@@ -82,6 +82,10 @@
 //     final automationRunView = automationRunViewFromJson(jsonString);
 //     final automationVersionView = automationVersionViewFromJson(jsonString);
 //     final automationView = automationViewFromJson(jsonString);
+//     final businessOperationPage = businessOperationPageFromJson(jsonString);
+//     final businessOperationPhaseCount = businessOperationPhaseCountFromJson(jsonString);
+//     final businessOperationSummary = businessOperationSummaryFromJson(jsonString);
+//     final businessOperationView = businessOperationViewFromJson(jsonString);
 //     final capabilityContractPage = capabilityContractPageFromJson(jsonString);
 //     final capabilityContractView = capabilityContractViewFromJson(jsonString);
 //     final clientKeyView = clientKeyViewFromJson(jsonString);
@@ -112,6 +116,7 @@
 //     final nativeHumanReadReceipt = nativeHumanReadReceiptFromJson(jsonString);
 //     final nativeHumanResourceResult = nativeHumanResourceResultFromJson(jsonString);
 //     final nativeHumanScopeResult = nativeHumanScopeResultFromJson(jsonString);
+//     final operationUsageCount = operationUsageCountFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
@@ -132,6 +137,7 @@
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
+//     final usageBillingView = usageBillingViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final webChannelView = webChannelViewFromJson(jsonString);
 //     final webCustomEmojiMutation = webCustomEmojiMutationFromJson(jsonString);
@@ -751,6 +757,30 @@ AutomationView automationViewFromJson(String str) =>
 
 String automationViewToJson(AutomationView data) => json.encode(data.toJson());
 
+BusinessOperationPage businessOperationPageFromJson(String str) =>
+    BusinessOperationPage.fromJson(json.decode(str));
+
+String businessOperationPageToJson(BusinessOperationPage data) =>
+    json.encode(data.toJson());
+
+BusinessOperationPhaseCount businessOperationPhaseCountFromJson(String str) =>
+    BusinessOperationPhaseCount.fromJson(json.decode(str));
+
+String businessOperationPhaseCountToJson(BusinessOperationPhaseCount data) =>
+    json.encode(data.toJson());
+
+BusinessOperationSummary businessOperationSummaryFromJson(String str) =>
+    BusinessOperationSummary.fromJson(json.decode(str));
+
+String businessOperationSummaryToJson(BusinessOperationSummary data) =>
+    json.encode(data.toJson());
+
+BusinessOperationView businessOperationViewFromJson(String str) =>
+    BusinessOperationView.fromJson(json.decode(str));
+
+String businessOperationViewToJson(BusinessOperationView data) =>
+    json.encode(data.toJson());
+
 CapabilityContractPage capabilityContractPageFromJson(String str) =>
     CapabilityContractPage.fromJson(json.decode(str));
 
@@ -939,6 +969,12 @@ NativeHumanScopeResult nativeHumanScopeResultFromJson(String str) =>
 String nativeHumanScopeResultToJson(NativeHumanScopeResult data) =>
     json.encode(data.toJson());
 
+OperationUsageCount operationUsageCountFromJson(String str) =>
+    OperationUsageCount.fromJson(json.decode(str));
+
+String operationUsageCountToJson(OperationUsageCount data) =>
+    json.encode(data.toJson());
+
 OwnAuditEntry ownAuditEntryFromJson(String str) =>
     OwnAuditEntry.fromJson(json.decode(str));
 
@@ -1051,6 +1087,12 @@ TenantInvitationView tenantInvitationViewFromJson(String str) =>
     TenantInvitationView.fromJson(json.decode(str));
 
 String tenantInvitationViewToJson(TenantInvitationView data) =>
+    json.encode(data.toJson());
+
+UsageBillingView usageBillingViewFromJson(String str) =>
+    UsageBillingView.fromJson(json.decode(str));
+
+String usageBillingViewToJson(UsageBillingView data) =>
     json.encode(data.toJson());
 
 UserStateVersion userStateVersionFromJson(String str) =>
@@ -9381,6 +9423,508 @@ class AutomationView {
   });
 }
 
+///GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
+///Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。
+class BusinessOperationPage {
+  ///下一页首项之前的 ActionExecution ID；缺省即已读完
+  final String? nextCursor;
+  final List<OperationElement> operations;
+
+  BusinessOperationPage({this.nextCursor, required this.operations});
+
+  factory BusinessOperationPage.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationPage(
+        nextCursor: json["nextCursor"],
+        operations: List<OperationElement>.from(
+          json["operations"].map((x) => OperationElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextCursor": nextCursor,
+    "operations": List<dynamic>.from(operations.map((x) => x.toJson())),
+  });
+}
+
+///业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+///或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+class OperationElement {
+  final String actionExecutionId;
+  final String actionKey;
+  final int actionVersion;
+  final String actorPrincipalId;
+  final ApprovalStatus? approvalStatus;
+
+  ///RFC3339，UTC
+  final String createdAt;
+  final String initiatorPrincipalId;
+  final String operationId;
+  final BusinessOperationPhase phase;
+  final ReasonCode? reason;
+  final String targetId;
+
+  ///RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+  final String? terminalAt;
+  final List<OperationUsage> usage;
+  final OperationUsageState usageState;
+  final WorkflowKind? workflowKind;
+
+  ///缺省即 Tenant 级动作
+  final String? workspaceId;
+
+  OperationElement({
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.actionVersion,
+    required this.actorPrincipalId,
+    this.approvalStatus,
+    required this.createdAt,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.phase,
+    this.reason,
+    required this.targetId,
+    this.terminalAt,
+    required this.usage,
+    required this.usageState,
+    this.workflowKind,
+    this.workspaceId,
+  });
+
+  factory OperationElement.fromJson(Map<String, dynamic> json) =>
+      OperationElement(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        actorPrincipalId: json["actorPrincipalId"],
+        approvalStatus: json["approvalStatus"] == null
+            ? null
+            : approvalStatusValues.map[json["approvalStatus"]]!,
+        createdAt: json["createdAt"],
+        initiatorPrincipalId: json["initiatorPrincipalId"],
+        operationId: json["operationId"],
+        phase: businessOperationPhaseValues.map[json["phase"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
+        targetId: json["targetId"],
+        terminalAt: json["terminalAt"],
+        usage: List<OperationUsage>.from(
+          json["usage"].map((x) => OperationUsage.fromJson(x)),
+        ),
+        usageState: operationUsageStateValues.map[json["usageState"]]!,
+        workflowKind: json["workflowKind"] == null
+            ? null
+            : workflowKindValues.map[json["workflowKind"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "actorPrincipalId": actorPrincipalId,
+    "approvalStatus": approvalStatusValues.reverse[approvalStatus],
+    "createdAt": createdAt,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "phase": businessOperationPhaseValues.reverse[phase],
+    "reason": reasonCodeValues.reverse[reason],
+    "targetId": targetId,
+    "terminalAt": terminalAt,
+    "usage": List<dynamic>.from(usage.map((x) => x.toJson())),
+    "usageState": operationUsageStateValues.reverse[usageState],
+    "workflowKind": workflowKindValues.reverse[workflowKind],
+    "workspaceId": workspaceId,
+  });
+}
+
+///业务操作视图的当前阶段（.design/14 §7、§8），由 Core 按 ActionExecution 准入/派发、ApprovalProjection 与
+///TaskProjection 唯一推导；投影不可担保为当前时为 PROJECTION_DELAYED，外部结果不明时为 UNKNOWN，二者都不是成功或失败。APPLIED
+///只用于无 Workflow 的同步动作返回结果；CANCEL_REQUESTED 只表示取消控制被接受，不表示原任务已终结。
+enum BusinessOperationPhase {
+  ABORTED,
+  APPLIED,
+  AWAITING_APPROVAL,
+  CANCELED,
+  CANCEL_REQUESTED,
+  COMPLETED,
+  DENIED,
+  EVALUATING,
+  EXPIRED,
+  FAILED,
+  NOT_STARTED,
+  PROJECTION_DELAYED,
+  REVOKED,
+  RUNNING,
+  TERMINATED,
+  TIMED_OUT,
+  UNKNOWN,
+}
+
+final businessOperationPhaseValues = EnumValues({
+  "ABORTED": BusinessOperationPhase.ABORTED,
+  "APPLIED": BusinessOperationPhase.APPLIED,
+  "AWAITING_APPROVAL": BusinessOperationPhase.AWAITING_APPROVAL,
+  "CANCELED": BusinessOperationPhase.CANCELED,
+  "CANCEL_REQUESTED": BusinessOperationPhase.CANCEL_REQUESTED,
+  "COMPLETED": BusinessOperationPhase.COMPLETED,
+  "DENIED": BusinessOperationPhase.DENIED,
+  "EVALUATING": BusinessOperationPhase.EVALUATING,
+  "EXPIRED": BusinessOperationPhase.EXPIRED,
+  "FAILED": BusinessOperationPhase.FAILED,
+  "NOT_STARTED": BusinessOperationPhase.NOT_STARTED,
+  "PROJECTION_DELAYED": BusinessOperationPhase.PROJECTION_DELAYED,
+  "REVOKED": BusinessOperationPhase.REVOKED,
+  "RUNNING": BusinessOperationPhase.RUNNING,
+  "TERMINATED": BusinessOperationPhase.TERMINATED,
+  "TIMED_OUT": BusinessOperationPhase.TIMED_OUT,
+  "UNKNOWN": BusinessOperationPhase.UNKNOWN,
+});
+
+class OperationUsage {
+  final String meterKey;
+
+  ///冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+  final int quantity;
+  final UsageSettlementStatus status;
+
+  OperationUsage({
+    required this.meterKey,
+    required this.quantity,
+    required this.status,
+  });
+
+  factory OperationUsage.fromJson(Map<String, dynamic> json) => OperationUsage(
+    meterKey: json["meterKey"],
+    quantity: json["quantity"],
+    status: usageSettlementStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "meterKey": meterKey,
+    "quantity": quantity,
+    "status": usageSettlementStatusValues.reverse[status],
+  });
+}
+
+///Core UsageEvent outbox 的投递事实（.design/11 §4 第 7 条）。PENDING_PUBLISH 尚未取得 OpenMeter
+///回应；ACCEPTED 只表示 202 接收；COMMITTED 表示按 ID/source 查到 stored_at；UNKNOWN 待对账；FAILED 为确定拒绝。均不表示
+///invoice 已结算。
+enum UsageSettlementStatus {
+  ACCEPTED,
+  COMMITTED,
+  FAILED,
+  PENDING_PUBLISH,
+  UNKNOWN,
+}
+
+final usageSettlementStatusValues = EnumValues({
+  "ACCEPTED": UsageSettlementStatus.ACCEPTED,
+  "COMMITTED": UsageSettlementStatus.COMMITTED,
+  "FAILED": UsageSettlementStatus.FAILED,
+  "PENDING_PUBLISH": UsageSettlementStatus.PENDING_PUBLISH,
+  "UNKNOWN": UsageSettlementStatus.UNKNOWN,
+});
+
+///一个业务操作的用量结算状态（.design/11 §4、§6，.design/14
+///§8）。NOT_METERED：动作定义没有用量来源；NOT_DISPATCHED：有计量但没有派发；BILLING_UNAVAILABLE：已派发却没有可结算的持久用量事实（不显示零）；SETTLEMENT_PENDING：用量事件待发布或
+///OpenMeter 仅 202 接收；COMMITTED：全部事件已按 ID/source 查到
+///stored_at；UNKNOWN：投递或查证结果不明，待对账；FAILED：投递被确定拒绝。COMMITTED 不代表账单已结算。
+enum OperationUsageState {
+  BILLING_UNAVAILABLE,
+  COMMITTED,
+  FAILED,
+  NOT_DISPATCHED,
+  NOT_METERED,
+  SETTLEMENT_PENDING,
+  UNKNOWN,
+}
+
+final operationUsageStateValues = EnumValues({
+  "BILLING_UNAVAILABLE": OperationUsageState.BILLING_UNAVAILABLE,
+  "COMMITTED": OperationUsageState.COMMITTED,
+  "FAILED": OperationUsageState.FAILED,
+  "NOT_DISPATCHED": OperationUsageState.NOT_DISPATCHED,
+  "NOT_METERED": OperationUsageState.NOT_METERED,
+  "SETTLEMENT_PENDING": OperationUsageState.SETTLEMENT_PENDING,
+  "UNKNOWN": OperationUsageState.UNKNOWN,
+});
+
+///一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+class BusinessOperationPhaseCount {
+  final int count;
+  final BusinessOperationPhase phase;
+
+  BusinessOperationPhaseCount({required this.count, required this.phase});
+
+  factory BusinessOperationPhaseCount.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationPhaseCount(
+        count: json["count"],
+        phase: businessOperationPhaseValues.map[json["phase"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "count": count,
+    "phase": businessOperationPhaseValues.reverse[phase],
+  });
+}
+
+///GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
+///audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
+class BusinessOperationSummary {
+  final List<BusinessOperationActionSummary> actions;
+
+  ///RFC3339，含
+  final String from;
+  final List<PhaseElement> phases;
+  final String tenantId;
+
+  ///RFC3339，不含
+  final String to;
+  final int total;
+  final List<UsageStateElement> usageStates;
+  final String? workspaceId;
+
+  BusinessOperationSummary({
+    required this.actions,
+    required this.from,
+    required this.phases,
+    required this.tenantId,
+    required this.to,
+    required this.total,
+    required this.usageStates,
+    this.workspaceId,
+  });
+
+  factory BusinessOperationSummary.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationSummary(
+        actions: List<BusinessOperationActionSummary>.from(
+          json["actions"].map(
+            (x) => BusinessOperationActionSummary.fromJson(x),
+          ),
+        ),
+        from: json["from"],
+        phases: List<PhaseElement>.from(
+          json["phases"].map((x) => PhaseElement.fromJson(x)),
+        ),
+        tenantId: json["tenantId"],
+        to: json["to"],
+        total: json["total"],
+        usageStates: List<UsageStateElement>.from(
+          json["usageStates"].map((x) => UsageStateElement.fromJson(x)),
+        ),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actions": List<dynamic>.from(actions.map((x) => x.toJson())),
+    "from": from,
+    "phases": List<dynamic>.from(phases.map((x) => x.toJson())),
+    "tenantId": tenantId,
+    "to": to,
+    "total": total,
+    "usageStates": List<dynamic>.from(usageStates.map((x) => x.toJson())),
+    "workspaceId": workspaceId,
+  });
+}
+
+class BusinessOperationActionSummary {
+  final String actionKey;
+
+  ///timedTerminalCount 为 0 时缺省
+  final double? averageTerminalSeconds;
+  final List<PhaseElement> phases;
+
+  ///有确定终态时间、计入平均耗时的操作数
+  final int timedTerminalCount;
+  final int total;
+
+  BusinessOperationActionSummary({
+    required this.actionKey,
+    this.averageTerminalSeconds,
+    required this.phases,
+    required this.timedTerminalCount,
+    required this.total,
+  });
+
+  factory BusinessOperationActionSummary.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationActionSummary(
+        actionKey: json["actionKey"],
+        averageTerminalSeconds: json["averageTerminalSeconds"]?.toDouble(),
+        phases: List<PhaseElement>.from(
+          json["phases"].map((x) => PhaseElement.fromJson(x)),
+        ),
+        timedTerminalCount: json["timedTerminalCount"],
+        total: json["total"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "averageTerminalSeconds": averageTerminalSeconds,
+    "phases": List<dynamic>.from(phases.map((x) => x.toJson())),
+    "timedTerminalCount": timedTerminalCount,
+    "total": total,
+  });
+}
+
+///一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+class PhaseElement {
+  final int count;
+  final BusinessOperationPhase phase;
+
+  PhaseElement({required this.count, required this.phase});
+
+  factory PhaseElement.fromJson(Map<String, dynamic> json) => PhaseElement(
+    count: json["count"],
+    phase: businessOperationPhaseValues.map[json["phase"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "count": count,
+    "phase": businessOperationPhaseValues.reverse[phase],
+  });
+}
+
+///一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+class UsageStateElement {
+  final int count;
+  final OperationUsageState state;
+
+  UsageStateElement({required this.count, required this.state});
+
+  factory UsageStateElement.fromJson(Map<String, dynamic> json) =>
+      UsageStateElement(
+        count: json["count"],
+        state: operationUsageStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "count": count,
+    "state": operationUsageStateValues.reverse[state],
+  });
+}
+
+///业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+///或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+class BusinessOperationView {
+  final String actionExecutionId;
+  final String actionKey;
+  final int actionVersion;
+  final String actorPrincipalId;
+  final ApprovalStatus? approvalStatus;
+
+  ///RFC3339，UTC
+  final String createdAt;
+  final String initiatorPrincipalId;
+  final String operationId;
+  final BusinessOperationPhase phase;
+  final ReasonCode? reason;
+  final String targetId;
+
+  ///RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+  final String? terminalAt;
+  final List<BusinessOperationViewUsage> usage;
+  final OperationUsageState usageState;
+  final WorkflowKind? workflowKind;
+
+  ///缺省即 Tenant 级动作
+  final String? workspaceId;
+
+  BusinessOperationView({
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.actionVersion,
+    required this.actorPrincipalId,
+    this.approvalStatus,
+    required this.createdAt,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.phase,
+    this.reason,
+    required this.targetId,
+    this.terminalAt,
+    required this.usage,
+    required this.usageState,
+    this.workflowKind,
+    this.workspaceId,
+  });
+
+  factory BusinessOperationView.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationView(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        actorPrincipalId: json["actorPrincipalId"],
+        approvalStatus: json["approvalStatus"] == null
+            ? null
+            : approvalStatusValues.map[json["approvalStatus"]]!,
+        createdAt: json["createdAt"],
+        initiatorPrincipalId: json["initiatorPrincipalId"],
+        operationId: json["operationId"],
+        phase: businessOperationPhaseValues.map[json["phase"]]!,
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
+        targetId: json["targetId"],
+        terminalAt: json["terminalAt"],
+        usage: List<BusinessOperationViewUsage>.from(
+          json["usage"].map((x) => BusinessOperationViewUsage.fromJson(x)),
+        ),
+        usageState: operationUsageStateValues.map[json["usageState"]]!,
+        workflowKind: json["workflowKind"] == null
+            ? null
+            : workflowKindValues.map[json["workflowKind"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "actorPrincipalId": actorPrincipalId,
+    "approvalStatus": approvalStatusValues.reverse[approvalStatus],
+    "createdAt": createdAt,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "phase": businessOperationPhaseValues.reverse[phase],
+    "reason": reasonCodeValues.reverse[reason],
+    "targetId": targetId,
+    "terminalAt": terminalAt,
+    "usage": List<dynamic>.from(usage.map((x) => x.toJson())),
+    "usageState": operationUsageStateValues.reverse[usageState],
+    "workflowKind": workflowKindValues.reverse[workflowKind],
+    "workspaceId": workspaceId,
+  });
+}
+
+class BusinessOperationViewUsage {
+  final String meterKey;
+
+  ///冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+  final int quantity;
+  final UsageSettlementStatus status;
+
+  BusinessOperationViewUsage({
+    required this.meterKey,
+    required this.quantity,
+    required this.status,
+  });
+
+  factory BusinessOperationViewUsage.fromJson(Map<String, dynamic> json) =>
+      BusinessOperationViewUsage(
+        meterKey: json["meterKey"],
+        quantity: json["quantity"],
+        status: usageSettlementStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "meterKey": meterKey,
+    "quantity": quantity,
+    "status": usageSettlementStatusValues.reverse[status],
+  });
+}
+
 class CapabilityContractPage {
   final bool canRegister;
   final List<ContractElement> contracts;
@@ -12120,6 +12664,25 @@ class NativeHumanScopeSelection {
   });
 }
 
+///一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+class OperationUsageCount {
+  final int count;
+  final OperationUsageState state;
+
+  OperationUsageCount({required this.count, required this.state});
+
+  factory OperationUsageCount.fromJson(Map<String, dynamic> json) =>
+      OperationUsageCount(
+        count: json["count"],
+        state: operationUsageStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "count": count,
+    "state": operationUsageStateValues.reverse[state],
+  });
+}
+
 ///GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
 class OwnAuditEntry {
   final String actionKey;
@@ -13605,6 +14168,279 @@ final tenantInvitationStatusValues = EnumValues({
   "ISSUED": TenantInvitationStatus.ISSUED,
   "REDEEMED": TenantInvitationStatus.REDEEMED,
   "REVOKED": TenantInvitationStatus.REVOKED,
+});
+
+///GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
+///§7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core
+///不复制或聚合成账本；投递计数只来自 Core UsageEvent outbox。缺口用确定状态表达，不显示零或已结算。
+class UsageBillingView {
+  final UsageSectionState billingState;
+  final UsageCustomerState customerState;
+  final List<UsageDeliveryCount> delivery;
+  final List<UsageEntitlementView> entitlements;
+  final UsageSectionState entitlementState;
+
+  ///RFC3339，含
+  final String from;
+  final List<UsageInvoiceView> invoices;
+  final List<UsageMeterView> meters;
+  final List<UsageStateElement> operationUsage;
+  final String tenantId;
+
+  ///RFC3339，不含
+  final String to;
+  final String? workspaceId;
+
+  UsageBillingView({
+    required this.billingState,
+    required this.customerState,
+    required this.delivery,
+    required this.entitlements,
+    required this.entitlementState,
+    required this.from,
+    required this.invoices,
+    required this.meters,
+    required this.operationUsage,
+    required this.tenantId,
+    required this.to,
+    this.workspaceId,
+  });
+
+  factory UsageBillingView.fromJson(Map<String, dynamic> json) =>
+      UsageBillingView(
+        billingState: usageSectionStateValues.map[json["billingState"]]!,
+        customerState: usageCustomerStateValues.map[json["customerState"]]!,
+        delivery: List<UsageDeliveryCount>.from(
+          json["delivery"].map((x) => UsageDeliveryCount.fromJson(x)),
+        ),
+        entitlements: List<UsageEntitlementView>.from(
+          json["entitlements"].map((x) => UsageEntitlementView.fromJson(x)),
+        ),
+        entitlementState:
+            usageSectionStateValues.map[json["entitlementState"]]!,
+        from: json["from"],
+        invoices: List<UsageInvoiceView>.from(
+          json["invoices"].map((x) => UsageInvoiceView.fromJson(x)),
+        ),
+        meters: List<UsageMeterView>.from(
+          json["meters"].map((x) => UsageMeterView.fromJson(x)),
+        ),
+        operationUsage: List<UsageStateElement>.from(
+          json["operationUsage"].map((x) => UsageStateElement.fromJson(x)),
+        ),
+        tenantId: json["tenantId"],
+        to: json["to"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "billingState": usageSectionStateValues.reverse[billingState],
+    "customerState": usageCustomerStateValues.reverse[customerState],
+    "delivery": List<dynamic>.from(delivery.map((x) => x.toJson())),
+    "entitlements": List<dynamic>.from(entitlements.map((x) => x.toJson())),
+    "entitlementState": usageSectionStateValues.reverse[entitlementState],
+    "from": from,
+    "invoices": List<dynamic>.from(invoices.map((x) => x.toJson())),
+    "meters": List<dynamic>.from(meters.map((x) => x.toJson())),
+    "operationUsage": List<dynamic>.from(operationUsage.map((x) => x.toJson())),
+    "tenantId": tenantId,
+    "to": to,
+    "workspaceId": workspaceId,
+  });
+}
+
+///用量与账单页中额度、账单两类 Customer
+///级事实的读取结论。AVAILABLE：原生查询成功（列表可以为空）；UNAVAILABLE：原生查询失败或结果不可查证；TENANT_SCOPE_ONLY：所选
+///Workspace 视图不展示 Customer 级事实；NOT_PROVISIONED：Tenant 没有有效 Customer 映射。
+enum UsageSectionState {
+  AVAILABLE,
+  NOT_PROVISIONED,
+  TENANT_SCOPE_ONLY,
+  UNAVAILABLE,
+}
+
+final usageSectionStateValues = EnumValues({
+  "AVAILABLE": UsageSectionState.AVAILABLE,
+  "NOT_PROVISIONED": UsageSectionState.NOT_PROVISIONED,
+  "TENANT_SCOPE_ONLY": UsageSectionState.TENANT_SCOPE_ONLY,
+  "UNAVAILABLE": UsageSectionState.UNAVAILABLE,
+});
+
+///当前 Tenant 的 OpenMeter Customer 映射（DD-38、.design/11 §3）。ACTIVE：Core binding 有效且原生 Customer
+///读回同 Tenant 且未删除；NOT_PROVISIONED：没有 binding；REVOKED：binding 已撤销；UNAVAILABLE：原生事实不可读或与
+///binding 不一致，结果不明。
+enum UsageCustomerState { ACTIVE, NOT_PROVISIONED, REVOKED, UNAVAILABLE }
+
+final usageCustomerStateValues = EnumValues({
+  "ACTIVE": UsageCustomerState.ACTIVE,
+  "NOT_PROVISIONED": UsageCustomerState.NOT_PROVISIONED,
+  "REVOKED": UsageCustomerState.REVOKED,
+  "UNAVAILABLE": UsageCustomerState.UNAVAILABLE,
+});
+
+class UsageDeliveryCount {
+  final int count;
+  final UsageSettlementStatus status;
+
+  UsageDeliveryCount({required this.count, required this.status});
+
+  factory UsageDeliveryCount.fromJson(Map<String, dynamic> json) =>
+      UsageDeliveryCount(
+        count: json["count"],
+        status: usageSettlementStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "count": count,
+    "status": usageSettlementStatusValues.reverse[status],
+  });
+}
+
+class UsageEntitlementView {
+  ///仅 metered；OpenMeter 十进制原文
+  final String? balance;
+
+  ///原生 entitlement 类型原文
+  final String entitlementType;
+  final String featureKey;
+  final bool hasAccess;
+
+  ///仅 metered
+  final String? overage;
+
+  ///仅 metered；当前用量周期内的原生 usage
+  final String? usage;
+
+  UsageEntitlementView({
+    this.balance,
+    required this.entitlementType,
+    required this.featureKey,
+    required this.hasAccess,
+    this.overage,
+    this.usage,
+  });
+
+  factory UsageEntitlementView.fromJson(Map<String, dynamic> json) =>
+      UsageEntitlementView(
+        balance: json["balance"],
+        entitlementType: json["entitlementType"],
+        featureKey: json["featureKey"],
+        hasAccess: json["hasAccess"],
+        overage: json["overage"],
+        usage: json["usage"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "balance": balance,
+    "entitlementType": entitlementType,
+    "featureKey": featureKey,
+    "hasAccess": hasAccess,
+    "overage": overage,
+    "usage": usage,
+  });
+}
+
+class UsageInvoiceView {
+  final String? currency;
+  final String id;
+  final String? issuedAt;
+  final String? number;
+  final String? servicePeriodFrom;
+  final String? servicePeriodTo;
+
+  ///原生 invoice status 原文；只有原生终态才可称为已结算
+  final String status;
+
+  ///原生 totals.total 十进制原文
+  final String? total;
+
+  UsageInvoiceView({
+    this.currency,
+    required this.id,
+    this.issuedAt,
+    this.number,
+    this.servicePeriodFrom,
+    this.servicePeriodTo,
+    required this.status,
+    this.total,
+  });
+
+  factory UsageInvoiceView.fromJson(Map<String, dynamic> json) =>
+      UsageInvoiceView(
+        currency: json["currency"],
+        id: json["id"],
+        issuedAt: json["issuedAt"],
+        number: json["number"],
+        servicePeriodFrom: json["servicePeriodFrom"],
+        servicePeriodTo: json["servicePeriodTo"],
+        status: json["status"],
+        total: json["total"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "currency": currency,
+    "id": id,
+    "issuedAt": issuedAt,
+    "number": number,
+    "servicePeriodFrom": servicePeriodFrom,
+    "servicePeriodTo": servicePeriodTo,
+    "status": status,
+    "total": total,
+  });
+}
+
+class UsageMeterView {
+  ///原生 meter 的聚合方式原文
+  final String? aggregation;
+
+  ///ActionDefinition 登记的平台 meter 选择键
+  final String meterKey;
+
+  ///仅 COMMITTED 时给出；OpenMeter 返回的十进制原文
+  final String? quantity;
+  final MeterUsageState state;
+
+  UsageMeterView({
+    this.aggregation,
+    required this.meterKey,
+    this.quantity,
+    required this.state,
+  });
+
+  factory UsageMeterView.fromJson(Map<String, dynamic> json) => UsageMeterView(
+    aggregation: json["aggregation"],
+    meterKey: json["meterKey"],
+    quantity: json["quantity"],
+    state: meterUsageStateValues.map[json["state"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "aggregation": aggregation,
+    "meterKey": meterKey,
+    "quantity": quantity,
+    "state": meterUsageStateValues.reverse[state],
+  });
+}
+
+///一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+///Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+///meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+///中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+enum MeterUsageState {
+  COMMITTED,
+  METER_NOT_REGISTERED,
+  NO_COMMITTED_USAGE,
+  UNAVAILABLE,
+  WORKSPACE_DIMENSION_UNAVAILABLE,
+}
+
+final meterUsageStateValues = EnumValues({
+  "COMMITTED": MeterUsageState.COMMITTED,
+  "METER_NOT_REGISTERED": MeterUsageState.METER_NOT_REGISTERED,
+  "NO_COMMITTED_USAGE": MeterUsageState.NO_COMMITTED_USAGE,
+  "UNAVAILABLE": MeterUsageState.UNAVAILABLE,
+  "WORKSPACE_DIMENSION_UNAVAILABLE":
+      MeterUsageState.WORKSPACE_DIMENSION_UNAVAILABLE,
 });
 
 ///CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT

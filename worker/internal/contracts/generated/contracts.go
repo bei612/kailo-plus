@@ -247,6 +247,18 @@
 //    automationView, err := UnmarshalAutomationView(bytes)
 //    bytes, err = automationView.Marshal()
 //
+//    businessOperationPage, err := UnmarshalBusinessOperationPage(bytes)
+//    bytes, err = businessOperationPage.Marshal()
+//
+//    businessOperationPhaseCount, err := UnmarshalBusinessOperationPhaseCount(bytes)
+//    bytes, err = businessOperationPhaseCount.Marshal()
+//
+//    businessOperationSummary, err := UnmarshalBusinessOperationSummary(bytes)
+//    bytes, err = businessOperationSummary.Marshal()
+//
+//    businessOperationView, err := UnmarshalBusinessOperationView(bytes)
+//    bytes, err = businessOperationView.Marshal()
+//
 //    capabilityContractPage, err := UnmarshalCapabilityContractPage(bytes)
 //    bytes, err = capabilityContractPage.Marshal()
 //
@@ -337,6 +349,9 @@
 //    nativeHumanScopeResult, err := UnmarshalNativeHumanScopeResult(bytes)
 //    bytes, err = nativeHumanScopeResult.Marshal()
 //
+//    operationUsageCount, err := UnmarshalOperationUsageCount(bytes)
+//    bytes, err = operationUsageCount.Marshal()
+//
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
 //
@@ -396,6 +411,9 @@
 //
 //    tenantInvitationView, err := UnmarshalTenantInvitationView(bytes)
 //    bytes, err = tenantInvitationView.Marshal()
+//
+//    usageBillingView, err := UnmarshalUsageBillingView(bytes)
+//    bytes, err = usageBillingView.Marshal()
 //
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
@@ -1532,6 +1550,46 @@ func (r *AutomationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalBusinessOperationPage(data []byte) (BusinessOperationPage, error) {
+	var r BusinessOperationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *BusinessOperationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalBusinessOperationPhaseCount(data []byte) (BusinessOperationPhaseCount, error) {
+	var r BusinessOperationPhaseCount
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *BusinessOperationPhaseCount) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalBusinessOperationSummary(data []byte) (BusinessOperationSummary, error) {
+	var r BusinessOperationSummary
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *BusinessOperationSummary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalBusinessOperationView(data []byte) (BusinessOperationView, error) {
+	var r BusinessOperationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *BusinessOperationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalCapabilityContractPage(data []byte) (CapabilityContractPage, error) {
 	var r CapabilityContractPage
 	err := json.Unmarshal(data, &r)
@@ -1832,6 +1890,16 @@ func (r *NativeHumanScopeResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalOperationUsageCount(data []byte) (OperationUsageCount, error) {
+	var r OperationUsageCount
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *OperationUsageCount) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalOwnAuditEntry(data []byte) (OwnAuditEntry, error) {
 	var r OwnAuditEntry
 	err := json.Unmarshal(data, &r)
@@ -2029,6 +2097,16 @@ func UnmarshalTenantInvitationView(data []byte) (TenantInvitationView, error) {
 }
 
 func (r *TenantInvitationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalUsageBillingView(data []byte) (UsageBillingView, error) {
+	var r UsageBillingView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *UsageBillingView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4922,6 +5000,119 @@ type AutomationView struct {
 	WorkspaceID string  `json:"workspaceId"`
 }
 
+// GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
+// Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。
+type BusinessOperationPage struct {
+	// 下一页首项之前的 ActionExecution ID；缺省即已读完
+	NextCursor *string            `json:"nextCursor,omitempty"`
+	Operations []OperationElement `json:"operations"`
+}
+
+// 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+// 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+type OperationElement struct {
+	ActionExecutionID string          `json:"actionExecutionId"`
+	ActionKey         string          `json:"actionKey"`
+	ActionVersion     int64           `json:"actionVersion"`
+	ActorPrincipalID  string          `json:"actorPrincipalId"`
+	ApprovalStatus    *ApprovalStatus `json:"approvalStatus,omitempty"`
+	// RFC3339，UTC
+	CreatedAt            string                 `json:"createdAt"`
+	InitiatorPrincipalID string                 `json:"initiatorPrincipalId"`
+	OperationID          string                 `json:"operationId"`
+	Phase                BusinessOperationPhase `json:"phase"`
+	Reason               *ReasonCode            `json:"reason,omitempty"`
+	TargetID             string                 `json:"targetId"`
+	// RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+	TerminalAt   *string             `json:"terminalAt,omitempty"`
+	Usage        []OperationUsage    `json:"usage"`
+	UsageState   OperationUsageState `json:"usageState"`
+	WorkflowKind *WorkflowKind       `json:"workflowKind,omitempty"`
+	// 缺省即 Tenant 级动作
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+type OperationUsage struct {
+	MeterKey string `json:"meterKey"`
+	// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+	Quantity int64                 `json:"quantity"`
+	Status   UsageSettlementStatus `json:"status"`
+}
+
+// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+type BusinessOperationPhaseCount struct {
+	Count int64                  `json:"count"`
+	Phase BusinessOperationPhase `json:"phase"`
+}
+
+// GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
+// audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
+type BusinessOperationSummary struct {
+	Actions []BusinessOperationActionSummary `json:"actions"`
+	// RFC3339，含
+	From     string         `json:"from"`
+	Phases   []PhaseElement `json:"phases"`
+	TenantID string         `json:"tenantId"`
+	// RFC3339，不含
+	To          string              `json:"to"`
+	Total       int64               `json:"total"`
+	UsageStates []UsageStateElement `json:"usageStates"`
+	WorkspaceID *string             `json:"workspaceId,omitempty"`
+}
+
+type BusinessOperationActionSummary struct {
+	ActionKey string `json:"actionKey"`
+	// timedTerminalCount 为 0 时缺省
+	AverageTerminalSeconds *float64       `json:"averageTerminalSeconds,omitempty"`
+	Phases                 []PhaseElement `json:"phases"`
+	// 有确定终态时间、计入平均耗时的操作数
+	TimedTerminalCount int64 `json:"timedTerminalCount"`
+	Total              int64 `json:"total"`
+}
+
+// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+type PhaseElement struct {
+	Count int64                  `json:"count"`
+	Phase BusinessOperationPhase `json:"phase"`
+}
+
+// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+type UsageStateElement struct {
+	Count int64               `json:"count"`
+	State OperationUsageState `json:"state"`
+}
+
+// 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+// 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+type BusinessOperationView struct {
+	ActionExecutionID string          `json:"actionExecutionId"`
+	ActionKey         string          `json:"actionKey"`
+	ActionVersion     int64           `json:"actionVersion"`
+	ActorPrincipalID  string          `json:"actorPrincipalId"`
+	ApprovalStatus    *ApprovalStatus `json:"approvalStatus,omitempty"`
+	// RFC3339，UTC
+	CreatedAt            string                 `json:"createdAt"`
+	InitiatorPrincipalID string                 `json:"initiatorPrincipalId"`
+	OperationID          string                 `json:"operationId"`
+	Phase                BusinessOperationPhase `json:"phase"`
+	Reason               *ReasonCode            `json:"reason,omitempty"`
+	TargetID             string                 `json:"targetId"`
+	// RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+	TerminalAt   *string                      `json:"terminalAt,omitempty"`
+	Usage        []BusinessOperationViewUsage `json:"usage"`
+	UsageState   OperationUsageState          `json:"usageState"`
+	WorkflowKind *WorkflowKind                `json:"workflowKind,omitempty"`
+	// 缺省即 Tenant 级动作
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+type BusinessOperationViewUsage struct {
+	MeterKey string `json:"meterKey"`
+	// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+	Quantity int64                 `json:"quantity"`
+	Status   UsageSettlementStatus `json:"status"`
+}
+
 type CapabilityContractPage struct {
 	CanRegister bool              `json:"canRegister"`
 	Contracts   []ContractElement `json:"contracts"`
@@ -5630,6 +5821,12 @@ type NativeHumanScopeSelection struct {
 	WorkspaceID       *string    `json:"workspaceId,omitempty"`
 }
 
+// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+type OperationUsageCount struct {
+	Count int64               `json:"count"`
+	State OperationUsageState `json:"state"`
+}
+
 // GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
 type OwnAuditEntry struct {
 	ActionKey string         `json:"actionKey"`
@@ -5981,6 +6178,67 @@ type TenantInvitationView struct {
 	// 兑换者自报的显示名，只作展示
 	RedeemerDisplayName *string                `json:"redeemerDisplayName,omitempty"`
 	Status              TenantInvitationStatus `json:"status"`
+}
+
+// GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
+// §7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core
+// 不复制或聚合成账本；投递计数只来自 Core UsageEvent outbox。缺口用确定状态表达，不显示零或已结算。
+type UsageBillingView struct {
+	BillingState     UsageSectionState      `json:"billingState"`
+	CustomerState    UsageCustomerState     `json:"customerState"`
+	Delivery         []UsageDeliveryCount   `json:"delivery"`
+	Entitlements     []UsageEntitlementView `json:"entitlements"`
+	EntitlementState UsageSectionState      `json:"entitlementState"`
+	// RFC3339，含
+	From           string              `json:"from"`
+	Invoices       []UsageInvoiceView  `json:"invoices"`
+	Meters         []UsageMeterView    `json:"meters"`
+	OperationUsage []UsageStateElement `json:"operationUsage"`
+	TenantID       string              `json:"tenantId"`
+	// RFC3339，不含
+	To          string  `json:"to"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+type UsageDeliveryCount struct {
+	Count  int64                 `json:"count"`
+	Status UsageSettlementStatus `json:"status"`
+}
+
+type UsageEntitlementView struct {
+	// 仅 metered；OpenMeter 十进制原文
+	Balance *string `json:"balance,omitempty"`
+	// 原生 entitlement 类型原文
+	EntitlementType string `json:"entitlementType"`
+	FeatureKey      string `json:"featureKey"`
+	HasAccess       bool   `json:"hasAccess"`
+	// 仅 metered
+	Overage *string `json:"overage,omitempty"`
+	// 仅 metered；当前用量周期内的原生 usage
+	Usage *string `json:"usage,omitempty"`
+}
+
+type UsageInvoiceView struct {
+	Currency          *string `json:"currency,omitempty"`
+	ID                string  `json:"id"`
+	IssuedAt          *string `json:"issuedAt,omitempty"`
+	Number            *string `json:"number,omitempty"`
+	ServicePeriodFrom *string `json:"servicePeriodFrom,omitempty"`
+	ServicePeriodTo   *string `json:"servicePeriodTo,omitempty"`
+	// 原生 invoice status 原文；只有原生终态才可称为已结算
+	Status string `json:"status"`
+	// 原生 totals.total 十进制原文
+	Total *string `json:"total,omitempty"`
+}
+
+type UsageMeterView struct {
+	// 原生 meter 的聚合方式原文
+	Aggregation *string `json:"aggregation,omitempty"`
+	// ActionDefinition 登记的平台 meter 选择键
+	MeterKey string `json:"meterKey"`
+	// 仅 COMMITTED 时给出；OpenMeter 返回的十进制原文
+	Quantity *string         `json:"quantity,omitempty"`
+	State    MeterUsageState `json:"state"`
 }
 
 // CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
@@ -7649,7 +7907,7 @@ const (
 type Phase string
 
 const (
-	Accepted      Phase = "ACCEPTED"
+	PhaseACCEPTED Phase = "ACCEPTED"
 	PhaseCONFLICT Phase = "CONFLICT"
 	PhaseFAILED   Phase = "FAILED"
 	PhaseUNKNOWN  Phase = "UNKNOWN"
@@ -7910,10 +8168,10 @@ const (
 type ActionDispatchState string
 
 const (
-	Aborted                    ActionDispatchState = "ABORTED"
-	ActionDispatchStateUNKNOWN ActionDispatchState = "UNKNOWN"
-	Dispatched                 ActionDispatchState = "DISPATCHED"
-	NotDispatched              ActionDispatchState = "NOT_DISPATCHED"
+	ActionDispatchStateABORTED       ActionDispatchState = "ABORTED"
+	ActionDispatchStateNOTDISPATCHED ActionDispatchState = "NOT_DISPATCHED"
+	ActionDispatchStateUNKNOWN       ActionDispatchState = "UNKNOWN"
+	Dispatched                       ActionDispatchState = "DISPATCHED"
 )
 
 // ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
@@ -7921,12 +8179,12 @@ const (
 type ActionGateState string
 
 const (
-	ActionGateStateDENIED  ActionGateState = "DENIED"
-	ActionGateStateEXPIRED ActionGateState = "EXPIRED"
-	ActionGateStateREVOKED ActionGateState = "REVOKED"
-	ActionGateStateWAITING ActionGateState = "WAITING"
-	Allowed                ActionGateState = "ALLOWED"
-	Evaluating             ActionGateState = "EVALUATING"
+	ActionGateStateDENIED     ActionGateState = "DENIED"
+	ActionGateStateEVALUATING ActionGateState = "EVALUATING"
+	ActionGateStateEXPIRED    ActionGateState = "EXPIRED"
+	ActionGateStateREVOKED    ActionGateState = "REVOKED"
+	ActionGateStateWAITING    ActionGateState = "WAITING"
+	Allowed                   ActionGateState = "ALLOWED"
 )
 
 // 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
@@ -7970,11 +8228,11 @@ const (
 	NativeSurfaceRequired        ReasonCode = "NATIVE_SURFACE_REQUIRED"
 	PayloadTooLarge              ReasonCode = "PAYLOAD_TOO_LARGE"
 	PermissionDenied             ReasonCode = "PERMISSION_DENIED"
-	ProjectionDelayed            ReasonCode = "PROJECTION_DELAYED"
 	PublishRejected              ReasonCode = "PUBLISH_REJECTED"
 	PublishResultUnknown         ReasonCode = "PUBLISH_RESULT_UNKNOWN"
 	QuotaExhausted               ReasonCode = "QUOTA_EXHAUSTED"
 	RateLimited                  ReasonCode = "RATE_LIMITED"
+	ReasonCodePROJECTIONDELAYED  ReasonCode = "PROJECTION_DELAYED"
 	ScopeGuardFailed             ReasonCode = "SCOPE_GUARD_FAILED"
 	SelfApprovalDenied           ReasonCode = "SELF_APPROVAL_DENIED"
 	SessionNotActive             ReasonCode = "SESSION_NOT_ACTIVE"
@@ -8251,12 +8509,12 @@ const (
 type TaskStatus string
 
 const (
-	TaskStatusCANCELED  TaskStatus = "CANCELED"
-	TaskStatusCOMPLETED TaskStatus = "COMPLETED"
-	TaskStatusFAILED    TaskStatus = "FAILED"
-	TaskStatusRUNNING   TaskStatus = "RUNNING"
-	Terminated          TaskStatus = "TERMINATED"
-	TimedOut            TaskStatus = "TIMED_OUT"
+	TaskStatusCANCELED   TaskStatus = "CANCELED"
+	TaskStatusCOMPLETED  TaskStatus = "COMPLETED"
+	TaskStatusFAILED     TaskStatus = "FAILED"
+	TaskStatusRUNNING    TaskStatus = "RUNNING"
+	TaskStatusTERMINATED TaskStatus = "TERMINATED"
+	TaskStatusTIMEDOUT   TaskStatus = "TIMED_OUT"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind
@@ -8278,6 +8536,60 @@ const (
 	SecretRefRehome          WorkflowKind = "SECRET_REF_REHOME"
 	TenantLifecycle          WorkflowKind = "TENANT_LIFECYCLE"
 	WorkspaceLifecycle       WorkflowKind = "WORKSPACE_LIFECYCLE"
+)
+
+// 业务操作视图的当前阶段（.design/14 §7、§8），由 Core 按 ActionExecution 准入/派发、ApprovalProjection 与
+// TaskProjection 唯一推导；投影不可担保为当前时为 PROJECTION_DELAYED，外部结果不明时为 UNKNOWN，二者都不是成功或失败。APPLIED
+// 只用于无 Workflow 的同步动作返回结果；CANCEL_REQUESTED 只表示取消控制被接受，不表示原任务已终结。
+type BusinessOperationPhase string
+
+const (
+	Applied                                 BusinessOperationPhase = "APPLIED"
+	AwaitingApproval                        BusinessOperationPhase = "AWAITING_APPROVAL"
+	BusinessOperationPhaseABORTED           BusinessOperationPhase = "ABORTED"
+	BusinessOperationPhaseCANCELED          BusinessOperationPhase = "CANCELED"
+	BusinessOperationPhaseCOMPLETED         BusinessOperationPhase = "COMPLETED"
+	BusinessOperationPhaseDENIED            BusinessOperationPhase = "DENIED"
+	BusinessOperationPhaseEVALUATING        BusinessOperationPhase = "EVALUATING"
+	BusinessOperationPhaseEXPIRED           BusinessOperationPhase = "EXPIRED"
+	BusinessOperationPhaseFAILED            BusinessOperationPhase = "FAILED"
+	BusinessOperationPhasePROJECTIONDELAYED BusinessOperationPhase = "PROJECTION_DELAYED"
+	BusinessOperationPhaseREVOKED           BusinessOperationPhase = "REVOKED"
+	BusinessOperationPhaseRUNNING           BusinessOperationPhase = "RUNNING"
+	BusinessOperationPhaseTERMINATED        BusinessOperationPhase = "TERMINATED"
+	BusinessOperationPhaseTIMEDOUT          BusinessOperationPhase = "TIMED_OUT"
+	BusinessOperationPhaseUNKNOWN           BusinessOperationPhase = "UNKNOWN"
+	CancelRequested                         BusinessOperationPhase = "CANCEL_REQUESTED"
+	NotStarted                              BusinessOperationPhase = "NOT_STARTED"
+)
+
+// Core UsageEvent outbox 的投递事实（.design/11 §4 第 7 条）。PENDING_PUBLISH 尚未取得 OpenMeter
+// 回应；ACCEPTED 只表示 202 接收；COMMITTED 表示按 ID/source 查到 stored_at；UNKNOWN 待对账；FAILED 为确定拒绝。均不表示
+// invoice 已结算。
+type UsageSettlementStatus string
+
+const (
+	PendingPublish                 UsageSettlementStatus = "PENDING_PUBLISH"
+	UsageSettlementStatusACCEPTED  UsageSettlementStatus = "ACCEPTED"
+	UsageSettlementStatusCOMMITTED UsageSettlementStatus = "COMMITTED"
+	UsageSettlementStatusFAILED    UsageSettlementStatus = "FAILED"
+	UsageSettlementStatusUNKNOWN   UsageSettlementStatus = "UNKNOWN"
+)
+
+// 一个业务操作的用量结算状态（.design/11 §4、§6，.design/14
+// §8）。NOT_METERED：动作定义没有用量来源；NOT_DISPATCHED：有计量但没有派发；BILLING_UNAVAILABLE：已派发却没有可结算的持久用量事实（不显示零）；SETTLEMENT_PENDING：用量事件待发布或
+// OpenMeter 仅 202 接收；COMMITTED：全部事件已按 ID/source 查到
+// stored_at；UNKNOWN：投递或查证结果不明，待对账；FAILED：投递被确定拒绝。COMMITTED 不代表账单已结算。
+type OperationUsageState string
+
+const (
+	BillingUnavailable               OperationUsageState = "BILLING_UNAVAILABLE"
+	NotMetered                       OperationUsageState = "NOT_METERED"
+	OperationUsageStateCOMMITTED     OperationUsageState = "COMMITTED"
+	OperationUsageStateFAILED        OperationUsageState = "FAILED"
+	OperationUsageStateNOTDISPATCHED OperationUsageState = "NOT_DISPATCHED"
+	OperationUsageStateUNKNOWN       OperationUsageState = "UNKNOWN"
+	SettlementPending                OperationUsageState = "SETTLEMENT_PENDING"
 )
 
 type CapabilityContractStatus string
@@ -8614,6 +8926,44 @@ const (
 	Redeemed                      TenantInvitationStatus = "REDEEMED"
 	TenantInvitationStatusEXPIRED TenantInvitationStatus = "EXPIRED"
 	TenantInvitationStatusREVOKED TenantInvitationStatus = "REVOKED"
+)
+
+// 用量与账单页中额度、账单两类 Customer
+// 级事实的读取结论。AVAILABLE：原生查询成功（列表可以为空）；UNAVAILABLE：原生查询失败或结果不可查证；TENANT_SCOPE_ONLY：所选
+// Workspace 视图不展示 Customer 级事实；NOT_PROVISIONED：Tenant 没有有效 Customer 映射。
+type UsageSectionState string
+
+const (
+	Available                       UsageSectionState = "AVAILABLE"
+	TenantScopeOnly                 UsageSectionState = "TENANT_SCOPE_ONLY"
+	UsageSectionStateNOTPROVISIONED UsageSectionState = "NOT_PROVISIONED"
+	UsageSectionStateUNAVAILABLE    UsageSectionState = "UNAVAILABLE"
+)
+
+// 当前 Tenant 的 OpenMeter Customer 映射（DD-38、.design/11 §3）。ACTIVE：Core binding 有效且原生 Customer
+// 读回同 Tenant 且未删除；NOT_PROVISIONED：没有 binding；REVOKED：binding 已撤销；UNAVAILABLE：原生事实不可读或与
+// binding 不一致，结果不明。
+type UsageCustomerState string
+
+const (
+	UsageCustomerStateACTIVE         UsageCustomerState = "ACTIVE"
+	UsageCustomerStateNOTPROVISIONED UsageCustomerState = "NOT_PROVISIONED"
+	UsageCustomerStateREVOKED        UsageCustomerState = "REVOKED"
+	UsageCustomerStateUNAVAILABLE    UsageCustomerState = "UNAVAILABLE"
+)
+
+// 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+// Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+// meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+// 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+type MeterUsageState string
+
+const (
+	MeterNotRegistered            MeterUsageState = "METER_NOT_REGISTERED"
+	MeterUsageStateCOMMITTED      MeterUsageState = "COMMITTED"
+	MeterUsageStateUNAVAILABLE    MeterUsageState = "UNAVAILABLE"
+	NoCommittedUsage              MeterUsageState = "NO_COMMITTED_USAGE"
+	WorkspaceDimensionUnavailable MeterUsageState = "WORKSPACE_DIMENSION_UNAVAILABLE"
 )
 
 // 原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。

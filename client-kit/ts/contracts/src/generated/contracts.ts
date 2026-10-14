@@ -3021,6 +3021,213 @@ export interface AutomationView {
     workspaceId: string;
 }
 
+/**
+ * GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
+ * Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。
+ */
+export interface BusinessOperationPage {
+    /**
+     * 下一页首项之前的 ActionExecution ID；缺省即已读完
+     */
+    nextCursor?: string;
+    operations:  OperationElement[];
+}
+
+/**
+ * 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+ * 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+ */
+export interface OperationElement {
+    actionExecutionId: string;
+    actionKey:         string;
+    actionVersion:     number;
+    actorPrincipalId:  string;
+    approvalStatus?:   ApprovalStatus;
+    /**
+     * RFC3339，UTC
+     */
+    createdAt:            string;
+    initiatorPrincipalId: string;
+    operationId:          string;
+    phase:                BusinessOperationPhase;
+    reason?:              ReasonCode;
+    targetId:             string;
+    /**
+     * RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+     */
+    terminalAt?:   string;
+    usage:         OperationUsage[];
+    usageState:    OperationUsageState;
+    workflowKind?: WorkflowKind;
+    /**
+     * 缺省即 Tenant 级动作
+     */
+    workspaceId?: string;
+}
+
+/**
+ * 业务操作视图的当前阶段（.design/14 §7、§8），由 Core 按 ActionExecution 准入/派发、ApprovalProjection 与
+ * TaskProjection 唯一推导；投影不可担保为当前时为 PROJECTION_DELAYED，外部结果不明时为 UNKNOWN，二者都不是成功或失败。APPLIED
+ * 只用于无 Workflow 的同步动作返回结果；CANCEL_REQUESTED 只表示取消控制被接受，不表示原任务已终结。
+ */
+export enum BusinessOperationPhase {
+    Aborted = "ABORTED",
+    Applied = "APPLIED",
+    AwaitingApproval = "AWAITING_APPROVAL",
+    CancelRequested = "CANCEL_REQUESTED",
+    Canceled = "CANCELED",
+    Completed = "COMPLETED",
+    Denied = "DENIED",
+    Evaluating = "EVALUATING",
+    Expired = "EXPIRED",
+    Failed = "FAILED",
+    NotStarted = "NOT_STARTED",
+    ProjectionDelayed = "PROJECTION_DELAYED",
+    Revoked = "REVOKED",
+    Running = "RUNNING",
+    Terminated = "TERMINATED",
+    TimedOut = "TIMED_OUT",
+    Unknown = "UNKNOWN",
+}
+
+export interface OperationUsage {
+    meterKey: string;
+    /**
+     * 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+     */
+    quantity: number;
+    status:   UsageSettlementStatus;
+}
+
+/**
+ * Core UsageEvent outbox 的投递事实（.design/11 §4 第 7 条）。PENDING_PUBLISH 尚未取得 OpenMeter
+ * 回应；ACCEPTED 只表示 202 接收；COMMITTED 表示按 ID/source 查到 stored_at；UNKNOWN 待对账；FAILED 为确定拒绝。均不表示
+ * invoice 已结算。
+ */
+export enum UsageSettlementStatus {
+    Accepted = "ACCEPTED",
+    Committed = "COMMITTED",
+    Failed = "FAILED",
+    PendingPublish = "PENDING_PUBLISH",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * 一个业务操作的用量结算状态（.design/11 §4、§6，.design/14
+ * §8）。NOT_METERED：动作定义没有用量来源；NOT_DISPATCHED：有计量但没有派发；BILLING_UNAVAILABLE：已派发却没有可结算的持久用量事实（不显示零）；SETTLEMENT_PENDING：用量事件待发布或
+ * OpenMeter 仅 202 接收；COMMITTED：全部事件已按 ID/source 查到
+ * stored_at；UNKNOWN：投递或查证结果不明，待对账；FAILED：投递被确定拒绝。COMMITTED 不代表账单已结算。
+ */
+export enum OperationUsageState {
+    BillingUnavailable = "BILLING_UNAVAILABLE",
+    Committed = "COMMITTED",
+    Failed = "FAILED",
+    NotDispatched = "NOT_DISPATCHED",
+    NotMetered = "NOT_METERED",
+    SettlementPending = "SETTLEMENT_PENDING",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+ */
+export interface BusinessOperationPhaseCount {
+    count: number;
+    phase: BusinessOperationPhase;
+}
+
+/**
+ * GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
+ * audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
+ */
+export interface BusinessOperationSummary {
+    actions: BusinessOperationActionSummary[];
+    /**
+     * RFC3339，含
+     */
+    from:     string;
+    phases:   PhaseElement[];
+    tenantId: string;
+    /**
+     * RFC3339，不含
+     */
+    to:           string;
+    total:        number;
+    usageStates:  UsageStateElement[];
+    workspaceId?: string;
+}
+
+export interface BusinessOperationActionSummary {
+    actionKey: string;
+    /**
+     * timedTerminalCount 为 0 时缺省
+     */
+    averageTerminalSeconds?: number;
+    phases:                  PhaseElement[];
+    /**
+     * 有确定终态时间、计入平均耗时的操作数
+     */
+    timedTerminalCount: number;
+    total:              number;
+}
+
+/**
+ * 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+ */
+export interface PhaseElement {
+    count: number;
+    phase: BusinessOperationPhase;
+}
+
+/**
+ * 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+ */
+export interface UsageStateElement {
+    count: number;
+    state: OperationUsageState;
+}
+
+/**
+ * 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
+ * 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
+ */
+export interface BusinessOperationView {
+    actionExecutionId: string;
+    actionKey:         string;
+    actionVersion:     number;
+    actorPrincipalId:  string;
+    approvalStatus?:   ApprovalStatus;
+    /**
+     * RFC3339，UTC
+     */
+    createdAt:            string;
+    initiatorPrincipalId: string;
+    operationId:          string;
+    phase:                BusinessOperationPhase;
+    reason?:              ReasonCode;
+    targetId:             string;
+    /**
+     * RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
+     */
+    terminalAt?:   string;
+    usage:         BusinessOperationViewUsage[];
+    usageState:    OperationUsageState;
+    workflowKind?: WorkflowKind;
+    /**
+     * 缺省即 Tenant 级动作
+     */
+    workspaceId?: string;
+}
+
+export interface BusinessOperationViewUsage {
+    meterKey: string;
+    /**
+     * 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
+     */
+    quantity: number;
+    status:   UsageSettlementStatus;
+}
+
 export interface CapabilityContractPage {
     canRegister: boolean;
     contracts:   ContractElement[];
@@ -4080,6 +4287,14 @@ export interface NativeHumanScopeSelection {
 }
 
 /**
+ * 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+ */
+export interface OperationUsageCount {
+    count: number;
+    state: OperationUsageState;
+}
+
+/**
  * GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
  */
 export interface OwnAuditEntry {
@@ -4705,6 +4920,129 @@ export enum TenantInvitationStatus {
     Issued = "ISSUED",
     Redeemed = "REDEEMED",
     Revoked = "REVOKED",
+}
+
+/**
+ * GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
+ * §7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core
+ * 不复制或聚合成账本；投递计数只来自 Core UsageEvent outbox。缺口用确定状态表达，不显示零或已结算。
+ */
+export interface UsageBillingView {
+    billingState:     UsageSectionState;
+    customerState:    UsageCustomerState;
+    delivery:         UsageDeliveryCount[];
+    entitlements:     UsageEntitlementView[];
+    entitlementState: UsageSectionState;
+    /**
+     * RFC3339，含
+     */
+    from:           string;
+    invoices:       UsageInvoiceView[];
+    meters:         UsageMeterView[];
+    operationUsage: UsageStateElement[];
+    tenantId:       string;
+    /**
+     * RFC3339，不含
+     */
+    to:           string;
+    workspaceId?: string;
+}
+
+/**
+ * 用量与账单页中额度、账单两类 Customer
+ * 级事实的读取结论。AVAILABLE：原生查询成功（列表可以为空）；UNAVAILABLE：原生查询失败或结果不可查证；TENANT_SCOPE_ONLY：所选
+ * Workspace 视图不展示 Customer 级事实；NOT_PROVISIONED：Tenant 没有有效 Customer 映射。
+ */
+export enum UsageSectionState {
+    Available = "AVAILABLE",
+    NotProvisioned = "NOT_PROVISIONED",
+    TenantScopeOnly = "TENANT_SCOPE_ONLY",
+    Unavailable = "UNAVAILABLE",
+}
+
+/**
+ * 当前 Tenant 的 OpenMeter Customer 映射（DD-38、.design/11 §3）。ACTIVE：Core binding 有效且原生 Customer
+ * 读回同 Tenant 且未删除；NOT_PROVISIONED：没有 binding；REVOKED：binding 已撤销；UNAVAILABLE：原生事实不可读或与
+ * binding 不一致，结果不明。
+ */
+export enum UsageCustomerState {
+    Active = "ACTIVE",
+    NotProvisioned = "NOT_PROVISIONED",
+    Revoked = "REVOKED",
+    Unavailable = "UNAVAILABLE",
+}
+
+export interface UsageDeliveryCount {
+    count:  number;
+    status: UsageSettlementStatus;
+}
+
+export interface UsageEntitlementView {
+    /**
+     * 仅 metered；OpenMeter 十进制原文
+     */
+    balance?: string;
+    /**
+     * 原生 entitlement 类型原文
+     */
+    entitlementType: string;
+    featureKey:      string;
+    hasAccess:       boolean;
+    /**
+     * 仅 metered
+     */
+    overage?: string;
+    /**
+     * 仅 metered；当前用量周期内的原生 usage
+     */
+    usage?: string;
+}
+
+export interface UsageInvoiceView {
+    currency?:          string;
+    id:                 string;
+    issuedAt?:          string;
+    number?:            string;
+    servicePeriodFrom?: string;
+    servicePeriodTo?:   string;
+    /**
+     * 原生 invoice status 原文；只有原生终态才可称为已结算
+     */
+    status: string;
+    /**
+     * 原生 totals.total 十进制原文
+     */
+    total?: string;
+}
+
+export interface UsageMeterView {
+    /**
+     * 原生 meter 的聚合方式原文
+     */
+    aggregation?: string;
+    /**
+     * ActionDefinition 登记的平台 meter 选择键
+     */
+    meterKey: string;
+    /**
+     * 仅 COMMITTED 时给出；OpenMeter 返回的十进制原文
+     */
+    quantity?: string;
+    state:     MeterUsageState;
+}
+
+/**
+ * 一个已登记 meter 在所选区间内的 OpenMeter committed usage 查询结论（.design/11 §7）。COMMITTED：原生查询返回该
+ * Customer 的聚合值；NO_COMMITTED_USAGE：原生查询成功且区间内没有已存储事件；WORKSPACE_DIMENSION_UNAVAILABLE：原生
+ * meter 未声明 workspace_id 维度，不能按 Workspace 归因；METER_NOT_REGISTERED：动作登记的 meter 在 OpenMeter
+ * 中不存在或不唯一；UNAVAILABLE：查询失败或结果不可查证。后三者都不显示数值。
+ */
+export enum MeterUsageState {
+    Committed = "COMMITTED",
+    MeterNotRegistered = "METER_NOT_REGISTERED",
+    NoCommittedUsage = "NO_COMMITTED_USAGE",
+    Unavailable = "UNAVAILABLE",
+    WorkspaceDimensionUnavailable = "WORKSPACE_DIMENSION_UNAVAILABLE",
 }
 
 /**
