@@ -44,5 +44,5 @@ release:
     - name: worker
       digest: sha256:93211bf99aab4619839b0157438bb18e6830ade1c8083a4618237b321e505260
     - name: collaboration-relay
-      digest: sha256:907e71897124ec9b1c79ea12085b3dfd3ee7e7ec50d0a968a45929012f99f7c3
+      digest: sha256:f61ac00fd6cd999a37e7fa0273d37df265bef5bd4edda70e3a6eea4b2268da21
   gate: blocked_until_seams_closed

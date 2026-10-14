@@ -238,7 +238,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:907e71897124ec9b1c79ea12085b3dfd3ee7e7ec50d0a968a45929012f99f7c3
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:f61ac00fd6cd999a37e7fa0273d37df265bef5bd4edda70e3a6eea4b2268da21
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -257,7 +257,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:907e71897124ec9b1c79ea12085b3dfd3ee7e7ec50d0a968a45929012f99f7c3
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:f61ac00fd6cd999a37e7fa0273d37df265bef5bd4edda70e3a6eea4b2268da21
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
