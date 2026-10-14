@@ -4904,8 +4904,12 @@ final actionEnumValues = EnumValues({
 });
 
 class ContentTrigger {
-  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-  ///事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+  ///固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+  final String? emoji;
+
+  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+  ///为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+  ///4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
   final String? filter;
   final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
@@ -4913,6 +4917,7 @@ class ContentTrigger {
   final String? textPrefix;
 
   ContentTrigger({
+    this.emoji,
     this.filter,
     required this.kind,
     this.mentionPrincipalId,
@@ -4921,6 +4926,7 @@ class ContentTrigger {
   });
 
   factory ContentTrigger.fromJson(Map<String, dynamic> json) => ContentTrigger(
+    emoji: json["emoji"],
     filter: json["filter"],
     kind: automationTriggerKindValues.map[json["kind"]]!,
     mentionPrincipalId: json["mentionPrincipalId"],
@@ -4931,6 +4937,7 @@ class ContentTrigger {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "emoji": emoji,
     "filter": filter,
     "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,
@@ -4939,11 +4946,19 @@ class ContentTrigger {
   });
 }
 
-enum AutomationTriggerKind { CHANNEL_MESSAGE, MENTION, SCHEDULE }
+enum AutomationTriggerKind {
+  CHANNEL_MESSAGE,
+  DIFF_POSTED,
+  MENTION,
+  REACTION_ADDED,
+  SCHEDULE,
+}
 
 final automationTriggerKindValues = EnumValues({
   "CHANNEL_MESSAGE": AutomationTriggerKind.CHANNEL_MESSAGE,
+  "DIFF_POSTED": AutomationTriggerKind.DIFF_POSTED,
   "MENTION": AutomationTriggerKind.MENTION,
+  "REACTION_ADDED": AutomationTriggerKind.REACTION_ADDED,
   "SCHEDULE": AutomationTriggerKind.SCHEDULE,
 });
 
@@ -15627,8 +15642,12 @@ class AutomationVersionContentAction {
 }
 
 class AutomationVersionContentTrigger {
-  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-  ///事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+  ///固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+  final String? emoji;
+
+  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+  ///为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+  ///4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
   final String? filter;
   final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
@@ -15636,6 +15655,7 @@ class AutomationVersionContentTrigger {
   final String? textPrefix;
 
   AutomationVersionContentTrigger({
+    this.emoji,
     this.filter,
     required this.kind,
     this.mentionPrincipalId,
@@ -15645,6 +15665,7 @@ class AutomationVersionContentTrigger {
 
   factory AutomationVersionContentTrigger.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentTrigger(
+        emoji: json["emoji"],
         filter: json["filter"],
         kind: automationTriggerKindValues.map[json["kind"]]!,
         mentionPrincipalId: json["mentionPrincipalId"],
@@ -15655,6 +15676,7 @@ class AutomationVersionContentTrigger {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "emoji": emoji,
     "filter": filter,
     "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,

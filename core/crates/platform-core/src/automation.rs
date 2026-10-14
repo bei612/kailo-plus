@@ -293,7 +293,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     if trigger.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "kind" | "textPrefix" | "filter" | "mentionPrincipalId" | "scheduleSpec"
+            "kind" | "textPrefix" | "filter" | "emoji" | "mentionPrincipalId" | "scheduleSpec"
         )
     }) || !steps::supported(&native_action)
     {
@@ -310,10 +310,35 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         trigger_condition::validate(filter)?;
         native_trigger["filter"] = filter.clone();
     }
+    // `emoji` is the fixed Buzz ReactionAdded filter only.
+    if trigger.contains_key("emoji")
+        && trigger.get("kind").and_then(Value::as_str) != Some("REACTION_ADDED")
+    {
+        return Err(invalid_management());
+    }
     match trigger.get("kind").and_then(Value::as_str) {
         Some("CHANNEL_MESSAGE")
             if !trigger.contains_key("mentionPrincipalId")
                 && !trigger.contains_key("scheduleSpec") => {}
+        // Fixed Buzz TriggerDef::DiffPosted { filter }: kind:40008 in the same
+        // Workspace Channel; only the original filter, no text prefix.
+        Some("DIFF_POSTED")
+            if !trigger.contains_key("textPrefix")
+                && !trigger.contains_key("mentionPrincipalId")
+                && !trigger.contains_key("scheduleSpec") => {}
+        // Fixed Buzz TriggerDef::ReactionAdded { emoji, filter } on kind:7.
+        Some("REACTION_ADDED")
+            if !trigger.contains_key("textPrefix")
+                && !trigger.contains_key("mentionPrincipalId")
+                && !trigger.contains_key("scheduleSpec") =>
+        {
+            if let Some(emoji) = trigger.get("emoji") {
+                if emoji.as_str().is_none_or(|emoji| emoji.trim().is_empty()) {
+                    return Err(invalid_management());
+                }
+                native_trigger["emoji"] = emoji.clone();
+            }
+        }
         Some("MENTION") if !trigger.contains_key("scheduleSpec") => {
             let id = trigger
                 .get("mentionPrincipalId")
@@ -1640,7 +1665,7 @@ async fn fresh(
     if !steps::supported(&row.action)
         || !matches!(
             row.trigger.get("kind").and_then(Value::as_str),
-            Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE")
+            Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE" | "DIFF_POSTED" | "REACTION_ADDED")
         )
         || row.result_target
             != if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
@@ -1811,11 +1836,12 @@ struct FrozenInvocation {
     source_event_id: String,
     root_event_id: String,
     source_kind: String,
+    trigger_target_event_id: Option<String>,
 }
 
 const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automation_version_asset_id,i.action_execution_id,a.operation_id,
             a.action_version,i.agent_version_asset_id,i.projection_generation,i.delegation_id,
-            i.source_event_id,i.root_event_id,i.source_kind
+            i.source_event_id,i.root_event_id,i.source_kind,i.trigger_target_event_id
          from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
          where i.id=$1 and not i.cancel_pending
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
@@ -1962,6 +1988,12 @@ async fn recheck_invocation(
             .and_then(|p| p.get("rootEventId"))
             .and_then(Value::as_str)
             != Some(frozen.root_event_id.as_str())
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("triggerTargetEventId"))
+            .and_then(Value::as_str)
+            != frozen.trigger_target_event_id.as_deref()
     {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
@@ -2353,7 +2385,7 @@ pub(crate) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), Re
         left join projection.ingress_checkpoint c on c.source_key=
             'relay:automation:'||d.resource_id::text||':'||d.pinned_version_asset_id::text
         where d.state='ENABLED' and r.state='ACTIVE' and t.status='ACTIVE'
-          and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION')
+          and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION','DIFF_POSTED','REACTION_ADDED')
           and r.projection_action_execution_id is null
         order by c.updated_at nulls first,d.resource_id limit $1",
     )
@@ -2389,8 +2421,17 @@ fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
         )
     ) && matches!(
         trigger.get("kind").and_then(Value::as_str),
-        Some("CHANNEL_MESSAGE" | "MENTION")
+        Some("CHANNEL_MESSAGE" | "MENTION" | "DIFF_POSTED" | "REACTION_ADDED")
     )
+}
+
+/// Native event kind consumed by a Relay trigger (fixed Buzz trigger_matches_event).
+fn relay_trigger_kind(trigger: &Value) -> u32 {
+    match trigger.get("kind").and_then(Value::as_str) {
+        Some("DIFF_POSTED") => collab_bridge::kind::KIND_STREAM_MESSAGE_DIFF,
+        Some("REACTION_ADDED") => collab_bridge::kind::KIND_REACTION,
+        _ => collab_bridge::kind::KIND_STREAM_MESSAGE,
+    }
 }
 
 async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(), Refusal> {
@@ -2481,7 +2522,8 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
     }
     let limit = batch.min(document.limits.max_limit);
-    let mut filter = json!({"kinds":[collab_bridge::kind::KIND_STREAM_MESSAGE],"#h":[channel.to_string()],
+    let trigger_kind = relay_trigger_kind(&row.trigger);
+    let mut filter = json!({"kinds":[trigger_kind],"#h":[channel.to_string()],
         "since":row.enabled_at.timestamp(),"limit":limit});
     if let (Some(until), Some(before)) = (&cursor.until, &cursor.before_id) {
         filter["until"] = json!(until);
@@ -2517,10 +2559,13 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
             .filter_map(|tag| tag.get(1).map(String::as_str))
             .collect();
         let channel_text = channel.to_string();
+        // Reactions are scoped by the Relay's stored channel (#h filter) and may
+        // omit the h tag; their reacted message is checked against the channel below.
+        let reaction = trigger_kind == collab_bridge::kind::KIND_REACTION;
         if event.kind.as_u16()
-            != u16::try_from(collab_bridge::kind::KIND_STREAM_MESSAGE)
+            != u16::try_from(trigger_kind)
                 .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?
-            || channels.as_slice() != [channel_text.as_str()]
+            || (channels.as_slice() != [channel_text.as_str()] && !(reaction && channels.is_empty()))
             || i64::try_from(time)
                 .ok()
                 .is_none_or(|time| time < row.enabled_at.timestamp())
@@ -2547,10 +2592,30 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         let Some(author) = author else {
             continue;
         };
-        if !matches_event(&mut conn, &row, channel, &event).await? {
+        // ReactionAdded: freeze the verified same-channel reacted message and the
+        // thread it belongs to; a reaction without such a target never fires.
+        let reacted = if reaction {
+            let Some(target) = collab_bridge::memory::reaction_target(&event) else {
+                continue;
+            };
+            match client
+                .channel_message_root(&state.http, &target, &channel_text)
+                .await
+            {
+                Ok(root) => Some((target, root)),
+                Err(collab_bridge::memory::MemoryError::Unavailable) => {
+                    return Err(Refusal::Unavailable("Relay 回应目标不可读".into()))
+                }
+                Err(_) => continue,
+            }
+        } else {
+            None
+        };
+        let target = reacted.as_ref().map(|(target, _)| target.as_str());
+        if !matches_event(&mut conn, &row, channel, &event, target).await? {
             continue;
         }
-        admit(state, &row, &def, &event, author).await?;
+        admit(state, &row, &def, &event, author, reacted).await?;
     }
     // 尾页后重新扫描原生保留历史，业务稳定源 ID 去重；不用 timestamp highwater 漏掉迟到事件。
     let next = if i64::try_from(values.len()).ok() == Some(limit) {
@@ -2600,8 +2665,9 @@ async fn matches_event(
     row: &Run,
     channel: Uuid,
     event: &Event,
+    target: Option<&str>,
 ) -> Result<bool, Refusal> {
-    if !trigger_condition::matches(&row.trigger, channel, event).await? {
+    if !trigger_condition::matches(&row.trigger, channel, event, target).await? {
         return Ok(false);
     }
     if let Some(prefix) = row.trigger.get("text_prefix") {
@@ -2614,7 +2680,14 @@ async fn matches_event(
         }
     }
     match row.trigger.get("kind").and_then(Value::as_str) {
-        Some("CHANNEL_MESSAGE") => Ok(true),
+        Some("CHANNEL_MESSAGE" | "DIFF_POSTED") => Ok(true),
+        // Fixed Buzz should_fire_workflow: optional exact emoji, reacted message required.
+        Some("REACTION_ADDED") => Ok(target.is_some()
+            && row
+                .trigger
+                .get("emoji")
+                .and_then(Value::as_str)
+                .is_none_or(|emoji| event.content == emoji)),
         Some("MENTION") => {
             let target = row
                 .trigger
@@ -2648,14 +2721,16 @@ async fn admit(
     def: &Definition,
     event: &Event,
     author: Uuid,
+    reacted: Option<(String, String)>,
 ) -> Result<(), Refusal> {
-    admit_source(state, snapshot, def, AdmissionSource::Relay(event, author))
+    admit_source(state, snapshot, def, AdmissionSource::Relay(event, author, reacted))
         .await
         .map(|_| ())
 }
 
 enum AdmissionSource<'a> {
-    Relay(&'a Event, Uuid),
+    /// Event, its HUMAN author and, for ReactionAdded, the reacted message and its thread root.
+    Relay(&'a Event, Uuid, Option<(String, String)>),
     Manual(
         &'a crate::bff::ExecutionContext,
         &'a contracts::ActionCommand,
@@ -2669,12 +2744,17 @@ async fn admit_source(
     origin: AdmissionSource<'_>,
 ) -> Result<Uuid, Refusal> {
     let (idempotency, source, root, source_kind, author) = match &origin {
-        AdmissionSource::Relay(event, author) => {
+        AdmissionSource::Relay(event, author, reacted) => {
             let source = event.id.to_hex();
-            let root = collab_bridge::nip10::parse_thread_markers(&event.tags)
-                .resolve()
-                .map(|(root, _)| root)
-                .unwrap_or_else(|| source.clone());
+            // A reaction run replies in the reacted message's thread; the
+            // reaction itself stays the trigger source and uniqueness key.
+            let root = match reacted {
+                Some((_, root)) => root.clone(),
+                None => collab_bridge::nip10::parse_thread_markers(&event.tags)
+                    .resolve()
+                    .map(|(root, _)| root)
+                    .unwrap_or_else(|| source.clone()),
+            };
             (
                 Uuid::new_v5(&snapshot.resource_id, source.as_bytes()),
                 source,
@@ -2770,9 +2850,16 @@ async fn admit_source(
         "projectionGeneration":row.projection_generation,"sourceEventId":source,
         "rootEventId":root,"sourcePrincipalId":author,
         "delegationId":row.delegation_id});
+    let target = match &origin {
+        AdmissionSource::Relay(_, _, Some((target, _))) => Some(target.clone()),
+        _ => None,
+    };
     match &origin {
-        AdmissionSource::Relay(event, _) => {
-            parameters["sourcePubkey"] = json!(event.pubkey.to_hex())
+        AdmissionSource::Relay(event, _, reacted) => {
+            parameters["sourcePubkey"] = json!(event.pubkey.to_hex());
+            if let Some((target, _)) = reacted {
+                parameters["triggerTargetEventId"] = json!(target);
+            }
         }
         AdmissionSource::Manual(ctx, command) => {
             // The BFF proves the HUMAN owner; no client chooses a Grant, pin,
@@ -2813,7 +2900,7 @@ async fn admit_source(
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         match &origin {
-            AdmissionSource::Relay(event, _) => {
+            AdmissionSource::Relay(event, _, _) => {
                 source_human(
                     &state.governance,
                     &mut tx,
@@ -2903,11 +2990,13 @@ async fn admit_source(
     }
     sqlx::query("insert into catalog.agent_invocation
         (id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,agent_version_asset_id,
-         projection_generation,delegation_id,automation_resource_id,automation_version_asset_id,action_execution_id,workflow_id,status,source_kind)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'CREATED',$14)")
+         projection_generation,delegation_id,automation_resource_id,automation_version_asset_id,action_execution_id,workflow_id,status,source_kind,
+         trigger_target_event_id)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'CREATED',$14,$15)")
         .bind(invocation).bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(&source)
         .bind(row.executor_installation_resource_id).bind(row.agent_version_asset_id).bind(row.projection_generation)
         .bind(row.delegation_id).bind(row.resource_id).bind(row.automation_version_asset_id).bind(ae.id).bind(&workflow).bind(source_kind)
+        .bind(&target)
         .execute(&mut *tx).await?;
     sqlx::query("insert into projection.workflow_ref
         (workflow_id,workflow_type,workflow_version,kind,tenant_id,workspace_id,operation_id,action_execution_id,projection_state)

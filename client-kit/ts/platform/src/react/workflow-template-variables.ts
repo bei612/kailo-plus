@@ -24,6 +24,12 @@ function triggerVariables(trigger: TriggerKind): WorkflowTemplateVariable[] {
     case TriggerKind.ChannelMessage:
     case TriggerKind.Mention:
       return eventVariables;
+    case TriggerKind.DiffPosted:
+      return eventVariables.map((variable) => variable.value === "trigger.text"
+        ? {...variable, description: "workflows.template.diffText" as const} : variable);
+    case TriggerKind.ReactionAdded:
+      return [{ value: "trigger.emoji", description: "workflows.template.reactionEmoji", group: "workflows.template.triggerGroup" },
+        ...eventVariables.filter(({ value }) => value !== "trigger.text")];
     case TriggerKind.Schedule:
       return eventVariables.filter(({ value }) => value === "trigger.channel_id" || value === "trigger.timestamp");
     default:

@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::WorkflowNode/WorkflowFormBuilder.
 // Original sequence and inspector; the parent retains the governed draft and publishing authority.
-import { ArrowDown, CalendarClock, Check, ChevronDown, MessageSquare, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, CalendarClock, Check, ChevronDown, GitPullRequest, MessageSquare, Plus, SmilePlus, Trash2, X } from "lucide-react";
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, type ReactNode, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
@@ -179,7 +179,9 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
     },
   }));
   const triggerLabel = t(trigger === AutomationTriggerKind.Schedule ? "agents.automation.schedule"
-    : trigger === AutomationTriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage");
+    : trigger === AutomationTriggerKind.Mention ? "agents.installation.trigger.mention"
+    : trigger === AutomationTriggerKind.DiffPosted ? "agents.automation.diffPosted"
+    : trigger === AutomationTriggerKind.ReactionAdded ? "agents.automation.reactionAdded" : "agents.automation.channelMessage");
   const actionLabel = (step: AutomationStep) => t(actionKeys[step.action as DraftAction]);
   const legacyActionLabel = action ? t(action.kind === ActionKind.AgentTurn ? "agents.automation.agentTurn" : "agents.automation.postMessage") : "";
   const legacyActionDescription = action?.template.trim() ? `“${compact(action.template)}”` : legacyActionLabel;
@@ -210,7 +212,9 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
         {scopeField ? <div className="mb-3">{scopeField}</div> : null}
         <ol aria-label={t("workflows.sequence")}>
           <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} label={`${t("agents.automation.trigger")}: ${triggerLabel}`} disabled={disabled}
-            icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+            icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" />
+              : trigger === AutomationTriggerKind.DiffPosted ? <GitPullRequest className="h-4 w-4" />
+              : trigger === AutomationTriggerKind.ReactionAdded ? <SmilePlus className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             selected={selectedNode?.type === "trigger"} terminal={!action && steps.length === 0} onSelect={() => selectNode({type: "trigger"})}
             actions={actionsAt(0)} onAddAfter={action => insertStep(0, action)} />
           {action ? <WorkflowNode title={t("workflows.steps.number", {number: 1})}

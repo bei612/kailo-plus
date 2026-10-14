@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use buzz_core::engram::{self, Body};
-use buzz_core::kind::{KIND_AGENT_ENGRAM, KIND_STREAM_MESSAGE};
+use buzz_core::kind::{KIND_AGENT_ENGRAM, KIND_REACTION, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF};
 use nostr::{Event, Keys, PublicKey};
 use serde_json::json;
 
@@ -132,6 +132,8 @@ pub struct SourceMessage {
 impl IdentityClient {
     /// Read the exact persisted trigger, using Buzz's single NIP-10 parser.
     /// A new head, another channel or an unverified event cannot supply input.
+    /// The trigger is a channel message or, for the fixed Buzz DiffPosted
+    /// trigger, a kind:40008 diff; admission already froze which one it is.
     pub async fn source_message(
         &self,
         http: &reqwest::Client,
@@ -149,7 +151,8 @@ impl IdentityClient {
         let event = events.next().ok_or(MemoryError::Unavailable)?;
         if events.next().is_some()
             || event.id.to_hex() != event_id
-            || u32::from(event.kind.as_u16()) != KIND_STREAM_MESSAGE
+            || ![KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF]
+                .contains(&u32::from(event.kind.as_u16()))
             || event.verify().is_err()
         {
             return Err(MemoryError::InvalidEvidence);
@@ -173,6 +176,93 @@ impl IdentityClient {
                 .is_some_and(|(observed, _)| observed == root)
         };
         if observed_channel.map(String::as_str) != Some(channel) || !belongs {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        Ok(SourceMessage {
+            author: event.pubkey.to_hex(),
+            content: event.content,
+            timestamp: event.created_at.as_secs(),
+        })
+    }
+}
+
+/// NIP-25 direct target of a reaction: the last `e` tag holding a 64-char hex
+/// event ID (fixed Buzz lib.rs::build_trigger_context). Unlike upstream there is
+/// no fallback to the reaction itself; a reaction without a target is ignored.
+pub fn reaction_target(event: &Event) -> Option<String> {
+    event.tags.iter().rev().find_map(|tag| {
+        let parts = tag.as_slice();
+        (parts.first().map(String::as_str) == Some("e"))
+            .then(|| parts.get(1))
+            .flatten()
+            .filter(|id| id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()))
+            .cloned()
+    })
+}
+
+impl IdentityClient {
+    /// The reacted message must be a verified channel message or diff in exactly
+    /// this channel; returns the thread root it belongs to (itself if top level).
+    pub async fn channel_message_root(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        channel: &str,
+    ) -> Result<String, MemoryError> {
+        let page = self
+            .query(http, &[json!({"ids":[event_id]})])
+            .await
+            .map_err(|_| MemoryError::Unavailable)?;
+        let events: Vec<Event> =
+            serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
+        let mut events = events.into_iter();
+        let event = events.next().ok_or(MemoryError::InvalidEvidence)?;
+        if events.next().is_some()
+            || event.id.to_hex() != event_id
+            || ![KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF]
+                .contains(&u32::from(event.kind.as_u16()))
+            || event.verify().is_err()
+        {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        let channels: Vec<&String> = event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice())
+            .filter(|parts| parts.first().map(String::as_str) == Some("h"))
+            .filter_map(|parts| (parts.len() == 2).then(|| &parts[1]))
+            .collect();
+        if channels.len() != 1 || channels[0] != channel {
+            return Err(MemoryError::InvalidEvidence);
+        }
+        Ok(buzz_core::nip10::parse_thread_markers(&event.tags)
+            .resolve()
+            .map(|(root, _)| root)
+            .unwrap_or_else(|| event_id.to_owned()))
+    }
+
+    /// Re-read the frozen reaction trigger: verified kind:7 whose NIP-25 target
+    /// is still the frozen reacted message. Its content is the reaction emoji.
+    pub async fn reaction_source(
+        &self,
+        http: &reqwest::Client,
+        reaction_id: &str,
+        target: &str,
+    ) -> Result<SourceMessage, MemoryError> {
+        let page = self
+            .query(http, &[json!({"ids":[reaction_id]})])
+            .await
+            .map_err(|_| MemoryError::Unavailable)?;
+        let events: Vec<Event> =
+            serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
+        let mut events = events.into_iter();
+        let event = events.next().ok_or(MemoryError::Unavailable)?;
+        if events.next().is_some()
+            || event.id.to_hex() != reaction_id
+            || u32::from(event.kind.as_u16()) != KIND_REACTION
+            || event.verify().is_err()
+            || reaction_target(&event).as_deref() != Some(target)
+        {
             return Err(MemoryError::InvalidEvidence);
         }
         Ok(SourceMessage {
@@ -495,5 +585,35 @@ impl<'a> Reader<'a> {
             }
         }
         Ok((heads, plaintext_bytes))
+    }
+}
+
+#[cfg(test)]
+mod reaction_target_tests {
+    use super::reaction_target;
+    use nostr::{EventBuilder, Keys, Kind, Tag};
+
+    fn reaction(tags: Vec<Tag>) -> nostr::Event {
+        EventBuilder::new(Kind::Reaction, "👍")
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[test]
+    fn last_hex_e_tag_is_the_target_without_fallback() {
+        let root = "a".repeat(64);
+        let target = "b".repeat(64);
+        let event = reaction(vec![
+            Tag::parse(["e", &root]).unwrap(),
+            Tag::parse(["e", &target]).unwrap(),
+            Tag::parse(["e", "not-an-event-id"]).unwrap(),
+        ]);
+        assert_eq!(reaction_target(&event).as_deref(), Some(target.as_str()));
+        assert_eq!(reaction_target(&reaction(vec![])), None);
+        assert_eq!(
+            reaction_target(&reaction(vec![Tag::parse(["e", "short"]).unwrap()])),
+            None
+        );
     }
 }

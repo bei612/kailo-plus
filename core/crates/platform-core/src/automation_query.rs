@@ -862,6 +862,20 @@ async fn versions(
                 if !trigger.contains_key("mention_principal_id")
                     && !trigger.contains_key("schedule_spec")
                     && version.result_target == "TRIGGER_THREAD" => {}
+            Some("DIFF_POSTED")
+                if !trigger.contains_key("text_prefix")
+                    && !trigger.contains_key("emoji")
+                    && !trigger.contains_key("mention_principal_id")
+                    && !trigger.contains_key("schedule_spec")
+                    && version.result_target == "TRIGGER_THREAD" => {}
+            Some("REACTION_ADDED")
+                if !trigger.contains_key("text_prefix")
+                    && !trigger.contains_key("mention_principal_id")
+                    && !trigger.contains_key("schedule_spec")
+                    && trigger
+                        .get("emoji")
+                        .is_none_or(|emoji| emoji.as_str().is_some_and(|e| !e.trim().is_empty()))
+                    && version.result_target == "TRIGGER_THREAD" => {}
             Some("MENTION")
                 if trigger
                     .get("mention_principal_id")

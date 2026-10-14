@@ -1,5 +1,5 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 WorkflowTriggerConditions.
-// Original message_posted branch. Other trigger kinds remain unavailable in Core.
+// Original message_posted, diff_posted and reaction_added branches.
 import { ChevronRight } from "lucide-react";
 import * as React from "react";
 
@@ -126,7 +126,7 @@ export function WorkflowTriggerConditions({
   disabled?: boolean;
   onChange: (value: string) => void;
   onConditionDraftsChange: (drafts: ParsedConditionExpression[] | null) => void;
-  triggerType?: "message_posted";
+  triggerType?: "message_posted" | "diff_posted" | "reaction_added";
   value: string;
   workflowChannelId?: string | null;
 }) {
@@ -298,7 +298,7 @@ export function WorkflowTriggerConditions({
                   type="button"
                 >
                   <span className="min-w-0 flex-1 truncate text-base font-medium">
-                    {t(field.value === "trigger_author" ? "workflows.condition.author" : "workflows.condition.messageText")}
+                    {t(field.value === "trigger_author" ? "workflows.condition.author" : field.value === "trigger_emoji" ? "workflows.condition.reactionEmoji" : field.value === "trigger_message_id" ? "workflows.condition.reactedMessage" : triggerType === "diff_posted" ? "workflows.condition.diffText" : "workflows.condition.messageText")}
                   </span>
                   {authorSummary ? (
                     <AuthorConditionSummary
@@ -393,7 +393,7 @@ export function WorkflowTriggerConditions({
                           <FieldLabel
                             htmlFor={`wf-trigger-${field.value}-value`}
                           >
-                            {t(field.value === "trigger_author" ? "workflows.condition.author" : "workflows.condition.messageText")}
+                            {t(field.value === "trigger_author" ? "workflows.condition.author" : field.value === "trigger_emoji" ? "workflows.condition.reactionEmoji" : field.value === "trigger_message_id" ? "workflows.condition.reactedMessage" : triggerType === "diff_posted" ? "workflows.condition.diffText" : "workflows.condition.messageText")}
                           </FieldLabel>
                           <Input
                             aria-describedby={

@@ -1787,8 +1787,13 @@ pub enum ActionEnum {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentTrigger {
-    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-    /// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+    /// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+    /// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+    /// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
 
@@ -1810,7 +1815,13 @@ pub enum AutomationTriggerKind {
     #[serde(rename = "CHANNEL_MESSAGE")]
     ChannelMessage,
 
+    #[serde(rename = "DIFF_POSTED")]
+    DiffPosted,
+
     Mention,
+
+    #[serde(rename = "REACTION_ADDED")]
+    ReactionAdded,
 
     Schedule,
 }
@@ -7774,8 +7785,13 @@ pub struct AutomationVersionContentAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContentTrigger {
-    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-    /// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+    /// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+    /// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+    /// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
 

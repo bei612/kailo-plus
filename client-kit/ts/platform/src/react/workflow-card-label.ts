@@ -48,6 +48,8 @@ function messageTriggerDescription(content: AutomationVersionContent, t: Transla
 /** Original getWorkflowTriggerSummary uses omission, unlike the card's author presentation. */
 export function workflowTriggerSummary(content: AutomationVersionContent, t: Translate): string {
   if (content.trigger.kind === "SCHEDULE") return t("workflows.trigger.schedule");
+  if (content.trigger.kind === "DIFF_POSTED") return t("workflows.trigger.diff");
+  if (content.trigger.kind === "REACTION_ADDED") return t("workflows.trigger.reaction");
   if (content.trigger.kind === "MENTION") return t("workflows.trigger.mention");
   if (content.trigger.textPrefix) return t("workflows.trigger.matchingMessage");
   return messageTriggerDescription(content, t, false, {omitUnresolvedReferences: true});
@@ -84,6 +86,11 @@ export function workflowTriggerCardClause(content: AutomationVersionContent, t: 
   // A Kailo MENTION also requires its existing trusted principal predicate;
   // do not describe that authorized extra constraint as an unrestricted message.
   if (trigger.kind === "MENTION") return t("workflows.card.mention");
+  // Original getTriggerCardClause diff_posted branch.
+  if (trigger.kind === "DIFF_POSTED") return t(trigger.filter ? "workflows.card.matchingDiff" : "workflows.card.diff");
+  // Original getTriggerCardClause reaction_added branch.
+  if (trigger.kind === "REACTION_ADDED") return trigger.emoji?.trim()
+    ? t("workflows.card.reactionTriggerWith", {emoji: trigger.emoji.trim()}) : t("workflows.card.reactionTrigger");
   // Legacy textPrefix is an additional Kailo constraint, not a Buzz filter.
   if (trigger.textPrefix) return t("workflows.card.matchingMessage");
   return messageTriggerDescription(content, t, true, options);

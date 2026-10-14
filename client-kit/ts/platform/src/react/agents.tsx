@@ -39,7 +39,7 @@ import {
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Play, Plus, RefreshCw, X, Zap } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -299,8 +299,11 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
     && (trigger.kind === TriggerKind.Schedule
       ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined && trigger.filter === undefined
         && validSchedule(trigger.scheduleSpec)
-      : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention)
-        && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined);
+      : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention
+        || ((trigger.kind === TriggerKind.DiffPosted || trigger.kind === TriggerKind.ReactionAdded) && trigger.textPrefix === undefined))
+        && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined)
+    && (trigger.emoji === undefined || (trigger.kind === TriggerKind.ReactionAdded
+      && typeof trigger.emoji === "string" && !!trigger.emoji.trim()));
 }
 
 function automationFromYaml(text: string): AutomationVersionContent | null {
@@ -522,8 +525,12 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2" aria-hidden>
           <span className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xs ${content?.trigger.kind === TriggerKind.Schedule
-            ? "border-emerald-400/30 bg-emerald-600 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
-            {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+            ? "border-emerald-400/30 bg-emerald-600 text-white" : content?.trigger.kind === TriggerKind.DiffPosted
+            ? "border-violet-400/30 bg-violet-600 text-white" : content?.trigger.kind === TriggerKind.ReactionAdded
+            ? "border-pink-400/30 bg-pink-600 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
+            {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" />
+              : content.trigger.kind === TriggerKind.DiffPosted ? <GitPullRequest className="h-5 w-5" />
+              : content.trigger.kind === TriggerKind.ReactionAdded ? <SmilePlus className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
           </span>
           {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" />
             <WorkflowActionTileStack content={content} animationSequence={triggerAnimationSequence} /></> : null}
@@ -694,7 +701,10 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
           <Cell><Badge tone="neutral">{t(automationVersionLabels[version.state])}</Badge></Cell>
           <Cell>
             <p>{t(version.content.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
-              : version.content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage")}</p>
+              : version.content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention"
+              : version.content.trigger.kind === TriggerKind.DiffPosted ? "agents.automation.diffPosted"
+              : version.content.trigger.kind === TriggerKind.ReactionAdded ? "agents.automation.reactionAdded" : "agents.automation.channelMessage")}</p>
+            {version.content.trigger.emoji ? <p>{t("workflows.steps.emoji")}: {version.content.trigger.emoji}</p> : null}
             {version.content.trigger.scheduleSpec ? <>
               <p>{t("agents.automation.everySeconds")}: {version.content.trigger.scheduleSpec.everySeconds}</p>
               <p>{t("agents.automation.offsetSeconds")}: {version.content.trigger.scheduleSpec.offsetSeconds}</p>
@@ -795,6 +805,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const [trigger, setTrigger] = useState(TriggerKind.ChannelMessage);
   const [prefix, setPrefix] = useState("");
   const [filter, setFilter] = useState("");
+  const [triggerEmoji, setTriggerEmoji] = useState("");
   const [conditionDrafts, setConditionDrafts] = useState<ParsedConditionExpression[] | null>(null);
   const [interval, setInterval] = useState("");
   const [offsetSeconds, setOffsetSeconds] = useState("");
@@ -877,7 +888,9 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     ...(name !== "" ? { name } : {}),
     ...(description !== undefined ? { description } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : {
-      ...(prefix ? { textPrefix: prefix } : {}), ...(filter ? { filter } : {}) }),
+      ...(prefix && trigger !== TriggerKind.DiffPosted && trigger !== TriggerKind.ReactionAdded ? { textPrefix: prefix } : {}),
+      ...(trigger === TriggerKind.ReactionAdded && triggerEmoji.trim() ? { emoji: triggerEmoji.trim() } : {}),
+      ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
     ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
@@ -914,7 +927,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     setName(content?.name ?? "");
     setDescription(content?.description);
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
-    setFilter(content?.trigger.filter ?? "");
+    setFilter(content?.trigger.filter ?? ""); setTriggerEmoji(content?.trigger.emoji ?? "");
     setConditionDrafts(null);
     setScheduleMode(content?.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
     setIntervalTagged(content?.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
@@ -1067,7 +1080,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const triggerFields = <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
           <select value={trigger} onChange={(event) => {
-            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
+            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, TriggerKind.ReactionAdded, TriggerKind.DiffPosted, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
               .find((candidate) => candidate === event.target.value);
             if (value) {
               setTrigger(value);
@@ -1077,6 +1090,8 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
             }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
+            <option value={TriggerKind.ReactionAdded}>{t("agents.automation.reactionAdded")}</option>
+            <option value={TriggerKind.DiffPosted}>{t("agents.automation.diffPosted")}</option>
             {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
           </select>
         </label>
@@ -1098,10 +1113,16 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           </label>
           <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
         </> : <>
-        {prefix && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
+        {trigger === TriggerKind.ReactionAdded ? <label className="flex flex-col gap-1 text-sm">{t("workflows.steps.emoji")}
+          <input value={triggerEmoji} autoCapitalize="off" placeholder={t("workflows.steps.emojiExample")}
+            disabled={busy || !!intent || unknown}
+            onChange={(event) => setTriggerEmoji(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+        </label> : null}
+        {prefix && trigger !== TriggerKind.DiffPosted && trigger !== TriggerKind.ReactionAdded && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
-        <WorkflowTriggerConditions key={workspaceId} value={filter} onChange={setFilter}
+        <WorkflowTriggerConditions key={`${workspaceId}:${trigger}`} value={filter} onChange={setFilter}
+          triggerType={trigger === TriggerKind.DiffPosted ? "diff_posted" : trigger === TriggerKind.ReactionAdded ? "reaction_added" : "message_posted"}
           conditionDrafts={conditionDrafts} onConditionDraftsChange={setConditionDrafts}
           workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />
         </>}

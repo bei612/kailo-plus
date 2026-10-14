@@ -2,7 +2,8 @@
 //! 原生 SpiceDB/Relay/Temporal 的正向链不由这些检查替代。
 
 use super::{
-    governance, management_content, validate_management_params, ACTION, FROZEN_INVOCATION_SQL, RUN,
+    governance, management_content, relay_trigger_kind, relay_trigger_supported,
+    validate_management_params, ACTION, FROZEN_INVOCATION_SQL, RUN,
 };
 use governance::{Params, Semantic};
 use serde_json::json;
@@ -322,6 +323,65 @@ fn trigger_filter_is_frozen_without_rewriting_legacy_prefix_or_version() {
         management_content(&filtered).is_err(),
         "timer has no message condition context"
     );
+}
+
+#[test]
+fn diff_trigger_freezes_original_filter_and_reads_native_diff_kind() {
+    // Fixed Buzz TriggerDef::DiffPosted { filter }: kind:40008, filter only.
+    let mut value = json!({"trigger":{"kind":"DIFF_POSTED","filter":"str_contains(trigger_text, \"fix\")"},
+        "action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
+    let frozen = management_content(&value).unwrap();
+    assert_eq!(
+        frozen["trigger"],
+        json!({"kind":"DIFF_POSTED","filter":"str_contains(trigger_text, \"fix\")"})
+    );
+    assert_eq!(
+        relay_trigger_kind(&frozen["trigger"]),
+        collab_bridge::kind::KIND_STREAM_MESSAGE_DIFF
+    );
+    assert_eq!(
+        relay_trigger_kind(&json!({"kind":"CHANNEL_MESSAGE"})),
+        collab_bridge::kind::KIND_STREAM_MESSAGE
+    );
+    assert!(relay_trigger_supported(&frozen["action"], &frozen["trigger"]));
+    value["trigger"]["textPrefix"] = json!("!");
+    assert!(management_content(&value).is_err(), "diff has no legacy prefix");
+    value["trigger"] = json!({"kind":"DIFF_POSTED","mentionPrincipalId":Uuid::new_v4()});
+    assert!(management_content(&value).is_err(), "diff has no mention target");
+    value["trigger"] = json!({"kind":"DIFF_POSTED"});
+    value["resultTarget"] = json!("CHANNEL");
+    assert!(management_content(&value).is_err(), "diff replies in the trigger thread");
+    value["trigger"] = json!({"kind":"DIFF_POSTED","emoji":"👍"});
+    value["resultTarget"] = json!("TRIGGER_THREAD");
+    assert!(management_content(&value).is_err(), "emoji belongs to reactions only");
+}
+
+#[test]
+fn reaction_trigger_freezes_optional_emoji_and_reads_native_reactions() {
+    // Fixed Buzz TriggerDef::ReactionAdded { emoji, filter }: kind:7.
+    let mut value = json!({"trigger":{"kind":"REACTION_ADDED","emoji":"🚀","filter":"trigger_emoji == \"🚀\""},
+        "action":{"kind":"POST_MESSAGE","template":"{{trigger.message_id}}"},"resultTarget":"TRIGGER_THREAD"});
+    let frozen = management_content(&value).unwrap();
+    assert_eq!(
+        frozen["trigger"],
+        json!({"kind":"REACTION_ADDED","emoji":"🚀","filter":"trigger_emoji == \"🚀\""})
+    );
+    assert_eq!(
+        relay_trigger_kind(&frozen["trigger"]),
+        collab_bridge::kind::KIND_REACTION
+    );
+    assert!(relay_trigger_supported(&frozen["action"], &frozen["trigger"]));
+    value["trigger"] = json!({"kind":"REACTION_ADDED"});
+    assert!(management_content(&value).is_ok(), "emoji is optional");
+    for invalid in [
+        json!({"kind":"REACTION_ADDED","emoji":" "}),
+        json!({"kind":"REACTION_ADDED","emoji":7}),
+        json!({"kind":"REACTION_ADDED","textPrefix":"!"}),
+        json!({"kind":"CHANNEL_MESSAGE","emoji":"🚀"}),
+    ] {
+        value["trigger"] = invalid.clone();
+        assert!(management_content(&value).is_err(), "{invalid}");
+    }
 }
 
 #[test]

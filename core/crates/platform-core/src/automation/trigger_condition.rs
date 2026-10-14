@@ -22,19 +22,22 @@ pub(super) async fn matches(
     trigger: &Value,
     channel: Uuid,
     event: &Event,
+    target: Option<&str>,
 ) -> Result<bool, Refusal> {
     let Some(filter) = trigger.get("filter") else {
         return Ok(true);
     };
     let expression = validate(filter)?.to_owned();
     // Same fields as fixed Buzz lib.rs::build_trigger_context/event_is_reply.
-    // The caller has verified the event, channel and current HUMAN binding.
+    // The caller has verified the event, channel and current HUMAN binding; for
+    // a reaction it also verified the reacted same-channel message (`target`).
     let context = TriggerContext {
         text: event.content.clone(),
         author: event.pubkey.to_hex(),
         channel_id: channel.to_string(),
         timestamp: event.created_at.as_secs().to_string(),
-        message_id: event.id.to_hex(),
+        emoji: target.map(|_| event.content.clone()).unwrap_or_default(),
+        message_id: target.map_or_else(|| event.id.to_hex(), str::to_owned),
         is_reply: collab_bridge::nip10::parse_thread_markers(&event.tags)
             .reply
             .is_some(),
@@ -87,14 +90,14 @@ mod tests {
             ("str_len(trigger_text) == 0", false),
         ] {
             assert_eq!(
-                matches(&json!({"filter":filter}), channel, &event)
+                matches(&json!({"filter":filter}), channel, &event, None)
                     .await
                     .unwrap(),
                 expected,
                 "{filter}"
             );
         }
-        assert!(matches(&json!({}), channel, &event).await.unwrap());
+        assert!(matches(&json!({}), channel, &event, None).await.unwrap());
     }
 
     #[tokio::test]
@@ -112,17 +115,18 @@ mod tests {
             "trigger_author == \"{}\" && trigger_channel_id == \"{}\" && trigger_message_id == \"{}\" && trigger_timestamp == \"{}\" && trigger_is_reply",
             event.pubkey.to_hex(), channel, event.id.to_hex(), event.created_at.as_secs(),
         );
-        assert!(matches(&json!({"filter":filter}), channel, &event)
+        assert!(matches(&json!({"filter":filter}), channel, &event, None)
             .await
             .unwrap());
         assert!(!matches(
             &json!({"filter":format!("trigger_author == \"{forged_actor}\"")}),
             channel,
-            &event
+            &event,
+            None
         )
         .await
         .unwrap());
-        assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event)
+        assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
             .await
             .unwrap());
         for tags in [
@@ -131,7 +135,7 @@ mod tests {
         ] {
             let event = super::tests::event("hello", tags);
             assert!(
-                matches(&json!({"filter":"!trigger_is_reply"}), channel, &event)
+                matches(&json!({"filter":"!trigger_is_reply"}), channel, &event, None)
                     .await
                     .unwrap()
             );
@@ -139,10 +143,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reaction_context_exposes_emoji_and_reacted_message() {
+        // Fixed Buzz build_trigger_context: emoji = reaction content,
+        // message_id = NIP-25 reacted message, not the reaction event.
+        let target = "c".repeat(64);
+        let event = event("🚀", vec![Tag::parse(["e", &target]).unwrap()]);
+        let channel = Uuid::new_v4();
+        let filter = format!(
+            "trigger_emoji == \"🚀\" && trigger_message_id == \"{target}\" && trigger_text == \"🚀\""
+        );
+        assert!(matches(&json!({"filter":filter}), channel, &event, Some(&target))
+            .await
+            .unwrap());
+        let reaction_id = format!("trigger_message_id == \"{}\"", event.id.to_hex());
+        assert!(!matches(&json!({"filter":reaction_id}), channel, &event, Some(&target))
+            .await
+            .unwrap());
+        assert!(!matches(&json!({"filter":"trigger_emoji == \"🚀\""}), channel, &event, None)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
     async fn expression_errors_never_admit_a_trigger() {
         let event = event("private source", vec![]);
         for filter in ["unknown_trigger_field", "@@@", "trigger_text", "1 / 0 > 2"] {
-            assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event)
+            assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
                 .await
                 .unwrap());
         }

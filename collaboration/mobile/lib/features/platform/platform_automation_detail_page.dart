@@ -126,6 +126,10 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                           PlatformMessageKey.agentsAutomationChannelMessage,
                         AutomationTriggerKind.SCHEDULE =>
                           PlatformMessageKey.agentsAutomationSchedule,
+                        AutomationTriggerKind.DIFF_POSTED =>
+                          PlatformMessageKey.agentsAutomationDiffPosted,
+                        AutomationTriggerKind.REACTION_ADDED =>
+                          PlatformMessageKey.agentsAutomationReactionAdded,
                       }),
                     ),
                     if (version.content.trigger.mentionPrincipalId != null)

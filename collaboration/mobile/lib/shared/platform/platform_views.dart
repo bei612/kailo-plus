@@ -623,6 +623,18 @@ final platformAutomationProvider = FutureProvider.autoDispose
             content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
                 trigger.mentionPrincipalId == null &&
                 spec == null,
+          AutomationTriggerKind.DIFF_POSTED =>
+            content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
+                trigger.mentionPrincipalId == null &&
+                trigger.textPrefix == null &&
+                trigger.emoji == null &&
+                spec == null,
+          AutomationTriggerKind.REACTION_ADDED =>
+            content.resultTarget == AutomationResultTarget.TRIGGER_THREAD &&
+                trigger.mentionPrincipalId == null &&
+                trigger.textPrefix == null &&
+                trigger.emoji?.trim().isEmpty != true &&
+                spec == null,
           AutomationTriggerKind.SCHEDULE =>
             content.resultTarget == AutomationResultTarget.CHANNEL &&
                 trigger.mentionPrincipalId == null &&

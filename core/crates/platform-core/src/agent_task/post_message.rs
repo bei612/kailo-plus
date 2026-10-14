@@ -150,23 +150,38 @@ async fn native_template(
             )
             .await
             .map_err(|_| unknown())?;
-            let source = control
-                .source_message(
-                    &state.http,
-                    &invocation.source_event_id,
-                    &channel.to_string(),
-                    &invocation.root_event_id,
-                )
-                .await
-                .map_err(|_| unknown())?;
+            // Fixed Buzz build_trigger_context: a reaction's text/emoji is its
+            // content and message_id is the reacted message, not the reaction.
+            let source = match invocation.trigger_target_event_id.as_deref() {
+                Some(target) => control
+                    .reaction_source(&state.http, &invocation.source_event_id, target)
+                    .await
+                    .map_err(|_| unknown())?,
+                None => control
+                    .source_message(
+                        &state.http,
+                        &invocation.source_event_id,
+                        &channel.to_string(),
+                        &invocation.root_event_id,
+                    )
+                    .await
+                    .map_err(|_| unknown())?,
+            };
             if source.author != expected_author {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            let message_id = invocation
+                .trigger_target_event_id
+                .clone()
+                .unwrap_or_else(|| invocation.source_event_id.clone());
+            if invocation.trigger_target_event_id.is_some() {
+                context.emoji = source.content.clone();
             }
             context.text = source.content;
             context.author = source.author;
             context.timestamp = source.timestamp.to_string();
-            context.message_id = invocation.source_event_id.clone();
-            context.is_reply = invocation.source_event_id != invocation.root_event_id;
+            context.is_reply = message_id != invocation.root_event_id;
+            context.message_id = message_id;
         }
         "SCHEDULE" => {
             // The existing admission checked this frozen nominal timestamp.
@@ -529,7 +544,14 @@ async fn publish(
         if invocation.source_kind != "BUZZ_EVENT" {
             return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
         }
-        client.sign_reaction_at(&invocation.source_event_id, &content, timestamp)
+        client.sign_reaction_at(
+            invocation
+                .trigger_target_event_id
+                .as_deref()
+                .unwrap_or(invocation.source_event_id.as_str()),
+            &content,
+            timestamp,
+        )
     } else if action["kind"] == "SET_CHANNEL_TOPIC_STEPS" {
         client.sign_channel_topic_at(binding.channel_id, &content, timestamp)
     } else if let Some(step) = sequence_step {

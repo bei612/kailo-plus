@@ -3902,8 +3902,11 @@ type StepElement struct {
 }
 
 type AutomationVersionContentTrigger struct {
-	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-	// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+	// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+	Emoji *string `json:"emoji,omitempty"`
+	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+	// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+	// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
 	Filter             *string               `json:"filter,omitempty"`
 	Kind               AutomationTriggerKind `json:"kind"`
 	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
@@ -6515,8 +6518,11 @@ type AutomationVersionContentActionClass struct {
 }
 
 type AutomationVersionContentTriggerClass struct {
-	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
-	// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+	// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+	Emoji *string `json:"emoji,omitempty"`
+	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+	// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+	// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
 	Filter             *string               `json:"filter,omitempty"`
 	Kind               AutomationTriggerKind `json:"kind"`
 	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
@@ -7802,6 +7808,8 @@ const (
 	AutomationTriggerKindMENTION  AutomationTriggerKind = "MENTION"
 	AutomationTriggerKindSCHEDULE AutomationTriggerKind = "SCHEDULE"
 	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
+	DiffPosted                    AutomationTriggerKind = "DIFF_POSTED"
+	ReactionAdded                 AutomationTriggerKind = "REACTION_ADDED"
 )
 
 // 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。

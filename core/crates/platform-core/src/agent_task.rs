@@ -47,6 +47,9 @@ struct Invocation {
     cancel_pending: bool,
     observation_cursor: Option<String>,
     automation_action_kind: Option<String>,
+    /// ReactionAdded only: the reacted message (result thread parent, template
+    /// message_id and add_reaction target). The reaction stays `source_event_id`.
+    trigger_target_event_id: Option<String>,
 }
 
 const LOAD: &str =
@@ -54,6 +57,7 @@ const LOAD: &str =
     i.installation_resource_id,i.agent_version_asset_id,i.projection_generation,
     i.action_execution_id,i.workflow_id,s.runtime_thread_id,i.runtime_turn_id,
     i.native_status,i.reply_event_id,i.status,i.cancel_pending,i.observation_cursor,
+    i.trigger_target_event_id,
     (select v.action->>'kind' from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
       and v.automation_resource_id=i.automation_resource_id) automation_action_kind
     from catalog.agent_invocation i join catalog.agent_session s
@@ -989,15 +993,23 @@ async fn source_message(
     )
     .await
     .map_err(|_| RuntimeError::Unavailable)?;
-    let source = client
-        .source_message(
-            &state.http,
-            &invocation.source_event_id,
-            &channel.to_string(),
-            &invocation.root_event_id,
-        )
-        .await
-        .map_err(|_| RuntimeError::Unavailable)?;
+    // ReactionAdded: the source is the frozen reaction (content = emoji) whose
+    // NIP-25 target must still be the frozen reacted message.
+    let source = match invocation.trigger_target_event_id.as_deref() {
+        Some(target) => client
+            .reaction_source(&state.http, &invocation.source_event_id, target)
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?,
+        None => client
+            .source_message(
+                &state.http,
+                &invocation.source_event_id,
+                &channel.to_string(),
+                &invocation.root_event_id,
+            )
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?,
+    };
     Ok(TaskSource {
         author: Some(source.author),
         content: source.content,
@@ -1932,9 +1944,9 @@ async fn lock_reply(
          left join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
            and v.automation_resource_id=i.automation_resource_id and v.state='PUBLISHED'
            and v.action->>'kind'='AGENT_TURN'
-           and ((i.source_kind='BUZZ_EVENT' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION') and v.result_target='TRIGGER_THREAD')
+           and ((i.source_kind='BUZZ_EVENT' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION','DIFF_POSTED','REACTION_ADDED') and v.result_target='TRIGGER_THREAD')
              or (i.source_kind='SCHEDULE' and v.trigger->>'kind'='SCHEDULE' and v.result_target='CHANNEL')
-             or (i.source_kind='MANUAL' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION','SCHEDULE')
+             or (i.source_kind='MANUAL' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION','SCHEDULE','DIFF_POSTED','REACTION_ADDED')
                and v.result_target=case when v.trigger->>'kind'='SCHEDULE' then 'CHANNEL' else 'TRIGGER_THREAD' end))
          join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
          join catalog.agent_version av on av.asset_id=i.agent_version_asset_id
@@ -2271,7 +2283,10 @@ mod released_reply_activity_tests {
 fn reply_ancestry(invocation: &Invocation) -> Option<(&str, &str)> {
     (invocation.source_kind == "BUZZ_EVENT").then_some((
         invocation.root_event_id.as_str(),
-        invocation.source_event_id.as_str(),
+        invocation
+            .trigger_target_event_id
+            .as_deref()
+            .unwrap_or(invocation.source_event_id.as_str()),
     ))
 }
 
@@ -2709,7 +2724,11 @@ async fn reconcile_reply(
                 &state.http,
                 event_id,
                 &intent.agent_pubkey,
-                &invocation.source_event_id,
+                // Same target the reaction was signed for (post_message).
+                invocation
+                    .trigger_target_event_id
+                    .as_deref()
+                    .unwrap_or(invocation.source_event_id.as_str()),
                 emoji,
             )
             .await
@@ -3561,6 +3580,7 @@ mod reply_tests {
             cancel_pending: false,
             observation_cursor: None,
             automation_action_kind: None,
+            trigger_target_event_id: None,
         };
         let turn = json!({"status":"completed","itemsView":"full","error":null,
             "startedAt":100,"completedAt":105,"items":[
