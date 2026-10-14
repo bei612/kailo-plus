@@ -342,6 +342,116 @@ pub(crate) async fn observe_birth(
     Ok(Some(thread))
 }
 
+#[derive(FromRow)]
+struct LostBirth {
+    tenant_id: Uuid,
+    agent_version_asset_id: Uuid,
+    workspace_id: Uuid,
+    root_event_id: String,
+    installation_resource_id: Uuid,
+    projection_generation: i64,
+    status: String,
+    runtime_thread_id: Option<String>,
+}
+
+/// birth 先提交 STARTING，再在同一 pool 行锁下发出 thread/start；回应只由收到
+/// 该请求的那个 runtime 进程在内存中关联（固定 Codex 的 thread/start 没有可回查
+/// 的调用方引用）。那个进程已不在（Core 或 runtime 重启）时，这次 birth 的结果
+/// 永久不可观察；按上方「绝不回退到 thread/start」，该 Session 不会再得到 thread，
+/// 绑定它的 Invocation 也就不可能发出 turn（写前 model trace 只在已有 thread 时写）。
+///
+/// 只在下列事实同时成立时确认，并把 Session 记为 UNKNOWN（原 birth 结果不明，
+/// 不伪造 ACTIVE/CLOSED）：调用方已持有 pool 行锁，排除本 Core 在途 birth；该
+/// Invocation 没有仍有效的 HELD holder（birth 第二段需要它，终态或过期后不可能
+/// 再发出）；Session 仍是无 thread 的 STARTING/UNKNOWN；当前存活、同 generation
+/// 的 runtime 进程确认没有这次请求的回执。缺任一事实返回 false，保持原 UNKNOWN 对账。
+pub(crate) async fn confirm_lost_birth(
+    state: &ServiceState,
+    tx: &mut Transaction<'_, Postgres>,
+    invocation: Uuid,
+    projection: &RuntimeRef,
+) -> Result<bool, RuntimeError> {
+    let runtime = state.agent_runtime.as_ref().ok_or(RuntimeError::Unknown)?;
+    // pool→lease→AE→Session/Invocation：与 birth 的锁序一致。
+    let live_holder: bool = sqlx::query_scalar(
+        "select exists(select 1 from admission.capacity_lease where invocation_id=$1
+           and state='HELD' and expires_at>clock_timestamp() and terminal_event_id is null
+           and native_release_confirmed_at is null for update)",
+    )
+    .bind(invocation)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    if live_holder {
+        return Ok(false);
+    }
+    let ae: Option<Uuid> =
+        sqlx::query_scalar("select action_execution_id from catalog.agent_invocation where id=$1")
+            .bind(invocation)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|_| RuntimeError::Unknown)?;
+    let ae = ae.ok_or(RuntimeError::Unknown)?;
+    crate::governance::lock_execution(tx, ae)
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let session: Option<LostBirth> = sqlx::query_as(
+        "select s.tenant_id,s.agent_version_asset_id,s.workspace_id,s.root_event_id,
+           s.installation_resource_id,s.projection_generation,s.status,s.runtime_thread_id
+         from catalog.agent_invocation i join catalog.agent_session s
+           on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+           and s.installation_resource_id=i.installation_resource_id and s.tenant_id=i.tenant_id
+           and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+         join catalog.agent_runtime_projection p on p.installation_resource_id=s.installation_resource_id
+           and p.generation=s.projection_generation and p.agent_version_asset_id=s.agent_version_asset_id
+         where i.id=$1 and i.status='CREATED' and i.runtime_turn_id is null
+           and s.installation_resource_id=$2 and s.projection_generation=$3 and p.config_hash=$4
+         for update of i,s",
+    )
+    .bind(invocation)
+    .bind(projection.installation_id)
+    .bind(projection.generation)
+    .bind(&projection.config_hash)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    let Some(session) = session else {
+        return Ok(false);
+    };
+    if !matches!(session.status.as_str(), "STARTING" | "UNKNOWN")
+        || session.runtime_thread_id.is_some()
+    {
+        return Ok(false);
+    }
+    let scope = BirthReceiptScope {
+        tenant_id: session.tenant_id,
+        agent_version_asset_id: session.agent_version_asset_id,
+        workspace_id: session.workspace_id,
+        root_event_id: session.root_event_id.clone(),
+        installation_resource_id: session.installation_resource_id,
+        projection_generation: session.projection_generation,
+    };
+    if runtime.start_receipt_held(projection, &scope.owner()).await != Some(false) {
+        return Ok(false);
+    }
+    let changed = sqlx::query(
+        "update catalog.agent_session set status='UNKNOWN'
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3
+          and projection_generation=$4 and tenant_id=$5 and agent_version_asset_id=$6
+          and status in ('STARTING','UNKNOWN') and runtime_thread_id is null",
+    )
+    .bind(scope.workspace_id)
+    .bind(&scope.root_event_id)
+    .bind(scope.installation_resource_id)
+    .bind(scope.projection_generation)
+    .bind(scope.tenant_id)
+    .bind(scope.agent_version_asset_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    Ok(changed.rows_affected() == 1)
+}
+
 /// A thread ID alone does not prove a first turn: a crash after birth must
 /// still consume the frozen core. Once an exact scoped Invocation has a native
 /// turn reference, later turns resume history without reading/injecting core.

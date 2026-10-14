@@ -420,6 +420,16 @@ async fn advance_accepted(
         };
         match crate::agent_session::observe_birth(&state, id, &projection).await {
             Ok(thread) => invocation.runtime_thread_id = thread,
+            Err(_) if invocation.status == "CREATED" => {
+                // A birth whose receiving runtime process is gone can never bind
+                // a thread, so this CREATED Invocation can never send a turn.
+                return match fail_unsent_lost_birth(&state, &invocation, &projection).await {
+                    Ok(true) if holder.released => result(id, TaskStatus::Failed, "NONE"),
+                    Ok(true) => release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await,
+                    Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                    Err(error) => unavailable(error),
+                };
+            }
             Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
         }
     }
@@ -1448,6 +1458,60 @@ async fn fail_unsent_lost_thread(
         &ae,
         invocation.id,
         ("lost-thread", "RECONCILIATION", "DISPATCH_NOT_SENT"),
+        vec![
+            crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+            crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+        ],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// CREATED with a Session birth whose thread/start result was lost with its
+/// runtime process (agent_session::confirm_lost_birth). No thread can be
+/// bound, so no turn, model trace or usage can exist: close FAILED with the
+/// same RECONCILIATION DISPATCH_NOT_SENT fact. No new thread, no resend, no
+/// zero usage; any residual uncertainty leaves the Invocation untouched.
+async fn fail_unsent_lost_birth(
+    state: &ServiceState,
+    invocation: &Invocation,
+    projection: &RuntimeRef,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    state.capacity.lock_pool(&mut tx).await?;
+    let lost =
+        crate::agent_session::confirm_lost_birth(state, &mut tx, invocation.id, projection).await;
+    if !matches!(lost, Ok(true)) {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let changed = sqlx::query(
+        "update catalog.agent_invocation i set status='FAILED',updated_at=now()
+         where i.id=$1 and i.action_execution_id=$2 and i.status='CREATED'
+           and i.runtime_turn_id is null and i.native_status is null
+           and i.reply_event_id is null and i.post_message_intent is null
+           and cardinality(i.automation_step_event_ids)=0
+           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+           and not exists(select 1 from outbox.usage_event u
+             where u.invocation_id=i.id or u.operation_id=$3)",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(ae.operation_id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        ("lost-birth", "RECONCILIATION", "DISPATCH_NOT_SENT"),
         vec![
             crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
             crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),

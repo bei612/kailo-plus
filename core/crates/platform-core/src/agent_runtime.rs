@@ -630,6 +630,34 @@ impl Supervisor {
             .await
     }
 
+    /// Whether the live process of this exact generation still holds the
+    /// in-process receipt of `owner`'s thread/start. `None` is no conclusion:
+    /// no live process, a different generation/config, a retiring process, or
+    /// the slot busy with another native call. `Some(false)` only says the
+    /// current process never received that request; it is not a native
+    /// absence answer and never permits another thread/start.
+    pub(crate) async fn start_receipt_held(
+        &self,
+        projection: &RuntimeRef,
+        owner: &StartOwner,
+    ) -> Option<bool> {
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()?;
+        let locked = slot.try_lock().ok()?;
+        let process = locked.as_ref()?;
+        if process.retiring
+            || process.generation != projection.generation
+            || process.config_hash != projection.config_hash
+        {
+            return None;
+        }
+        Some(process.start_receipts.contains_key(owner))
+    }
+
     /// Forget volatile correlation only after the existing DB receipt committed.
     pub(crate) async fn acknowledge_start(
         &self,

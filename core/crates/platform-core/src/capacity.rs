@@ -462,6 +462,19 @@ impl Capacity {
         Ok(true)
     }
 
+    /// The pool row Session birth holds from STARTING through thread/start until
+    /// its receipt commits. Holding it excludes an in-flight birth of this Core.
+    pub(crate) async fn lock_pool(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("select pool_key from admission.capacity_pool where pool_key=$1 for update")
+            .bind(&self.pool_key)
+            .fetch_one(&mut **tx)
+            .await?;
+        Ok(())
+    }
+
     /// A delayed request from a terminal holder must not borrow its successor's
     /// HELD lease. Keep this lock until Session STARTING or Invocation
     /// DISPATCHING plus its model trace commits.
