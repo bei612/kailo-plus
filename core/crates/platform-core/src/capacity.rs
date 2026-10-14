@@ -641,13 +641,15 @@ impl Capacity {
             .await?;
             let observed = match generation.and_then(|g| lease.persisted_terminal(g)) {
                 Some(terminal) => Ok(terminal),
-                None => temporal
-                    .activity(
-                        &lease.workflow_id,
-                        &lease.run_id.to_string(),
-                        &lease.activity_id,
-                    )
-                    .await,
+                None => {
+                    temporal
+                        .activity(
+                            &lease.workflow_id,
+                            &lease.run_id.to_string(),
+                            &lease.activity_id,
+                        )
+                        .await
+                }
             };
             let mut tx = pool.begin().await?;
             sqlx::query(
