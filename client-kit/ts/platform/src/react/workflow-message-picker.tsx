@@ -214,7 +214,7 @@ function MessageOption({ active, candidate, disabled, fallbackName, id, onSelect
   active: boolean;
   candidate: WorkflowMessageCandidate;
   disabled?: boolean;
-  fallbackName?: string;
+  fallbackName?: string | null;
   id: string;
   onSelect: () => void;
   optionRef: (node: HTMLButtonElement | null) => void;

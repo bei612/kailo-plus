@@ -9,7 +9,7 @@ import {
 import * as React from "react";
 import type { WebMessageAttachment } from "@client-kit/contracts";
 import { useUiT, useUiLocale } from "../../context";
-import { relativeTime } from "../../../format";
+import { formatPulseRelativeTime } from "../lib/formatRelativeTime";
 
 import { ForumComposer, usePulseHost } from "../host";
 import { useUserProfileQuery } from "../host";
@@ -205,7 +205,7 @@ export function NoteCard({
             </span>
           ) : null}
           <span className="shrink-0 text-xs text-muted-foreground/70">
-            {relativeTime(locale,new Date(note.createdAt*1_000).toISOString())}
+            {formatPulseRelativeTime(note.createdAt, t, locale)}
           </span>
         </div>
 

@@ -4,7 +4,7 @@
 // Original admitted trigger/action branches; wire data remains AutomationVersionContent.
 import { ActionEnum, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import type { Translate } from "./context";
-import { parseConditionExpressions } from "./workflow-condition-expression";
+import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { formatDurationSeconds, formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
 import { scheduleFormFromTrigger } from "./workflow-schedule";
 import { truncateNpub, truncatePubkey } from "./conversations/pubkey";
@@ -52,6 +52,29 @@ export type WorkflowTriggerDescriptionOptions = WorkflowTriggerPresentation & {
   iconEmoji?: string;
 };
 
+const diffCardKeys = {
+  contains: "workflows.card.diffContains", not_contains: "workflows.card.diffNotContains",
+  starts_with: "workflows.card.diffStartsWith", ends_with: "workflows.card.diffEndsWith",
+  equals: "workflows.card.diffEquals", not_equals: "workflows.card.diffNotEquals",
+  is_not_empty: "workflows.card.diffWithText", is_empty: "workflows.card.diffWithoutText",
+} as const;
+
+// Original workflowTriggerDescription authorReference/messageReference
+// attribution, including the omitUnresolvedReferences summary behaviour.
+function authorAttribution(conditions: ParsedConditionExpression[], t: Translate, options: WorkflowTriggerDescriptionOptions): string {
+  const author = conditions.find(condition => condition.field === "trigger_author");
+  if (!author || (options.omitUnresolvedReferences && !options.authorLabel && !options.authorLoading)) return "";
+  const label = options.authorLoading ? t("workflows.trigger.loadingAuthor") : options.authorLabel ?? truncateNpub(author.value);
+  return t(author.operator === "not_equals" ? "workflows.trigger.exceptAuthor" : "workflows.trigger.byAuthor", {author: label});
+}
+function messageTarget(conditions: ParsedConditionExpression[], t: Translate, options: WorkflowTriggerDescriptionOptions): string {
+  const message = conditions.find(condition => condition.field === "trigger_message_id");
+  if (!message || (options.omitUnresolvedReferences && !options.messageLabel && !options.messageLoading)) return "";
+  const label = options.messageLoading ? t("workflows.trigger.loadingMessage")
+    : options.messageLabel ? `“${compact(options.messageLabel, 36)}”` : truncatePubkey(message.value);
+  return t(message.operator === "not_equals" ? "workflows.trigger.exceptMessage" : "workflows.trigger.toMessage", {message: label});
+}
+
 const diffKeys = {
   contains: "workflows.trigger.diffContains", not_contains: "workflows.trigger.diffNotContains",
   starts_with: "workflows.trigger.diffStartsWith", ends_with: "workflows.trigger.diffEndsWith",
@@ -71,26 +94,18 @@ export function workflowTriggerDescription(content: AutomationVersionContent, t:
   const type = trigger.kind === "DIFF_POSTED" ? "diff_posted" : trigger.kind === "REACTION_ADDED" ? "reaction_added" : "message_posted";
   const conditions = trigger.filter ? parseConditionExpressions(trigger.filter, type) : [];
   if (!conditions) return t(type === "diff_posted" ? "workflows.trigger.diff" : type === "reaction_added" ? "workflows.trigger.reaction" : "workflows.trigger.message", {author: ""});
-  const author = conditions.find(condition => condition.field === "trigger_author");
-  const showAuthor = author && (!options.omitUnresolvedReferences || options.authorLabel || options.authorLoading);
-  const authorLabel = showAuthor ? options.authorLoading ? t("workflows.trigger.loadingAuthor")
-    : options.authorLabel ?? truncateNpub(author.value) : undefined;
-  const attribution = authorLabel ? t(author?.operator === "not_equals"
-    ? "workflows.trigger.exceptAuthor" : "workflows.trigger.byAuthor", {author: authorLabel}) : "";
   if (type === "message_posted") return messageTriggerDescription(content, t, false, options);
+  const attribution = authorAttribution(conditions, t, options);
   if (type === "diff_posted") {
     const text = conditions.find(condition => condition.field === "trigger_text");
     if (!text) return t("workflows.trigger.diffPosted", {author: attribution});
     return t(diffKeys[text.operator], {value: `“${compact(text.value, 36)}”`, author: attribution});
   }
   const emoji = conditions.find(condition => condition.field === "trigger_emoji");
-  const messageCondition = conditions.find(condition => condition.field === "trigger_message_id");
-  const showMessage = messageCondition && (!options.omitUnresolvedReferences || options.messageLabel || options.messageLoading);
-  const messageLabel = showMessage ? options.messageLoading ? t("workflows.trigger.loadingMessage")
-    : options.messageLabel ? `“${compact(options.messageLabel, 36)}”` : truncatePubkey(messageCondition.value) : undefined;
-  const target = messageLabel ? t(messageCondition?.operator === "not_equals"
-    ? "workflows.trigger.exceptMessage" : "workflows.trigger.toMessage", {message: messageLabel}) : "";
-  const emojiValue = emoji?.value.trim() || trigger.emoji?.trim();
+  const target = messageTarget(conditions, t, options);
+  // A legacy trigger.emoji is not part of the original sentence; the canvas
+  // shows it as the node icon (WorkflowFormBuilder triggerEmoji).
+  const emojiValue = emoji?.value.trim();
   if (emoji?.operator === "not_equals" && emojiValue) {
     return t("workflows.trigger.reactionExceptEmoji", {emoji: emojiValue, author: attribution, message: target});
   }
@@ -124,11 +139,9 @@ export function splitWorkflowAuthorDescription(description: string, label: strin
 /** Original getWorkflowTriggerSummary uses omission, unlike the card's author presentation. */
 export function workflowTriggerSummary(content: AutomationVersionContent, t: Translate): string {
   if (content.trigger.kind === "SCHEDULE") return t("workflows.trigger.schedule");
-  if (content.trigger.kind === "DIFF_POSTED") return t("workflows.trigger.diff");
-  if (content.trigger.kind === "REACTION_ADDED") return t("workflows.trigger.reaction");
   if (content.trigger.kind === "MENTION") return t("workflows.trigger.mention");
   if (content.trigger.textPrefix) return t("workflows.trigger.matchingMessage");
-  return messageTriggerDescription(content, t, false, {omitUnresolvedReferences: true});
+  return workflowTriggerDescription(content, t, {omitUnresolvedReferences: true});
 }
 
 function compact(value: string, max = 42): string {
@@ -141,7 +154,7 @@ function quoted(value?: string): string | null {
 }
 
 export function workflowTriggerCardClause(content: AutomationVersionContent, t: Translate,
-  options: WorkflowTriggerPresentation = {}): string {
+  options: WorkflowTriggerDescriptionOptions = {}): string {
   const trigger = content.trigger;
   if (trigger.kind === "SCHEDULE") {
     const spec = trigger.scheduleSpec;
@@ -162,11 +175,28 @@ export function workflowTriggerCardClause(content: AutomationVersionContent, t: 
   // A Kailo MENTION also requires its existing trusted principal predicate;
   // do not describe that authorized extra constraint as an unrestricted message.
   if (trigger.kind === "MENTION") return t("workflows.card.mention");
-  // Original getTriggerCardClause diff_posted branch.
-  if (trigger.kind === "DIFF_POSTED") return t(trigger.filter ? "workflows.card.matchingDiff" : "workflows.card.diff");
-  // Original getTriggerCardClause reaction_added branch.
-  if (trigger.kind === "REACTION_ADDED") return trigger.emoji?.trim()
-    ? t("workflows.card.reactionTriggerWith", {emoji: trigger.emoji.trim()}) : t("workflows.card.reactionTrigger");
+  // Original getWorkflowCardLabel: the presented condition clause
+  // (getPresentedTriggerCardClause), else getTriggerCardClause.
+  if (trigger.kind === "DIFF_POSTED") {
+    const conditions = trigger.filter ? parseConditionExpressions(trigger.filter, "diff_posted") : [];
+    if (!conditions) return t("workflows.card.matchingDiff");
+    const author = authorAttribution(conditions, t, options);
+    const text = conditions.find(condition => condition.field === "trigger_text");
+    if (text) return t(diffCardKeys[text.operator], {value: `“${compact(text.value, 36)}”`, author});
+    return author ? t("workflows.card.diffPosted", {author}) : t("workflows.card.diff");
+  }
+  if (trigger.kind === "REACTION_ADDED") {
+    const conditions = trigger.filter ? parseConditionExpressions(trigger.filter, "reaction_added") : [];
+    const emoji = conditions?.find(condition => condition.field === "trigger_emoji");
+    if (emoji?.operator === "not_equals" && emoji.value.trim()) {
+      return t("workflows.card.reactionExceptEmoji", {emoji: emoji.value.trim()});
+    }
+    const emojiValue = (emoji?.operator === "equals" ? emoji.value.trim() : "") || trigger.emoji?.trim();
+    if (emojiValue) return t("workflows.card.reactionTriggerWith", {emoji: emojiValue});
+    const author = conditions ? authorAttribution(conditions, t, options) : "";
+    const message = conditions ? messageTarget(conditions, t, options) : "";
+    return author || message ? t("workflows.card.reactionAdded", {author, message}) : t("workflows.card.reactionTrigger");
+  }
   // Legacy textPrefix is an additional Kailo constraint, not a Buzz filter.
   if (trigger.textPrefix) return t("workflows.card.matchingMessage");
   return messageTriggerDescription(content, t, true, options);
@@ -199,7 +229,7 @@ function actionClause(step: AutomationStep, t: Translate): string {
 
 /** Same original first action + remaining step count, not the editable name. */
 export function workflowCardLabel(content: AutomationVersionContent, t: Translate,
-  options: WorkflowTriggerPresentation = {}): string {
+  options: WorkflowTriggerDescriptionOptions = {}): string {
   const trigger = workflowTriggerCardClause(content, t, options);
   const steps = content.steps;
   const first = steps?.[0];

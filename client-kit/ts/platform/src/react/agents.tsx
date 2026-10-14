@@ -58,6 +58,9 @@ import { reactionConditionValue } from "./workflow-reaction-condition";
 import { getWorkflowActivationWarning } from "./workflow-activation-warning";
 import { WorkflowActivationDialog } from "./workflow-activation-dialog";
 import { useWorkflowTriggerPresentation } from "./workflow-trigger-presentation";
+import { useWorkflowMessageScope } from "./workflow-message-host";
+import { useWorkflowTriggerMessage } from "./workflow-message-picker";
+import { normalizeMessageEventId } from "./workflow-message-candidates";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./workflow-author-directory";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
@@ -492,9 +495,14 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
     ? detail?.versions.find((version) => version.assetId === row.pinnedVersionAssetId)
     : detail?.versions[0];
   const content = version?.content;
-  const authorCondition = content?.trigger.filter
-    ? parseConditionExpressions(content.trigger.filter, "message_posted")?.find(condition => condition.field === "trigger_author")
-    : undefined;
+  // Original WorkflowCard author/message presentations for the condition sentence.
+  const conditions = content?.trigger.filter ? parseConditionExpressions(content.trigger.filter,
+    content.trigger.kind === TriggerKind.DiffPosted ? "diff_posted"
+      : content.trigger.kind === TriggerKind.ReactionAdded ? "reaction_added" : "message_posted") : undefined;
+  const authorCondition = conditions?.find(condition => condition.field === "trigger_author");
+  const messageCondition = conditions?.find(condition => condition.field === "trigger_message_id");
+  const messageScope = useWorkflowMessageScope(messageCondition ? row.workspaceId : undefined);
+  const message = useWorkflowTriggerMessage(messageCondition ? normalizeMessageEventId(messageCondition.value) : null, messageScope.scope);
   // Reuse the existing scoped directory. An unresolved authorized definition
   // reference falls back to the original compact npub, never an unscoped read.
   const authorLabel = authorCondition ? authors.rows.find(author => author.pubkey === authorCondition.value)?.displayName?.trim() : undefined;
@@ -566,6 +574,7 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
         : content ? <>
           <h3 className="mt-4 line-clamp-4 text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{workflowCardLabel(content, t, {
             authorLabel: authorLabel || undefined, authorLoading: !!authorCondition && !authorLabel && authors.isLoading,
+            messageLabel: message.messageLabel ?? undefined, messageLoading: message.messageLoading,
           })}</h3>
         </> : <p className="mt-4 text-sm text-muted-foreground">{t("agents.automation.noVersion")}</p>}
       <div className="mt-auto flex min-w-0 items-end justify-between gap-3 pt-5 text-muted-foreground">

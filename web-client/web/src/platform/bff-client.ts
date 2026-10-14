@@ -47,27 +47,34 @@ const transport = createFetchTransport({
 export const bff = createBffClient(transport);
 
 /** Original Relay FTS relevance order; the browser never constructs a Relay filter. */
-export async function searchMessageEvents(request: WebSearchQuery): Promise<BuzzEvent[]> {
+async function admittedSearchEvents(request: WebSearchQuery): Promise<{event: BuzzEvent; channelId: string}[]> {
   const page = await call<{events: BuzzEvent[]}>({method:"POST",path:"/api/v1/search/messages",body:request});
   if (!Array.isArray(page.events)) throw new TransportError("Invalid search response");
-  for (const event of page.events) {
+  const rows = page.events.map((event) => {
     if (!event || !/^[0-9a-f]{64}$/.test(event.id) || !/^[0-9a-f]{64}$/.test(event.pubkey)
       || ![9,40002,45001,45003].includes(event.kind) || typeof event.content !== "string"
       || !Number.isSafeInteger(event.created_at) || event.created_at < 0 || !Array.isArray(event.tags)
       || event.tags.some(tag => !Array.isArray(tag) || tag.some(value => typeof value !== "string")))
       throw new TransportError("Invalid search event");
     const channels = event.tags.filter(tag => tag[0] === "h");
-    if (channels.length !== 1 || !channels[0]?.[1]) throw new TransportError("Invalid search channel");
-  }
-  if (new Set(page.events.map(event => event.id)).size !== page.events.length) throw new TransportError("Duplicate search event");
-  return page.events;
+    const channelId = channels.length === 1 ? channels[0]?.[1] : undefined;
+    if (!channelId) throw new TransportError("Invalid search channel");
+    return {event, channelId};
+  });
+  if (new Set(rows.map(({event}) => event.id)).size !== rows.length) throw new TransportError("Duplicate search event");
+  return rows;
+}
+
+/** The same admitted search events, for consumers that re-validate exact channel membership. */
+export async function searchMessageEvents(request: WebSearchQuery): Promise<BuzzEvent[]> {
+  return (await admittedSearchEvents(request)).map(({event}) => event);
 }
 
 export async function searchMessages(request: WebSearchQuery): Promise<SearchMessagesResponse> {
-  const events = await searchMessageEvents(request);
-  const total = events.length;
-  const hits = events.map((event,index) => ({eventId:event.id,content:event.content,kind:event.kind,pubkey:event.pubkey,
-    channelId:event.tags.find(tag => tag[0] === "h")![1]!,channelName:null,createdAt:event.created_at,
+  const rows = await admittedSearchEvents(request);
+  const total = rows.length;
+  const hits = rows.map(({event, channelId},index) => ({eventId:event.id,content:event.content,kind:event.kind,pubkey:event.pubkey,
+    channelId,channelName:null,createdAt:event.created_at,
     score:total <= 1 ? 1 : 1 - index / total,threadRootId:getThreadReference(event.tags).rootId}));
   return {hits,found:hits.length};
 }

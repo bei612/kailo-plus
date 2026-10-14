@@ -2,7 +2,7 @@
 import { Bot, ChevronDown, ChevronRight } from "lucide-react";
 import * as React from "react";
 import { useUiT, useUiLocale } from "../../context";
-import { relativeTime } from "../../../format";
+import { formatPulseRelativeTime } from "../lib/formatRelativeTime";
 
 import type { AgentNoteGroup } from "../lib/groupAgentNotes";
 import { UserProfilePopover, usePulseHost } from "../host";
@@ -82,7 +82,7 @@ export function AgentActivityCard({
               <StatusDot status={agentStatus} />
             ) : null}
             <span className="shrink-0 text-2xs text-muted-foreground">
-              {relativeTime(locale,new Date(group.latestAt*1_000).toISOString())}
+              {formatPulseRelativeTime(group.latestAt, t, locale, { ago: true })}
             </span>
           </div>
         </div>
@@ -120,7 +120,7 @@ export function AgentActivityCard({
               <div className="min-w-0 flex-1 text-sm">
                 <Markdown content={note.content} tags={note.tags} />
                 <p className="mt-1 text-2xs text-muted-foreground">
-                  {relativeTime(locale,new Date(note.createdAt*1_000).toISOString())}
+                  {formatPulseRelativeTime(note.createdAt, t, locale, { ago: true })}
                 </p>
               </div>
             </div>

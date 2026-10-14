@@ -10,7 +10,7 @@ import { WorkflowMessageHostProvider, type WorkflowMessageHost } from "../src/re
 import type { BffReply, BffRequest } from "../src/transport";
 import type { AutomationVersionContent } from "@client-kit/contracts";
 import { translate, type PlatformMessageKey } from "../src/i18n";
-import { splitWorkflowAuthorDescription, workflowTriggerDescription } from "../src/react/workflow-card-label";
+import { splitWorkflowAuthorDescription, workflowTriggerCardClause, workflowTriggerDescription, workflowTriggerSummary } from "../src/react/workflow-card-label";
 import { click, render, settle, type } from "./render";
 
 const channelId = "11111111-1111-4111-8111-111111111111";
@@ -141,6 +141,24 @@ describe("original canvas trigger description", () => {
       { authorLabel: "Carl", messageLabel: "hey yourself" })).toBe("👾 reaction added by Carl to “hey yourself”");
     expect(describeTrigger("REACTION_ADDED", `trigger_emoji != "👀"`)).toBe("Any reaction except 👀 added");
     expect(describeTrigger("CHANNEL_MESSAGE", `trigger_author == "${a}"`, { authorLabel: "Carl" }, zh)).toBe("由Carl发布消息");
+  });
+
+  it("builds the original presented card clauses and omitting detail summary for diff and reaction", () => {
+    const card = (kind: string, filter?: string, options = {}, emoji?: string) => workflowTriggerCardClause(
+      { trigger: { kind, ...(filter ? { filter } : {}), ...(emoji ? { emoji } : {}) }, action: { kind: "POST_MESSAGE", template: "x" },
+        resultTarget: "TRIGGER_THREAD" } as unknown as AutomationVersionContent, en, options);
+    expect(card("DIFF_POSTED")).toBe("When a diff is posted");
+    expect(card("DIFF_POSTED", 'str_contains(trigger_text, "fix")')).toBe("When a diff contains “fix”");
+    expect(card("DIFF_POSTED", `trigger_text == "fix" && trigger_author == "${a}"`, { authorLabel: "Carl" })).toBe("When a diff “fix” is posted by Carl");
+    expect(card("REACTION_ADDED")).toBe("When someone adds a reaction");
+    expect(card("REACTION_ADDED", undefined, {}, "🔥")).toBe("When someone reacts with 🔥");
+    expect(card("REACTION_ADDED", `trigger_emoji == "🔥" && trigger_author == "${a}"`, { authorLabel: "Carl" })).toBe("When someone reacts with 🔥");
+    expect(card("REACTION_ADDED", `trigger_emoji != "👀"`)).toBe("When any reaction except 👀 is added");
+    expect(card("REACTION_ADDED", `trigger_author == "${a}" && trigger_message_id == "${b}"`, { authorLabel: "Carl", messageLabel: "hey yourself" }))
+      .toBe("When a reaction is added by Carl to “hey yourself”");
+    const summary = (filter: string) => workflowTriggerSummary({ trigger: { kind: "REACTION_ADDED", filter },
+      action: { kind: "POST_MESSAGE", template: "x" }, resultTarget: "TRIGGER_THREAD" } as unknown as AutomationVersionContent, en);
+    expect(summary(`trigger_emoji == "🔥" && trigger_message_id == "${b}"`)).toBe("🔥 reaction added");
   });
 
   it("splits the generated author attribution, not quoted user copy", () => {
