@@ -12,7 +12,7 @@ import {
 } from "@client-kit/contracts";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { AutomationManagement, type WorkspaceNavigation } from "./agents";
+import { AutomationManagement, type WorkflowRouteNavigation, type WorkspaceNavigation } from "./agents";
 import { useBffClient, useLocale, useT } from "./context";
 import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
 import { WorkflowRunTrace } from "./workflow-run-trace";
@@ -23,8 +23,9 @@ import type { WorkflowNavigation } from "./workflow-discard-dialog";
 import { WorkflowMessageHostProvider, type WorkflowMessageHost } from "./workflow-message-host";
 export { workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState } from "./workflow-discard-dialog";
 export type { WorkflowMessageHost } from "./workflow-message-host";
+export type { WorkflowRoute, WorkflowRouteNavigation } from "./agents";
 
-export function WorkflowsPage({ messageHost, ...navigation }: WorkspaceNavigation & {
+export function WorkflowsPage({ messageHost, ...navigation }: WorkspaceNavigation & WorkflowRouteNavigation & {
 	workflowNavigation?: WorkflowNavigation;
 	/** Host channel reads for the original trigger message picker. */
 	messageHost?: WorkflowMessageHost;

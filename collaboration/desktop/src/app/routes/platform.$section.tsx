@@ -6,7 +6,7 @@ import {
   ApprovalsPage,
   TasksPage,
 } from "@client-kit/platform/react/governance";
-import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState } from "@client-kit/platform/react/workflows";
+import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState, type WorkflowRoute } from "@client-kit/platform/react/workflows";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import {
   AuditPage,
@@ -65,11 +65,17 @@ function PlatformRouteComponent() {
     workItemTarget={{repositoryId,issueId,pullRequestId,tab}}
     workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
     onProjectChange={(id,target)=>navigate({search:{projectId:id??undefined,...target}})}
-    onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
+    onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }}
+    onWorkflowRouteChange={(route) => {
+      if (route) void navigate({ to: "/platform/workflows/$workflowId", params: { workflowId: route.workflowId },
+        search: { workspaceId: route.workspaceId, view: route.view } });
+    }} />;
 }
 
-function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation,workItemTarget }: {
+export function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation,workItemTarget,
+  workflowRoute, onWorkflowRouteChange }: {
   section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
+  workflowRoute?: WorkflowRoute | null; onWorkflowRouteChange?: (route: WorkflowRoute | null, workspaceId?: string) => void;
   projectId?:string;onProjectChange:(id:string|null,target?:import("@client-kit/platform/react/projects").ProjectWorkItemTarget)=>void|Promise<void>;
   workItemTarget:import("@client-kit/platform/react/projects").ProjectWorkItemTarget;
   workflowNavigation: WorkflowNavigation;
@@ -97,7 +103,7 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
           triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
       ) : section === "workflows" ? (
         <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} workflowNavigation={workflowNavigation}
-          messageHost={desktopWorkflowMessageHost} />
+          messageHost={desktopWorkflowMessageHost} workflowRoute={workflowRoute} onWorkflowRouteChange={onWorkflowRouteChange} />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (

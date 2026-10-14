@@ -473,6 +473,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
     ) : tab === "workflows" ? (
       <WorkflowsPage workspaceId={chosen ?? active ?? undefined} messageHost={webWorkflowMessageHost}
+        workflowRoute={navigation.workflowRoute}
+        onWorkflowRouteChange={(route, workspaceId) => { void navigation.openWorkflow(route, workspaceId); }}
         workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("workflows", workspaceId); }} />
     ) : tab === "tasks" ? (

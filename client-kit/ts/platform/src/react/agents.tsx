@@ -121,6 +121,17 @@ export type WorkspaceNavigation = {
   onWorkspaceChange?: (workspaceId: string) => void;
 };
 
+/**
+ * Buzz 779af8886caae1317b4de962082429867ab61503 app/routes/workflows.$workflowId.tsx:
+ * the URL-addressable workflow target (detail, ?view=edit, ?view=duplicate).
+ * The workspace is a navigation reference only; the authorized read decides it.
+ */
+export type WorkflowRoute = { workflowId: string; view?: "edit" | "duplicate"; workspaceId?: string };
+export type WorkflowRouteNavigation = {
+  workflowRoute?: WorkflowRoute | null;
+  onWorkflowRouteChange?: (route: WorkflowRoute | null, workspaceId?: string) => void;
+};
+
 type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
 
 export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost } = {}) {
@@ -346,7 +357,8 @@ type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause"
   | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
-export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation }: WorkspaceNavigation & {
+export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation, workflowRoute, onWorkflowRouteChange }:
+  WorkspaceNavigation & WorkflowRouteNavigation & {
   renderRunHistory?: (resourceId: string, workspaceId: string, receipt?: ActionSubmission) => ReactNode;
   workflowNavigation?: WorkflowNavigation;
 }) {
@@ -363,8 +375,20 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
   const data = state.status === "ok" ? state.data : null;
   const workspaces = data && Array.isArray(data) && data.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
-  const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
+  const routed = !!onWorkflowRouteChange;
+  const selection = routed && workflowRoute?.workspaceId ? workflowRoute.workspaceId
+    : onWorkspaceChange ? workspaceId : selected ?? workspaceId;
   const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
+  // A routed target's detail is shown only after its own authorized read placed
+  // it in this workspace; an editor view opens the existing governed editor.
+  const [resolvedRoute, setResolvedRoute] = useState<string | null>(null);
+  const routeKey = workflowRoute ? `${workflowRoute.workflowId}:${workflowRoute.view ?? ""}:${workflowRoute.workspaceId ?? ""}` : null;
+  const shownAutomation = routed ? (workflowRoute && !workflowRoute.view && resolvedRoute === routeKey ? workflowRoute.workflowId : null)
+    : selectedAutomation;
+  const selectAutomation = (resourceId: string | null) => {
+    if (!routed) { setSelectedAutomation(resourceId); return; }
+    onWorkflowRouteChange?.(resourceId && workspace ? { workflowId: resourceId, workspaceId: workspace.id } : null, workspace?.id);
+  };
   useEffect(() => {
     // Host search changes only after its router resolver accepts navigation.
     // Do not erase the current draft when a requested scope change is blocked.
@@ -391,15 +415,37 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("platform.noWorkspace")}</Notice> : null}
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
-    <AutomationAction workspaceId={workspace?.id} workspaces={workspaces} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation} onClose={() => setEditorOpen(false)}
+    {routed && workflowRoute && workspaces && resolvedRoute !== routeKey ? <WorkflowRouteTarget key={routeKey} route={workflowRoute}
+      workspaces={workspaces} onClose={() => onWorkflowRouteChange?.(null, workspace?.id)}
+      onResolved={(detail) => {
+        if (detail.automation.workspaceId !== workflowRoute.workspaceId) {
+          onWorkflowRouteChange?.({ ...workflowRoute, workspaceId: detail.automation.workspaceId }, detail.automation.workspaceId);
+          return;
+        }
+        setResolvedRoute(routeKey);
+        if (workflowRoute.view) {
+          const version = detail.automation.pinnedVersionAssetId
+            ? detail.versions.find((candidate) => candidate.assetId === detail.automation.pinnedVersionAssetId) : detail.versions[0];
+          if (!version || (workflowRoute.view === "edit" && !detail.canManage)) {
+            onWorkflowRouteChange?.({ workflowId: workflowRoute.workflowId, workspaceId: detail.automation.workspaceId }, detail.automation.workspaceId);
+            return;
+          }
+          setEdit({ detail, action: workflowRoute.view === "edit" ? "publish_version" : "copy", content: version.content });
+          setEditorOpen(true);
+        }
+      }} /> : null}
+    <AutomationAction workspaceId={workspace?.id} workspaces={workspaces} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation}
+      onClose={() => { setEditorOpen(false); if (routed && workflowRoute?.view) onWorkflowRouteChange?.(null, workspace?.id); }}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
       onRecorded={(command, submission) => {
         if (command.actionKey === "automation.run" && command.resourceId && command.workspaceId
           && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched) {
-          setSelectedAutomation(command.resourceId);
+          selectAutomation(command.resourceId);
           setRunReceipt({ resourceId: command.resourceId, workspaceId: command.workspaceId, submission });
-        } else { setSelectedAutomation(null); setRunReceipt(null); }
+        } else { selectAutomation(null); setRunReceipt(null); }
         setEdit(null); setEditorOpen(false); setRevision((old) => old + 1);
+        // A recorded edit/copy leaves its ?view= target, as the original editor closes back.
+        if (routed && workflowRoute?.view && command.actionKey !== "automation.run") onWorkflowRouteChange?.(null, workspace?.id);
         if (command.actionKey === "automation.create" && command.workspaceId
           && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched
           && workspaces?.some((candidate) => candidate.id === command.workspaceId)) {
@@ -408,12 +454,34 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
         }
       }} />
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
-      selected={selectedAutomation} onSelect={setSelectedAutomation}
+      selected={shownAutomation} onSelect={selectAutomation}
       onCreate={() => { setEdit(null); setEditorOpen(true); }}
       onEdit={(value) => { setEdit(value); setEditorOpen(true); }}
       renderRunHistory={renderRunHistory ? (resourceId, workspaceId) => renderRunHistory(resourceId, workspaceId,
         runReceipt?.resourceId === resourceId && runReceipt.workspaceId === workspaceId ? runReceipt.submission : undefined) : undefined} /> : null}
   </section>;
+}
+
+/**
+ * Original WorkflowEditorHost for a URL target: its authorized read shows the
+ * original loading/unavailable dialog and never substitutes another workflow.
+ */
+function WorkflowRouteTarget({ route, workspaces, onResolved, onClose }: {
+  route: WorkflowRoute; workspaces: WorkspaceView[];
+  onResolved: (detail: AutomationDetailView) => void; onClose: () => void;
+}) {
+  const client = useBffClient();
+  const [state, reload] = useLoad(`workflow-route:${route.workflowId}`, () => client.automation(route.workflowId, 0, 0));
+  const value = state.status === "ok" ? state.data : null;
+  const detail = value && value.automation && workspaces.some((candidate) => candidate.id === value.automation.workspaceId)
+    && validAutomationDetail(value, route.workflowId, value.automation.workspaceId) ? value : null;
+  const resolved = useRef(false);
+  useEffect(() => {
+    if (detail && !resolved.current) { resolved.current = true; onResolved(detail); }
+  }, [detail]);
+  if (detail) return null;
+  return <WorkflowUnavailableDialog loading={state.status === "pending"} open
+    onOpenChange={(open) => { if (!open) onClose(); }} onRetry={reload} />;
 }
 
 function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, renderRunHistory, selected, onSelect }: {

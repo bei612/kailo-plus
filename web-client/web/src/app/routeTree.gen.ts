@@ -13,6 +13,7 @@ import { Route as applicationsDotbindingIdRouteImport } from "./routes/applicati
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 import { Route as conversationsDotconversationIdRouteImport } from "./routes/conversations.$conversationId";
 import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
+import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
 
 const platformRoute = platformRouteImport.update({
   id: "/_platform",
@@ -55,6 +56,11 @@ const messagesDotnewRoute = messagesDotnewRouteImport.update({
   path: "/messages/new",
   getParentRoute: () => platformRoute,
 } as any);
+const workflowsDotworkflowIdRoute = workflowsDotworkflowIdRouteImport.update({
+  id: "/workflows/$workflowId",
+  path: "/workflows/$workflowId",
+  getParentRoute: () => platformRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
+  "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
 }
 export interface FileRoutesByTo {
   "/invite": typeof inviteRoute;
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
+  "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   "/_platform/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/_platform/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/_platform/messages/new": typeof messagesDotnewRoute;
+  "/_platform/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -94,7 +103,8 @@ export interface FileRouteTypes {
     | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/conversations/$conversationId"
-    | "/messages/new";
+    | "/messages/new"
+    | "/workflows/$workflowId";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/invite"
@@ -103,7 +113,8 @@ export interface FileRouteTypes {
     | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/conversations/$conversationId"
-    | "/messages/new";
+    | "/messages/new"
+    | "/workflows/$workflowId";
   id:
     | "__root__"
     | "/_platform"
@@ -113,7 +124,8 @@ export interface FileRouteTypes {
     | "/_platform/applications/$bindingId"
     | "/_platform/channels/$channelId"
     | "/_platform/conversations/$conversationId"
-    | "/_platform/messages/new";
+    | "/_platform/messages/new"
+    | "/_platform/workflows/$workflowId";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -179,6 +191,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof messagesDotnewRouteImport;
       parentRoute: typeof platformRoute;
     };
+    "/_platform/workflows/$workflowId": {
+      id: "/_platform/workflows/$workflowId";
+      path: "/workflows/$workflowId";
+      fullPath: "/workflows/$workflowId";
+      preLoaderRoute: typeof workflowsDotworkflowIdRouteImport;
+      parentRoute: typeof platformRoute;
+    };
   }
 }
 
@@ -189,6 +208,7 @@ interface platformRouteChildren {
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
   conversationsDotconversationIdRoute: typeof conversationsDotconversationIdRoute;
   messagesDotnewRoute: typeof messagesDotnewRoute;
+  workflowsDotworkflowIdRoute: typeof workflowsDotworkflowIdRoute;
 }
 
 const platformRouteChildren: platformRouteChildren = {
@@ -198,6 +218,7 @@ const platformRouteChildren: platformRouteChildren = {
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
   conversationsDotconversationIdRoute: conversationsDotconversationIdRoute,
   messagesDotnewRoute: messagesDotnewRoute,
+  workflowsDotworkflowIdRoute: workflowsDotworkflowIdRoute,
 };
 
 const platformRouteWithChildren = platformRoute._addFileChildren(

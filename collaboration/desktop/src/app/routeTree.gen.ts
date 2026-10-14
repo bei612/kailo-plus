@@ -11,6 +11,7 @@ import { Route as platformDotsectionRouteImport } from "./routes/platform.$secti
 import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 import { Route as applicationsDotbindingIdRouteImport } from "./routes/applications.$bindingId";
+import { Route as platformDotworkflowsDotworkflowIdRouteImport } from "./routes/platform.workflows.$workflowId";
 
 const settingsRoute = settingsRouteImport.update({
   id: "/settings",
@@ -43,6 +44,12 @@ const applicationsDotbindingIdRoute =
     path: "/applications/$bindingId",
     getParentRoute: () => rootRouteImport,
   } as any);
+const platformDotworkflowsDotworkflowIdRoute =
+  platformDotworkflowsDotworkflowIdRouteImport.update({
+    id: "/platform/workflows/$workflowId",
+    path: "/platform/workflows/$workflowId",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
+  "/platform/workflows/$workflowId": typeof platformDotworkflowsDotworkflowIdRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
@@ -59,6 +67,7 @@ export interface FileRoutesByTo {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
+  "/platform/workflows/$workflowId": typeof platformDotworkflowsDotworkflowIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -68,6 +77,7 @@ export interface FileRoutesById {
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
+  "/platform/workflows/$workflowId": typeof platformDotworkflowsDotworkflowIdRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -77,7 +87,8 @@ export interface FileRouteTypes {
     | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/messages/new"
-    | "/platform/$section";
+    | "/platform/$section"
+    | "/platform/workflows/$workflowId";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -85,7 +96,8 @@ export interface FileRouteTypes {
     | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/messages/new"
-    | "/platform/$section";
+    | "/platform/$section"
+    | "/platform/workflows/$workflowId";
   id:
     | "__root__"
     | "/"
@@ -93,7 +105,8 @@ export interface FileRouteTypes {
     | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/messages/new"
-    | "/platform/$section";
+    | "/platform/$section"
+    | "/platform/workflows/$workflowId";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -103,6 +116,7 @@ export interface RootRouteChildren {
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
   messagesDotnewRoute: typeof messagesDotnewRoute;
   platformDotsectionRoute: typeof platformDotsectionRoute;
+  platformDotworkflowsDotworkflowIdRoute: typeof platformDotworkflowsDotworkflowIdRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -149,6 +163,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof applicationsDotbindingIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/platform/workflows/$workflowId": {
+      id: "/platform/workflows/$workflowId";
+      path: "/platform/workflows/$workflowId";
+      fullPath: "/platform/workflows/$workflowId";
+      preLoaderRoute: typeof platformDotworkflowsDotworkflowIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -159,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
   messagesDotnewRoute: messagesDotnewRoute,
   platformDotsectionRoute: platformDotsectionRoute,
+  platformDotworkflowsDotworkflowIdRoute: platformDotworkflowsDotworkflowIdRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

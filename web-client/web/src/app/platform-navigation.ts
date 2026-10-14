@@ -20,6 +20,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
   workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;thread?: string; item?: string;
+  view?: "edit" | "duplicate";
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -34,6 +35,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     tab: reference("tab"),
     thread: reference("thread"),
     item: reference("item"),
+    // Original /workflows/$workflowId ?view= editor target; any other value is dropped.
+    view: search.view === "edit" || search.view === "duplicate" ? search.view : undefined,
   };
 }
 
@@ -83,7 +86,7 @@ export function usePlatformNavigation(scopeKey?: string) {
   };
   const newMessage = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/_platform/messages/new") });
   const tab: PlatformTab = params.channelId ? "channel" : params.conversationId ? "conversation"
-    : params.bindingId ? "application" : newMessage ? "new-message" : params.section ?? "channel";
+    : params.bindingId ? "application" : newMessage ? "new-message" : params.workflowId ? "workflows" : params.section ?? "channel";
   // The original project home embeds a channel; its thread uses the same URL
   // history. Repository/work-item routes do not mount that channel consumer.
   const projectChannelRoute = tab === "projects" && Boolean(search.projectId) &&
@@ -120,6 +123,11 @@ export function usePlatformNavigation(scopeKey?: string) {
     applicationBindingId: params.bindingId ?? null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
     projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab} : undefined,
+    workflowRoute: params.workflowId ? { workflowId: params.workflowId, view: search.view, workspaceId: search.workspaceId } : null,
+    openWorkflow: (route: { workflowId: string; view?: "edit" | "duplicate"; workspaceId?: string } | null, workspaceId?: string) => route
+      ? navigate({ to: "/workflows/$workflowId", params: { workflowId: route.workflowId },
+        search: { workspaceId: route.workspaceId, view: route.view }, state: navigationState() })
+      : navigate({ to: "/$section", params: { section: "workflows" }, search: { workspaceId }, state: navigationState() }),
     openProject: (projectId: string | null,target?:import("@client-kit/platform/react/projects").ProjectWorkItemTarget) => navigate({to:"/$section",params:{section:"projects"},search:{projectId:projectId??undefined,...target},state:navigationState()}),
     messageTarget: (params.channelId || params.conversationId) && search.messageId ? {
       channelId: (params.channelId ?? params.conversationId)!, messageId: search.messageId, threadRootId: search.threadRootId ?? null,
