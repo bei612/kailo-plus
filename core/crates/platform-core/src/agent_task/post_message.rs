@@ -81,6 +81,61 @@ pub(super) async fn sequence_progress(
     Ok(SequenceProgress::Ready(events.len()))
 }
 
+/// The deadline of the effect this Activity would dispatch next: it runs from the
+/// first time this run reached that step, recorded once by Core (no local timer).
+/// Returns the step and whether the deadline has passed; `None` if untimed.
+async fn effect_deadline(
+    state: &ServiceState,
+    invocation: &Invocation,
+    sequence_ordinal: Option<usize>,
+) -> Result<Option<(String, bool)>, Refusal> {
+    let (version_action, parameters): (Value, Option<Value>) = sqlx::query_as(
+        "select v.action,ae.parameters from catalog.agent_invocation i
+         join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+         and v.automation_resource_id=i.automation_resource_id
+         join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1",
+    )
+    .bind(invocation.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let action = crate::automation::steps::run_action(&version_action, parameters.as_ref())?
+        .ok_or_else(unknown)?;
+    let step = match sequence_ordinal {
+        Some(ordinal) if crate::automation::steps::is_sequence(&action) => {
+            crate::automation::steps::message_step(&action, ordinal)?
+        }
+        _ => match action["steps"].as_array().and_then(|steps| steps.last()) {
+            Some(step) => step,
+            None => return Ok(None),
+        },
+    };
+    let (Some(id), Some(timeout)) = (
+        step["id"].as_str(),
+        crate::automation::steps::effect_timeout(step),
+    ) else {
+        return Ok(None);
+    };
+    sqlx::query(
+        "update catalog.agent_invocation set automation_effect_starts=automation_effect_starts
+          ||jsonb_build_object($2::text,to_jsonb(clock_timestamp())),updated_at=now()
+         where id=$1 and not automation_effect_starts ? $2 and status in ('CREATED','DISPATCHING')",
+    )
+    .bind(invocation.id)
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+    let expired: Option<bool> = sqlx::query_scalar(
+        "select (automation_effect_starts->>$2)::timestamptz+make_interval(secs=>$3)<clock_timestamp()
+         from catalog.agent_invocation where id=$1",
+    )
+    .bind(invocation.id)
+    .bind(id)
+    .bind(timeout as f64)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Some((id.to_owned(), expired.ok_or_else(unknown)?)))
+}
+
 /// Earlier accepted effects remain visible and referenced. Cancellation/refusal
 /// stops only later writes; it never describes a partial run as rolled back.
 async fn finish_partial(
@@ -336,6 +391,20 @@ async fn execute(
     let event = match invocation.reply_event_id.as_deref() {
         Some(event) => event.to_owned(),
         None if !cancel && (invocation.status == "CREATED" || sequence_ordinal.is_some()) => {
+            // Original Step.timeout_secs: an effect not dispatched by its deadline
+            // fails before any write; a dispatched one keeps reconciliation.
+            if let Some((step, true)) = effect_deadline(state, invocation, sequence_ordinal).await?
+            {
+                sqlx::query(
+                    "update catalog.agent_invocation set automation_timed_out_step=$2,updated_at=now()
+                     where id=$1 and automation_timed_out_step is null and status in ('CREATED','DISPATCHING')",
+                )
+                .bind(invocation.id)
+                .bind(&step)
+                .execute(&state.pool)
+                .await?;
+                return Err(Refusal::Precondition(ReasonCode::StepTimeout));
+            }
             let (event, final_effect) = publish(state, invocation, input, sequence_ordinal).await?;
             if !final_effect {
                 // The next original Activity reconciles this event before timers

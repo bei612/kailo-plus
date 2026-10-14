@@ -14,6 +14,7 @@ struct Source {
     action_execution_id: Uuid,
     action: Value,
     parameters: Option<Value>,
+    timed_out_step: Option<String>,
     events: Vec<String>,
     reference_run: Option<String>,
 }
@@ -45,7 +46,7 @@ pub(crate) async fn capture(
         return Ok(None);
     }
     let source: Option<Source> = sqlx::query_as(
-        "select i.id,i.action_execution_id,v.action,ae.parameters,r.run_id reference_run,
+        "select i.id,i.action_execution_id,v.action,ae.parameters,i.automation_timed_out_step timed_out_step,r.run_id reference_run,
          case when v.action->'stepsVersion'='3'::jsonb then i.automation_step_event_ids
               when i.reply_event_id is not null then ARRAY[i.reply_event_id] else ARRAY[]::text[] end events
          from catalog.agent_invocation i
@@ -226,6 +227,10 @@ pub(crate) async fn capture(
                     if !accepted && !rejected {
                         entry["error"] = json!(contracts::ReasonCode::ExternalResultUnknown);
                     }
+                } else if source.timed_out_step.as_deref() == Some(id) {
+                    // Original Step.timeout_secs passed before this effect was dispatched.
+                    entry["status"] = "failed".into();
+                    entry["error"] = json!(contracts::ReasonCode::StepTimeout);
                 }
                 effect_index += 1;
             }

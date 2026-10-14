@@ -76,17 +76,18 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
       || new TextEncoder().encode(row.if).length > 4096)) return false;
     if (formatVersion === 3 && row.action === "send_message") {
       messages += 1;
-      return Object.keys(row).every((key) => ["id", "name", "if", "action", "text"].includes(key))
-        && typeof row.text === "string" && !!row.text.trim();
+      return Object.keys(row).every((key) => ["id", "name", "if", "action", "text", "timeout_secs"].includes(key))
+        && validStepTimeout(row.timeout_secs) && typeof row.text === "string" && !!row.text.trim();
     }
     if (formatVersion === 3 && index === value.length - 1) return false;
-    if (index === value.length - 1) return row.action === "add_reaction"
-      ? Object.keys(row).every((key) => ["id", "name", "if", "action", "emoji"].includes(key))
+    // Original Step.timeout_secs on the effect step; Core enforces it before dispatch.
+    if (index === value.length - 1) return validStepTimeout(row.timeout_secs) && (row.action === "add_reaction"
+      ? Object.keys(row).every((key) => ["id", "name", "if", "action", "emoji", "timeout_secs"].includes(key))
         && typeof row.emoji === "string" && !!row.emoji.trim()
       : row.action === "set_channel_topic"
-        ? Object.keys(row).every((key) => ["id", "name", "if", "action", "topic"].includes(key)) && typeof row.topic === "string"
-      : Object.keys(row).every((key) => ["id", "name", "if", "action", "text"].includes(key))
-        && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
+        ? Object.keys(row).every((key) => ["id", "name", "if", "action", "topic", "timeout_secs"].includes(key)) && typeof row.topic === "string"
+      : Object.keys(row).every((key) => ["id", "name", "if", "action", "text", "timeout_secs"].includes(key))
+        && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim());
     if (row.action === "request_approval") {
       if (approval || messages > 0) return false;
       approval = true;
@@ -126,7 +127,10 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
   // Original WorkflowStepCard runControlsSummary.
   const conditionSupported = supportsMessageTextCondition(trigger);
   const conditional = Boolean(step.if?.trim());
-  const timeoutLabel = step.action === "delay" ? timeoutDraft.trim() : "";
+  // Original Run controls timeout; Kailo executes it for delays and effect steps
+  // (approval expiry stays with its policy).
+  const timed = step.action !== "request_approval";
+  const timeoutLabel = timed ? timeoutDraft.trim() : "";
   const runControlsSummary = conditional && timeoutLabel ? t("workflows.steps.conditionalTimeout", {timeout: timeoutLabel})
     : conditional ? t("workflows.steps.conditional") : timeoutLabel || t("workflows.steps.default");
   return <div className={cn("space-y-0", !bare && "rounded-lg border border-border/70 bg-muted/10 p-3")}>
@@ -186,7 +190,7 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
         </div><p className="text-xs text-muted-foreground">{t("workflows.steps.channelTarget")}</p></div>}
     </section>
     <section className="divide-y divide-border/50 border-t border-border/50">
-      {step.action === "delay" || conditionSupported ? <div>
+      {timed || conditionSupported ? <div>
         <button aria-expanded={expanded === "run-controls"} disabled={disabled}
           className="flex min-h-12 w-full items-center gap-3 py-3 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => setExpanded((value) => value === "run-controls" ? null : "run-controls")} type="button">
@@ -201,7 +205,7 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
               if (condition) next.if = condition; else delete next.if;
               onUpdate(next);
             }} /> : null}
-          {step.action === "delay" ? <WorkflowDurationField disabled={disabled} fallbackSeconds={DEFAULT_STEP_TIMEOUT_SECONDS}
+          {timed ? <WorkflowDurationField disabled={disabled} fallbackSeconds={DEFAULT_STEP_TIMEOUT_SECONDS}
             id={`${prefix}-timeout-secs`} label={t("workflows.steps.timeout")} placeholder="5m"
             value={timeoutDraft} onChange={(timeoutSecs) => onUpdate({...step, timeoutSecs})} /> : null}
         </div></div> : null}

@@ -99,24 +99,31 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         if index + 1 == steps.len() {
             let valid = match step["action"].as_str() {
                 Some("send_message") => {
-                    fields(step, &["id", "name", "if", "action", "text"])
-                        && step["text"]
-                            .as_str()
-                            .is_some_and(|text| !text.trim().is_empty())
+                    fields(
+                        step,
+                        &["id", "name", "if", "action", "text", "timeout_secs"],
+                    ) && step["text"]
+                        .as_str()
+                        .is_some_and(|text| !text.trim().is_empty())
                 }
                 Some("add_reaction") => {
-                    fields(step, &["id", "name", "if", "action", "emoji"])
-                        && step["emoji"]
-                            .as_str()
-                            .is_some_and(collab_bridge::bridge::valid_reaction)
+                    fields(
+                        step,
+                        &["id", "name", "if", "action", "emoji", "timeout_secs"],
+                    ) && step["emoji"]
+                        .as_str()
+                        .is_some_and(collab_bridge::bridge::valid_reaction)
                 }
                 Some("set_channel_topic") => {
-                    fields(step, &["id", "name", "if", "action", "topic"])
-                        && step["topic"].is_string()
+                    fields(
+                        step,
+                        &["id", "name", "if", "action", "topic", "timeout_secs"],
+                    ) && step["topic"].is_string()
                 }
                 _ => false,
             };
-            if !valid {
+            // Original Step.timeout_secs on the effect: Core enforces it before dispatch.
+            if !valid || !valid_timeout(step) {
                 return Err(invalid_management());
             }
         } else {
@@ -185,7 +192,10 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
         condition(step)?;
         match step["action"].as_str() {
             Some("send_message")
-                if fields(step, &["id", "name", "if", "action", "text"])
+                if fields(
+                    step,
+                    &["id", "name", "if", "action", "text", "timeout_secs"],
+                ) && valid_timeout(step)
                     && step["text"]
                         .as_str()
                         .is_some_and(|text| !text.trim().is_empty()) =>
@@ -302,6 +312,19 @@ fn valid_timeout(step: &Value) -> bool {
             .as_i64()
             .is_some_and(|seconds| seconds > 0 && seconds <= i64::MAX / 1_000_000_000)
     })
+}
+
+/// Original Step.timeout_secs of an effect step (send_message, add_reaction,
+/// set_channel_topic); `None` keeps the existing unbounded behaviour.
+pub(crate) fn effect_timeout(step: &Value) -> Option<i64> {
+    if matches!(
+        step["action"].as_str(),
+        Some("send_message" | "add_reaction" | "set_channel_topic")
+    ) {
+        step["timeout_secs"].as_i64()
+    } else {
+        None
+    }
 }
 
 pub(crate) fn delay_timeouts(action: &Value) -> std::collections::HashMap<String, i64> {
@@ -752,13 +775,38 @@ mod tests {
     }
 
     #[test]
+    fn effect_step_timeouts_are_original_positive_seconds() {
+        for step in [
+            json!({"id":"reply","action":"send_message","text":"hello","timeout_secs":10}),
+            json!({"id":"react","action":"add_reaction","emoji":"👍","timeout_secs":10}),
+            json!({"id":"topic","action":"set_channel_topic","topic":"","timeout_secs":10}),
+        ] {
+            assert!(action(&json!([step.clone()])).is_ok(), "{step}");
+            assert_eq!(effect_timeout(&step), Some(10));
+            let mut invalid = step.clone();
+            invalid["timeout_secs"] = json!("10");
+            assert!(action(&json!([invalid])).is_err());
+        }
+        let sequence = json!([
+            {"id":"first","action":"send_message","text":"first","timeout_secs":5},
+            {"id":"last","action":"send_message","text":"last"}
+        ]);
+        assert!(message_sequence(&sequence).is_ok());
+        assert_eq!(effect_timeout(&sequence[1]), None);
+        assert_eq!(
+            effect_timeout(&json!({"id":"wait","action":"delay","duration":"1s","timeout_secs":5})),
+            None
+        );
+    }
+
+    #[test]
     fn unsupported_or_ambiguous_steps_never_become_an_executable_message() {
         for steps in [
             json!([]),
             json!([{"id":"wait","action":"delay","duration":"1s"}]),
             json!([{"id":"same","action":"delay","duration":"1s"},{"id":"same","action":"send_message","text":"hello"}]),
             json!([{"id":"wait","action":"delay","duration":"-1"},{"id":"reply","action":"send_message","text":"hello"}]),
-            json!([{"id":"reply","action":"send_message","text":"hello","timeout_secs":10}]),
+            json!([{"id":"reply","action":"send_message","text":"hello","timeout_secs":0}]),
         ] {
             assert!(action(&steps).is_err(), "{steps}");
         }
