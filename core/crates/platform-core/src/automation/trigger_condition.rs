@@ -126,19 +126,24 @@ mod tests {
         )
         .await
         .unwrap());
-        assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
-            .await
-            .unwrap());
+        assert!(
+            !matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
+                .await
+                .unwrap()
+        );
         for tags in [
             vec![Tag::parse(["e", &"a".repeat(64), "", "root"]).unwrap()],
             vec![Tag::parse(["e", "bad", "", "reply"]).unwrap()],
         ] {
             let event = super::tests::event("hello", tags);
-            assert!(
-                matches(&json!({"filter":"!trigger_is_reply"}), channel, &event, None)
-                    .await
-                    .unwrap()
-            );
+            assert!(matches(
+                &json!({"filter":"!trigger_is_reply"}),
+                channel,
+                &event,
+                None
+            )
+            .await
+            .unwrap());
         }
     }
 
@@ -152,25 +157,39 @@ mod tests {
         let filter = format!(
             "trigger_emoji == \"🚀\" && trigger_message_id == \"{target}\" && trigger_text == \"🚀\""
         );
-        assert!(matches(&json!({"filter":filter}), channel, &event, Some(&target))
-            .await
-            .unwrap());
+        assert!(
+            matches(&json!({"filter":filter}), channel, &event, Some(&target))
+                .await
+                .unwrap()
+        );
         let reaction_id = format!("trigger_message_id == \"{}\"", event.id.to_hex());
-        assert!(!matches(&json!({"filter":reaction_id}), channel, &event, Some(&target))
-            .await
-            .unwrap());
-        assert!(!matches(&json!({"filter":"trigger_emoji == \"🚀\""}), channel, &event, None)
-            .await
-            .unwrap());
+        assert!(!matches(
+            &json!({"filter":reaction_id}),
+            channel,
+            &event,
+            Some(&target)
+        )
+        .await
+        .unwrap());
+        assert!(!matches(
+            &json!({"filter":"trigger_emoji == \"🚀\""}),
+            channel,
+            &event,
+            None
+        )
+        .await
+        .unwrap());
     }
 
     #[tokio::test]
     async fn expression_errors_never_admit_a_trigger() {
         let event = event("private source", vec![]);
         for filter in ["unknown_trigger_field", "@@@", "trigger_text", "1 / 0 > 2"] {
-            assert!(!matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
-                .await
-                .unwrap());
+            assert!(
+                !matches(&json!({"filter":filter}), Uuid::new_v4(), &event, None)
+                    .await
+                    .unwrap()
+            );
         }
         for filter in [
             json!(null),

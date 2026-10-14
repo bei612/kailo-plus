@@ -343,17 +343,32 @@ fn diff_trigger_freezes_original_filter_and_reads_native_diff_kind() {
         relay_trigger_kind(&json!({"kind":"CHANNEL_MESSAGE"})),
         collab_bridge::kind::KIND_STREAM_MESSAGE
     );
-    assert!(relay_trigger_supported(&frozen["action"], &frozen["trigger"]));
+    assert!(relay_trigger_supported(
+        &frozen["action"],
+        &frozen["trigger"]
+    ));
     value["trigger"]["textPrefix"] = json!("!");
-    assert!(management_content(&value).is_err(), "diff has no legacy prefix");
+    assert!(
+        management_content(&value).is_err(),
+        "diff has no legacy prefix"
+    );
     value["trigger"] = json!({"kind":"DIFF_POSTED","mentionPrincipalId":Uuid::new_v4()});
-    assert!(management_content(&value).is_err(), "diff has no mention target");
+    assert!(
+        management_content(&value).is_err(),
+        "diff has no mention target"
+    );
     value["trigger"] = json!({"kind":"DIFF_POSTED"});
     value["resultTarget"] = json!("CHANNEL");
-    assert!(management_content(&value).is_err(), "diff replies in the trigger thread");
+    assert!(
+        management_content(&value).is_err(),
+        "diff replies in the trigger thread"
+    );
     value["trigger"] = json!({"kind":"DIFF_POSTED","emoji":"👍"});
     value["resultTarget"] = json!("TRIGGER_THREAD");
-    assert!(management_content(&value).is_err(), "emoji belongs to reactions only");
+    assert!(
+        management_content(&value).is_err(),
+        "emoji belongs to reactions only"
+    );
 }
 
 #[test]
@@ -370,7 +385,10 @@ fn reaction_trigger_freezes_optional_emoji_and_reads_native_reactions() {
         relay_trigger_kind(&frozen["trigger"]),
         collab_bridge::kind::KIND_REACTION
     );
-    assert!(relay_trigger_supported(&frozen["action"], &frozen["trigger"]));
+    assert!(relay_trigger_supported(
+        &frozen["action"],
+        &frozen["trigger"]
+    ));
     value["trigger"] = json!({"kind":"REACTION_ADDED"});
     assert!(management_content(&value).is_ok(), "emoji is optional");
     for invalid in [

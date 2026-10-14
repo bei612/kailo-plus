@@ -2565,7 +2565,8 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         if event.kind.as_u16()
             != u16::try_from(trigger_kind)
                 .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?
-            || (channels.as_slice() != [channel_text.as_str()] && !(reaction && channels.is_empty()))
+            || (channels.as_slice() != [channel_text.as_str()]
+                && !(reaction && channels.is_empty()))
             || i64::try_from(time)
                 .ok()
                 .is_none_or(|time| time < row.enabled_at.timestamp())
@@ -2723,9 +2724,14 @@ async fn admit(
     author: Uuid,
     reacted: Option<(String, String)>,
 ) -> Result<(), Refusal> {
-    admit_source(state, snapshot, def, AdmissionSource::Relay(event, author, reacted))
-        .await
-        .map(|_| ())
+    admit_source(
+        state,
+        snapshot,
+        def,
+        AdmissionSource::Relay(event, author, reacted),
+    )
+    .await
+    .map(|_| ())
 }
 
 enum AdmissionSource<'a> {

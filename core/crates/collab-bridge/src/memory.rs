@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 
 use buzz_core::engram::{self, Body};
-use buzz_core::kind::{KIND_AGENT_ENGRAM, KIND_REACTION, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF};
+use buzz_core::kind::{
+    KIND_AGENT_ENGRAM, KIND_REACTION, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
+};
 use nostr::{Event, Keys, PublicKey};
 use serde_json::json;
 
@@ -230,7 +232,8 @@ impl IdentityClient {
             .iter()
             .map(|tag| tag.as_slice())
             .filter(|parts| parts.first().map(String::as_str) == Some("h"))
-            .filter_map(|parts| (parts.len() == 2).then(|| &parts[1]))
+            .filter(|parts| parts.len() == 2)
+            .map(|parts| &parts[1])
             .collect();
         if channels.len() != 1 || channels[0] != channel {
             return Err(MemoryError::InvalidEvidence);

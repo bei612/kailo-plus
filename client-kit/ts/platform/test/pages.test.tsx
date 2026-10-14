@@ -3553,6 +3553,13 @@ describe("platform pages render only through the host theme", () => {
         expect(inspected.match(nativeWidth)).toHaveLength(1);
         inspected = inspected.replace(nativeWidth, "");
       }
+      if (name === "inbox-row.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503
+        // desktop/src/features/home/ui/InboxListPane.tsx:449 uses this exact
+        // reminder-due accent; the dark variant is the original host-root one.
+        expect(inspected.match(/\bdark:[a-z0-9:/-]+/g)).toEqual(["dark:text-amber-300/80"]);
+        inspected = inspected.replace("dark:text-amber-300/80", "");
+      }
       if (name === "new-message.tsx" || name === "inbox-surface.tsx") {
         // Fixed Buzz NewMessageScreen and HomeView use the host's dark root,
         // not another provider. HomeView at the same pin, line 687, repeats
@@ -3643,6 +3650,8 @@ describe("platform pages render only through the host theme", () => {
         expect(card).toBeDefined();
         for (const accent of [
           "border-emerald-400/30 bg-emerald-600 text-white",
+          "border-violet-400/30 bg-violet-600 text-white",
+          "border-pink-400/30 bg-pink-600 text-white",
           "border-blue-400/30 bg-blue-600 text-white",
         ]) {
           expect(card!.getText(parsed).split(accent)).toHaveLength(2);
@@ -3651,6 +3660,14 @@ describe("platform pages render only through the host theme", () => {
         }
         expect(source.text).toContain('import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
         expect(card!.getText(parsed)).toContain("<WorkflowActionTileStack content={content}");
+      }
+      if (source.name === "inbox-row.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503
+        // desktop/src/features/home/ui/InboxListPane.tsx:449: the original
+        // reminder-due accent, pinned to its single consumer.
+        const reminder = "text-amber-600/80 dark:text-amber-300/80";
+        expect(text.split(reminder)).toHaveLength(2);
+        text = text.replace(reminder, "");
       }
       if (source.name === "workflow-card-actions.tsx") {
         // The original WorkflowCard action tiles now have one shared module.
