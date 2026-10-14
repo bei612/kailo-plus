@@ -259,6 +259,7 @@ struct GateFacts {
     approval_policy_id: Option<Uuid>,
     approval_policy_version: Option<i32>,
     action: Option<Value>,
+    parameters: Option<Value>,
 }
 
 /// Called by the authenticated current AgentTask Activity, before Capacity,
@@ -271,9 +272,10 @@ pub(crate) async fn gate(
     let g = &state.governance;
     let mut tx = state.pool.begin().await?;
     let facts:Option<GateFacts>=sqlx::query_as(
-        "select i.action_execution_id,i.tenant_id,v.approval_policy_id,v.approval_policy_version,v.action
+        "select i.action_execution_id,i.tenant_id,v.approval_policy_id,v.approval_policy_version,v.action,ae.parameters
          from catalog.agent_invocation i left join catalog.automation_version v
            on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id
+         left join admission.action_execution ae on ae.id=i.action_execution_id
          where i.id=$1") .bind(invocation).fetch_optional(&mut *tx).await?;
     let GateFacts {
         action_execution_id: parent_id,
@@ -281,6 +283,7 @@ pub(crate) async fn gate(
         approval_policy_id: policy_id,
         approval_policy_version: policy_version,
         action,
+        parameters,
     } = facts.ok_or_else(unknown)?;
     let action = action.ok_or_else(unknown)?;
     if !steps::supported(&action) {
@@ -289,6 +292,11 @@ pub(crate) async fn gate(
     if let Some(step) = steps::approval(&action) {
         if policy_reference(Some(&step["approvalPolicy"]))? != (policy_id, policy_version) {
             return Err(unknown());
+        }
+        // Original Step.if frozen at admission: a skipped approval step gates nothing.
+        let run = steps::run_action(&action, parameters.as_ref())?.ok_or_else(unknown)?;
+        if steps::approval(&run).is_none() {
+            return Ok(Gate::Ready);
         }
     }
     let message_only = match action["kind"].as_str() {

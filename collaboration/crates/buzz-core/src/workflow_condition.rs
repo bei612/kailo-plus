@@ -172,6 +172,29 @@ pub fn validate_condition(expr: &str) -> Result<(), ConditionError> {
         .map_err(|error| ConditionError(error.to_string()))
 }
 
+/// Original trigger-context variables (`build_eval_context`), excluding the
+/// `steps_<id>_output_<field>` family.
+pub const TRIGGER_VARIABLES: [&str; 7] = [
+    "trigger_text",
+    "trigger_author",
+    "trigger_channel_id",
+    "trigger_timestamp",
+    "trigger_emoji",
+    "trigger_message_id",
+    "trigger_is_reply",
+];
+
+/// Variable identifiers read by a configured expression, in parse order.
+pub fn condition_variables(expr: &str) -> Result<Vec<String>, ConditionError> {
+    validate_condition(expr)?;
+    let tree =
+        evalexpr::build_operator_tree(expr).map_err(|error| ConditionError(error.to_string()))?;
+    Ok(tree
+        .iter_variable_identifiers()
+        .map(str::to_owned)
+        .collect())
+}
+
 /// Evaluate the original expression against the original typed context.
 /// Async hosts keep the original executor's bounded blocking-task wrapper.
 pub fn evaluate_condition(

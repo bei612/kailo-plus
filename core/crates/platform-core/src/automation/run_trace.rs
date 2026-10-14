@@ -13,6 +13,7 @@ struct Source {
     id: Uuid,
     action_execution_id: Uuid,
     action: Value,
+    parameters: Option<Value>,
     events: Vec<String>,
     reference_run: Option<String>,
 }
@@ -44,12 +45,13 @@ pub(crate) async fn capture(
         return Ok(None);
     }
     let source: Option<Source> = sqlx::query_as(
-        "select i.id,i.action_execution_id,v.action,r.run_id reference_run,
+        "select i.id,i.action_execution_id,v.action,ae.parameters,r.run_id reference_run,
          case when v.action->'stepsVersion'='3'::jsonb then i.automation_step_event_ids
               when i.reply_event_id is not null then ARRAY[i.reply_event_id] else ARRAY[]::text[] end events
          from catalog.agent_invocation i
          join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
            and v.automation_resource_id=i.automation_resource_id
+         join admission.action_execution ae on ae.id=i.action_execution_id
          join projection.workflow_ref r on r.workflow_id=i.workflow_id and r.workflow_type='AgentTaskWorkflow'
            and r.kind is null and r.action_execution_id=i.action_execution_id
            and r.tenant_id=i.tenant_id and r.workspace_id=i.workspace_id
@@ -86,20 +88,38 @@ pub(crate) async fn capture(
     {
         return Err("Projection is not in the fixed native execution chain".into());
     }
+    // Original Step.if decisions frozen at admission: skipped steps (and steps
+    // left with no later effect) are reported skipped; all native facts below
+    // are read through this run's projection, as the executor does.
+    let Some(run) = super::steps::run_action(&source.action, source.parameters.as_ref())
+        .map_err(|_| "Frozen step conditions are invalid")?
+    else {
+        return Ok(Some(json!(steps
+            .iter()
+            .map(|step| json!({"stepId":step["id"],"status":"skipped","output":{}}))
+            .collect::<Vec<_>>())));
+    };
+    let kept: std::collections::HashSet<&str> = run["steps"]
+        .as_array()
+        .ok_or("Frozen step projection is invalid")?
+        .iter()
+        .filter_map(|step| step["id"].as_str())
+        .collect();
     // For format 3, future zero-delay steps must not be marked skipped before
     // the preceding message has even been dispatched. The executor uses this
     // same prefix when it asks Temporal which timer it may advance.
-    let message_count = steps
-        .iter()
+    let message_count = run["steps"]
+        .as_array()
+        .into_iter()
+        .flatten()
         .filter(|step| step["action"] == "send_message")
         .count();
-    let delays =
-        if super::steps::is_sequence(&source.action) && source.events.len() < message_count {
-            super::steps::delays_through_message(&source.action, source.events.len())
-        } else {
-            super::steps::delays(&source.action)
-        }
-        .map_err(|_| "Immutable delay sequence is invalid")?;
+    let delays = if super::steps::is_sequence(&run) && source.events.len() < message_count {
+        super::steps::delays_through_message(&run, source.events.len())
+    } else {
+        super::steps::delays(&run)
+    }
+    .map_err(|_| "Immutable delay sequence is invalid")?;
     let (_, timers) = state
         .temporal
         .automation_step_history(
@@ -112,7 +132,7 @@ pub(crate) async fn capture(
             &source.id.to_string(),
             super::steps::DelayTimings {
                 steps: &delays,
-                timeouts: &super::steps::delay_timeouts(&source.action),
+                timeouts: &super::steps::delay_timeouts(&run),
             },
             Some(report),
         )
@@ -123,6 +143,13 @@ pub(crate) async fn capture(
     for step in steps {
         let id = step["id"].as_str().ok_or("Immutable step ID is absent")?;
         let mut entry = json!({"stepId":id,"status":"pending","output":{}});
+        if !kept.contains(id) {
+            entry["status"] = "skipped".into();
+            let typed: contracts::AutomationStepTrace =
+                serde_json::from_value(entry).map_err(|e| e.to_string())?;
+            trace.push(typed);
+            continue;
+        }
         match step["action"].as_str() {
             Some("delay") => {
                 if let Some(timer) = timers.iter().rev().find(|timer| timer["stepId"] == id) {
@@ -223,7 +250,8 @@ fn mark_passed_zero_delays(steps: &[Value], trace: &mut [Value]) {
     // only once a later real step is observed, not on the initial projection.
     let mut later_observed = false;
     for (step, entry) in steps.iter().rev().zip(trace.iter_mut().rev()) {
-        if entry["status"] != "pending" {
+        if entry["status"] != "pending" && entry["status"] != "skipped" {
+            // A step frozen as skipped at admission is not progress evidence.
             later_observed = true;
         } else if later_observed
             && step["action"] == "delay"

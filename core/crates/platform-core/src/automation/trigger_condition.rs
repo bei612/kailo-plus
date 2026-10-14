@@ -18,20 +18,11 @@ pub(crate) fn validate(value: &Value) -> Result<&str, Refusal> {
     Ok(expression)
 }
 
-pub(super) async fn matches(
-    trigger: &Value,
-    channel: Uuid,
-    event: &Event,
-    target: Option<&str>,
-) -> Result<bool, Refusal> {
-    let Some(filter) = trigger.get("filter") else {
-        return Ok(true);
-    };
-    let expression = validate(filter)?.to_owned();
-    // Same fields as fixed Buzz lib.rs::build_trigger_context/event_is_reply.
-    // The caller has verified the event, channel and current HUMAN binding; for
-    // a reaction it also verified the reacted same-channel message (`target`).
-    let context = TriggerContext {
+/// Same fields as fixed Buzz lib.rs::build_trigger_context/event_is_reply.
+/// The caller has verified the event, channel and current HUMAN binding; for
+/// a reaction it also verified the reacted same-channel message (`target`).
+pub(super) fn event_context(channel: Uuid, event: &Event, target: Option<&str>) -> TriggerContext {
+    TriggerContext {
         text: event.content.clone(),
         author: event.pubkey.to_hex(),
         channel_id: channel.to_string(),
@@ -42,7 +33,10 @@ pub(super) async fn matches(
             .reply
             .is_some(),
         ..Default::default()
-    };
+    }
+}
+
+async fn evaluate(expression: String, context: TriggerContext) -> Option<bool> {
     // 100ms is the fixed upstream executor::EVAL_TIMEOUT, not a new setting.
     let result = tokio::time::timeout(
         workflow_condition::EVAL_TIMEOUT,
@@ -52,12 +46,74 @@ pub(super) async fn matches(
     )
     .await;
     match result {
-        Ok(Ok(Ok(matched))) => Ok(matched),
-        _ => {
+        Ok(Ok(Ok(matched))) => Some(matched),
+        _ => None,
+    }
+}
+
+pub(super) async fn matches(
+    trigger: &Value,
+    channel: Uuid,
+    event: &Event,
+    target: Option<&str>,
+) -> Result<bool, Refusal> {
+    let Some(filter) = trigger.get("filter") else {
+        return Ok(true);
+    };
+    let expression = validate(filter)?.to_owned();
+    match evaluate(expression, event_context(channel, event, target)).await {
+        Some(matched) => Ok(matched),
+        None => {
             // Original trigger filters skip on evaluation errors/timeouts.
             // Do not log expression diagnostics which can contain source text.
             tracing::warn!("automation trigger condition could not be evaluated; skipping event");
             Ok(false)
+        }
+    }
+}
+
+/// Fixed Buzz executor.rs step loop `if:` decisions, taken once at admission
+/// against the verified trigger context and frozen into the run. A false
+/// condition skips the step; an evaluation error fails the run before any
+/// effect (`error`), and later conditions are not evaluated.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct StepConditions {
+    pub(super) skipped: Vec<String>,
+    pub(super) error: Option<String>,
+}
+
+pub(super) async fn step_conditions(action: &Value, context: &TriggerContext) -> StepConditions {
+    let mut decisions = StepConditions::default();
+    for step in action["steps"].as_array().into_iter().flatten() {
+        let (Some(id), Some(expression)) = (step["id"].as_str(), step.get("if")) else {
+            continue;
+        };
+        match expression.as_str() {
+            Some(expression) => match evaluate(expression.to_owned(), context.clone()).await {
+                Some(true) => {}
+                Some(false) => decisions.skipped.push(id.to_owned()),
+                None => {
+                    decisions.error = Some(id.to_owned());
+                    break;
+                }
+            },
+            None => {
+                decisions.error = Some(id.to_owned());
+                break;
+            }
+        }
+    }
+    decisions
+}
+
+impl StepConditions {
+    /// Freeze the decisions into the run's ActionExecution parameters.
+    pub(super) fn freeze(&self, parameters: &mut Value) {
+        if !self.skipped.is_empty() {
+            parameters["automationSkippedSteps"] = serde_json::json!(self.skipped);
+        }
+        if let Some(step) = &self.error {
+            parameters["automationStepConditionError"] = serde_json::json!(step);
         }
     }
 }
@@ -73,6 +129,44 @@ mod tests {
             .tags(tags)
             .sign_with_keys(&Keys::generate())
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn step_conditions_freeze_skips_and_stop_at_the_first_error() {
+        let context = event_context(Uuid::new_v4(), &event("deploy now", vec![]), None);
+        let action = json!({"steps":[
+            {"id":"keep","if":"str_contains(trigger_text, \"deploy\")","action":"delay","duration":"1s"},
+            {"id":"skip","if":"trigger_is_reply","action":"send_message","text":"x"},
+            {"id":"plain","action":"send_message","text":"y"}]});
+        let decisions = step_conditions(&action, &context).await;
+        assert_eq!(
+            decisions,
+            StepConditions {
+                skipped: vec!["skip".into()],
+                error: None
+            }
+        );
+        let mut parameters = json!({});
+        decisions.freeze(&mut parameters);
+        assert_eq!(parameters, json!({"automationSkippedSteps":["skip"]}));
+        let failing = json!({"steps":[
+            {"id":"bad","if":"str_len(trigger_text, trigger_text) > 0","action":"delay","duration":"1s"},
+            {"id":"later","if":"false","action":"send_message","text":"z"}]});
+        let decisions = step_conditions(&failing, &context).await;
+        assert_eq!(
+            decisions,
+            StepConditions {
+                skipped: vec![],
+                error: Some("bad".into())
+            }
+        );
+        let mut parameters = json!({});
+        decisions.freeze(&mut parameters);
+        assert_eq!(parameters, json!({"automationStepConditionError":"bad"}));
+        assert_eq!(
+            step_conditions(&json!({"kind":"AGENT_TURN"}), &context).await,
+            StepConditions::default()
+        );
     }
 
     #[tokio::test]

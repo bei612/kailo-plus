@@ -181,6 +181,84 @@ async fn advance_accepted(
         } else {
             false
         };
+    // Original Step.if decisions frozen at admission: a condition error fails the
+    // run before any effect; a run with every effect skipped completes without one.
+    if invocation
+        .automation_action_kind
+        .as_deref()
+        .is_some_and(crate::automation::steps::is_native_kind)
+        && matches!(invocation.status.as_str(), "CREATED" | "COMPLETED")
+    {
+        let facts: (Value, Option<Value>, bool) = match sqlx::query_as(
+            "select v.action,ae.parameters,i.automation_effect_skipped from catalog.agent_invocation i
+             join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+               and v.automation_resource_id=i.automation_resource_id
+             join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1",
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await
+        {
+            Ok(facts) => facts,
+            Err(error) => return unavailable(error),
+        };
+        let (action, parameters, effect_skipped) = facts;
+        if invocation.status == "COMPLETED" {
+            if effect_skipped {
+                return result(id, TaskStatus::Completed, "NONE");
+            }
+        } else if parameters
+            .as_ref()
+            .is_some_and(|p| p.get("automationStepConditionError").is_some())
+        {
+            let reason = if automation_cancel {
+                contracts::ReasonCode::AdmissionAbandoned
+            } else {
+                contracts::ReasonCode::InvalidParameters
+            };
+            return match refuse_step_before_dispatch(
+                &state,
+                &invocation,
+                &reason,
+                automation_cancel,
+            )
+            .await
+            {
+                Ok(true) => result(
+                    id,
+                    if automation_cancel {
+                        TaskStatus::Canceled
+                    } else {
+                        TaskStatus::Failed
+                    },
+                    &crate::governance::wire(&reason),
+                ),
+                _ => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            };
+        } else {
+            match crate::automation::steps::run_action(&action, parameters.as_ref()) {
+                Ok(Some(_)) => (),
+                Ok(None) if automation_cancel => {
+                    let reason = contracts::ReasonCode::AdmissionAbandoned;
+                    return match refuse_step_before_dispatch(&state, &invocation, &reason, true)
+                        .await
+                    {
+                        Ok(true) => {
+                            result(id, TaskStatus::Canceled, &crate::governance::wire(&reason))
+                        }
+                        _ => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                    };
+                }
+                Ok(None) => {
+                    return match complete_without_effect(&state, &invocation).await {
+                        Ok(true) => result(id, TaskStatus::Completed, "NONE"),
+                        _ => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                    };
+                }
+                Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            }
+        }
+    }
     // Format 3 re-enters this same Activity only after the preceding immutable
     // native event has been reconciled. No timer or later write may overtake it.
     let sequence_ordinal = if invocation.reply_event_id.is_none()
@@ -208,8 +286,14 @@ async fn advance_accepted(
         .is_some_and(crate::automation::steps::is_native_kind)
         && (invocation.status == "CREATED" || sequence_ordinal.is_some())
     {
-        let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
-            .bind(id).fetch_one(&state.pool).await { Ok(action) => action, Err(error) => return unavailable(error) };
+        let (version_action, parameters): (Value, Option<Value>) = match sqlx::query_as("select v.action,ae.parameters from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1")
+            .bind(id).fetch_one(&state.pool).await { Ok(row) => row, Err(error) => return unavailable(error) };
+        // The run's frozen Step.if projection; a no-effect run never reaches here.
+        let action =
+            match crate::automation::steps::run_action(&version_action, parameters.as_ref()) {
+                Ok(Some(action)) => action,
+                _ => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            };
         let delays = match sequence_ordinal.map_or_else(
             || crate::automation::steps::delays(&action),
             |ordinal| crate::automation::steps::delays_through_message(&action, ordinal),
@@ -2705,6 +2789,7 @@ struct ReplyIntent {
     channel_id: Uuid,
     delivery_outcome: Option<String>,
     frozen_action: Option<Value>,
+    run_parameters: Option<Value>,
     sequence_ordinal: Option<i32>,
 }
 
@@ -2715,7 +2800,7 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     d.initiator_principal_id,d.actor_principal_id,d.action_key,d.action_version,
     d.component_type_key,d.target_type,d.target_id,d.parameter_hash,d.result_exposure,
     d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id,o.result_code as delivery_outcome,
-    version.action as frozen_action,
+    version.action as frozen_action,ae.parameters as run_parameters,
     case when version.action->'stepsVersion'='3'::jsonb then array_position(i.automation_step_event_ids,$2)-1 end as sequence_ordinal
   from catalog.agent_invocation i
   left join catalog.automation_version version on version.asset_id=i.automation_version_asset_id
@@ -2780,6 +2865,16 @@ async fn reconcile_reply(
     let [intent] = intents.as_slice() else {
         return Ok(None);
     };
+    // The run's frozen Step.if projection fixes ordinals and the final effect.
+    let frozen_action = match intent.frozen_action.as_ref() {
+        Some(action) => {
+            match crate::automation::steps::run_action(action, intent.run_parameters.as_ref()) {
+                Ok(Some(action)) => Some(action),
+                _ => return Ok(None),
+            }
+        }
+        None => None,
+    };
     let Some(raw_refs) = intent.evidence_refs.as_array() else {
         return Ok(None);
     };
@@ -2806,7 +2901,7 @@ async fn reconcile_reply(
         return Ok(None);
     };
     let observed = if let Some(ordinal) = intent.sequence_ordinal {
-        let Some(step) = intent.frozen_action.as_ref().and_then(|action| {
+        let Some(step) = frozen_action.as_ref().and_then(|action| {
             usize::try_from(ordinal)
                 .ok()
                 .and_then(|ordinal| crate::automation::steps::message_step(action, ordinal).ok())
@@ -2826,13 +2921,11 @@ async fn reconcile_reply(
                 Uuid::new_v5(&invocation.id, step_id.as_bytes()),
             )
             .await
-    } else if intent
-        .frozen_action
+    } else if frozen_action
         .as_ref()
         .is_some_and(|action| action["kind"] == "ADD_REACTION_STEPS")
     {
-        let Some(action) = intent
-            .frozen_action
+        let Some(action) = frozen_action
             .as_ref()
             .filter(|action| crate::automation::steps::supported(action))
         else {
@@ -2857,13 +2950,11 @@ async fn reconcile_reply(
                 emoji,
             )
             .await
-    } else if intent
-        .frozen_action
+    } else if frozen_action
         .as_ref()
         .is_some_and(|action| action["kind"] == "SET_CHANNEL_TOPIC_STEPS")
     {
-        let Some(action) = intent
-            .frozen_action
+        let Some(action) = frozen_action
             .as_ref()
             .filter(|action| crate::automation::steps::supported(action))
         else {
@@ -3173,6 +3264,46 @@ fn billed_outcome(
     }
 }
 
+/// Fixed Buzz executor: a run whose every step was skipped by its `if` finishes
+/// successfully. Kailo records it on the same Invocation/ActionExecution with no
+/// native effect, usage, lease or model turn; the DB guard proves the frozen set.
+async fn complete_without_effect(
+    state: &ServiceState,
+    invocation: &Invocation,
+) -> Result<bool, crate::governance::Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let changed = sqlx::query(
+        "update catalog.agent_invocation i set status='COMPLETED',automation_effect_skipped=true,updated_at=now()
+        where i.id=$1 and i.action_execution_id=$2 and i.status='CREATED' and not i.cancel_pending
+          and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is null
+          and i.post_message_intent is null and cardinality(i.automation_step_event_ids)=0
+          and not exists(select 1 from admission.capacity_lease l where l.invocation_id=i.id)
+          and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id)",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Ok(false);
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        ("step-conditions:skipped", "OUTCOME", "COMPLETED"),
+        vec![crate::audit::Evidence::new(
+            EvidenceKind::ActionExecutionId,
+            ae.id,
+        )],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
 async fn refuse_step_before_dispatch(
     state: &ServiceState,
     invocation: &Invocation,
@@ -3207,6 +3338,8 @@ async fn refuse_step_before_dispatch(
         (
             if *reason == contracts::ReasonCode::StepTimeout {
                 "delay-step:timeout"
+            } else if *reason == contracts::ReasonCode::InvalidParameters {
+                "step-condition:error"
             } else {
                 "approval-step:refused"
             },

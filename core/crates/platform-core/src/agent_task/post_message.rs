@@ -37,14 +37,18 @@ pub(super) async fn sequence_progress(
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
 ) -> Result<SequenceProgress, Refusal> {
-    let (action, events): (Value, Vec<String>) = sqlx::query_as(
-        "select v.action,i.automation_step_event_ids from catalog.agent_invocation i
+    let (version_action, events, parameters): (Value, Vec<String>, Option<Value>) = sqlx::query_as(
+        "select v.action,i.automation_step_event_ids,ae.parameters from catalog.agent_invocation i
          join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
-         and v.automation_resource_id=i.automation_resource_id where i.id=$1",
+         and v.automation_resource_id=i.automation_resource_id
+         join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1",
     )
     .bind(invocation.id)
     .fetch_one(&state.pool)
     .await?;
+    // Ordinals follow this run's frozen Step.if projection, as the DB guard does.
+    let action = crate::automation::steps::run_action(&version_action, parameters.as_ref())?
+        .ok_or_else(unknown)?;
     if !crate::automation::steps::is_sequence(&action) {
         return Ok(SequenceProgress::Legacy);
     }

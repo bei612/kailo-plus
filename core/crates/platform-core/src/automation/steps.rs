@@ -58,6 +58,23 @@ pub(crate) fn duration_seconds(value: &str) -> Option<i64> {
     (!value.is_empty() && total <= i64::MAX / 1_000_000_000).then_some(total)
 }
 
+/// Original Step.if, limited to the trigger variables Kailo freezes at admission.
+/// A step-output reference cannot be evaluated before any effect and is blocked.
+fn condition(step: &Value) -> Result<(), Refusal> {
+    let Some(expression) = step.get("if") else {
+        return Ok(());
+    };
+    let expression = super::trigger_condition::validate(expression)?;
+    let variables = collab_bridge::workflow_condition::condition_variables(expression)
+        .map_err(|_| invalid_management())?;
+    if variables.iter().any(|variable| {
+        !collab_bridge::workflow_condition::TRIGGER_VARIABLES.contains(&variable.as_str())
+    }) {
+        return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
+    }
+    Ok(())
+}
+
 pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
     let steps = steps
         .as_array()
@@ -78,22 +95,24 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         {
             return Err(invalid_management());
         }
+        condition(step)?;
         if index + 1 == steps.len() {
             let valid = match step["action"].as_str() {
                 Some("send_message") => {
-                    fields(step, &["id", "name", "action", "text"])
+                    fields(step, &["id", "name", "if", "action", "text"])
                         && step["text"]
                             .as_str()
                             .is_some_and(|text| !text.trim().is_empty())
                 }
                 Some("add_reaction") => {
-                    fields(step, &["id", "name", "action", "emoji"])
+                    fields(step, &["id", "name", "if", "action", "emoji"])
                         && step["emoji"]
                             .as_str()
                             .is_some_and(collab_bridge::bridge::valid_reaction)
                 }
                 Some("set_channel_topic") => {
-                    fields(step, &["id", "name", "action", "topic"]) && step["topic"].is_string()
+                    fields(step, &["id", "name", "if", "action", "topic"])
+                        && step["topic"].is_string()
                 }
                 _ => false,
             };
@@ -103,15 +122,20 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         } else {
             match step["action"].as_str() {
                 Some("delay")
-                    if fields(step, &["id", "name", "action", "duration", "timeout_secs"])
-                        && valid_timeout(step)
+                    if fields(
+                        step,
+                        &["id", "name", "if", "action", "duration", "timeout_secs"],
+                    ) && valid_timeout(step)
                         && step["duration"]
                             .as_str()
                             .and_then(duration_seconds)
                             .is_some() => {}
                 Some("request_approval")
                     if !has_approval
-                        && fields(step, &["id", "name", "action", "approvalPolicy", "message"])
+                        && fields(
+                            step,
+                            &["id", "name", "if", "action", "approvalPolicy", "message"],
+                        )
                         && step["message"]
                             .as_str()
                             .is_some_and(|text| !text.trim().is_empty())
@@ -158,9 +182,10 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
         {
             return Err(invalid_management());
         }
+        condition(step)?;
         match step["action"].as_str() {
             Some("send_message")
-                if fields(step, &["id", "name", "action", "text"])
+                if fields(step, &["id", "name", "if", "action", "text"])
                     && step["text"]
                         .as_str()
                         .is_some_and(|text| !text.trim().is_empty()) =>
@@ -168,8 +193,10 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
                 messages += 1
             }
             Some("delay")
-                if fields(step, &["id", "name", "action", "duration", "timeout_secs"])
-                    && valid_timeout(step)
+                if fields(
+                    step,
+                    &["id", "name", "if", "action", "duration", "timeout_secs"],
+                ) && valid_timeout(step)
                     && step["duration"]
                         .as_str()
                         .and_then(duration_seconds)
@@ -177,7 +204,10 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
             Some("request_approval")
                 if messages == 0
                     && !approval_seen
-                    && fields(step, &["id", "name", "action", "approvalPolicy", "message"])
+                    && fields(
+                        step,
+                        &["id", "name", "if", "action", "approvalPolicy", "message"],
+                    )
                     && step["message"]
                         .as_str()
                         .is_some_and(|message| !message.trim().is_empty())
@@ -194,6 +224,72 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
         return Err(invalid_management());
     }
     Ok(json!({"kind":"POST_MESSAGE_STEPS","template":last["text"],"stepsVersion":3,"steps":rows}))
+}
+
+/// Step ids whose original `if` was false at this run's admission. The frozen
+/// set lives in the run's ActionExecution parameters; absence means none.
+pub(crate) fn skipped(parameters: Option<&Value>) -> Result<Vec<String>, Refusal> {
+    let Some(value) = parameters.and_then(|p| p.get("automationSkippedSteps")) else {
+        return Ok(Vec::new());
+    };
+    let ids = value
+        .as_array()
+        .filter(|ids| !ids.is_empty())
+        .ok_or_else(invalid_management)?;
+    ids.iter()
+        .map(|id| {
+            id.as_str()
+                .map(str::to_owned)
+                .ok_or_else(invalid_management)
+        })
+        .collect()
+}
+
+/// This run's executable projection: the immutable version without the steps
+/// frozen as skipped. Steps after the last remaining effect only delay or gate
+/// nothing and are dropped; `None` means no side effect remains.
+pub(crate) fn effective(action: &Value, skipped: &[String]) -> Result<Option<Value>, Refusal> {
+    if skipped.is_empty() {
+        return Ok(Some(action.clone()));
+    }
+    if !supported(action) {
+        return Err(invalid_management());
+    }
+    let steps = action["steps"].as_array().ok_or_else(invalid_management)?;
+    if skipped
+        .iter()
+        .any(|id| !steps.iter().any(|step| step["id"] == id.as_str()))
+    {
+        return Err(invalid_management());
+    }
+    let mut kept: Vec<Value> = steps
+        .iter()
+        .filter(|step| !skipped.iter().any(|id| step["id"] == id.as_str()))
+        .cloned()
+        .collect();
+    while kept
+        .last()
+        .is_some_and(|step| matches!(step["action"].as_str(), Some("delay" | "request_approval")))
+    {
+        kept.pop();
+    }
+    if kept.is_empty() {
+        return Ok(None);
+    }
+    let kept = Value::Array(kept);
+    if is_sequence(action) {
+        message_sequence(&kept).map(Some)
+    } else {
+        self::action(&kept).map(Some)
+    }
+}
+
+/// The run's executable projection from its version action and AE parameters.
+pub(crate) fn run_action(
+    action: &Value,
+    parameters: Option<&Value>,
+) -> Result<Option<Value>, Refusal> {
+    effective(action, &skipped(parameters)?)
 }
 
 pub(crate) fn is_sequence(action: &Value) -> bool {
@@ -443,7 +539,6 @@ mod tests {
                 "approvalPolicy":{"id":"00000000-0000-4000-8000-000000000001","version":1}},
                 {"id":"last","action":"send_message","text":"last"}]),
             json!([{"id":"dm","action":"send_dm","to":"owner","text":"not a HUMAN identity"},{"id":"m","action":"send_message","text":"last"}]),
-            json!([{"id":"m","action":"send_message","text":"first","if":"true"},{"id":"last","action":"send_message","text":"last"}]),
         ] {
             assert!(message_sequence(&steps).is_err(), "{steps}");
         }
@@ -574,13 +669,95 @@ mod tests {
     }
 
     #[test]
+    fn original_step_conditions_admit_only_trigger_variables() {
+        let message = |condition: &str| {
+            json!([{"id":"wait","if":condition,"action":"delay","duration":"1s"},
+                {"id":"reply","if":condition,"action":"send_message","text":"hello"}])
+        };
+        for accepted in [
+            r#"str_contains(trigger_text, "deploy")"#,
+            "trigger_is_reply == false",
+            r#"trigger_author == "aa" && str_len(trigger_emoji) > 0"#,
+            "true",
+        ] {
+            assert!(action(&message(accepted)).is_ok(), "{accepted}");
+            assert!(message_sequence(&message(accepted)).is_ok(), "{accepted}");
+            assert_eq!(
+                action(&message(accepted)).unwrap()["steps"],
+                message(accepted)
+            );
+        }
+        for blocked in [r#"steps_wait_output_status == "done""#, "unknown_variable"] {
+            assert!(matches!(
+                action(&message(blocked)),
+                Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked))
+            ));
+        }
+        for invalid in ["", "trigger_text ==", r#"str_contains(trigger_text, "#] {
+            assert!(
+                matches!(action(&message(invalid)), Err(Refusal::Precondition(_))),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn frozen_skips_reproject_the_same_version_kind_or_leave_no_effect() {
+        let sequence = message_sequence(&json!([
+            {"id":"wait","action":"delay","duration":"1s"},
+            {"id":"first","if":"trigger_is_reply","action":"send_message","text":"first"},
+            {"id":"pause","action":"delay","duration":"2s"},
+            {"id":"last","if":"trigger_is_reply == false","action":"send_message","text":"last"}
+        ]))
+        .unwrap();
+        let first_only = effective(&sequence, &["last".into()]).unwrap().unwrap();
+        assert_eq!(first_only["kind"], "POST_MESSAGE_STEPS");
+        assert_eq!(first_only["template"], "first");
+        assert_eq!(first_only["steps"].as_array().unwrap().len(), 2);
+        assert!(supported(&first_only));
+        let last_only = effective(&sequence, &["first".into()]).unwrap().unwrap();
+        assert_eq!(
+            delays_through_message(&last_only, 0).unwrap(),
+            vec![("wait".into(), 1), ("pause".into(), 2)]
+        );
+        assert_eq!(
+            effective(&sequence, &["first".into(), "last".into()]).unwrap(),
+            None
+        );
+        assert_eq!(effective(&sequence, &[]).unwrap(), Some(sequence.clone()));
+        assert!(effective(&sequence, &["missing".into()]).is_err());
+        let reaction = action(&json!([{"id":"wait","action":"delay","duration":"1s"},
+            {"id":"react","if":"true","action":"add_reaction","emoji":"👍"}]))
+        .unwrap();
+        assert_eq!(effective(&reaction, &["react".into()]).unwrap(), None);
+        assert_eq!(
+            effective(&reaction, &["wait".into()]).unwrap().unwrap()["steps"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            skipped(Some(&json!({"automationSkippedSteps":["a"]}))).unwrap(),
+            vec!["a".to_owned()]
+        );
+        assert_eq!(skipped(Some(&json!({}))).unwrap(), Vec::<String>::new());
+        for invalid in [
+            json!({"automationSkippedSteps":[]}),
+            json!({"automationSkippedSteps":[1]}),
+            json!({"automationSkippedSteps":"a"}),
+        ] {
+            assert!(skipped(Some(&invalid)).is_err());
+        }
+    }
+
+    #[test]
     fn unsupported_or_ambiguous_steps_never_become_an_executable_message() {
         for steps in [
             json!([]),
             json!([{"id":"wait","action":"delay","duration":"1s"}]),
             json!([{"id":"same","action":"delay","duration":"1s"},{"id":"same","action":"send_message","text":"hello"}]),
             json!([{"id":"wait","action":"delay","duration":"-1"},{"id":"reply","action":"send_message","text":"hello"}]),
-            json!([{"id":"reply","action":"send_message","text":"hello","if":"true"}]),
             json!([{"id":"reply","action":"send_message","text":"hello","timeout_secs":10}]),
         ] {
             assert!(action(&steps).is_err(), "{steps}");

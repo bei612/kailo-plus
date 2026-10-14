@@ -237,11 +237,18 @@ pub(crate) async fn submit_manual(
         }
         tx.commit().await?;
         let def = definition(&state.governance).await?;
+        // A manual run has no trigger event: the original context fields are empty.
+        let conditions = super::trigger_condition::step_conditions(
+            &snapshot.action,
+            &collab_bridge::workflow_template::TriggerContext::default(),
+        )
+        .await;
         match admit_source(
             &state.memory_service,
             &snapshot,
             &def,
             AdmissionSource::Manual(ctx, command),
+            conditions,
         )
         .await
         {

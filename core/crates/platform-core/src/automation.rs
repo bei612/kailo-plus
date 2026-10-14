@@ -2118,7 +2118,17 @@ pub(crate) async fn fresh_channel_action(
     if !steps::supported(&row.action) {
         return Err(invalid_management());
     }
-    Ok((row.action, binding, revision))
+    // This run's frozen Step.if projection; a no-effect run never publishes.
+    let parameters: Option<Value> = sqlx::query_scalar(
+        "select ae.parameters from catalog.agent_invocation i
+         join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1",
+    )
+    .bind(invocation)
+    .fetch_one(&mut **tx)
+    .await?;
+    let action =
+        steps::run_action(&row.action, parameters.as_ref())?.ok_or_else(invalid_management)?;
+    Ok((action, binding, revision))
 }
 
 pub(crate) async fn fresh_runtime(
@@ -2616,7 +2626,12 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         if !matches_event(&mut conn, &row, channel, &event, target).await? {
             continue;
         }
-        admit(state, &row, &def, &event, author, reacted).await?;
+        let conditions = trigger_condition::step_conditions(
+            &row.action,
+            &trigger_condition::event_context(channel, &event, target),
+        )
+        .await;
+        admit(state, &row, &def, &event, author, reacted, conditions).await?;
     }
     // 尾页后重新扫描原生保留历史，业务稳定源 ID 去重；不用 timestamp highwater 漏掉迟到事件。
     let next = if i64::try_from(values.len()).ok() == Some(limit) {
@@ -2723,12 +2738,14 @@ async fn admit(
     event: &Event,
     author: Uuid,
     reacted: Option<(String, String)>,
+    conditions: trigger_condition::StepConditions,
 ) -> Result<(), Refusal> {
     admit_source(
         state,
         snapshot,
         def,
         AdmissionSource::Relay(event, author, reacted),
+        conditions,
     )
     .await
     .map(|_| ())
@@ -2748,6 +2765,7 @@ async fn admit_source(
     snapshot: &Run,
     def: &Definition,
     origin: AdmissionSource<'_>,
+    conditions: trigger_condition::StepConditions,
 ) -> Result<Uuid, Refusal> {
     let (idempotency, source, root, source_kind, author) = match &origin {
         AdmissionSource::Relay(event, author, reacted) => {
@@ -2880,6 +2898,7 @@ async fn admit_source(
             parameters["manualRequest"] = manual::request(command)?;
         }
     }
+    conditions.freeze(&mut parameters);
     let ae = governance::open_automation_execution(
         &mut tx,
         Actor {

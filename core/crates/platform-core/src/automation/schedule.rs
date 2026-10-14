@@ -678,10 +678,24 @@ async fn admit_once(
     if duplicate {
         return Err(Refusal::Unavailable("Schedule准入并发，沿原key查证".into()));
     }
-    let params = json!({"targetVersion":origin.resource_version,"automationVersionAssetId":origin.version,
+    let mut params = json!({"targetVersion":origin.resource_version,"automationVersionAssetId":origin.version,
         "automationVersion":origin.version_number,"agentVersionAssetId":origin.agent_version,"projectionGeneration":origin.generation,
         "delegationId":origin.grant,"sourceKind":"SCHEDULE","scheduleId":native.schedule_id,"scheduledAt":planned,
         "sourceEventId":planned,"rootEventId":root});
+    // Original Step.if for a scheduled run: no trigger event, empty context fields.
+    let action: Value = sqlx::query_scalar(
+        "select action from catalog.automation_version where asset_id=$1 and automation_resource_id=$2",
+    )
+    .bind(origin.version)
+    .bind(resource)
+    .fetch_one(&mut *tx)
+    .await?;
+    trigger_condition::step_conditions(
+        &action,
+        &collab_bridge::workflow_template::TriggerContext::default(),
+    )
+    .await
+    .freeze(&mut params);
     let ae = governance::open_automation_execution(
         &mut tx,
         Actor {
