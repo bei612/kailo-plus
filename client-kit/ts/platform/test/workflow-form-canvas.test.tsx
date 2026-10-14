@@ -71,7 +71,8 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"");
     expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:ActionEnum.Delay,duration:"62s"});
     await node(host,2);
-    expect([...host.querySelectorAll("button")].some(button=>button.textContent?.includes("Run controls"))).toBe(false);
+    // Original WorkflowStepCard: a message step under a message trigger has Run controls (condition).
+    expect([...host.querySelectorAll("button")].some(button=>button.textContent?.includes("Run controls"))).toBe(true);
   });
   it("uses the original dialog handle to add a first real step and close the inspector without changing that draft", async () => {
     const {host, changes, handle} = await setup([]);

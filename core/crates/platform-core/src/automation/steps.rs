@@ -693,7 +693,7 @@ mod tests {
                 Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked))
             ));
         }
-        for invalid in ["", "trigger_text ==", r#"str_contains(trigger_text, "#] {
+        for invalid in ["", "(trigger_is_reply", "trigger_is_reply)"] {
             assert!(
                 matches!(action(&message(invalid)), Err(Refusal::Precondition(_))),
                 "{invalid}"
