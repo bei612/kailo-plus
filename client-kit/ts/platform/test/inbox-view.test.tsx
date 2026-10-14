@@ -31,7 +31,9 @@ beforeAll(() => {
 });
 beforeEach(() => {
   setLocale("en"); localStorage.clear(); width = 1200;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, 0, width, 800));
+  // The shared virtual list measures its viewport and rows like the reminders suite.
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.hasAttribute("data-index") ? 96 : 420; });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) { return new DOMRect(0, 0, width, this.offsetHeight); });
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
