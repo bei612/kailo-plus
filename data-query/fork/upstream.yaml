@@ -19,15 +19,15 @@ artifacts:
     build_context: data-query/wren-ai-service
     build_dockerfile: data-query/wren-ai-service/docker/Dockerfile
     inputs: [data-query/wren-ai-service/]
-    source_digest: sha256:92a532e755dd5b8c13564c13d8860f047faeaf44bf3f9ef9fa3e7854999a0874
-    artifact_digest: sha256:721fd2fd5c4b1501303d17b13fdec67e7a978ac24187bb9d26d2436ef18792b4
+    source_digest: sha256:512dcd824b1bace37f7f6fa5e1f9676deaaab77b0fc3d8a9bcdb1af17fac005a
+    artifact_digest: sha256:41d09fad9d211bddbdfee1f9e72f45a290041f358e8fc4d20bd97362073c3f95
   - name: data-query-engine
     kind: image
     build_context: data-query/wren-engine/wren-core-legacy
     build_dockerfile: data-query/wren-engine/wren-core-legacy/docker/Dockerfile
     inputs: [data-query/wren-engine/wren-core-legacy/]
-    source_digest: sha256:3f1856f5401c4fbe387814e0f0097521990d1055b0b7f9a7d8ef40bc0db43c4e
-    artifact_digest: sha256:e726ca12d3476881eed9734777c2ea5338f62378ed8d6eb2e87004667c37446e
+    source_digest: sha256:b15ffaf38771968d05c0434bd83b6e06d278ad882becedb4a38e825216472e45
+    artifact_digest: sha256:054632c1a9cf6f4669ce6d38386634b6f04dea2817bb0bd85061f3d5ea52b31f
   - name: data-query-ibis
     kind: image
     build_context: data-query/wren-engine
