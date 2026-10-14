@@ -4499,6 +4499,11 @@ export interface RoleMemberPage {
 }
 
 export interface RoleMemberView {
+    /**
+     * 当前 Workspace manage 与 workspace.member.add 目录均有效且已开放，目标在该 Workspace 没有未撤销的
+     * WorkspaceMembership（不存在或 REVOKED）；省略或 false 不显示添加动作，提交仍重新准入。
+     */
+    canAddToWorkspace?:     boolean;
     canGrantTenantAdmin:    boolean;
     canGrantWorkspaceAdmin: boolean;
     /**

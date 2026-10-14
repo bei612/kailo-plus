@@ -5870,8 +5870,11 @@ type RoleMemberPage struct {
 }
 
 type RoleMemberView struct {
-	CanGrantTenantAdmin    bool `json:"canGrantTenantAdmin"`
-	CanGrantWorkspaceAdmin bool `json:"canGrantWorkspaceAdmin"`
+	// 当前 Workspace manage 与 workspace.member.add 目录均有效且已开放，目标在该 Workspace 没有未撤销的
+	// WorkspaceMembership（不存在或 REVOKED）；省略或 false 不显示添加动作，提交仍重新准入。
+	CanAddToWorkspace      *bool `json:"canAddToWorkspace,omitempty"`
+	CanGrantTenantAdmin    bool  `json:"canGrantTenantAdmin"`
+	CanGrantWorkspaceAdmin bool  `json:"canGrantWorkspaceAdmin"`
 	// 当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false
 	// 不显示动作。
 	CanRemoveFromTenant *bool `json:"canRemoveFromTenant,omitempty"`

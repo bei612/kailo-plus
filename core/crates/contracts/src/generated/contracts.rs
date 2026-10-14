@@ -6555,6 +6555,11 @@ pub struct RoleMemberPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleMemberView {
+    /// 当前 Workspace manage 与 workspace.member.add 目录均有效且已开放，目标在该 Workspace 没有未撤销的
+    /// WorkspaceMembership（不存在或 REVOKED）；省略或 false 不显示添加动作，提交仍重新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_add_to_workspace: Option<bool>,
+
     pub can_grant_tenant_admin: bool,
 
     pub can_grant_workspace_admin: bool,

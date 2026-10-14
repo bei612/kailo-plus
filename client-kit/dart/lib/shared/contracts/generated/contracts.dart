@@ -13153,6 +13153,9 @@ class RoleMemberPage {
 }
 
 class RoleMemberView {
+  ///当前 Workspace manage 与 workspace.member.add 目录均有效且已开放，目标在该 Workspace 没有未撤销的
+  ///WorkspaceMembership（不存在或 REVOKED）；省略或 false 不显示添加动作，提交仍重新准入。
+  final bool? canAddToWorkspace;
   final bool canGrantTenantAdmin;
   final bool canGrantWorkspaceAdmin;
 
@@ -13184,6 +13187,7 @@ class RoleMemberView {
   final bool workspaceAdmin;
 
   RoleMemberView({
+    this.canAddToWorkspace,
     required this.canGrantTenantAdmin,
     required this.canGrantWorkspaceAdmin,
     this.canRemoveFromTenant,
@@ -13200,6 +13204,7 @@ class RoleMemberView {
   });
 
   factory RoleMemberView.fromJson(Map<String, dynamic> json) => RoleMemberView(
+    canAddToWorkspace: json["canAddToWorkspace"],
     canGrantTenantAdmin: json["canGrantTenantAdmin"],
     canGrantWorkspaceAdmin: json["canGrantWorkspaceAdmin"],
     canRemoveFromTenant: json["canRemoveFromTenant"],
@@ -13218,6 +13223,7 @@ class RoleMemberView {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "canAddToWorkspace": canAddToWorkspace,
     "canGrantTenantAdmin": canGrantTenantAdmin,
     "canGrantWorkspaceAdmin": canGrantWorkspaceAdmin,
     "canRemoveFromTenant": canRemoveFromTenant,
