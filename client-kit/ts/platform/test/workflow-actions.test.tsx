@@ -594,7 +594,7 @@ describe("original workflow action menu with governed consumers", () => {
     const { host, send } = await setup();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
-    await canvasNode(dialog, 1);
+    await canvasInsert(dialog, 0, "Agent turn");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Discarded create draft");
     await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
@@ -603,8 +603,9 @@ describe("original workflow action menu with governed consumers", () => {
     expect(document.body.style.pointerEvents).toBe(initialPointerEvents);
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     const reopened = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
-    await canvasNode(reopened, 1);
-    expect(reopened.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    // Original empty sequence: no discarded Agent turn or text is carried over.
+    expect(reopened.querySelectorAll("ol > li")).toHaveLength(1);
+    expect(reopened.querySelector("textarea")).toBeNull();
     await click(reopened.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(writes(send)).toHaveLength(0);

@@ -986,8 +986,9 @@ describe("shared Automation schedule consumer", () => {
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
     expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     await click(section.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
-    await selectCanvasNode(section, 1);
-    expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    // The discarded draft is not reused: the original empty sequence returns.
+    expect(section.querySelectorAll('ol[aria-label="Workflow sequence"] > li')).toHaveLength(1);
+    expect(field("Instruction template")).toBeUndefined();
     expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
   });
 

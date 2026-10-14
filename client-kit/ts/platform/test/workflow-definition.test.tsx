@@ -248,8 +248,8 @@ describe("original complete Definition view with immutable pinned governance", (
     await click(panel.querySelector<HTMLButtonElement>(`button[aria-label="${locale === "en" ? "Close" : "关闭"}"]`)!);
     await click(host.querySelector<HTMLElement>('[data-testid="new-workflow-card"]')!);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
-    const action = [...dialog.querySelectorAll("label")].find(label => label.textContent?.startsWith(locale === "en" ? "Action" : "执行动作"))!.querySelector("select")!;
-    await act(async () => { action.value = "POST_MESSAGE"; action.dispatchEvent(new Event("change", {bubbles:true})); });
+    // The original dialog opens on its empty sequence; no top action selector exists.
+    expect([...dialog.querySelectorAll("label")].some(label => label.textContent?.startsWith(locale === "en" ? "Action" : "执行动作"))).toBe(false);
     const primary = dialog.querySelector<HTMLButtonElement>('[data-testid="workflow-dialog-primary-action"]')!;
     expect(primary.getAttribute("aria-label")).toBe(locale === "en" ? "Add first step" : "添加第一个步骤");
     expect(primary.textContent).toBe(locale === "en" ? "Add step" : "添加步骤");
