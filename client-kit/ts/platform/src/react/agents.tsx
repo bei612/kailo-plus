@@ -816,7 +816,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{workflowAction(version.content)?.template}</span>
             {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
-              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "set_channel_topic" ? `${t("workflows.steps.setTopic")}: ${step.topic}` : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : t("workflows.steps.message")}</li>)}</ol> : null}
+              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "set_channel_topic" ? `${t("workflows.steps.setTopic")}: ${step.topic}` : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : step.action === "call_webhook" ? `${t("workflows.steps.callWebhook")}: ${step.method ?? "POST"} ${step.url}` : t("workflows.steps.message")}</li>)}</ol> : null}
           </Cell>
           <Cell><Button disabled={locked || copying} onClick={() => { void openVersion(version.assetId, "copy"); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
@@ -992,7 +992,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
       ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
     ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
-      ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
+      || actionKind === ActionEnum.CallWebhook ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
@@ -1331,10 +1331,11 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           onStepsChange={(next) => {
             setSteps(next);
             const terminal = next.at(-1);
-            setTemplate(terminal?.text ?? terminal?.emoji ?? terminal?.topic ?? "");
+            setTemplate(terminal?.text ?? terminal?.emoji ?? terminal?.topic ?? terminal?.url ?? "");
             if (terminal) {
               setActionKind(terminal.action === ActionEnum.AddReaction ? ActionEnum.AddReaction
-                : terminal.action === ActionEnum.SetChannelTopic ? ActionEnum.SetChannelTopic : ActionKind.PostMessage);
+                : terminal.action === ActionEnum.SetChannelTopic ? ActionEnum.SetChannelTopic
+                : terminal.action === ActionEnum.CallWebhook ? ActionEnum.CallWebhook : ActionKind.PostMessage);
               setStepsFormat(terminal.action === ActionEnum.SendMessage ? 3 : 2);
             }
             if (next.some(step => step.action === ActionEnum.RequestApproval)) setPolicyKey("");

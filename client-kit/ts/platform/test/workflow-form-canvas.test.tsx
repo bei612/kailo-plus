@@ -98,6 +98,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     [{id:"step", action:ActionEnum.Delay, duration:"invalid draft"}, "invalid draft", "Delay"],
     [{id:"step", action:ActionEnum.SetChannelTopic, topic:"Release <b>discussion</b>"}, "“Release <b>discussion</b>”", "Set channel topic"],
     [{id:"step", action:ActionEnum.RequestApproval, message:"Please review", approvalPolicy:policy}, "“Please review”", "Request approval"],
+    [{id:"step", action:ActionEnum.CallWebhook, url:" https://hooks.example.com/notify "}, "POST https://hooks.example.com/notify", "Call Webhook"],
   ] satisfies Array<[AutomationStep,string,string]>)("renders the original configured summary for %j without altering the draft", async (step, summary, subtitle) => {
     const {host,changes} = await setup([step]);
     const target = host.querySelector<HTMLElement>('ol > li:nth-child(2) button[aria-pressed]')!;
@@ -284,10 +285,11 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     expect(read(host)).toEqual([{...first,id:"renamed_step"},second]);
   });
 
-  it("supports an empty sequence but does not offer unsupported DM, webhook or schedule reaction", async () => {
+  it("supports an empty sequence and the original webhook, but not DM or a schedule reaction", async () => {
     const {host} = await setup([], {schedule:true});
     const popup = await menu(host.querySelector<HTMLElement>('[data-testid="workflow-node-ingress"] button')!);
-    expect([...popup.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(["Delay", "Send message", "Set channel topic"]);
+    expect([...popup.querySelectorAll('[role="menuitem"]')].map(item => item.textContent))
+      .toEqual(["Delay", "Send message", "Set channel topic", "Call Webhook"]);
   });
 
   it("keeps the disabled draft read-only", async () => {

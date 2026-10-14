@@ -13,25 +13,57 @@ import { WorkflowDurationField } from "./workflow-duration-field";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowMessageTextCondition } from "./workflow-message-text-condition-editor";
 import { supportsMessageTextCondition } from "./workflow-message-text-condition";
+import { headersToRecord, WEBHOOK_METHODS, WorkflowWebhookStepFields, type WorkflowHeaderRow } from "./workflow-webhook-step";
 
 // Original workflowFormTypes.ts::nextStepId. Step references are not request IDs.
 const STEP_ID_PATTERN = /^step_(\d+)$/;
 // Original WorkflowStepCard display fallback only; never persisted as a default
 // deadline or added to an old immutable AutomationVersion.
 const DEFAULT_STEP_TIMEOUT_SECONDS = 5 * 60;
-// Original StepFormState.timeoutSecs is authoring text, not a wire field.
-export type WorkflowStepDraft = AutomationStep & { timeoutSecs?: string };
+// Original StepFormState.timeoutSecs/headers are authoring state, not wire fields.
+export type WorkflowStepDraft = AutomationStep & { timeoutSecs?: string; headerRows?: WorkflowHeaderRow[] };
 export function validStepTimeout(value: unknown): boolean {
   return value === undefined || typeof value === "number" && Number.isSafeInteger(value)
     && value > 0 && value <= 9223372036;
 }
 export function workflowStepsContent(steps: WorkflowStepDraft[]): AutomationStep[] {
-  return steps.map(({timeoutSecs, ...step}) => {
+  return steps.map(({timeoutSecs, headerRows, ...step}) => {
+    if (step.action === ActionEnum.CallWebhook) {
+      // Original actionFieldsForStep: method defaults to POST, empty body/headers are omitted.
+      step.method = step.method || "POST" as AutomationStep["method"];
+      if (!step.body) delete step.body;
+      if (headerRows) {
+        const headers = headersToRecord(headerRows);
+        if (headers) step.headers = headers; else delete step.headers;
+      }
+    }
     if (timeoutSecs === undefined) return step;
     if (!timeoutSecs.trim()) delete step.timeout_secs;
     else step.timeout_secs = parseDurationSeconds(timeoutSecs) ?? NaN;
     return step;
   });
+}
+
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+// Original call_webhook fields; credential headers are only SecretRefs (Core rechecks
+// scope, reserved names and the literal https origin).
+function supportedWebhookStep(row: Record<string, unknown>): boolean {
+  const names = new Set<string>();
+  const header = (name: string) => HEADER_NAME.test(name) && !names.has(name.toLowerCase()) && !!names.add(name.toLowerCase());
+  const record = (value: unknown) => !!value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length > 0 ? value as Record<string, unknown> : null;
+  const headers = row.headers === undefined ? {} : record(row.headers);
+  const secrets = row.secretHeaders === undefined ? {} : record(row.secretHeaders);
+  return Object.keys(row).every((key) => ["id", "name", "if", "action", "url", "method", "headers", "secretHeaders", "body",
+    "timeout_secs"].includes(key))
+    && typeof row.url === "string" && /^https:\/\/[^/?#{}@\s]+(?:[/?#]|$)/.test(row.url)
+    && (row.method === undefined || WEBHOOK_METHODS.includes(row.method as typeof WEBHOOK_METHODS[number]))
+    && (row.body === undefined || typeof row.body === "string")
+    && !!headers && Object.entries(headers).every(([name, value]) => typeof value === "string" && header(name))
+    && !!secrets && Object.entries(secrets).every(([name, value]) => header(name) && !!record(value)
+      && Object.keys(value as object).length === 3 && typeof (value as {locator?: unknown}).locator === "string"
+      && typeof (value as {audience?: unknown}).audience === "string"
+      && Number.isSafeInteger((value as {version?: unknown}).version) && ((value as {version: number}).version) > 0);
 }
 export function nextStepId(existingSteps: AutomationStep[]): string {
   const existingIds = new Set(existingSteps.map((s) => s.id));
@@ -86,6 +118,7 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
         && typeof row.emoji === "string" && !!row.emoji.trim()
       : row.action === "set_channel_topic"
         ? Object.keys(row).every((key) => ["id", "name", "if", "action", "topic", "timeout_secs"].includes(key)) && typeof row.topic === "string"
+      : row.action === "call_webhook" ? supportedWebhookStep(row)
       : Object.keys(row).every((key) => ["id", "name", "if", "action", "text", "timeout_secs"].includes(key))
         && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim());
     if (row.action === "request_approval") {
@@ -101,13 +134,15 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
   });
 }
 
-export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
+export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction | ActionEnum.SetChannelTopic | ActionEnum.CallWebhook;
 export function workflowAction(content: AutomationVersionContent): {kind: WorkflowActionKind; template: string} | undefined {
   return content.formatVersion === 2 || content.formatVersion === 3
     ? content.steps?.at(-1)?.action === ActionEnum.AddReaction
       ? {kind: ActionEnum.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
       : content.steps?.at(-1)?.action === ActionEnum.SetChannelTopic
         ? {kind: ActionEnum.SetChannelTopic, template: content.steps.at(-1)?.topic ?? ""}
+      : content.steps?.at(-1)?.action === ActionEnum.CallWebhook
+        ? {kind: ActionEnum.CallWebhook, template: content.steps.at(-1)?.url ?? ""}
       : { kind: ActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
     : content.action;
 }
@@ -181,6 +216,7 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
             onChange={(event) => onUpdate({ ...step, topic: event.target.value })} />
           <span className="block font-normal">{t("workflows.steps.topicTarget")}</span>
         </label>
+        : step.action === "call_webhook" ? <WorkflowWebhookStepFields disabled={disabled} onUpdate={onUpdate} prefix={prefix} step={step} />
         : <div className="space-y-2"><div className="space-y-1.5">
           <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>{t("workflows.steps.messageText")}</label>
           <WorkflowTemplateTextarea autoCapitalize="off" disabled={disabled} id={`${prefix}-text`} value={step.text ?? ""}

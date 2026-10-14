@@ -3703,6 +3703,7 @@ describe("platform pages render only through the host theme", () => {
         });
         expect(entries).toEqual([
           ["add_reaction", "border-pink-400/30 bg-pink-600 text-white"],
+          ["call_webhook", "border-orange-300/30 bg-orange-500 text-white"],
           ["delay", "border-sky-300/30 bg-sky-500 text-white"],
           ["request_approval", "border-emerald-300/30 bg-emerald-600 text-white"],
           ["send_message", "border-blue-300/30 bg-blue-600 text-white"],

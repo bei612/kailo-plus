@@ -224,6 +224,11 @@ function actionClause(step: AutomationStep, t: Translate): string {
       const detail = quoted(step.topic);
       return detail ? t("workflows.card.topicValue", {topic: detail}) : t("workflows.card.topic");
     }
+    case ActionEnum.CallWebhook: {
+      const url = step.url?.trim();
+      return url ? t("workflows.card.call", {target: `${step.method?.trim() || "POST"} ${compact(url)}`})
+        : t("workflows.card.callWebhook");
+    }
   }
 }
 
