@@ -38,3 +38,33 @@
 ## 部署与业务验收
 
 见下方按日期追加的实际记录；源码写入、CI 检查、部署与真实 SSO 页面复核分别记录。
+
+### 2026-10-14 源码、检查与线上 SSO 实拍
+
+提交：`9ff7a3ae`（源码与契约）→ `5019c8d2`（kailo-ci gen `77bc0112` 四侧生成物，
+artifact SHA-256 `48610af8…cae0b`）→ `25fee580`（rustfmt）→ `2280c583`（同步动作按 operation
+审计计时、`usage_event_by_operation` 只读索引迁移）→ `019cb2c5`（同级视图唯一 key、终态时间只取审计）。
+`25fee580` lint `a4c22c12` exit 0；`019cb2c5` lint `021c3862` 与 verify `9e6675a9` 均 SUCCEEDED exit 0
+（含 `business_observability` 单测）。`25fee580` 的 verify `1e730f4c` 失败的 7 项全在 Projects 与频道管理测试，
+不涉及本能力。
+
+线上发布点 `7bcdd952`（Core `5f433c77`、Web `703dcf2b`，迁移 `20261014200000` 已应用）用正常 SSO
+在 Web `/app/usage`、`/app/operations` 实拍，Playwright 脚本 `~/kailo-acceptance/metering.mjs`
+（CI 节点），截图在开发机 `/tmp/kailo-dev-work/s4/`：
+
+| 账号 | 结果 |
+|---|---|
+| Tenant 管理员（中文 `s4b-*`、英文 `s4en-*`） | 侧栏有「用量与账单」「业务操作」；Customer ACTIVE；committed `uat_kailo_verify_total_tokens_20261004` sum 333329、`automation.run` count 1；三个记忆 meter 显示「OpenMeter 中未登记该计量项」；额度两项 metered/可用（token：余额 0、本期 36292、超额 333329，soft-limit）；投递 38 条已入账；按结算状态 计费数据不可用 4 / 已入账 29 / 未派发 5 / 不计量 90；无 invoice 时显示「不表示已结算或金额为零」。Workspace 视图：token meter「无法归属到工作区」，额度与账单 TENANT_SCOPE_ONLY |
+| 普通成员 `kailo-qa-1`（`s4qa1-*`） | `/usage-billing`、`scope=tenant|workspace`、`/operations/summary` 全部 403，页面显示「没有整个组织的审计权限」；`scope=mine` 200，只列本人一条 `workspace.join` |
+
+独立核对：Core 只读查询同区间 `outbox.usage_event` COMMITTED 共 38 条，token 合计 333329、
+`automation.run` 1，与 OpenMeter 原生查询结果一致（视图未从 outbox 推算数值）。
+21:11 UTC 首次读取时 token meter 为 UNAVAILABLE，OpenMeter 日志同刻为 ClickHouse
+`memory limit exceeded`；ClickHouse 由主线程修复后同一查询返回 COMMITTED，说明查询失败如实
+fail closed、不补零。
+
+实拍发现并已修复（`019cb2c5`，待下一发布点部署后复拍）：业务操作切到 Workspace 时同级
+Summary/Timeline 共用 key，页面残留整个组织的聚合；同步动作终态取了后来的过期/对账事实。
+
+未覆盖：Desktop 安装包实机、Mobile 只读视图、`identity.client_key.register` 与 `tenant.bootstrap`
+在共享动作目录中没有中文/英文标签（显示「未识别的动作」与原 key）。
