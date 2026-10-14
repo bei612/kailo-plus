@@ -15,6 +15,9 @@ struct Source {
     action: Value,
     parameters: Option<Value>,
     timed_out_step: Option<String>,
+    webhook_request_id: Option<String>,
+    webhook_outcome: Option<Value>,
+    status: String,
     events: Vec<String>,
     reference_run: Option<String>,
 }
@@ -47,6 +50,7 @@ pub(crate) async fn capture(
     }
     let source: Option<Source> = sqlx::query_as(
         "select i.id,i.action_execution_id,v.action,ae.parameters,i.automation_timed_out_step timed_out_step,r.run_id reference_run,
+         i.webhook_request_id,i.webhook_outcome,i.status,
          case when v.action->'stepsVersion'='3'::jsonb then i.automation_step_event_ids
               when i.reply_event_id is not null then ARRAY[i.reply_event_id] else ARRAY[]::text[] end events
          from catalog.agent_invocation i
@@ -233,6 +237,35 @@ pub(crate) async fn capture(
                     entry["error"] = json!(contracts::ReasonCode::StepTimeout);
                 }
                 effect_index += 1;
+            }
+            Some("call_webhook") => {
+                // The single frozen dispatch of this run: its recorded HTTP status,
+                // or UNKNOWN when the send may have happened without a response.
+                entry["output"] = json!({"actionExecutionId":source.action_execution_id});
+                match (&source.webhook_request_id, &source.webhook_outcome) {
+                    (Some(request), Some(outcome)) => {
+                        entry["status"] = "completed".into();
+                        entry["output"]["requestId"] = request.clone().into();
+                        entry["output"]["httpStatus"] = outcome["status"].clone();
+                    }
+                    (Some(request), None) => {
+                        entry["output"]["requestId"] = request.clone().into();
+                        entry["status"] = match source.status.as_str() {
+                            "FAILED" => "failed",
+                            "DISPATCHING" => "running",
+                            _ => "unknown",
+                        }
+                        .into();
+                        if entry["status"] == "unknown" {
+                            entry["error"] = json!(contracts::ReasonCode::ExternalResultUnknown);
+                        }
+                    }
+                    (None, _) if source.timed_out_step.as_deref() == Some(id) => {
+                        entry["status"] = "failed".into();
+                        entry["error"] = json!(contracts::ReasonCode::StepTimeout);
+                    }
+                    (None, _) => entry["output"] = json!({}),
+                }
             }
             _ => return Err("Unknown immutable step action".into()),
         }

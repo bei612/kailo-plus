@@ -2961,7 +2961,7 @@ impl Governance {
         let message_only: bool = sqlx::query_scalar(
             "select exists(select 1 from catalog.automation_version v
             where v.asset_id=($1::jsonb->>'automationVersionAssetId')::uuid
-              and v.automation_resource_id=$2 and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS'))",
+              and v.automation_resource_id=$2 and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS','CALL_WEBHOOK_STEPS'))",
         )
         .bind(&ae.parameters)
         .bind(ae.target_id)

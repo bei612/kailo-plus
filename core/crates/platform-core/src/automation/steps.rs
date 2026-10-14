@@ -120,6 +120,23 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
                         &["id", "name", "if", "action", "topic", "timeout_secs"],
                     ) && step["topic"].is_string()
                 }
+                Some("call_webhook") => {
+                    fields(
+                        step,
+                        &[
+                            "id",
+                            "name",
+                            "if",
+                            "action",
+                            "url",
+                            "method",
+                            "headers",
+                            "secretHeaders",
+                            "body",
+                            "timeout_secs",
+                        ],
+                    ) && super::webhook_step::valid(step)
+                }
                 _ => false,
             };
             // Original Step.timeout_secs on the effect: Core enforces it before dispatch.
@@ -162,6 +179,8 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         json!({"kind":"ADD_REACTION_STEPS","emoji":last["emoji"],"stepsVersion":2,"steps":steps})
     } else if last["action"] == "set_channel_topic" {
         json!({"kind":"SET_CHANNEL_TOPIC_STEPS","topic":last["topic"],"stepsVersion":2,"steps":steps})
+    } else if last["action"] == "call_webhook" {
+        json!({"kind":"CALL_WEBHOOK_STEPS","url":last["url"],"stepsVersion":2,"steps":steps})
     } else {
         json!({"kind":"POST_MESSAGE_STEPS","template":last["text"],"stepsVersion":2,"steps":steps})
     })
@@ -314,13 +333,20 @@ fn valid_timeout(step: &Value) -> bool {
     })
 }
 
+const EFFECTS: [&str; 4] = [
+    "send_message",
+    "add_reaction",
+    "set_channel_topic",
+    "call_webhook",
+];
+
 /// Original Step.timeout_secs of an effect step (send_message, add_reaction,
-/// set_channel_topic); `None` keeps the existing unbounded behaviour.
+/// set_channel_topic, call_webhook); `None` keeps the existing unbounded behaviour.
 pub(crate) fn effect_timeout(step: &Value) -> Option<i64> {
-    if matches!(
-        step["action"].as_str(),
-        Some("send_message" | "add_reaction" | "set_channel_topic")
-    ) {
+    if step["action"]
+        .as_str()
+        .is_some_and(|action| EFFECTS.contains(&action))
+    {
         step["timeout_secs"].as_i64()
     } else {
         None
@@ -395,7 +421,11 @@ pub(crate) fn delays_through_message(
 pub(crate) fn is_native_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS" | "SET_CHANNEL_TOPIC_STEPS"
+        "POST_MESSAGE"
+            | "POST_MESSAGE_STEPS"
+            | "ADD_REACTION_STEPS"
+            | "SET_CHANNEL_TOPIC_STEPS"
+            | "CALL_WEBHOOK_STEPS"
     )
 }
 
@@ -607,6 +637,42 @@ mod tests {
         ] {
             assert!(action(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn webhook_is_the_final_effect_with_its_original_fields_and_deadline() {
+        let steps = json!([{"id":"wait","action":"delay","duration":"1s"},
+            {"id":"hook","name":"Notify","if":"trigger_is_reply","action":"call_webhook",
+             "url":"https://hooks.example.com/notify","method":"POST","timeout_secs":30,
+             "headers":{"Content-Type":"application/json"},
+             "secretHeaders":{"Authorization":{"locator":"t/kv/hook","version":1,"audience":"core"}},
+             "body":"{\"text\":\"{{trigger.text}}\"}"}]);
+        let projected = action(&steps).unwrap();
+        assert_eq!(projected["kind"], "CALL_WEBHOOK_STEPS");
+        assert_eq!(projected["url"], "https://hooks.example.com/notify");
+        assert!(projected.get("template").is_none());
+        assert!(is_native_kind("CALL_WEBHOOK_STEPS"));
+        assert!(supported(&projected));
+        assert!(super::super::webhook_step::requires_elevated_authority(
+            &projected
+        ));
+        assert_eq!(effect_timeout(&steps[1]), Some(30));
+        assert_eq!(delays(&projected).unwrap(), vec![("wait".into(), 1)]);
+        let mut content = json!({});
+        expose(&mut content, &projected).unwrap();
+        assert_eq!(content, json!({"formatVersion":2,"steps":steps}));
+        for invalid in [
+            json!([{"id":"hook","action":"call_webhook"}]),
+            json!([{"id":"hook","action":"call_webhook","url":"https://h.example.com/","target":"x"}]),
+            json!([{"id":"hook","action":"call_webhook","url":"https://h.example.com/"},
+                {"id":"message","action":"send_message","text":"second effect"}]),
+            json!([{"id":"hook","action":"call_webhook","url":"https://h.example.com/"},
+                {"id":"wait","action":"delay","duration":"1s"}]),
+        ] {
+            assert!(action(&invalid).is_err());
+        }
+        // Not an ordered message sequence (format 3) step.
+        assert!(message_sequence(&steps).is_err());
     }
 
     #[test]

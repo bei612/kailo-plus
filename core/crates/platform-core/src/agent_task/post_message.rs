@@ -11,13 +11,13 @@ use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-struct Intent {
-    created_at: DateTime<Utc>,
-    customer_id: String,
-    namespace: String,
-    subject: String,
-    binding_version: i32,
-    meter: crate::openmeter::InvocationMeter,
+pub(super) struct Intent {
+    pub(super) created_at: DateTime<Utc>,
+    pub(super) customer_id: String,
+    pub(super) namespace: String,
+    pub(super) subject: String,
+    pub(super) binding_version: i32,
+    pub(super) meter: crate::openmeter::InvocationMeter,
 }
 
 fn unknown() -> Refusal {
@@ -136,6 +136,27 @@ async fn effect_deadline(
     Ok(Some((id.to_owned(), expired.ok_or_else(unknown)?)))
 }
 
+/// Original Step.timeout_secs: an effect not dispatched by its deadline fails
+/// before any write; a dispatched one keeps reconciliation.
+pub(super) async fn effect_deadline_refusal(
+    state: &ServiceState,
+    invocation: &Invocation,
+    sequence_ordinal: Option<usize>,
+) -> Result<(), Refusal> {
+    if let Some((step, true)) = effect_deadline(state, invocation, sequence_ordinal).await? {
+        sqlx::query(
+            "update catalog.agent_invocation set automation_timed_out_step=$2,updated_at=now()
+             where id=$1 and automation_timed_out_step is null and status in ('CREATED','DISPATCHING')",
+        )
+        .bind(invocation.id)
+        .bind(&step)
+        .execute(&state.pool)
+        .await?;
+        return Err(Refusal::Precondition(ReasonCode::StepTimeout));
+    }
+    Ok(())
+}
+
 /// Earlier accepted effects remain visible and referenced. Cancellation/refusal
 /// stops only later writes; it never describes a partial run as rolled back.
 async fn finish_partial(
@@ -194,6 +215,18 @@ async fn native_template(
     if !template.contains("{{") {
         return render_native_content(template, &Default::default(), action_kind, step_outputs);
     }
+    let context = trigger_context(state, invocation, channel, expected_author).await?;
+    render_native_content(template, &context, action_kind, step_outputs)
+}
+
+/// The original build_trigger_context of this run's verified source, read only
+/// after the ordinary automation/source admission.
+pub(super) async fn trigger_context(
+    state: &ServiceState,
+    invocation: &Invocation,
+    channel: Uuid,
+    expected_author: Option<&str>,
+) -> Result<collab_bridge::workflow_template::TriggerContext, Refusal> {
     let mut context = collab_bridge::workflow_template::TriggerContext {
         channel_id: channel.to_string(),
         ..Default::default()
@@ -253,7 +286,7 @@ async fn native_template(
         "MANUAL" => {}
         _ => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
     }
-    render_native_content(template, &context, action_kind, step_outputs)
+    Ok(context)
 }
 
 fn render_native_content(
@@ -331,6 +364,9 @@ pub(super) async fn advance(
     input: &AgentTaskAdvanceRequest,
     sequence_ordinal: Option<usize>,
 ) -> Response {
+    if invocation.automation_action_kind.as_deref() == Some("CALL_WEBHOOK_STEPS") {
+        return super::call_webhook::advance(state, invocation, input).await;
+    }
     match execute(state, invocation, input, sequence_ordinal).await {
         Ok((status, reason)) => result(invocation.id, status, reason),
         Err(error) => {
@@ -391,20 +427,7 @@ async fn execute(
     let event = match invocation.reply_event_id.as_deref() {
         Some(event) => event.to_owned(),
         None if !cancel && (invocation.status == "CREATED" || sequence_ordinal.is_some()) => {
-            // Original Step.timeout_secs: an effect not dispatched by its deadline
-            // fails before any write; a dispatched one keeps reconciliation.
-            if let Some((step, true)) = effect_deadline(state, invocation, sequence_ordinal).await?
-            {
-                sqlx::query(
-                    "update catalog.agent_invocation set automation_timed_out_step=$2,updated_at=now()
-                     where id=$1 and automation_timed_out_step is null and status in ('CREATED','DISPATCHING')",
-                )
-                .bind(invocation.id)
-                .bind(&step)
-                .execute(&state.pool)
-                .await?;
-                return Err(Refusal::Precondition(ReasonCode::StepTimeout));
-            }
+            effect_deadline_refusal(state, invocation, sequence_ordinal).await?;
             let (event, final_effect) = publish(state, invocation, input, sequence_ordinal).await?;
             if !final_effect {
                 // The next original Activity reconciles this event before timers
@@ -431,7 +454,7 @@ async fn execute(
     }
 }
 
-async fn fail_before_dispatch(
+pub(super) async fn fail_before_dispatch(
     state: &ServiceState,
     invocation: &Invocation,
     refusal: &Refusal,
@@ -445,7 +468,7 @@ async fn fail_before_dispatch(
     let changed = sqlx::query(
         "update catalog.agent_invocation set status='FAILED',updated_at=now()
         where id=$1 and status in ('CREATED','DISPATCHING') and action_execution_id=$2 and reply_event_id is null
-        and post_message_intent is null and runtime_turn_id is null and native_status is null
+        and post_message_intent is null and webhook_intent is null and runtime_turn_id is null and native_status is null
         and not exists(select 1 from unnest(automation_step_event_ids) e where not catalog.automation_step_accepted(id,e))",
     )
     .bind(invocation.id)
@@ -474,7 +497,7 @@ async fn fail_before_dispatch(
     Ok(true)
 }
 
-async fn current_meter(
+pub(super) async fn current_meter(
     state: &ServiceState,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     invocation: &Invocation,

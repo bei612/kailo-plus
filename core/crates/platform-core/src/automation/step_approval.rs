@@ -304,7 +304,8 @@ pub(crate) async fn gate(
             "POST_MESSAGE"
             | "POST_MESSAGE_STEPS"
             | "ADD_REACTION_STEPS"
-            | "SET_CHANNEL_TOPIC_STEPS",
+            | "SET_CHANNEL_TOPIC_STEPS"
+            | "CALL_WEBHOOK_STEPS",
         ) => true,
         Some("AGENT_TURN") => false,
         _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),

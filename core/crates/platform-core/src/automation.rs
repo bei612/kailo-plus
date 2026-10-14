@@ -25,6 +25,7 @@ pub(crate) mod step_approval;
 pub(crate) mod steps;
 pub(crate) mod trigger_condition;
 mod webhook_secret;
+pub(crate) mod webhook_step;
 pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
 pub(crate) use schedule::converge_scope_schedules;
@@ -232,6 +233,77 @@ async fn project_executor(
         return Err(Refusal::Unavailable(
             "Automation executor 投影尚未精确收敛".into(),
         ));
+    }
+    Ok(())
+}
+
+/// AgentGateway egress listener for original call_webhook (06 §9.1). Without
+/// it the capability is not offered: saving and running are blocked.
+pub(crate) fn webhook_egress() -> Result<reqwest::Url, Refusal> {
+    let url = std::env::var("AGENTGATEWAY_EGRESS_URL")
+        .ok()
+        .and_then(|raw| reqwest::Url::parse(&raw).ok())
+        .filter(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none()
+        });
+    url.ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))
+}
+
+/// Original owner_authority_allows(role, needs_elevated): the Kailo Workspace
+/// is the original channel, and owner/admin is its `manage` permission.
+pub(crate) async fn elevated_authority(
+    g: &Governance,
+    workspace: Uuid,
+    principal: Uuid,
+) -> Result<String, Refusal> {
+    let checked = g
+        .spicedb
+        .check(
+            "workspace",
+            &workspace.to_string(),
+            "manage",
+            &principal.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Workflow webhook authority 不可核验".into()))?;
+    if checked.zed_token.is_empty() {
+        return Err(Refusal::Unavailable(
+            "Workflow webhook authority 缺原生 revision".into(),
+        ));
+    }
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Ok(checked.zed_token)
+}
+
+/// Saving or pinning a call_webhook definition: egress offered, header secrets
+/// are exact same-Tenant Core SecretRefs, and every principal holds the
+/// original elevated authority.
+async fn webhook_management(
+    g: &Governance,
+    tenant: Uuid,
+    workspace: Uuid,
+    principals: &[Uuid],
+    action: &Value,
+) -> Result<(), Refusal> {
+    if !webhook_step::requires_elevated_authority(action) {
+        return Ok(());
+    }
+    webhook_egress()?;
+    let audience = std::env::var("OPENBAO_SERVICE_IDENTITY")
+        .map_err(|_| Refusal::Unavailable("OpenBao service identity unavailable".into()))?;
+    if !webhook_step::secret_scope(action, &g.secrets.tenant_locator(tenant, ""), &audience) {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    for principal in principals {
+        elevated_authority(g, workspace, *principal).await?;
     }
     Ok(())
 }
@@ -734,6 +806,14 @@ pub(crate) async fn management_prewrite(
                 .ok_or_else(invalid_management)?,
         )?;
         let workspace = ae.workspace_id.ok_or_else(invalid_management)?;
+        webhook_management(
+            g,
+            ae.tenant_id,
+            workspace,
+            &[ae.initiator_principal_id],
+            &normalized["action"],
+        )
+        .await?;
         sqlx::query("insert into catalog.resource
             (id,tenant_id,type_key,owner_principal_id,home_workspace_id,component_type_key,native_type,native_id,state,version,projection_action_execution_id)
             values($1,$2,'automation',$3,$4,$5,'automation',$1::text,'PROVISIONING',1,$6)")
@@ -774,6 +854,14 @@ pub(crate) async fn management_prewrite(
                 row.executor_installation_resource_id,
                 ae.initiator_principal_id,
                 &normalized,
+            )
+            .await?;
+            webhook_management(
+                g,
+                ae.tenant_id,
+                row.workspace_id,
+                &[ae.initiator_principal_id],
+                &normalized["action"],
             )
             .await?;
             management_insert_version(tx, ae, row.id, normalized).await
@@ -831,6 +919,14 @@ pub(crate) async fn management_prewrite(
                 row.executor_installation_resource_id,
                 row.owner_principal_id,
                 &version.content,
+            )
+            .await?;
+            webhook_management(
+                g,
+                ae.tenant_id,
+                row.workspace_id,
+                &[ae.initiator_principal_id, row.owner_principal_id],
+                &version.content["action"],
             )
             .await?;
             management_grant(g, tx, &row, p).await?;
@@ -1795,6 +1891,14 @@ async fn fresh(
         }
         revision = Some(checked.zed_token);
     }
+    // Original WorkflowDef::requires_elevated_authority (SEC-006): a definition
+    // that sends channel data to an external destination needs the owner's
+    // current Workspace management authority at every run and dispatch.
+    if webhook_step::requires_elevated_authority(&row.action) {
+        webhook_egress()?;
+        let token = elevated_authority(g, row.workspace_id, row.owner_principal_id).await?;
+        revision = Some(token);
+    }
     // DD-107: the registered meter set is the maximum for this Action. A
     // template publication does not request or consume model capacity/quota.
     let mut effective = def.clone();
@@ -1847,7 +1951,7 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
                  and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is not distinct from $4::text
                  and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS')))
+                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS','CALL_WEBHOOK_STEPS')))
              or (not $6 and not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
              or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
                and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
@@ -2083,7 +2187,8 @@ async fn fresh_executor(
             "POST_MESSAGE"
             | "POST_MESSAGE_STEPS"
             | "ADD_REACTION_STEPS"
-            | "SET_CHANNEL_TOPIC_STEPS",
+            | "SET_CHANNEL_TOPIC_STEPS"
+            | "CALL_WEBHOOK_STEPS",
         ) => post_message::fresh(state, tx, &runtime_scope(row)).await,
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     }
@@ -2428,6 +2533,7 @@ fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
                 | "POST_MESSAGE_STEPS"
                 | "ADD_REACTION_STEPS"
                 | "SET_CHANNEL_TOPIC_STEPS"
+                | "CALL_WEBHOOK_STEPS"
         )
     ) && matches!(
         trigger.get("kind").and_then(Value::as_str),
