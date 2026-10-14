@@ -11,6 +11,8 @@ import { cn } from "./profile/buzz/shared/lib/cn";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { WorkflowDurationField } from "./workflow-duration-field";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
+import { WorkflowMessageTextCondition } from "./workflow-message-text-condition-editor";
+import { supportsMessageTextCondition } from "./workflow-message-text-condition";
 
 // Original workflowFormTypes.ts::nextStepId. Step references are not request IDs.
 const STEP_ID_PATTERN = /^step_(\d+)$/;
@@ -69,26 +71,29 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
     if (typeof row.id !== "string" || !row.id.trim() || ids.has(row.id)
       || (row.name !== undefined && (typeof row.name !== "string" || !row.name.trim()))) return false;
     ids.add(row.id);
+    // Original Step.if: a non-empty expression; Core checks variables and syntax.
+    if (row.if !== undefined && (typeof row.if !== "string" || !row.if.trim()
+      || new TextEncoder().encode(row.if).length > 4096)) return false;
     if (formatVersion === 3 && row.action === "send_message") {
       messages += 1;
-      return Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
+      return Object.keys(row).every((key) => ["id", "name", "if", "action", "text"].includes(key))
         && typeof row.text === "string" && !!row.text.trim();
     }
     if (formatVersion === 3 && index === value.length - 1) return false;
     if (index === value.length - 1) return row.action === "add_reaction"
-      ? Object.keys(row).every((key) => ["id", "name", "action", "emoji"].includes(key))
+      ? Object.keys(row).every((key) => ["id", "name", "if", "action", "emoji"].includes(key))
         && typeof row.emoji === "string" && !!row.emoji.trim()
       : row.action === "set_channel_topic"
-        ? Object.keys(row).every((key) => ["id", "name", "action", "topic"].includes(key)) && typeof row.topic === "string"
-      : Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
+        ? Object.keys(row).every((key) => ["id", "name", "if", "action", "topic"].includes(key)) && typeof row.topic === "string"
+      : Object.keys(row).every((key) => ["id", "name", "if", "action", "text"].includes(key))
         && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
     if (row.action === "request_approval") {
       if (approval || messages > 0) return false;
       approval = true;
-      return Object.keys(row).every((key) => ["id", "name", "action", "approvalPolicy", "message"].includes(key))
+      return Object.keys(row).every((key) => ["id", "name", "if", "action", "approvalPolicy", "message"].includes(key))
         && validApprovalPolicy(row.approvalPolicy) && typeof row.message === "string" && !!row.message.trim();
     }
-    return Object.keys(row).every((key) => ["id", "name", "action", "duration", "timeout_secs"].includes(key))
+    return Object.keys(row).every((key) => ["id", "name", "if", "action", "duration", "timeout_secs"].includes(key))
       && validStepTimeout(row.timeout_secs)
       && row.action === "delay" && typeof row.duration === "string"
       && parseDurationSeconds(row.duration) !== null && parseDurationSeconds(row.duration)! <= 9223372036;
@@ -118,6 +123,12 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
   const [expanded, setExpanded] = useState<"details" | "run-controls" | null>(null);
   const timeoutDraft = step.timeoutSecs ?? (step.timeout_secs === undefined ? "" : formatDurationSeconds(step.timeout_secs));
   const prefix = `wf-step-${index}`;
+  // Original WorkflowStepCard runControlsSummary.
+  const conditionSupported = supportsMessageTextCondition(trigger);
+  const conditional = Boolean(step.if?.trim());
+  const timeoutLabel = step.action === "delay" ? timeoutDraft.trim() : "";
+  const runControlsSummary = conditional && timeoutLabel ? t("workflows.steps.conditionalTimeout", {timeout: timeoutLabel})
+    : conditional ? t("workflows.steps.conditional") : timeoutLabel || t("workflows.steps.default");
   return <div className={cn("space-y-0", !bare && "rounded-lg border border-border/70 bg-muted/10 p-3")}>
     {showHeader ? <div className="mb-3 flex items-center justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{t("workflows.steps.number", {number: index + 1})}</span>
@@ -175,18 +186,24 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
         </div><p className="text-xs text-muted-foreground">{t("workflows.steps.channelTarget")}</p></div>}
     </section>
     <section className="divide-y divide-border/50 border-t border-border/50">
-      {step.action === "delay" ? <div>
+      {step.action === "delay" || conditionSupported ? <div>
         <button aria-expanded={expanded === "run-controls"} disabled={disabled}
           className="flex min-h-12 w-full items-center gap-3 py-3 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => setExpanded((value) => value === "run-controls" ? null : "run-controls")} type="button">
           <span className="min-w-0 flex-1 truncate text-base font-medium">{t("workflows.steps.runControls")}</span>
-          <span className="max-w-40 truncate text-sm text-muted-foreground">{timeoutDraft.trim() || t("workflows.steps.default")}</span>
+          <span className="max-w-40 truncate text-sm text-muted-foreground">{runControlsSummary}</span>
           <ChevronRight className={cn("h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-150 motion-reduce:transition-none", expanded === "run-controls" && "rotate-90")} />
         </button>
         {expanded === "run-controls" ? <div className="animate-in pb-4 pt-1 fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none"><div className="space-y-4">
-          <WorkflowDurationField disabled={disabled} fallbackSeconds={DEFAULT_STEP_TIMEOUT_SECONDS}
+          {conditionSupported ? <WorkflowMessageTextCondition disabled={disabled} value={step.if ?? ""}
+            onChange={(condition) => {
+              const next = { ...step };
+              if (condition) next.if = condition; else delete next.if;
+              onUpdate(next);
+            }} /> : null}
+          {step.action === "delay" ? <WorkflowDurationField disabled={disabled} fallbackSeconds={DEFAULT_STEP_TIMEOUT_SECONDS}
             id={`${prefix}-timeout-secs`} label={t("workflows.steps.timeout")} placeholder="5m"
-            value={timeoutDraft} onChange={(timeoutSecs) => onUpdate({...step, timeoutSecs})} />
+            value={timeoutDraft} onChange={(timeoutSecs) => onUpdate({...step, timeoutSecs})} /> : null}
         </div></div> : null}
       </div> : null}
       <div>

@@ -58,6 +58,7 @@ import { reactionConditionValue } from "./workflow-reaction-condition";
 import { getWorkflowActivationWarning } from "./workflow-activation-warning";
 import { WorkflowActivationDialog } from "./workflow-activation-dialog";
 import { WorkflowUnavailableDialog } from "./workflow-unavailable-dialog";
+import { supportsMessageTextCondition } from "./workflow-message-text-condition";
 import { useWorkflowTriggerPresentation } from "./workflow-trigger-presentation";
 import { useWorkflowMessageScope } from "./workflow-message-host";
 import { useWorkflowTriggerMessage } from "./workflow-message-picker";
@@ -1046,8 +1047,10 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
       && content.trigger.scheduleSpec.cron.trim().split(/\s+/).length !== 5;
     // Original yamlToFormState cannot represent empty/untrimmed descriptions.
     // Keep the exact authorized version in YAML rather than dropping its text.
+    // Original yamlToFormState: "Step conditions are only available in the YAML editor".
     const needsYaml = cronNeedsYaml || (content?.description !== undefined
-      && (!content.description || content.description.trim() !== content.description));
+      && (!content.description || content.description.trim() !== content.description))
+      || !!content?.steps?.some((step) => step.if !== undefined);
     setEditorMode(needsYaml ? "yaml" : "form"); setYamlText(needsYaml ? stringify(content) : ""); setEditorError(false);
     formDraftYaml.current = "";
     setInitialDraft(null); setDraftEpoch((epoch) => epoch + 1); setDiscardOpen(false);
@@ -1101,6 +1104,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
       setEditorMode(mode); setEditorError(false); return;
     }
     if (!contentUsable(yamlContent)
+      || !!yamlContent.steps?.some((step) => step.if !== undefined)
       || (yamlContent.description !== undefined && (!yamlContent.description || yamlContent.description.trim() !== yamlContent.description))
       || (yamlContent.trigger.scheduleSpec?.cron !== undefined
       && cronExpressionError(yamlContent.trigger.scheduleSpec.cron))) { setEditorError(true); return; }
@@ -1185,6 +1189,10 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
               .find((candidate) => candidate === event.target.value);
             if (value) {
               setTrigger(value);
+              // Original WorkflowFormBuilder: an unsupported trigger clears step conditions.
+              if (!supportsMessageTextCondition(value)) setSteps((current) => current.map((step) => {
+                const next = { ...step }; delete next.if; return next;
+              }));
               if (value === TriggerKind.Schedule && !interval && !cron) {
                 setScheduleMode("cron"); setCron(defaultScheduleTrigger().cron ?? "");
               }
