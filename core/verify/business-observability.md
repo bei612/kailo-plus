@@ -25,8 +25,9 @@
 - 用量状态（`OperationUsageState`）：无事件时按动作定义 `obs_usage_source` 与派发事实给出
   `NOT_METERED`/`NOT_DISPATCHED`/`BILLING_UNAVAILABLE`；有事件时 `UNKNOWN` 优先于 `FAILED`，
   再到 `SETTLEMENT_PENDING`（PENDING_PUBLISH/ACCEPTED），全部 COMMITTED 才是 `COMMITTED`。
-- 耗时只取确定终态：Workflow 终态取 TaskProjection 写回时间，同步动作取同一 AE 的
-  DISPATCH/OUTCOME 审计时间；等待、运行、不明、撤销不计入平均值，但单列计数。
+- 耗时只取确定终态：Workflow 终态取 TaskProjection 终态写回时间（含兜底对账收敛的写回，
+  因此长时间待对账的调用会如实拉长平均值），同步动作取同一 operation 的 DISPATCH/OUTCOME
+  审计时间（审计按 operation 追加，`action_execution_id` 可空）；等待、运行、不明、撤销不计入平均值，但单列计数。
 - meter：原生 meter 未声明 `workspace_id` 维度时 Workspace 视图显示
   `WORKSPACE_DIMENSION_UNAVAILABLE`，不按时间或 outbox 推算；查询成功且无数据显示
   `NO_COMMITTED_USAGE`；查询失败显示 `UNAVAILABLE`，三者都不给数值。

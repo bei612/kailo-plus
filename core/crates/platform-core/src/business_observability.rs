@@ -54,8 +54,10 @@ fn operation_query(filter: &str) -> String {
                then tp.updated_at
              when ae.temporal_workflow_id is null and ae.gate_state = 'ALLOWED'
                   and ae.dispatch_state = 'DISPATCHED'
+               -- 审计行按 operation 追加（action_execution_id 可空），同步结果以同一
+               -- operation 的 DISPATCH/OUTCOME 为确定终态时间
                then (select max(a.occurred_at) from audit.audit_event a
-                     where a.operation_id = ae.operation_id and a.action_execution_id = ae.id
+                     where a.tenant_id = ae.tenant_id and a.operation_id = ae.operation_id
                        and a.event_type in ('DISPATCH','OUTCOME'))
            end as terminal_at,
            coalesce((select jsonb_agg(jsonb_build_object(

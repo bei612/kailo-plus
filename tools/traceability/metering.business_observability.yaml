@@ -27,7 +27,7 @@ implementation:
   paths: [core/crates/platform-core/src/business_observability.rs, core/crates/platform-core/src/openmeter.rs, core/crates/platform-core/src/audit_views.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/react/business-observability.tsx, client-kit/ts/platform/src/react/navigation.tsx, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/i18n.ts, client-kit/ts/platform/src/governance.ts, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop/src/app/routes/platform.$section.tsx]
   surfaces: [web, desktop]
   schemas: [contracts/api/usage_billing_view.schema.json, contracts/api/business_operation_page.schema.json, contracts/api/business_operation_view.schema.json, contracts/api/business_operation_summary.schema.json, contracts/api/business_operation_phase_count.schema.json, contracts/api/operation_usage_count.schema.json, contracts/enums/business_operation_phase.schema.json, contracts/enums/operation_usage_state.schema.json, contracts/enums/usage_settlement_status.schema.json, contracts/enums/usage_customer_state.schema.json, contracts/enums/meter_usage_state.schema.json, contracts/enums/usage_section_state.schema.json]
-  migrations: []
+  migrations: [core/migrations/20261014200000_usage_event_by_operation.up.sql, core/migrations/20261014200000_usage_event_by_operation.down.sql]
 
 runtime:
   routes: ["/api/v1/operations", "/api/v1/operations/summary", "/api/v1/usage-billing"]
