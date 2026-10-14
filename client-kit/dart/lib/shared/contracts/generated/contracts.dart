@@ -166,6 +166,7 @@
 //     final applicationModelGatewayConfig = applicationModelGatewayConfigFromJson(jsonString);
 //     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
+//     final automationSecretRef = automationSecretRefFromJson(jsonString);
 //     final automationStep = automationStepFromJson(jsonString);
 //     final automationStepTrace = automationStepTraceFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
@@ -1258,6 +1259,12 @@ AutomationScheduleSpec automationScheduleSpecFromJson(String str) =>
     AutomationScheduleSpec.fromJson(json.decode(str));
 
 String automationScheduleSpecToJson(AutomationScheduleSpec data) =>
+    json.encode(data.toJson());
+
+AutomationSecretRef automationSecretRefFromJson(String str) =>
+    AutomationSecretRef.fromJson(json.decode(str));
+
+String automationSecretRefToJson(AutomationSecretRef data) =>
     json.encode(data.toJson());
 
 AutomationStep automationStepFromJson(String str) =>
@@ -3352,7 +3359,7 @@ class LaunchDescriptorClass {
   final String editorOrigin;
   final String expiresAt;
   final Map<String, String> formFields;
-  final Method method;
+  final LaunchDescriptorMethod method;
 
   LaunchDescriptorClass({
     required this.actionUrl,
@@ -3370,7 +3377,7 @@ class LaunchDescriptorClass {
         formFields: Map.from(
           json["formFields"],
         ).map((k, v) => MapEntry<String, String>(k, v)),
-        method: methodValues.map[json["method"]]!,
+        method: launchDescriptorMethodValues.map[json["method"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -3380,13 +3387,16 @@ class LaunchDescriptorClass {
     "formFields": Map.from(
       formFields,
     ).map((k, v) => MapEntry<String, dynamic>(k, v)),
-    "method": methodValues.reverse[method],
+    "method": launchDescriptorMethodValues.reverse[method],
   });
 }
 
-enum Method { GET, POST }
+enum LaunchDescriptorMethod { GET, POST }
 
-final methodValues = EnumValues({"GET": Method.GET, "POST": Method.POST});
+final launchDescriptorMethodValues = EnumValues({
+  "GET": LaunchDescriptorMethod.GET,
+  "POST": LaunchDescriptorMethod.POST,
+});
 
 ///DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
 ///PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
@@ -4865,16 +4875,24 @@ final automationResultTargetValues = EnumValues({
   "TRIGGER_THREAD": AutomationResultTarget.TRIGGER_THREAD,
 });
 
-///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+///requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
 class StepElement {
   final ActionEnum action;
 
   ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///原请求体模板；不保存响应正文。
+  final String? body;
   final String? duration;
 
   ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
   final String? emoji;
+
+  ///原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+  ///者）不得明文保存，必须改用 secretHeaders。
+  final Map<String, String>? headers;
   final String id;
 
   ///固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
@@ -4883,28 +4901,47 @@ class StepElement {
   ///ActionExecution；求值错误使该运行在任何副作用前失败。
   final String? automationStepIf;
   final String? message;
+
+  ///原 HTTP 方法，缺省 POST。
+  final StepMethod? method;
   final String? name;
+
+  ///Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+  ///注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+  final Map<String, SecretHeaderValue>? secretHeaders;
   final String? text;
 
-  ///固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-  ///执行，缺省保持既有版本行为，不给历史补写默认值。
+  ///固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+  ///执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+  ///自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+  ///的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
   final int? timeoutSecs;
 
   ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
   final String? topic;
 
+  ///固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+  ///端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+  ///AgentGateway 出站，不跟随重定向。
+  final String? url;
+
   StepElement({
     required this.action,
     this.approvalPolicy,
+    this.body,
     this.duration,
     this.emoji,
+    this.headers,
     required this.id,
     this.automationStepIf,
     this.message,
+    this.method,
     this.name,
+    this.secretHeaders,
     this.text,
     this.timeoutSecs,
     this.topic,
+    this.url,
   });
 
   factory StepElement.fromJson(Map<String, dynamic> json) => StepElement(
@@ -4912,34 +4949,64 @@ class StepElement {
     approvalPolicy: json["approvalPolicy"] == null
         ? null
         : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+    body: json["body"],
     duration: json["duration"],
     emoji: json["emoji"],
+    headers: json["headers"] == null
+        ? null
+        : Map.from(
+            json["headers"]!,
+          ).map((k, v) => MapEntry<String, String>(k, v)),
     id: json["id"],
     automationStepIf: json["if"],
     message: json["message"],
+    method: json["method"] == null
+        ? null
+        : stepMethodValues.map[json["method"]]!,
     name: json["name"],
+    secretHeaders: json["secretHeaders"] == null
+        ? null
+        : Map.from(json["secretHeaders"]!).map(
+            (k, v) => MapEntry<String, SecretHeaderValue>(
+              k,
+              SecretHeaderValue.fromJson(v),
+            ),
+          ),
     text: json["text"],
     timeoutSecs: json["timeout_secs"],
     topic: json["topic"],
+    url: json["url"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": actionEnumValues.reverse[action],
     "approvalPolicy": approvalPolicy?.toJson(),
+    "body": body,
     "duration": duration,
     "emoji": emoji,
+    "headers": headers == null
+        ? null
+        : Map.from(headers!).map((k, v) => MapEntry<String, dynamic>(k, v)),
     "id": id,
     "if": automationStepIf,
     "message": message,
+    "method": stepMethodValues.reverse[method],
     "name": name,
+    "secretHeaders": secretHeaders == null
+        ? null
+        : Map.from(
+            secretHeaders!,
+          ).map((k, v) => MapEntry<String, dynamic>(k, v.toJson())),
     "text": text,
     "timeout_secs": timeoutSecs,
     "topic": topic,
+    "url": url,
   });
 }
 
 enum ActionEnum {
   ADD_REACTION,
+  CALL_WEBHOOK,
   DELAY,
   REQUEST_APPROVAL,
   SEND_MESSAGE,
@@ -4948,11 +5015,49 @@ enum ActionEnum {
 
 final actionEnumValues = EnumValues({
   "add_reaction": ActionEnum.ADD_REACTION,
+  "call_webhook": ActionEnum.CALL_WEBHOOK,
   "delay": ActionEnum.DELAY,
   "request_approval": ActionEnum.REQUEST_APPROVAL,
   "send_message": ActionEnum.SEND_MESSAGE,
   "set_channel_topic": ActionEnum.SET_CHANNEL_TOPIC,
 });
+
+///原 HTTP 方法，缺省 POST。
+enum StepMethod { DELETE, GET, PATCH, POST, PUT }
+
+final stepMethodValues = EnumValues({
+  "DELETE": StepMethod.DELETE,
+  "GET": StepMethod.GET,
+  "PATCH": StepMethod.PATCH,
+  "POST": StepMethod.POST,
+  "PUT": StepMethod.PUT,
+});
+
+///同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+class SecretHeaderValue {
+  final String audience;
+  final String locator;
+  final int version;
+
+  SecretHeaderValue({
+    required this.audience,
+    required this.locator,
+    required this.version,
+  });
+
+  factory SecretHeaderValue.fromJson(Map<String, dynamic> json) =>
+      SecretHeaderValue(
+        audience: json["audience"],
+        locator: json["locator"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "version": version,
+  });
+}
 
 class ContentTrigger {
   ///固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
@@ -9063,6 +9168,12 @@ class ExecutionTraceOutput {
   final String? approvalWorkflowId;
   final String? eventId;
   final int? historyEventId;
+
+  ///call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+  final int? httpStatus;
+
+  ///call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+  final String? requestId;
   final String? runId;
   final String? workflowId;
 
@@ -9071,6 +9182,8 @@ class ExecutionTraceOutput {
     this.approvalWorkflowId,
     this.eventId,
     this.historyEventId,
+    this.httpStatus,
+    this.requestId,
     this.runId,
     this.workflowId,
   });
@@ -9081,6 +9194,8 @@ class ExecutionTraceOutput {
         approvalWorkflowId: json["approvalWorkflowId"],
         eventId: json["eventId"],
         historyEventId: json["historyEventId"],
+        httpStatus: json["httpStatus"],
+        requestId: json["requestId"],
         runId: json["runId"],
         workflowId: json["workflowId"],
       );
@@ -9090,6 +9205,8 @@ class ExecutionTraceOutput {
     "approvalWorkflowId": approvalWorkflowId,
     "eventId": eventId,
     "historyEventId": historyEventId,
+    "httpStatus": httpStatus,
+    "requestId": requestId,
     "runId": runId,
     "workflowId": workflowId,
   });
@@ -16263,16 +16380,50 @@ class AutomationScheduleSpec {
   });
 }
 
-///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+///同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+class AutomationSecretRef {
+  final String audience;
+  final String locator;
+  final int version;
+
+  AutomationSecretRef({
+    required this.audience,
+    required this.locator,
+    required this.version,
+  });
+
+  factory AutomationSecretRef.fromJson(Map<String, dynamic> json) =>
+      AutomationSecretRef(
+        audience: json["audience"],
+        locator: json["locator"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "version": version,
+  });
+}
+
+///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+///requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
 class AutomationStep {
   final ActionEnum action;
 
   ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///原请求体模板；不保存响应正文。
+  final String? body;
   final String? duration;
 
   ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
   final String? emoji;
+
+  ///原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+  ///者）不得明文保存，必须改用 secretHeaders。
+  final Map<String, String>? headers;
   final String id;
 
   ///固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
@@ -16281,28 +16432,47 @@ class AutomationStep {
   ///ActionExecution；求值错误使该运行在任何副作用前失败。
   final String? automationStepIf;
   final String? message;
+
+  ///原 HTTP 方法，缺省 POST。
+  final StepMethod? method;
   final String? name;
+
+  ///Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+  ///注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+  final Map<String, SecretHeaderValue>? secretHeaders;
   final String? text;
 
-  ///固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-  ///执行，缺省保持既有版本行为，不给历史补写默认值。
+  ///固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+  ///执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+  ///自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+  ///的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
   final int? timeoutSecs;
 
   ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
   final String? topic;
 
+  ///固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+  ///端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+  ///AgentGateway 出站，不跟随重定向。
+  final String? url;
+
   AutomationStep({
     required this.action,
     this.approvalPolicy,
+    this.body,
     this.duration,
     this.emoji,
+    this.headers,
     required this.id,
     this.automationStepIf,
     this.message,
+    this.method,
     this.name,
+    this.secretHeaders,
     this.text,
     this.timeoutSecs,
     this.topic,
+    this.url,
   });
 
   factory AutomationStep.fromJson(Map<String, dynamic> json) => AutomationStep(
@@ -16310,29 +16480,58 @@ class AutomationStep {
     approvalPolicy: json["approvalPolicy"] == null
         ? null
         : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+    body: json["body"],
     duration: json["duration"],
     emoji: json["emoji"],
+    headers: json["headers"] == null
+        ? null
+        : Map.from(
+            json["headers"]!,
+          ).map((k, v) => MapEntry<String, String>(k, v)),
     id: json["id"],
     automationStepIf: json["if"],
     message: json["message"],
+    method: json["method"] == null
+        ? null
+        : stepMethodValues.map[json["method"]]!,
     name: json["name"],
+    secretHeaders: json["secretHeaders"] == null
+        ? null
+        : Map.from(json["secretHeaders"]!).map(
+            (k, v) => MapEntry<String, SecretHeaderValue>(
+              k,
+              SecretHeaderValue.fromJson(v),
+            ),
+          ),
     text: json["text"],
     timeoutSecs: json["timeout_secs"],
     topic: json["topic"],
+    url: json["url"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": actionEnumValues.reverse[action],
     "approvalPolicy": approvalPolicy?.toJson(),
+    "body": body,
     "duration": duration,
     "emoji": emoji,
+    "headers": headers == null
+        ? null
+        : Map.from(headers!).map((k, v) => MapEntry<String, dynamic>(k, v)),
     "id": id,
     "if": automationStepIf,
     "message": message,
+    "method": stepMethodValues.reverse[method],
     "name": name,
+    "secretHeaders": secretHeaders == null
+        ? null
+        : Map.from(
+            secretHeaders!,
+          ).map((k, v) => MapEntry<String, dynamic>(k, v.toJson())),
     "text": text,
     "timeout_secs": timeoutSecs,
     "topic": topic,
+    "url": url,
   });
 }
 
@@ -16385,6 +16584,12 @@ class AutomationStepTraceOutput {
   final String? approvalWorkflowId;
   final String? eventId;
   final int? historyEventId;
+
+  ///call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+  final int? httpStatus;
+
+  ///call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+  final String? requestId;
   final String? runId;
   final String? workflowId;
 
@@ -16393,6 +16598,8 @@ class AutomationStepTraceOutput {
     this.approvalWorkflowId,
     this.eventId,
     this.historyEventId,
+    this.httpStatus,
+    this.requestId,
     this.runId,
     this.workflowId,
   });
@@ -16403,6 +16610,8 @@ class AutomationStepTraceOutput {
         approvalWorkflowId: json["approvalWorkflowId"],
         eventId: json["eventId"],
         historyEventId: json["historyEventId"],
+        httpStatus: json["httpStatus"],
+        requestId: json["requestId"],
         runId: json["runId"],
         workflowId: json["workflowId"],
       );
@@ -16412,6 +16621,8 @@ class AutomationStepTraceOutput {
     "approvalWorkflowId": approvalWorkflowId,
     "eventId": eventId,
     "historyEventId": historyEventId,
+    "httpStatus": httpStatus,
+    "requestId": requestId,
     "runId": runId,
     "workflowId": workflowId,
   });
@@ -17541,7 +17752,7 @@ class DocumentLaunchDescriptor {
   final String editorOrigin;
   final String expiresAt;
   final Map<String, String> formFields;
-  final Method method;
+  final LaunchDescriptorMethod method;
 
   DocumentLaunchDescriptor({
     required this.actionUrl,
@@ -17559,7 +17770,7 @@ class DocumentLaunchDescriptor {
         formFields: Map.from(
           json["formFields"],
         ).map((k, v) => MapEntry<String, String>(k, v)),
-        method: methodValues.map[json["method"]]!,
+        method: launchDescriptorMethodValues.map[json["method"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -17569,7 +17780,7 @@ class DocumentLaunchDescriptor {
     "formFields": Map.from(
       formFields,
     ).map((k, v) => MapEntry<String, dynamic>(k, v)),
-    "method": methodValues.reverse[method],
+    "method": launchDescriptorMethodValues.reverse[method],
   });
 }
 

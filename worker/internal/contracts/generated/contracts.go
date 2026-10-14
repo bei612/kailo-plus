@@ -499,6 +499,9 @@
 //    automationScheduleSpec, err := UnmarshalAutomationScheduleSpec(bytes)
 //    bytes, err = automationScheduleSpec.Marshal()
 //
+//    automationSecretRef, err := UnmarshalAutomationSecretRef(bytes)
+//    bytes, err = automationSecretRef.Marshal()
+//
 //    automationStep, err := UnmarshalAutomationStep(bytes)
 //    bytes, err = automationStep.Marshal()
 //
@@ -2390,6 +2393,16 @@ func (r *AutomationScheduleSpec) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationSecretRef(data []byte) (AutomationSecretRef, error) {
+	var r AutomationSecretRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationSecretRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationStep(data []byte) (AutomationStep, error) {
 	var r AutomationStep
 	err := json.Unmarshal(data, &r)
@@ -3563,11 +3576,11 @@ type AdapterProtocolSessionLaunchResponse struct {
 // DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
 // credentials are only string form fields, never a persisted Task, chat or ContentReference.
 type LaunchDescriptorClass struct {
-	ActionURL    string            `json:"actionUrl"`
-	EditorOrigin string            `json:"editorOrigin"`
-	ExpiresAt    string            `json:"expiresAt"`
-	FormFields   map[string]string `json:"formFields"`
-	Method       Method            `json:"method"`
+	ActionURL    string                 `json:"actionUrl"`
+	EditorOrigin string                 `json:"editorOrigin"`
+	ExpiresAt    string                 `json:"expiresAt"`
+	FormFields   map[string]string      `json:"formFields"`
+	Method       LaunchDescriptorMethod `json:"method"`
 }
 
 // DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
@@ -3960,28 +3973,52 @@ type ApprovalPolicyElement struct {
 	Version int64  `json:"version"`
 }
 
-// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
 type StepElement struct {
 	Action ActionEnum `json:"action"`
 	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
-	Duration       *string                `json:"duration,omitempty"`
+	// 原请求体模板；不保存响应正文。
+	Body     *string `json:"body,omitempty"`
+	Duration *string `json:"duration,omitempty"`
 	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
 	Emoji *string `json:"emoji,omitempty"`
-	ID    string  `json:"id"`
+	// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+	// 者）不得明文保存，必须改用 secretHeaders。
+	Headers map[string]string `json:"headers,omitempty"`
+	ID      string            `json:"id"`
 	// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
 	// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
 	// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
 	// ActionExecution；求值错误使该运行在任何副作用前失败。
 	If      *string `json:"if,omitempty"`
 	Message *string `json:"message,omitempty"`
-	Name    *string `json:"name,omitempty"`
-	Text    *string `json:"text,omitempty"`
-	// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-	// 执行，缺省保持既有版本行为，不给历史补写默认值。
+	// 原 HTTP 方法，缺省 POST。
+	Method *StepMethod `json:"method,omitempty"`
+	Name   *string     `json:"name,omitempty"`
+	// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+	// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+	SecretHeaders map[string]SecretHeaderValue `json:"secretHeaders,omitempty"`
+	Text          *string                      `json:"text,omitempty"`
+	// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+	// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+	// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+	// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
 	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
 	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
 	Topic *string `json:"topic,omitempty"`
+	// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+	// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+	// AgentGateway 出站，不跟随重定向。
+	URL *string `json:"url,omitempty"`
+}
+
+// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+type SecretHeaderValue struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -4930,8 +4967,12 @@ type ExecutionTraceOutput struct {
 	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
 	EventID            *string `json:"eventId,omitempty"`
 	HistoryEventID     *int64  `json:"historyEventId,omitempty"`
-	RunID              *string `json:"runId,omitempty"`
-	WorkflowID         *string `json:"workflowId,omitempty"`
+	// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+	HTTPStatus *int64 `json:"httpStatus,omitempty"`
+	// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+	RequestID  *string `json:"requestId,omitempty"`
+	RunID      *string `json:"runId,omitempty"`
+	WorkflowID *string `json:"workflowId,omitempty"`
 }
 
 // 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
@@ -6719,28 +6760,52 @@ type AutomationScheduleSpec struct {
 	OffsetSeconds *int64            `json:"offsetSeconds,omitempty"`
 }
 
-// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+type AutomationSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
+}
+
+// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
 type AutomationStep struct {
 	Action ActionEnum `json:"action"`
 	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
-	Duration       *string                `json:"duration,omitempty"`
+	// 原请求体模板；不保存响应正文。
+	Body     *string `json:"body,omitempty"`
+	Duration *string `json:"duration,omitempty"`
 	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
 	Emoji *string `json:"emoji,omitempty"`
-	ID    string  `json:"id"`
+	// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+	// 者）不得明文保存，必须改用 secretHeaders。
+	Headers map[string]string `json:"headers,omitempty"`
+	ID      string            `json:"id"`
 	// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
 	// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
 	// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
 	// ActionExecution；求值错误使该运行在任何副作用前失败。
 	If      *string `json:"if,omitempty"`
 	Message *string `json:"message,omitempty"`
-	Name    *string `json:"name,omitempty"`
-	Text    *string `json:"text,omitempty"`
-	// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-	// 执行，缺省保持既有版本行为，不给历史补写默认值。
+	// 原 HTTP 方法，缺省 POST。
+	Method *StepMethod `json:"method,omitempty"`
+	Name   *string     `json:"name,omitempty"`
+	// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+	// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+	SecretHeaders map[string]SecretHeaderValue `json:"secretHeaders,omitempty"`
+	Text          *string                      `json:"text,omitempty"`
+	// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+	// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+	// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+	// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
 	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
 	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
 	Topic *string `json:"topic,omitempty"`
+	// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+	// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+	// AgentGateway 出站，不跟随重定向。
+	URL *string `json:"url,omitempty"`
 }
 
 // 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
@@ -6761,8 +6826,12 @@ type AutomationStepTraceOutput struct {
 	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
 	EventID            *string `json:"eventId,omitempty"`
 	HistoryEventID     *int64  `json:"historyEventId,omitempty"`
-	RunID              *string `json:"runId,omitempty"`
-	WorkflowID         *string `json:"workflowId,omitempty"`
+	// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+	HTTPStatus *int64 `json:"httpStatus,omitempty"`
+	// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+	RequestID  *string `json:"requestId,omitempty"`
+	RunID      *string `json:"runId,omitempty"`
+	WorkflowID *string `json:"workflowId,omitempty"`
 }
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
@@ -7049,11 +7118,11 @@ type DelegationScopeParameters struct {
 // DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
 // credentials are only string form fields, never a persisted Task, chat or ContentReference.
 type DocumentLaunchDescriptor struct {
-	ActionURL    string            `json:"actionUrl"`
-	EditorOrigin string            `json:"editorOrigin"`
-	ExpiresAt    string            `json:"expiresAt"`
-	FormFields   map[string]string `json:"formFields"`
-	Method       Method            `json:"method"`
+	ActionURL    string                 `json:"actionUrl"`
+	EditorOrigin string                 `json:"editorOrigin"`
+	ExpiresAt    string                 `json:"expiresAt"`
+	FormFields   map[string]string      `json:"formFields"`
+	Method       LaunchDescriptorMethod `json:"method"`
 }
 
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
@@ -7945,11 +8014,11 @@ const (
 	Light Theme = "LIGHT"
 )
 
-type Method string
+type LaunchDescriptorMethod string
 
 const (
-	Get  Method = "GET"
-	Post Method = "POST"
+	PurpleGET  LaunchDescriptorMethod = "GET"
+	PurplePOST LaunchDescriptorMethod = "POST"
 )
 
 type DecisionEnum string
@@ -8067,10 +8136,22 @@ type ActionEnum string
 
 const (
 	AddReaction     ActionEnum = "add_reaction"
+	CallWebhook     ActionEnum = "call_webhook"
 	Delay           ActionEnum = "delay"
 	RequestApproval ActionEnum = "request_approval"
 	SendMessage     ActionEnum = "send_message"
 	SetChannelTopic ActionEnum = "set_channel_topic"
+)
+
+// 原 HTTP 方法，缺省 POST。
+type StepMethod string
+
+const (
+	FluffyGET    StepMethod = "GET"
+	FluffyPOST   StepMethod = "POST"
+	MethodDELETE StepMethod = "DELETE"
+	Patch        StepMethod = "PATCH"
+	Put          StepMethod = "PUT"
 )
 
 type AutomationTriggerKind string

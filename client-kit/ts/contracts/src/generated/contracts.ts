@@ -629,10 +629,10 @@ export interface LaunchDescriptorClass {
     editorOrigin: string;
     expiresAt:    string;
     formFields:   { [key: string]: string };
-    method:       Method;
+    method:       LaunchDescriptorMethod;
 }
 
-export enum Method {
+export enum LaunchDescriptorMethod {
     Get = "GET",
     Post = "POST",
 }
@@ -1251,7 +1251,8 @@ export enum AutomationResultTarget {
 }
 
 /**
- * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+ * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+ * requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
  */
 export interface StepElement {
     action: ActionEnum;
@@ -1259,12 +1260,21 @@ export interface StepElement {
      * request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
      */
     approvalPolicy?: ApprovalPolicyElement;
-    duration?:       string;
+    /**
+     * 原请求体模板；不保存响应正文。
+     */
+    body?:     string;
+    duration?: string;
     /**
      * 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
      */
     emoji?: string;
-    id:     string;
+    /**
+     * 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+     * 者）不得明文保存，必须改用 secretHeaders。
+     */
+    headers?: { [key: string]: string };
+    id:       string;
     /**
      * 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
      * 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
@@ -1273,25 +1283,63 @@ export interface StepElement {
      */
     if?:      string;
     message?: string;
-    name?:    string;
-    text?:    string;
     /**
-     * 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-     * 执行，缺省保持既有版本行为，不给历史补写默认值。
+     * 原 HTTP 方法，缺省 POST。
+     */
+    method?: StepMethod;
+    name?:   string;
+    /**
+     * Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+     * 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+     */
+    secretHeaders?: { [key: string]: SecretHeaderValue };
+    text?:          string;
+    /**
+     * 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+     * 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+     * 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+     * 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
      */
     timeout_secs?: number;
     /**
      * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
      */
     topic?: string;
+    /**
+     * 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+     * 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+     * AgentGateway 出站，不跟随重定向。
+     */
+    url?: string;
 }
 
 export enum ActionEnum {
     AddReaction = "add_reaction",
+    CallWebhook = "call_webhook",
     Delay = "delay",
     RequestApproval = "request_approval",
     SendMessage = "send_message",
     SetChannelTopic = "set_channel_topic",
+}
+
+/**
+ * 原 HTTP 方法，缺省 POST。
+ */
+export enum StepMethod {
+    Delete = "DELETE",
+    Get = "GET",
+    Patch = "PATCH",
+    Post = "POST",
+    Put = "PUT",
+}
+
+/**
+ * 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+ */
+export interface SecretHeaderValue {
+    audience: string;
+    locator:  string;
+    version:  number;
 }
 
 export interface AutomationVersionContentTrigger {
@@ -2883,8 +2931,16 @@ export interface ExecutionTraceOutput {
     approvalWorkflowId?: string;
     eventId?:            string;
     historyEventId?:     number;
-    runId?:              string;
-    workflowId?:         string;
+    /**
+     * call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+     */
+    httpStatus?: number;
+    /**
+     * call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+     */
+    requestId?:  string;
+    runId?:      string;
+    workflowId?: string;
 }
 
 export enum AutomationStepStatus {
@@ -5665,7 +5721,17 @@ export interface AutomationScheduleSpec {
 }
 
 /**
- * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+ * 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+ */
+export interface AutomationSecretRef {
+    audience: string;
+    locator:  string;
+    version:  number;
+}
+
+/**
+ * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+ * requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
  */
 export interface AutomationStep {
     action: ActionEnum;
@@ -5673,12 +5739,21 @@ export interface AutomationStep {
      * request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
      */
     approvalPolicy?: ApprovalPolicyElement;
-    duration?:       string;
+    /**
+     * 原请求体模板；不保存响应正文。
+     */
+    body?:     string;
+    duration?: string;
     /**
      * 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
      */
     emoji?: string;
-    id:     string;
+    /**
+     * 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+     * 者）不得明文保存，必须改用 secretHeaders。
+     */
+    headers?: { [key: string]: string };
+    id:       string;
     /**
      * 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
      * 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
@@ -5687,17 +5762,34 @@ export interface AutomationStep {
      */
     if?:      string;
     message?: string;
-    name?:    string;
-    text?:    string;
     /**
-     * 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-     * 执行，缺省保持既有版本行为，不给历史补写默认值。
+     * 原 HTTP 方法，缺省 POST。
+     */
+    method?: StepMethod;
+    name?:   string;
+    /**
+     * Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+     * 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+     */
+    secretHeaders?: { [key: string]: SecretHeaderValue };
+    text?:          string;
+    /**
+     * 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+     * 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+     * 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+     * 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
      */
     timeout_secs?: number;
     /**
      * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
      */
     topic?: string;
+    /**
+     * 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+     * 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+     * AgentGateway 出站，不跟随重定向。
+     */
+    url?: string;
 }
 
 /**
@@ -5724,8 +5816,16 @@ export interface AutomationStepTraceOutput {
     approvalWorkflowId?: string;
     eventId?:            string;
     historyEventId?:     number;
-    runId?:              string;
-    workflowId?:         string;
+    /**
+     * call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+     */
+    httpStatus?: number;
+    /**
+     * call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+     */
+    requestId?:  string;
+    runId?:      string;
+    workflowId?: string;
 }
 
 /**
@@ -6084,7 +6184,7 @@ export interface DocumentLaunchDescriptor {
     editorOrigin: string;
     expiresAt:    string;
     formFields:   { [key: string]: string };
-    method:       Method;
+    method:       LaunchDescriptorMethod;
 }
 
 /**

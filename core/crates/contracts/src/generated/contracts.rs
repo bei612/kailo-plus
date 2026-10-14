@@ -880,11 +880,11 @@ pub struct LaunchDescriptorClass {
 
     pub form_fields: HashMap<String, String>,
 
-    pub method: Method,
+    pub method: LaunchDescriptorMethod,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Method {
+pub enum LaunchDescriptorMethod {
     #[serde(rename = "GET")]
     Get,
 
@@ -1728,15 +1728,20 @@ pub enum AutomationResultTarget {
     TriggerThread,
 }
 
-/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+/// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StepElement {
     pub action: ActionEnum,
 
     /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-    #[serde(rename = "approvalPolicy")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 原请求体模板；不保存响应正文。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
@@ -1744,6 +1749,11 @@ pub struct StepElement {
     /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emoji: Option<String>,
+
+    /// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+    /// 者）不得明文保存，必须改用 secretHeaders。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
 
     pub id: String,
 
@@ -1758,20 +1768,38 @@ pub struct StepElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 
+    /// 原 HTTP 方法，缺省 POST。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<StepMethod>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    /// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+    /// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_headers: Option<HashMap<String, SecretHeaderValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 
-    /// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-    /// 执行，缺省保持既有版本行为，不给历史补写默认值。
+    /// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+    /// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+    /// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+    /// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
+    #[serde(rename = "timeout_secs")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<i64>,
 
     /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
+
+    /// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+    /// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+    /// AgentGateway 出站，不跟随重定向。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1779,6 +1807,9 @@ pub struct StepElement {
 pub enum ActionEnum {
     #[serde(rename = "add_reaction")]
     AddReaction,
+
+    #[serde(rename = "call_webhook")]
+    CallWebhook,
 
     Delay,
 
@@ -1790,6 +1821,35 @@ pub enum ActionEnum {
 
     #[serde(rename = "set_channel_topic")]
     SetChannelTopic,
+}
+
+/// 原 HTTP 方法，缺省 POST。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum StepMethod {
+    #[serde(rename = "DELETE")]
+    Delete,
+
+    #[serde(rename = "GET")]
+    Get,
+
+    #[serde(rename = "PATCH")]
+    Patch,
+
+    #[serde(rename = "POST")]
+    Post,
+
+    #[serde(rename = "PUT")]
+    Put,
+}
+
+/// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecretHeaderValue {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4213,6 +4273,14 @@ pub struct ExecutionTraceOutput {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_event_id: Option<i64>,
+
+    /// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<i64>,
+
+    /// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
@@ -8125,15 +8193,30 @@ pub struct AutomationScheduleSpec {
     pub offset_seconds: Option<i64>,
 }
 
-/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+/// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
+}
+
+/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+/// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AutomationStep {
     pub action: ActionEnum,
 
     /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-    #[serde(rename = "approvalPolicy")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 原请求体模板；不保存响应正文。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
@@ -8141,6 +8224,11 @@ pub struct AutomationStep {
     /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emoji: Option<String>,
+
+    /// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+    /// 者）不得明文保存，必须改用 secretHeaders。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
 
     pub id: String,
 
@@ -8155,20 +8243,38 @@ pub struct AutomationStep {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 
+    /// 原 HTTP 方法，缺省 POST。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<StepMethod>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
+    /// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+    /// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_headers: Option<HashMap<String, SecretHeaderValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 
-    /// 固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer
-    /// 执行，缺省保持既有版本行为，不给历史补写默认值。
+    /// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+    /// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+    /// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+    /// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
+    #[serde(rename = "timeout_secs")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<i64>,
 
     /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
+
+    /// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+    /// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+    /// AgentGateway 出站，不跟随重定向。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
@@ -8208,6 +8314,14 @@ pub struct AutomationStepTraceOutput {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_event_id: Option<i64>,
+
+    /// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<i64>,
+
+    /// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
@@ -8723,7 +8837,7 @@ pub struct DocumentLaunchDescriptor {
 
     pub form_fields: HashMap<String, String>,
 
-    pub method: Method,
+    pub method: LaunchDescriptorMethod,
 }
 
 /// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
