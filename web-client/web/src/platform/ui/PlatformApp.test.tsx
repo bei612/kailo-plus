@@ -8,6 +8,10 @@ vi.mock("./SidebarProjects",()=>({SidebarProjects:()=>null}));
 vi.mock("./ConversationSidebar",()=>({ConversationSidebar:()=> <div data-testid="shared-conversation-list" />}));
 vi.mock("@tanstack/react-router", () => ({ useBlocker: () => ({ status: "idle" }) }));
 vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChannelDialog: () => null }));
+vi.mock("@client-kit/platform/react/channel-members", () => ({
+  ChannelMembersBar: ({workspaceId}:{workspaceId:string}) => <div data-testid="channel-members-trigger" data-workspace={workspaceId} />,
+  ChannelMembersDialog: () => null,
+}));
 
 const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false,
   channelType: "stream", conversationId: null as string | null, emptyWorkspaces: false,

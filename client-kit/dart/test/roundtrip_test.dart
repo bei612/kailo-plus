@@ -578,7 +578,11 @@ void main() {
     for (final permission in [true, false, null]) {
       final value = jsonDecode(jsonEncode(sample)) as Map<String, dynamic>;
       final row = (value['members'] as List).first as Map<String, dynamic>;
-      for (final key in ['canRemoveFromWorkspace', 'canRemoveFromTenant']) {
+      for (final key in [
+        'canRemoveFromWorkspace',
+        'canAddToWorkspace',
+        'canRemoveFromTenant',
+      ]) {
         if (permission == null) {
           row.remove(key);
         } else {

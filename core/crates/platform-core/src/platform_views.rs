@@ -633,6 +633,7 @@ struct RoleMemberRow {
     principal_id: Uuid,
     display_name: String,
     removable_workspace_member: bool,
+    addable_workspace_member: bool,
     created_at: chrono::DateTime<chrono::Utc>,
     pubkeys: Vec<String>,
 }
@@ -720,6 +721,8 @@ pub async fn list_role_members(
         "select p.id as principal_id, hi.display_name,
            exists(select 1 from identity.workspace_membership wm
              where wm.workspace_id=$4 and wm.tenant_principal_id=p.id and wm.state in ('ACTIVE','ERROR')) as removable_workspace_member,
+           not exists(select 1 from identity.workspace_membership wm
+             where wm.workspace_id=$4 and wm.tenant_principal_id=p.id and wm.state <> 'REVOKED') as addable_workspace_member,
            tm.created_at,
            array(select bib.pubkey from identity.buzz_identity_binding bib
              where bib.tenant_id=tm.tenant_id and bib.principal_id=p.id
@@ -854,10 +857,10 @@ pub async fn list_role_members(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let removal_actions = match active_member_removal_actions(&state.pool).await {
+    let membership_actions = match active_membership_actions(&state.pool).await {
         Ok(keys) => keys,
         Err(error) => {
-            tracing::warn!(%error,"读取成员撤权 ActionDefinition 失败");
+            tracing::warn!(%error,"读取成员变更 ActionDefinition 失败");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
@@ -868,6 +871,7 @@ pub async fn list_role_members(
                  principal_id,
                  display_name,
                  removable_workspace_member,
+                 addable_workspace_member,
                  created_at,
                  pubkeys,
              }| {
@@ -901,7 +905,7 @@ pub async fn list_role_members(
                         workspace_manage
                             && removable_workspace_member
                             && principal_id != ctx.tenant_principal_id
-                            && removal_actions.contains("workspace.member.revoke")
+                            && membership_actions.contains("workspace.member.revoke")
                             && crate::capability_registry::action_exposed(
                                 "workspace.member.revoke",
                             ),
@@ -910,8 +914,15 @@ pub async fn list_role_members(
                         tenant_manage
                             && !last_tenant_admin
                             && principal_id != ctx.tenant_principal_id
-                            && removal_actions.contains("tenant.member.revoke")
+                            && membership_actions.contains("tenant.member.revoke")
                             && crate::capability_registry::action_exposed("tenant.member.revoke"),
+                    ),
+                    // workspace.member.add 只建或复用已 REVOKED 的 membership；在途或有效行一律不给。
+                    can_add_to_workspace: Some(
+                        workspace_manage
+                            && addable_workspace_member
+                            && membership_actions.contains("workspace.member.add")
+                            && crate::capability_registry::action_exposed("workspace.member.add"),
                     ),
                 }
             },
@@ -927,17 +938,22 @@ pub async fn list_role_members(
         .into_response()
 }
 
-async fn active_member_removal_actions<'e>(
+async fn active_membership_actions<'e>(
     executor: impl sqlx::PgExecutor<'e>,
 ) -> Result<HashSet<String>, sqlx::Error> {
     let keys:Vec<String>=sqlx::query_scalar(
         "select ad.action_key from catalog.action_definition ad
          where ad.status='ACTIVE' and ad.component_type_key='core' and ad.permission='manage'
            and ad.tenant_rule='SESSION_TENANT' and ad.execution_mode='TEMPORAL'
-           and ad.workflow_type='ComponentTaskWorkflow' and ad.workflow_kind='MEMBERSHIP_REVOCATION'
-           and ((ad.action_key='workspace.member.revoke' and ad.target_type='WORKSPACE_MEMBERSHIP'
+           and ad.workflow_type='ComponentTaskWorkflow'
+           and ((ad.action_key='workspace.member.add' and ad.workflow_kind='MEMBERSHIP_PROJECTION'
+             and ad.target_type='WORKSPACE_MEMBERSHIP' and ad.permission_object_type='workspace'
+             and ad.workspace_rule='WORKSPACE_REQUIRED')
+           or (ad.action_key='workspace.member.revoke' and ad.workflow_kind='MEMBERSHIP_REVOCATION'
+             and ad.target_type='WORKSPACE_MEMBERSHIP'
              and ad.permission_object_type='workspace' and ad.workspace_rule='WORKSPACE_REQUIRED')
-           or (ad.action_key='tenant.member.revoke' and ad.target_type='TENANT_MEMBERSHIP'
+           or (ad.action_key='tenant.member.revoke' and ad.workflow_kind='MEMBERSHIP_REVOCATION'
+             and ad.target_type='TENANT_MEMBERSHIP'
              and ad.permission_object_type='tenant' and ad.workspace_rule='TENANT_ONLY'
              and ad.confirmation_mode='APPROVAL' and exists(select 1 from catalog.approval_policy ap
                where ap.id=ad.approval_policy_id and ap.version=ad.approval_policy_version
@@ -1165,17 +1181,19 @@ mod member_action_tests {
 
     #[tokio::test]
     #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
-    async fn member_removal_view_requires_its_original_action_and_active_approval_policy() {
+    async fn member_change_view_requires_its_original_action_and_active_approval_policy() {
         let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
             .await
             .unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let active = active_member_removal_actions(&mut *tx).await.unwrap();
+        let active = active_membership_actions(&mut *tx).await.unwrap();
+        assert!(active.contains("workspace.member.add"));
         assert!(active.contains("workspace.member.revoke"));
         assert!(active.contains("tenant.member.revoke"));
         sqlx::query("update catalog.approval_policy set status='RETIRED' where action_key='tenant.member.revoke' and status='ACTIVE'")
             .execute(&mut *tx).await.unwrap();
-        let retired = active_member_removal_actions(&mut *tx).await.unwrap();
+        let retired = active_membership_actions(&mut *tx).await.unwrap();
+        assert!(retired.contains("workspace.member.add"));
         assert!(retired.contains("workspace.member.revoke"));
         assert!(!retired.contains("tenant.member.revoke"));
         tx.rollback().await.unwrap();

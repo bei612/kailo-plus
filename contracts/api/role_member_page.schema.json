@@ -26,6 +26,7 @@
           "canGrantWorkspaceAdmin": { "type": "boolean" },
           "canRevokeWorkspaceAdmin": { "type": "boolean" },
           "canRemoveFromWorkspace": { "type": "boolean", "description": "当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false 不显示动作，提交仍重新准入。" },
+          "canAddToWorkspace": { "type": "boolean", "description": "当前 Workspace manage 与 workspace.member.add 目录均有效且已开放，目标在该 Workspace 没有未撤销的 WorkspaceMembership（不存在或 REVOKED）；省略或 false 不显示添加动作，提交仍重新准入。" },
           "canRemoveFromTenant": { "type": "boolean", "description": "当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false 不显示动作。" },
           "lastTenantAdmin": { "type": "boolean", "description": "有效 Tenant admin 仅剩此人；该人的撤销按钮禁用，服务端最终准入仍重查" }
         }

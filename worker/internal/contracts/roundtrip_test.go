@@ -795,7 +795,7 @@ func TestMemberRemovalPermissionsRoundtrip(t *testing.T) {
 			t.Fatal(err)
 		}
 		row := value["members"].([]any)[0].(map[string]any)
-		for _, key := range []string{"canRemoveFromWorkspace", "canRemoveFromTenant"} {
+		for _, key := range []string{"canRemoveFromWorkspace", "canAddToWorkspace", "canRemoveFromTenant"} {
 			if permission == nil {
 				delete(row, key)
 			} else {

@@ -8,8 +8,9 @@ import { Button } from "../profile/buzz/shared/ui/button";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { channelChrome } from "./chromeLayout";
 
-export function ChatHeader({ title, description, leadingContent, statusBadge, onCopyTitle,
+export function ChatHeader({ title, description, leadingContent, statusBadge, onCopyTitle, actions,
   channelType, visibility, belowSystemChrome = false, chromeWrapperRef, transparentChrome = false }: {
+  actions?: ReactNode;
   title: string;
   description?: string;
   leadingContent?: ReactNode;
@@ -41,7 +42,9 @@ export function ChatHeader({ title, description, leadingContent, statusBadge, on
         </Button>
         {statusBadge ? <div className="flex shrink-0 flex-wrap items-center gap-1">{statusBadge}</div> : null}
       </div>
-    </div></div>
+    </div>
+    {actions ? <div className="flex shrink-0 items-center gap-1"><div className="shrink-0">{actions}</div></div> : null}
+    </div>
   </header>;
   if (!belowSystemChrome) return header;
   return <div ref={chromeWrapperRef} className={cn(

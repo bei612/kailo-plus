@@ -41,7 +41,7 @@ function useMemberProfile(target: MemberTarget) {
     },retry:false,staleTime:0});
 }
 
-function MemberAvatar({target,label}:{target:MemberTarget;label:string}) {
+export function MemberAvatar({target,label,className="h-9 w-9 text-xs shadow-none"}:{target:MemberTarget;label:string;className?:string}) {
   const client=useBffClient();const locale=useLocale();
   // The original row consumes its authorized profile before opening a popover.
   // useLoad drops responses after this transport scope or exact member key leaves.
@@ -52,7 +52,7 @@ function MemberAvatar({target,label}:{target:MemberTarget;label:string}) {
   });
   const profile=result.status==="ok"?result.data:undefined;
   return <AvatarHostProvider value={{locale,rewriteMediaUrl:url=>profile?.avatarMediaPaths[url]??url}}>
-    <ProfileAvatar avatarUrl={profile?.avatarUrl??null} className="h-9 w-9 text-xs shadow-none" label={label} shape="circle"/>
+    <ProfileAvatar avatarUrl={profile?.avatarUrl??null} className={className} label={label} shape="circle"/>
   </AvatarHostProvider>;
 }
 

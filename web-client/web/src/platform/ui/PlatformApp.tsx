@@ -45,6 +45,7 @@ import {
   WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
+import { ChannelMembersBar, ChannelMembersDialog } from "@client-kit/platform/react/channel-members";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -248,6 +249,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ?? rows.find((workspace) => workspace.isMember === true)
     ?? rows[0];
   const active = activeRow?.id ?? null;
+  const [membersOpenFor, setMembersOpenFor] = useState<string | null>(null);
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
   const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">, query?:string) => {
@@ -569,6 +571,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
               channelType={channel.data.channelType}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
+              actions={<ChannelMembersBar workspaceId={active} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -582,6 +585,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             </AvatarHostProvider> : tab === "new-message" || tab === "agents" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
+          {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
+            <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} workspaceId={active} open={membersOpenFor === active}
+              onOpenChange={(open) => setMembersOpenFor(open ? active : null)} archived={channel.data.archived}
+              currentPrincipalId={session.tenantPrincipalId} /> : null}
           <main className={tab === "inbox" || tab === "new-message" || tab === "agents" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
             {body}
           </main>

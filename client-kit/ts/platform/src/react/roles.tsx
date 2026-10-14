@@ -17,7 +17,9 @@ import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS } from "./channel-ty
 import { WorkspaceVisibility } from "@client-kit/contracts";
 import { ChannelPermissionsSettings } from "./channel-permissions-settings";
 
-type Change = { command: ActionCommand; principal: Pick<RoleMemberView,"principalId"|"displayName">; label: string };
+// immediate: the original control submits on click; a confirmation card only returns
+// for an UNKNOWN outcome, where the same command and idempotency key must be retried.
+type Change = { command: ActionCommand; principal: Pick<RoleMemberView,"principalId"|"displayName">; label: string; immediate?: boolean };
 type Outcome =
   | { kind: "submitted"; action: string; execution: string }
   | { kind: "failed"; failure: WriteFailure };
@@ -426,11 +428,11 @@ export function useMemberAction(onRecorded:()=>void) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [submittedFor, setSubmittedFor] = useState<string | null>(null);
-  const submit = async () => {
-    if (!confirming || inFlight.current) return;
+  const execute = async (change: Change) => {
+    if (inFlight.current) return;
     const wasUnknown=outcome?.kind==="failed"&&outcome.failure.kind==="unknown";
     const priorOperation=outcome?.kind==="failed"&&outcome.failure.kind==="unknown"?outcome.failure.operationId:undefined;
-    const { command, principal } = confirming;
+    const { command, principal } = change;
     inFlight.current=true;
     setBusy(true);
     if(!wasUnknown)setOutcome(null);
@@ -448,7 +450,7 @@ export function useMemberAction(onRecorded:()=>void) {
         return;
       }
       setSubmittedFor(principal.principalId);
-      setOutcome({ kind: "submitted", action: confirming.label, execution: result.actionExecutionId });
+      setOutcome({ kind: "submitted", action: change.label, execution: result.actionExecutionId });
       setConfirming(null);
       receipt.current=null;
     } catch (error) {
@@ -464,15 +466,23 @@ export function useMemberAction(onRecorded:()=>void) {
       onRecorded();
     }
   };
-  return {confirming,busy,outcome,submittedFor,submit,
+  const intend=(key:string,principal:Change["principal"],label:string,workspaceId:string|undefined,immediate:boolean):Change|null=>{
+    if(busy||confirming||inFlight.current)return null;
+    receipt.current=null;
+    setOutcome(null);
+    const change:Change={principal,label,immediate,command:{actionKey:key,principalId:principal.principalId,idempotencyKey:newIdempotencyKey(),
+      ...(key.startsWith("workspace.")?{workspaceId}: {})}};
+    setConfirming(change);
+    return change;
+  };
+  return {confirming,busy,outcome,submittedFor,
+    submit:async()=>{if(confirming)await execute(confirming);},
     refresh:()=>{setSubmittedFor(null);onRecorded();},
     cancel:()=>{if(!busy&&!(outcome?.kind==="failed"&&outcome.failure.kind==="unknown"))setConfirming(null);},
-    choose:(key:string,principal:Change["principal"],label:string,workspaceId?:string)=>{
-      if(busy||confirming)return;
-      receipt.current=null;
-      setOutcome(null);
-      setConfirming({principal,label,command:{actionKey:key,principalId:principal.principalId,idempotencyKey:newIdempotencyKey(),
-        ...(key.startsWith("workspace.")?{workspaceId}: {})}});
+    choose:(key:string,principal:Change["principal"],label:string,workspaceId?:string)=>{intend(key,principal,label,workspaceId,false);},
+    perform:(key:string,principal:Change["principal"],label:string,workspaceId?:string)=>{
+      const change=intend(key,principal,label,workspaceId,true);
+      if(change)void execute(change);
     }};
 }
 
@@ -484,7 +494,7 @@ export function MemberActionFeedback({action}:{action:ReturnType<typeof useMembe
       ?t("roles.submitted",{action:outcome.action,execution:outcome.execution})
       :outcome.failure.kind==="unknown"?t("roles.unknown",{operation:outcome.failure.operationId??"—"})
       :t("members.rejected",{reason:failureText(outcome.failure)})}</p>:null}
-    {confirming?<div className="flex flex-col gap-2 rounded-md border p-3" role="group">
+    {confirming&&(!confirming.immediate||(outcome?.kind==="failed"&&outcome.failure.kind==="unknown"))?<div className="flex flex-col gap-2 rounded-md border p-3" role="group">
       <p>{t("roles.confirm",{action:confirming.label,member:confirming.principal.displayName})}</p>
       <code className="text-xs text-muted-foreground">{confirming.command.actionKey}</code>
       <div className="flex gap-2"><Button disabled={busy} onClick={()=>void action.submit()}>{t("platform.confirm")}</Button>

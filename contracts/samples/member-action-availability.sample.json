@@ -11,6 +11,7 @@
     "canGrantWorkspaceAdmin": true,
     "canRevokeWorkspaceAdmin": false,
     "canRemoveFromWorkspace": true,
+    "canAddToWorkspace": false,
     "canRemoveFromTenant": false,
     "lastTenantAdmin": false
   }]
