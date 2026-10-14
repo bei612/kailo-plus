@@ -54,6 +54,9 @@ import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowsListSkeleton } from "./workflow-list-skeleton";
 import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "./workflow-form-canvas";
 import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
+import { reactionConditionValue } from "./workflow-reaction-condition";
+import { getWorkflowActivationWarning } from "./workflow-activation-warning";
+import { WorkflowActivationDialog } from "./workflow-activation-dialog";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./workflow-author-directory";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
@@ -470,6 +473,7 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
   const [state, reload] = useLoad(`automation-card:${row.resourceId}:${row.resourceVersion}`,
     () => client.automation(row.resourceId, 0, 0));
   const [triggerAnimationSequence, setTriggerAnimationSequence] = useState(0);
+  const [activationOpen, setActivationOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<unknown>();
   const openRequest = useRef(0);
@@ -516,6 +520,7 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
   };
   const canEnable = !!detail?.versions.some((candidate) => candidate.state === AgentVersionState.Published)
     && !!detail?.delegations.some((grant) => new Date(grant.expiresAt).getTime() > Date.now());
+  const activationWarning = content ? getWorkflowActivationWarning(content, t) : null;
   return <div data-testid={`workflow-card-${row.resourceId}`}
     className="group relative flex min-h-60 w-full flex-col overflow-hidden rounded-2xl bg-muted/50 p-5 text-left text-foreground shadow-xs transition-colors hover:bg-muted/65">
     <button type="button" disabled={locked}
@@ -538,7 +543,10 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
         <div className="pointer-events-auto flex items-center gap-1.5">
           <WorkflowStatusToggle enabled={row.state === AutomationState.Enabled}
             disabled={locked || opening || !detail?.canManage || (row.state !== AutomationState.Enabled && !canEnable)}
-            onToggle={() => { void openAction(row.state === AutomationState.Enabled ? "disable" : "enable"); }} />
+            onToggle={() => {
+              if (row.state !== AutomationState.Enabled && activationWarning) { setActivationOpen(true); return; }
+              void openAction(row.state === AutomationState.Enabled ? "disable" : "enable");
+            }} />
           {detail ? <WorkflowActionsMenu isEnabled={row.state === AutomationState.Enabled} disabled={locked || opening}
             showEnabledToggle={false}
             onEdit={detail.canManage && content ? () => { void openAction("publish_version"); } : undefined}
@@ -567,6 +575,9 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
         {row.updatedAt ? <time className="shrink-0 text-2xs" dateTime={row.updatedAt}>{new Date(row.updatedAt).toLocaleDateString(locale)}</time> : null}
       </div>
     </div>
+    <WorkflowActivationDialog warning={activationWarning} open={activationOpen} disabled={locked || opening}
+      onOpenChange={(open) => { if (!open) setActivationOpen(false); }}
+      onConfirm={() => { setActivationOpen(false); void openAction("enable"); }} />
   </div>;
 }
 
@@ -1113,15 +1124,14 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           </label>
           <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
         </> : <>
-        {trigger === TriggerKind.ReactionAdded ? <label className="flex flex-col gap-1 text-sm">{t("workflows.steps.emoji")}
-          <input value={triggerEmoji} autoCapitalize="off" placeholder={t("workflows.steps.emojiExample")}
-            disabled={busy || !!intent || unknown}
-            onChange={(event) => setTriggerEmoji(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-        </label> : null}
         {prefix && trigger !== TriggerKind.DiffPosted && trigger !== TriggerKind.ReactionAdded && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
-        <WorkflowTriggerConditions key={`${workspaceId}:${trigger}`} value={filter} onChange={setFilter}
+        {/* Original WorkflowFormBuilder TriggerFields: a legacy reaction emoji is
+            edited as the trigger_emoji condition and is not a separate field. */}
+        <WorkflowTriggerConditions key={`${workspaceId}:${trigger}`}
+          value={trigger === TriggerKind.ReactionAdded ? reactionConditionValue(filter, triggerEmoji) : filter}
+          onChange={(next) => { setFilter(next); if (trigger === TriggerKind.ReactionAdded) setTriggerEmoji(""); }}
           triggerType={trigger === TriggerKind.DiffPosted ? "diff_posted" : trigger === TriggerKind.ReactionAdded ? "reaction_added" : "message_posted"}
           conditionDrafts={conditionDrafts} onConditionDraftsChange={setConditionDrafts}
           workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />

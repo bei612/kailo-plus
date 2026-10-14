@@ -8,6 +8,7 @@ import { Input } from "./composer/shared/ui/input";
 import { UserAvatar } from "./messages/UserAvatar";
 import { Tabs, TabsList, TabsTrigger } from "./profile/buzz/shared/ui/tabs";
 import { WorkflowAuthorPicker } from "./workflow-author-picker";
+import { WorkflowEmojiField } from "./workflow-emoji-field";
 import {
   buildConditionExpressions,
   conditionFieldsForTrigger,
@@ -108,6 +109,28 @@ function AuthorConditionSummary({
       <span className="sr-only">
         {t(excluded ? "workflows.condition.excludedAuthor" : "workflows.condition.selectedAuthor")}
         {label}
+      </span>
+    </span>
+  );
+}
+
+function EmojiConditionSummary({
+  emoji,
+  excluded,
+}: {
+  emoji: string;
+  excluded: boolean;
+}) {
+  const t = useT();
+  return (
+    <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+      <span aria-hidden="true" className="text-2xl leading-none">
+        {emoji}
+      </span>
+      {excluded ? <ExclusionStrike /> : null}
+      <span className="sr-only">
+        {t(excluded ? "workflows.condition.excludedEmoji" : "workflows.condition.selectedEmoji")}
+        {emoji}
       </span>
     </span>
   );
@@ -308,6 +331,13 @@ export function WorkflowTriggerConditions({
                       isAgent={triggerPresentation.isAgent}
                       label={authorSummary}
                     />
+                  ) : existing &&
+                    field.value === "trigger_emoji" &&
+                    condition.value.trim() ? (
+                    <EmojiConditionSummary
+                      emoji={condition.value.trim()}
+                      excluded={condition.operator === "not_equals"}
+                    />
                   ) : (
                     <span className="max-w-44 truncate font-mono text-xs text-muted-foreground">
                       {summary}
@@ -365,7 +395,23 @@ export function WorkflowTriggerConditions({
                       </div>
                     </fieldset>
                     {conditionOperatorNeedsValue(condition.operator) ? (
-                      field.value === "trigger_author" ? (
+                      field.value === "trigger_emoji" ? (
+                        <WorkflowEmojiField
+                          ariaLabel={t("workflows.emoji.chooseTrigger")}
+                          clearAriaLabel={t("workflows.emoji.clearTrigger")}
+                          disabled={disabled}
+                          id="wf-trigger-emoji"
+                          onChange={(emoji) =>
+                            updateConditions([
+                              ...conditions.filter(
+                                (item) => item.field !== field.value,
+                              ),
+                              { ...condition, value: emoji ?? "" },
+                            ])
+                          }
+                          value={condition.value}
+                        />
+                      ) : field.value === "trigger_author" ? (
                         <WorkflowAuthorPicker
                           channelId={workflowChannelId}
                           directory={directory}

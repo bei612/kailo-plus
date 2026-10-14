@@ -33,12 +33,12 @@ export function WorkflowStatusToggle({ disabled, enabled, onToggle }: {
 }
 
 // Original StatusEmoji rendering, resolved only through the existing admitted media reader.
-export function ActionEmoji({ value }: { value: string }) {
+export function ActionEmoji({ value, className = "h-6 w-6 text-xl" }: { value: string; className?: string }) {
   const palette = useBffCustomEmojiPalette(useBffClient());
   const image = reactionEmojiUrl(value, palette);
   return image ? <img alt="" src={image} draggable={false}
-    className="inline-block object-contain align-middle h-6 w-6 text-xl" />
-    : <span className="inline-flex items-center justify-center leading-normal align-middle h-6 w-6 text-xl">{value}</span>;
+    className={cn("inline-block object-contain align-middle", className)} />
+    : <span className={cn("inline-flex items-center justify-center leading-normal align-middle", className)}>{value}</span>;
 }
 
 function ActionTile({ action, emoji, animationSequence, index, className }: {
