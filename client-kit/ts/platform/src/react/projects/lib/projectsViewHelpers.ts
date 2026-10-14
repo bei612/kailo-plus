@@ -38,10 +38,10 @@ export function writeStoredSort(sort: ProjectsSort) {
 export function readStoredFilter():ProjectsFilter {
   try {
     const value=globalThis.localStorage?.getItem(PROJECTS_FILTER_STORAGE_KEY);
-    // Only restored consumers may be selected; un-restored Activity/Git retain
+    // Original default is Activity. Un-restored Git repository sections retain
     // their source evidence, not an empty reachable page.
-    return value==="channels"||value==="issues"||value==="prs"?value:"projects";
-  } catch {return "projects";}
+    return value==="projects"||value==="channels"||value==="issues"||value==="prs"?value:"all";
+  } catch {return "all";}
 }
 export function writeStoredFilter(filter:ProjectsFilter) {
   try {globalThis.localStorage?.setItem(PROJECTS_FILTER_STORAGE_KEY,filter);}

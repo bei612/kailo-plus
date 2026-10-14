@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
-import { Folders, Hash, Trash2, CircleDot, GitPullRequest } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -43,6 +43,13 @@ import {CreateIssueDialog} from "./CreateIssueDialog";
 import {publishProjectIssue} from "./issueMutations";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import {toast} from "sonner";
+import {ProjectsActivityFeed,projectsActivityPubkeys} from "./ProjectsActivityFeed";
+import {ProjectsActivityIntro,ProjectsOverviewPanel} from "./ProjectsOverviewPanel";
+import {ProjectsWorkItemsLoadNotice} from "./ProjectsWorkItemsLoadNotice";
+import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
+import {projectActivitySummaries} from "./lib/projectActivitySummaries";
+import {projectsSectionIcon,projectsSectionTitleKey} from "./projectsSectionMeta";
+import {useNow} from "../useNow";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
   onDiscussInChannel?:ProjectDiscussInChannel;
@@ -214,12 +221,64 @@ function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:Projec
     <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>;
 }
 
+// Original ProjectsView filter "all": ProjectsOverviewPanel > ProjectsActivityIntro
+// + ProjectsWorkItemsLoadNotice + ProjectsActivityFeed, over the same work-item
+// read and cache key as the Tasks/Reviews sections.
+function ProjectsActivityOverview({host,search,onOpenProject,onOpen,renderWorkItems}:{host:ProjectsHost;search:string;onOpenProject:(project:Project)=>void;
+  onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
+  const t=useUiT();const cache=useQueryClient();
+  const [navigationFailed,setNavigationFailed]=useState(false);
+  const lifetime=useMemo(()=>({active:true}),[host]);
+  useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
+  const query=useQuery({queryKey:["projects-work-items",host.scopeKey],queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
+  useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects-work-items",host.scopeKey]});cache.removeQueries({queryKey:["projects-work-items",host.scopeKey]});},[cache,host.scopeKey]);
+  const open=(project:Project,target:ProjectWorkItemTarget)=>{
+    void Promise.resolve().then(()=>{if(lifetime.active)return onOpen(project.id,target);})
+      .catch(()=>{if(lifetime.active)setNavigationFailed(true);});
+  };
+  // A stale cache or failed read never becomes an empty or partial timeline.
+  const snapshot=query.isSuccess&&!query.isFetching?query.data:undefined;
+  const content=snapshot?<ProjectsActivityBody snapshot={snapshot} search={search} onOpenProject={onOpenProject} onOpen={open}/>:null;
+  return <>
+    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
+    <ProjectsOverviewPanel>
+      {query.isError?<ProjectsWorkItemsLoadNotice error={query.error} isRetrying={query.isFetching} onRetry={()=>{void query.refetch();}}/>
+        :!snapshot?<BuzzLoadingState label={t("projects.activity.loading")}/>
+        :renderWorkItems?renderWorkItems(content,snapshot.viewerPubkey):content}
+    </ProjectsOverviewPanel>
+  </>;
+}
+
+function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:Awaited<ReturnType<typeof loadProjectWorkItems>>;search:string;
+  onOpenProject:(project:Project)=>void;onOpen:(project:Project,target:ProjectWorkItemTarget)=>void}) {
+  const t=useUiT();
+  // Original overview counts only explicit projects; standalone repositories
+  // remain part of the read model for the work items they own.
+  const projects=useMemo(()=>snapshot.projects.filter(project=>!project.legacy),[snapshot]);
+  const issues=useMemo(()=>snapshot.items.filter((item):item is Extract<ProjectInboxWorkItem,{type:"issue"}>=>item.type==="issue"),[snapshot]);
+  const pullRequests=useMemo(()=>snapshot.items.filter((item):item is Extract<ProjectInboxWorkItem,{type:"pull-request"}>=>item.type==="pull-request"),[snapshot]);
+  const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
+  const now=useNow(600_000);
+  const digest=useMemo(()=>buildProjectsActivityDigest({issues,nowSeconds:Math.floor(now/1_000),projects,pullRequests,summaries,t}),[issues,now,projects,pullRequests,summaries,t]);
+  const pubkeys=useMemo(()=>projectsActivityPubkeys({issues,projects,pullRequests}),[issues,projects,pullRequests]);
+  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  return <>
+    <ProjectsActivityIntro digest={digest}/>
+    <section className="space-y-3">
+      <ProjectsActivityFeed issues={issues} pullRequests={pullRequests} projects={projects} profiles={profiles} searchQuery={search}
+        onOpenProject={onOpenProject}
+        onOpenIssue={(project,repository,issue)=>onOpen(project,{repositoryId:repository.id,issueId:issue.id})}
+        onOpenPullRequest={(project,repository,pullRequest)=>onOpen(project,{repositoryId:repository.id,pullRequestId:pullRequest.id})}/>
+    </section>
+  </>;
+}
+
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState<ProjectsFilter>(()=>{
     const stored=readStoredFilter();
-    return stored==="channels"&&!onOpenChannel||(stored==="issues"||stored==="prs")&&!onSelectedProjectChange?"projects":stored;
+    return stored==="channels"&&!onOpenChannel||(stored==="all"||stored==="issues"||stored==="prs")&&!onSelectedProjectChange?"projects":stored;
   });
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
   const [sort,setSort]=useState<ProjectsSort>(()=>readStoredSort());
@@ -241,7 +300,6 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   // A failed fresh read must not keep a previously accessible announcement open.
   const projects=query.isSuccess&&!query.isFetching?query.data.projects:[];
   const active=projects.find(project=>project.id===selected);
-  const searchText=search.trim().toLowerCase();
   const visible=projects.filter(project=>matchesProjectsSearch(search,[
     project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description]),
   ]))
@@ -279,25 +337,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
         renderChannel={renderChannel} onOpenChannel={onOpenChannel} onOpenProject={onSelectedProjectChange} onGoProjects={()=>setSelected(null)} host={host} renderWorkItems={renderWorkItems}/>
     : <ProjectPanelState error={!query.isPending&&!query.isFetching}
         title={t(query.isPending||query.isFetching?"platform.loading":query.isError?"platform.loadFailed":"projects.home.channelMissing")}/>;
-  return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
-      <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4">
-        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
-          sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
-      </div>
-      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={filter==="channels"?Hash:filter==="issues"?CircleDot:filter==="prs"?GitPullRequest:Folders} testId="projects-page-header"
-        title={t(filter==="channels"?"sidebar.channels":filter==="issues"?"projects.list.tasks":filter==="prs"?"projects.list.reviews":"platform.tab.projects")}
-        trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>
-      {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
-      {(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
-        <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
-          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
-        searchText?<EmptyFilteredState/>:<EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:
-        <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
-          {visible.map(projectRow)}
-        </section>}
-    </div>
-    <CreateProjectDialog open={createOpen&&(canCreate||creation.busy)} onOpenChange={setCreateOpen} isCreating={creation.busy} frozen={creation.intent?.input}
+  const createDialog=<CreateProjectDialog open={createOpen&&(canCreate||creation.busy)} onOpenChange={setCreateOpen} isCreating={creation.busy} frozen={creation.intent?.input}
       onCreate={async input=>{
         const project=await creation.create(input);
         if(!lifetime.active)return;
@@ -305,6 +345,34 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
         if(!lifetime.active)return;
         try{await setSelected(project.id);if(lifetime.active)setNavigationFailed(null);}
         catch{if(lifetime.active)setNavigationFailed("created");}
-      }}/>
+      }}/>;
+  // Original ProjectsView: an empty directory is the page-level EmptyState,
+  // without section tabs.
+  if(query.isSuccess&&!query.isFetching&&projects.length===0)return <>
+    {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
+    <EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>
+    {createDialog}
+  </>;
+  return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
+      <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4" data-testid="projects-page-tabs">
+        <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
+          sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={Boolean(onSelectedProjectChange)}/>
+      </div>
+      {filter==="all"?null:<ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={projectsSectionIcon(filter)} testId="projects-page-header"
+        title={t(projectsSectionTitleKey(filter))}
+        trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>}
+      {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
+      {filter==="all"&&onSelectedProjectChange?<div className="mx-auto w-full max-w-6xl">
+        <ProjectsActivityOverview key={host.scopeKey} host={host} search={search} onOpenProject={onOpen} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>
+      </div>:(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
+        <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
+          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
+        <EmptyFilteredState/>:
+        <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
+          {visible.map(projectRow)}
+        </section>}
+    </div>
+    {createDialog}
   </div>;
 }

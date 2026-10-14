@@ -58,6 +58,8 @@ async function creationFixture(){
 }
 const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><button aria-label="Delete project" disabled={pending} onClick={onOpen}>Open deletion</button>;
 beforeEach(()=>{localStorage.clear();setLocale("en");sessionStorage.clear();
+  // These cases cover the original Projects/Channels sections; Activity has its own suite.
+  localStorage.setItem("buzz.projects.filter","projects");
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });

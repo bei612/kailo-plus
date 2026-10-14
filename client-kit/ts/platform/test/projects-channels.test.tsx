@@ -26,6 +26,8 @@ const member:WorkspaceMemberView={principalId:"human-principal",displayName:"Rea
 const profile={pubkey,displayName:"Real profile",avatarUrl:"original-avatar",avatarMediaPaths:{"original-avatar":"/authorized-avatar"},about:"Actual profile",nip05Handle:null};
 const cache=()=>new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
 beforeEach(()=>{localStorage.clear();setLocale("en");
+  // These cases cover the original Projects/Channels sections; Activity has its own suite.
+  localStorage.setItem("buzz.projects.filter","projects");
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
   HTMLElement.prototype.scrollIntoView=vi.fn();
   Object.defineProperty(window,"matchMedia",{configurable:true,value:vi.fn(()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn(),addListener:vi.fn(),removeListener:vi.fn()}))});

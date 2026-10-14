@@ -1,10 +1,10 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectsToolbar.tsx.
-// Unrestored Git/activity/work-item consumers do not receive empty tab entries.
+// Unrestored Git repository consumers do not receive an empty tab entry.
 import { LayoutGrid, List } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
 import type { ProjectsViewMode } from "./lib/projectsViewHelpers";
-export type ProjectsFilter = "projects" | "channels" | "issues" | "prs";
+export type ProjectsFilter = "all" | "projects" | "channels" | "issues" | "prs";
 const PROJECT_TAB_TRIGGER_CLASS = "h-7 shrink-0 rounded-full bg-muted/30 px-3 text-xs font-medium leading-5 tracking-tight text-muted-foreground shadow-none transition-colors hover:bg-muted/55 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none";
 const PROJECT_TAB_SELECTED_CLASS = "bg-muted text-foreground";
 import { twMerge as cn } from "tailwind-merge";
@@ -127,6 +127,7 @@ export function ProjectsToolbar({
     label: string;
     value: ProjectsFilter;
   }> = [
+    ...(workItemsAvailable ? [{ label: t("projects.section.activity"), value: "all" as const }] : []),
     { label: t("platform.tab.projects"), value: "projects" },
     ...(workItemsAvailable ? [{label:t("projects.list.tasks"),value:"issues" as const},{label:t("projects.list.reviews"),value:"prs" as const}] : []),
     ...(channelsAvailable ? [{ label: t("sidebar.channels"), value: "channels" as const }] : []),

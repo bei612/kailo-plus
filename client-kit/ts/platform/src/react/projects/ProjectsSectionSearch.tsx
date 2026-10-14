@@ -6,6 +6,7 @@ import { useUiT } from "../context";
 import { ProjectsToolbar, type ProjectsFilter } from "./ProjectsToolbar";
 import { ProjectsSortSelect, type ProjectsSort } from "./ProjectsListHeaderBar";
 import { Button } from "../profile/buzz/shared/ui/button";
+import { projectsSectionTitleKey } from "./projectsSectionMeta";
 
 export function ProjectsSectionSearch({
   filter,
@@ -25,7 +26,7 @@ export function ProjectsSectionSearch({
   workItemsAvailable: boolean;
 }) {
   const t=useUiT();
-  const sectionTitle=t(filter==="channels"?"sidebar.channels":filter==="issues"?"projects.list.tasks":filter==="prs"?"projects.list.reviews":"platform.tab.projects");
+  const sectionTitle=t(projectsSectionTitleKey(filter));
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const deferredQuery = React.useDeferredValue(query);
@@ -118,7 +119,7 @@ export function ProjectsSectionSearch({
                 type="search"
                 value={query}
               />
-              {filter !== "channels" ? (
+              {filter !== "all" && filter !== "channels" ? (
                 <div className="absolute inset-y-0 right-0 flex w-32 items-center justify-end">
                   <ProjectsSortSelect onChange={onSortChange} sort={sort} activityAvailable={filter === "issues" || filter === "prs"} />
                 </div>
