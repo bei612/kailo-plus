@@ -254,6 +254,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const active = activeRow?.id ?? null;
   const [membersOpenFor, setMembersOpenFor] = useState<string | null>(null);
   const [manageOpenFor, setManageOpenFor] = useState<string | null>(null);
+  const { isDark } = useTheme();
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
   const openSearchChannel = async (channelId:string, hit?:Pick<SearchHit, "eventId" | "threadRootId">, query?:string) => {
@@ -602,7 +603,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               currentPrincipalId={session.tenantPrincipalId} /> : null}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
             <ChannelManagementSheet key={`manage:${session.tenantPrincipalId}:${active}`} workspaceId={active} open={manageOpenFor === active}
-              onOpenChange={(open) => setManageOpenFor(open ? active : null)}
+              onOpenChange={(open) => setManageOpenFor(open ? active : null)} isDark={isDark}
               channel={{channelId: channel.data.channelId, name: channel.data.name, description: channel.data.description ?? "",
                 channelType: channel.data.channelType === "forum" ? "forum" : "stream", visibility: activeRow.visibility,
                 ttlSeconds: channel.data.ttlSeconds ?? null}}

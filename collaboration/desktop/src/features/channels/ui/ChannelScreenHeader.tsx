@@ -14,6 +14,7 @@ import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
+import { useTheme } from "@/shared/theme/ThemeProvider";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { Channel } from "@/shared/api/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
@@ -43,6 +44,7 @@ export function ChannelScreenHeader({
     : nativeApplicationWorkspace(directory.data, { channelId: activeChannel.id });
   const [membersOpenFor, setMembersOpenFor] = React.useState<string | null>(null);
   const [manageOpenFor, setManageOpenFor] = React.useState<string | null>(null);
+  const { isDark } = useTheme();
   const { openProfilePanel } = useProfilePanel();
 
   async function handleCopyTitle(value: string) {
@@ -70,7 +72,7 @@ export function ChannelScreenHeader({
           onToggleMembers={() => setMembersOpenFor(membersOpenFor === workspace.id ? null : workspace.id)}
           onManageChannel={() => setManageOpenFor(workspace.id)} /> : undefined} />
       {workspace && activeChannel.channelType !== "dm" ? <ChannelManagementSheet key={`manage:${workspace.id}`} workspaceId={workspace.id}
-        open={manageOpenFor === workspace.id} onOpenChange={(open) => setManageOpenFor(open ? workspace.id : null)}
+        open={manageOpenFor === workspace.id} onOpenChange={(open) => setManageOpenFor(open ? workspace.id : null)} isDark={isDark}
         channel={{ channelId: activeChannel.id, name: activeChannel.name, description: activeChannel.description,
           channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds }}
         onOpenMembers={() => { const id = workspace.id; window.requestAnimationFrame(() => setMembersOpenFor(id)); }}

@@ -31,6 +31,9 @@ import { MemberAvatar } from "./members";
 import { useChannelMembers } from "./channel-members";
 
 const MAX_VISIBLE_AVATARS = 3;
+// The original stacks with inline zIndex index + 1; literal utilities keep the same order
+// without an inline style (MAX_VISIBLE_AVATARS avatars plus the overflow chip).
+const STACK_Z_CLASSES = ["z-[1]", "z-[2]", "z-[3]", "z-[4]"] as const;
 const TTL_UNIT_SECONDS = { d: 86_400, h: 3_600, m: 60, s: 1 } as const;
 
 export type ChannelManagementChannel = {
@@ -84,8 +87,10 @@ function useScrollBoundaryLock(scrollRef: React.RefObject<HTMLElement | null>) {
   }, [scrollRef]);
 }
 
-export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channel, onOpenMembers, onCopy }: {
+export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channel, isDark, onOpenMembers, onCopy }: {
   open: boolean;
+  /** Host theme state, as the original reads useTheme().isDark for the overlay surface. */
+  isDark: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   channel: ChannelManagementChannel;
@@ -119,7 +124,7 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
             PANEL_OVERLAY_CLASS,
             PANEL_ENTER_MOTION_CLASS,
             "w-[380px] cursor-default overflow-hidden p-0 data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=closed]:duration-200",
-            "bg-background dark:bg-background/85 dark:backdrop-blur-xl dark:supports-backdrop-filter:bg-background/75",
+            isDark ? "bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/75" : "bg-background",
           )}
           data-testid="channel-management-sheet"
         >
@@ -207,8 +212,8 @@ function MemberAvatarStack({ workspaceId, members }: {
         const pubkey = member.pubkeys[0];
         const className = "!h-8 !w-8 border-2 border-background text-2xs";
         return (
-          <span className={index > 0 ? "-ml-2" : ""} data-testid="channel-management-member-avatar" key={member.principalId}
-            style={{ zIndex: index + 1 }}>
+          <span className={cn(STACK_Z_CLASSES[index], index > 0 && "-ml-2")} data-testid="channel-management-member-avatar"
+            key={member.principalId}>
             {pubkey ? <MemberAvatar className={className} label={member.displayName} target={{ workspaceId, principalId: member.principalId, pubkey }} />
               : <ProfileAvatar avatarUrl={null} className={className} label={member.displayName} shape="circle" />}
           </span>
@@ -216,9 +221,9 @@ function MemberAvatarStack({ workspaceId, members }: {
       })}
       {overflowCount > 0 ? (
         <span
-          className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background bg-muted text-2xs font-semibold text-muted-foreground"
+          className={cn("-ml-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background bg-muted text-2xs font-semibold text-muted-foreground",
+            STACK_Z_CLASSES[stackItemCount - 1])}
           data-testid="channel-management-member-avatar-overflow"
-          style={{ zIndex: stackItemCount }}
           title={t("channelManagement.moreMembers", { count: overflowCount })}
         >
           +{overflowCount}
