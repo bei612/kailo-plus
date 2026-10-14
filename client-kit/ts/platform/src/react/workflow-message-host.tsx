@@ -4,9 +4,9 @@
 // its BFF-signed channel window/search; Desktop keeps its local-key Relay reads.
 // No message body is stored here and every result is validated by the caller.
 import { createContext, useContext } from "react";
-import { useQuery } from "@tanstack/react-query";
 import type { ChannelWindowCursor, RelayEvent } from "./forum/channelWindowResponse";
 import { useBffClient } from "./context";
+import { useLoad } from "./use-load";
 
 export type WorkflowMessageScope = { workspaceId: string; channelId: string };
 
@@ -23,26 +23,23 @@ const WorkflowMessageHostContext = createContext<WorkflowMessageHost | undefined
 export const WorkflowMessageHostProvider = WorkflowMessageHostContext.Provider;
 export const useWorkflowMessageHost = () => useContext(WorkflowMessageHostContext);
 
-/** The Relay channel behind the workflow's Workspace, read through the existing admitted descriptor. */
+/**
+ * The Relay channel behind the workflow's Workspace, read through the existing
+ * admitted descriptor. Uses the shared loader so every WorkflowsPage consumer
+ * keeps the PlatformProvider-only contract.
+ */
 export function useWorkflowMessageScope(workspaceId: string | null | undefined): {
   scope: WorkflowMessageScope | null; isPending: boolean; isError: boolean; refetch: () => void;
 } {
   const client = useBffClient();
-  const query = useQuery({
-    enabled: !!workspaceId,
-    queryKey: ["workflow-message-scope", workspaceId],
-    queryFn: async () => {
-      const channel = await client.workspaceChannel(workspaceId!);
-      if (!channel || typeof channel.channelId !== "string" || !channel.channelId) throw new Error("Invalid workflow channel");
-      return channel.channelId;
-    },
-    retry: false,
-    staleTime: 60_000,
-  });
+  const [state, reload] = useLoad(`workflow-message-scope:${workspaceId ?? ""}`,
+    () => (workspaceId ? client.workspaceChannel(workspaceId) : Promise.resolve(null)));
+  const channelId = state.status === "ok" && state.data && typeof state.data.channelId === "string" && state.data.channelId
+    ? state.data.channelId : null;
   return {
-    scope: workspaceId && query.data ? { workspaceId, channelId: query.data } : null,
-    isPending: !!workspaceId && query.isPending,
-    isError: query.isError,
-    refetch: () => { void query.refetch(); },
+    scope: workspaceId && channelId ? { workspaceId, channelId } : null,
+    isPending: !!workspaceId && state.status === "pending",
+    isError: !!workspaceId && (state.status === "error" || (state.status === "ok" && !channelId)),
+    refetch: reload,
   };
 }

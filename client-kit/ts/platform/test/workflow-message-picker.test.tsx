@@ -64,9 +64,8 @@ describe("original workflow message picker through the host channel reads", () =
     };
     const { node, values } = await mount("", host);
     await click(disclosure(node, "Message"));
-    await settle();
     const results = node.querySelector<HTMLElement>('[data-testid="workflow-message-picker-results"]')!;
-    expect(results.textContent).toContain("Deploy finished");
+    await vi.waitFor(() => expect(results.textContent).toContain("Deploy finished"));
     expect(results.textContent).toContain("Release notes ready");
     expect(results.textContent).not.toContain("Other channel secret");
     expect(host.history).toHaveBeenCalledWith({ workspaceId: "workspace", channelId }, null, 25);
@@ -81,10 +80,12 @@ describe("original workflow message picker through the host channel reads", () =
       search: vi.fn(async () => []),
     };
     const { node } = await mount(`trigger_message_id == "${first.id}"`, host);
-    expect(disclosure(node, "Message").textContent).toContain("“Deploy finished”");
+    await vi.waitFor(() => expect(disclosure(node, "Message").textContent).toContain("“Deploy finished”"));
 
     const foreignHost: WorkflowMessageHost = { ...host, event: vi.fn(async () => ({ ...foreign, id: first.id })) };
     const other = await mount(`trigger_message_id == "${first.id}"`, foreignHost);
+    await vi.waitFor(() => expect(foreignHost.event).toHaveBeenCalled());
+    await settle();
     expect(disclosure(other.node, "Message").textContent).not.toContain("Other channel secret");
   });
 
@@ -97,9 +98,9 @@ describe("original workflow message picker through the host channel reads", () =
     const { node, values } = await mount("", host);
     await click(disclosure(node, "Message"));
     const input = node.querySelector<HTMLInputElement>("#wf-trigger-message-id-value")!;
+    await vi.waitFor(() => expect(input.disabled).toBe(false));
     await type(input, foreign.id);
-    await settle();
-    expect(node.textContent).toContain("That message is not available in this channel.");
+    await vi.waitFor(() => expect(node.textContent).toContain("That message is not available in this channel."));
     await click(node.querySelector<HTMLButtonElement>('[role="option"]')!);
     expect(values).toHaveLength(0);
   });

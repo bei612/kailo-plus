@@ -39,8 +39,8 @@ export function useWorkflowTriggerPresentation(content: AutomationVersionContent
   const loading = !!authorKey && !candidate && directory.isLoading;
   const label = authorKey && !loading
     ? resolveUserLabel({pubkey: authorKey, fallbackName: candidate?.displayName, profiles: profiles.profiles, t}) : null;
-  const scope = useWorkflowMessageScope(workspaceId);
   const messageCondition = conditions.find(condition => condition.field === "trigger_message_id");
+  const scope = useWorkflowMessageScope(messageCondition ? workspaceId : undefined);
   const message = useWorkflowTriggerMessage(messageCondition ? normalizeMessageEventId(messageCondition.value) : null, scope.scope);
   const iconEmoji = trigger.kind !== AutomationTriggerKind.ReactionAdded ? undefined
     : trigger.emoji?.trim() || conditions.find(condition => condition.field === "trigger_emoji"

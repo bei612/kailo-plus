@@ -21,6 +21,7 @@ import {
   validateWorkflowMessageSearchResults,
 } from "./workflow-message-candidates";
 import { useWorkflowMessageHost, type WorkflowMessageScope } from "./workflow-message-host";
+import { useLoad } from "./use-load";
 
 const PAGE_SIZE = 25;
 
@@ -256,15 +257,10 @@ function MessageOption({ active, candidate, disabled, fallbackName, id, onSelect
 /** Original useWorkflowTriggerPresentation message lookup for a trigger_message_id condition. */
 export function useWorkflowTriggerMessage(messageId: string | null, scope: WorkflowMessageScope | null) {
   const host = useWorkflowMessageHost();
-  const enabled = Boolean(host && scope && messageId);
-  const query = useQuery({
-    enabled,
-    queryKey: ["workflow-trigger-message", scope?.workspaceId, scope?.channelId, messageId],
-    queryFn: () => host!.event(scope!, messageId!),
-    retry: false,
-    staleTime: 60_000,
-  });
-  const message = scope && messageId
-    ? validatedWorkflowMessageCandidate(query.data, { channelId: scope.channelId, requestedId: messageId }) : null;
-  return { messageLabel: message?.content?.trim() || null, messageLoading: enabled && query.isPending };
+  const target = host && scope && messageId ? { host, scope, messageId } : null;
+  const [state] = useLoad(target ? `workflow-trigger-message:${target.scope.workspaceId}:${target.scope.channelId}:${target.messageId}` : "",
+    () => (target ? target.host.event(target.scope, target.messageId) : Promise.resolve(null)));
+  const message = target && state.status === "ok"
+    ? validatedWorkflowMessageCandidate(state.data, { channelId: target.scope.channelId, requestedId: target.messageId }) : null;
+  return { messageLabel: message?.content?.trim() || null, messageLoading: !!target && state.status === "pending" };
 }

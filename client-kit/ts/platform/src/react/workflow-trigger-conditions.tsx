@@ -179,7 +179,8 @@ export function WorkflowTriggerConditions({
   const authorKey = parseDirectAuthorInput(authorCondition?.value ?? "");
   const authorProfile = useWorkflowAuthorProfiles(workflowChannelId ?? undefined, authorKey ? [authorKey] : [], directory);
   const candidate = directory.rows.find((row) => row.pubkey === authorKey);
-  const messageScope = useWorkflowMessageScope(workflowChannelId);
+  // Only the original reaction trigger has a reacted-message condition.
+  const messageScope = useWorkflowMessageScope(triggerType === "reaction_added" ? workflowChannelId : undefined);
   const messageCondition = conditions.find((condition) => condition.field === "trigger_message_id");
   const messageId = messageCondition ? normalizeMessageEventId(messageCondition.value) : null;
   const message = useWorkflowTriggerMessage(messageId, messageScope.scope);
