@@ -1547,8 +1547,7 @@ impl OpenMeter {
         let mut seen = HashSet::new();
         let mut facts = Vec::with_capacity(list.data.len());
         for access in list.data {
-            if !valid_resource_key(&access.feature_key)
-                || !seen.insert(access.feature_key.clone())
+            if !valid_resource_key(&access.feature_key) || !seen.insert(access.feature_key.clone())
             {
                 return Err(Error::Unknown);
             }

@@ -175,9 +175,8 @@ struct Operation {
 #[allow(clippy::result_large_err)]
 fn operation(row: OperationRow) -> Result<Operation, Response> {
     let created_at = row.task.created_at;
-    let usage: Vec<UsageRow> = serde_json::from_value(row.usage).map_err(|e| {
-        Refusal::Unavailable(format!("UsageEvent 聚合不合形状: {e}")).respond(None)
-    })?;
+    let usage: Vec<UsageRow> = serde_json::from_value(row.usage)
+        .map_err(|e| Refusal::Unavailable(format!("UsageEvent 聚合不合形状: {e}")).respond(None))?;
     let usage = usage
         .into_iter()
         .map(|u| -> Result<OperationUsage, Response> {
@@ -377,9 +376,7 @@ async fn aggregate(
     Ok(out)
 }
 
-fn phase_counts(
-    phases: BTreeMap<String, (BusinessOperationPhase, i64)>,
-) -> Vec<PhaseElement> {
+fn phase_counts(phases: BTreeMap<String, (BusinessOperationPhase, i64)>) -> Vec<PhaseElement> {
     phases
         .into_values()
         .map(|(phase, count)| PhaseElement { phase, count })
@@ -517,7 +514,11 @@ pub async fn usage_billing(
             Ok(MeterUsage::Committed {
                 aggregation,
                 quantity,
-            }) => (MeterUsageState::Committed, Some(aggregation), Some(quantity)),
+            }) => (
+                MeterUsageState::Committed,
+                Some(aggregation),
+                Some(quantity),
+            ),
             Ok(MeterUsage::NoCommittedUsage { aggregation }) => {
                 (MeterUsageState::NoCommittedUsage, Some(aggregation), None)
             }
@@ -543,7 +544,10 @@ pub async fn usage_billing(
     let (entitlement_state, entitlements) = if query.workspace_id.is_some() {
         (UsageSectionState::TenantScopeOnly, Vec::new())
     } else if let Some(customer_id) = customer.as_deref() {
-        match openmeter.entitlement_facts(ctx.tenant_id, customer_id).await {
+        match openmeter
+            .entitlement_facts(ctx.tenant_id, customer_id)
+            .await
+        {
             Ok(facts) => (
                 UsageSectionState::Available,
                 facts
