@@ -13,8 +13,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:4239dc6a722bb7bab580c5b4a7f0a5e2b102950ad504726157e8b56716197636
-    artifact_digest: sha256:8d4e3b73fc15e29b4ccb4896c6a9bb271c9245fafe4d078ebbbda578173261f0
+    source_digest: sha256:445218b2b6a37da5c2a954dba10bf717e7575633241394216464e1ebf4b10728
+    artifact_digest: sha256:9bc691583482ad380e9e68da7a5d4b819048d1f3b1827368659f72b7d159e6af
     blocked: The frozen adapter candidate built, pushed and passed immutable registry digest readback; it is not deployed. Live Agent activation audit, approved release/binding and full component conformance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-service
     kind: image

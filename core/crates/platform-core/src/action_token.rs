@@ -174,8 +174,9 @@ async fn bootstrap_signing_key(
     )
 }
 
+const PKCS8_PEM_TAG: &str = "PRIVATE KEY";
+
 fn fresh_signing_key() -> Result<String, ()> {
-    use base64::Engine;
     let random = ring::rand::SystemRandom::new();
     let private = ring::signature::EcdsaKeyPair::generate_pkcs8(
         &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
@@ -183,26 +184,22 @@ fn fresh_signing_key() -> Result<String, ()> {
     )
     .map_err(|_| ())?;
     // PKCS#8 PEM is the exact format consumed by the existing ActionToken signer.
-    Ok(format!(
-        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
-        base64::engine::general_purpose::STANDARD.encode(private.as_ref())
+    Ok(pem::encode_config(
+        &pem::Pem::new(PKCS8_PEM_TAG, private.as_ref()),
+        pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF),
     ))
 }
 
 fn public_signing_key(private: &str, version: u32) -> Result<Value, ()> {
     use base64::Engine;
     use ring::signature::KeyPair;
-    let body = private
-        .strip_prefix("-----BEGIN PRIVATE KEY-----\n")
-        .ok_or(())?
-        .strip_suffix("\n-----END PRIVATE KEY-----\n")
-        .ok_or(())?;
-    let der = base64::engine::general_purpose::STANDARD
-        .decode(body.replace('\n', ""))
-        .map_err(|_| ())?;
+    let parsed = pem::parse(private).map_err(|_| ())?;
+    if parsed.tag() != PKCS8_PEM_TAG {
+        return Err(());
+    }
     let pair = ring::signature::EcdsaKeyPair::from_pkcs8(
         &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-        &der,
+        parsed.contents(),
         &ring::rand::SystemRandom::new(),
     )
     .map_err(|_| ())?;

@@ -24,7 +24,12 @@ die()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 
 # 不接受未跟踪源码；Dockerfile 的 COPY worker 会把它一同放进构建上下文。
 # 实际构建输入另从固定 commit 导出，避免被 ignored 文件或构建期间的工作树变化污染。
-[ -z "$(git status --porcelain --untracked-files=all)" ] || die "工作树有未提交改动，构建产物无法追溯到 commit"
+dirty=$(git status --porcelain --untracked-files=all)
+if [ -n "$dirty" ]; then
+  # 列出现场，交接方不必登录本机即可定位来源
+  printf '%s\n' "$dirty" | head -50 | sed 's/^/    /'
+  die "工作树有未提交改动，构建产物无法追溯到 commit"
+fi
 COMMIT=$(git rev-parse HEAD)
 registry="${REGISTRY:?release 需要已使用的 REGISTRY}"
 container_resource_preflight

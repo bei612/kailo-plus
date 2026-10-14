@@ -2530,6 +2530,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "pem",
  "prost",
  "prost-build",
  "prost-wkt-types",

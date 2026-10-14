@@ -47,7 +47,8 @@ coverage/
 /client-kit/dart/pubspec.lock
 
 # 发布产物（由 tools/release.sh 生成，可追溯性来自 provenance）
-/dist/
+# 不带结尾斜杠：CI 可把 dist 软链接到按 digest 命名的持久产物库，软链接同样不入版本库
+/dist
 
 # Python 字节码缓存（tools/upstream_manifest.py 被 check.sh 导入时生成）
 __pycache__/
