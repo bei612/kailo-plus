@@ -151,6 +151,11 @@ prepare_check_dependencies() {
   fi
   export PATH="$tooling/node_modules/.bin:$PATH"
   pnpm install --frozen-lockfile || return 2
+  # The Web shell is an npm project outside the pnpm workspace (file: copies of client-kit,
+  # .npmrc install-links); install it exactly as web-client/web/Dockerfile does.
+  if populated web-client/web/src; then
+    (cd web-client/web && npm ci --prefer-offline --no-audit --no-fund) || return 2
+  fi
   (cd client-kit/dart && dart pub get) || return 2
 }
 
@@ -175,6 +180,10 @@ step_lint() {
     ran=1
     diag pnpm -r typecheck && pass "tsc --noEmit" || fail "tsc --noEmit"
   fi
+  if populated web-client/web/src && have npm; then
+    ran=1
+    (cd web-client/web && diag npm run typecheck) && pass "web-client tsc --noEmit" || fail "web-client tsc --noEmit"
+  fi
   if populated client-kit/dart/lib; then
     if have dart; then
       ran=1
@@ -195,6 +204,8 @@ step_verify()   { hdr "2/10 受影响范围的验证"
     (cd worker && diag go test ./...) && pass "go test" || fail "go test"; fi
   if populated client-kit/ts && have pnpm; then ran=1
     pnpm -r test && pass "pnpm -r test（TypeScript）" || fail "pnpm -r test（TypeScript）"; fi
+  if populated web-client/web/src && have npm; then ran=1
+    (cd web-client/web && npm test) && pass "web-client vitest" || fail "web-client vitest"; fi
   if populated client-kit/dart/test && have dart; then ran=1
     (cd client-kit/dart && diag dart test) && pass "dart test" || fail "dart test"; fi
   [ "$ran" -eq 0 ] && skip "尚无可验证范围"
