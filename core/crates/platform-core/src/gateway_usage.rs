@@ -719,8 +719,11 @@ async fn correlate(
     let origin = if let Some(origin) = application_correlation(tx, entry).await? {
         origin
     } else {
+        let Some(trace) = trace else {
+            return untraced_agent_usage(tx, entry).await;
+        };
         sqlx::query_as::<_, Correlation>(CORRELATION)
-            .bind(trace.ok_or("Gateway durable usage 缺 Core trace")?)
+            .bind(trace)
             .fetch_optional(&mut **tx)
             .await
             .map_err(|_| "Gateway trace 归因不可读")?
@@ -868,6 +871,49 @@ async fn correlate(
         .await?;
     }
     Ok(true)
+}
+
+/// 03 §8、11 §4/§5、DD-21：平台自有 Agent（Codex）在 SS-COD-TRACE 闭合前发出的
+/// 模型请求没有 Core trace，归因固定 NONE、状态 BILLING_UNAVAILABLE，不创建
+/// 无法归属的 UsageEvent，也不记零用量。只凭请求上的专属 Gateway identity 精确
+/// 解析发放该凭据的 Installation 模型 binding（不按时间或模型名猜 operation），
+/// 把这一事实记在该 binding 的原安装 operation 下，全局游标随之前移。identity
+/// 解析不到唯一的平台 Agent binding（缺 Tenant/Workspace identity）时保持原游标。
+async fn untraced_agent_usage(
+    tx: &mut Transaction<'_, Postgres>,
+    entry: &Entry,
+) -> Result<bool, &'static str> {
+    let user = entry
+        .agentgateway_user
+        .as_deref()
+        .and_then(|v| Uuid::parse_str(v).ok())
+        .ok_or("Gateway durable usage 缺 Core trace")?;
+    let owners: Vec<Uuid> = sqlx::query_scalar(
+        "select a.operation_id from catalog.agent_model_binding b
+         join identity.principal p on p.id=b.gateway_principal_id and p.kind='SERVICE'
+         join admission.action_execution a on a.id=b.action_execution_id
+           and a.tenant_id=p.tenant_id and a.parent_action_execution_id is null
+           and a.action_key in ('agent.installation.create','agent.installation.upgrade')
+           and a.target_id=b.installation_resource_id
+         where b.gateway_principal_id=$1",
+    )
+    .bind(user)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|_| "Gateway untraced usage 的 Agent identity 不可读")?;
+    let [operation] = owners.as_slice() else {
+        return Err("Gateway durable usage 缺 Core trace");
+    };
+    usage_audit(
+        tx,
+        *operation,
+        &format!("usage:gateway:{}:BILLING_UNAVAILABLE", entry.id),
+        "RECONCILIATION",
+        "BILLING_UNAVAILABLE",
+        vec![Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id)],
+    )
+    .await?;
+    Ok(false)
 }
 
 /// 同一权威 AuditEvent，与引用和状态写同事务；不建立计量审计的第二份表。
@@ -1205,12 +1251,16 @@ impl Ingress {
 
     /// A native nonempty dispatch set, not a tail cursor or locally observed
     /// UsageEvent count. The final Codex turn/Capacity fence is supplied by Task.
+    /// `None`: after that native terminal the Gateway reports no durable
+    /// dispatch, pending or untracked request on this trace for this identity.
+    /// That is missing durable usage (03 §8: BILLING_UNAVAILABLE + NONE, no
+    /// UsageEvent), never a zero-usage proof.
     async fn completed_requests(
         &self,
         trace: &str,
         principal: Uuid,
         batch: i64,
-    ) -> Result<Vec<Entry>, &'static str> {
+    ) -> Result<Option<Vec<Entry>>, &'static str> {
         if batch <= 0 {
             return Err("Gateway usage 治理对账批次无效");
         }
@@ -1219,8 +1269,16 @@ impl Ingress {
             let page = self
                 .read_identity_page(requests.after, batch, Some(trace), Some(principal))
                 .await?;
+            if requests.submitted.is_none()
+                && page.entries.is_empty()
+                && page.submitted_requests == Some(0)
+                && page.pending_requests == Some(0)
+                && page.untracked_requests == Some(0)
+            {
+                return Ok(None);
+            }
             if requests.absorb(page, trace, principal, batch)? {
-                return Ok(requests.entries);
+                return Ok(Some(requests.entries));
             }
         }
     }
@@ -1781,7 +1839,11 @@ pub(crate) async fn committed_turn(
         expected.insert(("AGENT_INVOCATION".to_owned(), invocation, count.key));
     }
     let mut evidence = vec![Evidence::new(EvidenceKind::TraceId, &facts.trace_id)];
-    let mut billing_unavailable = false;
+    // A completed turn whose trace reached no durable Gateway request (e.g. the
+    // Codex chain before SS-COD-TRACE closed) has no attributable model usage:
+    // BILLING_UNAVAILABLE + NONE, with no model UsageEvent to expect.
+    let mut billing_unavailable = entries.is_none();
+    let entries = entries.unwrap_or_default();
     let mut tx = pool.begin().await.map_err(|_| "计量全集关联事务不可用")?;
     for entry in &entries {
         // Reuses exactly the global ingress attribution, native quantities and
