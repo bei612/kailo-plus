@@ -3,6 +3,9 @@
 // or missing Git activity producer is migrated into this presentation module.
 import { getLocale, platformTimeSeconds, translate, type PlatformLocale } from "../../../i18n";
 import type {ProjectsFilter} from "../ProjectsToolbar";
+import type {Project} from "../projectModels";
+import {normalizePubkey} from "../../conversations/pubkey";
+import type {ProjectActivitySummary} from "./projectActivitySummaries";
 export type ProjectsViewMode = "grid" | "list";
 export type ProjectsSort = "updated" | "created" | "name";
 export function formatExactTimestamp(createdAt: number) {
@@ -113,4 +116,51 @@ export function relativeTime(createdAt:number,nowSeconds=Math.floor(Date.now()/1
     }
   }
   return translate(locale,"platform.time.now");
+}
+
+// Original projectsViewHelpers.ts::projectPeople, getProjectUpdatedAt and
+// isProjectMine, unchanged.
+export function projectPeople(
+  project: Project,
+  summary?: ProjectActivitySummary,
+): string[] {
+  return [
+    ...new Set(
+      [
+        project.owner,
+        ...project.repositories.flatMap((repository) => [
+          repository.owner,
+          ...repository.contributors,
+        ]),
+        ...(summary?.participantPubkeys ?? []),
+      ].map(normalizePubkey),
+    ),
+  ];
+}
+
+export function getProjectUpdatedAt(
+  project: Project,
+  summary: ProjectActivitySummary | undefined,
+) {
+  // A summary with no recorded activity has `updatedAt: 0` — fall back to
+  // the announcement's creation time rather than rendering the Unix epoch.
+  return summary?.updatedAt || project.createdAt;
+}
+
+export function isProjectMine(
+  project: Project,
+  currentPubkey: string | undefined,
+) {
+  if (!currentPubkey) return false;
+  const normalizedCurrentPubkey = normalizePubkey(currentPubkey);
+  return (
+    normalizePubkey(project.owner) === normalizedCurrentPubkey ||
+    project.repositories.some(
+      (repository) =>
+        normalizePubkey(repository.owner) === normalizedCurrentPubkey ||
+        repository.contributors.some(
+          (pubkey) => normalizePubkey(pubkey) === normalizedCurrentPubkey,
+        ),
+    )
+  );
 }

@@ -16,6 +16,7 @@ export function ProjectsSectionSearch({
   sort,
   channelsAvailable,
   workItemsAvailable,
+  projectActivityAvailable = false,
 }: {
   filter: ProjectsFilter;
   onFilterChange: (filter: ProjectsFilter) => void;
@@ -24,6 +25,8 @@ export function ProjectsSectionSearch({
   sort: ProjectsSort;
   channelsAvailable: boolean;
   workItemsAvailable: boolean;
+  /** Project recent-activity order needs the completed work-item summaries. */
+  projectActivityAvailable?: boolean;
 }) {
   const t=useUiT();
   const sectionTitle=t(projectsSectionTitleKey(filter));
@@ -121,7 +124,7 @@ export function ProjectsSectionSearch({
               />
               {filter !== "all" && filter !== "channels" ? (
                 <div className="absolute inset-y-0 right-0 flex w-32 items-center justify-end">
-                  <ProjectsSortSelect onChange={onSortChange} sort={sort} activityAvailable={filter === "issues" || filter === "prs"} />
+                  <ProjectsSortSelect onChange={onSortChange} sort={sort} activityAvailable={filter === "issues" || filter === "prs" || projectActivityAvailable} />
                 </div>
               ) : null}
             </motion.div>

@@ -103,6 +103,18 @@ describe("original Projects Activity overview",()=>{
     expect(cards(ui).some(value=>value?.includes("创建了任务于")&&value.includes("待办"))).toBe(true);
     cache.clear();
   });
+  it("groups the original project cards and shows their people and activity distribution from the same read",async()=>{
+    localStorage.setItem("buzz.projects.filter","projects");
+    const f=fixture();const {ui,cache}=await mount(f);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-activity-bar"]')).not.toBeNull());
+    expect([...ui.querySelectorAll('[data-testid="projects-collection-group-label"]')].map(node=>node.textContent)).toEqual(["Other projects"]);
+    expect([...ui.querySelectorAll('[data-testid="project-activity-segment"]')].map(node=>node.getAttribute("aria-label"))).toEqual(["2 commits","1 review","1 task"]);
+    expect(ui.querySelector('button[aria-label^="View "][aria-label$="profile"]')).not.toBeNull();
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('option[value="updated"]')).not.toBeNull());
+    expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated");
+    cache.clear();
+  });
   it("shows the original failure notice instead of an empty timeline and retries the same read",async()=>{
     const f=fixture();f.deny(true);const {ui,cache}=await mount(f);
     await vi.waitFor(()=>expect(ui.querySelector('[role="alert"]')?.textContent).toContain("Could not load project activity."));

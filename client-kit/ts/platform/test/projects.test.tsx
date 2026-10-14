@@ -2,7 +2,7 @@ import { QueryClient,QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach,describe,expect,it,vi } from "vitest";
 import {setLocale} from "../src/i18n";
 import {ProjectsView,loadProjects,type ProjectsHost} from "../src/react/projects";
-import type {PulseEvent} from "../src/react/pulse/host";
+import {PulseHostProvider,type PulseEvent,type PulseHost} from "../src/react/pulse/host";
 import {buildProjectReadModels} from "../src/react/projects/projectModels";
 import {render,button,click,type} from "./render";
 import {ProjectDeleteAction} from "../src/react/projects/ProjectDeleteAction";
@@ -30,6 +30,10 @@ const owner="a".repeat(64),other="b".repeat(64);
 function project(name="Real project",id="p",time=10):PulseEvent{return {id,pubkey:owner,kind:30621,created_at:time,content:"",tags:[["d",id],["name",name],["description","Signed announcement"],["a",`30617:${other}:missing`]]};}
 function host(rows:PulseEvent[]=[project()]):ProjectsHost{return {scopeKey:"tenant:owner",query:async req=>({events:req.view==="PROJECTS"?rows:[],pubkey:owner,limit:3})};}
 const signal=()=>new AbortController().signal;
+// Production hosts supply the profile host through renderWorkItems; the
+// directory's Activity rail reads profiles from it.
+const pulseHost:PulseHost={scopeKey:"tenant:owner",pubkey:owner,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
+  renderComposer:()=>null,renderContent:content=><p>{content}</p>};
 const homeId="12345678-1234-4234-8234-123456789001",relatedId="12345678-1234-4234-8234-123456789002";
 function homeWorkspace(channelId=homeId):DiscoverableWorkspace{return {id:`workspace-${channelId}`,createdAt:new Date(0),isMember:true,
   membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
@@ -315,7 +319,7 @@ describe("governed original project creation",()=>{
 describe("original Projects directory management consumers",()=>{
   const cache=()=>new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   async function directory(h:ProjectsHost,client=bff,onSelectedProjectChange=vi.fn()){
-    const ui=await render(<PlatformProvider client={client}><QueryClientProvider client={cache()}><ProjectsView host={h} onSelectedProjectChange={onSelectedProjectChange}/></QueryClientProvider></PlatformProvider>);
+    const ui=await render(<PlatformProvider client={client}><QueryClientProvider client={cache()}><TooltipProvider><PulseHostProvider host={pulseHost}><ProjectsView host={h} onSelectedProjectChange={onSelectedProjectChange}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.querySelector('[role="status"]')).toBeNull());
     return ui;
   }
@@ -438,7 +442,7 @@ describe("original Projects directory management consumers",()=>{
     const query=vi.fn<ProjectsHost["query"]>(async request=>({pubkey:owner,limit:20,
       events:request.view==="PROJECTS"?[matched,unmatched]:request.view==="REPOSITORIES"?[repository]:[]}));
     const h:ProjectsHost={scopeKey:"project-search",query},selected=vi.fn(),clientCache=cache();
-    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={clientCache}><ProjectsView host={h} selectedProjectId={null} onSelectedProjectChange={selected}/></QueryClientProvider></PlatformProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={clientCache}><TooltipProvider><PulseHostProvider host={pulseHost}><ProjectsView host={h} selectedProjectId={null} onSelectedProjectChange={selected}/></PulseHostProvider></TooltipProvider></QueryClientProvider></PlatformProvider>);
     const card=(id:string)=>ui.querySelector(`[data-testid="project-card-${id}"]`);
     await vi.waitFor(()=>expect(card("alpha")).not.toBeNull());
     expect(card("other")).not.toBeNull();
@@ -526,7 +530,7 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     const h=host();const cache=new QueryClient();const changed=vi.fn();
     function Host(){const [selected,setSelected]=useState<string|null>(`30621:${owner}:p`);return <ProjectsView host={h} selectedProjectId={selected} renderChannel={vi.fn()} onOpenChannel={vi.fn()} onSelectedProjectChange={id=>{changed(id);setSelected(id);}}/>;}
     const client=createBffClient({send:async()=>({status:200,body:{items:[]}})});
-    const ui=await render(<><div id="app-top-chrome-content"/><TooltipProvider><PlatformProvider client={client}><QueryClientProvider client={cache}><Host/></QueryClientProvider></PlatformProvider></TooltipProvider></>);
+    const ui=await render(<><div id="app-top-chrome-content"/><TooltipProvider><PlatformProvider client={client}><QueryClientProvider client={cache}><PulseHostProvider host={pulseHost}><Host/></PulseHostProvider></QueryClientProvider></PlatformProvider></TooltipProvider></>);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-detail-chrome"]')).not.toBeNull());
     await click(button(ui,"Projects"));
     expect(changed).toHaveBeenCalledWith(null);expect(ui.querySelector('[data-testid="project-channel-home"]')).toBeNull();

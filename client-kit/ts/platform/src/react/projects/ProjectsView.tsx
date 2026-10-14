@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
-import { Trash2 } from "lucide-react";
+import { Folders, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -14,7 +14,7 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectDeleteAction } from "./ProjectDeleteAction";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { useCreateProject } from "./useCreateProject";
-import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,readStoredSort,writeStoredSort,type ProjectsViewMode } from "./lib/projectsViewHelpers";
+import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFilter,readStoredSort,writeStoredSort,getProjectUpdatedAt,isProjectMine,projectPeople,type ProjectsViewMode } from "./lib/projectsViewHelpers";
 import { ProjectChannelHome, type ProjectChannelRenderer } from "./ProjectChannelHome";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
@@ -47,7 +47,9 @@ import {ProjectsActivityFeed,projectsActivityPubkeys} from "./ProjectsActivityFe
 import {ProjectsActivityIntro,ProjectsOverviewPanel} from "./ProjectsOverviewPanel";
 import {ProjectsWorkItemsLoadNotice} from "./ProjectsWorkItemsLoadNotice";
 import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
-import {projectActivitySummaries} from "./lib/projectActivitySummaries";
+import {projectActivitySummaries,type ProjectActivitySummary} from "./lib/projectActivitySummaries";
+import {ProjectSelectableGroup} from "./ProjectSelectableGroup";
+import type {UserProfileLookup} from "../messages/system/identity";
 import {projectsSectionIcon,projectsSectionTitleKey} from "./projectsSectionMeta";
 import {useNow} from "../useNow";
 import {cn} from "../profile/buzz/shared/lib/cn";
@@ -289,6 +291,42 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
   </>;
 }
 
+// Original ProjectsOverviewItems.tsx::ProjectsOverviewProjectItems: Mine / Other
+// projects collection groups over the responsive card grid or list rows.
+const RESPONSIVE_CARD_GRID_CLASS="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]";
+type ProjectItemActivity={people:string[];profiles?:UserProfileLookup;summary:ProjectActivitySummary|undefined};
+function ProjectsOverviewProjectItems({visible,viewerPubkey,view,activityFor,renderRow}:{visible:Project[];viewerPubkey:string;view:ProjectsViewMode;
+  activityFor:(project:Project)=>ProjectItemActivity|undefined;renderRow:(project:Project,activity:ProjectItemActivity|undefined)=>ReactNode}) {
+  const t=useUiT();
+  if(visible.length===0)return <EmptyFilteredState/>;
+  const groups=[
+    {items:visible.filter(project=>isProjectMine(project,viewerPubkey)),key:"mine",title:t("projects.group.mine")},
+    {items:visible.filter(project=>!isProjectMine(project,viewerPubkey)),key:"other",title:t("projects.group.other")},
+  ].filter(group=>group.items.length>0);
+  return <div className="space-y-0" data-testid={view==="list"?"projects-list-container":undefined}>
+    {groups.map(group=><ProjectSelectableGroup contentClassName="mt-2 space-y-0" count={group.items.length} groupKey={group.key}
+      headerClassName="mx-0 gap-3 px-3" headerTestId="projects-collection-group-header" icon={<Folders className="h-4 w-4"/>} key={group.key}
+      label={group.title} labelClassName="text-sm font-normal text-foreground/80" labelTestId="projects-collection-group-label" testId="projects-collection-group">
+      {view==="grid"?<div className={RESPONSIVE_CARD_GRID_CLASS}>
+        {group.items.map(project=><div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]" key={project.id}>{renderRow(project,activityFor(project))}</div>)}
+      </div>:<div>
+        {group.items.map(project=><div className="[contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]" key={project.id}>{renderRow(project,activityFor(project))}</div>)}
+      </div>}
+    </ProjectSelectableGroup>)}
+  </div>;
+}
+
+// Profiles for the original people stacks come from the work-item host.
+function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,summaries,renderRow}:{visible:Project[];viewerPubkey:string;view:ProjectsViewMode;
+  summaries:Record<string,ProjectActivitySummary>;renderRow:(project:Project,activity:ProjectItemActivity|undefined)=>ReactNode}) {
+  // Identity-stable people arrays keep memoized cards from re-rendering.
+  const peopleByProject=useMemo(()=>new Map(visible.map(project=>[project.id,projectPeople(project,summaries[project.id])])),[summaries,visible]);
+  const pubkeys=useMemo(()=>[...new Set([...peopleByProject.values()].flat())],[peopleByProject]);
+  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  return <ProjectsOverviewProjectItems visible={visible} viewerPubkey={viewerPubkey} view={view} renderRow={renderRow}
+    activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/>;
+}
+
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
 // over the same directory and work-item reads; profiles come from the work-item host.
 function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
@@ -312,9 +350,6 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   });
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
   const [sort,setSort]=useState<ProjectsSort>(()=>readStoredSort());
-  // Directory activity summaries remain un-restored. The visible fallback is
-  // not a new user preference: keep the original stored sort for work items.
-  const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"?"created":sort;
   const [createOpen,setCreateOpen]=useState(false);
   const [createIssueOpen,setCreateIssueOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
@@ -341,11 +376,19 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects",host.scopeKey]});cache.removeQueries({queryKey:["projects",host.scopeKey]});},[cache,host.scopeKey]);
   // A failed fresh read must not keep a previously accessible announcement open.
   const projects=query.isSuccess&&!query.isFetching?query.data.projects:[];
+  const workSnapshot=workItems.isSuccess&&!workItems.isFetching?workItems.data:undefined;
+  // Original per-project activity summaries over the completed work-item read;
+  // absent while loading or failed, never a zero-activity stand-in.
+  const directorySummaries=useMemo(()=>workSnapshot?projectActivitySummaries(workSnapshot.events,projects):undefined,[workSnapshot,projects]);
+  // Recent-activity order needs those summaries; otherwise the visible order
+  // falls back to the creation date without rewriting the stored preference.
+  const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"&&!directorySummaries?"created":sort;
   const active=projects.find(project=>project.id===selected);
   const visible=projects.filter(project=>matchesProjectsSearch(search,[
     project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description]),
   ]))
-    .sort((a,b)=>effectiveSort==="name"?a.name.localeCompare(b.name):b.createdAt-a.createdAt);
+    .sort((a,b)=>effectiveSort==="name"?a.name.localeCompare(b.name):effectiveSort==="created"?b.createdAt-a.createdAt
+      :getProjectUpdatedAt(b,directorySummaries?.[b.id])-getProjectUpdatedAt(a,directorySummaries?.[a.id]));
   const canCreate=Boolean(host.publish&&query.isSuccess&&!query.isFetching&&(
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
@@ -356,9 +399,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
     cache.invalidateQueries({queryKey:["sidebar-projects",host.scopeKey]}),
   ]);
-  const projectRow=(project:Project)=>{
-    const row=(actions?:ReactNode)=>view==="grid"?<ProjectGridCard project={project} onOpen={onOpen} actions={actions}/>
-      :<ProjectListRow project={project} onOpen={onOpen} actions={actions}/>;
+  const projectRow=(project:Project,activity?:ProjectItemActivity)=>{
+    const row=(actions?:ReactNode)=>view==="grid"?<ProjectGridCard project={project} onOpen={onOpen} actions={actions} activity={activity}/>
+      :<ProjectListRow project={project} onOpen={onOpen} actions={actions} activity={activity}/>;
     // Use the same winning replaceable event as projectModels (timestamp, then
     // lowest event ID). A stale earlier revision must not be deletion's target.
     const head=[...query.data!.projectEvents,...query.data!.repositoryEvents]
@@ -395,7 +438,6 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     <EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>
     {createDialog}
   </>;
-  const workSnapshot=workItems.isSuccess&&!workItems.isFetching?workItems.data:undefined;
   const contextAvailable=Boolean(onSelectedProjectChange);
   const explicitProjects=workSnapshot?workSnapshot.projects.filter(project=>!project.legacy):[];
   const selectSection=(section:ProjectsOverviewSection)=>changeFilter(section);
@@ -427,7 +469,8 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
               <div className="w-full space-y-3">
                 <div className={cn("sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 px-4",PROJECT_COLUMN_HEADER_BACKDROP_CLASS,overviewDetached&&"rounded-t-2xl")} data-testid="projects-page-tabs">
                   <ProjectsSectionSearch filter={filter} onFilterChange={changeFilter} onQueryChange={setSearch} onSortChange={changeSort}
-                    sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={contextAvailable}/>
+                    sort={effectiveSort} channelsAvailable={Boolean(onOpenChannel)} workItemsAvailable={contextAvailable}
+                    projectActivityAvailable={Boolean(directorySummaries)}/>
                 </div>
                 {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
                 <div className={filter==="all"?"mx-auto w-full max-w-6xl":"w-full"}>
@@ -439,11 +482,14 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
                     <section><div className="space-y-3">
                       {(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} query={workItems} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
                         <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
-                          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
-                        <EmptyFilteredState/>:
-                        <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
-                          {visible.map(projectRow)}
-                        </section>}
+                          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:<>
+                        {workItems.isError?<ProjectsWorkItemsLoadNotice error={workItems.error} isRetrying={workItems.isFetching} onRetry={()=>{void workItems.refetch();}}/>:null}
+                        {directorySummaries&&workSnapshot?(()=>{
+                          const items=<ProjectsOverviewProjectItemsWithActivity visible={visible} viewerPubkey={query.data!.viewerPubkey} view={view}
+                            summaries={directorySummaries} renderRow={projectRow}/>;
+                          return renderWorkItems?renderWorkItems(items,workSnapshot.viewerPubkey):items;
+                        })():<ProjectsOverviewProjectItems visible={visible} viewerPubkey={query.data!.viewerPubkey} view={view} renderRow={projectRow} activityFor={()=>undefined}/>}
+                      </>}
                     </div></section>
                   </>}
                 </div>

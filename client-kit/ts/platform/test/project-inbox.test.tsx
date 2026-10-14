@@ -1138,9 +1138,10 @@ describe("original Inbox project read closure",()=>{
       await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe(storage==="available"?"name":"updated");
       await choose("updated");expect(first()).toBe(id("1"));
       await closeSearch();await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-projects"]')!);
-      await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");expect(ui.querySelector('option[value="updated"]')).toBeNull();
+      // The completed work-item read supplies the original project activity summaries.
+      await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated");expect(ui.querySelector('option[value="updated"]')).not.toBeNull();
       expect(originalGet.call(localStorage,"buzz.projects.sort")).toBe(storage==="available"?"updated":"name");
-      await act(async()=>reload());await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("created");
+      await act(async()=>reload());await openSearch();await vi.waitFor(()=>expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated"));
       await closeSearch();await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-issues"]')!);
       await vi.waitFor(()=>expect(first()).toBe(id("1")));await openSearch();expect(ui.querySelector<HTMLSelectElement>("select")?.value).toBe("updated");
       if(storage==="available"){
