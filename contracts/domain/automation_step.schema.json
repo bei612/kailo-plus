@@ -2,21 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/automation_step.schema.json",
   "title": "AutomationStep",
-  "description": "原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。",
+  "description": "原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原 requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "action"],
   "properties": {
     "id": {"type": "string", "minLength": 1},
     "name": {"type": "string", "minLength": 1},
-    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message", "add_reaction", "set_channel_topic"]},
+    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message", "add_reaction", "set_channel_topic", "call_webhook"]},
     "topic": {"type": "string", "description": "原频道主题；空字符串清空主题，不改变频道名称、描述或成员。"},
     "emoji": {"type": "string", "minLength": 1, "maxLength": 64, "description": "原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。"},
     "duration": {"type": "string", "minLength": 1},
     "if": {"type": "string", "minLength": 1, "description": "固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以 CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该 ActionExecution；求值错误使该运行在任何副作用前失败。"},
-    "timeout_secs": {"type": "integer", "minimum": 1, "description": "固定 Buzz Step.timeout_secs；当前仅 Delay 接入。显式时限由原 AgentTask 的独立 Temporal Timer 执行，缺省保持既有版本行为，不给历史补写默认值。"},
+    "timeout_secs": {"type": "integer", "minimum": 1, "description": "固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。"},
     "approvalPolicy": {"$ref": "automation_approval_policy_ref.schema.json", "description": "request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。"},
     "message": {"type": "string", "minLength": 1},
-    "text": {"type": "string", "minLength": 1}
+    "text": {"type": "string", "minLength": 1},
+    "url": {"type": "string", "minLength": 9, "maxLength": 2048, "pattern": "^https://", "description": "固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经 AgentGateway 出站，不跟随重定向。"},
+    "method": {"type": "string", "enum": ["POST", "GET", "PUT", "PATCH", "DELETE"], "description": "原 HTTP 方法，缺省 POST。"},
+    "headers": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}, "description": "原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey 者）不得明文保存，必须改用 secretHeaders。"},
+    "secretHeaders": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "automation_secret_ref.schema.json"}, "description": "Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。"},
+    "body": {"type": "string", "description": "原请求体模板；不保存响应正文。"}
   }
 }

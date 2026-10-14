@@ -22,7 +22,9 @@
         "runId": {"type": "string"},
         "historyEventId": {"type": "integer"},
         "actionExecutionId": {"type": "string", "format": "uuid"},
-        "approvalWorkflowId": {"type": "string"}
+        "approvalWorkflowId": {"type": "string"},
+        "httpStatus": {"type": "integer", "minimum": 100, "maximum": 599, "description": "call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。"},
+        "requestId": {"type": "string", "description": "call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。"}
       }
     }
   }
