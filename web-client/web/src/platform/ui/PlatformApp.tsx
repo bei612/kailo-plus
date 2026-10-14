@@ -593,7 +593,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
                 }}/>
-            </AvatarHostProvider> : tab === "new-message" || tab === "agents" || tab === "projects" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+            </AvatarHostProvider> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
