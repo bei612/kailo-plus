@@ -372,8 +372,13 @@ remove_paths:
   - desktop/src/features/gifs
   - desktop/src/features/home/hiddenDmInboxAction.test.mjs
   - desktop/src/features/home/hiddenDmInboxAction.ts
+  # Original HomeView pane layout and filter selection moved verbatim into the
+  # shared client-kit Inbox body (react/inbox-view.tsx) used by Web and Desktop.
+  - desktop/src/features/home/lib/homePaneLayout.ts
   - desktop/src/features/home/lib/inboxListRows.test.mjs
   - desktop/src/features/home/lib/inboxListRows.ts
+  - desktop/src/features/home/lib/inboxSelection.test.mjs
+  - desktop/src/features/home/lib/inboxSelection.ts
   - desktop/src/features/home/lib/projectInbox.test.mjs
   - desktop/src/features/home/lib/projectInbox.ts
   - desktop/src/features/home/ui/FeedSection.tsx

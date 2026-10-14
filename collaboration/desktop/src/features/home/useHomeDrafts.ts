@@ -12,6 +12,9 @@ type UseHomeDraftsOptions = {
   isNarrowHomeViewport: boolean;
   selectionEnabled: boolean;
   viewportWidthPx: number;
+  /** Selection is owned by the shared Inbox page state. */
+  selectedKey: string | null;
+  setSelectedKey: React.Dispatch<React.SetStateAction<string | null>>;
 };
 
 export function useHomeDrafts({
@@ -19,13 +22,14 @@ export function useHomeDrafts({
   isNarrowHomeViewport,
   selectionEnabled,
   viewportWidthPx,
+  selectedKey,
+  setSelectedKey,
 }: UseHomeDraftsOptions) {
   const items = useDraftViewItems(selectionEnabled);
   const optimisticActiveCount = useActiveDraftCount(new Map());
   const activeCount = selectionEnabled
     ? items.filter((item) => item.rootStatus !== "deleted").length
     : optimisticActiveCount;
-  const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
   const selectedItem =
     items.find((item) => item.entry.key === selectedKey) ?? null;
 
@@ -38,7 +42,7 @@ export function useHomeDrafts({
         setSelectedKey(null);
       }
     },
-    [selectedKey],
+    [selectedKey, setSelectedKey],
   );
 
   return {

@@ -24,29 +24,25 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { BffError } from "@client-kit/platform/transport";
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
-import { InboxListPane } from "@client-kit/platform/react/inbox-list-pane";
+import { InboxView, useInboxViewState, type InboxViewStatus } from "@client-kit/platform/react/inbox-view";
 import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
-import { HomeLoadingState, InboxLayout, InboxEmptyDetail, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
-import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
-import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
+import { HomeLoadingState, InboxEmptyDetail, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
+import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import type { PlatformDraftNavigation } from "@/app/platform-navigation";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
-import { useHomeInboxAutoSelection } from "@client-kit/platform/react/use-inbox-auto-selection";
 import { useInboxSelectionAnchor } from "@client-kit/platform/react/use-inbox-selection-anchor";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hex, inboxEvents, inboxReactionEvents, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
-import { Button } from "@/shared/ui/button";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, useMessageAuthorProfiles, type MessageAuthor } from "./MessageAuthorProfile";
 import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
 import {loadProjectWorkItems,projectInboxMentions,resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,type ProjectInboxWorkItem,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
 import {useProjectsHost} from "./ProjectsPane";
 import {PulsePane} from "./PulsePane";
 import {UserAvatar} from "@client-kit/platform/react/messages";
-import {useReminderHost,useRemindersQuery,ReminderDetailPane} from "@client-kit/platform/react/reminders";
 type ProjectEvent=ReturnType<typeof projectInboxMentions>[number];
 type InboxEvent=Event|ProjectEvent;
 
@@ -86,9 +82,6 @@ export function InboxPane({
   const selectionScope = useMemo(() => ({}), [client, principalId]);
   const projectsHost=useProjectsHost(principalId);
   const t = useT();
-  const reminderHost=useReminderHost();
-  const reminders=useRemindersQuery(reminderHost.pubkey);
-  const [selectedReminder,setSelectedReminder]=useState<string|null>(null);
   const locale = useLocale();
   const reads = useInboxState(client);
   const visibility = useConversationVisibilityHost();
@@ -96,38 +89,25 @@ export function InboxPane({
     onOpenContext: target => onOpen(target.channelId, target), onError: message => toast.error(message) });
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState(false);
-  const [filter, setFilter] = useState<InboxFilter>("all");
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const [autoSelectedEventId, setAutoSelectedEventId] = useState<string | null>(null);
   const [localSelectedItemId, setLocalSelectedItemId] = useState<string | null>(null);
-  const urlSelectedItemId = selectedItemId === undefined ? localSelectedItemId : selectedItemId;
   const [publicationSelection, setPublicationSelection] = useState<{principalId: string; event: InboxEvent} | null>(null);
   const publicationAnchor = publicationSelection?.principalId === principalId ? publicationSelection.event : undefined;
-  const effectiveSelectedItemId = publicationAnchor?.id ?? urlSelectedItemId;
-  const selectItem = (id: string | null) => {
-    setAutoSelectedEventId(null);
-    setLocalSelectedItemId(id);
-    onSelectedItemIdChange?.(id);
-  };
-  const selectedEventId = effectiveSelectedItemId ?? autoSelectedEventId;
-  const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
+  // Shared original Inbox page state. An unsent publication's owner anchor is
+  // held in place of the URL item without rewriting the URL.
+  const view = useInboxViewState({
+    itemId: selectedItemId === undefined ? localSelectedItemId : selectedItemId,
+    setItemId: useCallback((id: string | null) => { setLocalSelectedItemId(id); onSelectedItemIdChange?.(id); }, [onSelectedItemIdChange]),
+    heldItemId: publicationAnchor?.id ?? null,
+  });
+  const { filter, selectedEventId } = view;
+  const effectiveSelectedItemId = view.urlSelectedItemId;
   const [profileTarget, setProfileTarget] = useState<MessageAuthor | null>(null);
   const [profileWidth, setProfileWidth] = useState(AUXILIARY_PANEL_DEFAULT_WIDTH_PX);
   const closeAuthorScope = useCallback((workspaceId: string) => {
     setProfileTarget((target) => target?.workspaceId === workspaceId ? null : target);
   }, []);
   const drafts = useInboxDrafts(principalId);
-  const container = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState<number | null>(null);
-  const resize = useResizableInboxListWidth();
-  useEffect(() => { setAutoSelectedEventId(null); setLocalSelectedItemId(null); setPublicationSelection(null); setSelectedDraft(null); setProfileTarget(null); }, [principalId]);
-  useEffect(() => {
-    const node = container.current;
-    if (!node) return;
-    const observer = new ResizeObserver(([entry]) => { if (entry) setWidth(entry.contentRect.width); });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [snapshot !== null, reads.state !== null, failed, reads.failed, reads.unknown]);
+  useEffect(() => { view.setAutoSelectedEventId(null); setLocalSelectedItemId(null); setPublicationSelection(null); view.setSelectedDraftKey(null); setProfileTarget(null); }, [principalId]);
   const generation = useRef(0);
   const projectRead = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
@@ -332,7 +312,7 @@ export function InboxPane({
     void load();
     void reads.refresh();
   };
-  const messagesMode = filter !== "drafts" && filter !== "reminders" && selectedReminder === null;
+  const messagesMode = view.isMessagesMode;
   const anchorFeedItems = useMemo(() => rows.flatMap(row => row.items), [rows]);
   const visibleAnchor = (event: InboxEvent | undefined) => event?.channelId != null && reads.visibleChannels.has(event.channelId) &&
     (snapshot?.workspaces.some(workspace => workspace.id === event.channelId) || snapshot?.conversations.some(conversation => conversation.channelId === event.channelId && conversation.participantPrincipalIds.includes(principalId)))
@@ -387,136 +367,109 @@ export function InboxPane({
       row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(readItem(event))!) ?? 0))).length);
   }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt, readItem]);
   useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
-  const visibleRows = rows
-    .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, filter, snapshot?.agentPubkeys))
-    .filter(
-      (row) =>
-        !unreadOnly || row.scopeKey === selected ||
-        row.items.some(
-          (item) =>
-            item.createdAt >
-            (reads.readAt(inboxReadContext(readItem(item))!) ?? 0),
-        ),
-    );
-  const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
-  const authorProfiles=useMessageAuthorProfiles(visibleRows.flatMap(({item})=>{
+  const viewRows = useMemo(() => rows.map(row => ({...row, id: row.item.id, groupItems: row.items, conversationId: row.scopeKey})), [rows]);
+  type ViewRow = typeof viewRows[number];
+  const isRead = useCallback((row: ViewRow) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(readItem(event))!) ?? 0)),
+    [reads.readAt, readItem]);
+  const matchesFilter = useCallback((row: ViewRow, next: InboxFilter) =>
+    matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, next, snapshot?.agentPubkeys), [snapshot]);
+  const ready = !failed && !reads.failed && !reads.unknown && Boolean(snapshot && snapshot.scope === selectionScope && reads.state);
+  const authorProfiles=useMessageAuthorProfiles(viewRows.filter(row => matchesFilter(row, filter)).flatMap(({item})=>{
     if(item.channelId===null)return [];
     const conversation=snapshot?.conversations.find(value=>value.channelId===item.channelId);
     return [{principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey,...(conversation?{conversationId:conversation.id}:{})}];
-  }),!failed&&!reads.failed&&!reads.unknown&&Boolean(snapshot&&reads.state)&&!["drafts","reminders"].includes(filter));
-  const listItems = visibleRows.map(row => ({...row, id: row.item.id, groupItems: row.items, conversationId: row.scopeKey}));
-  useInboxDraftSelection({ items: drafts.entries.map(entry => ({ entry })), selectedKey: selectedDraft, setSelectedKey: setSelectedDraft,
-    autoSelect: filter === "drafts", selectionEnabled: filter === "drafts", viewportWidthPx: width ?? 0, isNarrowHomeViewport: narrow });
-  // The original selection hook receives the admitted scope key as its stable
-  // identity; equal Relay root IDs in different channels must not share a pane.
-  const selectionItems = useMemo(() => visibleRows.map(row => ({ id: row.item.id, conversationId: row.scopeKey })), [visibleRows]);
-  useHomeInboxAutoSelection({
-    coldResolutionPending: coldPending,
-    filteredItems: selectionItems,
-    hasFeed: Boolean(snapshot && reads.state),
-    hasPersonalSelection: filter === "drafts" && selectedDraft !== null,
-    homeInboxWidthPx: width ?? 0,
-    isLoading: failed || reads.failed || reads.unknown || !snapshot || !reads.state,
-    isMessagesMode: filter !== "drafts" && filter !== "reminders" && selectedReminder === null,
-    isNarrowHomeViewport: narrow,
-    selectedConversationId: selected,
-    setAutoSelectedEventId,
-    urlSelectedItemId: effectiveSelectedItemId,
-  });
-  if (failed || reads.failed || reads.unknown)
-    return (
-      <section role="status">
-        <p>{t(reads.unknown ? "inbox.readUnknown" : "platform.loadFailed")}</p>
-        <Button onClick={refresh}>{t("platform.refresh")}</Button>
-      </section>
-    );
-  if (!snapshot || snapshot.scope !== selectionScope || !reads.state) return <HomeLoadingState />;
+  }),ready&&!["drafts","reminders"].includes(filter));
+  useInboxDraftSelection({ items: drafts.entries.map(entry => ({ entry })), selectedKey: view.selectedDraftKey, setSelectedKey: view.setSelectedDraftKey,
+    autoSelect: filter === "drafts", selectionEnabled: filter === "drafts", viewportWidthPx: view.widthPx, isNarrowHomeViewport: view.isNarrow });
+  const status: InboxViewStatus = failed || reads.failed || reads.unknown
+    ? { kind: "unavailable", message: t(reads.unknown ? "inbox.readUnknown" : "platform.loadFailed"), onRetry: refresh }
+    : ready ? { kind: "ready" } : { kind: "loading" };
   const chosen = anchor ? {scopeKey: inboxScopeKey(anchor), item: anchor} : undefined;
-  const chosenProject=chosen&&chosen.item.channelId===null?resolveProjectInboxWorkItem(snapshot.projectItems,chosen.item):undefined;
-  const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
+  const chosenProject=snapshot&&chosen&&chosen.item.channelId===null?resolveProjectInboxWorkItem(snapshot.projectItems,chosen.item):undefined;
+  const authorTarget = snapshot && profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
   const openItem = (event: InboxEvent) => { if(event.channelId!==null)void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
-  const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
-  const hasSelection = filter === "reminders" || selectedReminder!==null ? Boolean(selectedReminder) : filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
-  const showList = !singleAuxiliary && (!narrow || !hasSelection);
-  const showDetail = !singleAuxiliary && (!narrow || hasSelection);
-  const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
-  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(readItem(event))!) ?? 0));
-  const listPane = (draftList: ReactNode = null) => <InboxListPane items={listItems}
-    filter={filter} onFilterChange={next => {
-      setProfileTarget(null); setSelectedReminder(null); setFilter(next);
-      if (next === "drafts" || next === "reminders" || !rows.some(row => row.scopeKey === selected &&
-        matchesInbox({categories: row.categories, groupItems: row.items, item: row.item}, next, snapshot.agentPubkeys))) selectItem(null);
-    }} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly} activeDraftCount={drafts.entries.length}
-    selectedConversationId={selected} selectedReminderId={selectedReminder}
-    onSelectReminder={id => {setProfileTarget(null);selectItem(null);setSelectedReminder(id);}}
-    onSelect={row => {setSelectedReminder(null);setProfileTarget(null);selectItem(row.item.id);}}
-    isRead={isRead} readPending={reads.pending}
-    onMarkRead={row => reads.write(inboxReadContexts(row.items.map(readItem), true))}
-    onMarkUnread={row => reads.write(inboxReadContexts(row.items.map(readItem), false))}
-    onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap(row => row.items.map(readItem)), true))}
-    onOpen={row => openItem(row.item)} sourceChannelId={row => row.item.tags.find(tag => tag[0] === "h")?.[1] ?? null}
-    reopenState={row => ({pending: Boolean(row.item.channelId && hiddenDm.isReopenPending(row.item.channelId)),
-      error: Boolean(row.item.channelId && hiddenDm.isReopenErrored(row.item.channelId)),
-      unknown: Boolean(row.item.channelId && hiddenDm.isReopenUnknown(row.item.channelId))})}
-    draftList={draftList} showRightDivider={showDetail}
-    presentation={row => {
-      const item = row.item;
-      if (item.channelId === null) {
-        const sender = truncatePubkey(item.pubkey);
-        const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender, channelLabel: null}, locale);
+  const draftsPart = (part: "list" | "detail", onBack?: () => void) => snapshot ? <InboxDrafts key={`${principalId}:${part}`} principalId={principalId}
+    workspaces={snapshot.workspaces} participants={snapshot.people} entries={drafts.entries}
+    selectedKey={view.selectedDraftKey} onSelect={view.setSelectedDraftKey} onDelete={drafts.remove}
+    showList={part === "list"} showDetail={part === "detail"} renderList={list => list} onOpen={onOpen} onBack={onBack} /> : null;
+  return <InboxView state={view} status={status} items={viewRows} matchesFilter={matchesFilter} isRead={isRead}
+    selectedConversationId={selected} coldResolutionPending={coldPending}
+    onFilterChanged={() => setProfileTarget(null)}
+    onRowSelected={() => setProfileTarget(null)}
+    list={{
+      activeDraftCount: drafts.entries.length,
+      draftList: draftsPart("list"),
+      readPending: reads.pending,
+      onMarkRead: row => reads.write(inboxReadContexts(row.items.map(readItem), true)),
+      onMarkUnread: row => reads.write(inboxReadContexts(row.items.map(readItem), false)),
+      onMarkAllRead: unread => reads.write(inboxReadContexts(unread.flatMap(row => row.items.map(readItem)), true)),
+      onOpen: row => openItem(row.item),
+      sourceChannelId: row => row.item.tags.find(tag => tag[0] === "h")?.[1] ?? null,
+      reopenState: row => ({pending: Boolean(row.item.channelId && hiddenDm.isReopenPending(row.item.channelId)),
+        error: Boolean(row.item.channelId && hiddenDm.isReopenErrored(row.item.channelId)),
+        unknown: Boolean(row.item.channelId && hiddenDm.isReopenUnknown(row.item.channelId))}),
+      presentation: row => {
+        const item = row.item;
+        if (item.channelId === null || !snapshot) {
+          const sender = truncatePubkey(item.pubkey);
+          const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender, channelLabel: null}, locale);
+          return {senderLabel: sender, timestamp: formatItemTimestamp(row.latestActivityAt), unreadCount: row.unreadCount,
+            label: label.text, channel: null,
+            sender: <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{sender}</span>,
+            avatar: <UserAvatar avatarUrl={null} className="h-9 w-9" displayName={sender} size="md" shape="circle" />,
+            preview: <MessageContent className="inbox-preview-markdown text-inherit" interactive={false} content={feedPreview(item, locale)} mediaTags={item.tags} />};
+        }
+        const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
+        const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find(candidate => candidate.pubkeys.includes(item.pubkey));
+        const sender = member?.displayName || truncatePubkey(item.pubkey);
+        const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender,
+          channelLabel: snapshot.workspaces.find(workspace => workspace.id === item.channelId)?.name ?? null}, locale);
+        const isSenderAgent = snapshot.agentPubkeys.has(item.pubkey);
+        const target = {principalId, workspaceId: item.channelId, eventId: item.id, pubkey: item.pubkey, ...(conversation ? {conversationId: conversation.id} : {})};
         return {senderLabel: sender, timestamp: formatItemTimestamp(row.latestActivityAt), unreadCount: row.unreadCount,
-          label: label.text, channel: null,
-          sender: <span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground">{sender}</span>,
-          avatar: <UserAvatar avatarUrl={null} className="h-9 w-9" displayName={sender} size="md" shape="circle" />,
-          preview: <MessageContent className="inbox-preview-markdown text-inherit" interactive={false} content={feedPreview(item, locale)} mediaTags={item.tags} />};
+          label: label.text, channel: label.channelLabel,
+          sender: <MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>,
+          avatar: <MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} profile={{value: authorProfiles(target)}} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>,
+          preview: <MessageContent className="inbox-preview-markdown text-inherit" interactive={false}
+            videoReviewCommentRootId={getInboxVideoReviewCommentRootId({item, groupItems: row.items})}
+            content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} />};
+      },
+    }}
+    drafts={{
+      hasSelection: drafts.entries.some(entry => entry.key === view.selectedDraftKey),
+      renderDetail: ({ onBack }) => draftsPart("detail", onBack),
+    }}
+    renderMessageDetail={({ visible, auxiliarySinglePanel, onBack }) => {
+      if (!snapshot) return null;
+      if (chosenProject && visible && onStartDm) return <PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={onBack} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>;
+      // The unsent publication owner stays mounted while the single-panel author
+      // profile covers the detail column.
+      if (chosen && chosen.item.channelId !== null && (visible || auxiliarySinglePanel)) {
+        const channelId = chosen.item.channelId;
+        const conversation = snapshot.conversations.find(item => item.channelId === channelId);
+        const members = snapshot.members.get(channelId) ?? snapshot.people.filter(person => conversation?.participantPrincipalIds.includes(person.principalId));
+        return <div className={visible ? "contents" : "hidden"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+          workspaceId={channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
+          selectionItemId={effectiveSelectedItemId}
+          onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}
+          channelId={snapshot.channelIds.get(channelId)}
+          forum={chosen.item.channelType === "forum"}
+          conversation={conversation}
+          canInteract={!snapshot.hiddenDm.has(channelId)}
+          onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
+          senderLabel={members.find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || truncatePubkey(chosen.item.pubkey)}
+          channelName={snapshot.workspaces.find((workspace) => workspace.id === channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && conversation?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
+          members={members} onBack={onBack}
+          onOpen={hiddenDm.isReopenPending(channelId) ? undefined : () => openItem(chosen.item)} /></div>;
       }
-      const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
-      const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find(candidate => candidate.pubkeys.includes(item.pubkey));
-      const sender = member?.displayName || truncatePubkey(item.pubkey);
-      const label = getInboxTypeLabel({item, groupItems: row.items, senderLabel: sender,
-        channelLabel: snapshot.workspaces.find(workspace => workspace.id === item.channelId)?.name ?? null}, locale);
-      const isSenderAgent = snapshot.agentPubkeys.has(item.pubkey);
-      const target = {principalId, workspaceId: item.channelId, eventId: item.id, pubkey: item.pubkey, ...(conversation ? {conversationId: conversation.id} : {})};
-      return {senderLabel: sender, timestamp: formatItemTimestamp(row.latestActivityAt), unreadCount: row.unreadCount,
-        label: label.text, channel: label.channelLabel,
-        sender: <MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>,
-        avatar: <MessageAuthorIdentity target={target} triggerElement="span" triggerClassName={`shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${isSenderAgent ? "rounded-[30%]" : "rounded-full"}`} onOpen={() => setProfileTarget(target)}><span className="inline-flex shrink-0"><MessageAuthorAvatar target={target} profile={{value: authorProfiles(target)}} className="h-9 w-9" displayName={sender} size="md" shape={isSenderAgent ? "squircle" : "circle"} /></span></MessageAuthorIdentity>,
-        preview: <MessageContent className="inbox-preview-markdown text-inherit" interactive={false}
-          videoReviewCommentRootId={getInboxVideoReviewCommentRootId({item, groupItems: row.items})}
-          content={feedPreview(item, locale)} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} />};
-    }} />;
-  if (filter === "reminders") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
-    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
-    {showList ? listPane() : null}
-    {showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:null}
-  </InboxLayout>;
-  if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
-    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
-    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} participants={snapshot.people} entries={drafts.entries}
-      selectedKey={selectedDraft} onSelect={setSelectedDraft} onDelete={drafts.remove} showList={showList} showDetail={showDetail} renderList={listPane}
-      onOpen={onOpen}
-      onBack={narrow ? () => setSelectedDraft(null) : undefined} />
-  </InboxLayout>;
-  return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
-    hasAuxiliary={Boolean(authorTarget)} singleAuxiliary={singleAuxiliary} auxiliaryWidth={profileWidth}
-    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
-    {showList ? listPane() : null}
-    {selectedReminder!==null&&showDetail?<ReminderDetailPane pubkey={reminderHost.pubkey} reminder={reminders.data?.find(r=>r.id===selectedReminder)??null} onBack={narrow?()=>setSelectedReminder(null):undefined}/>:chosenProject&&showDetail&&onStartDm?<PulsePane scopeKey={principalId} onStartDm={onStartDm}><ProjectInboxDetail host={projectsHost} key={chosen?.scopeKey} workItem={chosenProject} onBack={narrow?()=>selectItem(null):undefined} onOpenProject={onOpenProject?()=>onOpenProject(chosenProject.project.id,projectWorkItemTarget(chosenProject)):undefined}/></PulsePane>:chosen&&chosen.item.channelId!==null && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
-      workspaceId={chosen.item.channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
-      selectionItemId={effectiveSelectedItemId}
-      onPublicationPendingChange={pending => setPublicationSelection(pending ? {principalId, event:chosen.item} : null)}
-      channelId={snapshot.channelIds.get(chosen.item.channelId)}
-      forum={chosen.item.channelType === "forum"}
-      conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
-      canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}
-      onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
-      senderLabel={(snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))).find(member => member.pubkeys.includes(chosen.item.pubkey))?.displayName || truncatePubkey(chosen.item.pubkey)}
-      channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
-      members={snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))} onBack={narrow ? () => selectItem(null) : undefined}
-      onOpen={hiddenDm.isReopenPending(chosen.item.channelId) ? undefined : () => openItem(chosen.item)} /></div> : showDetail ? coldPending ? <HomeLoadingState /> : coldResolutionFailed ? <section role="status">{t("platform.loadFailed")}</section> : <InboxEmptyDetail /> : null}
-    {authorTarget ? <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
-      target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary} layout="split" transparentChrome
-      onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} /> : null}
-  </InboxLayout>;
+      if (!visible) return null;
+      return coldPending ? <HomeLoadingState /> : coldResolutionFailed ? <section role="status">{t("platform.loadFailed")}</section> : <InboxEmptyDetail />;
+    }}
+    auxiliary={authorTarget && snapshot ? {
+      preferredWidthPx: profileWidth,
+      render: ({ isSinglePanel }) => <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
+        target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={isSinglePanel} layout="split" transparentChrome
+        onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} />,
+    } : null} />;
 }
