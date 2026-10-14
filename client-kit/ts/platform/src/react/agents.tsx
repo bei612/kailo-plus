@@ -57,6 +57,7 @@ import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import { reactionConditionValue } from "./workflow-reaction-condition";
 import { getWorkflowActivationWarning } from "./workflow-activation-warning";
 import { WorkflowActivationDialog } from "./workflow-activation-dialog";
+import { WorkflowUnavailableDialog } from "./workflow-unavailable-dialog";
 import { useWorkflowTriggerPresentation } from "./workflow-trigger-presentation";
 import { useWorkflowMessageScope } from "./workflow-message-host";
 import { useWorkflowTriggerMessage } from "./workflow-message-picker";
@@ -423,6 +424,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
   const client = useBffClient();
   const t = useT();
   const authors = useWorkflowAuthorDirectory(workspaceId);
+  const [unavailable, setUnavailable] = useState(false);
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
   const offset = offsets[index] ?? 0;
@@ -453,12 +455,17 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
           }}>{t("roles.next")}</Button> : null}
         </div>
       </>}
-    <Dialog open={selected !== null} onOpenChange={(open) => { if (!open && !locked) onSelect(null); }}>
+    {/* Original WorkflowEditorHost: an unreadable target shows WorkflowUnavailableDialog. */}
+    <WorkflowUnavailableDialog loading={false} open={selected !== null && unavailable}
+      onOpenChange={(open) => { if (!open) { setUnavailable(false); onSelect(null); } }}
+      onRetry={() => setUnavailable(false)} />
+    <Dialog open={selected !== null && !unavailable} onOpenChange={(open) => { if (!open && !locked) onSelect(null); }}>
       <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
         showCloseButton={false} onEscapeKeyDown={(event) => { if (locked) event.preventDefault(); }}
         onInteractOutside={(event) => { if (locked) event.preventDefault(); }} aria-describedby={undefined}>
         <DialogTitle className="sr-only">{t("workflows.definition")}</DialogTitle>
-        {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked}
+        {selected && !unavailable ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked}
+          onUnavailable={() => setUnavailable(true)}
           onEdit={(edit) => { onSelect(null); onEdit(edit); }} onClose={() => onSelect(null)} renderRunHistory={renderRunHistory} /> : null}
       </DialogContent>
     </Dialog>
@@ -591,9 +598,9 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
   </div>;
 }
 
-function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, renderRunHistory }: {
+function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, onUnavailable, renderRunHistory }: {
   resourceId: string; workspaceId: string; locked: boolean; onEdit: (edit: AutomationEdit) => void;
-  onClose: () => void;
+  onClose: () => void; onUnavailable?: () => void;
   renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
 }) {
   const client = useBffClient();
@@ -620,6 +627,8 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
   const detail = value && validAutomationDetail(value, resourceId, workspaceId)
     && (value.nextVersionOffset === undefined || (Number.isSafeInteger(value.nextVersionOffset) && value.nextVersionOffset > versionOffset))
     && (value.nextDelegationOffset === undefined || (Number.isSafeInteger(value.nextDelegationOffset) && value.nextDelegationOffset > grantOffset)) ? value : null;
+  const unreadable = state.status !== "pending" && !detail;
+  useEffect(() => { if (unreadable) onUnavailable?.(); }, [unreadable]);
   // Keep the original WorkflowDetailPanel shell throughout its authorized read.
   // The outer Dialog intentionally has no separate close control. Do not replace
   // this shell with a notice, or expose stale definition/actions while reloading.
@@ -960,7 +969,9 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     setSteps(content?.steps ?? []);
     setStepsFormat(content?.formatVersion === 3 ? 3 : 2);
     setTemplate(content ? workflowAction(content)?.template ?? "" : "");
-    setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.AgentTurn : ActionKind.AgentTurn);
+    // Original WorkflowDialog starts with an empty sequence and its primary
+    // "Add step"; the governed Agent turn is chosen from the canvas menu.
+    setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.PostMessage : ActionKind.PostMessage);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId(""); setDraftScope(null);
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
@@ -1154,6 +1165,9 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     : edit.action === "publish_version" ? "workflows.dialog.edit"
     : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause"
     : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
+  // Original WorkflowDialog SUBMIT_LABELS; lifecycle reviews keep the governed review label.
+  const submitLabel = creating ? edit?.action === "copy" ? "workflows.dialog.createCopy" : "workflows.dialog.create"
+    : edit.action === "publish_version" ? "workflows.dialog.save" : "agents.review";
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
   if (!workspaceId && !intent) return null;
   if (edit?.action === "delete") return <WorkflowDeleteDialog open={open || !!intent}
@@ -1225,26 +1239,10 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
         {editorMode === "yaml" ? <><div className="max-w-md flex-shrink-0">{scopeField}</div><WorkflowYamlEditor value={yamlText} disabled={busy || !!intent || unknown}
           onChange={(value) => { setYamlText(value); setEditorError(false); }} /></> : <>
-        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
-          <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
-            if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
-            if (event.target.value === ActionEnum.AddReaction) {
-              setActionKind(ActionEnum.AddReaction);
-              setSteps([{id: nextStepId([]), action: ActionEnum.AddReaction, emoji: ""}]);
-            }
-            if (event.target.value === ActionEnum.SetChannelTopic) {
-              setActionKind(ActionEnum.SetChannelTopic);
-              setSteps([{id: nextStepId([]), action: ActionEnum.SetChannelTopic, topic: ""}]);
-            }
-          }} className="h-8 rounded-md border border-input bg-background px-2">
-            <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
-            <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
-            <option value={ActionEnum.AddReaction} disabled={trigger === TriggerKind.Schedule}>{t("workflows.steps.addReaction")}</option>
-            <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
-          </select>
-        </label>
         <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
           triggerPresentation={triggerPresentation}
+          onAgentTurn={() => { setActionKind(ActionKind.AgentTurn); setTemplate(""); }}
+          onRemoveAction={() => { setActionKind(ActionKind.PostMessage); setTemplate(""); }}
           action={actionKind === ActionKind.AgentTurn ? {kind: ActionKind.AgentTurn, template} : undefined}
           actionFields={actionKind === ActionKind.AgentTurn ? <div className="space-y-1.5">
             <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${formId}-agent-template`}>{t("agents.automation.template")}</label>
@@ -1304,7 +1302,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           disabled={!canCreate || !executor || requestBlocked || busy} onClick={() => formBuilderRef.current?.addFirstStep()} type="button">
           {t("workflows.addStep")}</WorkflowButton>
           : !creating || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
-            || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
+            || (contentAction && !contentAvailable)}>{t(submitLabel)}</Button> : null}
         <Button onClick={requestClose}>{t("buzz.close")}</Button>
         </div>
       </div>

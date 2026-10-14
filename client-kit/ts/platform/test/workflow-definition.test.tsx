@@ -368,19 +368,22 @@ describe("original workflow detail loading and failure shell", () => {
     expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
   });
 
-  it.each(["rejected", "wrong-scope"] as const)("keeps %s a real failure with close and the original authorized retry", async failure => {
+  it.each(["rejected", "wrong-scope"] as const)("shows the original Workflow unavailable dialog for %s and retries the authorized read", async failure => {
     const {panel, send, resolveRead, closeLabel} = await openPendingDetail("en");
     await act(async () => { resolveRead(failure === "rejected"
       ? {status: 403, body: {reasonCode: "PERMISSION_DENIED"}}
       : {status: 200, body: {...detail, automation: {...automation, workspaceId: "different-workspace"}}}); });
     await settle();
-    const failedPanel = panel()!;
-    expect(failedPanel.querySelector(failure === "rejected" ? '[role="alert"]' : '[role="status"]')).not.toBeNull();
-    expect(failedPanel.querySelectorAll(".t-skel-bar")).toHaveLength(1);
-    expect(failedPanel.querySelector("h3, pre, select, dl")).toBeNull();
-    expect(failedPanel.querySelector<HTMLButtonElement>(`button[aria-label="${closeLabel}"]`)!.disabled).toBe(false);
-    await click(button(failedPanel, "Try again"));
+    // Buzz 779af8886caae1317b4de962082429867ab61503 WorkflowEditorHost/WorkflowUnavailableDialog.
+    expect(panel()).toBeNull();
+    const unavailable = document.querySelector<HTMLElement>('[data-testid="workflow-unavailable-dialog"]')!;
+    expect(unavailable.textContent).toContain("Workflow unavailable");
+    expect(unavailable.textContent).toContain("This workflow could not be loaded. It may no longer be available to you.");
+    expect(unavailable.querySelector("h3, pre, select, dl")).toBeNull();
+    expect(button(unavailable, "Close")).toBeDefined();
+    await click(button(unavailable, "Retry"));
     await settle();
+    expect(document.querySelector('[data-testid="workflow-unavailable-dialog"]')).toBeNull();
     expect(panel()!.querySelector("h3")?.textContent).toBe(content.name);
     expect(send.mock.calls.filter(([request]) => request.path.startsWith("/api/v1/automations/workflow?"))).toHaveLength(3);
     expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);

@@ -622,6 +622,8 @@ describe("shared Automation schedule consumer", () => {
     await click(section.querySelectorAll<HTMLElement>('ol[aria-label="Workflow sequence"] > li > div > button[aria-pressed]')[index]!);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
   };
+  // The editor's single submit control; its label follows the original WorkflowDialog mode.
+  const submit = () => document.querySelector<HTMLButtonElement>('[data-testid="workflow-editor-dialog"] button[type="submit"]')!;
   const insertCanvasStep = async (section: HTMLElement, index: number, action: string) => {
     const trigger = section.querySelectorAll<HTMLElement>('[data-testid="workflow-node-ingress"] button')[index]!;
     await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", bubbles:true})));
@@ -687,15 +689,21 @@ describe("shared Automation schedule consumer", () => {
       return node?.control && !node.contains(node.control) ? node.control.parentElement! : node!;
     };
     const choose = async (label: string, value: string) => {
+      if (label === "Action") {
+        // Original add-step menu; the governed Agent turn is one of its entries.
+        const item = ({AGENT_TURN: "Agent turn", POST_MESSAGE: "Send message", add_reaction: "Add reaction",
+          set_channel_topic: "Set channel topic"} as Record<string, string>)[value]!;
+        await insertCanvasStep(section, 0, item);
+        return;
+      }
       if (label === "Trigger" && !field(label)) await selectCanvasNode(section, 0);
       const select = field(label).querySelector("select")!;
       await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
       await settle();
-      if (label === "Action" && (value === "add_reaction" || value === "set_channel_topic")) await selectCanvasNode(section, 1);
     };
     const fill = async (label: string, value: string) => {
       if (!field(label) && label === "Instruction template" && section.querySelector('ol[aria-label="Workflow sequence"]')) {
-        if (section.querySelectorAll('ol[aria-label="Workflow sequence"] > li').length === 1) await insertCanvasStep(section, 0, "Send message");
+        if (section.querySelectorAll('ol[aria-label="Workflow sequence"] > li').length === 1) await insertCanvasStep(section, 0, "Agent turn");
         else await selectCanvasNode(section, 1);
       }
       const input = field(label).querySelector("input,textarea")!;
@@ -718,12 +726,15 @@ describe("shared Automation schedule consumer", () => {
     const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
     expect(section.querySelector<HTMLInputElement>('#wf-trigger-time')!.value).toBe("09:00");
-    expect(button(section, "Review request").disabled).toBe(true);
+    // Original WorkflowDialog: an empty sequence offers "Add step", not a submit.
+    expect(submit()).toBeNull();
+    expect(section.querySelector('[data-testid="workflow-dialog-primary-action"]')?.textContent).toBe("Add step");
     await click(section.querySelector<HTMLInputElement>('input[value="every_15_minutes"]')!);
     await fill("Offset (seconds)", "0");
     await fill("Catch-up window (seconds)", "60");
     await fill("Instruction template", "Report workspace progress");
-    await click(button(section, "Review request"));
+    expect(submit().textContent).toBe("Create workflow");
+    await click(submit());
     expect(section.textContent).toContain("Workspace channel");
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
@@ -759,7 +770,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     await selectCanvasNode(section, 1);
     expect(section.querySelector<HTMLInputElement>('input[id="wf-step-0-duration"]')!.value).toBe("1m 2s");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
@@ -785,7 +796,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     await selectCanvasNode(section, 2);
     expect(section.querySelector<HTMLInputElement>("#wf-step-1-emoji")!.value).toBe("👍");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
@@ -808,7 +819,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     await selectCanvasNode(section, 1);
     await type(section.querySelector<HTMLInputElement>("#wf-step-0-topic")!, "");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
@@ -824,7 +835,7 @@ describe("shared Automation schedule consumer", () => {
     await choose("Action", "POST_MESSAGE");
     await fill("Instruction template", "Only after approval");
     await insertCanvasStep(section, 0, "Request approval");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     const selector = section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!;
     expect(selector.value).toBe("");
     await act(async () => { selector.value = `${policy.id}:${policy.version}`; selector.dispatchEvent(new Event("change", {bubbles:true})); });
@@ -837,7 +848,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     await selectCanvasNode(section, 1);
     expect(section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!.value).toBe(`${policy.id}:${policy.version}`);
-    await click(button(section, "Review request"));
+    await click(submit());
     expect(section.textContent).toContain(`${policy.id} · ${policy.version}`);
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
@@ -860,7 +871,7 @@ describe("shared Automation schedule consumer", () => {
       {id:"reply",action:"send_message",text:"Approved"},
     ]};
     await writeYaml(section, JSON.stringify(request));
-    expect(button(section, "Review request").disabled).toBe(false);
+    expect(submit().disabled).toBe(false);
     for (const invalid of [
       {...request,approvalPolicy:policy},
       {...request,steps:[{...request.steps[0],from:"owner"},request.steps[1]]},
@@ -869,7 +880,7 @@ describe("shared Automation schedule consumer", () => {
     ]) {
       const raw = JSON.stringify(invalid);
       await writeYaml(section, raw);
-      expect(button(section, "Review request").disabled).toBe(true);
+      expect(submit().disabled).toBe(true);
       expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toBe(raw);
     }
   });
@@ -890,7 +901,7 @@ describe("shared Automation schedule consumer", () => {
     expect(after).not.toContain("action: delay");
     expect(first).toContain(after.slice(after.indexOf("steps:" ) + "steps:".length).trim());
     await writeYaml(section, after.replace("action: send_message", "action: send_message\n    if: true"));
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
   });
 
   it("submits original cron fields and preserves six/seven-field YAML without truncation", async () => {
@@ -912,7 +923,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     expect(yaml.value).toBe(exact);
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBe(yaml);
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     const posts = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
@@ -934,7 +945,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Workflow YAML"));
     const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!;
     await writeYaml(section, yaml.value.replace("scheduleSpec:", "scheduleSpec:\n    kind: CRON\n    cron: '0 9 * * *'"));
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await click(button(section, "Form"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBe(yaml);
     expect(t.send.mock.calls.every(([request]) => request.method !== "POST")).toBe(true);
@@ -949,18 +960,18 @@ describe("shared Automation schedule consumer", () => {
       await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value!);
     }
     await fill("Catch-up window (seconds)", "60");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "1-7");
-    expect(button(section, "Review request").disabled).toBe(false);
+    expect(submit().disabled).toBe(false);
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "MON-SUN");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Month"]')!, "January-March");
     for (const name of ["Monday-Friday", "Tues-Thurs"]) {
       await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, name);
-      expect(button(section, "Review request").disabled).toBe(false);
+      expect(submit().disabled).toBe(false);
     }
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Month"]')!, "Januar");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
   });
 
   it("protects a canvas draft on footer close until the original discard confirmation", async () => {
@@ -990,7 +1001,7 @@ describe("shared Automation schedule consumer", () => {
     expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toContain("协作播报");
     await click(button(section, "Form"));
     expect(section.querySelector('[data-testid="workflow-editor-dialog"]')?.textContent).toContain("协作播报");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     expect(section.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.disabled).toBe(true);
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
@@ -1034,7 +1045,7 @@ describe("shared Automation schedule consumer", () => {
     expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Delete")).toBe(false);
     await click(button(section, "Run once"));
     expect(section.textContent).toContain("Admission, delegation, quota and step approval still apply");
-    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    await click(submit()); await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     expect(section.textContent).toContain("Outcome is not confirmed");
     expect(section.textContent).toContain("schedule-op");
@@ -1089,12 +1100,13 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Workflow YAML"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).not.toBeNull();
     expect(section.textContent).not.toContain("Your text has been kept");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     await click(button(section, "Form"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBeNull();
-    await selectCanvasNode(section, 1);
-    expect(field("Instruction template").querySelector("textarea")!.value).toBe("");
+    // The original empty sequence is retained, with no fabricated first effect.
+    expect(section.querySelectorAll('ol[aria-label="Workflow sequence"] > li')).toHaveLength(1);
+    expect(field("Instruction template")).toBeUndefined();
     expect(section.textContent).not.toContain("Your text has been kept");
     expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
   });
@@ -1108,10 +1120,11 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "Form"));
     await selectCanvasNode(section, 1);
     expect(field("Instruction template").querySelector("textarea")!.value).toBe("Result ${source}");
-    expect(field("Action").querySelector("select")!.value).toBe("POST_MESSAGE");
+    // The non-original top action selector is gone; the action lives in the canvas.
+    expect(section.querySelector('select option[value="AGENT_TURN"]')).toBeNull();
     await click(button(section, "Workflow YAML"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')?.textContent).toContain("POST_MESSAGE");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBeNull();
     await click(button(section, "Re-check same request"));
@@ -1139,7 +1152,7 @@ describe("shared Automation schedule consumer", () => {
     await writeYaml(section, text); await click(button(section, "Form"));
     expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toBe(text);
     expect(section.textContent).toContain("Your text has been kept");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
   });
@@ -1151,9 +1164,11 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "View definition"));
     await click(button(section, "Copy as new draft"));
     expect(field("Executor installation").querySelector("select")!.value).toBe("");
-    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Review request")).toBe(false);
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"] button[type="submit"]')).toBeNull();
     await choose("Executor installation", "thread-only");
-    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    expect(submit().textContent).toBe("Create copy");
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"] h2')?.textContent).toBe("Duplicate workflow");
+    await click(submit()); await click(button(section, "Submit governed request"));
     const request = t.send.mock.calls.find(([entry]) => entry.path === "/api/v1/actions")![0].body;
     expect(request).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
       workspaceId: installation.workspaceId, executorInstallationResourceId: "thread-only", automationVersionContent: copied });
@@ -1177,7 +1192,7 @@ describe("shared Automation schedule consumer", () => {
   it.each([403, 409])("retains the original uncertain request after a later refusal (%s)", async (status) => {
     const { section, t, fill } = await setup(["TRIGGER_THREAD"], undefined, status);
     await fill("Instruction template", "Report");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     expect(section.textContent).toContain("Outcome is not confirmed");
@@ -1194,7 +1209,7 @@ describe("shared Automation schedule consumer", () => {
     const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
     await choose("Action", "POST_MESSAGE");
     await fill("Instruction template", "Literal ${source} template");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");
     expect(writes).toHaveLength(1);
@@ -1208,7 +1223,7 @@ describe("shared Automation schedule consumer", () => {
     const {section,t,choose,fill}=await setup(["TRIGGER_THREAD"],undefined,undefined,undefined,[policy]);
     await choose("Approval before execution",`${policy.id}:2`);
     await fill("Instruction template","Review before execution");
-    await click(button(section,"Review request"));
+    await click(submit());
     expect(section.textContent).toContain(policy.id);
     await click(button(section,"Submit governed request"));
     await click(button(section,"Re-check same request"));
@@ -1222,7 +1237,7 @@ describe("shared Automation schedule consumer", () => {
     const { section, t, fill } = await setup(["TRIGGER_THREAD"], undefined, undefined,
       { [field]: "foreign-operation", gateState: "DENIED", dispatchState: "NOT_DISPATCHED", reason: "PERMISSION_DENIED" });
     await fill("Instruction template", "Report");
-    await click(button(section, "Review request"));
+    await click(submit());
     await click(button(section, "Submit governed request"));
     await click(button(section, "Re-check same request"));
     expect(section.textContent).toContain("Outcome is not confirmed");
@@ -1251,7 +1266,7 @@ describe("shared Automation schedule consumer", () => {
     await fill("Offset (seconds)", "0"); await fill("Catch-up window (seconds)", "60");
     await fill("Instruction template", "Report");
     await choose("Executor installation", "thread-only");
-    expect(button(section, "Review request").disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(section.textContent).toContain("Scheduling is unavailable");
     expect(section.textContent).not.toContain("Submit governed request");
@@ -1267,7 +1282,7 @@ describe("shared Automation schedule consumer", () => {
       await type(section.querySelector<HTMLInputElement>('#wf-trigger-interval')!, every);
       await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
       await fill("Instruction template", "Report");
-      expect(button(section, "Review request").disabled).toBe(true);
+      expect(submit().disabled).toBe(true);
     },
   );
 
@@ -1279,7 +1294,7 @@ describe("shared Automation schedule consumer", () => {
     await settle();
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Advanced expression"]')!, 'str_starts_with(trigger_text, "help")');
     await fill("Instruction template", "Reply");
-    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    await click(submit()); await click(button(section, "Submit governed request"));
     expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
       automationVersionContent: { trigger: { kind: "MENTION", filter: 'str_starts_with(trigger_text, "help")', mentionPrincipalId: installation.agentPrincipalId },
         action: { kind: "AGENT_TURN", template: "Reply" }, resultTarget: "TRIGGER_THREAD" },
@@ -1294,7 +1309,9 @@ describe("shared Automation schedule consumer", () => {
     expect(section.textContent).toContain("Interval (seconds): 300");
     await click(button(section, "Edit"));
     await settle();
-    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    expect(submit().textContent).toBe("Save changes");
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"] h2')?.textContent).toBe("Edit workflow");
+    await click(submit()); await click(button(section, "Submit governed request"));
     expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
       actionKey: "automation.publish_version", resourceId: "schedule-automation", resourceVersion: 2,
       automationVersionContent: scheduleContent,
@@ -1308,7 +1325,7 @@ describe("shared Automation schedule consumer", () => {
       await click(button(section,"View definition"));
       expect(section.textContent).toContain(content.approvalPolicy.id);
       await click(button(section,"Edit")); await settle();
-      expect(button(section,"Review request").disabled).toBe(true);
+      expect(submit().disabled).toBe(true);
       await act(async()=>section.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
       expect(t.send.mock.calls.filter(([r])=>r.path==="/api/v1/actions")).toHaveLength(0);
       expect(section.textContent).toContain("cannot be verified");
@@ -1319,7 +1336,7 @@ describe("shared Automation schedule consumer", () => {
     await click(button(section, "View definition")); await click(button(section, "Enable"));
     await choose("Published version", "schedule-version"); await choose("Verified delegation", "schedule-grant");
     const supported = targets.includes("CHANNEL");
-    expect(button(section, "Review request").disabled).toBe(!supported);
+    expect(submit().disabled).toBe(!supported);
     await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     if (supported) {
       await click(button(section, "Submit governed request"));

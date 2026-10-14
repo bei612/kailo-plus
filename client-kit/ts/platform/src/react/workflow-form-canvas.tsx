@@ -16,8 +16,12 @@ import { nextStepId, WorkflowStepCard, type WorkflowStepDraft } from "./workflow
 import { WorkflowRichTriggerDescription, type WorkflowTriggerNodePresentation } from "./workflow-trigger-presentation";
 
 type Pane = { type: "trigger" } | { type: "step"; stepId: string } | { type: "action" } | null;
-type DraftAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
+type StepAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
+// Kailo's governed Agent turn is offered in the original add-step menu as the
+// sole first effect; it is the legacy single action, not an AutomationStep.
+type DraftAction = StepAction | ActionKind.AgentTurn;
 const actionKeys = {
+  [ActionKind.AgentTurn]: "agents.automation.agentTurn",
   [ActionEnum.Delay]: "workflows.steps.delay",
   [ActionEnum.RequestApproval]: "workflows.steps.requestApproval",
   [ActionEnum.SendMessage]: "buzz.sendMessage",
@@ -113,10 +117,12 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   steps: WorkflowStepDraft[]; onStepsChange: (steps: WorkflowStepDraft[]) => void;
   action?: NonNullable<AutomationVersionContent["action"]>; actionFields?: ReactNode;
   trigger: AutomationTriggerKind; triggerFields: ReactNode; scopeField?: ReactNode;
+  /** Chooses / removes the governed Agent turn from the canvas menu. */
+  onAgentTurn?: () => void; onRemoveAction?: () => void;
   /** Original useWorkflowTriggerPresentation for the trigger node. */
   triggerPresentation?: WorkflowTriggerNodePresentation;
   policies: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null; disabled?: boolean;
-}>(function WorkflowFormCanvas({ steps, onStepsChange, action, actionFields, trigger, triggerFields, triggerPresentation, scopeField, policies, disabled }, ref) {
+}>(function WorkflowFormCanvas({ steps, onStepsChange, action, actionFields, trigger, triggerFields, triggerPresentation, scopeField, policies, disabled, onAgentTurn, onRemoveAction }, ref) {
   const t = useT();
   const [pane, setPane] = useState<Pane>(null);
   const [selectionDirection, setSelectionDirection] = useState<1 | -1>(1);
@@ -163,10 +169,16 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
       if (trigger !== AutomationTriggerKind.Schedule) actions.push(ActionEnum.AddReaction);
       actions.push(ActionEnum.SetChannelTopic);
     }
+    if (onAgentTurn && steps.length === 0) actions.push(ActionKind.AgentTurn);
     return actions;
   };
   const insertStep = (index: number, action: DraftAction) => {
     if (disabled || !actionsAt(index).includes(action)) return;
+    if (action === ActionKind.AgentTurn) {
+      onAgentTurn?.();
+      selectNode({type: "action"});
+      return;
+    }
     const step: AutomationStep = { id: nextStepId(steps), action,
       ...(action === ActionEnum.SendMessage ? {text: ""} : action === ActionEnum.Delay ? {duration: ""}
         : action === ActionEnum.RequestApproval ? {message: ""} : action === ActionEnum.AddReaction ? {emoji: ""} : {topic: ""}) };
@@ -195,7 +207,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   };
   // The existing runtime admits delays before an effect, or a terminal effect.
   // Switching the original action selector must not silently keep unrelated fields.
-  const replacementActions: DraftAction[] = [];
+  const replacementActions: StepAction[] = [];
   if (selectedStep) {
     const before = steps.slice(0, selectedIndex);
     const after = steps.slice(selectedIndex + 1);
@@ -228,7 +240,8 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
             number={1} description={legacyActionDescription} showTitle={false}
             subtitle={legacyActionDescription !== legacyActionLabel ? legacyActionLabel : undefined}
             disabled={disabled} selected={selectedNode?.type === "action"} terminal
-            onSelect={() => selectNode({type: "action"})} actions={[]} onAddAfter={next => insertStep(0, next)} /> : null}
+            onSelect={() => selectNode({type: "action"})} actions={[]} onAddAfter={next => insertStep(0, next)}
+            onRemove={onRemoveAction ? () => { if (!disabled) { setPane(null); onRemoveAction(); } } : undefined} /> : null}
           {steps.map((step, index) => {
             const label = actionLabel(step);
             const description = workflowStepDescription(step, label, t);

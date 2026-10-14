@@ -242,8 +242,8 @@ describe("original workflow action menu with governed consumers", () => {
   });
 
   it.each([
-    ["en", "Edit", "Workflow YAML", "Form", "Review request", "Submit governed request", "Re-check same request"],
-    ["zh-CN", "编辑", "工作流 YAML", "表单", "核对请求", "提交受治理请求", "重查原请求"],
+    ["en", "Edit", "Workflow YAML", "Form", "Save changes", "Submit governed request", "Re-check same request"],
+    ["zh-CN", "编辑", "工作流 YAML", "表单", "保存更改", "提交受治理请求", "重查原请求"],
   ] as const)("preserves original conditions through form/YAML and UNKNOWN in %s", async (locale, editLabel, yamlLabel, formLabel, reviewLabel, submitLabel, retryLabel) => {
     const { host, send } = await setup(undefined, locale);
     const menu = await openMenu(host, locale === "en" ? "Workflow actions" : "工作流操作");
@@ -311,8 +311,9 @@ describe("original workflow action menu with governed consumers", () => {
       await chooseAction(host, "Edit");
       const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
       if (action === "add_reaction" || action === "set_channel_topic") {
-        const control = [...dialog.querySelectorAll("select")].find((field) => [...field.options].some((option) => option.value === action))!;
-        await select(control, action);
+        // Original canvas: replace the sole message effect through its node, then the add-step menu.
+        await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Remove step"]')!);
+        await canvasInsert(dialog, 0, action === "add_reaction" ? "Add reaction" : "Set channel topic");
       } else {
         await canvasInsert(dialog, 0, action === "delay" ? "Delay" : "Request approval");
       }
@@ -356,7 +357,7 @@ describe("original workflow action menu with governed consumers", () => {
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("First {{trigger.text}}");
     await canvasNode(dialog, 3);
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Second {{trigger.text}}");
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     const commands = writes(send);
     expect(commands).toHaveLength(1);
@@ -403,7 +404,7 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.value).toContain("Message: {{trigger.text}}");
     await click(button(dialog, "Form"));
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     const commands = writes(send);
     expect(commands).toHaveLength(1);
@@ -425,7 +426,7 @@ describe("original workflow action menu with governed consumers", () => {
     const removals = () => dialog.querySelectorAll<HTMLButtonElement>('button[aria-label="Remove step"]');
     expect(removals()).toHaveLength(3);
     await click(removals()[2]!);
-    expect(button(dialog, "Review request").disabled).toBe(true); // A trailing delay is not a fabricated effect.
+    expect(button(dialog, "Save changes").disabled).toBe(true); // A trailing delay is not a fabricated effect.
     await click(button(dialog, "Workflow YAML"));
     const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
     expect(yaml.value).toContain("id: step_8");
@@ -433,17 +434,17 @@ describe("original workflow action menu with governed consumers", () => {
     expect(yaml.value).not.toContain("Deleted terminal effect");
     await click(button(dialog, "Form"));
     await click(removals()[1]!);
-    expect(button(dialog, "Review request").disabled).toBe(false);
+    expect(button(dialog, "Save changes").disabled).toBe(false);
     await click(removals()[0]!);
     expect(removals()).toHaveLength(0);
-    expect(button(dialog, "Review request").disabled).toBe(true);
+    expect(button(dialog, "Save changes").disabled).toBe(true);
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")).toBeNull();
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain("Keep until explicitly removed");
     await click(button(dialog, "Form"));
     await canvasInsert(dialog, 0, "Send message");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Replacement message");
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     expect(writes(send)).toHaveLength(1);
     expect(writes(send)[0]).toMatchObject({ actionKey: "automation.publish_version", resourceVersion: 2,
@@ -462,10 +463,9 @@ describe("original workflow action menu with governed consumers", () => {
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Remove step"]')!);
-    expect(button(dialog, "Review request").disabled).toBe(true);
-    const action = [...dialog.querySelectorAll("label")].find((label) => label.textContent?.startsWith("Action"))!.querySelector("select")!;
-    expect(action.disabled).toBe(false);
-    await select(action, "POST_MESSAGE");
+    expect(button(dialog, "Save changes").disabled).toBe(true);
+    // The original empty sequence offers its add-step menu, not a top selector.
+    expect([...dialog.querySelectorAll("label")].some((label) => label.textContent?.startsWith("Action"))).toBe(false);
     await canvasInsert(dialog, 0, "Send message");
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New effect");
@@ -474,7 +474,7 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain(effect.action);
     await click(button(dialog, "Form"));
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     expect(writes(send)[0]).toMatchObject({ actionKey: "automation.publish_version",
       automationVersionContent: { formatVersion: 3, steps: [
@@ -563,7 +563,7 @@ describe("original workflow action menu with governed consumers", () => {
     expect(yaml).toContain("Summarize {{trigger.text}}");
     expect(yaml).not.toContain("steps:");
     await click(button(dialog, locale === "en" ? "Form" : "表单"));
-    await click(button(dialog, locale === "en" ? "Review request" : "核对请求"));
+    await click(button(dialog, locale === "en" ? "Save changes" : "保存更改"));
     expect(writes(send)).toHaveLength(0);
     await click(button(dialog, locale === "en" ? "Submit governed request" : "提交受治理请求"));
     const [command] = writes(send) as Array<{automationVersionContent: Record<string, unknown>}>;
@@ -616,7 +616,7 @@ describe("original workflow action menu with governed consumers", () => {
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     await canvasNode(dialog, 1);
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New confirmed content");
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     expect(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.disabled).toBe(true);
     await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
@@ -642,7 +642,7 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.value).toContain("Selected older version instructions");
     await click(button(dialog, "Form"));
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Save changes"));
     await click(button(dialog, "Submit governed request"));
     expect(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.disabled).toBe(true);
     await click(button(dialog, "Re-check same request"));
@@ -666,7 +666,7 @@ describe("original workflow action menu with governed consumers", () => {
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     const executor = [...dialog.querySelectorAll("label")].find((label) => label.textContent?.startsWith("Executor installation"))!;
     await select(executor.querySelector("select")!, "executor");
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Create copy"));
     await click(button(dialog, "Submit governed request"));
     const command = writes(send)[0];
     expect(command).toMatchObject({ actionKey: "automation.create", workspaceId: "workspace", executorInstallationResourceId: "executor",

@@ -75,7 +75,7 @@ describe("original channel chooser with scoped workflow draft consumers", () => 
     expect(dialog.querySelector('button[type="submit"]')).toBeNull();
     expect(send.mock.calls.some(([request]) => request.path.startsWith("/api/v1/automations?") && request.path.includes("workspaceId=two"))).toBe(true);
     await changeSelect(selected, "executor-two");
-    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Create workflow"));
     expect(dialog.textContent).toContain("automation.create · two");
     expect(dialog.textContent).toContain("executor-two");
     expect(dialog.textContent).toContain("Retained draft");
