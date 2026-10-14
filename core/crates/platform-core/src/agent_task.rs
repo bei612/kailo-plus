@@ -453,6 +453,22 @@ async fn advance_accepted(
             .await
             .is_err()
         {
+            // 写前 trace 不变量下未发出的 dispatch，且原 Session 的 durable thread
+            // 经原生回答确定不存在（Session 不得替换已绑定 thread）：不能再在此
+            // Session 发 turn，也没有任何可结算的模型请求。只此确定组合终结为
+            // FAILED；其余读不到/不明一律保持 UNKNOWN 待对账。
+            if invocation.runtime_turn_id.is_none()
+                && invocation.native_status.is_none()
+                && matches!(invocation.status.as_str(), "DISPATCHING" | "UNKNOWN")
+                && matches!(runtime.thread_absent(&projection, thread).await, Ok(true))
+            {
+                return match fail_unsent_lost_thread(&state, &invocation).await {
+                    Ok(true) if holder.released => result(id, TaskStatus::Failed, "NONE"),
+                    Ok(true) => release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await,
+                    Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                    Err(error) => unavailable(error),
+                };
+            }
             return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
         }
         if invocation.runtime_turn_id.is_none()
@@ -1395,6 +1411,51 @@ async fn record_turn_in_transaction(
     )
     .await?;
     Ok(turn.is_some())
+}
+
+/// DISPATCHING/UNKNOWN 的确定未发出终结。与 `record_turn_in_transaction` 的
+/// not-sent 同一谓词（AE 锁下无 native turn/status、无 reply/消息意图、无写前
+/// model trace、无 UsageEvent）；调用方另行取得原 Session thread 的原生缺席回答。
+/// 结果是业务失败，不是成功或取消；不写零用量，也不新建 thread 重发。
+async fn fail_unsent_lost_thread(
+    state: &ServiceState,
+    invocation: &Invocation,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let changed = sqlx::query(
+        "update catalog.agent_invocation i set status='FAILED',updated_at=now()
+         where i.id=$1 and i.action_execution_id=$2 and i.status in ('DISPATCHING','UNKNOWN')
+           and i.runtime_turn_id is null and i.native_status is null
+           and i.reply_event_id is null and i.post_message_intent is null
+           and cardinality(i.automation_step_event_ids)=0
+           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+           and not exists(select 1 from outbox.usage_event u
+             where u.invocation_id=i.id or u.operation_id=$3)",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(ae.operation_id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        ("lost-thread", "RECONCILIATION", "DISPATCH_NOT_SENT"),
+        vec![
+            crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+            crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+        ],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 async fn turn_audit(

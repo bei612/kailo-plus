@@ -104,6 +104,9 @@ struct Process {
     start_receipts: HashMap<StartOwner, StartReceipt>,
     // 仅保留活动 turn 的 native 时间/引用，不保留通知正文或 durable usage。
     native_activity: HashMap<Uuid, NativeActivity>,
+    // 最近一次请求的固定原生错误分类（只取精确匹配的封闭集合，不保留正文）。
+    // 每次 RPC 开始时清空；只供同一持锁调用者读取本次请求的确定回答。
+    last_native_error: Option<&'static str>,
 }
 
 struct NativeActivity {
@@ -476,6 +479,7 @@ impl Supervisor {
             pending_line: Vec::new(),
             start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
+            last_native_error: None,
         };
         let initialized = process.rpc("initialize", json!({"clientInfo":{"name":"platform-core","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}), self.timeout, self.max_message_bytes).await?;
         if initialized.get("codexHome").and_then(Value::as_str) != process.home.to_str() {
@@ -679,6 +683,55 @@ impl Supervisor {
             return Err(RuntimeError::Protocol);
         }
         Ok(())
+    }
+
+    /// 原生会话缺席的确定回答：固定 Codex 的 thread/resume 对这一精确 thread
+    /// 返回 `no rollout found for thread id <id>`（`error_category` 的
+    /// THREAD_NOT_FOUND，code 与正文均精确绑定本次请求）。Core 从不调用
+    /// thread/archive 或删除 rollout，因此这只意味着该 durable thread 从未落盘。
+    /// `Ok(false)` 是同一 thread 已恢复；超时、传输、其它原生错误一律 Err，
+    /// 不从「读不到」推断缺席。
+    pub(crate) async fn thread_absent(
+        &self,
+        projection: &RuntimeRef,
+        thread_id: &str,
+    ) -> Result<bool, RuntimeError> {
+        if Uuid::parse_str(thread_id).is_err() {
+            return Err(RuntimeError::Protocol);
+        }
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut slot = slot.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        match process
+            .rpc(
+                "thread/resume",
+                json!({"threadId":thread_id,"excludeTurns":true}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await
+        {
+            Ok(response) => {
+                check_thread_projection(&response, &process.model, &process.home)?;
+                if isolated_thread_id(&response)? != thread_id {
+                    return Err(RuntimeError::Protocol);
+                }
+                Ok(false)
+            }
+            Err(RuntimeError::Unknown) if process.last_native_error == Some("THREAD_NOT_FOUND") => {
+                Ok(true)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// DD-105: only a fenced, certainly undispatched Invocation may refresh its
@@ -1364,6 +1417,7 @@ impl Process {
         {
             return Err(RuntimeError::Unknown); // observe the old request, never resend
         }
+        self.last_native_error = None;
         self.next_id = self.next_id.checked_add(1).ok_or(RuntimeError::Protocol)?;
         let id = self.next_id;
         let diagnostic =
@@ -1388,6 +1442,7 @@ impl Process {
             }
         }
         let mut native_error_received = false;
+        let mut native_category = None;
         let read = async {
             loop {
                 let message = self.read_message(max).await?;
@@ -1399,6 +1454,7 @@ impl Process {
                         native_error_received = true;
                         let (code, category) = diagnostic.error_category(error);
                         diagnostic.emit("RESPONSE", code, category);
+                        native_category = Some(category);
                         return Err(RuntimeError::Unknown);
                     }
                     return message.get("result").cloned().ok_or(RuntimeError::Protocol);
@@ -1417,7 +1473,9 @@ impl Process {
                 )?;
             }
         };
-        match tokio::time::timeout(timeout, read).await {
+        let outcome = tokio::time::timeout(timeout, read).await;
+        self.last_native_error = native_category;
+        match outcome {
             Err(_) => {
                 diagnostic.emit("READ", None, "TIMEOUT");
                 Err(RuntimeError::Unknown)
@@ -2142,6 +2200,7 @@ mod activity_tests {
             pending_line: Vec::new(),
             start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
+            last_native_error: None,
         }
     }
 

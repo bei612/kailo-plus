@@ -71,6 +71,28 @@ struct Lease {
     expires_at: DateTime<Utc>,
     state: String,
     native_release_confirmed_at: Option<DateTime<Utc>>,
+    terminal_event_id: Option<i64>,
+    terminal_event_at: Option<DateTime<Utc>>,
+}
+
+impl Lease {
+    /// 这一 holder Activity 已在同一 pool→lease 锁下取证并持久的原生终态
+    /// （reconcile 写入前已核 scheduled_event_id 与 Invocation）。Temporal 按
+    /// namespace retention 清除旧 run 的 history 不改变已取证事实；有它就不再
+    /// 重读 history，也绝不从缺失的 history 推断终态。generation 是该 Invocation
+    /// 冻结的唯一值，同一 AgentTaskWorkflow 的 Activity 输入只能携带它。
+    fn persisted_terminal(&self, projection_generation: i64) -> Option<ActivityObservation> {
+        Some(ActivityObservation {
+            scheduled_event_id: self.scheduled_event_id,
+            invocation_id: self.invocation_id.to_string(),
+            projection_generation,
+            workflow_cancel_requested: false,
+            state: ActivityState::Terminal {
+                event_id: self.terminal_event_id?,
+                at: self.terminal_event_at?,
+            },
+        })
+    }
 }
 
 #[derive(FromRow)]
@@ -86,7 +108,8 @@ struct NativeInvocation {
 }
 
 const LEASE: &str = "select id,invocation_id,pool_key,workflow_id,run_id,activity_id,attempt,
-    scheduled_event_id,units,acquired_at,renewed_at,expires_at,state,native_release_confirmed_at
+    scheduled_event_id,units,acquired_at,renewed_at,expires_at,state,native_release_confirmed_at,
+    terminal_event_id,terminal_event_at
     from admission.capacity_lease";
 
 impl Capacity {
@@ -216,14 +239,17 @@ impl Capacity {
                 || lease.activity_id != activity_id
                 || lease.scheduled_event_id != observed.scheduled_event_id
             {
-                let previous = temporal
-                    .activity(
-                        &lease.workflow_id,
-                        &lease.run_id.to_string(),
-                        &lease.activity_id,
-                    )
-                    .await
-                    .map_err(|_| CapacityError::Unknown)?;
+                let previous = match lease.persisted_terminal(facts.projection_generation) {
+                    Some(previous) => previous,
+                    None => temporal
+                        .activity(
+                            &lease.workflow_id,
+                            &lease.run_id.to_string(),
+                            &lease.activity_id,
+                        )
+                        .await
+                        .map_err(|_| CapacityError::Unknown)?,
+                };
                 let held = self
                     .recover_unstarted(
                         &mut tx,
@@ -540,7 +566,8 @@ impl Capacity {
         Ok(live && !releasing)
     }
 
-    /// 只由已持久 native terminal 或确定未派发取消事实进入 RELEASING。
+    /// 只由已持久 native terminal 或确定未派发的 CANCELED/FAILED 事实进入 RELEASING。
+    /// 写前 model trace 先于任何 turn/start 提交，故无 trace 的终态没有 native turn。
     /// Activity 返回以后对账才可释放；本次更新本身不归还任何 units。
     pub(crate) async fn begin_release(
         &self,
@@ -555,7 +582,8 @@ impl Capacity {
         let ready: Option<bool> = sqlx::query_scalar(
             "select
             (coalesce(i.native_status in ('completed','failed','interrupted'),false)
-              or (i.status='CANCELED' and i.cancel_pending and i.runtime_turn_id is null
+              or (((i.status='CANCELED' and i.cancel_pending) or i.status='FAILED')
+                and i.runtime_turn_id is null
                 and i.native_status is null and i.reply_event_id is null
                 and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
                 and not exists(select 1 from outbox.usage_event u
@@ -605,13 +633,22 @@ impl Capacity {
             tracing::debug!("CapacityLease 无适用对象");
         }
         for lease in leases {
-            let observed = temporal
-                .activity(
-                    &lease.workflow_id,
-                    &lease.run_id.to_string(),
-                    &lease.activity_id,
-                )
-                .await;
+            let generation: Option<i64> = sqlx::query_scalar(
+                "select projection_generation from catalog.agent_invocation where id=$1",
+            )
+            .bind(lease.invocation_id)
+            .fetch_optional(pool)
+            .await?;
+            let observed = match generation.and_then(|g| lease.persisted_terminal(g)) {
+                Some(terminal) => Ok(terminal),
+                None => temporal
+                    .activity(
+                        &lease.workflow_id,
+                        &lease.run_id.to_string(),
+                        &lease.activity_id,
+                    )
+                    .await,
+            };
             let mut tx = pool.begin().await?;
             sqlx::query(
                 "select pool_key from admission.capacity_pool where pool_key=$1 for update",
@@ -755,8 +792,9 @@ async fn confirm_closed_native(
            and l.tenant_id=i.tenant_id and l.workspace_id=i.workspace_id and l.workflow_id=i.workflow_id
          where i.id=$1 and i.workflow_id=$2 and l.id=$3
            and a.tenant_id=i.tenant_id and a.workspace_id=i.workspace_id
-           and a.temporal_workflow_id=i.workflow_id and i.status='CANCELED'
-           and i.cancel_pending and i.runtime_turn_id is null and i.native_status is null
+           and a.temporal_workflow_id=i.workflow_id
+           and ((i.status='CANCELED' and i.cancel_pending) or i.status='FAILED')
+           and i.runtime_turn_id is null and i.native_status is null
            and i.reply_event_id is null
            and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
            and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id or u.operation_id=a.operation_id)
