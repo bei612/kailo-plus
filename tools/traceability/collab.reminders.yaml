@@ -33,7 +33,7 @@ release:
   # 以下为该源码实际构建并推送的产物，仅登记发布事实，不提升能力状态或开放门禁。
   artifacts:
     - name: core
-      digest: sha256:29ea050ccc06cbfe6920c2be6c089923c3a86f02e466823f0c8e3032d01b3945
+      digest: sha256:76eb93c4d4662ff1cc7731615000e976f57c7366b3d5e0011ba65d4e90f23c28
     - name: web-client
       digest: sha256:19d8aa47eac962b5e4bf300ca51a91a0ecb145655fd52dd7b3b818196c4bdefd
   # 未完成本固定发布树的 full 门禁；定向检查不替代全量验收。
