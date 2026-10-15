@@ -2560,6 +2560,8 @@ enum PlatformMessageKey {
   actionsConversationMessagePublish,
   actionsPulsePublish,
   actionsIdentityProfilePublish,
+  actionsIdentityClientKeyRegister,
+  actionsTenantBootstrap,
   actionsTenantSuspend,
   actionsTenantRestore,
   actionsTenantDelete,
@@ -8724,6 +8726,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.actionsIdentityProfilePublish: (
     'Update profile',
     '更新个人资料',
+  ),
+  PlatformMessageKey.actionsIdentityClientKeyRegister: (
+    'Register device key',
+    '登记设备公钥',
+  ),
+  PlatformMessageKey.actionsTenantBootstrap: (
+    'Bootstrap organization',
+    '初始化组织',
   ),
   PlatformMessageKey.actionsTenantSuspend: ('Suspend organization', '暂停组织'),
   PlatformMessageKey.actionsTenantRestore: ('Restore organization', '恢复组织'),
