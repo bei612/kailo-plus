@@ -103,6 +103,11 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             {
                 tracing::warn!(error = %e, "Profile publication reconciliation incomplete");
             }
+            // DD-117: Agent kind:0 publications settle by event ID within the same
+            // Relay drift window; missing/stale Agent profiles are (re)published.
+            if let Err(e) = crate::agent_profile::reconcile(&state, cfg.batch, cfg.settle).await {
+                tracing::warn!(error = %e, "Agent profile projection reconciliation incomplete");
+            }
             if let Err(e) = pass(&state, &metrics, &cfg, &mut publish_cursor).await {
                 tracing::warn!(error = %e, "发布结果对账本轮未完成");
             }

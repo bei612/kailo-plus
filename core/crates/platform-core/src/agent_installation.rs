@@ -641,7 +641,15 @@ pub(crate) async fn advance(
         }
     }
     match initialize(&state, id, version, input.projection_generation, true).await {
-        Ok(()) => creation_result(id, TaskStatus::Completed, "NONE"),
+        Ok(()) => {
+            // DD-117: the newly active Version's persona becomes the AGENT kind:0
+            // now; any failure stays with the publish reconciler.
+            let profile_state = state.clone();
+            tokio::spawn(async move {
+                crate::agent_profile::project_installation(&profile_state, id).await;
+            });
+            creation_result(id, TaskStatus::Completed, "NONE")
+        }
         Err(error) => {
             tracing::warn!(installation=%id,reason=?error.reason(),"Installation readiness 未闭合");
             creation_result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT")
