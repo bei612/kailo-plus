@@ -2,10 +2,10 @@
 // ProjectsView / ProjectCards / ProjectEntityListRow presentation. This host
 // reads announcements/work-item targets and uses the governed publication hosts;
 // Git, terminal and unsupported work-item operations retain missing consumers.
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
-import { Folders, Trash2 } from "lucide-react";
+import { FolderGit2, Folders, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -47,7 +47,11 @@ import {ProjectsActivityFeed,projectsActivityPubkeys} from "./ProjectsActivityFe
 import {ProjectsActivityIntro,ProjectsOverviewPanel} from "./ProjectsOverviewPanel";
 import {ProjectsWorkItemsLoadNotice} from "./ProjectsWorkItemsLoadNotice";
 import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
-import {projectActivitySummaries,type ProjectActivitySummary} from "./lib/projectActivitySummaries";
+import {projectActivitySummaries,repositoryActivitySummaries,type ProjectActivitySummary} from "./lib/projectActivitySummaries";
+import {RepositoryGridCard,RepositoryListRow} from "./RepositoryCards";
+import {CopyShareLinkMenuItem} from "./CopyShareLinkMenuItem";
+import {projectShareLink} from "./projectShareLinks";
+import {normalizePubkey} from "../conversations/pubkey";
 import {ProjectSelectableGroup} from "./ProjectSelectableGroup";
 import type {UserProfileLookup} from "../messages/system/identity";
 import {projectsSectionIcon,projectsSectionTitleKey} from "./projectsSectionMeta";
@@ -331,6 +335,51 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
     activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/></div>;
 }
 
+type RepositoryRow={project:Project;repository:Project["repositories"][number]};
+// Unique repositories of the directory read models (original visibleRepositories).
+function directoryRepositories(projects:Project[]):RepositoryRow[] {
+  return [...new Map(projects.flatMap(project=>project.repositories.map(repository=>({project,repository})))
+    .map(item=>[item.repository.repoAddress,item])).values()];
+}
+function repositoryIsMine(repository:Project["repositories"][number],currentPubkey:string) {
+  const viewer=normalizePubkey(currentPubkey);
+  return normalizePubkey(repository.owner)===viewer||repository.contributors.some(pubkey=>normalizePubkey(pubkey)===viewer);
+}
+
+// Original ProjectsOverviewItems.tsx::ProjectsOverviewRepositoryItems: Mine / Other
+// repositories collection groups. Opening a repository uses the restored
+// repository workspace (Tasks/Review); Git Overview/Files/Commits tabs are not
+// part of the shared governed read.
+function ProjectsOverviewRepositoryItems({visible,viewerPubkey,view,summaries,profiles,canCopyLink,onOpen}:{visible:RepositoryRow[];viewerPubkey:string;view:ProjectsViewMode;
+  summaries?:Record<string,ProjectActivitySummary>;profiles?:UserProfileLookup;canCopyLink:boolean;onOpen:(project:Project,repository:Project["repositories"][number])=>void}) {
+  const t=useUiT();
+  if(visible.length===0)return <EmptyFilteredState/>;
+  const groups=[
+    {items:visible.filter(row=>repositoryIsMine(row.repository,viewerPubkey)),key:"mine",title:t("projects.group.mine")},
+    {items:visible.filter(row=>!repositoryIsMine(row.repository,viewerPubkey)),key:"other",title:t("projects.group.otherRepositories")},
+  ].filter(group=>group.items.length>0);
+  return <div className="min-w-0 flex-1 space-y-0" data-testid={view==="list"?"projects-list-container":undefined}>
+    {groups.map(group=><ProjectSelectableGroup contentClassName="mt-2 space-y-0" count={group.items.length} groupKey={group.key}
+      headerClassName="mx-0 gap-3 px-3" headerTestId="projects-collection-group-header" icon={<FolderGit2 className="h-4 w-4"/>} key={group.key}
+      label={group.title} labelClassName="text-sm font-normal text-foreground/80" labelTestId="projects-collection-group-label" testId="projects-collection-group">
+      {view==="grid"?<div className={RESPONSIVE_CARD_GRID_CLASS}>
+        {group.items.map(({project,repository})=><div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]" key={repository.repoAddress}>
+          <RepositoryGridCard project={project} repository={repository} summary={summaries?.[repository.repoAddress]} profiles={profiles} onOpen={onOpen} canCopyLink={canCopyLink}/></div>)}
+      </div>:<div>
+        {group.items.map(({project,repository})=><div className="[contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]" key={repository.repoAddress}>
+          <RepositoryListRow project={project} repository={repository} summary={summaries?.[repository.repoAddress]} profiles={profiles} onOpen={onOpen} canCopyLink={canCopyLink}/></div>)}
+      </div>}
+    </ProjectSelectableGroup>)}
+  </div>;
+}
+
+function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<typeof ProjectsOverviewRepositoryItems>,"profiles"|"canCopyLink">&{summaries:Record<string,ProjectActivitySummary>}) {
+  const pubkeys=useMemo(()=>[...new Set(props.visible.flatMap(({repository})=>[repository.owner,...repository.contributors,
+    ...(props.summaries[repository.repoAddress]?.participantPubkeys??[])].map(normalizePubkey)))],[props.visible,props.summaries]);
+  const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
+  return <ProjectsOverviewRepositoryItems {...props} profiles={profiles} canCopyLink/>;
+}
+
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
 // over the same directory and work-item reads; profiles come from the work-item host.
 function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
@@ -339,10 +388,11 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const issues=useMemo(()=>snapshot.items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[snapshot]);
   const pullRequests=useMemo(()=>snapshot.items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[snapshot]);
   const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
-  const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,summaries]);
+  const repositorySummaries=useMemo(()=>repositoryActivitySummaries(snapshot.events,directoryRepositories(projectReadModels).map(row=>row.repository)),[snapshot,projectReadModels]);
+  const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries]);
   const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
-    summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/></div>;
+    repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/></div>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
@@ -388,11 +438,22 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   // falls back to the creation date without rewriting the stored preference.
   const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"&&!directorySummaries?"created":sort;
   const active=projects.find(project=>project.id===selected);
-  const visible=projects.filter(project=>matchesProjectsSearch(search,[
+  // Original Projects section lists explicit projects; standalone repositories
+  // belong to the Repositories section.
+  const visible=projects.filter(project=>!project.legacy).filter(project=>matchesProjectsSearch(search,[
     project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description]),
   ]))
     .sort((a,b)=>effectiveSort==="name"?a.name.localeCompare(b.name):effectiveSort==="created"?b.createdAt-a.createdAt
       :getProjectUpdatedAt(b,directorySummaries?.[b.id])-getProjectUpdatedAt(a,directorySummaries?.[a.id]));
+  const repositorySummaries=useMemo(()=>workSnapshot?repositoryActivitySummaries(workSnapshot.events,directoryRepositories(projects).map(row=>row.repository)):undefined,[workSnapshot,projects]);
+  const visibleRepositories=directoryRepositories(projects).filter(({project,repository})=>matchesProjectsSearch(search,[repository.name,repository.description,project.name]))
+    .sort((left,right)=>effectiveSort==="name"?left.repository.name.localeCompare(right.repository.name)
+      :effectiveSort==="created"?right.repository.createdAt-left.repository.createdAt
+      :(repositorySummaries?.[right.repository.repoAddress]?.updatedAt??right.repository.createdAt)-(repositorySummaries?.[left.repository.repoAddress]?.updatedAt??left.repository.createdAt));
+  const openRepository=(project:Project,repository:Project["repositories"][number])=>{
+    if(!onSelectedProjectChange)return;
+    void Promise.resolve(onSelectedProjectChange(project.id,{repositoryId:repository.id,tab:"issues"})).catch(()=>{if(lifetime.active)setNavigationFailed("open");});
+  };
   const canCreate=Boolean(host.publish&&query.isSuccess&&!query.isFetching&&(
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
@@ -411,15 +472,24 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     const head=[...query.data!.projectEvents,...query.data!.repositoryEvents]
       .filter(event=>`${event.kind}:${event.pubkey}:${event.tags.find(tag=>tag[0]==="d")?.[1]}`===project.projectAddress)
       .sort((a,b)=>b.created_at-a.created_at||a.id.localeCompare(b.id))[0];
+    // Original ProjectActionsMenu: Copy link and Delete project (disabled unless
+    // this viewer may delete). The copy action uses the work-item host, present
+    // with activity; the native terminal action has no shared consumer.
+    const link=activity?projectShareLink(project):null;
+    const menu=(deleteItem:ReactNode)=><ProjectListRowMenu label={t("projects.moreOptions",{name:project.name})}>
+      {link?<CopyShareLinkMenuItem label={t("buzz.copyLink")} link={link} testId={`project-copy-link-${project.dtag}`}/>:null}
+      {deleteItem}
+    </ProjectListRowMenu>;
     return host.publish&&project.owner===query.data?.viewerPubkey&&head?<ProjectDeleteAction key={project.id} project={project}
       headId={head.id} viewerPubkey={query.data.viewerPubkey} host={host} onDeleted={()=>{
         if(!lifetime.active)return;
         if(selected===project.id)void setSelected(null).catch(()=>{if(lifetime.active)setNavigationFailed("open");});
         void invalidateProjects();
-      }} renderTrigger={({onOpen:onDelete,pending})=>row(<ProjectListRowMenu label={t("projects.moreOptions",{name:project.name})}>
+      }} renderTrigger={({onOpen:onDelete,pending})=>row(menu(
         <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={pending}
-          onSelect={event=>{event.preventDefault();event.stopPropagation();onDelete();}}><Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>
-      </ProjectListRowMenu>)}/>:<Fragment key={project.id}>{row()}</Fragment>;
+          onSelect={event=>{event.preventDefault();event.stopPropagation();onDelete();}}><Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>))}/>
+      :<Fragment key={project.id}>{row(link?menu(<DropdownMenuItem className="text-destructive focus:text-destructive" disabled>
+        <Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>):undefined)}</Fragment>;
   };
   if (selected) return active && renderChannel && onOpenChannel
     ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} scopeKey={host.scopeKey}
@@ -492,7 +562,14 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
                     <section><div className="space-y-3">
                       {(filter==="issues"||filter==="prs")&&onSelectedProjectChange?<ProjectWorkItemsList key={host.scopeKey+filter} host={host} query={workItems} filter={filter} search={search} sort={sort} view={view} onOpen={onSelectedProjectChange} renderWorkItems={renderWorkItems}/>:query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
                         <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
-                          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:<>
+                          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:filter==="repositories"?<>
+                        {workItems.isError?<ProjectsWorkItemsLoadNotice error={workItems.error} isRetrying={workItems.isFetching} onRetry={()=>{void workItems.refetch();}}/>:null}
+                        {repositorySummaries&&workSnapshot?(()=>{
+                          const items=<ProjectsOverviewRepositoryItemsWithActivity visible={visibleRepositories} viewerPubkey={query.data!.viewerPubkey} view={view}
+                            summaries={repositorySummaries} onOpen={openRepository}/>;
+                          return renderWorkItems?renderWorkItems(items,workSnapshot.viewerPubkey):items;
+                        })():<ProjectsOverviewRepositoryItems visible={visibleRepositories} viewerPubkey={query.data!.viewerPubkey} view={view} canCopyLink={false} onOpen={openRepository}/>}
+                      </>:<>
                         {workItems.isError?<ProjectsWorkItemsLoadNotice error={workItems.error} isRetrying={workItems.isFetching} onRetry={()=>{void workItems.refetch();}}/>:null}
                         {directorySummaries&&workSnapshot?(()=>{
                           const items=<ProjectsOverviewProjectItemsWithActivity visible={visible} viewerPubkey={query.data!.viewerPubkey} view={view}

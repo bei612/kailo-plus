@@ -3,6 +3,7 @@
 // and projectsSectionIcon. Titles resolve through the shared catalog.
 import {
   CircleDot,
+  FolderGit2,
   Folders,
   GitPullRequest,
   Hash,
@@ -16,6 +17,7 @@ export function projectsSectionTitleKey(filter: ProjectsFilter): PlatformMessage
   if (filter === "all") return "projects.section.activity";
   if (filter === "prs") return "projects.list.reviews";
   if (filter === "issues") return "projects.list.tasks";
+  if (filter === "repositories") return "projects.section.repositories";
   if (filter === "channels") return "sidebar.channels";
   return "platform.tab.projects";
 }
@@ -23,6 +25,7 @@ export function projectsSectionTitleKey(filter: ProjectsFilter): PlatformMessage
 export function projectsSectionIcon(filter: ProjectsFilter): LucideIcon {
   if (filter === "prs") return GitPullRequest;
   if (filter === "issues") return CircleDot;
+  if (filter === "repositories") return FolderGit2;
   if (filter === "channels") return Hash;
   return Folders;
 }

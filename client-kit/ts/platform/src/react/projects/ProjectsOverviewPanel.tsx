@@ -6,6 +6,7 @@
 import {
   CheckCircle2,
   CircleDot,
+  FolderGit2,
   Folders,
   GitMerge,
   GitPullRequest,
@@ -41,6 +42,7 @@ const STAT_ICONS: Record<
   completed: CheckCircle2,
   merged: GitMerge,
   projects: Folders,
+  repositories: FolderGit2,
   reviews: GitPullRequest,
   tasks: CircleDot,
 };
@@ -109,6 +111,7 @@ type ProjectsOverviewContextPanelProps = {
   projectReadModels: Project[];
   projects: Project[];
   pullRequests: ProjectPullRequest[];
+  repositorySummaries?: Record<string, ProjectActivitySummary>;
   summaries?: Record<string, ProjectActivitySummary>;
 };
 
@@ -180,6 +183,7 @@ export function ProjectsOverviewContextPanel({
   projectReadModels,
   projects,
   pullRequests,
+  repositorySummaries,
   summaries,
 }: ProjectsOverviewContextPanelProps) {
   const t = useUiT();
@@ -193,9 +197,10 @@ export function ProjectsOverviewContextPanel({
         projectReadModels,
         projects,
         pullRequests,
+        repositorySummaries,
         summaries,
       }),
-    [filter, issues, projectReadModels, projects, pullRequests, summaries],
+    [filter, issues, projectReadModels, projects, pullRequests, repositorySummaries, summaries],
   );
   return (
     <div

@@ -56,7 +56,7 @@ describe("original Projects Activity overview",()=>{
     const f=fixture();const {ui,opened,pulse,cache}=await mount(f);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-activity-timeline"]')).not.toBeNull());
     expect(ui.querySelector('[data-testid="projects-section-all"]')?.getAttribute("aria-pressed")).toBe("true");
-    expect([...ui.querySelectorAll('[data-testid^="projects-section-"]')].map(node=>node.getAttribute("aria-label"))).toEqual(["Activity","Projects","Tasks","Reviews"]);
+    expect([...ui.querySelectorAll('[data-testid^="projects-section-"]')].map(node=>node.getAttribute("aria-label"))).toEqual(["Activity","Projects","Repositories","Tasks","Reviews"]);
     expect(ui.querySelector('[data-testid="projects-page-header"]')?.textContent).toBe("Projects Activity");
     expect(ui.querySelector('[data-testid="projects-activity-summary"]')?.textContent).toBe("Currently tracking 1 project, 1 task, and 1 review.");
     expect([...ui.querySelectorAll('[data-testid="projects-activity-group"] h3')].map(node=>node.textContent)).toEqual(["Earlier"]);
@@ -81,7 +81,7 @@ describe("original Projects Activity overview",()=>{
     expect(ui.querySelector('[data-testid="projects-overview-content-pod"]')).not.toBeNull();
     expect(rail().style.width).toBe("288px");
     expect(ui.querySelector('[data-testid="projects-overview-context-title"]')?.textContent).toBe("Activity");
-    expect(stats()).toEqual(["Projects1","Channels0","Tasks1","Reviews1"]);
+    expect(stats()).toEqual(["Projects1","Repositories1","Channels0","Tasks1","Reviews1"]);
     expect(ui.querySelector('[data-testid="projects-overview-people"]')).not.toBeNull();
     await click([...ui.querySelectorAll<HTMLButtonElement>('[data-testid="projects-overview-stat"]')].find(node=>node.textContent==="Tasks1")!);
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-issues"]')?.getAttribute("aria-pressed")).toBe("true"));

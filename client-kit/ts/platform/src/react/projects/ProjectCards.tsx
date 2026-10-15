@@ -20,6 +20,7 @@ import type {ProjectActivitySummary} from "./lib/projectActivitySummaries";
 import {ProjectEntityFacepile} from "./ProjectEntityFacepile";
 import {ProjectEntityListRow} from "./ProjectEntityListRow";
 import {PROJECT_GRID_CARD_BODY_CLASS} from "./projectGridCardStyles";
+import {PROJECT_LIST_ROW_META_TEXT_CLASS} from "./projectListRowStyles";
 
 export function ProjectPeopleStack({
   pubkeys,
@@ -112,6 +113,48 @@ const PROJECT_STAT_ITEMS = [
 
 function statLabel(t: ReturnType<typeof useUiT>, label: (typeof PROJECT_STAT_ITEMS)[number]["label"], count: number) {
   return t(`${label}.${count === 1 ? "one" : "other"}` as PlatformMessageKey);
+}
+
+/**
+ * Textual commit/PR/issue counts for project and repository cards.
+ */
+export function ProjectStatsRow({
+  summary,
+  fixedColumns = false,
+}: {
+  summary: ProjectActivitySummary | undefined;
+  /** Give each stat a fixed width so stats align vertically across list rows. */
+  fixedColumns?: boolean;
+}) {
+  const t = useUiT();
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-x-3 gap-y-1 text-muted-foreground",
+        fixedColumns ? PROJECT_LIST_ROW_META_TEXT_CLASS : "text-xs leading-4",
+        !fixedColumns && "flex-wrap",
+      )}
+    >
+      {PROJECT_STAT_ITEMS.map(
+        ({ key, icon: Icon, iconClass, label, columnClass }) => {
+          const count = summary?.[key] ?? 0;
+          return (
+            <span
+              className={cn(
+                "flex items-center gap-1",
+                fixedColumns && cn("shrink-0", columnClass),
+              )}
+              key={key}
+            >
+              <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClass)} />
+              <span className="font-medium text-foreground">{count}</span>
+              {statLabel(t, label, count)}
+            </span>
+          );
+        },
+      )}
+    </div>
+  );
 }
 
 // Segmented commits/PRs/issues distribution — the card's "progress bar".

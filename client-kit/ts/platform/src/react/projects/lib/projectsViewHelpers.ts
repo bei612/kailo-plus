@@ -41,9 +41,8 @@ export function writeStoredSort(sort: ProjectsSort) {
 export function readStoredFilter():ProjectsFilter {
   try {
     const value=globalThis.localStorage?.getItem(PROJECTS_FILTER_STORAGE_KEY);
-    // Original default is Activity. Un-restored Git repository sections retain
-    // their source evidence, not an empty reachable page.
-    return value==="projects"||value==="channels"||value==="issues"||value==="prs"?value:"all";
+    // Original default is Activity.
+    return value==="projects"||value==="repositories"||value==="channels"||value==="issues"||value==="prs"?value:"all";
   } catch {return "all";}
 }
 export function writeStoredFilter(filter:ProjectsFilter) {

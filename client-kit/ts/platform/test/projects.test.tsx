@@ -358,14 +358,22 @@ describe("original Projects directory management consumers",()=>{
     expect(ui.querySelectorAll("button button")).toHaveLength(0);
     expect(ui.querySelector('[data-testid="project-activity-bar"]')).toBeNull();
   });
-  it("preserves original legacy repository status without inventing Git availability",async()=>{
+  it("lists an original standalone repository in Repositories, not Projects, without inventing Git availability",async()=>{
     const source:PulseEvent={id:"legacy",pubkey:owner,kind:30617,created_at:10,content:"",tags:[["d","legacy"],["name","Original legacy"],["status","archived"]]};
     const h:ProjectsHost={scopeKey:"legacy-scope",query:async req=>({events:req.view==="REPOSITORIES"?[source]:[],pubkey:owner,limit:3})};
-    const ui=await directory(h);
-    expect(ui.querySelector('[data-testid="project-card-legacy"] span.rounded-full')?.textContent).toBe("archived");
+    const opened=vi.fn();const ui=await directory(h,bff,opened);
+    // Original ProjectsView: the Projects section holds explicit projects only.
+    expect(ui.querySelector('[data-testid="project-card-legacy"]')).toBeNull();
+    expect(ui.textContent).toContain("No matching projects");
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-section-repositories"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="repository-card-legacy"]')).not.toBeNull());
+    expect(ui.querySelector('[data-testid="repository-card-legacy"]')?.textContent).toContain("Original legacy");
     await click(ui.querySelector<HTMLButtonElement>('[aria-label="List layout"]')!);
-    expect(ui.querySelector('[data-testid="project-row-legacy"] span.rounded-full')?.textContent).toBe("archived");
-    expect(ui.querySelector('[aria-label^="Repository "]')).toBeNull();
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="repository-row-legacy"]')).not.toBeNull());
+    // Only the unresolved host mark; no Git availability or terminal claim.
+    expect([...ui.querySelectorAll('[aria-label^="Repository "]')].map(node=>node.getAttribute("aria-label"))).toEqual(["Repository host"]);
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="repository-row-legacy"] > button')!);
+    expect(opened).toHaveBeenCalledWith(`30617:${owner}:legacy`,{repositoryId:`${owner}:legacy`,tab:"issues"});
   });
   it("opens the original empty-state form and completes the existing governed creation chain",async()=>{
     const f=await creationFixture();const original=f.send.getMockImplementation()!;
@@ -402,7 +410,9 @@ describe("original Projects directory management consumers",()=>{
     let rows=[old,current];const publish=vi.fn(async()=>{rows=[];return {eventId:"f".repeat(64)};});
     const h:ProjectsHost={scopeKey:"owned-directory",query:async request=>({pubkey:owner,limit:20,events:request.view==="PROJECTS"?rows:[]}),publish};
     const ui=await directory(h);await vi.waitFor(()=>expect(ui.textContent).toContain("Current owned"));
-    await openMenu(ui,"Current owned");await click(document.querySelector<HTMLElement>('[role="menuitem"]')!);
+    await openMenu(ui,"Current owned");
+    expect(document.querySelector('[data-testid="project-copy-link-'+"c".repeat(64)+'"]')).not.toBeNull();
+    await click([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node=>node.textContent==="Delete project")!);
     await vi.waitFor(()=>expect(document.querySelector('[role="alertdialog"]')).not.toBeNull());
     await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!,"Delete project"));
     await vi.waitFor(()=>expect(ui.textContent).toContain("No projects yet"));
@@ -413,7 +423,12 @@ describe("original Projects directory management consumers",()=>{
   it("does not turn another author's directory row into a delete action",async()=>{
     const source={...project("Someone else's project"),pubkey:other};const publish=vi.fn();
     const ui=await directory({...host([source]),publish});await vi.waitFor(()=>expect(ui.textContent).toContain("Someone else's project"));
-    expect(ui.querySelector('[aria-label^="More options"]')).toBeNull();expect(publish).not.toHaveBeenCalled();
+    // Original ProjectActionsMenu keeps Copy link and shows Delete disabled.
+    await openMenu(ui,"Someone else's project");
+    const remove=[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node=>node.textContent==="Delete project");
+    expect(remove?.getAttribute("aria-disabled")).toBe("true");
+    if(remove)await click(remove);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();expect(publish).not.toHaveBeenCalled();
   });
   it("retains the original list preference across remount and flattens only its compact description",async()=>{
     const source=project();source.tags=source.tags.map(tag=>tag[0]==="description"?["description","## **Original** [description](https://example.invalid)\nnext line"]:tag);

@@ -1,8 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/projectsOverviewContext.ts. Same title,
-// people and stat derivation per section; labels are catalog keys. Sections
-// without a shared consumer (Repositories) are not emitted as stat targets, and
-// create actions are only returned for sections whose governed writer exists.
+// people and stat derivation per section; labels are catalog keys. Create
+// actions are only returned for sections whose governed writer exists (no
+// add-channel, add-repository or create-review writer is available).
 import type { PlatformMessageKey } from "../../i18n";
 import { projectContributorActivityCounts } from "./lib/projectContributorMatching";
 import type { ProjectActivitySummary } from "./lib/projectActivitySummaries";
@@ -22,6 +22,7 @@ export type ProjectsOverviewSection = Exclude<ProjectsFilter, "all">;
 
 export type OverviewContextStatIcon =
   | "projects"
+  | "repositories"
   | "channels"
   | "tasks"
   | "reviews"
@@ -54,8 +55,16 @@ type OverviewContextInput = {
   projectReadModels?: Project[];
   projects: Project[];
   pullRequests: ProjectPullRequest[];
+  repositorySummaries?: Record<string, ProjectActivitySummary>;
   summaries?: Record<string, ProjectActivitySummary>;
 };
+
+function repositoryCount(projects: Project[]) {
+  return projects.reduce(
+    (count, project) => count + project.repositories.length,
+    0,
+  );
+}
 
 function summaryWorkItemCounts(
   projects: Project[],
@@ -175,16 +184,20 @@ function overviewContextPeople({
   issues,
   projects,
   pullRequests,
+  repositorySummaries,
   summaries,
 }: OverviewContextInput) {
   const counts = workspaceActorCounts(issues, pullRequests);
   const commitAuthors = uniquePubkeys([
     ...peopleWithKind(counts, "commits"),
-    ...latestCommitAuthors(summaries),
+    ...latestCommitAuthors(
+      filter === "repositories" ? repositorySummaries : summaries,
+    ),
   ]);
 
   if (filter === "issues") return peopleWithKind(counts, "tasks");
   if (filter === "prs") return peopleWithKind(counts, "reviews");
+  if (filter === "repositories") return commitAuthors;
   if (filter === "channels") return [];
   if (filter === "all") {
     return uniquePubkeys([...peopleWithKind(counts, "any"), ...commitAuthors]);
@@ -209,7 +222,36 @@ export function projectsOverviewContext(
   const tasks = resolvedTaskActivity(issues, summaryCounts.issues);
   const reviews = resolvedReviewActivity(pullRequests, summaryCounts.prs);
   const channelCount = uniqueProjectRelatedChannelCount(readModels);
+  const repositories = repositoryCount(readModels);
   const people = overviewContextPeople(input);
+
+  if (filter === "repositories") {
+    return {
+      action: null,
+      people,
+      stats: [
+        {
+          count: repositories,
+          icon: "repositories",
+          label: "projects.section.repositories",
+          section: "repositories",
+        },
+        {
+          count: tasks.active,
+          icon: "tasks",
+          label: "projects.overview.activeTasks",
+          section: "issues",
+        },
+        {
+          count: reviews.open,
+          icon: "reviews",
+          label: "projects.overview.openReviews",
+          section: "prs",
+        },
+      ],
+      title: "projects.section.repositories",
+    };
+  }
 
   if (filter === "channels") {
     return {
@@ -227,6 +269,12 @@ export function projectsOverviewContext(
           icon: "projects",
           label: "platform.tab.projects",
           section: "projects",
+        },
+        {
+          count: repositories,
+          icon: "repositories",
+          label: "projects.section.repositories",
+          section: "repositories",
         },
       ],
       title: "sidebar.channels",
@@ -305,6 +353,12 @@ export function projectsOverviewContext(
           section: "projects",
         },
         {
+          count: repositories,
+          icon: "repositories",
+          label: "projects.section.repositories",
+          section: "repositories",
+        },
+        {
           count: channelCount,
           icon: "channels",
           label: "sidebar.channels",
@@ -340,6 +394,12 @@ export function projectsOverviewContext(
         icon: "projects",
         label: "platform.tab.projects",
         section: "projects",
+      },
+      {
+        count: repositories,
+        icon: "repositories",
+        label: "projects.section.repositories",
+        section: "repositories",
       },
       {
         count: channelCount,
