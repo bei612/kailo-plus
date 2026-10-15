@@ -135,14 +135,15 @@ describe("web-fetch", () => {
         await client.conversationParticipants();
         await client.applicationBindings(undefined, 0);
         await client.conversationMessages("dm");
+        if (round < 2) await client.collaborationUserState();
         await client.workspaceActivity({ items: [{ workspaceId: "w", messageType: WebMessageType.Stream }] });
       }
     }
     const paths = fetch.mock.calls.map(([path]) => String(path));
     const reads = paths.filter((path) => !path.endsWith("/workspace-activity"));
     expect(reads.filter((path) => path === "/api/v1/session")).toHaveLength(1 + 3);
-    expect(reads.filter((path) => path !== "/api/v1/session")).toHaveLength(4);
-    expect(new Set(reads).size).toBe(5);
+    expect(reads.filter((path) => path !== "/api/v1/session")).toHaveLength(5);
+    expect(new Set(reads).size).toBe(6);
   });
 
   it("收件箱私聊详情显式带 STREAM 的首窗读取与列表的首窗读取是同一次读", async () => {
@@ -202,6 +203,11 @@ describe("web-fetch", () => {
       expect(isSettledRead("/api/v1/conversations/dm/messages")).toBe(true);
       expect(isSettledRead("/api/v1/conversations/dm/messages?cursor=x")).toBe(false);
       expect(isSettledRead("/api/v1/workspaces")).toBe(false);
+      expect(isSettledRead("/api/v1/user-state")).toBe(true);
+      await client.collaborationUserState();
+      await client.markRead({ items: [] } as unknown as Parameters<typeof client.markRead>[0]);
+      await client.collaborationUserState();
+      expect(count("/api/v1/user-state")).toBe(2);
     } finally { vi.useRealTimers(); }
   });
 

@@ -31,6 +31,8 @@ export const SETTLED_READ_MS = 2_000;
  * Paged or anchored message reads (any query string) are never shared. */
 export function isSettledRead(path: string): boolean {
   return /^\/api\/v1\/(?:session|conversations|conversation-participants|application-bindings)(?:\?|$)/.test(path)
+    // Personal preferences/read positions; every CAS write invalidates before it is sent.
+    || path === "/api/v1/user-state"
     || /^\/api\/v1\/(?:conversations|workspaces)\/[^/?]+\/messages$/.test(path);
 }
 
