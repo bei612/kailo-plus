@@ -537,10 +537,7 @@ mod persistence_rejection_tests {
             sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()),
         ] {
             assert_eq!(PersistenceRejection::of(&error), None);
-            assert_eq!(
-                unavailable(error).status(),
-                StatusCode::SERVICE_UNAVAILABLE
-            );
+            assert_eq!(unavailable(error).status(), StatusCode::SERVICE_UNAVAILABLE);
         }
     }
 
@@ -634,7 +631,10 @@ mod persistence_rejection_tests {
             .expect_err("serialization failure");
         first.rollback().await.expect("rollback");
         assert_eq!(
-            conflict.as_database_error().and_then(|e| e.code()).as_deref(),
+            conflict
+                .as_database_error()
+                .and_then(|e| e.code())
+                .as_deref(),
             Some("40001")
         );
         assert_eq!(PersistenceRejection::of(&conflict), None);
@@ -698,12 +698,14 @@ mod persistence_rejection_tests {
         .execute(&mut *tx)
         .await
         .expect("workflow fixture");
-        sqlx::query("update admission.action_execution set temporal_workflow_id = $1 where id = $2")
-            .bind(&workflow)
-            .bind(action)
-            .execute(&mut *tx)
-            .await
-            .expect("workflow link");
+        sqlx::query(
+            "update admission.action_execution set temporal_workflow_id = $1 where id = $2",
+        )
+        .bind(&workflow)
+        .bind(action)
+        .execute(&mut *tx)
+        .await
+        .expect("workflow link");
         let report = contracts::TaskStateReport {
             activity_id: None,
             workflow_id: workflow.clone(),
