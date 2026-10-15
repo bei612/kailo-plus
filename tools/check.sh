@@ -1394,6 +1394,32 @@ if os.path.exists(agw_cfg):
             if not routes:
                 continue
 
+            # DD-116：原版 Workflow WEBHOOK 的公开入口。外部系统没有平台身份，签名是唯一凭据，
+            # 因此它是唯一不挂认证、不投影身份的 listener；作为交换，它必须清洗全部身份与
+            # 凭据 header，且只能有一条 POST /hooks/<uuid> 到 BFF 的 route。
+            if lis_name == "automation-webhook":
+                checked += 1
+                tr = transform_of(lis)
+                removes = {str(h).lower() for h in (tr.get("remove") or [])}
+                need = PROJECTED | {SURFACE} | LEGACY | MUST_REMOVE | {"authorization", "cookie",
+                       "x-platform-human-identity", "x-platform-tenant", "x-platform-workspace",
+                       "x-platform-principal"}
+                if oidc or jwt:
+                    bad.append("agentgateway automation-webhook: 公开 webhook 入口不得挂 oidc/jwtAuth（DD-116）")
+                if tr.get("set"):
+                    bad.append("agentgateway automation-webhook: 公开 webhook 入口不得 set 任何 header（DD-116）")
+                for h in sorted(need - removes):
+                    bad.append(f"agentgateway automation-webhook: 未移除 {h}，外部请求可冒充平台身份或凭据（DD-116）")
+                hook_ok = len(routes) == 1 and all(
+                    m.get("method") == "POST"
+                    and (m.get("path") or {}).get("regex") == "/hooks/[0-9a-fA-F-]{36}"
+                    for m in (routes[0].get("matches") or [None]) if m is not None
+                ) and (routes[0].get("matches") or []) and [
+                    b.get("host") for b in routes[0].get("backends") or []] == ["${BFF_UPSTREAM}"]
+                if not hook_ok:
+                    bad.append("agentgateway automation-webhook: 只允许一条 POST /hooks/<uuid> 到 ${BFF_UPSTREAM} 的 route（DD-116）")
+                continue
+
             # 认证必须挂在 listener 上，且恰好一种：浏览器入口用 OIDC（cookie 会话），
             # 原生入口用 jwtAuth（Bearer）。两者同挂时 OIDC 先执行，会把不带 cookie
             # 的原生请求当成未登录导航（SF-AGW-22、DD-78）。
