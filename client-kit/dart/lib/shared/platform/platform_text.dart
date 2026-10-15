@@ -1786,6 +1786,15 @@ enum PlatformMessageKey {
   agentsExecuteEffective,
   agentsExecuteNotEffective,
   agentsExecuteUnverified,
+  agentUseTitle,
+  agentUseBoundary,
+  agentUseToggle,
+  agentUseGranted,
+  agentUseNotGranted,
+  agentUseInherited,
+  agentUsePending,
+  agentUseUnknown,
+  agentUseNone,
   agentsExecuteGrant,
   agentsExecuteRevoke,
   agentsExecuteApproval,
@@ -2584,6 +2593,8 @@ enum PlatformMessageKey {
   actionsAgentInstallationCreate,
   actionsAgentInstallationExecuteGrant,
   actionsAgentInstallationExecuteRevoke,
+  actionsAgentInstallationUseGrant,
+  actionsAgentInstallationUseRevoke,
   actionsAgentDelegationGrant,
   actionsAgentDelegationRevoke,
   actionsAutomationCreate,
@@ -6801,6 +6812,36 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Execute permission cannot be verified. No permission action is offered.',
     '执行权限不可查证，不提供权限操作。',
   ),
+  PlatformMessageKey.agentUseTitle: (
+    'Members who can use this Agent',
+    '允许使用此 Agent 的成员',
+  ),
+  PlatformMessageKey.agentUseBoundary: (
+    'Allow one workspace member to mention, assign and delegate to this installation. Owners and admins can already use it. Revoking rejects new mentions immediately and requests cancellation of that member\'s running invocations.',
+    '允许单个工作区成员提及、指派此安装并向其委托；所有者与管理员本就可以使用。撤销后新的提及立即被拒绝，并对该成员在途的调用发出取消请求。',
+  ),
+  PlatformMessageKey.agentUseToggle: (
+    'Allow {name} to use this Agent',
+    '允许 {name} 使用此 Agent',
+  ),
+  PlatformMessageKey.agentUseGranted: ('Allowed', '已允许'),
+  PlatformMessageKey.agentUseNotGranted: ('Not allowed', '未允许'),
+  PlatformMessageKey.agentUseInherited: (
+    'Available through owner or admin role',
+    '已通过所有者或管理员权限可用',
+  ),
+  PlatformMessageKey.agentUsePending: (
+    'A permission change is in progress',
+    '权限变更处理中',
+  ),
+  PlatformMessageKey.agentUseUnknown: (
+    'Result unknown. Operation {operation}. Retry checks the same request.',
+    '结果不明。操作 {operation}。重试将查证同一请求。',
+  ),
+  PlatformMessageKey.agentUseNone: (
+    'No active members in this workspace.',
+    '此工作区没有可授权的成员。',
+  ),
   PlatformMessageKey.agentsExecuteGrant: ('Review execute grant', '预览授予执行权限'),
   PlatformMessageKey.agentsExecuteRevoke: (
     'Review execute revocation',
@@ -8813,6 +8854,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.actionsAgentInstallationExecuteRevoke: (
     'Revoke Agent execution permission',
     '撤销 Agent 执行权限',
+  ),
+  PlatformMessageKey.actionsAgentInstallationUseGrant: (
+    'Allow a member to use an Agent',
+    '允许成员使用 Agent',
+  ),
+  PlatformMessageKey.actionsAgentInstallationUseRevoke: (
+    'Revoke a member\'s use of an Agent',
+    '撤销成员使用 Agent',
   ),
   PlatformMessageKey.actionsAgentDelegationGrant: (
     'Grant Agent delegation',

@@ -2788,6 +2788,11 @@ pub struct InstallationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_projection_generation: Option<i64>,
 
+    /// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+    /// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_display_name: Option<String>,
+
     pub agent_principal_id: String,
 
     pub agent_principal_state: AgentPrincipalState,
@@ -2963,6 +2968,38 @@ pub struct AgentInstallationProjectionView {
     pub state: AgentRuntimeProjectionState,
 }
 
+/// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
+/// reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
+/// 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationUsePage {
+    pub installation_id: String,
+
+    pub members: Vec<Member>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub resource_version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Member {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub display_name: String,
+
+    pub effective: bool,
+
+    pub principal_id: String,
+
+    pub requested: bool,
+}
+
 /// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 /// 正文、执行或管理权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2970,6 +3007,11 @@ pub struct AgentInstallationProjectionView {
 pub struct AgentInstallationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_projection_generation: Option<i64>,
+
+    /// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+    /// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_display_name: Option<String>,
 
     pub agent_principal_id: String,
 

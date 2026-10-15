@@ -1950,8 +1950,13 @@ export interface AgentInstallationPage {
  */
 export interface InstallationElement {
     activeProjectionGeneration?: number;
-    agentPrincipalId:            string;
-    agentPrincipalState:         AgentPrincipalState;
+    /**
+     * 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+     * 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+     */
+    agentDisplayName?:   string;
+    agentPrincipalId:    string;
+    agentPrincipalState: AgentPrincipalState;
     /**
      * 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
      * owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
@@ -2058,13 +2063,39 @@ export interface AgentInstallationProjectionView {
 }
 
 /**
+ * 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
+ * reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
+ * 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
+ */
+export interface AgentInstallationUsePage {
+    installationId:            string;
+    members:                   Member[];
+    pendingActionExecutionId?: string;
+    resourceVersion:           number;
+}
+
+export interface Member {
+    canGrant:    boolean;
+    canRevoke:   boolean;
+    displayName: string;
+    effective:   boolean;
+    principalId: string;
+    requested:   boolean;
+}
+
+/**
  * 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
  * 正文、执行或管理权限。
  */
 export interface AgentInstallationView {
     activeProjectionGeneration?: number;
-    agentPrincipalId:            string;
-    agentPrincipalState:         AgentPrincipalState;
+    /**
+     * 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+     * 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+     */
+    agentDisplayName?:   string;
+    agentPrincipalId:    string;
+    agentPrincipalState: AgentPrincipalState;
     /**
      * 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
      * owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。

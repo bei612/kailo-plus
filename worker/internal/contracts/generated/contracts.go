@@ -169,6 +169,9 @@
 //    agentInstallationProjectionView, err := UnmarshalAgentInstallationProjectionView(bytes)
 //    bytes, err = agentInstallationProjectionView.Marshal()
 //
+//    agentInstallationUsePage, err := UnmarshalAgentInstallationUsePage(bytes)
+//    bytes, err = agentInstallationUsePage.Marshal()
+//
 //    agentInstallationView, err := UnmarshalAgentInstallationView(bytes)
 //    bytes, err = agentInstallationView.Marshal()
 //
@@ -1290,6 +1293,16 @@ func UnmarshalAgentInstallationProjectionView(data []byte) (AgentInstallationPro
 }
 
 func (r *AgentInstallationProjectionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationUsePage(data []byte) (AgentInstallationUsePage, error) {
+	var r AgentInstallationUsePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationUsePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4353,9 +4366,12 @@ type AgentInstallationPage struct {
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type InstallationElement struct {
-	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string              `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
+	ActiveProjectionGeneration *int64 `json:"activeProjectionGeneration,omitempty"`
+	// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+	// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+	AgentDisplayName    *string             `json:"agentDisplayName,omitempty"`
+	AgentPrincipalID    string              `json:"agentPrincipalId"`
+	AgentPrincipalState AgentPrincipalState `json:"agentPrincipalState"`
 	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
 	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
 	AgentPubkey     *string `json:"agentPubkey,omitempty"`
@@ -4419,12 +4435,34 @@ type AgentInstallationProjectionView struct {
 	State               AgentRuntimeProjectionState `json:"state"`
 }
 
+// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
+// reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
+// 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
+type AgentInstallationUsePage struct {
+	InstallationID           string   `json:"installationId"`
+	Members                  []Member `json:"members"`
+	PendingActionExecutionID *string  `json:"pendingActionExecutionId,omitempty"`
+	ResourceVersion          int64    `json:"resourceVersion"`
+}
+
+type Member struct {
+	CanGrant    bool   `json:"canGrant"`
+	CanRevoke   bool   `json:"canRevoke"`
+	DisplayName string `json:"displayName"`
+	Effective   bool   `json:"effective"`
+	PrincipalID string `json:"principalId"`
+	Requested   bool   `json:"requested"`
+}
+
 // 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 // 正文、执行或管理权限。
 type AgentInstallationView struct {
-	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
-	AgentPrincipalID           string              `json:"agentPrincipalId"`
-	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
+	ActiveProjectionGeneration *int64 `json:"activeProjectionGeneration,omitempty"`
+	// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+	// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+	AgentDisplayName    *string             `json:"agentDisplayName,omitempty"`
+	AgentPrincipalID    string              `json:"agentPrincipalId"`
+	AgentPrincipalState AgentPrincipalState `json:"agentPrincipalState"`
 	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
 	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
 	AgentPubkey     *string `json:"agentPubkey,omitempty"`

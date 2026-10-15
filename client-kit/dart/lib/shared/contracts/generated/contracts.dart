@@ -56,6 +56,7 @@
 //     final agentInstallationCandidatePage = agentInstallationCandidatePageFromJson(jsonString);
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
+//     final agentInstallationUsePage = agentInstallationUsePageFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
 //     final agentInvocationPage = agentInvocationPageFromJson(jsonString);
 //     final agentInvocationView = agentInvocationViewFromJson(jsonString);
@@ -603,6 +604,12 @@ AgentInstallationProjectionView agentInstallationProjectionViewFromJson(
 String agentInstallationProjectionViewToJson(
   AgentInstallationProjectionView data,
 ) => json.encode(data.toJson());
+
+AgentInstallationUsePage agentInstallationUsePageFromJson(String str) =>
+    AgentInstallationUsePage.fromJson(json.decode(str));
+
+String agentInstallationUsePageToJson(AgentInstallationUsePage data) =>
+    json.encode(data.toJson());
 
 AgentInstallationView agentInstallationViewFromJson(String str) =>
     AgentInstallationView.fromJson(json.decode(str));
@@ -6549,6 +6556,10 @@ class AgentInstallationPage {
 ///正文、执行或管理权限。
 class InstallationElement {
   final int? activeProjectionGeneration;
+
+  ///17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+  ///准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+  final String? agentDisplayName;
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
 
@@ -6578,6 +6589,7 @@ class InstallationElement {
 
   InstallationElement({
     this.activeProjectionGeneration,
+    this.agentDisplayName,
     required this.agentPrincipalId,
     required this.agentPrincipalState,
     this.agentPubkey,
@@ -6600,6 +6612,7 @@ class InstallationElement {
   factory InstallationElement.fromJson(Map<String, dynamic> json) =>
       InstallationElement(
         activeProjectionGeneration: json["activeProjectionGeneration"],
+        agentDisplayName: json["agentDisplayName"],
         agentPrincipalId: json["agentPrincipalId"],
         agentPrincipalState:
             agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
@@ -6638,6 +6651,7 @@ class InstallationElement {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "activeProjectionGeneration": activeProjectionGeneration,
+    "agentDisplayName": agentDisplayName,
     "agentPrincipalId": agentPrincipalId,
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
@@ -6864,10 +6878,84 @@ class AgentInstallationProjectionView {
   });
 }
 
+///05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
+///reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
+///既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
+class AgentInstallationUsePage {
+  final String installationId;
+  final List<Member> members;
+  final String? pendingActionExecutionId;
+  final int resourceVersion;
+
+  AgentInstallationUsePage({
+    required this.installationId,
+    required this.members,
+    this.pendingActionExecutionId,
+    required this.resourceVersion,
+  });
+
+  factory AgentInstallationUsePage.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationUsePage(
+        installationId: json["installationId"],
+        members: List<Member>.from(
+          json["members"].map((x) => Member.fromJson(x)),
+        ),
+        pendingActionExecutionId: json["pendingActionExecutionId"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "installationId": installationId,
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "pendingActionExecutionId": pendingActionExecutionId,
+    "resourceVersion": resourceVersion,
+  });
+}
+
+class Member {
+  final bool canGrant;
+  final bool canRevoke;
+  final String displayName;
+  final bool effective;
+  final String principalId;
+  final bool requested;
+
+  Member({
+    required this.canGrant,
+    required this.canRevoke,
+    required this.displayName,
+    required this.effective,
+    required this.principalId,
+    required this.requested,
+  });
+
+  factory Member.fromJson(Map<String, dynamic> json) => Member(
+    canGrant: json["canGrant"],
+    canRevoke: json["canRevoke"],
+    displayName: json["displayName"],
+    effective: json["effective"],
+    principalId: json["principalId"],
+    requested: json["requested"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canGrant": canGrant,
+    "canRevoke": canRevoke,
+    "displayName": displayName,
+    "effective": effective,
+    "principalId": principalId,
+    "requested": requested,
+  });
+}
+
 ///03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 ///正文、执行或管理权限。
 class AgentInstallationView {
   final int? activeProjectionGeneration;
+
+  ///17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+  ///准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+  final String? agentDisplayName;
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
 
@@ -6897,6 +6985,7 @@ class AgentInstallationView {
 
   AgentInstallationView({
     this.activeProjectionGeneration,
+    this.agentDisplayName,
     required this.agentPrincipalId,
     required this.agentPrincipalState,
     this.agentPubkey,
@@ -6920,6 +7009,7 @@ class AgentInstallationView {
     Map<String, dynamic> json,
   ) => AgentInstallationView(
     activeProjectionGeneration: json["activeProjectionGeneration"],
+    agentDisplayName: json["agentDisplayName"],
     agentPrincipalId: json["agentPrincipalId"],
     agentPrincipalState:
         agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
@@ -6958,6 +7048,7 @@ class AgentInstallationView {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "activeProjectionGeneration": activeProjectionGeneration,
+    "agentDisplayName": agentDisplayName,
     "agentPrincipalId": agentPrincipalId,
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
