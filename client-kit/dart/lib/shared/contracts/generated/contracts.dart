@@ -13394,6 +13394,11 @@ class ProjectsPublishRequest {
   ///Optional immutable original per-self assignment operation head. Same publication intent
   ///retains it across UNKNOWN observation; never an authorization grant.
   final String? priorEventId;
+
+  ///Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+  ///1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+  ///review author or repository owner signs it.
+  final ProjectPullRequestLifecycleStatus? pullRequestStatus;
   final String? targetEventId;
 
   ///Original trimmed issue subject; the consumer additionally enforces the original
@@ -13413,6 +13418,7 @@ class ProjectsPublishRequest {
     this.name,
     required this.operation,
     this.priorEventId,
+    this.pullRequestStatus,
     this.targetEventId,
     this.title,
     this.visibility,
@@ -13439,6 +13445,10 @@ class ProjectsPublishRequest {
         name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
         priorEventId: json["priorEventId"],
+        pullRequestStatus: json["pullRequestStatus"] == null
+            ? null
+            : projectPullRequestLifecycleStatusValues
+                  .map[json["pullRequestStatus"]]!,
         targetEventId: json["targetEventId"],
         title: json["title"],
         visibility: json["visibility"] == null
@@ -13462,6 +13472,8 @@ class ProjectsPublishRequest {
     "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
     "priorEventId": priorEventId,
+    "pullRequestStatus":
+        projectPullRequestLifecycleStatusValues.reverse[pullRequestStatus],
     "targetEventId": targetEventId,
     "title": title,
     "visibility": projectListingVisibilityValues.reverse[visibility],
@@ -13563,6 +13575,7 @@ enum ProjectPublicationOperation {
   DELETE,
   SELF_ASSIGN_ISSUE,
   SELF_UNASSIGN_ISSUE,
+  SET_PULL_REQUEST_STATUS,
   UNASSIGN_ISSUE,
 }
 
@@ -13577,7 +13590,20 @@ final projectPublicationOperationValues = EnumValues({
   "DELETE": ProjectPublicationOperation.DELETE,
   "SELF_ASSIGN_ISSUE": ProjectPublicationOperation.SELF_ASSIGN_ISSUE,
   "SELF_UNASSIGN_ISSUE": ProjectPublicationOperation.SELF_UNASSIGN_ISSUE,
+  "SET_PULL_REQUEST_STATUS":
+      ProjectPublicationOperation.SET_PULL_REQUEST_STATUS,
   "UNASSIGN_ISSUE": ProjectPublicationOperation.UNASSIGN_ISSUE,
+});
+
+///Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+///1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+///review author or repository owner signs it.
+enum ProjectPullRequestLifecycleStatus { CLOSED, DRAFT, OPEN }
+
+final projectPullRequestLifecycleStatusValues = EnumValues({
+  "closed": ProjectPullRequestLifecycleStatus.CLOSED,
+  "draft": ProjectPullRequestLifecycleStatus.DRAFT,
+  "open": ProjectPullRequestLifecycleStatus.OPEN,
 });
 
 enum ProjectListingVisibility { LISTED, UNLISTED }

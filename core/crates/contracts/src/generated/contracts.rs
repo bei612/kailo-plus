@@ -6622,6 +6622,12 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prior_event_id: Option<String>,
 
+    /// Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+    /// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+    /// review author or repository owner signs it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_request_status: Option<ProjectPullRequestLifecycleStatus>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_event_id: Option<String>,
 
@@ -6722,8 +6728,24 @@ pub enum ProjectPublicationOperation {
     #[serde(rename = "SELF_UNASSIGN_ISSUE")]
     SelfUnassignIssue,
 
+    #[serde(rename = "SET_PULL_REQUEST_STATUS")]
+    SetPullRequestStatus,
+
     #[serde(rename = "UNASSIGN_ISSUE")]
     UnassignIssue,
+}
+
+/// Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+/// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+/// review author or repository owner signs it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectPullRequestLifecycleStatus {
+    Closed,
+
+    Draft,
+
+    Open,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

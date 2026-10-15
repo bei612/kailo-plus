@@ -4618,8 +4618,14 @@ export interface ProjectsPublishRequest {
      * Optional immutable original per-self assignment operation head. Same publication intent
      * retains it across UNKNOWN observation; never an authorization grant.
      */
-    priorEventId?:  string;
-    targetEventId?: string;
+    priorEventId?: string;
+    /**
+     * Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+     * 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+     * review author or repository owner signs it.
+     */
+    pullRequestStatus?: ProjectPullRequestLifecycleStatus;
+    targetEventId?:     string;
     /**
      * Original trimmed issue subject; the consumer additionally enforces the original
      * JavaScript 256 UTF-16 code-unit limit.
@@ -4684,7 +4690,19 @@ export enum ProjectPublicationOperation {
     Delete = "DELETE",
     SelfAssignIssue = "SELF_ASSIGN_ISSUE",
     SelfUnassignIssue = "SELF_UNASSIGN_ISSUE",
+    SetPullRequestStatus = "SET_PULL_REQUEST_STATUS",
     UnassignIssue = "UNASSIGN_ISSUE",
+}
+
+/**
+ * Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+ * 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+ * review author or repository owner signs it.
+ */
+export enum ProjectPullRequestLifecycleStatus {
+    Closed = "closed",
+    Draft = "draft",
+    Open = "open",
 }
 
 export enum ProjectListingVisibility {

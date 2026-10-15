@@ -6090,8 +6090,12 @@ type ProjectsPublishRequest struct {
 	Operation   ProjectPublicationOperation `json:"operation"`
 	// Optional immutable original per-self assignment operation head. Same publication intent
 	// retains it across UNKNOWN observation; never an authorization grant.
-	PriorEventID  *string `json:"priorEventId,omitempty"`
-	TargetEventID *string `json:"targetEventId,omitempty"`
+	PriorEventID *string `json:"priorEventId,omitempty"`
+	// Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+	// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+	// review author or repository owner signs it.
+	PullRequestStatus *ProjectPullRequestLifecycleStatus `json:"pullRequestStatus,omitempty"`
+	TargetEventID     *string                            `json:"targetEventId,omitempty"`
 	// Original trimmed issue subject; the consumer additionally enforces the original
 	// JavaScript 256 UTF-16 code-unit limit.
 	Title       *string                   `json:"title,omitempty"`
@@ -8390,8 +8394,8 @@ const (
 type WorkspaceVisibility string
 
 const (
-	Open    WorkspaceVisibility = "open"
-	Private WorkspaceVisibility = "private"
+	Private                 WorkspaceVisibility = "private"
+	WorkspaceVisibilityOpen WorkspaceVisibility = "open"
 )
 
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
@@ -9037,7 +9041,19 @@ const (
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
 	SelfAssignIssue                   ProjectPublicationOperation = "SELF_ASSIGN_ISSUE"
 	SelfUnassignIssue                 ProjectPublicationOperation = "SELF_UNASSIGN_ISSUE"
+	SetPullRequestStatus              ProjectPublicationOperation = "SET_PULL_REQUEST_STATUS"
 	UnassignIssue                     ProjectPublicationOperation = "UNASSIGN_ISSUE"
+)
+
+// Original pullRequestReviews.ts lifecycle states the UI may publish (NIP-34
+// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
+// review author or repository owner signs it.
+type ProjectPullRequestLifecycleStatus string
+
+const (
+	Closed                                ProjectPullRequestLifecycleStatus = "closed"
+	Draft                                 ProjectPullRequestLifecycleStatus = "draft"
+	ProjectPullRequestLifecycleStatusOpen ProjectPullRequestLifecycleStatus = "open"
 )
 
 type ProjectListingVisibility string
