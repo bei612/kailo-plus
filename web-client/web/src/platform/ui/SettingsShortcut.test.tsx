@@ -22,6 +22,10 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@client-kit/platform/react/context", () => ({
+  useDeviceLocale: () => "en",
+  useUiT: () => (key: string) => key,
+  useT: () => (key: string) => key,
+  useUiLocale: () => "en",
   PlatformProvider: ({
     children,
     documentTheme,

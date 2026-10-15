@@ -42,6 +42,9 @@ export default defineConfig({
     alias: {
       "@": "/src",
     },
+    // One React for the shell and every client-kit source module, wherever a test imports it
+    // from (installed copy or repository path); the image build already has a single copy.
+    dedupe: ["react", "react-dom"],
   },
   server: {
     port: parseInt(process.env.VITE_PORT || "5173", 10),
