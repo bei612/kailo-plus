@@ -17,9 +17,46 @@ pub(crate) const GRANT: &str = "agent.installation.execute.grant";
 pub(crate) const REVOKE: &str = "agent.installation.execute.revoke";
 pub(crate) const READ_GRANT: &str = "resource.grant_read";
 pub(crate) const READ_REVOKE: &str = "resource.revoke_read";
+/// 05 §2.10：Workspace admin/owner 向单个 HUMAN 成员授予或收回 Installation 使用权。
+pub(crate) const USE_GRANT: &str = "agent.installation.use.grant";
+pub(crate) const USE_REVOKE: &str = "agent.installation.use.revoke";
+/// 使用权成组写入的 relationship 与其复核 permission；三项缺一不能触发或委托。
+const USE_RELATIONS: [(&str, &str); 3] = [
+    ("reader", "read"),
+    ("executor", "execute"),
+    ("delegator", "delegate"),
+];
 
 pub(crate) fn is_grant(action: &str) -> bool {
+    matches!(action, GRANT | READ_GRANT | USE_GRANT)
+}
+
+/// 只有原 execute/read 授予走 owner 审批；成员使用权是 EXPLICIT 无审批。
+fn approves(action: &str) -> bool {
     matches!(action, GRANT | READ_GRANT)
+}
+
+fn is_use(action: &str) -> bool {
+    matches!(action, USE_GRANT | USE_REVOKE)
+}
+
+/// 撤销所对应、可能在途的同类授予键。
+fn grant_key(action: &str) -> &'static str {
+    if is_read(action) {
+        READ_GRANT
+    } else if is_use(action) {
+        USE_GRANT
+    } else {
+        GRANT
+    }
+}
+
+fn relations(action: &str) -> Vec<(&'static str, &'static str)> {
+    if is_use(action) {
+        USE_RELATIONS.to_vec()
+    } else {
+        vec![(relation(action), permission(action))]
+    }
 }
 
 fn is_read(action: &str) -> bool {
@@ -78,7 +115,8 @@ async fn installation(
             select 1 from admission.action_execution ae where ae.id=r.projection_action_execution_id
               and ae.tenant_id=r.tenant_id and ae.workspace_id=w.id and ae.target_id=r.id
               and ae.action_key in ('agent.installation.execute.grant','agent.installation.execute.revoke',
-                'resource.grant_read','resource.revoke_read','agent.installation.upgrade')))
+                'resource.grant_read','resource.revoke_read','agent.installation.upgrade',
+                'agent.installation.use.grant','agent.installation.use.revoke')))
         {}", if lock { "for update of r,i,w,a,p,tm" } else { "" }))
         .bind(id).bind(tenant).fetch_optional(conn).await
 }
@@ -211,6 +249,53 @@ async fn permission_target(
     Ok(row)
 }
 
+/// The exact permission target of `action`. Member use (05 §2.10) targets an
+/// Installation with the HUMAN recipient from the command, never the AGENT.
+async fn target_for(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    params: &Params,
+    lock: bool,
+    projected: Option<Uuid>,
+    action: &str,
+) -> Result<PermissionTarget, Refusal> {
+    if !is_use(action) {
+        return permission_target(conn, tenant, id, params, lock, projected).await;
+    }
+    if params.receiver_resource.is_some() {
+        return Err(conflict());
+    }
+    let mut row = installation(conn, tenant, id, lock)
+        .await?
+        .ok_or_else(conflict)?;
+    let recipient = params.principal_id.ok_or_else(conflict)?;
+    // Keep an inactive HUMAN identifiable for revoke; grant re-checks live
+    // Tenant/Workspace membership in human() at admission and dispatch.
+    let human: bool = sqlx::query_scalar(
+        "select exists(select 1 from identity.principal
+        where id=$1 and tenant_id=$2 and kind='HUMAN')",
+    )
+    .bind(recipient)
+    .bind(tenant)
+    .fetch_one(&mut *conn)
+    .await?;
+    if !human {
+        return Err(conflict());
+    }
+    row.subject_principal_id = recipient;
+    Ok(row)
+}
+
+/// Frozen intent key of the recipient. Member use is always a HUMAN.
+fn intent_field(row: &PermissionTarget, action: &str) -> &'static str {
+    if is_use(action) {
+        "humanPrincipalId"
+    } else {
+        principal_field(row)
+    }
+}
+
 /// 05 §2.9 reader operations and §2.4 membership boundaries: a HUMAN uses the same relationship,
 /// owner approval and projection intent as the existing AGENT/SERVICE paths.
 /// The native service supplies neither another tenant nor permission facts.
@@ -318,8 +403,11 @@ pub(super) async fn target(
 ) -> Result<Target, Refusal> {
     let grant = matches!(
         sem,
-        Semantic::AgentInstallationExecuteGrant | Semantic::ResourceGrantRead
+        Semantic::AgentInstallationExecuteGrant
+            | Semantic::ResourceGrantRead
+            | Semantic::AgentInstallationUseGrant
     );
+    let approval = grant && approves(&def.action_key);
     if def.target_type != "RESOURCE"
         || def.permission_object_type != "resource"
         || def.permission != "share"
@@ -329,9 +417,9 @@ pub(super) async fn target(
         || def.quota_policy != "NONE"
         || !def.meters.is_empty()
         || def.workflow_kind.is_some()
-        || def.confirmation_mode != if grant { "APPROVAL" } else { "EXPLICIT" }
-        || (def.approval_policy_id.is_some() != grant)
-        || (def.approval_policy_version.is_some() != grant)
+        || def.confirmation_mode != if approval { "APPROVAL" } else { "EXPLICIT" }
+        || (def.approval_policy_id.is_some() != approval)
+        || (def.approval_policy_version.is_some() != approval)
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -355,12 +443,13 @@ pub(super) async fn target(
     let id = params
         .resource_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    let row = permission_target(conn, tenant, id, params, lock, None).await?;
+    let row = target_for(conn, tenant, id, params, lock, None, &def.action_key).await?;
     if (!is_read(&def.action_key) && row.read_edge.is_some())
         || Some(row.version) != params.resource_version
         || frozen.is_some_and(|v| v != row.id)
         || (grant && row.projection_action_execution_id.is_some())
-        || (is_read(&def.action_key) && params.principal_id != Some(row.subject_principal_id))
+        || ((is_read(&def.action_key) || is_use(&def.action_key))
+            && params.principal_id != Some(row.subject_principal_id))
     {
         return Err(conflict());
     }
@@ -373,14 +462,7 @@ pub(super) async fn target(
             .bind(tenant)
             .fetch_one(&mut *conn)
             .await?;
-            if key != "agent.installation.upgrade"
-                && key
-                    != if is_read(&def.action_key) {
-                        READ_GRANT
-                    } else {
-                        GRANT
-                    }
-            {
+            if key != "agent.installation.upgrade" && key != grant_key(&def.action_key) {
                 return Err(conflict());
             }
         }
@@ -450,7 +532,7 @@ async fn human(
     if !is_read(action) {
         checked(g, "resource", row.id, "execute", principal).await?;
     }
-    if human_recipient(row) && is_grant(action) {
+    if (human_recipient(row) || is_use(action)) && is_grant(action) {
         human_recipient_scope(conn, row).await?;
     }
     Ok(())
@@ -574,20 +656,21 @@ pub(super) async fn gate(
     params: &Params,
     action: &str,
 ) -> Result<(), Refusal> {
-    let row = permission_target(
+    let row = target_for(
         conn,
         tenant,
         params.resource_id.ok_or_else(conflict)?,
         params,
         false,
         None,
+        action,
     )
     .await?;
     if Some(row.version) != params.resource_version {
         return Err(conflict());
     }
     projection(g, &row).await?;
-    if is_read(action) && params.principal_id != Some(row.subject_principal_id) {
+    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id) {
         return Err(conflict());
     }
     human(g, conn, &row, principal, action).await
@@ -812,13 +895,13 @@ pub(super) async fn prepare_revoke(
           and ($4::uuid is null or parameters->'params'->>'principalId'=$4::uuid::text)
           and (gate_state in ('EVALUATING','WAITING') or (gate_state='ALLOWED' and dispatch_state in ('NOT_DISPATCHED','UNKNOWN')))
         order by id for update")
-        .bind(actor.tenant_id).bind(id).bind(if is_read(action) { READ_GRANT } else { GRANT })
-        .bind(if is_read(action) { params.principal_id } else { None })
+        .bind(actor.tenant_id).bind(id).bind(grant_key(action))
+        .bind(if is_read(action) || is_use(action) { params.principal_id } else { None })
         .fetch_all(&mut **tx).await?;
     if !crate::roles::lock_tenant(tx, actor.tenant_id).await? {
         return Err(conflict());
     }
-    let row = permission_target(tx, actor.tenant_id, id, params, true, None).await?;
+    let row = target_for(tx, actor.tenant_id, id, params, true, None, action).await?;
     if Some(row.version) != params.resource_version {
         return Err(conflict());
     }
@@ -830,7 +913,7 @@ pub(super) async fn prepare_revoke(
         return Err(conflict());
     }
     projection(g, &row).await?;
-    if is_read(action) && params.principal_id != Some(row.subject_principal_id) {
+    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id) {
         return Err(conflict());
     }
     human(g, tx, &row, actor.principal_id, action).await?;
@@ -863,7 +946,7 @@ pub(super) async fn prewrite(
 ) -> Result<(), Refusal> {
     let version = ae.frozen_target_version().ok_or_else(conflict)?;
     let params = ae.params().ok_or_else(unavailable)?;
-    let row = permission_target(tx, ae.tenant_id, ae.target_id, &params, true, None).await?;
+    let row = target_for(tx, ae.tenant_id, ae.target_id, &params, true, None, &ae.action_key).await?;
     if row.version != version || row.workspace_id != ae.workspace_id {
         return Err(conflict());
     }
@@ -902,7 +985,7 @@ pub(super) async fn prewrite(
     let mut intent = json!({"resourceVersion":version,
             "ownerPrincipalId":row.owner_principal_id,
             "interruptedProjectionActionExecutionId":interrupted});
-    intent[principal_field(&row)] = json!(row.subject_principal_id);
+    intent[intent_field(&row, &ae.action_key)] = json!(row.subject_principal_id);
     if let Some(edge) = &row.read_edge {
         intent["readEdge"] = edge.clone();
     }
@@ -924,12 +1007,35 @@ pub(super) async fn prewrite(
             .bind(row.tenant_id).bind(row.id).bind(row.workspace_id).bind(row.subject_principal_id)
             .execute(&mut **tx).await?;
     }
+    if ae.action_key == USE_REVOKE {
+        // 05 §2.10: the member's own ordinary in-flight triggers of this exact
+        // Installation receive the same immutable cancellation intent.
+        sqlx::query("update catalog.agent_invocation i set cancel_pending=true,updated_at=now()
+            from admission.action_execution source
+            where source.id=i.action_execution_id and source.action_key='agent.invoke'
+              and source.tenant_id=$1 and source.target_id=$2 and source.workspace_id=$3
+              and source.initiator_principal_id=$4
+              and i.tenant_id=source.tenant_id and i.workspace_id=source.workspace_id
+              and i.installation_resource_id=source.target_id and i.automation_resource_id is null
+              and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') and not i.cancel_pending")
+            .bind(row.tenant_id).bind(row.id).bind(row.workspace_id).bind(row.subject_principal_id)
+            .execute(&mut **tx).await?;
+    }
     Ok(())
 }
 
 async fn held(g: &Governance, row: &PermissionTarget, relation: &str) -> Result<bool, Refusal> {
-    let resource = row.id.to_string();
-    let agent = row.subject_principal_id.to_string();
+    held_by(g, row.id, row.subject_principal_id, relation).await
+}
+
+async fn held_by(
+    g: &Governance,
+    resource: Uuid,
+    subject: Uuid,
+    relation: &str,
+) -> Result<bool, Refusal> {
+    let resource = resource.to_string();
+    let agent = subject.to_string();
     let rels = g
         .spicedb
         .read(
@@ -997,20 +1103,21 @@ pub(super) async fn dispatch(
         return Err(conflict());
     }
     let params = ae.params().ok_or_else(unavailable)?;
-    let row = permission_target(
+    let row = target_for(
         &mut tx,
         ae.tenant_id,
         ae.target_id,
         &params,
         true,
         Some(ae.id),
+        &ae.action_key,
     )
     .await?;
     let intent = &ae.parameters.as_ref().ok_or_else(unavailable)?["permissionIntent"];
     if row.projection_action_execution_id != Some(id)
         || row.workspace_id != ae.workspace_id
         || intent["resourceVersion"].as_i64() != Some(i64::from(row.version))
-        || intent[principal_field(&row)].as_str()
+        || intent[intent_field(&row, &ae.action_key)].as_str()
             != Some(row.subject_principal_id.to_string().as_str())
         || intent["ownerPrincipalId"].as_str() != Some(row.owner_principal_id.to_string().as_str())
         || intent.get("readEdge") != row.read_edge.as_ref()
@@ -1022,7 +1129,7 @@ pub(super) async fn dispatch(
         crate::application_action::native_human::check_permission_origin(&mut tx, &ae, row.version)
             .await?;
         human(g, &mut tx, &row, ae.initiator_principal_id, &ae.action_key).await?;
-        if grant && first {
+        if grant && first && approves(&ae.action_key) {
             approved(g, &mut tx, &ae).await?;
         }
         Ok::<(), Refusal>(())
@@ -1053,18 +1160,23 @@ pub(super) async fn dispatch(
         return Err(error);
     }
     let mut token = None;
+    let pairs = relations(&ae.action_key);
     if first {
-        let rel = Relationship {
-            object_type: "resource".into(),
-            object_id: row.id.to_string(),
-            relation: relation(&ae.action_key).into(),
-            subject_principal: row.subject_principal_id.to_string(),
-        };
-        match g
-            .spicedb
-            .write(&[(if grant { Write::Touch } else { Write::Delete }, rel)])
-            .await
-        {
+        let writes: Vec<_> = pairs
+            .iter()
+            .map(|(relation, _)| {
+                (
+                    if grant { Write::Touch } else { Write::Delete },
+                    Relationship {
+                        object_type: "resource".into(),
+                        object_id: row.id.to_string(),
+                        relation: (*relation).into(),
+                        subject_principal: row.subject_principal_id.to_string(),
+                    },
+                )
+            })
+            .collect();
+        match g.spicedb.write(&writes).await {
             Ok(written) if !written.is_empty() => token = Some(written),
             _ => {
                 tx.commit().await?;
@@ -1072,27 +1184,34 @@ pub(super) async fn dispatch(
             }
         }
     }
-    let c = g
-        .spicedb
-        .check(
-            "resource",
-            &row.id.to_string(),
-            permission(&ae.action_key),
-            &row.subject_principal_id.to_string(),
-            token.as_ref().map_or(Consistency::FullyConsistent, |s| {
-                Consistency::AtLeastAsFresh(s.as_str())
-            }),
-        )
-        .await
-        .map_err(|_| unavailable())?;
-    if c.zed_token.is_empty()
-        || !permission_outcome_matches(
-            &row,
-            grant,
-            held(g, &row, relation(&ae.action_key)).await?,
-            c.allowed,
-        )
-    {
+    let mut c = None;
+    let mut matched = true;
+    for (relation, permission) in &pairs {
+        let checked = g
+            .spicedb
+            .check(
+                "resource",
+                &row.id.to_string(),
+                permission,
+                &row.subject_principal_id.to_string(),
+                token.as_ref().map_or(Consistency::FullyConsistent, |s| {
+                    Consistency::AtLeastAsFresh(s.as_str())
+                }),
+            )
+            .await
+            .map_err(|_| unavailable())?;
+        let held = held(g, &row, relation).await?;
+        matched &= !checked.zed_token.is_empty()
+            && if is_use(&ae.action_key) {
+                // Revoking explicit use never removes independent owner/admin power.
+                held == grant && (checked.allowed || !grant)
+            } else {
+                permission_outcome_matches(&row, grant, held, checked.allowed)
+            };
+        c = Some(checked);
+    }
+    let c = c.ok_or_else(unavailable)?;
+    if !matched {
         audit(
             &mut tx,
             &ae,
@@ -1119,11 +1238,7 @@ pub(super) async fn dispatch(
         )
         .bind(ae.tenant_id)
         .bind(ae.target_id)
-        .bind(if is_read(&ae.action_key) {
-            READ_GRANT
-        } else {
-            GRANT
-        })
+        .bind(grant_key(&ae.action_key))
         .fetch_one(&mut *tx)
         .await?
     {
@@ -1146,15 +1261,15 @@ pub(super) async fn dispatch(
     sqlx::query("update admission.action_execution set dispatch_state='DISPATCHED',reason_code=null,updated_at=now() where id=$1")
         .bind(id).execute(&mut *tx).await?;
     let mut evidence = zed_evidence(Some(&c.zed_token));
-    evidence.push(crate::audit::Evidence::new(
-        EvidenceKind::SpicedbRelationship,
-        format!(
-            "resource:{}#{}@principal:{}",
-            row.id,
-            relation(&ae.action_key),
-            row.subject_principal_id
-        ),
-    ));
+    for (relation, _) in &pairs {
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::SpicedbRelationship,
+            format!(
+                "resource:{}#{}@principal:{}",
+                row.id, relation, row.subject_principal_id
+            ),
+        ));
+    }
     audit(
         &mut tx,
         &ae,
@@ -1162,7 +1277,11 @@ pub(super) async fn dispatch(
         "permission-outcome",
         "OUTCOME",
         "ALLOW",
-        if human_recipient(&row) && grant {
+        if is_use(&ae.action_key) && grant {
+            "HUMAN_USE_GRANTED"
+        } else if is_use(&ae.action_key) {
+            "HUMAN_USE_REVOKED"
+        } else if human_recipient(&row) && grant {
             "HUMAN_READ_GRANTED"
         } else if human_recipient(&row) {
             "HUMAN_READ_REVOKED"
@@ -1304,6 +1423,83 @@ async fn permission_view(
         },
     }});
     if let Some(pending) = row.projection_action_execution_id {
+        result["pendingActionExecutionId"] = json!(pending);
+    }
+    Ok(Some(result))
+}
+
+/// 05 §2.10、17 §8: per-member use directory of one Installation. Lists the
+/// Workspace's active HUMAN members; `requested` reads the three explicit
+/// relationships, `effective` the fresh read/execute/delegate permissions
+/// (owner/admin power included). Only a viewer who could revoke may change it.
+pub(crate) async fn use_view(
+    g: &Governance,
+    tenant: Uuid,
+    principal: Uuid,
+    id: Uuid,
+) -> Result<Option<Value>, Refusal> {
+    let mut conn = g.pool.acquire().await?;
+    let Some(row) = installation(&mut conn, tenant, id, false).await? else {
+        return Ok(None);
+    };
+    projection(g, &row).await?;
+    // The manager check needs no recipient; revoke has the same initiator rule.
+    let can_manage = match human(g, &mut conn, &row, principal, USE_REVOKE).await {
+        Ok(()) => true,
+        Err(Refusal::Denied(_)) => false,
+        Err(e) => return Err(e),
+    };
+    let mut enabled = Vec::new();
+    for key in [USE_GRANT, USE_REVOKE] {
+        enabled.push(
+            crate::capability_registry::action_exposed(key)
+                && super::active_definition(&g.pool, key).await?.is_some(),
+        );
+    }
+    let workspace = row.workspace_id.ok_or_else(conflict)?;
+    let members: Vec<(Uuid, String)> = sqlx::query_as(
+        "select p.id,h.display_name from identity.workspace_membership wm
+         join identity.principal p on p.id=wm.tenant_principal_id and p.tenant_id=$2
+           and p.kind='HUMAN' and p.status='ACTIVE'
+         join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=p.tenant_id
+           and tm.state='ACTIVE'
+         join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+         where wm.workspace_id=$1 and wm.state='ACTIVE' order by h.display_name,p.id",
+    )
+    .bind(workspace)
+    .bind(tenant)
+    .fetch_all(&mut *conn)
+    .await?;
+    let pending = row.projection_action_execution_id;
+    let mut rows = Vec::with_capacity(members.len());
+    for (member, name) in members {
+        let mut requested = true;
+        let mut effective = true;
+        for (relation, permission) in USE_RELATIONS {
+            requested &= held_by(g, row.id, member, relation).await?;
+            let c = g
+                .spicedb
+                .check(
+                    "resource",
+                    &row.id.to_string(),
+                    permission,
+                    &member.to_string(),
+                    Consistency::FullyConsistent,
+                )
+                .await
+                .map_err(|_| unavailable())?;
+            if c.zed_token.is_empty() {
+                return Err(unavailable());
+            }
+            effective &= c.allowed;
+        }
+        rows.push(json!({"principalId":member,"displayName":name,"requested":requested,
+            "effective":effective && pending.is_none(),
+            "canGrant":can_manage && enabled[0] && pending.is_none() && !requested,
+            "canRevoke":can_manage && enabled[1] && pending.is_none() && requested}));
+    }
+    let mut result = json!({"installationId":row.id,"resourceVersion":row.version,"members":rows});
+    if let Some(pending) = pending {
         result["pendingActionExecutionId"] = json!(pending);
     }
     Ok(Some(result))

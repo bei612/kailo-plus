@@ -14,6 +14,7 @@
     "agentPrincipalId": {"type": "string", "format": "uuid"},
     "agentPubkey": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。"},
     "agentPrincipalState": {"type": "string", "enum": ["ACTIVE", "DISABLED"]},
+    "agentDisplayName": {"type": "string", "description": "17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。"},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
     "resourceVersion": {"type": "integer", "minimum": 1},
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},

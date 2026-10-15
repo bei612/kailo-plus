@@ -95,6 +95,9 @@ import type { ImetaMedia } from "@client-kit/platform/react/composer/features/me
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
 
+/** A mentioned Agent is no longer in this member's fresh, authorized directory (05 §2.10). */
+class MentionAgentNotAllowedError extends Error {}
+
 export function mentionPeopleFromMembers(members: readonly (WorkspaceMemberView | ConversationParticipant)[]): MentionSuggestion[] {
   return members.filter(member => !("state" in member) || member.state === "ACTIVE")
     .flatMap(member => member.pubkeys.map(pubkey => ({pubkey, displayName: member.displayName})));
@@ -1274,7 +1277,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         const fresh = await agentDirectory.verify();
         if (!owner.active) return;
         if (agentRecipients.some(pubkey => !fresh.agents.some(agent => agent.pubkey === pubkey)) ||
-            mentionInstallationIds.some(id => !fresh.agents.some(agent => agent.installation.resourceId === id))) throw new Error(t("platform.mentionAgentsUnavailable"));
+            mentionInstallationIds.some(id => !fresh.agents.some(agent => agent.installation.resourceId === id))) throw new MentionAgentNotAllowedError();
         selectedInstallationIds = [...new Set([...mentionInstallationIds, ...agentRecipients.map(pubkey => fresh.agents.find(agent => agent.pubkey === pubkey)!.installation.resourceId)])].sort();
       }
       humanMentionPubkeys=recipients.filter(pubkey => !agentRecipients.includes(pubkey));
@@ -1286,7 +1289,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       for(const pubkey of humanMentionPubkeys) for(const {candidates} of occurrences) {
         for(const candidate of candidates) if(candidate.pubkey===pubkey) humanBindings.current.set(candidate.displayName,pubkey);
       }
-    } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName}):t("platform.loadFailed"));return;}
+    } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName})
+      :error instanceof MentionAgentNotAllowedError?t("platform.mentionAgentNotAllowed"):t("platform.loadFailed"));return;}
     const messagePayload = [
       content,
       attachments.map((a) => {

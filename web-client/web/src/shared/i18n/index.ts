@@ -49,6 +49,7 @@ const messages = {
   "platform.noMention": { en: "No mention", "zh-CN": "不提及" },
   "platform.moreMentionAgents": { en: "Load more installations", "zh-CN": "加载更多安装" },
   "platform.mentionAgentsUnavailable": { en: "Agent installations could not be loaded", "zh-CN": "无法读取 Agent 安装" },
+  "platform.mentionAgentNotAllowed": { en: "You can't mention this Agent: you are not allowed to use it here, or it is unavailable. The message was not sent.", "zh-CN": "无法提及该 Agent：你在此频道没有使用权限或它当前不可用，消息未发送。" },
   "error.attachmentImagePrepare": {
     en: "We couldn't prepare this image for upload.",
     "zh-CN": "无法处理此图片以上传。",

@@ -19,6 +19,7 @@ capabilities:
   - /api/v1/agent-installation-candidates
   - /api/v1/agent-installations/{resource_id}/delegations
   - /api/v1/agent-installations/{resource_id}/delegation-targets
+  - /api/v1/agent-installations/{resource_id}/users
   - /api/v1/agent-definitions/{resource_id}/version-configuration
   - /api/v1/agent-definitions/{resource_id}/versions
   - /api/v1/platform-tools
@@ -52,6 +53,8 @@ capabilities:
   - agent.invoke
   - agent.installation.execute.grant
   - agent.installation.execute.revoke
+  - agent.installation.use.grant
+  - agent.installation.use.revoke
   - resource.grant_read
   - resource.revoke_read
   tools: []

@@ -48,6 +48,7 @@ import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./
 import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
+import { AgentInstallationUse } from "./agent-installation-use";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
@@ -2073,6 +2074,8 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
     <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
     {row.canUpgrade === true && row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onUpgrade(row)}>{t("agents.upgradeVersion")}</Button> : null}
     {row.state === AgentInstallationState.Active || row.state === AgentInstallationState.Draining ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
+    {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
+      ? <AgentInstallationUse installationId={resourceId} locked={locked} /> : null}
     {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} onLocked={onLocked} /> : null}
     <InstallationSessions key={`${workspaceId}:${resourceId}`} installation={row} />
   </section>;

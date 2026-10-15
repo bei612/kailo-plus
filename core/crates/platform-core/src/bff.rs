@@ -503,6 +503,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::delegation_query::targets),
         )
         .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/users",
+            get(crate::agent_installation_query::users),
+        )
+        .exposed_route(
             "/api/v1/agent-installations/{resource_id}/memory/core",
             get(crate::agent_memory::core),
         )

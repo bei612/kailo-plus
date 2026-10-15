@@ -176,6 +176,12 @@ async fn view(
     )
     .await
     .map_err(|e| e.respond(None))?;
+    let display_name = row
+        .version_content
+        .pointer("/personaIdentity/displayName")
+        .and_then(serde_json::Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned);
     let mut result_targets = Vec::new();
     if row.state == "ACTIVE"
         && row.resource_state == "ACTIVE"
@@ -200,6 +206,7 @@ async fn view(
         "agentPrincipalId": row.agent_principal_id.to_string(),
         "agentPubkey": row.agent_pubkey,
         "agentPrincipalState": row.agent_principal_state,
+        "agentDisplayName": display_name,
         "ownerPrincipalId": row.owner_principal_id.to_string(),
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
         "state": row.state, "activeProjectionGeneration": row.active_projection_generation,
@@ -290,6 +297,37 @@ pub async fn get(
     match read_view(&state, &ctx, id).await {
         Ok(v) => Json(v).into_response(),
         Err(r) => r,
+    }
+}
+
+/// 05 §2.10、17 §8：Installation 成员使用权目录；与单项读取同一 scope 与 fresh read。
+pub async fn users(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(r) => return r,
+    };
+    if let Err(r) = read_view(&state, &ctx, id).await {
+        return r;
+    }
+    let page = match crate::governance::installation_permission::use_view(
+        &state.governance,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+        id,
+    )
+    .await
+    {
+        Ok(Some(page)) => page,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return e.respond(None),
+    };
+    match serde_json::from_value::<contracts::AgentInstallationUsePage>(page) {
+        Ok(page) => Json(page).into_response(),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }
 

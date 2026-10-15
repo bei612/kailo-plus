@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_use_page.schema.json",
+  "title": "AgentInstallationUsePage",
+  "description": "05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有 reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationId", "resourceVersion", "members"],
+  "properties": {
+    "installationId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer"},
+    "pendingActionExecutionId": {"type": "string", "format": "uuid"},
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["principalId", "displayName", "requested", "effective", "canGrant", "canRevoke"],
+        "properties": {
+          "principalId": {"type": "string", "format": "uuid"},
+          "displayName": {"type": "string"},
+          "requested": {"type": "boolean"},
+          "effective": {"type": "boolean"},
+          "canGrant": {"type": "boolean"},
+          "canRevoke": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

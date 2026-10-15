@@ -126,7 +126,10 @@ export async function loadComposerAgentDirectory(
   );
   const agents: ComposerAgent[] = [];
   for (const installation of installations) {
-    let displayName = truncateNpub(canonicalNpub(installation.agentPubkey!)!);
+    // The pinned Version persona name is read under the same Installation read;
+    // a member who may use the Agent need not read its Tenant Definition.
+    let displayName = installation.agentDisplayName?.trim()
+      || truncateNpub(canonicalNpub(installation.agentPubkey!)!);
     // Definition read is separately authorized; absence cannot fabricate a
     // display name, and does not turn the public key into a human profile.
     try {

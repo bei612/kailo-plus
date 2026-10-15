@@ -467,6 +467,9 @@ pub enum Semantic {
     AgentInstallationUpgrade,
     AgentInstallationExecuteGrant,
     AgentInstallationExecuteRevoke,
+    /// 05 §2.10：成员对 Installation 的使用权（reader/executor/delegator）。
+    AgentInstallationUseGrant,
+    AgentInstallationUseRevoke,
     ResourceGrantRead,
     ResourceRevokeRead,
     AgentDelegationGrant,
@@ -524,6 +527,8 @@ impl Semantic {
             "agent.installation.upgrade" => Self::AgentInstallationUpgrade,
             "agent.installation.execute.grant" => Self::AgentInstallationExecuteGrant,
             "agent.installation.execute.revoke" => Self::AgentInstallationExecuteRevoke,
+            "agent.installation.use.grant" => Self::AgentInstallationUseGrant,
+            "agent.installation.use.revoke" => Self::AgentInstallationUseRevoke,
             "resource.grant_read" => Self::ResourceGrantRead,
             "resource.revoke_read" => Self::ResourceRevokeRead,
             "agent.delegation.grant" => Self::AgentDelegationGrant,
@@ -572,6 +577,8 @@ impl Semantic {
             self,
             Self::AgentInstallationExecuteGrant
                 | Self::AgentInstallationExecuteRevoke
+                | Self::AgentInstallationUseGrant
+                | Self::AgentInstallationUseRevoke
                 | Self::ResourceGrantRead
                 | Self::ResourceRevokeRead
         )
@@ -672,7 +679,10 @@ impl Semantic {
             )
             || matches!(
                 self,
-                Self::AgentInstallationExecuteRevoke | Self::ResourceRevokeRead
+                Self::AgentInstallationExecuteRevoke
+                    | Self::ResourceRevokeRead
+                    | Self::AgentInstallationUseGrant
+                    | Self::AgentInstallationUseRevoke
             )
             || matches!(
                 self,
@@ -1204,6 +1214,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentInstallationUpgrade
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
+            | Semantic::AgentInstallationUseGrant
+            | Semantic::AgentInstallationUseRevoke
             | Semantic::ResourceGrantRead
             | Semantic::ResourceRevokeRead
             | Semantic::AgentDelegationGrant
@@ -1252,6 +1264,18 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                     } else {
                         None
                     }
+        }
+        Semantic::AgentInstallationUseGrant | Semantic::AgentInstallationUseRevoke => {
+            p.workspace_id.is_none()
+                && p.receiver_resource.is_none()
+                && p.principal_id.is_some_and(|id| !id.is_nil())
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.explicit_confirmation == Some(true)
         }
         Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke => {
             p.workspace_id.is_none()
@@ -1614,6 +1638,8 @@ async fn resolve_target(
         }
         Semantic::AgentInstallationExecuteGrant
         | Semantic::AgentInstallationExecuteRevoke
+        | Semantic::AgentInstallationUseGrant
+        | Semantic::AgentInstallationUseRevoke
         | Semantic::ResourceGrantRead
         | Semantic::ResourceRevokeRead => {
             installation_permission::target(conn, tenant, def, sem, p, frozen, lock).await
@@ -2349,6 +2375,8 @@ impl Governance {
             def.action_key.as_str(),
             installation_permission::GRANT
                 | installation_permission::REVOKE
+                | installation_permission::USE_GRANT
+                | installation_permission::USE_REVOKE
                 | installation_permission::READ_GRANT
                 | installation_permission::READ_REVOKE
         );
@@ -4259,7 +4287,9 @@ impl Governance {
         }
         let revoked = if matches!(
             sem,
-            Semantic::AgentInstallationExecuteRevoke | Semantic::ResourceRevokeRead
+            Semantic::AgentInstallationExecuteRevoke
+                | Semantic::AgentInstallationUseRevoke
+                | Semantic::ResourceRevokeRead
         ) {
             installation_permission::prepare_revoke(self, &mut tx, actor, &params, &def.action_key)
                 .await
@@ -4916,6 +4946,8 @@ impl Governance {
                 }
                 Semantic::AgentInstallationExecuteGrant
                 | Semantic::AgentInstallationExecuteRevoke
+                | Semantic::AgentInstallationUseGrant
+                | Semantic::AgentInstallationUseRevoke
                 | Semantic::ResourceGrantRead
                 | Semantic::ResourceRevokeRead => {
                     installation_permission::prewrite(tx, ae).await?;
@@ -5244,6 +5276,8 @@ impl Governance {
             | Semantic::AgentDelegationRevoke
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
+            | Semantic::AgentInstallationUseGrant
+            | Semantic::AgentInstallationUseRevoke
             | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
@@ -6859,6 +6893,7 @@ impl Governance {
                 | Semantic::AutomationDelete
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 | Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke
+                | Semantic::AgentInstallationUseGrant | Semantic::AgentInstallationUseRevoke
                 | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend

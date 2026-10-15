@@ -21,6 +21,7 @@ import type {
   AgentDefinitionPage,
   AgentDefinitionView,
   AgentInstallationPage,
+  AgentInstallationUsePage,
   AgentInstallationCandidatePage,
   AgentDelegationPage,
   AgentDelegationTargetPage,
@@ -200,6 +201,9 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+    /** 05 §2.10：成员使用权目录；读取不改变授权，开关仍走统一 Action。 */
+    agentInstallationUsers: (resourceId: string) =>
+      get<AgentInstallationUsePage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/users`),
 
     /** Existing Session / Invocation authority only; never starts or resumes a runtime. */
     agentSessions: (resourceId: string, rootEventId?: string, cursor?: string) => {
