@@ -13,6 +13,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use collab_bridge::projects::PULL_REQUEST_STATUS_KINDS;
 use serde_json::{json, Value};
 
 pub(crate) const PUBLISH_ACTION: &str = "projects.publish";
@@ -87,7 +88,7 @@ pub(crate) async fn publication_target(
     if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
-    let status = collab_bridge::projects::PULL_REQUEST_STATUS_KINDS.contains(&kind);
+    let status = PULL_REQUEST_STATUS_KINDS.contains(&kind);
     let target_kinds = if kind == 1 {
         vec![collab_bridge::projects::comment_target_kind(request)
             .map_err(|_| StatusCode::BAD_REQUEST.into_response())?]
@@ -257,9 +258,10 @@ pub(crate) async fn latest_pull_request_status(
             return Err(StatusCode::BAD_GATEWAY.into_response());
         }
         // Pages are (created_at DESC, id ASC): the first trusted match is newest.
-        if let Some(event) = events.iter().find(|event| {
+        let trusted = |event: &&nostr::Event| {
             collab_bridge::projects::pull_request_status_trusted(pull_request, event)
-        }) {
+        };
+        if let Some(event) = events.iter().find(trusted) {
             return Ok(Some(event.clone()));
         }
         if events.len() < cap {
@@ -476,7 +478,7 @@ pub(crate) async fn confirm_accepted_issue_publication(
     if event.id.to_hex() != event_id || event.pubkey != keys.public_key() {
         return Err(unknown());
     }
-    let matches = if collab_bridge::projects::PULL_REQUEST_STATUS_KINDS.contains(&kind) {
+    let matches = if PULL_REQUEST_STATUS_KINDS.contains(&kind) {
         // Compare with the immutable review named by the retained request.
         let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
         let page = client

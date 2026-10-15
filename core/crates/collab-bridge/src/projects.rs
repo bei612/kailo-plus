@@ -72,12 +72,15 @@ pub fn pull_request_status_trusted(pull_request: &Event, event: &Event) -> bool 
         return false;
     };
     let signer = event.pubkey.to_hex();
-    PULL_REQUEST_STATUS_HISTORY_KINDS.contains(&event.kind.as_u16())
+    let kind = event.kind.as_u16();
+    PULL_REQUEST_STATUS_HISTORY_KINDS.contains(&kind)
         && event.verify().is_ok()
         && (signer == owner || signer == author)
         && event.tags.iter().any(|tag| {
             let fields = tag.as_slice();
-            fields.first().is_some_and(|name| name == "e" || name == "E")
+            fields
+                .first()
+                .is_some_and(|name| name == "e" || name == "E")
                 && fields.get(1) == Some(&pull_request.id.to_hex())
         })
 }
@@ -126,9 +129,7 @@ pub fn status_publication_builder(
     }
     let (owner, author) = pull_request_status_actors(pull_request)?;
     if signer != owner && signer != author {
-        return Err(invalid(
-            "review status requires the review author or repository owner",
-        ));
+        return Err(invalid("review status requires the review author or repository owner"));
     }
     let created_at = match latest {
         Some(event) if pull_request_status_trusted(pull_request, event) => Timestamp::from_secs(
@@ -142,10 +143,11 @@ pub fn status_publication_builder(
         Some(_) => return Err(invalid("invalid previous review status evidence")),
         None => Timestamp::now(),
     };
-    Ok(EventBuilder::new(nostr::Kind::from(kind), "")
+    let builder = EventBuilder::new(nostr::Kind::from(kind), "")
         .tags(pull_request_status_tags(pull_request)?)
         .allow_self_tagging()
-        .custom_created_at(created_at))
+        .custom_created_at(created_at);
+    Ok(builder)
 }
 
 /// Compare an accepted lifecycle receipt with the immutable review it targets.
@@ -159,10 +161,12 @@ pub fn status_publication_matches(
         return Err(invalid("invalid review status evidence"));
     }
     let tags = pull_request_status_tags(pull_request)?;
-    Ok(event.kind.as_u16() == kind
-        && event.content.is_empty()
-        && request.target_event_id.as_deref() == Some(pull_request.id.to_hex().as_str())
-        && event.tags.iter().eq(tags.iter()))
+    Ok(
+        event.kind.as_u16() == kind
+            && event.content.is_empty()
+            && request.target_event_id.as_deref() == Some(pull_request.id.to_hex().as_str())
+            && event.tags.iter().eq(tags.iter()),
+    )
 }
 
 /// Fixed issueAssignments.ts uses a display label only. Self p tags come from
@@ -325,10 +329,7 @@ pub fn publication_observed(
 ) -> Result<bool, OperatorError> {
     let unverified =
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
-    if !matches!(
-        expected_kind,
-        1 | 5 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621
-    ) {
+    if !matches!(expected_kind, 1 | 5 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621) {
         return Err(unverified());
     }
     let events: Vec<Event> = serde_json::from_value(page).map_err(|_| unverified())?;

@@ -2110,17 +2110,16 @@ async fn publish(
             // Original allowedActorsForRoot: only the review author or the
             // repository owner changes its lifecycle. Others are refused here,
             // and Relay readers ignore any such event regardless.
+            let signer = keys.public_key().to_hex();
             match collab_bridge::projects::pull_request_status_actors(pull_request) {
-                Ok((owner, author))
-                    if owner == keys.public_key().to_hex()
-                        || author == keys.public_key().to_hex() => {}
+                Ok((owner, author)) if owner == signer || author == signer => {}
                 Ok(_) => {
                     return error_body(
                         StatusCode::FORBIDDEN,
                         ErrorClass::Denied,
                         ReasonCode::PermissionDenied,
                         None,
-                    )
+                    );
                 }
                 Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
             }
