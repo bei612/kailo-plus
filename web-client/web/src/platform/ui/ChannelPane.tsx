@@ -141,6 +141,7 @@ export function ChannelPane({
   metadataPending = false,
   restoreEditEventId,
   onStartDm,
+  memberProfileRequest,
   idleAuxiliaryPanel,
   idleAuxiliaryHeaderActions,
   idleAuxiliaryOverridesThread = false,
