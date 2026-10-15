@@ -2054,7 +2054,8 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
     && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
   const host = avatarHost && version ? avatarHost(version) : null;
   const card = <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
-      label={version?.content.personaIdentity.displayName ?? t("agents.installation.id")}
+      // 成员可读安装却未必可读 Version：用安装视图随附的固定版本显示名，不借最新定义。
+      label={version?.content.personaIdentity.displayName ?? (row.agentDisplayName?.trim() || t("agents.installation.id"))}
       subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
       avatarUrl={host ? version?.content.personaIdentity.avatarUrl : undefined}
       ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
