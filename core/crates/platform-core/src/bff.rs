@@ -377,6 +377,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route("/api/v1/platform-info", get(crate::platform_info::get))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
         .exposed_route(
+            "/api/v1/workspace-activity",
+            axum::routing::post(crate::web_transport::query_workspace_activity),
+        )
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages",
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )

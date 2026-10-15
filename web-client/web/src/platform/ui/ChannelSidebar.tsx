@@ -1,6 +1,8 @@
 // Web adapter for the same Buzz channel groups/rows/context menus used by Desktop.
 // Business preferences/read positions remain the existing Core user-state CAS authority.
-import { ChannelType, WebMessageType, type WorkspaceView } from "@client-kit/contracts";
+import { ChannelType, type DiscoverableWorkspace, type WorkspaceView } from "@client-kit/contracts";
+import { loadWorkspaceActivity } from "@client-kit/platform/react/workspace-activity";
+import { TransportError } from "@client-kit/platform/transport";
 import { useT } from "@client-kit/platform/react/context";
 import { ChannelGroupSection, type SidebarChannel } from "@client-kit/platform/react/sidebar/channel-group";
 import { ChannelContextMenuItems } from "@client-kit/platform/react/sidebar/channel-context-menu";
@@ -22,12 +24,14 @@ import { forcedUnreadMarker, type ForcedUnreadMap } from "@client-kit/platform/r
 
 type Group = "starred" | "channels" | "forums";
 
-export function ChannelSidebar({ principalId, workspaces, selectedId, active, reads, preferencePending,
+export function ChannelSidebar({ principalId, workspaces, directory, selectedId, active, reads, preferencePending,
   onSelect, onCreate, onCreateForum, onSetPreference, onActivity, onUnreadChange,
   forcedUnread = {}, onMarkChannelUnread, onClearChannelManualUnread,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
+  /** Admitted channel directory: each joined row's native channel ID and type for the batch read. */
+  directory?: readonly DiscoverableWorkspace[];
   selectedId: string | null;
   active: boolean;
   reads: ReturnType<typeof useInboxState>;
@@ -48,21 +52,19 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   // Tenant principal IDs already scope the Web host; no browser Relay identity is invented.
   const { sortModeFor, setSortModeFor } = useChannelSortPreference(principalId);
   const joined = workspaces.filter((workspace) => workspace.isMember === true);
+  // Original channel list (fixed Buzz channels/fetch.rs): every joined channel's latest window
+  // in one batched read, native IDs/types from the admitted directory, not two reads per row.
+  const joinedRows = directory ? joined.map((workspace) => directory.find((row) => row.id === workspace.id)) : undefined;
   const messages = useQuery({
-    queryKey: ["platform", "sidebar-messages", principalId, ...joined.map((workspace) => workspace.id)],
-    enabled: joined.length > 0,
-    queryFn: async ({ signal }) => {
+    queryKey: ["platform", "sidebar-messages", principalId,
+      ...joined.map((workspace, index) => `${workspace.id}:${joinedRows?.[index]?.channel.channelId ?? ""}`)],
+    enabled: joined.length > 0 && joinedRows !== undefined,
+    queryFn: async () => {
+      if (!joinedRows || joinedRows.some((row) => row === undefined)) throw new TransportError("Channel directory changed");
+      const activity = await loadWorkspaceActivity(bff, joinedRows as DiscoverableWorkspace[]);
       const pages = new Map<string, { channelId: string; channelType: ChannelType; events: ReturnType<typeof inboxWindowEvents> }>();
-      for (const workspace of joined) {
-        signal.throwIfAborted();
-        const channel = await bff.workspaceChannel(workspace.id);
-        signal.throwIfAborted();
-        if (channel.channelType !== ChannelType.Stream && channel.channelType !== ChannelType.Forum) throw new Error("Invalid channel type");
-        const forumPosts = channel.channelType === ChannelType.Forum;
-        const page = await bff.workspaceMessages(workspace.id, { messageType: forumPosts ? WebMessageType.ForumPost : WebMessageType.Stream });
-        signal.throwIfAborted();
-        pages.set(workspace.id, { channelId: channel.channelId, channelType: channel.channelType, events: inboxWindowEvents(page.events, channel.channelId, forumPosts) });
-      }
+      for (const [id, { channelId, channelType, events }] of activity)
+        pages.set(id, { channelId, channelType, events: inboxWindowEvents(events, channelId, channelType === ChannelType.Forum) });
       return pages;
     },
   });

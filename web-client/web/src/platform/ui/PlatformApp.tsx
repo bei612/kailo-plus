@@ -572,6 +572,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCloseSelected={() => setTab("inbox")}
               onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
+              directory={searchDirectory.isError ? undefined : searchDirectory.data?.workspaces}
               forcedUnread={forcedUnread} onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
               onActivity={setChannelActivity}
               onUnreadChange={setSidebarUnread}

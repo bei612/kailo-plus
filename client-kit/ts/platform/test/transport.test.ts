@@ -1,7 +1,7 @@
 // 两个传输实现：Web 同源 fetch、Desktop 经 platform_api。两者对同一次调用必须给出同一
 // 解读（错误体、会话结束、没有回应），差别只在请求怎么送出去。
 
-import { ErrorClass, ReasonCode } from "@client-kit/contracts";
+import { ErrorClass, ReasonCode, WebMessageType } from "@client-kit/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { createInvokeTransport, createNativeHost } from "../src/native";
@@ -51,6 +51,73 @@ describe("web-fetch", () => {
       redirect: "manual",
     });
     expect(fetch.mock.calls[1]?.[0]).toBe("/api/v1/workspaces");
+  });
+
+  it("同一会话并发的相同 GET 共用一次读取，每个调用方拿到自己的副本；写入后重新读取", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetch = vi.fn<typeof globalThis.fetch>(async (path) => {
+      await gate;
+      return json(200, path === "/api/v1/user-state" ? { version: 1, readContexts: {} } : { revoked: true });
+    });
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {} }));
+    const reads = [client.collaborationUserState(), client.collaborationUserState(), client.collaborationUserState()];
+    release();
+    const [first, second] = await Promise.all(reads);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+    await client.logout();
+    await client.collaborationUserState();
+    expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/user-state", "/api/v1/logout", "/api/v1/user-state"]);
+  });
+
+  it("资料读取按原版窗口同会话缓存：自己 30 秒、同一 pubkey 60 秒；资料写入或治理动作后重新读取", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { pubkey: "b".repeat(64), avatarMediaPaths: {} }));
+      const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {} }));
+      const own = await client.profile();
+      (own as { displayName?: string }).displayName = "caller mutation";
+      await client.profile();
+      await client.memberProfile("w", "p", "b".repeat(64));
+      await client.memberProfile("w", "p", "b".repeat(64));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(await client.profile()).not.toHaveProperty("displayName");
+      vi.setSystemTime(Date.now() + 30_000);
+      await client.profile();
+      await client.memberProfile("w", "p", "b".repeat(64));
+      expect(fetch).toHaveBeenCalledTimes(3);
+      await client.updateProfile({ displayName: "new" } as Parameters<typeof client.updateProfile>[0]);
+      await client.profile();
+      await client.memberProfile("w", "p", "b".repeat(64));
+      expect(fetch).toHaveBeenCalledTimes(6);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("冷启动读次数上限：挂载时的重复读合并，所有频道窗口一次批量读取", async () => {
+    // The live cold start (2026-10-15, 14 joined channels) issued profile x5, user-state x5,
+    // custom-emoji x2 and two Relay reads per channel. The same burst must stay under the cap.
+    const COLD_START_READ_CAP = 4;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (path, init) => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (path === "/api/v1/workspace-activity") {
+        const { items } = JSON.parse(String(init?.body)) as { items: { workspaceId: string }[] };
+        return json(200, { items: items.map(({ workspaceId }) => ({ workspaceId, channelId: `c-${workspaceId}`, events: [] })) });
+      }
+      return json(200, path === "/api/v1/user-state" ? { version: 1, readContexts: {} } : { pubkey: "b".repeat(64), avatarMediaPaths: {} });
+    });
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {} }));
+    const channels = Array.from({ length: 14 }, (_, index) => ({ workspaceId: `w${index}`, messageType: WebMessageType.Stream }));
+    await Promise.all([
+      ...Array.from({ length: 5 }, () => client.profile()),
+      ...Array.from({ length: 5 }, () => client.collaborationUserState()),
+      ...Array.from({ length: 2 }, () => client.customEmoji()),
+      client.workspaceActivity({ items: channels }),
+    ]);
+    await client.profile();
+    expect(fetch.mock.calls.length).toBeLessThanOrEqual(COLD_START_READ_CAP);
+    expect(fetch.mock.calls.filter(([path]) => path === "/api/v1/workspace-activity")).toHaveLength(1);
   });
 
   it("401 与 opaqueredirect 都是会话结束：先通知宿主再抛出", async () => {

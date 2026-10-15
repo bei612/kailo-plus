@@ -9,6 +9,10 @@ import type { Event as SidebarEvent } from "./inbox-events";
 
 const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { channelId: string; events: SidebarEvent[] }>>),
   channel: vi.fn(async (workspace: string) => ({channelId:`native-${workspace}`, channelType:"stream"})), messages: vi.fn(),
+  types: { one: "stream", two: "stream" } as Record<string, string>,
+  // Core's batched endpoint, modeled as the per-channel binding and window it replaces.
+  activity: vi.fn(async ({ items }: { items: { workspaceId: string; messageType: string }[] }) => ({ items: await Promise.all(items.map(async ({ workspaceId, messageType }) => ({
+    workspaceId, channelId: (await snapshot.channel(workspaceId)).channelId, events: (await snapshot.messages(workspaceId, { messageType })).events }))) })),
   menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void; markRead?: (id: string) => void; markUnread?: (id: string) => void }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
@@ -36,7 +40,7 @@ vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
-vi.mock("@/platform/bff-client", () => ({ bff: { workspaceChannel:snapshot.channel, workspaceMessages: snapshot.messages }, fetchUserState: vi.fn() }));
+vi.mock("@/platform/bff-client", () => ({ bff: { workspaceActivity: snapshot.activity }, fetchUserState: vi.fn() }));
 beforeEach(() => localStorage.setItem("buzz-feature-overrides-v1", JSON.stringify({ forum: true })));
 
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
@@ -44,8 +48,10 @@ const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
   workspaceChannels: new Set(["one", "two"]), conversations: [], eventReadAt: () => 20,
 };
+const directory = () => ["one", "two"].map((id) => ({ id, visibility: "open", isMember: true, memberCount: 1,
+  channel: { channelId: `native-${id}`, channelType: snapshot.types[id], name: id, archived: false } })) as unknown as ComponentProps<typeof ChannelSidebar>["directory"];
 function markup(overrides: Partial<typeof reads> = {}, isMember = true) {
-  return renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember }, { id: "two", name: "Two", slug: "two", isMember }]}
+  return renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember }, { id: "two", name: "Two", slug: "two", isMember }]} directory={directory()}
     selectedId="two" active reads={{ ...reads, ...overrides }} preferencePending={false}
     onSelect={vi.fn()} onCreate={vi.fn()} onCreateForum={vi.fn()} onSetPreference={vi.fn()} />);
 }
@@ -90,7 +96,25 @@ it("loads the real sidebar activity query when Core returns original window meta
   expect(result.get("one")?.events.map((event) => event.id)).toEqual(["a".repeat(64)]);
   expect(result.get("two")?.events.map((event) => event.id)).toEqual(["a".repeat(64)]);
   expect(result.get("one")).toMatchObject({channelId:"native-one", events:[{channelId:"native-one"}]});
-  expect(snapshot.channel).toHaveBeenCalledWith("one");
+  expect(snapshot.activity).toHaveBeenLastCalledWith({ items: [{ workspaceId: "one", messageType: "STREAM" }, { workspaceId: "two", messageType: "STREAM" }] });
+});
+
+it("reads every joined channel's window in one batched request instead of two reads per row", async () => {
+  snapshot.activity.mockClear();
+  snapshot.messages.mockImplementation(async (workspace: string) => ({ events: [{ id: "c".repeat(64), pubkey: "d".repeat(64), kind: 39006, created_at: 31,
+    content: JSON.stringify({ has_more: false, next_cursor: null }), tags: [["h", `native-${workspace}`], ["d", `native-${workspace}:head`]] }] }));
+  markup();
+  await snapshot.query!({ signal: new AbortController().signal });
+  expect(snapshot.activity).toHaveBeenCalledOnce();
+});
+
+it("does not start a per-row fallback when the admitted directory is unavailable", async () => {
+  snapshot.activity.mockClear(); snapshot.channel.mockClear(); snapshot.messages.mockClear();
+  renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember: true }]}
+    selectedId="one" active reads={reads} preferencePending={false} onSelect={vi.fn()} onCreate={vi.fn()} onCreateForum={vi.fn()} onSetPreference={vi.fn()} />);
+  await expect(snapshot.query!({ signal: new AbortController().signal })).rejects.toThrow("Channel directory changed");
+  expect(snapshot.activity).not.toHaveBeenCalled();
+  expect(snapshot.messages).not.toHaveBeenCalled();
 });
 
 it("passes the observed Relay ID to original Copy while retaining management IDs for other actions", () => {
@@ -225,6 +249,7 @@ it("restores the original authorized Forum group, toggle and real create callbac
 
 it("uses the actual forum-post window for Forum activity and canonical read contexts, rejecting wrong scopes", async () => {
   snapshot.channel.mockImplementation(async (workspace: string) => ({channelId:`native-${workspace}`,channelType:workspace === "two" ? "forum" : "stream"}));
+  snapshot.types.two = "forum";
   snapshot.messages.mockImplementation(async (workspace: string, query: {messageType: string}) => ({events:[
     {id:"a".repeat(64),pubkey:"b".repeat(64),kind:query.messageType === "FORUM_POST" ? 45001 : 9,
       created_at:30,content:"Original post",tags:[["h",`native-${workspace}`]]},
@@ -241,6 +266,7 @@ it("uses the actual forum-post window for Forum activity and canonical read cont
     snapshot.messages.mockResolvedValueOnce({events:[{id:"a".repeat(64),pubkey:"b".repeat(64),kind:9,created_at:30,content:"Wrong scope",tags:[["h","other"]]}]});
     await expect(snapshot.query!({signal:new AbortController().signal})).rejects.toThrow("Unverifiable message scope");
   } finally {
+    snapshot.types.two = "stream";
     snapshot.channel.mockImplementation(async (workspace: string) => ({channelId:`native-${workspace}`,channelType:"stream"}));
   }
 });

@@ -30,7 +30,27 @@ export type FetchTransportOptions = {
 };
 
 export function createFetchTransport(options: FetchTransportOptions): FetchTransport {
-  const exchange = async (path: string, init: RequestInit): Promise<BffReply> => {
+  // Same-session read coalescing: concurrent identical GETs (the shell, sidebar, Inbox and
+  // panes all read user-state/profile/session on mount) share one network read, and each
+  // caller gets its own copy of the body. Any write clears the table first, so a read issued
+  // after a write is never answered by a request that started before it.
+  const reads = new Map<string, Promise<BffReply>>();
+  const coalesced = async (path: string, init: RequestInit): Promise<BffReply> => {
+    if ((init.method ?? "GET").toUpperCase() !== "GET" || init.body !== undefined) {
+      reads.clear();
+      return send(path, init);
+    }
+    let read = reads.get(path);
+    if (!read) {
+      read = send(path, init);
+      const current = read;
+      reads.set(path, current);
+      void current.finally(() => { if (reads.get(path) === current) reads.delete(path); }).catch(() => undefined);
+    }
+    const reply = await read;
+    return { status: reply.status, body: reply.body === undefined ? undefined : structuredClone(reply.body) };
+  };
+  const send = async (path: string, init: RequestInit): Promise<BffReply> => {
     let response: Response;
     try {
       response = await (options.fetch ?? fetch)(path, {
@@ -55,6 +75,7 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
     return { status: response.status, body };
   };
 
+  const exchange = coalesced;
   return {
     exchange,
     send: (request: BffRequest) =>

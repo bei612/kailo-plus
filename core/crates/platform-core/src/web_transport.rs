@@ -3360,6 +3360,215 @@ async fn query_messages_for(
     }
 }
 
+/// Original batched channel-list activity: fixed Buzz
+/// `desktop/src-tauri/src/commands/channels/fetch.rs::query_last_messages` keeps one indexed
+/// filter per channel inside as few Relay requests as possible. Each Workspace still passes its
+/// own HUMAN collaboration admission; the filters are the same first-page window that
+/// `query_messages` builds, chunked by the binding's NIP-11 `max_filters`, and every channel's
+/// slice goes through the same `verify_message_page`. Any failure fails the whole read.
+pub async fn query_workspace_activity(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Json(query): Json<contracts::WebWorkspaceActivityQuery>,
+) -> Response {
+    let mut targets = Vec::with_capacity(query.items.len());
+    let mut seen = std::collections::HashSet::new();
+    for item in &query.items {
+        let Ok(id) = Uuid::parse_str(&item.workspace_id) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        if !seen.insert(id)
+            || !matches!(
+                item.message_type,
+                contracts::WebMessageType::Stream | contracts::WebMessageType::ForumPost
+            )
+        {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        targets.push((id, item.message_type.clone()));
+    }
+    if targets.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    let mut scopes = Vec::with_capacity(targets.len());
+    for (id, _) in &targets {
+        match admit_workspace(&state, &ctx, *id).await {
+            Ok(scope) => scopes.push(scope),
+            Err(response) => return response,
+        }
+    }
+    let host = scopes[0].community_host.clone();
+    if scopes.iter().any(|scope| scope.community_host != host) {
+        return AdmissionFailure::BindingNotActive.into_response();
+    }
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    let client = match community_client(&state, &keys, &host) {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    let limits = match community_limits(&state, &host).await {
+        Ok(limits) => limits,
+        Err(error) => return error.into_response(),
+    };
+    let author = match window_author(&state, &ctx, &host).await {
+        Ok(author) => author,
+        Err(response) => return response,
+    };
+    let cap =
+        page_limit(&state, &limits).min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
+    let mut by_channel: HashMap<String, Vec<nostr::Event>> = HashMap::new();
+    let pairs: Vec<_> = scopes.iter().zip(&targets).collect();
+    for batch in pairs.chunks(limits.max_filters.max(1)) {
+        let filters: Vec<serde_json::Value> = batch
+            .iter()
+            .map(|(scope, (_, message_type))| {
+                channel_window_filter(&scope.channel_id, message_type, cap, None)
+            })
+            .collect();
+        let events: Vec<nostr::Event> = match client.query(&state.http, &filters).await {
+            Ok(value) => match serde_json::from_value(value) {
+                Ok(events) => events,
+                Err(_) => return invalid_message_evidence(),
+            },
+            Err(error) => {
+                tracing::warn!(error = %error, "批量读取频道窗口失败");
+                return relay_error_response(&error, None);
+            }
+        };
+        let channels: Vec<&str> = batch
+            .iter()
+            .map(|(scope, _)| scope.channel_id.as_str())
+            .collect();
+        match split_window_events(events, &channels) {
+            Ok(split) => by_channel.extend(split),
+            Err(response) => return response,
+        }
+    }
+    let mut items = Vec::with_capacity(scopes.len());
+    for (scope, (id, message_type)) in &pairs {
+        let events = by_channel.remove(&scope.channel_id).unwrap_or_default();
+        let (verified, _) = match verify_message_page(
+            events,
+            &scope.channel_id,
+            message_type,
+            None,
+            None,
+            Some(author.1.as_str()),
+            cap,
+        ) {
+            Ok(page) => page,
+            Err(response) => return response,
+        };
+        let mut objects = Vec::with_capacity(verified.len());
+        for event in &verified {
+            match serde_json::to_value(event) {
+                Ok(serde_json::Value::Object(map)) => {
+                    objects.push(map.into_iter().map(|(k, v)| (k, Some(v))).collect())
+                }
+                _ => return invalid_message_evidence(),
+            }
+        }
+        items.push(contracts::WebWorkspaceActivity {
+            workspace_id: id.to_string(),
+            channel_id: scope.channel_id.clone(),
+            events: objects,
+        });
+    }
+    for (scope, (id, _)) in &pairs {
+        match admit_workspace(&state, &ctx, *id).await {
+            Ok(current)
+                if current.channel_id == scope.channel_id
+                    && current.community_host == scope.community_host
+                    && current.admission_epoch == scope.admission_epoch => {}
+            Ok(_) => return AdmissionFailure::BindingNotActive.into_response(),
+            Err(response) => return response,
+        }
+    }
+    match actor_keys(&state, &ctx).await {
+        Ok(current) if current.public_key() == keys.public_key() => {}
+        Ok(_) => return AdmissionFailure::BindingNotActive.into_response(),
+        Err(response) => return response,
+    }
+    match window_author(&state, &ctx, &host).await {
+        Ok(observed) if observed == author => {}
+        _ => return AdmissionFailure::BindingNotActive.into_response(),
+    }
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(contracts::WebWorkspaceActivityPage { items }),
+    )
+        .into_response()
+}
+
+/// Split one multi-channel window response back into per-channel slices. Rows, overlays and
+/// scoped aux carry exactly one `h`; target-scoped reactions/deletions follow the channel
+/// whose row (or first-hop action) they reference. Anything unattributable or ambiguous is
+/// not evidence for any requested channel.
+#[allow(clippy::result_large_err)]
+fn split_window_events(
+    events: Vec<nostr::Event>,
+    channels: &[&str],
+) -> Result<HashMap<String, Vec<nostr::Event>>, Response> {
+    let mut split: HashMap<String, Vec<nostr::Event>> = channels
+        .iter()
+        .map(|channel| ((*channel).to_owned(), Vec::new()))
+        .collect();
+    let mut owner: HashMap<String, String> = HashMap::new();
+    let mut deferred = Vec::new();
+    for event in events {
+        let kind = u32::from(event.kind.as_u16());
+        let has_h = event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().is_some_and(|name| name == "h"));
+        if !has_h && [KIND_DELETION, KIND_REACTION].contains(&kind) {
+            deferred.push(event);
+            continue;
+        }
+        let channel = single_event_tag(&event, "h")
+            .filter(|h| channels.contains(h))
+            .ok_or_else(invalid_message_evidence)?
+            .to_owned();
+        owner.insert(event.id.to_hex(), channel.clone());
+        split.entry(channel).or_default().push(event);
+    }
+    // Two passes cover the original two-hop closure: actions, then deletions of actions.
+    for _ in 0..2 {
+        let mut pending = Vec::new();
+        for event in deferred {
+            let targets: std::collections::BTreeSet<String> = event
+                .tags
+                .iter()
+                .map(nostr::Tag::as_slice)
+                .filter(|tag| tag.first().is_some_and(|name| name == "e"))
+                .filter_map(|tag| tag.get(1).and_then(|id| owner.get(id.as_str())).cloned())
+                .collect();
+            let mut targets = targets.into_iter();
+            match (targets.next(), targets.next()) {
+                (Some(channel), None) => {
+                    owner.insert(event.id.to_hex(), channel.clone());
+                    split.entry(channel).or_default().push(event);
+                }
+                (None, _) => pending.push(event),
+                _ => return Err(invalid_message_evidence()),
+            }
+        }
+        deferred = pending;
+    }
+    if deferred.is_empty() {
+        Ok(split)
+    } else {
+        Err(invalid_message_evidence())
+    }
+}
+
 /// 单页上界：部署登记值与 NIP-11 `max_limit` 的交集。
 pub fn page_limit(state: &BffState, limits: &RelayLimits) -> i64 {
     state.message_page_limit.min(limits.max_limit)
@@ -3909,6 +4118,45 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn batched_window_split_attributes_rows_and_target_scoped_actions_to_one_channel() {
+        let keys = nostr::Keys::generate();
+        let row = |channel: &str| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(9), "row")
+                .tags([nostr::Tag::parse(["h", channel]).unwrap()])
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let refer = |kind: nostr::Kind, target: nostr::EventId| {
+            nostr::EventBuilder::new(kind, "")
+                .tags([nostr::Tag::event(target)])
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let (a, b) = (row("channel-a"), row("channel-b"));
+        let reaction = refer(nostr::Kind::Reaction, b.id);
+        let unreact = refer(nostr::Kind::EventDeletion, reaction.id);
+        let split = super::split_window_events(
+            vec![a.clone(), unreact.clone(), b.clone(), reaction.clone()],
+            &["channel-a", "channel-b"],
+        )
+        .unwrap();
+        assert_eq!(split["channel-a"], vec![a.clone()]);
+        assert_eq!(split["channel-b"], vec![b.clone(), reaction, unreact]);
+        // Not requested, unattributable, or referring to two requested channels: no evidence.
+        assert!(super::split_window_events(vec![row("channel-c")], &["channel-a"]).is_err());
+        let orphan = refer(
+            nostr::Kind::Reaction,
+            nostr::EventId::from_hex(&"c".repeat(64)).unwrap(),
+        );
+        assert!(super::split_window_events(vec![a.clone(), orphan], &["channel-a"]).is_err());
+        let both = nostr::EventBuilder::new(nostr::Kind::Reaction, "")
+            .tags([nostr::Tag::event(a.id), nostr::Tag::event(b.id)])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(super::split_window_events(vec![a, b, both], &["channel-a", "channel-b"]).is_err());
+    }
+
     #[test]
     fn reaction_semantics_reuse_typed_contract_without_allowing_notes_or_body_fields() {
         let parse =

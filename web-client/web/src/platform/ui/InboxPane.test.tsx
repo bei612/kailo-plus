@@ -17,6 +17,24 @@ import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
 const api=vi.hoisted(()=>({inboxMentions:vi.fn().mockResolvedValue({events:[]}),projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
+// Core's admitted directory and batched activity endpoint, modeled as the per-channel binding
+// and first window they replace so every binding/window case below keeps its evidence.
+Object.assign(api,{
+  discoverableWorkspaces:async()=>{
+    const workspaces=await api.workspaces.mock.results.at(-1)?.value as {id:string;name:string;isMember?:boolean}[];
+    return {items:await Promise.all(workspaces.map(async workspace=>{const channel=await api.workspaceChannel(workspace.id) as {channelId:string;channelType?:string};
+      return {id:workspace.id,visibility:"open",isMember:workspace.isMember===true,memberCount:1,channel:{channelId:channel.channelId,channelType:channel.channelType??"stream",name:workspace.name,archived:false}};}))};
+  },
+  workspaceActivity:async({items}:{items:{workspaceId:string;messageType:string}[]})=>{
+    const out=[];
+    for (const {workspaceId,messageType} of items) {
+      const channel=await api.workspaceChannel(workspaceId) as {channelId:string};
+      const page=await api.workspaceMessages(workspaceId,messageType==="FORUM_POST"?{messageType}:undefined) as {events:unknown[]};
+      out.push({workspaceId,channelId:channel.channelId,events:page.events});
+    }
+    return {items:out};
+  },
+});
 const authorBatches=vi.hoisted(()=>vi.fn());
 const publicationFixture=vi.hoisted(()=>({enabled:false,publish:vi.fn()}));
 // Existing message-only cases run with no admitted reminder identity. Dedicated
@@ -770,4 +788,36 @@ it("real top-level Inbox mention reads and marks the bound native Channel, while
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]')!.click());
     expect(open).toHaveBeenCalledWith(workspace.id, { channelId: workspace.id, messageId: event.id, threadRootId: null });
   } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
+});
+
+it("cold start reads every joined channel's first window in one batched read, not two reads per channel", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  setLocale("en"); localStorage.clear(); sessionStorage.clear();
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  const self = "c".repeat(64);
+  // The mocked read state shows workspace-a; the other 19 joined channels are equally read.
+  const joined = Array.from({ length: 20 }, (_, index) => ({ id: index === 0 ? "workspace-a" : `workspace-${index}`, name: `Channel ${index}`, isMember: true }));
+  api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+  api.readFailed = false; api.readUnknown = false;
+  api.workspaces.mockReset().mockResolvedValue(joined);
+  api.workspaceChannel.mockReset().mockImplementation(async (id: string) => ({ channelId: `native-${id}` }));
+  api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+  api.agentInstallations.mockResolvedValue({ installations: [] });
+  api.workspaceMessages.mockReset().mockImplementation(async (id: string) => ({ events: [
+    ...(id === "workspace-a" ? [{ ...event, content: "Cold start mention", tags: [["h", `native-${id}`], ["p", self]] }] : []),
+    { ...event, id: "d".repeat(64), kind: 39006, tags: [["h", `native-${id}`], ["d", `native-${id}:head`]], content: JSON.stringify({ has_more: false, next_cursor: null }) },
+  ] }));
+  const reads = api as unknown as { workspaceActivity: (body: { items: unknown[] }) => Promise<unknown>; discoverableWorkspaces: () => Promise<unknown> };
+  const batch = vi.spyOn(reads, "workspaceActivity");
+  const directory = vi.spyOn(reads, "discoverableWorkspaces");
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  try {
+    await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+    await vi.waitFor(() => expect(host.textContent).toContain("Cold start mention"));
+    expect(directory).toHaveBeenCalledOnce();
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch.mock.calls[0]![0].items).toHaveLength(joined.length);
+  } finally { batch.mockRestore(); directory.mockRestore(); await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
 });

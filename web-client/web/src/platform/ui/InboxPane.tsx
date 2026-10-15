@@ -1,7 +1,7 @@
 // Web transport adapter only: aggregation and rows are the same TS used by Buzz Desktop Home.
 import {
   WorkspaceMembershipState,
-  WebMessageType,
+  type DiscoverableWorkspace,
   type WorkspaceMemberView,
   type WorkspaceView,
   type ConversationView, type ConversationParticipant,
@@ -24,6 +24,8 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { BffError } from "@client-kit/platform/transport";
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
+import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
+import { loadWorkspaceActivity } from "@client-kit/platform/react/workspace-activity";
 import { InboxView, useInboxViewState, type InboxViewStatus } from "@client-kit/platform/react/inbox-view";
 import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
 import { HomeLoadingState, InboxEmptyDetail, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
@@ -141,6 +143,14 @@ export function InboxPane({
       }
       if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
       const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
+      // Original channel-list batch (fixed Buzz channels/fetch.rs): one admitted read for every
+      // joined channel's first window, keyed by the directory's native channel ID and type.
+      const directory = joined.length ? await loadChannelDirectory(client, () => epoch === generation.current) : [];
+      if (epoch !== generation.current) return;
+      const joinedRows = joined.map((workspace) => directory.find((row) => row.id === workspace.id));
+      if (joinedRows.some((row) => row === undefined || row.isMember !== true)) throw new Error("Unverifiable Workspace channel binding");
+      const activity = await loadWorkspaceActivity(client, joinedRows as DiscoverableWorkspace[]);
+      if (epoch !== generation.current) return;
       const next: Snapshot = { scope: selectionScope, mentions: [], activity: [], projectItems:[], workspaces: joined, channelIds: new Map(), forumChannels: new Set(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
@@ -171,13 +181,11 @@ export function InboxPane({
         )
           throw new Error("Unverifiable own identity");
         const own = new Set(self.pubkeys);
-        const channel = await client.workspaceChannel(workspace.id);
-        if (epoch !== generation.current) return;
+        const channel = activity.get(workspace.id);
         if (!channel?.channelId) throw new Error("Unverifiable Workspace channel binding");
         const forum = channel.channelType === "forum";
         if (forum) next.forumChannels.add(workspace.id);
-        const page = await client.workspaceMessages(workspace.id, forum ? {messageType: WebMessageType.ForumPost} : undefined);
-        if (epoch !== generation.current) return;
+        const page = { events: channel.events };
         // Relay h/bounds use the native Channel ID. Management/profile/navigation
         // keep the existing Workspace key; neither identity is inferred from the other.
         const events = inboxWindowEvents(page.events, channel.channelId, forum)

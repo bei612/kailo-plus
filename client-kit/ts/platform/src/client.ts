@@ -75,6 +75,8 @@ import type {
   WebProfileUpdateRequest,
   WebCustomEmojiMutation,
   WebCustomEmojiView,
+  WebWorkspaceActivityPage,
+  WebWorkspaceActivityQuery,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -83,9 +85,28 @@ import { type BffRequest, type BffTransport, unwrap } from "./transport";
 export type BffClient = ReturnType<typeof createBffClient>;
 
 export function createBffClient(transport: BffTransport) {
-  const call = async <T>(request: BffRequest): Promise<T> =>
-    unwrap<T>(request, await transport.send(request));
+  // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/profile/hooks.ts: the
+  // self profile answers for 30 s and a user's profile for 60 s per pubkey before a re-read.
+  // Kailo keys the same windows by the admitted path (scope, principal, pubkey); a profile
+  // write or governed action drops them so a read after a profile, membership or role change
+  // is never answered from before it. Read-only POST queries keep the cache.
+  const profiles = new Map<string, { at: number; read: Promise<WebProfileView> }>();
+  const call = async <T>(request: BffRequest): Promise<T> => {
+    if (request.method !== "GET" && (request.path === "/api/v1/profile" || request.path.startsWith("/api/v1/actions"))) profiles.clear();
+    return unwrap<T>(request, await transport.send(request));
+  };
   const get = <T>(path: string) => call<T>({ method: "GET", path });
+  const profileRead = async (path: string, freshMs: number): Promise<WebProfileView> => {
+    const now = Date.now();
+    let entry = profiles.get(path);
+    if (!entry || now - entry.at >= freshMs) {
+      const created = { at: now, read: get<WebProfileView>(path) };
+      profiles.set(path, created);
+      created.read.catch(() => { if (profiles.get(path) === created) profiles.delete(path); });
+      entry = created;
+    }
+    return structuredClone(await entry.read);
+  };
   const messageAuthors = (kind:"workspaces"|"conversations", id:string, body:WebMessageAuthorQuery) =>
     call<WebMessageAuthorView>({method:"POST",path:`/api/v1/${kind}/${encodeURIComponent(id)}/messages/author-profiles`,body});
   const singleMessageAuthor = async (kind:"workspaces"|"conversations",id:string,eventId:string) => {
@@ -97,13 +118,13 @@ export function createBffClient(transport: BffTransport) {
 
   return {
     transport,
-    profile: () => get<WebProfileView>("/api/v1/profile"),
+    profile: () => profileRead("/api/v1/profile", 30_000),
     customEmoji: () => get<WebCustomEmojiView>("/api/v1/custom-emoji"),
     updateCustomEmoji: (body: WebCustomEmojiMutation) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/custom-emoji", body }),
     messageAuthorProfiles: (workspaceId: string, body: WebMessageAuthorQuery) => messageAuthors("workspaces",workspaceId,body),
     messageAuthorProfile: (workspaceId:string,eventId:string) => singleMessageAuthor("workspaces",workspaceId,eventId),
-    memberProfile: (workspaceId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
-    conversationParticipantProfile: (conversationId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/participants/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
+    memberProfile: (workspaceId: string, principalId: string, pubkey: string) => profileRead(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`, 60_000),
+    conversationParticipantProfile: (conversationId: string, principalId: string, pubkey: string) => profileRead(`/api/v1/conversations/${encodeURIComponent(conversationId)}/participants/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`, 60_000),
     conversationMessageAuthorProfiles: (conversationId: string, body: WebMessageAuthorQuery) => messageAuthors("conversations",conversationId,body),
     conversationMessageAuthorProfile: (conversationId:string,eventId:string) => singleMessageAuthor("conversations",conversationId,eventId),
     updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),
@@ -160,6 +181,9 @@ export function createBffClient(transport: BffTransport) {
       call<UserStateVersion>({method:"PUT",path:"/api/v1/user-state/projects",body}),
     setConversationPreference: (id: string, body: ConversationPreferenceRequest) =>
       call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/conversations/${encodeURIComponent(id)}`, body }),
+    /** Original batched channel-list activity: one Core read, one Relay request per NIP-11 filter batch. */
+    workspaceActivity: (body: WebWorkspaceActivityQuery) =>
+      call<WebWorkspaceActivityPage>({ method: "POST", path: "/api/v1/workspace-activity", body }),
     workspaceChannel: (workspaceId: string) => get<WebChannelView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/channel`),
     inboxMentions: (body: WebInboxQuery = {}) =>
       call<{ events: unknown }>({method: "POST", path: "/api/v1/inbox/mentions", body}),
