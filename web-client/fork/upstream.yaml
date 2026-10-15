@@ -95,8 +95,8 @@ artifacts:
     build_context: .
     build_dockerfile: web-client/web/Dockerfile
     inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/, collaboration/patches/virtua@0.49.3.patch, collaboration/desktop/src/shared/ui/EmojiBurstProvider.tsx]
-    source_digest: sha256:5d5206916869e28da008c5467d16fccc6df8af0a019a898002022fe19efe1882
-    artifact_digest: sha256:cb51c259a197e5f67fc17dd07bec7c962ad96d1352c701b816ba914b07f28d60
+    source_digest: sha256:afeea2168b27acb2bc52f60933ccd48937be0c6aef513e9397aa572682bb5138
+    artifact_digest: sha256:b6a9e0a16fbc30e80797700404fe64e73c7902faf4fffbe4d2c82e9790d1b6c5
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
