@@ -76,6 +76,12 @@ describe("original step condition (Run controls)", () => {
   it("offers no message-text condition for reaction or schedule triggers", async () => {
     const reaction: AutomationStep = {id: "react", action: ActionEnum.AddReaction, emoji: "👍"};
     const {host} = await mount(AutomationTriggerKind.ReactionAdded, reaction);
-    expect(runControls(host)).toBeUndefined();
+    // Effect steps keep Run controls for the original timeout (ec2e4b8d); only the
+    // message-text condition is absent for triggers without message text.
+    const controls = runControls(host);
+    if (controls) await click(controls);
+    expect([...host.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")]
+      .find((node) => node.textContent?.startsWith("Message text"))).toBeUndefined();
+    expect(host.querySelector("#wf-trigger-filter-trigger-text-value")).toBeNull();
   });
 });
