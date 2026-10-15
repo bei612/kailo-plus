@@ -425,7 +425,7 @@ impl Supervisor {
         // 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
         // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
         // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
-        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
+        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\nplugins = false\napps = false\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
         let config = config + &native_trace_config(&self.trace_endpoint)?;
         tokio::fs::write(home.join("config.toml"), config)
             .await
@@ -509,6 +509,10 @@ impl Supervisor {
             || config.pointer("/features/memories").and_then(Value::as_bool) != Some(false)
             || config.pointer("/features/shell_tool").and_then(Value::as_bool) != Some(false)
             || config.pointer("/features/tool_call_mcp_elicitation").and_then(Value::as_bool) != Some(true)
+            // 插件市场与 ChatGPT apps 会让 app-server 自行外连 chatgpt.com/GitHub 拉取
+            // 插件与连接器，绕开 AgentGateway 的工具准入（.design/12 §1）。
+            || config.pointer("/features/plugins").and_then(Value::as_bool) != Some(false)
+            || config.pointer("/features/apps").and_then(Value::as_bool) != Some(false)
             || config.pointer("/model_providers/platform_gateway/base_url").and_then(Value::as_str) != Some(projection.gateway_base_url.as_str())
             || config.pointer("/model_providers/platform_gateway/wire_api").and_then(Value::as_str) != Some("responses")
             || config.pointer("/model_providers/platform_gateway/env_key").and_then(Value::as_str) != Some("KAILO_CODEX_MODEL_TOKEN")

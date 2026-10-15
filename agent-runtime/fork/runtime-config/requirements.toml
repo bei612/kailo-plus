@@ -29,3 +29,9 @@ tool_call_mcp_elicitation = true
 memories = false
 # 纵深防御（DD-15）：模型 shell 工具。承重封堵是 environments.toml 不含 local environment。
 shell_tool = false
+# .design/12 §1：工具只来自 Core 批准的 AgentGateway MCP。插件市场会自行外连
+# chatgpt.com/backend-api/plugins 与 GitHub openai/plugins 同步插件
+# （core-plugins/src/manager.rs::maybe_start_curated_repo_sync_for_config），
+# ChatGPT apps 会引入未经平台准入的连接器；两者都固定关闭。
+plugins = false
+apps = false
