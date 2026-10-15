@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Codex app-server（平台 SERVER_CODEX runtime）的运行镜像（DD-26、ADR-06）。
 #
 # 构建上下文是 agent-runtime/ 源码树（本仓库的改动直接在树里）：tools/build-upstream.sh
@@ -32,11 +33,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 # 以非 root 运行：app-server 只经 stdio 受 Core 控制，不需要任何特权
 RUN useradd --system --uid 10001 --no-create-home platform
 COPY --from=builder /out/codex-app-server /usr/local/bin/codex-app-server
-# 管理员强制约束与 system 配置层（Codex 固定从 /etc/codex 读取）
-COPY fork/runtime-config/requirements.toml /etc/codex/requirements.toml
-COPY fork/runtime-config/config.toml /etc/codex/config.toml
+# 管理员强制约束与 system 配置层（Codex 固定从 /etc/codex 读取）。
+# 固定配置 root 拥有、对运行用户 10001 只读：显式 --chmod，因为构建输入沿用源检出的权限
+# （CI 检出为 umask 077 的 0600）；落成 root 0600 时 Codex 与 Core 都读不到这些文件，
+# 所有 Installation 停在初始化（a6eb8174 实测）。
+COPY --chmod=0644 fork/runtime-config/requirements.toml /etc/codex/requirements.toml
+COPY --chmod=0644 fork/runtime-config/config.toml /etc/codex/config.toml
 # 每个 Installation 的 CODEX_HOME/environments.toml 由 Core 从这里原样写入
-COPY fork/runtime-config/environments.toml /usr/share/platform/codex/environments.toml
+COPY --chmod=0644 fork/runtime-config/environments.toml /usr/share/platform/codex/environments.toml
 # CODEX_HOME 缺 environments.toml 时的回退路径同样不含 local environment
 # （codex-rs/exec-server/src/environment_provider.rs::normalize_exec_server_url）
 ENV CODEX_EXEC_SERVER_URL=none
