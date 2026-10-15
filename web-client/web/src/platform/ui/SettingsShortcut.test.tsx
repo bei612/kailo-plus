@@ -21,22 +21,6 @@ vi.mock("@tanstack/react-query", () => ({
   useMutation: () => ({ mutate: vi.fn() }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
-vi.mock("@client-kit/platform/react/context", () => ({
-  useDeviceLocale: () => "en",
-  useUiT: () => (key: string) => key,
-  useT: () => (key: string) => key,
-  useUiLocale: () => "en",
-  PlatformProvider: ({
-    children,
-    documentTheme,
-  }: {
-    children: React.ReactNode;
-    documentTheme?: string;
-  }) => {
-    void documentTheme;
-    return children;
-  },
-}));
 vi.mock("@client-kit/platform/react/protocol-document-bridge", () => ({
   ProtocolDocumentBridge: ({ bindingId }: { bindingId: string }) => (
     <div data-document-binding={bindingId} />
@@ -72,14 +56,16 @@ vi.mock("@/platform/ui/SettingsPane", () => ({
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en", t: (key: string) => key }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ isDark: true }) }));
 vi.mock("@/platform/bff-client", () => ({
-  bff: {
+  // The real PlatformProvider receives this client. Reads this test does not exercise stay
+  // pending (loading UI) instead of each shell dependency needing its own stub.
+  bff: new Proxy({
     workspaces: vi.fn(),
     session: async () => ({
       tenantPrincipalId: "human-a",
       currentWorkspaceId: "workspace-b",
       accessMode: state.accessMode,
     }),
-  },
+  } as Record<string, unknown>, { get: (known, key) => typeof key === "string" && key in known ? known[key] : () => new Promise(() => {}) }),
   // The shell provides the real host to ConversationVisibilityProvider; settings never reads it.
   conversationVisibility: { read: vi.fn(), prepare: vi.fn() },
   BffError: class extends Error {},
