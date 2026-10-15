@@ -38,10 +38,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+const selections: (string | null)[] = [];
 function Host({ rows, status, onUrl }: { rows: (Row & { read: boolean })[]; status: InboxViewStatus; onUrl: (id: string | null) => void }) {
   const [url, setUrl] = useState<string | null>(null);
-  const state = useInboxViewState({ itemId: url, setItemId: (id) => { setUrl(id); onUrl(id); } });
-  return <InboxView state={state} status={status} items={rows} selectedConversationId={rows.find((item) => item.id === state.selectedEventId)?.conversationId ?? null}
+  const [held, setHeld] = useState<string | null>(null);
+  const state = useInboxViewState({ itemId: url, setItemId: (id) => { setUrl(id); onUrl(id); }, heldItemId: held });
+  selections.push(state.selectedEventId);
+  return <><button onClick={() => setHeld(held ? null : state.selectedEventId)} type="button">hold</button><InboxView state={state} status={status} items={rows} selectedConversationId={rows.find((item) => item.id === state.selectedEventId)?.conversationId ?? null}
     matchesFilter={(item, filter) => filter === "all" || item.category === filter} isRead={(item) => item.read}
     list={{ activeDraftCount: 0, draftList: <p>drafts</p>, onMarkRead: vi.fn(), onMarkUnread: vi.fn(), onOpen: vi.fn(),
       reopenState: () => ({ pending: false, error: false, unknown: false }), sourceChannelId: () => null,
@@ -51,7 +54,7 @@ function Host({ rows, status, onUrl }: { rows: (Row & { read: boolean })[]; stat
     renderMessageDetail={({ visible, isSinglePanel, onBack }) => visible ? <section data-testid="detail">
       <span data-testid="detail-selection">{state.selectedEventId ?? "none"}</span>
       {isSinglePanel && onBack ? <button onClick={onBack} type="button">back</button> : null}
-    </section> : null} />;
+    </section> : null} /></>;
 }
 async function mount(rows: (Row & { read: boolean })[], status: InboxViewStatus = { kind: "ready" }) {
   const onUrl = vi.fn();
@@ -99,6 +102,18 @@ describe("original shared Inbox page body", () => {
     await vi.waitFor(() => expect(ui.querySelector('[data-testid="detail-selection"]')?.textContent).toBe(thread.id));
     expect(ui.querySelector(`[data-testid="home-inbox-item-${mention.id}"]`)).toBeNull();
     expect(ui.querySelector(`[data-testid="home-inbox-item-${thread.id}"]`)).not.toBeNull();
+  });
+
+  it("keeps the automatic selection while a host holds its unsent publication anchor", async () => {
+    const mention = row("1", "mention"), thread = row("2", "thread");
+    const { ui, onUrl } = await mount([mention, thread]);
+    await vi.waitFor(() => expect(ui.querySelector('[data-testid="detail-selection"]')?.textContent).toBe(mention.id));
+    selections.length = 0;
+    await click([...ui.querySelectorAll("button")].find((item) => item.textContent === "hold")!);
+    await click([...ui.querySelectorAll("button")].find((item) => item.textContent === "hold")!);
+    expect(ui.querySelector('[data-testid="detail-selection"]')?.textContent).toBe(mention.id);
+    expect(selections).not.toContain(null);
+    expect(onUrl).not.toHaveBeenCalled();
   });
 
   it("uses the URL for explicit selection and the original single-panel back path when narrow", async () => {

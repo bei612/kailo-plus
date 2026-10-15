@@ -142,8 +142,11 @@ export function useInboxViewState({ itemId, setItemId, heldItemId = null }: {
   const isMessagesMode = !isDrafts && !isReminders && selectedReminderId === null;
   // `?item=` is Messages-mode-only machinery: a draft never enters the
   // FeedItem selection model.
-  const urlSelectedItemId = isMessagesMode ? (heldItemId ?? itemId) : null;
-  const selectedEventId = urlSelectedItemId ?? autoSelectedEventId;
+  const urlSelectedItemId = isMessagesMode ? itemId : null;
+  // A held anchor overrides the visible selection but is not a user choice:
+  // it must not clear the local automatic selection that it is holding.
+  const explicitSelectedItemId = isMessagesMode ? (heldItemId ?? itemId) : null;
+  const selectedEventId = explicitSelectedItemId ?? autoSelectedEventId;
   const selectItem = React.useCallback((id: string | null) => {
     setAutoSelectedEventId(null);
     setItemId(id);
@@ -157,7 +160,7 @@ export function useInboxViewState({ itemId, setItemId, heldItemId = null }: {
     autoSelectedEventId, setAutoSelectedEventId,
     unreadBoundary, setUnreadBoundary,
     isDrafts, isReminders, isMessagesMode,
-    urlSelectedItemId, selectedEventId, selectItem, resize,
+    urlSelectedItemId, explicitSelectedItemId, selectedEventId, selectItem, resize,
   };
 }
 

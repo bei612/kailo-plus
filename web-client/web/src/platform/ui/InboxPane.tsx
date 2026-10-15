@@ -100,7 +100,7 @@ export function InboxPane({
     heldItemId: publicationAnchor?.id ?? null,
   });
   const { filter, selectedEventId } = view;
-  const effectiveSelectedItemId = view.urlSelectedItemId;
+  const effectiveSelectedItemId = view.explicitSelectedItemId;
   const [profileTarget, setProfileTarget] = useState<MessageAuthor | null>(null);
   const [profileWidth, setProfileWidth] = useState(AUXILIARY_PANEL_DEFAULT_WIDTH_PX);
   const closeAuthorScope = useCallback((workspaceId: string) => {
