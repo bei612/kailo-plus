@@ -239,33 +239,14 @@ pub(crate) async fn capture(
                 effect_index += 1;
             }
             Some("call_webhook") => {
-                // The single frozen dispatch of this run: its recorded HTTP status,
-                // or UNKNOWN when the send may have happened without a response.
-                entry["output"] = json!({"actionExecutionId":source.action_execution_id});
-                match (&source.webhook_request_id, &source.webhook_outcome) {
-                    (Some(request), Some(outcome)) => {
-                        entry["status"] = "completed".into();
-                        entry["output"]["requestId"] = request.clone().into();
-                        entry["output"]["httpStatus"] = outcome["status"].clone();
-                    }
-                    (Some(request), None) => {
-                        entry["output"]["requestId"] = request.clone().into();
-                        entry["status"] = match source.status.as_str() {
-                            "FAILED" => "failed",
-                            "DISPATCHING" => "running",
-                            _ => "unknown",
-                        }
-                        .into();
-                        if entry["status"] == "unknown" {
-                            entry["error"] = json!(contracts::ReasonCode::ExternalResultUnknown);
-                        }
-                    }
-                    (None, _) if source.timed_out_step.as_deref() == Some(id) => {
-                        entry["status"] = "failed".into();
-                        entry["error"] = json!(contracts::ReasonCode::StepTimeout);
-                    }
-                    (None, _) => entry["output"] = json!({}),
-                }
+                entry = webhook_entry(
+                    id,
+                    source.action_execution_id,
+                    source.webhook_request_id.as_deref(),
+                    source.webhook_outcome.as_ref(),
+                    &source.status,
+                    source.timed_out_step.as_deref() == Some(id),
+                );
             }
             _ => return Err("Unknown immutable step action".into()),
         }
@@ -281,6 +262,44 @@ pub(crate) async fn capture(
         trace.as_array_mut().ok_or("Invalid step projection")?,
     );
     Ok(Some(trace))
+}
+
+/// The single frozen call_webhook dispatch of this run: its recorded HTTP
+/// status, or UNKNOWN when the send may have happened without a response.
+fn webhook_entry(
+    id: &str,
+    action_execution: Uuid,
+    request: Option<&str>,
+    outcome: Option<&Value>,
+    status: &str,
+    timed_out: bool,
+) -> Value {
+    let mut entry = json!({"stepId":id,"status":"pending","output":{}});
+    match (request, outcome) {
+        (Some(request), Some(outcome)) => {
+            entry["status"] = "completed".into();
+            entry["output"] =
+                json!({"actionExecutionId":action_execution,"requestId":request,"httpStatus":outcome["status"]});
+        }
+        (Some(request), None) => {
+            entry["output"] = json!({"actionExecutionId":action_execution,"requestId":request});
+            entry["status"] = match status {
+                "FAILED" => "failed",
+                "DISPATCHING" => "running",
+                _ => "unknown",
+            }
+            .into();
+            if entry["status"] == "unknown" {
+                entry["error"] = json!(contracts::ReasonCode::ExternalResultUnknown);
+            }
+        }
+        (None, _) if timed_out => {
+            entry["status"] = "failed".into();
+            entry["error"] = json!(contracts::ReasonCode::StepTimeout);
+        }
+        (None, _) => {}
+    }
+    entry
 }
 
 fn mark_passed_zero_delays(steps: &[Value], trace: &mut [Value]) {
@@ -306,6 +325,58 @@ fn mark_passed_zero_delays(steps: &[Value], trace: &mut [Value]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn webhook_step_evidence_passes_the_task_projection_check() {
+        let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+            eprintln!("SKIP webhook trace check: no disposable migrated DATABASE_URL");
+            return;
+        };
+        let pool = sqlx::PgPool::connect(&database_url)
+            .await
+            .expect("disposable migrated database");
+        let ae = Uuid::new_v4();
+        let request = Uuid::new_v4().to_string();
+        let outcome = json!({"status":200});
+        let entries = [
+            webhook_entry("sent", ae, Some(&request), Some(&outcome), "COMPLETED", false),
+            webhook_entry("open", ae, Some(&request), None, "DISPATCHING", false),
+            webhook_entry("unclear", ae, Some(&request), None, "UNKNOWN", false),
+            webhook_entry("refused", ae, Some(&request), None, "FAILED", false),
+            webhook_entry("late", ae, None, None, "FAILED", true),
+            webhook_entry("waiting", ae, None, None, "CREATED", false),
+        ];
+        // The same typed contract boundary as capture() before the write.
+        let typed: Vec<contracts::AutomationStepTrace> = entries
+            .iter()
+            .map(|entry| serde_json::from_value(entry.clone()).expect("contract trace"))
+            .collect();
+        let trace = serde_json::to_value(typed).expect("trace json");
+        assert_eq!(trace[0]["output"]["httpStatus"], 200);
+        let valid = |trace: Value| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, bool>("select projection.valid_automation_step_trace($1)")
+                    .bind(trace)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("projection check function")
+            }
+        };
+        assert!(valid(trace.clone()).await);
+        for (key, value) in [
+            ("httpStatus", json!("200")),
+            ("httpStatus", json!(700)),
+            ("httpStatus", json!(20.5)),
+            ("requestId", json!("")),
+            ("requestBody", json!("never stored")),
+        ] {
+            let mut invalid = trace.clone();
+            invalid[0]["output"][key] = value;
+            assert!(!valid(invalid).await, "{key}");
+        }
+        pool.close().await;
+    }
 
     #[test]
     fn zero_delay_requires_later_real_observation_and_never_gets_a_fabricated_timestamp() {
