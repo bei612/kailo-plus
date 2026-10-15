@@ -805,7 +805,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:b7696827f5cd0f904a10ac483ee93d7e4882b237cca27eec4e09c4a29f322087
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:3ca36716a3e92177f0d3a3e143bcd7bacf5d17ae73b3f2fd31f1dec6eca4dbaa
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -868,7 +868,7 @@ services:
   # 只接受 Core service client 的令牌（Proxy-Authorization，失败 407），只放行公网主机名；
   # 不配 admin/storage，端口不发布到宿主，只在 automation-egress 网络。
   automation-egress:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:b7696827f5cd0f904a10ac483ee93d7e4882b237cca27eec4e09c4a29f322087
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:3ca36716a3e92177f0d3a3e143bcd7bacf5d17ae73b3f2fd31f1dec6eca4dbaa
     networks:
       automation-egress:
         ipv4_address: ${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}
