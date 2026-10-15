@@ -12,10 +12,11 @@ import { PulsePane } from "./PulsePane";
 import {ProjectsPane,useProjectDiscussInChannel} from "./ProjectsPane";
 import {initDraftStore,loadDraftEntry,saveDraftEntry,clearAllDrafts} from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import type {DiscoverableWorkspace} from "@client-kit/contracts";
-import { usePulseHost } from "@client-kit/platform/react/pulse";
-import { ForumComposer } from "../../../../../client-kit/ts/platform/src/react/pulse/host";
+// Package paths only: the installed client-kit copy and the repository path are separate
+// module instances, so a repository-path consumer never sees PulsePane's host context.
+import { ForumComposer, usePulseHost } from "@client-kit/platform/react/pulse";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
-import { ProjectRichContent } from "../../../../../client-kit/ts/platform/src/react/projects/ProjectRichContent";
+import { ProjectRichContent } from "@client-kit/platform/react/projects";
 import type {BffTransport} from "@client-kit/platform/transport";
 
 const api=vi.hoisted(()=>({profile:vi.fn(),queryPulse:vi.fn(),queryProjects:vi.fn(),discoverableWorkspaces:vi.fn(),searchMessages:vi.fn(),error:vi.fn(),composer:vi.fn()}));

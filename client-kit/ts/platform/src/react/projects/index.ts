@@ -12,6 +12,7 @@ export { EntityLinkAnchor, type EntityLinkRuntime } from "./EntityLinkAnchor";
 export { default as remarkEntityLinks } from "../messages/remarkEntityLinks";
 export { ProjectInboxDetail } from "./ProjectInboxDetail";
 export { ProjectOriginReferenceContent, type ProjectOriginReferenceProps } from "./ProjectOriginReference";
+export { ProjectRichContent } from "./ProjectRichContent";
 export { loadProjectWorkItems, projectInboxMentions, resolveProjectInboxWorkItem, type ProjectInboxWorkItem } from "./projectWorkItems";
 export {projectWorkItemTarget,resolveProjectWorkItemTarget,type ProjectWorkItemTarget} from "./projectWorkItems";
 export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedProject } from "./projectCreation";

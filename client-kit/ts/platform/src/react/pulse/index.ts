@@ -3,7 +3,7 @@ export { ProfileSummaryView } from "./ProfileSummaryView";
 export { UserProfilePanelFrame } from "./UserProfilePanelFrame";
 export { UserProfilePopoverSurface, UserProfilePopoverBody } from "./UserProfilePopover";
 export type { ProfilePopoverBodyProps } from "./UserProfilePopover";
-export { PulseHostProvider, usePulseHost } from "./host";
+export { PulseHostProvider, usePulseHost, ForumComposer } from "./host";
 export type { PulseHost, PulseEvent, PulseComposerProps } from "./host";
 export { PeopleMentionAutocomplete } from "./PeopleMentionAutocomplete";
 export type { MentionSuggestion } from "./PeopleMentionAutocomplete";

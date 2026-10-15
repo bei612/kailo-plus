@@ -500,7 +500,12 @@ it("uses the original shared virtual list for admitted Inbox rows and reaches ro
     await vi.waitFor(() => expect(list.querySelector(`[data-testid="home-inbox-item-${messages[0]!.id}"]`)).not.toBeNull());
     expect(list.querySelectorAll(rowSelector).length).toBeLessThan(messages.length);
     expect(api.write).not.toHaveBeenCalled();
-    expect(authorBatches).toHaveBeenCalledExactlyOnceWith("workspace-a",{eventIds:messages.map(message=>message.id).sort()});
+    // One admitted batch for every row, never per-row reads. The original wide Home
+    // auto-opens the first row; that re-render may re-read the same fresh (staleTime 0)
+    // batch, but a repeat never changes the scope or the admitted event set.
+    const batch=["workspace-a",{eventIds:messages.map(message=>message.id).sort()}];
+    expect(authorBatches).toHaveBeenCalled();
+    for(const call of authorBatches.mock.calls)expect(call).toEqual(batch);
   } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
 });
 
@@ -539,7 +544,8 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     expect(avatar.classList.contains("w-9")).toBe(true);
     await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(mediaPath));
     expect(host.querySelector('[data-testid="home-inbox-detail"]')).not.toBeNull();
-    await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center"}));
+    // Original useAnchoredScroll pins the selected event with its default behavior "auto".
+    await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center",behavior:"auto"}));
     expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
     expect(host.querySelector('[data-testid="home-user-profile-panel"]')).toBeNull();
     const trigger=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [role="button"][aria-label="Profile"]`)!;
