@@ -45,17 +45,21 @@ async function readMemberKeyProfile(client: ReturnType<typeof useBffClient>, tar
   return profile;
 }
 
-/** The member's published profile: the first key (target key first) whose kind:0 exists; with
- * none, the target key's empty profile. Every key read carries its own membership proof. */
+type MemberKeyProfile = Awaited<ReturnType<typeof readMemberKeyProfile>>;
+const publishedProfile = (profile: MemberKeyProfile) => Boolean(profile.eventId || profile.displayName?.trim()
+  || profile.avatarUrl || profile.nip05Handle?.trim() || profile.about?.trim());
+
+/** The member's published profile: the target key when it has one (a single read, as the
+ * original row), else the first other directory key that does, each read with its own
+ * membership proof. An unreadable other key is skipped; the target key's empty profile stays. */
 async function readMemberProfile(client: ReturnType<typeof useBffClient>, target: MemberTarget) {
-  const keys=[target.pubkey,...(target.alternatePubkeys??[]).filter(key=>key!==target.pubkey)];
-  let first: Awaited<ReturnType<typeof readMemberKeyProfile>> | undefined;
-  for(const key of keys){
-    const profile=await readMemberKeyProfile(client,target,key);
-    if(profile.eventId)return profile;
-    first??=profile;
+  const own=await readMemberKeyProfile(client,target,target.pubkey);
+  if(publishedProfile(own))return own;
+  for(const key of (target.alternatePubkeys??[]).filter(key=>key!==target.pubkey)){
+    const profile=await readMemberKeyProfile(client,target,key).catch(()=>null);
+    if(profile&&publishedProfile(profile))return profile;
   }
-  return first!;
+  return own;
 }
 
 /** Original resolveProfileDisplayName order: published name, then the directory label (the
