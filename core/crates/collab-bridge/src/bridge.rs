@@ -702,7 +702,22 @@ impl IdentityClient {
         latest_comment: Option<&Event>,
         media_tags: &[Vec<String>],
     ) -> Result<Event, OperatorError> {
-        let builder = if crate::projects::publication_kind(request)? == 1 {
+        let kind = crate::projects::publication_kind(request)?;
+        let builder = if crate::projects::PULL_REQUEST_STATUS_KINDS.contains(&kind) {
+            // `latest_comment` carries the review's newest trusted lifecycle
+            // event here; it is ordering evidence, never a signing authority.
+            if channel_id.is_some() || !media_tags.is_empty() {
+                return Err(OperatorError::Sign(
+                    "review status fields are not supported".into(),
+                ));
+            }
+            crate::projects::status_publication_builder(
+                request,
+                target.ok_or_else(|| OperatorError::Sign("review status target missing".into()))?,
+                latest_comment,
+                &self.pubkey_hex(),
+            )?
+        } else if kind == 1 {
             if channel_id.is_some() {
                 return Err(OperatorError::Sign(
                     "comment channel is not supported".into(),

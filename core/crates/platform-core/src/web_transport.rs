@@ -739,7 +739,7 @@ pub(crate) async fn publish_project(
     let target = match crate::projects::publication_kind(&request) {
         // NIP-34 issues, like deletion, are Community-global. A repository's
         // buzz-channel metadata must not silently become a Workspace grant.
-        Ok(1 | 5 | 1621) => MessageTarget::Pulse(ctx.tenant_id),
+        Ok(1 | 5 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
         Ok(_) => match request
             .workspace_id
             .as_deref()
@@ -1917,7 +1917,7 @@ async fn publish(
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 if let Publication::Project(request) = &publication {
-                    if matches!(requested_kind, 1 | 1621) {
+                    if matches!(requested_kind, 1 | 1621 | 1630 | 1632 | 1633) {
                         if let Err(response) = crate::projects::confirm_accepted_issue_publication(
                             &state,
                             &ctx,
@@ -2103,7 +2103,39 @@ async fn publish(
         None
     };
     let latest_project_comment = if let Publication::Project(request) = &publication {
-        if requested_kind == 1
+        if collab_bridge::projects::is_pull_request_status(request) {
+            let Some(pull_request) = project_target.as_ref() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            // Original allowedActorsForRoot: only the review author or the
+            // repository owner changes its lifecycle. Others are refused here,
+            // and Relay readers ignore any such event regardless.
+            match collab_bridge::projects::pull_request_status_actors(pull_request) {
+                Ok((owner, author))
+                    if owner == keys.public_key().to_hex()
+                        || author == keys.public_key().to_hex() => {}
+                Ok(_) => {
+                    return error_body(
+                        StatusCode::FORBIDDEN,
+                        ErrorClass::Denied,
+                        ReasonCode::PermissionDenied,
+                        None,
+                    )
+                }
+                Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+            }
+            match crate::projects::latest_pull_request_status(
+                &state,
+                &client,
+                pull_request,
+                &community_host,
+            )
+            .await
+            {
+                Ok(latest) => latest,
+                Err(response) => return response,
+            }
+        } else if requested_kind == 1
             && project_target
                 .as_ref()
                 .is_some_and(|target| target.kind.as_u16() == 1621)
@@ -2134,7 +2166,17 @@ async fn publish(
         None
     };
     if let Publication::Project(request) = &publication {
-        let builder = if requested_kind == 1 {
+        let builder = if collab_bridge::projects::is_pull_request_status(request) {
+            match project_target.as_ref() {
+                Some(pull_request) => collab_bridge::projects::status_publication_builder(
+                    request,
+                    pull_request,
+                    latest_project_comment.as_ref(),
+                    &keys.public_key().to_hex(),
+                ),
+                None => return StatusCode::BAD_REQUEST.into_response(),
+            }
+        } else if requested_kind == 1 {
             collab_bridge::projects::comment_publication_builder(
                 request,
                 project_target.as_ref().expect("comment issue checked"),

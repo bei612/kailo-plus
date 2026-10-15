@@ -87,9 +87,12 @@ pub(crate) async fn publication_target(
     if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }
+    let status = collab_bridge::projects::PULL_REQUEST_STATUS_KINDS.contains(&kind);
     let target_kinds = if kind == 1 {
         vec![collab_bridge::projects::comment_target_kind(request)
             .map_err(|_| StatusCode::BAD_REQUEST.into_response())?]
+    } else if status {
+        vec![1618]
     } else if kind == 1621 {
         vec![30617]
     } else {
@@ -110,7 +113,7 @@ pub(crate) async fn publication_target(
     {
         return Err(StatusCode::BAD_GATEWAY.into_response());
     }
-    if kind == 1 {
+    if kind == 1 || status {
         let repository = collab_bridge::projects::comment_repository(event)
             .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
         let mut parts = repository.splitn(3, ':');
@@ -196,6 +199,67 @@ pub(crate) async fn latest_comment(
             .iter()
             .find(|event| collab_bridge::projects::comment_activity_matches(issue, event, &author))
         {
+            return Ok(Some(event.clone()));
+        }
+        if events.len() < cap {
+            return Ok(None);
+        }
+        let last = events
+            .last()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        cursor = Some((last.created_at.as_secs(), last.id.to_hex()));
+    }
+}
+
+/// Newest trusted lifecycle event of one review (projectPullRequests.mjs::
+/// latestStatusForPullRequest). Only the review author and repository owner are
+/// trusted, so SQL-pushed authors/kinds bound the pages; the root `e` tag is
+/// matched locally because Relay applies tag filters after its SQL limit.
+pub(crate) async fn latest_pull_request_status(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    pull_request: &nostr::Event,
+    community_host: &str,
+) -> Result<Option<nostr::Event>, Response> {
+    let (owner, author) = collab_bridge::projects::pull_request_status_actors(pull_request)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let cap = community_limits(state, community_host)
+        .await
+        .map_err(IntoResponse::into_response)?
+        .max_limit;
+    let cap = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let kinds = [1630, 1631, 1632, 1633];
+    let mut authors = vec![owner.clone()];
+    if author != owner {
+        authors.push(author.clone());
+    }
+    let mut cursor: Option<(u64, String)> = None;
+    loop {
+        let mut filter = json!({"kinds":kinds,"authors":authors,"limit":cap});
+        if let Some((until, before_id)) = &cursor {
+            filter["until"] = json!(until);
+            filter["before_id"] = json!(before_id);
+        }
+        let rows = client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        validate_project_page(&events, &kinds, None, cap, cursor.as_ref())?;
+        if events
+            .iter()
+            .any(|event| !authors.contains(&event.pubkey.to_hex()))
+        {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        // Pages are (created_at DESC, id ASC): the first trusted match is newest.
+        if let Some(event) = events.iter().find(|event| {
+            collab_bridge::projects::pull_request_status_trusted(pull_request, event)
+        }) {
             return Ok(Some(event.clone()));
         }
         if events.len() < cap {
@@ -412,7 +476,23 @@ pub(crate) async fn confirm_accepted_issue_publication(
     if event.id.to_hex() != event_id || event.pubkey != keys.public_key() {
         return Err(unknown());
     }
-    let matches = if kind == 1 {
+    let matches = if collab_bridge::projects::PULL_REQUEST_STATUS_KINDS.contains(&kind) {
+        // Compare with the immutable review named by the retained request.
+        let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;
+        let page = client
+            .query(
+                &state.http,
+                &[json!({"ids":[target_id],"kinds":[1618],"limit":1})],
+            )
+            .await
+            .map_err(|_| unknown())?;
+        let reviews: Vec<nostr::Event> = serde_json::from_value(page).map_err(|_| unknown())?;
+        let [review] = reviews.as_slice() else {
+            return Err(unknown());
+        };
+        collab_bridge::projects::status_publication_matches(request, review, event)
+            .map_err(|_| unknown())?
+    } else if kind == 1 {
         // Retained receipt comparison needs the immutable issue, not today's
         // replaceable repository head or a freshly chosen comment timestamp.
         let target_id = request.target_event_id.as_deref().ok_or_else(unknown)?;

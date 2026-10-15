@@ -32,6 +32,139 @@ pub fn is_assignment(request: &ProjectsPublishRequest) -> bool {
     is_self_assignment(request) || is_other_assignment(request)
 }
 
+/// Fixed pullRequestReviews.ts::updateProjectPullRequestStatus lifecycle kinds.
+/// Merged (1631) is reached through git, never through this UI operation.
+pub const PULL_REQUEST_STATUS_KINDS: [u16; 3] = [1630, 1632, 1633];
+const PULL_REQUEST_STATUS_HISTORY_KINDS: [u16; 4] = [1630, 1631, 1632, 1633];
+
+pub fn is_pull_request_status(request: &ProjectsPublishRequest) -> bool {
+    serde_json::to_value(&request.operation)
+        .is_ok_and(|value| value.as_str() == Some("SET_PULL_REQUEST_STATUS"))
+}
+
+fn pull_request_status_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
+    let status = serde_json::to_value(&request.pull_request_status)
+        .map_err(|_| invalid("invalid review status"))?;
+    match status.as_str() {
+        Some("open") => Ok(1630),
+        Some("draft") => Ok(1633),
+        Some("closed") => Ok(1632),
+        _ => Err(invalid("invalid review status")),
+    }
+}
+
+/// Original projectIssues.mjs::allowedActorsForRoot: the review author and the
+/// owner of the repository its `a` tag names. Nobody else changes its lifecycle.
+pub fn pull_request_status_actors(
+    pull_request: &Event,
+) -> Result<(String, String), OperatorError> {
+    if pull_request.kind.as_u16() != 1618 {
+        return Err(invalid("review status target is not a review"));
+    }
+    let repository = comment_repository(pull_request)?;
+    let owner = repository.split(':').nth(1).unwrap_or_default().to_owned();
+    Ok((owner, pull_request.pubkey.to_hex()))
+}
+
+/// Original projectPullRequests.mjs::latestStatusForPullRequest trust rule.
+pub fn pull_request_status_trusted(pull_request: &Event, event: &Event) -> bool {
+    let Ok((owner, author)) = pull_request_status_actors(pull_request) else {
+        return false;
+    };
+    let signer = event.pubkey.to_hex();
+    PULL_REQUEST_STATUS_HISTORY_KINDS.contains(&event.kind.as_u16())
+        && event.verify().is_ok()
+        && (signer == owner || signer == author)
+        && event.tags.iter().any(|tag| {
+            let fields = tag.as_slice();
+            fields.first().is_some_and(|name| name == "e" || name == "E")
+                && fields.get(1) == Some(&pull_request.id.to_hex())
+        })
+}
+
+/// Same shape as `buzz pr status` / the original desktop write: root `e`, the
+/// repository `a`, then `p` for the repository owner and the review author.
+fn pull_request_status_tags(pull_request: &Event) -> Result<Vec<Tag>, OperatorError> {
+    let repository = comment_repository(pull_request)?;
+    let (owner, author) = pull_request_status_actors(pull_request)?;
+    let mut recipients = vec![owner.to_lowercase()];
+    if !recipients.contains(&author.to_lowercase()) {
+        recipients.push(author.to_lowercase());
+    }
+    let mut tags = vec![
+        vec![
+            "e".to_owned(),
+            pull_request.id.to_hex(),
+            String::new(),
+            "root".to_owned(),
+        ],
+        vec!["a".to_owned(), repository.to_owned()],
+    ];
+    tags.extend(recipients.into_iter().map(|key| vec!["p".to_owned(), key]));
+    tags.into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid review status tags"))
+}
+
+/// Fixed pullRequestReviews.ts::updateProjectPullRequestStatus. `latest` is the
+/// review's newest trusted lifecycle event, which keeps whole-second writes
+/// ordered (projectPullRequests.mjs::nextProjectPullRequestStatusCreatedAt).
+pub fn status_publication_builder(
+    request: &ProjectsPublishRequest,
+    pull_request: &Event,
+    latest: Option<&Event>,
+    signer: &str,
+) -> Result<EventBuilder, OperatorError> {
+    let kind = publication_kind(request)?;
+    if !PULL_REQUEST_STATUS_KINDS.contains(&kind)
+        || request.target_event_id.as_deref() != Some(pull_request.id.to_hex().as_str())
+        || pull_request.verify().is_err()
+        || nostr::PublicKey::from_hex(signer).map_or(true, |key| key.to_hex() != signer)
+    {
+        return Err(invalid("invalid review status target"));
+    }
+    let (owner, author) = pull_request_status_actors(pull_request)?;
+    if signer != owner && signer != author {
+        return Err(invalid(
+            "review status requires the review author or repository owner",
+        ));
+    }
+    let created_at = match latest {
+        Some(event) if pull_request_status_trusted(pull_request, event) => Timestamp::from_secs(
+            event
+                .created_at
+                .as_secs()
+                .checked_add(1)
+                .ok_or_else(|| invalid("review status timestamp overflow"))?,
+        )
+        .max(Timestamp::now()),
+        Some(_) => return Err(invalid("invalid previous review status evidence")),
+        None => Timestamp::now(),
+    };
+    Ok(EventBuilder::new(nostr::Kind::from(kind), "")
+        .tags(pull_request_status_tags(pull_request)?)
+        .allow_self_tagging()
+        .custom_created_at(created_at))
+}
+
+/// Compare an accepted lifecycle receipt with the immutable review it targets.
+pub fn status_publication_matches(
+    request: &ProjectsPublishRequest,
+    pull_request: &Event,
+    event: &Event,
+) -> Result<bool, OperatorError> {
+    let kind = publication_kind(request)?;
+    if !PULL_REQUEST_STATUS_KINDS.contains(&kind) || event.verify().is_err() {
+        return Err(invalid("invalid review status evidence"));
+    }
+    let tags = pull_request_status_tags(pull_request)?;
+    Ok(event.kind.as_u16() == kind
+        && event.content.is_empty()
+        && request.target_event_id.as_deref() == Some(pull_request.id.to_hex().as_str())
+        && event.tags.iter().eq(tags.iter()))
+}
+
 /// Fixed issueAssignments.ts uses a display label only. Self p tags come from
 /// the authenticated signer; other p tags identify the admitted HUMAN recipient,
 /// never a client-selected signing identity.
@@ -192,7 +325,10 @@ pub fn publication_observed(
 ) -> Result<bool, OperatorError> {
     let unverified =
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
-    if !matches!(expected_kind, 1 | 5 | 1621 | 30617 | 30621) {
+    if !matches!(
+        expected_kind,
+        1 | 5 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621
+    ) {
         return Err(unverified());
     }
     let events: Vec<Event> = serde_json::from_value(page).map_err(|_| unverified())?;
@@ -231,6 +367,9 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     }
     if !is_other_assignment(request) && request.assignee_pubkey.is_some() {
         return Err(invalid("other assignee on another project operation"));
+    }
+    if !is_pull_request_status(request) && request.pull_request_status.is_some() {
+        return Err(invalid("review status on another project operation"));
     }
     if operation.as_str() != Some("CREATE_ISSUE")
         && (request.title.is_some() || request.category.is_some())
@@ -274,6 +413,20 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
                 return Err(invalid("invalid self assignment"));
             }
             Ok(1)
+        }
+        Some("SET_PULL_REQUEST_STATUS") => {
+            if !request
+                .target_event_id
+                .as_deref()
+                .is_some_and(canonical_event_id)
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+            {
+                return Err(invalid("invalid review status"));
+            }
+            pull_request_status_kind(request)
         }
         Some("CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT") => {
             if request
@@ -413,6 +566,9 @@ pub fn publication_builder(
     let kind = publication_kind(request)?;
     if kind == 1 {
         return Err(invalid("issue comment requires signed activity evidence"));
+    }
+    if PULL_REQUEST_STATUS_KINDS.contains(&kind) {
+        return Err(invalid("review status requires its review evidence"));
     }
     if kind == 1621 {
         let event = target.ok_or_else(|| invalid("issue repository missing"))?;
@@ -799,6 +955,132 @@ pub fn issue_publication_matches(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn review_status_follows_original_actors_tags_kinds_and_ordering() {
+        use super::*;
+        let author = nostr::Keys::generate();
+        let repo_owner = nostr::Keys::generate();
+        let stranger = nostr::Keys::generate();
+        let repository = format!("30617:{}:repo", repo_owner.public_key());
+        let review = EventBuilder::new(nostr::Kind::from(1618), "review")
+            .tags([Tag::parse(["a", &repository]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        let request = |status: &str| -> ProjectsPublishRequest {
+            serde_json::from_value(serde_json::json!({
+                "operation":"SET_PULL_REQUEST_STATUS", "targetEventId":review.id.to_hex(),
+                "pullRequestStatus":status
+            }))
+            .unwrap()
+        };
+        for (status, kind) in [("open", 1630), ("draft", 1633), ("closed", 1632)] {
+            assert_eq!(publication_kind(&request(status)).unwrap(), kind);
+            assert!(publication_builder(&request(status), Some(&review), None, "x").is_err());
+            for signer in [&author, &repo_owner] {
+                let event = status_publication_builder(
+                    &request(status),
+                    &review,
+                    None,
+                    &signer.public_key().to_hex(),
+                )
+                .unwrap()
+                .sign_with_keys(signer)
+                .unwrap();
+                assert_eq!(event.kind.as_u16(), kind);
+                assert!(event.content.is_empty());
+                assert_eq!(
+                    event
+                        .tags
+                        .iter()
+                        .map(|tag| tag.as_slice().to_vec())
+                        .collect::<Vec<_>>(),
+                    vec![
+                        vec![
+                            "e".to_owned(),
+                            review.id.to_hex(),
+                            String::new(),
+                            "root".into()
+                        ],
+                        vec!["a".into(), repository.clone()],
+                        vec!["p".into(), repo_owner.public_key().to_hex()],
+                        vec!["p".into(), author.public_key().to_hex()],
+                    ]
+                );
+                assert!(status_publication_matches(&request(status), &review, &event).unwrap());
+                assert!(pull_request_status_trusted(&review, &event));
+            }
+        }
+        // allowedActorsForRoot: nobody else may sign the lifecycle.
+        assert!(status_publication_builder(
+            &request("closed"),
+            &review,
+            None,
+            &stranger.public_key().to_hex()
+        )
+        .is_err());
+        // The newest trusted status orders a same-second write after it.
+        let future = Timestamp::now().as_secs() + 120;
+        let latest = EventBuilder::new(nostr::Kind::from(1632), "")
+            .tags([Tag::parse(["e", &review.id.to_hex(), "", "root"]).unwrap()])
+            .custom_created_at(Timestamp::from_secs(future))
+            .sign_with_keys(&repo_owner)
+            .unwrap();
+        let reopened = status_publication_builder(
+            &request("open"),
+            &review,
+            Some(&latest),
+            &author.public_key().to_hex(),
+        )
+        .unwrap()
+        .sign_with_keys(&author)
+        .unwrap();
+        assert_eq!(reopened.created_at.as_secs(), future + 1);
+        let untrusted = EventBuilder::new(nostr::Kind::from(1632), "")
+            .tags([Tag::parse(["e", &review.id.to_hex(), "", "root"]).unwrap()])
+            .sign_with_keys(&stranger)
+            .unwrap();
+        assert!(!pull_request_status_trusted(&review, &untrusted));
+        assert!(status_publication_builder(
+            &request("open"),
+            &review,
+            Some(&untrusted),
+            &author.public_key().to_hex()
+        )
+        .is_err());
+        // A lifecycle event for another review never matches this request.
+        let other = EventBuilder::new(nostr::Kind::from(1618), "other")
+            .tags([Tag::parse(["a", &repository]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        let foreign = status_publication_builder(
+            &serde_json::from_value(serde_json::json!({
+                "operation":"SET_PULL_REQUEST_STATUS", "targetEventId":other.id.to_hex(),
+                "pullRequestStatus":"closed"
+            }))
+            .unwrap(),
+            &other,
+            None,
+            &author.public_key().to_hex(),
+        )
+        .unwrap()
+        .sign_with_keys(&author)
+        .unwrap();
+        assert!(!status_publication_matches(&request("closed"), &review, &foreign).unwrap());
+        // Status fields never ride on another operation, and tasks are not reviews.
+        let mut comment: ProjectsPublishRequest = serde_json::from_value(serde_json::json!({
+            "operation":"CREATE_PULL_REQUEST_COMMENT", "targetEventId":review.id.to_hex(),
+            "body":"hi"
+        }))
+        .unwrap();
+        comment.pull_request_status = request("open").pull_request_status;
+        assert!(publication_kind(&comment).is_err());
+        let task = EventBuilder::new(nostr::Kind::from(1621), "task")
+            .tags([Tag::parse(["a", &repository]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        assert!(pull_request_status_actors(&task).is_err());
+    }
+
     #[test]
     fn repository_owner_issue_keeps_original_owner_recipient_and_matches() {
         use super::*;

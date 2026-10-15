@@ -409,7 +409,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .await
             .map_err(|_| "EVIDENCE_UNREADABLE")?
             .ok_or("EVIDENCE_MISSING")?;
-            if (community_scope && !matches!(kind, 1 | 5 | 1621))
+            if (community_scope && !matches!(kind, 1 | 5 | 1621 | 1630 | 1632 | 1633))
                 || (project_home_scope && !matches!(kind, 30617 | 30621))
             {
                 return Err("EVIDENCE_MISSING");
