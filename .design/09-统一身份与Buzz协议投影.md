@@ -154,6 +154,10 @@ Browser 不直连 Relay 也不持有 signer。这一边界同时覆盖消息、p
 
 Web 摄像头许可仅为 `camera=(self)`，且须由用户在头像控件中发起并取得浏览器授权；不申请麦克风。拒绝授权、无设备或非安全上下文时呈现明确不可用原因，不宣称采集成功；退出采集、切换身份或关闭页面时释放媒体轨道，不后台持续采集。该许可是同源宿主能力，不是同源模块之间的权限隔离；跨源组件页面不得取得摄像头委派。DD-60 的“不因 release 放宽”仍成立：组件登记、Tenant 与 binding 不能改变这些宿主策略，外部页面和文档编辑器仍按 `07` 的隔离边界承载。Mobile 不因此成为组件宿主。
 
+### Agent 公开资料
+
+Agent 在频道、线程与工作流结果中的作者名和头像来自其自身身份签名的 kind:0，与 HUMAN 一样只由 Relay 呈现。Core 按 DD-117 以 Installation 的 AGENT `SERVER` 身份，把 pinned AgentVersion 的 `personaIdentity` 投影为 `display_name`、`picture`、`about`，在创建与升级激活后发布、在对账中补发，结果不明按 event ID 对账；Installation 或 AGENT binding 离开 ACTIVE 后保留最后一份资料、不再更新。提及候选使用的安装目录展示名与该资料同源于同一 Version，但不替代 Relay 资料。上游托管 Agent 由 Desktop 以 Agent 密钥发布同一形态的资料（SF-BUZ-48）。
+
 ### BFF Relay 连接模型
 
 - 每个 TenantBuzzBinding 在 `ACTIVE` 前抓取 NIP-11，按 `03` 的 digest 规则保存 snapshot digest。BFF 使用该快照与自身更严格配置的交集，不把 1024 subscription、10 filters/REQ、1000 limit、512 KiB frame 当作可超越的建议值；Workspace scope 的订阅必须合并在单 REQ 不超过 10 个 filter，分页 limit 不超过 1000（SF-BUZ-28）。

@@ -164,6 +164,7 @@ select exact PUBLISHED version + Workspace
 → build PENDING projection
 → reconcile Gateway/skill/runtime
 → ACTIVE
+→ publish AGENT kind:0 from pinned Version personaIdentity（DD-117）
 ```
 
 SpiceDB workspace relationship 投影及 fresh `discover` Check、Buzz Channel roster、active ChannelAgentBinding、AgentMemoryBinding 与 runtime generation 任一未闭合时，Installation 保持 `PROVISIONING/ERROR`，菜单可显示管理错误，但 Channel 不发现、不触发。AgentPrincipal 不建立 HUMAN WorkspaceMembership；Installation 是其 Workspace 归属事实（DD-50/66）。
@@ -172,7 +173,7 @@ ToolBinding 与业务能力服务都不是 Installation `ACTIVE` 的前提：零
 
 ### 升级与回滚
 
-升级或回滚都固定目标 PUBLISHED version，生成新 projection generation。新 generation 完成对账后，Installation pointer 原子切换；之后的新触发只使用新 generation。已开始 Invocation 固定旧 version/generation 并自然结束，符合 Buzz 只在 Agent 空闲后应用漂移配置的安全方向（SF-BUZ-14）；`DRAINING` 只用于 AgentInstallation。旧 AgentRuntimeProjection 保持不再被选择的 `ACTIVE` 历史 generation，待其 Invocation 结束后转 `REVOKED`。
+升级或回滚都固定目标 PUBLISHED version，生成新 projection generation。新 generation 完成对账后，Installation pointer 原子切换；之后的新触发只使用新 generation。已开始 Invocation 固定旧 version/generation 并自然结束，符合 Buzz 只在 Agent 空闲后应用漂移配置的安全方向（SF-BUZ-14）；`DRAINING` 只用于 AgentInstallation。旧 AgentRuntimeProjection 保持不再被选择的 `ACTIVE` 历史 generation，待其 Invocation 结束后转 `REVOKED`。新 generation 激活后按 DD-117 以新 Version 的 `personaIdentity` 重新发布 Agent 资料；激活前保持旧资料。
 
 权限撤销、Delegation 到期、Quota 拒绝或工具 route 撤销不是“等 turn 结束的配置升级”。这些事件按 `10` fresh check：立即禁止尚未发生的外部副作用、停止新触发并关闭已知连接；已发生的 usage/audit 保留。
 
