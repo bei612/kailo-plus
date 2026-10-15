@@ -107,7 +107,10 @@ it("does not gate the project directory on unrelated own-profile or composer peo
   await vi.waitFor(()=>expect(api.queryProjects).toHaveBeenCalled());
   // An empty original directory renders its page-level empty state instead of the section screen.
   expect(host.querySelector('[data-testid="projects-overview-layout"]')!==null||host.textContent?.includes("No projects yet")).toBe(true);
-  expect(api.profile).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+  // The directory's own create-capability read (role-workspaces) may already have started
+  // under suite load; no own-profile or composer people read may.
+  expect(api.profile).not.toHaveBeenCalled();
+  expect(send.mock.calls.filter(([request])=>(request as {path?:string}).path!=="/api/v1/role-workspaces")).toEqual([]);
 });
 it("passes only a freshly admitted matching channel descriptor to the Project home host and unloads on live invalidation",async()=>{
   const channelId="12345678-1234-4234-8234-123456789001",workspaceId="22345678-1234-4234-8234-123456789001";
