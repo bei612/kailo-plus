@@ -24,6 +24,7 @@ use crate::{
 pub(crate) const WORKFLOW_TYPE: &str = "AgentTaskWorkflow";
 mod call_webhook;
 mod post_message;
+pub(crate) mod stranded;
 #[cfg(test)]
 pub(crate) mod receipt_tests;
 

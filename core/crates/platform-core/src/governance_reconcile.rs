@@ -177,6 +177,11 @@ pub fn spawn(
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "ProtocolSession 原生 token 生命周期未收敛");
             }
+            // AgentTaskWorkflow 失败关闭后不会再有 Activity 推进 Invocation；
+            // 按证据收尾为 FAILED/UNKNOWN，不重发任何效果。
+            if let Err(error) = crate::agent_task::stranded::reconcile(&state, cfg.batch).await {
+                tracing::warn!(error = %error, "已关闭 AgentTaskWorkflow 的 Invocation 收尾本轮未完成");
+            }
             if let Err(error) = crate::agent_invocation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "普通 Agent 持久触发对账未完成；原 checkpoint 保留");
