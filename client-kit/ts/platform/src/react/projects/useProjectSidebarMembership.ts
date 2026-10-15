@@ -3,6 +3,21 @@ import type {ProjectPreferenceRequest} from "@client-kit/contracts";
 import {checkedUserState,type CollaborationUserState} from "../../inbox";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import {useBffClient,useUiT} from "../context";
+import type {BffClient} from "../../client";
+
+const PROJECT_PREFERENCES_CHANGED="kailo:project-preferences-changed";
+
+/** Original useCreateProjectMutation.onSuccess::addProjectToSidebar, on the
+ * governed preference: one fresh read, then a single CAS write. It never turns
+ * a confirmed creation into a failure; other sidebar readers re-read. */
+export async function addCreatedProjectToSidebar(client:Pick<BffClient,"collaborationUserState"|"setProjectPreference">,projectAddress:string){
+  const current=checkedUserState(await client.collaborationUserState());
+  if(current.projectPreferences===undefined)throw new TransportError("Project preferences unavailable");
+  if(current.projectPreferences[projectAddress]?.selected)return;
+  const result=await client.setProjectPreference({projectAddress,selected:true,version:current.version});
+  if(result.version!==current.version+1)throw new TransportError("Invalid user-state CAS response");
+  window.dispatchEvent(new Event(PROJECT_PREFERENCES_CHANGED));
+}
 
 /** Original Added/remove semantics. Core CAS is the only preference authority. */
 export function useProjectSidebarMembership(scopeKey:string){
@@ -29,7 +44,8 @@ export function useProjectSidebarMembership(scopeKey:string){
     scope.active=true;void read();
     const focus=()=>{if(!scope.busy)void read();};
     window.addEventListener("focus",focus);
-    return()=>{scope.active=false;scope.reading++;scope.current=null;window.removeEventListener("focus",focus);};
+    window.addEventListener(PROJECT_PREFERENCES_CHANGED,focus);
+    return()=>{scope.active=false;scope.reading++;scope.current=null;window.removeEventListener("focus",focus);window.removeEventListener(PROJECT_PREFERENCES_CHANGED,focus);};
   },[scope,read]);
   const write=async(rechecking:boolean)=>{
     const request=scope.intent;

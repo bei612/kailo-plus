@@ -714,3 +714,35 @@ exit 0，三个本批 Rust 文件 `rustfmt --edition 2021 --check` 亦 exit 0。
 | 本地仓库动作（终端、打开目录、clone/push/pull/merge、分支） | 只存在于 Desktop 原生命令。 | Web 原样不提供；Desktop 随上行 Git 恢复一并缺失。 |
 
 本节只记录在线实拍与上游/设计分界；未新增代码，不把这些截图当 Git 内容或 Review 状态验收。
+
+## 2026-10-15 Review 生命周期（open / draft / closed）受控发布链
+
+依据固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/projects/pullRequestReviews.ts::updateProjectPullRequestStatus`（只发
+open 1630 / draft 1633 / closed 1632；merged 1631 走 git，不在界面发布），
+`projectIssues.mjs::allowedActorsForRoot`（只信 Review 作者与仓库 owner），
+`projectPullRequests.mjs::nextProjectPullRequestStatusCreatedAt`（在最新受信状态之后排序），
+`ui/PullRequestReviewCard.tsx`（可以审阅 / 重新打开审阅 / 更多：转为草稿、关闭审阅）。
+
+- 契约：`ProjectsPublishRequest` 新增 `SET_PULL_REQUEST_STATUS` 与 `pullRequestStatus`
+  （`open|draft|closed`），其余操作一律不得携带该字段；样例覆盖三种状态。
+- Bridge：`status_publication_builder` 只接受作者或仓库 owner 签名，标签为原 `e root`、`a`、
+  owner 与作者 `p`；时间戳排在 Core 读到的最新受信状态之后；`status_publication_matches`
+  按不可变 Review 核对回执。单测 `review_status_follows_original_actors_tags_kinds_and_ordering`。
+- BFF：读取不可变 1618 与其仓库头；非作者/owner 返回 403；最新受信状态按作者与 kind 下推
+  分页后本地匹配根标签；这些 kind 与任务同为 Community 全局；ACCEPTED 重放按 Review 回执核对，
+  UNKNOWN 对账 `publication_observed` 接受 1630/1632/1633。
+- Native：Desktop 以本人 CLIENT 签名走同一校验与意图恢复（`publishProjectIntent` 观察 kind 增加
+  1630/1632/1633）。
+- 共享 UI：`PullRequestReviewCard` 仅对作者/owner 显示原生命周期操作；结果不明时保留同一意图，
+  只允许“重新核对状态变更”原样重发。
+- 部署前置：Relay `BUZZ_MEMBER_EVENT_KINDS` 需准入 1630、1632、1633（主线程在发布时加入）。
+- 仍未恢复：Approve / Request changes 审阅决定、Merge（git）、managed-agent owner 代签。
+
+### 同批核对：Projects 复验三处观察
+
+| 观察 | 原版事实 | 结论 |
+| --- | --- | --- |
+| 任务右栏“评论 2”把分配记录计入 | `projectIssues.mjs::commentsForIssue` 把该任务的全部 kind:1（含 `t=assignment`）作为评论，`ProjectWorkItemContextDetails` 显示 `issue.comments.length`；注释写明分配记录作为普通评论可读 | 与原版一致，原样保留 |
+| 分配记录文案为英文 “Assigned this task to npub…” | `issueAssignments.ts` 固定英文正文；`IssueAssigneesRow.labelForPubkey` 无显示名时回退 `truncateNpub`；时间线按普通评论渲染 | 与原版一致，原样保留（账号无显示名所致） |
+| 侧栏“项目”为空，而本人刚创建了项目 | `useCreateProjectMutation.onSuccess` 创建后 `addProjectToSidebar` | 缺失需恢复，已修：创建确认后经同一 Core CAS 加入侧栏，并通知已挂载的侧栏重读；写入失败不影响已确认的创建 |

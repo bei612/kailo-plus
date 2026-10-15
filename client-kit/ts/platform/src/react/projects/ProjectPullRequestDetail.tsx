@@ -21,10 +21,12 @@ import { pullRequestShareLink } from "./projectShareLinks";
 import {useQueryClient} from "@tanstack/react-query";
 import {toast} from "sonner";
 import type {WebMessageAttachment} from "@client-kit/contracts";
-import {ForumComposer} from "../pulse/host";
+import {ForumComposer,usePulseHost} from "../pulse/host";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import type {ProjectsHost} from "./projectEnumeration";
 import {publishProjectPullRequestComment} from "./issueMutations";
+import {publishProjectPullRequestStatus,readProjectPullRequestStatusIntent,type ProjectPullRequestLifecycle} from "./pullRequestStatus";
+import {PullRequestReviewCard} from "./PullRequestReviewCard";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
 import {useUiT} from "../context";
@@ -226,6 +228,10 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
  const [isSending,setIsSending]=React.useState(false);
  const [readUnavailable,setReadUnavailable]=React.useState(false);
  const sending=React.useRef(false);
+ const viewer=usePulseHost().pubkey;
+ let statusIntent:ReturnType<typeof readProjectPullRequestStatusIntent>=null;
+ try{if(publication&&viewer)statusIntent=readProjectPullRequestStatusIntent(publication.host,publication.projectId,project,pullRequest,viewer);}
+ catch{/* The click consumer reports unknown; a corrupt slot is never removed. */}
  const lifetime=React.useMemo(()=>({controller:new AbortController()}),[publication?.host]);
  React.useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
  const members=React.useMemo(()=>[...new Set([project.owner,pullRequest.author,...project.contributors,...pullRequest.recipients])].map(pubkey=>{
@@ -253,6 +259,30 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
        else toast.error(t("video.postFailed"));
      }
      throw error;
+   }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
+ }
+ async function handleStatusChange(status:ProjectPullRequestLifecycle){
+   if(!publication||!viewer||sending.current)return;
+   sending.current=true;setIsSending(true);
+   const requested=statusIntent?.status??status;
+   try{
+     const {host,projectId}=publication;
+     const result=await publishProjectPullRequestStatus(host,projectId,project,pullRequest,viewer,requested,lifetime.controller.signal,
+       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+     lifetime.controller.signal.throwIfAborted();
+     result.complete();setConfirmed({source,pullRequest:result.pullRequest});
+     cache.setQueryData(["project-home-work-items",host.scopeKey,projectId],result.snapshot);
+     cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===host.scopeKey&&query.queryKey[2]===projectId},result.snapshot);
+     void cache.invalidateQueries({queryKey:["projects-work-items",host.scopeKey]});
+     void cache.invalidateQueries({queryKey:["projects",host.scopeKey,"inbox-work-items"]});
+     // Original toast copy per transition (PullRequestReviewCard.handleStatusChange).
+     toast.success(t(requested==="draft"?"projects.review.status.drafted":requested==="closed"?"projects.review.status.closed"
+       :pullRequest.status==="Closed"?"projects.review.status.reopened":"projects.review.status.readied"));
+   }catch(error){
+     if(!lifetime.controller.signal.aborted){
+       if(isOutcomeUnknown(error))toast.message(t("projects.review.status.unknown"));
+       else toast.error(t("projects.review.status.failed"));
+     }
    }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
  }
  const [expandedReviewHistoryPullRequestIds,setExpandedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
@@ -533,6 +563,10 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
                 </div>
               );
             })}
+            {publication?.host.publish?<div className="flex min-h-12 items-start justify-start px-3 py-2.5">
+              <PullRequestReviewCard repository={project} pullRequest={pullRequest} viewer={viewer} pending={isSending}
+                recoveryStatus={statusIntent?.status} onStatusChange={status=>void handleStatusChange(status)}/>
+            </div>:null}
           </div>
         </div>
       </ProjectDetailSection>

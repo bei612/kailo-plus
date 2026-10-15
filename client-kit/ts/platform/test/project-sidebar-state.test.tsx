@@ -2,7 +2,7 @@ import {act,useState} from "react";
 import {describe,expect,it} from "vitest";
 import {createBffClient} from "../src/client";
 import {PlatformProvider} from "../src/react/context";
-import {useProjectSidebarMembership} from "../src/react/projects/useProjectSidebarMembership";
+import {addCreatedProjectToSidebar,useProjectSidebarMembership} from "../src/react/projects/useProjectSidebarMembership";
 import type {CollaborationUserState} from "../src/inbox";
 import {TransportError,type BffRequest} from "../src/transport";
 import {button,click,render,settle} from "./render";
@@ -31,6 +31,23 @@ describe("original project Added preferences use the sole Core CAS",()=>{
     await click(button(ui,"Remove"));expect(output(ui).addresses).toEqual([]);
     expect(writes.map(r=>r.body)).toEqual([{projectAddress:address,selected:true,version:0},{projectAddress:address,selected:false,version:1}]);
     expect(writes.every(r=>r.path==="/api/v1/user-state/projects")).toBe(true);
+  });
+  // Original useCreateProjectMutation.onSuccess::addProjectToSidebar: a confirmed
+  // creation lands in the creator's sidebar; the mounted sidebar re-reads it.
+  it("adds a created project through one fresh CAS and refreshes the mounted sidebar",async()=>{
+    let current=state();const writes:BffRequest[]=[];
+    const client=createBffClient({send:async request=>{
+      if(request.method==="GET")return {status:200,body:current};
+      writes.push(request);const body=request.body as {selected:boolean;version:number};
+      current=state(body.version+1,body.selected);return {status:200,body:{version:current.version}};
+    }});
+    const ui=await render(<PlatformProvider client={client} locale="en"><Harness/></PlatformProvider>);
+    expect(output(ui).addresses).toEqual([]);
+    await act(async()=>{await addCreatedProjectToSidebar(client,address);});
+    await settle();
+    expect(output(ui).addresses).toEqual([address]);
+    await act(async()=>{await addCreatedProjectToSidebar(client,address);});
+    expect(writes.map(r=>r.body)).toEqual([{projectAddress:address,selected:true,version:0}]);
   });
   it("retains UNKNOWN after a later denied observation and retries only the identical old CAS",async()=>{
     let current=state(),attempt=0;const writes:unknown[]=[];

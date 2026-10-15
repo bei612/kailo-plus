@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestStatus,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestStatusCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -102,6 +102,55 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
         return {eventId:event.id};
       }
       if(request.assigneeLabel!==undefined||request.assigneePubkey!==undefined||request.priorEventId!==undefined)throw new Error("Unexpected task assignment fields");
+      if(request.operation==="SET_PULL_REQUEST_STATUS"){
+        // Fixed pullRequestReviews.ts::updateProjectPullRequestStatus. CLIENT signs;
+        // only the review author or repository owner (allowedActorsForRoot) may.
+        const status=request.pullRequestStatus;
+        if(!request.targetEventId||!/^[0-9a-f]{64}$/.test(request.targetEventId)||(status!=="open"&&status!=="draft"&&status!=="closed")
+          ||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined||request.visibility!==undefined
+          ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
+          ||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid review status");
+        const readTarget=async()=>{
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1618],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==1618||!verifyEvent(root))throw new Error("Review unavailable");
+          const address=root.tags.find(tag=>tag[0]==="a")?.[1];
+          const [kind,owner,...identifier]=address?.split(":")??[];
+          const slug=identifier.join(":");
+          if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository coordinate unavailable");
+          const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
+          if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          if(root.pubkey!==viewer&&owner!==viewer)throw new Error("Review status denied");
+          return {root,repository:{owner,repoAddress:address!}};
+        };
+        const target=await readTarget();
+        const lifecycle=status==="open"?"open":status==="draft"?"draft":"closed";
+        const template=buildProjectPullRequestStatus(target.repository,{id:target.root.id,author:target.root.pubkey},lifecycle);
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            const fresh=await readTarget();
+            if(fresh.root.id!==target.root.id||fresh.repository.repoAddress!==target.repository.repoAddress)throw new Error("Review changed");
+            // Only author/owner lifecycle events are trusted; push those authors
+            // and kinds to SQL and match the root locally after Relay's limit.
+            const authors=[...new Set([fresh.repository.owner,fresh.root.pubkey])];
+            const history=await enumerateProjectEvents(async page=>{
+              const events=await relayClient.fetchEvents({kinds:[1630,1631,1632,1633],authors,limit:relayQueryLimit,since:page.since,until:page.until});check();
+              if(events.some(event=>![1630,1631,1632,1633].includes(event.kind)||!authors.includes(event.pubkey)||!verifyEvent(event)))throw new Error("Review status history unavailable");
+              return events;
+            },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
+            const current=eventToProjectPullRequest(fresh.root,[],[],history);
+            const signed=await signRelayEvent({kind:template.kind,content:template.content,tags:template.tags,
+              createdAt:nextProjectPullRequestStatusCreatedAt(current,Math.floor(Date.now()/1_000))});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Review status signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==template.kind||event.pubkey!==viewer||!verifyEvent(event)||event.content!==template.content
+          ||JSON.stringify(event.tags)!==JSON.stringify(template.tags))throw new TransportError("Review status receipt mismatch");
+        return {eventId:event.id};
+      }
+      if(request.pullRequestStatus!==undefined)throw new Error("Unexpected review status field");
       if(request.operation==="CREATE_ISSUE_COMMENT"||request.operation==="CREATE_PULL_REQUEST_COMMENT"){
         const targetKind=request.operation==="CREATE_ISSUE_COMMENT"?1621:1618;
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined

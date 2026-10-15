@@ -298,7 +298,7 @@ test("a restarted project intent observes its persisted exact event ID without s
   const create=async()=>{assert.fail("must not sign after restart");};
   client.publishEvent=async()=>assert.fail("must not republish after restart");
   const observation={eventId:event.id,onPrepared:()=>assert.fail("must not prepare again")};
-  client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[5,30621,30617,1621],limit:1});return [];};
+  client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[1,5,30621,30617,1621,1630,1632,1633],limit:1});return [];};
   await assert.rejects(client.publishProjectIntent("restart",relay,create,true,observation),RelayPublishUnknownError);
   client.fetchEvents=async()=>[event];
   assert.equal((await client.publishProjectIntent("restart",relay,create,true,observation)).id,event.id);
@@ -313,7 +313,7 @@ test("failure to persist a prepared project reference prevents external publicat
 });
 
 test("project and default repository creation recover exact IDs without a second signature", async () => {
-  for(const kind of [30621,30617,1621]) {
+  for(const kind of [30621,30617,1621,1630,1632,1633]) {
     reset();const client=connectedClient();const relay="wss://projects.test";
     client.ensureConnected=async()=>{client.relayUrl=relay;};
     const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind,created_at:1,tags:[["d","garden"]],content:"",sig:"c".repeat(128)};

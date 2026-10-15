@@ -5,6 +5,7 @@ import { useBffClient, useUiT } from "../context";
 import { prepareProjectCreation, resumeProjectCreation, ProjectCreationRejected, type CreateProjectInput, type ProjectCreationIntent } from "./createProject";
 import type { ProjectsHost } from "./projectEnumeration";
 import { validProjectAgent } from "./projectAgent";
+import { addCreatedProjectToSidebar } from "./useProjectSidebarMembership";
 
 /** Local recovery references are not authorization or a second project store. */
 function readIntent(key: string): ProjectCreationIntent | null {
@@ -83,6 +84,9 @@ export function useCreateProject(host: ProjectsHost) {
       check();
       sessionStorage.removeItem(storageKey);
       setIntent(null);
+      // Original creation lands in the creator's sidebar; a failed preference
+      // write leaves the confirmed project intact (Browse can still add it).
+      void addCreatedProjectToSidebar(client, project.projectAddress).catch(() => undefined);
       return project;
     } finally {
       busyRef.current = false;
