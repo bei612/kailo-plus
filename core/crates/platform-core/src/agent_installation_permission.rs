@@ -266,7 +266,9 @@ async fn target_for(
     if params.receiver_resource.is_some() {
         return Err(conflict());
     }
-    let mut row = installation(conn, tenant, id, lock).await?.ok_or_else(conflict)?;
+    let mut row = installation(conn, tenant, id, lock)
+        .await?
+        .ok_or_else(conflict)?;
     let recipient = params.principal_id.ok_or_else(conflict)?;
     // Keep an inactive HUMAN identifiable for revoke; grant re-checks live
     // Tenant/Workspace membership in human() at admission and dispatch.
@@ -1502,10 +1504,12 @@ pub(crate) async fn use_view(
             }
             effective &= c.allowed;
         }
-        rows.push(json!({"principalId":member,"displayName":name,"requested":requested,
+        rows.push(
+            json!({"principalId":member,"displayName":name,"requested":requested,
             "effective":effective && pending.is_none(),
             "canGrant":can_manage && enabled[0] && pending.is_none() && !requested,
-            "canRevoke":can_manage && enabled[1] && pending.is_none() && requested}));
+            "canRevoke":can_manage && enabled[1] && pending.is_none() && requested}),
+        );
     }
     let mut result = json!({"installationId":row.id,"resourceVersion":row.version,"members":rows});
     if let Some(pending) = pending {
