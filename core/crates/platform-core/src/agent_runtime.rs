@@ -832,9 +832,12 @@ impl Supervisor {
             }
             // Even notLoaded here does not turn this ACK into a successful
             // refresh. The next original Activity must observe absence.
+            let unsubscribe = response
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             tracing::info!(installation_id = %projection.installation_id,
-                generation = projection.generation, thread_id,
-                unsubscribe = response.get("status").and_then(Value::as_str).unwrap_or_default(),
+                generation = projection.generation, thread_id, unsubscribe,
                 unload_delay_secs = THREAD_UNLOAD_DELAY_SECS,
                 "MCP refresh unsubscribed the idle native thread; next round requires its unload");
             return Err(RuntimeError::Unknown);

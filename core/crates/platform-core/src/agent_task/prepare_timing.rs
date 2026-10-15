@@ -43,7 +43,8 @@ impl PrepareTiming {
     /// Close the step that just finished, measured from the previous step.
     pub(super) fn step(&mut self, name: &'static str) {
         let now = Instant::now();
-        self.steps.push((name, now.duration_since(self.last).as_millis()));
+        self.steps
+            .push((name, now.duration_since(self.last).as_millis()));
         self.last = now;
     }
 

@@ -989,7 +989,7 @@ async fn first_turn(
                 invocation.id,
                 TaskStatus::Running,
                 "RUNTIME_ADMISSION_UNAVAILABLE",
-            )
+            );
         }
     };
     if source.content.is_empty() {
@@ -1030,7 +1030,7 @@ async fn first_turn(
                 invocation.id,
                 TaskStatus::Running,
                 "RUNTIME_ADMISSION_UNAVAILABLE",
-            )
+            );
         }
     };
     let prepared = prepare_dispatch(
