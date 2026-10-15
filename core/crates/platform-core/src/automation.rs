@@ -2352,12 +2352,17 @@ pub(crate) async fn fresh_runtime(
     {
         return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
     }
+    // `05` §4：Agent 允许 = AgentPrincipal ∩ grantor 可委托 permission ∩ … ∩ LLM Route binding。
+    // 发起 HUMAN 的可委托 permission 是 Installation 的 execute/delegate（调用方逐次 fresh
+    // 核验，含 `05` §2.10 的成员使用授权）；模型 route 只经 Installation 的 binding 进入回合，
+    // 该 binding 的问责 HUMAN 是 Installation owner，其 route execute 失效即停新回合（`10`）。
+    // 不要求发起者另持 route 权限，否则成员使用授权永远无法生效。
     for (kind, object, permission, principal) in [
         (
             "resource",
             fence.model_route,
             "execute",
-            row.owner_principal_id,
+            fence.installation_owner,
         ),
         (
             "resource",
