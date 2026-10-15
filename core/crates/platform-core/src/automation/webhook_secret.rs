@@ -378,7 +378,10 @@ mod tests {
         // Exactly what governance::open_execution persists.
         let stored = json!({ "params": params.to_json(), "targetVersion": 3 });
         assert_eq!(frozen_asset_id(Some(&stored)), Some(asset));
-        assert_eq!(frozen_asset_id(Some(&json!({ "assetId": asset.to_string() }))), None);
+        assert_eq!(
+            frozen_asset_id(Some(&json!({ "assetId": asset.to_string() }))),
+            None
+        );
         assert_eq!(frozen_asset_id(None), None);
     }
 }
