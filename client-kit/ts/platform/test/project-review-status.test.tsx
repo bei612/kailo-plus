@@ -52,7 +52,7 @@ async function openMenu(root:ParentNode){
   await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
 }
 
-beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
+beforeEach(()=>{localStorage.clear();sessionStorage.clear();setLocale("en");
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   Object.defineProperty(document,"fonts",{configurable:true,value:{ready:Promise.resolve()}});
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
