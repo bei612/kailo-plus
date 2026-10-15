@@ -682,3 +682,35 @@ exit 0，三个本批 Rust 文件 `rustfmt --edition 2021 --check` 亦 exit 0。
 
 此处只记录源码和隔离原消费者证据；本批尚未部署，旧在线 Web 截图不用于认领
 新 PR 评论。既有 full 制品摘要失败门禁未被本批定向结果替代。
+
+## 2026-10-15 发布点 c1e0dda7 实拍复验与剩余差距分界
+
+部署为主线程发布点 `c1e0dda7`（Core `f7b4fdb7`、Web `eab92f1e`），包含 `944ee8c8`、
+`0f61edc1`、`207fd498`、`158a7255`、`8b5f50b3`、`3f8ed782`。CI 节点 Playwright 经真实 SSO，
+每个账号先在「设置 → 实验功能」打开工作流／项目／动态／论坛四个开关；截图在 CI 节点
+`~/kailo-acceptance/pi-out/ver/`，已拷回开发机逐张查看。
+
+- 所有者（seam-verifier）在 `pi-1015b` 创建任务「复验任务 1015v」：直接进入任务详情，页面与弹窗
+  均无“结果不明”。Relay 读回 kind 1621 `995077571278fc03…`，标签含 `a`（30617 坐标）、
+  `p`（仓库 owner 本人）、`subject`、`t=issue`，即 `944ee8c8` 的自身接收人修复在线生效。
+- 同一任务「分配给我」后右栏为“已分配给我”、受派人 1；Relay kind 1 `fed8d69f…`（`e root`、`a`、`p`、
+  `t=assignment`）。评论「复验评论 1015v」进入时间线，Relay kind 1 `984d64f9…`，评论框清空。
+- Activity：介绍与动态卡片上下排列（`0f61edc1`），Repositories 分区（我的，网格／列表、宿主图标、
+  `0 次提交 · 0 个审阅 · 1 个任务`）、仓库菜单“复制链接”、项目菜单“复制链接／删除项目”均在线可见。
+- Inbox：kailo-qa-2 在「多人多Agent协作验收1014」提及 kailo-qa-1（kind 9 `c1746eeb…`，`p`→qa-1）；
+  qa-1 打开收件箱即按原宽屏自动选中最新提及并打开详情，回复 kind 9 `da56ef2d…`（`e reply`）
+  进入线程后输入框清空（`207fd498` 生效）。
+
+### 剩余差距：哪些能做、哪些不能自行做
+
+依据固定 Buzz `779af8886caae1317b4de962082429867ab61503` 与设计 09「原版 Projects 的公告与内容边界」。
+
+| 项 | 上游事实 | 分类与下一步 |
+| --- | --- | --- |
+| 任务（Issue）状态流转 | `desktop/src/features/projects` 不发布 Issue 状态；`projectIssues.mjs` 只把已有 1630–1633 解析为状态。 | 原版本无此 UI，属原样保留，不新增“任务状态”写入。 |
+| Review（PR）生命周期 open/draft/closed | `pullRequestReviews.ts::updateProjectPullRequestStatus` 签发 1630/1633/1632（`e root`、`a`、owner 与作者 `p`），只信 PR 作者或仓库 owner；1631 merged 排除（走 git）。Relay `required_scope_for_kind` 为 `MessagesWrite`。 | 缺失需恢复。需新增 typed 发布操作（契约、Bridge、BFF、Native 同链，保留 UNKNOWN 对账），并由主线程在 `BUZZ_MEMBER_EVENT_KINDS` 准入 1630/1632/1633。目前线上没有 PR（原版 PR 由 git 推送创建），完成后也只能先做源码与单元验证。 |
+| Git 内容（概览／文件／提交／README／diff） | 原版由 Desktop Tauri 命令（`shared/api/projectGit.ts` → `src-tauri/src/commands/project_git_*`）经 Relay git transport 读取，Relay 侧 `api/git/binding.rs::resolve_repo_binding`、`transport.rs::authorize_git_read` 授权。Kailo fork 在 `collaboration/fork/upstream.yaml` 移除了这些命令。 | 设计 09 将其列为恢复范围，但必须保留原绑定与内容授权。Desktop：以本人 CLIENT identity 走原 Relay git 授权恢复，属缺失需恢复（原生工作量）。Web：没有 Tauri，需要 BFF/Core 以本人 SERVER identity 代读，设计 09 未定义该读取链，不能自行新增，须先有设计决定。 |
+| 不允许的替代 | 设计 09：目录可见不等于仓库内容可读，公告写入、Added、`tenant.discover` 都不授予 Git 内容权限。 | 不得据公告/目录/Added 推断内容可读，不得接受客户端任意 Relay filter，不得伪造提交数或文件树。 |
+| 本地仓库动作（终端、打开目录、clone/push/pull/merge、分支） | 只存在于 Desktop 原生命令。 | Web 原样不提供；Desktop 随上行 Git 恢复一并缺失。 |
+
+本节只记录在线实拍与上游/设计分界；未新增代码，不把这些截图当 Git 内容或 Review 状态验收。
