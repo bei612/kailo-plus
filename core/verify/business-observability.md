@@ -68,3 +68,24 @@ Summary/Timeline 共用 key，页面残留整个组织的聚合；同步动作�
 
 未覆盖：Desktop 安装包实机、Mobile 只读视图、`identity.client_key.register` 与 `tenant.bootstrap`
 在共享动作目录中没有中文/英文标签（显示「未识别的动作」与原 key）。
+
+### 2026-10-15 发布点 c1e0dda7 复拍
+
+线上 Core `f7b4fdb7`、Web `eab92f1e`（含 `019cb2c5`、`d1669abd`）。截图在开发机 `/tmp/kailo-dev-work/s5/`：
+
+- Workspace 视图（`s5zh-05`、`s6en-05`）：切到「多人多Agent协作验收1014」后只剩该范围的一份聚合
+  （13 项：已生效 5、已完成 5、已过期 2、进行中 1）和 13 行时间线，不再残留整个组织的聚合；
+  BFF 同刻 `summary?workspaceId=` total=13。
+- 耗时：同步动作 0–43.4 秒；`agent.installation.create`、`workspace.*` 等没有同名 OUTCOME 审计的
+  Workflow 动作显示「尚无确定终态」/「—」，不再用投影写回时间。
+- 动作标签（`crop-actions-zh`、`crop6-actions-en`）：`identity.client_key.register` 显示
+  「登记设备公钥 / Register device key」，`tenant.bootstrap` 显示「初始化组织 / Bootstrap organization」。
+- 普通成员 `kailo-qa-1`（`s6qa1-*`）：范围视图全部 403，「我的操作」200。
+- 首轮英文的组织范围两次请求在网关按 `fcae9942` 重建的窗口内没有回应，页面显示「结果不明，可重试」，
+  没有渲染成空；网关修复后重拍正常。
+
+call_webhook 与步骤超时：截至本次核对，库中没有任何带 `webhook_request_id` 的 Invocation，
+也没有新的 `automation.run`（只有 10-05 的一次），因此计量与时间线没有实际对象可验收。按源码，
+每次 call_webhook 运行写一条 `automation.run` count 用量事件，维度带 `webhook_request_id`；
+时间线显示为该 `automation.run` 操作及其用量行与投递状态。`httpStatus`、`requestId` 记在运行轨迹
+（Workflows 运行历史），业务操作视图不展示原生结果。
