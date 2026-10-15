@@ -227,8 +227,9 @@ function ProjectWorkItemsContent({items,filter,view,search,onOpen}:{items:Projec
   const t=useUiT();
   const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
   const common={profiles,viewMode:view,embedded:view==="list",onOpen};
-  return filter==="issues"?<ProjectsIssuesList {...common} issues={items.filter(item=>item.type==="issue")} emptyMessage={search.trim()?t("projects.list.tasksNoMatch"):undefined}/>:
-    <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>;
+  // One block child inside the work-item host's flex row.
+  return <div className="min-w-0 flex-1">{filter==="issues"?<ProjectsIssuesList {...common} issues={items.filter(item=>item.type==="issue")} emptyMessage={search.trim()?t("projects.list.tasksNoMatch"):undefined}/>:
+    <ProjectsPullRequestsList {...common} pullRequests={items.filter(item=>item.type==="pull-request")} emptyMessage={search.trim()?t("projects.list.reviewsNoMatch"):undefined}/>}</div>;
 }
 
 type ProjectWorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
@@ -280,7 +281,9 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
   const digest=useMemo(()=>buildProjectsActivityDigest({issues,nowSeconds:Math.floor(now/1_000),projects,pullRequests,summaries,t}),[issues,now,projects,pullRequests,summaries,t]);
   const pubkeys=useMemo(()=>projectsActivityPubkeys({issues,projects,pullRequests}),[issues,projects,pullRequests]);
   const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
-  return <>
+  // The work-item host wraps its children in a flex row (for its profile
+  // panel); keep the original stacked intro + timeline as one block child.
+  return <div className="min-w-0 flex-1">
     <ProjectsActivityIntro digest={digest}/>
     <section className="space-y-3">
       <ProjectsActivityFeed issues={issues} pullRequests={pullRequests} projects={projects} profiles={profiles} searchQuery={search}
@@ -288,7 +291,7 @@ function ProjectsActivityBody({snapshot,search,onOpenProject,onOpen}:{snapshot:P
         onOpenIssue={(project,repository,issue)=>onOpen(project,{repositoryId:repository.id,issueId:issue.id})}
         onOpenPullRequest={(project,repository,pullRequest)=>onOpen(project,{repositoryId:repository.id,pullRequestId:pullRequest.id})}/>
     </section>
-  </>;
+  </div>;
 }
 
 // Original ProjectsOverviewItems.tsx::ProjectsOverviewProjectItems: Mine / Other
@@ -323,8 +326,9 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
   const peopleByProject=useMemo(()=>new Map(visible.map(project=>[project.id,projectPeople(project,summaries[project.id])])),[summaries,visible]);
   const pubkeys=useMemo(()=>[...new Set([...peopleByProject.values()].flat())],[peopleByProject]);
   const profiles=useUsersBatchQuery(pubkeys,{enabled:pubkeys.length>0}).data?.profiles;
-  return <ProjectsOverviewProjectItems visible={visible} viewerPubkey={viewerPubkey} view={view} renderRow={renderRow}
-    activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/>;
+  // One block child inside the work-item host's flex row.
+  return <div className="min-w-0 flex-1"><ProjectsOverviewProjectItems visible={visible} viewerPubkey={viewerPubkey} view={view} renderRow={renderRow}
+    activityFor={project=>({people:peopleByProject.get(project.id)??[],profiles,summary:summaries[project.id]})}/></div>;
 }
 
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
@@ -337,8 +341,8 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const summaries=useMemo(()=>projectActivitySummaries(snapshot.events,projects),[snapshot,projects]);
   const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,summaries]);
   const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
-  return <ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
-    summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/>;
+  return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
+    summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/></div>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
