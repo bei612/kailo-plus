@@ -33,6 +33,16 @@ fn reference(value: &Value) -> Result<SecretRef, Refusal> {
     })
 }
 
+/// The admitted command is stored as `{"params":{..},"targetVersion":..}`
+/// (`governance::open_execution`, native-origin submits alike); the version an
+/// enable pins is that frozen `params.assetId`, never a top-level key.
+fn frozen_asset_id(parameters: Option<&Value>) -> Option<Uuid> {
+    parameters?
+        .pointer("/params/assetId")?
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+}
+
 pub(super) async fn freeze(
     g: &Governance,
     tx: &mut Transaction<'_, Postgres>,
@@ -43,7 +53,7 @@ pub(super) async fn freeze(
     let enabling = ae.action_key == "automation.enable";
     let creating = rotating || (enabling && sqlx::query_scalar::<_,bool>("select exists(select 1 from catalog.automation_version
         where asset_id=$1 and automation_resource_id=$2 and state='PUBLISHED' and trigger->>'kind'='WEBHOOK')")
-        .bind(ae.parameters.as_ref().and_then(|p|p.get("assetId")).and_then(Value::as_str).and_then(|s|Uuid::parse_str(s).ok()))
+        .bind(frozen_asset_id(ae.parameters.as_ref()))
         .bind(row.id).fetch_one(&mut **tx).await?);
     if !creating && row.webhook_secret_ref.is_none() {
         return Ok(None);
@@ -348,4 +358,27 @@ async fn finish(
     complete_management_intent(&mut tx, ae, def, "webhookSecretIntent").await?;
     tx.commit().await?;
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Live DD-116 enable stayed EVALUATING: reading a top-level assetId missed
+    // the pinned WEBHOOK version, so no SecretRef was created and the ENABLED
+    // guard ("must pin a published version and a real trigger reference") failed.
+    #[test]
+    fn enable_reads_the_asset_frozen_in_the_admitted_params() {
+        let asset = Uuid::new_v4();
+        let params = governance::Params::from_json(&json!({
+            "resourceId": Uuid::new_v4().to_string(), "resourceVersion": 3,
+            "assetId": asset.to_string(), "delegationId": Uuid::new_v4().to_string(),
+        }))
+        .expect("real Params parse");
+        // Exactly what governance::open_execution persists.
+        let stored = json!({ "params": params.to_json(), "targetVersion": 3 });
+        assert_eq!(frozen_asset_id(Some(&stored)), Some(asset));
+        assert_eq!(frozen_asset_id(Some(&json!({ "assetId": asset.to_string() }))), None);
+        assert_eq!(frozen_asset_id(None), None);
+    }
 }
