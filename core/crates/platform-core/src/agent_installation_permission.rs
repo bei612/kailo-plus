@@ -266,9 +266,7 @@ async fn target_for(
     if params.receiver_resource.is_some() {
         return Err(conflict());
     }
-    let mut row = installation(conn, tenant, id, lock)
-        .await?
-        .ok_or_else(conflict)?;
+    let mut row = installation(conn, tenant, id, lock).await?.ok_or_else(conflict)?;
     let recipient = params.principal_id.ok_or_else(conflict)?;
     // Keep an inactive HUMAN identifiable for revoke; grant re-checks live
     // Tenant/Workspace membership in human() at admission and dispatch.
@@ -670,7 +668,8 @@ pub(super) async fn gate(
         return Err(conflict());
     }
     projection(g, &row).await?;
-    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id) {
+    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id)
+    {
         return Err(conflict());
     }
     human(g, conn, &row, principal, action).await
@@ -913,7 +912,8 @@ pub(super) async fn prepare_revoke(
         return Err(conflict());
     }
     projection(g, &row).await?;
-    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id) {
+    if (is_read(action) || is_use(action)) && params.principal_id != Some(row.subject_principal_id)
+    {
         return Err(conflict());
     }
     human(g, tx, &row, actor.principal_id, action).await?;
@@ -946,7 +946,16 @@ pub(super) async fn prewrite(
 ) -> Result<(), Refusal> {
     let version = ae.frozen_target_version().ok_or_else(conflict)?;
     let params = ae.params().ok_or_else(unavailable)?;
-    let row = target_for(tx, ae.tenant_id, ae.target_id, &params, true, None, &ae.action_key).await?;
+    let row = target_for(
+        tx,
+        ae.tenant_id,
+        ae.target_id,
+        &params,
+        true,
+        None,
+        &ae.action_key,
+    )
+    .await?;
     if row.version != version || row.workspace_id != ae.workspace_id {
         return Err(conflict());
     }
@@ -1201,13 +1210,13 @@ pub(super) async fn dispatch(
             .await
             .map_err(|_| unavailable())?;
         let held = held(g, &row, relation).await?;
-        matched &= !checked.zed_token.is_empty()
-            && if is_use(&ae.action_key) {
-                // Revoking explicit use never removes independent owner/admin power.
-                held == grant && (checked.allowed || !grant)
-            } else {
-                permission_outcome_matches(&row, grant, held, checked.allowed)
-            };
+        let outcome = if is_use(&ae.action_key) {
+            // Revoking explicit use never removes independent owner/admin power.
+            held == grant && (checked.allowed || !grant)
+        } else {
+            permission_outcome_matches(&row, grant, held, checked.allowed)
+        };
+        matched &= !checked.zed_token.is_empty() && outcome;
         c = Some(checked);
     }
     let c = c.ok_or_else(unavailable)?;
