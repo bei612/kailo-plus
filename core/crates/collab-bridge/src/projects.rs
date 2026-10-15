@@ -460,11 +460,15 @@ pub fn publication_builder(
         .map_err(|_| invalid("invalid issue tags"))?;
         // Fixed desktop buildGitIssueTags counts UTF-16, unlike SDK's byte limit.
         // Body bounds come from current Relay admission, not SDK's static limit.
+        // Original buildGitIssueTags always tags the repository owner. nostr's
+        // builder drops a signer's own `p` tag unless self tagging is allowed,
+        // which made an owner's task differ from issue_publication_matches.
         return Ok(EventBuilder::new(
             nostr::Kind::from(kind),
             request.body.as_deref().unwrap_or_default().trim(),
         )
-        .tags(tags));
+        .tags(tags)
+        .allow_self_tagging());
     }
     if kind != 5 {
         let channel = channel_id
@@ -795,6 +799,38 @@ pub fn issue_publication_matches(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn repository_owner_issue_keeps_original_owner_recipient_and_matches() {
+        use super::*;
+        let owner = nostr::Keys::generate();
+        let repository = EventBuilder::new(nostr::Kind::from(30617), "")
+            .tags([Tag::parse(["d", "repo"]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let request: ProjectsPublishRequest = serde_json::from_value(serde_json::json!({
+            "operation":"CREATE_ISSUE", "targetEventId":repository.id.to_hex(),
+            "title":" Owner task ", "body":"Owner body", "category":"issue"
+        }))
+        .unwrap();
+        let event = publication_builder(
+            &request,
+            Some(&repository),
+            None,
+            &owner.public_key().to_hex(),
+        )
+        .unwrap()
+        .sign_with_keys(&owner)
+        .unwrap();
+        let tags = event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect::<Vec<_>>();
+        assert_eq!(tags[1], vec!["p".to_owned(), owner.public_key().to_hex()]);
+        assert_eq!(tags.len(), 4);
+        assert!(issue_publication_matches(&request, &event).unwrap());
+    }
+
     #[test]
     fn other_human_assignment_requires_original_authority_and_exact_recipient() {
         use super::*;
