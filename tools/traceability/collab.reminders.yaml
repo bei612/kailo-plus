@@ -35,7 +35,7 @@ release:
     - name: core
       digest: sha256:5ff77b356e7c82dcc4fced71727654733f5f4b0ee73080aa85111c70709d10c1
     - name: web-client
-      digest: sha256:eab92f1e925bf70f0ee3bfa6bef8ae22a0cd05c8298c8033dd3e982bb07b4611
+      digest: sha256:55013f0b04b596cfb6f7fadcd2d2cc8b0f0c391deea2d81a946b8dcdcc95c6c7
   # 未完成本固定发布树的 full 门禁；定向检查不替代全量验收。
   # 新产物尚未部署，不证明线上已使用本版提醒消费者。
   # 尚未完成真实用户提醒创建、到期通知与发布对账的业务验收。
