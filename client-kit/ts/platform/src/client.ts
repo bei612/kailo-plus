@@ -215,14 +215,16 @@ export function createBffClient(transport: BffTransport) {
     workspaceMessages: (workspaceId: string, options?: WebMessageQuery) => {
       const query = new URLSearchParams();
       for (const [name, value] of Object.entries(options ?? {})) {
-        if (value !== undefined) query.set(name, String(value));
+        // STREAM is Core's default type: omitting it gives one path per window for shared reads.
+        if (value !== undefined && !(name === "messageType" && value === "STREAM")) query.set(name, String(value));
       }
       return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages${query.size ? `?${query}` : ""}`);
     },
     conversationMessages: (conversationId: string, options?: WebMessageQuery) => {
       const query = new URLSearchParams();
       for (const [name, value] of Object.entries(options ?? {})) {
-        if (value !== undefined) query.set(name, String(value));
+        // STREAM is Core's default type: omitting it gives one path per window for shared reads.
+        if (value !== undefined && !(name === "messageType" && value === "STREAM")) query.set(name, String(value));
       }
       return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages${query.size ? `?${query}` : ""}`);
     },

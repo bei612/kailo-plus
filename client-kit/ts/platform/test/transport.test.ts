@@ -145,6 +145,19 @@ describe("web-fetch", () => {
     expect(new Set(reads).size).toBe(5);
   });
 
+  it("收件箱私聊详情显式带 STREAM 的首窗读取与列表的首窗读取是同一次读", async () => {
+    // Live Inbox open (2026-10-15): /messages from the list, then /messages?messageType=STREAM
+    // twice from the DM detail. STREAM is Core's default type, so all three are one window.
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { events: [] }));
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead }));
+    await client.conversationMessages("dm");
+    await client.conversationMessages("dm", { messageType: WebMessageType.Stream });
+    await client.conversationMessages("dm", { messageType: WebMessageType.Stream });
+    await client.conversationMessages("dm", { messageType: WebMessageType.Stream, parentEventId: "a".repeat(64) });
+    expect(fetch.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/conversations/dm/messages", `/api/v1/conversations/dm/messages?parentEventId=${"a".repeat(64)}`]);
+  });
+
   it("共享窗口内的身份核对读取（fresh）仍然发出网络请求，也不加入进行中的共享读取", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
