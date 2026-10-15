@@ -1,5 +1,39 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-15 频道管理、私聊头部与设置类别：固定原版对照
+
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`。本段只覆盖频道成员/频道设置、
+频道头部加入、私聊头部与用户设置类别，不重算全量 5316/3281 证明队列。
+
+| 固定官方路径与符号 | 当前四类与证据 |
+| --- | --- |
+| `desktop/src/features/channels/ui/ChannelMembersBar.tsx::ChannelMembersBar` | 共享迁移到 `client-kit/ts/platform/src/react/channel-members.tsx::ChannelMembersBar`，频道与私聊均挂载（Web `PlatformApp`、Desktop `ChannelScreenHeader`）。已授权治理改造：无 Huddle（受治理频道不提供语音，SS-BUZ-GOVERNANCE）；仅 inline 变体，紧凑变体缺失需恢复 |
+| `desktop/src/features/channels/ui/MembersSidebar.tsx::MembersSidebar`、`MembersSidebarMemberCard.tsx`、`AddMemberSearchResultRow.tsx` | 共享迁移到 `channel-members.tsx::ChannelMembersDialog`。名单来自 BFF Workspace 成员或私聊参与者；添加/移除/改角色提交已登记 `workspace.member.add/revoke`、`workspace.admin.grant/revoke`，可用性来自 `RoleMemberView.canAddToWorkspace` 等 fresh 投影。已授权：角色只有管理员关系（无 owner/guest）；添加需频道 manage，无权成员看到明确提示；私聊不能加人（原版同）。缺失需恢复：Agent 行、Agent 使用授权、封禁/禁言（归协作队友或 CONTROL-only 阻断） |
+| `desktop/src/features/channels/ui/ChannelManagementSheet.tsx::ChannelManagementSheet` 及 Rows、`ChannelMemberAvatarStack.tsx` | 共享迁移到 `channel-management-sheet.tsx`：概要、频道类型、可见性、成员与头像叠放、频道 ID；私聊为 MessageSquare 概要。已授权：名称/描述/类型/可见性编辑、归档、删除、退出没有受治理平台动作（频道元数据只由 CONTROL 写入，DD-80），入口不渲染。缺失需恢复：Canvas 与 Workflows 入口（无 Canvas 读取权威；工作流列表视图无名称） |
+| `desktop/src/features/channels/ui/ChannelScreenHeader.tsx` showJoinButton 分支 | 共享迁移为 `channel-browser.tsx::ChannelJoinButton`，与频道浏览器共用 `useWorkspaceJoin`（同一 `workspace.join`、同一幂等键、ACTIVE 读回后才进入）。已授权：非成员无法读取受治理频道时间线，正文保留成员资格提示。Desktop 原生频道列表只含已加入频道，无对应入口 |
+| `MembersSidebar` 打开资料面板 | Desktop 走原 `openProfilePanel`；Web 经 `MemberProfileRequest` 交给 `ChannelPane`/`ForumPane` 的共享 `MemberProfilePanel`，仅在该成员键在本 Workspace 仍为 ACTIVE 时渲染。私聊参与者在 Web 无独立资料读取，不开放 |
+| `desktop/src/features/sidebar/ui/CreateChannelFormFields.tsx` 模板选择 | 缺失且阻断：原模板存于 Tauri 本地存储（`shared/api/tauriChannelTemplates`），Kailo 无模板权威；原 `ChooserDialogContent` 本身不渲染描述，现状一致 |
+
+用户设置 16 类中，Web 现有 profile、appearance、notifications、shortcuts、custom-emoji、
+community-members、experimental 七类。其余九类逐类判定均无法在 Web 以既有权威实现，不生成入口：
+
+- voice：`VoiceSettingsCard` 读写 `get_tts_settings`/`set_pocket_voice` 等 Tauri 命令，依赖本机 TTS。
+- channel-templates：Tauri 本地模板存储，平台无模板权威（另受原 featureGate）。
+- compute：`MeshComputeSettingsCard` 管理本机算力节点。
+- hosted-communities：`HostedCommunitiesSettingsCard` 直接 `invoke` 本机托管 Relay。
+- moderation：举报队列、封禁/禁言是 Relay 管理事件，只收 CONTROL 签发，无受治理平台动作。
+- local-archive：本机身份/消息归档。
+- mobile：`MobilePairingCard` 监听 Tauri 事件做本机配对。
+- updates：Desktop 自更新器。
+- agents：Agent 默认值与 harness，归 Agent 管理平面队友。
+
+实际验收（Web `703dcf2b`、Core `5f433c77`，正常 SSO）：频道头部成员按钮与 ⋮、成员弹窗、
+设置面板及叠加成员弹窗已截图复核；在 kailo-projects-accept 实际添加 kailo-qa-1
+（执行 `79008b88-cb55-4bf5-ace4-83c2f9526648`：INTENT→DECISION ALLOWED→DISPATCH→
+OUTCOME ACTIVE，MEMBERSHIP_PROJECTION TERMINAL）后再移除（执行
+`659e3081-6311-4fcb-9816-57659ae045bb`），人数 1→2→1。私聊头部、加入按钮、Web 资料面板
+尚待下一发布点实拍；Desktop/Windows 无设备验收。
+
 ## 2026-10-12 完整清单覆盖复核与 Projects 现有消费者纠偏
 
 固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。
