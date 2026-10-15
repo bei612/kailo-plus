@@ -163,6 +163,11 @@ beforeEach(() => {
   api.projectQuery.mockReset().mockResolvedValue({events:[],pubkey:"c".repeat(64),limit:20,bindingVersion:1});
   api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
   api.readAt.mockReset().mockReturnValue(null);
+  // jsdom has no CSS.escape; the original anchored detail scroll uses it once the
+  // original wide-layout auto-selection opens the first conversation.
+  vi.stubGlobal("CSS", { escape: (value: string) => value });
+  // jsdom has no element scrollTo; the auto-opened thread pins its timeline bottom.
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
   // Keep the actual original virtualizer; jsdom supplies no layout of its own.
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
     return this.hasAttribute("data-index") ? 96 : 420;
@@ -585,7 +590,11 @@ it("loads owned Agent activity through the admitted author query, never foreign 
     expect(avatar.getAttribute("data-avatar-shape")).toBe("squircle");
     expect(avatar.classList.contains("h-9")).toBe(true);
     expect(avatar.classList.contains("w-9")).toBe(true);
-    expect(api.workspaceMessages.mock.calls.map(call=>call[1])).toEqual([undefined,{agentInstallationId:"own-agent"}]);
+    // Original wide Home auto-opens the first admitted row; its thread read is the
+    // only other workspace read, and no foreign installation is ever queried.
+    const queries=api.workspaceMessages.mock.calls.map(call=>call[1] as {messageType?:string;parentEventId?:string}|undefined);
+    expect(queries.filter(query=>query?.messageType!=="STREAM")).toEqual([undefined,{agentInstallationId:"own-agent"}]);
+    expect(queries.filter(query=>query?.messageType==="STREAM").every(query=>query?.parentEventId===event.id)).toBe(true);
     expect(api.write).not.toHaveBeenCalled();
     api.agentInstallations.mockResolvedValue({installations:[{...install,agentPubkey:undefined}]});
     await act(async()=>window.dispatchEvent(new Event("focus")));
