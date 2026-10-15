@@ -762,90 +762,133 @@ async fn readable_event_ids(
         .chain(conversation_ids.into_iter().map(ReadTarget::Conversation))
         .collect();
     let keys = web_transport::actor_keys(state, ctx).await?;
+    // Fixed Buzz 779af888 channels/fetch.rs reads many channels with one filter per channel in
+    // one request. Admit every target first, then ask each Community with at most
+    // `max_filters` channel filters per request until every ID is found, instead of one Relay
+    // read per readable channel.
+    let mut scopes = Vec::new();
     for target in targets {
-        if readable.len() == requested.len() {
-            break;
-        }
-        let scope = match target.admit(state, ctx).await {
-            Ok(scope) => scope,
+        match target.admit(state, ctx).await {
+            Ok(scope) => scopes.push((target, scope)),
             Err(response) if response.status() == StatusCode::FORBIDDEN => continue,
             Err(response) => return Err(response),
-        };
-        let limits = web_transport::community_limits(state, scope.community_host())
+        }
+    }
+    let mut hosts: Vec<&str> = Vec::new();
+    for (_, scope) in &scopes {
+        if !hosts.contains(&scope.community_host()) {
+            hosts.push(scope.community_host());
+        }
+    }
+    let mut found: HashSet<EventId> = HashSet::new();
+    let mut observed: HashMap<usize, HashMap<EventId, bool>> = HashMap::new();
+    'hosts: for host in hosts {
+        let members: Vec<usize> = scopes
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, scope))| scope.community_host() == host)
+            .map(|(index, _)| index)
+            .collect();
+        let limits = web_transport::community_limits(state, host)
             .await
             .map_err(IntoResponse::into_response)?;
         let page_size = usize::try_from(web_transport::page_limit(state, &limits))
             .ok()
             .filter(|size| *size > 0)
             .ok_or_else(user_state_unavailable)?;
-        let client = web_transport::community_client(state, &keys, scope.community_host())?;
-        let mut remaining: Vec<EventId> = requested
-            .iter()
-            .filter(|id| !readable.contains_key(*id))
-            .copied()
-            .collect();
-        remaining.sort_unstable();
-        let mut observed = HashMap::new();
-        // 复用部署与 binding 的真实单页上界；不新增消息数量阈值，也不静默截断。
-        for batch in remaining.chunks(page_size) {
-            let ids: Vec<String> = batch.iter().map(ToString::to_string).collect();
-            let limit = i64::try_from(batch.len()).map_err(|_| user_state_unavailable())?;
-            let filter = serde_json::json!({
-                "ids": ids,
-                "#h": [scope.channel_id()],
-                "limit": limit,
-            });
-            let result = client.query(&state.http, &[filter]).await.map_err(|e| {
-                tracing::warn!(error = %e, "查证已读事件可见性失败");
-                web_transport::relay_error_response(&e, None)
-            })?;
-            let events: Vec<nostr::Event> = serde_json::from_value(result).map_err(|e| {
-                tracing::warn!(error = %e, "Relay 可见性回应不是有效事件数组");
-                user_state_unavailable()
-            })?;
-            if events.len() > batch.len() {
-                return Err(user_state_unavailable());
+        let client = web_transport::community_client(state, &keys, host)?;
+        for group in members.chunks(limits.max_filters.max(1)) {
+            let mut remaining: Vec<EventId> = requested
+                .iter()
+                .filter(|id| !found.contains(*id))
+                .copied()
+                .collect();
+            if remaining.is_empty() {
+                break 'hosts;
             }
-            for event in events {
-                let channel = event
-                    .tags
+            remaining.sort_unstable();
+            // 复用部署与 binding 的真实单页上界；不新增消息数量阈值，也不静默截断。
+            for batch in remaining.chunks(page_size) {
+                let ids: Vec<String> = batch.iter().map(ToString::to_string).collect();
+                let limit = i64::try_from(batch.len()).map_err(|_| user_state_unavailable())?;
+                let filters: Vec<serde_json::Value> = group
                     .iter()
-                    .map(nostr::Tag::as_slice)
-                    .find(|tag| tag.first().is_some_and(|name| name == "h"))
-                    .and_then(|tag| tag.get(1));
-                if !batch.contains(&event.id)
-                    || channel.map(String::as_str) != Some(scope.channel_id())
-                    || event.verify().is_err()
-                {
-                    tracing::warn!("Relay 可见性回应不符合请求 scope 或验签合同");
+                    .map(|index| {
+                        serde_json::json!({
+                            "ids": ids,
+                            "#h": [scopes[*index].1.channel_id()],
+                            "limit": limit,
+                        })
+                    })
+                    .collect();
+                let result = client.query(&state.http, &filters).await.map_err(|e| {
+                    tracing::warn!(error = %e, "查证已读事件可见性失败");
+                    web_transport::relay_error_response(&e, None)
+                })?;
+                let events: Vec<nostr::Event> = serde_json::from_value(result).map_err(|e| {
+                    tracing::warn!(error = %e, "Relay 可见性回应不是有效事件数组");
+                    user_state_unavailable()
+                })?;
+                if events.len() > batch.len() {
                     return Err(user_state_unavailable());
                 }
-                // Buzz 的 NIP-10 resolver 只以有效的 lowercase e/reply 标记判定回复；
-                // root-only 仍是顶层。复用 nostr 的 EventId/marker 解析，忽略此判定
-                // 不使用的 relay/author 槽，避免它们的格式使真实回复被误判成根。
-                let is_root = !event.tags.iter().any(|tag| {
-                    let parts = tag.as_slice();
-                    parts.len() >= 4
-                        && parts[0] == "e"
-                        && nostr::Tag::parse([
-                            parts[0].as_str(),
-                            parts[1].as_str(),
-                            "",
-                            parts[3].as_str(),
-                        ])
-                        .is_ok_and(|tag| tag.is_reply())
-                });
-                observed.insert(event.id, is_root);
+                for event in events {
+                    let channel = event
+                        .tags
+                        .iter()
+                        .map(nostr::Tag::as_slice)
+                        .find(|tag| tag.first().is_some_and(|name| name == "h"))
+                        .and_then(|tag| tag.get(1));
+                    let owner = group.iter().copied().find(|index| {
+                        channel.map(String::as_str) == Some(scopes[*index].1.channel_id())
+                    });
+                    let Some(owner) = owner else {
+                        tracing::warn!("Relay 可见性回应不符合请求 scope 或验签合同");
+                        return Err(user_state_unavailable());
+                    };
+                    if !batch.contains(&event.id)
+                        || found.contains(&event.id)
+                        || event.verify().is_err()
+                    {
+                        tracing::warn!("Relay 可见性回应不符合请求 scope 或验签合同");
+                        return Err(user_state_unavailable());
+                    }
+                    // Buzz 的 NIP-10 resolver 只以有效的 lowercase e/reply 标记判定回复；
+                    // root-only 仍是顶层。复用 nostr 的 EventId/marker 解析，忽略此判定
+                    // 不使用的 relay/author 槽，避免它们的格式使真实回复被误判成根。
+                    let is_root = !event.tags.iter().any(|tag| {
+                        let parts = tag.as_slice();
+                        parts.len() >= 4
+                            && parts[0] == "e"
+                            && nostr::Tag::parse([
+                                parts[0].as_str(),
+                                parts[1].as_str(),
+                                "",
+                                parts[3].as_str(),
+                            ])
+                            .is_ok_and(|tag| tag.is_reply())
+                    });
+                    found.insert(event.id);
+                    observed.entry(owner).or_default().insert(event.id, is_root);
+                }
             }
         }
-        // 不沿用外部读取之前的资格或 binding；查询期间撤权时丢弃该 scope 的结果。
+    }
+    // 不沿用外部读取之前的资格或 binding；查询期间撤权时丢弃该 scope 的结果。
+    let current_keys = web_transport::actor_keys(state, ctx).await?;
+    if keys.public_key() != current_keys.public_key() {
+        return Err(AdmissionFailure::BindingNotActive.into_response());
+    }
+    let mut owners: Vec<usize> = observed.keys().copied().collect();
+    owners.sort_unstable();
+    for owner in owners {
+        let (target, scope) = &scopes[owner];
         let current = match target.admit(state, ctx).await {
             Ok(scope) => scope,
             Err(response) if response.status() == StatusCode::FORBIDDEN => continue,
             Err(response) => return Err(response),
         };
-        let current_keys = web_transport::actor_keys(state, ctx).await?;
-        if !scope.same_admission(&current) || keys.public_key() != current_keys.public_key() {
+        if !scope.same_admission(&current) {
             return Err(AdmissionFailure::BindingNotActive.into_response());
         }
         let channel_id = scope
@@ -854,6 +897,8 @@ async fn readable_event_ids(
             .map_err(|_| user_state_unavailable())?;
         readable.extend(
             observed
+                .remove(&owner)
+                .unwrap_or_default()
                 .into_iter()
                 .map(|(id, is_root)| (id, (Some(channel_id), is_root))),
         );
