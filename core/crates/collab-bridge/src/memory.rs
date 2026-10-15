@@ -188,6 +188,101 @@ impl IdentityClient {
     }
 }
 
+/// One verified earlier message of the trigger's thread. Like `SourceMessage`,
+/// its plaintext belongs only to the current turn call.
+pub struct ThreadMessage {
+    pub id: String,
+    pub author: String,
+    pub content: String,
+    pub timestamp: u64,
+}
+
+impl IdentityClient {
+    /// Bounded history of the trigger's canonical thread (fixed Buzz ACP
+    /// `fetch_thread_context`, SF-BUZ-20): the root plus replies that resolve
+    /// to it in exactly this channel, created no later than the trigger, oldest
+    /// first, at most the `limit` newest. The trigger itself is excluded, and an
+    /// unverified, foreign or differently-rooted event is dropped, never used.
+    pub async fn thread_context(
+        &self,
+        http: &reqwest::Client,
+        channel: &str,
+        root: &str,
+        trigger: &str,
+        until: u64,
+        limit: usize,
+    ) -> Result<Vec<ThreadMessage>, MemoryError> {
+        if limit == 0 || root == trigger {
+            return Ok(Vec::new());
+        }
+        let kinds = [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF];
+        let page = self
+            .query(
+                http,
+                &[
+                    json!({"ids":[root],"#h":[channel],"limit":1}),
+                    json!({"kinds":kinds,"#e":[root],"#h":[channel],"until":until,
+                        "limit":limit.saturating_mul(2).saturating_add(1)}),
+                ],
+            )
+            .await
+            .map_err(|_| MemoryError::Unavailable)?;
+        let events: Vec<Event> =
+            serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
+        Ok(thread_messages(events, channel, root, trigger, until, limit))
+    }
+}
+
+/// Pure selection behind `thread_context`, kept separate so the bound and the
+/// ancestry/channel/signature filters are testable without a Relay.
+pub fn thread_messages(
+    events: Vec<Event>,
+    channel: &str,
+    root: &str,
+    trigger: &str,
+    until: u64,
+    limit: usize,
+) -> Vec<ThreadMessage> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<ThreadMessage> = events
+        .into_iter()
+        .filter(|event| {
+            let id = event.id.to_hex();
+            let channels: Vec<&String> = event
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice())
+                .filter(|parts| parts.first().map(String::as_str) == Some("h"))
+                .filter_map(|parts| (parts.len() == 2).then(|| &parts[1]))
+                .collect();
+            let ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
+            let belongs = if id == root {
+                ancestry.is_none()
+            } else {
+                ancestry.as_ref().is_some_and(|(observed, _)| observed == root)
+            };
+            id != trigger
+                && [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF]
+                    .contains(&u32::from(event.kind.as_u16()))
+                && event.created_at.as_secs() <= until
+                && channels.len() == 1
+                && channels[0] == channel
+                && belongs
+                && event.verify().is_ok()
+                && seen.insert(id)
+        })
+        .map(|event| ThreadMessage {
+            id: event.id.to_hex(),
+            author: event.pubkey.to_hex(),
+            content: event.content,
+            timestamp: event.created_at.as_secs(),
+        })
+        .collect();
+    out.sort_by(|a, b| (a.timestamp, &a.id).cmp(&(b.timestamp, &b.id)));
+    let skip = out.len().saturating_sub(limit);
+    out.split_off(skip)
+}
+
 /// NIP-25 direct target of a reaction: the last `e` tag holding a 64-char hex
 /// event ID (fixed Buzz lib.rs::build_trigger_context). Unlike upstream there is
 /// no fallback to the reaction itself; a reaction without a target is ignored.
@@ -618,5 +713,55 @@ mod reaction_target_tests {
             reaction_target(&reaction(vec![Tag::parse(["e", "short"]).unwrap()])),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod thread_context_tests {
+    use super::thread_messages;
+    use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+    fn message(text: &str, channel: &str, root: Option<&str>, at: u64) -> nostr::Event {
+        let mut tags = vec![Tag::parse(["h", channel]).unwrap()];
+        if let Some(root) = root {
+            tags.push(Tag::parse(["e", root, "", "root"]).unwrap());
+        }
+        EventBuilder::new(Kind::Custom(9), text)
+            .tags(tags)
+            .custom_created_at(Timestamp::from(at))
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[test]
+    fn keeps_only_verified_same_thread_messages_up_to_the_trigger_newest_bounded() {
+        let channel = "663cb02d-9a7f-4c39-ae8b-11955c556b98";
+        let root = message("root", channel, None, 10);
+        let root_id = root.id.to_hex();
+        let first = message("first", channel, Some(&root_id), 11);
+        let second = message("second", channel, Some(&root_id), 12);
+        let trigger = message("trigger", channel, Some(&root_id), 13);
+        let later = message("later", channel, Some(&root_id), 14);
+        let foreign_thread = message("other thread", channel, Some(&"f".repeat(64)), 12);
+        let foreign_channel = message("other channel", "other", Some(&root_id), 12);
+        let trigger_id = trigger.id.to_hex();
+        let events = vec![
+            later,
+            trigger,
+            second.clone(),
+            foreign_thread,
+            foreign_channel,
+            first,
+            root.clone(),
+            root,
+        ];
+        let all = thread_messages(events.clone(), channel, &root_id, &trigger_id, 13, 12);
+        assert_eq!(
+            all.iter().map(|m| m.content.as_str()).collect::<Vec<_>>(),
+            ["root", "first", "second"]
+        );
+        let bounded = thread_messages(events, channel, &root_id, &trigger_id, 13, 1);
+        assert_eq!(bounded.len(), 1);
+        assert_eq!(bounded[0].id, second.id.to_hex());
     }
 }

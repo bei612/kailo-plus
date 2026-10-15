@@ -856,10 +856,10 @@ impl Supervisor {
         projection: &RuntimeRef,
         invocation: Uuid,
         thread: &str,
-        source_context: (&str, Option<&str>),
+        source_context: (&str, Option<&str>, Option<&str>),
         trace: &str,
     ) -> Result<String, RuntimeError> {
-        let (input, core_memory) = source_context;
+        let (input, core_memory, thread_context) = source_context;
         if Uuid::parse_str(thread).is_err() || input.is_empty() {
             return Err(RuntimeError::Protocol);
         }
@@ -926,9 +926,22 @@ impl Supervisor {
         )
         .await
         .map_err(|_| RuntimeError::Unknown)?;
-        let context = core_memory.map(
-            |profile| json!({"platform.agent-memory.core":{"value":profile,"kind":"untrusted"}}),
-        );
+        // Both fragments are external, untrusted context (`12` §2): the pinned
+        // core memory and the bounded thread history of this trigger.
+        let mut fragments = serde_json::Map::new();
+        if let Some(profile) = core_memory {
+            fragments.insert(
+                "platform.agent-memory.core".into(),
+                json!({"value":profile,"kind":"untrusted"}),
+            );
+        }
+        if let Some(history) = thread_context {
+            fragments.insert(
+                "platform.buzz.thread-context".into(),
+                json!({"value":history,"kind":"untrusted"}),
+            );
+        }
+        let context = (!fragments.is_empty()).then_some(Value::Object(fragments));
         let mut inputs = Vec::new();
         if let Some(template) = template {
             inputs.push(json!({"type":"text","text":template,"textElements":[]}));
