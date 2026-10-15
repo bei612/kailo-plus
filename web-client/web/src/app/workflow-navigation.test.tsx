@@ -78,10 +78,19 @@ async function draft(text: string) {
   const create = document.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]');
   expect(create).not.toBeNull();
   await act(async () => create!.click());
-  const input = document.querySelector<HTMLTextAreaElement>("textarea")!;
+  // Original WorkflowDialog opens on an empty sequence: choose the executor,
+  // add the first step from its primary action, then edit that step's message.
+  const executor = [...document.querySelectorAll("select")].find((select) => [...select.options].some((option) => option.value === "executor"))!;
+  await act(async () => { executor.value = "executor"; executor.dispatchEvent(new Event("change", { bubbles: true })); });
+  const primary = document.querySelector<HTMLButtonElement>('[data-testid="workflow-dialog-primary-action"]');
+  expect(primary?.disabled).toBe(false);
+  await act(async () => primary!.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+  const input = document.querySelector<HTMLTextAreaElement>("textarea");
+  expect(input).not.toBeNull();
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input!, text);
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
