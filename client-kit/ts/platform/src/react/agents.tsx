@@ -39,7 +39,7 @@ import {
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, X, Zap } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Webhook, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -69,6 +69,7 @@ import { useWorkflowAuthorDirectory, type WorkflowAuthorDirectory } from "./work
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { WorkflowDiscardDialog, type WorkflowNavigation } from "./workflow-discard-dialog";
 import { WorkflowDeleteDialog } from "./workflow-delete-dialog";
+import { WorkflowWebhookSecretDialog, type WorkflowWebhookSecret } from "./workflow-webhook-secret-dialog";
 import { Skeleton } from "./sidebar/skeleton";
 import { ChannelCombobox } from "./workflow-channel-combobox";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
@@ -263,7 +264,10 @@ export function validAutomation(row: AutomationView): boolean {
     && [row.pinnedVersionAssetId, row.delegationId].every((id) => id === undefined || (typeof id === "string" && !!id))
     && [row.createdAt, row.updatedAt].every((time) => time === undefined
       || (typeof time === "string" && Number.isFinite(Date.parse(time))))
-    && (row.state !== AutomationState.Enabled || (!!row.pinnedVersionAssetId && !!row.delegationId));
+    && (row.state !== AutomationState.Enabled || (!!row.pinnedVersionAssetId && !!row.delegationId))
+    // DD-116: only the public URL and four-character hint of an ACTIVE key.
+    && (row.webhookUrl === undefined || (typeof row.webhookUrl === "string" && /^https?:\/\//.test(row.webhookUrl)))
+    && (row.webhookSecretHint === undefined || (typeof row.webhookSecretHint === "string" && row.webhookSecretHint.length === 4));
 }
 
 function validSchedule(spec: unknown): spec is NonNullable<AutomationVersionContent["trigger"]["scheduleSpec"]> {
@@ -320,6 +324,11 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
     && (trigger.kind === TriggerKind.Schedule
       ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined && trigger.filter === undefined
         && validSchedule(trigger.scheduleSpec)
+      // DD-116, fixed Buzz TriggerDef::Webhook: no message filter; replies in the Channel.
+      : trigger.kind === TriggerKind.Webhook
+        ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined && trigger.filter === undefined
+          && trigger.scheduleSpec === undefined && content.action === undefined
+          && !content.steps?.some((step) => step.action === "add_reaction")
       : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention
         || ((trigger.kind === TriggerKind.DiffPosted || trigger.kind === TriggerKind.ReactionAdded) && trigger.textPrefix === undefined))
         && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined)
@@ -355,7 +364,7 @@ export function validAutomationDetail(value: AutomationDetailView, resource: str
     && new Set(value.delegations.map((row) => row.delegationId)).size === value.delegations.length;
 }
 
-type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause" | "disable" | "delete" | "run" }
+type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause" | "disable" | "delete" | "run" | "rotate_webhook_secret" }
   | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
@@ -373,6 +382,8 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
   const [selectedAutomation, setSelectedAutomation] = useState<string | null>(null);
+  // DD-116: the one response that carries a new webhook key; it is never reloaded.
+  const [webhookSecret, setWebhookSecret] = useState<WorkflowWebhookSecret | null>(null);
   const [runReceipt, setRunReceipt] = useState<{ resourceId: string; workspaceId: string; submission: ActionSubmission } | null>(null);
   const data = state.status === "ok" ? state.data : null;
   const workspaces = data && Array.isArray(data) && data.every((w) => w && typeof w.id === "string" && !!w.id
@@ -440,6 +451,12 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
       onClose={() => { setEditorOpen(false); if (routed && workflowRoute?.view) onWorkflowRouteChange?.(null, workspace?.id); }}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
       onRecorded={(command, submission) => {
+        const issued = submission.webhookSecret;
+        if ((command.actionKey === "automation.enable" || command.actionKey === "automation.rotate_webhook_secret")
+          && issued && issued.automationResourceId === command.resourceId
+          && /^whsec_[A-Za-z0-9+/]{43}=$/.test(issued.secret)) {
+          setWebhookSecret({ automationResourceId: issued.automationResourceId, secret: issued.secret, url: issued.url });
+        }
         if (command.actionKey === "automation.run" && command.resourceId && command.workspaceId
           && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched) {
           selectAutomation(command.resourceId);
@@ -455,6 +472,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
           else setSelected(command.workspaceId);
         }
       }} />
+    {webhookSecret ? <WorkflowWebhookSecretDialog secret={webhookSecret} onContinue={() => setWebhookSecret(null)} /> : null}
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
       selected={shownAutomation} onSelect={selectAutomation}
       onCreate={() => { setEdit(null); setEditorOpen(true); }}
@@ -618,10 +636,12 @@ function AutomationCard({ row, workspaceName, authors, locked, onView, onEdit }:
           <span className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xs ${content?.trigger.kind === TriggerKind.Schedule
             ? "border-emerald-400/30 bg-emerald-600 text-white" : content?.trigger.kind === TriggerKind.DiffPosted
             ? "border-violet-400/30 bg-violet-600 text-white" : content?.trigger.kind === TriggerKind.ReactionAdded
-            ? "border-pink-400/30 bg-pink-600 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
+            ? "border-pink-400/30 bg-pink-600 text-white" : content?.trigger.kind === TriggerKind.Webhook
+            ? "border-orange-300/30 bg-orange-500 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
             {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" />
               : content.trigger.kind === TriggerKind.DiffPosted ? <GitPullRequest className="h-5 w-5" />
-              : content.trigger.kind === TriggerKind.ReactionAdded ? <SmilePlus className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+              : content.trigger.kind === TriggerKind.ReactionAdded ? <SmilePlus className="h-5 w-5" />
+              : content.trigger.kind === TriggerKind.Webhook ? <Webhook className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
           </span>
           {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" />
             <WorkflowActionTileStack content={content} animationSequence={triggerAnimationSequence} /></> : null}
@@ -777,12 +797,17 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
       <dt>{t("agents.automation.pinned")}</dt><dd className="break-all">{row.pinnedVersionAssetId ?? "—"}</dd>
       <dt>{t("agents.automation.grant")}</dt><dd className="break-all">{row.delegationId ?? "—"}</dd>
       <dt>{t("agents.resourceVersion")}</dt><dd>{row.resourceVersion}</dd>
+      {row.webhookUrl ? <><dt>{t("workflows.webhook.url")}</dt><dd className="break-all font-mono">{row.webhookUrl}</dd></> : null}
+      {row.webhookSecretHint ? <><dt>{t("workflows.webhook.secret")}</dt>
+        <dd className="font-mono">{t("workflows.webhook.hint", { hint: row.webhookSecretHint })}</dd></> : null}
     </dl>
     {detail.canManage ? <div className="flex flex-wrap gap-2">
       {row.state !== AutomationState.Enabled && published.length > 0 && grants.length > 0
         ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "enable" })}>{t("agents.automation.enable")}</Button> : null}
       {row.state === AutomationState.Enabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "pause" })}>{t("agents.automation.pause")}</Button> : null}
       {row.state !== AutomationState.Disabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "disable" })}>{t("agents.automation.disable")}</Button> : null}
+      {row.webhookSecretHint && row.state !== AutomationState.Disabled
+        ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "rotate_webhook_secret" })}>{t("workflows.webhook.rotate")}</Button> : null}
       <Button disabled={locked} onClick={() => onEdit({ detail, action: "delete" })}>{t("agents.automation.delete")}</Button>
     </div> : null}
     {/* Buzz 779af8886caae1317b4de962082429867ab61503:
@@ -803,7 +828,8 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
             <p>{t(version.content.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
               : version.content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention"
               : version.content.trigger.kind === TriggerKind.DiffPosted ? "agents.automation.diffPosted"
-              : version.content.trigger.kind === TriggerKind.ReactionAdded ? "agents.automation.reactionAdded" : "agents.automation.channelMessage")}</p>
+              : version.content.trigger.kind === TriggerKind.ReactionAdded ? "agents.automation.reactionAdded"
+              : version.content.trigger.kind === TriggerKind.Webhook ? "agents.automation.webhook" : "agents.automation.channelMessage")}</p>
             {version.content.trigger.emoji ? <p>{t("workflows.steps.emoji")}: {version.content.trigger.emoji}</p> : null}
             {version.content.trigger.scheduleSpec ? <>
               <p>{t("agents.automation.everySeconds")}: {version.content.trigger.scheduleSpec.everySeconds}</p>
@@ -987,7 +1013,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const formContent: AutomationVersionContent = {
     ...(name !== "" ? { name } : {}),
     ...(description !== undefined ? { description } : {}),
-    trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : {
+    trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : trigger === TriggerKind.Webhook ? {} : {
       ...(prefix && trigger !== TriggerKind.DiffPosted && trigger !== TriggerKind.ReactionAdded ? { textPrefix: prefix } : {}),
       ...(trigger === TriggerKind.ReactionAdded && triggerEmoji.trim() ? { emoji: triggerEmoji.trim() } : {}),
       ...(filter ? { filter } : {}) }),
@@ -995,7 +1021,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       || actionKind === ActionEnum.CallWebhook ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
-    resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
+    resultTarget: trigger === TriggerKind.Schedule || trigger === TriggerKind.Webhook ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
   const triggerPresentation = useWorkflowTriggerPresentation(formContent, workspaceId);
   const yamlContent = editorMode === "yaml" ? automationFromYaml(yamlText) : null;
@@ -1186,7 +1212,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const triggerFields = <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
           <select value={trigger} onChange={(event) => {
-            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, TriggerKind.ReactionAdded, TriggerKind.DiffPosted, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
+            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, TriggerKind.ReactionAdded, TriggerKind.DiffPosted, TriggerKind.Webhook, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
               .find((candidate) => candidate === event.target.value);
             if (value) {
               setTrigger(value);
@@ -1202,6 +1228,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
             <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
             <option value={TriggerKind.ReactionAdded}>{t("agents.automation.reactionAdded")}</option>
             <option value={TriggerKind.DiffPosted}>{t("agents.automation.diffPosted")}</option>
+            <option value={TriggerKind.Webhook}>{t("agents.automation.webhook")}</option>
             {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
           </select>
         </label>
@@ -1222,7 +1249,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
             <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
           <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
-        </> : <>
+        </> : trigger === TriggerKind.Webhook ? <p className="text-sm text-muted-foreground">{t("workflows.webhook.triggerHint")}</p> : <>
         {prefix && trigger !== TriggerKind.DiffPosted && trigger !== TriggerKind.ReactionAdded && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
@@ -1241,7 +1268,8 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const title = creating ? edit?.action === "copy" ? "workflows.dialog.duplicate" : "workflows.dialog.create"
     : edit.action === "publish_version" ? "workflows.dialog.edit"
     : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause"
-    : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
+    : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete"
+    : edit.action === "rotate_webhook_secret" ? "workflows.webhook.rotate" : "agents.automation.disable";
   // Original WorkflowDialog SUBMIT_LABELS; lifecycle reviews keep the governed review label.
   const submitLabel = creating ? edit?.action === "copy" ? "workflows.dialog.createCopy" : "workflows.dialog.create"
     : edit.action === "publish_version" ? "workflows.dialog.save" : "agents.review";
@@ -1318,7 +1346,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           onChange={(value) => { setYamlText(value); setEditorError(false); }} /></> : <>
         <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
           triggerPresentation={triggerPresentation}
-          onAgentTurn={() => { setActionKind(ActionKind.AgentTurn); setTemplate(""); }}
+          onAgentTurn={trigger === TriggerKind.Webhook ? undefined : () => { setActionKind(ActionKind.AgentTurn); setTemplate(""); }}
           onRemoveAction={() => { setActionKind(ActionKind.PostMessage); setTemplate(""); }}
           action={actionKind === ActionKind.AgentTurn ? {kind: ActionKind.AgentTurn, template} : undefined}
           actionFields={actionKind === ActionKind.AgentTurn ? <div className="space-y-1.5">
@@ -1353,7 +1381,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         </label> : null}
         {!policyAvailable ? <Notice role="status">{t("agents.automation.approvalUnavailable")}
           <Button onClick={reloadAdmission}>{t("platform.retry")}</Button></Notice> : null}
-        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(actionKind === ActionEnum.SetChannelTopic || trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(actionKind === ActionEnum.SetChannelTopic || trigger === TriggerKind.Schedule || trigger === TriggerKind.Webhook ? "agents.automation.channel" : "agents.automation.thread")}</p>
         </>}
       </> : null}
       {edit?.action === "enable" ? <>
@@ -1370,6 +1398,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
       </> : null}
       {((contentAction && trigger === TriggerKind.Schedule) || (edit?.action === "enable" && version?.content.trigger.kind === TriggerKind.Schedule))
         && !scheduleSupported ? <Notice role="status">{t("agents.automation.scheduleUnavailable")}</Notice> : null}
+      {edit?.action === "rotate_webhook_secret" ? <Notice role="status">{t("workflows.webhook.rotateNotice")}</Notice> : null}
       <div className="sticky bottom-0 mt-auto flex flex-shrink-0 flex-wrap items-center justify-between gap-4 bg-background pt-2 pb-1">
         {contentAction ? <div className="inline-flex h-8 items-center rounded-lg bg-muted p-0.5 text-muted-foreground" role="group" aria-label={t("agents.automation.yaml")}>
           <Button className={editorMode === "form" ? "h-7 bg-background px-3 text-xs shadow-xs" : "h-7 border-transparent px-3 text-xs"} aria-pressed={editorMode === "form"} onClick={() => changeEditor("form")}>{t("agents.automation.form")}</Button>
@@ -1391,7 +1420,8 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         <p className="break-words">{t("workflows.name")}: {intent.automationVersionContent.name ?? t("workflows.unnamed")}</p>
         <p className="break-words">{t("agents.automation.executor")}: {intent.executorInstallationResourceId ?? edit?.detail.automation.executorInstallationResourceId}</p>
         <p>{t("agents.automation.trigger")}: {intent.automationVersionContent.trigger.kind === TriggerKind.Mention
-          ? t("agents.installation.trigger.mention") : t(intent.automationVersionContent.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule" : "agents.automation.channelMessage")}</p>
+          ? t("agents.installation.trigger.mention") : t(intent.automationVersionContent.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
+            : intent.automationVersionContent.trigger.kind === TriggerKind.Webhook ? "agents.automation.webhook" : "agents.automation.channelMessage")}</p>
         {intent.automationVersionContent.trigger.scheduleSpec ? <>
           <p>{t("agents.automation.everySeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.everySeconds}</p>
           <p>{t("agents.automation.offsetSeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.offsetSeconds}</p>

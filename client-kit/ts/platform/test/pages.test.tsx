@@ -3671,6 +3671,7 @@ describe("platform pages render only through the host theme", () => {
           "border-violet-400/30 bg-violet-600 text-white",
           "border-pink-400/30 bg-pink-600 text-white",
           "border-blue-400/30 bg-blue-600 text-white",
+          "border-orange-300/30 bg-orange-500 text-white",
         ]) {
           expect(card!.getText(parsed).split(accent)).toHaveLength(2);
           expect(text.split(accent)).toHaveLength(2);
@@ -3760,7 +3761,8 @@ describe("platform pages render only through the host theme", () => {
         text = text.replace(originalTint, "active");
       }
       if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx" || source.name === "workflow-delete-dialog.tsx"
-        || source.name === "workflow-activation-dialog.tsx" || source.name === "workflow-message-text-condition-editor.tsx") {
+        || source.name === "workflow-activation-dialog.tsx" || source.name === "workflow-message-text-condition-editor.tsx"
+        || source.name === "workflow-webhook-secret-dialog.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
         // This exact modal backdrop is original; other literal colours remain

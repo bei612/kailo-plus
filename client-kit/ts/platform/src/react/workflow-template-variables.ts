@@ -32,6 +32,9 @@ function triggerVariables(trigger: TriggerKind): WorkflowTemplateVariable[] {
         ...eventVariables.filter(({ value }) => value !== "trigger.text")];
     case TriggerKind.Schedule:
       return eventVariables.filter(({ value }) => value === "trigger.channel_id" || value === "trigger.timestamp");
+    // Original webhook trigger: only the workflow channel; body fields are free-form.
+    case TriggerKind.Webhook:
+      return eventVariables.filter(({ value }) => value === "trigger.channel_id");
     default:
       return [];
   }

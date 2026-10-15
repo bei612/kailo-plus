@@ -90,7 +90,9 @@ const diffKeys = {
 export function workflowTriggerDescription(content: AutomationVersionContent, t: Translate,
   options: WorkflowTriggerDescriptionOptions = {}): string {
   const trigger = content.trigger;
-  if (trigger.kind === "SCHEDULE" || trigger.kind === "MENTION" || trigger.textPrefix) return workflowTriggerSummary(content, t);
+  if (trigger.kind === "SCHEDULE" || trigger.kind === "MENTION" || trigger.kind === "WEBHOOK" || trigger.textPrefix) {
+    return workflowTriggerSummary(content, t);
+  }
   const type = trigger.kind === "DIFF_POSTED" ? "diff_posted" : trigger.kind === "REACTION_ADDED" ? "reaction_added" : "message_posted";
   const conditions = trigger.filter ? parseConditionExpressions(trigger.filter, type) : [];
   if (!conditions) return t(type === "diff_posted" ? "workflows.trigger.diff" : type === "reaction_added" ? "workflows.trigger.reaction" : "workflows.trigger.message", {author: ""});
@@ -139,6 +141,7 @@ export function splitWorkflowAuthorDescription(description: string, label: strin
 /** Original getWorkflowTriggerSummary uses omission, unlike the card's author presentation. */
 export function workflowTriggerSummary(content: AutomationVersionContent, t: Translate): string {
   if (content.trigger.kind === "SCHEDULE") return t("workflows.trigger.schedule");
+  if (content.trigger.kind === "WEBHOOK") return t("workflows.trigger.webhook");
   if (content.trigger.kind === "MENTION") return t("workflows.trigger.mention");
   if (content.trigger.textPrefix) return t("workflows.trigger.matchingMessage");
   return workflowTriggerDescription(content, t, {omitUnresolvedReferences: true});
@@ -175,6 +178,8 @@ export function workflowTriggerCardClause(content: AutomationVersionContent, t: 
   // A Kailo MENTION also requires its existing trusted principal predicate;
   // do not describe that authorized extra constraint as an unrestricted message.
   if (trigger.kind === "MENTION") return t("workflows.card.mention");
+  // Original getTriggerCardClause: "When a webhook arrives".
+  if (trigger.kind === "WEBHOOK") return t("workflows.card.webhook");
   // Original getWorkflowCardLabel: the presented condition clause
   // (getPresentedTriggerCardClause), else getTriggerCardClause.
   if (trigger.kind === "DIFF_POSTED") {
