@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_workspace_activity_query.schema.json",
+  "title": "WebWorkspaceActivityQuery",
+  "description": "POST /api/v1/workspace-activity：一次读取调用方多个已加入 Workspace 的原版频道窗口首页（侧栏最近活动与未读、Inbox 原兴趣规则的输入），对应固定 Buzz desktop/src-tauri/src/commands/channels/fetch.rs 的批量 last-message 查询。每项仍单独做 HUMAN 协作准入；同一请求内 Workspace 不得重复。messageType 只接受频道窗口的 STREAM 或 FORUM_POST。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "title": "WebWorkspaceActivityTarget",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["workspaceId", "messageType"],
+        "properties": {
+          "workspaceId": { "type": "string", "format": "uuid" },
+          "messageType": { "$ref": "web_message_type.schema.json" }
+        }
+      }
+    }
+  }
+}

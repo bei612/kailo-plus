@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_workspace_activity_page.schema.json",
+  "title": "WebWorkspaceActivityPage",
+  "description": "POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope 与窗口边界核验的首页事件，语义与单个 GET /workspaces/{id}/messages 首页相同。任一项准入或核验失败即整次失败，不返回部分结果。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "WebWorkspaceActivity",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["workspaceId", "channelId", "events"],
+        "properties": {
+          "workspaceId": { "type": "string", "format": "uuid" },
+          "channelId": { "type": "string", "format": "uuid" },
+          "events": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    }
+  }
+}
