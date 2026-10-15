@@ -2630,6 +2630,7 @@ enum PlatformMessageKey {
   actionsAgentVersionPublish,
   actionsAgentVersionRetire,
   actionsAgentInstallationCreate,
+  actionsAgentInstallationUpgrade,
   actionsAgentInstallationExecuteGrant,
   actionsAgentInstallationExecuteRevoke,
   actionsAgentInstallationUseGrant,
@@ -8978,6 +8979,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.actionsAgentInstallationCreate: (
     'Install Agent',
     '安装 Agent',
+  ),
+  PlatformMessageKey.actionsAgentInstallationUpgrade: (
+    'Upgrade Agent installation',
+    '升级 Agent 安装',
   ),
   PlatformMessageKey.actionsAgentInstallationExecuteGrant: (
     'Grant Agent execution permission',
