@@ -51,7 +51,7 @@ export async function loadConversationSidebarActivity(client: BffClient, princip
   if (conversations.some(previous => !current.some(item => item.id === previous.id && item.channelId === previous.channelId &&
     item.participantPrincipalIds.length === previous.participantPrincipalIds.length && item.participantPrincipalIds.every(id => previous.participantPrincipalIds.includes(id)))))
     throw new Error("Conversation admission changed during read");
-  if ((await client.session()).tenantPrincipalId !== principal) throw new Error("DM identity changed during read");
+  if ((await client.session({ fresh: true })).tenantPrincipalId !== principal) throw new Error("DM identity changed during read");
   signal.throwIfAborted();
   return {events, lastMessageAt};
 }

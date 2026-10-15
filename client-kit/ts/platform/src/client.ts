@@ -96,7 +96,7 @@ export function createBffClient(transport: BffTransport) {
     if (request.method !== "GET" && (request.path === "/api/v1/profile" || request.path.startsWith("/api/v1/actions"))) { profiles.clear(); authors.clear(); }
     return unwrap<T>(request, await transport.send(request));
   };
-  const get = <T>(path: string) => call<T>({ method: "GET", path });
+  const get = <T>(path: string, fresh = false) => call<T>({ method: "GET", path, ...(fresh ? { fresh: true } : {}) });
   const profileRead = async (path: string, freshMs: number): Promise<WebProfileView> => {
     const now = Date.now();
     let entry = profiles.get(path);
@@ -157,8 +157,9 @@ export function createBffClient(transport: BffTransport) {
     platformInfo: () => get<PlatformInfo>("/api/v1/platform-info"),
 
     /** 当前会话。撤权后下一次调用即 403——会话不由客户端持有，不需要它主动丢弃。 */
-    session: async () => {
-      const session = await get<PlatformSessionView>("/api/v1/session");
+    /** `fresh`: an identity re-check after a read; it always reaches the BFF, never a shared answer. */
+    session: async (options?: { fresh?: boolean }) => {
+      const session = await get<PlatformSessionView>("/api/v1/session", options?.fresh === true);
       // 未知或旧回应缺字段不是任何一种可用会话，不猜默认准入模式（DD-96）。
       if (
         session?.accessMode !== PlatformSessionAccessMode.Full &&

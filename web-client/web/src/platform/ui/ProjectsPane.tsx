@@ -59,7 +59,7 @@ export function useProjectDiscussInChannel(scopeKey:string,onOpenChannel?: (work
     const descriptor=await client.workspaceChannel(current.id);check();
     if(descriptor.channelId!==current.channel.channelId||descriptor.channelType!==ChannelType.Stream||descriptor.archived!==false)
       throw new Error(t("projects.home.channelMissing"));
-    const session=await client.session();check();
+    const session=await client.session({fresh:true});check();
     if(session.accessMode!==PlatformSessionAccessMode.Full||session.tenantPrincipalId!==principalId
       ||`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`!==scopeKey)throw new Error(t("platform.loadFailed"));
     initDraftStore(principalId!,window.location.origin);

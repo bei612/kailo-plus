@@ -87,7 +87,7 @@ export async function loadComposerAgentDirectory(
     if (!current()) throw new Error("Composer identity or scope changed");
   };
   check();
-  const principalId = (await client.session()).tenantPrincipalId;
+  const principalId = (await client.session({ fresh: true })).tenantPrincipalId;
   check();
   if (scope.principalId && scope.principalId !== principalId)
     throw new Error("Composer principal changed");
@@ -163,7 +163,7 @@ export async function loadComposerAgentDirectory(
       avatarUrl: null,
     });
   }
-  if ((await client.session()).tenantPrincipalId !== principalId)
+  if ((await client.session({ fresh: true })).tenantPrincipalId !== principalId)
     throw new Error("Composer principal changed during read");
   check();
   const finalChannel = await client.workspaceChannel(scope.workspaceId);

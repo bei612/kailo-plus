@@ -260,7 +260,7 @@ export function useDirectMessageOpen(currentPrincipalId: string) {
     if (!currentPrincipalId) throw new Error(translateUi("dm.viewInactive"));
     scope.busy = true; setResolving(true);
     try {
-      const session = await client.session();
+      const session = await client.session({ fresh: true });
       checkCurrent();
       if (session.tenantPrincipalId !== currentPrincipalId) throw new Error(translateUi("dm.viewInactive"));
       const target = normalizePubkey(pubkey);

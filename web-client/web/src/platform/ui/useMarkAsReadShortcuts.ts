@@ -18,7 +18,7 @@ export async function loadReadShortcutContexts(client: BffClient, session: Platf
   const check = () => { if (!isCurrent()) throw new Error("Read shortcut view changed"); };
   const checkSession = async () => {
     check();
-    const actual = await client.session();
+    const actual = await client.session({ fresh: true });
     check();
     if (actual.accessMode !== PlatformSessionAccessMode.Full || actual.tenantId !== session.tenantId ||
         actual.tenantPrincipalId !== session.tenantPrincipalId || actual.platformSessionId !== session.platformSessionId)

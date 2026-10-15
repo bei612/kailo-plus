@@ -63,22 +63,23 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
   const invalidateReads = () => { generation += 1; reads.clear(); settledReads.clear(); };
   const copy = (reply: BffReply): BffReply =>
     ({ status: reply.status, body: reply.body === undefined ? undefined : structuredClone(reply.body) });
-  const coalesced = async (path: string, init: RequestInit): Promise<BffReply> => {
+  const coalesced = async (path: string, init: RequestInit, fresh = false): Promise<BffReply> => {
     const method = (init.method ?? "GET").toUpperCase();
     if (method !== "GET" || init.body !== undefined) {
       if (!(method === "POST" && READ_POSTS.test(path))) invalidateReads();
       return send(path, init);
     }
     const settle = options.settleMs !== undefined && options.settleMs > 0 && options.settled?.(path) === true;
-    const hit = settle ? settledReads.get(path) : undefined;
+    const hit = settle && !fresh ? settledReads.get(path) : undefined;
     if (hit && Date.now() - hit.at < options.settleMs!) return copy(hit.reply);
-    let read = reads.get(path);
+    // A fresh read is a security re-check: it neither joins an in-flight read nor answers others.
+    let read = fresh ? undefined : reads.get(path);
     if (!read) {
       read = send(path, init);
       const current = read, started = generation, at = Date.now();
-      reads.set(path, current);
+      if (!fresh) reads.set(path, current);
       void current.then((reply) => {
-        if (settle && started === generation && reply.status >= 200 && reply.status < 300) settledReads.set(path, { at, reply });
+        if (settle && !fresh && started === generation && reply.status >= 200 && reply.status < 300) settledReads.set(path, { at, reply });
       }, () => undefined).finally(() => { if (reads.get(path) === current) reads.delete(path); });
     }
     return copy(await read);
@@ -113,7 +114,7 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
     exchange,
     invalidateReads,
     send: (request: BffRequest) =>
-      exchange(request.path, {
+      coalesced(request.path, {
         method: request.method,
         ...(request.body === undefined
           ? {}
@@ -121,6 +122,6 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(request.body),
             }),
-      }),
+      }, request.fresh === true),
   };
 }

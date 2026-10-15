@@ -10,7 +10,11 @@ import { type ErrorBody, ErrorClass } from "@client-kit/contracts";
 export type BffMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 /** 一次管理平面请求。`path` 必须在 `/api/v1/` 下；正文是 JSON。 */
-export type BffRequest = { method: BffMethod; path: string; body?: unknown };
+export type BffRequest = {
+  method: BffMethod; path: string; body?: unknown;
+  /** Security re-check: the transport must send a new request, never a shared or settled answer. */
+  fresh?: boolean;
+};
 
 /** BFF 的回应：状态码与已解析的正文（没有正文或不是 JSON 时为 `undefined`）。 */
 export type BffReply = { status: number; body: unknown };

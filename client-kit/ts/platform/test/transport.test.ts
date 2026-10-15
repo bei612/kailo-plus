@@ -120,13 +120,15 @@ describe("web-fetch", () => {
     expect(fetch.mock.calls.filter(([path]) => path === "/api/v1/workspace-activity")).toHaveLength(1);
   });
 
-  it("冷启动先后读取的会话、私聊、参与者、应用绑定与首个消息窗口各只读 1 次", async () => {
+  it("冷启动先后读取：私聊、参与者、应用绑定与首个消息窗口各 1 次，会话 1 次共享加 3 次身份核对", async () => {
     // The live cold start (2026-10-15) read session x4, conversations x3, participants x3,
-    // application-bindings x3 and one DM's first window x3, back to back within ~0.4 s.
+    // application-bindings x3 and one DM's first window x3, back to back within ~0.4 s. The
+    // shell's session read is shared; the three identity re-checks always reach the BFF.
     const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { items: [], events: [], tenantPrincipalId: "p", accessMode: "FULL" }));
     const transport = createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead });
     const client = createBffClient(transport);
     for (let round = 0; round < 4; round += 1) {
+      await client.session(round === 0 ? undefined : { fresh: true });
       await client.session();
       if (round < 3) {
         await client.conversations();
@@ -138,8 +140,30 @@ describe("web-fetch", () => {
     }
     const paths = fetch.mock.calls.map(([path]) => String(path));
     const reads = paths.filter((path) => !path.endsWith("/workspace-activity"));
-    expect(reads).toHaveLength(5);
+    expect(reads.filter((path) => path === "/api/v1/session")).toHaveLength(1 + 3);
+    expect(reads.filter((path) => path !== "/api/v1/session")).toHaveLength(4);
     expect(new Set(reads).size).toBe(5);
+  });
+
+  it("共享窗口内的身份核对读取（fresh）仍然发出网络请求，也不加入进行中的共享读取", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let principal = "first";
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      const answer = principal; await gate;
+      return json(200, { tenantPrincipalId: answer, accessMode: "FULL" });
+    });
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead }));
+    const shared = client.session();
+    principal = "second";
+    const inFlightCheck = client.session({ fresh: true });
+    release();
+    expect((await shared).tenantPrincipalId).toBe("first");
+    expect((await inFlightCheck).tenantPrincipalId).toBe("second");
+    expect((await client.session()).tenantPrincipalId).toBe("first");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await client.session({ fresh: true })).tenantPrincipalId).toBe("second");
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("共享读取在写入、实时事件或窗口过期后重新读取；分页读与其他路径不共享", async () => {
