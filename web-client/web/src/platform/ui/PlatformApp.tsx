@@ -622,7 +622,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
             <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} roster={{kind: "workspace", workspaceId: active}} open={membersOpenFor === active}
               onOpenChange={(open) => setMembersOpenFor(open ? active : null)} archived={channel.data.archived}
-              currentPrincipalId={session.tenantPrincipalId}
+              currentPrincipalId={session.tenantPrincipalId} workspaceName={channel.data.name}
               onOpenProfile={(target) => { setMembersOpenFor(null); setManageOpenFor(null);
                 setMemberProfileRequest({workspaceId: active, ...target, nonce: Date.now()}); }} /> : null}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?

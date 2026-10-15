@@ -9,10 +9,15 @@
 // workspace.admin.grant/revoke actions (DD-41/46/82), re-admitted by Core on submit.
 // Huddle is not offered on governed channels (SS-BUZ-GOVERNANCE), so the bar has no
 // huddle control; Manage channel opens the shared channel-management-sheet. Channel roles are the platform admin relation only: no owner/guest.
+// Agent rows (MembersSidebarMemberCard memberIsBot) are the Workspace's governed Agent
+// installations, not memberships: name from the installation directory, the original
+// AddChannelBotDialog is the governed agent.installation.create dialog, and a row opens the
+// installation detail with its use authorization. Lifecycle start/stop, respond-to editing and
+// removal have no governed action and are not offered (core/verify/buzz-restoration-checkpoint.md).
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, EllipsisVertical, Settings2, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
-import { WorkspaceMembershipState, type ConversationParticipant, type ConversationView, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
+import { Bot, Ellipsis, EllipsisVertical, Settings2, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
+import { AgentInstallationState, WorkspaceMembershipState, type AgentInstallationView, type ConversationParticipant, type ConversationView, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
 import { truncatePubkey } from "../format";
@@ -34,7 +39,14 @@ import { MemberAvatar, type MemberTarget } from "./members";
 import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "./roles";
 import { rankUserCandidatesBySearch } from "./search/userCandidateSearch";
 import type { UserSearchResult } from "./search/types";
+import { installationLabels, loadWorkspaceAgents } from "./agent-installation-view";
 
+// The governed installation dialogs live with the Agents page; load them on first use only.
+const WorkspaceAgentDialogs = React.lazy(() => import("./agents").then((module) => ({ default: module.WorkspaceAgentDialogs })));
+
+// Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/presence/lib/presence.ts::getPresenceDotClassName.
+// An installation is "online" only while it is Active with an active channel binding.
+const PRESENCE_DOT_CLASS = { online: "bg-emerald-500", offline: "bg-muted-foreground/35" } as const;
 const MEMBER_ADD_RESULT_LIMIT = 50;
 const MEMBER_SEARCH_MIN_QUERY_LENGTH = 2;
 const MEMBER_ROW_ESTIMATE_PX = 60;
@@ -177,8 +189,10 @@ function compareMembersForModal(left: Row, right: Row) {
     || left.member.principalId.localeCompare(right.member.principalId);
 }
 
-export function ChannelMembersDialog({ roster, open, onOpenChange, archived = false, currentPrincipalId, currentPubkey, onOpenProfile }: {
+export function ChannelMembersDialog({ roster, open, onOpenChange, archived = false, currentPrincipalId, currentPubkey, onOpenProfile, workspaceName }: {
   roster: MemberRoster;
+  /** The channel's Workspace name, shown in the governed install review; omitted hides Add agent. */
+  workspaceName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   archived?: boolean;
@@ -208,6 +222,23 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     void queryClient.invalidateQueries({ queryKey: ["platform", "channel-member-roles", workspaceId] });
   }, [queryClient, roster, workspaceId]);
   const action = useMemberAction(refresh);
+  const agentsQuery = useQuery({
+    queryKey: ["platform", "channel-agents", workspaceId],
+    queryFn: () => loadWorkspaceAgents(client, workspaceId!),
+    enabled: open && workspaceId !== undefined,
+    retry: false,
+    staleTime: 0,
+  });
+  const [agentDialogs, setAgentDialogs] = React.useState(false);
+  const [agentCreateOpen, setAgentCreateOpen] = React.useState(false);
+  const [selectedAgent, setSelectedAgent] = React.useState<string | null>(null);
+  // Like the original Add-agent and View-activity entries, the member dialog yields to the
+  // agent dialog instead of stacking two modal layers.
+  const openAgentDialog = (resourceId: string | null) => {
+    onOpenChange(false);
+    setAgentDialogs(true);
+    if (resourceId) setSelectedAgent(resourceId); else setAgentCreateOpen(true);
+  };
 
   React.useEffect(() => {
     if (!open) {
@@ -256,6 +287,12 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     });
   }, [candidates, deferredSearchQuery]);
   const isAddSearchLoading = deferredSearchQuery.length >= MEMBER_SEARCH_MIN_QUERY_LENGTH && rolesQuery.isPending;
+  const agents = agentsQuery.data ?? [];
+  const agentName = (row: AgentInstallationView) => row.agentDisplayName?.trim() || t("agents.installation.id");
+  const filteredAgents = !normalizedSearchQuery ? agents : agents.filter((row) => [
+    agentName(row), "agent", row.agentPubkey ?? "",
+  ].some((label) => label.toLowerCase().includes(normalizedSearchQuery)));
+  const canOfferAgentAdd = workspaceId !== undefined && workspaceName !== undefined && !archived && selfActive;
   const disabled = action.busy || action.confirming !== null || archived;
 
   function addMember(role: RoleMemberView) {
@@ -358,7 +395,51 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     );
   }
 
+  function renderAgentCard(row: AgentInstallationView) {
+    const name = agentName(row);
+    const owner = membersQuery.data?.find((member) => member.principalId === row.ownerPrincipalId)?.displayName;
+    const available = row.state === AgentInstallationState.Active && row.channelBinding?.status === "ACTIVE";
+    return (
+      <div
+        className={cn(
+          "group/member relative isolate flex min-h-14 items-center gap-3 px-4 py-3.5 text-left transition-colors duration-150 ease-out hover:bg-muted/40 focus-within:bg-muted/40",
+          MEMBER_ROW_INSET_DIVIDER_CLASS,
+        )}
+        data-testid={`sidebar-agent-${row.resourceId}`}
+        key={row.resourceId}
+      >
+        <button
+          aria-label={t("channelMembers.openAgent", { name })}
+          className="absolute inset-0 z-0 cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+          data-testid={`sidebar-agent-open-${row.resourceId}`}
+          disabled={archived}
+          onClick={() => openAgentDialog(row.resourceId)}
+          type="button"
+        />
+        <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-3">
+          <div className="relative shrink-0">
+            <ProfileAvatar avatarUrl={null} className="h-8 w-8 text-xs shadow-none" iconClassName="h-4 w-4" label={name} shape="squircle" />
+            <span
+              className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+              data-testid={`sidebar-agent-presence-${row.resourceId}`}
+            >
+              <span aria-hidden="true" className={cn("inline-flex h-2 w-2 shrink-0 rounded-full", PRESENCE_DOT_CLASS[available ? "online" : "offline"])} />
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium tracking-tight">{name}</span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Bot className="h-3 w-3" />{t(installationLabels[row.state])}</span>
+            </div>
+            {owner ? <p className="truncate text-xs text-muted-foreground">{t("channelMembers.agentAddedBy", { name: owner })}</p> : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
+    <>
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
         aria-describedby={undefined}
@@ -445,6 +526,26 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
                 )}
               </div>
             </section>
+            {workspaceId !== undefined ? (
+              <section className="mt-4 overflow-hidden rounded-xl border border-border/70 bg-background/70" data-testid="members-sidebar-agents">
+                <SearchResultSectionTitle action={canOfferAgentAdd ? (
+                  <Button className="h-7 px-2 text-xs" data-testid="members-sidebar-add-agent" onClick={() => openAgentDialog(null)} size="sm" type="button" variant="outline">
+                    <Bot className="h-3.5 w-3.5" />{t("channelMembers.addAgent")}
+                  </Button>
+                ) : null}>
+                  {normalizedSearchQuery ? t("channelMembers.agents") : t("channelMembers.agentsCount", { count: agents.length })}
+                </SearchResultSectionTitle>
+                {agentsQuery.isError ? (
+                  <p className="px-4 py-3 text-sm text-destructive" role="alert">{t("platform.loadFailed")}</p>
+                ) : agentsQuery.isPending ? (
+                  <p className="px-4 py-3 text-sm text-muted-foreground">{t("channelMembers.agentsLoading")}</p>
+                ) : filteredAgents.length > 0 ? (
+                  <div className="max-h-[min(30vh,15rem)] overflow-y-auto">{filteredAgents.map(renderAgentCard)}</div>
+                ) : (
+                  <p className="px-4 py-3 text-sm text-muted-foreground">{normalizedSearchQuery ? t("channelMembers.noMatch") : t("channelMembers.noAgents")}</p>
+                )}
+              </section>
+            ) : null}
             {rolesQuery.isError && !rolesForbidden ? (
               <p className="mt-4 text-sm text-destructive" role="alert">{t("platform.loadFailed")}</p>
             ) : null}
@@ -455,6 +556,14 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
         </AvatarHostProvider>
       </DialogContent>
     </Dialog>
+    {agentDialogs && workspaceId !== undefined && workspaceName !== undefined ? (
+      <React.Suspense fallback={null}>
+        <WorkspaceAgentDialogs createOpen={agentCreateOpen} onCreateOpenChange={setAgentCreateOpen}
+          onRecorded={() => void queryClient.invalidateQueries({ queryKey: ["platform", "channel-agents", workspaceId] })}
+          onSelectedChange={setSelectedAgent} selectedId={selectedAgent} workspaceId={workspaceId} workspaceName={workspaceName} />
+      </React.Suspense>
+    ) : null}
+    </>
   );
 }
 
@@ -500,10 +609,11 @@ function AddMemberSearchResultRow({ disabled, onSelect, role }: {
   );
 }
 
-function SearchResultSectionTitle({ children }: { children: React.ReactNode }) {
+function SearchResultSectionTitle({ action, children }: { action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="sticky top-0 z-10 mr-3 flex min-h-9 items-center gap-2 bg-background/95 px-4 pb-1.5 pt-3 text-xs font-medium text-muted-foreground/75 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <span>{children}</span>
+      {action ? <span className="ml-auto">{action}</span> : null}
     </div>
   );
 }

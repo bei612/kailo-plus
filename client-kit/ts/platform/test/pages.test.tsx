@@ -3799,6 +3799,14 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalBadge)).toHaveLength(2);
         text = text.replace(originalBadge, "");
       }
+      if (source.name === "channel-members.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/presence/lib/presence.ts::getPresenceDotClassName "online".
+        // Preserve only the original agent presence dot, not other literal colours.
+        const originalOnline = 'online: "bg-emerald-500"';
+        expect(text.split(originalOnline)).toHaveLength(2);
+        text = text.replace(originalOnline, "");
+      }
       if (source.name === "inbox-surface.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/features/home/ui/InboxListPane.tsx::InboxRowActionButton.

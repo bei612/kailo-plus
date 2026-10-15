@@ -34,6 +34,23 @@ OUTCOME ACTIVE，MEMBERSHIP_PROJECTION TERMINAL）后再移除（执行
 `659e3081-6311-4fcb-9816-57659ae045bb`），人数 1→2→1。私聊头部、加入按钮、Web 资料面板
 尚待下一发布点实拍；Desktop/Windows 无设备验收。
 
+### 2026-10-15 频道成员弹窗的 Agent 行与添加 Agent（本地，未部署）
+
+Agent 在 Kailo 不是 Workspace 成员，而是受治理的 Agent 安装（`identity.workspace_membership` 只含 HUMAN）。
+因此原版成员卡片中的 bot 行映射为本 Workspace 的安装目录，不从成员名单推断。
+
+| 固定官方路径与符号 | 四类与当前实现 |
+| --- | --- |
+| `desktop/src/features/channels/ui/MembersSidebar.tsx`、`MembersSidebarMemberCard.tsx`（`memberIsBot` 行、`PresenceDot`） | 共享迁移：`client-kit/ts/platform/src/react/channel-members.tsx::ChannelMembersDialog` 的 Agent 段，数据来自 `agent-installation-view.ts::loadWorkspaceAgents`（`GET /api/v1/agent-installations` 全页、逐行校验）。名称暂用安装目录的 `agentDisplayName`，Agent kind:0 资料由协作队友交付后替换；头像暂为 squircle 首字母；在线点沿用原 `getPresenceDotClassName` 的 online/offline 类，“在线”仅指安装 ACTIVE 且频道绑定 ACTIVE；行内显示安装状态与“由 X 添加”（安装 owner）。已授权治理改造：Agent 列为独立分段，不与成员混排 |
+| `desktop/src/features/channels/ui/AddChannelBotDialog.tsx`（Personas/Teams/Generic providers/ReuseGuard） | 已授权治理改造：“添加 Agent”打开 `agents.tsx::WorkspaceAgentDialogs` 中与 Agents 页相同的 `InstallationCreate`，候选来自 `agent-installation-candidates`，提交走 `agent.installation.create`。原本机 ACP provider、persona/team 现场创建与复用守卫依赖本机 harness，不适用于平台托管运行时，不提供 |
+| `desktop/src/features/profile/ui/UserProfilePanel.tsx`（Agent 资料）与成员卡片管理菜单 | 已授权治理改造：Agent 行打开同一安装详情（`InstallationDetail`），含已有使用授权开关 `AgentInstallationUse`、执行/读取授权、委托、升级、记忆与会话；成员弹窗先关闭再打开，避免两层模态叠放（同原 View activity） |
+| 原 bot 生命周期 start/stop（`managedAgentPairAction`）、`EditRespondToDialog`、从频道移除 bot | 治理冲突，不提供：运行时由平台投影管理，没有受治理启停动作；触发方式在安装时确定，没有修改动作；没有受治理的卸载动作。三者都不渲染入口，待对应动作登记后恢复 |
+| 原搜索框“Add people and agents”中的 Agent 候选 | 已授权治理改造：搜索会过滤已在频道的 Agent 行；新增 Agent 走“添加 Agent”安装对话框，不在成员添加结果中混排 |
+| `desktop/src/features/channels/ui/ChannelManagementSheet.tsx` | 原样保留：固定原版频道设置面板没有 Agent 段，未新增 |
+
+验证：`client-kit/ts/platform/test/channel-agents.test.tsx` 覆盖 Agent 行、搜索、详情、添加对话框只读候选、私聊无 Agent 段；
+`pages.test.tsx` 只豁免原版 online 在线点这一条字面颜色。实拍待部署后补。
+
 ## 2026-10-12 完整清单覆盖复核与 Projects 现有消费者纠偏
 
 固定官方仍为 Buzz `779af8886caae1317b4de962082429867ab61503`。

@@ -96,7 +96,7 @@ export function ChannelScreenHeader({
         onCopy={(value) => writeTextToClipboard(value)} /> : null}
       {roster && rosterId ? <ChannelMembersDialog key={rosterId} roster={roster} open={membersOpenFor === rosterId}
         onOpenChange={(open) => setMembersOpenFor(open ? rosterId : null)} archived={Boolean(activeChannel.archivedAt)}
-        currentPubkey={currentPubkey}
+        currentPubkey={currentPubkey} workspaceName={roster.kind === "workspace" ? activeChannel.name : undefined}
         onOpenProfile={openProfilePanel ? (target) => { setMembersOpenFor(null); openProfilePanel(target.pubkey); } : undefined} /> : null}
     </AvatarHostProvider>
   );

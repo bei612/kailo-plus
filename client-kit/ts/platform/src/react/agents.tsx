@@ -49,6 +49,7 @@ import { Badge, Button, Cell, Notice, Table, ReadFailure as AgentReadFailure } f
 import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { AgentInstallationUse } from "./agent-installation-use";
+import { installationLabels, validInstallation } from "./agent-installation-view";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
@@ -1473,13 +1474,6 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   </>;
 }
 
-const installationLabels = {
-  [AgentInstallationState.Provisioning]: "agents.installation.state.provisioning",
-  [AgentInstallationState.Active]: "agents.installation.state.active",
-  [AgentInstallationState.Draining]: "agents.installation.state.draining",
-  [AgentInstallationState.Disabled]: "agents.installation.state.disabled",
-  [AgentInstallationState.Error]: "agents.installation.state.error",
-} as const satisfies Record<AgentInstallationState, PlatformMessageKey>;
 const projectionLabels = {
   [AgentRuntimeProjectionState.Pending]: "agents.installation.projection.pending",
   [AgentRuntimeProjectionState.Active]: "agents.installation.projection.active",
@@ -1501,36 +1495,6 @@ const triggerLabels = {
   [AgentTrigger.Mention]: "agents.installation.trigger.mention",
   [AgentTrigger.ManualAssignment]: "agents.installation.trigger.manual",
 } as const satisfies Record<AgentTrigger, PlatformMessageKey>;
-
-function validInstallation(row: AgentInstallationView): boolean {
-  if (!row || ![row.resourceId, row.workspaceId, row.agentResourceId, row.pinnedVersionAssetId,
-    row.agentPrincipalId, row.ownerPrincipalId].every((id) => typeof id === "string" && !!id)
-    || !Number.isSafeInteger(row.resourceVersion) || row.resourceVersion <= 0
-    || !Object.values(ResourceState).includes(row.resourceState)
-    || !Object.values(AgentInstallationState).includes(row.state)
-    || (row.canUpgrade !== undefined && typeof row.canUpgrade !== "boolean")
-    || (row.agentPrincipalState !== "ACTIVE" && row.agentPrincipalState !== "DISABLED")) return false;
-  const channel = row.channelBinding;
-  if (channel !== undefined && (!channel || !["ACTIVE", "DISABLED", "ERROR"].includes(channel.status)
-    || !Array.isArray(channel.triggers) || channel.triggers.length === 0
-    || !channel.triggers.every((trigger) => Object.values(AgentTrigger).includes(trigger))
-    || (channel.channelId !== undefined && (typeof channel.channelId !== "string" || !channel.channelId)))) return false;
-  const projection = row.projection;
-  if (projection !== undefined && (!projection || !Number.isSafeInteger(projection.generation) || projection.generation <= 0
-    || projection.agentVersionAssetId !== row.pinnedVersionAssetId
-    || typeof projection.runtimeProfileKey !== "string" || !projection.runtimeProfileKey
-    || typeof projection.configHash !== "string" || !/^[0-9a-f]{64}$/.test(projection.configHash)
-    || !Object.values(AgentRuntimeProjectionState).includes(projection.state))) return false;
-  if (row.activeProjectionGeneration !== undefined && (!Number.isSafeInteger(row.activeProjectionGeneration)
-    || row.activeProjectionGeneration <= 0 || projection?.generation !== row.activeProjectionGeneration)) return false;
-  for (const permission of [row.executionPermission, row.readPermission]) {
-    if (permission !== undefined && (!permission
-      || ![permission.requested, permission.effective, permission.canGrant, permission.canRevoke].every((value) => typeof value === "boolean")
-      || (permission.pendingActionExecutionId !== undefined && (typeof permission.pendingActionExecutionId !== "string" || !permission.pendingActionExecutionId)))) return false;
-  }
-  return row.state !== AgentInstallationState.Active || (row.resourceState === ResourceState.Active
-    && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
-}
 
 function InstallationManagement({ versionRevision, refreshRevision, onLockedChange, workspaceId, onWorkspaceChange, avatarHost }: WorkspaceNavigation & {
   versionRevision: number; refreshRevision: number; onLockedChange: (locked: boolean) => void;
@@ -1587,6 +1551,52 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked} avatarHost={avatarHost}
       onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
   </section>;
+}
+
+/**
+ * Buzz 779af8886caae1317b4de962082429867ab61503 MembersSidebar/AddChannelBotDialog consumers for one
+ * channel's Workspace: the same governed install (agent.installation.create), installation
+ * detail with its use authorization, execution/read permission, delegation and upgrade dialogs
+ * as the Agents page. The host only chooses which one is open.
+ */
+export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, onCreateOpenChange, selectedId, onSelectedChange, onRecorded }: {
+  workspaceId: string; workspaceName: string;
+  createOpen: boolean; onCreateOpenChange: (open: boolean) => void;
+  selectedId: string | null; onSelectedChange: (resourceId: string | null) => void;
+  onRecorded?: () => void;
+}) {
+  const t = useT();
+  const [locked, setLocked] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
+  const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
+  const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
+  const recorded = () => { setRevision((old) => old + 1); onRecorded?.(); };
+  return <>
+    <InstallationCreate open={createOpen} onClose={() => onCreateOpenChange(false)} workspaceId={workspaceId} workspaceName={workspaceName}
+      sourceRevision={`channel:${revision}`} locked={locked} onLocked={setLocked} onRecorded={recorded} />
+    {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
+      workspaceId={upgradeTarget.workspaceId} workspaceName={workspaceName} sourceRevision={`channel:${revision}`}
+      locked={locked} onLocked={setLocked} onRecorded={recorded} /> : null}
+    <AgentManagementDialog open={selectedId !== null} title={t("agents.installation.open")} locked={locked} onClose={() => onSelectedChange(null)}>
+      {selectedId ? <InstallationDetail key={`${selectedId}:${revision}`} resourceId={selectedId} workspaceId={workspaceId} locked={locked} onLocked={setLocked}
+        onPermission={(row) => { onSelectedChange(null); setPermissionTarget(row); }}
+        onManage={(row) => { onSelectedChange(null); setDelegationTarget(row); }}
+        onUpgrade={(row) => { onSelectedChange(null); setUpgradeTarget(row); }} /> : null}
+    </AgentManagementDialog>
+    <AgentManagementDialog open={delegationTarget !== null} title={t("agents.delegation.title")} locked={locked} onClose={() => setDelegationTarget(null)}>
+      <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
+        onRecorded={recorded} />
+    </AgentManagementDialog>
+    <AgentManagementDialog open={permissionTarget !== null} title={t("agents.execute.open")} locked={locked} onClose={() => setPermissionTarget(null)}>
+    {permissionTarget ? <>
+      <InstallationPermission key={`execute:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="execute" installation={permissionTarget} locked={locked} onLocked={setLocked}
+        onRecorded={recorded} />
+      {permissionTarget.readPermission ? <InstallationPermission key={`read:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="read" installation={permissionTarget} locked={locked} onLocked={setLocked}
+        onRecorded={recorded} /> : null}
+    </> : null}
+    </AgentManagementDialog>
+  </>;
 }
 
 function validInstallationCandidate(row: AgentInstallationCandidate): boolean {

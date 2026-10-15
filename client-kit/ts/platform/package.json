@@ -146,6 +146,7 @@
     "./react/channel-members": "./src/react/channel-members.tsx",
     "./react/workspace-activity": "./src/react/workspace-activity.ts",
     "./react/agent-installation-use": "./src/react/agent-installation-use.tsx",
+    "./react/agent-installation-view": "./src/react/agent-installation-view.ts",
     "./react/channel-management-sheet": "./src/react/channel-management-sheet.tsx",
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./react/profile/avatar-host": "./src/react/profile/avatar-host.tsx",
