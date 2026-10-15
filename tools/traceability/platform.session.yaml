@@ -36,7 +36,7 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:f7b4fdb72819e0df6118fed77d82403a6ad555c3999f2e06b003971d0fb240a1
+      digest: sha256:5ff77b356e7c82dcc4fced71727654733f5f4b0ee73080aa85111c70709d10c1
     - name: model-gateway
       digest: sha256:3ca36716a3e92177f0d3a3e143bcd7bacf5d17ae73b3f2fd31f1dec6eca4dbaa
     - name: web-client
