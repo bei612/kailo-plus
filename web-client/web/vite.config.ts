@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -45,5 +46,11 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.VITE_PORT || "5173", 10),
     strictPort: true,
+  },
+  test: {
+    // client-kit ships TypeScript source installed as file: copies (.npmrc install-links).
+    // The production build bundles it; vitest must transform it the same way instead of
+    // externalizing node_modules to Node, which cannot strip types there.
+    server: { deps: { inline: [/[\\/]@client-kit[\\/]/] } },
   },
 });

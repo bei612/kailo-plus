@@ -155,6 +155,11 @@ prepare_check_dependencies() {
   # .npmrc install-links); install it exactly as web-client/web/Dockerfile does.
   if populated web-client/web/src; then
     (cd web-client/web && npm ci --prefer-offline --no-audit --no-fund) || return 2
+    # web-client/web/Dockerfile links /src/node_modules to the Web install so the shared
+    # Desktop EmojiBurstProvider asserted by src/main.test.tsx resolves the same packages.
+    # Here the repository root node_modules belongs to pnpm; link only the Desktop tree.
+    [ -e collaboration/desktop/node_modules ] \
+      || ln -s ../../web-client/web/node_modules collaboration/desktop/node_modules || return 2
   fi
   (cd client-kit/dart && dart pub get) || return 2
 }
