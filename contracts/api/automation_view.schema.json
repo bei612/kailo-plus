@@ -16,6 +16,8 @@
     "state": {"$ref": "../enums/automation_state.schema.json"},
     "executorInstallationResourceId": {"type": "string", "format": "uuid"},
     "pinnedVersionAssetId": {"type": "string", "format": "uuid"},
-    "delegationId": {"type": "string", "format": "uuid"}
+    "delegationId": {"type": "string", "format": "uuid"},
+    "webhookUrl": {"type": "string", "description": "WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。"},
+    "webhookSecretHint": {"type": "string", "minLength": 4, "maxLength": 4, "description": "当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。"}
   }
 }
