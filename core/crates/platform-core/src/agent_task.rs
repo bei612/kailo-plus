@@ -2046,13 +2046,24 @@ async fn observe(
             // Known native completion is not a successful governed reply. A
             // revoked run cannot create a new reply intent, but must settle its
             // actual usage and release its holder before business failure.
-            return finish_billed_turn(state, invocation, id, status, None, None, proof).await;
+            return finish_billed_turn(state, invocation, id, status, None, None, proof, false)
+                .await;
         }
         let event_id = match invocation.reply_event_id.as_deref() {
             Some(event_id) => event_id.to_owned(),
+            None if native_reply_absent(turn) => {
+                // 17 §10: a completed native turn whose full item view holds no
+                // final agent text has no reply to publish. Close it FAILED
+                // after the same usage proof; never invent or resend a reply.
+                return finish_billed_turn(state, invocation, id, status, None, None, proof, true)
+                    .await;
+            }
             None => match publish_reply(state, invocation, projection, turn, activity).await {
                 Ok(event_id) => event_id,
                 Err(error) => {
+                    let reason = crate::governance::wire(&error.reason());
+                    tracing::warn!(invocation_id=%invocation.id, reason_code=%reason, ?error,
+                        "Agent reply 未发布；保持原 Invocation 待对账");
                     // 新回复仍须 fresh 准入；没有已持久意图时不把拒绝伪装为发送。
                     return release_holder(
                         state,
@@ -2074,6 +2085,7 @@ async fn observe(
                     Some(&event_id),
                     Some(delivered),
                     proof,
+                    false,
                 )
                 .await;
             }
@@ -2096,7 +2108,7 @@ async fn observe(
         };
         return release_holder(state, invocation.id, true, waiting).await;
     }
-    finish_billed_turn(state, invocation, id, status, None, None, proof).await
+    finish_billed_turn(state, invocation, id, status, None, None, proof, false).await
 }
 
 #[derive(FromRow, PartialEq)]
@@ -2277,6 +2289,48 @@ fn native_reply(turn: &Value) -> Option<(&str, u64)> {
         .as_str()
         .filter(|text| !text.trim().is_empty())?;
     Some((text, u64::try_from(completed).ok()?))
+}
+
+/// The native full item view of a completed turn proves there is no reply:
+/// every agentMessage has a recognised shape and none carries non-empty final
+/// text (e.g. the model produced only reasoning). Any unknown shape, partial
+/// view or error is no conclusion and stays with `native_reply`.
+fn native_reply_absent(turn: &Value) -> bool {
+    if turn.get("status").and_then(Value::as_str) != Some("completed")
+        || turn.get("itemsView").and_then(Value::as_str) != Some("full")
+        || turn.get("error").is_some_and(|error| !error.is_null())
+    {
+        return false;
+    }
+    let Some(items) = turn.get("items").and_then(Value::as_array) else {
+        return false;
+    };
+    items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("agentMessage"))
+        .all(|message| {
+            message
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+                && message.get("delivery").is_none_or(Value::is_null)
+                && message.get("questions").is_none_or(Value::is_null)
+                && match message.get("phase") {
+                    Some(Value::String(phase)) if phase == "commentary" => true,
+                    None | Some(Value::Null) => message_text_empty(message),
+                    Some(Value::String(phase)) if phase == "final_answer" => {
+                        message_text_empty(message)
+                    }
+                    _ => false,
+                }
+        })
+}
+
+fn message_text_empty(message: &Value) -> bool {
+    message
+        .get("text")
+        .and_then(Value::as_str)
+        .is_some_and(|text| text.trim().is_empty())
 }
 
 // Runtime slot ownership ends before metering/reply. The released lease still
@@ -3049,6 +3103,7 @@ async fn reconcile_reply(
 /// A released holder and native terminal turn are necessary but not metering
 /// proof. Finish only after the actual nonempty Gateway set and turn COUNT have
 /// all reached OpenMeter stored_at, and persist those exact references atomically.
+#[allow(clippy::too_many_arguments)]
 async fn finish_billed_turn(
     state: &ServiceState,
     invocation: &Invocation,
@@ -3057,13 +3112,19 @@ async fn finish_billed_turn(
     reply: Option<&str>,
     reply_delivered: Option<bool>,
     proof: (Vec<Uuid>, Vec<crate::audit::Evidence>, bool),
+    no_reply_content: bool,
 ) -> Response {
-    let Some((status, wire_status)) = billed_outcome(
-        native_status,
-        reply,
-        invocation.cancel_pending,
-        reply_delivered,
-    ) else {
+    let outcome = if no_reply_content && native_status == "completed" && reply.is_none() {
+        Some((TaskStatus::Failed, "FAILED"))
+    } else {
+        billed_outcome(
+            native_status,
+            reply,
+            invocation.cancel_pending,
+            reply_delivered,
+        )
+    };
+    let Some((status, wire_status)) = outcome else {
         return result(
             invocation.id,
             TaskStatus::Running,
@@ -3134,7 +3195,7 @@ async fn finish_billed_turn(
          where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
            and i.status in ('RUNNING','UNKNOWN') and i.runtime_turn_id=$5 and i.native_status=$6
            and i.reply_event_id is not distinct from $10::text
-           and ($6<>'completed' or $10::text is not null or i.cancel_pending)
+           and ($6<>'completed' or $10::text is not null or i.cancel_pending or $16::boolean)
            and ($11::boolean is distinct from false or exists(select 1 from audit.audit_event o
              where o.event_key=$7::text||':agent-turn:'||i.id::text||':reply:'||i.reply_event_id||':outcome'
                and o.operation_id=$7 and o.tenant_id=i.tenant_id and o.workspace_id=i.workspace_id
@@ -3157,6 +3218,7 @@ async fn finish_billed_turn(
     .bind(reply)
     .bind(reply_delivered)
     .bind(&ae.action_key).bind(ae.action_version).bind(ae.actor_principal_id).bind(&ae.parameter_hash)
+    .bind(no_reply_content)
     .fetch_optional(&mut *tx)
     .await
     {
@@ -3207,7 +3269,9 @@ async fn finish_billed_turn(
             reply,
         ));
     }
-    let outcome = if native_status == "completed" && wire_status == "FAILED" {
+    let outcome = if no_reply_content && native_status == "completed" && reply.is_none() {
+        "FAILED_NO_REPLY_CONTENT"
+    } else if native_status == "completed" && wire_status == "FAILED" {
         "FAILED_REPLY_NOT_DELIVERED"
     } else {
         wire_status
@@ -3611,8 +3675,9 @@ mod memory_context_tests {
 #[cfg(test)]
 mod reply_tests {
     use super::{
-        billed_outcome, definite_reply_refusal, native_reply, needs_native_interrupt,
-        result_channel, sign_native_reply, Invocation, UnboundTurnHistory,
+        billed_outcome, definite_reply_refusal, native_reply, native_reply_absent,
+        needs_native_interrupt, result_channel, sign_native_reply, Invocation,
+        UnboundTurnHistory,
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -3760,6 +3825,40 @@ mod reply_tests {
                     .is_err());
             }
         }
+    }
+
+    #[test]
+    fn reasoning_only_completed_turn_is_a_native_absent_reply_not_unknown() {
+        let turn = |items: serde_json::Value| {
+            json!({"id":"t","status":"completed","itemsView":"full","error":null,
+                "startedAt":1,"completedAt":2,"items":items})
+        };
+        // The live 2026-10-14 case: user + reasoning items only.
+        let items = json!([{"type":"userMessage","id":"u"},{"type":"reasoning","id":"r"}]);
+        let reasoning = turn(items);
+        assert!(native_reply(&reasoning).is_none());
+        assert!(native_reply_absent(&reasoning));
+        let item = json!({"type":"agentMessage","id":"m","text":"  ","phase":"final_answer"});
+        let blank = turn(json!([item]));
+        assert!(native_reply_absent(&blank));
+        // A publishable reply, an unknown shape, a partial view or an error is
+        // never "absent".
+        let answered = turn(json!([{"type":"agentMessage","id":"m","text":"ok"}]));
+        assert!(native_reply(&answered).is_some());
+        assert!(!native_reply_absent(&answered));
+        let unknown = turn(json!([{"type":"agentMessage","id":"m","text":"","phase":"other"}]));
+        assert!(!native_reply_absent(&unknown));
+        let questions = turn(json!([{"type":"agentMessage","id":"m","text":"","questions":[]}]));
+        assert!(!native_reply_absent(&questions));
+        let mut partial = reasoning.clone();
+        partial["itemsView"] = json!("summary");
+        assert!(!native_reply_absent(&partial));
+        let mut failed = reasoning.clone();
+        failed["error"] = json!({"message":"x"});
+        assert!(!native_reply_absent(&failed));
+        let mut running = reasoning;
+        running["status"] = json!("inProgress");
+        assert!(!native_reply_absent(&running));
     }
 
     #[test]
