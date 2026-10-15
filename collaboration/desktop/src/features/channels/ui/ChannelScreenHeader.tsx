@@ -68,16 +68,16 @@ export function ChannelScreenHeader({
                 triggerAriaLabel={translate(locale, "platform.settings.profile")}>{avatar}</UserProfilePopover> : avatar} />
           : activeChannel.channelType !== "dm" ? <ChannelGlyph channel={activeChannel} className="h-4 w-4 translate-y-px text-muted-foreground" /> : undefined}
         statusBadge={activeChannelEphemeralDisplay ? <ChannelHeaderStatusBadge ephemeralDisplay={activeChannelEphemeralDisplay} /> : undefined}
-        actions={workspace ? <ChannelMembersBar workspaceId={workspace.id}
+        actions={workspace ? <ChannelMembersBar roster={{ kind: "workspace", workspaceId: workspace.id }}
           onToggleMembers={() => setMembersOpenFor(membersOpenFor === workspace.id ? null : workspace.id)}
           onManageChannel={() => setManageOpenFor(workspace.id)} /> : undefined} />
-      {workspace && activeChannel.channelType !== "dm" ? <ChannelManagementSheet key={`manage:${workspace.id}`} workspaceId={workspace.id}
+      {workspace && activeChannel.channelType !== "dm" ? <ChannelManagementSheet key={`manage:${workspace.id}`} roster={{ kind: "workspace", workspaceId: workspace.id }}
         open={manageOpenFor === workspace.id} onOpenChange={(open) => setManageOpenFor(open ? workspace.id : null)} isDark={isDark}
         channel={{ channelId: activeChannel.id, name: activeChannel.name, description: activeChannel.description,
           channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds }}
         onOpenMembers={() => { const id = workspace.id; window.requestAnimationFrame(() => setMembersOpenFor(id)); }}
         onCopy={(value) => writeTextToClipboard(value)} /> : null}
-      {workspace ? <ChannelMembersDialog key={workspace.id} workspaceId={workspace.id} open={membersOpenFor === workspace.id}
+      {workspace ? <ChannelMembersDialog key={workspace.id} roster={{ kind: "workspace", workspaceId: workspace.id }} open={membersOpenFor === workspace.id}
         onOpenChange={(open) => setMembersOpenFor(open ? workspace.id : null)} archived={Boolean(activeChannel.archivedAt)}
         currentPubkey={currentPubkey}
         onOpenProfile={openProfilePanel ? (target) => { setMembersOpenFor(null); openProfilePanel(target.pubkey); } : undefined} /> : null}

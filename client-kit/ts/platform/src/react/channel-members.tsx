@@ -12,11 +12,12 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ellipsis, EllipsisVertical, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
-import { WorkspaceMembershipState, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
+import { WorkspaceMembershipState, type ConversationParticipant, type ConversationView, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
 import { truncatePubkey } from "../format";
-import { BffError } from "../transport";
+import { BffError, TransportError } from "../transport";
+import type { BffClient } from "../client";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
@@ -40,23 +41,54 @@ const MEMBER_ROW_ESTIMATE_PX = 60;
 const MEMBER_ROW_INSET_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-0 after:h-px after:bg-border/60 after:content-[''] last:after:hidden";
 
-/** One cached Workspace roster read for the header count and the dialog. */
-export function channelMembersQueryKey(workspaceId: string) {
-  return ["platform", "channel-members", workspaceId] as const;
+/** A channel roster is its Workspace membership; a DM roster is its admitted participants. */
+export type MemberRoster =
+  | { kind: "workspace"; workspaceId: string }
+  | { kind: "conversation"; conversation: Pick<ConversationView, "id" | "participantPrincipalIds"> };
+
+/** All pages of the caller's admitted DM directory, narrowed to this conversation. */
+export async function loadConversationParticipants(client: BffClient,
+  conversation: Pick<ConversationView, "participantPrincipalIds">): Promise<ConversationParticipant[]> {
+  const items: ConversationParticipant[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await client.conversationParticipants(cursor);
+    items.push(...page.items.filter((item) => conversation.participantPrincipalIds.includes(item.principalId)));
+    cursor = page.nextCursor;
+    if (cursor && seen.has(cursor)) throw new TransportError("Recipient cursor did not advance.");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return items;
 }
 
-export function useChannelMembers(workspaceId: string, enabled = true) {
+/** One cached roster read for the header count, the dialog and the settings sheet. */
+export function rosterQueryKey(roster: MemberRoster) {
+  return roster.kind === "workspace"
+    ? ["platform", "channel-members", roster.workspaceId] as const
+    : ["platform", "conversation-roster", roster.conversation.id, roster.conversation.participantPrincipalIds.join(",")] as const;
+}
+
+export function useRosterMembers(roster: MemberRoster, enabled = true) {
   const client = useBffClient();
-  return useQuery({ queryKey: channelMembersQueryKey(workspaceId), queryFn: () => client.members(workspaceId), enabled });
+  return useQuery({
+    queryKey: rosterQueryKey(roster),
+    queryFn: async (): Promise<WorkspaceMemberView[]> => roster.kind === "workspace"
+      ? client.members(roster.workspaceId)
+      // Admitted participants carry no membership lifecycle; the conversation itself is open.
+      : (await loadConversationParticipants(client, roster.conversation)).map((participant) => ({
+        ...participant, state: WorkspaceMembershipState.Active })),
+    enabled,
+  });
 }
 
-export function ChannelMembersBar({ workspaceId, onToggleMembers, onManageChannel }: {
-  workspaceId: string;
+export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel }: {
+  roster: MemberRoster;
   onToggleMembers: () => void;
   onManageChannel: () => void;
 }) {
   const t = useT();
-  const members = useChannelMembers(workspaceId);
+  const members = useRosterMembers(roster);
   const memberCount = members.isSuccess
     ? members.data.filter((member) => member.state === WorkspaceMembershipState.Active).length
     : null;
@@ -110,8 +142,8 @@ function compareMembersForModal(left: Row, right: Row) {
     || left.member.principalId.localeCompare(right.member.principalId);
 }
 
-export function ChannelMembersDialog({ workspaceId, open, onOpenChange, archived = false, currentPrincipalId, currentPubkey, onOpenProfile }: {
-  workspaceId: string;
+export function ChannelMembersDialog({ roster, open, onOpenChange, archived = false, currentPrincipalId, currentPubkey, onOpenProfile }: {
+  roster: MemberRoster;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   archived?: boolean;
@@ -125,18 +157,21 @@ export function ChannelMembersDialog({ workspaceId, open, onOpenChange, archived
   const queryClient = useQueryClient();
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
-  const membersQuery = useChannelMembers(workspaceId, open);
+  // DM membership is fixed at creation (original canAddChannelMembers); only a channel
+  // Workspace has a role projection and governed member actions.
+  const workspaceId = roster.kind === "workspace" ? roster.workspaceId : undefined;
+  const membersQuery = useRosterMembers(roster, open);
   const rolesQuery = useQuery({
     queryKey: ["platform", "channel-member-roles", workspaceId],
-    queryFn: () => loadRoleMemberDirectory(client, workspaceId),
-    enabled: open,
+    queryFn: () => loadRoleMemberDirectory(client, workspaceId!),
+    enabled: open && workspaceId !== undefined,
     retry: false,
     staleTime: 0,
   });
   const refresh = React.useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: channelMembersQueryKey(workspaceId) });
+    void queryClient.invalidateQueries({ queryKey: rosterQueryKey(roster) });
     void queryClient.invalidateQueries({ queryKey: ["platform", "channel-member-roles", workspaceId] });
-  }, [queryClient, workspaceId]);
+  }, [queryClient, roster, workspaceId]);
   const action = useMemberAction(refresh);
 
   React.useEffect(() => {
@@ -225,7 +260,7 @@ export function ChannelMembersDialog({ workspaceId, open, onOpenChange, archived
         )}
         <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-3">
           <div className="relative shrink-0">
-            {active && pubkey ? (
+            {active && pubkey && workspaceId ? (
               <MemberAvatar className="h-8 w-8 text-xs shadow-none" label={member.displayName}
                 target={{ workspaceId, principalId: member.principalId, pubkey }} />
             ) : (

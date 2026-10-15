@@ -590,7 +590,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
               channelType={channel.data.channelType}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
-              actions={<ChannelMembersBar workspaceId={active} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
+              actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
                 onManageChannel={() => setManageOpenFor(active)} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
@@ -598,6 +598,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>url}}>
               <ChatHeader title={dmHeaderTitle} channelType="dm" visibility="private"
                 leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
+                actions={chosenConversation ? <ChannelMembersBar roster={{kind: "conversation", conversation: chosenConversation}}
+                  onToggleMembers={() => setMembersOpenFor(membersOpenFor === chosenConversation.id ? null : chosenConversation.id)}
+                  onManageChannel={() => setManageOpenFor(chosenConversation.id)} /> : undefined}
                 onCopyTitle={async title=>{
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -614,19 +617,31 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
-            <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} workspaceId={active} open={membersOpenFor === active}
+            <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} roster={{kind: "workspace", workspaceId: active}} open={membersOpenFor === active}
               onOpenChange={(open) => setMembersOpenFor(open ? active : null)} archived={channel.data.archived}
               currentPrincipalId={session.tenantPrincipalId}
               onOpenProfile={(target) => { setMembersOpenFor(null); setManageOpenFor(null);
                 setMemberProfileRequest({workspaceId: active, ...target, nonce: Date.now()}); }} /> : null}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
-            <ChannelManagementSheet key={`manage:${session.tenantPrincipalId}:${active}`} workspaceId={active} open={manageOpenFor === active}
+            <ChannelManagementSheet key={`manage:${session.tenantPrincipalId}:${active}`} roster={{kind: "workspace", workspaceId: active}} open={manageOpenFor === active}
               onOpenChange={(open) => setManageOpenFor(open ? active : null)} isDark={isDark}
               channel={{channelId: channel.data.channelId, name: channel.data.name, description: channel.data.description ?? "",
                 channelType: channel.data.channelType === "forum" ? "forum" : "stream", visibility: activeRow.visibility,
                 ttlSeconds: channel.data.ttlSeconds ?? null}}
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
               onCopy={writeTextToClipboard} /> : null}
+          {tab === "conversation" && chosenConversation ? <>
+            <ChannelMembersDialog key={`dm:${session.tenantPrincipalId}:${chosenConversation.id}`}
+              roster={{kind: "conversation", conversation: chosenConversation}} open={membersOpenFor === chosenConversation.id}
+              onOpenChange={(open) => setMembersOpenFor(open ? chosenConversation.id : null)}
+              currentPrincipalId={session.tenantPrincipalId} />
+            <ChannelManagementSheet key={`dm-manage:${session.tenantPrincipalId}:${chosenConversation.id}`}
+              roster={{kind: "conversation", conversation: chosenConversation}} open={manageOpenFor === chosenConversation.id}
+              onOpenChange={(open) => setManageOpenFor(open ? chosenConversation.id : null)} isDark={isDark}
+              channel={{channelId: chosenConversation.channelId, name: dmHeaderTitle ?? "", description: "", channelType: "dm", ttlSeconds: null}}
+              onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(chosenConversation.id)); }}
+              onCopy={writeTextToClipboard} />
+          </> : null}
           <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
             {body}
           </main>

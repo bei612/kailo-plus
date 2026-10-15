@@ -63,7 +63,7 @@ import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, 
 import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
-import type { MemberProfileRequest } from "@client-kit/platform/react/channel-members";
+import { loadConversationParticipants, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
@@ -284,17 +284,7 @@ export function ChannelPane({
       conversation ? {conversationId:conversation.id,participantPrincipalIds:conversation.participantPrincipalIds} : null],
     queryFn: async () => {
       if (!conversation) return bff.members(workspaceId);
-      const items: ConversationParticipant[] = [];
-      let cursor: string | undefined;
-      const seen = new Set<string>();
-      do {
-        const page = await bff.conversationParticipants(cursor);
-        items.push(...page.items.filter((item) => conversation.participantPrincipalIds.includes(item.principalId)));
-        cursor = page.nextCursor;
-        if (cursor && seen.has(cursor)) throw new TransportError("Recipient cursor did not advance.");
-        if (cursor) seen.add(cursor);
-      } while (cursor);
-      return items;
+      return loadConversationParticipants(bff, conversation);
     },
   });
   const userState = useQuery(platformQueries.userState);

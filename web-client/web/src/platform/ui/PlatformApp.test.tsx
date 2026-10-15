@@ -9,7 +9,7 @@ vi.mock("./ConversationSidebar",()=>({ConversationSidebar:()=> <div data-testid=
 vi.mock("@tanstack/react-router", () => ({ useBlocker: () => ({ status: "idle" }) }));
 vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChannelDialog: () => null }));
 vi.mock("@client-kit/platform/react/channel-members", () => ({
-  ChannelMembersBar: ({workspaceId}:{workspaceId:string}) => <div data-testid="channel-members-trigger" data-workspace={workspaceId} />,
+  ChannelMembersBar: ({roster}:{roster:{kind:string;workspaceId?:string}}) => <div data-testid="channel-members-trigger" data-roster={roster.kind} data-workspace={roster.workspaceId} />,
   ChannelMembersDialog: () => null,
 }));
 vi.mock("@client-kit/platform/react/channel-management-sheet", () => ({ ChannelManagementSheet: () => null }));

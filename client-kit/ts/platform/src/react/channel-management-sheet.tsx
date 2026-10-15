@@ -12,7 +12,7 @@
 // affordances and action rows are not rendered.
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { WorkspaceMembershipState } from "@client-kit/contracts";
 import { useLocale, useT } from "./context";
@@ -28,7 +28,7 @@ import {
 import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "./profile/avatar-host";
 import { MemberAvatar } from "./members";
-import { useChannelMembers } from "./channel-members";
+import { useRosterMembers, type MemberRoster } from "./channel-members";
 
 const MAX_VISIBLE_AVATARS = 3;
 // The original stacks with inline zIndex index + 1; literal utilities keep the same order
@@ -40,7 +40,7 @@ export type ChannelManagementChannel = {
   channelId: string;
   name: string;
   description: string;
-  channelType: "stream" | "forum";
+  channelType: "stream" | "forum" | "dm";
   visibility?: "open" | "private";
   ttlSeconds: number | null;
 };
@@ -87,12 +87,12 @@ function useScrollBoundaryLock(scrollRef: React.RefObject<HTMLElement | null>) {
   }, [scrollRef]);
 }
 
-export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channel, isDark, onOpenMembers, onCopy }: {
+export function ChannelManagementSheet({ open, onOpenChange, roster, channel, isDark, onOpenMembers, onCopy }: {
   open: boolean;
   /** Host theme state, as the original reads useTheme().isDark for the overlay surface. */
   isDark: boolean;
   onOpenChange: (open: boolean) => void;
-  workspaceId: string;
+  roster: MemberRoster;
   channel: ChannelManagementChannel;
   onOpenMembers?: () => void;
   /** Host clipboard transport; the shared row owns the original feedback. */
@@ -102,7 +102,9 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
   const locale = useLocale();
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useScrollBoundaryLock(scrollRef);
-  const membersQuery = useChannelMembers(workspaceId, open);
+  const membersQuery = useRosterMembers(roster, open);
+  const workspaceId = roster.kind === "workspace" ? roster.workspaceId : undefined;
+  const dm = channel.channelType === "dm";
   const members = (membersQuery.data ?? []).filter((member) => member.state === WorkspaceMembershipState.Active);
   const memberCount = members.length;
   const description = channel.description.trim();
@@ -150,9 +152,10 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
                 <div className="space-y-6 pt-3">
                   <div className="flex flex-col items-center gap-3 py-3 text-center" data-testid="channel-management-hero">
                     <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <ChannelGlyph channel={{ channelType: channel.channelType, visibility: channel.visibility }} className="h-8 w-8" />
+                      {dm ? <MessageSquare className="h-8 w-8" />
+                        : <ChannelGlyph channel={{ channelType: channel.channelType, visibility: channel.visibility }} className="h-8 w-8" />}
                     </div>
-                    <div className="flex max-w-full flex-col items-center">
+                    {dm ? null : <div className="flex max-w-full flex-col items-center">
                       <h3 className="max-w-full truncate text-xl font-semibold tracking-tight" data-testid="channel-management-name-row">
                         {channel.name}
                       </h3>
@@ -160,7 +163,7 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
                         <p className="mt-1 line-clamp-6 max-w-full whitespace-pre-line text-sm leading-5 text-muted-foreground/70"
                           data-testid="channel-management-description">{description}</p>
                       ) : null}
-                    </div>
+                    </div>}
                   </div>
 
                   {membersQuery.isError ? (
@@ -170,8 +173,8 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
                   ) : null}
 
                   <PanelSectionGroup testId="channel-management-details" title={t("channelManagement.details")}>
-                    <InfoFieldRow label={t("channelManagement.channelType")} testId="channel-management-type" value={lifecycle} />
-                    {channel.visibility ? (
+                    {dm ? null : <InfoFieldRow label={t("channelManagement.channelType")} testId="channel-management-type" value={lifecycle} />}
+                    {!dm && channel.visibility ? (
                       <InfoFieldRow label={t("channelManagement.visibility")} testId="channel-management-visibility"
                         value={t(channel.visibility === "private" ? "channelManagement.private" : "channelManagement.public")} />
                     ) : null}
@@ -198,7 +201,7 @@ export function ChannelManagementSheet({ open, onOpenChange, workspaceId, channe
 }
 
 function MemberAvatarStack({ workspaceId, members }: {
-  workspaceId: string;
+  workspaceId?: string;
   members: { principalId: string; displayName: string; pubkeys: string[] }[];
 }) {
   const t = useT();
@@ -214,7 +217,7 @@ function MemberAvatarStack({ workspaceId, members }: {
         return (
           <span className={cn(STACK_Z_CLASSES[index], index > 0 && "-ml-2")} data-testid="channel-management-member-avatar"
             key={member.principalId}>
-            {pubkey ? <MemberAvatar className={className} label={member.displayName} target={{ workspaceId, principalId: member.principalId, pubkey }} />
+            {pubkey && workspaceId ? <MemberAvatar className={className} label={member.displayName} target={{ workspaceId, principalId: member.principalId, pubkey }} />
               : <ProfileAvatar avatarUrl={null} className={className} label={member.displayName} shape="circle" />}
           </span>
         );
