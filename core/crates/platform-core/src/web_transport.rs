@@ -4133,7 +4133,11 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         for (scope, person, key) in [
-            (MemberProfileScope::Workspace(Uuid::new_v4()), principal, pubkey.clone()),
+            (
+                MemberProfileScope::Workspace(Uuid::new_v4()),
+                principal,
+                pubkey.clone(),
+            ),
             (workscope, Uuid::new_v4(), pubkey.clone()),
             (
                 workscope,
