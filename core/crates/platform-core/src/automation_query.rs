@@ -562,6 +562,62 @@ pub async fn runs(
         Err(_) => unavailable(),
     }
 }
+/// The trigger shapes a readable immutable version may carry, with the
+/// result location each original source implies.
+fn readable_trigger(
+    trigger: &serde_json::Map<String, Value>,
+    result_target: &str,
+    executor: Uuid,
+) -> bool {
+    match trigger.get("kind").and_then(Value::as_str) {
+        Some("CHANNEL_MESSAGE") => {
+            !trigger.contains_key("mention_principal_id")
+                && !trigger.contains_key("schedule_spec")
+                && result_target == "TRIGGER_THREAD"
+        }
+        Some("DIFF_POSTED") => {
+            !trigger.contains_key("text_prefix")
+                && !trigger.contains_key("emoji")
+                && !trigger.contains_key("mention_principal_id")
+                && !trigger.contains_key("schedule_spec")
+                && result_target == "TRIGGER_THREAD"
+        }
+        Some("REACTION_ADDED") => {
+            !trigger.contains_key("text_prefix")
+                && !trigger.contains_key("mention_principal_id")
+                && !trigger.contains_key("schedule_spec")
+                && trigger
+                    .get("emoji")
+                    .is_none_or(|emoji| emoji.as_str().is_some_and(|e| !e.trim().is_empty()))
+                && result_target == "TRIGGER_THREAD"
+        }
+        Some("MENTION") => {
+            trigger
+                .get("mention_principal_id")
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok())
+                == Some(executor)
+                && !trigger.contains_key("schedule_spec")
+                && result_target == "TRIGGER_THREAD"
+        }
+        Some("SCHEDULE") => {
+            !trigger.contains_key("text_prefix")
+                && !trigger.contains_key("filter")
+                && !trigger.contains_key("mention_principal_id")
+                && result_target == "CHANNEL"
+        }
+        // DD-116: a webhook carries no message filter and replies in the Channel.
+        Some("WEBHOOK") => {
+            !trigger.contains_key("text_prefix")
+                && !trigger.contains_key("filter")
+                && !trigger.contains_key("mention_principal_id")
+                && !trigger.contains_key("schedule_spec")
+                && result_target == "CHANNEL"
+        }
+        _ => false,
+    }
+}
+
 #[derive(FromRow)]
 struct AutomationRow {
     resource_id: Uuid,
@@ -867,45 +923,12 @@ async fn versions(
         if let Some(filter) = trigger.get("filter") {
             crate::automation::trigger_condition::validate(filter).map_err(|_| unavailable())?;
         }
-        match trigger.get("kind").and_then(Value::as_str) {
-            Some("CHANNEL_MESSAGE")
-                if !trigger.contains_key("mention_principal_id")
-                    && !trigger.contains_key("schedule_spec")
-                    && version.result_target == "TRIGGER_THREAD" => {}
-            Some("DIFF_POSTED")
-                if !trigger.contains_key("text_prefix")
-                    && !trigger.contains_key("emoji")
-                    && !trigger.contains_key("mention_principal_id")
-                    && !trigger.contains_key("schedule_spec")
-                    && version.result_target == "TRIGGER_THREAD" => {}
-            Some("REACTION_ADDED")
-                if !trigger.contains_key("text_prefix")
-                    && !trigger.contains_key("mention_principal_id")
-                    && !trigger.contains_key("schedule_spec")
-                    && trigger.get("emoji").is_none_or(|emoji| {
-                        emoji.as_str().is_some_and(|e| !e.trim().is_empty())
-                    })
-                    && version.result_target == "TRIGGER_THREAD" => {}
-            Some("MENTION")
-                if trigger
-                    .get("mention_principal_id")
-                    .and_then(Value::as_str)
-                    .and_then(|value| Uuid::parse_str(value).ok())
-                    == Some(executor)
-                    && !trigger.contains_key("schedule_spec")
-                    && version.result_target == "TRIGGER_THREAD" => {}
-            Some("SCHEDULE")
-                if !trigger.contains_key("text_prefix")
-                    && !trigger.contains_key("filter")
-                    && !trigger.contains_key("mention_principal_id")
-                    && version.result_target == "CHANNEL" =>
-            {
-                crate::automation::schedule_spec(
-                    trigger.get("schedule_spec").ok_or_else(unavailable)?,
-                )
+        if !readable_trigger(trigger, &version.result_target, executor) {
+            return Err(unavailable());
+        }
+        if trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
+            crate::automation::schedule_spec(trigger.get("schedule_spec").ok_or_else(unavailable)?)
                 .map_err(|e| e.respond(None))?;
-            }
-            _ => return Err(unavailable()),
         }
         crate::automation::step_approval::validate_policy(
             conn,
@@ -1175,5 +1198,47 @@ pub async fn get(
     {
         Ok(value) => Json(value).into_response(),
         Err(_) => unavailable(),
+    }
+}
+
+#[cfg(test)]
+mod readable_trigger_tests {
+    use super::*;
+
+    fn trigger(value: Value) -> serde_json::Map<String, Value> {
+        value.as_object().cloned().expect("trigger object")
+    }
+
+    #[test]
+    fn webhook_versions_are_readable_with_their_channel_result() {
+        // The exact native shape automation.create stores for a form-created
+        // WEBHOOK version (DD-116): only the kind, replying in the Channel.
+        let executor = Uuid::new_v4();
+        let webhook = trigger(json!({"kind":"WEBHOOK"}));
+        assert!(readable_trigger(&webhook, "CHANNEL", executor));
+        assert!(!readable_trigger(&webhook, "TRIGGER_THREAD", executor));
+        for extra in [
+            json!({"kind":"WEBHOOK","text_prefix":"deploy"}),
+            json!({"kind":"WEBHOOK","filter":"true"}),
+            json!({"kind":"WEBHOOK","mention_principal_id":executor}),
+            json!({"kind":"WEBHOOK","schedule_spec":{"everySeconds":60}}),
+        ] {
+            assert!(!readable_trigger(&trigger(extra), "CHANNEL", executor));
+        }
+        assert!(readable_trigger(
+            &trigger(json!({"kind":"CHANNEL_MESSAGE"})),
+            "TRIGGER_THREAD",
+            executor
+        ));
+        assert!(readable_trigger(
+            &trigger(json!({"kind":"MENTION","mention_principal_id":executor})),
+            "TRIGGER_THREAD",
+            executor
+        ));
+        assert!(!readable_trigger(
+            &trigger(json!({"kind":"UNKNOWN"})),
+            "CHANNEL",
+            executor
+        ));
     }
 }
