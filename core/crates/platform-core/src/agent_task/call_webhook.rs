@@ -865,13 +865,18 @@ DECLARE
   automation uuid:='__AUTOMATION__'; version uuid:='__VERSION__'; action uuid:='__ACTION__';
   workspace uuid:=gen_random_uuid(); human uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
   definition uuid:=gen_random_uuid(); agent_version uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
+  human_identity uuid:=gen_random_uuid();
 BEGIN
   INSERT INTO identity.tenant(id,slug,name,state)
     VALUES(tenant,'webhook-guard-'||tenant,'Webhook guard fixture','ACTIVE');
   INSERT INTO identity.workspace(id,tenant_id,slug,name,state)
     VALUES(workspace,tenant,'webhook-guard','Webhook guard fixture','ACTIVE');
+  INSERT INTO identity.human_identity(id,display_name,status)
+    VALUES(human_identity,'Webhook guard fixture','ACTIVE');
   INSERT INTO identity.principal(id,tenant_id,kind,status)
     VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+  INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state)
+    VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
   INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
     component_type_key,native_id,state,version) VALUES
     (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
