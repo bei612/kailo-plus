@@ -3676,8 +3676,7 @@ mod memory_context_tests {
 mod reply_tests {
     use super::{
         billed_outcome, definite_reply_refusal, native_reply, native_reply_absent,
-        needs_native_interrupt, result_channel, sign_native_reply, Invocation,
-        UnboundTurnHistory,
+        needs_native_interrupt, result_channel, sign_native_reply, Invocation, UnboundTurnHistory,
     };
     use serde_json::json;
     use uuid::Uuid;
