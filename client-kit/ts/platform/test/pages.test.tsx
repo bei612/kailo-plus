@@ -15,7 +15,7 @@ import { PlatformNavigation, platformNavigationSections } from "../src/react/nav
 import { setOverride } from "../src/react/features/store";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import { CreateChannelDialog } from "../src/react/create-channel-dialog";
-import { ChannelBrowser } from "../src/react/channel-browser";
+import { ChannelBrowser, ChannelJoinButton } from "../src/react/channel-browser";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
@@ -127,6 +127,35 @@ describe("original channel browser with governed public membership", () => {
     await click(document.querySelector<HTMLButtonElement>("[data-testid=channel-join-status]")!);
     expect(select).toHaveBeenCalledOnce();
     expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  });
+  it("header Join converges an accepted join by re-reading, never re-writing, then enters once", async () => {
+    // Buzz ChannelScreenHeader showJoinButton: the projection is not observed in the receipt,
+    // so the header must reach ACTIVE on its own instead of leaving "Join" until re-clicked.
+    let membership: "absent" | "PROVISIONING" | "ACTIVE" = "absent";
+    const t = transport((request) => {
+      if (request.method === "POST") {
+        membership = "PROVISIONING";
+        return { status: 202, body: { operationId: "join-operation", actionExecutionId: "join-execution",
+          actionKey: "workspace.join", gateState: "ALLOWED", dispatchState: "DISPATCHED" } };
+      }
+      if (request.path.startsWith("/api/v1/discoverable-workspaces")) return { status: 200, body: { items: [{ ...workspace,
+        isMember: membership === "ACTIVE", ...(membership === "absent" ? {} : { membershipState: membership, joinActionKey: undefined }),
+      }] } };
+      return { status: 200, body: [] };
+    });
+    const joined = vi.fn();
+    await mount(t, <ChannelJoinButton workspace={workspace as never} onJoined={joined} />);
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=channel-header-join]")!);
+    expect(joined).not.toHaveBeenCalled();
+    membership = "ACTIVE";
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_100)); });
+    await settle();
+    expect(joined).toHaveBeenCalledOnce();
+    expect(joined.mock.calls[0]?.[0]).toMatchObject({ id: workspace.id });
+    const writes = t.send.mock.calls.map(([r]) => r).filter((r) => r.method === "POST");
+    expect(writes).toHaveLength(1);
+    const reads = t.send.mock.calls.map(([r]) => r).filter((r) => r.path.startsWith("/api/v1/discoverable-workspaces"));
+    expect(reads.length).toBe(2);
   });
 });
 

@@ -245,7 +245,7 @@ function MemberAvatarStack({ roster, members }: {
         return (
           <span className={cn(STACK_Z_CLASSES[index], index > 0 && "-ml-2")} data-testid="channel-management-member-avatar"
             key={member.principalId}>
-            {pubkey ? <MemberAvatar className={className} label={member.displayName} target={rosterMemberTarget(roster, member.principalId, pubkey)} />
+            {pubkey ? <MemberAvatar className={className} label={member.displayName} target={rosterMemberTarget(roster, member, pubkey)} />
               : <ProfileAvatar avatarUrl={null} className={className} label={member.displayName} shape="circle" />}
           </span>
         );

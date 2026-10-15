@@ -226,9 +226,9 @@ export function ChannelPane({
       changedScope || threadHeadId === current ? undefined : current);
   }, [threadScope, threadHeadId]);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
-  const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
+  const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string;alternatePubkeys?:readonly string[];displayName?:string} | null>(null);
   // Original DM member dialog profile: the conversation's participant key is its own proof.
-  const [participantProfileTarget, setParticipantProfileTarget] = useState<{conversationId:string;principalId:string;pubkey:string} | null>(null);
+  const [participantProfileTarget, setParticipantProfileTarget] = useState<{conversationId:string;principalId:string;pubkey:string;alternatePubkeys?:readonly string[];displayName?:string} | null>(null);
   const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); setParticipantProfileTarget(null); }, []);
   const handleOpenAuthor = useCallback(
     (message: TimelineMessage) => {
@@ -289,12 +289,14 @@ export function ChannelPane({
   useEffect(() => {
     if (!memberProfileRequest || !conversation || memberProfileRequest.conversationId !== conversation.id) return;
     setProfileTarget(null);
-    setParticipantProfileTarget({conversationId: conversation.id, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+    setParticipantProfileTarget({conversationId: conversation.id, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey,
+      alternatePubkeys: memberProfileRequest.alternatePubkeys, displayName: memberProfileRequest.displayName});
   }, [memberProfileRequest, conversation]);
   useEffect(() => {
     if (!memberProfileRequest || conversation || memberProfileRequest.workspaceId !== workspaceId) return;
     setProfileTarget(null);
-    setSystemProfileTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+    setSystemProfileTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey,
+      alternatePubkeys: memberProfileRequest.alternatePubkeys, displayName: memberProfileRequest.displayName});
   }, [memberProfileRequest, conversation, workspaceId]);
   const visible = useVisible();
   const members = useQuery({

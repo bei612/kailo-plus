@@ -2,7 +2,9 @@ import * as React from "react";
 
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
-import { useChannelsQuery } from "@/features/channels/hooks";
+import { useQueryClient } from "@tanstack/react-query";
+import { useChannelsQuery, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
+import { ChannelJoinScreen } from "@/features/channels/ui/ChannelJoinScreen";
 import { ChannelScreen } from "@/features/channels/ui/ChannelScreen";
 import { ForumScreen } from "@/features/forum/ForumScreen";
 import {
@@ -107,6 +109,12 @@ export function ChannelRouteScreen({
   const channels = channelsQuery.data ?? [];
   const activeChannel =
     channels.find((channel) => channel.id === channelId) ?? null;
+  // A route to an open channel this identity has not joined: the admitted directory row and
+  // its join action are the only authority for the original header Join.
+  const queryClient = useQueryClient();
+  const directory = useWorkspaceChannelDirectory({ enabled: !activeChannel && !channelsQuery.isPending });
+  const joinRow = activeChannel ? undefined : directory.data?.find((row) => row.channel.channelId === channelId
+    && !row.isMember && row.visibility === "open" && !row.channel.archived && row.joinActionKey === "workspace.join");
   const [targetMessageEvents, setTargetMessageEvents] = React.useState<
     RelayEvent[]
   >(() => {
@@ -224,6 +232,13 @@ export function ChannelRouteScreen({
 
   if (!activeChannel && channelsQuery.isPending) {
     return <ViewLoadingFallback includeHeader kind="channel" />;
+  }
+
+  if (!activeChannel && joinRow) {
+    return <ChannelJoinScreen workspace={joinRow} onJoined={async () => {
+      await queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
+      await channelsQuery.refetch();
+    }} />;
   }
 
   if (activeChannel?.channelType === "forum") {

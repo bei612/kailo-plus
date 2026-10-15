@@ -126,6 +126,9 @@ export function useWorkspaceJoin(load: () => Promise<DiscoverableWorkspace[]>) {
   return { intent, accepted, failure, busy, join };
 }
 
+/** Bounded directory re-reads after an accepted join (ms before each read). */
+const JOIN_CONVERGENCE_REREAD_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
+
 /** Buzz 779af8886caae1317b4de962082429867ab61503
  * desktop/src/features/channels/ui/ChannelScreenHeader.tsx showJoinButton branch: a non-member
  * of an open, unarchived channel gets the original Join control in the header. */
@@ -138,12 +141,37 @@ export function ChannelJoinButton({ workspace, onJoined }: {
   const failureText = useFailureText();
   const load = useCallback(() => loadChannelDirectory(client, () => true), [client]);
   const state = useWorkspaceJoin(load);
-  const pending = state.intent !== null && !state.busy;
-  // Kailo membership is a governed projection: say so instead of silently staying outside.
+  const joinRef = useRef(state.join);
+  joinRef.current = state.join;
+  const onJoinedRef = useRef(onJoined);
+  onJoinedRef.current = onJoined;
+  const rereads = useRef(0);
+  const announced = useRef<string | null>(null);
+  // An accepted join converges through MEMBERSHIP_PROJECTION. Re-read the admitted directory
+  // (never re-submit) on a bounded backoff so the original header can enter the channel
+  // without the user re-clicking; after the last read the original control remains.
+  useEffect(() => {
+    if (state.intent === null) { rereads.current = 0; return; }
+    if (!state.accepted || state.busy) return;
+    const delay = JOIN_CONVERGENCE_REREAD_MS[rereads.current];
+    if (delay === undefined) return;
+    const timer = window.setTimeout(() => {
+      rereads.current += 1;
+      void joinRef.current(workspace.id, workspace).then(async (ready) => {
+        if (ready) await onJoinedRef.current(workspace);
+      });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [state.intent, state.accepted, state.busy, workspace]);
+  // Kailo membership is a governed projection: say so once per intent, not per re-read.
   useEffect(() => {
     if (state.failure?.kind === "rejected") toast.error(failureText(state.failure));
-    else if (state.failure || pending) toast(t("channel.browser.joinPending"));
-  }, [state.failure, pending, failureText, t]);
+    else if (state.failure) toast(t("channel.browser.joinPending"));
+  }, [state.failure, failureText, t]);
+  useEffect(() => {
+    const key = state.accepted ? state.intent?.idempotencyKey ?? null : null;
+    if (key && announced.current !== key) { announced.current = key; toast(t("channel.browser.joinPending")); }
+  }, [state.accepted, state.intent, t]);
   return (
     <div className="flex items-center gap-1">
       <BuzzButton data-testid="channel-header-join" disabled={state.busy} size="sm" variant="default" onClick={() => {

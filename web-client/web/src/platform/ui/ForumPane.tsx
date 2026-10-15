@@ -69,12 +69,13 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const [denied, setDenied] = React.useState<string | null>(null);
   const [interrupted, setInterrupted] = React.useState(false);
   const [profileTarget, setProfileTarget] = React.useState<MessageAuthor | null>(null);
-  const [memberTarget, setMemberTarget] = React.useState<{workspaceId:string; principalId:string; pubkey:string} | null>(null);
+  const [memberTarget, setMemberTarget] = React.useState<{workspaceId:string; principalId:string; pubkey:string; alternatePubkeys?:readonly string[]; displayName?:string} | null>(null);
   React.useEffect(() => { setProfileTarget(null); setMemberTarget(null); }, [workspaceId, channelId, myPrincipalId]);
   React.useEffect(() => {
     if (!memberProfileRequest || memberProfileRequest.workspaceId !== workspaceId) return;
     setProfileTarget(null);
-    setMemberTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+    setMemberTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey,
+      alternatePubkeys: memberProfileRequest.alternatePubkeys, displayName: memberProfileRequest.displayName});
   }, [memberProfileRequest, workspaceId]);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);

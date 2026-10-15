@@ -28,37 +28,54 @@ import { TenantInvitations } from "./invitations";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 
-/** A member key proven by its Workspace membership or by its governed conversation's participants. */
+/** A member key proven by its Workspace membership or by its governed conversation's participants.
+ * A Principal may hold several ACTIVE keys (Web plus each native device): alternatePubkeys are the
+ * directory's other keys and displayName its directory label, used only as the original
+ * fallbacks below, never as a profile authority. */
+type MemberTargetFacts = {principalId: string; pubkey: string; alternatePubkeys?: readonly string[]; displayName?: string};
 export type MemberTarget =
-  | {workspaceId: string; principalId: string; pubkey: string; conversationId?: undefined}
-  | {conversationId: string; principalId: string; pubkey: string; workspaceId?: undefined};
+  | (MemberTargetFacts & {workspaceId: string; conversationId?: undefined})
+  | (MemberTargetFacts & {conversationId: string; workspaceId?: undefined});
 
-function readMemberProfile(client: ReturnType<typeof useBffClient>, target: MemberTarget) {
-  return target.conversationId !== undefined
-    ? client.conversationParticipantProfile(target.conversationId,target.principalId,target.pubkey)
-    : client.memberProfile(target.workspaceId,target.principalId,target.pubkey);
+async function readMemberKeyProfile(client: ReturnType<typeof useBffClient>, target: MemberTarget, pubkey: string) {
+  const profile = await (target.conversationId !== undefined
+    ? client.conversationParticipantProfile(target.conversationId,target.principalId,pubkey)
+    : client.memberProfile(target.workspaceId,target.principalId,pubkey));
+  if(profile.pubkey!==pubkey)throw new TransportError("Member identity changed");
+  return profile;
+}
+
+/** The member's published profile: the first key (target key first) whose kind:0 exists; with
+ * none, the target key's empty profile. Every key read carries its own membership proof. */
+async function readMemberProfile(client: ReturnType<typeof useBffClient>, target: MemberTarget) {
+  const keys=[target.pubkey,...(target.alternatePubkeys??[]).filter(key=>key!==target.pubkey)];
+  let first: Awaited<ReturnType<typeof readMemberKeyProfile>> | undefined;
+  for(const key of keys){
+    const profile=await readMemberKeyProfile(client,target,key);
+    if(profile.eventId)return profile;
+    first??=profile;
+  }
+  return first!;
+}
+
+/** Original resolveProfileDisplayName order: published name, then the directory label (the
+ * persona slot for people), then the compact key. */
+export function memberProfileDisplayName(profile: {displayName?: string|null; pubkey: string}, target: MemberTarget) {
+  return profile.displayName ?? target.displayName ?? truncatePubkey(profile.pubkey);
 }
 export type MemberIdentityRenderer = (pubkey: string, children: ReactNode, label: string) => ReactNode;
 
 function useMemberProfile(target: MemberTarget) {
   const client = useBffClient();
-  return useQuery({queryKey:["workspace-member-profile",target.conversationId!==undefined?`conversation:${target.conversationId}`:target.workspaceId,target.principalId,target.pubkey],
-    queryFn:async()=>{
-      const profile=await readMemberProfile(client,target);
-      if(profile.pubkey!==target.pubkey)throw new TransportError("Member identity changed");
-      return profile;
-    },retry:false,staleTime:0});
+  return useQuery({queryKey:["workspace-member-profile",target.conversationId!==undefined?`conversation:${target.conversationId}`:target.workspaceId,target.principalId,target.pubkey,...(target.alternatePubkeys??[])],
+    queryFn:()=>readMemberProfile(client,target),retry:false,staleTime:0});
 }
 
 export function MemberAvatar({target,label,className="h-9 w-9 text-xs shadow-none"}:{target:MemberTarget;label:string;className?:string}) {
   const client=useBffClient();const locale=useLocale();
   // The original row consumes its authorized profile before opening a popover.
   // useLoad drops responses after this transport scope or exact member key leaves.
-  const [result]=useLoad(JSON.stringify(target),async()=>{
-    const profile=await readMemberProfile(client,target);
-    if(profile.pubkey!==target.pubkey)throw new TransportError("Member identity changed");
-    return profile;
-  });
+  const [result]=useLoad(JSON.stringify(target),()=>readMemberProfile(client,target));
   const profile=result.status==="ok"?result.data:undefined;
   return <AvatarHostProvider value={{locale,rewriteMediaUrl:url=>profile?.avatarMediaPaths[url]??url}}>
     <ProfileAvatar avatarUrl={profile?.avatarUrl??null} className={className} label={label} shape="circle"/>
@@ -105,7 +122,7 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
     </AuxiliaryPanelHeaderGroup>}
     profileBody={
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6">
-      {profile?<ProfileSummaryView profile={profile} displayName={profile.displayName??truncatePubkey(profile.pubkey)}
+      {profile?<ProfileSummaryView profile={profile} displayName={memberProfileDisplayName(profile,target)}
         pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
         messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
@@ -131,7 +148,7 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
     if(member.state!==WorkspaceMembershipState.Active)return children;
     const label=t("members.openProfile",{name:member.displayName});
     if(renderIdentity)return renderIdentity(pubkey,children,label);
-    const target={workspaceId,principalId:member.principalId,pubkey};
+    const target={workspaceId,principalId:member.principalId,pubkey,displayName:member.displayName};
     return <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerAriaLabel={label}
       onOpenProfile={()=>setSelected(target)} renderBody={(props)=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
   }
@@ -176,7 +193,7 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
             <VirtualizedList className="max-h-[28rem] divide-y divide-border/60" estimateSize={60}
               items={filtered} getItemKey={member=>member.principalId} renderItem={member=><div className="group/member flex min-h-14 items-center gap-3 px-1 py-2.5" data-testid={`member-${member.principalId}`}>
               {member.state===WorkspaceMembershipState.Active&&member.pubkeys[0]?identity(member,member.pubkeys[0],
-                <MemberAvatar target={{workspaceId,principalId:member.principalId,pubkey:member.pubkeys[0]}} label={member.displayName}/>):
+                <MemberAvatar target={{workspaceId,principalId:member.principalId,pubkey:member.pubkeys[0],alternatePubkeys:member.pubkeys,displayName:member.displayName}} label={member.displayName}/>):
                 <ProfileAvatar avatarUrl={null} className="h-9 w-9 text-xs shadow-none" label={member.displayName} shape="circle"/>}
               <div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
                 <span className="inline-grid min-w-0 max-w-full grid-cols-1">

@@ -63,10 +63,12 @@ export async function loadConversationParticipants(client: BffClient,
 }
 
 /** The profile proof for a roster key: its Workspace membership or its conversation. */
-export function rosterMemberTarget(roster: MemberRoster, principalId: string, pubkey: string): MemberTarget {
+export function rosterMemberTarget(roster: MemberRoster,
+  member: Pick<WorkspaceMemberView, "principalId" | "pubkeys" | "displayName">, pubkey: string): MemberTarget {
+  const facts = { principalId: member.principalId, pubkey, alternatePubkeys: member.pubkeys, displayName: member.displayName };
   return roster.kind === "workspace"
-    ? { workspaceId: roster.workspaceId, principalId, pubkey }
-    : { conversationId: roster.conversation.id, principalId, pubkey };
+    ? { ...facts, workspaceId: roster.workspaceId }
+    : { ...facts, conversationId: roster.conversation.id };
 }
 
 /** One cached roster read for the header count, the dialog and the settings sheet. */
@@ -182,7 +184,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
   archived?: boolean;
   currentPrincipalId?: string;
   currentPubkey?: string;
-  onOpenProfile?: (target: { principalId: string; pubkey: string }) => void;
+  onOpenProfile?: (target: { principalId: string; pubkey: string; alternatePubkeys: readonly string[]; displayName: string }) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -271,7 +273,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     const roleLabel = !active ? enumLabel(locale, workspaceMembershipStateMessages, member.state)
       : role?.workspaceAdmin ? t("communityMembers.admin") : null;
     const rowDisabled = disabled || action.submittedFor === member.principalId;
-    const openProfile = active && pubkey && onOpenProfile ? () => onOpenProfile({ principalId: member.principalId, pubkey }) : undefined;
+    const openProfile = active && pubkey && onOpenProfile ? () => onOpenProfile({ principalId: member.principalId, pubkey, alternatePubkeys: member.pubkeys, displayName: member.displayName }) : undefined;
     return (
       <div
         className={cn(
@@ -295,7 +297,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
           <div className="relative shrink-0">
             {active && pubkey ? (
               <MemberAvatar className="h-8 w-8 text-xs shadow-none" label={member.displayName}
-                target={rosterMemberTarget(roster, member.principalId, pubkey)} />
+                target={rosterMemberTarget(roster, member, pubkey)} />
             ) : (
               <ProfileAvatar avatarUrl={null} className="h-8 w-8 text-xs shadow-none" iconClassName="h-4 w-4" label={member.displayName} shape="circle" />
             )}
