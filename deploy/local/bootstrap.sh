@@ -24,6 +24,7 @@ if [ "$#" -eq 1 ] && { [ "$1" = '--prepare-wren-model-reader' ] || [ "$1" = '--m
 fi
 : "${OIDC_ISSUER:?缺少 OIDC_ISSUER}" "${OIDC_REALM:?缺少 OIDC_REALM}" \
   "${PUBLIC_ORIGIN:?缺少 PUBLIC_ORIGIN}" "${PUBLIC_HOST:?缺少 PUBLIC_HOST}" \
+  "${PUBLIC_BIND_ADDR:?缺少 PUBLIC_BIND_ADDR}" \
   "${OIDC_HOST:?缺少 OIDC_HOST}" "${BUZZ_RELAY_HOST:?缺少 BUZZ_RELAY_HOST}" \
   "${BUZZ_RELAY_PORT:?缺少 BUZZ_RELAY_PORT}" "${AGENTGATEWAY_PORT:?缺少 AGENTGATEWAY_PORT}" \
   "${KEYCLOAK_PORT:?缺少 KEYCLOAK_PORT}" \
@@ -65,7 +66,7 @@ fi
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
 NATIVE_PAGE_ORIGINS="${NATIVE_PAGE_ORIGINS:-}" \
 EDITOR_ORIGINS="${EDITOR_ORIGINS:-}" WEB_EDITOR_ORIGINS="${WEB_EDITOR_ORIGINS:-}" \
-PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
+PUBLIC_HOST="$PUBLIC_HOST" PUBLIC_BIND_ADDR="$PUBLIC_BIND_ADDR" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
 BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
 CORE_DB_PORT="$CORE_DB_PORT" \
@@ -105,8 +106,14 @@ import re
 from ctypes import c_int, sizeof
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
+from ipaddress import IPv4Address
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
+
+try:
+    IPv4Address(os.environ["PUBLIC_BIND_ADDR"])
+except ValueError:
+    raise SystemExit("PUBLIC_BIND_ADDR 必须是有效 IPv4 地址") from None
 
 if not os.environ["PLATFORM_DISPLAY_NAME"].strip():
     raise SystemExit("PLATFORM_DISPLAY_NAME 不能为空或仅含空白")
@@ -770,7 +777,6 @@ fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
 OIDC_REDIRECT_URI="${PUBLIC_ORIGIN}/oauth/callback"
 RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
-
 mkdir -p secrets
 umask 077
 

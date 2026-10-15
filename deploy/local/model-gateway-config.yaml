@@ -168,6 +168,25 @@ binds:
             x-platform-oidc-subject: jwt.sub
 
     routes:
+    # 登录回跳保留原始 URL；裸 origin 必须进入现有 Web，而不是 BFF 的 404。
+    # 只匹配首页读取，仍继承 listener 的 OIDC 与身份清洗；API/回调不改道。
+    - name: web-home
+      matches:
+      - path:
+          exact: /
+        method: GET
+      - path:
+          exact: /
+        method: HEAD
+      policies:
+        csrf:
+          additionalOrigins:
+          - ${PUBLIC_ORIGIN}
+        requestRedirect:
+          path:
+            full: /app/
+          status: 302
+
     # Web 面。镜像里的 Caddy 只 handle `/app*`，其余一律 404，因此前缀
     # 与镜像的服务范围是同一件事，不是任取的挂载点。
     #
