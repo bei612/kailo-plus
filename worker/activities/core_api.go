@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,7 +23,49 @@ const (
 	ErrTypeRejected = "CORE_REQUEST_REJECTED"
 	// 前置条件不成立：binding 不是 ACTIVE、托管方不是 Core
 	ErrTypeAdmissionDenied = "ADMISSION_DENIED"
+	// Core 的数据库以声明的约束或数据类型确定拒绝了这次写入（HTTP 422
+	// PERSISTENCE_REJECTED）。同一请求重试不会通过，只会一直占着 Core 的连接；
+	// Workflow 据此进入明确的失败，等待人工修正后重跑。
+	ErrTypePersistenceRejected = "CORE_PERSISTENCE_REJECTED"
 )
+
+// IsDeterministicFailure 判断 Activity 错误是否为确定的拒绝：Workflow 不再按轮
+// 重做，而是立即以该错误结束这一步。
+func IsDeterministicFailure(err error) bool {
+	var app *temporal.ApplicationError
+	if !errors.As(err, &app) {
+		return false
+	}
+	switch app.Type() {
+	case ErrTypeRejected, ErrTypeAdmissionDenied, ErrTypePersistenceRejected:
+		return true
+	}
+	return false
+}
+
+// persistenceRejection 识别 Core 的确定持久化拒绝。只认 422 加约定 code：
+// 其他 422 仍是普通的请求拒绝。约束名与 SQLSTATE 是低基数的定位信息，
+// 进入错误消息以便在 Workflow history 中直接看到停在哪条约束上。
+func persistenceRejection(path string, status int, body []byte) error {
+	if status != http.StatusUnprocessableEntity {
+		return nil
+	}
+	var rejected struct {
+		Code       string  `json:"code"`
+		SQLState   string  `json:"sqlstate"`
+		Constraint *string `json:"constraint"`
+	}
+	if json.Unmarshal(body, &rejected) != nil || rejected.Code != "PERSISTENCE_REJECTED" {
+		return nil
+	}
+	constraint := "-"
+	if rejected.Constraint != nil && *rejected.Constraint != "" {
+		constraint = *rejected.Constraint
+	}
+	return temporal.NewNonRetryableApplicationError(
+		fmt.Sprintf("%s 被 Core 数据库确定拒绝: SQLSTATE %s constraint %s", path, rejected.SQLState, constraint),
+		ErrTypePersistenceRejected, nil)
+}
 
 // errorExcerptBytes 是非 200 回应写进错误消息的正文上界：错误消息会进入
 // Temporal history，不能随 Core 的错误体无界增长。成功回应不受它约束。
@@ -102,6 +145,8 @@ func (c *CoreAPI) post(ctx context.Context, path string, payload any, out any) e
 		case resp.StatusCode == http.StatusUnauthorized && attempt == 0:
 			c.tokens.Invalidate()
 			continue
+		case persistenceRejection(path, resp.StatusCode, body) != nil:
+			return persistenceRejection(path, resp.StatusCode, body)
 		case resp.StatusCode == http.StatusForbidden:
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("%s 前置条件不成立: %s", path, body), ErrTypeAdmissionDenied, nil)

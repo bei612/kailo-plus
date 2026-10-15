@@ -537,3 +537,50 @@ func TestAgentTaskStepApprovalCancellationRemainsOnOriginalInvocation(t *testing
 		t.Fatalf("cancel did not drain original gate: %v", env.GetWorkflowError())
 	}
 }
+
+// Core 数据库确定拒绝推进或投影时，AgentTask 不再按轮重做：同一请求每轮都会被
+// 拒绝并占着 Core 连接。Workflow 以 CORE_PERSISTENCE_REJECTED 明确失败。
+func TestAgentTaskPersistenceRejectionFailsInsteadOfRedoingEveryRound(t *testing.T) {
+	rejected := func() error {
+		return temporal.NewNonRetryableApplicationError("rejected", activities.ErrTypePersistenceRejected, nil)
+	}
+	for _, c := range []struct {
+		name                            string
+		rejectProjection, rejectAdvance int
+		wantProjections, wantAdvances   int
+	}{
+		{name: "begin projection", rejectProjection: 1, wantProjections: 1, wantAdvances: 0},
+		{name: "terminal projection", rejectProjection: 2, wantProjections: 2, wantAdvances: 1},
+		{name: "advance", rejectAdvance: 1, wantProjections: 2, wantAdvances: 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			projections, advances := 0, 0
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.TaskStateReport) error {
+					projections++
+					if projections == c.rejectProjection {
+						return rejected()
+					}
+					return nil
+				})
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+				func(context.Context, generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+					advances++
+					if advances == c.rejectAdvance {
+						return generated.AgentTaskAdvanceResult{}, rejected()
+					}
+					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED,
+						WaitingReason: "NONE", FinishActivity: true}, nil
+				})
+			env.ExecuteWorkflow(AgentTaskKind, in)
+			var app *temporal.ApplicationError
+			if err := env.GetWorkflowError(); !errors.As(err, &app) || app.Type() != activities.ErrTypePersistenceRejected {
+				t.Fatalf("workflow must fail explicitly on persistence rejection: %v", err)
+			}
+			if projections != c.wantProjections || advances != c.wantAdvances {
+				t.Fatalf("rejected request was redone: projections=%d advances=%d", projections, advances)
+			}
+		})
+	}
+}

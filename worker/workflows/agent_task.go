@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -132,7 +133,11 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 		if !begun {
 			// 投影的 transport/ACK 错误不证明 Invocation 失败。与后续观察
 			// 共用有界轮次，在持久 timer 后重试；未确认投影时不占 runner。
-			begun = project(loop, generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT") == nil
+			projected := project(loop, generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT")
+			if rejected := persistenceRejected(loop, projected); rejected != nil {
+				return rejected
+			}
+			begun = projected == nil
 		}
 		if begun {
 			options := activityOptions()
@@ -179,7 +184,17 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 			// finishActivity 只确认结束 holder，不是业务终态。RELEASED 后
 			// 后续 Activity 只观察同一 Invocation，不由 Worker 再占 units。
 			// 任何终态都先落投影；ACK 不明时继续对账，不返回假 terminal。
-			if projected := project(loop, status, reason); projected == nil {
+			projected := project(loop, status, reason)
+			// Core 数据库确定拒绝推进或投影：同一请求每轮重做都不会通过，只会
+			// 一直占着 Core 的连接。先照常写回本轮观察，再以该错误结束，交给
+			// 人工修正后重跑；兜底对账按 Temporal 终态补写投影并标观测缺口。
+			if rejected := persistenceRejected(loop, err); rejected != nil {
+				return rejected
+			}
+			if rejected := persistenceRejected(loop, projected); rejected != nil {
+				return rejected
+			}
+			if projected == nil {
 				if err == nil && out.DelayStep != nil {
 					// Original ordered Delay: a native durable Timer, not an Activity
 					// sleep. Core reads this exact TimerFired before the next effect.
@@ -269,4 +284,20 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 			return workflow.NewContinueAsNewError(loop, AgentTaskKind, in)
 		}
 	}
+}
+
+// persistenceRejected 把 Core 的确定持久化拒绝变成本 Workflow 的明确失败。
+// 只有新 Core 才会给出这个错误类型，旧 history 不会走到这里；GetVersion 只在
+// 命中时记录，保持既有 history 的命令序列不变。
+func persistenceRejected(ctx workflow.Context, err error) error {
+	var app *temporal.ApplicationError
+	if !errors.As(err, &app) || app.Type() != activities.ErrTypePersistenceRejected {
+		return nil
+	}
+	if workflow.GetVersion(ctx, "agent-task-persistence-rejected", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
+		return nil
+	}
+	workflow.GetLogger(ctx).Error("AgentTask 被 Core 数据库确定拒绝，停止重做并等待人工处理", "error", err)
+	return temporal.NewNonRetryableApplicationError(
+		"AgentTask 被 Core 数据库确定拒绝，等待人工处理: "+app.Error(), activities.ErrTypePersistenceRejected, nil)
 }

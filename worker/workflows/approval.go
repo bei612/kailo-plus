@@ -652,9 +652,7 @@ func (a *approval) projectUntilDone(ctx workflow.Context, fn func(workflow.Conte
 		if err == nil {
 			return nil
 		}
-		var app *temporal.ApplicationError
-		if errors.As(err, &app) &&
-			(app.Type() == activities.ErrTypeRejected || app.Type() == activities.ErrTypeAdmissionDenied) {
+		if activities.IsDeterministicFailure(err) {
 			return err
 		}
 		workflow.GetLogger(ctx).Warn("审批投影未写入，等待下一轮", "error", err)

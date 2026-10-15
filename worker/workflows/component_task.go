@@ -155,6 +155,7 @@ func activityOptions() workflow.ActivityOptions {
 			NonRetryableErrorTypes: []string{
 				activities.ErrTypeRejected,
 				activities.ErrTypeAdmissionDenied,
+				activities.ErrTypePersistenceRejected,
 			},
 		},
 	}
@@ -198,9 +199,7 @@ func converge(
 		if err == nil {
 			return nil
 		}
-		var app *temporal.ApplicationError
-		if errors.As(err, &app) &&
-			(app.Type() == activities.ErrTypeRejected || app.Type() == activities.ErrTypeAdmissionDenied) {
+		if activities.IsDeterministicFailure(err) {
 			return err
 		}
 		workflow.GetLogger(ctx).Warn("本轮收敛未完成，等待下一轮", "error", err)
