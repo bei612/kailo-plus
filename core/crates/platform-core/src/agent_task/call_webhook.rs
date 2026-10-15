@@ -49,7 +49,9 @@ async fn bounded<T>(
         Err(_) => {
             let seconds = budget.as_secs();
             tracing::warn!(%invocation, step, seconds, "call_webhook step timed out");
-            Err(Refusal::Unavailable(format!("call_webhook {step} timed out")))
+            Err(Refusal::Unavailable(format!(
+                "call_webhook {step} timed out"
+            )))
         }
     }
 }
@@ -404,7 +406,9 @@ async fn dispatch(
             .min(STEP_BUDGET)
     };
     bounded(id, "activity_fence", left(), async {
-        activity_fence(state, invocation, input, false).await.map(|_| ())
+        activity_fence(state, invocation, input, false)
+            .await
+            .map(|_| ())
     })
     .await?;
     bounded(id, "audit_gate", left(), async {
@@ -426,13 +430,7 @@ async fn dispatch(
         .map_err(|_| unknown())?;
     // Network-only preparation happens before any row lock: the frozen step,
     // the original check_ssrf, header SecretRefs and Core's egress credential.
-    let frozen = bounded(
-        id,
-        "frozen_step",
-        left(),
-        frozen_step(state, invocation),
-    )
-    .await?;
+    let frozen = bounded(id, "frozen_step", left(), frozen_step(state, invocation)).await?;
     let origin = webhook_step::origin(frozen["url"].as_str().unwrap_or_default())
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
     let host = origin.0.as_str();
@@ -502,7 +500,9 @@ async fn dispatch(
     headers.extend(secrets);
     if Instant::now() >= deadline {
         tracing::warn!(invocation = %id, "call_webhook preparation used its attempt budget");
-        return Err(Refusal::Unavailable("call_webhook preparation over budget".into()));
+        return Err(Refusal::Unavailable(
+            "call_webhook preparation over budget".into(),
+        ));
     }
     let created_at = DateTime::from_timestamp(Utc::now().timestamp(), 0).ok_or_else(unknown)?;
     let usage = bounded(id, "usage_meter", left(), async {
