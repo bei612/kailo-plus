@@ -672,8 +672,11 @@ async fn publish(
             &binding.channel_id.to_string(),
             &content,
             reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
-                .then_some(invocation.id),
+            matches!(
+                invocation.source_kind.as_str(),
+                "SCHEDULE" | "MANUAL" | "WEBHOOK"
+            )
+            .then_some(invocation.id),
             timestamp,
         )
     }

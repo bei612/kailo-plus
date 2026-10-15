@@ -2572,8 +2572,11 @@ fn sign_native_reply(
             channel_id,
             text,
             reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
-                .then_some(invocation.id),
+            matches!(
+                invocation.source_kind.as_str(),
+                "SCHEDULE" | "MANUAL" | "WEBHOOK"
+            )
+            .then_some(invocation.id),
             nostr::Timestamp::now().as_secs(),
         )
         .map_err(|_| unknown())
@@ -3035,8 +3038,11 @@ async fn reconcile_reply(
                 &intent.agent_pubkey,
                 &intent.channel_id.to_string(),
                 reply_ancestry(invocation),
-                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
-                    .then_some(invocation.id),
+                matches!(
+                    invocation.source_kind.as_str(),
+                    "SCHEDULE" | "MANUAL" | "WEBHOOK"
+                )
+                .then_some(invocation.id),
             )
             .await
     };

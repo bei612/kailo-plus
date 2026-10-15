@@ -71,7 +71,11 @@ pub(crate) fn verify(key: &[u8], id: &str, timestamp: &str, body: &[u8], signatu
     signatures
         .split(' ')
         .filter_map(|entry| entry.strip_prefix("v1,"))
-        .filter_map(|encoded| base64::engine::general_purpose::STANDARD.decode(encoded).ok())
+        .filter_map(|encoded| {
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .ok()
+        })
         .any(|signature| ring::hmac::verify(&key, &message, &signature).is_ok())
 }
 

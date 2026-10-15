@@ -24,8 +24,8 @@ mod schedule;
 pub(crate) mod step_approval;
 pub(crate) mod steps;
 pub(crate) mod trigger_condition;
-mod webhook_secret;
 pub(crate) mod webhook;
+mod webhook_secret;
 pub(crate) mod webhook_step;
 pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
@@ -947,7 +947,11 @@ pub(crate) async fn management_prewrite(
             )
             .await?;
             // DD-116 (6): without the public webhook listener there is no URL to hand out.
-            if version.content.pointer("/trigger/kind").and_then(Value::as_str) == Some("WEBHOOK")
+            if version
+                .content
+                .pointer("/trigger/kind")
+                .and_then(Value::as_str)
+                == Some("WEBHOOK")
                 && webhook::public_base().is_none()
             {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));

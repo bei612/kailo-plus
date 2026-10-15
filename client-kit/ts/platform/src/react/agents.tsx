@@ -328,7 +328,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
       : trigger.kind === TriggerKind.Webhook
         ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined && trigger.filter === undefined
           && trigger.scheduleSpec === undefined && content.action === undefined
-          && !content.steps?.some((step) => step.action === "add_reaction")
+          && !(Array.isArray(content.steps) && content.steps.some((step: { action?: unknown }) => step.action === "add_reaction"))
       : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention
         || ((trigger.kind === TriggerKind.DiffPosted || trigger.kind === TriggerKind.ReactionAdded) && trigger.textPrefix === undefined))
         && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined)
