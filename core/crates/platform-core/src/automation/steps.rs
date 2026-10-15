@@ -541,8 +541,10 @@ mod tests {
             assert!(action(&invalid).is_err());
             assert!(message_sequence(&invalid).is_err());
         }
+        // Effect-step timeout_secs is executed since ec2e4b8d; `from` is still an
+        // original control Kailo does not execute, so it must stay rejected.
         let mut unsupported = source;
-        unsupported[1]["timeout_secs"] = json!(1);
+        unsupported[1]["from"] = json!("unbound");
         assert!(action(&unsupported).is_err());
         assert!(message_sequence(&unsupported).is_err());
     }
