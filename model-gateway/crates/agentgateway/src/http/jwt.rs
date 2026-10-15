@@ -481,6 +481,12 @@ impl Provider {
 }
 
 impl Jwt {
+	/// Whether the token is read from `Proxy-Authorization`: the gateway is then addressed as a
+	/// forward proxy and failures must be challenged with `407` (RFC 9110), as basic auth does.
+	pub fn is_proxy_location(&self) -> bool {
+		self.location.is_proxy_header()
+	}
+
 	pub fn from_providers(
 		providers: Vec<Provider>,
 		mode: Mode,

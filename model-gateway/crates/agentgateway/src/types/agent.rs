@@ -2989,11 +2989,18 @@ impl store::RequestPolicyTrait for JwtAuthentication {
 			return Ok(crate::http::PolicyResponse::default());
 		}
 
+		let proxy = self.jwt.is_proxy_location();
 		self
 			.jwt
 			.apply(Some(log), req)
 			.await
-			.map_err(crate::proxy::ProxyError::JwtAuthenticationFailure)
+			.map_err(|e| {
+				if proxy {
+					crate::proxy::ProxyError::JwtProxyAuthenticationFailure(e)
+				} else {
+					crate::proxy::ProxyError::JwtAuthenticationFailure(e)
+				}
+			})
 			.map_err(crate::proxy::ProxyResponse::from)?;
 		Ok(crate::http::PolicyResponse::default())
 	}

@@ -80,7 +80,9 @@ impl ProxyError {
 			ProxyError::SubstrateIngressFailed(status, _) => substrate_ingress_reason(*status),
 			ProxyError::AIRequest(error) => classify_ai_request(error).reason,
 			ProxyError::AIResponse(error) => classify_ai_response(error).reason,
-			ProxyError::JwtAuthenticationFailure(_) => ProxyResponseReason::JwtAuth,
+			ProxyError::JwtAuthenticationFailure(_) | ProxyError::JwtProxyAuthenticationFailure(_) => {
+				ProxyResponseReason::JwtAuth
+			},
 			ProxyError::OidcFailure(_) => ProxyResponseReason::Oidc,
 			ProxyError::McpJwtAuthenticationFailure(_, _) => ProxyResponseReason::JwtAuth,
 			ProxyError::BasicAuthenticationFailure(_) => ProxyResponseReason::BasicAuth,
@@ -200,6 +202,9 @@ pub enum ProxyError {
 	BackendUnsupportedMirror,
 	#[error("authentication failure: {0}")]
 	JwtAuthenticationFailure(http::jwt::TokenError),
+	/// JWT read from `Proxy-Authorization` failed: challenged with `407` + `Proxy-Authenticate`.
+	#[error("proxy authentication failure: {0}")]
+	JwtProxyAuthenticationFailure(http::jwt::TokenError),
 	#[error("oidc failure: {0}")]
 	OidcFailure(http::oidc::Error),
 	#[error("mcp authentication failure: {0}")]
@@ -404,6 +409,7 @@ impl ProxyError {
 			ProxyError::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
 
 			ProxyError::JwtAuthenticationFailure(_) => StatusCode::UNAUTHORIZED,
+			ProxyError::JwtProxyAuthenticationFailure(_) => StatusCode::PROXY_AUTHENTICATION_REQUIRED,
 			ProxyError::OidcFailure(ref error) => match error {
 				http::oidc::Error::AuthenticationRequired => StatusCode::UNAUTHORIZED,
 				http::oidc::Error::MissingSession
@@ -547,6 +553,10 @@ impl ProxyError {
 			if let Ok(hv) = HeaderValue::try_from(auth_header) {
 				rb = rb.header(challenge, hv);
 			}
+		}
+
+		if matches!(self, ProxyError::JwtProxyAuthenticationFailure(_)) {
+			rb = rb.header(hyper::header::PROXY_AUTHENTICATE, HeaderValue::from_static("Bearer"));
 		}
 
 		if let Some(grpc_status) = grpc_status {

@@ -1043,3 +1043,51 @@ pub fn test_required_claims_with_nbf_rejects_missing_nbf() {
 		"required_claims with nbf should reject tokens missing nbf claim"
 	);
 }
+
+// Kailo automation egress: a JWT read from Proxy-Authorization addresses the gateway as a
+// forward proxy, so a failure is a 407 + Proxy-Authenticate challenge (RFC 9110), never a 401
+// that the caller could mistake for the upstream target's own response.
+#[tokio::test]
+pub async fn test_proxy_authorization_failure_returns_407() {
+	let (base, _, _, _) = setup_test_jwt();
+	let jwt = Jwt {
+		mode: Mode::Strict,
+		providers: base.providers.clone(),
+		location: crate::http::auth::AuthorizationLocation::Header {
+			name: crate::http::header::PROXY_AUTHORIZATION,
+			prefix: Some("Bearer ".into()),
+		},
+		preserve_token: false,
+	};
+	assert!(jwt.is_proxy_location());
+	assert!(!base.is_proxy_location());
+	let mut req = crate::http::Request::new(crate::http::Body::empty());
+	req.headers_mut().insert(
+		crate::http::header::PROXY_AUTHORIZATION,
+		crate::http::HeaderValue::from_static("Bearer invalid-token"),
+	);
+	let mut log = make_min_req_log();
+	let err = jwt
+		.apply(Some(&mut log), &mut req)
+		.await
+		.expect_err("strict mode rejects an invalid token");
+	let resp =
+		crate::proxy::ProxyError::JwtProxyAuthenticationFailure(err).into_response_with_grpc(false);
+	assert_eq!(
+		resp.status(),
+		::http::StatusCode::PROXY_AUTHENTICATION_REQUIRED
+	);
+	assert_eq!(
+		resp
+			.headers()
+			.get(::http::header::PROXY_AUTHENTICATE)
+			.unwrap(),
+		"Bearer"
+	);
+	assert!(
+		resp
+			.headers()
+			.get(::http::header::WWW_AUTHENTICATE)
+			.is_none()
+	);
+}

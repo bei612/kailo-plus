@@ -19,6 +19,8 @@ base_divergence: none
 # fork/verify/admin-authentication.md；完成请求的 LLM 记录与 request log 同事务进入 durable usage
 # outbox，写库失败保留重试而不清批次，并经已认证的 admin 接口按游标读取（SS-AGW-USAGE），见
 # fork/verify/durable-usage.md。后者的读取接口依赖前者的认证。
+# jwtAuth 令牌位于 Proxy-Authorization 时失败以 407 拒绝（与上游 basic auth 一致），供 call_webhook
+# 出站网关区分"网关拒绝 Core"与目标响应，见 fork/verify/proxy-jwt-407.md。
 
 artifacts:
   - name: model-gateway
@@ -31,6 +33,6 @@ artifacts:
 
 source_facts: [SF-AGW-02, SF-AGW-06, SF-AGW-09, SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
 source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE]
-compatibility_evidence: [model-gateway/fork/verify/oidc-header-projection.md, model-gateway/fork/verify/admin-authentication.md, model-gateway/fork/verify/durable-usage.md, model-gateway/fork/verify/llm-instruction-role.md]
+compatibility_evidence: [model-gateway/fork/verify/oidc-header-projection.md, model-gateway/fork/verify/admin-authentication.md, model-gateway/fork/verify/durable-usage.md, model-gateway/fork/verify/llm-instruction-role.md, model-gateway/fork/verify/proxy-jwt-407.md]
 owner: team-platform
 last_reverified: 2026-09-29

@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+#
+# 原版 call_webhook 的唯一出站口（.design/06 §9.1）。只接受 Core 自有 service client
+# 的 client_credentials 令牌（Proxy-Authorization，失败 407），只放行公网主机名目标；
+# IP 字面量、单标签名与内网后缀在授权阶段 403。DNS 换绑到私网地址由宿主
+# automation-egress-firewall.sh 的 DOCKER-USER/INPUT 规则兜底。
+# 不配 adminAddr 与 storage：本实例没有管理面，也不持久任何请求内容。
+binds:
+- port: ${AUTOMATION_EGRESS_PORT}
+  listeners:
+  - name: automation-egress
+    protocol: HTTP
+    policies:
+      jwtAuth:
+        mode: strict
+        issuer: ${OIDC_ISSUER}
+        audiences:
+        - ${AGENTGATEWAY_ADMIN_AUDIENCE}
+        jwks:
+          url: ${OIDC_JWKS_URI}
+        location:
+          header:
+            name: proxy-authorization
+            prefix: 'Bearer '
+      authorization:
+        rules:
+        - 'jwt.azp == "${AGENTGATEWAY_ADMIN_CLIENT_ID}" && "x-platform-egress-authority" in request.headers && request.headers["x-platform-egress-authority"].matches("^(?i)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\\.[a-z]{2,63}:[0-9]{1,5}$") && !request.headers["x-platform-egress-authority"].matches("(?i)\\.(local|internal|localhost|svc|home\\.arpa)(:|$)")'
+      transformations:
+        request:
+          set:
+            host: 'request.headers["x-platform-egress-authority"]'
+          remove:
+          - x-platform-egress-authority
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+    routes:
+    - name: automation-webhook
+      matches:
+      - path:
+          pathPrefix: /
+      policies:
+        timeout:
+          requestTimeout: 15s
+      backends:
+      - dynamic: {}
+        policies:
+          backendTLS: {}
