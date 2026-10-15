@@ -2553,6 +2553,25 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       else expect(section(host, "agent-installations").querySelector("select")?.disabled).toBe(false);
     },
   );
+
+  // Core keeps one EVALUATING/WAITING action per target, so a pending upgrade
+  // approval on this installation must block a delegation request before review.
+  it("blocks delegation requests while another action on the installation awaits approval", async () => {
+    const upgrade = { actionExecutionId: "upgrade-ae", operationId: "upgrade-operation", actionKey: "agent.installation.upgrade",
+      actionVersion: 1, targetId: installation.resourceId, workspaceId: installation.workspaceId,
+      gateState: "WAITING", dispatchState: "NOT_DISPATCHED", createdAt: "2026-10-15T10:04:39Z" };
+    const t = routes((r) => r.path === "/api/v1/tasks" ? { status: 200, body: [upgrade] } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(host, "View delegation grants"));
+    const action = section(host, "agent-delegation-management");
+    const pending = action.querySelector("[data-testid=agent-delegation-pending]");
+    expect(pending?.textContent).toContain("agent.installation.upgrade");
+    expect(pending?.textContent).toContain("upgrade-operation");
+    expect(button(action, "Review request").disabled).toBe(true);
+    expect(button(action, "Review revocation").disabled).toBe(true);
+    expect(posts(t)).toHaveLength(0);
+  });
 });
 
 describe("DevicesPage", () => {

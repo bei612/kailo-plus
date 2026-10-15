@@ -108,6 +108,14 @@ function validDefinition(value: AgentDefinitionView): boolean {
       || (typeof value.currentPublishedVersionAssetId === "string" && !!value.currentPublishedVersionAssetId));
 }
 
+// Core admits at most one EVALUATING/WAITING action per target, whatever its key
+// (admission.action_execution_one_pending_per_target). A pending approval on the
+// installation therefore blocks every other request on it until it settles.
+function holdsTarget(task: TaskView, targetId: string | undefined): boolean {
+  return targetId !== undefined && task.targetId === targetId
+    && (task.gateState === ActionGateState.Evaluating || task.gateState === ActionGateState.Waiting);
+}
+
 function validDefinitionTask(task: TaskView): boolean {
   return !!task && typeof task.actionKey === "string"
     && typeof task.actionExecutionId === "string" && !!task.actionExecutionId
@@ -1443,7 +1451,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
       : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
+      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
       : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm">{pending.map((task) => <p className="break-words" key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}
         <Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
@@ -1766,7 +1774,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
         receipt={submission} workspaceId={submissionScope.workspaceId} />
     </> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
+      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
       : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm">{pending.map((task) => <p key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}
         <Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
@@ -1860,8 +1868,9 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
   const usesValid = uses === undefined || (Number.isSafeInteger(uses) && uses > 0);
   const [tasks, reloadTasks] = useLoad("delegation-actions-in-flight", client.tasks);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
-  const pending = taskRows?.filter((task) => ["agent.delegation.grant", "agent.delegation.revoke"].includes(task.actionKey)
-    && task.targetId === resourceId && taskPhase(task).tone === "neutral") ?? [];
+  const pending = taskRows?.filter((task) => holdsTarget(task, resourceId)
+    || (["agent.delegation.grant", "agent.delegation.revoke"].includes(task.actionKey)
+      && task.targetId === resourceId && taskPhase(task).tone === "neutral")) ?? [];
   const requestBlocked = !taskRows || pending.length > 0;
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
@@ -1978,9 +1987,9 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId })
       : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
+      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
-      : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm">{pending.map((task) => <p key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}<Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
+      : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm" data-testid="agent-delegation-pending">{pending.map((task) => <p className="break-words" key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.actionKey} · {task.operationId}</p>)}<Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
   </section>;
 }
 
@@ -2143,9 +2152,9 @@ function InstallationPermission({ kind, installation, locked, onLocked, onRecord
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   const [tasks, reloadTasks] = useLoad(`installation-${kind}:${installation.resourceId}`, client.tasks);
   const rows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
-  const pending = rows?.some((row) => row.targetId === installation.resourceId
-    && [actions.grant, actions.revoke].includes(row.actionKey)
-    && taskPhase(row).tone === "neutral") ?? true;
+  const pending = rows?.some((row) => holdsTarget(row, installation.resourceId)
+    || (row.targetId === installation.resourceId && [actions.grant, actions.revoke].includes(row.actionKey)
+      && taskPhase(row).tone === "neutral")) ?? true;
   const prepare = (grant: boolean) => {
     if (locked || intent || busy || !permission || !rows || !row
       || !(grant ? permission.canGrant && !pending : permission.canRevoke)) return;
@@ -2656,7 +2665,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
         </form>}
     </> : null}
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId }) : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
-    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown" ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
+    {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown" ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.refresh")}</Button></Notice>
       : pending.length > 0 ? <div role="status" className="flex flex-col gap-1 text-sm"><p>{t("agents.version.inFlight")}</p>{pending.map((task) => <p key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}<Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
   </section></AgentManagementDialog>;
@@ -2778,7 +2787,7 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
       : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}
       {submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown"
-      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
+      ? t("agents.unknown", { operation: failure.operationId ?? "—" }) : t("agents.rejected", { reason: failureText(failure) })}</p> : null}
     {tasks.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !taskRows ? <Notice role="alert">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
       : pending.length > 0 ? <div role="status" className="flex flex-col gap-1 text-sm"><p>{t("agents.inFlight")}</p>

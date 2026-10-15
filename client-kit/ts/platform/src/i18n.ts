@@ -1869,6 +1869,7 @@ export const platformMessages = {
   "agents.admission": { en: "Core rechecks scope, permission, approval, quota and capacity according to the registered action policy. A request is not a runtime authorization.", "zh-CN": "Core 按登记的动作策略重查 scope、权限、审批、额度与容量。提交请求不构成运行授权。" },
   "agents.recorded": { en: "Request recorded. Check Tasks for its outcome and Approvals for ownership transfer. Execution: {execution}; operation: {operation}.", "zh-CN": "请求已登记。请到任务页查看结果；所有权转移可到审批页查看。执行：{execution}；操作：{operation}。" },
   "agents.unknown": { en: "Outcome is not confirmed. Re-check only this same request or inspect Tasks; do not submit a replacement. Operation: {operation}.", "zh-CN": "结果尚未确认。只能重查原请求或到任务页查证，不要另发一笔。操作：{operation}。" },
+  "agents.rejected": { en: "Request rejected: {reason}", "zh-CN": "请求被拒绝：{reason}" },
   "agents.inFlight": { en: "Existing definition requests in progress", "zh-CN": "仍在进行的定义请求" },
   "agents.inFlightUnavailable": { en: "Could not confirm existing requests. Refresh this view or inspect Tasks; new requests remain blocked until confirmation.", "zh-CN": "无法确认已有请求。请刷新本页或到任务页查证；完成查证前不能另发请求。" },
   "agents.version.published": { en: "Published", "zh-CN": "已发布" },
