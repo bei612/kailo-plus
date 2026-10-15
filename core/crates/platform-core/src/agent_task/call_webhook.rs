@@ -16,9 +16,42 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 fn unknown() -> Refusal {
     Refusal::Unavailable("Webhook dispatch evidence unavailable".into())
+}
+
+/// Each Activity attempt answers well inside the Worker's 30 s Activity
+/// deadline: everything before the intent is frozen fits in PREPARE_BUDGET, the
+/// single send has its own original 10 s bound, and a slow dependency leaves
+/// the invocation CREATED for the next attempt. The send is never cancelled.
+const PREPARE_BUDGET: Duration = Duration::from_secs(12);
+const STEP_BUDGET: Duration = Duration::from_secs(5);
+/// Dependency failures before the intent is frozen are retried this long, from
+/// the first time this run reached the step; then the run fails before dispatch.
+const PREPARE_BUDGET_SECONDS: f64 = 600.0;
+
+/// One bounded pre-dispatch step: a timeout or a refusal is logged with the
+/// step name and reason, never silently folded into "result unknown".
+async fn bounded<T>(
+    invocation: Uuid,
+    step: &'static str,
+    budget: Duration,
+    future: impl std::future::Future<Output = Result<T, Refusal>>,
+) -> Result<T, Refusal> {
+    match tokio::time::timeout(budget, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => {
+            tracing::warn!(%invocation, step, ?error, "call_webhook step refused");
+            Err(error)
+        }
+        Err(_) => {
+            let seconds = budget.as_secs();
+            tracing::warn!(%invocation, step, seconds, "call_webhook step timed out");
+            Err(Refusal::Unavailable(format!("call_webhook {step} timed out")))
+        }
+    }
 }
 
 /// One stable reference per run: call_webhook is the run's single final effect.
@@ -49,8 +82,13 @@ pub(super) async fn advance(
     match execute(state, invocation, input).await {
         Ok((status, reason)) => result(invocation.id, status, &reason),
         Err(error) => {
-            // Only a still-CREATED invocation without a frozen intent can close here.
-            if definite_reply_refusal(&error)
+            tracing::warn!(invocation = %invocation.id, ?error, "call_webhook not dispatched");
+            // Only a still-CREATED invocation without a frozen intent can close
+            // here: a definite refusal, or dependencies failing past the budget.
+            let definite = definite_reply_refusal(&error)
+                || (matches!(error, Refusal::Unavailable(_))
+                    && prepare_expired(state, invocation).await);
+            if definite
                 && matches!(
                     fail_before_dispatch(state, invocation, &error).await,
                     Ok(true)
@@ -76,9 +114,13 @@ async fn execute(
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
 ) -> Result<(TaskStatus, String), Refusal> {
-    let cancel = activity_fence(state, invocation, input, true).await?
-        || input.cancel_requested
-        || invocation.cancel_pending;
+    let id = invocation.id;
+    let deadline = Instant::now() + PREPARE_BUDGET;
+    let fence = bounded(id, "activity_fence", STEP_BUDGET, async {
+        activity_fence(state, invocation, input, true).await
+    })
+    .await?;
+    let cancel = fence || input.cancel_requested || invocation.cancel_pending;
     match invocation.status.as_str() {
         "COMPLETED" => return Ok((TaskStatus::Completed, "NONE".into())),
         "FAILED" => return Ok((TaskStatus::Failed, "NONE".into())),
@@ -117,8 +159,9 @@ async fn execute(
             if invocation.status != "CREATED" {
                 return Err(unknown());
             }
+            effect_started(state, invocation).await?;
             effect_deadline_refusal(state, invocation, None).await?;
-            match dispatch(state, invocation, input).await? {
+            match dispatch(state, invocation, input, deadline).await? {
                 Dispatched::Responded => {}
                 Dispatched::Undetermined => {
                     return Ok((TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT".into()));
@@ -131,19 +174,70 @@ async fn execute(
         }
         (true, false) => {
             // A previous attempt froze the intent and may have sent the request.
-            undetermined(state, invocation).await?;
+            bounded(
+                id,
+                "undetermined",
+                STEP_BUDGET,
+                undetermined(state, invocation),
+            )
+            .await?;
             return Ok((TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT".into()));
         }
         (true, true) => {}
     }
-    let usage = record_count(state, invocation).await?;
-    if !crate::gateway_usage::settle_events(&state.pool, &[usage], &state.openmeter)
-        .await
-        .map_err(|_| unknown())?
-    {
+    let usage = bounded(
+        id,
+        "record_count",
+        STEP_BUDGET,
+        record_count(state, invocation),
+    )
+    .await?;
+    let settled = bounded(id, "settle_usage", STEP_BUDGET, async {
+        crate::gateway_usage::settle_events(&state.pool, &[usage], &state.openmeter)
+            .await
+            .map_err(|_| unknown())
+    })
+    .await?;
+    if !settled {
         return Ok((TaskStatus::Running, "BILLING_UNAVAILABLE".into()));
     }
-    finish(state, invocation, usage).await
+    bounded(id, "finish", STEP_BUDGET, finish(state, invocation, usage)).await
+}
+
+/// The first time this run reached its webhook step (shared with Step.timeout_secs).
+async fn effect_started(state: &ServiceState, invocation: &Invocation) -> Result<(), Refusal> {
+    sqlx::query(
+        "update catalog.agent_invocation i set automation_effect_starts=i.automation_effect_starts
+          ||jsonb_build_object(v.action->'steps'->(-1)->>'id',to_jsonb(clock_timestamp())),updated_at=now()
+         from catalog.automation_version v
+         where i.id=$1 and v.asset_id=i.automation_version_asset_id
+           and v.automation_resource_id=i.automation_resource_id and v.action->>'kind'='CALL_WEBHOOK_STEPS'
+           and not i.automation_effect_starts ? (v.action->'steps'->(-1)->>'id')
+           and i.status='CREATED' and i.webhook_intent is null",
+    )
+    .bind(invocation.id)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
+/// Pre-dispatch dependency failures have outlived PREPARE_BUDGET_SECONDS.
+async fn prepare_expired(state: &ServiceState, invocation: &Invocation) -> bool {
+    sqlx::query_scalar::<_, Option<bool>>(
+        "select (i.automation_effect_starts->>(v.action->'steps'->(-1)->>'id'))::timestamptz
+            +make_interval(secs=>$2)<clock_timestamp()
+         from catalog.agent_invocation i join catalog.automation_version v
+           on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id
+         where i.id=$1 and i.status='CREATED' and i.webhook_intent is null",
+    )
+    .bind(invocation.id)
+    .bind(PREPARE_BUDGET_SECONDS)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// Original executor.rs expansion of url/headers/body with the verified trigger
@@ -275,65 +369,146 @@ async fn secret_headers(
     Ok(headers)
 }
 
+/// This run's frozen call_webhook step, read without row locks.
+async fn frozen_step(state: &ServiceState, invocation: &Invocation) -> Result<Value, Refusal> {
+    let (version_action, parameters): (Value, Option<Value>) = sqlx::query_as(
+        "select v.action,ae.parameters from catalog.agent_invocation i
+         join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+         and v.automation_resource_id=i.automation_resource_id
+         join admission.action_execution ae on ae.id=i.action_execution_id where i.id=$1",
+    )
+    .bind(invocation.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let action = crate::automation::steps::run_action(&version_action, parameters.as_ref())?
+        .ok_or_else(unknown)?;
+    action["steps"]
+        .as_array()
+        .and_then(|steps| steps.last())
+        .filter(|step| step["action"] == "call_webhook")
+        .cloned()
+        .ok_or_else(unknown)
+}
+
 async fn dispatch(
     state: &ServiceState,
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
+    deadline: Instant,
 ) -> Result<Dispatched, Refusal> {
-    activity_fence(state, invocation, input, false).await?;
-    crate::service_api::audit_gate(state)
-        .await
-        .map_err(|_| unknown())?;
+    let id = invocation.id;
+    // Never more than what is left of this attempt's preparation budget.
+    let left = || {
+        deadline
+            .saturating_duration_since(Instant::now())
+            .min(STEP_BUDGET)
+    };
+    bounded(id, "activity_fence", left(), async {
+        activity_fence(state, invocation, input, false).await.map(|_| ())
+    })
+    .await?;
+    bounded(id, "audit_gate", left(), async {
+        crate::service_api::audit_gate(state)
+            .await
+            .map_err(|_| Refusal::Unavailable("audit devices unavailable".into()))
+    })
+    .await?;
     let egress = crate::automation::webhook_egress()?;
     let tokens = crate::oidc::TokenSource::from_env()
         .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     // The request leaves only through AgentGateway: no system proxy, no redirect.
-    let timeout = std::time::Duration::from_secs(webhook_step::REQUEST_TIMEOUT_SECS);
+    let timeout = Duration::from_secs(webhook_step::REQUEST_TIMEOUT_SECS);
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(timeout)
         .build()
         .map_err(|_| unknown())?;
+    // Network-only preparation happens before any row lock: the frozen step,
+    // the original check_ssrf, header SecretRefs and Core's egress credential.
+    let frozen = bounded(
+        id,
+        "frozen_step",
+        left(),
+        frozen_step(state, invocation),
+    )
+    .await?;
+    let origin = webhook_step::origin(frozen["url"].as_str().unwrap_or_default())
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let host = origin.0.as_str();
+    let lookup = webhook_step::resolve_public(host, origin.1);
+    match tokio::time::timeout(left(), lookup).await {
+        Ok(Ok(())) => {}
+        Ok(Err(true)) => {
+            tracing::warn!(invocation = %id, host, "call_webhook destination is not public");
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        Ok(Err(false)) => {
+            tracing::warn!(invocation = %id, host, "call_webhook destination unresolved");
+            return Err(Refusal::Precondition(ReasonCode::TargetNotFound));
+        }
+        Err(_) => {
+            tracing::warn!(invocation = %id, host, "call_webhook DNS timed out");
+            return Err(Refusal::Unavailable("call_webhook dns timed out".into()));
+        }
+    }
+    let secrets = bounded(id, "secret_headers", left(), async {
+        let action = json!({"steps":[frozen.clone()]});
+        secret_headers(state, invocation.tenant_id, &action, &frozen).await
+    })
+    .await?;
+    let bearer = bounded(id, "egress_token", left(), async {
+        tokens
+            .token()
+            .await
+            .map_err(|_| Refusal::Unavailable("Core egress credential unavailable".into()))
+    })
+    .await?;
     let mut tx = state.pool.begin().await?;
-    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
-    sqlx::query("select id from identity.tenant where id=$1 for no key update")
-        .bind(invocation.tenant_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let ae = bounded(id, "lock", left(), async {
+        let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+        sqlx::query("select id from identity.tenant where id=$1 for no key update")
+            .bind(invocation.tenant_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        Ok::<_, Refusal>(ae)
+    })
+    .await?;
     // The same fresh admission as every native effect, including the original
     // elevated authority (automation::fresh) for this exact frozen run.
-    let (action, binding, revision) =
-        crate::automation::fresh_channel_action(state, &mut tx, invocation.id, None).await?;
+    let (action, binding, revision) = bounded(id, "fresh_admission", left(), async {
+        crate::automation::fresh_channel_action(state, &mut tx, invocation.id, None).await
+    })
+    .await?;
     if action["kind"] != "CALL_WEBHOOK_STEPS" {
         return Err(unknown());
     }
     let step = action["steps"]
         .as_array()
         .and_then(|steps| steps.last())
-        .filter(|step| step["action"] == "call_webhook")
+        .filter(|step| step["action"] == "call_webhook" && **step == frozen)
         .ok_or_else(unknown)?
         .clone();
     let source_author = ae
         .parameters
         .as_ref()
         .and_then(|parameters| parameters["sourcePubkey"].as_str());
-    let prepared = prepare(state, invocation, binding.channel_id, source_author, &step).await?;
-    // Original check_ssrf before every dispatch; AgentGateway repeats the
-    // destination restriction on its egress listener.
-    match webhook_step::resolve_public(&prepared.origin.0, prepared.origin.1).await {
-        Ok(()) => {}
-        Err(true) => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
-        Err(false) => return Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
-    }
+    let channel = binding.channel_id;
+    let prepared = bounded(id, "trigger_context", left(), async {
+        prepare(state, invocation, channel, source_author, &step).await
+    })
+    .await?;
     let mut headers = prepared.headers.clone();
-    headers.extend(secret_headers(state, invocation.tenant_id, &action, &step).await?);
-    let bearer = tokens
-        .token()
-        .await
-        .map_err(|_| Refusal::Unavailable("Core egress credential unavailable".into()))?;
+    headers.extend(secrets);
+    if Instant::now() >= deadline {
+        tracing::warn!(invocation = %id, "call_webhook preparation used its attempt budget");
+        return Err(Refusal::Unavailable("call_webhook preparation over budget".into()));
+    }
     let created_at = DateTime::from_timestamp(Utc::now().timestamp(), 0).ok_or_else(unknown)?;
-    let usage = current_meter(state, &mut tx, invocation, created_at).await?;
+    let usage = bounded(id, "usage_meter", left(), async {
+        current_meter(state, &mut tx, invocation, created_at).await
+    })
+    .await?;
     let request = request_id(invocation.id);
     let authority = format!("{}:{}", prepared.origin.0, prepared.origin.1);
     let usage_value = serde_json::to_value(&usage).map_err(|_| unknown())?;
@@ -398,6 +573,7 @@ async fn dispatch(
         Ok(guard) => guard,
         Err(error) => {
             // This live sender has not sent and never will: definite non-delivery.
+            tracing::warn!(invocation = %id, step = "dispatch_recheck", ?error, "call_webhook not sent");
             not_delivered(state, invocation, &ae, &request, evidence, &error).await?;
             return Ok(Dispatched::NotDelivered(error));
         }

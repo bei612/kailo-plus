@@ -3709,11 +3709,12 @@ mod reply_tests {
     fn automation_reply_uses_frozen_source_without_widening_ordinary_agent_policy() {
         for channel in [false, true] {
             assert_eq!(result_channel("BUZZ_EVENT", true, channel), Some(false));
-            for source in ["SCHEDULE", "MANUAL"] {
+            // DD-116: a webhook run, like schedule/manual, replies in the Channel.
+            for source in ["SCHEDULE", "MANUAL", "WEBHOOK"] {
                 assert_eq!(result_channel(source, true, channel), Some(true));
                 assert_eq!(result_channel(source, false, channel), None);
             }
-            for source in ["WEBHOOK", "FUTURE_SOURCE", ""] {
+            for source in ["FUTURE_SOURCE", ""] {
                 assert_eq!(result_channel(source, true, channel), None);
                 assert_eq!(result_channel(source, false, channel), None);
             }
