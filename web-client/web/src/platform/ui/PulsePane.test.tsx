@@ -95,6 +95,10 @@ it("passes original supplied task members without extra directory authority and 
   expect(submit).toHaveBeenCalledWith("Original raw draft",[peer],[media],false);
 });
 it("does not gate the project directory on unrelated own-profile or composer people reads",async()=>{
+  // Under full-suite load a previous test's late own-profile read can land here; drain the
+  // task queue first so the assertions only see reads this ProjectsPane makes.
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,0));});
+  api.profile.mockClear();
   api.profile.mockRejectedValue(new Error("Unrelated profile failed"));
   const send=vi.fn(async()=>{throw new Error("No composer directory request");});
   await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({send})} locale="en"><TooltipProvider>
