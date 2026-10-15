@@ -11,7 +11,7 @@
 // huddle control; Manage channel opens the shared channel-management-sheet. Channel roles are the platform admin relation only: no owner/guest.
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, EllipsisVertical, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
+import { Ellipsis, EllipsisVertical, Settings2, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
 import { WorkspaceMembershipState, type ConversationParticipant, type ConversationView, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
@@ -30,7 +30,7 @@ import { MODAL_SEARCH_INPUT_CLASS, MODAL_SEARCH_SHELL_CLASS } from "./channel-br
 import { VirtualizedList } from "./forum/VirtualizedList";
 import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "./profile/avatar-host";
-import { MemberAvatar } from "./members";
+import { MemberAvatar, type MemberTarget } from "./members";
 import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "./roles";
 import { rankUserCandidatesBySearch } from "./search/userCandidateSearch";
 import type { UserSearchResult } from "./search/types";
@@ -62,6 +62,13 @@ export async function loadConversationParticipants(client: BffClient,
   return items;
 }
 
+/** The profile proof for a roster key: its Workspace membership or its conversation. */
+export function rosterMemberTarget(roster: MemberRoster, principalId: string, pubkey: string): MemberTarget {
+  return roster.kind === "workspace"
+    ? { workspaceId: roster.workspaceId, principalId, pubkey }
+    : { conversationId: roster.conversation.id, principalId, pubkey };
+}
+
 /** One cached roster read for the header count, the dialog and the settings sheet. */
 export function rosterQueryKey(roster: MemberRoster) {
   return roster.kind === "workspace"
@@ -82,16 +89,42 @@ export function useRosterMembers(roster: MemberRoster, enabled = true) {
   });
 }
 
-export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel }: {
+export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, variant = "inline" }: {
   roster: MemberRoster;
   onToggleMembers: () => void;
   onManageChannel: () => void;
+  /** Original ChannelScreen compacts the actions while an auxiliary panel leaves < 760px. */
+  variant?: "inline" | "compact";
 }) {
   const t = useT();
   const members = useRosterMembers(roster);
   const memberCount = members.isSuccess
     ? members.data.filter((member) => member.state === WorkspaceMembershipState.Active).length
     : null;
+  if (variant === "compact") {
+    return (
+      <div className="flex items-center gap-[6px]">
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={t("channelMembers.channelActions")} data-testid="channel-actions-menu-trigger" size="icon" type="button" variant="outline">
+              <EllipsisVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem data-testid="channel-members-trigger" onSelect={onToggleMembers}>
+              <Users />
+              <span>{t("channelMembers.members")}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{memberCount ?? ""}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="channel-management-trigger" onSelect={onManageChannel}>
+              <Settings2 />
+              <span>{t("channelManagement.manage")}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-[6px]">
       <Tooltip disableHoverableContent>
@@ -130,7 +163,7 @@ export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel }: 
 }
 
 /** A host opens the original profile panel for this exact admitted Workspace member key. */
-export type MemberProfileRequest = { workspaceId: string; principalId: string; pubkey: string; nonce: number };
+export type MemberProfileRequest = MemberTarget & { nonce: number };
 
 type Row = { member: WorkspaceMemberView; role: RoleMemberView | undefined; self: boolean; label: string };
 
@@ -260,9 +293,9 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
         )}
         <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-3">
           <div className="relative shrink-0">
-            {active && pubkey && workspaceId ? (
+            {active && pubkey ? (
               <MemberAvatar className="h-8 w-8 text-xs shadow-none" label={member.displayName}
-                target={{ workspaceId, principalId: member.principalId, pubkey }} />
+                target={rosterMemberTarget(roster, member.principalId, pubkey)} />
             ) : (
               <ProfileAvatar avatarUrl={null} className="h-8 w-8 text-xs shadow-none" iconClassName="h-4 w-4" label={member.displayName} shape="circle" />
             )}

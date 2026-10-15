@@ -15,6 +15,7 @@ import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHead
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useTheme } from "@/shared/theme/ThemeProvider";
+import { useNavigate } from "@tanstack/react-router";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { Channel } from "@/shared/api/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
@@ -45,6 +46,7 @@ export function ChannelScreenHeader({
   const [membersOpenFor, setMembersOpenFor] = React.useState<string | null>(null);
   const [manageOpenFor, setManageOpenFor] = React.useState<string | null>(null);
   const { isDark } = useTheme();
+  const navigate = useNavigate();
   const { openProfilePanel } = useProfilePanel();
 
   async function handleCopyTitle(value: string) {
@@ -76,6 +78,10 @@ export function ChannelScreenHeader({
         channel={{ channelId: activeChannel.id, name: activeChannel.name, description: activeChannel.description,
           channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds }}
         onOpenMembers={() => { const id = workspace.id; window.requestAnimationFrame(() => setMembersOpenFor(id)); }}
+        workflows={{
+          onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigate({ to: "/platform/workflows/$workflowId", params: { workflowId }, search: { workspaceId: workspace.id } }); },
+          onCreateWorkflow: () => { setManageOpenFor(null); void navigate({ to: "/platform/$section", params: { section: "workflows" }, search: { workspaceId: workspace.id } }); },
+        }}
         onCopy={(value) => writeTextToClipboard(value)} /> : null}
       {workspace ? <ChannelMembersDialog key={workspace.id} roster={{ kind: "workspace", workspaceId: workspace.id }} open={membersOpenFor === workspace.id}
         onOpenChange={(open) => setMembersOpenFor(open ? workspace.id : null)} archived={Boolean(activeChannel.archivedAt)}

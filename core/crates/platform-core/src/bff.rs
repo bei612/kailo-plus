@@ -602,6 +602,10 @@ pub fn router(state: BffState) -> Router {
             axum::routing::post(crate::web_transport::conversation_message_author_profiles),
         )
         .exposed_route(
+            "/api/v1/conversations/{conversation_id}/participants/{principal_id}/profiles/{pubkey}",
+            get(crate::web_transport::conversation_participant_profile),
+        )
+        .exposed_route(
             "/api/v1/conversations/{conversation_id}/media",
             axum::routing::post(crate::web_transport::upload_conversation_media),
         )

@@ -12,10 +12,13 @@
 // affordances and action rows are not rendered.
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Check, Copy, MessageSquare } from "lucide-react";
+import { Check, ChevronRight, Copy, MessageSquare, Plus, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
-import { WorkspaceMembershipState } from "@client-kit/contracts";
-import { useLocale, useT } from "./context";
+import { AutomationState, WorkspaceMembershipState, type AutomationView } from "@client-kit/contracts";
+import { useQuery } from "@tanstack/react-query";
+import { validAutomation, validAutomationDetail } from "./agents";
+import { Button } from "./profile/buzz/shared/ui/button";
+import { useBffClient, useLocale, useT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { ChannelGlyph } from "./channel-glyph";
 import { PanelSectionGroup } from "./pulse/PanelSectionGroup";
@@ -28,7 +31,7 @@ import {
 import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "./profile/avatar-host";
 import { MemberAvatar } from "./members";
-import { useRosterMembers, type MemberRoster } from "./channel-members";
+import { rosterMemberTarget, useRosterMembers, type MemberRoster } from "./channel-members";
 
 const MAX_VISIBLE_AVATARS = 3;
 // The original stacks with inline zIndex index + 1; literal utilities keep the same order
@@ -87,7 +90,13 @@ function useScrollBoundaryLock(scrollRef: React.RefObject<HTMLElement | null>) {
   }, [scrollRef]);
 }
 
-export function ChannelManagementSheet({ open, onOpenChange, roster, channel, isDark, onOpenMembers, onCopy }: {
+/** Host routes into the shared Workflows page; the sheet only lists admitted definitions. */
+export type ChannelWorkflowNavigation = {
+  onOpenWorkflow: (resourceId: string) => void;
+  onCreateWorkflow: () => void;
+};
+
+export function ChannelManagementSheet({ open, onOpenChange, roster, channel, isDark, onOpenMembers, onCopy, workflows }: {
   open: boolean;
   /** Host theme state, as the original reads useTheme().isDark for the overlay surface. */
   isDark: boolean;
@@ -97,6 +106,8 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   onOpenMembers?: () => void;
   /** Host clipboard transport; the shared row owns the original feedback. */
   onCopy: (value: string) => Promise<void>;
+  /** Original ChannelWorkflowsSection: Workspace automations are channel-scoped workflows. */
+  workflows?: ChannelWorkflowNavigation;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -105,6 +116,9 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   const membersQuery = useRosterMembers(roster, open);
   const workspaceId = roster.kind === "workspace" ? roster.workspaceId : undefined;
   const dm = channel.channelType === "dm";
+  const [activeView, setActiveView] = React.useState<"summary" | "workflows">("summary");
+  React.useEffect(() => { if (!open) setActiveView("summary"); }, [open]);
+  const workflowsQuery = useChannelWorkflows(workflows ? workspaceId : undefined, open);
   const members = (membersQuery.data ?? []).filter((member) => member.state === WorkspaceMembershipState.Active);
   const memberCount = members.length;
   const description = channel.description.trim();
@@ -136,9 +150,10 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
               layout: "standalone", mode: "panel", onClose: () => onOpenChange(false), transparentChrome: false, widthPx: 380,
             }}>
               <AuxiliaryPanelHeader bordered density="compact" mode="panel" transparent={false}>
-                <AuxiliaryPanelHeaderGroup mode="panel">
+                <AuxiliaryPanelHeaderGroup mode="panel" backButtonAriaLabel={t("channelManagement.back")} backButtonTestId="channel-management-back"
+                  onBack={activeView !== "summary" ? () => setActiveView("summary") : undefined}>
                   <DialogPrimitive.Title asChild>
-                    <AuxiliaryPanelTitle>{t("channelManagement.title")}</AuxiliaryPanelTitle>
+                    <AuxiliaryPanelTitle>{t(activeView === "workflows" ? "channelManagement.workflows" : "channelManagement.title")}</AuxiliaryPanelTitle>
                   </DialogPrimitive.Title>
                 </AuxiliaryPanelHeaderGroup>
                 <DialogPrimitive.Description className="sr-only">{t("channelManagement.settings")}</DialogPrimitive.Description>
@@ -149,7 +164,9 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                 panelPadding
                 ref={scrollRef}
               >
-                <div className="space-y-6 pt-3">
+                {activeView === "workflows" && workflows ? (
+                  <ChannelWorkflowsSection query={workflowsQuery} workflows={workflows} />
+                ) : <div className="space-y-6 pt-3">
                   <div className="flex flex-col items-center gap-3 py-3 text-center" data-testid="channel-management-hero">
                     <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground">
                       {dm ? <MessageSquare className="h-8 w-8" />
@@ -182,7 +199,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                       label={t("channelManagement.members")}
                       onClick={onOpenMembers}
                       testId="channel-management-member-count"
-                      trailing={<MemberAvatarStack workspaceId={workspaceId} members={members} />}
+                      trailing={<MemberAvatarStack roster={roster} members={members} />}
                       value={membersQuery.isSuccess
                         ? t(memberCount === 1 ? "channelManagement.memberCountOne" : "channelManagement.memberCountOther", { count: memberCount })
                         : t("channelMembers.loading")}
@@ -190,7 +207,18 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                     <CopyFieldRow copiedMessage={t("channelManagement.channelIdCopied")} label={t("channelManagement.channelId")} onCopy={onCopy}
                       testId="channel-management-channel-id" value={channel.channelId} />
                   </PanelSectionGroup>
-                </div>
+                  {workflows && workspaceId ? (
+                    <IngressRow
+                      description={workflowsQuery.isSuccess
+                        ? t(workflowsQuery.data.rows.length === 1 ? "channelManagement.workflowCountOne" : "channelManagement.workflowCountOther", { count: workflowsQuery.data.rows.length })
+                        : undefined}
+                      label={t("channelManagement.workflows")}
+                      onClick={() => setActiveView("workflows")}
+                      testId="channel-workflows-ingress"
+                      trailing={workflowsQuery.isPending ? t("channelManagement.loading") : undefined}
+                    />
+                  ) : null}
+                </div>}
               </AuxiliaryPanelBody>
             </AuxiliaryPanelContext.Provider>
           </AvatarHostProvider>
@@ -200,8 +228,8 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   );
 }
 
-function MemberAvatarStack({ workspaceId, members }: {
-  workspaceId?: string;
+function MemberAvatarStack({ roster, members }: {
+  roster: MemberRoster;
   members: { principalId: string; displayName: string; pubkeys: string[] }[];
 }) {
   const t = useT();
@@ -217,7 +245,7 @@ function MemberAvatarStack({ workspaceId, members }: {
         return (
           <span className={cn(STACK_Z_CLASSES[index], index > 0 && "-ml-2")} data-testid="channel-management-member-avatar"
             key={member.principalId}>
-            {pubkey && workspaceId ? <MemberAvatar className={className} label={member.displayName} target={{ workspaceId, principalId: member.principalId, pubkey }} />
+            {pubkey ? <MemberAvatar className={className} label={member.displayName} target={rosterMemberTarget(roster, member.principalId, pubkey)} />
               : <ProfileAvatar avatarUrl={null} className={className} label={member.displayName} shape="circle" />}
           </span>
         );
@@ -334,5 +362,139 @@ function CopyFieldRow({ copiedMessage, label, value, testId, onCopy }: {
         )} />
       </span>
     </button>
+  );
+}
+
+type ChannelWorkflows = { rows: AutomationView[]; canCreate: boolean };
+
+/** Every page of the Workspace's admitted automations, validated like the Workflows page. */
+function useChannelWorkflows(workspaceId: string | undefined, enabled: boolean) {
+  const client = useBffClient();
+  return useQuery({
+    queryKey: ["platform", "channel-workflows", workspaceId],
+    enabled: enabled && workspaceId !== undefined,
+    retry: false,
+    queryFn: async (): Promise<ChannelWorkflows> => {
+      const rows: AutomationView[] = [];
+      let canCreate = false;
+      let offset = 0;
+      for (;;) {
+        const page = await client.automations(workspaceId!, offset);
+        if (!page || !Array.isArray(page.automations) || typeof page.canCreate !== "boolean"
+          || !page.automations.every((row) => validAutomation(row) && row.workspaceId === workspaceId))
+          throw new Error("Invalid workflow page");
+        rows.push(...page.automations.filter((row) => row.state !== AutomationState.Deleted));
+        canCreate = canCreate || page.canCreate;
+        if (page.nextOffset === undefined) break;
+        if (!Number.isSafeInteger(page.nextOffset) || page.nextOffset <= offset) throw new Error("Workflow cursor did not advance");
+        offset = page.nextOffset;
+      }
+      return { rows, canCreate };
+    },
+  });
+}
+
+const automationStateLabels = {
+  [AutomationState.Draft]: "agents.automation.state.draft",
+  [AutomationState.Enabled]: "agents.automation.state.enabled",
+  [AutomationState.Paused]: "agents.automation.state.paused",
+  [AutomationState.Disabled]: "agents.automation.state.disabled",
+  [AutomationState.Deleted]: "agents.automation.state.deleted",
+} as const;
+
+function ChannelWorkflowsSection({ query, workflows }: {
+  query: ReturnType<typeof useChannelWorkflows>;
+  workflows: ChannelWorkflowNavigation;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-4 pt-3" data-testid="channel-workflows-section">
+      {query.isPending ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">{t("channelManagement.loadingWorkflows")}</p>
+      ) : query.isError ? (
+        <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">{t("platform.loadFailed")}</p>
+          <Button onClick={() => void query.refetch()} size="sm" variant="outline">{t("platform.retry")}</Button>
+        </div>
+      ) : query.data.rows.length > 0 ? (
+        <PanelSectionGroup testId="channel-workflows-list">
+          {query.data.rows.map((row) => <ChannelWorkflowRow key={row.resourceId} row={row} onOpen={workflows.onOpenWorkflow} />)}
+        </PanelSectionGroup>
+      ) : (
+        <p className="py-8 text-center text-sm text-muted-foreground">{t("channelManagement.noWorkflows")}</p>
+      )}
+      {query.isSuccess && query.data.canCreate ? (
+        <Button className="w-full" data-testid="channel-workflows-new" onClick={workflows.onCreateWorkflow} type="button" variant="outline">
+          <Plus />
+          {t("channelManagement.newWorkflow")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ChannelWorkflowRow({ row, onOpen }: { row: AutomationView; onOpen: (resourceId: string) => void }) {
+  const client = useBffClient();
+  const t = useT();
+  // Same label rule as the Workflows card: the executing pin, else the latest readable version.
+  const detail = useQuery({
+    queryKey: ["platform", "channel-workflow", row.resourceId, row.resourceVersion],
+    retry: false,
+    queryFn: async () => {
+      const value = await client.automation(row.resourceId, 0, 0);
+      if (!validAutomationDetail(value, row.resourceId, row.workspaceId)) throw new Error("Invalid workflow detail");
+      return value;
+    },
+  });
+  const version = detail.isSuccess ? row.pinnedVersionAssetId
+    ? detail.data.versions.find((item) => item.assetId === row.pinnedVersionAssetId)
+    : detail.data.versions[0] : undefined;
+  return (
+    <button
+      className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      data-testid={`channel-workflow-${row.resourceId}`}
+      onClick={() => onOpen(row.resourceId)}
+      type="button"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <WorkflowIcon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {version?.content.name ?? (detail.isPending ? t("channelManagement.loading") : t("workflows.unnamed"))}
+        </span>
+        <span className="block text-xs text-muted-foreground">{t(automationStateLabels[row.state])}</span>
+      </span>
+    </button>
+  );
+}
+
+function IngressRow({ description, label, onClick, testId, trailing }: {
+  description?: string;
+  label: string;
+  onClick: () => void;
+  testId: string;
+  trailing?: string;
+}) {
+  const t = useT();
+  return (
+    <PanelSectionGroup testId={`${testId}-section`}>
+      <div className="relative flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left">
+        <button
+          aria-label={t("channelManagement.open", { label })}
+          className="absolute inset-0 z-10 transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          data-testid={testId}
+          onClick={onClick}
+          type="button"
+        />
+        <WorkflowIcon className="pointer-events-none relative z-20 h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="pointer-events-none relative z-20 min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground"><span>{label}</span></span>
+          {description ? <span className="mt-0.5 block truncate text-sm font-normal text-muted-foreground/70">{description}</span> : null}
+        </span>
+        {trailing ? <span className="pointer-events-none relative z-20 text-sm text-muted-foreground/70">{trailing}</span> : null}
+        <ChevronRight className="pointer-events-none relative z-20 h-4 w-4 shrink-0 text-muted-foreground" />
+      </div>
+    </PanelSectionGroup>
   );
 }

@@ -255,7 +255,7 @@ const automationVersionLabels = {
   [AgentVersionState.Retired]: "agents.automation.version.retired",
 } as const satisfies Record<AgentVersionState, PlatformMessageKey>;
 
-function validAutomation(row: AutomationView): boolean {
+export function validAutomation(row: AutomationView): boolean {
   return !!row && [row.resourceId, row.workspaceId, row.ownerPrincipalId, row.executorInstallationResourceId]
     .every((id) => typeof id === "string" && !!id)
     && Number.isSafeInteger(row.resourceVersion) && row.resourceVersion > 0
@@ -336,7 +336,7 @@ function automationFromYaml(text: string): AutomationVersionContent | null {
   } catch { return null; }
 }
 
-function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
+export function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
   const parent = value?.automation;
   return !!value && !!parent && validAutomation(parent) && parent.resourceId === resource && parent.workspaceId === workspace
     && typeof value.canManage === "boolean"

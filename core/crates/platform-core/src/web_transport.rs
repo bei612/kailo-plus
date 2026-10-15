@@ -2695,14 +2695,39 @@ struct MemberProfileIdentity {
     identity_version: i32,
 }
 
+/// Where a member key is proven: an ACTIVE Workspace membership, or a participant of an
+/// ACTIVE governed conversation. Both require the exact ACTIVE HUMAN key of that Principal.
+#[derive(Clone, Copy)]
+enum MemberProfileScope {
+    Workspace(Uuid),
+    Conversation(Uuid),
+}
+
+impl MemberProfileScope {
+    fn read_target(self) -> crate::user_state::ReadTarget {
+        match self {
+            Self::Workspace(id) => crate::user_state::ReadTarget::Workspace(id),
+            Self::Conversation(id) => crate::user_state::ReadTarget::Conversation(id),
+        }
+    }
+
+    fn media_path(self, hash: &str) -> String {
+        match self {
+            Self::Workspace(id) => format!("/api/v1/workspaces/{id}/media/{hash}"),
+            Self::Conversation(id) => format!("/api/v1/conversations/{id}/media/{hash}"),
+        }
+    }
+}
+
 async fn member_profile_identity<'e>(
     executor: impl sqlx::PgExecutor<'e>,
-    workspace_id: Uuid,
+    scope: MemberProfileScope,
     principal_id: Uuid,
     pubkey: &str,
 ) -> Result<MemberProfileIdentity, Response> {
-    sqlx::query_as::<_, MemberProfileIdentity>(
-        "select wm.id as membership_id, wm.version as membership_version, tm.version as tenant_membership_version,
+    let (sql, scope_id) = match scope {
+        MemberProfileScope::Workspace(id) => (
+            "select wm.id as membership_id, wm.version as membership_version, tm.version as tenant_membership_version,
                 bib.pubkey as identity_pubkey, bib.version as identity_version
          from identity.workspace_membership wm
          join identity.tenant_membership tm on tm.tenant_principal_id = wm.tenant_principal_id
@@ -2715,11 +2740,35 @@ async fn member_profile_identity<'e>(
               and bib.tenant_id = tm.tenant_id and bib.state = 'ACTIVE' and bib.kind = 'HUMAN'
          where wm.workspace_id = $1 and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
               and bib.pubkey = $3",
-    ).bind(workspace_id).bind(principal_id).bind(pubkey)
-     .fetch_optional(executor).await.map_err(|error| {
-         tracing::warn!(error = %error, "成员资料身份读取失败");
-         StatusCode::SERVICE_UNAVAILABLE.into_response()
-     })?.ok_or_else(|| StatusCode::FORBIDDEN.into_response())
+            id,
+        ),
+        MemberProfileScope::Conversation(id) => (
+            "select c.id as membership_id, c.version as membership_version, tm.version as tenant_membership_version,
+                bib.pubkey as identity_pubkey, bib.version as identity_version
+         from projection.conversation_buzz_binding c
+         join identity.tenant_membership tm on tm.tenant_principal_id = $2
+              and tm.tenant_id = c.tenant_id and tm.state = 'ACTIVE'
+         join identity.principal p on p.id = tm.tenant_principal_id and p.tenant_id = tm.tenant_id
+              and p.status = 'ACTIVE' and p.kind = 'HUMAN'
+         join identity.human_identity hi on hi.id = tm.human_identity_id and hi.status = 'ACTIVE'
+         join identity.buzz_identity_binding bib on bib.principal_id = tm.tenant_principal_id
+              and bib.tenant_id = tm.tenant_id and bib.state = 'ACTIVE' and bib.kind = 'HUMAN'
+         where c.id = $1 and c.state = 'ACTIVE' and $2 = any(c.participant_principal_ids)
+              and bib.pubkey = $3",
+            id,
+        ),
+    };
+    sqlx::query_as::<_, MemberProfileIdentity>(sql)
+        .bind(scope_id)
+        .bind(principal_id)
+        .bind(pubkey)
+        .fetch_optional(executor)
+        .await
+        .map_err(|error| {
+            tracing::warn!(error = %error, "成员资料身份读取失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })?
+        .ok_or_else(|| StatusCode::FORBIDDEN.into_response())
 }
 
 /// The directory's exact ACTIVE member/key is the proof; no Pulse or message substitution.
@@ -2728,10 +2777,44 @@ pub async fn member_profile(
     Path((workspace_id, principal_id, pubkey)): Path<(Uuid, Uuid, String)>,
     headers: HeaderMap,
 ) -> Response {
+    scoped_member_profile(
+        &state,
+        &headers,
+        MemberProfileScope::Workspace(workspace_id),
+        principal_id,
+        pubkey,
+    )
+    .await
+}
+
+/// Original DM header/member dialog profile: the conversation's own participant list and
+/// that Principal's ACTIVE key are the proof, never a message author substitution.
+pub async fn conversation_participant_profile(
+    State(state): State<BffState>,
+    Path((conversation_id, principal_id, pubkey)): Path<(Uuid, Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    scoped_member_profile(
+        &state,
+        &headers,
+        MemberProfileScope::Conversation(conversation_id),
+        principal_id,
+        pubkey,
+    )
+    .await
+}
+
+async fn scoped_member_profile(
+    state: &BffState,
+    headers: &HeaderMap,
+    scope: MemberProfileScope,
+    principal_id: Uuid,
+    pubkey: String,
+) -> Response {
     async fn read(
         state: &BffState,
         headers: &HeaderMap,
-        workspace_id: Uuid,
+        scope: MemberProfileScope,
         principal_id: Uuid,
         pubkey: String,
     ) -> Result<Response, Response> {
@@ -2739,17 +2822,15 @@ pub async fn member_profile(
             return Err(StatusCode::BAD_REQUEST.into_response());
         }
         let ctx = resolve_execution_context(state, headers).await?;
-        let target = crate::user_state::ReadTarget::Workspace(workspace_id);
+        let target = scope.read_target();
         let before = target.admit(state, &ctx).await?;
-        let identity =
-            member_profile_identity(&state.pool, workspace_id, principal_id, &pubkey).await?;
+        let identity = member_profile_identity(&state.pool, scope, principal_id, &pubkey).await?;
         let keys = actor_keys(state, &ctx).await?;
         let client = community_client(state, &keys, before.community_host())?;
         let profile = crate::web_profile::read_author(state, &client, &pubkey).await?;
         let after = target.admit(state, &ctx).await?;
         if !before.same_admission(&after)
-            || identity
-                != member_profile_identity(&state.pool, workspace_id, principal_id, &pubkey).await?
+            || identity != member_profile_identity(&state.pool, scope, principal_id, &pubkey).await?
             || keys.public_key() != actor_keys(state, &ctx).await?.public_key()
         {
             return Err(AdmissionFailure::BindingNotActive.into_response());
@@ -2757,7 +2838,7 @@ pub async fn member_profile(
         let mut view = crate::web_profile::view(pubkey, profile.as_ref(), before.community_host());
         for path in view.avatar_media_paths.values_mut() {
             if let Some(hash) = path.strip_prefix("/api/v1/profile/media/") {
-                *path = format!("/api/v1/workspaces/{workspace_id}/media/{hash}");
+                *path = scope.media_path(hash);
             }
         }
         Ok((
@@ -2766,7 +2847,7 @@ pub async fn member_profile(
         )
             .into_response())
     }
-    match read(&state, &headers, workspace_id, principal_id, pubkey).await {
+    match read(state, headers, scope, principal_id, pubkey).await {
         Ok(response) | Err(response) => response,
     }
 }

@@ -103,6 +103,7 @@ export function createBffClient(transport: BffTransport) {
     messageAuthorProfiles: (workspaceId: string, body: WebMessageAuthorQuery) => messageAuthors("workspaces",workspaceId,body),
     messageAuthorProfile: (workspaceId:string,eventId:string) => singleMessageAuthor("workspaces",workspaceId,eventId),
     memberProfile: (workspaceId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
+    conversationParticipantProfile: (conversationId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/participants/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
     conversationMessageAuthorProfiles: (conversationId: string, body: WebMessageAuthorQuery) => messageAuthors("conversations",conversationId,body),
     conversationMessageAuthorProfile: (conversationId:string,eventId:string) => singleMessageAuthor("conversations",conversationId,eventId),
     updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),

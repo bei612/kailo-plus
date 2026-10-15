@@ -64,6 +64,7 @@ import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/mess
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
 import { loadConversationParticipants, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
+import { useElementWidth } from "@client-kit/platform/react/sidebar/use-mobile";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
@@ -142,6 +143,7 @@ export function ChannelPane({
   restoreEditEventId,
   onStartDm,
   memberProfileRequest,
+  onHeaderActionsCompactChange,
   idleAuxiliaryPanel,
   idleAuxiliaryHeaderActions,
   idleAuxiliaryOverridesThread = false,
@@ -175,6 +177,8 @@ export function ChannelPane({
   onStartDm?: (pubkey: string) => void;
   /** Header members dialog request; rendered only while this member stays ACTIVE here. */
   memberProfileRequest?: MemberProfileRequest;
+  /** Original ChannelScreen shouldCompactHeaderActions, reported to the host-owned header. */
+  onHeaderActionsCompactChange?: (compact: boolean) => void;
 }) {
   const uiT = useUiT();
   const queryClient = useQueryClient();
@@ -223,10 +227,13 @@ export function ChannelPane({
   }, [threadScope, threadHeadId]);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
   const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
-  const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); }, []);
+  // Original DM member dialog profile: the conversation's participant key is its own proof.
+  const [participantProfileTarget, setParticipantProfileTarget] = useState<{conversationId:string;principalId:string;pubkey:string} | null>(null);
+  const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); setParticipantProfileTarget(null); }, []);
   const handleOpenAuthor = useCallback(
     (message: TimelineMessage) => {
       if (!requireThreadEditResolution()) return;
+      setParticipantProfileTarget(null);
       setProfileTarget(message);
     },
     [requireThreadEditResolution],
@@ -237,6 +244,7 @@ export function ChannelPane({
       handleCancelEdit();
       setProfileTarget(null);
       setSystemProfileTarget(null);
+      setParticipantProfileTarget(null);
       const headId = getThreadReference(message.tags ?? []).rootId ?? message.id;
       setSelectedReplyId(message.id);
       setOptimisticThreadHeadId(headId);
@@ -277,6 +285,12 @@ export function ChannelPane({
   }, [denied, live, handleCancelEdit]);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
+  useEffect(() => { setParticipantProfileTarget(null); }, [conversation?.id, myPrincipalId, denied, live]);
+  useEffect(() => {
+    if (!memberProfileRequest || !conversation || memberProfileRequest.conversationId !== conversation.id) return;
+    setProfileTarget(null);
+    setParticipantProfileTarget({conversationId: conversation.id, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+  }, [memberProfileRequest, conversation]);
   useEffect(() => {
     if (!memberProfileRequest || conversation || memberProfileRequest.workspaceId !== workspaceId) return;
     setProfileTarget(null);
@@ -352,7 +366,7 @@ export function ChannelPane({
     ? selectedReply && (getThreadReference(selectedReply.tags ?? []).rootId ?? selectedReply.id) === effectiveThreadHeadId
       ? selectedReply : routeMessageById.get(effectiveThreadHeadId) ?? null
     : null;
-  const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget);
+  const useFocusThreadDrawer = Boolean(replyTarget && focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget);
   const idleWidth = useThreadPanelWidth();
   const hasIdleAuxiliary = Boolean(idleAuxiliaryPanel && onCloseIdleAuxiliaryPanel && live && !denied && !metadataPending);
   const priorityIdleAuxiliary = shouldPrioritizeIdleAuxiliary(idleAuxiliaryOverridesThread, hasIdleAuxiliary);
@@ -360,12 +374,17 @@ export function ChannelPane({
   const replaceThreadWithIdleAuxiliary = priorityIdleAuxiliary && Boolean(replyTarget) && threadOverlay;
   const useFocusIdleDrawer = shouldUseFocusIdleDrawer({channelManagementOpen:false,hasAgentSession:false,
     hasIdleAuxiliaryPanel:hasIdleAuxiliary,hasIdlePanelCloseHandler:Boolean(onCloseIdleAuxiliaryPanel),
-    hasProfilePanel:Boolean(profileTarget||systemProfileTarget),hasThreadSurface:Boolean(replyTarget),
+    hasProfilePanel:Boolean(profileTarget||systemProfileTarget||participantProfileTarget),hasThreadSurface:Boolean(replyTarget),
     overrideThread:overlayIdleAuxiliaryOverThread,useSplitAuxiliaryPane:!threadOverlay});
   const showIdleAuxiliaryOverThread = overlayIdleAuxiliaryOverThread && useFocusIdleDrawer;
   const { channelIsCovered, markExitComplete } = useFocusDrawerPresence(useFocusThreadDrawer || useFocusIdleDrawer,
     priorityIdleAuxiliary ? onCloseIdleAuxiliaryPanel ?? handleCloseThread : useFocusThreadDrawer ? handleCloseThread : onCloseIdleAuxiliaryPanel ?? handleCloseThread);
   const threadSurface = useThreadPanelSurface(showIdleAuxiliaryOverThread,markExitComplete);
+  const [paneRef, paneWidthPx] = useElementWidth<HTMLDivElement>();
+  const compactHeaderActions = Boolean(replyTarget || profileTarget || systemProfileTarget || participantProfileTarget || hasIdleAuxiliary)
+    && paneWidthPx > 0 && paneWidthPx < 760;
+  useEffect(() => { onHeaderActionsCompactChange?.(compactHeaderActions); }, [compactHeaderActions, onHeaderActionsCompactChange]);
+  useEffect(() => () => onHeaderActionsCompactChange?.(false), [onHeaderActionsCompactChange]);
   const idleAuxiliarySurface = hasIdleAuxiliary ? <IdleAuxiliarySurface key="idle-auxiliary-surface"
     idleAuxiliaryPanel={idleAuxiliaryPanel} idleAuxiliaryHeaderActions={idleAuxiliaryHeaderActions}
     idleAuxiliaryTitle={idleAuxiliaryTitle} onCloseIdleAuxiliaryPanel={onCloseIdleAuxiliaryPanel}
@@ -705,7 +724,7 @@ export function ChannelPane({
       channelName={channelName} channelType={conversation ? "dm" : "stream"}
       messages={[...routeMessageById.values()]} available={live && !denied && !archived && !metadataPending && members.isSuccess && !members.isError}
       onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl}>
-    <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
+    <div ref={paneRef} className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
     <div inert={channelIsCovered ? true : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
       <div className="text-xs text-muted-foreground" role="status">
         {status}
@@ -841,11 +860,16 @@ export function ChannelPane({
     </div>
     {systemProfileTarget && systemProfileTarget.workspaceId === workspaceId && selectedSystemMember?.principalId === systemProfileTarget.principalId && "state" in selectedSystemMember && selectedSystemMember.state === "ACTIVE" && live && !denied && !conversation ? <MemberProfilePanel key={`${myPrincipalId}:${systemProfileTarget.workspaceId}:${systemProfileTarget.pubkey}`}
       target={systemProfileTarget} onClose={()=>setSystemProfileTarget(null)} onStartDm={mine.has(systemProfileTarget.pubkey)?undefined:onStartDm}/> : null}
+    {participantProfileTarget && conversation && participantProfileTarget.conversationId === conversation.id
+      && byPubkey.get(participantProfileTarget.pubkey)?.principalId === participantProfileTarget.principalId && live && !denied
+      ? <MemberProfilePanel key={`${myPrincipalId}:${participantProfileTarget.conversationId}:${participantProfileTarget.pubkey}`}
+        target={participantProfileTarget} onClose={()=>setParticipantProfileTarget(null)}
+        onStartDm={mine.has(participantProfileTarget.pubkey)?undefined:onStartDm}/> : null}
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
-    {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
@@ -870,7 +894,7 @@ export function ChannelPane({
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink}
       isMessageUnread={isMessageUnread}
       onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}
-      onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : !profileTarget && !systemProfileTarget ? idleAuxiliarySurface : null}
+      onMarkUnread={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, false) : undefined} /></FocusThreadDrawer></div> : !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : null}
     </AnimatePresence> : null}
     {live && !denied && !metadataPending ? <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence> : null}
     {deleteMessageDialog.dialog}

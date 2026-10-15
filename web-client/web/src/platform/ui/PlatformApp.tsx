@@ -254,6 +254,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const active = activeRow?.id ?? null;
   const [membersOpenFor, setMembersOpenFor] = useState<string | null>(null);
   const [manageOpenFor, setManageOpenFor] = useState<string | null>(null);
+  const [headerActionsCompact, setHeaderActionsCompact] = useState(false);
   const [memberProfileRequest, setMemberProfileRequest] = useState<MemberProfileRequest | undefined>(undefined);
   // Original showJoinButton: non-member, open, unarchived, with the admitted join action.
   const joinRow = activeRow && activeRow.isMember !== true && !searchDirectory.isError
@@ -406,7 +407,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onNavigationGuardChange={navigation.registerThreadNavigationGuard}
       restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
       onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
-      onStartDm={openDirectMessage} memberProfileRequest={memberProfileRequest}
+      onStartDm={openDirectMessage} memberProfileRequest={memberProfileRequest} onHeaderActionsCompactChange={setHeaderActionsCompact}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
       targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
       targetSearchActivationId={navigation.searchHighlight?.activationId}
@@ -425,6 +426,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+        onHeaderActionsCompactChange={setHeaderActionsCompact} memberProfileRequest={memberProfileRequest}
         threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
         onNavigationGuardChange={navigation.registerThreadNavigationGuard}
         restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
@@ -591,7 +593,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               channelType={channel.data.channelType}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
-                onManageChannel={() => setManageOpenFor(active)} />}
+                onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -600,7 +602,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
                 actions={chosenConversation ? <ChannelMembersBar roster={{kind: "conversation", conversation: chosenConversation}}
                   onToggleMembers={() => setMembersOpenFor(membersOpenFor === chosenConversation.id ? null : chosenConversation.id)}
-                  onManageChannel={() => setManageOpenFor(chosenConversation.id)} /> : undefined}
+                  onManageChannel={() => setManageOpenFor(chosenConversation.id)} variant={headerActionsCompact ? "compact" : "inline"} /> : undefined}
                 onCopyTitle={async title=>{
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -629,12 +631,18 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 channelType: channel.data.channelType === "forum" ? "forum" : "stream", visibility: activeRow.visibility,
                 ttlSeconds: channel.data.ttlSeconds ?? null}}
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
+              workflows={{
+                onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigation.openWorkflow({ workflowId, workspaceId: active }, active); },
+                onCreateWorkflow: () => { setManageOpenFor(null); void navigation.openTab("workflows", active); },
+              }}
               onCopy={writeTextToClipboard} /> : null}
           {tab === "conversation" && chosenConversation ? <>
             <ChannelMembersDialog key={`dm:${session.tenantPrincipalId}:${chosenConversation.id}`}
               roster={{kind: "conversation", conversation: chosenConversation}} open={membersOpenFor === chosenConversation.id}
               onOpenChange={(open) => setMembersOpenFor(open ? chosenConversation.id : null)}
-              currentPrincipalId={session.tenantPrincipalId} />
+              currentPrincipalId={session.tenantPrincipalId}
+              onOpenProfile={(target) => { setMembersOpenFor(null); setManageOpenFor(null);
+                setMemberProfileRequest({conversationId: chosenConversation.id, ...target, nonce: Date.now()}); }} />
             <ChannelManagementSheet key={`dm-manage:${session.tenantPrincipalId}:${chosenConversation.id}`}
               roster={{kind: "conversation", conversation: chosenConversation}} open={manageOpenFor === chosenConversation.id}
               onOpenChange={(open) => setManageOpenFor(open ? chosenConversation.id : null)} isDark={isDark}

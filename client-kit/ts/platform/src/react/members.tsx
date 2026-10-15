@@ -28,14 +28,23 @@ import { TenantInvitations } from "./invitations";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 
-type MemberTarget = {workspaceId: string; principalId: string; pubkey: string};
+/** A member key proven by its Workspace membership or by its governed conversation's participants. */
+export type MemberTarget =
+  | {workspaceId: string; principalId: string; pubkey: string; conversationId?: undefined}
+  | {conversationId: string; principalId: string; pubkey: string; workspaceId?: undefined};
+
+function readMemberProfile(client: ReturnType<typeof useBffClient>, target: MemberTarget) {
+  return target.conversationId !== undefined
+    ? client.conversationParticipantProfile(target.conversationId,target.principalId,target.pubkey)
+    : client.memberProfile(target.workspaceId,target.principalId,target.pubkey);
+}
 export type MemberIdentityRenderer = (pubkey: string, children: ReactNode, label: string) => ReactNode;
 
 function useMemberProfile(target: MemberTarget) {
   const client = useBffClient();
-  return useQuery({queryKey:["workspace-member-profile",target.workspaceId,target.principalId,target.pubkey],
+  return useQuery({queryKey:["workspace-member-profile",target.conversationId!==undefined?`conversation:${target.conversationId}`:target.workspaceId,target.principalId,target.pubkey],
     queryFn:async()=>{
-      const profile=await client.memberProfile(target.workspaceId,target.principalId,target.pubkey);
+      const profile=await readMemberProfile(client,target);
       if(profile.pubkey!==target.pubkey)throw new TransportError("Member identity changed");
       return profile;
     },retry:false,staleTime:0});
@@ -46,7 +55,7 @@ export function MemberAvatar({target,label,className="h-9 w-9 text-xs shadow-non
   // The original row consumes its authorized profile before opening a popover.
   // useLoad drops responses after this transport scope or exact member key leaves.
   const [result]=useLoad(JSON.stringify(target),async()=>{
-    const profile=await client.memberProfile(target.workspaceId,target.principalId,target.pubkey);
+    const profile=await readMemberProfile(client,target);
     if(profile.pubkey!==target.pubkey)throw new TransportError("Member identity changed");
     return profile;
   });
@@ -66,7 +75,7 @@ export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:Me
 export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarget;onClose:()=>void;onStartDm?:(pubkey:string)=>void|Promise<void>}) {
   const t=useT();const query=useMemberProfile(target);const width=useThreadPanelWidth();
   const isOverlay=useIsThreadPanelOverlay();
-  const owner=useMemo(()=>({active:true,busy:false}),[target.workspaceId,target.principalId,target.pubkey]);
+  const owner=useMemo(()=>({active:true,busy:false}),[target.workspaceId,target.conversationId,target.principalId,target.pubkey]);
   const currentOwner=useRef(owner);currentOwner.current=owner;
   const [opening,setOpening]=useState(false);const [problem,setProblem]=useState<string|null>(null);
   useEffect(()=>{owner.active=true;setOpening(false);setProblem(null);return()=>{owner.active=false;};},[owner]);

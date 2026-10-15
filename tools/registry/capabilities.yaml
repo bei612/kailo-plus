@@ -100,6 +100,7 @@ capabilities:
   - /api/v1/conversations/{conversation_id}/visibility
   - /api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile
   - /api/v1/conversations/{conversation_id}/messages/author-profiles
+  - /api/v1/conversations/{conversation_id}/participants/{principal_id}/profiles/{pubkey}
   actions:
   - conversation.open
   - conversation.message.publish
