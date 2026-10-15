@@ -15,3 +15,15 @@ These are conventions observed in Kailo's current Web, Desktop, and Mobile platf
 After changing the shared catalog, run `python3 tools/gen-platform-i18n.py`, then `python3 tools/gen-platform-i18n.py --check`. Rebuild the Web, Desktop and Mobile artifacts: all three reference `client-kit` by local path dependency and ship bytes from the same package. Confirm the generator's `--check` fails when a generated translation is deliberately changed, then restore it.
 
 The Buzz-native chat date formatters remain separate from these Kailo management-view helpers. Do not treat the platform helper checks as proof that all collaborative chat timestamps have converged across three clients.
+
+## Identity re-checks never read from client caches
+
+The Web transport shares settled GETs for 2 s (`web-fetch.ts`) and caches author
+profiles for 60 s. Reads whose purpose is to *verify the current identity* after
+loading data (ConversationSidebar, use-conversations before opening a DM,
+composerAgentDirectory, mark-as-read shortcuts, Projects "discuss in channel") must
+call `client.session({ fresh: true })`. A cached session would let another tab's
+account switch go unnoticed inside the window. Tests in
+`client-kit/ts/platform/test/transport.test.ts` assert a fresh read still hits the
+network while a shared read is in flight.
+

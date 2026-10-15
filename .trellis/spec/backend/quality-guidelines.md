@@ -107,3 +107,29 @@ SecretRef 不可读时 binding 不得 active（`DD-70`）。于是一个**还在
 
 两件事都要做：mount 上显式设 `max_versions`（已写进 `07` §1），以及测试夹具
 回传本次写入的版本号而不是假设 1 和 2。
+
+## 镜像里的配置文件必须显式 `COPY --chmod`，不能继承检出权限
+
+CI 的检出和发布树都是 umask 077（文件 600、目录 700）。`COPY` 原样保留权限，
+运行用户（Core 是 uid 10001）就读不到。2026-10-15 agent-runtime a6eb8174 因此
+所有 Codex 运行时报 `Failed to read requirements file ... Permission denied`，
+全部 Agent 停摆。
+
+```dockerfile
+# Wrong
+COPY fork/runtime-config/requirements.toml /etc/codex/requirements.toml
+# Correct：先建 0755 目录，再以 0644 复制
+RUN install -d -m 0755 /etc/codex
+COPY --chmod=0644 fork/runtime-config/requirements.toml /etc/codex/requirements.toml
+```
+
+同理，从发布树 bind/configs 挂进容器的配置（`model-gateway-config.yaml`、
+`automation-egress-gateway.yaml`）在重建前要 `chmod 644`，否则网关起不来。
+
+## CI 节点上的热修必须回写仓库
+
+在 CI 节点 `/volumes/kailo/apps/deploy/local` 直接改的配置（例如网关 `web-home`
+路由、bootstrap 校验、OpenBao 策略）不在 Git 里，下一次从仓库发布就被冲掉
+（2026-10-15 登录后落到 404）。改完当场把同样的 diff 提交到 main，发布前用
+`git -C /volumes/kailo/apps status deploy/` 确认没有未回写的改动。
+
