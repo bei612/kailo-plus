@@ -229,7 +229,9 @@ impl IdentityClient {
             .map_err(|_| MemoryError::Unavailable)?;
         let events: Vec<Event> =
             serde_json::from_value(page).map_err(|_| MemoryError::InvalidEvidence)?;
-        Ok(thread_messages(events, channel, root, trigger, until, limit))
+        Ok(thread_messages(
+            events, channel, root, trigger, until, limit,
+        ))
     }
 }
 
@@ -253,13 +255,16 @@ pub fn thread_messages(
                 .iter()
                 .map(|tag| tag.as_slice())
                 .filter(|parts| parts.first().map(String::as_str) == Some("h"))
-                .filter_map(|parts| (parts.len() == 2).then(|| &parts[1]))
+                .filter(|parts| parts.len() == 2)
+                .map(|parts| &parts[1])
                 .collect();
             let ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
             let belongs = if id == root {
                 ancestry.is_none()
             } else {
-                ancestry.as_ref().is_some_and(|(observed, _)| observed == root)
+                ancestry
+                    .as_ref()
+                    .is_some_and(|(observed, _)| observed == root)
             };
             id != trigger
                 && [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF]

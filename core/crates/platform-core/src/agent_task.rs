@@ -1210,7 +1210,11 @@ async fn thread_context(
     .bind(invocation.installation_resource_id)
     .fetch_optional(&state.pool)
     .await?;
-    Ok(Some(render_thread_context(&fresh, &names, agent_pubkey.as_deref())))
+    Ok(Some(render_thread_context(
+        &fresh,
+        &names,
+        agent_pubkey.as_deref(),
+    )))
 }
 
 /// Messages after the last trigger this session already received, minus every
@@ -1219,8 +1223,10 @@ fn undelivered<'a>(
     messages: &'a [collab_bridge::memory::ThreadMessage],
     delivered: &[(String, Option<String>)],
 ) -> Vec<&'a collab_bridge::memory::ThreadMessage> {
-    let triggers: std::collections::HashSet<&str> =
-        delivered.iter().map(|(source, _)| source.as_str()).collect();
+    let triggers: std::collections::HashSet<&str> = delivered
+        .iter()
+        .map(|(source, _)| source.as_str())
+        .collect();
     let seen: std::collections::HashSet<&str> = delivered
         .iter()
         .flat_map(|(source, reply)| [Some(source.as_str()), reply.as_deref()])
@@ -1248,11 +1254,15 @@ fn render_thread_context(
         let label = if Some(message.author.as_str()) == own {
             "you".to_owned()
         } else {
-            let known = names.iter().find(|(pubkey, _, _)| pubkey == &message.author);
+            let known = names
+                .iter()
+                .find(|(pubkey, _, _)| pubkey == &message.author);
             let name = known
                 .and_then(|(_, name, _)| name.as_deref())
                 .map(str::to_owned)
-                .unwrap_or_else(|| format!("npub:{}", &message.author[..message.author.len().min(12)]));
+                .unwrap_or_else(|| {
+                    format!("npub:{}", &message.author[..message.author.len().min(12)])
+                });
             match known.map(|(_, _, kind)| kind.as_str()) {
                 Some("AGENT") => format!("{name} (agent)"),
                 _ => name,
@@ -4222,9 +4232,15 @@ mod thread_context_tests {
 
     #[test]
     fn first_turn_in_a_thread_receives_every_earlier_message() {
-        let thread = [message("root", "h1", 1, "root"), message("a1", "a", 2, "answer")];
+        let thread = [
+            message("root", "h1", 1, "root"),
+            message("a1", "a", 2, "answer"),
+        ];
         let fresh = undelivered(&thread, &[]);
-        assert_eq!(fresh.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["root", "a1"]);
+        assert_eq!(
+            fresh.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            ["root", "a1"]
+        );
     }
 
     #[test]
@@ -4237,7 +4253,10 @@ mod thread_context_tests {
         ];
         let delivered = [("t1".to_owned(), Some("r1".to_owned()))];
         let fresh = undelivered(&thread, &delivered);
-        assert_eq!(fresh.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["x"]);
+        assert_eq!(
+            fresh.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            ["x"]
+        );
         assert!(undelivered(&thread[..3], &delivered).is_empty());
     }
 
@@ -4251,8 +4270,16 @@ mod thread_context_tests {
         ];
         let refs: Vec<_> = thread.iter().collect();
         let names = [
-            ("h1".to_owned(), Some("kailo-qa-1".to_owned()), "HUMAN".to_owned()),
-            ("other".to_owned(), Some("研究助理".to_owned()), "AGENT".to_owned()),
+            (
+                "h1".to_owned(),
+                Some("kailo-qa-1".to_owned()),
+                "HUMAN".to_owned(),
+            ),
+            (
+                "other".to_owned(),
+                Some("研究助理".to_owned()),
+                "AGENT".to_owned(),
+            ),
         ];
         let text = render_thread_context(&refs, &names, Some("own"));
         assert!(text.contains("untrusted"));
