@@ -205,7 +205,7 @@ trigger（HUMAN 消息 / @提及 / Temporal Schedule / webhook）
 - 消息与 @提及触发复用 Agent 触发的 Relay 持久事件与 IngressCheckpoint（DD-04）；只有 HUMAN 身份发布的事件参与匹配，AGENT 与 CONTROL 身份的事件（含自动化自己的回帖）不匹配，因此不形成自触发循环。
 - 消息与 webhook 触发由 Core 先写 ActionExecution 与 WorkflowRef，workflow ID 为 `platform:automation_run:<tenant_id>:<automation_resource_id>:<trigger_source_id>`，再按 §3.1 的 Start 纪律启动。
 - `SCHEDULE` 触发使用 Temporal Schedule（SF-TMP-05），overlap 固定 `SKIP`，action 直接启动 `AgentTaskWorkflow`；run 的 workflow ID 由 scheduler 组成，其首个 Activity 调 Core 完成 `automation.run` 准入并按 §3.1 的 Schedule 例外回填 ActionExecution 与 WorkflowRef，准入拒绝时 Workflow 以拒绝原因终结、不产生副作用。Schedule 只在 AutomationDefinition `ENABLED` 时存在，`PAUSED` 时暂停，`DISABLED`、Workspace 暂停与 Tenant 暂停或销毁时按各自流程暂停或删除（§7.2、§7.3）。
-- `WEBHOOK` 触发经 AgentGateway 公开路由进入 BFF：校验 HMAC-SHA256 签名（覆盖时间戳与正文）、5 分钟时间窗与 delivery ID 去重后才建立 ActionExecution；签名不符直接拒绝并只计入度量。正文作为不可信触发内容进入模板上下文，不能携带 Tenant、Workspace、Principal 或权限。
+- `WEBHOOK` 触发经 AgentGateway 公开路由进入 BFF：校验 HMAC-SHA256 签名（覆盖时间戳与正文）、5 分钟时间窗与 delivery ID 去重后才建立 ActionExecution；签名不符直接拒绝并只计入度量。正文作为不可信触发内容进入模板上下文，不能携带 Tenant、Workspace、Principal 或权限。签名格式、去重记录、密钥一次性展示与轮换、公开入口及相对原版的逐项差异见 DD-116。
 - 审批关卡是 step approval：child ActionExecution 与 child ApprovalWorkflow 在第一个副作用之前，父 Workflow 等待结果；拒绝或过期时该次运行以对应原因终结。
 - 每次运行在准入时 fresh 检查 owner、执行 Installation、Delegation、Workspace 状态与 Quota；`AGENT_TURN` 经 CapacityLease 取得 Codex slot，其余同普通 Agent 回合。运行进入任务工作台，与其他 Workflow 同一投影、控制与观测规则。
 
