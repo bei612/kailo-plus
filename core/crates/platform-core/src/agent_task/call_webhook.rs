@@ -1004,11 +1004,12 @@ CREATE TRIGGER webhook_guard_probe BEFORE INSERT OR UPDATE ON webhook_guard_prob
         let valid = intent(&ids);
         let row = probe(&mut tx, &ids).await;
         assert_eq!(freeze(&mut tx, row, &valid).await, Ok(()));
-        let status: String = sqlx::query_scalar("select status from webhook_guard_probe where id=$1")
-            .bind(row)
-            .fetch_one(&mut *tx)
-            .await
-            .expect("probe status");
+        let status: String =
+            sqlx::query_scalar("select status from webhook_guard_probe where id=$1")
+                .bind(row)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("probe status");
         assert_eq!(status, "DISPATCHING");
 
         let mut extra_usage = valid.clone();
