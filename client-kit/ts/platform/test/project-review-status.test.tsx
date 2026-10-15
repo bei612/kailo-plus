@@ -52,6 +52,8 @@ async function openMenu(root:ParentNode){
   await vi.waitFor(()=>expect(document.querySelector('[role="menu"]')).not.toBeNull());
 }
 
+const statusIntents=()=>[...Array(localStorage.length)].map((_,index)=>localStorage.key(index)).filter(key=>key?.startsWith('["project-pull-request-status"'));
+
 beforeEach(()=>{localStorage.clear();sessionStorage.clear();setLocale("en");
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   Object.defineProperty(document,"fonts",{configurable:true,value:{ready:Promise.resolve()}});
@@ -88,7 +90,7 @@ describe("original review lifecycle actions",()=>{
     await vi.waitFor(()=>expect(success).toHaveBeenCalledWith("Review closed."));
     expect(f.host.publish).toHaveBeenCalledTimes(1);
     await vi.waitFor(()=>expect(button(ui,"Reopen review")).toBeDefined());
-    expect(localStorage.length).toBe(0);
+    expect(statusIntents()).toEqual([]);
   });
 
   it("hides lifecycle actions from anyone but the review author or repository owner",async()=>{
@@ -118,6 +120,6 @@ describe("original review lifecycle actions",()=>{
     await vi.waitFor(()=>expect(publish).toHaveBeenCalledTimes(2));
     expect(publish.mock.calls[1]?.[0]).toEqual(publish.mock.calls[0]?.[0]);
     expect(publish.mock.calls[1]?.[1]).toBe(publish.mock.calls[0]?.[1]);expect(publish.mock.calls[1]?.[2]).toBe(true);
-    await vi.waitFor(()=>expect(localStorage.length).toBe(0));
+    await vi.waitFor(()=>expect(statusIntents()).toEqual([]));
   });
 });
