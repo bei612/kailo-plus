@@ -2202,7 +2202,6 @@ pub(crate) struct RuntimeScope {
     pub executor_installation_resource_id: Uuid,
     pub agent_version_asset_id: Uuid,
     pub projection_generation: i64,
-    pub owner_principal_id: Uuid,
     pub agent_principal_id: Uuid,
 }
 
@@ -2213,7 +2212,6 @@ fn runtime_scope(row: &Run) -> RuntimeScope {
         executor_installation_resource_id: row.executor_installation_resource_id,
         agent_version_asset_id: row.agent_version_asset_id,
         projection_generation: row.projection_generation,
-        owner_principal_id: row.owner_principal_id,
         agent_principal_id: row.agent_principal_id,
     }
 }

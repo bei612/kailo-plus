@@ -168,14 +168,13 @@ const INSTALLATION: &str = "select r.id,r.tenant_id,i.workspace_id,r.version,i.a
           and catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)))";
 
 impl Installation {
-    fn scope(&self, human: Uuid) -> RuntimeScope {
+    fn scope(&self) -> RuntimeScope {
         RuntimeScope {
             tenant_id: self.tenant_id,
             workspace_id: self.workspace_id,
             executor_installation_resource_id: self.id,
             agent_version_asset_id: self.agent_version_asset_id,
             projection_generation: self.projection_generation,
-            owner_principal_id: human,
             agent_principal_id: self.agent_principal_id,
         }
     }
@@ -268,7 +267,7 @@ async fn fresh(
     def: &Definition,
     operation: Option<Uuid>,
 ) -> Result<String, Refusal> {
-    let scope = row.scope(human);
+    let scope = row.scope();
     crate::automation::source_human(&state.governance, tx, &scope, human, pubkey).await?;
     let max: Option<Option<i64>> = sqlx::query_scalar(
         "select max_uses from admission.delegation_grant
