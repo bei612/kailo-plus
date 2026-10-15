@@ -167,6 +167,34 @@ describe("TasksPage", () => {
     expect(posts(send)).toHaveLength(1);
   });
 
+  // Live: Core closed the gate moments after the withdraw reply, but the detail
+  // kept "Waiting for approval" until a manual refresh.
+  it("re-reads the task and approval after a definite withdraw until they leave waiting", async () => {
+    let withdrawn = false, lagging = 0;
+    const { send, host } = mount((r) => {
+      const settled = withdrawn && lagging-- <= 0;
+      if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ gateState: ActionGateState.Waiting, approvalWorkflowId: WF })] };
+      if (r.path === "/api/v1/tasks/ae1") return { status: 200, body: task({ approvalWorkflowId: WF,
+        gateState: settled ? ActionGateState.Revoked : ActionGateState.Waiting,
+        reason: settled ? ReasonCode.ApprovalWithdrawn : ReasonCode.WaitingApproval }) };
+      if (r.method === "POST") { withdrawn = true; lagging = 2; return { status: 200, body: { status: ApprovalStatus.Cancelled } }; }
+      return { status: 200, body: approval({ status: settled ? ApprovalStatus.Cancelled : ApprovalStatus.Waiting }) };
+    }, <TasksPage />);
+    const el = await host;
+    await settle();
+    await click(button(el, "Remove organization membertenant.member.revoke"));
+    expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
+    await click(button(el, "Withdraw request"));
+    await click(button(el, "Confirm"));
+    expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
+    await vi.waitFor(async () => {
+      await settle();
+      expect(el.textContent).not.toContain("WAITING_APPROVAL");
+      expect(el.textContent).toContain("APPROVAL_WITHDRAWN");
+    }, { timeout: 6000, interval: 200 });
+    expect(posts(send)).toHaveLength(1);
+  }, 10000);
+
   it("投影不可担保时不给控制", async () => {
     const { host } = mount((r) => {
       if (r.path === "/api/v1/tasks") return { status: 200, body: [task({ approvalWorkflowId: WF })] };

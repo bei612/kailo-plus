@@ -9,6 +9,7 @@
 // 失败：显示「等待对账」并给出 operation 作为查证入口。
 
 import {
+  ActionGateState,
   ApprovalDecision,
   type ApprovalDecisionOutcome,
   ApprovalStatus,
@@ -17,7 +18,7 @@ import {
   TaskStatus,
   type TaskView,
 } from "@client-kit/contracts";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { approvalOpen, newIdempotencyKey, taskPhase } from "../governance";
 import {
@@ -360,7 +361,8 @@ export function TaskDetail({
       {approvalWorkflowId.current ? (
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-medium">{t("tasks.approval")}</h3>
-          <ApprovalPanel workflowId={approvalWorkflowId.current} role="initiator" onChanged={reload} />
+          <ApprovalPanel workflowId={approvalWorkflowId.current} role="initiator" onChanged={reload}
+            ownerPending={state.status === "ok" && state.data.gateState === ActionGateState.Waiting} />
         </section>
       ) : null}
     </div>
@@ -437,6 +439,12 @@ function ApprovalList({ onOpen }: { onOpen: (workflowId: string) => void }) {
   );
 }
 
+// A definite withdraw/decision returns before Core's gate and the approval
+// projection converge; re-read a bounded few times instead of showing the
+// closed request as still waiting until a manual refresh.
+const SETTLE_ATTEMPTS = 5;
+const SETTLE_DELAY_MS = 1000;
+
 type ControlOutcome =
   | { kind: "decided"; outcome: ApprovalDecisionOutcome }
   | { kind: "withdrawn"; status: ApprovalStatus }
@@ -451,11 +459,14 @@ function ApprovalPanel({
   role,
   onBack,
   onChanged,
+  ownerPending = false,
 }: {
   workflowId: string;
   role: "initiator" | "approver";
   onBack?: () => void;
   onChanged?: () => void;
+  /** The owning task still reads its pre-decision gate. */
+  ownerPending?: boolean;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -466,6 +477,20 @@ function ApprovalPanel({
   const [confirming, setConfirming] = useState<ApprovalDecision | "withdraw" | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ControlOutcome | null>(null);
+  const [settleAttempts, setSettleAttempts] = useState(0);
+  const closedStatus = outcome?.kind === "withdrawn" ? outcome.status
+    : outcome?.kind === "decided" ? outcome.outcome.status : undefined;
+  const awaitingProjection = closedStatus !== undefined && !approvalOpen(closedStatus)
+    && ((state.status === "ok" && approvalOpen(state.data.status)) || ownerPending);
+  useEffect(() => {
+    if (!awaitingProjection || settleAttempts >= SETTLE_ATTEMPTS) return;
+    const timer = setTimeout(() => {
+      setSettleAttempts((attempts) => attempts + 1);
+      reload();
+      onChanged?.();
+    }, SETTLE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [awaitingProjection, settleAttempts, reload, onChanged]);
 
   const refresh = () => {
     setConfirming(null);
@@ -475,6 +500,7 @@ function ApprovalPanel({
   const run = async (control: ApprovalDecision | "withdraw") => {
     setConfirming(null);
     setBusy(true);
+    setSettleAttempts(0);
     const unknown = outcome?.kind === "failed" && outcome.failure.kind === "unknown";
     if (!unknown) setOutcome(null);
     try {
