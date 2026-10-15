@@ -2,7 +2,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { PlatformApp } from "./PlatformApp";
+import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
+import { routeTree } from "@/app/routeTree.gen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ accessMode: "FULL" }));
@@ -89,8 +90,27 @@ afterEach(() => {
   host.remove();
   vi.restoreAllMocks();
 });
+// PlatformApp navigates through the real TanStack routes (/_platform layout and its sections),
+// so mount it the way the app does instead of rendering it outside a router.
 async function open() {
-  await act(async () => root.render(<PlatformApp />));
+  const url = `${window.location.pathname}${window.location.search}`;
+  const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [url] }), basepath: "/app", defaultPendingMinMs: 0 });
+  await act(async () => { await router.load(); root.render(<RouterProvider router={router} />); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+// The restored original sidebar: Inbox is the primary menu's first row, Settings lives in
+// the profile card popover and opens on the next frame.
+async function openInboxFromSidebar() {
+  const inbox = host.querySelector('[data-testid="sidebar-primary-menu"] .lucide-inbox')?.closest("button");
+  expect(inbox).toBeTruthy();
+  await act(async () => inbox!.click());
+}
+async function openSettingsFromSidebar() {
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="open-settings"]')!.click());
+  const item = document.querySelector<HTMLButtonElement>('[data-testid="profile-popover-settings"]');
+  expect(item).not.toBeNull();
+  await act(async () => item!.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
 }
 async function shortcut() {
   const event = new KeyboardEvent("keydown", { key: ",", ctrlKey: true, cancelable: true });
@@ -102,9 +122,7 @@ async function shortcut() {
 it("opens the actual host settings and closes back to the previously selected Inbox", async () => {
   await open();
   expect(host.querySelector('[data-testid="channel-content"]')).not.toBeNull();
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="sidebar-inbox"]')!.click(),
-  );
+  await openInboxFromSidebar();
   expect(host.querySelector('[data-testid="inbox-content"]')).not.toBeNull();
   expect((await shortcut()).defaultPrevented).toBe(true);
   expect(host.querySelector('[data-testid="settings-content"]')).not.toBeNull();
@@ -114,9 +132,7 @@ it("opens the actual host settings and closes back to the previously selected In
 });
 it("closes settings opened by the existing sidebar without resetting Workspace", async () => {
   await open();
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="sidebar-settings"]')!.click(),
-  );
+  await openSettingsFromSidebar();
   expect(host.querySelector('[data-testid="settings-content"]')).not.toBeNull();
   await shortcut();
   expect(host.querySelector('[data-testid="channel-content"]')).not.toBeNull();
