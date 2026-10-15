@@ -162,7 +162,8 @@ it.each(["", "/platform"] as const)("does not discard a %s UNKNOWN command on ro
   await draft("frozen command");
   const executor = [...document.querySelectorAll("select")].find((select) => [...select.options].some((option) => option.value === "executor"))!;
   await act(async () => { executor.value = "executor"; executor.dispatchEvent(new Event("change", { bubbles: true })); });
-  await click("Review request");
+  // Original create dialog primary label; the governed confirmation follows it.
+  await click("Create workflow");
   await click("Submit governed request");
   const command = send.mock.calls.filter(([request]) => request.method === "POST")[0][0].body;
   await act(async () => { void router.navigate({ to: `${prefix}/audit`, search: {} }); });

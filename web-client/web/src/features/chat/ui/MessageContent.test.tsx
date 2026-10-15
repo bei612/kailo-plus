@@ -245,18 +245,19 @@ describe("MessageContent", () => {
     const paths: string[] = [];
     const bff = createBffClient({send:async request => {
       paths.push(request.path);
-      return {status:200,body:request.path.endsWith("/author-profile")
-        ? {pubkey:PERSON,displayName:"Alice",nip05Handle:null}
+      // Single-author reads use the batched author-profiles route with exactly one requested event.
+      return {status:200,body:request.path.endsWith("/author-profiles")
+        ? {profiles:{[(request.body as {eventIds:string[]}).eventIds[0]!]:{pubkey:PERSON,displayName:"Alice",nip05Handle:null,avatarMediaPaths:{}}}}
         : {events:[event,{...event,id:editId,kind:40003,created_at:101,tags:[["h",link.channelId],["e",id]],content:"**new**"}]}};
     }});
     expect(await readMessageLinkMetadata(bff,target,link,()=>{})).toEqual({kind:"ready",author:"Alice",createdAt:100,snippet:"new"});
     expect(paths[0]).toContain(`/workspaces/${WORKSPACE}/messages?`);
     expect(paths[0]).toContain(`parentEventId=${id}`);
-    expect(paths[1]).toBe(`/api/v1/workspaces/${WORKSPACE}/messages/${id}/author-profile`);
+    expect(paths[1]).toBe(`/api/v1/workspaces/${WORKSPACE}/messages/author-profiles`);
     const dm = {...target,workspaceId:undefined,conversationId:"conversation-one",channel:{...target.channel,channelType:"dm" as const}};
     await readMessageLinkMetadata(bff,dm,link,()=>{});
     expect(paths[2]).toContain("/conversations/conversation-one/messages?");
-    expect(paths[3]).toContain("/conversations/conversation-one/messages/");
+    expect(paths[3]).toBe("/api/v1/conversations/conversation-one/messages/author-profiles");
     const foreign = createBffClient({send:async()=>({status:200,body:{events:[{...event,tags:[["h","foreign-channel"]]}]}})});
     await expect(readMessageLinkMetadata(foreign,target,link,()=>{})).rejects.toThrow("scope");
   });

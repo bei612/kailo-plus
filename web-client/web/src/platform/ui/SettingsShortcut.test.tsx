@@ -80,6 +80,8 @@ vi.mock("@/platform/bff-client", () => ({
       accessMode: state.accessMode,
     }),
   },
+  // The shell provides the real host to ConversationVisibilityProvider; settings never reads it.
+  conversationVisibility: { read: vi.fn(), prepare: vi.fn() },
   BffError: class extends Error {},
   fetchUserState: vi.fn(),
   setWorkspacePreference: vi.fn(),
