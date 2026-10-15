@@ -86,7 +86,7 @@ export type RichTextEditorOptions = {
    *  so it fires *before* ProseMirror's default splitBlock behaviour. */
   onSubmit?: () => void;
   onEditLastOwnMessage?: () => boolean;
-  /** When true, plain Enter is passed through (e.g. to select an autocomplete item). */
+  /** When true, plain Enter is claimed without editing so the owner's keydown bridge can select the autocomplete item. */
   isAutocompleteOpen?: React.RefObject<boolean>;
   /**
    * Called when the user clicks an existing link in the editor. The link
@@ -298,7 +298,11 @@ export function useRichTextEditor({
           addKeyboardShortcuts() {
             return {
               Enter: ({ editor: ed }) => {
-                if (isAutocompleteOpen?.current) return false;
+                // An open autocomplete owns Enter: the composer's keydown bridge
+                // selects the highlighted row. Claim the key here so ProseMirror's
+                // later splitBlock never runs first and leaves a paragraph break
+                // after the inserted mention ("@Agent\n\n text").
+                if (isAutocompleteOpen?.current) return true;
                 if (!onSubmitRef.current) return false;
 
                 const fenceResult = handleCodeFenceEnter(ed);
