@@ -168,10 +168,18 @@ export function ChannelJoinButton({ workspace, onJoined }: {
     if (state.failure?.kind === "rejected") toast.error(failureText(state.failure));
     else if (state.failure) toast(t("channel.browser.joinPending"));
   }, [state.failure, failureText, t]);
+  // Only when the bounded re-reads end without ACTIVE does the user need to know the projection
+  // is still converging; a converged or abandoned join withdraws that notice.
+  const exhausted = state.accepted && state.intent !== null && !state.busy
+    && rereads.current >= JOIN_CONVERGENCE_REREAD_MS.length;
   useEffect(() => {
-    const key = state.accepted ? state.intent?.idempotencyKey ?? null : null;
-    if (key && announced.current !== key) { announced.current = key; toast(t("channel.browser.joinPending")); }
-  }, [state.accepted, state.intent, t]);
+    const key = exhausted ? state.intent?.idempotencyKey ?? null : null;
+    if (key && announced.current !== key) { announced.current = key; toast(t("channel.browser.joinPending"), { id: key }); }
+  }, [exhausted, state.intent, t]);
+  useEffect(() => {
+    if (state.intent === null && announced.current) { toast.dismiss(announced.current); announced.current = null; }
+  }, [state.intent]);
+  useEffect(() => () => { if (announced.current) toast.dismiss(announced.current); }, []);
   return (
     <div className="flex items-center gap-1">
       <BuzzButton data-testid="channel-header-join" disabled={state.busy} size="sm" variant="default" onClick={() => {
