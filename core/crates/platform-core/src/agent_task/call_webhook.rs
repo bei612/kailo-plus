@@ -253,9 +253,15 @@ async fn secret_headers(
             .secrets
             .read(
                 &secret_store::SecretRef {
-                    locator: reference["locator"].as_str().ok_or_else(unknown)?.to_owned(),
+                    locator: reference["locator"]
+                        .as_str()
+                        .ok_or_else(unknown)?
+                        .to_owned(),
                     version,
-                    audience: reference["audience"].as_str().ok_or_else(unknown)?.to_owned(),
+                    audience: reference["audience"]
+                        .as_str()
+                        .ok_or_else(unknown)?
+                        .to_owned(),
                 },
                 "value",
             )
@@ -381,8 +387,7 @@ async fn dispatch(
             return Err(unknown());
         }
         let (current_action, current_binding, _) =
-            crate::automation::fresh_channel_action(state, &mut guard, invocation.id, None)
-                .await?;
+            crate::automation::fresh_channel_action(state, &mut guard, invocation.id, None).await?;
         if current_action != action || current_binding != binding {
             return Err(unknown());
         }
