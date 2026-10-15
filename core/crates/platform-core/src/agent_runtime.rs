@@ -210,6 +210,17 @@ fn hosted_search_disabled(config: &Value) -> bool {
     config.get("web_search").and_then(Value::as_str) == Some("disabled")
 }
 
+/// Seconds the fixed Codex app-server keeps an idle thread loaded after its
+/// last subscriber leaves (`ConfigToml::thread_unload_delay_secs`, native
+/// default 60). DD-105 refresh unsubscribes the idle thread and then requires
+/// the native unload before a cold resume with the fresh Tool configuration;
+/// with the native default every follow-up turn in an existing Session (thread
+/// relay) waited at least 60 s, and a full minute more whenever the Activity
+/// attempt boundary fell between that resume and turn/start. Core is the only
+/// client and stays subscribed through every turn it starts or resumes, so a
+/// short delay only shortens the unload Core itself requested.
+const THREAD_UNLOAD_DELAY_SECS: u64 = 1;
+
 fn native_trace_config(endpoint: &str) -> Result<String, RuntimeError> {
     let endpoint = reqwest::Url::parse(endpoint).map_err(|_| RuntimeError::Unavailable)?;
     if !matches!(endpoint.scheme(), "http" | "https")
@@ -425,7 +436,7 @@ impl Supervisor {
         // 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
         // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
         // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
-        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\nplugins = false\napps = false\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, quoted(&projection.gateway_base_url)?);
+        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\nthread_unload_delay_secs = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\nplugins = false\napps = false\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, THREAD_UNLOAD_DELAY_SECS, quoted(&projection.gateway_base_url)?);
         let config = config + &native_trace_config(&self.trace_endpoint)?;
         tokio::fs::write(home.join("config.toml"), config)
             .await
@@ -502,6 +513,7 @@ impl Supervisor {
             || !hosted_search_disabled(config)
             || !native_trace_verified(config, &self.trace_endpoint)
             || config.get("developer_instructions").and_then(Value::as_str) != Some(projection.instructions.as_str())
+            || config.get("thread_unload_delay_secs").and_then(Value::as_u64) != Some(THREAD_UNLOAD_DELAY_SECS)
             || config.pointer("/skills/bundled/enabled").and_then(Value::as_bool) != Some(false)
             // 固定 ConfigToml 的 MCP 默认是空 map；显式未知形状或非空配置
             // 都不能借 initialize 成功变成已加载的有效 ToolBinding 交集。
@@ -820,6 +832,11 @@ impl Supervisor {
             }
             // Even notLoaded here does not turn this ACK into a successful
             // refresh. The next original Activity must observe absence.
+            tracing::info!(installation_id = %projection.installation_id,
+                generation = projection.generation, thread_id,
+                unsubscribe = response.get("status").and_then(Value::as_str).unwrap_or_default(),
+                unload_delay_secs = THREAD_UNLOAD_DELAY_SECS,
+                "MCP refresh unsubscribed the idle native thread; next round requires its unload");
             return Err(RuntimeError::Unknown);
         }
         // Fixed native default is an unbounded complete loaded-ID list. Reject
@@ -832,7 +849,12 @@ impl Supervisor {
                 self.max_message_bytes,
             )
             .await?;
-        require_unloaded(&loaded, thread_id)?;
+        if let Err(error) = require_unloaded(&loaded, thread_id) {
+            tracing::info!(installation_id = %projection.installation_id,
+                generation = projection.generation, thread_id, ?error,
+                "MCP refresh found the native thread still loaded; cold resume deferred");
+            return Err(error);
+        }
         let response = process
             .rpc(
                 "thread/resume",

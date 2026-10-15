@@ -24,6 +24,7 @@ use crate::{
 pub(crate) const WORKFLOW_TYPE: &str = "AgentTaskWorkflow";
 mod call_webhook;
 mod post_message;
+mod prepare_timing;
 #[cfg(test)]
 pub(crate) mod receipt_tests;
 pub(crate) mod stranded;
@@ -122,6 +123,17 @@ async fn advance_accepted(
     {
         return StatusCode::CONFLICT.into_response();
     }
+    // Only the still-CREATED agent turn path is timed: that is the path from
+    // trigger to model request. Observation rounds of a running turn are not.
+    let mut timing = prepare_timing::PrepareTiming::new(
+        id,
+        input.attempt,
+        invocation.status == "CREATED"
+            && !invocation
+                .automation_action_kind
+                .as_deref()
+                .is_some_and(crate::automation::steps::is_native_kind),
+    );
     let reference: Option<Option<String>> = match sqlx::query_scalar("select run_id from projection.workflow_ref where workflow_id=$1 and workflow_type=$2 and kind is null and tenant_id=$3 and action_execution_id=$4")
         .bind(&invocation.workflow_id).bind(WORKFLOW_TYPE).bind(invocation.tenant_id).bind(invocation.action_execution_id).fetch_optional(&state.pool).await {
         Ok(value) => value, Err(error) => return unavailable(error),
@@ -434,6 +446,7 @@ async fn advance_accepted(
         }
         return post_message::advance(&state, &invocation, &input, sequence_ordinal).await;
     }
+    timing.step("activity_fence");
     let holder = match state
         .capacity
         .acquire_or_renew(
@@ -447,8 +460,13 @@ async fn advance_accepted(
         .await
     {
         Ok(holder) => holder,
-        Err(error) => return capacity_wait_response(id, error),
+        Err(error) => {
+            timing.step("capacity");
+            timing.outcome("CAPACITY_WAIT");
+            return capacity_wait_response(id, error);
+        }
     };
+    timing.step("capacity");
     tracing::debug!(invocation_id=%id, lease_id=%holder.lease_id, "原生 Activity holder 已查证");
     match invocation.status.as_str() {
         "COMPLETED" | "FAILED" | "CANCELED" if !holder.released => {
@@ -504,7 +522,9 @@ async fn advance_accepted(
             generation: invocation.projection_generation,
             config_hash,
         };
-        match crate::agent_session::observe_birth(&state, id, &projection).await {
+        let observed = crate::agent_session::observe_birth(&state, id, &projection).await;
+        timing.step("birth_observe");
+        match observed {
             Ok(thread) => invocation.runtime_thread_id = thread,
             Err(_) if invocation.status == "CREATED" => {
                 // A birth whose receiving runtime process is gone can never bind
@@ -545,10 +565,18 @@ async fn advance_accepted(
             generation: invocation.projection_generation,
             config_hash,
         };
-        if crate::agent_session::resume_existing(&state, id, &projection)
-            .await
-            .is_err()
-        {
+        let resumed = crate::agent_session::resume_existing(&state, id, &projection).await;
+        if invocation.status == "CREATED" {
+            timing.step("session_resume");
+        }
+        if let Err(error) = resumed {
+            // DD-105 refresh returns Unknown while the native thread is still
+            // loaded; the next Activity round observes the requested unload.
+            timing.outcome(match error {
+                crate::agent_runtime::RuntimeError::AdmissionRequired => "SESSION_ADMISSION",
+                crate::agent_runtime::RuntimeError::Unknown => "SESSION_RESUME_PENDING",
+                _ => "SESSION_RESUME_UNAVAILABLE",
+            });
             // 写前 trace 不变量下未发出的 dispatch，且原 Session 的 durable thread
             // 经原生回答确定不存在（Session 不得替换已绑定 thread）：不能再在此
             // Session 发 turn，也没有任何可结算的模型请求。只此确定组合终结为
@@ -591,14 +619,15 @@ async fn advance_accepted(
             if !holder.held {
                 return result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE");
             }
-            let facts = match crate::agent_installation::admit_runtime(
+            let admitted = crate::agent_installation::admit_runtime(
                 &state,
                 invocation.installation_resource_id,
                 invocation.agent_version_asset_id,
                 invocation.projection_generation,
             )
-            .await
-            {
+            .await;
+            timing.step("admit_runtime");
+            let facts = match admitted {
                 Ok(facts)
                     if facts.tenant_id == invocation.tenant_id
                         && facts.workspace_id == invocation.workspace_id
@@ -606,19 +635,43 @@ async fn advance_accepted(
                 {
                     facts
                 }
-                _ => return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE"),
+                Ok(_) => {
+                    timing.outcome("RUNTIME_ADMISSION_MISMATCH");
+                    return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+                }
+                Err(error) => {
+                    tracing::warn!(invocation_id = %id, step = "admit_runtime", ?error,
+                        "agent_task runtime admission refused before dispatch");
+                    timing.outcome("RUNTIME_ADMISSION_REFUSED");
+                    return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+                }
             };
             // The dynamic invocation authorization below is additional to this
             // installation check; the static projection cannot grant a run.
             drop(facts);
-            let memory = match crate::agent_session::fixed_core(&state, id, &projection).await {
+            let memory = crate::agent_session::fixed_core(&state, id, &projection).await;
+            timing.step("fixed_core");
+            let memory = match memory {
                 Ok(memory) => memory,
                 Err(crate::agent_runtime::RuntimeError::Unknown) => {
-                    return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT")
+                    timing.outcome("CORE_MEMORY_UNKNOWN");
+                    return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
                 }
-                Err(_) => return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE"),
+                Err(_) => {
+                    timing.outcome("CORE_MEMORY_UNAVAILABLE");
+                    return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+                }
             };
-            return first_turn(&state, &invocation, &projection, thread, memory, &input).await;
+            return first_turn(
+                &state,
+                &invocation,
+                &projection,
+                thread,
+                memory,
+                &input,
+                &mut timing,
+            )
+            .await;
         }
         if needs_native_interrupt(
             invocation.cancel_pending,
@@ -672,18 +725,25 @@ async fn advance_accepted(
         .await;
     }
     if !holder.held {
+        timing.outcome("CAPACITY_UNAVAILABLE");
         return result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE");
     }
-    let facts = match crate::agent_installation::admit_runtime(
+    let admitted = crate::agent_installation::admit_runtime(
         &state,
         invocation.installation_resource_id,
         invocation.agent_version_asset_id,
         invocation.projection_generation,
     )
-    .await
-    {
+    .await;
+    timing.step("admit_runtime");
+    let facts = match admitted {
         Ok(facts) => facts,
-        Err(_) => return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE"),
+        Err(error) => {
+            tracing::warn!(invocation_id = %id, step = "admit_runtime", ?error,
+                "agent_task runtime admission refused before dispatch");
+            timing.outcome("RUNTIME_ADMISSION_REFUSED");
+            return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+        }
     };
     if facts.tenant_id != invocation.tenant_id || facts.workspace_id != invocation.workspace_id {
         return StatusCode::CONFLICT.into_response();
@@ -702,7 +762,9 @@ async fn advance_accepted(
     };
     // birth owns its lifecycle/fresh authorization transaction; the plaintext
     // is passed directly to this first turn and is never a durable Task input.
-    match crate::agent_session::birth(&state, id, &projection, &input).await {
+    let born = crate::agent_session::birth(&state, id, &projection, &input).await;
+    timing.step("session_birth");
+    match born {
         Ok(birth) => {
             first_turn(
                 &state,
@@ -711,13 +773,18 @@ async fn advance_accepted(
                 &birth.runtime_thread_id,
                 TurnMemory::Initial(birth.core_memory),
                 &input,
+                &mut timing,
             )
             .await
         }
         Err(crate::agent_runtime::RuntimeError::AdmissionRequired) => {
+            timing.outcome("SESSION_ADMISSION");
             result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE")
         }
-        Err(_) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        Err(_) => {
+            timing.outcome("SESSION_BIRTH_UNKNOWN");
+            result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT")
+        }
     }
 }
 
@@ -910,10 +977,14 @@ async fn first_turn(
     thread: &str,
     memory: TurnMemory,
     holder: &AgentTaskAdvanceRequest,
+    timing: &mut prepare_timing::PrepareTiming,
 ) -> Response {
-    let source = match source_message(state, invocation).await {
+    let source = source_message(state, invocation).await;
+    timing.step("source_message");
+    let source = match source {
         Ok(source) => source,
         Err(_) => {
+            timing.outcome("SOURCE_UNAVAILABLE");
             return result(
                 invocation.id,
                 TaskStatus::Running,
@@ -922,6 +993,7 @@ async fn first_turn(
         }
     };
     if source.content.is_empty() {
+        timing.outcome("SOURCE_EMPTY");
         return result(
             invocation.id,
             TaskStatus::Running,
@@ -946,11 +1018,14 @@ async fn first_turn(
             .ok(),
         Err(_) => None,
     };
+    timing.step("holder_recheck");
     let runtime = match (current, state.agent_runtime.as_ref()) {
         (Some(holder), Some(runtime)) if holder.held && !holder.workflow_cancel_requested => {
             runtime
         }
         _ => {
+            // A superseded Activity attempt: the next attempt starts again.
+            timing.outcome("HOLDER_STALE");
             return result(
                 invocation.id,
                 TaskStatus::Running,
@@ -958,7 +1033,7 @@ async fn first_turn(
             )
         }
     };
-    let trace = match prepare_dispatch(
+    let prepared = prepare_dispatch(
         state,
         invocation,
         projection,
@@ -967,10 +1042,12 @@ async fn first_turn(
         &memory,
         holder,
     )
-    .await
-    {
+    .await;
+    timing.step("prepare_dispatch");
+    let trace = match prepared {
         Ok(trace) => trace,
         Err(crate::agent_runtime::RuntimeError::Unknown) => {
+            timing.outcome("DISPATCH_INTENT_UNKNOWN");
             return result(
                 invocation.id,
                 TaskStatus::Running,
@@ -978,11 +1055,12 @@ async fn first_turn(
             );
         }
         Err(_) => {
+            timing.outcome("DISPATCH_ADMISSION_UNAVAILABLE");
             return result(
                 invocation.id,
                 TaskStatus::Running,
                 "RUNTIME_ADMISSION_UNAVAILABLE",
-            )
+            );
         }
     };
     let core = first_turn_memory_context(&memory);
@@ -998,6 +1076,12 @@ async fn first_turn(
             &trace,
         )
         .await;
+    timing.step("turn_start");
+    timing.outcome(if observed.is_ok() {
+        "TURN_STARTED"
+    } else {
+        "TURN_START_UNKNOWN"
+    });
     // Neither source nor decrypted core crosses this RPC lifetime or appears
     // in an audit/error. Even a pre-RPC error retains the committed intent.
     drop(memory);
