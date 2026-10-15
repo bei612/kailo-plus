@@ -1721,6 +1721,7 @@ enum PlatformMessageKey {
   agentsAdmission,
   agentsRecorded,
   agentsUnknown,
+  agentsRejected,
   agentsInFlight,
   agentsInFlightUnavailable,
   agentsVersionPublished,
@@ -6625,6 +6626,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsUnknown: (
     'Outcome is not confirmed. Re-check only this same request or inspect Tasks; do not submit a replacement. Operation: {operation}.',
     '结果尚未确认。只能重查原请求或到任务页查证，不要另发一笔。操作：{operation}。',
+  ),
+  PlatformMessageKey.agentsRejected: (
+    'Request rejected: {reason}',
+    '请求被拒绝：{reason}',
   ),
   PlatformMessageKey.agentsInFlight: (
     'Existing definition requests in progress',
