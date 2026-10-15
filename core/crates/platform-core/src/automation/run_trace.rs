@@ -278,8 +278,7 @@ fn webhook_entry(
     match (request, outcome) {
         (Some(request), Some(outcome)) => {
             entry["status"] = "completed".into();
-            entry["output"] =
-                json!({"actionExecutionId":action_execution,"requestId":request,"httpStatus":outcome["status"]});
+            entry["output"] = json!({"actionExecutionId":action_execution,"requestId":request,"httpStatus":outcome["status"]});
         }
         (Some(request), None) => {
             entry["output"] = json!({"actionExecutionId":action_execution,"requestId":request});
@@ -339,7 +338,14 @@ mod tests {
         let request = Uuid::new_v4().to_string();
         let outcome = json!({"status":200});
         let entries = [
-            webhook_entry("sent", ae, Some(&request), Some(&outcome), "COMPLETED", false),
+            webhook_entry(
+                "sent",
+                ae,
+                Some(&request),
+                Some(&outcome),
+                "COMPLETED",
+                false,
+            ),
             webhook_entry("open", ae, Some(&request), None, "DISPATCHING", false),
             webhook_entry("unclear", ae, Some(&request), None, "UNKNOWN", false),
             webhook_entry("refused", ae, Some(&request), None, "FAILED", false),
