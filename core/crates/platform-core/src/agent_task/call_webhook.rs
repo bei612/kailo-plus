@@ -849,3 +849,188 @@ async fn finish(
     tx.commit().await?;
     Ok((TaskStatus::Completed, "NONE".into()))
 }
+
+#[cfg(test)]
+mod guard_tests {
+    //! Regression for 20261015050000: the real catalog.guard_automation_webhook
+    //! evaluated on a migrated database. The original `->'usage'-ARRAY[...]`
+    //! parsed as `->('usage'-ARRAY[...])` and refused every intent.
+    use serde_json::{json, Value};
+    use sqlx::{Acquire, Postgres, Transaction};
+    use uuid::Uuid;
+
+    const FIXTURE: &str = r#"DO $$
+DECLARE
+  tenant uuid:='__TENANT__'; installation uuid:='__INSTALLATION__';
+  automation uuid:='__AUTOMATION__'; version uuid:='__VERSION__'; action uuid:='__ACTION__';
+  workspace uuid:=gen_random_uuid(); human uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+  definition uuid:=gen_random_uuid(); agent_version uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
+BEGIN
+  INSERT INTO identity.tenant(id,slug,name,state)
+    VALUES(tenant,'webhook-guard-'||tenant,'Webhook guard fixture','ACTIVE');
+  INSERT INTO identity.workspace(id,tenant_id,slug,name,state)
+    VALUES(workspace,tenant,'webhook-guard','Webhook guard fixture','ACTIVE');
+  INSERT INTO identity.principal(id,tenant_id,kind,status)
+    VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+  INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
+    component_type_key,native_id,state,version) VALUES
+    (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+    (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+    (installation,tenant,'agent.installation',workspace,human,'core',installation::text,'PROVISIONING',1),
+    (automation,tenant,'automation',workspace,human,'core',automation::text,'PROVISIONING',1);
+  INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status)
+    VALUES(definition,'webhook-guard','Webhook guard fixture','PROVISIONING');
+  INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+    (agent_version,tenant,definition,'agent.version',human,agent_version::text,'DRAFT',1),
+    (version,tenant,automation,'automation.version',human,version::text,'DRAFT',1);
+  INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state)
+    VALUES(agent_version,definition,1,
+      jsonb_build_object('runtimeProfileKey','webhook-guard','modelRouteResourceId',route),repeat('a',64),'DRAFT');
+  INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,
+    agent_principal_id,runtime_isolation_ref,state)
+    VALUES(installation,workspace,definition,agent_version,agent,'fixture:'||installation,'PROVISIONING');
+  INSERT INTO catalog.automation_definition(resource_id,workspace_id,executor_installation_resource_id,state,version)
+    VALUES(automation,workspace,installation,'DRAFT',1);
+  INSERT INTO catalog.automation_version(asset_id,automation_resource_id,ordinal,trigger,action,
+    result_target,config_hash,state)
+    VALUES(version,automation,1,'{"kind":"CHANNEL_MESSAGE"}',
+      '{"kind":"CALL_WEBHOOK_STEPS","url":"https://hooks.example.com/","stepsVersion":2,
+        "steps":[{"id":"hook","action":"call_webhook","url":"https://hooks.example.com/"}]}',
+      'TRIGGER_THREAD',repeat('a',64),'DRAFT');
+  INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+    initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+    VALUES(action,gen_random_uuid(),tenant,workspace,'automation.run',1,
+      human,agent,automation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+  INSERT INTO projection.openmeter_binding(tenant_id,namespace,customer_id,subject_key_prefix,status)
+    VALUES(tenant,'webhook-guard-'||tenant,tenant::text,tenant||':','ACTIVE');
+END $$;
+CREATE TEMP TABLE webhook_guard_probe ON COMMIT DROP AS
+  SELECT * FROM catalog.agent_invocation WITH NO DATA;
+CREATE TRIGGER webhook_guard_probe BEFORE INSERT OR UPDATE ON webhook_guard_probe
+  FOR EACH ROW EXECUTE FUNCTION catalog.guard_automation_webhook();"#;
+
+    struct Ids {
+        tenant: Uuid,
+        installation: Uuid,
+        automation: Uuid,
+        version: Uuid,
+        action: Uuid,
+    }
+
+    async fn probe(tx: &mut Transaction<'_, Postgres>, ids: &Ids) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "insert into webhook_guard_probe(id,tenant_id,workspace_id,installation_resource_id,
+             automation_resource_id,automation_version_asset_id,action_execution_id,status,
+             cancel_pending,automation_effect_skipped,automation_step_event_ids)
+             select $1,ae.tenant_id,ae.workspace_id,$2,$3,$4,ae.id,'CREATED',false,false,'{}'
+             from admission.action_execution ae where ae.id=$5",
+        )
+        .bind(id)
+        .bind(ids.installation)
+        .bind(ids.automation)
+        .bind(ids.version)
+        .bind(ids.action)
+        .execute(&mut **tx)
+        .await
+        .expect("a CREATED probe row passes the guard");
+        id
+    }
+
+    fn intent(ids: &Ids) -> Value {
+        let created = chrono::Utc::now() - chrono::Duration::seconds(60);
+        json!({"usage":{"created_at":created,"customer_id":ids.tenant.to_string(),
+            "namespace":format!("webhook-guard-{}", ids.tenant),
+            "subject":format!("{}:{}", ids.tenant, ids.installation),"binding_version":1,
+            "meter":{"key":"automation.run","id":"meter","event_type":"automation.run"}},
+            "request_digest":"a".repeat(64),"destination":"hooks.example.com:443"})
+    }
+
+    async fn freeze(
+        tx: &mut Transaction<'_, Postgres>,
+        row: Uuid,
+        intent: &Value,
+    ) -> Result<(), String> {
+        let mut savepoint = Acquire::begin(&mut *tx).await.expect("savepoint");
+        let result = sqlx::query(
+            "update webhook_guard_probe set status='DISPATCHING',webhook_request_id=$2,
+             webhook_intent=$3 where id=$1",
+        )
+        .bind(row)
+        .bind(Uuid::new_v4().to_string())
+        .bind(intent)
+        .execute(&mut *savepoint)
+        .await;
+        match result {
+            Ok(_) => {
+                savepoint.commit().await.expect("release savepoint");
+                Ok(())
+            }
+            Err(error) => {
+                savepoint.rollback().await.expect("rollback savepoint");
+                Err(error.to_string())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn exact_webhook_intent_enters_dispatching_and_extra_usage_keys_are_refused() {
+        let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+            eprintln!("SKIP webhook intent guard: no disposable migrated DATABASE_URL");
+            return;
+        };
+        let pool = sqlx::PgPool::connect(&database_url)
+            .await
+            .expect("disposable migrated database");
+        let ids = Ids {
+            tenant: Uuid::new_v4(),
+            installation: Uuid::new_v4(),
+            automation: Uuid::new_v4(),
+            version: Uuid::new_v4(),
+            action: Uuid::new_v4(),
+        };
+        let fixture = FIXTURE
+            .replace("__TENANT__", &ids.tenant.to_string())
+            .replace("__INSTALLATION__", &ids.installation.to_string())
+            .replace("__AUTOMATION__", &ids.automation.to_string())
+            .replace("__VERSION__", &ids.version.to_string())
+            .replace("__ACTION__", &ids.action.to_string());
+        let mut tx = pool.begin().await.expect("transaction");
+        sqlx::raw_sql(&fixture)
+            .execute(&mut *tx)
+            .await
+            .expect("fixture");
+
+        let valid = intent(&ids);
+        let row = probe(&mut tx, &ids).await;
+        assert_eq!(freeze(&mut tx, row, &valid).await, Ok(()));
+        let status: String = sqlx::query_scalar("select status from webhook_guard_probe where id=$1")
+            .bind(row)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("probe status");
+        assert_eq!(status, "DISPATCHING");
+
+        let mut extra_usage = valid.clone();
+        extra_usage["usage"]["extra"] = json!("not part of the pin");
+        let mut extra_top = valid.clone();
+        extra_top["body"] = json!("never stored");
+        let mut missing_meter = valid.clone();
+        missing_meter["usage"]
+            .as_object_mut()
+            .expect("usage")
+            .remove("meter");
+        for refused in [extra_usage, extra_top, missing_meter] {
+            let row = probe(&mut tx, &ids).await;
+            let error = freeze(&mut tx, row, &refused)
+                .await
+                .expect_err("only the exact intent shape is admitted");
+            assert!(
+                error.contains("Webhook dispatch intent requires the exact admitted run"),
+                "{error}"
+            );
+        }
+        tx.rollback().await.expect("rollback fixture");
+        pool.close().await;
+    }
+}
