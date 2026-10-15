@@ -7784,6 +7784,39 @@ pub struct WebSearchQuery {
     pub until: Option<i64>,
 }
 
+/// POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope
+/// 与窗口边界核验的首页事件，语义与单个 GET /workspaces/{id}/messages 首页相同。任一项准入或核验失败即整次失败，不返回部分结果。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebWorkspaceActivityPage {
+    pub items: Vec<WebWorkspaceActivity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebWorkspaceActivity {
+    pub channel_id: String,
+
+    pub events: Vec<HashMap<String, Option<serde_json::Value>>>,
+
+    pub workspace_id: String,
+}
+
+/// POST /api/v1/workspace-activity：一次读取调用方多个已加入 Workspace 的原版频道窗口首页（侧栏最近活动与未读、Inbox
+/// 原兴趣规则的输入），对应固定 Buzz desktop/src-tauri/src/commands/channels/fetch.rs 的批量 last-message
+/// 查询。每项仍单独做 HUMAN 协作准入；同一请求内 Workspace 不得重复。messageType 只接受频道窗口的 STREAM 或 FORUM_POST。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebWorkspaceActivityQuery {
+    pub items: Vec<WebWorkspaceActivityTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebWorkspaceActivityTarget {
+    pub message_type: WebMessageType,
+
+    pub workspace_id: String,
+}
+
 /// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
 /// binding 都 ACTIVE 的 Workspace。管理可见不代表可读取协作消息；isMember 投影真实成员事实。Workspace id 同时是其 Channel
 /// id（DD-80）。

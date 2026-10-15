@@ -155,6 +155,8 @@
 //     final webProfileView = webProfileViewFromJson(jsonString);
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
 //     final webSearchQuery = webSearchQueryFromJson(jsonString);
+//     final webWorkspaceActivityPage = webWorkspaceActivityPageFromJson(jsonString);
+//     final webWorkspaceActivityQuery = webWorkspaceActivityQueryFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
@@ -1195,6 +1197,18 @@ WebSearchQuery webSearchQueryFromJson(String str) =>
     WebSearchQuery.fromJson(json.decode(str));
 
 String webSearchQueryToJson(WebSearchQuery data) => json.encode(data.toJson());
+
+WebWorkspaceActivityPage webWorkspaceActivityPageFromJson(String str) =>
+    WebWorkspaceActivityPage.fromJson(json.decode(str));
+
+String webWorkspaceActivityPageToJson(WebWorkspaceActivityPage data) =>
+    json.encode(data.toJson());
+
+WebWorkspaceActivityQuery webWorkspaceActivityQueryFromJson(String str) =>
+    WebWorkspaceActivityQuery.fromJson(json.decode(str));
+
+String webWorkspaceActivityQueryToJson(WebWorkspaceActivityQuery data) =>
+    json.encode(data.toJson());
 
 WorkspaceView workspaceViewFromJson(String str) =>
     WorkspaceView.fromJson(json.decode(str));
@@ -15364,6 +15378,97 @@ class WebSearchQuery {
     "q": q,
     "since": since,
     "until": until,
+  });
+}
+
+///POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope
+///与窗口边界核验的首页事件，语义与单个 GET /workspaces/{id}/messages 首页相同。任一项准入或核验失败即整次失败，不返回部分结果。
+class WebWorkspaceActivityPage {
+  final List<WebWorkspaceActivity> items;
+
+  WebWorkspaceActivityPage({required this.items});
+
+  factory WebWorkspaceActivityPage.fromJson(Map<String, dynamic> json) =>
+      WebWorkspaceActivityPage(
+        items: List<WebWorkspaceActivity>.from(
+          json["items"].map((x) => WebWorkspaceActivity.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class WebWorkspaceActivity {
+  final String channelId;
+  final List<Map<String, dynamic>> events;
+  final String workspaceId;
+
+  WebWorkspaceActivity({
+    required this.channelId,
+    required this.events,
+    required this.workspaceId,
+  });
+
+  factory WebWorkspaceActivity.fromJson(Map<String, dynamic> json) =>
+      WebWorkspaceActivity(
+        channelId: json["channelId"],
+        events: List<Map<String, dynamic>>.from(
+          json["events"].map(
+            (x) => Map.from(x).map((k, v) => MapEntry<String, dynamic>(k, v)),
+          ),
+        ),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "events": List<dynamic>.from(
+      events.map(
+        (x) => Map.from(x).map((k, v) => MapEntry<String, dynamic>(k, v)),
+      ),
+    ),
+    "workspaceId": workspaceId,
+  });
+}
+
+///POST /api/v1/workspace-activity：一次读取调用方多个已加入 Workspace 的原版频道窗口首页（侧栏最近活动与未读、Inbox
+///原兴趣规则的输入），对应固定 Buzz desktop/src-tauri/src/commands/channels/fetch.rs 的批量 last-message
+///查询。每项仍单独做 HUMAN 协作准入；同一请求内 Workspace 不得重复。messageType 只接受频道窗口的 STREAM 或 FORUM_POST。
+class WebWorkspaceActivityQuery {
+  final List<WebWorkspaceActivityTarget> items;
+
+  WebWorkspaceActivityQuery({required this.items});
+
+  factory WebWorkspaceActivityQuery.fromJson(Map<String, dynamic> json) =>
+      WebWorkspaceActivityQuery(
+        items: List<WebWorkspaceActivityTarget>.from(
+          json["items"].map((x) => WebWorkspaceActivityTarget.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class WebWorkspaceActivityTarget {
+  final WebMessageType messageType;
+  final String workspaceId;
+
+  WebWorkspaceActivityTarget({
+    required this.messageType,
+    required this.workspaceId,
+  });
+
+  factory WebWorkspaceActivityTarget.fromJson(Map<String, dynamic> json) =>
+      WebWorkspaceActivityTarget(
+        messageType: webMessageTypeValues.map[json["messageType"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "messageType": webMessageTypeValues.reverse[messageType],
+    "workspaceId": workspaceId,
   });
 }
 

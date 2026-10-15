@@ -466,6 +466,12 @@
 //    webSearchQuery, err := UnmarshalWebSearchQuery(bytes)
 //    bytes, err = webSearchQuery.Marshal()
 //
+//    webWorkspaceActivityPage, err := UnmarshalWebWorkspaceActivityPage(bytes)
+//    bytes, err = webWorkspaceActivityPage.Marshal()
+//
+//    webWorkspaceActivityQuery, err := UnmarshalWebWorkspaceActivityQuery(bytes)
+//    bytes, err = webWorkspaceActivityQuery.Marshal()
+//
 //    workspaceView, err := UnmarshalWorkspaceView(bytes)
 //    bytes, err = workspaceView.Marshal()
 //
@@ -2286,6 +2292,26 @@ func UnmarshalWebSearchQuery(data []byte) (WebSearchQuery, error) {
 }
 
 func (r *WebSearchQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebWorkspaceActivityPage(data []byte) (WebWorkspaceActivityPage, error) {
+	var r WebWorkspaceActivityPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebWorkspaceActivityPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebWorkspaceActivityQuery(data []byte) (WebWorkspaceActivityQuery, error) {
+	var r WebWorkspaceActivityQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebWorkspaceActivityQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6549,6 +6575,30 @@ type WebSearchQuery struct {
 	Q         string   `json:"q"`
 	Since     *int64   `json:"since,omitempty"`
 	Until     *int64   `json:"until,omitempty"`
+}
+
+// POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope
+// 与窗口边界核验的首页事件，语义与单个 GET /workspaces/{id}/messages 首页相同。任一项准入或核验失败即整次失败，不返回部分结果。
+type WebWorkspaceActivityPage struct {
+	Items []WebWorkspaceActivity `json:"items"`
+}
+
+type WebWorkspaceActivity struct {
+	ChannelID   string                   `json:"channelId"`
+	Events      []map[string]interface{} `json:"events"`
+	WorkspaceID string                   `json:"workspaceId"`
+}
+
+// POST /api/v1/workspace-activity：一次读取调用方多个已加入 Workspace 的原版频道窗口首页（侧栏最近活动与未读、Inbox
+// 原兴趣规则的输入），对应固定 Buzz desktop/src-tauri/src/commands/channels/fetch.rs 的批量 last-message
+// 查询。每项仍单独做 HUMAN 协作准入；同一请求内 Workspace 不得重复。messageType 只接受频道窗口的 STREAM 或 FORUM_POST。
+type WebWorkspaceActivityQuery struct {
+	Items []WebWorkspaceActivityTarget `json:"items"`
+}
+
+type WebWorkspaceActivityTarget struct {
+	MessageType WebMessageType `json:"messageType"`
+	WorkspaceID string         `json:"workspaceId"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
