@@ -1158,7 +1158,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   }, [pasteBinding.claimMentionIntent]);
   const insertMention = useCallback((person: MentionSuggestion, cursor: number) => {
     const label = registerMentionPubkey(person.displayName, person.pubkey);
-    const edit = {replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: humanQuery?.cursor ?? cursor, insertText: "@" + label + " "};
+    // 与原 useMentions.insertMention 一致：替换到选择时的实时光标。用 Enter 选候选时编辑器已先
+    // splitBlock，旧 query 光标会把那次分段留在 @提及后面（消息变成 "@Agent\n\n 正文"）。
+    const edit = {replaceFromOffset: humanQuery?.startIndex ?? cursor, replaceToOffset: cursor, insertText: "@" + label + " "};
     setHumanQuery(null);setHumanIndex(0);
     return edit;
   }, [registerMentionPubkey, humanQuery, setHumanIndex]);

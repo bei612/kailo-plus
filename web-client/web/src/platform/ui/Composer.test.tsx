@@ -868,6 +868,21 @@ it("selects through the original highlighted picker row with the keyboard", asyn
   expect(host.querySelector('[data-testid="mention-autocomplete"]')).toBeNull();
 });
 
+it("selecting a mention with Enter does not leave the editor's paragraph split behind the mention", async () => {
+  const host = await render(agentComposer());
+  await settle();
+  await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);
+  await act(async () => {await vi.waitFor(() => expect(host.querySelector('[aria-label="Mention agent-a"]')).not.toBeNull());});
+  const editor = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  await act(async () => {
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  });
+  // Original useMentions replaces up to the live selection, which also absorbs the
+  // splitBlock ProseMirror applied for that Enter: one paragraph, mention first.
+  expect(editor.querySelectorAll("p")).toHaveLength(1);
+  expect(editor.textContent).toMatch(/^@agent-a/);
+});
+
 it.each([false, undefined])(
   "excludes an Agent when execution permission is %s on either overlapping page",
   async (effective) => {
