@@ -2830,7 +2830,8 @@ async fn scoped_member_profile(
         let profile = crate::web_profile::read_author(state, &client, &pubkey).await?;
         let after = target.admit(state, &ctx).await?;
         if !before.same_admission(&after)
-            || identity != member_profile_identity(&state.pool, scope, principal_id, &pubkey).await?
+            || identity
+                != member_profile_identity(&state.pool, scope, principal_id, &pubkey).await?
             || keys.public_key() != actor_keys(state, &ctx).await?.public_key()
         {
             return Err(AdmissionFailure::BindingNotActive.into_response());
@@ -4014,7 +4015,8 @@ mod tests {
             INSERT INTO identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state)
               VALUES('{tenant}','{principal}','{pubkey}','CLIENT','HUMAN','ACTIVE');
         "#)).execute(&mut *tx).await.unwrap();
-        let before = member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+        let workscope = MemberProfileScope::Workspace(workspace);
+        let before = member_profile_identity(&mut *tx, workscope, principal, &pubkey)
             .await
             .unwrap();
         crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
@@ -4131,10 +4133,10 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         for (scope, person, key) in [
-            (Uuid::new_v4(), principal, pubkey.clone()),
-            (workspace, Uuid::new_v4(), pubkey.clone()),
+            (MemberProfileScope::Workspace(Uuid::new_v4()), principal, pubkey.clone()),
+            (workscope, Uuid::new_v4(), pubkey.clone()),
             (
-                workspace,
+                workscope,
                 principal,
                 nostr::Keys::generate().public_key().to_hex(),
             ),
@@ -4154,7 +4156,7 @@ mod tests {
             .unwrap();
         assert_ne!(
             before,
-            member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+            member_profile_identity(&mut *tx, workscope, principal, &pubkey)
                 .await
                 .unwrap()
         );
@@ -4187,7 +4189,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(
-                member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+                member_profile_identity(&mut *tx, workscope, principal, &pubkey)
                     .await
                     .unwrap_err()
                     .status(),
@@ -4213,7 +4215,7 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         assert_eq!(
-            member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+            member_profile_identity(&mut *tx, workscope, principal, &pubkey)
                 .await
                 .unwrap_err()
                 .status(),
