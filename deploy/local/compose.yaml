@@ -625,6 +625,8 @@ services:
       AGENTGATEWAY_ADMIN_URL: ${AGENTGATEWAY_ADMIN_URL:?必须显式提供已认证的管理入口}
       # 原版 call_webhook 只经此出站网关发出；缺省时保存与运行 call_webhook 都被拒绝。
       AGENTGATEWAY_EGRESS_URL: http://automation-egress:${AUTOMATION_EGRESS_PORT:?必须显式提供出站网关端口}
+      # WEBHOOK 触发对外展示的基准地址（DD-116）；缺省时 WEBHOOK 版本不能启用。
+      AUTOMATION_WEBHOOK_PUBLIC_BASE_URL: ${AUTOMATION_WEBHOOK_PUBLIC_BASE_URL:?必须显式提供 Webhook 公开基准地址}
       AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS: ${AGENTGATEWAY_ADMIN_TIMEOUT_SECONDS:?必须显式提供管理请求时限}
       AGENTGATEWAY_MODEL_BASE_URL: ${AGENTGATEWAY_MODEL_BASE_URL:?必须显式提供 Gateway 私网模型入口}
       AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
@@ -861,6 +863,8 @@ services:
       - "${PUBLIC_BIND_ADDR:?必须显式提供公开入口发布地址}:${AGENTGATEWAY_PORT:?必须显式提供，禁止硬编码}:8080"
       # 原生端入口。容器端口是网关配置里 native bind 的端口
       - "${PUBLIC_BIND_ADDR:?必须显式提供，禁止硬编码}:${AGENTGATEWAY_NATIVE_PORT:?必须显式提供，禁止硬编码}:8091"
+      # 原版 Workflow WEBHOOK 公开入口（DD-116）。容器端口是网关配置里 automation-webhook bind 的端口
+      - "${PUBLIC_BIND_ADDR:?必须显式提供，禁止硬编码}:${AGENTGATEWAY_WEBHOOK_PORT:?必须显式提供 Webhook 公开入口端口}:8092"
 
   # AgentGateway 的 request log 与 durable usage outbox 库（SS-AGW-USAGE）。只在
   # agentgateway-data：除网关外没有服务能到达它；Core 只经已认证的 admin 接口读游标。

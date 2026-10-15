@@ -272,3 +272,43 @@ binds:
           pathPrefix: /api/
       backends:
       - host: ${BFF_UPSTREAM}
+
+# 原版 Workflow WEBHOOK 触发的公开入口（.design/02 DD-116、06 §9）。外部系统没有平台
+# 身份：这里不做 OIDC/jwtAuth/身份投影，只清洗所有身份与凭据 header，只放行
+# POST /hooks/<automation UUID>；签名（Standard Webhooks HMAC）、时间窗与去重在 BFF 校验。
+- port: 8092
+  listeners:
+  - name: automation-webhook
+    protocol: HTTP
+    policies:
+      transformations:
+        request:
+          remove:
+          - authorization
+          - cookie
+          - proxy-authorization
+          - x-platform-oidc-issuer
+          - x-platform-oidc-subject
+          - x-platform-human-identity
+          - x-platform-tenant
+          - x-platform-workspace
+          - x-platform-principal
+          - x-platform-client-surface
+          - x-kailo-oidc-issuer
+          - x-kailo-oidc-subject
+          - x-kailo-client-surface
+          - x-kailo-human-identity
+          - x-kailo-tenant
+          - x-kailo-workspace
+          - x-kailo-principal
+    routes:
+    - name: automation-webhook
+      matches:
+      - path:
+          regex: /hooks/[0-9a-fA-F-]{36}
+        method: POST
+      policies:
+        timeout:
+          requestTimeout: 30s
+      backends:
+      - host: ${BFF_UPSTREAM}
