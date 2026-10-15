@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LogIn } from "lucide-react";
+import { toast } from "sonner";
+import { Button as BuzzButton } from "./profile/buzz/shared/ui/button";
 import { ActionDispatchState, ActionGateState, ChannelType, WorkspaceMembershipState, type ActionCommand, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, writeFailure, type WriteFailure } from "../transport";
@@ -24,11 +27,6 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [createActionKey, setCreateActionKey] = useState<import("@client-kit/contracts").CreateActionKey>();
-  const [intent, setIntent] = useState<ActionCommand | null>(null);
-  const [accepted, setAccepted] = useState(false);
-  const [failure, setFailure] = useState<WriteFailure | null>(null);
-  const [busy, setBusy] = useState(false);
-  const running = useRef(false);
   const epoch = useRef(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current += 1; }; }, []);
@@ -56,9 +54,44 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
     return () => { current = false; };
   }, [open, client, load]);
 
-  const join = async (id: string): Promise<boolean> => {
+  const { intent, accepted, failure, busy, join: joinWorkspace } = useWorkspaceJoin(load);
+  const join = (id: string) => joinWorkspace(id, rows.find((item) => item.id === id));
+  const channels: BrowserChannel[] = rows.map((row) => ({ ...row,
+    name: row.channel.name, description: row.channel.description ?? "", channelType: row.channel.channelType,
+    archivedAt: row.channel.archived, lastMessageAt: lastMessageAtByChannelId?.get(row.channel.channelId) ?? null,
+  }));
+  return <ChannelBrowserDialog channels={channels} open={open} channelTypeFilter={channelType}
+    createActionKey={createActionKey} busy={busy || loading} onOpenChange={onOpenChange} onJoinChannel={join}
+    onSelectChannel={(id) => {
+      const row = latestRows.current.find((item) => item.id === id);
+      if (row?.isMember) void Promise.resolve(onSelect(row)).catch((cause) => setError(cause));
+    }} status={<div className="px-1 pb-3 text-sm">
+      {loading ? <p role="status">{t("platform.loading")}</p> : null}
+      <Button disabled={loading || busy} onClick={() => void load().catch(() => undefined)}>{t("platform.refresh")}</Button>
+      {error ? <ReadFailure error={error} onRetry={() => void load().catch(() => undefined)} /> : null}
+      {intent ? <div role="status">{t("channel.browser.joinPending")}
+        <Button data-testid="channel-join-status" disabled={busy || loading} onClick={() => { void join(intent.workspaceId!).then((ready) => {
+          if (ready) { onOpenChange(false); const row = latestRows.current.find((item) => item.id === intent.workspaceId); if (row) void Promise.resolve(onSelect(row)).catch(setError); }
+        }); }}>{t(accepted ? "platform.refresh" : "platform.retry")}</Button>
+      </div> : null}
+      {failure ? <p role="alert">{failure.kind === "rejected" ? failureText(failure) : t("channel.browser.joinPending")}</p> : null}
+    </div>} />;
+}
+
+/** Original join intent shared by the browser and the channel header: the existing governed
+ * workspace.join keeps one idempotency key until fresh directory evidence shows ACTIVE
+ * membership; an accepted but not yet observed join is retried as a read, never resent. */
+export function useWorkspaceJoin(load: () => Promise<DiscoverableWorkspace[]>) {
+  const client = useBffClient();
+  const [intent, setIntent] = useState<ActionCommand | null>(null);
+  const [accepted, setAccepted] = useState(false);
+  const [failure, setFailure] = useState<WriteFailure | null>(null);
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const join = async (id: string, row: DiscoverableWorkspace | undefined): Promise<boolean> => {
     if (running.current || (intent && intent.workspaceId !== id)) return false;
-    const row = rows.find((item) => item.id === id);
     if (!intent && (!row || row.joinActionKey !== "workspace.join")) return false;
     const command = intent ?? { actionKey: "workspace.join", workspaceId: id, idempotencyKey: newIdempotencyKey() };
     running.current = true; setBusy(true); setFailure(null); setIntent(command);
@@ -90,24 +123,37 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
       return false;
     } finally { running.current = false; if (mounted.current) setBusy(false); }
   };
-  const channels: BrowserChannel[] = rows.map((row) => ({ ...row,
-    name: row.channel.name, description: row.channel.description ?? "", channelType: row.channel.channelType,
-    archivedAt: row.channel.archived, lastMessageAt: lastMessageAtByChannelId?.get(row.channel.channelId) ?? null,
-  }));
-  return <ChannelBrowserDialog channels={channels} open={open} channelTypeFilter={channelType}
-    createActionKey={createActionKey} busy={busy || loading} onOpenChange={onOpenChange} onJoinChannel={join}
-    onSelectChannel={(id) => {
-      const row = latestRows.current.find((item) => item.id === id);
-      if (row?.isMember) void Promise.resolve(onSelect(row)).catch((cause) => setError(cause));
-    }} status={<div className="px-1 pb-3 text-sm">
-      {loading ? <p role="status">{t("platform.loading")}</p> : null}
-      <Button disabled={loading || busy} onClick={() => void load().catch(() => undefined)}>{t("platform.refresh")}</Button>
-      {error ? <ReadFailure error={error} onRetry={() => void load().catch(() => undefined)} /> : null}
-      {intent ? <div role="status">{t("channel.browser.joinPending")}
-        <Button data-testid="channel-join-status" disabled={busy || loading} onClick={() => { void join(intent.workspaceId!).then((ready) => {
-          if (ready) { onOpenChange(false); const row = latestRows.current.find((item) => item.id === intent.workspaceId); if (row) void Promise.resolve(onSelect(row)).catch(setError); }
-        }); }}>{t(accepted ? "platform.refresh" : "platform.retry")}</Button>
-      </div> : null}
-      {failure ? <p role="alert">{failure.kind === "rejected" ? failureText(failure) : t("channel.browser.joinPending")}</p> : null}
-    </div>} />;
+  return { intent, accepted, failure, busy, join };
+}
+
+/** Buzz 779af8886caae1317b4de962082429867ab61503
+ * desktop/src/features/channels/ui/ChannelScreenHeader.tsx showJoinButton branch: a non-member
+ * of an open, unarchived channel gets the original Join control in the header. */
+export function ChannelJoinButton({ workspace, onJoined }: {
+  workspace: DiscoverableWorkspace;
+  onJoined: (workspace: DiscoverableWorkspace) => void | Promise<void>;
+}) {
+  const client = useBffClient();
+  const t = useT();
+  const failureText = useFailureText();
+  const load = useCallback(() => loadChannelDirectory(client, () => true), [client]);
+  const state = useWorkspaceJoin(load);
+  const pending = state.intent !== null && !state.busy;
+  // Kailo membership is a governed projection: say so instead of silently staying outside.
+  useEffect(() => {
+    if (state.failure?.kind === "rejected") toast.error(failureText(state.failure));
+    else if (state.failure || pending) toast(t("channel.browser.joinPending"));
+  }, [state.failure, pending, failureText, t]);
+  return (
+    <div className="flex items-center gap-1">
+      <BuzzButton data-testid="channel-header-join" disabled={state.busy} size="sm" variant="default" onClick={() => {
+        void state.join(workspace.id, workspace).then(async (ready) => {
+          if (ready) await onJoined(workspace);
+        });
+      }}>
+        <LogIn className="mr-1.5 h-4 w-4" />
+        {t(state.busy ? "channel.header.joining" : "channel.browser.join")}
+      </BuzzButton>
+    </div>
+  );
 }

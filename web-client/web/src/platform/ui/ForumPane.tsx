@@ -10,6 +10,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import * as React from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
+import type { MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { bff, deleteMessage, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
@@ -34,7 +35,7 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, onStartDm }: {
+export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, onStartDm, memberProfileRequest }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
   metadataPending?: boolean;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -46,6 +47,8 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   autoSendDraftKey?: string;
   onAutoSendConsumed?: () => void | Promise<void>;
   onStartDm?: (pubkey: string) => void;
+  /** Header members dialog request; rendered only while this member stays ACTIVE here. */
+  memberProfileRequest?: MemberProfileRequest;
 }) {
   const labels = useForumLabels();
   const queryClient = useQueryClient();
@@ -68,6 +71,11 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const [profileTarget, setProfileTarget] = React.useState<MessageAuthor | null>(null);
   const [memberTarget, setMemberTarget] = React.useState<{workspaceId:string; principalId:string; pubkey:string} | null>(null);
   React.useEffect(() => { setProfileTarget(null); setMemberTarget(null); }, [workspaceId, channelId, myPrincipalId]);
+  React.useEffect(() => {
+    if (!memberProfileRequest || memberProfileRequest.workspaceId !== workspaceId) return;
+    setProfileTarget(null);
+    setMemberTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+  }, [memberProfileRequest, workspaceId]);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   React.useEffect(() => {

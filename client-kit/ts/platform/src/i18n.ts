@@ -427,6 +427,7 @@ export const platformMessages = {
   "channel.browser.members.other": { en: "{count} members", "zh-CN": "{count}名成员" },
   "channel.browser.joining": { en: "Joining...", "zh-CN": "正在加入…" },
   "channel.browser.join": { en: "Join", "zh-CN": "加入" },
+  "channel.header.joining": { en: "Joining…", "zh-CN": "正在加入…" },
   "channel.browser.joinPending": { en: "Membership is being reconciled. Check status before opening the channel.", "zh-CN": "成员资格正在对账，请刷新状态后再进入频道。" },
   "channel.visibility.label": { en: "Visibility", "zh-CN": "可见性" },
   "channel.visibility.private": { en: "Private", "zh-CN": "私有" },

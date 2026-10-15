@@ -63,6 +63,7 @@ import { MessageThreadSummaryRow, ThreadRepliesErrorCard, getThreadRouteTarget, 
 import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/messages/threading";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
+import type { MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
@@ -168,6 +169,8 @@ export function ChannelPane({
   metadataPending?: boolean;
   restoreEditEventId?: string;
   onStartDm?: (pubkey: string) => void;
+  /** Header members dialog request; rendered only while this member stays ACTIVE here. */
+  memberProfileRequest?: MemberProfileRequest;
 }) {
   const uiT = useUiT();
   const queryClient = useQueryClient();
@@ -270,6 +273,11 @@ export function ChannelPane({
   }, [denied, live, handleCancelEdit]);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
+  useEffect(() => {
+    if (!memberProfileRequest || conversation || memberProfileRequest.workspaceId !== workspaceId) return;
+    setProfileTarget(null);
+    setSystemProfileTarget({workspaceId, principalId: memberProfileRequest.principalId, pubkey: memberProfileRequest.pubkey});
+  }, [memberProfileRequest, conversation, workspaceId]);
   const visible = useVisible();
   const members = useQuery({
     queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId, myPrincipalId,

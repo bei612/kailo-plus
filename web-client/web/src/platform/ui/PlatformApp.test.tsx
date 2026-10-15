@@ -116,6 +116,7 @@ vi.mock("@client-kit/platform/react/channel-browser", () => ({
   ChannelBrowser: ({ open }: { open: boolean }) => (
     <div data-testid="shared-create-channel-dialog" data-open={open} />
   ),
+  ChannelJoinButton: ({ workspace }: { workspace: { id: string } }) => <button data-testid="channel-header-join" data-workspace={workspace.id} />,
 }));
 vi.mock("@client-kit/platform/react/new-message", () => ({
   ConversationVisibilityProvider: ({ children }: { children: React.ReactNode }) => children,

@@ -97,6 +97,9 @@ export function ChannelMembersBar({ workspaceId, onToggleMembers, onManageChanne
   );
 }
 
+/** A host opens the original profile panel for this exact admitted Workspace member key. */
+export type MemberProfileRequest = { workspaceId: string; principalId: string; pubkey: string; nonce: number };
+
 type Row = { member: WorkspaceMemberView; role: RoleMemberView | undefined; self: boolean; label: string };
 
 function compareMembersForModal(left: Row, right: Row) {
@@ -114,7 +117,7 @@ export function ChannelMembersDialog({ workspaceId, open, onOpenChange, archived
   archived?: boolean;
   currentPrincipalId?: string;
   currentPubkey?: string;
-  onOpenProfile?: (pubkey: string) => void;
+  onOpenProfile?: (target: { principalId: string; pubkey: string }) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -200,7 +203,7 @@ export function ChannelMembersDialog({ workspaceId, open, onOpenChange, archived
     const roleLabel = !active ? enumLabel(locale, workspaceMembershipStateMessages, member.state)
       : role?.workspaceAdmin ? t("communityMembers.admin") : null;
     const rowDisabled = disabled || action.submittedFor === member.principalId;
-    const openProfile = active && pubkey && onOpenProfile ? () => onOpenProfile(pubkey) : undefined;
+    const openProfile = active && pubkey && onOpenProfile ? () => onOpenProfile({ principalId: member.principalId, pubkey }) : undefined;
     return (
       <div
         className={cn(

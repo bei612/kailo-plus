@@ -17,7 +17,7 @@ import {
 } from "@client-kit/contracts";
 import { PlatformProvider, useDeviceLocale } from "@client-kit/platform/react/context";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
+import { ChannelBrowser, ChannelJoinButton } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useSearchShortcuts } from "@client-kit/platform/react/use-search-shortcuts";
@@ -47,7 +47,7 @@ import {
   WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
-import { ChannelMembersBar, ChannelMembersDialog } from "@client-kit/platform/react/channel-members";
+import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -254,6 +254,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const active = activeRow?.id ?? null;
   const [membersOpenFor, setMembersOpenFor] = useState<string | null>(null);
   const [manageOpenFor, setManageOpenFor] = useState<string | null>(null);
+  const [memberProfileRequest, setMemberProfileRequest] = useState<MemberProfileRequest | undefined>(undefined);
+  // Original showJoinButton: non-member, open, unarchived, with the admitted join action.
+  const joinRow = activeRow && activeRow.isMember !== true && !searchDirectory.isError
+    ? searchDirectory.data?.workspaces.find((row) => row.id === activeRow.id && !row.isMember
+      && row.visibility === "open" && !row.channel.archived && row.joinActionKey === "workspace.join")
+    : undefined;
   const { isDark } = useTheme();
   const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
     : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
@@ -391,7 +397,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
       restoreDraftKey={navigation.draftTarget?.key} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
-      onStartDm={openDirectMessage}
+      onStartDm={openDirectMessage} memberProfileRequest={memberProfileRequest}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink}
       target={messageTarget?.channelId === active ? {...messageTarget,channelId:channel.data.channelId} : undefined}
       searchMessageId={navigation.searchHighlight?.messageId} searchQuery={navigation.searchHighlight?.query} searchActivationId={navigation.searchHighlight?.activationId} /> :
@@ -400,7 +406,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onNavigationGuardChange={navigation.registerThreadNavigationGuard}
       restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
       onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
-      onStartDm={openDirectMessage}
+      onStartDm={openDirectMessage} memberProfileRequest={memberProfileRequest}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
       targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
       targetSearchActivationId={navigation.searchHighlight?.activationId}
@@ -596,13 +602,23 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
                 }}/>
-            </AvatarHostProvider> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+            </AvatarHostProvider> : tab === "channel" && joinRow ? <ChatHeader title={joinRow.channel.name}
+              description={joinRow.channel.description ?? undefined} channelType={joinRow.channel.channelType}
+              leadingContent={<ChannelGlyph channel={{channelType: joinRow.channel.channelType, visibility: joinRow.visibility}} className="h-4 w-4 translate-y-px text-muted-foreground" />}
+              actions={<ChannelJoinButton key={joinRow.id} workspace={joinRow}
+                onJoined={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} />}
+              onCopyTitle={async (title) => {
+                try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
+                catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
+              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
             <ChannelMembersDialog key={`${session.tenantPrincipalId}:${active}`} workspaceId={active} open={membersOpenFor === active}
               onOpenChange={(open) => setMembersOpenFor(open ? active : null)} archived={channel.data.archived}
-              currentPrincipalId={session.tenantPrincipalId} /> : null}
+              currentPrincipalId={session.tenantPrincipalId}
+              onOpenProfile={(target) => { setMembersOpenFor(null); setManageOpenFor(null);
+                setMemberProfileRequest({workspaceId: active, ...target, nonce: Date.now()}); }} /> : null}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
             <ChannelManagementSheet key={`manage:${session.tenantPrincipalId}:${active}`} workspaceId={active} open={manageOpenFor === active}
               onOpenChange={(open) => setManageOpenFor(open ? active : null)} isDark={isDark}

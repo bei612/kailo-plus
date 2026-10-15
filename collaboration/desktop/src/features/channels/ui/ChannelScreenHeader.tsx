@@ -80,7 +80,7 @@ export function ChannelScreenHeader({
       {workspace ? <ChannelMembersDialog key={workspace.id} workspaceId={workspace.id} open={membersOpenFor === workspace.id}
         onOpenChange={(open) => setMembersOpenFor(open ? workspace.id : null)} archived={Boolean(activeChannel.archivedAt)}
         currentPubkey={currentPubkey}
-        onOpenProfile={openProfilePanel ? (pubkey) => { setMembersOpenFor(null); openProfilePanel(pubkey); } : undefined} /> : null}
+        onOpenProfile={openProfilePanel ? (target) => { setMembersOpenFor(null); openProfilePanel(target.pubkey); } : undefined} /> : null}
     </AvatarHostProvider>
   );
 }
