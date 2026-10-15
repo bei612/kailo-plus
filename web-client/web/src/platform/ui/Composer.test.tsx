@@ -880,7 +880,7 @@ it("selecting a mention with Enter does not leave the editor's paragraph split b
   // Original useMentions replaces up to the live selection, which also absorbs the
   // splitBlock ProseMirror applied for that Enter: one paragraph, mention first.
   expect(editor.querySelectorAll("p")).toHaveLength(1);
-  expect(editor.textContent).toMatch(/^@agent-a/);
+  expect(editor.textContent).toMatch(/^@agent-[ab] $/);
 });
 
 it.each([false, undefined])(
