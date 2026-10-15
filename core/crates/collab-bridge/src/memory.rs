@@ -729,7 +729,9 @@ mod thread_context_tests {
     fn message(text: &str, channel: &str, root: Option<&str>, at: u64) -> nostr::Event {
         let mut tags = vec![Tag::parse(["h", channel]).unwrap()];
         if let Some(root) = root {
-            tags.push(Tag::parse(["e", root, "", "root"]).unwrap());
+            // A direct reply carries only the `reply` marker (NIP-10 resolve:
+            // a lone `root` marker never anchors a reply).
+            tags.push(Tag::parse(["e", root, "", "reply"]).unwrap());
         }
         EventBuilder::new(Kind::Custom(9), text)
             .tags(tags)
