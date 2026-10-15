@@ -30,8 +30,8 @@ artifacts:
     build_dockerfile: agent-runtime/fork/packaging/Dockerfile
     build_args: [CARGO_BUILD_JOBS]
     inputs: [agent-runtime/]
-    source_digest: sha256:8dee2887732b4595d24a5aebefe205cd5d408986733cf49d0c15e0b697f606cb
-    artifact_digest: sha256:0a37f9edf7f4004c73e41bba7bf7dfa5cdcd8d04b51dbc22066a2a3094282725
+    source_digest: sha256:74634a6c142f471492b4d7453af4d9846226054fb4cba20e12f8aad7a51f3c8d
+    artifact_digest: sha256:a6eb81746e803f94f91da21f58dfbf21d02cb0fe7164de0a08c50c459d95c8a2
 
 source_facts: [SF-COD-01, SF-COD-03, SF-COD-04, SF-COD-10, SF-COD-11, SF-COD-12, SF-COD-15]
 source_seams: [SS-COD-TRACE, SS-COD-RUNTIME, SS-COD-APP]
