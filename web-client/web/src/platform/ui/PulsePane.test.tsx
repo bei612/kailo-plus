@@ -110,7 +110,8 @@ it("does not gate the project directory on unrelated own-profile or composer peo
   // The directory's own create-capability read (role-workspaces) may already have started
   // under suite load; no own-profile or composer people read may.
   expect(api.profile).not.toHaveBeenCalled();
-  expect(send.mock.calls.filter(([request])=>(request as {path?:string}).path!=="/api/v1/role-workspaces")).toEqual([]);
+  expect(send.mock.calls.map(call=>(call as unknown[])[0] as {path?:string}|undefined)
+    .filter(request=>request?.path!=="/api/v1/role-workspaces")).toEqual([]);
 });
 it("passes only a freshly admitted matching channel descriptor to the Project home host and unloads on live invalidation",async()=>{
   const channelId="12345678-1234-4234-8234-123456789001",workspaceId="22345678-1234-4234-8234-123456789001";
