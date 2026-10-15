@@ -744,16 +744,22 @@ impl OpenMeter {
     }
 
     async fn read<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<T, Error> {
-        let response = self
-            .http
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| Error::Unknown)?;
+        // Path only: the query carries no credential, but keep logs minimal.
+        let path = url.path().to_owned();
+        let response = self.http.get(url).send().await.map_err(|error| {
+            tracing::warn!(path = %path, timeout = error.is_timeout(), connect = error.is_connect(),
+                "OpenMeter read transport failed");
+            Error::Unknown
+        })?;
         if response.status() != StatusCode::OK {
+            tracing::warn!(path = %path, status = response.status().as_u16(),
+                "OpenMeter read returned a non-OK status");
             return Err(status_error(response.status()));
         }
-        response.json().await.map_err(|_| Error::Unknown)
+        response.json().await.map_err(|_| {
+            tracing::warn!(path = %path, "OpenMeter read body could not be decoded");
+            Error::Unknown
+        })
     }
 
     async fn collection<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<Vec<T>, Error> {

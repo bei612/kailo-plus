@@ -2997,11 +2997,19 @@ impl Governance {
         .await?;
         let (outcome, token, reason) = match &result {
             Ok(token) => ("ALLOW", Some(token.as_str()), None),
-            Err(Refusal::Unavailable(_)) => (
-                "NOT_APPLICABLE",
-                None,
-                Some(ReasonCode::DependencyUnavailable),
-            ),
+            Err(Refusal::Unavailable(dependency)) => {
+                // The audit row keeps only DEPENDENCY_UNAVAILABLE; the operator
+                // needs the exact dependency (DB, SpiceDB, OpenMeter, OpenBao,
+                // Relay, ...) that the admission could not verify.
+                tracing::warn!(operation_id = %ae.operation_id, action_execution_id = %ae.id,
+                    action_key = %ae.action_key, phase, dependency = %dependency,
+                    "automation admission dependency unavailable");
+                (
+                    "NOT_APPLICABLE",
+                    None,
+                    Some(ReasonCode::DependencyUnavailable),
+                )
+            }
             Err(error) => ("DENY", None, Some(error.reason())),
         };
         sqlx::query("insert into admission.action_decision
