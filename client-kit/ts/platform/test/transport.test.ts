@@ -11,7 +11,7 @@ import {
   SessionEndedError,
   TransportError,
 } from "../src/transport";
-import { createFetchTransport } from "../src/web-fetch";
+import { createFetchTransport, isSettledRead, SETTLED_READ_MS } from "../src/web-fetch";
 
 function json(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -33,10 +33,10 @@ it("message authors use the typed batch transport for workspace, DM and a single
   expect(send.mock.calls.map(([request])=>request)).toEqual([
     {method:"POST",path:"/api/v1/workspaces/workspace/messages/author-profiles",body:{eventIds:[eventId,secondId]}},
     {method:"POST",path:"/api/v1/conversations/private/messages/author-profiles",body:{eventIds:[eventId]}},
-    {method:"POST",path:"/api/v1/workspaces/workspace/messages/author-profiles",body:{eventIds:[eventId]}},
   ]);
   send.mockResolvedValue({status:200,body:{profiles:{}}});
-  await expect(client.messageAuthorProfile("workspace",eventId)).rejects.toThrow();
+  await expect(client.messageAuthorProfile("workspace","d".repeat(64))).rejects.toThrow();
+  expect(send).toHaveBeenLastCalledWith({method:"POST",path:"/api/v1/workspaces/workspace/messages/author-profiles",body:{eventIds:["d".repeat(64)]}});
 });
 
 describe("web-fetch", () => {
@@ -118,6 +118,77 @@ describe("web-fetch", () => {
     await client.profile();
     expect(fetch.mock.calls.length).toBeLessThanOrEqual(COLD_START_READ_CAP);
     expect(fetch.mock.calls.filter(([path]) => path === "/api/v1/workspace-activity")).toHaveLength(1);
+  });
+
+  it("冷启动先后读取的会话、私聊、参与者、应用绑定与首个消息窗口各只读 1 次", async () => {
+    // The live cold start (2026-10-15) read session x4, conversations x3, participants x3,
+    // application-bindings x3 and one DM's first window x3, back to back within ~0.4 s.
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { items: [], events: [], tenantPrincipalId: "p", accessMode: "FULL" }));
+    const transport = createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead });
+    const client = createBffClient(transport);
+    for (let round = 0; round < 4; round += 1) {
+      await client.session();
+      if (round < 3) {
+        await client.conversations();
+        await client.conversationParticipants();
+        await client.applicationBindings(undefined, 0);
+        await client.conversationMessages("dm");
+        await client.workspaceActivity({ items: [{ workspaceId: "w", messageType: WebMessageType.Stream }] });
+      }
+    }
+    const paths = fetch.mock.calls.map(([path]) => String(path));
+    const reads = paths.filter((path) => !path.endsWith("/workspace-activity"));
+    expect(reads).toHaveLength(5);
+    expect(new Set(reads).size).toBe(5);
+  });
+
+  it("共享读取在写入、实时事件或窗口过期后重新读取；分页读与其他路径不共享", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => json(200, { items: [], events: [] }));
+      const transport = createFetchTransport({ fetch, onSessionEnded: () => {}, settleMs: SETTLED_READ_MS, settled: isSettledRead });
+      const client = createBffClient(transport);
+      const count = (path: string) => fetch.mock.calls.filter(([called]) => called === path).length;
+      await client.conversations(); await client.conversations();
+      expect(count("/api/v1/conversations")).toBe(1);
+      transport.invalidateReads();
+      await client.conversations();
+      expect(count("/api/v1/conversations")).toBe(2);
+      await client.logout();
+      await client.conversations();
+      expect(count("/api/v1/conversations")).toBe(3);
+      vi.setSystemTime(Date.now() + SETTLED_READ_MS);
+      await client.conversations();
+      expect(count("/api/v1/conversations")).toBe(4);
+      await client.workspaces(); await client.workspaces();
+      expect(count("/api/v1/workspaces")).toBe(2);
+      expect(isSettledRead("/api/v1/conversations/dm/messages")).toBe(true);
+      expect(isSettledRead("/api/v1/conversations/dm/messages?cursor=x")).toBe(false);
+      expect(isSettledRead("/api/v1/workspaces")).toBe(false);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("同一消息的作者资料按原版 60 秒窗口共用，只补读未缓存的事件；资料写入后重新读取", async () => {
+    const bodies: unknown[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (path, init) => {
+      if (!String(path).endsWith("/author-profiles")) return json(200, { eventId: "f".repeat(64), operationId: "op" });
+      const { eventIds } = JSON.parse(String(init?.body)) as { eventIds: string[] };
+      bodies.push(eventIds);
+      return json(200, { profiles: Object.fromEntries(eventIds.map((id) => [id, { pubkey: "b".repeat(64), avatarMediaPaths: {} }])) });
+    });
+    const client = createBffClient(createFetchTransport({ fetch, onSessionEnded: () => {} }));
+    const [one, two] = await Promise.all([
+      client.conversationMessageAuthorProfiles("dm", { eventIds: ["e1", "e2"] }),
+      client.conversationMessageAuthorProfiles("dm", { eventIds: ["e1", "e2"] }),
+    ]);
+    expect(Object.keys(one.profiles)).toEqual(["e1", "e2"]);
+    expect(two).toEqual(one);
+    expect(await client.conversationMessageAuthorProfile("dm", "e2")).toMatchObject({ pubkey: "b".repeat(64) });
+    await client.conversationMessageAuthorProfiles("dm", { eventIds: ["e1", "e3"] });
+    expect(bodies).toEqual([["e1", "e2"], ["e3"]]);
+    await client.updateProfile({ displayName: "new" } as Parameters<typeof client.updateProfile>[0]);
+    await client.conversationMessageAuthorProfiles("dm", { eventIds: ["e1"] });
+    expect(bodies.at(-1)).toEqual(["e1"]);
   });
 
   it("401 与 opaqueredirect 都是会话结束：先通知宿主再抛出", async () => {

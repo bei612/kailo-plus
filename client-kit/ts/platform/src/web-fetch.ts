@@ -17,7 +17,22 @@ export type FetchTransport = BffTransport & {
    * 媒体上传、带 Idempotency-Key 的发布）经它发出；它们在 Desktop 上不经 BFF。
    */
   exchange(path: string, init: RequestInit): Promise<BffReply>;
+  /** 丢弃所有共享读取（收到流事件、流中断或任何写入时）。 */
+  invalidateReads(): void;
 };
+
+/** Read-only POST queries: they neither write nor invalidate shared reads. */
+const READ_POSTS = /^\/api\/v1\/(?:(?:workspaces|conversations)\/[^/]+\/messages\/author-profiles|workspace-activity|inbox\/mentions|search\/messages|projects\/query|reminders\/source|pulse\/query)$/;
+
+/** Cold-start settle window: the shell, sidebars, Inbox and panes read these within ~0.4 s. */
+export const SETTLED_READ_MS = 2_000;
+
+/** Identity/directory reads and first message windows that several mounts read back to back.
+ * Paged or anchored message reads (any query string) are never shared. */
+export function isSettledRead(path: string): boolean {
+  return /^\/api\/v1\/(?:session|conversations|conversation-participants|application-bindings)(?:\?|$)/.test(path)
+    || /^\/api\/v1\/(?:conversations|workspaces)\/[^/?]+\/messages$/.test(path);
+}
 
 export type FetchTransportOptions = {
   /**
@@ -27,6 +42,10 @@ export type FetchTransportOptions = {
   onSessionEnded: () => void;
   /** 测试替身用；缺省即全局 fetch。 */
   fetch?: typeof fetch;
+  /** A successful read of a `settled` path answers identical reads for this many ms, unless a
+   * write, stream frame or interruption invalidated it first. Omitted: only in-flight sharing. */
+  settleMs?: number;
+  settled?: (path: string) => boolean;
 };
 
 export function createFetchTransport(options: FetchTransportOptions): FetchTransport {
@@ -34,21 +53,35 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
   // panes all read user-state/profile/session on mount) share one network read, and each
   // caller gets its own copy of the body. Any write clears the table first, so a read issued
   // after a write is never answered by a request that started before it.
+  // A settled path additionally keeps its successful answer for `settleMs`: the original
+  // client serves these from its query cache and live subscription; here any write, stream
+  // frame or interruption drops them, so a shared answer is never older than the last change
+  // this page could have observed.
   const reads = new Map<string, Promise<BffReply>>();
+  const settledReads = new Map<string, { at: number; reply: BffReply }>();
+  let generation = 0;
+  const invalidateReads = () => { generation += 1; reads.clear(); settledReads.clear(); };
+  const copy = (reply: BffReply): BffReply =>
+    ({ status: reply.status, body: reply.body === undefined ? undefined : structuredClone(reply.body) });
   const coalesced = async (path: string, init: RequestInit): Promise<BffReply> => {
-    if ((init.method ?? "GET").toUpperCase() !== "GET" || init.body !== undefined) {
-      reads.clear();
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method !== "GET" || init.body !== undefined) {
+      if (!(method === "POST" && READ_POSTS.test(path))) invalidateReads();
       return send(path, init);
     }
+    const settle = options.settleMs !== undefined && options.settleMs > 0 && options.settled?.(path) === true;
+    const hit = settle ? settledReads.get(path) : undefined;
+    if (hit && Date.now() - hit.at < options.settleMs!) return copy(hit.reply);
     let read = reads.get(path);
     if (!read) {
       read = send(path, init);
-      const current = read;
+      const current = read, started = generation, at = Date.now();
       reads.set(path, current);
-      void current.finally(() => { if (reads.get(path) === current) reads.delete(path); }).catch(() => undefined);
+      void current.then((reply) => {
+        if (settle && started === generation && reply.status >= 200 && reply.status < 300) settledReads.set(path, { at, reply });
+      }, () => undefined).finally(() => { if (reads.get(path) === current) reads.delete(path); });
     }
-    const reply = await read;
-    return { status: reply.status, body: reply.body === undefined ? undefined : structuredClone(reply.body) };
+    return copy(await read);
   };
   const send = async (path: string, init: RequestInit): Promise<BffReply> => {
     let response: Response;
@@ -78,6 +111,7 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
   const exchange = coalesced;
   return {
     exchange,
+    invalidateReads,
     send: (request: BffRequest) =>
       exchange(request.path, {
         method: request.method,

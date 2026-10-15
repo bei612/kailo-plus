@@ -57,6 +57,20 @@ beforeEach(()=>{setLocale("en");localStorage.clear();sessionStorage.clear();
   HTMLElement.prototype.scrollIntoView=vi.fn();
 });
 describe("original Inbox project read closure",()=>{
+  it("reads the directory and work items with one query per original view, not one per project",async()=>{
+    // Buzz 779af888 projectEnumeration.ts: project and repository announcements, then scoped
+    // tombstones; work items and their activity by repository coordinate batches.
+    const f=fixture();
+    for(let index=0;index<6;index+=1){
+      const hex=(index+16).toString(16),repo=`30617:${author}:repo-${index}`;
+      f.rows.push({id:`a${hex}`.repeat(32),kind:30617,pubkey:author,tags:[["d",`repo-${index}`],["name",`Repo ${index}`],["clone","https://example.test/repo.git"]],content:"",created_at:20},
+        {id:`b${hex}`.repeat(32),kind:30621,pubkey:author,tags:[["d",`project-${index}`],["name",`Project ${index}`],["a",repo]],content:"",created_at:20},
+        {id:`c${hex}`.repeat(32),kind:1621,pubkey:author,tags:[["a",repo],["subject",`Task ${index}`],["p",viewer]],content:"body",created_at:20});
+    }
+    const data=await loadProjectWorkItems(f.host,new AbortController().signal);
+    expect(data.projects).toHaveLength(7);
+    expect(f.query.mock.calls.map(([request])=>request.view)).toEqual(["PROJECTS","REPOSITORIES","DELETIONS","WORK_ITEMS","WORK_ITEM_ACTIVITY"]);
+  });
   async function repositoryPageFixture(tab="issues") {
     vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
     const f=fixture();const data=await loadProjectWorkItems(f.host,new AbortController().signal);

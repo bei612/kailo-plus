@@ -91,8 +91,9 @@ export function createBffClient(transport: BffTransport) {
   // write or governed action drops them so a read after a profile, membership or role change
   // is never answered from before it. Read-only POST queries keep the cache.
   const profiles = new Map<string, { at: number; read: Promise<WebProfileView> }>();
+  const authors = new Map<string, { at: number; read: Promise<WebMessageAuthorView["profiles"][string] | undefined> }>();
   const call = async <T>(request: BffRequest): Promise<T> => {
-    if (request.method !== "GET" && (request.path === "/api/v1/profile" || request.path.startsWith("/api/v1/actions"))) profiles.clear();
+    if (request.method !== "GET" && (request.path === "/api/v1/profile" || request.path.startsWith("/api/v1/actions"))) { profiles.clear(); authors.clear(); }
     return unwrap<T>(request, await transport.send(request));
   };
   const get = <T>(path: string) => call<T>({ method: "GET", path });
@@ -107,8 +108,31 @@ export function createBffClient(transport: BffTransport) {
     }
     return structuredClone(await entry.read);
   };
-  const messageAuthors = (kind:"workspaces"|"conversations", id:string, body:WebMessageAuthorQuery) =>
-    call<WebMessageAuthorView>({method:"POST",path:`/api/v1/${kind}/${encodeURIComponent(id)}/messages/author-profiles`,body});
+  // The author of an admitted message is the original per-pubkey user profile: same 60 s
+  // window, keyed by (scope, event), dropped with the profile cache. Only uncached events
+  // are asked for; the answer still carries exactly the requested event IDs.
+  const messageAuthors = async (kind:"workspaces"|"conversations", id:string, body:WebMessageAuthorQuery): Promise<WebMessageAuthorView> => {
+    const scope = `${kind}/${id}/`, now = Date.now();
+    const fresh = (eventId: string) => { const hit = authors.get(scope + eventId); return hit && now - hit.at < 60_000 ? hit : undefined; };
+    const missing = body.eventIds.filter((eventId) => !fresh(eventId));
+    if (missing.length > 0) {
+      const read = call<WebMessageAuthorView>({method:"POST",path:`/api/v1/${kind}/${encodeURIComponent(id)}/messages/author-profiles`,
+        body: missing.length === body.eventIds.length ? body : { ...body, eventIds: missing }});
+      for (const eventId of missing) {
+        const entry = { at: now, read: read.then((view) => view?.profiles?.[eventId]) };
+        authors.set(scope + eventId, entry);
+        entry.read.then((profile) => { if (profile === undefined && authors.get(scope + eventId) === entry) authors.delete(scope + eventId); },
+          () => { if (authors.get(scope + eventId) === entry) authors.delete(scope + eventId); });
+      }
+    }
+    const reads = body.eventIds.map((eventId) => [eventId, authors.get(scope + eventId)?.read] as const);
+    const profiles: WebMessageAuthorView["profiles"] = {};
+    for (const [eventId, read] of reads) {
+      const profile = await read;
+      if (profile !== undefined) profiles[eventId] = structuredClone(profile);
+    }
+    return { profiles };
+  };
   const singleMessageAuthor = async (kind:"workspaces"|"conversations",id:string,eventId:string) => {
     const view=await messageAuthors(kind,id,{eventIds:[eventId]});
     const profile=view.profiles[eventId];

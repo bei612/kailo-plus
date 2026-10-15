@@ -28,7 +28,7 @@ import { hiddenConversationChannels, type ConversationVisibilityHost } from "@cl
 import { newIdempotencyKey } from "@client-kit/platform/governance";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 import { type BffRequest, unwrap } from "@client-kit/platform/transport";
-import { createFetchTransport } from "@client-kit/platform/web-fetch";
+import { createFetchTransport, isSettledRead, SETTLED_READ_MS } from "@client-kit/platform/web-fetch";
 
 export { BffError } from "@client-kit/platform/transport";
 
@@ -42,6 +42,8 @@ const transport = createFetchTransport({
     returningToLogin = true;
     window.location.assign(window.location.href);
   },
+  settleMs: SETTLED_READ_MS,
+  settled: isSettledRead,
 });
 
 export const bff = createBffClient(transport);
@@ -334,6 +336,7 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
       // EventSource cannot expose an HTTP status or stop a cross-origin
       // redirect itself. Probe through the existing manual-redirect transport
       // before permitting another subscription or top-level login.
+      transport.invalidateReads();
       await bff.session();
     } catch (error) {
       if (stopped) return;
@@ -374,6 +377,9 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("event", (e) => {
       if (stopped || source !== es) return;
+      // A live change (or a closed/interrupted stream) ends every shared settled read; the
+      // initial snapshot is the same state the shared reads already describe.
+      transport.invalidateReads();
       onFrame({
         type: "event",
         event: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent,
@@ -385,6 +391,7 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("closed", (e) => {
       if (stopped || source !== es) return;
+      transport.invalidateReads();
       const reason = (e as MessageEvent<string>).data;
       if (
         reason === "session-revoked" ||
@@ -400,6 +407,7 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("error", () => {
       if (stopped || source !== es) return;
+      transport.invalidateReads();
       // Even CONNECTING would otherwise retry without observing an expired
       // browser session, repeatedly creating OIDC transactions on HTTP origins.
       es.close();
