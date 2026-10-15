@@ -2854,6 +2854,8 @@ export const platformMessages = {
   "actions.conversation.message.publish": { en: "Publish direct message", "zh-CN": "发布私聊消息" },
   "actions.pulse.publish": { en: "Publish note", "zh-CN": "发布动态" },
   "actions.identity.profile.publish": { en: "Update profile", "zh-CN": "更新个人资料" },
+  "actions.identity.client-key.register": { en: "Register device key", "zh-CN": "登记设备公钥" },
+  "actions.tenant.bootstrap": { en: "Bootstrap organization", "zh-CN": "初始化组织" },
   "actions.tenant.suspend": { en: "Suspend organization", "zh-CN": "暂停组织" },
   "actions.tenant.restore": { en: "Restore organization", "zh-CN": "恢复组织" },
   "actions.tenant.delete": { en: "Delete organization", "zh-CN": "删除组织" },
