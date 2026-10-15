@@ -201,7 +201,7 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 |---|---|---|
 | Agent 列表 | Tenant Agent、owner、published version、Workspace 安装数、状态 | `discover` |
 | Definition | identity、instructions、RuntimeProfile、版本历史、publish/retire | `read/update/manage` |
-| Installation | Workspace、exact version、AgentPrincipal、Channel trigger、runtime state | Installation Resource `read/manage` |
+| Installation | Workspace、exact version、AgentPrincipal、Channel trigger、runtime state；成员使用权（`05` §2.10 的授予/撤销，逐成员显示是否已授予与是否已生效） | Installation Resource `read/manage`；使用权变更需 `share` |
 | Capabilities | model、skills、tools、Resources 的 requested/effective/source/reason 矩阵 | `read`；敏感 evidence 需 `audit` |
 | Delegation & Approval | 谁可委托什么、有效期/次数、等待中的审批 | `delegate/approve` |
 | Operations & Usage | Invocation/Workflow、tool/model/native refs、token/cost、Quota/Capacity | `read/audit` 与 ResultExposurePolicy |
