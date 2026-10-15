@@ -2050,6 +2050,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.agent_session set status='CLOSED' where tenant_id=$1 and status<>'CLOSED'",
         "update catalog.automation_definition set state='DISABLED',pinned_version_asset_id=null,version=version+1 where state<>'DELETED' and resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.automation_version set state='RETIRED' where automation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'RETIRED'",
+        // DD-116: the untrusted webhook bodies go; the delivery facts stay as history.
+        "update catalog.automation_webhook_delivery set payload=null where tenant_id=$1 and payload is not null",
         "update catalog.agent_definition set status='DELETED',current_published_version_asset_id=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.agent_version set state='RETIRED' where asset_id in (select id from catalog.asset where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",

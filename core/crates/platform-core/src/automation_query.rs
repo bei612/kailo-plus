@@ -579,12 +579,15 @@ struct AutomationRow {
     pinned_asset_state: Option<String>,
     pinned_projection: Option<Uuid>,
     pinned_action: Option<Value>,
+    webhook_active: bool,
+    webhook_secret_hint: Option<String>,
 }
 const ROW:&str="select r.id resource_id,d.workspace_id,r.owner_principal_id,r.version resource_version,
     d.created_at,greatest(d.updated_at,(select max(v.updated_at) from catalog.automation_version v
         where v.automation_resource_id=d.resource_id)) updated_at,
     r.state resource_state,d.state,d.executor_installation_resource_id,d.pinned_version_asset_id,d.delegation_id,
-    pin.state pinned_version_state,asset.state pinned_asset_state,asset.projection_action_execution_id pinned_projection,pin.action pinned_action
+    pin.state pinned_version_state,asset.state pinned_asset_state,asset.projection_action_execution_id pinned_projection,pin.action pinned_action,
+    coalesce(d.webhook_secret_ref is not null and pin.trigger->>'kind'='WEBHOOK',false) webhook_active,d.webhook_secret_hint
     from catalog.resource r join catalog.automation_definition d on d.resource_id=r.id
     join catalog.resource_type_definition kind on kind.type_key=r.type_key and kind.status='ACTIVE'
       and kind.tenant_delete_action_key='tenant.delete'
@@ -696,15 +699,22 @@ async fn view(
     if !matched {
         return Err(unavailable());
     }
-    serde_json::from_value(
-        json!({"resourceId":row.resource_id,"workspaceId":row.workspace_id,
+    let mut view = json!({"resourceId":row.resource_id,"workspaceId":row.workspace_id,
         "ownerPrincipalId":row.owner_principal_id,"resourceVersion":row.resource_version,
         "createdAt":row.created_at,"updatedAt":row.updated_at,
         "resourceState":row.resource_state,"state":row.state,
         "executorInstallationResourceId":row.executor_installation_resource_id,
-        "pinnedVersionAssetId":row.pinned_version_asset_id,"delegationId":row.delegation_id}),
-    )
-    .map_err(|_| unavailable())
+        "pinnedVersionAssetId":row.pinned_version_asset_id,"delegationId":row.delegation_id});
+    // DD-116: only the URL and the four-character hint of an ACTIVE key are readable.
+    if row.webhook_active {
+        if let Some(hint) = row.webhook_secret_hint.as_deref() {
+            view["webhookSecretHint"] = json!(hint);
+        }
+        if let Some(url) = crate::automation::webhook::url_for(row.resource_id) {
+            view["webhookUrl"] = json!(url);
+        }
+    }
+    serde_json::from_value(view).map_err(|_| unavailable())
 }
 
 pub async fn list(

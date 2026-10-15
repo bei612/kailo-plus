@@ -25,6 +25,7 @@ pub(crate) mod step_approval;
 pub(crate) mod steps;
 pub(crate) mod trigger_condition;
 mod webhook_secret;
+pub(crate) mod webhook;
 pub(crate) mod webhook_step;
 pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
@@ -308,6 +309,21 @@ async fn webhook_management(
     Ok(())
 }
 
+/// A webhook carries no Relay message: no reaction target or Agent turn input.
+fn webhook_action(action: &Value) -> bool {
+    action["kind"]
+        .as_str()
+        .is_some_and(|kind| steps::is_native_kind(kind) && kind != "ADD_REACTION_STEPS")
+}
+
+/// Schedule and webhook runs have no trigger thread; they reply in the Channel.
+fn result_target(kind: Option<&Value>) -> &'static str {
+    match kind.and_then(Value::as_str) {
+        Some("SCHEDULE" | "WEBHOOK") => "CHANNEL",
+        _ => "TRIGGER_THREAD",
+    }
+}
+
 fn invalid_management() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
@@ -430,19 +446,20 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
             schedule::spec(spec)?;
             native_trigger["schedule_spec"] = spec.clone();
         }
+        // DD-116, fixed Buzz TriggerDef::Webhook: no message filter or emoji; it
+        // carries no Relay message, so a reaction or an Agent turn has no source.
+        Some("WEBHOOK")
+            if !trigger.contains_key("textPrefix")
+                && !trigger.contains_key("filter")
+                && !trigger.contains_key("mentionPrincipalId")
+                && !trigger.contains_key("scheduleSpec")
+                && webhook_action(&native_action) => {}
         _ => return Err(invalid_management()),
     }
     let result = value
         .get("resultTarget")
         .and_then(Value::as_str)
-        .filter(|result| {
-            *result
-                == if trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
-                    "CHANNEL"
-                } else {
-                    "TRIGGER_THREAD"
-                }
-        })
+        .filter(|result| *result == result_target(trigger.get("kind")))
         .ok_or_else(invalid_management)?;
     let step_policy = steps::approval(&native_action).map(|step| &step["approvalPolicy"]);
     if step_policy.is_some() && value.get("approvalPolicy").is_some() {
@@ -929,6 +946,12 @@ pub(crate) async fn management_prewrite(
                 &version.content["action"],
             )
             .await?;
+            // DD-116 (6): without the public webhook listener there is no URL to hand out.
+            if version.content.pointer("/trigger/kind").and_then(Value::as_str) == Some("WEBHOOK")
+                && webhook::public_base().is_none()
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
             management_grant(g, tx, &row, p).await?;
             let schedule_id = (version
                 .content
@@ -1761,14 +1784,16 @@ async fn fresh(
     if !steps::supported(&row.action)
         || !matches!(
             row.trigger.get("kind").and_then(Value::as_str),
-            Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE" | "DIFF_POSTED" | "REACTION_ADDED")
+            Some(
+                "CHANNEL_MESSAGE"
+                    | "MENTION"
+                    | "SCHEDULE"
+                    | "DIFF_POSTED"
+                    | "REACTION_ADDED"
+                    | "WEBHOOK"
+            )
         )
-        || row.result_target
-            != if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
-                "CHANNEL"
-            } else {
-                "TRIGGER_THREAD"
-            }
+        || row.result_target != result_target(row.trigger.get("kind"))
         || row.config_hash
             != collab_bridge::limits::canonical_digest(&version_content(
                 row.trigger.clone(),
@@ -2103,6 +2128,19 @@ async fn recheck_invocation(
     }
     if frozen.source_kind == "MANUAL" {
         if !manual::frozen_source(&ae, &frozen.source_event_id, &frozen.root_event_id) {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        manual::fresh_owner(
+            g,
+            tx,
+            row.tenant_id,
+            row.workspace_id,
+            row.resource_id,
+            row.owner_principal_id,
+        )
+        .await?;
+    } else if frozen.source_kind == "WEBHOOK" {
+        if !webhook::frozen_source(&ae, &frozen.source_event_id, &frozen.root_event_id) {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         manual::fresh_owner(
@@ -2864,6 +2902,8 @@ enum AdmissionSource<'a> {
         &'a crate::bff::ExecutionContext,
         &'a contracts::ActionCommand,
     ),
+    /// DD-116: a verified, first-seen webhook delivery ID.
+    Webhook(&'a str),
 }
 
 async fn admit_source(
@@ -2903,6 +2943,16 @@ async fn admit_source(
                 source,
                 "MANUAL",
                 ctx.tenant_principal_id,
+            )
+        }
+        AdmissionSource::Webhook(delivery) => {
+            let source = webhook::source(snapshot.resource_id, delivery);
+            (
+                webhook::idempotency(snapshot.resource_id, delivery),
+                source.clone(),
+                source,
+                "WEBHOOK",
+                snapshot.owner_principal_id,
             )
         }
     };
@@ -3003,6 +3053,11 @@ async fn admit_source(
             parameters["sourceKind"] = json!(source_kind);
             parameters["manualRequest"] = manual::request(command)?;
         }
+        AdmissionSource::Webhook(delivery) => {
+            // DD-116: the body stays in the delivery record, not in the AE.
+            parameters["sourceKind"] = json!(source_kind);
+            parameters["webhookDeliveryId"] = json!(delivery);
+        }
     }
     conditions.freeze(&mut parameters);
     let ae = governance::open_automation_execution(
@@ -3041,7 +3096,7 @@ async fn admit_source(
                 )
                 .await?
             }
-            AdmissionSource::Manual(_, _) => {
+            AdmissionSource::Manual(_, _) | AdmissionSource::Webhook(_) => {
                 manual::fresh_owner(
                     &state.governance,
                     &mut tx,
@@ -3057,7 +3112,7 @@ async fn admit_source(
         fresh(&state.governance, &mut tx, &row, def, None).await
     }
     .await;
-    if source_kind == "MANUAL" {
+    if matches!(source_kind, "MANUAL" | "WEBHOOK") {
         if let Err(Refusal::Unavailable(message)) = &result {
             // No invocation/native run has been started: roll back the unknown
             // admission, so the same client key may recheck instead of leaving
@@ -3083,12 +3138,12 @@ async fn admit_source(
             Ok(ae.id)
         };
     }
-    let invocation = if source_kind == "MANUAL" {
+    let invocation = if matches!(source_kind, "MANUAL" | "WEBHOOK") {
         Uuid::new_v5(&row.resource_id, source.as_bytes())
     } else {
         Uuid::new_v4()
     };
-    let workflow = if source_kind == "MANUAL" {
+    let workflow = if matches!(source_kind, "MANUAL" | "WEBHOOK") {
         manual::workflow(row.tenant_id, row.resource_id, &source)
     } else {
         crate::component_task::workflow_id(

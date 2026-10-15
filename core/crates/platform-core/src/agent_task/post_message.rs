@@ -284,6 +284,12 @@ pub(super) async fn trigger_context(
         }
         // A governed manual run has no fabricated Relay author or message.
         "MANUAL" => {}
+        // DD-116: the original webhook_fields of this run's verified delivery.
+        "WEBHOOK" => {
+            let ae = invocation.action_execution_id;
+            context.webhook_fields =
+                crate::automation::webhook::trigger_fields(&state.pool, ae).await?;
+        }
         _ => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
     }
     Ok(context)
@@ -666,7 +672,7 @@ async fn publish(
             &binding.channel_id.to_string(),
             &content,
             reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
                 .then_some(invocation.id),
             timestamp,
         )

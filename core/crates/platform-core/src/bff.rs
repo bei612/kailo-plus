@@ -306,6 +306,11 @@ impl ExposedRoute for Router<BffState> {
 pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        // DD-116: AgentGateway's public listener; the signature is the only credential.
+        .exposed_route(
+            "/hooks/{resource_id}",
+            axum::routing::post(crate::automation::webhook::receive),
+        )
         .exposed_route("/api/v1/session", get(current_session))
         .exposed_route(
             "/api/v1/search/messages",

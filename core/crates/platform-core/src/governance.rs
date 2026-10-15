@@ -3456,6 +3456,8 @@ impl Execution {
             invitation: None,
             protocol_session_id: None,
             document_launch: None,
+            // Same rule for a webhook key (DD-116): only the creating response.
+            webhook_secret: None,
         }
     }
 }
@@ -4618,6 +4620,7 @@ impl Governance {
         let (status, mut submission) = submission_result(&ae)?;
         // 明文凭据只在这里出现一次：它已随签发同事务落成摘要，之后再无来源
         submission.invitation = issued.map(|i| i.into_contract(&self.cfg.invitation_link_base));
+        submission.webhook_secret = crate::automation::webhook::reveal(self, &ae).await;
         Ok((status, submission))
     }
 

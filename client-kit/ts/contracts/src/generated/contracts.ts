@@ -1365,6 +1365,7 @@ export enum AutomationTriggerKind {
     Mention = "MENTION",
     ReactionAdded = "REACTION_ADDED",
     Schedule = "SCHEDULE",
+    Webhook = "WEBHOOK",
 }
 
 /**
@@ -1686,7 +1687,9 @@ export enum WorkspaceVisibility {
 
 /**
  * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
- * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+ * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+ * 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+ * automation.rotate_webhook_secret 首次回应中出现（DD-116）。
  */
 export interface ActionSubmission {
     actionExecutionId:   string;
@@ -1699,6 +1702,7 @@ export interface ActionSubmission {
     operationId:         string;
     protocolSessionId?:  string;
     reason?:             ReasonCode;
+    webhookSecret?:      WebhookSecretClass;
     workflowId?:         string;
 }
 
@@ -1799,6 +1803,24 @@ export enum ReasonCode {
     TenantNotActive = "TENANT_NOT_ACTIVE",
     TenantSelectionNotAvailable = "TENANT_SELECTION_NOT_AVAILABLE",
     WaitingApproval = "WAITING_APPROVAL",
+}
+
+/**
+ * DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+ * AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+ * `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+ */
+export interface WebhookSecretClass {
+    automationResourceId: string;
+    hint:                 string;
+    /**
+     * 32 字节随机密钥的 base64 展示形式。
+     */
+    secret: string;
+    /**
+     * 公开投递地址；部署未配置公开基址时省略。
+     */
+    url?: string;
 }
 
 /**
@@ -2850,7 +2872,15 @@ export interface AutomationElement {
      * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
      * UUID、审计投递时间或浏览器时钟推测。
      */
-    updatedAt?:  string;
+    updatedAt?: string;
+    /**
+     * 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+     */
+    webhookSecretHint?: string;
+    /**
+     * WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+     */
+    webhookUrl?: string;
     workspaceId: string;
 }
 
@@ -3111,8 +3141,34 @@ export interface AutomationView {
      * RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
      * UUID、审计投递时间或浏览器时钟推测。
      */
-    updatedAt?:  string;
+    updatedAt?: string;
+    /**
+     * 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+     */
+    webhookSecretHint?: string;
+    /**
+     * WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+     */
+    webhookUrl?: string;
     workspaceId: string;
+}
+
+/**
+ * DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+ * AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+ * `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+ */
+export interface AutomationWebhookSecret {
+    automationResourceId: string;
+    hint:                 string;
+    /**
+     * 32 字节随机密钥的 base64 展示形式。
+     */
+    secret: string;
+    /**
+     * 公开投递地址；部署未配置公开基址时省略。
+     */
+    url?: string;
 }
 
 /**
@@ -4305,7 +4361,9 @@ export interface ReadAdmission {
 
 /**
  * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
- * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+ * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+ * 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+ * automation.rotate_webhook_secret 首次回应中出现（DD-116）。
  */
 export interface SubmissionClass {
     actionExecutionId:   string;
@@ -4318,6 +4376,7 @@ export interface SubmissionClass {
     operationId:         string;
     protocolSessionId?:  string;
     reason?:             ReasonCode;
+    webhookSecret?:      WebhookSecretClass;
     workflowId?:         string;
 }
 

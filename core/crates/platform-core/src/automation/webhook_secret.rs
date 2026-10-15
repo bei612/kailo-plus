@@ -209,8 +209,12 @@ async fn advance(g: &Governance, id: Uuid, def: &Definition) -> Result<bool, Ref
     if !intent["oldRef"].is_null() {
         intent["oldStatus"] = json!("SUPERSEDED");
     }
-    sqlx::query("update catalog.automation_definition set webhook_secret_ref=$2,version=version+1 where resource_id=$1")
-        .bind(row.id).bind(&intent["newRef"]).execute(&mut *tx).await?;
+    // DD-116 (5): only the trailing four characters of the display form remain visible.
+    let hint = super::webhook::display(value.expose())
+        .map(|secret| super::webhook::hint(&secret))
+        .ok_or_else(unavailable)?;
+    sqlx::query("update catalog.automation_definition set webhook_secret_ref=$2,webhook_secret_hint=$3,version=version+1 where resource_id=$1")
+        .bind(row.id).bind(&intent["newRef"]).bind(hint).execute(&mut *tx).await?;
     persist(&mut tx, id, &intent).await?;
     tx.commit().await?;
     Ok(true)
@@ -262,7 +266,7 @@ async fn finish(
             sqlx::query(
                 "update catalog.automation_definition set state=$2,
                 pinned_version_asset_id=$3,delegation_id=$4,webhook_secret_ref=$5,
-                enabled_at=$6,schedule_id=$7,version=version+1 where resource_id=$1",
+                enabled_at=$6,schedule_id=$7,webhook_secret_hint=$8,version=version+1 where resource_id=$1",
             )
             .bind(row.id)
             .bind(previous["state"].as_str().ok_or_else(invalid_management)?)
@@ -286,6 +290,7 @@ async fn finish(
                     .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok()),
             )
             .bind(previous["schedule_id"].as_str())
+            .bind(previous["webhook_secret_hint"].as_str())
             .execute(&mut *tx)
             .await?;
         }
@@ -335,7 +340,7 @@ async fn finish(
             intent["oldStatus"] = json!("REVOKED");
         }
         if new_ref.is_none() {
-            sqlx::query("update catalog.automation_definition set webhook_secret_ref=null,version=version+1 where resource_id=$1")
+            sqlx::query("update catalog.automation_definition set webhook_secret_ref=null,webhook_secret_hint=null,version=version+1 where resource_id=$1")
                 .bind(row.id).execute(&mut *tx).await?;
         }
     }

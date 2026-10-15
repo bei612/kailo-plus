@@ -2228,7 +2228,7 @@ async fn lock_reply(
 fn result_channel(source: &str, automation: bool, agent_channel: bool) -> Option<bool> {
     match (automation, source) {
         (true, "BUZZ_EVENT") => Some(false),
-        (true, "SCHEDULE" | "MANUAL") => Some(true),
+        (true, "SCHEDULE" | "MANUAL" | "WEBHOOK") => Some(true),
         (false, "BUZZ_EVENT") if !agent_channel => Some(false),
         _ => None,
     }
@@ -2572,7 +2572,7 @@ fn sign_native_reply(
             channel_id,
             text,
             reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
                 .then_some(invocation.id),
             nostr::Timestamp::now().as_secs(),
         )
@@ -3035,7 +3035,7 @@ async fn reconcile_reply(
                 &intent.agent_pubkey,
                 &intent.channel_id.to_string(),
                 reply_ancestry(invocation),
-                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL" | "WEBHOOK")
                     .then_some(invocation.id),
             )
             .await

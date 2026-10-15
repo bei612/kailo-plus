@@ -250,6 +250,9 @@
 //    automationView, err := UnmarshalAutomationView(bytes)
 //    bytes, err = automationView.Marshal()
 //
+//    automationWebhookSecret, err := UnmarshalAutomationWebhookSecret(bytes)
+//    bytes, err = automationWebhookSecret.Marshal()
+//
 //    businessOperationPage, err := UnmarshalBusinessOperationPage(bytes)
 //    bytes, err = businessOperationPage.Marshal()
 //
@@ -1563,6 +1566,16 @@ func UnmarshalAutomationView(data []byte) (AutomationView, error) {
 }
 
 func (r *AutomationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationWebhookSecret(data []byte) (AutomationWebhookSecret, error) {
+	var r AutomationWebhookSecret
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationWebhookSecret) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4235,7 +4248,9 @@ type WorkspaceChannelClass struct {
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 type ActionSubmission struct {
 	ActionExecutionID  string                 `json:"actionExecutionId"`
 	ActionKey          string                 `json:"actionKey"`
@@ -4247,6 +4262,7 @@ type ActionSubmission struct {
 	OperationID        string                 `json:"operationId"`
 	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
 	Reason             *ReasonCode            `json:"reason,omitempty"`
+	WebhookSecret      *WebhookSecretClass    `json:"webhookSecret,omitempty"`
 	WorkflowID         *string                `json:"workflowId,omitempty"`
 }
 
@@ -4258,6 +4274,18 @@ type InvitationClass struct {
 	InvitationID string `json:"invitationId"`
 	// 部署登记的链接基址 + '#' + 一次性凭据
 	Link string `json:"link"`
+}
+
+// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+type WebhookSecretClass struct {
+	AutomationResourceID string `json:"automationResourceId"`
+	Hint                 string `json:"hint"`
+	// 32 字节随机密钥的 base64 展示形式。
+	Secret string `json:"secret"`
+	// 公开投递地址；部署未配置公开基址时省略。
+	URL *string `json:"url,omitempty"`
 }
 
 // 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
@@ -4932,7 +4960,11 @@ type AutomationElement struct {
 	State                          AutomationState `json:"state"`
 	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
 	// UUID、审计投递时间或浏览器时钟推测。
-	UpdatedAt   *string `json:"updatedAt,omitempty"`
+	UpdatedAt *string `json:"updatedAt,omitempty"`
+	// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+	WebhookSecretHint *string `json:"webhookSecretHint,omitempty"`
+	// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+	WebhookURL  *string `json:"webhookUrl,omitempty"`
 	WorkspaceID string  `json:"workspaceId"`
 }
 
@@ -5080,8 +5112,24 @@ type AutomationView struct {
 	State                          AutomationState `json:"state"`
 	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
 	// UUID、审计投递时间或浏览器时钟推测。
-	UpdatedAt   *string `json:"updatedAt,omitempty"`
+	UpdatedAt *string `json:"updatedAt,omitempty"`
+	// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+	WebhookSecretHint *string `json:"webhookSecretHint,omitempty"`
+	// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+	WebhookURL  *string `json:"webhookUrl,omitempty"`
 	WorkspaceID string  `json:"workspaceId"`
+}
+
+// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+type AutomationWebhookSecret struct {
+	AutomationResourceID string `json:"automationResourceId"`
+	Hint                 string `json:"hint"`
+	// 32 字节随机密钥的 base64 展示形式。
+	Secret string `json:"secret"`
+	// 公开投递地址；部署未配置公开基址时省略。
+	URL *string `json:"url,omitempty"`
 }
 
 // GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
@@ -5837,7 +5885,9 @@ type ReadAdmission struct {
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 type SubmissionClass struct {
 	ActionExecutionID  string                 `json:"actionExecutionId"`
 	ActionKey          string                 `json:"actionKey"`
@@ -5849,6 +5899,7 @@ type SubmissionClass struct {
 	OperationID        string                 `json:"operationId"`
 	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
 	Reason             *ReasonCode            `json:"reason,omitempty"`
+	WebhookSecret      *WebhookSecretClass    `json:"webhookSecret,omitempty"`
 	WorkflowID         *string                `json:"workflowId,omitempty"`
 }
 
@@ -8200,6 +8251,7 @@ const (
 	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
 	DiffPosted                    AutomationTriggerKind = "DIFF_POSTED"
 	ReactionAdded                 AutomationTriggerKind = "REACTION_ADDED"
+	Webhook                       AutomationTriggerKind = "WEBHOOK"
 )
 
 // 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。

@@ -1892,6 +1892,8 @@ pub enum AutomationTriggerKind {
     ReactionAdded,
 
     Schedule,
+
+    Webhook,
 }
 
 /// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
@@ -2325,7 +2327,9 @@ pub enum WorkspaceVisibility {
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+/// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+/// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSubmission {
@@ -2353,6 +2357,9 @@ pub struct ActionSubmission {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<WebhookSecretClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
@@ -2562,6 +2569,24 @@ pub enum ReasonCode {
 
     #[serde(rename = "WAITING_APPROVAL")]
     WaitingApproval,
+}
+
+/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookSecretClass {
+    pub automation_resource_id: String,
+
+    pub hint: String,
+
+    /// 32 字节随机密钥的 base64 展示形式。
+    pub secret: String,
+
+    /// 公开投递地址；部署未配置公开基址时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
@@ -4169,6 +4194,14 @@ pub struct AutomationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 
+    /// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret_hint: Option<String>,
+
+    /// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+
     pub workspace_id: String,
 }
 
@@ -4553,7 +4586,33 @@ pub struct AutomationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 
+    /// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret_hint: Option<String>,
+
+    /// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+
     pub workspace_id: String,
+}
+
+/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationWebhookSecret {
+    pub automation_resource_id: String,
+
+    pub hint: String,
+
+    /// 32 字节随机密钥的 base64 展示形式。
+    pub secret: String,
+
+    /// 公开投递地址；部署未配置公开基址时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
@@ -6187,7 +6246,9 @@ pub struct ReadAdmission {
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+/// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+/// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmissionClass {
@@ -6215,6 +6276,9 @@ pub struct SubmissionClass {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<WebhookSecretClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,

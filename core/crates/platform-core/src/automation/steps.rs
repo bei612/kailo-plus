@@ -58,8 +58,10 @@ pub(crate) fn duration_seconds(value: &str) -> Option<i64> {
     (!value.is_empty() && total <= i64::MAX / 1_000_000_000).then_some(total)
 }
 
-/// Original Step.if, limited to the trigger variables Kailo freezes at admission.
-/// A step-output reference cannot be evaluated before any effect and is blocked.
+/// Original Step.if, limited to the trigger variables Kailo freezes at admission:
+/// the standard ones and, for a webhook, the original `trigger_<field>` body
+/// fields (DD-116). A step-output reference cannot be evaluated before any
+/// effect and is blocked.
 fn condition(step: &Value) -> Result<(), Refusal> {
     let Some(expression) = step.get("if") else {
         return Ok(());
@@ -69,6 +71,7 @@ fn condition(step: &Value) -> Result<(), Refusal> {
         .map_err(|_| invalid_management())?;
     if variables.iter().any(|variable| {
         !collab_bridge::workflow_condition::TRIGGER_VARIABLES.contains(&variable.as_str())
+            && !variable.starts_with("trigger_")
     }) {
         return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
     }
@@ -769,6 +772,8 @@ mod tests {
             r#"str_contains(trigger_text, "deploy")"#,
             "trigger_is_reply == false",
             r#"trigger_author == "aa" && str_len(trigger_emoji) > 0"#,
+            // Original webhook body field, registered as trigger_<field> (DD-116).
+            r#"trigger_service == "api""#,
             "true",
         ] {
             assert!(action(&message(accepted)).is_ok(), "{accepted}");

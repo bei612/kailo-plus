@@ -83,6 +83,7 @@
 //     final automationRunView = automationRunViewFromJson(jsonString);
 //     final automationVersionView = automationVersionViewFromJson(jsonString);
 //     final automationView = automationViewFromJson(jsonString);
+//     final automationWebhookSecret = automationWebhookSecretFromJson(jsonString);
 //     final businessOperationPage = businessOperationPageFromJson(jsonString);
 //     final businessOperationPhaseCount = businessOperationPhaseCountFromJson(jsonString);
 //     final businessOperationSummary = businessOperationSummaryFromJson(jsonString);
@@ -764,6 +765,12 @@ AutomationView automationViewFromJson(String str) =>
     AutomationView.fromJson(json.decode(str));
 
 String automationViewToJson(AutomationView data) => json.encode(data.toJson());
+
+AutomationWebhookSecret automationWebhookSecretFromJson(String str) =>
+    AutomationWebhookSecret.fromJson(json.decode(str));
+
+String automationWebhookSecretToJson(AutomationWebhookSecret data) =>
+    json.encode(data.toJson());
 
 BusinessOperationPage businessOperationPageFromJson(String str) =>
     BusinessOperationPage.fromJson(json.decode(str));
@@ -5115,6 +5122,7 @@ enum AutomationTriggerKind {
   MENTION,
   REACTION_ADDED,
   SCHEDULE,
+  WEBHOOK,
 }
 
 final automationTriggerKindValues = EnumValues({
@@ -5123,6 +5131,7 @@ final automationTriggerKindValues = EnumValues({
   "MENTION": AutomationTriggerKind.MENTION,
   "REACTION_ADDED": AutomationTriggerKind.REACTION_ADDED,
   "SCHEDULE": AutomationTriggerKind.SCHEDULE,
+  "WEBHOOK": AutomationTriggerKind.WEBHOOK,
 });
 
 ///Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
@@ -5900,7 +5909,9 @@ final workspaceVisibilityValues = EnumValues({
 });
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+///的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+///automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 class ActionSubmission {
   final String actionExecutionId;
   final String actionKey;
@@ -5912,6 +5923,7 @@ class ActionSubmission {
   final String operationId;
   final String? protocolSessionId;
   final ReasonCode? reason;
+  final WebhookSecretClass? webhookSecret;
   final String? workflowId;
 
   ActionSubmission({
@@ -5925,6 +5937,7 @@ class ActionSubmission {
     required this.operationId,
     this.protocolSessionId,
     this.reason,
+    this.webhookSecret,
     this.workflowId,
   });
 
@@ -5946,6 +5959,9 @@ class ActionSubmission {
         reason: json["reason"] == null
             ? null
             : reasonCodeValues.map[json["reason"]]!,
+        webhookSecret: json["webhookSecret"] == null
+            ? null
+            : WebhookSecretClass.fromJson(json["webhookSecret"]),
         workflowId: json["workflowId"],
       );
 
@@ -5960,6 +5976,7 @@ class ActionSubmission {
     "operationId": operationId,
     "protocolSessionId": protocolSessionId,
     "reason": reasonCodeValues.reverse[reason],
+    "webhookSecret": webhookSecret?.toJson(),
     "workflowId": workflowId,
   });
 }
@@ -6125,6 +6142,42 @@ final reasonCodeValues = EnumValues({
   "TENANT_SELECTION_NOT_AVAILABLE": ReasonCode.TENANT_SELECTION_NOT_AVAILABLE,
   "WAITING_APPROVAL": ReasonCode.WAITING_APPROVAL,
 });
+
+///DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+///AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+///`{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+class WebhookSecretClass {
+  final String automationResourceId;
+  final String hint;
+
+  ///32 字节随机密钥的 base64 展示形式。
+  final String secret;
+
+  ///公开投递地址；部署未配置公开基址时省略。
+  final String? url;
+
+  WebhookSecretClass({
+    required this.automationResourceId,
+    required this.hint,
+    required this.secret,
+    this.url,
+  });
+
+  factory WebhookSecretClass.fromJson(Map<String, dynamic> json) =>
+      WebhookSecretClass(
+        automationResourceId: json["automationResourceId"],
+        hint: json["hint"],
+        secret: json["secret"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "hint": hint,
+    "secret": secret,
+    "url": url,
+  });
+}
 
 ///同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 class AgentDefinitionPage {
@@ -8952,6 +9005,12 @@ class AutomationElement {
   ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
   ///UUID、审计投递时间或浏览器时钟推测。
   final String? updatedAt;
+
+  ///当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+  final String? webhookSecretHint;
+
+  ///WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+  final String? webhookUrl;
   final String workspaceId;
 
   AutomationElement({
@@ -8965,6 +9024,8 @@ class AutomationElement {
     required this.resourceVersion,
     required this.state,
     this.updatedAt,
+    this.webhookSecretHint,
+    this.webhookUrl,
     required this.workspaceId,
   });
 
@@ -8980,6 +9041,8 @@ class AutomationElement {
         resourceVersion: json["resourceVersion"],
         state: automationStateValues.map[json["state"]]!,
         updatedAt: json["updatedAt"],
+        webhookSecretHint: json["webhookSecretHint"],
+        webhookUrl: json["webhookUrl"],
         workspaceId: json["workspaceId"],
       );
 
@@ -8994,6 +9057,8 @@ class AutomationElement {
     "resourceVersion": resourceVersion,
     "state": automationStateValues.reverse[state],
     "updatedAt": updatedAt,
+    "webhookSecretHint": webhookSecretHint,
+    "webhookUrl": webhookUrl,
     "workspaceId": workspaceId,
   });
 }
@@ -9595,6 +9660,12 @@ class AutomationView {
   ///RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
   ///UUID、审计投递时间或浏览器时钟推测。
   final String? updatedAt;
+
+  ///当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
+  final String? webhookSecretHint;
+
+  ///WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
+  final String? webhookUrl;
   final String workspaceId;
 
   AutomationView({
@@ -9608,6 +9679,8 @@ class AutomationView {
     required this.resourceVersion,
     required this.state,
     this.updatedAt,
+    this.webhookSecretHint,
+    this.webhookUrl,
     required this.workspaceId,
   });
 
@@ -9622,6 +9695,8 @@ class AutomationView {
     resourceVersion: json["resourceVersion"],
     state: automationStateValues.map[json["state"]]!,
     updatedAt: json["updatedAt"],
+    webhookSecretHint: json["webhookSecretHint"],
+    webhookUrl: json["webhookUrl"],
     workspaceId: json["workspaceId"],
   );
 
@@ -9636,7 +9711,45 @@ class AutomationView {
     "resourceVersion": resourceVersion,
     "state": automationStateValues.reverse[state],
     "updatedAt": updatedAt,
+    "webhookSecretHint": webhookSecretHint,
+    "webhookUrl": webhookUrl,
     "workspaceId": workspaceId,
+  });
+}
+
+///DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+///AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+///`{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+class AutomationWebhookSecret {
+  final String automationResourceId;
+  final String hint;
+
+  ///32 字节随机密钥的 base64 展示形式。
+  final String secret;
+
+  ///公开投递地址；部署未配置公开基址时省略。
+  final String? url;
+
+  AutomationWebhookSecret({
+    required this.automationResourceId,
+    required this.hint,
+    required this.secret,
+    this.url,
+  });
+
+  factory AutomationWebhookSecret.fromJson(Map<String, dynamic> json) =>
+      AutomationWebhookSecret(
+        automationResourceId: json["automationResourceId"],
+        hint: json["hint"],
+        secret: json["secret"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "hint": hint,
+    "secret": secret,
+    "url": url,
   });
 }
 
@@ -12628,7 +12741,9 @@ class ReadAdmission {
 }
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+///的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+///automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 class SubmissionClass {
   final String actionExecutionId;
   final String actionKey;
@@ -12640,6 +12755,7 @@ class SubmissionClass {
   final String operationId;
   final String? protocolSessionId;
   final ReasonCode? reason;
+  final WebhookSecretClass? webhookSecret;
   final String? workflowId;
 
   SubmissionClass({
@@ -12653,6 +12769,7 @@ class SubmissionClass {
     required this.operationId,
     this.protocolSessionId,
     this.reason,
+    this.webhookSecret,
     this.workflowId,
   });
 
@@ -12674,6 +12791,9 @@ class SubmissionClass {
         reason: json["reason"] == null
             ? null
             : reasonCodeValues.map[json["reason"]]!,
+        webhookSecret: json["webhookSecret"] == null
+            ? null
+            : WebhookSecretClass.fromJson(json["webhookSecret"]),
         workflowId: json["workflowId"],
       );
 
@@ -12688,6 +12808,7 @@ class SubmissionClass {
     "operationId": operationId,
     "protocolSessionId": protocolSessionId,
     "reason": reasonCodeValues.reverse[reason],
+    "webhookSecret": webhookSecret?.toJson(),
     "workflowId": workflowId,
   });
 }

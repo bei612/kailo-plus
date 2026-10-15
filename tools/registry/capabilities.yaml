@@ -23,6 +23,7 @@ capabilities:
   - /api/v1/agent-definitions/{resource_id}/version-configuration
   - /api/v1/agent-definitions/{resource_id}/versions
   - /api/v1/platform-tools
+  - /hooks/{resource_id}
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -37,6 +38,7 @@ capabilities:
   - automation.pause
   - automation.disable
   - automation.delete
+  - automation.rotate_webhook_secret
   - automation.run
   - agent.memory.core.read
   - agent.memory.entry.list
