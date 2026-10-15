@@ -2924,6 +2924,7 @@ export const platformMessages = {
   "actions.agent.version.publish": { en: "Publish Agent version", "zh-CN": "发布 Agent 版本" },
   "actions.agent.version.retire": { en: "Retire Agent version", "zh-CN": "退役 Agent 版本" },
   "actions.agent.installation.create": { en: "Install Agent", "zh-CN": "安装 Agent" },
+  "actions.agent.installation.upgrade": { en: "Upgrade Agent installation", "zh-CN": "升级 Agent 安装" },
   "actions.agent.installation.execute.grant": { en: "Grant Agent execution permission", "zh-CN": "授予 Agent 执行权限" },
   "actions.agent.installation.execute.revoke": { en: "Revoke Agent execution permission", "zh-CN": "撤销 Agent 执行权限" },
   "actions.agent.installation.use.grant": { en: "Allow a member to use an Agent", "zh-CN": "允许成员使用 Agent" },
