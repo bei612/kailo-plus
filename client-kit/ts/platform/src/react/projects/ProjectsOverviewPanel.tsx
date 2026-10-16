@@ -2,7 +2,8 @@
 // desktop/src/features/projects/ui/ProjectsOverviewPanel.tsx; wording comes from
 // the shared catalog. The multi-item selection branch (ProjectsSelectionCountMenu
 // with Agent chat / review creation) has no shared consumer, so only the
-// original unselected context pod is rendered.
+// original unselected context pod is rendered. Its Create review action (DD-118)
+// exists only while the caller passes the review writer.
 import {
   CheckCircle2,
   CircleDot,
@@ -105,6 +106,7 @@ type ProjectsOverviewContextPanelProps = {
   filter: ProjectsFilter;
   issues: ProjectIssue[];
   onCreateIssue?: () => void;
+  onCreatePullRequest?: () => void;
   onCreateProject?: () => void;
   onSelectSection: (section: ProjectsOverviewSection) => void;
   profiles?: UserProfileLookup;
@@ -118,14 +120,16 @@ type ProjectsOverviewContextPanelProps = {
 function OverviewCreateButton({
   action,
   onCreateIssue,
+  onCreatePullRequest,
   onCreateProject,
 }: {
   action: Exclude<OverviewContextAction, null>;
   onCreateIssue?: () => void;
+  onCreatePullRequest?: () => void;
   onCreateProject?: () => void;
 }) {
   const t = useUiT();
-  const actionHandler = action.kind === "issue" ? onCreateIssue : onCreateProject;
+  const actionHandler = action.kind === "issue" ? onCreateIssue : action.kind === "pullRequest" ? onCreatePullRequest : onCreateProject;
   // A section's create action exists only while its governed writer is available.
   if (!actionHandler) return null;
   return (
@@ -177,6 +181,7 @@ export function ProjectsOverviewContextPanel({
   filter,
   issues,
   onCreateIssue,
+  onCreatePullRequest,
   onCreateProject,
   onSelectSection,
   profiles,
@@ -219,6 +224,7 @@ export function ProjectsOverviewContextPanel({
             <OverviewCreateButton
               action={context.action}
               onCreateIssue={onCreateIssue}
+              onCreatePullRequest={onCreatePullRequest}
               onCreateProject={onCreateProject}
             />
           ) : null}

@@ -21,6 +21,8 @@ import type {
   ProjectsPublishRequest,
   ProjectsGitQueryRequest,
   ProjectsGitQueryResponse,
+  ProjectsGitRefRequest,
+  ProjectsGitRefResponse,
   WebSearchQuery,
 } from "@client-kit/contracts";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
@@ -90,6 +92,19 @@ export async function queryProjects(request:ProjectsQueryRequest):Promise<import
 /** DD-118 typed Projects Git read; the Browser names only the 30617 coordinate, ref and path. */
 export async function queryProjectsGit(request:ProjectsGitQueryRequest):Promise<ProjectsGitQueryResponse>{
   return call({method:"POST",path:"/api/v1/projects/git/query",body:request});
+}
+
+/**
+ * DD-118 branch create/delete: the person's own SERVER identity pushes through BFF. The intent's
+ * Idempotency-Key is resent unchanged after an UNKNOWN outcome; BFF reconciles it from info/refs.
+ */
+export async function refProjectsGit(request:ProjectsGitRefRequest,idempotencyKey:string):Promise<ProjectsGitRefResponse>{
+  const path="/api/v1/projects/git/ref";
+  const result=unwrap<ProjectsGitRefResponse>({method:"POST",path},await transport.exchange(path,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request),
+  }));
+  if(!result||typeof result.branch!=="string"||typeof result.commit!=="string")throw new TransportError("Repository ref outcome unknown");
+  return result;
 }
 
 export async function queryReminders():Promise<{pubkey:string;reminders:import("@client-kit/contracts").ReminderView[]}> {

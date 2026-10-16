@@ -1,6 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectWorkspaceTabs.tsx::WorkspaceTabs.
 // Original repository tab menu and panel structure. Tasks/Reviews always; Overview/Files/Commits
-// (DD-118) when the host offers Git reads. Other tabs require missing consumers.
+// (DD-118) when the host offers Git reads. Other tabs require missing consumers. The Tasks/Reviews
+// headers carry the original Create task / Create review actions when the caller has the writer.
 import { CircleDot, GitPullRequest } from "lucide-react";
 import type { ReactNode } from "react";
 import { useUiT } from "../context";
@@ -14,11 +15,13 @@ export function isProjectGitWorkspaceTab(tab: ProjectWorkspaceTab): tab is "over
   return tab === "overview" || tab === "files" || tab === "activity";
 }
 
-export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, git = false, detailSelected = false, sectionHeader, children }: {
+export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, onCreatePullRequest, git = false, detailSelected = false, sectionHeader, children }: {
   tab: ProjectWorkspaceTab;
   onTabChange: (tab: ProjectWorkspaceTab) => void;
   onBack: () => void;
   onCreateTask?: () => void;
+  /** Original "Create review" header action (DD-118); absent without the review writer. */
+  onCreatePullRequest?: () => void;
   /** The host offers DD-118 Git reads, so the original Git tabs exist. */
   git?: boolean;
   /** Original: a selected commit hides the tab menu. */
@@ -39,7 +42,9 @@ export function WorkspaceTabs({ tab, onTabChange, onBack, onCreateTask, git = fa
     <div className="-mx-4 flex flex-1 flex-col [&_[data-project-detail-panel]]:rounded-none [&_[data-project-detail-panel]]:border-0" data-testid="project-workspace-panel">
       {gitTab ? sectionHeader : <ProjectSectionHeader className="mx-4 mb-2 rounded-md bg-muted/40" icon={tab === "issues" ? CircleDot : GitPullRequest}
         title={t(tab === "issues" ? "projects.list.tasks" : "projects.list.reviews")}
-        action={tab === "issues" && onCreateTask ? { label: t("projects.issue.create"), onClick: onCreateTask } : undefined}/>}
+        action={tab === "issues" && onCreateTask ? { label: t("projects.issue.create"), onClick: onCreateTask }
+          : tab === "prs" && onCreatePullRequest ? { label: t("projects.review.create"), onClick: onCreatePullRequest, title: t("projects.review.createTitle") }
+          : undefined}/>}
       {gitTab ? <TabsContent className={tab === "files" ? "m-0" : "m-0 min-h-0 flex-1 flex-col data-[state=active]:flex"} value={tab}>
         {children}
       </TabsContent> : <TabsContent className="m-0 overflow-hidden rounded-xl border border-border/60 bg-transparent" data-project-detail-panel value={tab}>

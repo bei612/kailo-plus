@@ -2,6 +2,11 @@
 // "overview"/"activity"/"files" contents with ProjectDetailScreen's git views
 // (useRetainedProjectGitViews.ts::useProjectDetailGitViews, remote source, default branch) and the
 // selected review's Files changed (projectReviewDisplay.ts::reviewDiffWorkspaceBranch).
+// DD-118 batch 2a: ProjectDetailScreen's branch state (useRepoStateQuery, resolveProjectDefaultBranch,
+// useOptimisticProjectBranches, useProjectRepositoryRefSelection, projectBranchManagementState,
+// useProjectBranchActions + ProjectBranchActionDialogs). The original branch picker lives in the
+// detail right panel, which has no branch-scoped restoration here; the files panel's own original
+// `sourceControls` header carries it. Create/delete appear only when the host offers ref writes.
 import { Files as FilesIcon, GitCommitHorizontal } from "lucide-react";
 import * as React from "react";
 import { useUiT } from "../context";
@@ -13,6 +18,13 @@ import { findReadmeFile, type GitDataState, ProjectOverviewPanel } from "./Proje
 import { RepositoryFilesPanel } from "./ProjectRepositoryPanel";
 import { ProjectRepositoryUnavailableState } from "./ProjectRepositoryUnavailableState";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
+import { ProjectBranchActionDialogs } from "./ProjectBranchActionDialogs";
+import type { RepoBranchHeaderControls } from "./ProjectRepositorySource";
+import { useProjectBranchActions } from "./branchMutations";
+import { projectBranchCreationReason, projectBranchManagementState, resolveProjectDefaultBranch } from "./lib/projectBranches";
+import { useRepoStateQuery } from "./projectRepoState";
+import { useOptimisticProjectBranches } from "./useOptimisticProjectBranches";
+import { useProjectRepositoryRefSelection } from "./useProjectRepositoryRefSelection";
 import type { ProjectsHost } from "./projectEnumeration";
 import { useProjectCommitDiffQuery, useProjectRepoDiffQuery, useProjectRepoSnapshotQuery } from "./projectGitQueries";
 import type { Repository } from "./projectModels";
@@ -21,6 +33,8 @@ import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import { WorkspaceTabs, type ProjectWorkspaceTab } from "./ProjectWorkspaceTabs";
 import { projectRepoUnavailableReason } from "./lib/projectRepoAvailability";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContent";
+
+const NO_BRANCHES: Array<{ name: string; commit: string }> = [];
 
 /** Original repository workspace on a Git tab: tab menu, section header and tab content. */
 export function RepositoryGitWorkspace({ host, repository, projectId, pullRequests, tab, commitHash, filePath, onSelectedCommitHashChange, onTabChange, onBack }: {
@@ -36,7 +50,24 @@ export function RepositoryGitWorkspace({ host, repository, projectId, pullReques
   onBack: () => void;
 }) {
   const t = useUiT();
-  const activeBranch = repository.defaultBranch;
+  const repoStateQuery = useRepoStateQuery(host, repository);
+  const defaultBranch = resolveProjectDefaultBranch(repository.defaultBranch, repoStateQuery.data);
+  const referencedBranches = React.useMemo(() => pullRequests.map(pullRequest => pullRequest.branchName ?? null), [pullRequests]);
+  const { branchOptions, forgetBranch, managedBranches, rememberBranch } = useOptimisticProjectBranches({
+    defaultBranch,
+    observedBranches: repoStateQuery.data?.branches ?? NO_BRANCHES,
+    projectId: repository.id,
+    referencedBranches,
+  });
+  const { activeBranch: selectedBranch, selectBranch } = useProjectRepositoryRefSelection({
+    branchOptions,
+    defaultBranch,
+    projectAvailable: true,
+    projectPending: false,
+    repositoryId: repository.id,
+    tags: NO_BRANCHES,
+  });
+  const activeBranch = selectedBranch ?? defaultBranch;
   const snapshotQuery = useProjectRepoSnapshotQuery(host, repository, activeBranch, null, true);
   const commitDiffQuery = useProjectCommitDiffQuery(host, repository, commitHash);
   const fileContentSource = useRepositoryFileContentSource({ activeBranch, host, pullRequest: null, repository });
@@ -51,6 +82,47 @@ export function RepositoryGitWorkspace({ host, repository, projectId, pullReques
   const repositoryUnavailableState = unavailableReason ? <ProjectRepositoryUnavailableState reason={unavailableReason} /> : null;
   const selectedCommitPullRequest = commitHash
     ? pullRequests.find(pullRequest => pullRequest.commit === commitHash || pullRequest.initialCommit === commitHash) : undefined;
+  const { activeBranchCommit, activeRemoteBranch, deleteBranchReason } = projectBranchManagementState({
+    activeBranch,
+    branches: managedBranches,
+    defaultBranch,
+    hasOpenPullRequest: pullRequests.some(pullRequest => pullRequest.branchName === activeBranch
+      && (pullRequest.status === "Open" || pullRequest.status === "Draft")),
+    snapshotCommit: snapshot?.latestCommit?.hash,
+  });
+  const branchActions = useProjectBranchActions({
+    activeBranch,
+    activeBranchCommit,
+    activeRemoteBranch,
+    defaultBranch,
+    deleteBranchReason,
+    forgetBranch,
+    host,
+    project: repository,
+    refetchRepoState: repoStateQuery.refetch,
+    rememberBranch,
+    selectBranch,
+  });
+  const createBranchReason = projectBranchCreationReason({ activeBranch, activeBranchCommit });
+  const unconfirmed = t("projects.branch.unknown");
+  const otherRetained = (retained: unknown) => Boolean(branchActions.retainedCreate || branchActions.retainedDelete) && !retained;
+  const sourceControls: RepoBranchHeaderControls = {
+    branch: activeBranch,
+    branchOptions,
+    onBranchChange: selectBranch,
+    ...(branchActions.available ? {
+      onCreateBranch: () => branchActions.setCreateOpen(true),
+      createBranchDisabled: branchActions.createPending || otherRetained(branchActions.retainedCreate)
+        || (!branchActions.retainedCreate && !activeBranchCommit),
+      createBranchTitle: otherRetained(branchActions.retainedCreate) ? unconfirmed
+        : branchActions.retainedCreate ? t("projects.branch.recheck") : createBranchReason ?? t("projects.branch.createTitle"),
+      onDeleteBranch: () => branchActions.setDeleteOpen(true),
+      deleteBranchDisabled: branchActions.deletePending || otherRetained(branchActions.retainedDelete)
+        || (!branchActions.retainedDelete && Boolean(deleteBranchReason)),
+      deleteBranchTitle: otherRetained(branchActions.retainedDelete) ? unconfirmed
+        : branchActions.retainedDelete ? t("projects.branch.recheck") : deleteBranchReason ?? t("projects.branch.deleteTitle"),
+    } : {}),
+  };
 
   const sectionHeader = tab === "files" && files.length > 0
     ? <ProjectSectionHeader className={PROJECT_SECTION_HEADER_CLASS} icon={FilesIcon} title={t("projects.git.files")} />
@@ -72,11 +144,16 @@ export function RepositoryGitWorkspace({ host, repository, projectId, pullReques
   ) : (
     repositoryUnavailableState ?? (
       <RepositoryFilesPanel error={snapshotQuery.error} fallbackAuthorPubkey={repository.owner} fileContentSource={fileContentSource} files={files}
-        initialPath={filePath} isLoading={snapshotQuery.isLoading} onOpenCommit={onSelectedCommitHashChange} profiles={profiles} snapshot={snapshot} />
+        initialPath={filePath} isLoading={snapshotQuery.isLoading} onOpenCommit={onSelectedCommitHashChange} profiles={profiles} snapshot={snapshot}
+        sourceControls={sourceControls} />
     )
   );
-  return <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} git detailSelected={tab === "activity" && Boolean(commitHash)}
-    sectionHeader={sectionHeader}>{content}</WorkspaceTabs>;
+  return <>
+    {branchActions.available ? <ProjectBranchActionDialogs actions={branchActions} activeBranch={activeBranch}
+      activeBranchCommit={activeBranchCommit} existingBranches={branchOptions} /> : null}
+    <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} git detailSelected={tab === "activity" && Boolean(commitHash)}
+      sectionHeader={sectionHeader}>{content}</WorkspaceTabs>
+  </>;
 }
 
 /** Original selected-review Files changed body, diff stats and count. */

@@ -1,8 +1,10 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectRepositoryPanel.tsx::RepositoryFilesPanel/FileContentPanel.
-// Same table, breadcrumbs, latest-commit header, paging and preview. No branch/source/sync header:
-// this host has no branch listing, local checkout or push. The relay user-search avatar fallback
-// is not restored; known profiles and the repository owner remain the avatar sources.
+// Same table, breadcrumbs, latest-commit header, paging and preview. The header carries the original
+// branch picker (`sourceControls`, DD-118 repository state and branch writes) without the
+// remote/local source toggle or sync button: this host has no local checkout or push. The relay
+// user-search avatar fallback is not restored; known profiles and the repository owner remain the
+// avatar sources.
 import { ChevronRight, FileDiff } from "lucide-react";
 import * as React from "react";
 import { useUiT } from "../context";
@@ -13,6 +15,7 @@ import { cn } from "../profile/buzz/shared/lib/cn";
 import { BuzzLoadingState } from "./BuzzLoadingState";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { ProjectRepositoryLatestCommitRow } from "./ProjectRepositoryLatestCommitRow";
+import { RepositoryBranchDropdown, type RepoBranchHeaderControls } from "./ProjectRepositorySource";
 import { ProjectSyntaxCode } from "./ProjectSyntaxCode";
 import { DIRECTORY_ICON_VISUAL, fileBaseName, repositoryFileIconVisual } from "./projectFileIcons";
 import type { ProjectRepoFile, ProjectRepoSnapshot } from "./projectGit";
@@ -221,8 +224,10 @@ function FileContentPanel({ file, fileContentSource, onOpenPath }: {
   );
 }
 
+const SOURCE_HEADER_CLASS = "flex min-h-14 min-w-0 items-center gap-1 border-border/50 border-b px-4 py-3";
+
 export function RepositoryFilesPanel({
-  files, fileContentSource, initialPath, snapshot, isLoading, error, profiles, fallbackAuthorPubkey, onContextChange, onOpenCommit,
+  files, fileContentSource, initialPath, snapshot, isLoading, error, profiles, fallbackAuthorPubkey, onContextChange, onOpenCommit, sourceControls,
 }: {
   files: ProjectRepoFile[];
   fileContentSource?: RepositoryFileContentSource;
@@ -234,6 +239,8 @@ export function RepositoryFilesPanel({
   fallbackAuthorPubkey?: string;
   onContextChange?: (context: RepositoryFilesContext) => void;
   onOpenCommit?: (commitHash: string) => void;
+  /** Original branch picker in the panel header. */
+  sourceControls?: RepoBranchHeaderControls;
 }) {
   const t = useUiT();
   const { currentPath, openPath, selectedFile, setSelectedFile, setVisibleEntryCount, visibleEntryCount } =
@@ -249,19 +256,37 @@ export function RepositoryFilesPanel({
   const latestCommitAuthorLabel = commitAuthorLabel(latestCommit, latestCommitProfile);
   const pathSegments = currentPath ? currentPath.split("/") : [];
 
-  if (isLoading) return <BuzzLoadingState label={t("projects.git.loadingFiles")} />;
+  // Loading/error/empty states keep the header controls visible.
+  if (isLoading) {
+    if (!sourceControls) return <BuzzLoadingState label={t("projects.git.loadingFiles")} />;
+    return (
+      <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel>
+        <div className={SOURCE_HEADER_CLASS}><RepositoryBranchDropdown {...sourceControls} /></div>
+        <BuzzLoadingState label={t("projects.git.loadingFiles")} />
+      </div>
+    );
+  }
   const stateMessage = error ? t("projects.git.treeError") : files.length === 0 ? t("projects.git.noFiles") : null;
   if (stateMessage) {
-    return <ProjectPanelState description={error ? t("projects.git.treeErrorHint") : t("projects.git.noFilesHint")}
-      error={Boolean(error)} title={stateMessage} />;
+    const state = <ProjectPanelState description={error ? t("projects.git.treeErrorHint") : t("projects.git.noFilesHint")}
+      error={Boolean(error)} panel={!sourceControls} title={stateMessage} />;
+    if (!sourceControls) return state;
+    return (
+      <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel>
+        <div className={SOURCE_HEADER_CLASS}><RepositoryBranchDropdown {...sourceControls} /></div>
+        {state}
+      </div>
+    );
   }
   if (selectedFile) return <FileContentPanel file={selectedFile} fileContentSource={fileContentSource} onOpenPath={openPath} />;
 
   return (
     <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel data-testid="project-repository-files">
-      {pathSegments.length > 0 ? (
-        <div className="flex min-h-14 min-w-0 items-center gap-1 border-border/50 border-b px-4 py-3">
-          <BreadcrumbButton onClick={() => openPath("")}>{t("projects.git.files")}</BreadcrumbButton>
+      {sourceControls || pathSegments.length > 0 ? (
+        <div className={SOURCE_HEADER_CLASS}>
+          {sourceControls ? <RepositoryBranchDropdown {...sourceControls} /> : null}
+          {sourceControls && pathSegments.length > 0 ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" /> : null}
+          {pathSegments.length > 0 ? <BreadcrumbButton onClick={() => openPath("")}>{t("projects.git.files")}</BreadcrumbButton> : null}
           {pathSegments.map((segment, index) => {
             const nextPath = pathSegments.slice(0, index + 1).join("/");
             return (

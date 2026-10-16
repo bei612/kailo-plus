@@ -3,12 +3,18 @@
 // and desktop/src/shared/api/types.ts::ProjectRepo*. DD-118: the repository is named by its 30617
 // coordinate instead of a clone URL; the host maps the typed BFF query back to the original shapes
 // (absent latestCommit -> null) so restored components keep the original types.
+// createProjectRemoteBranch/deleteProjectRemoteBranch (original input names, 30617 coordinate instead
+// of cloneUrl) travel as the typed ProjectsGitRefRequest with the intent's Idempotency-Key.
 import {
+  ProjectGitRefOperation,
   ProjectsGitQueryRequestView,
   type ProjectsGitQueryRequest,
   type ProjectsGitQueryResponse,
+  type ProjectsGitRefRequest,
+  type ProjectsGitRefResponse,
   type ProjectRepoCommit as ContractRepoCommit,
 } from "@client-kit/contracts";
+import { TransportError } from "../../transport";
 
 export type ProjectRepoCommit = {
   hash: string;
@@ -66,12 +72,43 @@ export type ProjectRepoRefInput = {
   targetCommit?: string | null;
 };
 
+/** Original ProjectRepoBranchResult without its English message: the branch and its head. */
+export type ProjectRepoBranchResult = { branch: string; commit: string };
+
+/** Original createProjectRemoteBranch input with `cloneUrl` replaced by the 30617 coordinate. */
+export type CreateProjectRemoteBranchInput = { repository: string; sourceBranch: string; expectedCommit: string; newBranch: string };
+
+/** Original deleteProjectRemoteBranch input with `cloneUrl` replaced by the 30617 coordinate. */
+export type DeleteProjectRemoteBranchInput = { repository: string; branch: string; expectedCommit: string };
+
 /** Remote repository reads of the original Desktop, behind the Projects host seam. */
 export type ProjectsGitHost = {
   getProjectRepoSnapshot: (input: ProjectRepoRefInput) => Promise<ProjectRepoSnapshot>;
   getProjectRepoFileContent: (input: Omit<ProjectRepoRefInput, "baseBranch"> & { path: string }) => Promise<string | null>;
   getProjectRepoDiff: (input: ProjectRepoRefInput) => Promise<ProjectRepoDiff>;
+  /**
+   * DD-118 branch writes; hosts without them offer no branch actions. `idempotencyKey` is the
+   * retained intent's key: an UNKNOWN outcome is resent only with the same key and request.
+   */
+  createProjectRemoteBranch?: (input: CreateProjectRemoteBranchInput, idempotencyKey: string) => Promise<ProjectRepoBranchResult>;
+  deleteProjectRemoteBranch?: (input: DeleteProjectRemoteBranchInput, idempotencyKey: string) => Promise<ProjectRepoBranchResult>;
 };
+
+/** The typed ref request for an original branch input. */
+export function projectGitRefRequest(input: CreateProjectRemoteBranchInput | DeleteProjectRemoteBranchInput): ProjectsGitRefRequest {
+  return "newBranch" in input
+    ? { operation: ProjectGitRefOperation.CreateBranch, repository: input.repository, branch: input.newBranch,
+      sourceBranch: input.sourceBranch, expectedCommit: input.expectedCommit }
+    : { operation: ProjectGitRefOperation.DeleteBranch, repository: input.repository, branch: input.branch,
+      expectedCommit: input.expectedCommit };
+}
+
+function refAnswer(response: ProjectsGitRefResponse, request: ProjectsGitRefRequest): ProjectRepoBranchResult {
+  // Both operations answer the requested branch at the observed head; anything else is no confirmation.
+  if (!response || response.branch !== request.branch || response.commit !== request.expectedCommit)
+    throw new TransportError("Invalid repository ref response");
+  return { branch: response.branch, commit: response.commit };
+}
 
 function request(view: ProjectsGitQueryRequestView, input: ProjectRepoRefInput & { path?: string }): ProjectsGitQueryRequest {
   const body: ProjectsGitQueryRequest = { view, repository: input.repository };
@@ -94,9 +131,21 @@ function answer(response: ProjectsGitQueryResponse, view: ProjectsGitQueryReques
   return response;
 }
 
-/** Adapt the typed BFF query to the original three Desktop reads. */
-export function createProjectsGitHost(query: (request: ProjectsGitQueryRequest) => Promise<ProjectsGitQueryResponse>): ProjectsGitHost {
+type ProjectsGitRefSend = (request: ProjectsGitRefRequest, idempotencyKey: string) => Promise<ProjectsGitRefResponse>;
+
+function refWriter(ref: ProjectsGitRefSend) {
+  return async (input: CreateProjectRemoteBranchInput | DeleteProjectRemoteBranchInput, idempotencyKey: string) => {
+    const request = projectGitRefRequest(input);
+    return refAnswer(await ref(request, idempotencyKey), request);
+  };
+}
+
+/** Adapt the typed BFF query (and, when given, the ref write) to the original Desktop calls. */
+export function createProjectsGitHost(query: (request: ProjectsGitQueryRequest) => Promise<ProjectsGitQueryResponse>,
+  ref?: ProjectsGitRefSend): ProjectsGitHost {
+  const write = ref ? refWriter(ref) : undefined;
   return {
+    ...(write ? { createProjectRemoteBranch: write, deleteProjectRemoteBranch: write } : {}),
     getProjectRepoSnapshot: async input => {
       const snapshot = answer(await query(request(ProjectsGitQueryRequestView.Snapshot, input)), ProjectsGitQueryRequestView.Snapshot).snapshot;
       if (!snapshot || !Array.isArray(snapshot.files)) throw new Error("Invalid repository snapshot");

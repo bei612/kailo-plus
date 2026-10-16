@@ -34,6 +34,7 @@ import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {BuzzLoadingState} from "./BuzzLoadingState";
 import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
+import {CreatePullRequestDialog} from "./CreatePullRequestDialog";
 import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
 import {ProjectDetailChrome} from "./ProjectDetailChrome";
 import {WorkspaceTabs,isProjectGitWorkspaceTab,type ProjectWorkspaceTab} from "./ProjectWorkspaceTabs";
@@ -149,6 +150,9 @@ function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabC
   commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
+  const [createReviewOpen,setCreateReviewOpen]=useState(false);
+  // Original "Create review" (DD-118): only with the governed publication and the repository Git seam.
+  const canCreateReview=Boolean(host.publish&&host.git);
   const [navigationFailed,setNavigationFailed]=useState(false);const sending=useRef(false);
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host,repository.id]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
@@ -164,12 +168,16 @@ function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabC
   </>;
   return <>
     {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
-    <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} onCreateTask={host.publish?()=>setCreateOpen(true):undefined} git={Boolean(host.git)}>
+    <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} onCreateTask={host.publish?()=>setCreateOpen(true):undefined} git={Boolean(host.git)}
+      onCreatePullRequest={canCreateReview?()=>setCreateReviewOpen(true):undefined}>
       {tab==="issues"?<ProjectIssuesPanel issueItems={items.filter(item=>item.type==="issue").map(item=>({issue:item.issue,project:item.repository}))}
         selectedIssueId={null} onSelectedIssueIdChange={id=>{if(id)open({issueId:id});}} profiles={profiles}/>:
         <PullRequestsPanel project={repository} pullRequests={items.filter(item=>item.type==="pull-request").map(item=>item.pullRequest)}
           selectedPullRequest={null} onSelectedPullRequestIdChange={id=>{if(id)open({pullRequestId:id});}} profiles={profiles}/>}
     </WorkspaceTabs>
+    {canCreateReview&&createReviewOpen?<CreatePullRequestDialog host={host} initialProjectId={project.id} initialRepositoryId={repository.id}
+      projects={snapshot.projects} workItems={snapshot.items} open onOpenChange={setCreateReviewOpen}
+      onCreated={(_project,_repository,pullRequestId)=>open({pullRequestId})}/>:null}
     <CreateIssueDialog open={createOpen} onOpenChange={setCreateOpen} isCreating={creating} projectName={repository.name}
       onCreate={async input=>{
         if(sending.current)throw new TransportError(t("projects.issue.unknown"));
@@ -414,8 +422,8 @@ function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<t
 
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
 // over the same directory and work-item reads; profiles come from the work-item host.
-function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
-  projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreateProject?:()=>void}) {
+function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreatePullRequest,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
+  projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreatePullRequest?:()=>void;onCreateProject?:()=>void}) {
   const projects=useMemo(()=>snapshot.projects.filter(project=>!project.legacy),[snapshot]);
   const issues=useMemo(()=>snapshot.items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[snapshot]);
   const pullRequests=useMemo(()=>snapshot.items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[snapshot]);
@@ -424,7 +432,7 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries]);
   const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
-    repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreateProject={onCreateProject}/></div>;
+    repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}/></div>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
@@ -438,6 +446,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const [sort,setSort]=useState<ProjectsSort>(()=>readStoredSort());
   const [createOpen,setCreateOpen]=useState(false);
   const [createIssueOpen,setCreateIssueOpen]=useState(false);
+  const [createReviewOpen,setCreateReviewOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
   const creation=useCreateProject(host);
   const sidebar=useOptionalSidebar();
@@ -556,6 +565,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const railContent=workSnapshot&&query.isSuccess&&!query.isFetching?<ProjectsOverviewContextRailContent snapshot={workSnapshot} projectReadModels={projects} filter={filter}
     onSelectSection={section=>{selectSection(section);if(isNarrowProjectsLayout)setNarrowContextOpen(false);}}
     onCreateIssue={host.publish&&explicitProjects.length>0?()=>setCreateIssueOpen(true):undefined}
+    onCreatePullRequest={host.publish&&host.git&&explicitProjects.length>0?()=>setCreateReviewOpen(true):undefined}
     onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:null;
   const rail=railContent&&workSnapshot?renderWorkItems?renderWorkItems(railContent,workSnapshot.viewerPubkey):railContent:null;
   const overviewContextOpen=contextAvailable&&overviewPanelOpen&&!isNarrowProjectsLayout;
@@ -573,6 +583,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
       {createDialog}
       {host.publish&&onSelectedProjectChange&&explicitProjects.length>0?<CreateProjectIssueDialog host={host} projects={explicitProjects} open={createIssueOpen} onOpenChange={setCreateIssueOpen}
         onCreated={(project,repository,issueId)=>onSelectedProjectChange(project.id,{repositoryId:repository.id,issueId})}/>:null}
+      {host.publish&&host.git&&onSelectedProjectChange&&workSnapshot&&explicitProjects.length>0&&createReviewOpen?<CreatePullRequestDialog host={host}
+        projects={explicitProjects} workItems={workSnapshot.items} open onOpenChange={setCreateReviewOpen}
+        onCreated={(project,repository,pullRequestId)=>onSelectedProjectChange(project.id,{repositoryId:repository.id,pullRequestId})}/>:null}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
           <div aria-hidden="true" className="pointer-events-none absolute right-[3px] top-0 z-50 w-1 rounded-full bg-border/80 opacity-0 transition-opacity duration-200" ref={scrollIndicatorRef}/>

@@ -89,7 +89,7 @@ export function CreateProjectWorkItemDialog({
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : t("projects.issue.createFailed"),
+          : t(itemName === "issue" ? "projects.issue.createFailed" : "projects.review.createFailed"),
       );
     } finally {
       submitInFlightRef.current = false;
@@ -121,7 +121,7 @@ export function CreateProjectWorkItemDialog({
               form={`${testIdPrefix}-form`}
               type="submit"
             >
-              {t(isCreating ? "projects.issue.creating" : "projects.issue.create")}
+              {t(isCreating ? "projects.issue.creating" : itemName === "issue" ? "projects.issue.create" : "projects.review.create")}
             </Button>
           </div>
         }

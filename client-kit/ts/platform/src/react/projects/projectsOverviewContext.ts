@@ -2,7 +2,8 @@
 // desktop/src/features/projects/ui/projectsOverviewContext.ts. Same title,
 // people and stat derivation per section; labels are catalog keys. Create
 // actions are only returned for sections whose governed writer exists (no
-// add-channel, add-repository or create-review writer is available).
+// add-channel or add-repository writer is available); the panel hides an action
+// whose handler the caller does not pass (Create review needs DD-118 Git).
 import type { PlatformMessageKey } from "../../i18n";
 import { projectContributorActivityCounts } from "./lib/projectContributorMatching";
 import type { ProjectActivitySummary } from "./lib/projectActivitySummaries";
@@ -30,7 +31,7 @@ export type OverviewContextStatIcon =
   | "merged";
 
 export type OverviewContextAction = {
-  kind: "issue" | "project";
+  kind: "issue" | "project" | "pullRequest";
   label: PlatformMessageKey;
   testId: string;
 } | null;
@@ -315,7 +316,11 @@ export function projectsOverviewContext(
 
   if (filter === "prs") {
     return {
-      action: null,
+      action: {
+        kind: "pullRequest",
+        label: "projects.review.create",
+        testId: "projects-overview-create-pull-request",
+      },
       people,
       stats: [
         {

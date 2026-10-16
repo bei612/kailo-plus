@@ -1,6 +1,7 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectHomeWorkspaceSheet.tsx.
 // Tasks covers this project's repositories; Reviews uses the selected repository. Commits and
-// Files (DD-118) exist only when the host offers Git reads; People and writes stay un-restored.
+// Files (DD-118) exist only when the host offers Git reads; Create review (DD-118) needs both the
+// publication host and Git. People and other writes stay un-restored.
 import * as React from "react";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {useUiT} from "../context";
@@ -13,6 +14,7 @@ import {PullRequestsPanel} from "./ProjectPullRequestsPanel";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {BuzzLoadingState} from "./BuzzLoadingState";
 import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
+import {CreatePullRequestDialog} from "./CreatePullRequestDialog";
 import {ProjectHomeCommitsSheet,ProjectHomeFilesSheet} from "./ProjectHomeGitSheet";
 
 export type ProjectHomeWorkspaceSheetTab="issues"|"prs"|"commits"|"files";
@@ -51,6 +53,8 @@ export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderW
   const [selectedIssueId,setSelectedIssueId]=React.useState<string|null>(null);
   const [selectedPullRequestId,setSelectedPullRequestId]=React.useState<string|null>(null);
   const [createIssueOpen,setCreateIssueOpen]=React.useState(false);
+  const [createPullRequestOpen,setCreatePullRequestOpen]=React.useState(false);
+  const canCreateReview=Boolean(host.publish&&host.git);
   const key=React.useMemo(()=>["project-home-work-items",host.scopeKey,project.id],[host.scopeKey,project.id]);
   // The original Files sheet reads only the repository; it does not wait for work items.
   const query=useQuery({queryKey:key,enabled:tab!=="files",queryFn:({signal})=>loadProjectWorkItems(host,signal,project.id),retry:false,refetchOnMount:"always",refetchOnWindowFocus:"always"});
@@ -59,9 +63,11 @@ export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderW
   const repository=snapshot?.projects[0]?.repositories.find(item=>item.id===repositoryId);
   React.useEffect(()=>{
     onCreateActionChange?.(tab==="issues"&&!selectedIssueId&&snapshot&&repository&&host.publish
-      ?{label:t("projects.issue.create"),disabled:false,onClick:()=>setCreateIssueOpen(true)}:null);
+      ?{label:t("projects.issue.create"),disabled:false,onClick:()=>setCreateIssueOpen(true)}
+      :tab==="prs"&&!selectedPullRequestId&&snapshot&&repository&&canCreateReview
+        ?{label:t("projects.review.create"),disabled:snapshot.projects.length===0,onClick:()=>setCreatePullRequestOpen(true)}:null);
     return()=>onCreateActionChange?.(null);
-  },[onCreateActionChange,tab,selectedIssueId,snapshot,repository,host.publish,t]);
+  },[onCreateActionChange,tab,selectedIssueId,selectedPullRequestId,snapshot,repository,host.publish,canCreateReview,t]);
   const sheetRepository=project.repositories.find(item=>item.id===repositoryId);
   if(tab==="files")return <div className="-mx-4 [&_[data-project-detail-panel]]:rounded-none [&_[data-project-detail-panel]]:border-0" data-tab={tab} data-testid="project-home-workspace-sheet">
     {host.git&&sheetRepository?<ProjectHomeFilesSheet host={host} project={project} repository={sheetRepository} onDetailChange={onDetailChange}
@@ -83,5 +89,8 @@ export function ProjectHomeWorkspaceSheet({host,project,repositoryId,tab,renderW
     {snapshot&&repository&&host.publish?<CreateProjectIssueDialog host={host} initialProjectId={project.id}
       onCreated={(_project,_repository,id)=>{setSelectedIssueId(id);setSelectedPullRequestId(null);}}
       onOpenChange={setCreateIssueOpen} open={createIssueOpen} projects={snapshot.projects}/>:null}
+    {snapshot&&repository&&canCreateReview&&createPullRequestOpen?<CreatePullRequestDialog host={host} initialProjectId={project.id}
+      initialRepositoryId={repository.id} projects={snapshot.projects} workItems={snapshot.items} open onOpenChange={setCreatePullRequestOpen}
+      onCreated={(_project,_repository,id)=>{setSelectedPullRequestId(id);setSelectedIssueId(null);}}/>:null}
   </div>;
 }

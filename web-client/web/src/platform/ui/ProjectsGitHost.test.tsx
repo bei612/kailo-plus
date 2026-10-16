@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 // DD-118: the Web Projects host reads repository content only through the typed BFF query and
 // maps the contract back to the original Buzz Desktop shapes (absent latestCommit -> null).
+// Branch create/delete go to the typed ref route with the intent's Idempotency-Key.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import type { ProjectsHost } from "@client-kit/platform/react/projects";
+import { BffError, TransportError, isOutcomeUnknown } from "@client-kit/platform/transport";
 import { useProjectsHost } from "./ProjectsPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -69,4 +72,33 @@ it("rejects reads from a host whose scope ended", async () => {
   await expect(host.git!.getProjectRepoDiff({ repository })).rejects.toThrow("Project scope changed");
   expect(fetcher).not.toHaveBeenCalled();
   root = createRoot(element);
+});
+
+it("posts branch writes to the typed ref route with the intent's Idempotency-Key", async () => {
+  const head = "1".repeat(40);
+  const fetcher = respond({ branch: "feature/x", commit: head });
+  expect(await captured!.git!.createProjectRemoteBranch!({ repository, sourceBranch: "main", expectedCommit: head, newBranch: "feature/x" }, "intent-key"))
+    .toEqual({ branch: "feature/x", commit: head });
+  expect(String(fetcher.mock.lastCall![0])).toContain("/api/v1/projects/git/ref");
+  expect(fetcher.mock.lastCall![1].method).toBe("POST");
+  expect(fetcher.mock.lastCall![1].headers["Idempotency-Key"]).toBe("intent-key");
+  const body = JSON.parse(fetcher.mock.lastCall![1].body);
+  expect(body).toEqual({ operation: "CREATE_BRANCH", repository, branch: "feature/x", sourceBranch: "main", expectedCommit: head });
+  expect(JSON.stringify(body)).not.toMatch(/https?:|wss?:/);
+  respond({ branch: "feature/x", commit: head });
+  await captured!.git!.deleteProjectRemoteBranch!({ repository, branch: "feature/x", expectedCommit: head }, "delete-key");
+});
+
+it("keeps ref refusals as typed errors and an unknown push as UNKNOWN", async () => {
+  const head = "1".repeat(40);
+  const input = { repository, branch: "feature", expectedCommit: head };
+  respond({ class: ErrorClass.Conflict, reason: ReasonCode.TargetStateConflict }, 409);
+  await expect(captured!.git!.deleteProjectRemoteBranch!(input, "k1")).rejects.toMatchObject({ status: 409, reason: ReasonCode.TargetStateConflict });
+  respond({ class: ErrorClass.Unknown, reason: ReasonCode.PublishResultUnknown, operationId: "op-1" }, 502);
+  const unknown = await captured!.git!.deleteProjectRemoteBranch!(input, "k1").catch((error: unknown) => error);
+  expect(unknown).toBeInstanceOf(BffError);
+  expect(isOutcomeUnknown(unknown)).toBe(true);
+  // A 2xx that does not name the requested branch head is no confirmation.
+  respond({ branch: "feature", commit: "2".repeat(40) });
+  await expect(captured!.git!.deleteProjectRemoteBranch!(input, "k1")).rejects.toBeInstanceOf(TransportError);
 });
