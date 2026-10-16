@@ -33,6 +33,7 @@
   },
   "$defs": {
     "commit": {
+      "title": "ProjectRepoCommit",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -65,6 +66,7 @@
       }
     },
     "file": {
+      "title": "ProjectRepoFile",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -106,6 +108,7 @@
       }
     },
     "contributor": {
+      "title": "ProjectRepoContributor",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -130,6 +133,7 @@
       }
     },
     "snapshot": {
+      "title": "ProjectRepoSnapshot",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -165,6 +169,7 @@
       }
     },
     "diffFile": {
+      "title": "ProjectRepoDiffFile",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -195,6 +200,7 @@
       }
     },
     "diff": {
+      "title": "ProjectRepoDiff",
       "type": "object",
       "additionalProperties": false,
       "required": [
