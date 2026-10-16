@@ -17,7 +17,7 @@ import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
 import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   conversation?: ConversationView;
   typingEntries?: readonly TypingIndicatorEntry[];
@@ -52,6 +52,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   onCancelEdit?: () => void;
   onEditConfirmed?: (message: TimelineMessage) => void;
   onEditSendingChange?: (sending: boolean) => void;
+  /** DD-121: the sender-only Agent @mention outcome line for the viewer's own replies. */
+  renderAgentMentionStatus?: (message: TimelineMessage) => ReactNode;
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -194,6 +196,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
     renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply"
+      agentMentionStatus={renderAgentMentionStatus?.(row.message)}
       reference={<SentFromThreadLine channelId={channelId} tags={row.message.tags}
         renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
           channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}

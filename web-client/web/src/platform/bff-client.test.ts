@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
+import { AGENT_MENTION_OUTCOME_QUERY_LIMIT, agentMentionOutcomesPath, queryAgentMentionOutcomes } from "./bff-client";
 import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
   releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
@@ -297,6 +298,39 @@ it("names each DD-120 route once and sends only the typed presence/status intent
   releasePresence();
   await vi.waitFor(() => expect(sent()[1].keepalive).toBe(true));
   expect([sent()[0], sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/presence", "PUT", { status: "offline" }]);
+});
+
+it("names the DD-121 outcome route once and asks only about the caller's own event IDs", async () => {
+  expect(agentMentionOutcomesPath("workspace/a")).toBe("/api/v1/workspaces/workspace%2Fa/agent-mentions/query");
+  expect(AGENT_MENTION_OUTCOME_QUERY_LIMIT).toBe(50);
+  const mine = "1".repeat(64);
+  const row = { eventId: mine, installationId: "installation", state: "DENIED", reasonCode: "PERMISSION_DENIED" };
+  const fetcher = vi.fn(async (_path: string, _init: RequestInit) =>
+    new Response(JSON.stringify({ outcomes: [row] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetcher);
+  expect((await queryAgentMentionOutcomes("workspace", [mine, mine])).outcomes).toEqual([row]);
+  const [path, init] = fetcher.mock.lastCall!;
+  expect([path, init.method, JSON.parse(String(init.body))]).toEqual(["/api/v1/workspaces/workspace/agent-mentions/query", "POST", { eventIds: [mine] }]);
+  // Out-of-contract requests never leave the browser.
+  await expect(queryAgentMentionOutcomes("workspace", [])).rejects.toBeInstanceOf(TransportError);
+  await expect(queryAgentMentionOutcomes("workspace", ["not-an-event"])).rejects.toBeInstanceOf(TransportError);
+  await expect(queryAgentMentionOutcomes("workspace", Array.from({ length: 51 }, (_, index) => index.toString(16).padStart(64, "0"))))
+    .rejects.toBeInstanceOf(TransportError);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("rejects an outcome page that is malformed or speaks about events that were not asked", async () => {
+  const mine = "1".repeat(64);
+  const reply = (body: unknown) => vi.stubGlobal("fetch", vi.fn(async () =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })));
+  reply({});
+  await expect(queryAgentMentionOutcomes("workspace", [mine])).rejects.toBeInstanceOf(TransportError);
+  reply({ outcomes: [{ eventId: "2".repeat(64), installationId: "installation", state: "RUNNING" }] });
+  await expect(queryAgentMentionOutcomes("workspace", [mine])).rejects.toBeInstanceOf(TransportError);
+  reply({ outcomes: [{ eventId: mine, installationId: "installation", state: "PENDING" }] });
+  await expect(queryAgentMentionOutcomes("workspace", [mine])).rejects.toBeInstanceOf(TransportError);
+  reply({ outcomes: [{ eventId: mine, installationId: "installation", state: "DENIED", reasonCode: "NOT_A_REASON" }] });
+  await expect(queryAgentMentionOutcomes("workspace", [mine])).rejects.toBeInstanceOf(TransportError);
 });
 
 it("rejects a malformed presence or status page instead of rendering it", async () => {

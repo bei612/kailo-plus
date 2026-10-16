@@ -22,7 +22,7 @@ import { ConversationPreparationPending, useConversationInvalidation } from "@cl
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBrowserNotifications } from "./BrowserNotifications";
 import { formatMessageNotification } from "@client-kit/platform/react/notifications";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
@@ -44,7 +44,8 @@ import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { toast } from "sonner";
-import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { useAgentMentionOutcomes, type MentionableAgent } from "./useAgentMentionOutcomes";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
@@ -97,6 +98,8 @@ import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/compos
 import type { ImetaMedia } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
+// DD-121 renewal entry: the same governed Installation/delegation dialogs as the Agents page.
+const WorkspaceAgentDialogs = lazy(() => import("@client-kit/platform/react/pages").then((module) => ({ default: module.WorkspaceAgentDialogs })));
 
 /** A mentioned Agent is no longer in this member's fresh, authorized directory (05 §2.10). */
 class MentionAgentNotAllowedError extends Error {}
@@ -365,6 +368,23 @@ export function ChannelPane({
     ...getThreadReference(event.tags),
   })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
+  // DD-121: own top-level and open-thread messages that @mention a channel Agent (Workspace channels only).
+  const mentionAgents = useMemo<MentionableAgent[]>(() => (typingAgents.data?.agents ?? []).map(agent =>
+    ({pubkey: agent.pubkey, displayName: agent.displayName, installationId: agent.installation.resourceId})), [typingAgents.data]);
+  const mentionMessages = useMemo(() => [...timelineMessages, ...routeMessages], [timelineMessages, routeMessages]);
+  const agentMentions = useAgentMentionOutcomes({workspaceId, principalId: myPrincipalId,
+    ownPubkey: ownProfile.isSuccess ? ownProfile.data.pubkey : undefined, agents: mentionAgents, messages: mentionMessages,
+    enabled: !conversation && live && !denied && !metadataPending, fallbackName: uiT("agentMention.unknownAgent")});
+  const [renewInstallationId, setRenewInstallationId] = useState<string | null>(null);
+  const [agentDialogsMounted, setAgentDialogsMounted] = useState(false);
+  const renewDelegation = useCallback((installationId: string) => {
+    setAgentDialogsMounted(true);
+    setRenewInstallationId(installationId);
+  }, []);
+  const renderAgentMentionStatus = (message: TimelineMessage) => {
+    const entries = agentMentions.entriesFor(message.id);
+    return entries ? <AgentMentionStatus entries={entries} onRenewDelegation={renewDelegation} /> : undefined;
+  };
   const selectedReply = selectedReplyId ? routeMessageById.get(selectedReplyId) : undefined;
   const threadReadUnavailable = !routeContext.thread.isSuccess || routeContext.denied || routeContext.interrupted || routeContext.thread.isError;
   const threadAdmissionAvailable = live && !denied && (!effectiveThreadHeadId || !threadReadUnavailable);
@@ -785,6 +805,7 @@ export function ChannelPane({
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
+                agentMentionStatus={renderAgentMentionStatus(message)}
                 reference={<SentFromThreadLine channelId={channelId} tags={message.tags}
                   renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}
                     channelLabel={channelName || link.channelId.slice(0, 8)} threadExcerpt={threadExcerpt}
@@ -882,6 +903,10 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
+    {agentDialogsMounted && !conversation && live && !denied ? <Suspense fallback={null}>
+      <WorkspaceAgentDialogs workspaceId={workspaceId} workspaceName={channelName ?? ""} createOpen={false} onCreateOpenChange={() => {}}
+        selectedId={renewInstallationId} onSelectedChange={setRenewInstallationId} manageDelegation />
+    </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
@@ -900,6 +925,7 @@ export function ChannelPane({
       profiles={profiles}
       typingEntries={humanTypingEntries}
       onOpenAuthor={handleOpenAuthor} onAuthorScopeUnavailable={closeProfile}
+      renderAgentMentionStatus={conversation ? undefined : renderAgentMentionStatus}
       editTarget={threadEditTarget} onEdit={handleRoutedEdit} onCancelEdit={handleCancelEdit} onEditConfirmed={handleEditConfirmed}
       onDelete={canDelete ? deleteMessageDialog.requestDelete : undefined} onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
       editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}

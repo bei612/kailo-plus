@@ -43,7 +43,7 @@ import { MembersPane, type MemberIdentityRenderer } from "./members";
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
 export { MembersPane, type MemberIdentityRenderer } from "./members";
 
-export { AgentDefinitionsPage } from "./agents";
+export { AgentDefinitionsPage, WorkspaceAgentDialogs } from "./agents";
 export { NativeApplicationEntries } from "./native-application-entries";
 
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */

@@ -1,3 +1,4 @@
+export * from "./AgentMentionStatus";
 export * from "./DayDivider";
 export * from "./ComposerReplyBanner";
 export * from "./MessageActionBarSurface";

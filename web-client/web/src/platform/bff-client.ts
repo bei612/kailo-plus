@@ -33,8 +33,10 @@ import type {
   WebUserStatusPage,
   WebUserStatusQueryRequest,
   WebUserStatusUpdateRequest,
+  AgentMentionOutcomePage,
+  AgentMentionOutcomeQueryRequest,
 } from "@client-kit/contracts";
-import { WebPresenceStatus } from "@client-kit/contracts";
+import { AgentMentionOutcomeState, ReasonCode, WebPresenceStatus } from "@client-kit/contracts";
 import { KIND_PRESENCE_UPDATE, KIND_USER_STATUS } from "@client-kit/platform/react/thread/kinds";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
@@ -238,6 +240,38 @@ export async function publishReminder(request:import("@client-kit/contracts").Re
     method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request)}));
   if(!receipt?.eventId||!receipt.operationId)throw new TransportError("Reminder publication outcome unknown");
   return receipt;
+}
+
+/** DD-121 route; the one place the Web path is named, so it aligns with BFF here. */
+export function agentMentionOutcomesPath(workspaceId: string): string {
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-mentions/query`;
+}
+
+/** contracts/api/agent_mention_outcome_query_request.schema.json `eventIds.maxItems`. */
+export const AGENT_MENTION_OUTCOME_QUERY_LIMIT = 50;
+
+const OUTCOME_STATES: ReadonlySet<string> = new Set(Object.values(AgentMentionOutcomeState));
+const REASON_CODES: ReadonlySet<string> = new Set(Object.values(ReasonCode));
+
+/**
+ * DD-121 (1): read-only `agent.invoke` outcomes of the caller's own messages in this Workspace.
+ * Only rows for the requested event IDs are accepted; a malformed page is never rendered.
+ */
+export async function queryAgentMentionOutcomes(workspaceId: string, eventIds: readonly string[]): Promise<AgentMentionOutcomePage> {
+  const requested = [...new Set(eventIds)];
+  if (requested.length === 0 || requested.length > AGENT_MENTION_OUTCOME_QUERY_LIMIT || !requested.every((id) => /^[0-9a-f]{64}$/.test(id)))
+    throw new TransportError("Invalid agent mention outcome request");
+  const page = await call<AgentMentionOutcomePage>({ method: "POST", path: agentMentionOutcomesPath(workspaceId),
+    body: { eventIds: requested } satisfies AgentMentionOutcomeQueryRequest });
+  const asked = new Set(requested);
+  if (!page || !Array.isArray(page.outcomes) || !page.outcomes.every((row) => row && typeof row === "object"
+    && typeof row.eventId === "string" && asked.has(row.eventId)
+    && typeof row.installationId === "string" && row.installationId !== ""
+    && OUTCOME_STATES.has(row.state)
+    && (row.reasonCode === undefined || REASON_CODES.has(row.reasonCode))
+    && (row.replyEventId === undefined || typeof row.replyEventId === "string")))
+    throw new TransportError("Invalid agent mention outcome response");
+  return page;
 }
 
 /** DD-119 member topic route; the one place the Web path is named, so it aligns with BFF here. */

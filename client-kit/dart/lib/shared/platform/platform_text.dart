@@ -3055,6 +3055,13 @@ enum PlatformMessageKey {
   userStatusStatusSet,
   userStatusSaveFailed,
   userStatusSaveUnknown,
+  agentMentionRunning,
+  agentMentionFailed,
+  agentMentionDelegationRequired,
+  agentMentionRenewDelegation,
+  agentMentionUseRequired,
+  agentMentionUnavailable,
+  agentMentionUnknownAgent,
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
@@ -10402,6 +10409,28 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Status update not confirmed. Saving the same status again will not publish it twice.',
     '状态更新未确认。原样再次保存不会重复发布。',
   ),
+  PlatformMessageKey.agentMentionRunning: (
+    '{name} is working on it…',
+    '{name} 正在处理…',
+  ),
+  PlatformMessageKey.agentMentionFailed: (
+    '{name} could not process this message.',
+    '{name} 处理失败',
+  ),
+  PlatformMessageKey.agentMentionDelegationRequired: (
+    '{name} did not respond: your delegation to it has expired or was never granted.',
+    '{name} 未响应：你对它的委托已过期或尚未委托',
+  ),
+  PlatformMessageKey.agentMentionRenewDelegation: ('Renew delegation', '续签委托'),
+  PlatformMessageKey.agentMentionUseRequired: (
+    '{name} did not respond: an admin needs to grant you use of it.',
+    '{name} 未响应：需要管理员授予使用权',
+  ),
+  PlatformMessageKey.agentMentionUnavailable: (
+    '{name} did not respond: temporarily unavailable. Try again later.',
+    '{name} 未响应：暂不可用，稍后重试',
+  ),
+  PlatformMessageKey.agentMentionUnknownAgent: ('Agent', 'Agent'),
 };
 
 String platformText(

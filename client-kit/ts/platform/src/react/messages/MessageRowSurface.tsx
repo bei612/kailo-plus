@@ -47,7 +47,7 @@ export function MessageRowSurface({
     playEntrance = false,
     showDepthGuides = true,
     renderBody, renderIdentity, renderActions, reference, resolveMediaUrl, searchQuery,
-    onToggleReaction, customEmoji = [], reactionScope,
+    onToggleReaction, customEmoji = [], reactionScope, agentMentionStatus,
   }: {
     collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
     connectDescendants?: boolean;
@@ -84,6 +84,8 @@ export function MessageRowSurface({
     reference?: React.ReactNode;
     resolveMediaUrl?: (url: string) => string | undefined;
     searchQuery?: string;
+    /** DD-121: the sender-only Agent @mention outcome line under their own message; absent → unchanged row. */
+    agentMentionStatus?: React.ReactNode;
   }) {
     const translateUi = useUiT();
     const [expandedDiffId, setExpandedDiffId] = React.useState<string | null>(null);
@@ -305,6 +307,7 @@ export function MessageRowSurface({
           customEmoji={customEmoji} reactionScope={reactionScope} resolveMediaUrl={resolveMediaUrl}
         />
         {reaction.errorMessage ? <p className="mt-1.5 text-xs text-muted-foreground" role="status">{reaction.errorMessage}</p> : null}
+        {agentMentionStatus}
       </>
     );
 

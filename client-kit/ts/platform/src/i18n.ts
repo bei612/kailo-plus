@@ -3563,6 +3563,13 @@ export const platformMessages = {
   "userStatus.statusSet": { en: "Status set", "zh-CN": "已设置状态" },
   "userStatus.saveFailed": { en: "Status not saved.", "zh-CN": "状态未保存。" },
   "userStatus.saveUnknown": { en: "Status update not confirmed. Saving the same status again will not publish it twice.", "zh-CN": "状态更新未确认。原样再次保存不会重复发布。" },
+  "agentMention.running": { en: "{name} is working on it…", "zh-CN": "{name} 正在处理…" },
+  "agentMention.failed": { en: "{name} could not process this message.", "zh-CN": "{name} 处理失败" },
+  "agentMention.delegationRequired": { en: "{name} did not respond: your delegation to it has expired or was never granted.", "zh-CN": "{name} 未响应：你对它的委托已过期或尚未委托" },
+  "agentMention.renewDelegation": { en: "Renew delegation", "zh-CN": "续签委托" },
+  "agentMention.useRequired": { en: "{name} did not respond: an admin needs to grant you use of it.", "zh-CN": "{name} 未响应：需要管理员授予使用权" },
+  "agentMention.unavailable": { en: "{name} did not respond: temporarily unavailable. Try again later.", "zh-CN": "{name} 未响应：暂不可用，稍后重试" },
+  "agentMention.unknownAgent": { en: "Agent", "zh-CN": "Agent" },
 } as const;
 
 export type PlatformMessageKey = keyof typeof platformMessages;

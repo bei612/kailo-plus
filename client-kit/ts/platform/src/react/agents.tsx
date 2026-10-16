@@ -1559,11 +1559,17 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
  * detail with its use authorization, execution/read permission, delegation and upgrade dialogs
  * as the Agents page. The host only chooses which one is open.
  */
-export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, onCreateOpenChange, selectedId, onSelectedChange, onRecorded }: {
+export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, onCreateOpenChange, selectedId, onSelectedChange, onRecorded, manageDelegation = false }: {
   workspaceId: string; workspaceName: string;
   createOpen: boolean; onCreateOpenChange: (open: boolean) => void;
   selectedId: string | null; onSelectedChange: (resourceId: string | null) => void;
   onRecorded?: () => void;
+  /**
+   * DD-121 renewal entry: once the selected Installation is freshly read and manageable, open its
+   * delegation management directly (the same "View delegation grants" step); otherwise the
+   * installation detail stays as the fallback.
+   */
+  manageDelegation?: boolean;
 }) {
   const t = useT();
   const [locked, setLocked] = useState(false);
@@ -1580,6 +1586,7 @@ export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, 
       locked={locked} onLocked={setLocked} onRecorded={recorded} /> : null}
     <AgentManagementDialog open={selectedId !== null} title={t("agents.installation.open")} locked={locked} onClose={() => onSelectedChange(null)}>
       {selectedId ? <InstallationDetail key={`${selectedId}:${revision}`} resourceId={selectedId} workspaceId={workspaceId} locked={locked} onLocked={setLocked}
+        autoManage={manageDelegation}
         onPermission={(row) => { onSelectedChange(null); setPermissionTarget(row); }}
         onManage={(row) => { onSelectedChange(null); setDelegationTarget(row); }}
         onUpgrade={(row) => { onSelectedChange(null); setUpgradeTarget(row); }} /> : null}
@@ -2085,15 +2092,24 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   </div>;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onLocked }: {
+function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onLocked, autoManage = false }: {
   resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
+  autoManage?: boolean;
 }) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
   const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
     && state.data.workspaceId === workspaceId ? state.data : null;
+  const manageable = row !== null && row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active;
+  const autoManaged = useRef(false);
+  useEffect(() => {
+    // Same condition as the "View delegation grants" button below; at most once per mount.
+    if (!autoManage || autoManaged.current || locked || !manageable || !row) return;
+    autoManaged.current = true;
+    onManage(row);
+  }, [autoManage, locked, manageable, row, onManage]);
   if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   return <section className="flex flex-col gap-2 border-t pt-3" data-testid="agent-installation-detail">
