@@ -792,7 +792,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:229935b00e80e35bc72b9db9eec4bf46169f7a96cc9a3ef96423180f2f095697
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:ce893994beb8a2e94374eb75d5c5edb42607869176442a7c87809249b03d97f1
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
