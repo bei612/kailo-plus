@@ -4,7 +4,7 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {act} from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
-import {ProjectsGitQueryRequestView,type ProjectsGitQueryRequest,type ProjectsGitQueryResponse} from "@client-kit/contracts";
+import {ErrorClass,ProjectsGitQueryRequestView,ReasonCode,type ProjectsGitQueryRequest,type ProjectsGitQueryResponse} from "@client-kit/contracts";
 import {createBffClient} from "../src/client";
 import {setLocale} from "../src/i18n";
 import {PlatformProvider} from "../src/react/context";
@@ -147,7 +147,7 @@ describe("restored review Files changed",()=>{
 
   it("keeps the original unavailable copy when the BFF hides the repository",async()=>{
     const f=fixture();
-    f.gitQuery.mockRejectedValue(new BffError(404,"POST /api/v1/projects/git/query → 404",{reason:"REPOSITORY_NOT_FOUND" as never}));
+    f.gitQuery.mockRejectedValue(new BffError(404,"POST /api/v1/projects/git/query → 404",{class:ErrorClass.Unknown,reason:ReasonCode.TargetNotFound}));
     const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-repository-unavailable"]')?.textContent).toContain("Repository not initialized"),{timeout:3000});
   });

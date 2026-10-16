@@ -1,7 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/lib/projectRepoAvailability.ts. Same reasons and copy. The BFF
-// (DD-118) answers with typed reasons instead of git stderr: REPOSITORY_NOT_FOUND never says why,
-// REPOSITORY_UNBOUND reaches only the coordinate author, RELAY_UNAVAILABLE is the network case.
+// (DD-118) answers with contract reason codes instead of git stderr: TARGET_NOT_FOUND never says
+// why (one Relay 404), DEPENDENCY_UNAVAILABLE is the network case. The author-only unbound hint is
+// not yet produced by the BFF.
 // The membership refinement is not restored: the Relay 404 must stay indistinguishable.
 import { translateCurrent as t } from "../../../i18n";
 import { BffError, TransportError } from "../../../transport";
@@ -30,9 +31,8 @@ export function projectRepoUnavailablePresentation(reason: ProjectRepoUnavailabl
 export function projectRepoUnavailableReason(error: unknown): ProjectRepoUnavailableReason {
   if (error instanceof BffError) {
     const reason = String(error.reason ?? "");
-    if (reason === "REPOSITORY_UNBOUND") return "unbound";
-    if (reason === "REPOSITORY_NOT_FOUND") return "missing";
-    if (reason === "RELAY_UNAVAILABLE") return "network";
+    if (reason === "TARGET_NOT_FOUND") return "missing";
+    if (reason === "DEPENDENCY_UNAVAILABLE") return "network";
   }
   if (error instanceof TransportError) return "network";
   const message =
