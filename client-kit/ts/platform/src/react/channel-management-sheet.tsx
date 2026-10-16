@@ -623,7 +623,7 @@ function ChannelHero({ channel, description, dm, onEdit }: {
             <span className="block max-w-full truncate text-xl font-semibold tracking-tight">{channel.name}</span>
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 left-full ml-1 -translate-y-1/2 text-muted-foreground opacity-0 transition-[color,opacity] duration-150 ease-out group-hover:text-foreground group-hover:opacity-100 group-focus-visible:opacity-100"
+              className="pointer-events-none absolute top-1/2 left-full ml-1 -translate-y-1/2 text-muted-foreground opacity-0 transition-[opacity,color] duration-150 ease-out group-hover:text-foreground group-hover:opacity-100 group-focus-visible:opacity-100"
               data-testid="channel-management-edit-icon"
             >
               <Pencil className="h-4 w-4" />
