@@ -11,17 +11,24 @@
 //! The only seam is authentication ([`GitAuth`]): Desktop keeps the original
 //! `git-credential-nostr` helper; Core injects a freshly pre-signed NIP-98
 //! `Authorization` header per git invocation and never hands a private key to
-//! the git subprocess. Local-checkout, push, pull, merge and branch commands are
-//! not part of this crate yet; they belong next to these modules.
+//! the git subprocess. The original remote branch operations
+//! (`create_project_remote_branch` / `delete_project_remote_branch`) live in the
+//! `branches` module. Local-checkout, push, pull and merge commands are not part
+//! of this crate yet; they belong next to these modules.
 
 #![forbid(unsafe_code)]
 
+mod branches;
 mod diff;
 mod exec;
 mod file_content;
 mod snapshot;
 mod types;
 
+pub use branches::{
+    create_remote_branch_blocking, delete_remote_branch_blocking, normalize_branch,
+    normalize_commit, remote_branch_commit, ProjectRepoBranchResult, RemoteBranchError,
+};
 pub use diff::{project_repo_diff, ProjectRepoDiffFileInfo, ProjectRepoDiffInfo, MAX_PATCH_LINES};
 pub use exec::{
     clean_branch, clean_target_ref, is_timeout_error, AuthorizationSource, GitAuth, GitAuthConfig,
