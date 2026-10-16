@@ -4585,6 +4585,39 @@ export interface ProjectPreferenceRequest {
 }
 
 /**
+ * DD-118: the original Buzz Desktop merge_project_pull_request through BFF. Only when the
+ * person's own SERVER key is the repository coordinate owner: Core merges the review's
+ * source branch into the target branch in a temporary clone, pushes as that owner (Relay
+ * pre-receive policy decides), then publishes the owner-signed original kind 1631 merged
+ * status through the existing publication chain. Carries the Idempotency-Key header; the
+ * push is keyed by (repository, target ref, old->new) and reconciled from info/refs; 1631
+ * follows DD-81.
+ */
+export interface ProjectsGitMergeRequest {
+    /**
+     * Original expected source head; a moved source branch is a conflict, never a silent merge
+     * of other commits.
+     */
+    expectedCommit: string;
+    /**
+     * The original 1618 review being merged.
+     */
+    pullRequestEventId: string;
+    repository:         string;
+    sourceBranch:       string;
+    targetBranch:       string;
+}
+
+/**
+ * DD-118: the original ProjectRepoMergeResult without its English message. statusEventId is
+ * the owner-signed 1631 merged status; it is present once that publication is accepted.
+ */
+export interface ProjectsGitMergeResponse {
+    mergeCommit:    string;
+    statusEventId?: string;
+}
+
+/**
  * DD-118: the original Buzz Desktop remote repository reads
  * (get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through
  * BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay

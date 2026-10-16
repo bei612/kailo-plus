@@ -125,6 +125,8 @@
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
 //     final projectPreferenceRequest = projectPreferenceRequestFromJson(jsonString);
+//     final projectsGitMergeRequest = projectsGitMergeRequestFromJson(jsonString);
+//     final projectsGitMergeResponse = projectsGitMergeResponseFromJson(jsonString);
 //     final projectsGitQueryRequest = projectsGitQueryRequestFromJson(jsonString);
 //     final projectsGitQueryResponse = projectsGitQueryResponseFromJson(jsonString);
 //     final projectsGitRefRequest = projectsGitRefRequestFromJson(jsonString);
@@ -1028,6 +1030,18 @@ ProjectPreferenceRequest projectPreferenceRequestFromJson(String str) =>
     ProjectPreferenceRequest.fromJson(json.decode(str));
 
 String projectPreferenceRequestToJson(ProjectPreferenceRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsGitMergeRequest projectsGitMergeRequestFromJson(String str) =>
+    ProjectsGitMergeRequest.fromJson(json.decode(str));
+
+String projectsGitMergeRequestToJson(ProjectsGitMergeRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsGitMergeResponse projectsGitMergeResponseFromJson(String str) =>
+    ProjectsGitMergeResponse.fromJson(json.decode(str));
+
+String projectsGitMergeResponseToJson(ProjectsGitMergeResponse data) =>
     json.encode(data.toJson());
 
 ProjectsGitQueryRequest projectsGitQueryRequestFromJson(String str) =>
@@ -13392,6 +13406,68 @@ class ProjectPreferenceRequest {
     "selected": selected,
     "version": version,
   });
+}
+
+///DD-118: the original Buzz Desktop merge_project_pull_request through BFF. Only when the
+///person's own SERVER key is the repository coordinate owner: Core merges the review's
+///source branch into the target branch in a temporary clone, pushes as that owner (Relay
+///pre-receive policy decides), then publishes the owner-signed original kind 1631 merged
+///status through the existing publication chain. Carries the Idempotency-Key header; the
+///push is keyed by (repository, target ref, old->new) and reconciled from info/refs; 1631
+///follows DD-81.
+class ProjectsGitMergeRequest {
+  ///Original expected source head; a moved source branch is a conflict, never a silent merge
+  ///of other commits.
+  final String expectedCommit;
+
+  ///The original 1618 review being merged.
+  final String pullRequestEventId;
+  final String repository;
+  final String sourceBranch;
+  final String targetBranch;
+
+  ProjectsGitMergeRequest({
+    required this.expectedCommit,
+    required this.pullRequestEventId,
+    required this.repository,
+    required this.sourceBranch,
+    required this.targetBranch,
+  });
+
+  factory ProjectsGitMergeRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitMergeRequest(
+        expectedCommit: json["expectedCommit"],
+        pullRequestEventId: json["pullRequestEventId"],
+        repository: json["repository"],
+        sourceBranch: json["sourceBranch"],
+        targetBranch: json["targetBranch"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expectedCommit": expectedCommit,
+    "pullRequestEventId": pullRequestEventId,
+    "repository": repository,
+    "sourceBranch": sourceBranch,
+    "targetBranch": targetBranch,
+  });
+}
+
+///DD-118: the original ProjectRepoMergeResult without its English message. statusEventId is
+///the owner-signed 1631 merged status; it is present once that publication is accepted.
+class ProjectsGitMergeResponse {
+  final String mergeCommit;
+  final String? statusEventId;
+
+  ProjectsGitMergeResponse({required this.mergeCommit, this.statusEventId});
+
+  factory ProjectsGitMergeResponse.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitMergeResponse(
+        mergeCommit: json["mergeCommit"],
+        statusEventId: json["statusEventId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"mergeCommit": mergeCommit, "statusEventId": statusEventId});
 }
 
 ///DD-118: the original Buzz Desktop remote repository reads

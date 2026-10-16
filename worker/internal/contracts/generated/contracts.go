@@ -376,6 +376,12 @@
 //    projectPreferenceRequest, err := UnmarshalProjectPreferenceRequest(bytes)
 //    bytes, err = projectPreferenceRequest.Marshal()
 //
+//    projectsGitMergeRequest, err := UnmarshalProjectsGitMergeRequest(bytes)
+//    bytes, err = projectsGitMergeRequest.Marshal()
+//
+//    projectsGitMergeResponse, err := UnmarshalProjectsGitMergeResponse(bytes)
+//    bytes, err = projectsGitMergeResponse.Marshal()
+//
 //    projectsGitQueryRequest, err := UnmarshalProjectsGitQueryRequest(bytes)
 //    bytes, err = projectsGitQueryRequest.Marshal()
 //
@@ -2004,6 +2010,26 @@ func UnmarshalProjectPreferenceRequest(data []byte) (ProjectPreferenceRequest, e
 }
 
 func (r *ProjectPreferenceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitMergeRequest(data []byte) (ProjectsGitMergeRequest, error) {
+	var r ProjectsGitMergeRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitMergeRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitMergeResponse(data []byte) (ProjectsGitMergeResponse, error) {
+	var r ProjectsGitMergeResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitMergeResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6116,6 +6142,31 @@ type ProjectPreferenceRequest struct {
 	ProjectAddress string `json:"projectAddress"`
 	Selected       bool   `json:"selected"`
 	Version        int64  `json:"version"`
+}
+
+// DD-118: the original Buzz Desktop merge_project_pull_request through BFF. Only when the
+// person's own SERVER key is the repository coordinate owner: Core merges the review's
+// source branch into the target branch in a temporary clone, pushes as that owner (Relay
+// pre-receive policy decides), then publishes the owner-signed original kind 1631 merged
+// status through the existing publication chain. Carries the Idempotency-Key header; the
+// push is keyed by (repository, target ref, old->new) and reconciled from info/refs; 1631
+// follows DD-81.
+type ProjectsGitMergeRequest struct {
+	// Original expected source head; a moved source branch is a conflict, never a silent merge
+	// of other commits.
+	ExpectedCommit string `json:"expectedCommit"`
+	// The original 1618 review being merged.
+	PullRequestEventID string `json:"pullRequestEventId"`
+	Repository         string `json:"repository"`
+	SourceBranch       string `json:"sourceBranch"`
+	TargetBranch       string `json:"targetBranch"`
+}
+
+// DD-118: the original ProjectRepoMergeResult without its English message. statusEventId is
+// the owner-signed 1631 merged status; it is present once that publication is accepted.
+type ProjectsGitMergeResponse struct {
+	MergeCommit   string  `json:"mergeCommit"`
+	StatusEventID *string `json:"statusEventId,omitempty"`
 }
 
 // DD-118: the original Buzz Desktop remote repository reads
