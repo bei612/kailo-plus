@@ -382,6 +382,12 @@
 //    projectsGitQueryResponse, err := UnmarshalProjectsGitQueryResponse(bytes)
 //    bytes, err = projectsGitQueryResponse.Marshal()
 //
+//    projectsGitRefRequest, err := UnmarshalProjectsGitRefRequest(bytes)
+//    bytes, err = projectsGitRefRequest.Marshal()
+//
+//    projectsGitRefResponse, err := UnmarshalProjectsGitRefResponse(bytes)
+//    bytes, err = projectsGitRefResponse.Marshal()
+//
 //    projectsPublishRequest, err := UnmarshalProjectsPublishRequest(bytes)
 //    bytes, err = projectsPublishRequest.Marshal()
 //
@@ -2018,6 +2024,26 @@ func UnmarshalProjectsGitQueryResponse(data []byte) (ProjectsGitQueryResponse, e
 }
 
 func (r *ProjectsGitQueryResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitRefRequest(data []byte) (ProjectsGitRefRequest, error) {
+	var r ProjectsGitRefRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitRefRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitRefResponse(data []byte) (ProjectsGitRefResponse, error) {
+	var r ProjectsGitRefResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitRefResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6168,10 +6194,36 @@ type ProjectRepoFile struct {
 	Size           *int64             `json:"size"`
 }
 
+// DD-118: the original Buzz Desktop
+// create_project_remote_branch/delete_project_remote_branch through BFF. The person's own
+// SERVER identity pushes to the Relay repository named by its 30617 coordinate; Relay
+// pre-receive policy decides. The request carries the Idempotency-Key header; the push is
+// keyed by (repository, ref, old->new) and reconciled from info/refs.
+type ProjectsGitRefRequest struct {
+	// CREATE_BRANCH: the new branch. DELETE_BRANCH: the branch to delete.
+	Branch string `json:"branch"`
+	// CREATE_BRANCH: the source branch head the new branch starts at. DELETE_BRANCH: the branch
+	// head being deleted.
+	ExpectedCommit string                 `json:"expectedCommit"`
+	Operation      ProjectGitRefOperation `json:"operation"`
+	Repository     string                 `json:"repository"`
+	// CREATE_BRANCH only: the original source branch.
+	SourceBranch *string `json:"sourceBranch,omitempty"`
+}
+
+// DD-118: the original ProjectRepoBranchResult without its English message; the branch and
+// the commit the ref now points at (DELETE_BRANCH: the deleted head).
+type ProjectsGitRefResponse struct {
+	Branch string `json:"branch"`
+	Commit string `json:"commit"`
+}
+
 // Typed original Community announcement mutation. Actor is the authenticated SERVER or
 // CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
+// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
+// repository (DD-118); the push itself is not part of this request.
 type ProjectsPublishRequest struct {
 	// Original transient display label, trimmed and limited to 128 Unicode characters by the
 	// consumer. Never an identity or authorization claim.
@@ -6184,12 +6236,18 @@ type ProjectsPublishRequest struct {
 	// Original complete markdown including attachment markdown. Issues may be empty; comments
 	// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
 	// before signing.
-	Body        *string                     `json:"body,omitempty"`
-	Category    *ProjectIssueCategory       `json:"category,omitempty"`
-	Description *string                     `json:"description,omitempty"`
-	Mentions    []string                    `json:"mentions,omitempty"`
-	Name        *string                     `json:"name,omitempty"`
-	Operation   ProjectPublicationOperation `json:"operation"`
+	Body *string `json:"body,omitempty"`
+	// Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
+	BranchName *string               `json:"branchName,omitempty"`
+	Category   *ProjectIssueCategory `json:"category,omitempty"`
+	// Original 1618 `c`: compare branch head read from the trusted repository state.
+	Commit      *string  `json:"commit,omitempty"`
+	Description *string  `json:"description,omitempty"`
+	Mentions    []string `json:"mentions,omitempty"`
+	// Original 1618 `merge-base`, when known.
+	MergeBase *string                     `json:"mergeBase,omitempty"`
+	Name      *string                     `json:"name,omitempty"`
+	Operation ProjectPublicationOperation `json:"operation"`
 	// Optional immutable original per-self assignment operation head. Same publication intent
 	// retains it across UNKNOWN observation; never an authorization grant.
 	PriorEventID *string `json:"priorEventId,omitempty"`
@@ -6197,7 +6255,12 @@ type ProjectsPublishRequest struct {
 	// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
 	// review author or repository owner signs it.
 	PullRequestStatus *ProjectPullRequestLifecycleStatus `json:"pullRequestStatus,omitempty"`
-	TargetEventID     *string                            `json:"targetEventId,omitempty"`
+	// Original requested reviewers (p tags beside the repository owner). Never a signing
+	// identity or grant.
+	Reviewers []string `json:"reviewers,omitempty"`
+	// Original 1618 `target-branch`: the base branch.
+	TargetBranch  *string `json:"targetBranch,omitempty"`
+	TargetEventID *string `json:"targetEventId,omitempty"`
 	// Original trimmed issue subject; the consumer additionally enforces the original
 	// JavaScript 256 UTF-16 code-unit limit.
 	Title       *string                   `json:"title,omitempty"`
@@ -6230,6 +6293,8 @@ type AttachmentElement struct {
 
 // Original Buzz Community project/repository announcements, coordinate-scoped work-item
 // events and tombstones. Reads do not authorize Git transport or mutations.
+// REPOSITORY_STATES returns the original trusted 30618 repository state (signed by the
+// coordinate owner or the Relay itself) for the requested 30617 coordinates.
 type ProjectsQueryRequest struct {
 	Coordinates []string                 `json:"coordinates,omitempty"`
 	Since       *int64                   `json:"since,omitempty"`
@@ -9131,6 +9196,13 @@ const (
 	Snapshot    ProjectsGitQueryRequestView = "SNAPSHOT"
 )
 
+type ProjectGitRefOperation string
+
+const (
+	CreateBranch ProjectGitRefOperation = "CREATE_BRANCH"
+	DeleteBranch ProjectGitRefOperation = "DELETE_BRANCH"
+)
+
 type ProjectIssueCategory string
 
 const (
@@ -9146,6 +9218,7 @@ const (
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
+	CreatePullRequest                 ProjectPublicationOperation = "CREATE_PULL_REQUEST"
 	CreatePullRequestComment          ProjectPublicationOperation = "CREATE_PULL_REQUEST_COMMENT"
 	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
@@ -9179,6 +9252,7 @@ const (
 	Deletions        ProjectsQueryRequestView = "DELETIONS"
 	Projects         ProjectsQueryRequestView = "PROJECTS"
 	Repositories     ProjectsQueryRequestView = "REPOSITORIES"
+	RepositoryStates ProjectsQueryRequestView = "REPOSITORY_STATES"
 	WorkItemActivity ProjectsQueryRequestView = "WORK_ITEM_ACTIVITY"
 	WorkItems        ProjectsQueryRequestView = "WORK_ITEMS"
 )

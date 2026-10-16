@@ -6723,10 +6723,55 @@ pub struct ProjectRepoFile {
     pub size: Option<i64>,
 }
 
+/// DD-118: the original Buzz Desktop
+/// create_project_remote_branch/delete_project_remote_branch through BFF. The person's own
+/// SERVER identity pushes to the Relay repository named by its 30617 coordinate; Relay
+/// pre-receive policy decides. The request carries the Idempotency-Key header; the push is
+/// keyed by (repository, ref, old->new) and reconciled from info/refs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsGitRefRequest {
+    /// CREATE_BRANCH: the new branch. DELETE_BRANCH: the branch to delete.
+    pub branch: String,
+
+    /// CREATE_BRANCH: the source branch head the new branch starts at. DELETE_BRANCH: the branch
+    /// head being deleted.
+    pub expected_commit: String,
+
+    pub operation: ProjectGitRefOperation,
+
+    pub repository: String,
+
+    /// CREATE_BRANCH only: the original source branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ProjectGitRefOperation {
+    #[serde(rename = "CREATE_BRANCH")]
+    CreateBranch,
+
+    #[serde(rename = "DELETE_BRANCH")]
+    DeleteBranch,
+}
+
+/// DD-118: the original ProjectRepoBranchResult without its English message; the branch and
+/// the commit the ref now points at (DELETE_BRANCH: the deleted head).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectsGitRefResponse {
+    pub branch: String,
+
+    pub commit: String,
+}
+
 /// Typed original Community announcement mutation. Actor is the authenticated SERVER or
 /// CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 /// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 /// signed current announcement; it does not delete its channel or repositories.
+/// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
+/// repository (DD-118); the push itself is not part of this request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
@@ -6750,14 +6795,26 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 
+    /// Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<ProjectIssueCategory>,
+
+    /// Original 1618 `c`: compare branch head read from the trusted repository state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mentions: Option<Vec<String>>,
+
+    /// Original 1618 `merge-base`, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_base: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -6774,6 +6831,15 @@ pub struct ProjectsPublishRequest {
     /// review author or repository owner signs it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_request_status: Option<ProjectPullRequestLifecycleStatus>,
+
+    /// Original requested reviewers (p tags beside the repository owner). Never a signing
+    /// identity or grant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewers: Option<Vec<String>>,
+
+    /// Original 1618 `target-branch`: the base branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_branch: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_event_id: Option<String>,
@@ -6861,6 +6927,9 @@ pub enum ProjectPublicationOperation {
     #[serde(rename = "CREATE_PROJECT")]
     CreateProject,
 
+    #[serde(rename = "CREATE_PULL_REQUEST")]
+    CreatePullRequest,
+
     #[serde(rename = "CREATE_PULL_REQUEST_COMMENT")]
     CreatePullRequestComment,
 
@@ -6905,6 +6974,8 @@ pub enum ProjectListingVisibility {
 
 /// Original Buzz Community project/repository announcements, coordinate-scoped work-item
 /// events and tombstones. Reads do not authorize Git transport or mutations.
+/// REPOSITORY_STATES returns the original trusted 30618 repository state (signed by the
+/// coordinate owner or the Relay itself) for the requested 30617 coordinates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectsQueryRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6927,6 +6998,9 @@ pub enum ProjectsQueryRequestView {
     Projects,
 
     Repositories,
+
+    #[serde(rename = "REPOSITORY_STATES")]
+    RepositoryStates,
 
     #[serde(rename = "WORK_ITEM_ACTIVITY")]
     WorkItemActivity,

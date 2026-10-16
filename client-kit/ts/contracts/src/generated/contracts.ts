@@ -4681,10 +4681,51 @@ export interface ProjectRepoFile {
 }
 
 /**
+ * DD-118: the original Buzz Desktop
+ * create_project_remote_branch/delete_project_remote_branch through BFF. The person's own
+ * SERVER identity pushes to the Relay repository named by its 30617 coordinate; Relay
+ * pre-receive policy decides. The request carries the Idempotency-Key header; the push is
+ * keyed by (repository, ref, old->new) and reconciled from info/refs.
+ */
+export interface ProjectsGitRefRequest {
+    /**
+     * CREATE_BRANCH: the new branch. DELETE_BRANCH: the branch to delete.
+     */
+    branch: string;
+    /**
+     * CREATE_BRANCH: the source branch head the new branch starts at. DELETE_BRANCH: the branch
+     * head being deleted.
+     */
+    expectedCommit: string;
+    operation:      ProjectGitRefOperation;
+    repository:     string;
+    /**
+     * CREATE_BRANCH only: the original source branch.
+     */
+    sourceBranch?: string;
+}
+
+export enum ProjectGitRefOperation {
+    CreateBranch = "CREATE_BRANCH",
+    DeleteBranch = "DELETE_BRANCH",
+}
+
+/**
+ * DD-118: the original ProjectRepoBranchResult without its English message; the branch and
+ * the commit the ref now points at (DELETE_BRANCH: the deleted head).
+ */
+export interface ProjectsGitRefResponse {
+    branch: string;
+    commit: string;
+}
+
+/**
  * Typed original Community announcement mutation. Actor is the authenticated SERVER or
  * CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
  * admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
  * signed current announcement; it does not delete its channel or repositories.
+ * CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
+ * repository (DD-118); the push itself is not part of this request.
  */
 export interface ProjectsPublishRequest {
     /**
@@ -4704,12 +4745,24 @@ export interface ProjectsPublishRequest {
      * must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
      * before signing.
      */
-    body?:        string;
-    category?:    ProjectIssueCategory;
+    body?: string;
+    /**
+     * Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
+     */
+    branchName?: string;
+    category?:   ProjectIssueCategory;
+    /**
+     * Original 1618 `c`: compare branch head read from the trusted repository state.
+     */
+    commit?:      string;
     description?: string;
     mentions?:    string[];
-    name?:        string;
-    operation:    ProjectPublicationOperation;
+    /**
+     * Original 1618 `merge-base`, when known.
+     */
+    mergeBase?: string;
+    name?:      string;
+    operation:  ProjectPublicationOperation;
     /**
      * Optional immutable original per-self assignment operation head. Same publication intent
      * retains it across UNKNOWN observation; never an authorization grant.
@@ -4721,7 +4774,16 @@ export interface ProjectsPublishRequest {
      * review author or repository owner signs it.
      */
     pullRequestStatus?: ProjectPullRequestLifecycleStatus;
-    targetEventId?:     string;
+    /**
+     * Original requested reviewers (p tags beside the repository owner). Never a signing
+     * identity or grant.
+     */
+    reviewers?: string[];
+    /**
+     * Original 1618 `target-branch`: the base branch.
+     */
+    targetBranch?:  string;
+    targetEventId?: string;
     /**
      * Original trimmed issue subject; the consumer additionally enforces the original
      * JavaScript 256 UTF-16 code-unit limit.
@@ -4781,6 +4843,7 @@ export enum ProjectPublicationOperation {
     CreateIssue = "CREATE_ISSUE",
     CreateIssueComment = "CREATE_ISSUE_COMMENT",
     CreateProject = "CREATE_PROJECT",
+    CreatePullRequest = "CREATE_PULL_REQUEST",
     CreatePullRequestComment = "CREATE_PULL_REQUEST_COMMENT",
     CreateRepository = "CREATE_REPOSITORY",
     Delete = "DELETE",
@@ -4809,6 +4872,8 @@ export enum ProjectListingVisibility {
 /**
  * Original Buzz Community project/repository announcements, coordinate-scoped work-item
  * events and tombstones. Reads do not authorize Git transport or mutations.
+ * REPOSITORY_STATES returns the original trusted 30618 repository state (signed by the
+ * coordinate owner or the Relay itself) for the requested 30617 coordinates.
  */
 export interface ProjectsQueryRequest {
     coordinates?: string[];
@@ -4821,6 +4886,7 @@ export enum ProjectsQueryRequestView {
     Deletions = "DELETIONS",
     Projects = "PROJECTS",
     Repositories = "REPOSITORIES",
+    RepositoryStates = "REPOSITORY_STATES",
     WorkItemActivity = "WORK_ITEM_ACTIVITY",
     WorkItems = "WORK_ITEMS",
 }

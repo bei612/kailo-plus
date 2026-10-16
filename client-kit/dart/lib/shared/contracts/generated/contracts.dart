@@ -127,6 +127,8 @@
 //     final projectPreferenceRequest = projectPreferenceRequestFromJson(jsonString);
 //     final projectsGitQueryRequest = projectsGitQueryRequestFromJson(jsonString);
 //     final projectsGitQueryResponse = projectsGitQueryResponseFromJson(jsonString);
+//     final projectsGitRefRequest = projectsGitRefRequestFromJson(jsonString);
+//     final projectsGitRefResponse = projectsGitRefResponseFromJson(jsonString);
 //     final projectsPublishRequest = projectsPublishRequestFromJson(jsonString);
 //     final projectsQueryRequest = projectsQueryRequestFromJson(jsonString);
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
@@ -1038,6 +1040,18 @@ ProjectsGitQueryResponse projectsGitQueryResponseFromJson(String str) =>
     ProjectsGitQueryResponse.fromJson(json.decode(str));
 
 String projectsGitQueryResponseToJson(ProjectsGitQueryResponse data) =>
+    json.encode(data.toJson());
+
+ProjectsGitRefRequest projectsGitRefRequestFromJson(String str) =>
+    ProjectsGitRefRequest.fromJson(json.decode(str));
+
+String projectsGitRefRequestToJson(ProjectsGitRefRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsGitRefResponse projectsGitRefResponseFromJson(String str) =>
+    ProjectsGitRefResponse.fromJson(json.decode(str));
+
+String projectsGitRefResponseToJson(ProjectsGitRefResponse data) =>
     json.encode(data.toJson());
 
 ProjectsPublishRequest projectsPublishRequestFromJson(String str) =>
@@ -13683,10 +13697,78 @@ class ProjectRepoFile {
   });
 }
 
+///DD-118: the original Buzz Desktop
+///create_project_remote_branch/delete_project_remote_branch through BFF. The person's own
+///SERVER identity pushes to the Relay repository named by its 30617 coordinate; Relay
+///pre-receive policy decides. The request carries the Idempotency-Key header; the push is
+///keyed by (repository, ref, old->new) and reconciled from info/refs.
+class ProjectsGitRefRequest {
+  ///CREATE_BRANCH: the new branch. DELETE_BRANCH: the branch to delete.
+  final String branch;
+
+  ///CREATE_BRANCH: the source branch head the new branch starts at. DELETE_BRANCH: the branch
+  ///head being deleted.
+  final String expectedCommit;
+  final ProjectGitRefOperation operation;
+  final String repository;
+
+  ///CREATE_BRANCH only: the original source branch.
+  final String? sourceBranch;
+
+  ProjectsGitRefRequest({
+    required this.branch,
+    required this.expectedCommit,
+    required this.operation,
+    required this.repository,
+    this.sourceBranch,
+  });
+
+  factory ProjectsGitRefRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitRefRequest(
+        branch: json["branch"],
+        expectedCommit: json["expectedCommit"],
+        operation: projectGitRefOperationValues.map[json["operation"]]!,
+        repository: json["repository"],
+        sourceBranch: json["sourceBranch"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "branch": branch,
+    "expectedCommit": expectedCommit,
+    "operation": projectGitRefOperationValues.reverse[operation],
+    "repository": repository,
+    "sourceBranch": sourceBranch,
+  });
+}
+
+enum ProjectGitRefOperation { CREATE_BRANCH, DELETE_BRANCH }
+
+final projectGitRefOperationValues = EnumValues({
+  "CREATE_BRANCH": ProjectGitRefOperation.CREATE_BRANCH,
+  "DELETE_BRANCH": ProjectGitRefOperation.DELETE_BRANCH,
+});
+
+///DD-118: the original ProjectRepoBranchResult without its English message; the branch and
+///the commit the ref now points at (DELETE_BRANCH: the deleted head).
+class ProjectsGitRefResponse {
+  final String branch;
+  final String commit;
+
+  ProjectsGitRefResponse({required this.branch, required this.commit});
+
+  factory ProjectsGitRefResponse.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitRefResponse(branch: json["branch"], commit: json["commit"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"branch": branch, "commit": commit});
+}
+
 ///Typed original Community announcement mutation. Actor is the authenticated SERVER or
 ///CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
+///CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
+///repository (DD-118); the push itself is not part of this request.
 class ProjectsPublishRequest {
   ///Original transient display label, trimmed and limited to 128 Unicode characters by the
   ///consumer. Never an identity or authorization claim.
@@ -13702,9 +13784,18 @@ class ProjectsPublishRequest {
   ///must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
   ///before signing.
   final String? body;
+
+  ///Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
+  final String? branchName;
   final ProjectIssueCategory? category;
+
+  ///Original 1618 `c`: compare branch head read from the trusted repository state.
+  final String? commit;
   final String? description;
   final List<String>? mentions;
+
+  ///Original 1618 `merge-base`, when known.
+  final String? mergeBase;
   final String? name;
   final ProjectPublicationOperation operation;
 
@@ -13716,6 +13807,13 @@ class ProjectsPublishRequest {
   ///1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
   ///review author or repository owner signs it.
   final ProjectPullRequestLifecycleStatus? pullRequestStatus;
+
+  ///Original requested reviewers (p tags beside the repository owner). Never a signing
+  ///identity or grant.
+  final List<String>? reviewers;
+
+  ///Original 1618 `target-branch`: the base branch.
+  final String? targetBranch;
   final String? targetEventId;
 
   ///Original trimmed issue subject; the consumer additionally enforces the original
@@ -13729,13 +13827,18 @@ class ProjectsPublishRequest {
     this.assigneePubkey,
     this.attachments,
     this.body,
+    this.branchName,
     this.category,
+    this.commit,
     this.description,
     this.mentions,
+    this.mergeBase,
     this.name,
     required this.operation,
     this.priorEventId,
     this.pullRequestStatus,
+    this.reviewers,
+    this.targetBranch,
     this.targetEventId,
     this.title,
     this.visibility,
@@ -13752,13 +13855,16 @@ class ProjectsPublishRequest {
                 json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
               ),
         body: json["body"],
+        branchName: json["branchName"],
         category: json["category"] == null
             ? null
             : projectIssueCategoryValues.map[json["category"]]!,
+        commit: json["commit"],
         description: json["description"],
         mentions: json["mentions"] == null
             ? null
             : List<String>.from(json["mentions"]!.map((x) => x)),
+        mergeBase: json["mergeBase"],
         name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
         priorEventId: json["priorEventId"],
@@ -13766,6 +13872,10 @@ class ProjectsPublishRequest {
             ? null
             : projectPullRequestLifecycleStatusValues
                   .map[json["pullRequestStatus"]]!,
+        reviewers: json["reviewers"] == null
+            ? null
+            : List<String>.from(json["reviewers"]!.map((x) => x)),
+        targetBranch: json["targetBranch"],
         targetEventId: json["targetEventId"],
         title: json["title"],
         visibility: json["visibility"] == null
@@ -13781,16 +13891,23 @@ class ProjectsPublishRequest {
         ? null
         : List<dynamic>.from(attachments!.map((x) => x.toJson())),
     "body": body,
+    "branchName": branchName,
     "category": projectIssueCategoryValues.reverse[category],
+    "commit": commit,
     "description": description,
     "mentions": mentions == null
         ? null
         : List<dynamic>.from(mentions!.map((x) => x)),
+    "mergeBase": mergeBase,
     "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
     "priorEventId": priorEventId,
     "pullRequestStatus":
         projectPullRequestLifecycleStatusValues.reverse[pullRequestStatus],
+    "reviewers": reviewers == null
+        ? null
+        : List<dynamic>.from(reviewers!.map((x) => x)),
+    "targetBranch": targetBranch,
     "targetEventId": targetEventId,
     "title": title,
     "visibility": projectListingVisibilityValues.reverse[visibility],
@@ -13887,6 +14004,7 @@ enum ProjectPublicationOperation {
   CREATE_ISSUE,
   CREATE_ISSUE_COMMENT,
   CREATE_PROJECT,
+  CREATE_PULL_REQUEST,
   CREATE_PULL_REQUEST_COMMENT,
   CREATE_REPOSITORY,
   DELETE,
@@ -13901,6 +14019,7 @@ final projectPublicationOperationValues = EnumValues({
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
+  "CREATE_PULL_REQUEST": ProjectPublicationOperation.CREATE_PULL_REQUEST,
   "CREATE_PULL_REQUEST_COMMENT":
       ProjectPublicationOperation.CREATE_PULL_REQUEST_COMMENT,
   "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
@@ -13932,6 +14051,8 @@ final projectListingVisibilityValues = EnumValues({
 
 ///Original Buzz Community project/repository announcements, coordinate-scoped work-item
 ///events and tombstones. Reads do not authorize Git transport or mutations.
+///REPOSITORY_STATES returns the original trusted 30618 repository state (signed by the
+///coordinate owner or the Relay itself) for the requested 30617 coordinates.
 class ProjectsQueryRequest {
   final List<String>? coordinates;
   final int? since;
@@ -13969,6 +14090,7 @@ enum ProjectsQueryRequestView {
   DELETIONS,
   PROJECTS,
   REPOSITORIES,
+  REPOSITORY_STATES,
   WORK_ITEMS,
   WORK_ITEM_ACTIVITY,
 }
@@ -13977,6 +14099,7 @@ final projectsQueryRequestViewValues = EnumValues({
   "DELETIONS": ProjectsQueryRequestView.DELETIONS,
   "PROJECTS": ProjectsQueryRequestView.PROJECTS,
   "REPOSITORIES": ProjectsQueryRequestView.REPOSITORIES,
+  "REPOSITORY_STATES": ProjectsQueryRequestView.REPOSITORY_STATES,
   "WORK_ITEMS": ProjectsQueryRequestView.WORK_ITEMS,
   "WORK_ITEM_ACTIVITY": ProjectsQueryRequestView.WORK_ITEM_ACTIVITY,
 });
