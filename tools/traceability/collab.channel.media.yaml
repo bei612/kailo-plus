@@ -34,7 +34,7 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: core
-      digest: sha256:69aac6c758b34f6181720f54e13fd965912072e303fc7c7fd4069d3c8f019050
+      digest: sha256:102d81c605d2dd3af4b58a64d0fe8eb8c58b289a6565c4372d0f3605d2f7d723
     - name: web-client
-      digest: sha256:0754f6f06f055ed8dab18b2a7e851167d023aca70c7c1902f5c4ce3adaf56d31
+      digest: sha256:40c7225c8021e2051c9006096aeaae8c8501cbdf011c5f7fe4f02f0229f81118
   gate: blocked_until_seams_closed
