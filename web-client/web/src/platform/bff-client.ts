@@ -26,6 +26,7 @@ import type {
   ProjectsGitMergeRequest,
   ProjectsGitMergeResponse,
   WebSearchQuery,
+  WebPublishTopicRequest,
 } from "@client-kit/contracts";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
@@ -134,6 +135,26 @@ export async function publishReminder(request:import("@client-kit/contracts").Re
   const receipt=unwrap<{eventId:string;operationId:string}>({method:"POST",path},await transport.exchange(path,{
     method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request)}));
   if(!receipt?.eventId||!receipt.operationId)throw new TransportError("Reminder publication outcome unknown");
+  return receipt;
+}
+
+/** DD-119 member topic route; the one place the Web path is named, so it aligns with BFF here. */
+export function channelTopicPath(workspaceId: string): string {
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/channel/topic`;
+}
+
+/**
+ * DD-119 (9), V-SCN-99: the member's own SERVER identity publishes the strict h+topic 9002
+ * through BFF. Only the topic is sent; the intent's Idempotency-Key is resent unchanged after an
+ * UNKNOWN outcome and BFF reconciles it, never re-signs. A 2xx without a receipt is unknown.
+ */
+export async function publishChannelTopic(workspaceId: string, request: WebPublishTopicRequest, idempotencyKey: string): Promise<{eventId:string;operationId:string}> {
+  const path = channelTopicPath(workspaceId);
+  const receipt = unwrap<{eventId:string;operationId:string}>({method:"POST",path}, await transport.exchange(path, {
+    method:"POST", headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},
+    body:JSON.stringify({topic:request.topic} satisfies WebPublishTopicRequest),
+  }));
+  if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Topic publication outcome unknown");
   return receipt;
 }
 

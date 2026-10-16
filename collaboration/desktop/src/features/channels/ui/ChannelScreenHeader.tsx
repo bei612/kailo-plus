@@ -13,10 +13,11 @@ import type { EphemeralChannelDisplay } from "@/features/channels/lib/ephemeralC
 import { ChannelHeaderStatusBadge } from "@/features/channels/ui/ChannelHeaderStatusBadge";
 import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
-import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
+import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { Channel } from "@/shared/api/types";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
@@ -56,6 +57,7 @@ export function ChannelScreenHeader({
   const [manageOpenFor, setManageOpenFor] = React.useState<string | null>(null);
   const { isDark } = useTheme();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { openProfilePanel } = useProfilePanel();
 
   async function handleCopyTitle(value: string) {
@@ -87,7 +89,15 @@ export function ChannelScreenHeader({
         channel={activeChannel.channelType === "dm"
           ? { channelId: activeChannel.id, name: title, description: "", channelType: "dm", ttlSeconds: null }
           : { channelId: activeChannel.id, name: activeChannel.name, description: activeChannel.description,
-            channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds }}
+            channelType: activeChannel.channelType, visibility: activeChannel.visibility, ttlSeconds: activeChannel.ttlSeconds,
+            topic: activeChannel.topic ?? undefined, archived: Boolean(activeChannel.archivedAt) }}
+        // DD-119 governed edits go through the shared BFF client; readback re-reads the native
+        // channel list and the admitted directory. The member topic is native-signed (DD-119 (9))
+        // and has no Desktop host path yet, so it stays read-only here.
+        management={workspace ? { refresh: () => {
+          void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+          void queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
+        } } : undefined}
         onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(rosterId)); }}
         workflows={workspace ? {
           onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigate({ to: "/platform/workflows/$workflowId", params: { workflowId }, search: { workspaceId: workspace.id } }); },

@@ -49,7 +49,7 @@ import {
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -65,7 +65,7 @@ import { MessageAuthorAvatar } from "./MessageAuthorProfile";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
+import { BffError, bff, publishChannelTopic, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
@@ -175,6 +175,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const notificationSettings = useBrowserNotifications();
   const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
   const workspaces = useQuery(platformQueries.workspaces);
+  const queryClient = useQueryClient();
   const userState = useInboxState(bff);
   // The original per-device manual source is presentation state, not another
   // read-line authority. Browser partitioning uses its trusted platform scope.
@@ -630,7 +631,16 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onOpenChange={(open) => setManageOpenFor(open ? active : null)} isDark={isDark}
               channel={{channelId: channel.data.channelId, name: channel.data.name, description: channel.data.description ?? "",
                 channelType: channel.data.channelType === "forum" ? "forum" : "stream", visibility: activeRow.visibility,
-                ttlSeconds: channel.data.ttlSeconds ?? null}}
+                ttlSeconds: channel.data.ttlSeconds ?? null, topic: channel.data.topic, archived: channel.data.archived}}
+              management={{
+                // DD-119 readback: the channel descriptor, admitted directory and search directory.
+                refresh: () => {
+                  void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", session.tenantPrincipalId, active] });
+                  void workspaces.refetch();
+                  void searchDirectory.refetch();
+                },
+                publishTopic: async (workspaceId, request, idempotencyKey) => { await publishChannelTopic(workspaceId, request, idempotencyKey); },
+              }}
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
               workflows={{
                 onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigation.openWorkflow({ workflowId, workspaceId: active }, active); },

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { bff, deleteMessage, openStream, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
+import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -107,6 +107,24 @@ it("uses the dedicated DM deletion route and the same immutable target on UNKNOW
   expect(JSON.parse(first.body as string)).toMatchObject({deleteEventId:target,messageType:WebMessageType.Stream});
   fetcher.mockResolvedValueOnce(new Response(JSON.stringify({operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
   await expect(deleteMessage("unused",target,WebMessageType.Stream,"conversation")).rejects.toBeInstanceOf(TransportError);
+});
+
+it("publishes the DD-119 member topic with only the topic and the intent's Idempotency-Key", async () => {
+  const fetcher = vi.fn().mockRejectedValueOnce(new TypeError("connection lost"))
+    .mockImplementation(async () => new Response(JSON.stringify({eventId:"e".repeat(64),operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch", fetcher);
+  expect(channelTopicPath("work space")).toBe("/api/v1/workspaces/work%20space/channel/topic");
+  await expect(publishChannelTopic("workspace", {topic:"Launch"}, "topic-intent")).rejects.toBeInstanceOf(TransportError);
+  await expect(publishChannelTopic("workspace", {topic:"Launch"}, "topic-intent")).resolves.toEqual({eventId:"e".repeat(64),operationId:"operation"});
+  const [first, second] = fetcher.mock.calls.map(([url, init]) => [String(url), init as RequestInit] as const);
+  expect(first?.[0]).toBe("/api/v1/workspaces/workspace/channel/topic");
+  expect(first?.[1].method).toBe("POST");
+  expect(JSON.parse(first?.[1].body as string)).toEqual({topic:"Launch"});
+  expect(new Headers(first?.[1].headers).get("Idempotency-Key")).toBe("topic-intent");
+  expect(new Headers(second?.[1].headers).get("Idempotency-Key")).toBe("topic-intent");
+  expect(second?.[1].body).toBe(first?.[1].body);
+  fetcher.mockResolvedValueOnce(new Response(JSON.stringify({operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  await expect(publishChannelTopic("workspace", {topic:""}, "clear-intent")).rejects.toBeInstanceOf(TransportError);
 });
 
 it("routes scoped reactions with the frozen key and requires a confirmed publication receipt",async()=>{

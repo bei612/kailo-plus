@@ -3584,11 +3584,12 @@ describe("platform pages render only through the host theme", () => {
         inspected = inspected.replace(transition, "transition-colors");
       }
       if (name === "channel-type-settings.tsx") {
-        // Fixed Buzz ChannelTypeSettings sizes the TTL menu to its trigger.
-        // This exact native layout attribute does not create another theme.
+        // Fixed Buzz ChannelTypeSettings sizes the TTL menu, and ChannelTypePicker the
+        // edit dialog's type menu, to their triggers. This exact native layout
+        // attribute does not create another theme.
         const nativeWidth = 'style={{ minWidth: "var(--radix-dropdown-menu-trigger-width)" }}';
-        expect(inspected.split(nativeWidth)).toHaveLength(2);
-        inspected = inspected.replace(nativeWidth, "");
+        expect(inspected.split(nativeWidth)).toHaveLength(3);
+        inspected = inspected.replaceAll(nativeWidth, "");
       }
       if (name === "settings-slider.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
