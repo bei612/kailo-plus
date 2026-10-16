@@ -15,7 +15,12 @@
 //!
 //! 流只转发当前 active scope 的事件（`.design/09`）：filter 由 Core 构造并锁定
 //! 在该 Workspace 的 Channel 上，调用方没有提交 filter 的入口。
+//!
+//! 在线状态 20001 与用户状态 30315（DD-120(3)）不带 `h`，作者限定为该范围 roster，
+//! 在同一条会话连接上另开一个 REQ：Relay 把含无 `h` filter 的订阅登记为全局订阅，
+//! 而全局订阅收不到频道事件，所以它们不能并进频道 REQ。
 
+use std::collections::HashSet;
 use std::convert::Infallible;
 
 use axum::{
@@ -26,8 +31,9 @@ use axum::{
         IntoResponse, Response,
     },
 };
+use collab_bridge::kind::{KIND_PRESENCE_UPDATE, KIND_USER_STATUS};
 use collab_bridge::operator::LimitKind;
-use collab_bridge::stream::{Frame, SessionKey};
+use collab_bridge::stream::{Frame, SessionKey, Subscription};
 use futures_util::stream::Stream;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -42,6 +48,16 @@ use crate::web_transport::{
 enum StreamTarget {
     Workspace(Uuid),
     Conversation(Uuid),
+}
+
+/// 在线状态与用户状态的 kind（DD-120(3)）。
+const PRESENCE_KINDS: [u16; 2] = [KIND_PRESENCE_UPDATE as u16, KIND_USER_STATUS as u16];
+
+/// 同一会话连接上的在线/用户状态订阅：订阅时的 roster 与再准入后的当前 roster。
+struct PresenceFeed {
+    sub: Subscription,
+    subscribed: HashSet<String>,
+    current: HashSet<String>,
 }
 
 enum StreamScope {
@@ -66,6 +82,23 @@ impl StreamTarget {
                     axum::http::StatusCode::FORBIDDEN => AdmissionFailure::Denied,
                     _ => AdmissionFailure::Unavailable,
                 }),
+        }
+    }
+
+    /// 该范围的 roster（DD-120(3)），至多 `limit` 行。
+    async fn roster(
+        self,
+        state: &BffState,
+        ctx: &ExecutionContext,
+        limit: i64,
+    ) -> Result<Vec<String>, sqlx::Error> {
+        match self {
+            Self::Workspace(id) => {
+                crate::presence::workspace_roster(&state.pool, ctx.tenant_id, id, limit).await
+            }
+            Self::Conversation(id) => {
+                crate::presence::conversation_roster(&state.pool, ctx.tenant_id, id, limit).await
+            }
         }
     }
 }
@@ -97,6 +130,14 @@ impl StreamScope {
         ]);
         kinds.sort_unstable();
         kinds.dedup();
+        kinds
+    }
+
+    /// 这条流转发的全部 kind：频道 REQ 的 kind 加上在线订阅的 kind。
+    fn live_kinds(&self) -> Vec<u16> {
+        let mut kinds = self.message_kinds();
+        kinds.extend(PRESENCE_KINDS);
+        kinds.sort_unstable();
         kinds
     }
 
@@ -195,7 +236,8 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
     let generation = format!(
         "{}:{}",
         scope.generation(&ctx.tenant_principal_id),
-        message_kinds
+        scope
+            .live_kinds()
             .iter()
             .map(u16::to_string)
             .collect::<Vec<_>>()
@@ -235,7 +277,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
     let sub = match state
         .relay_sessions
         .subscribe(
-            session,
+            session.clone(),
             &keys,
             vec![serde_json::json!({
                 "kinds": message_kinds, "#h": [scope.channel_id()],
@@ -253,6 +295,41 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         Err(error) => {
             tracing::warn!(error = %error, "建立订阅失败");
             return closed_in_band(retry, "upstream-unavailable");
+        }
+    };
+    // roster 超出单帧上限、为空或订阅数用尽时不开在线订阅，客户端退回定时查询，
+    // 频道流照常（DD-120(3)）
+    let cap = roster_cap(&limits);
+    let roster_limit = i64::try_from(cap.saturating_add(1)).unwrap_or(i64::MAX);
+    let roster = match target.roster(&state, &ctx, roster_limit).await {
+        Ok(roster) => roster,
+        Err(error) => {
+            tracing::warn!(error = %error, "读 roster 失败");
+            return closed_in_band(retry, "readmission-unavailable");
+        }
+    };
+    let presence = if roster.is_empty() || roster.len() > cap {
+        None
+    } else {
+        let filters = presence_filters(&roster, nostr::Timestamp::now().as_secs());
+        match state
+            .relay_sessions
+            .subscribe(session, &keys, filters, &limits)
+            .await
+        {
+            Ok(sub) => {
+                let subscribed: HashSet<String> = roster.into_iter().collect();
+                Some(PresenceFeed {
+                    sub,
+                    current: subscribed.clone(),
+                    subscribed,
+                })
+            }
+            Err(error) if error.limit() == Some(LimitKind::Capacity) => None,
+            Err(error) => {
+                tracing::warn!(error = %error, "建立在线订阅失败，退回定时查询");
+                None
+            }
         }
     };
     let snapshot = {
@@ -319,6 +396,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         signer,
         relay_author: author,
         every,
+        roster_limit,
     };
     // Snapshot and subscription establishment await external I/O. Recheck before
     // exposing either, not only at the next periodic tick after delivery.
@@ -327,7 +405,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         Ok(Some(reason)) => return closed_in_band(retry, reason),
         Err(_) => return closed_in_band(retry, "readmission-unavailable"),
     }
-    Sse::new(frames(generation, retry, snapshot, sub, readmit))
+    Sse::new(frames(generation, retry, snapshot, sub, presence, readmit))
         .keep_alive(KeepAlive::default())
         .into_response()
 }
@@ -366,6 +444,8 @@ struct Readmission {
     signer: String,
     relay_author: (i32, String),
     every: std::time::Duration,
+    /// 再准入时重读 roster 的行数上界（与建流时相同）
+    roster_limit: i64,
 }
 
 impl Readmission {
@@ -413,6 +493,15 @@ impl Readmission {
             return false;
         };
         exact_auxiliary_receipt(&events, &event) && matches!(self.check().await, Ok(None))
+    }
+
+    /// 当前 roster：订阅之后才离开的成员不再转发（DD-120(3)）。
+    async fn roster(&self) -> Result<HashSet<String>, sqlx::Error> {
+        let roster = self
+            .target
+            .roster(&self.state, &self.ctx, self.roster_limit)
+            .await?;
+        Ok(roster.into_iter().collect())
     }
 
     /// `Ok(Some(reason))` 是该关流的原因；`Ok(None)` 是仍然准入。
@@ -479,7 +568,8 @@ fn frames(
     generation: String,
     retry: std::time::Duration,
     snapshot: Option<serde_json::Value>,
-    mut sub: collab_bridge::stream::Subscription,
+    mut sub: Subscription,
+    mut presence: Option<PresenceFeed>,
     readmit: Readmission,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     async_stream::stream! {
@@ -505,9 +595,45 @@ fn frames(
                     Some(f) => f,
                     None => break,
                 },
+                f = next_presence(&mut presence) => {
+                    match f {
+                        Some(Frame::Event(ev)) => {
+                            let checked = presence
+                                .as_ref()
+                                .map(|feed| presence_check(&ev, &feed.subscribed, &feed.current));
+                            match checked {
+                                Some(PresenceCheck::Forward) => {
+                                    yield Ok(Event::default().event("event").data(ev.to_string()));
+                                }
+                                Some(PresenceCheck::Skip) | None => {}
+                                // Relay 不守约：签名者不在订阅时的 roster、带 `h` 或形状不对
+                                Some(PresenceCheck::Invalid) => {
+                                    yield Ok(Event::default().event("closed").data("upstream-unavailable"));
+                                    break;
+                                }
+                            }
+                        }
+                        Some(Frame::EndOfStored) => {}
+                        // 在线订阅单独结束（如 Relay CLOSED）：退回定时查询，频道流照常
+                        Some(Frame::Closed(_)) | None => presence = None,
+                    }
+                    continue;
+                }
                 _ = tick.tick() => {
                     match readmit.check().await {
-                        Ok(None) => continue,
+                        Ok(None) => {
+                            if let Some(feed) = presence.as_mut() {
+                                match readmit.roster().await {
+                                    Ok(current) => feed.current = current,
+                                    Err(e) => {
+                                        tracing::warn!(error = %e, "再准入读 roster 失败");
+                                        yield Ok(Event::default().event("closed").data("readmission-unavailable"));
+                                        break;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         // 会话、scope、binding 不再匹配时关流；准入查询不可用则
                         // 报结果不明，客户端按既有 retry 规则重开，不沿用旧订阅。
                         Ok(Some(reason)) => {
@@ -550,6 +676,70 @@ fn frames(
                 }
             }
         }
+    }
+}
+
+/// 在线订阅帧的下一项；没有在线订阅时永不完成（`select!` 中等于没有这个分支）。
+async fn next_presence(feed: &mut Option<PresenceFeed>) -> Option<Frame> {
+    match feed {
+        Some(feed) => feed.sub.next().await,
+        None => std::future::pending::<Option<Frame>>().await,
+    }
+}
+
+/// 一个作者在在线 REQ 的两个 filter 中各出现一次，每次约 67 字节（64 位十六进制、
+/// 引号与逗号）。按单帧上限折算 roster 上界，超出即不开在线订阅。
+fn roster_cap(limits: &collab_bridge::limits::RelayLimits) -> usize {
+    limits.max_message_length / 134
+}
+
+/// 在线（瞬时，只有实时）与用户状态（`d=general`）两个 filter，作者都是 roster，
+/// 都从此刻起：快照另经 BFF 查询取得。
+fn presence_filters(roster: &[String], since: u64) -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({"kinds": [KIND_PRESENCE_UPDATE], "authors": roster, "since": since}),
+        serde_json::json!({
+            "kinds": [KIND_USER_STATUS], "#d": [crate::user_status::STATUS_D_TAG],
+            "authors": roster, "since": since,
+        }),
+    ]
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PresenceCheck {
+    Forward,
+    Skip,
+    Invalid,
+}
+
+/// 20001/30315 不带 `h`，签名者必须在该范围 roster 内（DD-120(3)）。Relay 只按订阅时的
+/// roster 推送：签名者不在其中、带 `h` 或形状不对是 Relay 不守约（Invalid）；订阅之后
+/// 才离开 roster 的成员只是不再转发（Skip）。
+fn presence_check(
+    value: &serde_json::Value,
+    subscribed: &HashSet<String>,
+    current: &HashSet<String>,
+) -> PresenceCheck {
+    let Ok(event) = serde_json::from_value::<nostr::Event>(value.clone()) else {
+        return PresenceCheck::Invalid;
+    };
+    let shaped = match u32::from(event.kind.as_u16()) {
+        KIND_PRESENCE_UPDATE => true,
+        KIND_USER_STATUS => event.tags.identifier() == Some(crate::user_status::STATUS_D_TAG),
+        _ => false,
+    };
+    let channel_tag = event
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice().first().is_some_and(|name| name == "h"));
+    let author = event.pubkey.to_hex();
+    if !shaped || channel_tag || !subscribed.contains(&author) || event.verify().is_err() {
+        return PresenceCheck::Invalid;
+    }
+    if current.contains(&author) {
+        PresenceCheck::Forward
+    } else {
+        PresenceCheck::Skip
     }
 }
 
@@ -762,5 +952,79 @@ mod tests {
             original.generation(&principal),
             changed.generation(&principal)
         );
+    }
+
+    #[test]
+    fn presence_rides_its_own_roster_req_and_joins_the_generation_kind_set() {
+        let scope = StreamScope::Conversation(crate::conversations::ConversationScope {
+            channel_id: Uuid::from_u128(3).to_string(),
+            community_host: "relay.example".into(),
+            binding_version: 1,
+            tenant_binding_version: 1,
+        });
+        assert_eq!(
+            scope.live_kinds(),
+            vec![5, 7, 9, 9005, 20001, 20002, 30315, 39005, 40002, 40003, 40008, 40099]
+        );
+        assert!(!scope.message_kinds().contains(&20001));
+        let roster = vec!["a".repeat(64), "b".repeat(64)];
+        let filters = presence_filters(&roster, 7);
+        assert_eq!(
+            filters,
+            vec![
+                serde_json::json!({"kinds": [20001], "authors": roster, "since": 7}),
+                serde_json::json!({
+                    "kinds": [30315], "#d": ["general"], "authors": roster, "since": 7,
+                }),
+            ]
+        );
+        // 无 `h` 的 filter 会让整个 REQ 成为全局订阅：频道 filter 绝不与它们同 REQ
+        assert!(filters.iter().all(|filter| filter.get("#h").is_none()));
+        let limits = collab_bridge::limits::RelayLimits {
+            max_subscriptions: 1,
+            max_filters: 10,
+            max_limit: 1,
+            max_subid_length: None,
+            max_message_length: 512 * 1024,
+        };
+        assert_eq!(roster_cap(&limits), 3912);
+    }
+
+    #[test]
+    fn presence_events_need_no_channel_but_a_roster_signer() {
+        let member = nostr::Keys::generate();
+        let departed = nostr::Keys::generate();
+        let other = nostr::Keys::generate();
+        let subscribed: HashSet<String> = [&member, &departed]
+            .iter()
+            .map(|keys| keys.public_key().to_hex())
+            .collect();
+        let current = HashSet::from([member.public_key().to_hex()]);
+        let sign = |keys: &nostr::Keys, kind: u16, tags: Vec<nostr::Tag>| {
+            let event = nostr::EventBuilder::new(nostr::Kind::Custom(kind), "online")
+                .tags(tags)
+                .sign_with_keys(keys)
+                .unwrap();
+            serde_json::json!(event)
+        };
+        let check = |value: serde_json::Value| presence_check(&value, &subscribed, &current);
+        let d = || vec![nostr::Tag::identifier("general")];
+        assert_eq!(check(sign(&member, 20001, vec![])), PresenceCheck::Forward);
+        assert_eq!(check(sign(&member, 30315, d())), PresenceCheck::Forward);
+        // 订阅之后才离开 roster：不再转发，但不是 Relay 不守约
+        assert_eq!(check(sign(&departed, 20001, vec![])), PresenceCheck::Skip);
+        // 不在订阅 roster、带 h、非 general 坐标、其他 kind、篡改：Relay 不守约
+        assert_eq!(check(sign(&other, 20001, vec![])), PresenceCheck::Invalid);
+        let h = vec![nostr::Tag::parse(["h", "channel"]).unwrap()];
+        assert_eq!(check(sign(&member, 20001, h)), PresenceCheck::Invalid);
+        let music = vec![nostr::Tag::identifier("music")];
+        assert_eq!(check(sign(&member, 30315, music)), PresenceCheck::Invalid);
+        assert_eq!(check(sign(&member, 9, vec![])), PresenceCheck::Invalid);
+        let mut forged = sign(&member, 20001, vec![]);
+        forged["content"] = serde_json::json!("away");
+        assert_eq!(check(forged), PresenceCheck::Invalid);
+        // 频道 REQ 的校验仍拒绝在线事件：它们只经在线订阅进来
+        let ev = sign(&member, 20001, vec![]);
+        assert!(!valid_live_event(&ev, "channel", "relay", &[9, 20002]));
     }
 }

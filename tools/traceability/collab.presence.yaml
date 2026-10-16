@@ -1,0 +1,47 @@
+capability_id: collab.presence
+title: 在线状态、输入中提示与用户状态经 BFF（Core 代签 20001/20002 瞬时事件与 30315 用户状态）
+stage: S1
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-120, DD-81]
+  facts: [SF-BUZ-51]
+  seams: []
+  blockers: []
+  entities: [PlatformSession, TenantBuzzBinding, BuzzIdentityBinding]
+
+validation:
+  scenarios: [V-SCN-100, V-SCN-101, V-SCN-102, V-SCN-103, V-SCN-104]
+  evidence:
+    # 源码内单元与本地假 Relay 测试；尚无 CI 运行、部署或浏览器业务验收结果。
+    - dimension: 故障与恢复
+      ref: core/crates/collab-bridge/src/stream.rs
+    - dimension: 安全边界
+      ref: core/crates/platform-core/src/presence.rs
+    - dimension: 领域规则
+      ref: core/crates/platform-core/src/user_status.rs
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/collab-bridge/src/stream.rs, core/crates/platform-core/src/presence.rs, core/crates/platform-core/src/user_status.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/bff.rs]
+  surfaces: [web]
+  schemas: [contracts/api/web_presence_update_request.schema.json, contracts/api/web_presence_query_request.schema.json, contracts/api/web_presence_page.schema.json, contracts/api/web_user_status_query_request.schema.json, contracts/api/web_user_status_page.schema.json, contracts/api/web_user_status_update_request.schema.json]
+  # 30315 复用既有 publish_attempt（与 kind:0、30030 相同，不写 message_kind），无新迁移。
+  migrations: []
+
+runtime:
+  routes: ["/api/v1/presence", "/api/v1/presence/query", "/api/v1/user-status", "/api/v1/user-status/query", "/api/v1/workspaces/{workspace_id}/typing", "/api/v1/conversations/{conversation_id}/typing"]
+  actions: [identity.user_status.publish]
+  workflow_kinds: []
+
+release:
+  # 以下沿用既有已构建候选的 digest 以满足登记格式；它们不含本能力源码，
+  # 不证明本能力已构建、部署或通过 full 与业务验收。
+  artifacts:
+    - name: core
+      digest: sha256:102d81c605d2dd3af4b58a64d0fe8eb8c58b289a6565c4372d0f3605d2f7d723
+    - name: web-client
+      digest: sha256:40c7225c8021e2051c9006096aeaae8c8501cbdf011c5f7fe4f02f0229f81118
+  gate: blocked_until_seams_closed

@@ -32,10 +32,12 @@ fn unavailable() -> Response {
     )
 }
 
-pub(crate) async fn client(
+/// The Tenant's ACTIVE Community host. Tenant-scoped collaboration (own profile,
+/// presence, user status) never borrows a Workspace for it.
+pub(crate) async fn tenant_host(
     state: &BffState,
     ctx: &ExecutionContext,
-) -> Result<(IdentityClient, String), Response> {
+) -> Result<String, Response> {
     let host: Option<String> = sqlx::query_scalar(
         "select b.normalized_host from projection.tenant_buzz_binding b
          join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
@@ -45,14 +47,21 @@ pub(crate) async fn client(
     .fetch_optional(&state.pool)
     .await
     .map_err(|_| unavailable())?;
-    let host = host.ok_or_else(|| {
+    host.ok_or_else(|| {
         error_body(
             StatusCode::SERVICE_UNAVAILABLE,
             ErrorClass::Precondition,
             ReasonCode::BindingNotActive,
             None,
         )
-    })?;
+    })
+}
+
+pub(crate) async fn client(
+    state: &BffState,
+    ctx: &ExecutionContext,
+) -> Result<(IdentityClient, String), Response> {
+    let host = tenant_host(state, ctx).await?;
     community_limits(state, &host)
         .await
         .map_err(IntoResponse::into_response)?;
@@ -520,8 +529,9 @@ pub(crate) async fn update(
     .await
 }
 
-/// Shared by the two original author-owned replaceable sets. The event body
-/// stays in Relay; the existing publish intent and reconciler retain only IDs.
+/// Shared by the original author-owned replaceable events (kind:0, the 30030 emoji
+/// set and the NIP-38 30315 status). The event body stays in Relay; the existing
+/// publish intent and reconciler retain only IDs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn publish_prepared(
     state: &BffState,
@@ -712,7 +722,7 @@ async fn pending<'e>(
         and not exists(select 1 from audit.audit_event r where r.operation_id=d.operation_id and r.event_type in ('OUTCOME','RECONCILIATION'))
         and ($3::timestamptz is null or (d.occurred_at,d.operation_id)>($3,$4))
         order by d.occurred_at,d.operation_id limit $2")
-        .bind([PROFILE_ACTION, crate::custom_emoji::EMOJI_ACTION].as_slice()).bind(batch).bind(cursor.map(|v| v.0)).bind(cursor.map(|v| v.1)).fetch_all(executor).await
+        .bind([PROFILE_ACTION, crate::custom_emoji::EMOJI_ACTION, crate::user_status::USER_STATUS_ACTION].as_slice()).bind(batch).bind(cursor.map(|v| v.0)).bind(cursor.map(|v| v.1)).fetch_all(executor).await
 }
 
 pub(crate) async fn reconcile(

@@ -128,6 +128,19 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.presence
+  exposure: end_user
+  routes:
+  - /api/v1/presence
+  - /api/v1/presence/query
+  - /api/v1/user-status
+  - /api/v1/user-status/query
+  - /api/v1/workspaces/{workspace_id}/typing
+  - /api/v1/conversations/{conversation_id}/typing
+  actions:
+  - identity.user_status.publish
+  tools: []
+  workflow_kinds: []
 - id: collab.projects
   exposure: end_user
   routes:

@@ -373,6 +373,31 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/custom-emoji",
             get(crate::custom_emoji::get).put(crate::custom_emoji::update),
         )
+        // DD-120：在线状态、输入中提示与用户状态
+        .exposed_route(
+            "/api/v1/presence",
+            axum::routing::put(crate::presence::update),
+        )
+        .exposed_route(
+            "/api/v1/presence/query",
+            axum::routing::post(crate::presence::query),
+        )
+        .exposed_route(
+            "/api/v1/user-status",
+            axum::routing::put(crate::user_status::update),
+        )
+        .exposed_route(
+            "/api/v1/user-status/query",
+            axum::routing::post(crate::user_status::query),
+        )
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/typing",
+            axum::routing::post(crate::presence::workspace_typing),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/typing",
+            axum::routing::post(crate::presence::conversation_typing),
+        )
         .exposed_route(
             "/api/v1/profile/media",
             axum::routing::post(crate::web_profile::upload_avatar).layer(
@@ -912,6 +937,8 @@ async fn logout(State(state): State<BffState>, headers: HeaderMap) -> Response {
         Ok(revoked) => {
             // 已经撤过也是成功：注销是幂等的，重复调用不该报错。
             tracing::info!(session = %ctx.session_id, revoked, "注销");
+            // DD-120(2)：在线租约与该会话的 Relay 连接立即关闭，Relay 随之清除在线状态
+            state.relay_sessions.release(&ctx.session_id.to_string());
             (
                 StatusCode::OK,
                 Json(serde_json::json!({ "revoked": revoked })),

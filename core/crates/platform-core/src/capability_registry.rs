@@ -73,6 +73,16 @@ mod tests {
             "/api/v1/conversations/{conversation_id}/messages/delete"
         ));
         assert!(action_exposed("identity.custom_emoji.publish"));
+        // DD-120：在线状态、输入中提示与用户状态
+        assert!(route_exposed("/api/v1/presence"));
+        assert!(route_exposed("/api/v1/presence/query"));
+        assert!(route_exposed("/api/v1/user-status"));
+        assert!(route_exposed("/api/v1/user-status/query"));
+        assert!(route_exposed("/api/v1/workspaces/{workspace_id}/typing"));
+        assert!(route_exposed(
+            "/api/v1/conversations/{conversation_id}/typing"
+        ));
+        assert!(action_exposed("identity.user_status.publish"));
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));

@@ -63,6 +63,7 @@ mod platform_build_info;
 mod platform_info;
 mod platform_keys;
 mod platform_views;
+mod presence;
 mod projects;
 mod projects_git;
 mod projects_git_merge;
@@ -92,6 +93,7 @@ mod tenant_bootstrap;
 mod tenant_delete;
 mod tenant_lifecycle;
 mod user_state;
+mod user_status;
 mod web_profile;
 mod web_transport;
 mod workflow_reconcile;
@@ -430,6 +432,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             governance_reconcile::Config::from_env()?,
             gateway_usage::Ingress::from_env(&opentelemetry::global::meter("platform-core"))?,
         );
+        // DD-120(2)：只靠在线租约保留的连接不再经过请求路径，撤权由它回头关闭
+        presence::spawn_lease_sweeper(bff_state.clone());
 
         let bff = tokio::net::TcpListener::bind(listen).await?;
         let service = tokio::net::TcpListener::bind(service_listen).await?;
