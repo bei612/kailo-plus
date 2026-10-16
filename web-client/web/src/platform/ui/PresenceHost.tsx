@@ -6,6 +6,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PlatformSessionView } from "@client-kit/contracts";
 import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
+import { newIdempotencyKey } from "@client-kit/platform/governance";
 import {
   ingestPresenceStreamEvent,
   PresenceHostProvider,
@@ -74,7 +75,8 @@ function PresencePageLifecycle() {
   const resync = self?.resync;
   useEffect(() => {
     if (!currentStatus || !resync) return;
-    const own = `${TAB_KEY_PREFIX}${crypto.randomUUID()}`;
+    // crypto.randomUUID exists only in secure contexts; the deployed origin is plain HTTP.
+    const own = `${TAB_KEY_PREFIX}${newIdempotencyKey()}`;
     const beat = () => {
       try { localStorage.setItem(own, String(Date.now())); } catch { /* storage unavailable */ }
     };
