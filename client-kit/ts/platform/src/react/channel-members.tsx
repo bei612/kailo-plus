@@ -14,6 +14,8 @@
 // AddChannelBotDialog is the governed agent.installation.create dialog, and a row opens the
 // installation detail with its use authorization. Lifecycle start/stop, respond-to editing and
 // removal have no governed action and are not offered (core/verify/buzz-restoration-checkpoint.md).
+// Member rows restore the original presence corner dot from the DD-120 snapshot, aggregated per
+// person over all bound keys; a member without a presence fact shows no dot (never offline).
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Ellipsis, EllipsisVertical, Settings2, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
@@ -40,6 +42,9 @@ import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "
 import { rankUserCandidatesBySearch } from "./search/userCandidateSearch";
 import type { UserSearchResult } from "./search/types";
 import { installationLabels, loadWorkspaceAgents } from "./agent-installation-view";
+import { usePresenceQuery } from "./presence/hooks";
+import { aggregatePresence } from "./presence/lib/presence";
+import { PresenceCornerDot } from "./presence/ui/PresenceBadge";
 
 // The governed installation dialogs live with the Agents page; load them on first use only.
 const WorkspaceAgentDialogs = React.lazy(() => import("./agents").then((module) => ({ default: module.WorkspaceAgentDialogs })));
@@ -257,6 +262,9 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     return { member, role: roles?.get(member.principalId), self, label: self ? t("channelMembers.you") : member.displayName };
   }).sort(compareMembersForModal), [membersQuery.data, roles, currentPrincipalId, currentPubkey, t]);
   const activeRows = rows.filter((row) => row.member.state === WorkspaceMembershipState.Active);
+  // DD-120 (5): one batched snapshot for the roster; a person is online if any bound key is.
+  const presenceQuery = usePresenceQuery(activeRows.flatMap((row) => row.member.pubkeys), { enabled: open });
+  const presenceLookup = presenceQuery.isSuccess ? presenceQuery.data : undefined;
   const selfActive = activeRows.some((row) => row.self);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const deferredSearchQuery = React.useDeferredValue(searchQuery.trim());
@@ -338,6 +346,8 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
             ) : (
               <ProfileAvatar avatarUrl={null} className="h-8 w-8 text-xs shadow-none" iconClassName="h-4 w-4" label={member.displayName} shape="circle" />
             )}
+            <PresenceCornerDot status={active ? aggregatePresence(presenceLookup, member.pubkeys) : undefined}
+              testId={`sidebar-member-presence-${member.principalId}`} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">

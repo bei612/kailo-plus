@@ -27,7 +27,15 @@ import type {
   ProjectsGitMergeResponse,
   WebSearchQuery,
   WebPublishTopicRequest,
+  WebPresencePage,
+  WebPresenceQueryRequest,
+  WebPresenceUpdateRequest,
+  WebUserStatusPage,
+  WebUserStatusQueryRequest,
+  WebUserStatusUpdateRequest,
 } from "@client-kit/contracts";
+import { WebPresenceStatus } from "@client-kit/contracts";
+import { KIND_PRESENCE_UPDATE, KIND_USER_STATUS } from "@client-kit/platform/react/thread/kinds";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
 import { createBffClient } from "@client-kit/platform/client";
@@ -54,6 +62,84 @@ const transport = createFetchTransport({
 });
 
 export const bff = createBffClient(transport);
+
+/** DD-120 BFF routes; each path is named only here so it aligns with Core in one place. */
+export const PRESENCE_PATH = "/api/v1/presence";
+export const PRESENCE_QUERY_PATH = "/api/v1/presence/query";
+export const USER_STATUS_PATH = "/api/v1/user-status";
+export const USER_STATUS_QUERY_PATH = "/api/v1/user-status/query";
+
+type PresenceChoice = "online" | "away" | "offline";
+const PRESENCE_WIRE = {
+  online: WebPresenceStatus.Online,
+  away: WebPresenceStatus.Away,
+  offline: WebPresenceStatus.Offline,
+} as const satisfies Record<PresenceChoice, WebPresenceStatus>;
+
+/** DD-120 (3): the Relay-signed 20001 snapshot facts for exactly these pubkeys. */
+export async function queryPresence(pubkeys: string[]): Promise<WebPresencePage> {
+  const page = await call<WebPresencePage>({ method: "POST", path: PRESENCE_QUERY_PATH,
+    body: { pubkeys } satisfies WebPresenceQueryRequest });
+  if (!page || !Array.isArray(page.presences)) throw new TransportError("Invalid presence response");
+  return page;
+}
+
+/**
+ * DD-120 (1)/(2): the person's own heartbeat or manual choice. Core signs the 20001 over the
+ * existing session connection; latest wins, a timeout is not success and is never re-signed —
+ * the next heartbeat supersedes it. offline releases the presence lease.
+ */
+export async function updatePresence(status: PresenceChoice): Promise<void> {
+  await call<unknown>({ method: "PUT", path: PRESENCE_PATH,
+    body: { status: PRESENCE_WIRE[status] } satisfies WebPresenceUpdateRequest });
+}
+
+/** Best-effort offline as the page goes away; `keepalive` lets it outlive the document. */
+export function releasePresence(): void {
+  void transport.exchange(PRESENCE_PATH, {
+    method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: WebPresenceStatus.Offline } satisfies WebPresenceUpdateRequest),
+  }).catch(() => undefined);
+}
+
+/** DD-120 (4): the latest verified `d=general` 30315 per pubkey; a cleared status is omitted. */
+export async function queryUserStatus(pubkeys: string[]): Promise<WebUserStatusPage> {
+  const page = await call<WebUserStatusPage>({ method: "POST", path: USER_STATUS_QUERY_PATH,
+    body: { pubkeys } satisfies WebUserStatusQueryRequest });
+  if (!page || !Array.isArray(page.statuses)) throw new TransportError("Invalid user status response");
+  return page;
+}
+
+/**
+ * DD-120 (4) under DD-81: Core publishes the person's own 30315 with their SERVER key. The
+ * intent's Idempotency-Key is resent unchanged after an UNKNOWN outcome and Core reconciles it,
+ * never re-signs. A 2xx without an event receipt is unknown.
+ */
+export async function updateUserStatus(request: WebUserStatusUpdateRequest, idempotencyKey: string): Promise<{eventId:string;createdAt?:number}> {
+  const receipt = unwrap<{eventId?: unknown; createdAt?: unknown}>({ method: "PUT", path: USER_STATUS_PATH },
+    await transport.exchange(USER_STATUS_PATH, {
+      method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(request satisfies WebUserStatusUpdateRequest),
+    }));
+  if (!receipt || typeof receipt.eventId !== "string" || !receipt.eventId) throw new TransportError("User status publication outcome unknown");
+  return { eventId: receipt.eventId,
+    ...(typeof receipt.createdAt === "number" && Number.isSafeInteger(receipt.createdAt) ? { createdAt: receipt.createdAt } : {}) };
+}
+
+/**
+ * DD-120 (3): admitted channel/conversation streams also carry member-signed 20001 and 30315
+ * without an `h` tag. They are identity facts for the presence host, never timeline rows,
+ * notifications or a reason to drop shared reads, so openStream routes them here only.
+ */
+const identityStreamKinds: ReadonlySet<number> = new Set([KIND_PRESENCE_UPDATE, KIND_USER_STATUS]);
+let identityStreamSink: ((event: BuzzEvent) => void) | null = null;
+export function setIdentityStreamSink(sink: (event: BuzzEvent) => void): () => void {
+  identityStreamSink = sink;
+  return () => { if (identityStreamSink === sink) identityStreamSink = null; };
+}
+function isIdentityStreamEvent(event: unknown): event is BuzzEvent {
+  return Boolean(event) && typeof event === "object" && identityStreamKinds.has((event as BuzzEvent).kind);
+}
 
 /** Original Relay FTS relevance order; the browser never constructs a Relay filter. */
 async function admittedSearchEvents(request: WebSearchQuery): Promise<{event: BuzzEvent; channelId: string}[]> {
@@ -263,7 +349,12 @@ export type MediaDescriptor = WebMessageAttachment;
  * 的 form-action 约束，而这条链最终会落到 IdP 的来源上。清完 cookie 再做一次
  * 普通的顶层导航，由网关带去重新登录。
  */
+/** Sign-out never waits on a best-effort presence release longer than this. */
+const SIGN_OUT_PRESENCE_WAIT_MS = 1_000;
 export async function signOut(): Promise<void> {
+  // DD-120 (2): others see offline at once; Core still closes the connection on logout.
+  await Promise.race([updatePresence("offline").catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, SIGN_OUT_PRESENCE_WAIT_MS))]);
   await bff.logout().catch(() => undefined);
   await fetch("/logout", { method: "POST", credentials: "same-origin", redirect: "manual" });
   window.location.assign(import.meta.env.BASE_URL);
@@ -429,20 +520,25 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("snapshot", (e) => {
       if (stopped || source !== es) return;
+      const parsed = JSON.parse((e as MessageEvent<string>).data) as unknown;
+      const events = Array.isArray(parsed) ? parsed : [];
+      for (const event of events) if (isIdentityStreamEvent(event)) identityStreamSink?.(event);
       onFrame({
         type: "snapshot",
-        events: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent[],
+        events: (Array.isArray(parsed) ? events.filter((event) => !isIdentityStreamEvent(event)) : parsed) as BuzzEvent[],
       });
     });
     es.addEventListener("event", (e) => {
       if (stopped || source !== es) return;
+      const event = JSON.parse((e as MessageEvent<string>).data) as BuzzEvent;
+      if (isIdentityStreamEvent(event)) {
+        identityStreamSink?.(event);
+        return;
+      }
       // A live change (or a closed/interrupted stream) ends every shared settled read; the
       // initial snapshot is the same state the shared reads already describe.
       transport.invalidateReads();
-      onFrame({
-        type: "event",
-        event: JSON.parse((e as MessageEvent<string>).data) as BuzzEvent,
-      });
+      onFrame({ type: "event", event });
     });
     es.addEventListener("live", () => {
       if (stopped || source !== es) return;

@@ -61,6 +61,8 @@ import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
+import { WebPresenceHost } from "./PresenceHost";
+import { UserNameIndicators } from "@client-kit/platform/react/user-status";
 import { MessageAuthorAvatar } from "./MessageAuthorProfile";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
@@ -157,7 +159,7 @@ export function PlatformApp() {
           }}
         />
       ) : (
-        <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><SignedIn session={session} /></ConversationVisibilityProvider></BrowserNotificationsProvider>
+        <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><SignedIn session={session} /></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
       )}
     </PlatformProvider>
   );
@@ -232,7 +234,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const dmHeaderPeople = searchDirectory.isSuccess && !searchDirectory.isFetching
     ? resolveConversationHeaderParticipants(chosenConversation, session.tenantPrincipalId, searchDirectory.data.people) : null;
   const dmHeaderTitle = dmHeaderPeople ? formatDmParticipantDisplayName(dmHeaderPeople) : null;
-  const dmHeaderParticipants = dmHeaderPeople?.map(person => ({id:person.principalId,displayName:person.displayName,avatarUrl:null})) ?? [];
+  const dmHeaderParticipants = dmHeaderPeople?.map(person => ({id:person.principalId,displayName:person.displayName,avatarUrl:null,presencePubkeys:person.pubkeys})) ?? [];
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
@@ -602,6 +604,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               }} /> : tab === "conversation" && dmHeaderTitle !== null ? <AvatarHostProvider value={{locale:getLocale(),rewriteMediaUrl:url=>url}}>
               <ChatHeader title={dmHeaderTitle} channelType="dm" visibility="private"
                 leadingContent={<DmHeaderParticipants participants={dmHeaderParticipants} title={dmHeaderTitle} />}
+                titleAdornment={dmHeaderPeople?.length === 1 ? <UserNameIndicators className="ml-1"
+                  pubkey={dmHeaderPeople[0]?.pubkeys[0]} pubkeys={dmHeaderPeople[0]?.pubkeys} size="dm" /> : null}
                 actions={chosenConversation ? <ChannelMembersBar roster={{kind: "conversation", conversation: chosenConversation}}
                   onToggleMembers={() => setMembersOpenFor(membersOpenFor === chosenConversation.id ? null : chosenConversation.id)}
                   onManageChannel={() => setManageOpenFor(chosenConversation.id)} variant={headerActionsCompact ? "compact" : "inline"} /> : undefined}

@@ -60,6 +60,8 @@
     "./theme/glass-preference": "./src/theme/glass-preference.ts",
     "./react/projects": "./src/react/projects/index.ts",
     "./react/pulse": "./src/react/pulse/index.ts",
+    "./react/presence": "./src/react/presence/index.ts",
+    "./react/user-status": "./src/react/user-status/index.ts",
     "./react/pulse/mentions": "./src/react/pulse/mentions.ts",
     "./react/thread": "./src/react/messages/thread/index.ts",
     "./react/thread/ThreadViewModeToggle": "./src/react/messages/thread/ThreadViewModeToggle.tsx",

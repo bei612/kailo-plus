@@ -48,6 +48,8 @@ vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChann
 vi.mock("@client-kit/platform/react/channel-browser", () => ({ ChannelBrowser: () => null, ChannelJoinButton: () => null }));
 vi.mock("@client-kit/platform/react/channel-members", () => ({ ChannelMembersBar: () => null, ChannelMembersDialog: () => null }));
 vi.mock("@client-kit/platform/react/channel-management-sheet", () => ({ ChannelManagementSheet: () => null }));
+// DD-120 presence transport has its own host tests; this shell test keeps it inert.
+vi.mock("./PresenceHost", () => ({ WebPresenceHost: ({ children }: { children: import("react").ReactNode }) => children }));
 vi.mock("./SidebarProfileCard", () => ({
   WebSidebarProfileCard: ({ onOpenSettings }: { onOpenSettings: () => void }) =>
     <button data-testid="sidebar-settings" onClick={onOpenSettings} />,

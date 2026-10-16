@@ -27,6 +27,9 @@ import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "
 import { TenantInvitations } from "./invitations";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
+import { usePresenceQuery } from "./presence/hooks";
+import { aggregatePresence } from "./presence/lib/presence";
+import { PresenceCornerDot } from "./presence/ui/PresenceBadge";
 
 /** A member key proven by its Workspace membership or by its governed conversation's participants.
  * A Principal may hold several ACTIVE keys (Web plus each native device): alternatePubkeys are the
@@ -86,10 +89,11 @@ export function MemberAvatar({target,label,className="h-9 w-9 text-xs shadow-non
   </AvatarHostProvider>;
 }
 
-export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:MemberTarget}) {
+export function MemberHover({target,presencePubkeys,...props}:ProfilePopoverBodyProps&{target:MemberTarget;presencePubkeys?:readonly string[]}) {
   const t=useT(); const query=useMemberProfile(target);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
   return <UserProfilePopoverBody {...props} profile={profile} mediaUrl={(url)=>profile?.avatarMediaPaths[url]??url}
+    presencePubkeys={presencePubkeys??target.alternatePubkeys}
     status={!profile?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
@@ -136,7 +140,9 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
 }
 
 /** The original row keeps its name/key hover and avatar/profile affordance.
- * No role, presence or created date is inferred from missing directory facts. */
+ * No role or created date is inferred from missing directory facts. Presence is the
+ * DD-120 snapshot aggregated per person over all bound keys (any online is online);
+ * a person without a presence fact gets no dot, never an offline one. */
 export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincipalId}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer;onStartDm?:(pubkey:string)=>void|Promise<void>;currentPrincipalId?:string}) {
   const client=useBffClient();const t=useT();const locale=useLocale();
   const [state,reload]=useLoad(`members:${workspaceId}`,()=>client.members(workspaceId));
@@ -145,6 +151,9 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
   const [search,setSearch]=useState("");const [selected,setSelected]=useState<MemberTarget|null>(null);
   useEffect(()=>{const refresh=()=>{reload();reloadRoles();};window.addEventListener("focus",refresh);return()=>window.removeEventListener("focus",refresh);},[reload,reloadRoles]);
   const rows=state.status==="ok"?state.data:[];
+  const presenceKeys=rows.filter(member=>member.state===WorkspaceMembershipState.Active).flatMap(member=>member.pubkeys);
+  const presence=usePresenceQuery(presenceKeys);
+  const presenceLookup=presence.isSuccess?presence.data:undefined;
   const filter=search.trim().toLowerCase();
   const filtered=rows.filter(member=>member.displayName.toLowerCase().includes(filter)||member.pubkeys.some(key=>key.includes(filter)));
   const active=selected?.workspaceId===workspaceId&&rows.some(member=>member.principalId===selected.principalId&&member.state===WorkspaceMembershipState.Active&&member.pubkeys.includes(selected.pubkey))?selected:null;
@@ -154,7 +163,7 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
     if(renderIdentity)return renderIdentity(pubkey,children,label);
     const target={workspaceId,principalId:member.principalId,pubkey,displayName:member.displayName};
     return <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerAriaLabel={label}
-      onOpenProfile={()=>setSelected(target)} renderBody={(props)=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
+      onOpenProfile={()=>setSelected(target)} renderBody={(props)=><MemberHover {...props} target={target} presencePubkeys={member.pubkeys}/>}>{children}</UserProfilePopoverSurface>;
   }
   function management(member:WorkspaceMemberView) {
     const role=roles.status==="ok"?roles.data.get(member.principalId):undefined;
@@ -196,8 +205,9 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
             filtered.length===0?<p className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">{t(rows.length?"members.noMatch":"platform.members.none")}</p>:
             <VirtualizedList className="max-h-[28rem] divide-y divide-border/60" estimateSize={60}
               items={filtered} getItemKey={member=>member.principalId} renderItem={member=><div className="group/member flex min-h-14 items-center gap-3 px-1 py-2.5" data-testid={`member-${member.principalId}`}>
-              {member.state===WorkspaceMembershipState.Active&&member.pubkeys[0]?identity(member,member.pubkeys[0],
-                <MemberAvatar target={{workspaceId,principalId:member.principalId,pubkey:member.pubkeys[0],alternatePubkeys:member.pubkeys,displayName:member.displayName}} label={member.displayName}/>):
+              {member.state===WorkspaceMembershipState.Active&&member.pubkeys[0]?<div className="relative shrink-0">{identity(member,member.pubkeys[0],
+                <MemberAvatar target={{workspaceId,principalId:member.principalId,pubkey:member.pubkeys[0],alternatePubkeys:member.pubkeys,displayName:member.displayName}} label={member.displayName}/>)}
+                <PresenceCornerDot status={aggregatePresence(presenceLookup,member.pubkeys)} testId={`member-presence-${member.principalId}`}/></div>:
                 <ProfileAvatar avatarUrl={null} className="h-9 w-9 text-xs shadow-none" label={member.displayName} shape="circle"/>}
               <div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
                 <span className="inline-grid min-w-0 max-w-full grid-cols-1">

@@ -8,13 +8,15 @@ import { Button } from "../profile/buzz/shared/ui/button";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { channelChrome } from "./chromeLayout";
 
-export function ChatHeader({ title, description, leadingContent, statusBadge, onCopyTitle, actions,
+export function ChatHeader({ title, description, leadingContent, statusBadge, titleAdornment, onCopyTitle, actions,
   channelType, visibility, belowSystemChrome = false, chromeWrapperRef, transparentChrome = false }: {
   actions?: ReactNode;
   title: string;
   description?: string;
   leadingContent?: ReactNode;
   statusBadge?: ReactNode;
+  /** Identity adornment rendered exactly 4px after a DM title. */
+  titleAdornment?: ReactNode;
   channelType?: "stream" | "forum" | "dm";
   visibility?: "open" | "private";
   belowSystemChrome?: boolean;
@@ -34,6 +36,7 @@ export function ChatHeader({ title, description, leadingContent, statusBadge, on
         <div className="flex shrink-0 items-center">{leadingContent ?? glyph}</div>
         <h1 className={cn("min-w-0 truncate text-base font-semibold leading-6 tracking-tight", channelType !== "dm" && "translate-y-px")}
           data-testid="chat-title" title={description?.trim() || undefined}>{title}</h1>
+        {titleAdornment}
         <Button aria-label={`${t("sidebar.copyName")}: ${title}`}
           className="h-6 w-6 shrink-0 opacity-0 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
           onClick={() => { const value = title.trim(); if (value) void onCopyTitle(value); }}

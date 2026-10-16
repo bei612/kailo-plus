@@ -10,6 +10,7 @@ import { useMessageEmoji } from "./useMessageEmoji";
 import { UserAvatar } from "./UserAvatar";
 import { MessageHeaderRow, MessageAuthorText } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
+import { UserNameIndicators } from "../user-status/ui/UserNameIndicators";
 import { MessageReactions } from "./reactions/MessageReactions";
 import { useReactionHandler } from "./reactions/useReactionHandler";
 import type { CustomEmoji } from "../custom-emoji/emoji";
@@ -279,6 +280,10 @@ export function MessageRowSurface({
       // header content ends before the rail's left edge in every rail state.
       <MessageHeaderRow className="pe-[var(--message-action-rail-width,0px)]">
         {renderIdentity ? renderIdentity(authorNode, "author") : authorNode}
+        {/* Fixed Buzz 779af8886caae1317b4de962082429867ab61503
+            desktop/src/features/messages/ui/MessageAuthorWithIndicators.tsx: DD-120 status
+            indicator after the author; renders nothing without a presence host or status. */}
+        <UserNameIndicators className="-ml-0.5 self-center" pubkey={message.pubkey} />
         {inlineMetadataNode}
       </MessageHeaderRow>
     );

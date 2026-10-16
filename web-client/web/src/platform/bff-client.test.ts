@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
+import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
+  releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -259,4 +261,80 @@ it("uses one top-level login navigation for concurrent expired-session responses
   const results = await Promise.allSettled([bff.session(), bff.session()]);
   expect(results.every(result => result.status === "rejected" && result.reason instanceof SessionEndedError)).toBe(true);
   expect(assign).toHaveBeenCalledExactlyOnceWith("/app/");
+});
+
+it("names each DD-120 route once and sends only the typed presence/status intents", async () => {
+  expect([PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH]).toEqual([
+    "/api/v1/presence", "/api/v1/presence/query", "/api/v1/user-status", "/api/v1/user-status/query"]);
+  const key = "b".repeat(64);
+  const fetcher = vi.fn(async (path: string, init: RequestInit) => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (path === PRESENCE_QUERY_PATH) return json({ presences: [{ pubkey: key, status: "online", observedAt: 5 }] });
+    if (path === USER_STATUS_QUERY_PATH) return json({ statuses: [{ pubkey: key, text: "Busy", createdAt: 5, eventId: "e".repeat(64) }] });
+    if (path === USER_STATUS_PATH) return json(JSON.parse(String(init.body)).text === "unknown" ? {} : { eventId: "e".repeat(64), operationId: "op" });
+    return new Response(null, { status: 204 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const sent = () => fetcher.mock.lastCall!;
+
+  expect((await queryPresence([key])).presences).toHaveLength(1);
+  expect(sent()[0]).toBe("/api/v1/presence/query");
+  expect([sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["POST", { pubkeys: [key] }]);
+
+  await updatePresence("away");
+  expect([sent()[0], sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/presence", "PUT", { status: "away" }]);
+
+  expect((await queryUserStatus([key])).statuses[0]?.text).toBe("Busy");
+  expect([sent()[0], sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/user-status/query", "POST", { pubkeys: [key] }]);
+
+  expect(await updateUserStatus({ text: "Busy", emoji: "🔴", expiresAt: 10 }, "intent")).toEqual({ eventId: "e".repeat(64) });
+  expect([sent()[0], sent()[1].method]).toEqual(["/api/v1/user-status", "PUT"]);
+  expect(new Headers(sent()[1].headers).get("Idempotency-Key")).toBe("intent");
+  expect(JSON.parse(String(sent()[1].body))).toEqual({ text: "Busy", emoji: "🔴", expiresAt: 10 });
+  // A 2xx without an event receipt is an unknown outcome, never success.
+  await expect(updateUserStatus({ text: "unknown" }, "intent")).rejects.toBeInstanceOf(TransportError);
+
+  releasePresence();
+  await vi.waitFor(() => expect(sent()[1].keepalive).toBe(true));
+  expect([sent()[0], sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/presence", "PUT", { status: "offline" }]);
+});
+
+it("rejects a malformed presence or status page instead of rendering it", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } })));
+  await expect(queryPresence(["b".repeat(64)])).rejects.toBeInstanceOf(TransportError);
+  await expect(queryUserStatus(["b".repeat(64)])).rejects.toBeInstanceOf(TransportError);
+});
+
+it("routes h-less 20001/30315 stream frames to the presence sink, never to timeline consumers", () => {
+  const identity: BuzzEvent[] = [];
+  const release = setIdentityStreamSink((event) => identity.push(event));
+  const frames: StreamFrame[] = [];
+  const stop = openStream("workspace-a", (frame) => frames.push(frame));
+  const source = Source.instances[0]!;
+  const message = { id: "a".repeat(64), pubkey: "b".repeat(64), kind: 9, created_at: 1, content: "hi", tags: [["h", "native-a"]] };
+  const status = { id: "c".repeat(64), pubkey: "b".repeat(64), kind: 30315, created_at: 2, content: "Busy", tags: [["d", "general"]] };
+  const presence = { id: "d".repeat(64), pubkey: "b".repeat(64), kind: 20001, created_at: 3, content: "online", tags: [] };
+  source.frame("snapshot", JSON.stringify([message, status]));
+  source.frame("event", JSON.stringify(presence));
+  source.frame("event", JSON.stringify(message));
+  expect(frames).toEqual([{ type: "snapshot", events: [message] }, { type: "event", event: message }]);
+  expect(identity).toEqual([status, presence]);
+  release();
+  source.frame("event", JSON.stringify(presence));
+  expect(identity).toHaveLength(2);
+  stop();
+});
+
+it("releases presence before revoking the session on sign-out", async () => {
+  const order: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (path: string, init: RequestInit) => {
+    order.push(`${init.method ?? "GET"} ${path}`);
+    return new Response(null, { status: 204 });
+  }));
+  vi.spyOn(bff, "logout").mockImplementation(async () => { order.push("logout"); return { revoked: true }; });
+  const assign = vi.fn();
+  vi.stubGlobal("window", { location: { href: "/app/", assign } });
+  await signOut();
+  expect(order).toEqual(["PUT /api/v1/presence", "logout", "POST /logout"]);
+  expect(assign).toHaveBeenCalledOnce();
 });

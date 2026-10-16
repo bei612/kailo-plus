@@ -22,7 +22,7 @@ export type FetchTransport = BffTransport & {
 };
 
 /** Read-only POST queries: they neither write nor invalidate shared reads. */
-const READ_POSTS = /^\/api\/v1\/(?:(?:workspaces|conversations)\/[^/]+\/messages\/author-profiles|workspace-activity|inbox\/mentions|search\/messages|projects\/query|reminders\/source|pulse\/query)$/;
+const READ_POSTS = /^\/api\/v1\/(?:(?:workspaces|conversations)\/[^/]+\/messages\/author-profiles|workspace-activity|inbox\/mentions|search\/messages|projects\/query|reminders\/source|pulse\/query|presence\/query|user-status\/query)$/;
 
 /** Cold-start settle window: the shell, sidebars, Inbox and panes read these within ~0.4 s. */
 export const SETTLED_READ_MS = 2_000;

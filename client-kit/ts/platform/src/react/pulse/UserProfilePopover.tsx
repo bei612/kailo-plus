@@ -1,6 +1,12 @@
 import * as React from "react";
 
 import { useUserProfileQuery } from "./host";
+import { usePresenceHost } from "../presence/context";
+import { usePresenceQuery } from "../presence/hooks";
+import { aggregatePresence } from "../presence/lib/presence";
+import { ProfileAvatarWithStatus } from "../presence/ui/ProfileAvatarWithStatus";
+import { newestVisibleUserStatus, useUserStatusQuery } from "../user-status/hooks";
+import { StatusEmoji } from "../user-status/ui/StatusEmoji";
 import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "../profile/avatar-host";
 import { useUiLocale } from "../context";
@@ -206,6 +212,63 @@ function PulseProfilePopoverBody(props: ProfilePopoverBodyProps) {
   return <UserProfilePopoverBody {...props} profile={profile.data} mediaUrl={host.mediaUrl}/>;
 }
 
+// Fixed Buzz 779af8886caae1317b4de962082429867ab61503
+// desktop/src/features/profile/ui/UserProfilePopover.tsx::StatusLine.
+function StatusLine({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="flex w-full min-w-0 items-center gap-1 py-1 text-xs leading-4 text-muted-foreground"
+      data-testid="user-profile-status"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * DD-120 (5): a Human is online if any bound key is online; a key without a fact is not
+ * painted offline. Agents keep their installation-active presence elsewhere, so a bot
+ * profile shows no Relay presence here.
+ */
+function PresenceProfileAvatar({ pubkeys, ...avatar }: {
+  pubkeys: readonly string[];
+  avatarUrl: string | null;
+  label: string;
+}) {
+  const presence = usePresenceQuery(pubkeys);
+  return (
+    <ProfileAvatarWithStatus
+      avatarClassName="text-xs"
+      avatarUrl={avatar.avatarUrl}
+      className="h-10 w-10"
+      iconClassName="h-5 w-5"
+      label={avatar.label}
+      size={40}
+      status={aggregatePresence(presence.isSuccess ? presence.data : undefined, pubkeys)}
+      statusTestId="user-profile-popover-presence-badge"
+      testId="user-profile-popover-avatar"
+    />
+  );
+}
+
+function ProfileStatusLine({ pubkeys }: { pubkeys: readonly string[] }) {
+  const userStatusQuery = useUserStatusQuery(pubkeys);
+  const userStatus = newestVisibleUserStatus(userStatusQuery.data, pubkeys);
+  const userStatusText = userStatus?.text.trim() ?? "";
+  if (!userStatusText && !userStatus?.emoji) return null;
+  return (
+    <>
+      <div aria-hidden="true" className="my-1 border-t border-border/60" />
+      <StatusLine>
+        {userStatus?.emoji ? (
+          <StatusEmoji className="h-3.5 w-3.5 shrink-0" value={userStatus.emoji} />
+        ) : null}
+        {userStatusText ? <span className="truncate">{userStatusText}</span> : null}
+      </StatusLine>
+    </>
+  );
+}
+
 export function UserProfilePopoverBody({
   canOpenProfilePanel,
   onContentMouseEnter,
@@ -216,26 +279,35 @@ export function UserProfilePopoverBody({
   profile,
   mediaUrl,
   status,
+  presencePubkeys,
 }: ProfilePopoverBodyProps & {
   profile: Pick<WebProfileView, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
   mediaUrl: (url: string) => string;
   status?: React.ReactNode;
+  /** Every admitted key of this person (WorkspaceMemberView.pubkeys); defaults to `pubkey`. */
+  presencePubkeys?: readonly string[];
 }) {
   const locale=useUiLocale();
+  const presenceHost = usePresenceHost();
+  const identityKeys = presencePubkeys && presencePubkeys.length > 0 ? presencePubkeys : [pubkey];
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
   const profileDescription = profile?.about?.trim() ?? "";
   const profileSubheader = profileDescription || profile?.nip05Handle?.trim();
 
   const profileHeaderContent = (
     <>
-      <AvatarHostProvider value={{locale,rewriteMediaUrl:mediaUrl}}><ProfileAvatar
+      <AvatarHostProvider value={{locale,rewriteMediaUrl:mediaUrl}}>{presenceHost && role !== "bot" ? <PresenceProfileAvatar
+        avatarUrl={profile?.avatarUrl ?? null}
+        label={displayName}
+        pubkeys={identityKeys}
+      /> : <ProfileAvatar
         avatarUrl={profile?.avatarUrl ?? null}
         className="h-10 w-10 text-xs"
         iconClassName="h-5 w-5"
         label={displayName}
         shape={role === "bot" ? "squircle" : "circle"}
         testId="user-profile-popover-avatar"
-      /></AvatarHostProvider>
+      />}</AvatarHostProvider>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -269,6 +341,7 @@ export function UserProfilePopoverBody({
       sideOffset={8}
     >
       {status}
+      <div className="flex flex-col gap-3">
       {canOpenProfilePanel ? (
         <button
           className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg text-left text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring [&_*]:cursor-pointer"
@@ -282,6 +355,8 @@ export function UserProfilePopoverBody({
           {profileHeaderContent}
         </div>
       )}
+      {presenceHost ? <ProfileStatusLine pubkeys={identityKeys} /> : null}
+      </div>
     </PopoverContent>
   );
 }

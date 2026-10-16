@@ -6,6 +6,10 @@ export const KIND_EVENT_REMINDER = 30300;
 export const KIND_REACTION = 7;
 export const KIND_STREAM_MESSAGE = 9;
 export const KIND_TYPING_INDICATOR = 20002;
+// DD-120 identity facts carried by admitted streams without an `h` tag (same values as
+// desktop/src/shared/constants/kinds.ts); they never become timeline rows.
+export const KIND_PRESENCE_UPDATE = 20001;
+export const KIND_USER_STATUS = 30315;
 // Buzz-native deletion. The relay soft-deletes the target and emits a
 // kind:40099 system message. Treated as a deletion marker alongside kind:5.
 export const KIND_NIP29_DELETE_EVENT = 9005;

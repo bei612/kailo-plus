@@ -126,6 +126,8 @@ vi.mock("@client-kit/platform/react/new-message", () => ({
   ConversationList: () => <div data-testid="shared-conversation-list" />,
 }));
 vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => <div data-testid="new-message-page"><header data-testid="new-message-header">To:</header></div> }));
+// DD-120 presence transport has its own host tests; this shell test keeps it inert.
+vi.mock("./PresenceHost", () => ({ WebPresenceHost: ({ children }: { children: import("react").ReactNode }) => children }));
 vi.mock("./SidebarProfileCard", () => ({
   WebSidebarProfileCard: ({ onOpenSettings }: { onOpenSettings: () => void }) =>
     <button data-testid="sidebar-settings" onClick={onOpenSettings} />,
