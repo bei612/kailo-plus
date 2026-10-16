@@ -125,6 +125,8 @@
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
 //     final projectPreferenceRequest = projectPreferenceRequestFromJson(jsonString);
+//     final projectsGitQueryRequest = projectsGitQueryRequestFromJson(jsonString);
+//     final projectsGitQueryResponse = projectsGitQueryResponseFromJson(jsonString);
 //     final projectsPublishRequest = projectsPublishRequestFromJson(jsonString);
 //     final projectsQueryRequest = projectsQueryRequestFromJson(jsonString);
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
@@ -1024,6 +1026,18 @@ ProjectPreferenceRequest projectPreferenceRequestFromJson(String str) =>
     ProjectPreferenceRequest.fromJson(json.decode(str));
 
 String projectPreferenceRequestToJson(ProjectPreferenceRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsGitQueryRequest projectsGitQueryRequestFromJson(String str) =>
+    ProjectsGitQueryRequest.fromJson(json.decode(str));
+
+String projectsGitQueryRequestToJson(ProjectsGitQueryRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsGitQueryResponse projectsGitQueryResponseFromJson(String str) =>
+    ProjectsGitQueryResponse.fromJson(json.decode(str));
+
+String projectsGitQueryResponseToJson(ProjectsGitQueryResponse data) =>
     json.encode(data.toJson());
 
 ProjectsPublishRequest projectsPublishRequestFromJson(String str) =>
@@ -13363,6 +13377,309 @@ class ProjectPreferenceRequest {
     "projectAddress": projectAddress,
     "selected": selected,
     "version": version,
+  });
+}
+
+///DD-118: the original Buzz Desktop remote repository reads
+///(get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through
+///BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay
+///authorize_git_read decides access with the person's own SERVER identity.
+class ProjectsGitQueryRequest {
+  final String? baseBranch;
+  final String? defaultBranch;
+
+  ///FILE_CONTENT only.
+  final String? path;
+  final String repository;
+  final String? targetCommit;
+  final String? targetRef;
+  final ProjectsGitQueryRequestView view;
+
+  ProjectsGitQueryRequest({
+    this.baseBranch,
+    this.defaultBranch,
+    this.path,
+    required this.repository,
+    this.targetCommit,
+    this.targetRef,
+    required this.view,
+  });
+
+  factory ProjectsGitQueryRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitQueryRequest(
+        baseBranch: json["baseBranch"],
+        defaultBranch: json["defaultBranch"],
+        path: json["path"],
+        repository: json["repository"],
+        targetCommit: json["targetCommit"],
+        targetRef: json["targetRef"],
+        view: projectsGitQueryRequestViewValues.map[json["view"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseBranch": baseBranch,
+    "defaultBranch": defaultBranch,
+    "path": path,
+    "repository": repository,
+    "targetCommit": targetCommit,
+    "targetRef": targetRef,
+    "view": projectsGitQueryRequestViewValues.reverse[view],
+  });
+}
+
+enum ProjectsGitQueryRequestView { DIFF, FILE_CONTENT, SNAPSHOT }
+
+final projectsGitQueryRequestViewValues = EnumValues({
+  "DIFF": ProjectsGitQueryRequestView.DIFF,
+  "FILE_CONTENT": ProjectsGitQueryRequestView.FILE_CONTENT,
+  "SNAPSHOT": ProjectsGitQueryRequestView.SNAPSHOT,
+});
+
+///DD-118: exactly one of snapshot/content/diff matches the requested view, in the original
+///Buzz Desktop shapes (ProjectRepoSnapshot, file preview, ProjectRepoDiff) with the
+///original 64 KiB, 2000-line and 250-file bounds.
+class ProjectsGitQueryResponse {
+  ///FILE_CONTENT preview; null when the file is binary or over the original preview bound.
+  final String? content;
+  final ProjectRepoDiff? diff;
+  final ProjectRepoSnapshot? snapshot;
+  final ProjectsGitQueryRequestView view;
+
+  ProjectsGitQueryResponse({
+    this.content,
+    this.diff,
+    this.snapshot,
+    required this.view,
+  });
+
+  factory ProjectsGitQueryResponse.fromJson(Map<String, dynamic> json) =>
+      ProjectsGitQueryResponse(
+        content: json["content"],
+        diff: json["diff"] == null
+            ? null
+            : ProjectRepoDiff.fromJson(json["diff"]),
+        snapshot: json["snapshot"] == null
+            ? null
+            : ProjectRepoSnapshot.fromJson(json["snapshot"]),
+        view: projectsGitQueryRequestViewValues.map[json["view"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "content": content,
+    "diff": diff?.toJson(),
+    "snapshot": snapshot?.toJson(),
+    "view": projectsGitQueryRequestViewValues.reverse[view],
+  });
+}
+
+class ProjectRepoDiff {
+  final int additions;
+  final String? commitBody;
+  final int deletions;
+  final List<ProjectRepoDiffFile> files;
+
+  ProjectRepoDiff({
+    required this.additions,
+    required this.commitBody,
+    required this.deletions,
+    required this.files,
+  });
+
+  factory ProjectRepoDiff.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoDiff(
+        additions: json["additions"],
+        commitBody: json["commitBody"],
+        deletions: json["deletions"],
+        files: List<ProjectRepoDiffFile>.from(
+          json["files"].map((x) => ProjectRepoDiffFile.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "additions": additions,
+    "commitBody": commitBody,
+    "deletions": deletions,
+    "files": List<dynamic>.from(files.map((x) => x.toJson())),
+  });
+}
+
+class ProjectRepoDiffFile {
+  final int additions;
+  final int deletions;
+  final String patch;
+  final String path;
+  final bool truncated;
+
+  ProjectRepoDiffFile({
+    required this.additions,
+    required this.deletions,
+    required this.patch,
+    required this.path,
+    required this.truncated,
+  });
+
+  factory ProjectRepoDiffFile.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoDiffFile(
+        additions: json["additions"],
+        deletions: json["deletions"],
+        patch: json["patch"],
+        path: json["path"],
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "additions": additions,
+    "deletions": deletions,
+    "patch": patch,
+    "path": path,
+    "truncated": truncated,
+  });
+}
+
+class ProjectRepoSnapshot {
+  final List<ProjectRepoCommit> commits;
+  final List<ProjectRepoContributor> contributors;
+  final List<ProjectRepoFile> files;
+
+  ///Absent when the original value is null.
+  final ProjectRepoCommit? latestCommit;
+
+  ProjectRepoSnapshot({
+    required this.commits,
+    required this.contributors,
+    required this.files,
+    this.latestCommit,
+  });
+
+  factory ProjectRepoSnapshot.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoSnapshot(
+        commits: List<ProjectRepoCommit>.from(
+          json["commits"].map((x) => ProjectRepoCommit.fromJson(x)),
+        ),
+        contributors: List<ProjectRepoContributor>.from(
+          json["contributors"].map((x) => ProjectRepoContributor.fromJson(x)),
+        ),
+        files: List<ProjectRepoFile>.from(
+          json["files"].map((x) => ProjectRepoFile.fromJson(x)),
+        ),
+        latestCommit: json["latestCommit"] == null
+            ? null
+            : ProjectRepoCommit.fromJson(json["latestCommit"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "commits": List<dynamic>.from(commits.map((x) => x.toJson())),
+    "contributors": List<dynamic>.from(contributors.map((x) => x.toJson())),
+    "files": List<dynamic>.from(files.map((x) => x.toJson())),
+    "latestCommit": latestCommit?.toJson(),
+  });
+}
+
+///Absent when the original value is null.
+class ProjectRepoCommit {
+  final String authorEmail;
+  final String authorName;
+  final String hash;
+  final String shortHash;
+  final String subject;
+  final int timestamp;
+
+  ProjectRepoCommit({
+    required this.authorEmail,
+    required this.authorName,
+    required this.hash,
+    required this.shortHash,
+    required this.subject,
+    required this.timestamp,
+  });
+
+  factory ProjectRepoCommit.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoCommit(
+        authorEmail: json["authorEmail"],
+        authorName: json["authorName"],
+        hash: json["hash"],
+        shortHash: json["shortHash"],
+        subject: json["subject"],
+        timestamp: json["timestamp"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authorEmail": authorEmail,
+    "authorName": authorName,
+    "hash": hash,
+    "shortHash": shortHash,
+    "subject": subject,
+    "timestamp": timestamp,
+  });
+}
+
+class ProjectRepoContributor {
+  final int commitCount;
+  final String email;
+  final int lastCommitAt;
+  final String name;
+
+  ProjectRepoContributor({
+    required this.commitCount,
+    required this.email,
+    required this.lastCommitAt,
+    required this.name,
+  });
+
+  factory ProjectRepoContributor.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoContributor(
+        commitCount: json["commitCount"],
+        email: json["email"],
+        lastCommitAt: json["lastCommitAt"],
+        name: json["name"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "commitCount": commitCount,
+    "email": email,
+    "lastCommitAt": lastCommitAt,
+    "name": name,
+  });
+}
+
+class ProjectRepoFile {
+  final String kind;
+  final int? lastChangedAt;
+
+  ///Absent when the original value is null.
+  final ProjectRepoCommit? latestCommit;
+  final String path;
+  final String? previewContent;
+  final int? size;
+
+  ProjectRepoFile({
+    required this.kind,
+    required this.lastChangedAt,
+    this.latestCommit,
+    required this.path,
+    required this.previewContent,
+    required this.size,
+  });
+
+  factory ProjectRepoFile.fromJson(Map<String, dynamic> json) =>
+      ProjectRepoFile(
+        kind: json["kind"],
+        lastChangedAt: json["lastChangedAt"],
+        latestCommit: json["latestCommit"] == null
+            ? null
+            : ProjectRepoCommit.fromJson(json["latestCommit"]),
+        path: json["path"],
+        previewContent: json["previewContent"],
+        size: json["size"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": kind,
+    "lastChangedAt": lastChangedAt,
+    "latestCommit": latestCommit?.toJson(),
+    "path": path,
+    "previewContent": previewContent,
+    "size": size,
   });
 }
 

@@ -6576,6 +6576,153 @@ pub struct ProjectPreferenceRequest {
     pub version: i64,
 }
 
+/// DD-118: the original Buzz Desktop remote repository reads
+/// (get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through
+/// BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay
+/// authorize_git_read decides access with the person's own SERVER identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsGitQueryRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+
+    /// FILE_CONTENT only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+
+    pub repository: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_commit: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_ref: Option<String>,
+
+    pub view: ProjectsGitQueryRequestView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ProjectsGitQueryRequestView {
+    Diff,
+
+    #[serde(rename = "FILE_CONTENT")]
+    FileContent,
+
+    Snapshot,
+}
+
+/// DD-118: exactly one of snapshot/content/diff matches the requested view, in the original
+/// Buzz Desktop shapes (ProjectRepoSnapshot, file preview, ProjectRepoDiff) with the
+/// original 64 KiB, 2000-line and 250-file bounds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectsGitQueryResponse {
+    /// FILE_CONTENT preview; null when the file is binary or over the original preview bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<ProjectRepoDiff>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<ProjectRepoSnapshot>,
+
+    pub view: ProjectsGitQueryRequestView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRepoDiff {
+    pub additions: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_body: Option<String>,
+
+    pub deletions: i64,
+
+    pub files: Vec<ProjectRepoDiffFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRepoDiffFile {
+    pub additions: i64,
+
+    pub deletions: i64,
+
+    pub patch: String,
+
+    pub path: String,
+
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRepoSnapshot {
+    pub commits: Vec<ProjectRepoCommit>,
+
+    pub contributors: Vec<ProjectRepoContributor>,
+
+    pub files: Vec<ProjectRepoFile>,
+
+    /// Absent when the original value is null.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_commit: Option<ProjectRepoCommit>,
+}
+
+/// Absent when the original value is null.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRepoCommit {
+    pub author_email: String,
+
+    pub author_name: String,
+
+    pub hash: String,
+
+    pub short_hash: String,
+
+    pub subject: String,
+
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRepoContributor {
+    pub commit_count: i64,
+
+    pub email: String,
+
+    pub last_commit_at: i64,
+
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRepoFile {
+    pub kind: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_changed_at: Option<i64>,
+
+    /// Absent when the original value is null.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_commit: Option<ProjectRepoCommit>,
+
+    pub path: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_content: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<i64>,
+}
+
 /// Typed original Community announcement mutation. Actor is the authenticated SERVER or
 /// CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 /// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real

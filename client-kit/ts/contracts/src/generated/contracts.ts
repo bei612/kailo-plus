@@ -4585,6 +4585,102 @@ export interface ProjectPreferenceRequest {
 }
 
 /**
+ * DD-118: the original Buzz Desktop remote repository reads
+ * (get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through
+ * BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay
+ * authorize_git_read decides access with the person's own SERVER identity.
+ */
+export interface ProjectsGitQueryRequest {
+    baseBranch?:    string;
+    defaultBranch?: string;
+    /**
+     * FILE_CONTENT only.
+     */
+    path?:         string;
+    repository:    string;
+    targetCommit?: string;
+    targetRef?:    string;
+    view:          ProjectsGitQueryRequestView;
+}
+
+export enum ProjectsGitQueryRequestView {
+    Diff = "DIFF",
+    FileContent = "FILE_CONTENT",
+    Snapshot = "SNAPSHOT",
+}
+
+/**
+ * DD-118: exactly one of snapshot/content/diff matches the requested view, in the original
+ * Buzz Desktop shapes (ProjectRepoSnapshot, file preview, ProjectRepoDiff) with the
+ * original 64 KiB, 2000-line and 250-file bounds.
+ */
+export interface ProjectsGitQueryResponse {
+    /**
+     * FILE_CONTENT preview; null when the file is binary or over the original preview bound.
+     */
+    content?:  null | string;
+    diff?:     ProjectRepoDiff;
+    snapshot?: ProjectRepoSnapshot;
+    view:      ProjectsGitQueryRequestView;
+}
+
+export interface ProjectRepoDiff {
+    additions:  number;
+    commitBody: null | string;
+    deletions:  number;
+    files:      ProjectRepoDiffFile[];
+}
+
+export interface ProjectRepoDiffFile {
+    additions: number;
+    deletions: number;
+    patch:     string;
+    path:      string;
+    truncated: boolean;
+}
+
+export interface ProjectRepoSnapshot {
+    commits:      ProjectRepoCommit[];
+    contributors: ProjectRepoContributor[];
+    files:        ProjectRepoFile[];
+    /**
+     * Absent when the original value is null.
+     */
+    latestCommit?: ProjectRepoCommit;
+}
+
+/**
+ * Absent when the original value is null.
+ */
+export interface ProjectRepoCommit {
+    authorEmail: string;
+    authorName:  string;
+    hash:        string;
+    shortHash:   string;
+    subject:     string;
+    timestamp:   number;
+}
+
+export interface ProjectRepoContributor {
+    commitCount:  number;
+    email:        string;
+    lastCommitAt: number;
+    name:         string;
+}
+
+export interface ProjectRepoFile {
+    kind:          string;
+    lastChangedAt: number | null;
+    /**
+     * Absent when the original value is null.
+     */
+    latestCommit?:  ProjectRepoCommit;
+    path:           string;
+    previewContent: null | string;
+    size:           number | null;
+}
+
+/**
  * Typed original Community announcement mutation. Actor is the authenticated SERVER or
  * CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
  * admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real

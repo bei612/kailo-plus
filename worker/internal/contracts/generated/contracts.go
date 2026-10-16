@@ -376,6 +376,12 @@
 //    projectPreferenceRequest, err := UnmarshalProjectPreferenceRequest(bytes)
 //    bytes, err = projectPreferenceRequest.Marshal()
 //
+//    projectsGitQueryRequest, err := UnmarshalProjectsGitQueryRequest(bytes)
+//    bytes, err = projectsGitQueryRequest.Marshal()
+//
+//    projectsGitQueryResponse, err := UnmarshalProjectsGitQueryResponse(bytes)
+//    bytes, err = projectsGitQueryResponse.Marshal()
+//
 //    projectsPublishRequest, err := UnmarshalProjectsPublishRequest(bytes)
 //    bytes, err = projectsPublishRequest.Marshal()
 //
@@ -1992,6 +1998,26 @@ func UnmarshalProjectPreferenceRequest(data []byte) (ProjectPreferenceRequest, e
 }
 
 func (r *ProjectPreferenceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitQueryRequest(data []byte) (ProjectsGitQueryRequest, error) {
+	var r ProjectsGitQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitQueryRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsGitQueryResponse(data []byte) (ProjectsGitQueryResponse, error) {
+	var r ProjectsGitQueryResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsGitQueryResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6066,6 +6092,82 @@ type ProjectPreferenceRequest struct {
 	Version        int64  `json:"version"`
 }
 
+// DD-118: the original Buzz Desktop remote repository reads
+// (get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through
+// BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay
+// authorize_git_read decides access with the person's own SERVER identity.
+type ProjectsGitQueryRequest struct {
+	BaseBranch    *string `json:"baseBranch,omitempty"`
+	DefaultBranch *string `json:"defaultBranch,omitempty"`
+	// FILE_CONTENT only.
+	Path         *string                     `json:"path,omitempty"`
+	Repository   string                      `json:"repository"`
+	TargetCommit *string                     `json:"targetCommit,omitempty"`
+	TargetRef    *string                     `json:"targetRef,omitempty"`
+	View         ProjectsGitQueryRequestView `json:"view"`
+}
+
+// DD-118: exactly one of snapshot/content/diff matches the requested view, in the original
+// Buzz Desktop shapes (ProjectRepoSnapshot, file preview, ProjectRepoDiff) with the
+// original 64 KiB, 2000-line and 250-file bounds.
+type ProjectsGitQueryResponse struct {
+	// FILE_CONTENT preview; null when the file is binary or over the original preview bound.
+	Content  *string                     `json:"content,omitempty"`
+	Diff     *ProjectRepoDiff            `json:"diff,omitempty"`
+	Snapshot *ProjectRepoSnapshot        `json:"snapshot,omitempty"`
+	View     ProjectsGitQueryRequestView `json:"view"`
+}
+
+type ProjectRepoDiff struct {
+	Additions  int64                 `json:"additions"`
+	CommitBody *string               `json:"commitBody"`
+	Deletions  int64                 `json:"deletions"`
+	Files      []ProjectRepoDiffFile `json:"files"`
+}
+
+type ProjectRepoDiffFile struct {
+	Additions int64  `json:"additions"`
+	Deletions int64  `json:"deletions"`
+	Patch     string `json:"patch"`
+	Path      string `json:"path"`
+	Truncated bool   `json:"truncated"`
+}
+
+type ProjectRepoSnapshot struct {
+	Commits      []ProjectRepoCommit      `json:"commits"`
+	Contributors []ProjectRepoContributor `json:"contributors"`
+	Files        []ProjectRepoFile        `json:"files"`
+	// Absent when the original value is null.
+	LatestCommit *ProjectRepoCommit `json:"latestCommit,omitempty"`
+}
+
+// Absent when the original value is null.
+type ProjectRepoCommit struct {
+	AuthorEmail string `json:"authorEmail"`
+	AuthorName  string `json:"authorName"`
+	Hash        string `json:"hash"`
+	ShortHash   string `json:"shortHash"`
+	Subject     string `json:"subject"`
+	Timestamp   int64  `json:"timestamp"`
+}
+
+type ProjectRepoContributor struct {
+	CommitCount  int64  `json:"commitCount"`
+	Email        string `json:"email"`
+	LastCommitAt int64  `json:"lastCommitAt"`
+	Name         string `json:"name"`
+}
+
+type ProjectRepoFile struct {
+	Kind          string `json:"kind"`
+	LastChangedAt *int64 `json:"lastChangedAt"`
+	// Absent when the original value is null.
+	LatestCommit   *ProjectRepoCommit `json:"latestCommit,omitempty"`
+	Path           string             `json:"path"`
+	PreviewContent *string            `json:"previewContent"`
+	Size           *int64             `json:"size"`
+}
+
 // Typed original Community announcement mutation. Actor is the authenticated SERVER or
 // CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
@@ -9019,6 +9121,14 @@ type ToolStatus string
 const (
 	IndigoACTIVE       ToolStatus = "ACTIVE"
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
+)
+
+type ProjectsGitQueryRequestView string
+
+const (
+	Diff        ProjectsGitQueryRequestView = "DIFF"
+	FileContent ProjectsGitQueryRequestView = "FILE_CONTENT"
+	Snapshot    ProjectsGitQueryRequestView = "SNAPSHOT"
 )
 
 type ProjectIssueCategory string
