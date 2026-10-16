@@ -88,3 +88,14 @@ it("releases presence when the page is hidden and renews it after a back/forward
   await act(async () => { window.dispatchEvent(show); });
   expect(state.updatePresence.mock.calls.length).toBe(beats + 1);
 });
+
+it("leaves presence to another open page instead of sending offline when one page closes", async () => {
+  localStorage.setItem("kailo-presence-tab:other", String(Date.now()));
+  await mount(<Peer />);
+  await vi.waitFor(() => expect(state.updatePresence).toHaveBeenCalledWith("online"));
+  await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+  expect(state.releasePresence).not.toHaveBeenCalled();
+  localStorage.setItem("kailo-presence-tab:other", String(Date.now() - 60_000));
+  await act(async () => { window.dispatchEvent(new Event("pagehide")); });
+  expect(state.releasePresence).toHaveBeenCalledOnce();
+});

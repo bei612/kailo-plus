@@ -43,10 +43,30 @@ export function WebPresenceHost({ session, children }: { session: PlatformSessio
   </PresenceHostProvider>;
 }
 
+const TAB_KEY_PREFIX = "kailo-presence-tab:";
+const TAB_BEAT_MS = 20_000;
+const TAB_ALIVE_MS = 45_000;
+
+function otherTabAlive(own: string, now: number): boolean {
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(TAB_KEY_PREFIX) || key === own) continue;
+      const beat = Number(localStorage.getItem(key));
+      if (Number.isFinite(beat) && now - beat < TAB_ALIVE_MS) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 /**
- * Browsers have no OS idle and no lifecycle hook beyond page events: leaving the page sends a
- * best-effort offline (the lease would otherwise lapse after three heartbeat windows), and a
- * page restored from the back/forward cache renews the current status at once.
+ * Browsers have no OS idle and no lifecycle hook beyond page events. Like the original, where
+ * presence clears only when the person's last connection closes, leaving the last open page
+ * sends a best-effort offline (the lease would otherwise lapse after three heartbeat windows);
+ * closing one of several open pages leaves presence to the remaining ones. A page restored from
+ * the back/forward cache renews the current status at once.
  */
 function PresencePageLifecycle() {
   const self = useSelfPresence();
@@ -54,11 +74,28 @@ function PresencePageLifecycle() {
   const resync = self?.resync;
   useEffect(() => {
     if (!currentStatus || !resync) return;
-    const hide = () => { if (currentStatus !== "offline") releasePresence(); };
-    const show = (event: PageTransitionEvent) => { if (event.persisted) resync(); };
+    const own = `${TAB_KEY_PREFIX}${crypto.randomUUID()}`;
+    const beat = () => {
+      try { localStorage.setItem(own, String(Date.now())); } catch { /* storage unavailable */ }
+    };
+    const forget = () => {
+      try { localStorage.removeItem(own); } catch { /* storage unavailable */ }
+    };
+    beat();
+    const timer = window.setInterval(beat, TAB_BEAT_MS);
+    const hide = () => {
+      forget();
+      if (currentStatus !== "offline" && !otherTabAlive(own, Date.now())) releasePresence();
+    };
+    const show = (event: PageTransitionEvent) => {
+      beat();
+      if (event.persisted) resync();
+    };
     window.addEventListener("pagehide", hide);
     window.addEventListener("pageshow", show);
     return () => {
+      window.clearInterval(timer);
+      forget();
       window.removeEventListener("pagehide", hide);
       window.removeEventListener("pageshow", show);
     };
