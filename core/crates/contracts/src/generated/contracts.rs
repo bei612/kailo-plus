@@ -8047,6 +8047,49 @@ pub enum WebMessageType {
     Stream,
 }
 
+/// DD-120: only snapshot events signed by the Relay itself whose single p tag is a requested
+/// pubkey bound in this Tenant. A pubkey without a fact is absent, never reported offline.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebPresencePage {
+    pub presences: Vec<WebPresenceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPresenceView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<i64>,
+
+    pub pubkey: String,
+
+    pub status: WebPresenceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebPresenceStatus {
+    Away,
+
+    Offline,
+
+    Online,
+}
+
+/// DD-120: presence for the requested pubkeys from the Relay-signed 20001 snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebPresenceQueryRequest {
+    pub pubkeys: Vec<String>,
+}
+
+/// DD-120: the person's own presence heartbeat or manual choice. Core signs the original
+/// kind 20001 with the person's SERVER key over the existing NIP-42 session connection;
+/// latest wins, not stored, never reconciled by event ID. offline releases the presence
+/// lease.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebPresenceUpdateRequest {
+    pub status: WebPresenceStatus,
+}
+
 /// Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 /// event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 /// empty strings explicitly clear a field.
@@ -8166,6 +8209,52 @@ pub struct WebSearchQuery {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub until: Option<i64>,
+}
+
+/// DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and
+/// is omitted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebUserStatusPage {
+    pub statuses: Vec<WebUserStatusView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebUserStatusView {
+    pub created_at: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    pub event_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+
+    pub pubkey: String,
+
+    pub text: String,
+}
+
+/// DD-120: the original NIP-38 kind 30315 `d=general` statuses for the requested pubkeys.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebUserStatusQueryRequest {
+    pub pubkeys: Vec<String>,
+}
+
+/// DD-120: the person's own original NIP-38 30315 (`d=general`, optional `emoji` and
+/// `expiration` tags), published by Core with the SERVER key under DD-81 (Idempotency-Key
+/// header). Empty text clears the status.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebUserStatusUpdateRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+
+    pub text: String,
 }
 
 /// POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope

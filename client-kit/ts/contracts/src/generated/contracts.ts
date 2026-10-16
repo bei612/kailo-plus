@@ -5672,6 +5672,43 @@ export enum WebMessageType {
 }
 
 /**
+ * DD-120: only snapshot events signed by the Relay itself whose single p tag is a requested
+ * pubkey bound in this Tenant. A pubkey without a fact is absent, never reported offline.
+ */
+export interface WebPresencePage {
+    presences: WebPresenceView[];
+}
+
+export interface WebPresenceView {
+    observedAt?: number;
+    pubkey:      string;
+    status:      WebPresenceStatus;
+}
+
+export enum WebPresenceStatus {
+    Away = "away",
+    Offline = "offline",
+    Online = "online",
+}
+
+/**
+ * DD-120: presence for the requested pubkeys from the Relay-signed 20001 snapshot.
+ */
+export interface WebPresenceQueryRequest {
+    pubkeys: string[];
+}
+
+/**
+ * DD-120: the person's own presence heartbeat or manual choice. Core signs the original
+ * kind 20001 with the person's SERVER key over the existing NIP-42 session connection;
+ * latest wins, not stored, never reconciled by event ID. offline releases the presence
+ * lease.
+ */
+export interface WebPresenceUpdateRequest {
+    status: WebPresenceStatus;
+}
+
+/**
  * Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
  * event, author, relay URL or management tags are accepted. Omitted fields are preserved;
  * empty strings explicitly clear a field.
@@ -5763,6 +5800,41 @@ export interface WebSearchQuery {
     q:          string;
     since?:     number;
     until?:     number;
+}
+
+/**
+ * DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and
+ * is omitted.
+ */
+export interface WebUserStatusPage {
+    statuses: WebUserStatusView[];
+}
+
+export interface WebUserStatusView {
+    createdAt:  number;
+    emoji?:     string;
+    eventId:    string;
+    expiresAt?: number;
+    pubkey:     string;
+    text:       string;
+}
+
+/**
+ * DD-120: the original NIP-38 kind 30315 `d=general` statuses for the requested pubkeys.
+ */
+export interface WebUserStatusQueryRequest {
+    pubkeys: string[];
+}
+
+/**
+ * DD-120: the person's own original NIP-38 30315 (`d=general`, optional `emoji` and
+ * `expiration` tags), published by Core with the SERVER key under DD-81 (Idempotency-Key
+ * header). Empty text clears the status.
+ */
+export interface WebUserStatusUpdateRequest {
+    emoji?:     string;
+    expiresAt?: number;
+    text:       string;
 }
 
 /**

@@ -472,6 +472,15 @@
 //    webMessageType, err := UnmarshalWebMessageType(bytes)
 //    bytes, err = webMessageType.Marshal()
 //
+//    webPresencePage, err := UnmarshalWebPresencePage(bytes)
+//    bytes, err = webPresencePage.Marshal()
+//
+//    webPresenceQueryRequest, err := UnmarshalWebPresenceQueryRequest(bytes)
+//    bytes, err = webPresenceQueryRequest.Marshal()
+//
+//    webPresenceUpdateRequest, err := UnmarshalWebPresenceUpdateRequest(bytes)
+//    bytes, err = webPresenceUpdateRequest.Marshal()
+//
 //    webProfileUpdateRequest, err := UnmarshalWebProfileUpdateRequest(bytes)
 //    bytes, err = webProfileUpdateRequest.Marshal()
 //
@@ -486,6 +495,15 @@
 //
 //    webSearchQuery, err := UnmarshalWebSearchQuery(bytes)
 //    bytes, err = webSearchQuery.Marshal()
+//
+//    webUserStatusPage, err := UnmarshalWebUserStatusPage(bytes)
+//    bytes, err = webUserStatusPage.Marshal()
+//
+//    webUserStatusQueryRequest, err := UnmarshalWebUserStatusQueryRequest(bytes)
+//    bytes, err = webUserStatusQueryRequest.Marshal()
+//
+//    webUserStatusUpdateRequest, err := UnmarshalWebUserStatusUpdateRequest(bytes)
+//    bytes, err = webUserStatusUpdateRequest.Marshal()
 //
 //    webWorkspaceActivityPage, err := UnmarshalWebWorkspaceActivityPage(bytes)
 //    bytes, err = webWorkspaceActivityPage.Marshal()
@@ -2339,6 +2357,36 @@ func (r *WebMessageType) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalWebPresencePage(data []byte) (WebPresencePage, error) {
+	var r WebPresencePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebPresencePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebPresenceQueryRequest(data []byte) (WebPresenceQueryRequest, error) {
+	var r WebPresenceQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebPresenceQueryRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebPresenceUpdateRequest(data []byte) (WebPresenceUpdateRequest, error) {
+	var r WebPresenceUpdateRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebPresenceUpdateRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalWebProfileUpdateRequest(data []byte) (WebProfileUpdateRequest, error) {
 	var r WebProfileUpdateRequest
 	err := json.Unmarshal(data, &r)
@@ -2386,6 +2434,36 @@ func UnmarshalWebSearchQuery(data []byte) (WebSearchQuery, error) {
 }
 
 func (r *WebSearchQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebUserStatusPage(data []byte) (WebUserStatusPage, error) {
+	var r WebUserStatusPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebUserStatusPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebUserStatusQueryRequest(data []byte) (WebUserStatusQueryRequest, error) {
+	var r WebUserStatusQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebUserStatusQueryRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebUserStatusUpdateRequest(data []byte) (WebUserStatusUpdateRequest, error) {
+	var r WebUserStatusUpdateRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebUserStatusUpdateRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6815,6 +6893,31 @@ type WebMessageQuery struct {
 	ParentEventID *string         `json:"parentEventId,omitempty"`
 }
 
+// DD-120: only snapshot events signed by the Relay itself whose single p tag is a requested
+// pubkey bound in this Tenant. A pubkey without a fact is absent, never reported offline.
+type WebPresencePage struct {
+	Presences []WebPresenceView `json:"presences"`
+}
+
+type WebPresenceView struct {
+	ObservedAt *int64            `json:"observedAt,omitempty"`
+	Pubkey     string            `json:"pubkey"`
+	Status     WebPresenceStatus `json:"status"`
+}
+
+// DD-120: presence for the requested pubkeys from the Relay-signed 20001 snapshot.
+type WebPresenceQueryRequest struct {
+	Pubkeys []string `json:"pubkeys"`
+}
+
+// DD-120: the person's own presence heartbeat or manual choice. Core signs the original
+// kind 20001 with the person's SERVER key over the existing NIP-42 session connection;
+// latest wins, not stored, never reconciled by event ID. offline releases the presence
+// lease.
+type WebPresenceUpdateRequest struct {
+	Status WebPresenceStatus `json:"status"`
+}
+
 // Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 // event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 // empty strings explicitly clear a field.
@@ -6881,6 +6984,35 @@ type WebSearchQuery struct {
 	Q         string   `json:"q"`
 	Since     *int64   `json:"since,omitempty"`
 	Until     *int64   `json:"until,omitempty"`
+}
+
+// DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and
+// is omitted.
+type WebUserStatusPage struct {
+	Statuses []WebUserStatusView `json:"statuses"`
+}
+
+type WebUserStatusView struct {
+	CreatedAt int64   `json:"createdAt"`
+	Emoji     *string `json:"emoji,omitempty"`
+	EventID   string  `json:"eventId"`
+	ExpiresAt *int64  `json:"expiresAt,omitempty"`
+	Pubkey    string  `json:"pubkey"`
+	Text      string  `json:"text"`
+}
+
+// DD-120: the original NIP-38 kind 30315 `d=general` statuses for the requested pubkeys.
+type WebUserStatusQueryRequest struct {
+	Pubkeys []string `json:"pubkeys"`
+}
+
+// DD-120: the person's own original NIP-38 30315 (`d=general`, optional `emoji` and
+// `expiration` tags), published by Core with the SERVER key under DD-81 (Idempotency-Key
+// header). Empty text clears the status.
+type WebUserStatusUpdateRequest struct {
+	Emoji     *string `json:"emoji,omitempty"`
+	ExpiresAt *int64  `json:"expiresAt,omitempty"`
+	Text      string  `json:"text"`
 }
 
 // POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope
@@ -9572,6 +9704,14 @@ const (
 	ForumComment         WebMessageType = "FORUM_COMMENT"
 	ForumPost            WebMessageType = "FORUM_POST"
 	WebMessageTypeSTREAM WebMessageType = "STREAM"
+)
+
+type WebPresenceStatus string
+
+const (
+	Away    WebPresenceStatus = "away"
+	Offline WebPresenceStatus = "offline"
+	Online  WebPresenceStatus = "online"
 )
 
 type CapabilityVectorFormat string

@@ -157,11 +157,17 @@
 //     final webMessageCursor = webMessageCursorFromJson(jsonString);
 //     final webMessageQuery = webMessageQueryFromJson(jsonString);
 //     final webMessageType = webMessageTypeFromJson(jsonString);
+//     final webPresencePage = webPresencePageFromJson(jsonString);
+//     final webPresenceQueryRequest = webPresenceQueryRequestFromJson(jsonString);
+//     final webPresenceUpdateRequest = webPresenceUpdateRequestFromJson(jsonString);
 //     final webProfileUpdateRequest = webProfileUpdateRequestFromJson(jsonString);
 //     final webProfileView = webProfileViewFromJson(jsonString);
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
 //     final webPublishTopicRequest = webPublishTopicRequestFromJson(jsonString);
 //     final webSearchQuery = webSearchQueryFromJson(jsonString);
+//     final webUserStatusPage = webUserStatusPageFromJson(jsonString);
+//     final webUserStatusQueryRequest = webUserStatusQueryRequestFromJson(jsonString);
+//     final webUserStatusUpdateRequest = webUserStatusUpdateRequestFromJson(jsonString);
 //     final webWorkspaceActivityPage = webWorkspaceActivityPageFromJson(jsonString);
 //     final webWorkspaceActivityQuery = webWorkspaceActivityQueryFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
@@ -1220,6 +1226,24 @@ WebMessageType webMessageTypeFromJson(String str) =>
 String webMessageTypeToJson(WebMessageType data) =>
     json.encode(webMessageTypeValues.reverse[data]);
 
+WebPresencePage webPresencePageFromJson(String str) =>
+    WebPresencePage.fromJson(json.decode(str));
+
+String webPresencePageToJson(WebPresencePage data) =>
+    json.encode(data.toJson());
+
+WebPresenceQueryRequest webPresenceQueryRequestFromJson(String str) =>
+    WebPresenceQueryRequest.fromJson(json.decode(str));
+
+String webPresenceQueryRequestToJson(WebPresenceQueryRequest data) =>
+    json.encode(data.toJson());
+
+WebPresenceUpdateRequest webPresenceUpdateRequestFromJson(String str) =>
+    WebPresenceUpdateRequest.fromJson(json.decode(str));
+
+String webPresenceUpdateRequestToJson(WebPresenceUpdateRequest data) =>
+    json.encode(data.toJson());
+
 WebProfileUpdateRequest webProfileUpdateRequestFromJson(String str) =>
     WebProfileUpdateRequest.fromJson(json.decode(str));
 
@@ -1247,6 +1271,24 @@ WebSearchQuery webSearchQueryFromJson(String str) =>
     WebSearchQuery.fromJson(json.decode(str));
 
 String webSearchQueryToJson(WebSearchQuery data) => json.encode(data.toJson());
+
+WebUserStatusPage webUserStatusPageFromJson(String str) =>
+    WebUserStatusPage.fromJson(json.decode(str));
+
+String webUserStatusPageToJson(WebUserStatusPage data) =>
+    json.encode(data.toJson());
+
+WebUserStatusQueryRequest webUserStatusQueryRequestFromJson(String str) =>
+    WebUserStatusQueryRequest.fromJson(json.decode(str));
+
+String webUserStatusQueryRequestToJson(WebUserStatusQueryRequest data) =>
+    json.encode(data.toJson());
+
+WebUserStatusUpdateRequest webUserStatusUpdateRequestFromJson(String str) =>
+    WebUserStatusUpdateRequest.fromJson(json.decode(str));
+
+String webUserStatusUpdateRequestToJson(WebUserStatusUpdateRequest data) =>
+    json.encode(data.toJson());
 
 WebWorkspaceActivityPage webWorkspaceActivityPageFromJson(String str) =>
     WebWorkspaceActivityPage.fromJson(json.decode(str));
@@ -15876,6 +15918,91 @@ final webMessageTypeValues = EnumValues({
   "STREAM": WebMessageType.STREAM,
 });
 
+///DD-120: only snapshot events signed by the Relay itself whose single p tag is a requested
+///pubkey bound in this Tenant. A pubkey without a fact is absent, never reported offline.
+class WebPresencePage {
+  final List<WebPresenceView> presences;
+
+  WebPresencePage({required this.presences});
+
+  factory WebPresencePage.fromJson(Map<String, dynamic> json) =>
+      WebPresencePage(
+        presences: List<WebPresenceView>.from(
+          json["presences"].map((x) => WebPresenceView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "presences": List<dynamic>.from(presences.map((x) => x.toJson())),
+  });
+}
+
+class WebPresenceView {
+  final int? observedAt;
+  final String pubkey;
+  final WebPresenceStatus status;
+
+  WebPresenceView({
+    this.observedAt,
+    required this.pubkey,
+    required this.status,
+  });
+
+  factory WebPresenceView.fromJson(Map<String, dynamic> json) =>
+      WebPresenceView(
+        observedAt: json["observedAt"],
+        pubkey: json["pubkey"],
+        status: webPresenceStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "observedAt": observedAt,
+    "pubkey": pubkey,
+    "status": webPresenceStatusValues.reverse[status],
+  });
+}
+
+enum WebPresenceStatus { AWAY, OFFLINE, ONLINE }
+
+final webPresenceStatusValues = EnumValues({
+  "away": WebPresenceStatus.AWAY,
+  "offline": WebPresenceStatus.OFFLINE,
+  "online": WebPresenceStatus.ONLINE,
+});
+
+///DD-120: presence for the requested pubkeys from the Relay-signed 20001 snapshot.
+class WebPresenceQueryRequest {
+  final List<String> pubkeys;
+
+  WebPresenceQueryRequest({required this.pubkeys});
+
+  factory WebPresenceQueryRequest.fromJson(Map<String, dynamic> json) =>
+      WebPresenceQueryRequest(
+        pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"pubkeys": List<dynamic>.from(pubkeys.map((x) => x))});
+}
+
+///DD-120: the person's own presence heartbeat or manual choice. Core signs the original
+///kind 20001 with the person's SERVER key over the existing NIP-42 session connection;
+///latest wins, not stored, never reconciled by event ID. offline releases the presence
+///lease.
+class WebPresenceUpdateRequest {
+  final WebPresenceStatus status;
+
+  WebPresenceUpdateRequest({required this.status});
+
+  factory WebPresenceUpdateRequest.fromJson(Map<String, dynamic> json) =>
+      WebPresenceUpdateRequest(
+        status: webPresenceStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"status": webPresenceStatusValues.reverse[status]});
+}
+
 ///Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 ///event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 ///empty strings explicitly clear a field.
@@ -16099,6 +16226,98 @@ class WebSearchQuery {
     "since": since,
     "until": until,
   });
+}
+
+///DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and
+///is omitted.
+class WebUserStatusPage {
+  final List<WebUserStatusView> statuses;
+
+  WebUserStatusPage({required this.statuses});
+
+  factory WebUserStatusPage.fromJson(Map<String, dynamic> json) =>
+      WebUserStatusPage(
+        statuses: List<WebUserStatusView>.from(
+          json["statuses"].map((x) => WebUserStatusView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "statuses": List<dynamic>.from(statuses.map((x) => x.toJson())),
+  });
+}
+
+class WebUserStatusView {
+  final int createdAt;
+  final String? emoji;
+  final String eventId;
+  final int? expiresAt;
+  final String pubkey;
+  final String text;
+
+  WebUserStatusView({
+    required this.createdAt,
+    this.emoji,
+    required this.eventId,
+    this.expiresAt,
+    required this.pubkey,
+    required this.text,
+  });
+
+  factory WebUserStatusView.fromJson(Map<String, dynamic> json) =>
+      WebUserStatusView(
+        createdAt: json["createdAt"],
+        emoji: json["emoji"],
+        eventId: json["eventId"],
+        expiresAt: json["expiresAt"],
+        pubkey: json["pubkey"],
+        text: json["text"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "createdAt": createdAt,
+    "emoji": emoji,
+    "eventId": eventId,
+    "expiresAt": expiresAt,
+    "pubkey": pubkey,
+    "text": text,
+  });
+}
+
+///DD-120: the original NIP-38 kind 30315 `d=general` statuses for the requested pubkeys.
+class WebUserStatusQueryRequest {
+  final List<String> pubkeys;
+
+  WebUserStatusQueryRequest({required this.pubkeys});
+
+  factory WebUserStatusQueryRequest.fromJson(Map<String, dynamic> json) =>
+      WebUserStatusQueryRequest(
+        pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"pubkeys": List<dynamic>.from(pubkeys.map((x) => x))});
+}
+
+///DD-120: the person's own original NIP-38 30315 (`d=general`, optional `emoji` and
+///`expiration` tags), published by Core with the SERVER key under DD-81 (Idempotency-Key
+///header). Empty text clears the status.
+class WebUserStatusUpdateRequest {
+  final String? emoji;
+  final int? expiresAt;
+  final String text;
+
+  WebUserStatusUpdateRequest({this.emoji, this.expiresAt, required this.text});
+
+  factory WebUserStatusUpdateRequest.fromJson(Map<String, dynamic> json) =>
+      WebUserStatusUpdateRequest(
+        emoji: json["emoji"],
+        expiresAt: json["expiresAt"],
+        text: json["text"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"emoji": emoji, "expiresAt": expiresAt, "text": text});
 }
 
 ///POST /api/v1/workspace-activity 的回应：按请求顺序给出每个 Workspace 的原生 Channel ID 与经签名、scope
