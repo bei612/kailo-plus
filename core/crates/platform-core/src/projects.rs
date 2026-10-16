@@ -540,6 +540,7 @@ fn filter(
     let kinds = match view.as_str() {
         Some("PROJECTS") => vec![30621],
         Some("REPOSITORIES") => vec![30617],
+        Some("REPOSITORY_STATES") => vec![30618],
         Some("DELETIONS") => vec![5],
         Some("WORK_ITEMS") => vec![1618, 1621],
         Some("WORK_ITEM_ACTIVITY") => vec![1, 1619, 1630, 1631, 1632, 1633],
@@ -591,6 +592,103 @@ fn coordinate(value: &str) -> bool {
                     .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
         })
         && parts.next().is_some_and(|v| !v.is_empty())
+}
+
+/// Fixed Buzz desktop/src/features/projects/hooks.ts::fetchRepoState for one
+/// requested 30617 coordinate: the newest kind 30618 with the repository `d`,
+/// trusting only the coordinate owner and the Relay's own NIP-11 `self` key
+/// (moderation/lib/relaySelf.ts::getRelaySelf; without it, the owner alone).
+/// A request window narrows it as for every other view.
+fn repository_state_filter(
+    coordinate: &str,
+    relay_self: Option<&str>,
+    window: &Value,
+) -> Option<(Vec<String>, String, Value)> {
+    let mut parts = coordinate.splitn(3, ':');
+    if parts.next() != Some("30617") {
+        return None;
+    }
+    let owner = parts.next()?;
+    let d = parts.next().filter(|d| !d.is_empty())?;
+    let mut authors = vec![owner.to_owned()];
+    if let Some(relay) = relay_self.filter(|relay| *relay != owner) {
+        authors.push(relay.to_owned());
+    }
+    let mut filter = json!({"kinds":[30618],"authors":authors,"#d":[d],"limit":1});
+    for bound in ["since", "until"] {
+        if let Some(value) = window.get(bound) {
+            filter[bound] = value.clone();
+        }
+    }
+    Some((authors, d.to_owned(), filter))
+}
+
+fn trusted_repository_state(event: &nostr::Event, authors: &[String], d: &str) -> bool {
+    event.kind.as_u16() == 30618
+        && authors.contains(&event.pubkey.to_hex())
+        && event.tags.identifier() == Some(d)
+        && event.verify().is_ok()
+}
+
+fn canonical_pubkey(key: &str) -> bool {
+    nostr::PublicKey::from_hex(key).is_ok_and(|parsed| parsed.to_hex() == key)
+}
+
+/// The Relay `self` key recorded with the admitted binding version
+/// (tenant_lifecycle, NIP-11). Like the original, an absent or invalid key is
+/// not trusted, which leaves only the repository owner.
+async fn repository_relay_self(
+    state: &BffState,
+    tenant: uuid::Uuid,
+    version: i32,
+) -> Result<Option<String>, Response> {
+    let row: Option<Option<String>> = sqlx::query_scalar(
+        "select relay_self_pubkey from projection.tenant_buzz_binding
+         where tenant_id=$1 and state='ACTIVE' and version=$2",
+    )
+    .bind(tenant)
+    .bind(version)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(crate::service_api::unavailable)?;
+    // The binding moved since admission: never trust another snapshot's key.
+    let key = row.ok_or_else(|| StatusCode::FORBIDDEN.into_response())?;
+    Ok(key.filter(|key| canonical_pubkey(key)))
+}
+
+/// One original `limit: 1` read per repository; Relay applies `authors` and
+/// `#d` before its limit, so the newest trusted state is the only row.
+async fn repository_states(
+    http: &reqwest::Client,
+    client: &collab_bridge::bridge::IdentityClient,
+    coordinates: &[String],
+    relay_self: Option<&str>,
+    window: &Value,
+) -> Result<Value, Response> {
+    let mut states: Vec<nostr::Event> = Vec::new();
+    for coordinate in coordinates {
+        let (authors, d, filter) = repository_state_filter(coordinate, relay_self, window)
+            .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?;
+        let rows = client
+            .query(http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        if events.len() > 1
+            || events
+                .iter()
+                .any(|event| !trusted_repository_state(event, &authors, &d))
+        {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        for event in events {
+            if !states.iter().any(|known| known.id == event.id) {
+                states.push(event);
+            }
+        }
+    }
+    Ok(json!(states))
 }
 
 /// NIP-34 work-item reference. `h`/buzz-channel are not an authorization scope.
@@ -702,10 +800,20 @@ async fn query_inner(
         .map_err(IntoResponse::into_response)?
         .max_limit;
     let (kinds, filter) = filter(&request, cap)?;
+    let states_view = request.view == contracts::ProjectsQueryRequestView::RepositoryStates;
+    let relay_self = if states_view {
+        repository_relay_self(state, ctx.tenant_id, before.version).await?
+    } else {
+        None
+    };
     let value = if serde_json::to_value(&request.view)
         .is_ok_and(|view| view.as_str() == Some("WORK_ITEM_ACTIVITY"))
     {
         work_item_activity_page(&state.http, &client, &request, &kinds, filter, cap).await?
+    } else if states_view {
+        let coordinates = request.coordinates.as_deref().unwrap_or_default();
+        let trusted = relay_self.as_deref();
+        repository_states(&state.http, &client, coordinates, trusted, &filter).await?
     } else {
         client
             .query(&state.http, &[filter])
@@ -727,6 +835,7 @@ async fn query_inner(
                 .until
                 .is_some_and(|v| event.created_at.as_secs() > v as u64)
             || request.coordinates.is_some()
+                && !states_view
                 && !event.tags.iter().any(|tag| {
                     let t = tag.as_slice();
                     t.first().is_some_and(|v| v == "a")
@@ -746,9 +855,14 @@ async fn query_inner(
     {
         return Err(StatusCode::FORBIDDEN.into_response());
     }
-    Ok(
-        json!({"events":value,"limit":cap,"pubkey":client.pubkey_hex(),"bindingVersion":before.version}),
-    )
+    let mut response = json!({"events":value,"limit":cap,"pubkey":client.pubkey_hex()});
+    response["bindingVersion"] = json!(before.version);
+    if states_view {
+        // The original trust set, so the client picks each repository's state
+        // exactly as fetchRepoState did (authors: owner and Relay self).
+        response["relaySelf"] = json!(relay_self);
+    }
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -955,6 +1069,7 @@ mod tests {
         for (view, expected) in [
             ("WORK_ITEMS", vec![1618, 1621]),
             ("WORK_ITEM_ACTIVITY", vec![1, 1619, 1630, 1631, 1632, 1633]),
+            ("REPOSITORY_STATES", vec![30618]),
         ] {
             let (kinds, value) =
                 filter(&request(json!({"view":view,"coordinates":[address]})), 73).unwrap();
@@ -1090,5 +1205,53 @@ mod tests {
         validate_project_page(&page[1..], &[1], Some(&actor), 1, Some(&cursor)).unwrap();
         page[1].content = "forged".into();
         assert!(validate_project_page(&page, &[1], Some(&actor), 2, None).is_err());
+    }
+
+    fn state_filter(coordinate: &str, relay: Option<&str>) -> (Vec<String>, String, Value) {
+        let window = json!({"kinds":[30618],"limit":73,"until":42});
+        repository_state_filter(coordinate, relay, &window).unwrap()
+    }
+
+    #[test]
+    fn repository_states_trust_only_the_owner_and_the_relay_itself() {
+        let owner = nostr::Keys::generate();
+        let relay = nostr::Keys::generate();
+        let stranger = nostr::Keys::generate();
+        let owner_hex = owner.public_key().to_hex();
+        let relay_hex = relay.public_key().to_hex();
+        let coordinate = format!("30617:{owner_hex}:repo");
+        let (authors, d, value) = state_filter(&coordinate, Some(&relay_hex));
+        assert_eq!(authors, [owner_hex.clone(), relay_hex.clone()]);
+        assert_eq!(d, "repo");
+        assert_eq!(value["kinds"], json!([30618]));
+        assert_eq!(value["authors"], json!([owner_hex, relay_hex]));
+        assert_eq!(value["#d"], json!(["repo"]));
+        assert_eq!(value["limit"], 1);
+        assert_eq!(value["until"], 42);
+        assert!(value.get("since").is_none());
+        let (owner_only, _, _) = state_filter(&coordinate, None);
+        assert_eq!(owner_only, [owner_hex.clone()]);
+        let (deduplicated, _, _) = state_filter(&coordinate, Some(&owner_hex));
+        assert_eq!(deduplicated, owner_only);
+        let empty = json!({});
+        let project = format!("30621:{owner_hex}:project");
+        assert!(repository_state_filter(&project, None, &empty).is_none());
+
+        let state = |keys: &nostr::Keys, d: &str| {
+            nostr::EventBuilder::new(nostr::Kind::from(30618), "")
+                .tags([nostr::Tag::parse(["d", d]).unwrap()])
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        assert!(trusted_repository_state(&state(&owner, "repo"), &authors, &d));
+        assert!(trusted_repository_state(&state(&relay, "repo"), &authors, &d));
+        assert!(!trusted_repository_state(&state(&stranger, "repo"), &authors, &d));
+        assert!(!trusted_repository_state(&state(&owner, "other"), &authors, &d));
+        assert!(!trusted_repository_state(&state(&relay, "repo"), &owner_only, &d));
+        let mut forged = state(&owner, "repo");
+        forged.content = "forged".into();
+        assert!(!trusted_repository_state(&forged, &authors, &d));
+        assert!(canonical_pubkey(&owner.public_key().to_hex()));
+        assert!(!canonical_pubkey(&owner.public_key().to_hex().to_uppercase()));
     }
 }
