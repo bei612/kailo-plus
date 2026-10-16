@@ -109,9 +109,10 @@ fn classify_merge_error(message: String, has_conflicts: bool) -> MergeError {
     }
 }
 
-/// A display name git accepts as an ident name: no angle brackets or control
-/// characters, none of the characters git strips from either end, bounded,
-/// and the original default when nothing is left.
+/// A display name git accepts as an ident name.
+///
+/// No angle brackets or control characters, none of the characters git strips
+/// from either end, bounded, and the original default when nothing is left.
 pub fn merge_author_name(display_name: &str) -> String {
     let crud = |c: char| c.is_whitespace() || ".,:;<>\"\\'".contains(c);
     let name = display_name
@@ -153,10 +154,12 @@ fn resolve(repo_dir: &Path, name: &str, auth: &GitAuthConfig) -> Option<String> 
         .map(|commit| commit.to_ascii_lowercase())
 }
 
-/// The original merge up to, not including, the push: clone `target_branch`,
-/// fetch `source_branch`, require it to still be `expected_commit`, and merge
-/// that commit as `author`. Branch names and the commit are expected already
-/// normalized (`normalize_branch` / `normalize_commit`).
+/// The original merge up to, not including, the push.
+///
+/// Clones `target_branch`, fetches `source_branch`, requires it to still be
+/// `expected_commit` and merges that commit as `author`. Branch names and the
+/// commit are expected already normalized (`normalize_branch` /
+/// `normalize_commit`).
 pub fn prepare_merge_blocking(
     clone_url: &str,
     target_branch: &str,
@@ -251,9 +254,10 @@ pub fn prepare_merge_blocking(
     })
 }
 
-/// The original push of the merge to the target branch, leased on the head
-/// the merge was made on: a target that moved meanwhile is refused, never
-/// overwritten.
+/// The original push of the merge to the target branch.
+///
+/// Leased on the head the merge was made on: a target that moved meanwhile is
+/// refused, never overwritten.
 pub fn push_merge_blocking(
     prepared: &PreparedMerge,
     auth: &GitAuthConfig,

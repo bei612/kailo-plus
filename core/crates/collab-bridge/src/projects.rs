@@ -174,10 +174,11 @@ fn merged_tags(pull_request: &Event, merge_commit: &str) -> Result<Vec<Tag>, Ope
     Ok(tags)
 }
 
-/// Fixed project_git_workflow.rs::build_merged_status_event: the repository
-/// owner's 1631 once the merge reached the target branch, empty content. The
-/// Desktop caller's `status_created_at` is the review's newest trusted
-/// lifecycle event here (`latest`), exactly as for 1630/1632/1633.
+/// Fixed project_git_workflow.rs::build_merged_status_event.
+///
+/// The repository owner's 1631 once the merge reached the target branch, empty
+/// content. The Desktop caller's `status_created_at` is the review's newest
+/// trusted lifecycle event here (`latest`), exactly as for 1630/1632/1633.
 pub fn merged_status_publication_builder(
     pull_request: &Event,
     latest: Option<&Event>,

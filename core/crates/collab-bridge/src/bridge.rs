@@ -807,9 +807,11 @@ impl IdentityClient {
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }
 
-    /// DD-118 merge: the original 1631 of `pull_request`, signed by this
-    /// identity only when it owns the review's repository. `latest` is the
-    /// review's newest trusted lifecycle event (ordering evidence only).
+    /// DD-118 merge: the original 1631 of `pull_request`.
+    ///
+    /// Signed by this identity only when it owns the review's repository.
+    /// `latest` is the review's newest trusted lifecycle event (ordering
+    /// evidence only).
     pub fn sign_merged_status(
         &self,
         pull_request: &Event,
