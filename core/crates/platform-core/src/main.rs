@@ -65,6 +65,7 @@ mod platform_keys;
 mod platform_views;
 mod projects;
 mod projects_git;
+mod projects_git_merge;
 mod projects_git_ref;
 mod protocol_session;
 mod publish_reconcile;

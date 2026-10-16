@@ -46,11 +46,11 @@ const PUSH_DEADLINE: Duration = Duration::from_secs(120);
 /// One reconciliation read (`ls-remote` of a single ref).
 const RECONCILE_DEADLINE: Duration = Duration::from_secs(30);
 
-const ACCEPTED: &str = "ACCEPTED";
-const REJECTED: &str = "REJECTED";
-const NOT_DELIVERED: &str = "NOT_DELIVERED";
+pub(crate) const ACCEPTED: &str = "ACCEPTED";
+pub(crate) const REJECTED: &str = "REJECTED";
+pub(crate) const NOT_DELIVERED: &str = "NOT_DELIVERED";
 /// The ref is at neither side of the update; another writer moved it.
-const CONFLICT: &str = "CONFLICT";
+pub(crate) const CONFLICT: &str = "CONFLICT";
 
 /// Bound on the Relay hook text kept in the log.
 const MAX_REASON_CHARS: usize = 512;
@@ -92,11 +92,11 @@ impl RefUpdate {
     }
 }
 
-fn is_zero(commit: &str) -> bool {
+pub(crate) fn is_zero(commit: &str) -> bool {
     commit.bytes().all(|byte| byte == b'0')
 }
 
-fn within(value: &str) -> bool {
+pub(crate) fn within(value: &str) -> bool {
     !value.is_empty() && value.chars().count() <= MAX_REF_CHARS
 }
 
@@ -154,7 +154,7 @@ fn validate(request: ProjectsGitRefRequest) -> Result<RefUpdate, Response> {
 
 /// Where the remote ref stands relative to one update.
 #[derive(Debug, PartialEq)]
-enum RefState {
+pub(crate) enum RefState {
     Delivered,
     NotDelivered,
     Moved,
@@ -166,9 +166,15 @@ fn side(commit: &str) -> Option<&str> {
 }
 
 fn ref_state(remote: Option<&str>, update: &RefUpdate) -> RefState {
-    if remote == side(&update.new_commit) {
+    advertised_state(remote, &update.old_commit, &update.new_commit)
+}
+
+/// Where the advertised ref stands relative to `old -> new` (zero: absent).
+/// When both sides are equal the update is already delivered.
+pub(crate) fn advertised_state(remote: Option<&str>, old: &str, new: &str) -> RefState {
+    if remote == side(new) {
         RefState::Delivered
-    } else if remote == side(&update.old_commit) {
+    } else if remote == side(old) {
         RefState::NotDelivered
     } else {
         RefState::Moved
@@ -177,7 +183,7 @@ fn ref_state(remote: Option<&str>, update: &RefUpdate) -> RefState {
 
 /// What a failed `git push` says about the update.
 #[derive(Debug, PartialEq)]
-enum PushFailure {
+pub(crate) enum PushFailure {
     /// Relay refused the push (pre-receive policy or receive-pack
     /// authorization); the ref was not updated. Carries the Relay's reason.
     Rejected(String),
@@ -210,7 +216,7 @@ fn hook_reason(stderr: &str) -> String {
     reason.chars().take(MAX_REASON_CHARS).collect()
 }
 
-fn classify_push_failure(stderr: &str) -> PushFailure {
+pub(crate) fn classify_push_failure(stderr: &str) -> PushFailure {
     if buzz_project_git::is_timeout_error(stderr) {
         return PushFailure::Unknown;
     }
@@ -240,7 +246,7 @@ fn classify_push_failure(stderr: &str) -> PushFailure {
     PushFailure::Unknown
 }
 
-fn conflict(operation_id: Option<Uuid>) -> Response {
+pub(crate) fn conflict(operation_id: Option<Uuid>) -> Response {
     error_body(
         StatusCode::CONFLICT,
         ErrorClass::Conflict,
@@ -249,7 +255,7 @@ fn conflict(operation_id: Option<Uuid>) -> Response {
     )
 }
 
-fn reused() -> Response {
+pub(crate) fn reused() -> Response {
     error_body(
         StatusCode::CONFLICT,
         ErrorClass::Conflict,
@@ -258,7 +264,7 @@ fn reused() -> Response {
     )
 }
 
-fn rejected(operation_id: Uuid) -> Response {
+pub(crate) fn rejected(operation_id: Uuid) -> Response {
     error_body(
         StatusCode::FORBIDDEN,
         ErrorClass::Denied,
@@ -267,7 +273,7 @@ fn rejected(operation_id: Uuid) -> Response {
     )
 }
 
-fn too_large(operation_id: Uuid) -> Response {
+pub(crate) fn too_large(operation_id: Uuid) -> Response {
     error_body(
         StatusCode::PAYLOAD_TOO_LARGE,
         ErrorClass::Limit,
@@ -276,7 +282,7 @@ fn too_large(operation_id: Uuid) -> Response {
     )
 }
 
-fn unknown(operation_id: Uuid) -> Response {
+pub(crate) fn unknown(operation_id: Uuid) -> Response {
     error_body(
         StatusCode::SERVICE_UNAVAILABLE,
         ErrorClass::Unknown,
@@ -285,7 +291,7 @@ fn unknown(operation_id: Uuid) -> Response {
     )
 }
 
-fn unavailable(status: StatusCode, operation_id: Option<Uuid>) -> Response {
+pub(crate) fn unavailable(status: StatusCode, operation_id: Option<Uuid>) -> Response {
     error_body(
         status,
         ErrorClass::Precondition,
@@ -325,7 +331,7 @@ fn prepare_error(message: &str, operation_id: Uuid) -> Response {
     }
 }
 
-fn idempotency_key(headers: &HeaderMap) -> Option<Uuid> {
+pub(crate) fn idempotency_key(headers: &HeaderMap) -> Option<Uuid> {
     headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
@@ -334,7 +340,11 @@ fn idempotency_key(headers: &HeaderMap) -> Option<Uuid> {
 
 /// A fresh NIP-98 per git invocation, signed by the person's own SERVER key
 /// for the repository root; Host names the Community (SF-BUZ-32).
-fn git_auth(client: &Arc<IdentityClient>, repo_path: &str, budget: Duration) -> GitAuthConfig {
+pub(crate) fn git_auth(
+    client: &Arc<IdentityClient>,
+    repo_path: &str,
+    budget: Duration,
+) -> GitAuthConfig {
     let signer = Arc::clone(client);
     let path = repo_path.to_owned();
     let header = GitAuth::Header {
@@ -354,9 +364,20 @@ async fn read_ref(
     clone_url: &str,
     update: &RefUpdate,
 ) -> Result<Option<String>, String> {
-    let auth = git_auth(client, &update.repo_path, RECONCILE_DEADLINE);
+    read_branch(client, clone_url, &update.repo_path, &update.branch).await
+}
+
+/// `refs/heads/{branch}` of the repository at `repo_path` as Relay advertises
+/// it to this person (`None`: absent).
+pub(crate) async fn read_branch(
+    client: &Arc<IdentityClient>,
+    clone_url: &str,
+    repo_path: &str,
+    branch: &str,
+) -> Result<Option<String>, String> {
+    let auth = git_auth(client, repo_path, RECONCILE_DEADLINE);
     let url = clone_url.to_owned();
-    let branch = update.branch.clone();
+    let branch = branch.to_owned();
     tokio::task::spawn_blocking(move || {
         buzz_project_git::remote_branch_commit(&url, &branch, &auth)
     })
@@ -425,9 +446,28 @@ fn entry<'a>(
     result_code: &'a str,
     signer: &str,
 ) -> AuditEntry<'a> {
+    git_audit_entry(
+        ctx,
+        GIT_REF_ACTION,
+        operation_id,
+        event_type,
+        result_code,
+        signer,
+    )
+}
+
+/// The DISPATCH / OUTCOME / RECONCILIATION chain of one Projects git push.
+pub(crate) fn git_audit_entry<'a>(
+    ctx: &ExecutionContext,
+    action: &'a str,
+    operation_id: Uuid,
+    event_type: &'a str,
+    result_code: &'a str,
+    signer: &str,
+) -> AuditEntry<'a> {
     AuditEntry {
         event_key: format!(
-            "{GIT_REF_ACTION}:{operation_id}:{}:{result_code}",
+            "{action}:{operation_id}:{}:{result_code}",
             event_type.to_ascii_lowercase()
         ),
         tenant_id: Some(ctx.tenant_id),
@@ -437,7 +477,7 @@ fn entry<'a>(
         human_identity_id: Some(ctx.human_identity_id),
         initiator_principal_id: Some(ctx.tenant_principal_id),
         actor_principal_id: Some(ctx.tenant_principal_id),
-        action_key: GIT_REF_ACTION,
+        action_key: action,
         action_version: 1,
         component_type_key: "buzz",
         // Repositories are Community-global (is_global_only_kind), like issues.
@@ -476,7 +516,7 @@ async fn settle(
     }
 }
 
-enum Claim {
+pub(crate) enum Claim {
     Acquired,
     /// Another request holds this key for the same update right now.
     Pending(Uuid),

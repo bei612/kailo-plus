@@ -119,9 +119,11 @@ capabilities:
   - /api/v1/projects/publish
   - /api/v1/projects/git/query
   - /api/v1/projects/git/ref
+  - /api/v1/projects/git/merge
   actions:
   - projects.publish
   - projects.git.ref
+  - projects.git.merge
   tools: []
   workflow_kinds: []
 - id: collab.pulse

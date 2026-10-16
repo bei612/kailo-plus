@@ -31,6 +31,11 @@ use crate::web_transport::{
     PUBLISH_ACTION,
 };
 
+/// Community-global project publications the reconciler settles: NIP-34
+/// issues, reviews and their lifecycle, the DD-118 merged status (1631)
+/// included.
+const COMMUNITY_PROJECT_KINDS: [i32; 8] = [1, 5, 1618, 1621, 1630, 1631, 1632, 1633];
+
 pub struct Config {
     pub interval: Duration,
     /// DISPATCH 之后至少等这么久仍查不到，才判定未送达。必须不小于 Relay 的
@@ -422,7 +427,7 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .await
             .map_err(|_| "EVIDENCE_UNREADABLE")?
             .ok_or("EVIDENCE_MISSING")?;
-            if (community_scope && !matches!(kind, 1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633))
+            if (community_scope && !COMMUNITY_PROJECT_KINDS.contains(&kind))
                 || (project_home_scope && !matches!(kind, 30617 | 30621))
             {
                 return Err("EVIDENCE_MISSING");

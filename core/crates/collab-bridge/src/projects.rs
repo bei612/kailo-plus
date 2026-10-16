@@ -33,7 +33,8 @@ pub fn is_assignment(request: &ProjectsPublishRequest) -> bool {
 }
 
 /// Fixed pullRequestReviews.ts::updateProjectPullRequestStatus lifecycle kinds.
-/// Merged (1631) is reached through git, never through this UI operation.
+/// Merged (1631) is reached through git, never through this UI operation: the
+/// DD-118 merge signs it with [`merged_status_publication_builder`].
 pub const PULL_REQUEST_STATUS_KINDS: [u16; 3] = [1630, 1632, 1633];
 const PULL_REQUEST_STATUS_HISTORY_KINDS: [u16; 4] = [1630, 1631, 1632, 1633];
 
@@ -131,22 +132,66 @@ pub fn status_publication_builder(
             "review status requires the review author or repository owner",
         ));
     }
-    let created_at = match latest {
-        Some(event) if pull_request_status_trusted(pull_request, event) => Timestamp::from_secs(
-            event
-                .created_at
-                .as_secs()
-                .checked_add(1)
-                .ok_or_else(|| invalid("review status timestamp overflow"))?,
-        )
-        .max(Timestamp::now()),
-        Some(_) => return Err(invalid("invalid previous review status evidence")),
-        None => Timestamp::now(),
-    };
     let builder = EventBuilder::new(nostr::Kind::from(kind), "")
         .tags(pull_request_status_tags(pull_request)?)
         .allow_self_tagging()
-        .custom_created_at(created_at);
+        .custom_created_at(next_status_created_at(pull_request, latest)?);
+    Ok(builder)
+}
+
+/// projectPullRequests.mjs::nextProjectPullRequestStatusCreatedAt: one second
+/// after the review's newest trusted lifecycle event, never before now.
+fn next_status_created_at(
+    pull_request: &Event,
+    latest: Option<&Event>,
+) -> Result<Timestamp, OperatorError> {
+    let Some(event) = latest else {
+        return Ok(Timestamp::now());
+    };
+    if !pull_request_status_trusted(pull_request, event) {
+        return Err(invalid("invalid previous review status evidence"));
+    }
+    let next = event
+        .created_at
+        .as_secs()
+        .checked_add(1)
+        .ok_or_else(|| invalid("review status timestamp overflow"))?;
+    Ok(Timestamp::from_secs(next).max(Timestamp::now()))
+}
+
+/// Fixed project_git_workflow.rs::build_merged_status_event tags: the
+/// lifecycle `e` / `a` / `p` tags, then `merge-commit` and `r` naming the
+/// merge commit.
+fn merged_tags(pull_request: &Event, merge_commit: &str) -> Result<Vec<Tag>, OperatorError> {
+    let bad = || invalid("invalid merge commit");
+    if !commit_id(merge_commit) {
+        return Err(bad());
+    }
+    let mut tags = pull_request_status_tags(pull_request)?;
+    for name in ["merge-commit", "r"] {
+        tags.push(Tag::parse([name, merge_commit]).map_err(|_| bad())?);
+    }
+    Ok(tags)
+}
+
+/// Fixed project_git_workflow.rs::build_merged_status_event: the repository
+/// owner's 1631 once the merge reached the target branch, empty content. The
+/// Desktop caller's `status_created_at` is the review's newest trusted
+/// lifecycle event here (`latest`), exactly as for 1630/1632/1633.
+pub fn merged_status_publication_builder(
+    pull_request: &Event,
+    latest: Option<&Event>,
+    signer: &str,
+    merge_commit: &str,
+) -> Result<EventBuilder, OperatorError> {
+    let (owner, _) = pull_request_status_actors(pull_request)?;
+    if signer != owner {
+        return Err(invalid("merged status requires the repository owner"));
+    }
+    let builder = EventBuilder::new(nostr::Kind::from(1631), "")
+        .tags(merged_tags(pull_request, merge_commit)?)
+        .allow_self_tagging()
+        .custom_created_at(next_status_created_at(pull_request, latest)?);
     Ok(builder)
 }
 
@@ -492,7 +537,7 @@ pub fn publication_observed(
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
     if !matches!(
         expected_kind,
-        1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621
+        1 | 5 | 1618 | 1621 | 1630 | 1631 | 1632 | 1633 | 30617 | 30621
     ) {
         return Err(unverified());
     }
@@ -2319,5 +2364,72 @@ mod tests {
         });
         let issue: ProjectsPublishRequest = serde_json::from_value(issue).unwrap();
         assert!(publication_kind(&issue).is_err());
+    }
+
+    #[test]
+    fn merged_status_is_the_owner_signed_original_1631() {
+        let owner = Keys::generate();
+        let author = Keys::generate();
+        let owner_hex = owner.public_key().to_hex();
+        let author_hex = author.public_key().to_hex();
+        let repository = format!("30617:{owner_hex}:repo");
+        let review = EventBuilder::new(nostr::Kind::from(1618), "review")
+            .tags([Tag::parse(["a", &repository]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        let commit = "e".repeat(40);
+        let before = Timestamp::now().as_secs();
+        let event = merged_status_publication_builder(&review, None, &owner_hex, &commit)
+            .unwrap()
+            .sign_with_keys(&owner)
+            .unwrap();
+        assert_eq!(event.kind.as_u16(), 1631);
+        assert!(event.content.is_empty());
+        assert!(event.created_at.as_secs() >= before);
+        let root = vec![
+            "e".to_owned(),
+            review.id.to_hex(),
+            String::new(),
+            "root".to_owned(),
+        ];
+        let expected = [
+            root,
+            tag("a", &repository),
+            tag("p", &owner_hex),
+            tag("p", &author_hex),
+            tag("merge-commit", &commit),
+            tag("r", &commit),
+        ];
+        assert_eq!(review_tags(&event), expected);
+        assert!(pull_request_status_trusted(&review, &event));
+        let id = event.id.to_hex();
+        assert!(publication_observed(json!([event]), &id, &owner_hex, 1631).unwrap());
+
+        // Only the repository owner merges; the review author does not.
+        assert!(merged_status_publication_builder(&review, None, &author_hex, &commit).is_err());
+        assert!(merged_status_publication_builder(&review, None, &owner_hex, "abc").is_err());
+
+        // The owner's own review tags the owner once, and the status is ordered
+        // after the newest trusted lifecycle event.
+        let own = EventBuilder::new(nostr::Kind::from(1618), "own")
+            .tags([Tag::parse(["a", &repository]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let future = Timestamp::now().as_secs() + 120;
+        let closed = EventBuilder::new(nostr::Kind::from(1632), "")
+            .tags([Tag::parse(["e", &own.id.to_hex(), "", "root"]).unwrap()])
+            .custom_created_at(Timestamp::from_secs(future))
+            .sign_with_keys(&owner)
+            .unwrap();
+        let merged = merged_status_publication_builder(&own, Some(&closed), &owner_hex, &commit)
+            .unwrap()
+            .sign_with_keys(&owner)
+            .unwrap();
+        assert_eq!(merged.created_at.as_secs(), future + 1);
+        let owners = review_tags(&merged)
+            .into_iter()
+            .filter(|tag| tag[0] == "p")
+            .count();
+        assert_eq!(owners, 1);
     }
 }

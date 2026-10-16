@@ -807,6 +807,26 @@ impl IdentityClient {
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }
 
+    /// DD-118 merge: the original 1631 of `pull_request`, signed by this
+    /// identity only when it owns the review's repository. `latest` is the
+    /// review's newest trusted lifecycle event (ordering evidence only).
+    pub fn sign_merged_status(
+        &self,
+        pull_request: &Event,
+        latest: Option<&Event>,
+        merge_commit: &str,
+    ) -> Result<Event, OperatorError> {
+        let builder = crate::projects::merged_status_publication_builder(
+            pull_request,
+            latest,
+            &self.pubkey_hex(),
+            merge_commit,
+        )?;
+        builder
+            .sign_with_keys(&self.keys)
+            .map_err(|error| OperatorError::Sign(error.to_string()))
+    }
+
     /// Buzz 779af8886caae1317b4de962082429867ab61503 reminderService and
     /// commands/identity::{nip44_encrypt_to_self,nip44_decrypt_from_self}.
     /// Only a verified 30300 event owned by this SERVER identity is decrypted.
