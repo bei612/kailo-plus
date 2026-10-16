@@ -634,6 +634,13 @@ remove_paths:
   - desktop/src/features/profile/ui/useProfileEditAgentRequest.ts
   - desktop/src/features/profile/ui/useProfileInteractionActions.ts
   - desktop/src/features/profile/useAvatarUpload.ts
+  # DD-118 第一批（2026-10-16，源码候选，未验收）：原 ui/ProjectRepositoryPanel、ProjectReadmePanel、
+  # ProjectOverviewPanel、ProjectRepositoryLatestCommitRow、ProjectRepositoryUnavailableState、
+  # ProjectHomeCodebasePanel、ProjectHomeCommitsPanel、ProjectDetailFeedPanels::ActivityPanel、
+  # ProjectCommitDetailPanel、ProjectPullRequestFilesChangedPanel、useRepositoryFileContent(Source)、
+  # useRepositoryFilesNavigation、projectPanelStyles 及 hooks.ts/useProjectCommitDiff.ts/
+  # useProjectRepositorySnapshots.ts 的远端读取迁入 client-kit/ts/platform/src/react/projects，
+  # 经 ProjectsHost.git 读取；Desktop 宿主尚未提供 git，仍保持原无仓库内容状态。
   - desktop/src/features/projects
   - desktop/src/features/pulse
   - desktop/src/features/reminders

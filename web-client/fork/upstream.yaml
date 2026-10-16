@@ -67,6 +67,8 @@ remove_paths:
   - web/src/features/community
   - web/src/features/inbox
   - web/src/features/invite
+  # 原直连 Relay 的仓库浏览器保持移除；Web 的 Projects 仓库内容（DD-118）由共享原 Desktop
+  # Projects 组件经 BFF POST /api/v1/projects/git/query 读取，浏览器不持 Relay URL 或 NIP-98。
   - web/src/features/repos
   - web/src/shared/api
   - web/src/shared/config

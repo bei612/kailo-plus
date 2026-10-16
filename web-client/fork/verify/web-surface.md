@@ -6551,3 +6551,45 @@ SDK所有本批目标已终态并释放，不存在本批在途检查；root按�
 - 原 ChannelPane blob `ea3c2647865f9c2f356febec24d705108e97f226` 与起点main blob `051661ab68113121787c804daf621ac947735d2c` 不同，仍不能把整个文件称原样保留。
 - 旧 TSV `collaboration-dfc7a3383517.classification.tsv` 的110共享/6残缺/3216未分类仅对应其已登记dfc7比较点；不冒充当前全量功能/视觉验收，也不把modified统称授权治理。
 - Settings仍7/16与9分区真实接缝缺失、Agent/Activity及其他原模块缺项继续保留；不能称100%还原或生产就绪。
+
+## 2026-10-16 Projects 原版仓库内容只读恢复（DD-118 第一批，源码候选，未验收）
+
+起点 main `ff4c0269`（含四侧生成的 `ProjectsGitQueryRequest`/`ProjectsGitQueryResponse`）；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。权威：DD-118、V-SCN-89/90/93、REQ-24。本批只做 TypeScript/UI
+与 Web 宿主；BFF/Core 的 Relay smart HTTP 读取由另一批 Rust 实现，本批不改 Rust、契约或数据库。
+
+边界与影响：
+
+- 读取接缝：`ProjectsHost.git?: ProjectsGitHost`，方法名沿原 `shared/api/projectGit.ts` 的
+  `getProjectRepoSnapshot` / `getProjectRepoFileContent` / `getProjectRepoDiff`，只把 `cloneUrl` 换成 30617 坐标；
+  `createProjectsGitHost` 把契约映射回原 `shared/api/types.ts` 形状（缺省 `latestCommit` → `null`），并拒绝视图不符的回应。
+- Web：`bff-client.ts::queryProjectsGit` 只 POST `/api/v1/projects/git/query`；`useProjectsHost` 增加 `git`，
+  沿用 query 的作用域失效检查。浏览器只给出坐标、分支/ref/commit 与 path，不持 Relay URL、NIP-98 或过滤器。
+- ref 语义沿原 `hooks.ts`：默认分支读快照；评审 diff 为 `defaultBranch = target-branch || 仓库默认分支`、
+  `baseBranch = 仓库默认分支`、`targetRef = refs/nostr/<评审 id>`、`targetCommit = 最新 c`；提交 diff 只给 `targetCommit`。
+  30618 repo-state HEAD 解析无受治理读取，使用公告默认分支（与原版无 repo-state 时一致）。
+- 无 `git` 能力的宿主（当前 Desktop）保持原无仓库内容状态：无 Commits/Files 入口、无 Git 标签、评审无 Files changed。
+
+源码归属（全部在 `client-kit/ts/platform/src/react/projects/`，文件头注明原路径）：
+
+| 原路径（desktop/src/features/projects/） | 共享位置与挂载 |
+|---|---|
+| ui/ProjectRepositoryPanel.tsx::RepositoryFilesPanel/FileContentPanel、ui/ProjectRepositoryLatestCommitRow.tsx | ProjectRepositoryPanel.tsx、ProjectRepositoryLatestCommitRow.tsx、projectFileIcons.ts；仓库 Files 标签与频道首页 Files 侧栏 |
+| ui/ProjectReadmePanel.tsx、ui/ProjectOverviewPanel.tsx、ui/ProjectRepositoryUnavailableState.tsx、lib/projectRepoAvailability.ts | ProjectReadmePanel.tsx、ProjectRepositoryUnavailableState.tsx、lib/projectRepoAvailability.ts；仓库 Overview 标签 |
+| ui/ProjectHomeCodebasePanel.tsx、ui/ProjectHomeCommitsPanel.tsx、ui/ProjectHomeWorkspaceSheet.tsx（commits/files 分支）、ui/ProjectHomeContextPanel.tsx（Commits/Files 行） | ProjectHomeCodebasePanel.tsx、ProjectCommitsPanel.tsx、ProjectHomeGitSheet.tsx；频道首页概览与工作区侧栏 |
+| ui/ProjectDetailFeedPanels.tsx::ActivityPanel、ui/ProjectCommitDetailPanel.tsx | ProjectCommitsPanel.tsx、ProjectCommitDetailPanel.tsx；仓库 Commits 标签与侧栏提交详情 |
+| ui/ProjectPullRequestFilesChangedPanel.tsx、ui/ProjectPullRequestsPanel.tsx 的 Files changed 段 | ProjectPullRequestFilesChangedPanel.tsx、ProjectPullRequestDetail.tsx；仓库内选中评审 |
+| ui/ProjectWorkspaceTabs.tsx、ui/ProjectWorkspaceTabList.tsx（overview/files/activity） | ProjectWorkspaceTabs.tsx、ProjectWorkspaceTabList.tsx、ProjectRepositoryGitTabs.tsx、ProjectsView.tsx |
+| hooks.ts、useProjectCommitDiff.ts、useProjectRepositorySnapshots.ts、ui/useRepositoryFileContent(Source).ts、ui/useRepositoryFilesNavigation.ts、ui/projectPanelStyles.ts、lib/projectContributorMatching.ts::profileForCommit | projectGitQueries.ts、useRepositoryFileContent.ts、useRepositoryFilesNavigation.ts、projectPanelStyles.ts、lib/projectContributorMatching.ts |
+
+未恢复及原因：merge、创建评审、建/删分支、本地仓库/终端/clone/sync（本批排除）；行内评论撰写（DD-118 写入，后续批）；
+分支/标签选择器（契约无 BRANCHES 视图）；Contributors/Channels 标签与 People 行（缺原消费者）；提交复制链接
+（`buzz://repo?tab=commits` 尚无路由）；作者头像的 Relay 用户搜索回退；`access` 原因的频道细分（DD-118 要求 404 不区分原因）。
+语法高亮只能取宿主明暗 `documentTheme`，用 Buzz 明暗语法主题；无主题时走原纯文本分支。
+
+词条：新增 `projects.git.*` 78 个（en/zh-CN），`platform_text.dart` 按原生成器的格式补入同一 78 项
+（本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。Web 路由新增 `commitHash`、`filePath` 两个查找参数。
+
+验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-git.test.tsx`
+与 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx` 待 CI 执行。BFF 端点、Relay 授权、部署与浏览器验收均未进行；
+不声称 V-SCN-89/90/93 已验收。
