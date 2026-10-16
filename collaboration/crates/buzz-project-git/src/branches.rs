@@ -185,7 +185,9 @@ pub fn delete_remote_branch_blocking(
     )
     .map_err(before_push)?;
     if remote_head_branch(&head_output).as_deref() == Some(branch) {
-        return Err(before_push("The repository's default branch cannot be deleted.".to_string()));
+        return Err(before_push(
+            "The repository's default branch cannot be deleted.".to_string(),
+        ));
     }
 
     let temp_dir =
