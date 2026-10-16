@@ -2351,6 +2351,38 @@ export enum AgentMemoryReadViewState {
 }
 
 /**
+ * DD-121: only agent.invoke executions initiated by the caller for the requested source
+ * events; no message body, no other member's executions, no Agent internals. A mentioned
+ * Agent without an outcome is still PENDING (not yet scanned).
+ */
+export interface AgentMentionOutcomePage {
+    outcomes: AgentMentionOutcomeView[];
+}
+
+export interface AgentMentionOutcomeView {
+    eventId:        string;
+    installationId: string;
+    reasonCode?:    ReasonCode;
+    replyEventId?:  string;
+    state:          AgentMentionOutcomeState;
+}
+
+export enum AgentMentionOutcomeState {
+    Denied = "DENIED",
+    Failed = "FAILED",
+    Replied = "REPLIED",
+    Running = "RUNNING",
+}
+
+/**
+ * DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
+ * outcome the caller may see.
+ */
+export interface AgentMentionOutcomeQueryRequest {
+    eventIds: string[];
+}
+
+/**
  * 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
  * 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
  */

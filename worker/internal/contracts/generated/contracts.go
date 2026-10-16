@@ -190,6 +190,12 @@
 //    agentMemoryReadView, err := UnmarshalAgentMemoryReadView(bytes)
 //    bytes, err = agentMemoryReadView.Marshal()
 //
+//    agentMentionOutcomePage, err := UnmarshalAgentMentionOutcomePage(bytes)
+//    bytes, err = agentMentionOutcomePage.Marshal()
+//
+//    agentMentionOutcomeQueryRequest, err := UnmarshalAgentMentionOutcomeQueryRequest(bytes)
+//    bytes, err = agentMentionOutcomeQueryRequest.Marshal()
+//
 //    agentSessionPage, err := UnmarshalAgentSessionPage(bytes)
 //    bytes, err = agentSessionPage.Marshal()
 //
@@ -1414,6 +1420,26 @@ func UnmarshalAgentMemoryReadView(data []byte) (AgentMemoryReadView, error) {
 }
 
 func (r *AgentMemoryReadView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMentionOutcomePage(data []byte) (AgentMentionOutcomePage, error) {
+	var r AgentMentionOutcomePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMentionOutcomePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMentionOutcomeQueryRequest(data []byte) (AgentMentionOutcomeQueryRequest, error) {
+	var r AgentMentionOutcomeQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMentionOutcomeQueryRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4853,6 +4879,27 @@ type AgentMemoryReadView struct {
 	// not the JSON body or a stored plaintext copy.
 	ValueHash   *string `json:"valueHash,omitempty"`
 	WorkspaceID string  `json:"workspaceId"`
+}
+
+// DD-121: only agent.invoke executions initiated by the caller for the requested source
+// events; no message body, no other member's executions, no Agent internals. A mentioned
+// Agent without an outcome is still PENDING (not yet scanned).
+type AgentMentionOutcomePage struct {
+	Outcomes []AgentMentionOutcomeView `json:"outcomes"`
+}
+
+type AgentMentionOutcomeView struct {
+	EventID        string                   `json:"eventId"`
+	InstallationID string                   `json:"installationId"`
+	ReasonCode     *ReasonCode              `json:"reasonCode,omitempty"`
+	ReplyEventID   *string                  `json:"replyEventId,omitempty"`
+	State          AgentMentionOutcomeState `json:"state"`
+}
+
+// DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
+// outcome the caller may see.
+type AgentMentionOutcomeQueryRequest struct {
+	EventIDS []string `json:"eventIds"`
 }
 
 // 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
@@ -9020,6 +9067,15 @@ const (
 	StateABSENT AgentMemoryReadViewState = "ABSENT"
 	StateFOUND  AgentMemoryReadViewState = "FOUND"
 	Unreadable  AgentMemoryReadViewState = "UNREADABLE"
+)
+
+type AgentMentionOutcomeState string
+
+const (
+	AgentMentionOutcomeStateDENIED  AgentMentionOutcomeState = "DENIED"
+	AgentMentionOutcomeStateFAILED  AgentMentionOutcomeState = "FAILED"
+	AgentMentionOutcomeStateRUNNING AgentMentionOutcomeState = "RUNNING"
+	Replied                         AgentMentionOutcomeState = "REPLIED"
 )
 
 type SessionStatus string

@@ -63,6 +63,8 @@
 //     final agentMemoryEntryPage = agentMemoryEntryPageFromJson(jsonString);
 //     final agentMemoryEntryView = agentMemoryEntryViewFromJson(jsonString);
 //     final agentMemoryReadView = agentMemoryReadViewFromJson(jsonString);
+//     final agentMentionOutcomePage = agentMentionOutcomePageFromJson(jsonString);
+//     final agentMentionOutcomeQueryRequest = agentMentionOutcomeQueryRequestFromJson(jsonString);
 //     final agentSessionPage = agentSessionPageFromJson(jsonString);
 //     final agentSessionView = agentSessionViewFromJson(jsonString);
 //     final agentVersionConfigurationPage = agentVersionConfigurationPageFromJson(jsonString);
@@ -663,6 +665,20 @@ AgentMemoryReadView agentMemoryReadViewFromJson(String str) =>
 
 String agentMemoryReadViewToJson(AgentMemoryReadView data) =>
     json.encode(data.toJson());
+
+AgentMentionOutcomePage agentMentionOutcomePageFromJson(String str) =>
+    AgentMentionOutcomePage.fromJson(json.decode(str));
+
+String agentMentionOutcomePageToJson(AgentMentionOutcomePage data) =>
+    json.encode(data.toJson());
+
+AgentMentionOutcomeQueryRequest agentMentionOutcomeQueryRequestFromJson(
+  String str,
+) => AgentMentionOutcomeQueryRequest.fromJson(json.decode(str));
+
+String agentMentionOutcomeQueryRequestToJson(
+  AgentMentionOutcomeQueryRequest data,
+) => json.encode(data.toJson());
 
 AgentSessionPage agentSessionPageFromJson(String str) =>
     AgentSessionPage.fromJson(json.decode(str));
@@ -7739,6 +7755,86 @@ final agentMemoryReadViewStateValues = EnumValues({
   "FOUND": AgentMemoryReadViewState.FOUND,
   "UNREADABLE": AgentMemoryReadViewState.UNREADABLE,
 });
+
+///DD-121: only agent.invoke executions initiated by the caller for the requested source
+///events; no message body, no other member's executions, no Agent internals. A mentioned
+///Agent without an outcome is still PENDING (not yet scanned).
+class AgentMentionOutcomePage {
+  final List<AgentMentionOutcomeView> outcomes;
+
+  AgentMentionOutcomePage({required this.outcomes});
+
+  factory AgentMentionOutcomePage.fromJson(Map<String, dynamic> json) =>
+      AgentMentionOutcomePage(
+        outcomes: List<AgentMentionOutcomeView>.from(
+          json["outcomes"].map((x) => AgentMentionOutcomeView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "outcomes": List<dynamic>.from(outcomes.map((x) => x.toJson())),
+  });
+}
+
+class AgentMentionOutcomeView {
+  final String eventId;
+  final String installationId;
+  final ReasonCode? reasonCode;
+  final String? replyEventId;
+  final AgentMentionOutcomeState state;
+
+  AgentMentionOutcomeView({
+    required this.eventId,
+    required this.installationId,
+    this.reasonCode,
+    this.replyEventId,
+    required this.state,
+  });
+
+  factory AgentMentionOutcomeView.fromJson(Map<String, dynamic> json) =>
+      AgentMentionOutcomeView(
+        eventId: json["eventId"],
+        installationId: json["installationId"],
+        reasonCode: json["reasonCode"] == null
+            ? null
+            : reasonCodeValues.map[json["reasonCode"]]!,
+        replyEventId: json["replyEventId"],
+        state: agentMentionOutcomeStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "eventId": eventId,
+    "installationId": installationId,
+    "reasonCode": reasonCodeValues.reverse[reasonCode],
+    "replyEventId": replyEventId,
+    "state": agentMentionOutcomeStateValues.reverse[state],
+  });
+}
+
+enum AgentMentionOutcomeState { DENIED, FAILED, REPLIED, RUNNING }
+
+final agentMentionOutcomeStateValues = EnumValues({
+  "DENIED": AgentMentionOutcomeState.DENIED,
+  "FAILED": AgentMentionOutcomeState.FAILED,
+  "REPLIED": AgentMentionOutcomeState.REPLIED,
+  "RUNNING": AgentMentionOutcomeState.RUNNING,
+});
+
+///DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
+///outcome the caller may see.
+class AgentMentionOutcomeQueryRequest {
+  final List<String> eventIds;
+
+  AgentMentionOutcomeQueryRequest({required this.eventIds});
+
+  factory AgentMentionOutcomeQueryRequest.fromJson(Map<String, dynamic> json) =>
+      AgentMentionOutcomeQueryRequest(
+        eventIds: List<String>.from(json["eventIds"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"eventIds": List<dynamic>.from(eventIds.map((x) => x))});
+}
 
 ///17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
 ///正文。cursor 固定 HUMAN、scope、筛选与原生 generation。

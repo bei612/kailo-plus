@@ -3362,6 +3362,53 @@ pub enum AgentMemoryReadViewState {
     Unreadable,
 }
 
+/// DD-121: only agent.invoke executions initiated by the caller for the requested source
+/// events; no message body, no other member's executions, no Agent internals. A mentioned
+/// Agent without an outcome is still PENDING (not yet scanned).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentMentionOutcomePage {
+    pub outcomes: Vec<AgentMentionOutcomeView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMentionOutcomeView {
+    pub event_id: String,
+
+    pub installation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_event_id: Option<String>,
+
+    pub state: AgentMentionOutcomeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentMentionOutcomeState {
+    #[serde(rename = "DENIED")]
+    Denied,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "REPLIED")]
+    Replied,
+
+    #[serde(rename = "RUNNING")]
+    Running,
+}
+
+/// DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
+/// outcome the caller may see.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMentionOutcomeQueryRequest {
+    pub event_ids: Vec<String>,
+}
+
 /// 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
 /// 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
