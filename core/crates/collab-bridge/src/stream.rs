@@ -28,15 +28,28 @@
 //! 中途再发 challenge（认证已失效）时，这条连接上的全部订阅以关闭原因结束；上层
 //! 重建流时自然建一条新连接并重新走 NIP-42——不在旧连接上就地重认证，因为那段
 //! 缺口里漏掉的事件无从得知，重建会重新取 snapshot。最后一个订阅结束时连接关闭。
+//!
+//! # WS-only 发布与在线租约（DD-120）
+//!
+//! 在线状态 20001 与输入中提示 20002 是只经 WebSocket 接收的瞬时事件，由同一条
+//! 已认证连接发出 `["EVENT", ev]`，并等到 Relay 对该 event ID 的 `["OK", id, ok, msg]`：
+//! `OK true` 才是成功，`OK false` 是带原因的拒绝，超过时限或连接在结论前中断是结果
+//! 不明。三者都不重签重发——瞬时事件由下一次心跳或输入取代。
+//!
+//! 一次成功的在线心跳把这条 (PlatformSession, Community, pubkey) 连接保留一段租约
+//! （缺省 [`PRESENCE_LEASE`]），不新增连接类别。租约到期且没有订阅时连接关闭，Relay
+//! 按原版在该公钥最后一条连接关闭时清除在线状态；手动离线在结论后立即结束租约；
+//! 登出与撤权用 [`RelaySessions::release`] / [`RelaySessions::release_identity`] 立即关闭。
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use futures_util::{SinkExt, StreamExt};
 use nostr::{EventBuilder, Keys, RelayUrl};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
 use crate::limits::RelayLimits;
@@ -66,10 +79,43 @@ pub struct SessionKey {
     pub pubkey: String,
 }
 
+/// 在线租约的缺省时长（DD-120(2)）。与 Relay 写在线事实的 `EX 180` 相同：比它长，
+/// 连接会比在线事实活得久；比它短，心跳间隙里连接被关，Relay 立即清除在线状态。
+pub const PRESENCE_LEASE: tokio::time::Duration = tokio::time::Duration::from_secs(180);
+
+/// 一次 WS 发布对在线租约的影响。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lease {
+    /// 不改变租约（输入中提示）
+    Unchanged,
+    /// Relay `OK true` 之后把连接保留一个租约期（在线心跳）；拒绝或结果不明不续租
+    Renew,
+    /// 得到结论（含结果不明）后立即结束租约（手动离线）
+    End,
+}
+
+/// WS 发布的失败。三者互斥；无论哪一种，调用方都不得另签新事件重发。
+#[derive(Debug, thiserror::Error)]
+pub enum PublishError {
+    /// Relay 以 `OK false` 拒绝，原因原样保留
+    #[error("Relay 拒绝: {0}")]
+    Rejected(String),
+    /// 已发出，但在时限内没有得到 `OK`，或连接在结论前结束：结果不明
+    #[error("结果不明: {0}")]
+    Unknown(String),
+    /// 确定没有发出：建连、认证或上界预检失败
+    #[error("未发出: {0}")]
+    NotSent(OperatorError),
+}
+
 /// BFF 进程内全部已认证 Relay 连接。
 pub struct RelaySessions {
     ws_url: String,
     challenge_timeout: tokio::time::Duration,
+    /// 等 Relay 回某次 WS 发布 `OK` 的上界；缺省与建连认证上界相同
+    publish_timeout: tokio::time::Duration,
+    /// 在线租约时长，缺省 [`PRESENCE_LEASE`]
+    presence_lease: tokio::time::Duration,
     buffer: usize,
     conns: Mutex<HashMap<SessionKey, Conn>>,
     next_id: AtomicU64,
@@ -91,6 +137,8 @@ impl Drop for LiveGuard {
 struct Conn {
     id: u64,
     cmd: mpsc::UnboundedSender<Cmd>,
+    /// 连接任务维护：此刻是否持有未到期的在线租约
+    leased: Arc<AtomicBool>,
 }
 
 enum Cmd {
@@ -104,6 +152,29 @@ enum Cmd {
     Unsubscribe {
         sub_id: String,
     },
+    Publish {
+        event_id: String,
+        frame: String,
+        lease: Lease,
+        ack: oneshot::Sender<Result<(), PublishError>>,
+    },
+    /// 立即关闭连接；订阅以该原因结束
+    Release(String),
+}
+
+/// 已发出、正在等 `OK` 的一次发布。
+struct InFlight {
+    deadline: Instant,
+    lease: Lease,
+    ack: oneshot::Sender<Result<(), PublishError>>,
+}
+
+/// Relay 的 `["OK", id, accepted, message]`。
+#[derive(Debug, PartialEq, Eq)]
+struct RelayOk {
+    event_id: String,
+    accepted: bool,
+    message: String,
 }
 
 /// 连接任务一侧的订阅出口。
@@ -183,6 +254,8 @@ impl RelaySessions {
         Self {
             ws_url: ws_url.to_owned(),
             challenge_timeout,
+            publish_timeout: challenge_timeout,
+            presence_lease: PRESENCE_LEASE,
             buffer,
             conns: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(0),
@@ -190,13 +263,124 @@ impl RelaySessions {
         }
     }
 
+    /// 覆盖等待 WS 发布结论的上界。
+    pub fn with_publish_timeout(mut self, timeout: tokio::time::Duration) -> Self {
+        self.publish_timeout = timeout;
+        self
+    }
+
+    /// 覆盖在线租约时长。
+    pub fn with_presence_lease(mut self, lease: tokio::time::Duration) -> Self {
+        self.presence_lease = lease;
+        self
+    }
+
     /// 当前保持的 Relay 连接数（已认证或正在认证）。
     pub fn connection_count(&self) -> usize {
         self.live.load(Ordering::Relaxed)
     }
 
+    /// 持有未到期在线租约的连接键。撤权巡检只需看它们：有订阅的连接由各自
+    /// 流的周期性再准入负责。
+    pub fn leased(&self) -> Vec<SessionKey> {
+        self.lock()
+            .iter()
+            .filter(|(_, conn)| conn.leased.load(Ordering::Relaxed))
+            .map(|(key, _)| key.clone())
+            .collect()
+    }
+
+    /// 登出或会话失效：立即关闭该 PlatformSession 的全部连接（DD-120(2)）。在线租约
+    /// 随之结束，连接上的订阅以 `session-revoked` 结束；Relay 在该公钥最后一条连接
+    /// 关闭时按原版清除在线状态。
+    pub fn release(&self, session: &str) {
+        self.close_where(|key| key.session == session, "session-revoked");
+    }
+
+    /// 签名身份不再 ACTIVE（密钥撤销或轮换）：只关这一条连接，订阅以
+    /// `identity-revoked` 结束——会话本身仍可用新身份重建流。
+    pub fn release_identity(&self, key: &SessionKey) {
+        self.close_where(|candidate| candidate == key, "identity-revoked");
+    }
+
+    /// 摘表与投递同锁：之后同一键上的命令只会建新连接，不会落进正在关闭的这条。
+    fn close_where(&self, matches: impl Fn(&SessionKey) -> bool, reason: &str) {
+        self.lock().retain(|key, conn| {
+            if !matches(key) {
+                return true;
+            }
+            let _ = conn.cmd.send(Cmd::Release(reason.to_owned()));
+            false
+        });
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<SessionKey, Conn>> {
         self.conns.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 该会话已有的连接；没有（或已结束）就建一条并登记。调用方持表锁。
+    fn connection(
+        self: &Arc<Self>,
+        conns: &mut HashMap<SessionKey, Conn>,
+        key: &SessionKey,
+        keys: &Keys,
+    ) -> Conn {
+        match conns.get(key) {
+            Some(c) if !c.cmd.is_closed() => c.clone(),
+            _ => {
+                let c = self.spawn(key.clone(), keys.clone());
+                conns.insert(key.clone(), c.clone());
+                c
+            }
+        }
+    }
+
+    /// 在该会话的已认证连接上发一条 WS-only 事件（`.design/09` 第 4 步）并等到 Relay
+    /// 对它的 `OK`；没有这样的连接就建一条并完成 NIP-42——同一 (PlatformSession,
+    /// Community, pubkey) 至多一条连接，不新增连接类别（DD-120(2)）。
+    ///
+    /// `Ok` 只表示 Relay `OK true`。[`PublishError::Rejected`] 是 `OK false`；已发出而在
+    /// 时限内没有结论是 [`PublishError::Unknown`]。调用方不得据此另签新事件重发。
+    pub async fn publish(
+        self: &Arc<Self>,
+        key: SessionKey,
+        keys: &Keys,
+        event: &nostr::Event,
+        limits: &RelayLimits,
+        lease: Lease,
+    ) -> Result<(), PublishError> {
+        let signer = keys.public_key();
+        if signer != event.pubkey || signer.to_hex() != key.pubkey {
+            return Err(PublishError::NotSent(OperatorError::Sign(
+                "会话键、签名身份与事件作者不一致".into(),
+            )));
+        }
+        let frame = serde_json::json!(["EVENT", event]).to_string();
+        if frame.len() > limits.max_message_length {
+            return Err(PublishError::NotSent(OperatorError::OverLimit(format!(
+                "EVENT 帧 {} 字节超过 {}",
+                frame.len(),
+                limits.max_message_length
+            ))));
+        }
+        let (ack, outcome) = oneshot::channel();
+        {
+            let mut conns = self.lock();
+            let conn = self.connection(&mut conns, &key, keys);
+            conn.cmd
+                .send(Cmd::Publish {
+                    event_id: event.id.to_hex(),
+                    frame,
+                    lease,
+                    ack,
+                })
+                .map_err(|_| PublishError::NotSent(OperatorError::Sign("连接已结束".into())))?;
+        }
+        // 连接任务对每条入队的发布都给出结论；走到 Err 只可能是任务异常终止，
+        // 那时无从知道是否已发出
+        outcome
+            .await
+            .unwrap_or_else(|_| Err(PublishError::Unknown("连接在给出结论前结束".into())))
     }
 
     /// 在该会话的已认证连接上开一个订阅；没有这样的连接就建一条并完成 NIP-42。
@@ -246,14 +430,7 @@ impl RelaySessions {
             // 查找与投递在同一把锁内：连接任务退役时也持这把锁，于是一条命令要么
             // 在它退役前进入队列（会被处理或明确失败），要么看到的已是新连接。
             let mut conns = self.lock();
-            let conn = match conns.get(&key) {
-                Some(c) if !c.cmd.is_closed() => c.clone(),
-                _ => {
-                    let c = self.spawn(key.clone(), keys.clone());
-                    conns.insert(key.clone(), c.clone());
-                    c
-                }
-            };
+            let conn = self.connection(&mut conns, &key, keys);
             conn.cmd
                 .send(Cmd::Subscribe {
                     sub_id: sub_id.clone(),
@@ -284,14 +461,16 @@ impl RelaySessions {
     fn spawn(self: &Arc<Self>, key: SessionKey, keys: Keys) -> Conn {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (cmd, cmd_rx) = mpsc::unbounded_channel();
+        let leased = Arc::new(AtomicBool::new(false));
         self.live.fetch_add(1, Ordering::Relaxed);
         let guard = LiveGuard(Arc::clone(&self.live));
         let hub = Arc::clone(self);
+        let flag = Arc::clone(&leased);
         tokio::spawn(async move {
             let _guard = guard;
-            run_connection(hub, key, id, keys, cmd_rx).await;
+            run_connection(hub, key, id, keys, flag, cmd_rx).await;
         });
-        Conn { id, cmd }
+        Conn { id, cmd, leased }
     }
 
     /// 从表中摘掉这条连接（仍是同一条时）。
@@ -320,13 +499,14 @@ impl RelaySessions {
     }
 }
 
-/// 一条共享连接的全部生命期：建连并认证，然后在同一个循环里处理订阅命令与
-/// Relay 帧。
+/// 一条共享连接的全部生命期：建连并认证，然后在同一个循环里处理订阅与发布命令、
+/// Relay 帧、发布时限与在线租约。
 async fn run_connection(
     hub: Arc<RelaySessions>,
     key: SessionKey,
     id: u64,
     keys: Keys,
+    leased: Arc<AtomicBool>,
     mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
 ) {
     let mut ws = match connect_and_auth(
@@ -346,7 +526,10 @@ async fn run_connection(
     };
 
     let mut subs: HashMap<String, SubSink> = HashMap::new();
+    let mut inflight: HashMap<String, InFlight> = HashMap::new();
+    let mut lease: Option<Instant> = None;
     let reason: String = loop {
+        let deadline = inflight.values().map(|pending| pending.deadline).min();
         tokio::select! {
             cmd = cmd_rx.recv() => {
                 // 表里始终持有一个发送端，走到 None 只可能是整个 hub 已被丢弃
@@ -378,6 +561,28 @@ async fn run_connection(
                             }
                         }
                     }
+                    Cmd::Publish { event_id, frame, lease: effect, ack } => {
+                        if inflight.contains_key(&event_id) {
+                            // 同一事件已在等结论：不再发第二次，结论只有一个
+                            let _ = ack.send(Err(PublishError::Unknown(
+                                "同一事件已在等待 Relay 结论".into(),
+                            )));
+                        } else if let Err(e) = ws.send(Message::text(frame)).await {
+                            // 写入失败时无从知道对端是否已收到部分帧：结果不明
+                            let _ = ack.send(Err(PublishError::Unknown(format!(
+                                "发送 EVENT 失败: {e}"
+                            ))));
+                            break format!("WS 写入失败: {e}");
+                        } else {
+                            let pending = InFlight {
+                                deadline: Instant::now() + hub.publish_timeout,
+                                lease: effect,
+                                ack,
+                            };
+                            inflight.insert(event_id, pending);
+                        }
+                    }
+                    Cmd::Release(why) => break why,
                 }
             }
             frame = ws.next() => {
@@ -388,31 +593,118 @@ async fn run_connection(
                     Some(Err(e)) => break format!("WS 读取失败: {e}"),
                     None => break "连接结束".to_owned(),
                 };
-                match route(&text, &mut subs) {
-                    Routed::Nothing => {}
-                    Routed::Dropped(sub_id) => {
-                        if let Err(e) = close_sub(&mut ws, &sub_id).await {
-                            break e;
+                if let Some(ok) = relay_ok(&text) {
+                    settle(&mut inflight, &mut lease, ok, hub.presence_lease);
+                } else {
+                    match route(&text, &mut subs) {
+                        Routed::Nothing => {}
+                        Routed::Dropped(sub_id) => {
+                            if let Err(e) = close_sub(&mut ws, &sub_id).await {
+                                break e;
+                            }
                         }
+                        // 会话中途的 AUTH 挑战意味着这条连接的认证已失效。不就地
+                        // 重认证：重认证成功与否无法让上层知道，而订阅在此期间的缺口
+                        // 也无从得知。结束整条连接，上层重建时新建连接、重新认证。
+                        Routed::Reauth => break "会话中途要求重新认证".to_owned(),
                     }
-                    // 会话中途的 AUTH 挑战意味着这条连接的认证已失效。不就地
-                    // 重认证：重认证成功与否无法让上层知道，而订阅在此期间的缺口
-                    // 也无从得知。结束整条连接，上层重建时新建连接、重新认证。
-                    Routed::Reauth => break "会话中途要求重新认证".to_owned(),
                 }
             }
+            _ = until(deadline) => expire(&mut inflight, &mut lease, Instant::now()),
+            _ = until(lease) => lease = None,
         }
-        if subs.is_empty() && hub.retire_if_idle(&key, id, &cmd_rx) {
+        leased.store(lease.is_some(), Ordering::Relaxed);
+        if subs.is_empty()
+            && inflight.is_empty()
+            && lease.is_none()
+            && hub.retire_if_idle(&key, id, &cmd_rx)
+        {
             let _ = ws.close(None).await;
             return;
         }
     };
 
+    leased.store(false, Ordering::Relaxed);
     hub.retire(&key, id);
     for (_, sink) in subs.drain() {
         sink.close(&reason);
     }
+    for (_, pending) in inflight.drain() {
+        let why = format!("连接在得到 OK 前结束: {reason}");
+        let _ = pending.ack.send(Err(PublishError::Unknown(why)));
+    }
     fail_pending(&mut cmd_rx, &reason);
+}
+
+/// 到点即完成；没有时刻就永不完成（`select!` 中该分支等于不存在）。
+async fn until(deadline: Option<Instant>) {
+    match deadline {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
+/// 解析 Relay 的 `OK` 帧。先看前缀，其余帧（含大体积 EVENT）照旧只由 `route` 解析一次。
+fn relay_ok(text: &str) -> Option<RelayOk> {
+    let rest = text.trim_start().strip_prefix('[')?;
+    if !rest.trim_start().starts_with("\"OK\"") {
+        return None;
+    }
+    let Ok(Value::Array(parts)) = serde_json::from_str::<Value>(text) else {
+        return None;
+    };
+    Some(RelayOk {
+        event_id: parts.get(1)?.as_str()?.to_owned(),
+        accepted: parts.get(2)?.as_bool()?,
+        message: parts
+            .get(3)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+/// Relay 对一次发布的结论：交还调用方，并按该发布的租约意图调整租约。不认识的
+/// event ID（例如已判为结果不明后才迟到的 `OK`）不改变任何状态。
+fn settle(
+    inflight: &mut HashMap<String, InFlight>,
+    lease: &mut Option<Instant>,
+    ok: RelayOk,
+    presence_lease: tokio::time::Duration,
+) {
+    let Some(pending) = inflight.remove(&ok.event_id) else {
+        return;
+    };
+    match pending.lease {
+        Lease::Renew if ok.accepted => *lease = Some(Instant::now() + presence_lease),
+        Lease::End => *lease = None,
+        Lease::Renew | Lease::Unchanged => {}
+    }
+    let outcome = if ok.accepted {
+        Ok(())
+    } else {
+        Err(PublishError::Rejected(ok.message))
+    };
+    let _ = pending.ack.send(outcome);
+}
+
+/// 超过时限仍没有 `OK` 的发布是结果不明；不续租，手动离线的租约照样结束。
+fn expire(inflight: &mut HashMap<String, InFlight>, lease: &mut Option<Instant>, now: Instant) {
+    let expired: Vec<String> = inflight
+        .iter()
+        .filter(|(_, pending)| pending.deadline <= now)
+        .map(|(event_id, _)| event_id.clone())
+        .collect();
+    for event_id in expired {
+        let Some(pending) = inflight.remove(&event_id) else {
+            continue;
+        };
+        if pending.lease == Lease::End {
+            *lease = None;
+        }
+        let unknown = PublishError::Unknown("等待 Relay OK 超时".into());
+        let _ = pending.ack.send(Err(unknown));
+    }
 }
 
 async fn close_sub(ws: &mut WsStream, sub_id: &str) -> Result<(), String> {
@@ -423,12 +715,20 @@ async fn close_sub(ws: &mut WsStream, sub_id: &str) -> Result<(), String> {
     .map_err(|e| format!("WS 写入失败: {e}"))
 }
 
-/// 连接结束后仍在队列里的订阅请求一律明确失败。
+/// 连接结束后仍在队列里的订阅与发布请求一律明确失败。它们从未写上连接，
+/// 发布因此是「未发出」而不是结果不明。
 fn fail_pending(cmd_rx: &mut mpsc::UnboundedReceiver<Cmd>, reason: &str) {
     cmd_rx.close();
     while let Ok(cmd) = cmd_rx.try_recv() {
-        if let Cmd::Subscribe { ack, .. } = cmd {
-            let _ = ack.send(Err(OperatorError::Sign(format!("连接不可用: {reason}"))));
+        let unavailable = OperatorError::Sign(format!("连接不可用: {reason}"));
+        match cmd {
+            Cmd::Subscribe { ack, .. } => {
+                let _ = ack.send(Err(unavailable));
+            }
+            Cmd::Publish { ack, .. } => {
+                let _ = ack.send(Err(PublishError::NotSent(unavailable)));
+            }
+            Cmd::Unsubscribe { .. } | Cmd::Release(_) => {}
         }
     }
 }
@@ -654,5 +954,227 @@ mod tests {
             route(r#"["AUTH","c"]"#, &mut subs),
             Routed::Reauth
         ));
+    }
+
+    #[test]
+    fn only_ok_frames_settle_publications() {
+        assert_eq!(
+            relay_ok(r#"[ "OK", "abc", false, "blocked: not a member" ]"#),
+            Some(RelayOk {
+                event_id: "abc".into(),
+                accepted: false,
+                message: "blocked: not a member".into(),
+            })
+        );
+        assert_eq!(
+            relay_ok(r#"["OK","abc",true]"#).map(|ok| ok.accepted),
+            Some(true)
+        );
+        assert!(relay_ok(r#"["EVENT","sub",{"content":"OK"}]"#).is_none());
+        assert!(relay_ok(r#"["OK","abc"]"#).is_none());
+    }
+
+    /// 测试侧 Relay 看到的事实。
+    #[derive(Debug, PartialEq)]
+    enum Seen {
+        Event(String),
+        Closed,
+    }
+
+    /// 最小 Relay：每条连接先完成 NIP-42，再按事件 content 回应 EVENT——`accept` 回
+    /// `OK true`，`reject` 回 `OK false`，其余不回应。连接结束时报告 `Closed`。
+    async fn fake_relay() -> (String, mpsc::UnboundedReceiver<Seen>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("local address");
+        let (seen, observed) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(fake_connection(stream, seen.clone()));
+            }
+        });
+        (format!("ws://{address}"), observed)
+    }
+
+    async fn fake_connection(stream: tokio::net::TcpStream, seen: mpsc::UnboundedSender<Seen>) {
+        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+            return;
+        };
+        let _ = ws.send(Message::text(r#"["AUTH","challenge"]"#)).await;
+        while let Some(Ok(message)) = ws.next().await {
+            let Message::Text(text) = message else {
+                continue;
+            };
+            let Ok(Value::Array(parts)) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
+            let event = parts.get(1).cloned().unwrap_or_default();
+            let id = event["id"].as_str().unwrap_or_default().to_owned();
+            let verdict = match parts.first().and_then(Value::as_str) {
+                Some("AUTH") => Some((true, "")),
+                Some("EVENT") => {
+                    let _ = seen.send(Seen::Event(id.clone()));
+                    match event["content"].as_str() {
+                        Some("accept") => Some((true, "")),
+                        Some("reject") => Some((false, "blocked: not a member")),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some((accepted, message)) = verdict {
+                let ok = serde_json::json!(["OK", id, accepted, message]);
+                let _ = ws.send(Message::text(ok.to_string())).await;
+            }
+        }
+        let _ = seen.send(Seen::Closed);
+    }
+
+    fn limits() -> RelayLimits {
+        RelayLimits {
+            max_subscriptions: 4,
+            max_filters: 10,
+            max_limit: 100,
+            max_subid_length: None,
+            max_message_length: 64 * 1024,
+        }
+    }
+
+    fn presence(keys: &Keys, content: &str) -> nostr::Event {
+        EventBuilder::new(nostr::Kind::Custom(20001), content)
+            .sign_with_keys(keys)
+            .expect("sign")
+    }
+
+    fn session(name: &str, keys: &Keys) -> SessionKey {
+        SessionKey {
+            session: name.to_owned(),
+            community_host: "relay.test".to_owned(),
+            pubkey: keys.public_key().to_hex(),
+        }
+    }
+
+    fn hub(url: &str, lease: tokio::time::Duration) -> Arc<RelaySessions> {
+        let sessions = RelaySessions::new(url, tokio::time::Duration::from_secs(5), 4)
+            .with_publish_timeout(tokio::time::Duration::from_millis(300))
+            .with_presence_lease(lease);
+        Arc::new(sessions)
+    }
+
+    async fn until_connections(hub: &RelaySessions, count: usize) -> bool {
+        let deadline = Instant::now() + tokio::time::Duration::from_secs(5);
+        while hub.connection_count() != count {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        }
+        true
+    }
+
+    #[tokio::test]
+    async fn accepted_heartbeat_pins_the_connection_until_the_lease_expires() {
+        let (url, mut seen) = fake_relay().await;
+        let hub = hub(&url, tokio::time::Duration::from_millis(800));
+        let keys = Keys::generate();
+        let event = presence(&keys, "accept");
+        hub.publish(session("s", &keys), &keys, &event, &limits(), Lease::Renew)
+            .await
+            .expect("OK true is success");
+        assert_eq!(seen.recv().await, Some(Seen::Event(event.id.to_hex())));
+        assert_eq!(hub.leased(), vec![session("s", &keys)]);
+        // 没有任何订阅，只靠租约保留连接
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        assert_eq!(hub.connection_count(), 1, "lease keeps the connection");
+        assert!(until_connections(&hub, 0).await, "lease expiry closes it");
+        assert_eq!(seen.recv().await, Some(Seen::Closed));
+        assert!(hub.leased().is_empty());
+    }
+
+    #[tokio::test]
+    async fn relay_rejection_is_typed_and_never_pins_the_connection() {
+        let (url, _seen) = fake_relay().await;
+        let hub = hub(&url, tokio::time::Duration::from_secs(60));
+        let keys = Keys::generate();
+        let event = presence(&keys, "reject");
+        let outcome = hub
+            .publish(session("s", &keys), &keys, &event, &limits(), Lease::Renew)
+            .await;
+        match outcome {
+            Err(PublishError::Rejected(message)) => assert_eq!(message, "blocked: not a member"),
+            other => panic!("OK false must be a typed rejection: {other:?}"),
+        }
+        assert!(until_connections(&hub, 0).await, "rejection never renews");
+    }
+
+    #[tokio::test]
+    async fn missing_ok_is_unknown_not_success_and_not_unsent() {
+        let (url, mut seen) = fake_relay().await;
+        let hub = hub(&url, tokio::time::Duration::from_secs(60));
+        let keys = Keys::generate();
+        let event = presence(&keys, "silent");
+        let started = Instant::now();
+        let outcome = hub
+            .publish(session("s", &keys), &keys, &event, &limits(), Lease::Renew)
+            .await;
+        assert!(
+            matches!(outcome, Err(PublishError::Unknown(_))),
+            "{outcome:?}"
+        );
+        assert!(started.elapsed() < tokio::time::Duration::from_secs(5));
+        // 事件确已发出：这是结果不明，而不是未发出
+        assert_eq!(seen.recv().await, Some(Seen::Event(event.id.to_hex())));
+        assert!(until_connections(&hub, 0).await, "unknown never renews");
+    }
+
+    #[tokio::test]
+    async fn manual_offline_ends_the_lease_and_closes_an_idle_connection() {
+        let (url, _seen) = fake_relay().await;
+        let hub = hub(&url, tokio::time::Duration::from_secs(60));
+        let keys = Keys::generate();
+        let event = presence(&keys, "accept");
+        hub.publish(session("s", &keys), &keys, &event, &limits(), Lease::Renew)
+            .await
+            .expect("online");
+        assert_eq!(hub.connection_count(), 1);
+        hub.publish(session("s", &keys), &keys, &event, &limits(), Lease::End)
+            .await
+            .expect("offline");
+        assert!(until_connections(&hub, 0).await, "offline ends the lease");
+    }
+
+    #[tokio::test]
+    async fn release_closes_only_that_session_before_its_lease_expires() {
+        let (url, _seen) = fake_relay().await;
+        let hub = hub(&url, tokio::time::Duration::from_secs(60));
+        let keys = Keys::generate();
+        for name in ["gone", "kept"] {
+            let event = presence(&keys, "accept");
+            hub.publish(session(name, &keys), &keys, &event, &limits(), Lease::Renew)
+                .await
+                .expect("online");
+        }
+        assert_eq!(hub.connection_count(), 2);
+        hub.release("gone");
+        assert!(until_connections(&hub, 1).await, "logout closes at once");
+        assert_eq!(hub.leased(), vec![session("kept", &keys)]);
+        hub.release_identity(&session("kept", &keys));
+        assert!(until_connections(&hub, 0).await, "revocation closes it");
+    }
+
+    #[tokio::test]
+    async fn a_foreign_event_is_never_sent_on_the_session() {
+        let hub = hub("ws://127.0.0.1:9", tokio::time::Duration::from_secs(60));
+        let keys = Keys::generate();
+        let event = presence(&Keys::generate(), "accept");
+        let outcome = hub
+            .publish(session("s", &keys), &keys, &event, &limits(), Lease::Renew)
+            .await;
+        assert!(
+            matches!(outcome, Err(PublishError::NotSent(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(hub.connection_count(), 0);
     }
 }
