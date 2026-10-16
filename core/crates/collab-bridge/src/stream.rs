@@ -562,24 +562,27 @@ async fn run_connection(
                         }
                     }
                     Cmd::Publish { event_id, frame, lease: effect, ack } => {
-                        if inflight.contains_key(&event_id) {
-                            // 同一事件已在等结论：不再发第二次，结论只有一个
-                            let _ = ack.send(Err(PublishError::Unknown(
-                                "同一事件已在等待 Relay 结论".into(),
-                            )));
-                        } else if let Err(e) = ws.send(Message::text(frame)).await {
-                            // 写入失败时无从知道对端是否已收到部分帧：结果不明
-                            let _ = ack.send(Err(PublishError::Unknown(format!(
-                                "发送 EVENT 失败: {e}"
-                            ))));
-                            break format!("WS 写入失败: {e}");
-                        } else {
-                            let pending = InFlight {
-                                deadline: Instant::now() + hub.publish_timeout,
-                                lease: effect,
-                                ack,
-                            };
-                            inflight.insert(event_id, pending);
+                        match inflight.entry(event_id) {
+                            std::collections::hash_map::Entry::Occupied(_) => {
+                                // 同一事件已在等结论：不再发第二次，结论只有一个
+                                let _ = ack.send(Err(PublishError::Unknown(
+                                    "同一事件已在等待 Relay 结论".into(),
+                                )));
+                            }
+                            std::collections::hash_map::Entry::Vacant(slot) => {
+                                if let Err(e) = ws.send(Message::text(frame)).await {
+                                    // 写入失败时无从知道对端是否已收到部分帧：结果不明
+                                    let _ = ack.send(Err(PublishError::Unknown(format!(
+                                        "发送 EVENT 失败: {e}"
+                                    ))));
+                                    break format!("WS 写入失败: {e}");
+                                }
+                                slot.insert(InFlight {
+                                    deadline: Instant::now() + hub.publish_timeout,
+                                    lease: effect,
+                                    ack,
+                                });
+                            }
                         }
                     }
                     Cmd::Release(why) => break why,

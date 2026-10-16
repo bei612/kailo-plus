@@ -48,7 +48,11 @@ fn unavailable() -> Response {
 }
 
 pub(crate) fn no_store<T: serde::Serialize>(body: T) -> Response {
-    ([(axum::http::header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(body),
+    )
+        .into_response()
 }
 
 /// 本人此刻用于 WS 发布的会话连接键、签名钥匙与运行期核对过的上界。
@@ -537,7 +541,7 @@ mod tests {
         assert!(requested_pubkeys(&[key(1), key(2)]).is_some());
         assert!(requested_pubkeys(&[]).is_none());
         assert!(requested_pubkeys(&[key(1), key(1)]).is_none());
-        assert!(requested_pubkeys(&[key(1).to_uppercase()]).is_none());
+        assert!(requested_pubkeys(&["AB".repeat(32)]).is_none());
         assert!(requested_pubkeys(&["a".repeat(63)]).is_none());
         let many: Vec<String> = (0..=MAX_QUERY_PUBKEYS)
             .map(|n| format!("{n:064x}"))
