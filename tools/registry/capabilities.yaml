@@ -118,8 +118,10 @@ capabilities:
   - /api/v1/projects/query
   - /api/v1/projects/publish
   - /api/v1/projects/git/query
+  - /api/v1/projects/git/ref
   actions:
   - projects.publish
+  - projects.git.ref
   tools: []
   workflow_kinds: []
 - id: collab.pulse

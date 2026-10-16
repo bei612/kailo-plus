@@ -284,6 +284,19 @@ async fn pass(
     .execute(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
+    // DD-118 branch push intents keep the same retention. Their reconciliation
+    // happens on the retry itself (the ref Relay advertises), never here.
+    sqlx::query(
+        "delete from admission.git_push_attempt a
+         where a.created_at < now() - make_interval(secs => $1::bigint)
+           and exists (select 1 from audit.audit_event r
+                       where r.operation_id = a.operation_id
+                         and r.event_type in ('OUTCOME', 'RECONCILIATION'))",
+    )
+    .bind(retention)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

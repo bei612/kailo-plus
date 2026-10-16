@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 const QUERY_DEADLINE: Duration = Duration::from_secs(120);
 
 /// Contract bound on `defaultBranch` / `baseBranch` / `targetRef`.
-const MAX_REF_CHARS: usize = 255;
+pub(crate) const MAX_REF_CHARS: usize = 255;
 /// Contract bound on `path`.
 const MAX_PATH_CHARS: usize = 4096;
 
@@ -68,7 +68,7 @@ fn lower_hex(value: &str) -> bool {
 /// transport.rs `validate_repo_id`): owner is 64 lowercase hex, `d` is
 /// `[A-Za-z0-9._-]{1,64}` without a leading dot or `..`. A `.git` suffix is
 /// refused because Relay strips it and would serve a different repository.
-fn repository_path(coordinate: &str) -> Option<String> {
+pub(crate) fn repository_path(coordinate: &str) -> Option<String> {
     let (owner, d) = coordinate.strip_prefix("30617:")?.split_once(':')?;
     let owner_ok = owner.len() == 64 && lower_hex(owner);
     let d_ok = !d.is_empty()
@@ -242,7 +242,7 @@ fn read(
 
 /// DD-118 (3): Relay's 404 / 401 / 403 are one indistinguishable "not found";
 /// the reason is never told apart. Other failures keep the Relay read mapping.
-fn info_refs_error(error: &OperatorError) -> Response {
+pub(crate) fn info_refs_error(error: &OperatorError) -> Response {
     match error {
         OperatorError::Rejected {
             status: 401 | 403 | 404,
