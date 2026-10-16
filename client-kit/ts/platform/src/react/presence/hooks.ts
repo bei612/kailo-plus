@@ -6,10 +6,10 @@
 // applyLivePresenceEvent. Browsers expose no OS idle, so in-app activity is the only signal.
 import * as React from "react";
 import {
+  type QueryClient,
   useMutation,
   useQuery,
   useQueryClient,
-  QueryClient,
 } from "@tanstack/react-query";
 
 import { normalizePubkey } from "../conversations/pubkey";
@@ -25,10 +25,6 @@ import {
   type PresenceLookup,
   type PresenceStatus,
 } from "./lib/presence";
-
-// Hosts without a presence surface keep rendering exactly as before: the query stays
-// disabled on a detached client instead of requiring an application QueryClient.
-const DETACHED_QUERY_CLIENT = new QueryClient();
 
 const PRESENCE_STATUS_TICK_INTERVAL_MS = 30_000;
 /** Keeps focused polling for presence at the established 60-second backstop cadence. */
@@ -165,7 +161,7 @@ export function usePresenceQuery(
     refetchInterval: PRESENCE_REFETCH_INTERVAL_MS,
     retry: false,
     ...presenceFocusRefetchPolicy,
-  }, host ? undefined : DETACHED_QUERY_CLIENT);
+  });
 }
 
 /**

@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // DD-120 Web host: the presence session heartbeats through the BFF, admitted stream frames
 // reach the shared caches, and leaving the page releases presence best-effort (V-SCN-100/101).
 import { act, type ReactNode } from "react";

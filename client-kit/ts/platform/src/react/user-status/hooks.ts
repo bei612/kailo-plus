@@ -6,11 +6,10 @@
 // person's own status is published by Core under DD-81 with one Idempotency-Key per intent.
 import * as React from "react";
 import {
+  type QueryClient,
   useMutation,
   useQuery,
   useQueryClient,
-  QueryClient,
-  QueryClientContext,
 } from "@tanstack/react-query";
 import type { WebUserStatusUpdateRequest } from "@client-kit/contracts";
 
@@ -20,10 +19,6 @@ import { normalizePubkey } from "../conversations/pubkey";
 import { KIND_USER_STATUS } from "../messages/thread/kinds";
 import { type PresenceHost, usePresenceHost } from "../presence/context";
 import type { UserStatus, UserStatusInput, UserStatusLookup } from "./types";
-
-// Hosts without a presence surface keep rendering exactly as before: the query stays
-// disabled on a detached client instead of requiring an application QueryClient.
-const DETACHED_QUERY_CLIENT = new QueryClient();
 
 type StatusEvent = {
   id: string;
@@ -356,7 +351,7 @@ export function useUserStatusQuery(
   const normalizedPubkeys = normalizePubkeys(pubkeys);
   const enabled = host !== null && normalizedPubkeys.length > 0;
 
-  const queryClient = React.useContext(QueryClientContext) ?? DETACHED_QUERY_CLIENT;
+  const queryClient = useQueryClient();
 
   return useQuery<UserStatusLookup>({
     enabled,
@@ -377,7 +372,7 @@ export function useUserStatusQuery(
     refetchInterval: USER_STATUS_REFETCH_INTERVAL_MS,
     retry: false,
     ...userStatusFocusRefetchPolicy,
-  }, host ? undefined : DETACHED_QUERY_CLIENT);
+  });
 }
 
 /**
