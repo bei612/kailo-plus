@@ -19,6 +19,8 @@ import type {
   PulsePublishRequest,
   ProjectsQueryRequest,
   ProjectsPublishRequest,
+  ProjectsGitQueryRequest,
+  ProjectsGitQueryResponse,
   WebSearchQuery,
 } from "@client-kit/contracts";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
@@ -83,6 +85,11 @@ export async function searchMessages(request: WebSearchQuery): Promise<SearchMes
 
 export async function queryProjects(request:ProjectsQueryRequest):Promise<import("@client-kit/platform/react/projects").ProjectsPage>{
   return call({method:"POST",path:"/api/v1/projects/query",body:request});
+}
+
+/** DD-118 typed Projects Git read; the Browser names only the 30617 coordinate, ref and path. */
+export async function queryProjectsGit(request:ProjectsGitQueryRequest):Promise<ProjectsGitQueryResponse>{
+  return call({method:"POST",path:"/api/v1/projects/git/query",body:request});
 }
 
 export async function queryReminders():Promise<{pubkey:string;reminders:import("@client-kit/contracts").ReminderView[]}> {

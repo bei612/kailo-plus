@@ -19,7 +19,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // URL contains only navigation references. It never stores sessions, identities,
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
-  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;thread?: string; item?: string;
+  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string;thread?: string; item?: string;
   view?: "edit" | "duplicate";
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
@@ -33,6 +33,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     issueId: reference("issueId"),
     pullRequestId: reference("pullRequestId"),
     tab: reference("tab"),
+    commitHash: reference("commitHash"),
+    filePath: reference("filePath"),
     thread: reference("thread"),
     item: reference("item"),
     // Original /workflows/$workflowId ?view= editor target; any other value is dropped.
@@ -122,7 +124,7 @@ export function usePlatformNavigation(scopeKey?: string) {
     conversationId: params.conversationId ?? null,
     applicationBindingId: params.bindingId ?? null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
-    projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab} : undefined,
+    projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab,commitHash:search.commitHash,filePath:search.filePath} : undefined,
     workflowRoute: params.workflowId ? { workflowId: params.workflowId, view: search.view, workspaceId: search.workspaceId } : null,
     openWorkflow: (route: { workflowId: string; view?: "edit" | "duplicate"; workspaceId?: string } | null, workspaceId?: string) => route
       ? navigate({ to: "/workflows/$workflowId", params: { workflowId: route.workflowId },

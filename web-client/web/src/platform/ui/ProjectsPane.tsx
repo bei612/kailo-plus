@@ -1,8 +1,8 @@
 import {useCallback,useEffect,useMemo} from "react";
 import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
-import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
+import {ProjectsView,createProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
 import {PulsePane} from "./PulsePane";
-import {queryProjects,publishProject} from "../bff-client";
+import {queryProjects,publishProject,queryProjectsGit} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
 import {ChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
@@ -41,7 +41,12 @@ export function useProjectsHost(scopeKey:string){
     const receipt=await publishProject(request,key);
     if(!scope.active)throw new TransportError("Project scope changed");
     return receipt;
-  }}),[scopeKey,scope]);
+  },git:createProjectsGitHost(async request=>{
+    if(!scope.active)throw new Error("Project scope changed");
+    const response=await queryProjectsGit(request);
+    if(!scope.active)throw new Error("Project scope changed");
+    return response;
+  })}),[scopeKey,scope]);
   return host;
 }
 
