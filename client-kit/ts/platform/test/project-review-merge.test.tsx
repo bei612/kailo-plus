@@ -141,7 +141,7 @@ describe("restored review merge",()=>{
     await vi.waitFor(()=>expect(error).toHaveBeenCalledWith("Pull request has merge conflicts."));
     const panel=ui.querySelector('[data-testid="merge-conflict-recovery"]');
     expect(panel?.textContent).toContain("Resolve conflicts in your local checkout");
-    expect(panel?.textContent).toContain("switch to main");
+    expect(panel?.textContent).toContain("Merge main into the review branch");
     expect(button(ui,"Resolve in Terminal")).toBeUndefined();
     expect(mergeIntents()).toEqual([]);
     // A definite refusal is no retained intent: Merge is offered again, not a re-check.
