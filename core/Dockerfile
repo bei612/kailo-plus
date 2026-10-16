@@ -2,7 +2,7 @@
 # 构建上下文为 apps/（与 worker 共用）；进入上下文的路径由 apps/.dockerignore
 # 的 allowlist 决定，secrets/ 与 data/ 不在其中。
 #
-# 多阶段：builder 产出静态二进制，runtime 只含二进制与运行所需证书。
+# 多阶段：builder 产出静态二进制，runtime 只含二进制、运行所需证书与 git（DD-118）。
 # 不在镜像内保留工具链、源码或依赖缓存——它们会进 SBOM 并放大攻击面。
 
 ARG AGENT_RUNTIME_IMAGE
@@ -16,6 +16,7 @@ COPY model-gateway/crates/protos/proto/ext_mcp.proto /build/apps/model-gateway/c
 COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
 COPY collaboration/crates/buzz-sdk /build/apps/collaboration/crates/buzz-sdk
+COPY collaboration/crates/buzz-project-git /build/apps/collaboration/crates/buzz-project-git
 COPY contracts/domain/automation_step.schema.json /build/apps/contracts/domain/automation_step.schema.json
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
 COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
@@ -41,6 +42,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # 直接复用其最小 runtime：包含 Codex 所需 CA/libssl/liblzma 与 /etc/codex，
 # 不在 Core recipe 再编译第二份 Codex，也不只拷 executable 漏掉动态库。
 FROM ${AGENT_RUNTIME_IMAGE} AS runtime
+# DD-118：Projects 仓库读取由 Core 调用系统 git 走 Relay smart HTTP（NIP-98 由 Core
+# 逐次签名、以进程级 http.extraHeader 注入，私钥不进 git）。agent-runtime 以 10001
+# 结尾，安装需临时切回 root，装完即回到非 root 用户。
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/platform-core /usr/local/bin/platform-core
 USER 10001
 ENTRYPOINT ["/usr/local/bin/platform-core"]

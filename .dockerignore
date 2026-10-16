@@ -13,6 +13,7 @@
 !collaboration/Cargo.toml
 !collaboration/crates/buzz-core
 !collaboration/crates/buzz-sdk
+!collaboration/crates/buzz-project-git
 !contracts/domain/automation_step.schema.json
 !tools/registry/capabilities.yaml
 !contracts/api/action_submission.schema.json
