@@ -38,7 +38,9 @@ import {
   uploadMedia,
   mediaUrl,
   deleteMessage,
+  publishTyping,
 } from "@/platform/bff-client";
+import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { toast } from "sonner";
@@ -187,6 +189,8 @@ export function ChannelPane({
   const focusThread = threadViewMode === "focus" && !threadOverlay;
   const notifications = useBrowserNotifications();
   const window = useChannelWindow({ workspaceId, conversationId: conversation?.id, principalId: myPrincipalId, channelId: conversation?.channelId ?? admittedChannelId, onLiveEvent: (event) => receiveNotification(event), onClosed: () => {
+  const notifyTyping = useTypingBroadcast(conversation ? `conversation:${conversation.id}` : workspaceId ? `workspace:${workspaceId}` : null,
+    () => publishTyping(conversation ? { conversationId: conversation.id } : { workspaceId }));
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
   }, archived });
   const { events: rawEvents, status, live, denied } = window;
@@ -835,6 +839,7 @@ export function ChannelPane({
         ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
             containerClassName="px-5 pb-0" layoutMode="dock"
             channelType="dm"
+            onTyping={notifyTyping}
             placeholder={composerPlaceholder}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink}
@@ -843,6 +848,7 @@ export function ChannelPane({
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
             containerClassName="px-5 pb-0" layoutMode="dock"
+            onTyping={notifyTyping}
             placeholder={composerPlaceholder}
             mentionPeople={mentionPeople}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
@@ -919,13 +925,15 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
   onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
+  /** Original useTypingBroadcast trigger for the main channel composer only. */
+  onTyping?: () => void;
   onEditLastOwnMessage?: () => boolean;
   onConfirmed?: () => void;
   draftChannelId?: string;
@@ -1122,6 +1130,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         .map(person => person.displayName) ?? []).trusted,
   });
   useEffect(() => () => pasteBinding.clearMentionIntents(), [owner, pasteBinding.clearMentionIntents]);
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
   const richText = useRichTextEditor({
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
     restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
@@ -1132,6 +1142,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
     onUpdate: ({ text, cursor }) => {
       setDraft(text); setDraftRevision((value) => value + 1);
+      if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
       const query=detectPrefixQuery("@",text,cursor,mentionCandidates.map(person=>person.displayName.toLowerCase()));
       if (query) mentionPickerOriginRef.current = "inline";

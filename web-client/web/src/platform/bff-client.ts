@@ -102,6 +102,22 @@ export function releasePresence(): void {
   }).catch(() => undefined);
 }
 
+/**
+ * DD-120 (1): the original main-channel 20002 typing indicator. Core signs it over the person's
+ * existing session connection; latest wins and nothing is re-signed, so callers ignore failures.
+ */
+export function typingPath(scope: { workspaceId?: string; conversationId?: string }): string | null {
+  if (scope.conversationId) return `/api/v1/conversations/${encodeURIComponent(scope.conversationId)}/typing`;
+  if (scope.workspaceId) return `/api/v1/workspaces/${encodeURIComponent(scope.workspaceId)}/typing`;
+  return null;
+}
+
+export async function publishTyping(scope: { workspaceId?: string; conversationId?: string }): Promise<void> {
+  const path = typingPath(scope);
+  if (!path) return;
+  await call<unknown>({ method: "POST", path });
+}
+
 /** DD-120 (4): the latest verified `d=general` 30315 per pubkey; a cleared status is omitted. */
 export async function queryUserStatus(pubkeys: string[]): Promise<WebUserStatusPage> {
   const page = await call<WebUserStatusPage>({ method: "POST", path: USER_STATUS_QUERY_PATH,
