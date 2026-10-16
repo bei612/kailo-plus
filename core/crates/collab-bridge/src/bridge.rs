@@ -767,6 +767,20 @@ impl IdentityClient {
                 latest_comment,
                 &self.pubkey_hex(),
             )?
+        } else if kind == 1618 {
+            // Original publishProjectPullRequest: Community-global, no comment
+            // ordering evidence and no media.
+            if channel_id.is_some() || latest_comment.is_some() || !media_tags.is_empty() {
+                return Err(OperatorError::Sign(
+                    "review creation fields are not supported".into(),
+                ));
+            }
+            crate::projects::pull_request_publication_builder(
+                request,
+                target.ok_or_else(|| OperatorError::Sign("review repository missing".into()))?,
+                &self.pubkey_hex(),
+                &self.community_host,
+            )?
         } else if kind == 1 {
             if channel_id.is_some() {
                 return Err(OperatorError::Sign(

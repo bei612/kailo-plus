@@ -737,9 +737,10 @@ pub(crate) async fn publish_project(
         Err(response) => return response,
     };
     let target = match crate::projects::publication_kind(&request) {
-        // NIP-34 issues, like deletion, are Community-global. A repository's
-        // buzz-channel metadata must not silently become a Workspace grant.
-        Ok(1 | 5 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
+        // NIP-34 issues and reviews, like deletion, are Community-global
+        // (is_global_only_kind). A repository's buzz-channel metadata must not
+        // silently become a Workspace grant.
+        Ok(1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
         Ok(_) => match request
             .workspace_id
             .as_deref()
@@ -1923,7 +1924,7 @@ async fn publish(
         match p.result.as_deref() {
             Some("ACCEPTED") => {
                 if let Publication::Project(request) = &publication {
-                    if matches!(requested_kind, 1 | 1621 | 1630 | 1632 | 1633) {
+                    if matches!(requested_kind, 1 | 1618 | 1621 | 1630 | 1632 | 1633) {
                         if let Err(response) = crate::projects::confirm_accepted_issue_publication(
                             &state,
                             &ctx,
@@ -2189,6 +2190,16 @@ async fn publish(
                 &keys.public_key().to_hex(),
                 &media_tags,
             )
+        } else if requested_kind == 1618 {
+            match project_target.as_ref() {
+                Some(repository) => collab_bridge::projects::pull_request_publication_builder(
+                    request,
+                    repository,
+                    &keys.public_key().to_hex(),
+                    &community_host,
+                ),
+                None => return StatusCode::BAD_REQUEST.into_response(),
+            }
         } else {
             collab_bridge::projects::publication_builder(
                 request,

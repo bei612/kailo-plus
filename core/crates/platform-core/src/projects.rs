@@ -94,7 +94,8 @@ pub(crate) async fn publication_target(
             .map_err(|_| StatusCode::BAD_REQUEST.into_response())?]
     } else if status {
         vec![1618]
-    } else if kind == 1621 {
+    } else if matches!(kind, 1618 | 1621) {
+        // Issues and reviews name their repository announcement.
         vec![30617]
     } else {
         vec![30621, 30617]
@@ -514,6 +515,9 @@ pub(crate) async fn confirm_accepted_issue_publication(
         let media_tags =
             crate::web_transport::project_comment_media(request, &before.community_host)?;
         collab_bridge::projects::comment_publication_matches(request, issue, event, &media_tags)
+            .map_err(|_| unknown())?
+    } else if kind == 1618 {
+        collab_bridge::projects::pull_request_publication_matches(request, event)
             .map_err(|_| unknown())?
     } else {
         collab_bridge::projects::issue_publication_matches(request, event).map_err(|_| unknown())?
@@ -1243,15 +1247,19 @@ mod tests {
                 .sign_with_keys(keys)
                 .unwrap()
         };
-        assert!(trusted_repository_state(&state(&owner, "repo"), &authors, &d));
-        assert!(trusted_repository_state(&state(&relay, "repo"), &authors, &d));
-        assert!(!trusted_repository_state(&state(&stranger, "repo"), &authors, &d));
-        assert!(!trusted_repository_state(&state(&owner, "other"), &authors, &d));
-        assert!(!trusted_repository_state(&state(&relay, "repo"), &owner_only, &d));
+        let trusted = |event: &nostr::Event, authors: &[String]| {
+            trusted_repository_state(event, authors, &d)
+        };
+        assert!(trusted(&state(&owner, "repo"), &authors));
+        assert!(trusted(&state(&relay, "repo"), &authors));
+        assert!(!trusted(&state(&stranger, "repo"), &authors));
+        assert!(!trusted(&state(&owner, "other"), &authors));
+        assert!(!trusted(&state(&relay, "repo"), &owner_only));
         let mut forged = state(&owner, "repo");
         forged.content = "forged".into();
-        assert!(!trusted_repository_state(&forged, &authors, &d));
+        assert!(!trusted(&forged, &authors));
         assert!(canonical_pubkey(&owner.public_key().to_hex()));
-        assert!(!canonical_pubkey(&owner.public_key().to_hex().to_uppercase()));
+        let upper = owner.public_key().to_hex().to_uppercase();
+        assert!(!canonical_pubkey(&upper));
     }
 }

@@ -317,6 +317,166 @@ pub fn assignment_head(
     Ok(head)
 }
 
+fn canonical_pubkey(key: &str) -> bool {
+    nostr::PublicKey::from_hex(key).is_ok_and(|parsed| parsed.to_hex() == key)
+}
+
+/// NIP-34 `c` / `merge-base`: a SHA-1 or SHA-256 object id in lowercase hex.
+fn commit_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// A review branch name as the contract bounds it: one git ref name, never
+/// whitespace or control characters a tag value could smuggle.
+fn review_branch(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().count() <= 255
+        && !value.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// Original projectModels.ts::getCloneUrls with
+/// lib/projectCloneUrl.ts::effectiveCloneUrls: the announcement's first `clone`
+/// tag, else the Relay-hosted `<community origin>/git/<owner>/<d>` the
+/// original derives from the active relay.
+fn repository_clone_urls(repository: &Event, community_host: &str, d: &str) -> Vec<String> {
+    let advertised = repository
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .find(|tag| tag.first().is_some_and(|name| name == "clone"))
+        .map(|tag| {
+            tag.iter()
+                .skip(1)
+                .filter(|url| !url.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !advertised.is_empty() || community_host.is_empty() {
+        return advertised;
+    }
+    let owner = repository.pubkey.to_hex();
+    vec![format!("https://{community_host}/git/{owner}/{d}")]
+}
+
+/// Fixed Buzz desktop/src/features/projects/pullRequestMutations.ts::
+/// projectPullRequestTags: repository address, the owner and requested
+/// reviewers (normalized, first occurrence kept), subject, compare head, the
+/// repository clone URLs, compare and base branches, and the merge base when
+/// known.
+fn pull_request_tags(
+    request: &ProjectsPublishRequest,
+    owner: &str,
+    d: &str,
+    clone: &[String],
+) -> Vec<Vec<String>> {
+    let owner = owner.trim().to_lowercase();
+    let mut recipients = vec![owner.clone()];
+    for key in request.reviewers.as_deref().unwrap_or_default() {
+        let key = key.trim().to_lowercase();
+        if !recipients.contains(&key) {
+            recipients.push(key);
+        }
+    }
+    let value = |field: &Option<String>| field.as_deref().unwrap_or_default().to_owned();
+    let mut tags = vec![vec!["a".to_owned(), format!("30617:{owner}:{d}")]];
+    tags.extend(recipients.into_iter().map(|key| vec!["p".to_owned(), key]));
+    let title = value(&request.title).trim().to_owned();
+    tags.push(vec!["subject".to_owned(), title]);
+    tags.push(vec!["c".to_owned(), value(&request.commit)]);
+    let mut clone_tag = vec!["clone".to_owned()];
+    clone_tag.extend_from_slice(clone);
+    tags.push(clone_tag);
+    tags.push(vec!["branch-name".to_owned(), value(&request.branch_name)]);
+    tags.push(vec!["target-branch".to_owned(), value(&request.target_branch)]);
+    if let Some(base) = request.merge_base.as_deref() {
+        tags.push(vec!["merge-base".to_owned(), base.to_owned()]);
+    }
+    tags
+}
+
+/// Original publishProjectPullRequest: the 1618 review of a branch already on
+/// the repository, signed by the person, content = trimmed body. `repository`
+/// is the trusted current 30617 announcement `targetEventId` names.
+pub fn pull_request_publication_builder(
+    request: &ProjectsPublishRequest,
+    repository: &Event,
+    signer: &str,
+    community_host: &str,
+) -> Result<EventBuilder, OperatorError> {
+    if publication_kind(request)? != 1618
+        || !canonical_pubkey(signer)
+        || request.target_event_id.as_deref() != Some(repository.id.to_hex().as_str())
+        || repository.kind.as_u16() != 30617
+        || repository.verify().is_err()
+    {
+        return Err(invalid("invalid review repository evidence"));
+    }
+    let d = repository
+        .tags
+        .identifier()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| invalid("review repository coordinate missing"))?;
+    let clone = repository_clone_urls(repository, community_host, d);
+    if clone.is_empty() {
+        return Err(invalid("This project has no clone URL."));
+    }
+    let tags = pull_request_tags(request, &repository.pubkey.to_hex(), d, &clone)
+        .into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid review tags"))?;
+    // The owner opening a review on their own repository still tags
+    // themselves, exactly like the original.
+    Ok(EventBuilder::new(
+        nostr::Kind::from(1618),
+        request.body.as_deref().unwrap_or_default().trim(),
+    )
+    .tags(tags)
+    .allow_self_tagging())
+}
+
+/// Compare an accepted review with the retained request. The clone URLs are
+/// taken from the event itself: the repository announcement may have changed
+/// since, and the request never carried them.
+pub fn pull_request_publication_matches(
+    request: &ProjectsPublishRequest,
+    event: &Event,
+) -> Result<bool, OperatorError> {
+    if publication_kind(request)? != 1618 || event.kind.as_u16() != 1618 || event.verify().is_err()
+    {
+        return Err(invalid("invalid review publication evidence"));
+    }
+    let tags = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().to_vec())
+        .collect::<Vec<_>>();
+    let Some(address) = tags.first().filter(|tag| tag.len() == 2 && tag[0] == "a") else {
+        return Ok(false);
+    };
+    let mut coordinate = address[1].splitn(3, ':');
+    let kind = coordinate.next();
+    let (Some(owner), Some(d)) = (coordinate.next(), coordinate.next()) else {
+        return Ok(false);
+    };
+    if kind != Some("30617") {
+        return Ok(false);
+    }
+    let clone = tags
+        .iter()
+        .find(|tag| tag.first().is_some_and(|name| name == "clone"));
+    let Some(clone) = clone else {
+        return Ok(false);
+    };
+    let expected = pull_request_tags(request, owner, d, &clone[1..]);
+    let body = request.body.as_deref().unwrap_or_default().trim();
+    Ok(event.content == body && tags == expected)
+}
+
 /// Read-only receipt for the exact persisted publication, not merely a JSON id.
 /// Missing replaceable events remain unobservable; they never prove rejection.
 pub fn publication_observed(
@@ -329,7 +489,7 @@ pub fn publication_observed(
         || OperatorError::NotConverged("Project publication evidence is invalid".into());
     if !matches!(
         expected_kind,
-        1 | 5 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621
+        1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633 | 30617 | 30621
     ) {
         return Err(unverified());
     }
@@ -373,18 +533,25 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     if !is_pull_request_status(request) && request.pull_request_status.is_some() {
         return Err(invalid("review status on another project operation"));
     }
-    if operation.as_str() != Some("CREATE_ISSUE")
-        && (request.title.is_some() || request.category.is_some())
-        || !matches!(
-            operation.as_str(),
-            Some("CREATE_ISSUE" | "CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT")
-        ) && request.body.is_some()
-        || !matches!(
-            operation.as_str(),
-            Some("CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT")
-        ) && (request.mentions.is_some() || request.attachments.is_some())
+    let op = operation.as_str().unwrap_or_default();
+    let comment = matches!(op, "CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT");
+    let titled = matches!(op, "CREATE_ISSUE" | "CREATE_PULL_REQUEST");
+    let bodied = titled || comment;
+    if !titled && request.title.is_some()
+        || op != "CREATE_ISSUE" && request.category.is_some()
+        || !bodied && request.body.is_some()
+        || !comment && (request.mentions.is_some() || request.attachments.is_some())
     {
         return Err(invalid("issue fields on another project operation"));
+    }
+    if op != "CREATE_PULL_REQUEST"
+        && (request.branch_name.is_some()
+            || request.target_branch.is_some()
+            || request.commit.is_some()
+            || request.merge_base.is_some()
+            || request.reviewers.is_some())
+    {
+        return Err(invalid("review fields on another project operation"));
     }
     match operation.as_str() {
         Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE" | "ASSIGN_ISSUE" | "UNASSIGN_ISSUE") => {
@@ -492,6 +659,49 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
             }
             Ok(1621)
         }
+        Some("CREATE_PULL_REQUEST") => {
+            let schema: serde_json::Value = serde_json::from_str(include_str!(
+                "../../../../contracts/api/projects_publish_request.schema.json"
+            ))
+            .map_err(|_| invalid("review limits unavailable"))?;
+            let limit = schema["properties"]["title"]["maxLength"]
+                .as_u64()
+                .ok_or_else(|| invalid("review limits unavailable"))?;
+            let title = request
+                .title
+                .as_deref()
+                .ok_or_else(|| invalid("review title missing"))?
+                .trim();
+            let branch = request.branch_name.as_deref().unwrap_or_default();
+            let target = request.target_branch.as_deref().unwrap_or_default();
+            let reviewers = request.reviewers.as_deref().unwrap_or_default();
+            // Original publishProjectPullRequest: nonempty title of at most 256
+            // UTF-16 units, base and compare branches differ.
+            if title.is_empty()
+                || title.encode_utf16().count() as u64 > limit
+                || request.body.is_none()
+                || !request
+                    .target_event_id
+                    .as_deref()
+                    .is_some_and(canonical_event_id)
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+                || !review_branch(branch)
+                || !review_branch(target)
+                || branch == target
+                || !request.commit.as_deref().is_some_and(commit_id)
+                || request
+                    .merge_base
+                    .as_deref()
+                    .is_some_and(|base| !commit_id(base))
+                || reviewers.iter().any(|key| !canonical_pubkey(key))
+            {
+                return Err(invalid("invalid review creation"));
+            }
+            Ok(1618)
+        }
         Some("DELETE")
             if request.target_event_id.as_deref().is_some_and(|id| {
                 nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
@@ -568,6 +778,9 @@ pub fn publication_builder(
     let kind = publication_kind(request)?;
     if kind == 1 {
         return Err(invalid("issue comment requires signed activity evidence"));
+    }
+    if kind == 1618 {
+        return Err(invalid("review creation needs its repository evidence"));
     }
     if PULL_REQUEST_STATUS_KINDS.contains(&kind) {
         return Err(invalid("review status requires its review evidence"));
@@ -1349,7 +1562,7 @@ mod tests {
     #[test]
     fn publication_receipt_verifies_frozen_actor_kind_hash_and_signature() {
         let keys = Keys::generate();
-        for kind in [1, 5, 1621, 30617, 30621] {
+        for kind in [1, 5, 1618, 1621, 30617, 30621] {
             let event = EventBuilder::new(nostr::Kind::from(kind as u16), "original")
                 .sign_with_keys(&keys)
                 .unwrap();
@@ -1971,5 +2184,131 @@ mod tests {
         assert!(
             publication_builder(&wrong, Some(&event), None, &keys.public_key().to_hex()).is_err()
         );
+    }
+
+    fn review_tags(event: &Event) -> Vec<Vec<String>> {
+        event
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect()
+    }
+
+    fn tag(name: &str, value: &str) -> Vec<String> {
+        vec![name.to_owned(), value.to_owned()]
+    }
+
+    #[test]
+    fn review_creation_signs_the_original_tags_after_original_validation() {
+        let owner = Keys::generate();
+        let author = Keys::generate();
+        let reviewer = Keys::generate();
+        let owner_hex = owner.public_key().to_hex();
+        let reviewer_hex = reviewer.public_key().to_hex();
+        let repository = EventBuilder::new(nostr::Kind::from(30617), "")
+            .tags([Tag::parse(["d", "repo"]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let commit = "c".repeat(40);
+        let base = "b".repeat(64);
+        let value = json!({
+            "operation":"CREATE_PULL_REQUEST", "targetEventId":repository.id.to_hex(),
+            "title":"  Add feature  ", "body":" Details \n", "branchName":"feature/x",
+            "targetBranch":"main", "commit":commit, "mergeBase":base,
+            "reviewers":[reviewer_hex, owner_hex]
+        });
+        let request: ProjectsPublishRequest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(publication_kind(&request).unwrap(), 1618);
+        assert!(publication_builder(&request, Some(&repository), None, &owner_hex).is_err());
+        let signer = author.public_key().to_hex();
+        let host = "relay.example";
+        let event = pull_request_publication_builder(&request, &repository, &signer, host)
+            .unwrap()
+            .sign_with_keys(&author)
+            .unwrap();
+        assert_eq!(event.kind.as_u16(), 1618);
+        assert_eq!(event.content, "Details");
+        // No clone tag on the announcement: the original derives the
+        // Relay-hosted repository URL; the owner precedes reviewers once.
+        let derived = format!("https://relay.example/git/{owner_hex}/repo");
+        let expected = [
+            tag("a", &format!("30617:{owner_hex}:repo")),
+            tag("p", &owner_hex),
+            tag("p", &reviewer_hex),
+            tag("subject", "Add feature"),
+            tag("c", &commit),
+            tag("clone", &derived),
+            tag("branch-name", "feature/x"),
+            tag("target-branch", "main"),
+            tag("merge-base", &base),
+        ];
+        assert_eq!(review_tags(&event), expected);
+        assert!(pull_request_publication_matches(&request, &event).unwrap());
+
+        // Advertised clone URLs win, and the owner reviewing their own
+        // repository still tags themselves.
+        let advertised = EventBuilder::new(nostr::Kind::from(30617), "")
+            .tags([
+                Tag::parse(["d", "repo"]).unwrap(),
+                Tag::parse(["clone", "https://git.example/r.git", ""]).unwrap(),
+            ])
+            .sign_with_keys(&owner)
+            .unwrap();
+        let mut own = request.clone();
+        own.target_event_id = Some(advertised.id.to_hex());
+        own.merge_base = None;
+        own.reviewers = None;
+        let event = pull_request_publication_builder(&own, &advertised, &owner_hex, host)
+            .unwrap()
+            .sign_with_keys(&owner)
+            .unwrap();
+        let expected = [
+            tag("a", &format!("30617:{owner_hex}:repo")),
+            tag("p", &owner_hex),
+            tag("subject", "Add feature"),
+            tag("c", &commit),
+            tag("clone", "https://git.example/r.git"),
+            tag("branch-name", "feature/x"),
+            tag("target-branch", "main"),
+        ];
+        assert_eq!(review_tags(&event), expected);
+        assert!(pull_request_publication_matches(&own, &event).unwrap());
+        let mut retitled = own.clone();
+        retitled.title = Some("Other".into());
+        assert!(!pull_request_publication_matches(&retitled, &event).unwrap());
+        assert!(pull_request_publication_builder(&request, &advertised, &signer, "x").is_err());
+
+        let invalid_values = [
+            ("branchName", json!("main")),
+            ("branchName", json!("bad name")),
+            ("targetBranch", json!("x".repeat(256))),
+            ("commit", json!("C".repeat(40))),
+            ("mergeBase", json!("x")),
+            ("reviewers", json!(["ABC"])),
+            ("title", json!("  ")),
+            ("title", json!("x".repeat(257))),
+            ("mentions", json!([reviewer_hex])),
+            ("category", json!("issue")),
+            ("workspaceId", json!(uuid::Uuid::new_v4())),
+        ];
+        for (field, bad) in invalid_values {
+            let mut invalid = value.clone();
+            invalid[field] = bad;
+            let invalid: ProjectsPublishRequest = serde_json::from_value(invalid).unwrap();
+            assert!(publication_kind(&invalid).is_err(), "{field}");
+        }
+        for field in ["body", "commit", "branchName", "targetBranch", "targetEventId"] {
+            let mut missing = value.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            let missing: ProjectsPublishRequest = serde_json::from_value(missing).unwrap();
+            assert!(publication_kind(&missing).is_err(), "{field}");
+        }
+        // Review fields never ride on another operation.
+        let issue = json!({
+            "operation":"CREATE_ISSUE", "targetEventId":repository.id.to_hex(), "title":"t",
+            "body":"", "category":"issue", "branchName":"feature/x"
+        });
+        let issue: ProjectsPublishRequest = serde_json::from_value(issue).unwrap();
+        assert!(publication_kind(&issue).is_err());
     }
 }
