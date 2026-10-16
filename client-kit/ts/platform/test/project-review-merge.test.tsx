@@ -2,7 +2,6 @@
 // desktop/src/features/projects/ui/MergePullRequestButton.tsx in PullRequestReviewCard and
 // pullRequestMutations.ts::useMergeProjectPullRequestMutation through the Projects Git host.
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
-import {act} from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {toast} from "sonner";
 import {ErrorClass,ProjectsGitQueryRequestView,ReasonCode,
