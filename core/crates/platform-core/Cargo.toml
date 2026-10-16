@@ -8,6 +8,7 @@ publish.workspace = true
 contracts = { path = "../contracts" }
 identity = { path = "../identity" }
 collab-bridge = { path = "../collab-bridge" }
+buzz-project-git = { path = "../../../collaboration/crates/buzz-project-git" }
 secret-store = { path = "../secret-store" }
 async-stream = "0.3"
 axum = { version = "0.8", features = ["macros", "http2"] }

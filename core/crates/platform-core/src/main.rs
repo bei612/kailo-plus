@@ -64,6 +64,7 @@ mod platform_info;
 mod platform_keys;
 mod platform_views;
 mod projects;
+mod projects_git;
 mod protocol_session;
 mod publish_reconcile;
 mod pulse;

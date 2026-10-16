@@ -117,6 +117,7 @@ capabilities:
   routes:
   - /api/v1/projects/query
   - /api/v1/projects/publish
+  - /api/v1/projects/git/query
   actions:
   - projects.publish
   tools: []

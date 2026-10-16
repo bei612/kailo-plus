@@ -406,6 +406,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-project-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "buzz-sdk"
 version = "0.1.0"
 dependencies = [
@@ -2517,6 +2525,7 @@ dependencies = [
  "async-stream",
  "axum",
  "base64 0.22.1",
+ "buzz-project-git",
  "chrono",
  "collab-bridge",
  "contracts",

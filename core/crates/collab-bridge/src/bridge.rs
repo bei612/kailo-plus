@@ -213,6 +213,56 @@ impl IdentityClient {
         self.keys.public_key().to_hex()
     }
 
+    /// Relay 按 Host 绑定 Community；不经本客户端发出的请求（git 子进程）须带同一 Host。
+    pub fn community_host(&self) -> &str {
+        &self.community_host
+    }
+
+    /// DD-118：Relay git smart HTTP 仓库根在网络地址上的位置，只用于建立连接；
+    /// 签名与 Host 仍是 Community host（SF-BUZ-32）。
+    pub fn git_remote_url(&self, repo_path: &str) -> Result<String, OperatorError> {
+        Ok(self.transport.join(repo_path)?.to_string())
+    }
+
+    /// DD-118：git smart HTTP 的 NIP-98，与固定 Buzz `git-credential-nostr` 同形
+    /// （`u` + `method`）。`u` 是仓库根 `http://{community host}{repo_path}`：Relay 的
+    /// `git_expected_url` 取请求路径在 `/info/refs`、`/git-upload-pack` 之前的部分接在
+    /// tenant host 之后比对，scheme 与 bridge 调用同一规则。每次调用都重新签名——
+    /// 令牌只有 ±60s 窗口，不跨 git 调用复用；私钥不离开本进程。
+    pub fn git_authorization(&self, repo_path: &str) -> Result<String, OperatorError> {
+        let url = format!("http://{}{}", self.community_host, repo_path);
+        let tag = |parts: [&str; 2]| {
+            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("NIP-98 tag: {e}")))
+        };
+        self.http_auth_header(vec![tag(["u", url.as_str()])?, tag(["method", "GET"])?])
+    }
+
+    /// DD-118 读取的前置：以本人身份取一次 `info/refs`（upload-pack），授权只由 Relay
+    /// 判定。只看状态码，不读 ref 广告正文；非 2xx 原样作为 `Rejected` 交给调用方。
+    pub async fn git_info_refs(
+        &self,
+        http: &reqwest::Client,
+        repo_path: &str,
+    ) -> Result<(), OperatorError> {
+        let path = format!("{repo_path}/info/refs?service=git-upload-pack");
+        let url = self.transport.join(&path)?;
+        let resp = http
+            .get(url)
+            .header(reqwest::header::HOST, &self.community_host)
+            .header("Authorization", self.git_authorization(repo_path)?)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: text.chars().take(200).collect(),
+            });
+        }
+        Ok(())
+    }
+
     /// 以该身份建立 id 为 `channel_id` 的 Channel（NIP-29 kind 9007 带 `h`）。
     ///
     /// 一个 Workspace 绑定一个 Channel（`DD-01`）。创建者成为该 Channel 的
@@ -1327,6 +1377,11 @@ impl IdentityClient {
             tag(["nonce", &nonce])?,
             tag(["payload", &payload_hash])?,
         ];
+        self.http_auth_header(tags)
+    }
+
+    /// 以本身份签 NIP-98（kind 27235）并编码为 `Authorization` 头的值。
+    fn http_auth_header(&self, tags: Vec<Tag>) -> Result<String, OperatorError> {
         let event = EventBuilder::new(Kind::HttpAuth, "")
             .tags(tags)
             .sign_with_keys(&self.keys)

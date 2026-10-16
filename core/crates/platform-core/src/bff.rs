@@ -328,6 +328,10 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/projects/query",
             axum::routing::post(crate::projects::query),
         )
+        .exposed_route(
+            "/api/v1/projects/git/query",
+            axum::routing::post(crate::projects_git::query),
+        )
         .exposed_route("/api/v1/reminders", get(crate::reminders::query))
         .exposed_route(
             "/api/v1/reminders/source",
