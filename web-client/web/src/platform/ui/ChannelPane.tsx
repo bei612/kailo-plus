@@ -189,10 +189,10 @@ export function ChannelPane({
   const focusThread = threadViewMode === "focus" && !threadOverlay;
   const notifications = useBrowserNotifications();
   const window = useChannelWindow({ workspaceId, conversationId: conversation?.id, principalId: myPrincipalId, channelId: conversation?.channelId ?? admittedChannelId, onLiveEvent: (event) => receiveNotification(event), onClosed: () => {
-  const notifyTyping = useTypingBroadcast(conversation ? `conversation:${conversation.id}` : workspaceId ? `workspace:${workspaceId}` : null,
-    () => publishTyping(conversation ? { conversationId: conversation.id } : { workspaceId }));
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
   }, archived });
+  const notifyTyping = useTypingBroadcast(conversation ? `conversation:${conversation.id}` : workspaceId ? `workspace:${workspaceId}` : null,
+    () => publishTyping(conversation ? { conversationId: conversation.id } : { workspaceId }));
   const { events: rawEvents, status, live, denied } = window;
   const searchHighlightProps = useSearchHighlightProps(targetSearchMessageId, targetSearchQuery);
   const messageReactions = useMessageReactions({principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,
