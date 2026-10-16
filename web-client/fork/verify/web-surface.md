@@ -6776,3 +6776,24 @@ V-SCN-94–99（DD-46、DD-81）。本批只做 TypeScript/UI 与 Web/Desktop �
 `web-client/web/src/platform/ui/PresenceHost.test.tsx`（心跳、流帧进入缓存、pagehide/bfcache），扩充 `bff-client.test.ts`（路由、方法、
 `Idempotency-Key`、keepalive、无回执即不明、流帧分流、登出顺序），待 CI 执行。BFF 路由、Relay 白名单、部署与浏览器验收均未进行；
 不声称 V-SCN-100–103 或 DD-120 已验收。追溯记录（tools/traceability）待与后端批次合并时补。
+
+## 2026-10-16 Agent @提及准入结论对发起人可见（DD-121 UI，源码候选，未验收）
+
+起点 main `201347ce`（含生成的 `AgentMentionOutcomeQueryRequest`、`AgentMentionOutcomePage/View`、`AgentMentionOutcomeState`）；权威 DD-121、
+V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主；`POST /api/v1/workspaces/{workspaceId}/agent-mentions/query`
+由并行 Rust 批次实现，本批不改 Rust、契约或数据库。源码提交 `413ad863`（本地分支 `feat/dd121-ui`，未 push）。
+
+- 挂载：`messages/AgentMentionStatus.tsx` 经 `MessageRowSurface` 可选 `agentMentionStatus` 插槽渲染在本人消息正文与回应之后（未提供即原样）；
+  Web `ChannelPane` 主时间线与 `ChannelThreadPane` 回复行，仅 Workspace 频道，DM 不计算。原版无此表面，是本批唯一新增布局。
+- 数据：`useAgentMentionOutcomes` 只取签名者为本人 Web 公钥、p 标签命中已准入频道 Agent 目录（`useComposerAgentDirectory`）的最近 50 条
+  （主窗口与已打开线程）；无结果行即 PENDING；每 5 s 重读，全部 REPLIED/DENIED/FAILED 或消息发出满 3 分钟即停，超窗不再显示处理中。
+  路径只在 `bff-client.ts::agentMentionOutcomesPath` 一处；请求 1–50 个小写 64 位事件 ID，响应只接受所问事件与已知状态/原因码。
+- 呈现：PENDING/RUNNING“正在处理…”；REPLIED 不显示（回复本身可见）；FAILED“处理失败”；DENIED：本人有执行使用权时的
+  `PERMISSION_DENIED` → 委托过期或未委托 + “续签委托”（频道内打开 `WorkspaceAgentDialogs`，新增 `manageDelegation` 在新鲜读取后直接进入该
+  Installation 的委托管理）；无使用权的 `PERMISSION_DENIED` 及 `CAPABILITY_BLOCKED`/`SCOPE_GUARD_FAILED`/`BINDING_NOT_ACTIVE`/`TENANT_*` →
+  需管理员授予使用权；其余 → 暂不可用稍后重试。只读：不重试、不代发、不追溯接纳。
+- 词条：`agentMention.*` 7 个（en/zh-CN），`platform_text.dart` 按既有投影与 80 列规则补入（规则复现 HEAD 3051 条逐字一致；未运行
+  `tools/gen-platform-i18n.py --check`）。
+- 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/agent-mention-status.test.tsx`、
+  `web-client/web/src/platform/ui/useAgentMentionOutcomes.test.tsx`，扩充 `bff-client.test.ts`，待 CI。Desktop 宿主、BFF 路由、部署与浏览器
+  验收均未进行；不声称 V-SCN-105/106 或 DD-121 已验收。追溯记录待与后端批次合并时补。
