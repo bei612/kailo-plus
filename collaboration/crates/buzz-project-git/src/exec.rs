@@ -139,6 +139,18 @@ pub(crate) fn run_git(
     cwd: Option<&Path>,
     auth: &GitAuthConfig,
 ) -> Result<String, String> {
+    run_git_with_env(args, cwd, auth, &[])
+}
+
+/// [`run_git`] with extra environment for this invocation only. Kailo merge:
+/// `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE`, so the same merge inputs make the
+/// same merge commit again.
+pub(crate) fn run_git_with_env(
+    args: &[&str],
+    cwd: Option<&Path>,
+    auth: &GitAuthConfig,
+    env: &[(&str, &str)],
+) -> Result<String, String> {
     let mut command = Command::new(&auth.git_path);
     command.args(args);
     if let Some(cwd) = cwd {
@@ -161,6 +173,9 @@ pub(crate) fn run_git(
         None => timeout,
     };
     configure_git_auth(&mut command, auth, needs_credentials)?;
+    for (key, value) in env {
+        command.env(key, value);
+    }
     command.stdin(Stdio::null());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());

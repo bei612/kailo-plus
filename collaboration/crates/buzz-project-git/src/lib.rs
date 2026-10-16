@@ -13,8 +13,10 @@
 //! `Authorization` header per git invocation and never hands a private key to
 //! the git subprocess. The original remote branch operations
 //! (`create_project_remote_branch` / `delete_project_remote_branch`) live in the
-//! `branches` module. Local-checkout, push, pull and merge commands are not part
-//! of this crate yet; they belong next to these modules.
+//! `branches` module and the original pull-request merge
+//! (`merge_project_pull_request`) in the `merge` module. Local-checkout, push
+//! and pull commands are not part of this crate yet; they belong next to these
+//! modules.
 
 #![forbid(unsafe_code)]
 
@@ -22,6 +24,7 @@ mod branches;
 mod diff;
 mod exec;
 mod file_content;
+mod merge;
 mod snapshot;
 mod types;
 
@@ -34,6 +37,10 @@ pub use exec::{
     clean_branch, clean_target_ref, is_timeout_error, AuthorizationSource, GitAuth, GitAuthConfig,
 };
 pub use file_content::{project_repo_file_content, validate_repo_file_path, MAX_PREVIEW_BYTES};
+pub use merge::{
+    merge_author_name, prepare_merge_blocking, push_merge_blocking, MergeAuthor, MergeError,
+    MergeErrorCode, PreparedMerge, MERGE_FAILED_PREFIX,
+};
 pub use snapshot::{project_repo_snapshot, MAX_EAGER_FILE_PREVIEWS};
 pub use types::{
     ProjectRepoCommitInfo, ProjectRepoContributorInfo, ProjectRepoFileInfo, ProjectRepoSnapshotInfo,
