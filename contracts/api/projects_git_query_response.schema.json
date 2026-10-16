@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_query_response.schema.json",
+  "title": "ProjectsGitQueryResponse",
+  "description": "DD-118: exactly one of snapshot/content/diff matches the requested view, in the original Buzz Desktop shapes (ProjectRepoSnapshot, file preview, ProjectRepoDiff) with the original 64 KiB, 2000-line and 250-file bounds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "view"
+  ],
+  "properties": {
+    "view": {
+      "type": "string",
+      "enum": [
+        "SNAPSHOT",
+        "FILE_CONTENT",
+        "DIFF"
+      ]
+    },
+    "snapshot": {
+      "$ref": "#/$defs/snapshot"
+    },
+    "content": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "FILE_CONTENT preview; null when the file is binary or over the original preview bound."
+    },
+    "diff": {
+      "$ref": "#/$defs/diff"
+    }
+  },
+  "$defs": {
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hash",
+        "shortHash",
+        "authorName",
+        "authorEmail",
+        "timestamp",
+        "subject"
+      ],
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "shortHash": {
+          "type": "string"
+        },
+        "authorName": {
+          "type": "string"
+        },
+        "authorEmail": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "integer"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind",
+        "size",
+        "previewContent",
+        "lastChangedAt"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "previewContent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastChangedAt": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "latestCommit": {
+          "$ref": "#/$defs/commit",
+          "description": "Absent when the original value is null."
+        }
+      }
+    },
+    "contributor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "email",
+        "commitCount",
+        "lastCommitAt"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "commitCount": {
+          "type": "integer"
+        },
+        "lastCommitAt": {
+          "type": "integer"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commits",
+        "files",
+        "contributors"
+      ],
+      "properties": {
+        "latestCommit": {
+          "$ref": "#/$defs/commit",
+          "description": "Absent when the original value is null."
+        },
+        "commits": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/commit"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "contributors": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/contributor"
+          }
+        }
+      }
+    },
+    "diffFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "additions",
+        "deletions",
+        "patch",
+        "truncated"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patch": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "diff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "additions",
+        "deletions",
+        "commitBody"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diffFile"
+          }
+        },
+        "additions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "commitBody": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

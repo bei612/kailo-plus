@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_query_request.schema.json",
+  "title": "ProjectsGitQueryRequest",
+  "description": "DD-118: the original Buzz Desktop remote repository reads (get_project_repo_snapshot/get_project_repo_file_content/get_project_repo_diff) through BFF. The repository is named by its 30617 coordinate, never by a clone URL; Relay authorize_git_read decides access with the person's own SERVER identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["view", "repository"],
+  "properties": {
+    "view": {"type": "string", "enum": ["SNAPSHOT", "FILE_CONTENT", "DIFF"]},
+    "repository": {"type": "string", "pattern": "^30617:[0-9a-f]{64}:[^/\\s]+$"},
+    "defaultBranch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "baseBranch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "targetRef": {"type": "string", "minLength": 1, "maxLength": 255},
+    "targetCommit": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "FILE_CONTENT only."}
+  }
+}
