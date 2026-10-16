@@ -8109,6 +8109,31 @@ impl Governance {
                     Err(Refusal::Conflict(_)) | Err(Refusal::Denied(_)) => false,
                     Err(e) => return Err(e),
                 }
+            } else if def.action_key == "agent.installation.upgrade" {
+                // The target is the Installation Resource, not its Agent definition:
+                // re-resolve it through the admission validator against the frozen facts.
+                let params = ae
+                    .params()
+                    .ok_or_else(|| Refusal::Unavailable("upgrade parameters missing".into()))?;
+                match resolve_target(
+                    &mut tx,
+                    ae.tenant_id,
+                    ae.initiator_principal_id,
+                    &def,
+                    Semantic::AgentInstallationUpgrade,
+                    &params,
+                    Some(ae.target_id),
+                    true,
+                )
+                .await
+                {
+                    Ok(target) => {
+                        target.id == ae.target_id
+                            && Some(target.version) == ae.frozen_target_version()
+                    }
+                    Err(r @ Refusal::Unavailable(_)) => return Err(r),
+                    Err(_) => false,
+                }
             } else if def.target_type == "RESOURCE" {
                 match crate::agent_definition::resource(&mut tx, ae.tenant_id, ae.target_id, true)
                     .await?
