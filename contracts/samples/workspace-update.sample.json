@@ -1,0 +1,11 @@
+{
+  "actionKey": "workspace.update",
+  "idempotencyKey": "00000000-0000-4000-8000-000000000006",
+  "workspaceId": "00000000-0000-4000-8000-000000000005",
+  "workspaceUpdate": {
+    "name": "Release discussion",
+    "description": "Release review posts and replies",
+    "ttlSeconds": 604800,
+    "visibility": "open"
+  }
+}

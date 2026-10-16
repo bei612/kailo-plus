@@ -438,19 +438,25 @@ test("workspace membership keeps true, false and absent distinct", () => {
 
 test("public discovery keeps product visibility separate from signed channel metadata", () => {
   const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
-  for (const name of ["workspace-public-create.sample.json", "workspace-join.sample.json"]) {
+  for (const name of ["workspace-public-create.sample.json", "workspace-join.sample.json", "workspace-update.sample.json",
+    "workspace-update-clear.sample.json", "workspace-reopen.sample.json", "workspace-leave.sample.json"]) {
     const original: ActionCommand = load(name);
+    const update = original.workspaceUpdate;
     const back: ActionCommand = { actionKey: original.actionKey, idempotencyKey: original.idempotencyKey,
       name: original.name, slug: original.slug, workspaceId: original.workspaceId,
-      workspaceVisibility: original.workspaceVisibility, workspaceChannel: original.workspaceChannel };
+      workspaceVisibility: original.workspaceVisibility, workspaceChannel: original.workspaceChannel,
+      workspaceUpdate: update && { name: update.name, description: update.description, ttlSeconds: update.ttlSeconds,
+        clearTtl: update.clearTtl, visibility: update.visibility, reopen: update.reopen } };
     deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
   }
   const original: DiscoverableWorkspacePage = load("discoverable-workspaces.sample.json");
   const back: DiscoverableWorkspacePage = { nextCursor: original.nextCursor, items: original.items.map(row => ({
     id: row.id, visibility: row.visibility, isMember: row.isMember, memberCount: row.memberCount,
     createdAt: row.createdAt, membershipState: row.membershipState, joinActionKey: row.joinActionKey,
+    updateActionKey: row.updateActionKey, canReopen: row.canReopen, leaveActionKey: row.leaveActionKey,
     channel: { channelId: row.channel.channelId, channelType: row.channel.channelType,
-      name: row.channel.name, archived: row.channel.archived },
+      name: row.channel.name, topic: row.channel.topic, archived: row.channel.archived,
+      ttlSeconds: row.channel.ttlSeconds, ttlDeadline: row.channel.ttlDeadline },
   })) };
   deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
 });
@@ -788,7 +794,7 @@ test("manual capability and deleted definition preserve optional compatibility",
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
-import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest, WebMessageQuery, WebMessageCursor, WebChannelView, PulsePublishRequest, PulseQueryRequest, NativeCommunityFacts } from "../src/generated/contracts.js";
+import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest, WebPublishTopicRequest, WebMessageQuery, WebMessageCursor, WebChannelView, PulsePublishRequest, PulseQueryRequest, NativeCommunityFacts } from "../src/generated/contracts.js";
 
 test("Pulse shares original attachment fields and optional native Relay limit", () => {
   const load = (name:string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`,import.meta.url),"utf8"));
@@ -874,8 +880,11 @@ test("forum query, cursor and native channel preserve each generated field and l
   const backCursor: WebMessageCursor = { createdAt: cursor.createdAt, eventId: cursor.eventId };
   deepStrictEqual(JSON.parse(JSON.stringify(backCursor)), cursor);
   const channel: WebChannelView = load("web-forum-channel.sample.json");
-  const backChannel: WebChannelView = { channelId: channel.channelId, channelType: channel.channelType, name: channel.name, description: channel.description, archived: channel.archived, ttlSeconds: channel.ttlSeconds, ttlDeadline: channel.ttlDeadline };
+  const backChannel: WebChannelView = { channelId: channel.channelId, channelType: channel.channelType, name: channel.name, description: channel.description, topic: channel.topic, archived: channel.archived, ttlSeconds: channel.ttlSeconds, ttlDeadline: channel.ttlDeadline };
   deepStrictEqual(JSON.parse(JSON.stringify(backChannel)), channel);
+  const topic: WebPublishTopicRequest = load("web-channel-topic.sample.json");
+  const backTopic: WebPublishTopicRequest = { topic: topic.topic };
+  deepStrictEqual(JSON.parse(JSON.stringify(backTopic)), topic);
   const query: WebMessageQuery = load("web-forum-query.sample.json");
   deepStrictEqual([query.before, query.beforeId], [cursor.createdAt, cursor.eventId]);
 });

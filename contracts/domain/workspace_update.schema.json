@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/workspace_update.schema.json",
+  "title": "WorkspaceUpdate",
+  "description": "workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {"type": "string", "description": "新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。"},
+    "description": {"type": "string", "description": "原 9002 about；空字符串清空描述。"},
+    "ttlSeconds": {"$ref": "workspace_channel_create.schema.json#/properties/ttlSeconds", "description": "设置原 Buzz 临时频道的不活跃期限（秒）。"},
+    "clearTtl": {"type": "boolean", "description": "只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。"},
+    "visibility": {"$ref": "workspace_visibility.schema.json", "description": "只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。"},
+    "reopen": {"type": "boolean", "description": "只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有 TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。"}
+  }
+}

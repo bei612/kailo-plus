@@ -1057,6 +1057,10 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"workspace-channel-create.sample.json", new(generated.ActionCommand)},
 		{"workspace-public-create.sample.json", new(generated.ActionCommand)},
 		{"workspace-join.sample.json", new(generated.ActionCommand)},
+		{"workspace-update.sample.json", new(generated.ActionCommand)},
+		{"workspace-update-clear.sample.json", new(generated.ActionCommand)},
+		{"workspace-reopen.sample.json", new(generated.ActionCommand)},
+		{"workspace-leave.sample.json", new(generated.ActionCommand)},
 		{"discoverable-workspaces.sample.json", new(generated.DiscoverableWorkspacePage)},
 		{"conversation-participants.sample.json", new(generated.ConversationParticipantPage)},
 		{"conversation-page.sample.json", new(generated.ConversationPage)},
@@ -1068,6 +1072,7 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"web-inbox-anchor-query.sample.json", new(generated.WebMessageQuery)},
 		{"web-message-cursor.sample.json", new(generated.WebMessageCursor)},
 		{"web-forum-channel.sample.json", new(generated.WebChannelView)},
+		{"web-channel-topic.sample.json", new(generated.WebPublishTopicRequest)},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", fixture.name))

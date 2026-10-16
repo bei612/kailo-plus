@@ -584,6 +584,10 @@ fn public_workspace_roundtrip_preserves_visibility_and_membership_evidence() {
     }
     roundtrip::<contracts::ActionCommand>("workspace-public-create.sample.json");
     roundtrip::<contracts::ActionCommand>("workspace-join.sample.json");
+    roundtrip::<contracts::ActionCommand>("workspace-update.sample.json");
+    roundtrip::<contracts::ActionCommand>("workspace-update-clear.sample.json");
+    roundtrip::<contracts::ActionCommand>("workspace-reopen.sample.json");
+    roundtrip::<contracts::ActionCommand>("workspace-leave.sample.json");
     roundtrip::<contracts::DiscoverableWorkspacePage>("discoverable-workspaces.sample.json");
     let legacy: contracts::WorkspaceView = serde_json::from_value(serde_json::json!({
         "id": "00000000-0000-4000-8000-000000000004", "slug": "legacy", "name": "Legacy"
@@ -860,6 +864,7 @@ fn forum_channel_and_composite_cursor_roundtrip_preserve_native_fields() {
     roundtrip::<contracts::WebMessageQuery>("web-inbox-anchor-query.sample.json");
     roundtrip::<contracts::WebMessageCursor>("web-message-cursor.sample.json");
     roundtrip::<contracts::WebChannelView>("web-forum-channel.sample.json");
+    roundtrip::<contracts::WebPublishTopicRequest>("web-channel-topic.sample.json");
 }
 
 #[test]

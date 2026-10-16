@@ -16,7 +16,21 @@
       "isMember": true,
       "memberCount": 2,
       "createdAt": "2026-10-06T00:00:00.001Z",
-      "membershipState": "ACTIVE"
+      "membershipState": "ACTIVE",
+      "updateActionKey": "workspace.update",
+      "leaveActionKey": "workspace.leave"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "visibility": "private",
+      "channel": { "channelId": "00000000-0000-4000-8000-000000000006", "channelType": "stream", "name": "Launch room", "topic": "Launch checklist", "archived": true, "ttlSeconds": 86400, "ttlDeadline": "2026-10-07T00:00:00.001Z" },
+      "isMember": true,
+      "memberCount": 3,
+      "createdAt": "2026-10-06T00:00:00.001Z",
+      "membershipState": "ACTIVE",
+      "updateActionKey": "workspace.update",
+      "canReopen": true,
+      "leaveActionKey": "workspace.leave"
     }
   ],
   "nextCursor": "00000000-0000-4000-8000-000000000005"

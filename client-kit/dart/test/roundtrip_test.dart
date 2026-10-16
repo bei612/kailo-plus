@@ -727,6 +727,14 @@ void main() {
             ActionCommand.fromJson(value).toJson(),
         'workspace-join.sample.json': (value) =>
             ActionCommand.fromJson(value).toJson(),
+        'workspace-update.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'workspace-update-clear.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'workspace-reopen.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'workspace-leave.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
         'discoverable-workspaces.sample.json': (value) =>
             DiscoverableWorkspacePage.fromJson(value).toJson(),
         'conversation-open.sample.json': (value) =>
@@ -751,6 +759,8 @@ void main() {
             WebMessageCursor.fromJson(value).toJson(),
         'web-forum-channel.sample.json': (value) =>
             WebChannelView.fromJson(value).toJson(),
+        'web-channel-topic.sample.json': (value) =>
+            WebPublishTopicRequest.fromJson(value).toJson(),
       };
       for (final entry in readers.entries) {
         final original =

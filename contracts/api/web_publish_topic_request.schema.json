@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_publish_topic_request.schema.json",
+  "title": "WebPublishTopicRequest",
+  "description": "Web HUMAN 修改已准入 Workspace 对应 Channel 的原主题（DD-119、09 §3）。BFF 以本人 SERVER 身份按 DD-81 签发严格 h+topic 两标签的 kind 9002，幂等键沿原发布的 Idempotency-Key 请求头；不接受 raw tags、signed event 或任何管理标签。结果不明只对账不重签；已归档 Channel 不接受。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["topic"],
+  "properties": {
+    "topic": {"type": "string", "description": "原频道主题；空字符串清空主题，不改变频道名称、描述、TTL 或成员。"}
+  }
+}

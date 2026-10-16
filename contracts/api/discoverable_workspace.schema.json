@@ -13,6 +13,9 @@
     "memberCount": { "type": "integer", "minimum": 0 },
     "createdAt": { "type": "string", "format": "date-time" },
     "membershipState": { "$ref": "../enums/workspace_membership_state.schema.json" },
-    "joinActionKey": { "type": "string", "const": "workspace.join" }
+    "joinActionKey": { "type": "string", "const": "workspace.join" },
+    "updateActionKey": { "type": "string", "const": "workspace.update", "description": "当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。" },
+    "canReopen": { "type": "boolean", "description": "与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的 reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。" },
+    "leaveActionKey": { "type": "string", "const": "workspace.leave", "description": "当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。" }
   }
 }

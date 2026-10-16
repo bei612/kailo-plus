@@ -10,6 +10,7 @@
     "channelType": {"$ref": "../domain/workspace_channel_create.schema.json#/properties/channelType"},
     "name": {"type": "string"},
     "description": {"type": "string"},
+    "topic": {"type": "string", "description": "原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。"},
     "archived": {"type": "boolean"},
     "ttlSeconds": {"$ref": "../domain/workspace_channel_create.schema.json#/properties/ttlSeconds"},
     "ttlDeadline": {"type": "string", "format": "date-time"}
