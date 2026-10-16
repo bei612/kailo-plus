@@ -6642,3 +6642,44 @@ SDK所有本批目标已终态并释放，不存在本批在途检查；root按�
 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-branch-review.test.tsx`，
 扩充 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx`，待 CI 执行。BFF 端点、Relay pre-receive 判定、
 `info/refs` 对账、部署与浏览器验收均未进行；不声称 V-SCN-92 或 DD-118 写入路径已验收。
+
+## 2026-10-16 Projects 原版评审 Merge 恢复（DD-118 第 2b 批，源码候选，未验收）
+
+起点 main `07f06bd2`（含四侧生成的 `ProjectsGitMergeRequest`/`ProjectsGitMergeResponse`）；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。权威：DD-118、DD-81、V-SCN-92。本批只做 TypeScript/UI 与 Web 宿主；
+`POST /api/v1/projects/git/merge` 的 BFF/Core 实现由另一批 Rust 并行完成，本批不改 Rust、契约或数据库。
+源码提交 `4eea108d`（本地分支 `feat/git-2b-ui`，未 push）。
+
+边界与影响：
+
+- 宿主接缝：`ProjectsGitHost` 增加可选 `mergeProjectPullRequest`（原输入名去掉 clone URL 与 1631 签名元数据
+  `targetOwner`/`pullRequestAuthor`/`statusCreatedAt`，`repoAddress` 即 30617 坐标，另带幂等键）；
+  `createProjectsGitHost(query, ref?, merge?)` 映射为 `ProjectsGitMergeRequest`，2xx 无 merge commit 或 `statusEventId` 畸形按结果不明处理。
+- 合并流程（`pullRequestMutations.ts`）：每个评审先在 localStorage 落一条意图（类型化请求与幂等键，无凭据）再发送；
+  确定回应即清除，UNKNOWN（无回应、`UNKNOWN` 类或 `PUBLISH_RESULT_UNKNOWN`）保留并只允许以同一键重送同一请求（“Re-check merge”）。
+  发送前新鲜读取判定权限（本人公钥等于坐标 owner、评审 Open、source 分支与 head 可解析）且确认的 head 仍是评审当前 head。
+  成功后重读工作项，`statusEventId` 指向的 owner 签名 1631 可见时评审显示 Merged；否则提示已合并状态尚未确认。
+  错误按 reason 映射原文案：`TARGET_STATE_CONFLICT`（分支移动与合并冲突共用）显示原冲突面板文案，`PUBLISH_REJECTED`、
+  `PERMISSION_DENIED`、`TARGET_NOT_FOUND`、`DEPENDENCY_UNAVAILABLE` 各有文案，其余为原 “Failed to merge review.”。
+- Web：`bff-client.ts::mergeProjectsGit` 只 POST `/api/v1/projects/git/merge` 并带 `Idempotency-Key`；`useProjectsHost` 的 `git`
+  增加该写入，作用域失效后的写入按结果不明抛出。
+- 能力门控：Merge 只在宿主提供 merge、本人公钥等于仓库坐标 owner（同一 Human 的其他设备公钥不算）、评审 Open 且有分支与 commit 时出现；无假按钮。
+
+源码归属（`client-kit/ts/platform/src/react/projects/`，文件头注明原路径）：
+
+| 原路径（desktop/src/） | 共享位置与挂载 |
+|---|---|
+| features/projects/ui/MergePullRequestButton.tsx | MergePullRequestButton.tsx；PullRequestReviewCard.tsx 动作行（与原版同位，位于生命周期动作之前） |
+| features/projects/pullRequestMutations.ts::useMergeProjectPullRequestMutation、shared/api/projectGit.ts::mergeProjectPullRequest/ProjectPullRequestMergeError/parseProjectPullRequestMergeError | pullRequestMutations.ts、projectGit.ts；ProjectPullRequestDetail.tsx 持有发送锁与读回 |
+
+未恢复及原因：冲突时的 “Resolve in Terminal” 与可复制命令（Desktop 本地终端专属，共享/Web 路径只保留原冲突文案）；
+“Publish merged status” 补发步骤（1631 由 Core 以 owner 身份按 DD-81 发布，客户端不签名）；Approve（评审决定仍待恢复）。
+原冲突说明里 “with the commands shown” 一句按要求保留原文，Web 上不显示命令。
+
+词条：新增 `projects.review.merge.*` 17 个（en/zh-CN），`platform_text.dart` 以原生成器的
+`platform_catalog`/`dart_key`/`dart_string` 投影、按 `dart format` 80 列规则补入（该规则在本机先复现了 HEAD 文件逐字一致；
+本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。
+
+验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-review-merge.test.tsx`，
+扩充 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx`，待 CI 执行。BFF merge 端点、Relay pre-receive 判定、
+`info/refs` 对账、1631 发布、部署与浏览器验收均未进行；不声称 V-SCN-92 或 DD-118 merge 路径已验收。
