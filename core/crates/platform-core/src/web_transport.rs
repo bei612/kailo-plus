@@ -50,7 +50,7 @@ enum Publication {
     Message(PublishRequest),
     Pulse(contracts::PulsePublishRequest),
     Reaction(contracts::PulsePublishRequest),
-    Project(contracts::ProjectsPublishRequest),
+    Project(Box<contracts::ProjectsPublishRequest>),
     Reminder(contracts::ReminderPublishRequest),
     Hide,
     Reopen,
@@ -750,7 +750,7 @@ pub(crate) async fn publish_project(
         },
         Err(response) => return response,
     };
-    publish(state, target, headers, Publication::Project(request)).await
+    publish(state, target, headers, Publication::Project(Box::new(request))).await
 }
 
 pub(crate) async fn publish_reminder(
