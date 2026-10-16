@@ -42,6 +42,6 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: web-client
-      digest: sha256:b6a9e0a16fbc30e80797700404fe64e73c7902faf4fffbe4d2c82e9790d1b6c5
+      digest: sha256:4c0b67edb0d73f13b2e5bd6484dde5248db5dbd373ff44a31a7cf8373fbfb3c0
   # 仅记录同批共享管理页实际构建，不代替部署、Core/Worker 或业务验收。
   gate: blocked_until_seams_closed
