@@ -62,6 +62,22 @@ capabilities:
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+- id: collab.channel.management
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  - /api/v1/discoverable-workspaces
+  - /api/v1/workspaces/{workspace_id}/channel
+  - /api/v1/workspaces/{workspace_id}/channel/topic
+  - /service/v1/workspaces/channel-metadata
+  actions:
+  - workspace.update
+  - workspace.leave
+  - workspace.channel.topic.publish
+  tools: []
+  workflow_kinds:
+  - WORKSPACE_LIFECYCLE
+  - MEMBERSHIP_REVOCATION
 - id: collab.channel.media
   exposure: end_user
   routes:
