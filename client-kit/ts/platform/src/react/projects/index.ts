@@ -20,5 +20,6 @@ export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedP
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";
 export { loadProjects, enumerateProjectEvents, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
 export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, type ProjectRepoDiff,
-  type ProjectRepoBranchResult, type CreateProjectRemoteBranchInput, type DeleteProjectRemoteBranchInput } from "./projectGit";
+  type ProjectRepoBranchResult, type CreateProjectRemoteBranchInput, type DeleteProjectRemoteBranchInput,
+  type MergeProjectPullRequestInput, type ProjectRepoMergeResult } from "./projectGit";
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";

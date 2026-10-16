@@ -23,6 +23,8 @@ import type {
   ProjectsGitQueryResponse,
   ProjectsGitRefRequest,
   ProjectsGitRefResponse,
+  ProjectsGitMergeRequest,
+  ProjectsGitMergeResponse,
   WebSearchQuery,
 } from "@client-kit/contracts";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
@@ -104,6 +106,20 @@ export async function refProjectsGit(request:ProjectsGitRefRequest,idempotencyKe
     method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request),
   }));
   if(!result||typeof result.branch!=="string"||typeof result.commit!=="string")throw new TransportError("Repository ref outcome unknown");
+  return result;
+}
+
+/**
+ * DD-118 review merge: only the repository coordinate owner's own SERVER identity merges and pushes
+ * through BFF, which then publishes the owner-signed 1631. The intent's Idempotency-Key is resent
+ * unchanged after an UNKNOWN outcome; BFF reconciles the push from info/refs.
+ */
+export async function mergeProjectsGit(request:ProjectsGitMergeRequest,idempotencyKey:string):Promise<ProjectsGitMergeResponse>{
+  const path="/api/v1/projects/git/merge";
+  const result=unwrap<ProjectsGitMergeResponse>({method:"POST",path},await transport.exchange(path,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request),
+  }));
+  if(!result||typeof result.mergeCommit!=="string")throw new TransportError("Repository merge outcome unknown");
   return result;
 }
 

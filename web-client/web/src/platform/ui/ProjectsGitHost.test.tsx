@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // DD-118: the Web Projects host reads repository content only through the typed BFF query and
 // maps the contract back to the original Buzz Desktop shapes (absent latestCommit -> null).
-// Branch create/delete go to the typed ref route with the intent's Idempotency-Key.
+// Branch create/delete go to the typed ref route with the intent's Idempotency-Key; the owner's
+// review merge goes to the typed merge route with its intent's Idempotency-Key.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -101,4 +102,35 @@ it("keeps ref refusals as typed errors and an unknown push as UNKNOWN", async ()
   // A 2xx that does not name the requested branch head is no confirmation.
   respond({ branch: "feature", commit: "2".repeat(40) });
   await expect(captured!.git!.deleteProjectRemoteBranch!(input, "k1")).rejects.toBeInstanceOf(TransportError);
+});
+
+it("posts the owner's review merge to the typed merge route with the intent's Idempotency-Key", async () => {
+  const head = "1".repeat(40), mergeCommit = "4".repeat(40), statusEventId = "5".repeat(64), review = "6".repeat(64);
+  const input = { repoAddress: repository, pullRequestId: review, targetBranch: "main", sourceBranch: "feature", expectedCommit: head };
+  const fetcher = respond({ mergeCommit, statusEventId });
+  expect(await captured!.git!.mergeProjectPullRequest!(input, "merge-key")).toEqual({ mergeCommit, statusEventId });
+  expect(String(fetcher.mock.lastCall![0])).toContain("/api/v1/projects/git/merge");
+  expect(fetcher.mock.lastCall![1].method).toBe("POST");
+  expect(fetcher.mock.lastCall![1].headers["Idempotency-Key"]).toBe("merge-key");
+  const body = JSON.parse(fetcher.mock.lastCall![1].body);
+  expect(body).toEqual({ repository, pullRequestEventId: review, targetBranch: "main", sourceBranch: "feature", expectedCommit: head });
+  expect(JSON.stringify(body)).not.toMatch(/https?:|wss?:/);
+  // The 1631 may still be pending: the merge stands without a status id.
+  respond({ mergeCommit });
+  expect(await captured!.git!.mergeProjectPullRequest!(input, "merge-key")).toEqual({ mergeCommit, statusEventId: null });
+});
+
+it("keeps merge refusals as typed errors and an unknown merge as UNKNOWN", async () => {
+  const input = { repoAddress: repository, pullRequestId: "6".repeat(64), targetBranch: "main", sourceBranch: "feature", expectedCommit: "1".repeat(40) };
+  respond({ class: ErrorClass.Conflict, reason: ReasonCode.TargetStateConflict }, 409);
+  await expect(captured!.git!.mergeProjectPullRequest!(input, "k1")).rejects.toMatchObject({ status: 409, reason: ReasonCode.TargetStateConflict });
+  respond({ class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied }, 403);
+  await expect(captured!.git!.mergeProjectPullRequest!(input, "k1")).rejects.toMatchObject({ status: 403, reason: ReasonCode.PermissionDenied });
+  respond({ class: ErrorClass.Unknown, reason: ReasonCode.PublishResultUnknown, operationId: "op-1" }, 502);
+  const unknown = await captured!.git!.mergeProjectPullRequest!(input, "k1").catch((error: unknown) => error);
+  expect(unknown).toBeInstanceOf(BffError);
+  expect(isOutcomeUnknown(unknown)).toBe(true);
+  // A 2xx without a merge commit is no confirmation.
+  respond({});
+  await expect(captured!.git!.mergeProjectPullRequest!(input, "k1")).rejects.toBeInstanceOf(TransportError);
 });

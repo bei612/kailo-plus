@@ -1,6 +1,7 @@
 // Original read branches of Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx, including the "Files changed"
-// section and diff stats when the workspace supplies the DD-118 review diff.
+// section and diff stats when the workspace supplies the DD-118 review diff. The review card
+// carries the original Merge action when the Projects Git host can merge (DD-118 batch 2b).
 import {Check,ChevronDown,ChevronUp,GitBranch,History,MessageSquare,TriangleAlert,UserPlus} from "lucide-react";
 import * as React from "react";
 import {translateCurrent as t} from "../../i18n";
@@ -28,6 +29,7 @@ import type {ProjectsHost} from "./projectEnumeration";
 import {publishProjectPullRequestComment} from "./issueMutations";
 import {publishProjectPullRequestStatus,readProjectPullRequestStatusIntent,type ProjectPullRequestLifecycle} from "./pullRequestStatus";
 import {PullRequestReviewCard} from "./PullRequestReviewCard";
+import {mergeProjectPullRequest,readProjectPullRequestMergeIntent} from "./pullRequestMutations";
 import {ProjectPanelState} from "./ProjectPanelState";
 import {buildOutgoingMessage} from "../composer/features/messages/lib/imetaMediaMarkdown";
 import {useUiT} from "../context";
@@ -234,6 +236,10 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
  let statusIntent:ReturnType<typeof readProjectPullRequestStatusIntent>=null;
  try{if(publication&&viewer)statusIntent=readProjectPullRequestStatusIntent(publication.host,publication.projectId,project,pullRequest,viewer);}
  catch{/* The click consumer reports unknown; a corrupt slot is never removed. */}
+ let mergeIntent:ReturnType<typeof readProjectPullRequestMergeIntent>=null,mergeIntentCorrupt=false;
+ try{if(publication&&viewer)mergeIntent=readProjectPullRequestMergeIntent(publication.host,project,pullRequest,viewer);}
+ catch{mergeIntentCorrupt=true;/* Merge stays blocked; a corrupt slot is never removed. */}
+ const [merged,setMerged]=React.useState(false);
  const lifetime=React.useMemo(()=>({controller:new AbortController()}),[publication?.host]);
  React.useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
  const members=React.useMemo(()=>[...new Set([project.owner,pullRequest.author,...project.contributors,...pullRequest.recipients])].map(pubkey=>{
@@ -287,6 +293,32 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
      }
    }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
  }
+ async function handleMerge(){
+   if(!publication||!viewer||sending.current)return null;
+   sending.current=true;setIsSending(true);
+   try{
+     const {host,projectId}=publication;
+     const result=await mergeProjectPullRequest(host,projectId,project,pullRequest,viewer,lifetime.controller.signal,
+       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+     lifetime.controller.signal.throwIfAborted();
+     setMerged(true);
+     if(result.pullRequest&&result.snapshot){
+       setConfirmed({source,pullRequest:result.pullRequest});
+       cache.setQueryData(["project-home-work-items",host.scopeKey,projectId],result.snapshot);
+       cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===host.scopeKey&&query.queryKey[2]===projectId},result.snapshot);
+     }
+     // Original invalidation after a merge: the review lists and the repository heads.
+     void cache.invalidateQueries({queryKey:["projects-work-items",host.scopeKey]});
+     void cache.invalidateQueries({queryKey:["projects",host.scopeKey,"inbox-work-items"]});
+     void cache.invalidateQueries({queryKey:["project",host.scopeKey]});
+     return result;
+   }finally{
+     sending.current=false;
+     if(!lifetime.controller.signal.aborted)setIsSending(false);
+   }
+ }
+ const mergeAction=publication?.host.git?.mergeProjectPullRequest&&!mergeIntentCorrupt&&!merged
+   ?{onMerge:handleMerge,recheck:mergeIntent!==null}:undefined;
  const [filesOpen,setFilesOpen]=React.useState(false);
  const [expandedReviewHistoryPullRequestIds,setExpandedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
  const [collapsedReviewHistoryPullRequestIds,setCollapsedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
@@ -581,7 +613,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
             })}
             {publication?.host.publish?<div className="flex min-h-12 items-start justify-start px-3 py-2.5">
               <PullRequestReviewCard repository={project} pullRequest={pullRequest} viewer={viewer} pending={isSending}
-                recoveryStatus={statusIntent?.status} onStatusChange={status=>void handleStatusChange(status)}/>
+                recoveryStatus={statusIntent?.status} onStatusChange={status=>void handleStatusChange(status)} merge={mergeAction}/>
             </div>:null}
           </div>
         </div>

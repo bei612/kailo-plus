@@ -1600,6 +1600,23 @@ enum PlatformMessageKey {
   projectsReviewCreated,
   projectsReviewCreateFailed,
   projectsReviewUnknown,
+  projectsReviewMergeMerge,
+  projectsReviewMergeRecheck,
+  projectsReviewMergeConfirmTitle,
+  projectsReviewMergeConfirmDescription,
+  projectsReviewMergeMerging,
+  projectsReviewMergeSubmit,
+  projectsReviewMergeMerged,
+  projectsReviewMergeStatusPending,
+  projectsReviewMergeUnknown,
+  projectsReviewMergeFailed,
+  projectsReviewMergeBranchChanged,
+  projectsReviewMergeConflict,
+  projectsReviewMergeConflictTitle,
+  projectsReviewMergeConflictDescription,
+  projectsReviewMergeRejected,
+  projectsReviewMergeOwnerOnly,
+  projectsReviewMergeNotFound,
   agentsUpgradeVersion,
   agentsUpgradeTarget,
   agentsUpgradeDrain,
@@ -6579,6 +6596,62 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.projectsReviewUnknown: (
     'Review creation outcome unknown. Retry checks the same publication.',
     '审阅创建结果不明。重试将核验同一次发布。',
+  ),
+  PlatformMessageKey.projectsReviewMergeMerge: ('Merge', '合并'),
+  PlatformMessageKey.projectsReviewMergeRecheck: ('Re-check merge', '重新核对合并'),
+  PlatformMessageKey.projectsReviewMergeConfirmTitle: (
+    'Merge review?',
+    '合并审阅？',
+  ),
+  PlatformMessageKey.projectsReviewMergeConfirmDescription: (
+    'Merge {source} into {target} and push the result to the repository. The remote will reject the operation if the branch changed or conflicts.',
+    '将 {source} 合并到 {target} 并把结果推送到仓库。如果分支已变化或存在冲突，远端会拒绝此操作。',
+  ),
+  PlatformMessageKey.projectsReviewMergeMerging: ('Merging…', '正在合并…'),
+  PlatformMessageKey.projectsReviewMergeSubmit: ('Merge review', '合并审阅'),
+  PlatformMessageKey.projectsReviewMergeMerged: (
+    'Merged {source} into {target}.',
+    '已将 {source} 合并到 {target}。',
+  ),
+  PlatformMessageKey.projectsReviewMergeStatusPending: (
+    'The merged review status is not confirmed yet. Refresh the review later.',
+    '审阅的已合并状态尚未确认，请稍后刷新审阅。',
+  ),
+  PlatformMessageKey.projectsReviewMergeUnknown: (
+    'The merge is not confirmed yet. Re-check the same merge.',
+    '合并尚未确认，请重新核对同一次合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeFailed: (
+    'Failed to merge review.',
+    '合并审阅失败。',
+  ),
+  PlatformMessageKey.projectsReviewMergeBranchChanged: (
+    'The pull request branch changed. Refresh the pull request before merging.',
+    '审阅分支已变化。请先刷新审阅再合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeConflict: (
+    'Pull request has merge conflicts.',
+    '审阅存在合并冲突。',
+  ),
+  PlatformMessageKey.projectsReviewMergeConflictTitle: (
+    'Resolve conflicts in your local checkout',
+    '请在本地检出中解决冲突',
+  ),
+  PlatformMessageKey.projectsReviewMergeConflictDescription: (
+    'Prepare the local checkout, then switch to {target} with the commands shown. After resolving and committing, push the target branch and retry the merge.',
+    '准备本地检出，然后按所示命令切换到 {target}。解决冲突并提交后，推送目标分支并重试合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeRejected: (
+    'The repository rejected this merge.',
+    '仓库拒绝了此次合并。',
+  ),
+  PlatformMessageKey.projectsReviewMergeOwnerOnly: (
+    'Only the repository owner can merge this review.',
+    '只有仓库所有者可以合并此审阅。',
+  ),
+  PlatformMessageKey.projectsReviewMergeNotFound: (
+    'The repository, review or branch was not found.',
+    '未找到该仓库、审阅或分支。',
   ),
   PlatformMessageKey.agentsUpgradeVersion: (
     'Upgrade / roll back version',

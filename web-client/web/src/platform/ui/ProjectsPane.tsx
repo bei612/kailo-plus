@@ -2,7 +2,7 @@ import {useCallback,useEffect,useMemo} from "react";
 import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
 import {ProjectsView,createProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
 import {PulsePane} from "./PulsePane";
-import {queryProjects,publishProject,queryProjectsGit,refProjectsGit} from "../bff-client";
+import {queryProjects,publishProject,queryProjectsGit,refProjectsGit,mergeProjectsGit} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
 import {ChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
@@ -50,6 +50,12 @@ export function useProjectsHost(scopeKey:string){
     // A write that may have been sent is UNKNOWN, never a plain failure.
     if(!scope.active)throw new Error("Project scope changed");
     const result=await refProjectsGit(request,key);
+    if(!scope.active)throw new TransportError("Project scope changed");
+    return result;
+  },async(request,key)=>{
+    // Same rule for the owner's merge: once it may have been sent, a scope change is UNKNOWN.
+    if(!scope.active)throw new Error("Project scope changed");
+    const result=await mergeProjectsGit(request,key);
     if(!scope.active)throw new TransportError("Project scope changed");
     return result;
   })}),[scopeKey,scope]);

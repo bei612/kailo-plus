@@ -1,7 +1,9 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/PullRequestReviewCard.tsx: the lifecycle
-// actions (ready/reopen, convert to draft, close). Approve and merge are not
-// restored here: merge runs through git and review decisions stay pending.
+// actions (ready/reopen, convert to draft, close) and, in the original place,
+// MergePullRequestButton when the host can merge and the viewer's own pubkey is
+// the repository coordinate owner (DD-118). Approve is not restored: review
+// decisions stay pending.
 import { GitPullRequest, GitPullRequestDraft, MoreHorizontal, RotateCcw, X } from "lucide-react";
 import * as React from "react";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -9,26 +11,40 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useUiT } from "../context";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
 import type { Repository } from "./projectModels";
+import { MergePullRequestButton } from "./MergePullRequestButton";
+import { canMergeProjectPullRequest, type ProjectPullRequestMergeOutcome } from "./pullRequestMutations";
 import { canChangeProjectPullRequestStatus, type ProjectPullRequestLifecycle } from "./pullRequestStatus";
 
-export function PullRequestReviewCard({ repository, pullRequest, viewer, pending, recoveryStatus, onStatusChange }: {
-  repository: Pick<Repository, "owner">;
+/** The host's merge capability for this review; absent when the host cannot merge. */
+export type PullRequestMergeAction = {
+  onMerge: () => Promise<ProjectPullRequestMergeOutcome | null>;
+  /** A retained unconfirmed merge of this review; only that exact merge may be resent. */
+  recheck: boolean;
+};
+
+export function PullRequestReviewCard({ repository, pullRequest, viewer, pending, recoveryStatus, onStatusChange, merge }: {
+  repository: Pick<Repository, "owner" | "repoAddress" | "defaultBranch">;
   pullRequest: ProjectPullRequest;
   viewer: string | null | undefined;
   pending: boolean;
   /** A retained unconfirmed lifecycle intent; only that exact intent may be resent. */
   recoveryStatus?: ProjectPullRequestLifecycle;
   onStatusChange: (status: ProjectPullRequestLifecycle) => void;
+  merge?: PullRequestMergeAction;
 }) {
   const t = useUiT();
   const canChangeStatus = canChangeProjectPullRequestStatus(repository, pullRequest, viewer);
-  if (!canChangeStatus) return null;
+  const canMerge = Boolean(merge) && (merge!.recheck || canMergeProjectPullRequest(repository, pullRequest, viewer));
+  const mergeButton = canMerge ? <MergePullRequestButton onMerge={merge!.onMerge} pending={pending} project={repository}
+    pullRequest={pullRequest} recheck={merge!.recheck}/> : null;
+  if (!canChangeStatus) return mergeButton ? <ReviewActionTimeline>{mergeButton}</ReviewActionTimeline> : null;
   if (recoveryStatus) {
     return <ReviewActionTimeline>
       <Button className="h-8 gap-1.5 px-3" disabled={pending} onClick={() => onStatusChange(recoveryStatus)} size="xs" type="button" variant="secondary">
         <RotateCcw className="h-3.5 w-3.5" />
         {t("projects.review.status.recheck")}
       </Button>
+      {merge?.recheck ? mergeButton : null}
     </ReviewActionTimeline>;
   }
   const canMarkReady = pullRequest.status === "Draft";
@@ -36,8 +52,9 @@ export function PullRequestReviewCard({ repository, pullRequest, viewer, pending
   const canClose = pullRequest.status === "Open" || pullRequest.status === "Draft";
   const canReopen = pullRequest.status === "Closed";
   const hasOverflowAction = canConvertToDraft || canClose;
-  if (!canMarkReady && !canConvertToDraft && !canClose && !canReopen) return null;
+  if (!mergeButton && !canMarkReady && !canConvertToDraft && !canClose && !canReopen) return null;
   return <ReviewActionTimeline>
+    {mergeButton}
     {canMarkReady ? (
       <Button className="h-8 gap-1.5 px-3" disabled={pending} onClick={() => onStatusChange("open")} size="xs" type="button" variant="secondary">
         <GitPullRequest className="h-3.5 w-3.5" />

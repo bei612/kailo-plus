@@ -5,9 +5,14 @@
 // (absent latestCommit -> null) so restored components keep the original types.
 // createProjectRemoteBranch/deleteProjectRemoteBranch (original input names, 30617 coordinate instead
 // of cloneUrl) travel as the typed ProjectsGitRefRequest with the intent's Idempotency-Key.
+// mergeProjectPullRequest keeps the original input names without the clone URLs, the 1631 signing
+// metadata (targetOwner/pullRequestAuthor/statusCreatedAt: Core reads them from the coordinate and
+// the 1618 and publishes the owner-signed status) and travels as the typed ProjectsGitMergeRequest.
 import {
   ProjectGitRefOperation,
   ProjectsGitQueryRequestView,
+  type ProjectsGitMergeRequest,
+  type ProjectsGitMergeResponse,
   type ProjectsGitQueryRequest,
   type ProjectsGitQueryResponse,
   type ProjectsGitRefRequest,
@@ -81,6 +86,24 @@ export type CreateProjectRemoteBranchInput = { repository: string; sourceBranch:
 /** Original deleteProjectRemoteBranch input with `cloneUrl` replaced by the 30617 coordinate. */
 export type DeleteProjectRemoteBranchInput = { repository: string; branch: string; expectedCommit: string };
 
+/**
+ * Original mergeProjectPullRequest input without clone URLs and 1631 signing metadata; `repoAddress`
+ * is the 30617 coordinate whose owner merges.
+ */
+export type MergeProjectPullRequestInput = {
+  repoAddress: string;
+  pullRequestId: string;
+  targetBranch: string;
+  sourceBranch: string;
+  expectedCommit: string;
+};
+
+/**
+ * Original ProjectRepoMergeResult without its English message and client-signed status event:
+ * `statusEventId` is the owner-signed 1631 once Core's publication of it was accepted.
+ */
+export type ProjectRepoMergeResult = { mergeCommit: string; statusEventId: string | null };
+
 /** Remote repository reads of the original Desktop, behind the Projects host seam. */
 export type ProjectsGitHost = {
   getProjectRepoSnapshot: (input: ProjectRepoRefInput) => Promise<ProjectRepoSnapshot>;
@@ -92,7 +115,30 @@ export type ProjectsGitHost = {
    */
   createProjectRemoteBranch?: (input: CreateProjectRemoteBranchInput, idempotencyKey: string) => Promise<ProjectRepoBranchResult>;
   deleteProjectRemoteBranch?: (input: DeleteProjectRemoteBranchInput, idempotencyKey: string) => Promise<ProjectRepoBranchResult>;
+  /**
+   * DD-118 review merge by the repository owner's own SERVER identity; hosts without it offer no
+   * Merge. Same retained-intent rule as the branch writes.
+   */
+  mergeProjectPullRequest?: (input: MergeProjectPullRequestInput, idempotencyKey: string) => Promise<ProjectRepoMergeResult>;
 };
+
+const COMMIT = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+const EVENT_ID = /^[0-9a-f]{64}$/;
+
+/** The typed merge request for an original merge input. */
+export function projectGitMergeRequest(input: MergeProjectPullRequestInput): ProjectsGitMergeRequest {
+  return { repository: input.repoAddress, pullRequestEventId: input.pullRequestId, targetBranch: input.targetBranch,
+    sourceBranch: input.sourceBranch, expectedCommit: input.expectedCommit };
+}
+
+function mergeAnswer(response: ProjectsGitMergeResponse): ProjectRepoMergeResult {
+  // A 2xx without a merge commit (or with a malformed status id) is no confirmation.
+  const statusEventId: unknown = response?.statusEventId ?? null;
+  if (!response || typeof response.mergeCommit !== "string" || !COMMIT.test(response.mergeCommit)
+    || statusEventId !== null && (typeof statusEventId !== "string" || !EVENT_ID.test(statusEventId)))
+    throw new TransportError("Invalid repository merge response");
+  return { mergeCommit: response.mergeCommit, statusEventId: statusEventId as string | null };
+}
 
 /** The typed ref request for an original branch input. */
 export function projectGitRefRequest(input: CreateProjectRemoteBranchInput | DeleteProjectRemoteBranchInput): ProjectsGitRefRequest {
@@ -132,6 +178,7 @@ function answer(response: ProjectsGitQueryResponse, view: ProjectsGitQueryReques
 }
 
 type ProjectsGitRefSend = (request: ProjectsGitRefRequest, idempotencyKey: string) => Promise<ProjectsGitRefResponse>;
+type ProjectsGitMergeSend = (request: ProjectsGitMergeRequest, idempotencyKey: string) => Promise<ProjectsGitMergeResponse>;
 
 function refWriter(ref: ProjectsGitRefSend) {
   return async (input: CreateProjectRemoteBranchInput | DeleteProjectRemoteBranchInput, idempotencyKey: string) => {
@@ -140,12 +187,14 @@ function refWriter(ref: ProjectsGitRefSend) {
   };
 }
 
-/** Adapt the typed BFF query (and, when given, the ref write) to the original Desktop calls. */
+/** Adapt the typed BFF query (and, when given, the ref and merge writes) to the original Desktop calls. */
 export function createProjectsGitHost(query: (request: ProjectsGitQueryRequest) => Promise<ProjectsGitQueryResponse>,
-  ref?: ProjectsGitRefSend): ProjectsGitHost {
+  ref?: ProjectsGitRefSend, merge?: ProjectsGitMergeSend): ProjectsGitHost {
   const write = ref ? refWriter(ref) : undefined;
   return {
     ...(write ? { createProjectRemoteBranch: write, deleteProjectRemoteBranch: write } : {}),
+    ...(merge ? { mergeProjectPullRequest: async (input: MergeProjectPullRequestInput, idempotencyKey: string) =>
+      mergeAnswer(await merge(projectGitMergeRequest(input), idempotencyKey)) } : {}),
     getProjectRepoSnapshot: async input => {
       const snapshot = answer(await query(request(ProjectsGitQueryRequestView.Snapshot, input)), ProjectsGitQueryRequestView.Snapshot).snapshot;
       if (!snapshot || !Array.isArray(snapshot.files)) throw new Error("Invalid repository snapshot");
