@@ -74,9 +74,11 @@ it("heartbeats the own Web key and feeds admitted 20001 frames into presence loo
   await vi.waitFor(() => expect(host.querySelector("output")?.getAttribute("data-loaded")).toBe("yes"));
   expect(host.textContent).toBe("none");
   await act(async () => state.sink!({ id: "c".repeat(64), pubkey: PEER, kind: 20001, created_at: 1, content: "online", tags: [] }));
-  expect(host.textContent).toBe("online");
+  // TanStack notifies observers on the next macrotask.
+  await vi.waitFor(() => expect(host.textContent).toBe("online"));
   // A frame claiming another subject through a p tag still only speaks for its signer.
   await act(async () => state.sink!({ id: "d".repeat(64), pubkey: SELF, kind: 20001, created_at: 2, content: "offline", tags: [["p", PEER]] }));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(host.textContent).toBe("online");
 });
 
