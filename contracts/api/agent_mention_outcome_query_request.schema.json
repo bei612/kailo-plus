@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_mention_outcome_query_request.schema.json",
+  "title": "AgentMentionOutcomeQueryRequest",
+  "description": "DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission outcome the caller may see.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventIds"
+  ],
+  "properties": {
+    "eventIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  }
+}

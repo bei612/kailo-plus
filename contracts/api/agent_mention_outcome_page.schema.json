@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_mention_outcome_page.schema.json",
+  "title": "AgentMentionOutcomePage",
+  "description": "DD-121: only agent.invoke executions initiated by the caller for the requested source events; no message body, no other member's executions, no Agent internals. A mentioned Agent without an outcome is still PENDING (not yet scanned).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "outcomes"
+  ],
+  "properties": {
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "title": "AgentMentionOutcomeView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "installationId",
+          "state"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "installationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "title": "AgentMentionOutcomeState",
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "REPLIED",
+              "DENIED",
+              "FAILED"
+            ]
+          },
+          "reasonCode": {
+            "$ref": "../enums/reason_code.schema.json"
+          },
+          "replyEventId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}
