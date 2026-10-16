@@ -40,6 +40,7 @@ trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期协议与契约均来自原文件。
 git archive --format=tar "$COMMIT" .dockerignore core worker \
   collaboration/Cargo.toml collaboration/crates/buzz-core collaboration/crates/buzz-sdk \
+  collaboration/crates/buzz-project-git \
   contracts/domain/automation_step.schema.json \
   model-gateway/crates/protos/proto/ext_mcp.proto \
   contracts/api/action_submission.schema.json \
