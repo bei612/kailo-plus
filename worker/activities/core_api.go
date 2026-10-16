@@ -269,6 +269,43 @@ func (c *CoreAPI) ConvergeWorkspaceChannelArchive(ctx context.Context, in Worksp
 	return c.post(ctx, "/service/v1/workspaces/channel-archive", in, nil)
 }
 
+// WorkspaceMetadataInput 是 workspace.update 的 METADATA 段一轮收敛的载荷（DD-119）。
+// 只带引用：名称、描述与 TTL 的目标状态由 Core 从该 ActionExecution 的冻结参数读取，
+// 不进 Workflow history。版本是准入时冻结的 Workspace 版本。LastRound 只回读、不再签发。
+type WorkspaceMetadataInput struct {
+	WorkspaceID       string `json:"workspaceId"`
+	WorkspaceVersion  int32  `json:"workspaceVersion"`
+	ActionExecutionID string `json:"actionExecutionId"`
+	LastRound         bool   `json:"lastRound,omitempty"`
+}
+
+// ConvergeWorkspaceChannelMetadata 的结论，与 Core 的 Convergence 逐字相同。
+const (
+	// 回读与目标一致，Core 的 Workspace 名称已在同一事务提交
+	MetadataConverged = "CONVERGED"
+	// 已签发而回读未达目标：结果不明，等下一轮
+	MetadataPending = "PENDING"
+	// 最后一轮仍不一致：EXTERNAL_RESULT_UNKNOWN，交对账
+	MetadataUnknown = "UNKNOWN"
+)
+
+// WorkspaceMetadataResult 是一轮收敛的回答。
+type WorkspaceMetadataResult struct {
+	State string `json:"state"`
+}
+
+// ConvergeWorkspaceChannelMetadata 请 Core 以 Tenant CONTROL 的 9002 把 Channel 的名称、
+// 描述、TTL 或 TTL 到期归档收敛到冻结的目标，以回读的 kind 39000 为准（DD-119、
+// SF-BUZ-50）。409 是确定的拒绝（Workspace 已不在准入时的版本或 ACTIVE、前置条件不成立、
+// Relay 拒绝）；503 是依赖不可用，按重试上界继续。
+func (c *CoreAPI) ConvergeWorkspaceChannelMetadata(
+	ctx context.Context, in WorkspaceMetadataInput,
+) (WorkspaceMetadataResult, error) {
+	var out WorkspaceMetadataResult
+	err := c.post(ctx, "/service/v1/workspaces/channel-metadata", in, &out)
+	return out, err
+}
+
 // Channel roster 收敛的两种模式，与 Core 的 RosterMode 逐字相同（DD-97）。
 const (
 	// 暂停：归档前把 roster 清空为只剩 CONTROL

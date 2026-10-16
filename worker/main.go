@@ -88,6 +88,7 @@ func main() {
 	w.RegisterActivity(core.VerifyTenantBuzz)
 	w.RegisterActivity(core.ProvisionWorkspaceBuzz)
 	w.RegisterActivity(core.ConvergeWorkspaceChannelArchive)
+	w.RegisterActivity(core.ConvergeWorkspaceChannelMetadata)
 	w.RegisterActivity(core.ConvergeWorkspaceChannelRoster)
 	w.RegisterActivity(core.ConvergeTenantCommunityArchive)
 	w.RegisterActivity(core.ReconcileTenantRestore)

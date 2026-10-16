@@ -69,6 +69,9 @@ type ScopeTarget struct {
 	SnapshotID string `json:"snapshotId,omitempty"`
 	// 仅新建链冻结；旧 history 缺省为 nil，不改变其命令序列。
 	Creator *MembershipTarget `json:"creator,omitempty"`
+	// 仅 METADATA 段（DD-119）有：被收敛的 workspace.update。目标状态由 Core 从它的
+	// 冻结参数读取，描述正文不进 history；其他段缺省，input 形状逐字不变。
+	ActionExecutionID string `json:"actionExecutionId,omitempty"`
 }
 
 // ScopeTarget.Operation 的取值，与 Core 的 ScopeOperation 逐字相同。
@@ -77,6 +80,10 @@ const (
 	scopeOperationRestore = "RESTORE"
 	scopeOperationDelete  = "DELETE"
 )
+
+// workspace.update 的 METADATA 段（DD-119），只属于 WORKSPACE_LIFECYCLE；与 Core
+// workspace_update 模块写出的取值逐字相同。
+const scopeOperationMetadata = "METADATA"
 
 // IdentityTarget 是原生设备公钥投影的冻结输入（DD-79）。
 //
@@ -732,6 +739,8 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 		return workspaceSuspend(ctx, in)
 	case scopeOperationRestore:
 		return workspaceRestore(ctx, in)
+	case scopeOperationMetadata:
+		return workspaceMetadata(ctx, in)
 	default:
 		return temporal.NewNonRetryableApplicationError(
 			"WORKSPACE_LIFECYCLE 的 operation 未实现", activities.ErrTypeRejected, nil)
@@ -856,6 +865,69 @@ func workspaceRestore(ctx workflow.Context, in ComponentTaskInput) error {
 		return failScope(ctx, t, scopeWorkspace, s, err)
 	}
 	return transitionScope(ctx, t, scopeWorkspace, s, "ACTIVE")
+}
+
+// metadataRounds 是 METADATA 段签发轮数的上界（DD-119(3)）：回读未达目标时以
+// PROJECTION_DELAYED 等一轮再收敛；超过上界的那一轮只回读、不再签发，仍不一致即以
+// EXTERNAL_RESULT_UNKNOWN 结束交对账。它决定命令序列，改动须以 GetVersion 门控。
+const metadataRounds = 5
+
+// waitingProjectionDelayed 是 METADATA 段等下一轮回读时写回的等待原因。
+const waitingProjectionDelayed = "PROJECTION_DELAYED"
+
+// workspaceMetadata 把 workspace.update 冻结的名称、描述、TTL 或 reopen 收敛到 Channel
+// （DD-119(3)(6)、V-SCN-94/97）。Workspace 状态不变：可见性已在准入事务内写入 Core，
+// 这里不跃迁 scope。每一轮由 Core「先读 → 以 CONTROL 签 9002 → 回读 39000」并在回读
+// 一致后同事务提交 Core 名称；Core 的确定拒绝立即失败，结果不明按轮等待，从不在
+// Workflow 里重放副作用。
+func workspaceMetadata(ctx workflow.Context, in ComponentTaskInput) error {
+	s := in.Scope
+	if s.ActionExecutionID == "" {
+		return temporal.NewNonRetryableApplicationError(
+			"WORKSPACE_LIFECYCLE METADATA 缺少冻结的 ActionExecution", activities.ErrTypeRejected, nil)
+	}
+	t := newTask(ctx, in)
+	if err := t.begin(); err != nil {
+		return t.fail(err)
+	}
+	ao := workflow.WithActivityOptions(ctx, activityOptions())
+	for round := 1; ; round++ {
+		if temporal.IsCanceledError(ctx.Err()) {
+			return t.fail(temporal.NewCanceledError())
+		}
+		var out activities.WorkspaceMetadataResult
+		err := workflow.ExecuteActivity(ao, (*activities.CoreAPI).ConvergeWorkspaceChannelMetadata,
+			activities.WorkspaceMetadataInput{
+				WorkspaceID:       s.ID,
+				WorkspaceVersion:  s.Version,
+				ActionExecutionID: s.ActionExecutionID,
+				LastRound:         round > metadataRounds,
+			}).Get(ctx, &out)
+		switch {
+		case err == nil && out.State == activities.MetadataConverged:
+			return t.complete()
+		case err == nil && out.State == activities.MetadataUnknown:
+			return t.fail(temporal.NewNonRetryableApplicationError(
+				"EXTERNAL_RESULT_UNKNOWN: Channel 元数据回读仍未达目标，交对账", activities.ErrTypeRejected, nil))
+		case err == nil && out.State != activities.MetadataPending:
+			return t.fail(temporal.NewNonRetryableApplicationError(
+				"Channel 元数据收敛回传未知状态", activities.ErrTypeRejected, nil))
+		case err != nil && (activities.IsDeterministicFailure(err) || temporal.IsCanceledError(err)):
+			return t.fail(err)
+		}
+		workflow.GetLogger(ctx).Warn("Channel 元数据尚未收敛，等待下一轮", "round", round, "error", err)
+		reason := waitingProjectionDelayed
+		// 等待原因写不进去不阻塞收敛本身：下一轮会再写
+		_ = t.project(ctx, generated.TaskStatusRUNNING, &reason).Get(ctx, nil)
+		if err := workflow.Sleep(ctx, retry.RoundInterval); err != nil {
+			return t.fail(err)
+		}
+		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+			next := in
+			next.EventBase = eventID(ctx, in)
+			return workflow.NewContinueAsNewError(ctx, ComponentTask, next)
+		}
+	}
 }
 
 // TransitionScope 的 Kind 取值。
