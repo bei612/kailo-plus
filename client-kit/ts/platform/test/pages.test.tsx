@@ -29,7 +29,9 @@ function transport(route: Route): BffTransport & { send: ReturnType<typeof vi.fn
 async function mount(t: BffTransport, ui: React.ReactNode, locale: "en" | "zh-CN" = "en") {
   const host = await render(
     <PlatformProvider client={createBffClient(t)} locale={locale}>
-      {ui}
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        {ui}
+      </QueryClientProvider>
     </PlatformProvider>,
   );
   // Original Agent and Workflow dialogs portal beside the page; query both surfaces.

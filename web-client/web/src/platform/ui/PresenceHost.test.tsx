@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // DD-120 Web host: the presence session heartbeats through the BFF, admitted stream frames
 // reach the shared caches, and leaving the page releases presence best-effort (V-SCN-100/101).
 import { act, type ReactNode } from "react";
@@ -56,7 +57,7 @@ afterEach(() => {
 function Peer() {
   const presence = usePresenceQuery([PEER]);
   const self = useSelfPresence();
-  return <output data-self={self?.currentStatus ?? ""}>{presence.data?.[PEER] ?? "none"}</output>;
+  return <output data-self={self?.currentStatus ?? ""} data-loaded={presence.isSuccess ? "yes" : "no"}>{presence.data?.[PEER] ?? "none"}</output>;
 }
 async function mount(ui: ReactNode) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -69,6 +70,8 @@ it("heartbeats the own Web key and feeds admitted 20001 frames into presence loo
   await vi.waitFor(() => expect(state.updatePresence).toHaveBeenCalledWith("online"));
   expect(host.querySelector("output")?.getAttribute("data-self")).toBe("online");
   expect(state.queryPresence).toHaveBeenCalledWith([PEER]);
+  // Live frames only update a lookup that has already succeeded (original rule).
+  await vi.waitFor(() => expect(host.querySelector("output")?.getAttribute("data-loaded")).toBe("yes"));
   expect(host.textContent).toBe("none");
   await act(async () => state.sink!({ id: "c".repeat(64), pubkey: PEER, kind: 20001, created_at: 1, content: "online", tags: [] }));
   expect(host.textContent).toBe("online");
