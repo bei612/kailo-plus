@@ -6727,3 +6727,52 @@ V-SCN-94–99（DD-46、DD-81）。本批只做 TypeScript/UI 与 Web/Desktop �
 `web-client/web/src/platform/bff-client.test.ts`，`pages.test.tsx` 的 trigger-width 样式钉扩为两处，待 CI 执行。BFF 主题路由、
 `workspace.update`/`workspace.leave` 后端、部署与浏览器验收均未进行；不声称 V-SCN-94–99 或 DD-119 已验收。追溯记录（tools/traceability）
 待与后端批次合并时补。
+
+## 2026-10-16 原版在线状态、用户状态与资料弹层恢复（DD-120 UI，源码候选，未验收）
+
+起点 main `e876e590`（含生成的 `WebPresenceStatus`、`WebPresenceUpdateRequest`、`WebPresenceQueryRequest`、`WebPresencePage/View`、
+`WebUserStatusQueryRequest`、`WebUserStatusPage/View`、`WebUserStatusUpdateRequest`）；固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`。
+权威：DD-120、SF-BUZ-51、V-SCN-100–103（DD-81）。本批只做 TypeScript/UI 与 Web 宿主；四条 BFF 路由与 Relay 成员事件白名单由并行批次完成，
+本批不改 Rust、Go、契约或数据库。源码提交 `36e543c6`（本地分支 `feat/dd120-ui`，未 push）。
+
+边界与影响：
+
+- 传输注入：`client-kit/ts/platform/src/react/presence/context.ts::PresenceHost`（查询快照、本人心跳/手动选择、查询状态、以 `Idempotency-Key`
+  发布本人 30315、社区自定义表情）。Browser 不持签名者、不连 Relay；Core 以本人 SERVER 身份签 20001/30315。
+- Web 路由各只在 `bff-client.ts` 命名一次：`PRESENCE_PATH`（PUT）、`PRESENCE_QUERY_PATH`（POST）、`USER_STATUS_QUERY_PATH`（POST）、
+  `USER_STATUS_PATH`（PUT，`Idempotency-Key`；2xx 无 `eventId` 按结果不明）。两条查询 POST 加入 `web-fetch` 只读 POST 集合，不清共享读取。
+- 心跳会话（原 `usePresenceSession`）：60 s 心跳、180 s 租约窗口、浏览器无 OS 空闲，按页内活动 10 min 转 away、30 s 重评；手动
+  auto/away/offline 按公钥存 localStorage，offline 立即发布并停止心跳。`pagehide` 以 `keepalive` 尽力发 offline，bfcache 恢复即重发当前状态；
+  登出先尽力发 offline（至多等 1 s）再撤销会话。超时不报成功、不重签，由下一次心跳取代。
+- 实时：`openStream` 把快照与实时帧中不带 `h` 的 20001/30315 只交给 `setIdentityStreamSink`（`PresenceHost.tsx` 写入共享缓存），不进入
+  时间线、论坛、线程消费者、通知或读失效；20001 只以签名者为主体，`p` 标签不被信任；30315 须 `d=general`。
+- 呈现：同一 Human 多公钥任一在线即在线；无在线事实不画离线（不继承原版 DM 头部的 `?? "offline"`）；Agent 仍按 Installation 活动显示；
+  空文本即清除，故不提供仅表情状态。无宿主时所有表面保持原样（不查询、不显示徽标）。
+
+源码归属（`client-kit/ts/platform/src/react/`，文件头注明原路径）：
+
+| 原路径（desktop/src/） | 共享位置与挂载 |
+|---|---|
+| features/presence/lib/presence.ts、hooks.ts、ui/PresenceBadge.tsx | presence/lib/presence.ts、presence/hooks.ts、presence/ui/PresenceBadge.tsx；PresenceHostProvider（presence/host.tsx） |
+| features/profile/ui/ProfileAvatarWithStatus.tsx | presence/ui/ProfileAvatarWithStatus.tsx |
+| features/user-status/{types,hooks,UserStatusLookupContext}.ts(x)、ui/{StatusEmoji,UserNameIndicators,SetStatusDialog}.tsx | user-status/ 同名文件 |
+| features/profile/ui/ProfilePopover.tsx（芯片、选择器、Update your status） | sidebar/profile-popover.tsx（保留平台 Sign out） |
+| features/sidebar/ui/SidebarProfileCard.tsx（自身徽标、状态行） | sidebar/sidebar-profile-card.tsx；Web `SidebarProfileCard.tsx` |
+| features/profile/ui/UserProfilePopover.tsx（在线徽标、StatusLine） | pulse/UserProfilePopover.tsx::UserProfilePopoverBody |
+| features/channels/ui/MembersSidebarMemberCard.tsx（角点） | channel-members.tsx；members.tsx 成员行 |
+| features/channels/ui/ChannelScreenHeader.tsx（单人 DM 徽标、titleAdornment） | messages/dm-header-participants.tsx、messages/chat-header.tsx |
+| features/messages/ui/MessageAuthorWithIndicators.tsx | messages/MessageRowSurface.tsx |
+
+未恢复及原因：Wave/Message/Huddle/Follow、owner 与 activity（本批范围外）；DM 侧栏列表的在线点（`useDmSidebarMetadata`，未纳入本批）；
+原社区切换与反馈入口（无宿主）；Desktop/Mobile 宿主尚未提供 PresenceHost，表面保持原样。原 Relay 订阅与
+`presenceSubscriptionReconciler` 由流帧注入取代；多标签页时关闭其一会先发 offline，其余页下一次心跳（≤60 s）恢复在线。
+
+词条：新增 `presence.*` 5 个、`userStatus.*` 27 个（en/zh-CN），`platform_text.dart` 以原生成器的 `platform_catalog`/`dart_key`/`dart_string`
+投影、按 `dart format` 80 列规则补入（规则先复现 HEAD 全部 3019 条逐字一致；本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。
+
+验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/presence.test.tsx`（原 presence.test 纯函数、
+多公钥聚合、缺失不画离线、快照校验与分块、流帧注入、成员角点、DM 徽标、自身选择器、心跳与手动 offline）、`test/user-status.test.tsx`
+（原到期/替换栅栏/分块读取、清除即省略、发布意图同键重送、SetStatusDialog 文本/预设/时长/自定义到期/清除、弹层入口、名称指示），
+`web-client/web/src/platform/ui/PresenceHost.test.tsx`（心跳、流帧进入缓存、pagehide/bfcache），扩充 `bff-client.test.ts`（路由、方法、
+`Idempotency-Key`、keepalive、无回执即不明、流帧分流、登出顺序），待 CI 执行。BFF 路由、Relay 白名单、部署与浏览器验收均未进行；
+不声称 V-SCN-100–103 或 DD-120 已验收。追溯记录（tools/traceability）待与后端批次合并时补。

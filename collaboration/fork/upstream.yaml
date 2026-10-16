@@ -48,7 +48,9 @@ remove_paths:
   - desktop/src/shared/styles/globals/spoilers.css
   - desktop/src/shared/theme/adaptive-theme.ts
   - desktop/src/shared/theme/theme-loader.ts
-  # 仍未恢复的原资料弹层继续列为交付缺口，不代表获得删除功能的授权。
+  # DD-120（2026-10-16，源码候选，未验收）：原资料弹层的在线状态芯片、online/away/offline 选择器与
+  # “Update your status”入口迁入 client-kit/ts/platform/src/react/sidebar/profile-popover.tsx（保留平台 Sign out），
+  # Web 宿主已接；原社区切换与反馈入口仍无宿主，原路径仍不存在，不代表获得删除功能的授权。
   - desktop/src/features/profile/ui/ProfilePopover.tsx
   - desktop/src/shared/ui/switch.tsx
   # Device typography preferences and their real control moved to the shared TypeScript package.
@@ -568,6 +570,9 @@ remove_paths:
   - desktop/src/features/onboarding/welcomeGuide.ts
   - desktop/src/features/onboarding/welcomeKickoff.test.mjs
   - desktop/src/features/onboarding/welcomeKickoff.ts
+  # DD-120（2026-10-16，源码候选，未验收）：lib/presence.ts、hooks.ts（心跳/空闲会话、查询、自身变更）与
+  # ui/PresenceBadge.tsx 迁入 client-kit/ts/platform/src/react/presence，传输由宿主注入；原 Relay 订阅/
+  # presenceSubscriptionReconciler 由宿主把已准入流帧送入同一缓存取代。原路径仍不存在。
   - desktop/src/features/presence
   - desktop/src/features/profile/avatarPresentationStore.test.mjs
   - desktop/src/features/profile/avatarPresentationStore.ts
@@ -608,6 +613,7 @@ remove_paths:
   - desktop/src/features/profile/ui/ProfileAvatarModeTabs.tsx
   - desktop/src/features/profile/ui/ProfileAvatarUntrusted.test.mjs
   - desktop/src/features/profile/ui/ProfileAvatarUploadPreview.tsx
+  # DD-120：迁入 client-kit/ts/platform/src/react/presence/ui/ProfileAvatarWithStatus.tsx（无在线事实不画离线）。
   - desktop/src/features/profile/ui/ProfileAvatarWithStatus.tsx
   - desktop/src/features/profile/ui/ProfileInstancesArchived.test.mjs
   - desktop/src/features/profile/ui/ProfileInstancesSection.tsx
@@ -718,6 +724,9 @@ remove_paths:
   - desktop/src/features/sidebar/ui/listSidebarProjects.ts
   - desktop/src/features/sidebar/useDmSidebarMetadata.ts
   - desktop/src/features/terminal
+  # DD-120（2026-10-16，源码候选，未验收）：types、hooks（到期计时、120 s 兜底、DD-81 发布意图）、
+  # UserStatusLookupContext 与 ui/{StatusEmoji,UserNameIndicators,SetStatusDialog} 迁入
+  # client-kit/ts/platform/src/react/user-status；原路径仍不存在。
   - desktop/src/features/user-status
   - desktop/src/features/workflows
   - desktop/src/jdenticon.d.ts
