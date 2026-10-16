@@ -1,0 +1,12 @@
+[package]
+name = "buzz-project-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Projects repository reads over Buzz git smart HTTP, shared by Desktop and Kailo Core (DD-118)"
+
+[dependencies]
+serde    = { workspace = true }
+tempfile = "3"

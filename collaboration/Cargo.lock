@@ -1260,6 +1260,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-project-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "buzz-pubsub"
 version = "0.1.0"
 dependencies = [
