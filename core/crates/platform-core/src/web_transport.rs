@@ -750,7 +750,13 @@ pub(crate) async fn publish_project(
         },
         Err(response) => return response,
     };
-    publish(state, target, headers, Publication::Project(Box::new(request))).await
+    publish(
+        state,
+        target,
+        headers,
+        Publication::Project(Box::new(request)),
+    )
+    .await
 }
 
 pub(crate) async fn publish_reminder(
