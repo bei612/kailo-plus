@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_merge_response.schema.json",
+  "title": "ProjectsGitMergeResponse",
+  "description": "DD-118: the original ProjectRepoMergeResult without its English message. statusEventId is the owner-signed 1631 merged status; it is present once that publication is accepted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mergeCommit"],
+  "properties": {
+    "mergeCommit": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"},
+    "statusEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

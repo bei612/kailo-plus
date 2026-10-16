@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_merge_request.schema.json",
+  "title": "ProjectsGitMergeRequest",
+  "description": "DD-118: the original Buzz Desktop merge_project_pull_request through BFF. Only when the person's own SERVER key is the repository coordinate owner: Core merges the review's source branch into the target branch in a temporary clone, pushes as that owner (Relay pre-receive policy decides), then publishes the owner-signed original kind 1631 merged status through the existing publication chain. Carries the Idempotency-Key header; the push is keyed by (repository, target ref, old->new) and reconciled from info/refs; 1631 follows DD-81.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repository", "pullRequestEventId", "targetBranch", "sourceBranch", "expectedCommit"],
+  "properties": {
+    "repository": {"type": "string", "pattern": "^30617:[0-9a-f]{64}:[^/\\s]+$"},
+    "pullRequestEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The original 1618 review being merged."},
+    "targetBranch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "sourceBranch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "expectedCommit": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$", "description": "Original expected source head; a moved source branch is a conflict, never a silent merge of other commits."}
+  }
+}
