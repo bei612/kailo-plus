@@ -391,7 +391,10 @@ fn pull_request_tags(
     clone_tag.extend_from_slice(clone);
     tags.push(clone_tag);
     tags.push(vec!["branch-name".to_owned(), value(&request.branch_name)]);
-    tags.push(vec!["target-branch".to_owned(), value(&request.target_branch)]);
+    tags.push(vec![
+        "target-branch".to_owned(),
+        value(&request.target_branch),
+    ]);
     if let Some(base) = request.merge_base.as_deref() {
         tags.push(vec!["merge-base".to_owned(), base.to_owned()]);
     }
@@ -2297,7 +2300,13 @@ mod tests {
             let invalid: ProjectsPublishRequest = serde_json::from_value(invalid).unwrap();
             assert!(publication_kind(&invalid).is_err(), "{field}");
         }
-        for field in ["body", "commit", "branchName", "targetBranch", "targetEventId"] {
+        for field in [
+            "body",
+            "commit",
+            "branchName",
+            "targetBranch",
+            "targetEventId",
+        ] {
             let mut missing = value.clone();
             missing.as_object_mut().unwrap().remove(field);
             let missing: ProjectsPublishRequest = serde_json::from_value(missing).unwrap();

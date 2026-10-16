@@ -1234,7 +1234,7 @@ mod tests {
         assert_eq!(value["until"], 42);
         assert!(value.get("since").is_none());
         let (owner_only, _, _) = state_filter(&coordinate, None);
-        assert_eq!(owner_only, [owner_hex.clone()]);
+        assert_eq!(owner_only, std::slice::from_ref(&owner_hex));
         let (deduplicated, _, _) = state_filter(&coordinate, Some(&owner_hex));
         assert_eq!(deduplicated, owner_only);
         let empty = json!({});
@@ -1247,9 +1247,8 @@ mod tests {
                 .sign_with_keys(keys)
                 .unwrap()
         };
-        let trusted = |event: &nostr::Event, authors: &[String]| {
-            trusted_repository_state(event, authors, &d)
-        };
+        let trusted =
+            |event: &nostr::Event, authors: &[String]| trusted_repository_state(event, authors, &d);
         assert!(trusted(&state(&owner, "repo"), &authors));
         assert!(trusted(&state(&relay, "repo"), &authors));
         assert!(!trusted(&state(&stranger, "repo"), &authors));
