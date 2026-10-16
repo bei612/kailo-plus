@@ -6683,3 +6683,47 @@ SDK所有本批目标已终态并释放，不存在本批在途检查；root按�
 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-review-merge.test.tsx`，
 扩充 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx`，待 CI 执行。BFF merge 端点、Relay pre-receive 判定、
 `info/refs` 对账、1631 发布、部署与浏览器验收均未进行；不声称 V-SCN-92 或 DD-118 merge 路径已验收。
+
+## 2026-10-16 原版频道管理编辑与操作行恢复（DD-119 UI，源码候选，未验收）
+
+起点 main `1fae80b6`（含生成的 `WorkspaceUpdate`、`ActionCommand.workspaceUpdate`、`DiscoverableWorkspace.updateActionKey/canReopen/leaveActionKey`、
+`WebChannelView.topic`、`WebPublishTopicRequest`）；固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`。权威：DD-119、SF-BUZ-50、
+V-SCN-94–99（DD-46、DD-81）。本批只做 TypeScript/UI 与 Web/Desktop 宿主；`workspace.update`/`workspace.leave` 的 Core 准入与工作流、
+`POST /api/v1/workspaces/{workspaceId}/channel/topic` 的 BFF 实现由另一批 Rust 并行完成，本批不改 Rust、Go、契约或数据库。
+源码提交 `1bf70fe1`（本地分支 `feat/dd119-ui`，未 push）。
+
+边界与影响：
+
+- 入口只随 BFF 动作提示出现，提交仍由 Core 重新准入：`updateActionKey` → 原 hero、“频道类型”（即 TTL）与“可见性”行打开原编辑对话框；
+  保存只发一条 `workspace.update`，仅含变更字段（描述为空即清空，改为 Ongoing 发 `clearTtl`）；`canReopen` 时只显示 “Unarchive channel”，
+  发单独的 `reopen`，不显示编辑；`leaveActionKey` → “Leave channel”（`workspace.leave` 只带 `workspaceId`，受理后关闭面板）；
+  `role-workspaces` 的 `lifecycleActionKey` → Archive/Unarchive（沿用 `workspace.suspend/restore`，按 DD-46 语义先行内确认）。
+- 无删除行（DD-46 排除）；stream/forum 类型不可编辑（DD-119 (4)）。
+- 主题：成员可见“主题”行；Web 宿主以本人身份经 `bff-client.ts::publishChannelTopic` POST 上述路由（路径只在 `channelTopicPath` 一处），
+  一次意图冻结一个 `Idempotency-Key`；结果不明保留意图，只允许以同一键重送同一主题，不重签；2xx 无回执按结果不明。
+  Desktop 主题按 DD-119 (9) 应以本机 CLIENT 身份经 Relay 发布，需 Tauri/Rust 命令，本批不做，Desktop 主题只读。
+- 受治理动作沿用既有语义：UNKNOWN 保留冻结命令与幂等键（“Retry same request”），ABORTED/拒绝/等待审批如实显示；
+  受理后宿主读回（Web：频道描述、工作区目录、搜索目录；Desktop：原生频道列表与已准入目录）并按 1/2/4/8/16 s 有界重读提示，只读不重发。
+- 宿主接缝：`ChannelManagementSheet` 增加可选 `management`（`ChannelManagementHost`：`refresh`、`publishTopic?`、`onLeft?`）与频道
+  `topic`/`archived`；DM 与未提供宿主时保持只读摘要。
+
+源码归属（`client-kit/ts/platform/src/react/`，文件头注明原路径）：
+
+| 原路径（desktop/src/） | 共享位置与挂载 |
+|---|---|
+| features/channels/ui/ChannelManagementSheet.tsx（编辑对话框、操作行、保存只发变更字段） | channel-management-sheet.tsx；channel-management-actions.ts（提示读取、受治理提交、主题意图） |
+| features/channels/ui/ChannelManagementSheetRows.tsx::{ChannelHero,EditableInfoFieldRow,ActionFieldRow} | channel-management-sheet.tsx |
+| features/channels/ui/ChannelTypeSettings.tsx、ChannelTypePicker.tsx、lib/ephemeralChannel.ts::formatTtlDuration | channel-type-settings.tsx（新增 dropdown 变体与 “Current (…)”，创建表单不变） |
+| features/channels/ui/ChannelPermissionsSettings.tsx | channel-permissions-settings.tsx（原样复用） |
+
+未恢复及原因：Delete channel（DD-46）；Join 行（面板只对成员打开，头部已有原 Join）；Canvas 入口（无受治理通路）；
+原版无主题编辑界面（仅 `useSetChannelTopicMutation`），主题行与对话框沿用原行/对话框样式补出，是本批唯一的新增布局。
+
+词条：新增 `channelManagement.*` 26 个（en/zh-CN），`platform_text.dart` 以原生成器的 `platform_catalog`/`dart_key`/`dart_string` 投影、
+按 `dart format` 80 列规则补入（规则先复现 HEAD 文件逐字一致，其余生成段落不变；本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。
+
+验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/channel-management.test.tsx`（编辑行随提示、
+只发变更字段、清除 TTL、可见性切换、UNKNOWN 冻结重送、Leave/Archive/Reopen 随提示、无删除行、主题同键重送），扩充
+`web-client/web/src/platform/bff-client.test.ts`，`pages.test.tsx` 的 trigger-width 样式钉扩为两处，待 CI 执行。BFF 主题路由、
+`workspace.update`/`workspace.leave` 后端、部署与浏览器验收均未进行；不声称 V-SCN-94–99 或 DD-119 已验收。追溯记录（tools/traceability）
+待与后端批次合并时补。
