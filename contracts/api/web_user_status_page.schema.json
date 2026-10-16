@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_user_status_page.schema.json",
+  "title": "WebUserStatusPage",
+  "description": "DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and is omitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "statuses"
+  ],
+  "properties": {
+    "statuses": {
+      "type": "array",
+      "items": {
+        "title": "WebUserStatusView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pubkey",
+          "text",
+          "eventId",
+          "createdAt"
+        ],
+        "properties": {
+          "pubkey": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "text": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "eventId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

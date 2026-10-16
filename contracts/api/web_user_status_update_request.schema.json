@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_user_status_update_request.schema.json",
+  "title": "WebUserStatusUpdateRequest",
+  "description": "DD-120: the person's own original NIP-38 30315 (`d=general`, optional `emoji` and `expiration` tags), published by Core with the SERVER key under DD-81 (Idempotency-Key header). Empty text clears the status.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "text"
+  ],
+  "properties": {
+    "text": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "emoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

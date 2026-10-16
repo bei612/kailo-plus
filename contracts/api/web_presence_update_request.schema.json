@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_presence_update_request.schema.json",
+  "title": "WebPresenceUpdateRequest",
+  "description": "DD-120: the person's own presence heartbeat or manual choice. Core signs the original kind 20001 with the person's SERVER key over the existing NIP-42 session connection; latest wins, not stored, never reconciled by event ID. offline releases the presence lease.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "status": {
+      "title": "WebPresenceStatus",
+      "type": "string",
+      "enum": [
+        "online",
+        "away",
+        "offline"
+      ]
+    }
+  }
+}

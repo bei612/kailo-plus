@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_presence_page.schema.json",
+  "title": "WebPresencePage",
+  "description": "DD-120: only snapshot events signed by the Relay itself whose single p tag is a requested pubkey bound in this Tenant. A pubkey without a fact is absent, never reported offline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "presences"
+  ],
+  "properties": {
+    "presences": {
+      "type": "array",
+      "items": {
+        "title": "WebPresenceView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pubkey",
+          "status"
+        ],
+        "properties": {
+          "pubkey": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "title": "WebPresenceStatus",
+            "type": "string",
+            "enum": [
+              "online",
+              "away",
+              "offline"
+            ]
+          },
+          "observedAt": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}
