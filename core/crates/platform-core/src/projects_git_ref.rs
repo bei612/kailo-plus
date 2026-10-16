@@ -31,8 +31,7 @@ use axum::{
 use buzz_project_git::{GitAuth, GitAuthConfig, RemoteBranchError};
 use collab_bridge::bridge::IdentityClient;
 use contracts::{
-    ErrorClass, EvidenceKind, ProjectGitRefOperation, ProjectsGitRefRequest,
-    ProjectsGitRefResponse, ReasonCode,
+    ErrorClass, EvidenceKind, ProjectsGitRefRequest, ProjectsGitRefResponse, ReasonCode,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -118,7 +117,7 @@ fn validate(request: ProjectsGitRefRequest) -> Result<RefUpdate, Response> {
         .filter(|commit| *commit == request.expected_commit && !is_zero(commit))
         .ok_or_else(bad)?;
     let zero = "0".repeat(expected.len());
-    let create = matches!(request.operation, ProjectGitRefOperation::CreateBranch);
+    let create = request.operation == contracts::ProjectGitRefOperation::CreateBranch;
     match (create, request.source_branch.as_deref()) {
         (true, Some(source)) => {
             let source = buzz_project_git::normalize_branch(source, "source").map_err(|_| bad())?;
