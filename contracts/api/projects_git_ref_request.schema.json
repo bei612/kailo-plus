@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_ref_request.schema.json",
+  "title": "ProjectsGitRefRequest",
+  "description": "DD-118: the original Buzz Desktop create_project_remote_branch/delete_project_remote_branch through BFF. The person's own SERVER identity pushes to the Relay repository named by its 30617 coordinate; Relay pre-receive policy decides. The request carries the Idempotency-Key header; the push is keyed by (repository, ref, old->new) and reconciled from info/refs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "repository", "branch", "expectedCommit"],
+  "properties": {
+    "operation": {"title": "ProjectGitRefOperation", "type": "string", "enum": ["CREATE_BRANCH", "DELETE_BRANCH"]},
+    "repository": {"type": "string", "pattern": "^30617:[0-9a-f]{64}:[^/\\s]+$"},
+    "branch": {"type": "string", "minLength": 1, "maxLength": 255, "description": "CREATE_BRANCH: the new branch. DELETE_BRANCH: the branch to delete."},
+    "sourceBranch": {"type": "string", "minLength": 1, "maxLength": 255, "description": "CREATE_BRANCH only: the original source branch."},
+    "expectedCommit": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$", "description": "CREATE_BRANCH: the source branch head the new branch starts at. DELETE_BRANCH: the branch head being deleted."}
+  },
+  "oneOf": [
+    {"properties": {"operation": {"const": "CREATE_BRANCH"}}, "required": ["sourceBranch"]},
+    {"properties": {"operation": {"const": "DELETE_BRANCH"}}, "not": {"required": ["sourceBranch"]}}
+  ]
+}

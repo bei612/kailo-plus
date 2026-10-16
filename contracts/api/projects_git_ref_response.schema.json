@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_git_ref_response.schema.json",
+  "title": "ProjectsGitRefResponse",
+  "description": "DD-118: the original ProjectRepoBranchResult without its English message; the branch and the commit the ref now points at (DELETE_BRANCH: the deleted head).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["branch", "commit"],
+  "properties": {
+    "branch": {"type": "string"},
+    "commit": {"type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"}
+  }
+}
