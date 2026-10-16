@@ -427,7 +427,13 @@ export function ChannelPane({
     handleCancelEdit();
     handledRouteTarget.current = key;
   }, [targetMessageId, targetSearchActivationId, myPrincipalId, workspaceId, routeContextReady, routeTarget, routeMessageById, composerBusy, editTarget, requireThreadEditResolution, handleCancelEdit, onThreadHeadIdChange]);
-  const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
+  // Agents of this channel resolve like the original profile lookup (relay thread summaries and
+  // typing rows bind names/avatars from here); human members take precedence on a shared key.
+  const profiles = useMemo(() => ({
+    ...Object.fromEntries((typingAgents.data?.agents ?? []).map(agent => [agent.pubkey.toLowerCase(),
+      {displayName: agent.displayName, avatarUrl: null, nip05Handle: null, ownerPubkey: null, isAgent: true}])),
+    ...Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])),
+  }), [byPubkey, typingAgents.data]);
   const directMessageIntro = useMemo<MessageTimelineProps["directMessageIntro"]>(() => {
     if (!conversation || !live || denied || metadataPending || !members.isSuccess || members.isError || members.isFetching) return null;
     const people = resolveConversationHeaderParticipants(conversation, myPrincipalId, members.data ?? []);
