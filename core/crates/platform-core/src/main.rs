@@ -9,6 +9,7 @@ mod agent_installation;
 mod agent_installation_query;
 mod agent_invocation;
 mod agent_memory;
+mod agent_mention_outcome;
 mod agent_policy;
 mod agent_profile;
 mod agent_runtime;

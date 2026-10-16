@@ -24,6 +24,7 @@ capabilities:
   - /api/v1/agent-definitions/{resource_id}/versions
   - /api/v1/platform-tools
   - /hooks/{resource_id}
+  - /api/v1/workspaces/{workspace_id}/agent-mentions/query
   actions:
   - agent.definition.create
   - agent.definition.update

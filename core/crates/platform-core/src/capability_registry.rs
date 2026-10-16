@@ -83,6 +83,10 @@ mod tests {
             "/api/v1/conversations/{conversation_id}/typing"
         ));
         assert!(action_exposed("identity.user_status.publish"));
+        // DD-121：本人 @提及的 Agent 准入结论
+        assert!(route_exposed(
+            "/api/v1/workspaces/{workspace_id}/agent-mentions/query"
+        ));
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));
