@@ -420,6 +420,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/workspaces/{workspace_id}/channel",
             get(crate::web_transport::query_channel),
         )
+        // DD-119(9)：成员以本人 SERVER 身份修改频道原主题
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/channel/topic",
+            axum::routing::post(crate::web_transport::publish_channel_topic),
+        )
         // 收藏/静音/已读：Core 是唯一权威，三端共用（DD-40）
         // 注销：必须在调用网关 logout **之前**。网关的 logout 是短路的，
         // 请求根本不到后端（SF-AGW-21），Core 无从得知注销发生过。

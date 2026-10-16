@@ -45,6 +45,8 @@ pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
 pub const CONVERSATION_HIDE_ACTION: &str = "conversation.hide";
 pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
+/// 成员修改频道原主题（DD-119(9)）。对账按它找这一类发布。
+pub const TOPIC_ACTION: &str = "workspace.channel.topic.publish";
 
 enum Publication {
     Message(PublishRequest),
@@ -52,6 +54,7 @@ enum Publication {
     Reaction(contracts::PulsePublishRequest),
     Project(Box<contracts::ProjectsPublishRequest>),
     Reminder(contracts::ReminderPublishRequest),
+    Topic(TopicRequest),
     Hide,
     Reopen,
 }
@@ -118,6 +121,7 @@ impl MessageTarget {
 }
 
 type PublishRequest = contracts::WebPublishMessageRequest;
+type TopicRequest = contracts::WebPublishTopicRequest;
 
 // Reuse the existing typed semantic publication contract, not Pulse's
 // Community admission. A channel reaction must prove its actual message scope.
@@ -817,6 +821,27 @@ async fn publish_message_for(
     publish(state, target, headers, Publication::Message(req)).await
 }
 
+/// 成员修改频道原主题（DD-119(9)、V-SCN-99、`09` §3）：以本人 SERVER 身份按 DD-81
+/// 签发严格 `h+topic` 两标签的 9002，不接受 raw tags 或任何管理标签。幂等键沿
+/// Idempotency-Key 请求头；结果不明只对账、不重签；已归档的 Channel 由 Relay 拒绝。
+pub async fn publish_channel_topic(
+    State(state): State<BffState>,
+    Path(workspace_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Result<Json<TopicRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Ok(Json(request)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    publish(
+        state,
+        MessageTarget::Workspace(workspace_id),
+        headers,
+        Publication::Topic(request),
+    )
+    .await
+}
+
 pub async fn hide_conversation(
     State(state): State<BffState>,
     Path(id): Path<Uuid>,
@@ -1075,6 +1100,10 @@ pub(crate) fn web_channel_view(
     let mut view = serde_json::json!({"channelId":channel,"channelType":channel_type,"name":name,"archived":archived});
     if let Some(description) = one("about")? {
         view["description"] = description.into();
+    }
+    // Relay 对空主题省略该标签：缺省即无主题（DD-119(9)）
+    if let Some(topic) = one("topic")? {
+        view["topic"] = topic.into();
     }
     match (one("ttl")?, one("ttl_deadline")?) {
         (None, None) => {}
@@ -1744,6 +1773,7 @@ async fn publish(
         }
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
+        Publication::Topic(_) => TOPIC_ACTION,
         Publication::Project(_) => crate::projects::PUBLISH_ACTION,
         Publication::Reminder(_) => crate::reminders::PUBLISH_ACTION,
     };
@@ -1774,7 +1804,7 @@ async fn publish(
             None,
             None,
         ),
-        Publication::Hide | Publication::Reopen => {
+        Publication::Hide | Publication::Reopen | Publication::Topic(_) => {
             (contracts::WebMessageType::Stream, None, None, None)
         }
     };
@@ -1790,7 +1820,12 @@ async fn publish(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = if let Publication::Reminder(req) = &publication {
+    let requested_kind = if let Publication::Topic(_) = &publication {
+        if !matches!(target, MessageTarget::Workspace(_)) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        collab_bridge::kind::KIND_NIP29_EDIT_METADATA as i32
+    } else if let Publication::Reminder(req) = &publication {
         if let Err(response) = crate::reminders::validate(req) {
             return response;
         }
@@ -1848,6 +1883,7 @@ async fn publish(
         Publication::Message(req) => req.mention_installation_ids.as_deref(),
         Publication::Hide
         | Publication::Reopen
+        | Publication::Topic(_)
         | Publication::Pulse(_)
         | Publication::Project(_)
         | Publication::Reminder(_)
@@ -2019,6 +2055,7 @@ async fn publish(
         }
         Publication::Hide
         | Publication::Reopen
+        | Publication::Topic(_)
         | Publication::Project(_)
         | Publication::Reminder(_) => None,
     };
@@ -2053,6 +2090,18 @@ async fn publish(
         match crate::custom_emoji::message_tags(&state, &client, &content).await {
             Ok(tags) => media_tags.extend(tags),
             Err(response) => return response,
+        }
+    }
+
+    // 主题随签名事件的标签进入 Relay，与正文按同一上界预检；它不进审计与存储
+    if let Publication::Topic(request) = &publication {
+        if request.topic.len() > state.message_max_content_bytes {
+            return error_body(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                ErrorClass::Limit,
+                ReasonCode::PayloadTooLarge,
+                None,
+            );
         }
     }
 
@@ -2348,6 +2397,14 @@ async fn publish(
             };
             client.sign_reminder(&prepared.content, &prepared.tags, prepared.created_at)
         }
+        // Original SDK pure-topic command (strict h+topic), never caller tags.
+        Publication::Topic(request) => match Uuid::parse_str(&channel_id) {
+            Ok(channel) => {
+                let created_at = nostr::Timestamp::now().as_secs();
+                client.sign_channel_topic_at(channel, &request.topic, created_at)
+            }
+            Err(_) => Err(OperatorError::Sign("channel is not a UUID".into())),
+        },
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
@@ -4974,6 +5031,33 @@ mod tests {
         let mut forged = event;
         forged.content = "tampered".into();
         assert!(web_channel_view(&forged, &channel, &keys.public_key().to_hex()).is_err());
+    }
+
+    // DD-119(9)：主题取自原 39000 的 topic 标签；Relay 对空主题省略它，重复即证据损坏。
+    #[test]
+    fn channel_descriptor_reads_the_native_topic_tag() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::from_u128(1).to_string();
+        let sign = |topics: &[&str]| {
+            let mut tags = vec![
+                nostr::Tag::parse(["d", channel.as_str()]).unwrap(),
+                nostr::Tag::parse(["name", "release"]).unwrap(),
+                nostr::Tag::parse(["t", "stream"]).unwrap(),
+            ];
+            for topic in topics {
+                tags.push(nostr::Tag::parse(["topic", *topic]).unwrap());
+            }
+            nostr::EventBuilder::new(nostr::Kind::Custom(39000), "")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let author = keys.public_key().to_hex();
+        let view = web_channel_view(&sign(&["Train 2026.10"]), &channel, &author).unwrap();
+        assert_eq!(view.topic.as_deref(), Some("Train 2026.10"));
+        let view = web_channel_view(&sign(&[]), &channel, &author).unwrap();
+        assert!(view.topic.is_none());
+        assert!(web_channel_view(&sign(&["a", "b"]), &channel, &author).is_err());
     }
 
     #[test]

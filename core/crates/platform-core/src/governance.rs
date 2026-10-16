@@ -424,6 +424,12 @@ pub enum Semantic {
     /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
     WorkspaceSuspend,
     WorkspaceRestore,
+    /// 受治理的频道编辑（DD-119）：执行 Workspace 即目标，manage@workspace；可见性在
+    /// 准入事务内改写，名称/描述/TTL/reopen 由 WORKSPACE_LIFECYCLE 的 METADATA 段收敛。
+    WorkspaceUpdate,
+    /// 本人退出频道（DD-119(8)）：主体固定为发起人，复用 workspace.member.revoke 的
+    /// 撤员链与角色撤销语义。
+    WorkspaceLeave,
     /// 业务 Tenant 的暂停与恢复（DD-96）：在 Platform Catalog Tenant 中执行、指向
     /// 业务 Tenant；业务侧由它自己的 TENANT_LIFECYCLE operation 承接。
     TenantSuspend,
@@ -493,6 +499,8 @@ impl Semantic {
             "workspace.join" => Self::WorkspaceJoin,
             "workspace.suspend" => Self::WorkspaceSuspend,
             "workspace.restore" => Self::WorkspaceRestore,
+            "workspace.update" => Self::WorkspaceUpdate,
+            "workspace.leave" => Self::WorkspaceLeave,
             "tenant.suspend" => Self::TenantSuspend,
             "tenant.restore" => Self::TenantRestore,
             "tenant.delete" => Self::TenantDelete,
@@ -725,6 +733,8 @@ impl Semantic {
 pub struct Params {
     pub workspace_visibility: Option<contracts::WorkspaceVisibility>,
     pub workspace_channel: Option<Value>,
+    /// workspace.update 的冻结目标状态（DD-119），已按契约校验并规范化
+    pub workspace_update: Option<Value>,
     pub conversation_open: Option<Value>,
     pub workspace_id: Option<Uuid>,
     /// 业务 Tenant 暂停与恢复的目标（DD-96）；其他语义一律为空
@@ -765,6 +775,9 @@ impl Params {
         }
         if let Some(input) = &self.workspace_channel {
             m.insert("workspaceChannel".into(), input.clone());
+        }
+        if let Some(update) = &self.workspace_update {
+            m.insert("workspaceUpdate".into(), update.clone());
         }
         if let Some(input) = &self.conversation_open {
             m.insert("conversationOpen".into(), input.clone());
@@ -873,6 +886,7 @@ impl Params {
                 .transpose()
                 .ok()?,
             workspace_channel: v.get("workspaceChannel").cloned(),
+            workspace_update: v.get("workspaceUpdate").cloned(),
             conversation_open: v.get("conversationOpen").cloned(),
             workspace_id: uuid("workspaceId"),
             tenant_id: uuid("tenantId"),
@@ -1008,6 +1022,64 @@ mod workspace_channel_tests {
             .workspace_channel
             .is_none());
     }
+
+    #[test]
+    fn workspace_update_freezes_one_normalized_target_state() {
+        let mut command: contracts::ActionCommand = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/workspace-update.sample.json"
+        ))
+        .unwrap();
+        let params = parse_command(Semantic::WorkspaceUpdate, &command).unwrap();
+        assert_eq!(
+            params.to_json()["workspaceUpdate"],
+            json!({
+                "name": "Release discussion",
+                "description": "Release review posts and replies",
+                "ttlSeconds": 604800,
+                "visibility": "open",
+            })
+        );
+        assert_eq!(Params::from_json(&params.to_json()).unwrap(), params);
+        // 只属于 workspace.update；它必带目标状态，不接受顶层可见性或调用方给出的主体
+        assert!(parse_command(Semantic::WorkspaceCreate, &command).is_err());
+        let mut missing = command.clone();
+        missing.workspace_update = None;
+        assert!(parse_command(Semantic::WorkspaceUpdate, &missing).is_err());
+        let mut subject = command.clone();
+        subject.principal_id = Some(uuid::Uuid::new_v4().to_string());
+        assert!(parse_command(Semantic::WorkspaceUpdate, &subject).is_err());
+        command.workspace_visibility = Some(contracts::WorkspaceVisibility::Private);
+        assert!(parse_command(Semantic::WorkspaceUpdate, &command).is_err());
+        for sample in [
+            include_str!("../../../../contracts/samples/workspace-reopen.sample.json"),
+            include_str!("../../../../contracts/samples/workspace-update-clear.sample.json"),
+        ] {
+            let command: contracts::ActionCommand = serde_json::from_str(sample).unwrap();
+            assert!(parse_command(Semantic::WorkspaceUpdate, &command).is_ok());
+        }
+    }
+
+    #[test]
+    fn workspace_leave_only_accepts_the_authenticated_self_subject() {
+        let mut command: contracts::ActionCommand = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/workspace-leave.sample.json"
+        ))
+        .unwrap();
+        assert!(parse_command(Semantic::WorkspaceLeave, &command).is_ok());
+        command.principal_id = Some(uuid::Uuid::new_v4().to_string());
+        assert!(parse_command(Semantic::WorkspaceLeave, &command).is_err());
+        command.principal_id = None;
+        command.workspace_update = Some(serde_json::from_value(json!({"reopen": true})).unwrap());
+        assert!(parse_command(Semantic::WorkspaceLeave, &command).is_err());
+        assert_eq!(
+            Semantic::from_key("workspace.leave"),
+            Some(Semantic::WorkspaceLeave)
+        );
+        assert_eq!(
+            Semantic::from_key("workspace.update"),
+            Some(Semantic::WorkspaceUpdate)
+        );
+    }
 }
 
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
@@ -1016,6 +1088,9 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     if cmd.workspace_channel.is_some() && sem != Semantic::WorkspaceCreate {
+        return Err(bad());
+    }
+    if cmd.workspace_update.is_some() != (sem == Semantic::WorkspaceUpdate) {
         return Err(bad());
     }
     if cmd
@@ -1043,6 +1118,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
+        workspace_update: cmd
+            .workspace_update
+            .as_ref()
+            .map(crate::workspace_update::normalize)
+            .transpose()?,
         conversation_open: cmd
             .conversation_open
             .as_ref()
@@ -1425,8 +1505,19 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.slug.as_deref().is_some_and(valid_slug)
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
         }
-        Semantic::WorkspaceJoin => {
+        // 退出与加入一样只指向一个 Workspace，主体是发起人本人，不接受调用方给出的主体
+        Semantic::WorkspaceJoin | Semantic::WorkspaceLeave => {
             p.workspace_id.is_some()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+        }
+        // 冻结的目标状态已由 normalize 校验组合；目标 Workspace 由 workspaceId 给出
+        Semantic::WorkspaceUpdate => {
+            p.workspace_id.is_some()
+                && p.workspace_update.is_some()
                 && p.principal_id.is_none()
                 && p.invitation_id.is_none()
                 && p.original_action_execution_id.is_none()
@@ -2065,13 +2156,23 @@ async fn resolve_target(
                 None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
             }
         }
+        Semantic::WorkspaceUpdate => {
+            crate::workspace_update::target(conn, tenant, def, p, frozen, lock).await
+        }
         Semantic::WorkspaceJoin
+        | Semantic::WorkspaceLeave
         | Semantic::WorkspaceMemberAdd
         | Semantic::WorkspaceMemberRevoke => {
-            // Joining never accepts a caller-supplied subject or changes another membership.
+            if sem == Semantic::WorkspaceLeave && !crate::workspace_update::leave_shape(def) {
+                tracing::error!(action = %def.action_key, "workspace.leave 的目录形状与语义不一致");
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            // Joining and leaving never accept a caller-supplied subject or change
+            // another membership (DD-80, DD-119(8)).
+            let self_subject = matches!(sem, Semantic::WorkspaceJoin | Semantic::WorkspaceLeave);
             let (ws, principal) = (
                 p.workspace_id,
-                if sem == Semantic::WorkspaceJoin {
+                if self_subject {
                     Some(initiator)
                 } else {
                     p.principal_id
@@ -2099,7 +2200,11 @@ async fn resolve_target(
             .bind(principal)
             .fetch_optional(&mut *conn)
             .await?;
-            if sem == Semantic::WorkspaceMemberRevoke {
+            // 退出复用撤员的目标规则：同一条 membership、同样接受的起始状态
+            if matches!(
+                sem,
+                Semantic::WorkspaceMemberRevoke | Semantic::WorkspaceLeave
+            ) {
                 return match row {
                     Some((id, version, state)) if matches!(state.as_str(), "ACTIVE" | "ERROR") => {
                         Ok(Target {
@@ -3229,6 +3334,7 @@ impl Governance {
         let params = Params {
             workspace_visibility: None,
             workspace_channel: None,
+            workspace_update: None,
             conversation_open: None,
             workspace_id: None,
             tenant_id: None,
@@ -3332,6 +3438,7 @@ impl Governance {
         let params = Params {
             workspace_visibility: None,
             workspace_channel: None,
+            workspace_update: None,
             conversation_open: None,
             workspace_id: None,
             tenant_id: None,
@@ -4799,6 +4906,7 @@ impl Governance {
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
             || sem == Semantic::WorkspaceJoin
+            || sem == Semantic::WorkspaceUpdate
             || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
@@ -5214,7 +5322,11 @@ impl Governance {
                 .await?
             }
             Semantic::WorkspaceJoin => return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
-            Semantic::WorkspaceMemberRevoke => {
+            // 可见性在准入事务内、Workspace 行锁下改写；Workspace 版本不推进
+            Semantic::WorkspaceUpdate => {
+                crate::workspace_update::prewrite(tx, ae.tenant_id, &target, params).await?
+            }
+            Semantic::WorkspaceMemberRevoke | Semantic::WorkspaceLeave => {
                 // 先关门再收敛：REVOKING 即拒绝该 Workspace 的新动作（DD-41）
                 sqlx::query_scalar(
                     "update identity.workspace_membership set state = 'REVOKING', version = version + 1
@@ -5307,6 +5419,7 @@ impl Governance {
             Semantic::SecretRefRehome
                 | Semantic::ComponentReleaseApprove
                 | Semantic::ResourceCreate
+                | Semantic::WorkspaceUpdate
         ) {
             ae.id
         } else {
@@ -6849,8 +6962,19 @@ impl Governance {
                     )
                     .await
                 }
+                Semantic::WorkspaceUpdate => {
+                    crate::workspace_update::start(
+                        &self.pool,
+                        &self.temporal,
+                        ae.id,
+                        ae.tenant_id,
+                        &workflow_id,
+                    )
+                    .await
+                }
                 Semantic::WorkspaceMemberAdd
                 | Semantic::WorkspaceJoin
+                | Semantic::WorkspaceLeave
                 | Semantic::WorkspaceMemberRevoke
                 | Semantic::TenantMemberRevoke
                 | Semantic::TenantMemberAdmit => {

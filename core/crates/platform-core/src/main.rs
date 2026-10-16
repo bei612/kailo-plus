@@ -95,6 +95,7 @@ mod user_state;
 mod web_profile;
 mod web_transport;
 mod workflow_reconcile;
+mod workspace_update;
 
 use std::net::SocketAddr;
 

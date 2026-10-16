@@ -147,6 +147,11 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/workspaces/channel-archive",
             post(crate::tenant_lifecycle::converge_workspace_channel_archive),
         )
+        // DD-119：workspace.update 的 METADATA 段，CONTROL 9002 回读收敛名称/描述/TTL
+        .route(
+            "/service/v1/workspaces/channel-metadata",
+            post(crate::workspace_update::converge_workspace_channel_metadata),
+        )
         // 业务 Tenant 暂停/恢复：Community 归档与解档、恢复对账（DD-96）
         .route(
             "/service/v1/tenants/community-archive",

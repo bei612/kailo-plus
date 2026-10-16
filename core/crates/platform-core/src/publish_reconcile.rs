@@ -28,7 +28,7 @@ use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
 use crate::web_transport::{
     CONVERSATION_HIDE_ACTION, CONVERSATION_PUBLISH_ACTION, CONVERSATION_REOPEN_ACTION,
-    PUBLISH_ACTION,
+    PUBLISH_ACTION, TOPIC_ACTION,
 };
 
 /// Community-global project publications the reconciler settles: NIP-34
@@ -182,6 +182,7 @@ async fn pass(
     .bind(
         [
             PUBLISH_ACTION,
+            TOPIC_ACTION,
             crate::pulse::PUBLISH_ACTION,
             crate::projects::PUBLISH_ACTION,
             crate::reminders::PUBLISH_ACTION,
@@ -261,6 +262,7 @@ async fn pass(
     .bind(
         [
             PUBLISH_ACTION,
+            TOPIC_ACTION,
             crate::pulse::PUBLISH_ACTION,
             crate::projects::PUBLISH_ACTION,
             crate::reminders::PUBLISH_ACTION,
@@ -478,6 +480,23 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             return Err("REMINDER_EVENT_UNOBSERVABLE");
         }
         return Ok(exists);
+    }
+    // DD-119(9)：成员主题命令（严格 h+topic 的 9002）随事件事务存储，CONTROL 按原
+    // event ID 查得到它；查不到并过了结算窗口才是未送达，结果不明时从不另签
+    if p.action_key == TOPIC_ACTION {
+        if p.target_type.as_deref() != Some("CHANNEL")
+            || p.workspace_id.is_none()
+            || p.target_id != p.workspace_id
+        {
+            return Err("EVIDENCE_MISSING");
+        }
+        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
+            .await
+            .map_err(|_| "CONTROL_UNREADABLE")?;
+        return control
+            .event_exists(&state.http, &p.event_id)
+            .await
+            .map_err(|_| "QUERY_FAILED");
     }
     if p.action_key == PUBLISH_ACTION {
         if p.target_type.as_deref() != Some("CHANNEL")

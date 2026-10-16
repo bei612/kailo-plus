@@ -499,6 +499,7 @@ impl Governance {
         let params = Params {
             workspace_visibility: None,
             workspace_channel: None,
+            workspace_update: None,
             conversation_open: None,
             workspace_id: None,
             tenant_id: None,

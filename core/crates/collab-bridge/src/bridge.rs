@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
+pub use buzz_core::channel::canonical_channel_name;
 pub use buzz_core::kind::{
     KIND_DELETION, KIND_EVENT_REMINDER, KIND_NIP29_DELETE_EVENT, KIND_REACTION,
     KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2,
@@ -1431,6 +1432,172 @@ impl IdentityClient {
     }
 }
 
+/// DD-119 `workspace.update` 冻结的 TTL 目标：设置秒数，或清除为长期频道（原 9002 的
+/// 空 `ttl` 标签）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelTtl {
+    Seconds(i64),
+    Clear,
+}
+
+/// DD-119 `workspace.update` 冻结的 Channel 元数据目标状态。省略的字段保持不变；
+/// `reopen` 只单独出现（由 Core 准入保证）。可见性不在此列：它只是 Core 事实，Relay
+/// 投影始终 private，这里从不产生 `visibility` 标签。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChannelMetadataTarget {
+    pub name: Option<String>,
+    pub about: Option<String>,
+    pub ttl: Option<ChannelTtl>,
+    pub reopen: bool,
+}
+
+impl ChannelMetadataTarget {
+    /// 没有任何需要经 Relay 收敛的字段（例如只改可见性）。
+    pub fn is_empty(&self) -> bool {
+        self.name.is_none() && self.about.is_none() && self.ttl.is_none() && !self.reopen
+    }
+}
+
+/// 从原 Relay 签名的 kind 39000 读出的 Channel 元数据。Relay 对空描述省略 `about`，
+/// 因此缺省读作空串；缺 `ttl` 即长期频道；缺 `archived` 即未归档。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelMetadataState {
+    pub name: String,
+    pub about: String,
+    pub ttl: Option<i64>,
+    pub archived: bool,
+}
+
+/// [`IdentityClient::converge_channel_metadata`] 给出的下一步。
+#[derive(Debug)]
+pub enum ChannelMetadataStep {
+    /// 回读已等于冻结的目标状态
+    Converged(ChannelMetadataState),
+    /// 需要签发的 CONTROL 9002：已签名、尚未发送。调用方先落 DISPATCH 再投递
+    Send(Box<Event>),
+    /// 目标状态的前置条件不成立，是确定的拒绝（原因只进日志）
+    Refused(&'static str),
+}
+
+/// 解析 kind 39000 discovery 的元数据。重复或形状不对的标签是损坏的证据，不能被解释
+/// 成「未设置」。
+pub fn channel_metadata_state(event: &Event) -> Result<ChannelMetadataState, OperatorError> {
+    let malformed = || OperatorError::NotConverged("Channel metadata tag malformed".into());
+    let one = |key: &str| -> Result<Option<String>, OperatorError> {
+        let mut values = event
+            .tags
+            .iter()
+            .map(Tag::as_slice)
+            .filter(|t| t.first().is_some_and(|v| v == key));
+        let value = values.next();
+        if values.next().is_some() || value.is_some_and(|v| v.len() != 2) {
+            return Err(malformed());
+        }
+        Ok(value.map(|v| v[1].clone()))
+    };
+    let name = one("name")?.ok_or_else(malformed)?;
+    let about = one("about")?.unwrap_or_default();
+    let ttl = match one("ttl")? {
+        Some(value) => {
+            let seconds = value.parse::<i64>().ok().filter(|n| *n > 0);
+            Some(seconds.ok_or_else(malformed)?)
+        }
+        None => None,
+    };
+    let archived = match one("archived")?.as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(malformed()),
+    };
+    Ok(ChannelMetadataState {
+        name,
+        about,
+        ttl,
+        archived,
+    })
+}
+
+/// 把回读状态推向目标状态所需的 9002 标签（DD-119(3)(6)、SF-BUZ-50）。
+///
+/// `Ok(None)` 表示已收敛；`Ok(Some(tags))` 是只含必要字段的一条编辑（首个标签是 `h`，
+/// 清除 TTL 发空 `ttl`）；`Err` 是确定的前置条件失败。从不产生 `visibility`、`topic`
+/// 或 `purpose` 标签。`reopen` 要求回读 `archived=true` 且设有 TTL；`reopen_dispatched`
+/// 表示本动作此前已签发过解档命令，此时回读未归档就是解档已生效，而不是前置条件不成立。
+pub fn plan_channel_metadata(
+    channel_id: &str,
+    target: &ChannelMetadataTarget,
+    observed: &ChannelMetadataState,
+    reopen_dispatched: bool,
+) -> Result<Option<Vec<Vec<String>>>, &'static str> {
+    let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
+    if target.reopen {
+        return match (observed.archived, observed.ttl) {
+            (true, Some(_)) => Ok(Some(vec![tag("h", channel_id), tag("archived", "false")])),
+            (true, None) => Err("archived channel has no TTL"),
+            (false, _) if reopen_dispatched => Ok(None),
+            (false, _) => Err("channel is not archived"),
+        };
+    }
+    let mut tags = vec![tag("h", channel_id)];
+    if let Some(name) = &target.name {
+        if canonical_channel_name(name) != observed.name {
+            tags.push(tag("name", name));
+        }
+    }
+    if let Some(about) = &target.about {
+        if *about != observed.about {
+            tags.push(tag("about", about));
+        }
+    }
+    match target.ttl {
+        Some(ChannelTtl::Seconds(seconds)) if observed.ttl != Some(seconds) => {
+            tags.push(tag("ttl", &seconds.to_string()));
+        }
+        Some(ChannelTtl::Clear) if observed.ttl.is_some() => tags.push(tag("ttl", "")),
+        _ => {}
+    }
+    if tags.len() == 1 {
+        return Ok(None);
+    }
+    // 已归档的 Channel 拒绝除解档以外的 9002；按 TTL 到期归档的先以 reopen 解档
+    if observed.archived {
+        return Err("channel is archived");
+    }
+    Ok(Some(tags))
+}
+
+impl IdentityClient {
+    /// 把 Channel 的名称、描述、TTL 或归档状态向冻结的目标收敛一步（DD-119，模式同
+    /// [`IdentityClient::converge_channel_archived`]：先读、已是目标即不发送）。
+    ///
+    /// 与归档收敛不同，这里只签名不发送：每次签发都要先由 Core 落 DISPATCH 审计，再经
+    /// [`IdentityClient::deliver`] 投递并记结果，之后再调用本方法回读——判据是回读的
+    /// kind 39000，不是 event ID。冻结参数即目标状态，每轮重签是幂等的。调用方必须是该
+    /// Tenant 的 CONTROL（Channel owner）。
+    pub async fn converge_channel_metadata(
+        &self,
+        http: &reqwest::Client,
+        channel_id: &str,
+        target: &ChannelMetadataTarget,
+        reopen_dispatched: bool,
+    ) -> Result<ChannelMetadataStep, OperatorError> {
+        let Some(event) = self.channel_metadata(http, channel_id).await? else {
+            return Err(OperatorError::NotConverged(
+                "Channel metadata missing".into(),
+            ));
+        };
+        let observed = channel_metadata_state(&event)?;
+        match plan_channel_metadata(channel_id, target, &observed, reopen_dispatched) {
+            Ok(None) => Ok(ChannelMetadataStep::Converged(observed)),
+            Ok(Some(tags)) => {
+                let edit = self.sign(KIND_CHANNEL_EDIT_METADATA, "", &tags)?;
+                Ok(ChannelMetadataStep::Send(Box::new(edit)))
+            }
+            Err(reason) => Ok(ChannelMetadataStep::Refused(reason)),
+        }
+    }
+}
+
 /// Relay 接受上传后回传的媒体描述（Blossom BUD-02 的 blob descriptor）。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MediaDescriptor {
@@ -2445,5 +2612,223 @@ mod reminder_tests {
             "community.test"
         )
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod channel_metadata_tests {
+    use super::*;
+
+    const CHANNEL: &str = "6f1c0b52-6a55-4d0e-9a53-7c3f2a4e1b01";
+
+    fn discovery(tags: &[&[&str]]) -> Event {
+        let tags = tags
+            .iter()
+            .map(|t| Tag::parse(t.to_vec()).unwrap())
+            .collect::<Vec<_>>();
+        EventBuilder::new(Kind::Custom(KIND_CHANNEL_METADATA), "")
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    fn state(name: &str, about: &str, ttl: Option<i64>, archived: bool) -> ChannelMetadataState {
+        ChannelMetadataState {
+            name: name.into(),
+            about: about.into(),
+            ttl,
+            archived,
+        }
+    }
+
+    fn row(k: &str, v: &str) -> Vec<String> {
+        vec![k.to_owned(), v.to_owned()]
+    }
+
+    fn rows(event: &Event) -> Vec<Vec<String>> {
+        event.tags.iter().map(|t| t.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn discovery_state_reads_native_tags_and_rejects_ambiguous_evidence() {
+        let full = discovery(&[
+            &["d", CHANNEL],
+            &["name", "release"],
+            &["about", "Release review"],
+            &["private"],
+            &["t", "forum"],
+            &["topic", "Train 2026.10"],
+            &["archived", "true"],
+            &["ttl", "604800"],
+            &["ttl_deadline", "2026-10-23T00:00:00+00:00"],
+        ]);
+        assert_eq!(
+            channel_metadata_state(&full).unwrap(),
+            state("release", "Release review", Some(604800), true)
+        );
+        let bare = discovery(&[&["d", CHANNEL], &["name", "release"], &["t", "stream"]]);
+        assert_eq!(
+            channel_metadata_state(&bare).unwrap(),
+            state("release", "", None, false)
+        );
+        for broken in [
+            discovery(&[&["d", CHANNEL]]),
+            discovery(&[&["d", CHANNEL], &["name", "a"], &["name", "b"]]),
+            discovery(&[&["d", CHANNEL], &["name", "a"], &["ttl", "0"]]),
+            discovery(&[&["d", CHANNEL], &["name", "a"], &["ttl", "soon"]]),
+            discovery(&[&["d", CHANNEL], &["name", "a"], &["archived", "maybe"]]),
+            discovery(&[&["d", CHANNEL], &["name", "a", "extra"]]),
+        ] {
+            assert!(channel_metadata_state(&broken).is_err());
+        }
+    }
+
+    #[test]
+    fn edit_carries_only_changed_fields_and_never_visibility() {
+        let target = ChannelMetadataTarget {
+            name: Some("Release discussion".into()),
+            about: Some("Release review posts and replies".into()),
+            ttl: Some(ChannelTtl::Seconds(604800)),
+            reopen: false,
+        };
+        let before = state("release", "", None, false);
+        let tags = plan_channel_metadata(CHANNEL, &target, &before, false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tags,
+            vec![
+                row("h", CHANNEL),
+                row("name", "Release discussion"),
+                row("about", "Release review posts and replies"),
+                row("ttl", "604800"),
+            ]
+        );
+        // 只差描述：只发 about
+        let partial = state("Release discussion", "", Some(604800), false);
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &partial, false).unwrap(),
+            Some(vec![
+                row("h", CHANNEL),
+                row("about", "Release review posts and replies"),
+            ])
+        );
+        // 回读一致即收敛，不再签发
+        let after = state(
+            "Release discussion",
+            "Release review posts and replies",
+            Some(604800),
+            false,
+        );
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &after, false),
+            Ok(None)
+        );
+        // Relay 存 canonical 名称：「# 名称」与回读的「名称」一致
+        let hashed = ChannelMetadataTarget {
+            name: Some("# Release discussion".into()),
+            ..ChannelMetadataTarget::default()
+        };
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &hashed, &after, false),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn clearing_description_and_ttl_sends_empty_values_only_when_set() {
+        let target = ChannelMetadataTarget {
+            about: Some(String::new()),
+            ttl: Some(ChannelTtl::Clear),
+            ..ChannelMetadataTarget::default()
+        };
+        let set = state("release", "Old", Some(3600), false);
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &set, false).unwrap(),
+            Some(vec![row("h", CHANNEL), row("about", ""), row("ttl", "")])
+        );
+        let cleared = state("release", "", None, false);
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &cleared, false),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn reopen_requires_ttl_archival_and_converges_on_read_back() {
+        let target = ChannelMetadataTarget {
+            reopen: true,
+            ..ChannelMetadataTarget::default()
+        };
+        let reaped = state("release", "", Some(3600), true);
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &reaped, false).unwrap(),
+            Some(vec![row("h", CHANNEL), row("archived", "false")])
+        );
+        // 不是 TTL 到期归档（没有 TTL）：不由 workspace.update 解档
+        let manual = state("release", "", None, true);
+        assert!(plan_channel_metadata(CHANNEL, &target, &manual, false).is_err());
+        assert!(plan_channel_metadata(CHANNEL, &target, &manual, true).is_err());
+        // 从未签发且未归档：前置条件不成立；已签发后回读未归档：解档已生效
+        let open = state("release", "", Some(3600), false);
+        assert!(plan_channel_metadata(CHANNEL, &target, &open, false).is_err());
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &open, true),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn edits_on_archived_channel_are_refused_unless_already_converged() {
+        let target = ChannelMetadataTarget {
+            name: Some("renamed".into()),
+            ..ChannelMetadataTarget::default()
+        };
+        let archived = state("release", "", Some(60), true);
+        assert!(plan_channel_metadata(CHANNEL, &target, &archived, false).is_err());
+        let converged = state("renamed", "", Some(60), true);
+        assert_eq!(
+            plan_channel_metadata(CHANNEL, &target, &converged, false),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn signed_edit_is_a_control_9002_never_a_member_topic() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "metadata.invalid",
+        )
+        .unwrap();
+        let target = ChannelMetadataTarget {
+            name: Some("renamed".into()),
+            ttl: Some(ChannelTtl::Clear),
+            ..ChannelMetadataTarget::default()
+        };
+        let observed = state("release", "", Some(60), false);
+        let tags = plan_channel_metadata(CHANNEL, &target, &observed, false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tags,
+            vec![row("h", CHANNEL), row("name", "renamed"), row("ttl", "")]
+        );
+        let edit = client.sign(KIND_CHANNEL_EDIT_METADATA, "", &tags).unwrap();
+        assert_eq!(edit.kind.as_u16(), 9002);
+        assert!(edit.content.is_empty());
+        assert_eq!(rows(&edit), tags);
+        assert!(buzz_core::channel::topic_change(&edit).is_none());
+        // 成员主题是严格 h+topic 两标签的 9002，Relay 只对这一形态放行成员（DD-119(9)）
+        let channel = Uuid::parse_str(CHANNEL).unwrap();
+        let topic = client.sign_channel_topic_at(channel, "Train", 7).unwrap();
+        assert_eq!(topic.kind.as_u16(), 9002);
+        assert_eq!(rows(&topic), vec![row("h", CHANNEL), row("topic", "Train")]);
+        assert_eq!(
+            buzz_core::channel::topic_change(&topic),
+            Some((channel, "Train"))
+        );
     }
 }

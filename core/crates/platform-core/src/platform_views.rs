@@ -23,8 +23,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::bff::{db_enum, resolve_execution_context, BffState};
-use crate::governance::{Actor, TenantLifecycleOffer, WorkspaceLifecycleOffer};
+use crate::governance::{Actor, Definition, TenantLifecycleOffer, WorkspaceLifecycleOffer};
 use crate::spicedb::{Consistency, RelationshipFilter};
+use crate::workspace_update::{leave_shape, update_shape, LEAVE_ACTION, UPDATE_ACTION};
 
 #[derive(Deserialize)]
 pub struct DiscoveryQuery {
@@ -94,6 +95,54 @@ async fn discover_tenant(
     Ok(())
 }
 
+/// 目录开放且 ACTIVE 定义与语义形状一致时，入口才可能给出；提交时仍完整重新准入。
+async fn offered(
+    state: &BffState,
+    key: &str,
+    shape: fn(&Definition) -> bool,
+) -> Result<bool, sqlx::Error> {
+    if !crate::capability_registry::action_exposed(key) {
+        return Ok(false);
+    }
+    let definition = crate::governance::active_definition(&state.pool, key).await?;
+    Ok(definition.is_some_and(|def| shape(&def)))
+}
+
+/// 本页各 Workspace 中，调用者 fresh 通过 `permission` 的那些。批量 Check 不可判定时
+/// 整页失败，不返回貌似完整的部分入口。
+async fn checked_workspaces(
+    state: &BffState,
+    ctx: &crate::bff::ExecutionContext,
+    ids: &[Uuid],
+    permission: &str,
+) -> Result<HashSet<Uuid>, Response> {
+    let objects = ids.iter().map(Uuid::to_string).collect::<Vec<_>>();
+    let actor = ctx.tenant_principal_id.to_string();
+    let spicedb = &state.governance.spicedb;
+    let checked = spicedb.check_bulk("workspace", &objects, permission, &actor);
+    let Ok(allowed) = checked.await else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    Ok(ids
+        .iter()
+        .copied()
+        .filter(|id| allowed.contains(&id.to_string()))
+        .collect())
+}
+
+/// 本页中仍有未终结 workspace.update 的 Workspace（含尚在准入中的），编辑入口不给出。
+async fn open_updates(
+    state: &BffState,
+    tenant: Uuid,
+    ids: &[Uuid],
+) -> Result<HashSet<Uuid>, Response> {
+    let Ok(mut conn) = state.pool.acquire().await else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    };
+    let open = crate::workspace_update::open_updates(&mut conn, tenant, ids, true).await;
+    open.map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
 /// DD-80 public discovery is not message admission. Metadata is read from the
 /// original signed Relay snapshot by the existing CONTROL identity, never cached
 /// as a second channel authority. Private nonmember rows never reach that reader.
@@ -151,6 +200,35 @@ pub async fn discoverable_workspaces(
                 && def.permission_object_type == "tenant"
                 && def.workflow_kind.as_deref() == Some("MEMBERSHIP_PROJECTION")
         });
+    // DD-119 入口：编辑要 fresh Workspace manage 且没有未终结的 workspace.update；退出要
+    // ACTIVE 成员与 fresh Workspace discover。两者都只是提示，提交时重新准入。
+    let (update_offered, leave_offered) = match (
+        offered(&state, UPDATE_ACTION, update_shape).await,
+        offered(&state, LEAVE_ACTION, leave_shape).await,
+    ) {
+        (Ok(update), Ok(leave)) => (update, leave),
+        _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let (managed, open) = if update_offered {
+        let managed = match checked_workspaces(&state, &ctx, &ids, "manage").await {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+        match open_updates(&state, ctx.tenant_id, &ids).await {
+            Ok(open) => (managed, open),
+            Err(response) => return response,
+        }
+    } else {
+        (HashSet::new(), HashSet::new())
+    };
+    let discovered = if leave_offered {
+        match checked_workspaces(&state, &ctx, &ids, "discover").await {
+            Ok(value) => value,
+            Err(response) => return response,
+        }
+    } else {
+        HashSet::new()
+    };
     let mut items = Vec::with_capacity(rows.len());
     for row in &rows {
         let event = match control.channel_metadata(&state.http, &row.channel_id).await {
@@ -176,6 +254,21 @@ pub async fn discoverable_workspaces(
             && !channel.archived
         {
             item["joinActionKey"] = "workspace.join".into();
+        }
+        // 按 TTL 到期归档的 Channel 只提供 reopen；被其他方式归档的不给编辑入口
+        let can_reopen = channel.archived && channel.ttl_seconds.is_some();
+        let editable = !channel.archived || can_reopen;
+        if update_offered && managed.contains(&row.id) && !open.contains(&row.id) && editable {
+            item["updateActionKey"] = UPDATE_ACTION.into();
+            item["canReopen"] = can_reopen.into();
+        }
+        // 已归档的 Channel 拒绝 roster 变更，退出不会收敛，不给入口
+        if leave_offered
+            && row.membership_state.as_deref() == Some("ACTIVE")
+            && discovered.contains(&row.id)
+            && !channel.archived
+        {
+            item["leaveActionKey"] = LEAVE_ACTION.into();
         }
         let parsed = match serde_json::from_value::<contracts::DiscoverableWorkspacePageItem>(item)
         {

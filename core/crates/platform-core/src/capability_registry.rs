@@ -76,6 +76,12 @@ mod tests {
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));
+        // DD-119：频道编辑、本人退出与成员主题
+        assert!(action_exposed("workspace.update"));
+        assert!(action_exposed("workspace.leave"));
+        assert!(route_exposed(
+            "/api/v1/workspaces/{workspace_id}/channel/topic"
+        ));
         assert!(!action_exposed("workspace.delete"));
         assert!(action_exposed("tenant.suspend"));
         assert!(action_exposed("tenant.restore"));

@@ -141,14 +141,15 @@ impl Entity {
 }
 
 /// kind 与原动作方向 → 该实体停在的收敛中状态。scope 只重跑建立链：Workspace
-/// 暂停与恢复（`workspace.suspend`/`workspace.restore`）同属 WORKSPACE_LIFECYCLE，
-/// 但未登记重跑控制定义（DD-84），这里按原 action key 显式不给收敛中状态，使它们
-/// 的终态 Workflow 不会被当作建立链以 PROVISIONING 重跑。成员按 kind 区分建立与
-/// 撤权，身份投影按原 action key 区分登记与撤销。
+/// 暂停与恢复（`workspace.suspend`/`workspace.restore`）与频道编辑（`workspace.update`
+/// 的 METADATA 段，DD-119）同属 WORKSPACE_LIFECYCLE，但未登记重跑控制定义（DD-84），
+/// 这里按原 action key 显式不给收敛中状态，使它们的终态 Workflow 不会被当作建立链以
+/// PROVISIONING 重跑。成员按 kind 区分建立与撤权，身份投影按原 action key 区分登记与
+/// 撤销。
 fn converging_state(kind: &str, action_key: &str) -> Option<&'static str> {
     match kind {
         "WORKSPACE_LIFECYCLE" => match action_key {
-            "workspace.suspend" | "workspace.restore" => None,
+            "workspace.suspend" | "workspace.restore" | "workspace.update" => None,
             _ => Some("PROVISIONING"),
         },
         // 业务 Tenant 的暂停与恢复同样未登记重跑控制定义（DD-84、DD-96）
@@ -855,11 +856,11 @@ mod tests {
             converging_state("TENANT_LIFECYCLE", "tenant.bootstrap"),
             Some("PROVISIONING")
         );
-        for action in ["workspace.suspend", "workspace.restore"] {
+        for action in ["workspace.suspend", "workspace.restore", "workspace.update"] {
             assert_eq!(
                 converging_state("WORKSPACE_LIFECYCLE", action),
                 None,
-                "暂停与恢复未开放重跑，不能被当作建立链重跑"
+                "暂停、恢复与频道编辑未开放重跑，不能被当作建立链重跑"
             );
         }
         let tenant = Uuid::new_v4();
