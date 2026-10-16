@@ -6593,3 +6593,52 @@ SDK所有本批目标已终态并释放，不存在本批在途检查；root按�
 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-git.test.tsx`
 与 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx` 待 CI 执行。BFF 端点、Relay 授权、部署与浏览器验收均未进行；
 不声称 V-SCN-89/90/93 已验收。
+
+## 2026-10-16 Projects 原版仓库状态、建/删分支与创建评审恢复（DD-118 第 2a 批，源码候选，未验收）
+
+起点 main `54c1caee`（含四侧生成的 `ProjectsGitRefRequest`/`ProjectsGitRefResponse`、`ProjectsPublishRequest`
+的 `CREATE_PULL_REQUEST` 字段与 `ProjectsQueryRequest` 的 `REPOSITORY_STATES` 视图）；固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`。权威：DD-118、DD-81、V-SCN-92、REQ-24。本批只做 TypeScript/UI 与 Web 宿主；
+`POST /api/v1/projects/git/ref` 与 `REPOSITORY_STATES`、`CREATE_PULL_REQUEST` 的 BFF/Core 实现由另一批 Rust 并行完成，本批不改 Rust、契约或数据库。
+源码提交 `5b95217d`（本地分支 `feat/git-2a-ui`，未 push）。
+
+边界与影响：
+
+- 仓库状态：恢复原 `hooks.ts::RepoState/eventToRepoState/fetchRepoState/useRepoStateQuery`，经 Projects 宿主查询视图
+  `REPOSITORY_STATES`（只给 30617 坐标）读取 30618；可信作者过滤在 BFF，客户端保留原解析，取最新（同秒取最小事件 ID）。
+  仓库 Git 标签页据此恢复原 `resolveProjectDefaultBranch`、分支选择与 `projectBranchManagementState`。
+- 分支写入：`ProjectsGitHost` 增加可选 `createProjectRemoteBranch` / `deleteProjectRemoteBranch`（原输入名，`cloneUrl` 换成坐标，
+  另带幂等键）；`createProjectsGitHost(query, ref?)` 映射为 `ProjectsGitRefRequest`，2xx 回应必须是所请求分支与预期 head，否则按结果不明处理。
+  `branchMutations.ts` 每仓库先在 localStorage 落一条意图（类型化请求与幂等键，无凭据）再发送；确定拒绝即清除，
+  UNKNOWN（无回应、`UNKNOWN` 类或 `PUBLISH_RESULT_UNKNOWN`）保留并只允许以同一键重送同一请求，期间该仓库其他分支变更被阻止。
+  错误按 reason 映射原文案（`TARGET_NOT_FOUND`、`TARGET_STATE_CONFLICT`、`PUBLISH_REJECTED`、`PAYLOAD_TOO_LARGE`、`DEPENDENCY_UNAVAILABLE`）。
+- 创建评审：`pullRequestMutations.ts::publishProjectPullRequest` 经既有 `projects.publish` 宿主发 `CREATE_PULL_REQUEST`
+  （`targetEventId` 为仓库公告事件、title/body/branchName/targetBranch/commit），沿用 Issue 发布的意图/UNKNOWN 规则，
+  以新鲜工作项读取核对本人 1618 后才确认。merge-base 与 reviewers 原版本就为空/本地得出，本宿主不发送。
+- Web：`bff-client.ts::refProjectsGit` 只 POST `/api/v1/projects/git/ref` 并带 `Idempotency-Key`；`useProjectsHost` 的 `git`
+  增加该写入，作用域失效后的写入按结果不明抛出。
+- 能力门控：分支创建/删除菜单项只在宿主提供 ref 写入时出现；“Create review” 只在宿主同时有 `publish` 与 `git` 时出现；无假按钮。
+
+源码归属（`client-kit/ts/platform/src/react/projects/`，文件头注明原路径）：
+
+| 原路径（desktop/src/features/projects/） | 共享位置与挂载 |
+|---|---|
+| hooks.ts::RepoState/eventToRepoState/fetchRepoState/useRepoStateQuery | projectRepoState.ts |
+| branchMutations.ts、useOptimisticProjectBranches.ts、useProjectRepositoryRefSelection.ts、lib/projectBranches.ts、lib/projectBranchErrors.ts | 同名文件；ProjectRepositoryGitTabs.tsx 的分支状态 |
+| ui/ProjectBranchDialogs.tsx、ui/ProjectBranchActionDialogs.tsx | 同名文件；仓库 Git 标签页 |
+| ui/ProjectRepositorySource.tsx::RepositoryBranchDropdown | ProjectRepositorySource.tsx；Files 标签页 RepositoryFilesPanel 头部（原 `sourceControls` 头部） |
+| ui/CreatePullRequestDialog.tsx、pullRequestMutations.ts::publishProjectPullRequest | 同名文件；仓库 Reviews 标题“Create review”、Projects 概览 Reviews 上下文“+”、频道首页 Reviews 侧栏创建动作 |
+
+挂载差异：原版分支选择器位于 ProjectDetailScreen 右侧面板的分支作用域段，本工程尚无该段的恢复，故挂在 Files 面板自身原有的
+`sourceControls` 头部；Overview 仍隐藏头部（与原版一致）。
+
+未恢复及原因：merge（第 2b 批）；本地仓库/终端/clone/sync/push、本地 sync 状态回退与 merge-base（无本地检出）；
+标签选择（无按 tag 寻址的快照读取，不传标签选项）；右侧面板分支作用域段与 Repository management；评审更新/reviewers 选择（原创建流程未提供）。
+
+词条：新增 `projects.branch.*` 37 个、`projects.review.*` 20 个（en/zh-CN），`platform_text.dart` 以原生成器的
+`platform_catalog`/`dart_key`/`dart_string` 投影、按 `dart format` 80 列规则补入（该规则在本机先复现了 HEAD 文件逐字一致；
+本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。`CreateProjectWorkItemDialog` 的评审提交按钮恢复原 “Create review” 文案。
+
+验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/project-branch-review.test.tsx`，
+扩充 `web-client/web/src/platform/ui/ProjectsGitHost.test.tsx`，待 CI 执行。BFF 端点、Relay pre-receive 判定、
+`info/refs` 对账、部署与浏览器验收均未进行；不声称 V-SCN-92 或 DD-118 写入路径已验收。
