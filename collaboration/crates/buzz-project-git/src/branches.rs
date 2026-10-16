@@ -316,7 +316,10 @@ mod tests {
         let listing = format!(
             "{a}\trefs/remotes/x/refs/heads/demo\n{b}\trefs/heads/demo\n{a}\trefs/heads/demo2\n"
         );
-        assert_eq!(advertised_commit(&listing, "demo"), Ok(Some("b".repeat(64))));
+        assert_eq!(
+            advertised_commit(&listing, "demo"),
+            Ok(Some("b".repeat(64)))
+        );
         assert_eq!(advertised_commit(&listing, "other"), Ok(None));
         assert_eq!(advertised_commit("", "demo"), Ok(None));
         assert!(advertised_commit("zz\trefs/heads/demo\n", "demo").is_err());
@@ -373,7 +376,10 @@ mod tests {
             .trim()
             .to_string();
 
-        assert_eq!(remote_branch_commit(remote_path, "feature/demo", &auth), Ok(None));
+        assert_eq!(
+            remote_branch_commit(remote_path, "feature/demo", &auth),
+            Ok(None)
+        );
         let created =
             create_remote_branch_blocking(remote_path, "main", &commit, "feature/demo", &auth)
                 .expect("create remote branch");
