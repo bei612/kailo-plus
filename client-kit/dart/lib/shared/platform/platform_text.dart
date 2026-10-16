@@ -6638,8 +6638,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '请在本地检出中解决冲突',
   ),
   PlatformMessageKey.projectsReviewMergeConflictDescription: (
-    'Prepare the local checkout, then switch to {target} with the commands shown. After resolving and committing, push the target branch and retry the merge.',
-    '准备本地检出，然后按所示命令切换到 {target}。解决冲突并提交后，推送目标分支并重试合并。',
+    'The review branch conflicts with {target} or moved since it was loaded. Merge {target} into the review branch in your own checkout, resolve the conflicts, push the review branch, then retry the merge.',
+    '审阅分支与 {target} 存在冲突，或在加载后已变动。请在你自己的本地检出中把 {target} 合入审阅分支并解决冲突，推送审阅分支后重试合并。',
   ),
   PlatformMessageKey.projectsReviewMergeRejected: (
     'The repository rejected this merge.',
