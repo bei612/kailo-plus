@@ -19,4 +19,5 @@ export {projectWorkItemTarget,resolveProjectWorkItemTarget,type ProjectWorkItemT
 export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedProject } from "./projectCreation";
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";
 export { loadProjects, enumerateProjectEvents, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
+export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, type ProjectRepoDiff } from "./projectGit";
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";

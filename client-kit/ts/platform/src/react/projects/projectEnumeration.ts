@@ -6,12 +6,15 @@ import type { ProjectsQueryRequest, ProjectsPublishRequest } from "@client-kit/c
 import type { PulseEvent } from "../pulse/host";
 import { buildProjectReadModels } from "./projectModels";
 import { absorbStandaloneProjectRepositories } from "./lib/projectCollection";
+import type { ProjectsGitHost } from "./projectGit";
 
 export type ProjectsPage = {events: PulseEvent[]; limit: number; pubkey: string; bindingVersion?: number};
 export type ProjectsHost = {scopeKey: string; query: (request: ProjectsQueryRequest)=>Promise<ProjectsPage>;
   publish?: (request: ProjectsPublishRequest, idempotencyKey: string, observeOnly?: boolean,
     observation?:{eventId?:string;onPrepared:(eventId:string)=>void})=>Promise<{eventId:string}>;
-  completePublication?: (idempotencyKey:string,eventId:string)=>void};
+  completePublication?: (idempotencyKey:string,eventId:string)=>void;
+  /** DD-118 remote repository reads; absent hosts keep the original no-repository states. */
+  git?: ProjectsGitHost};
 
 /** Original bounded second-boundary drain, shared by directory and work items. */
 export async function enumerateProjectEvents(fetchPage: (request: ProjectsQueryRequest) => Promise<PulseEvent[]>,

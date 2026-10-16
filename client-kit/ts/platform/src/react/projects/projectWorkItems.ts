@@ -16,7 +16,7 @@ export type ProjectInboxWorkItem =
   | {type: "pull-request"; project: Project; repository: Repository; pullRequest: ProjectPullRequest};
 
 // Original goProject search references, never an authorization context.
-export type ProjectWorkItemTarget = {repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string};
+export type ProjectWorkItemTarget = {repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string};
 export function projectWorkItemTarget(item:ProjectInboxWorkItem):ProjectWorkItemTarget {
   return {repositoryId:item.repository.id,...(item.type==="issue"?{issueId:item.issue.id}:{pullRequestId:item.pullRequest.id})};
 }

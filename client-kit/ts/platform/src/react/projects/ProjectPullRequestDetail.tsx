@@ -1,5 +1,6 @@
 // Original read branches of Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx.
+// desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx, including the "Files changed"
+// section and diff stats when the workspace supplies the DD-118 review diff.
 import {Check,ChevronDown,ChevronUp,GitBranch,History,MessageSquare,TriangleAlert,UserPlus} from "lucide-react";
 import * as React from "react";
 import {translateCurrent as t} from "../../i18n";
@@ -216,11 +217,12 @@ export function PullRequestDetailHeader({
   );
 }
 
-type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel:ProjectDiscussInChannel}};
+type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel:ProjectDiscussInChannel};
+  diffStats?:{additions:number;deletions:number}|null;filesChanged?:React.ReactNode;filesCount?:number};
 export function ProjectPullRequestDetail(props:PullRequestDetailProps) {
  return <PullRequestDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.pullRequest.id}`} {...props}/>;
 }
-function PullRequestDetailBody({profiles,project,pullRequest:source,publication,contextPanel}:PullRequestDetailProps) {
+function PullRequestDetailBody({profiles,project,pullRequest:source,publication,contextPanel,diffStats,filesChanged,filesCount}:PullRequestDetailProps) {
  const t=useUiT();
  const cache=useQueryClient();
  const [confirmed,setConfirmed]=React.useState<{source:ProjectPullRequest;pullRequest:ProjectPullRequest}|null>(null);
@@ -285,6 +287,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
      }
    }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
  }
+ const [filesOpen,setFilesOpen]=React.useState(false);
  const [expandedReviewHistoryPullRequestIds,setExpandedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
  const [collapsedReviewHistoryPullRequestIds,setCollapsedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
   const commitCount = Math.max(1, pullRequest.updates.length + 1);
@@ -321,6 +324,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
     >
       <PullRequestDetailHeader pullRequest={pullRequest} />
       <PullRequestMetaHeader
+        diffStats={diffStats}
         profiles={profiles}
         project={project}
         pullRequest={pullRequest}
@@ -368,6 +372,18 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
               ))}
             </div>
           ) : null}
+        </ProjectDetailSection>
+      ) : null}
+      {filesChanged ? (
+        <ProjectDetailSection
+          count={filesCount}
+          defaultOpen={false}
+          onOpenChange={setFilesOpen}
+          open={filesOpen}
+          testId="project-detail-section-files"
+          title={t("projects.git.filesChanged")}
+        >
+          <div className="-mx-6">{filesChanged}</div>
         </ProjectDetailSection>
       ) : null}
       <ProjectDetailSection

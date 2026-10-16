@@ -1,7 +1,8 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/projects/ui/ProjectChannelHome.tsx.
 // The original channel host, overview rail, toggle and chrome are shared.
-// Repository healing/management and write/Git sheets still need their original governed consumers.
+// Commits/Files sheets use the host's DD-118 Git reads; repository healing/management and write
+// sheets still need their original governed consumers.
 import * as React from "react";
 import {Maximize2,Plus} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -92,7 +93,16 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
     if (lifetime.active) await onOpenChannel(current);
   });
   const toggleLabel = t(summaryVisible ? "projects.home.hideOverview" : "projects.home.showOverview");
-  const expandLabel = t("projects.sheet.expand", {section:t(workspaceTab === "prs" ? "projects.list.reviews" : "projects.list.tasks")});
+  const sheetTitle = t(workspaceTab === "prs" ? "projects.list.reviews" : workspaceTab === "commits" ? "projects.workItem.commits"
+    : workspaceTab === "files" ? "projects.git.files" : "projects.list.tasks");
+  const expandLabel = t("projects.sheet.expand", {section:sheetTitle});
+  const selectWorkspaceRepository = React.useCallback((id: string) => {
+    setWorkspaceCreateAction(null); setWorkspaceDetail(null); setRepositoryId(id);
+  }, []);
+  const openCommit = (commitHash: string) => {
+    if (!repository || !onOpenProject) return;
+    navigate(() => onOpenProject(project.id, {repositoryId:repository.id,commitHash,tab:"commits"}));
+  };
   const expandWorkspace = () => {
     if (!repository || !workspaceTab || !onOpenProject) return;
     navigate(() => onOpenProject(project.id, {repositoryId:repository.id,...workspaceDetail?.navigation,tab:workspaceTab}));
@@ -100,7 +110,8 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   const workspaceSheet = workspaceOpen && host && renderWorkItems && repository && workspaceTab
     ? <ProjectHomeWorkspaceSheet key={`${scopeKey}:${project.id}:${repository.id}:${workspaceTab}`}
         host={host} project={project} repositoryId={repository.id} tab={workspaceTab}
-        renderWorkItems={renderWorkItems} onDetailChange={setWorkspaceDetail} onCreateActionChange={setWorkspaceCreateAction}/> : undefined;
+        renderWorkItems={renderWorkItems} onDetailChange={setWorkspaceDetail} onCreateActionChange={setWorkspaceCreateAction}
+        onOpenCommit={onOpenProject ? openCommit : undefined} onSelectRepository={selectWorkspaceRepository}/> : undefined;
   return <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
     summaryVisible && "bg-sidebar", summaryVisible && sidebar?.open === false && "pl-2")}
     data-project-context-detached={summaryVisible ? "true" : undefined}
@@ -134,7 +145,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
                 onClick={expandWorkspace} size="icon" title={expandLabel} type="button" variant="ghost"><Maximize2/></Button>
             </TooltipTrigger><TooltipContent>{expandLabel}</TooltipContent></Tooltip>:null}</>},
             idleAuxiliaryOverridesThread: workspaceOpen,
-            idleAuxiliaryTitle: t(workspaceTab === "prs" ? "projects.list.reviews" : "projects.list.tasks"),
+            idleAuxiliaryTitle: sheetTitle,
             onCloseIdleAuxiliaryPanel: closeWorkspace,
           })
         : <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
@@ -150,7 +161,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
         <ProjectHomeContextPanel project={project}
           channels={channels.map(channel => ({ id: channel.channel.channelId, name: channel.channel.name }))}
           onOpenChannel={openChannel} activeWorkspaceTab={workspaceTab}
-          onOpenWorkspace={host && renderWorkItems ? openWorkspace : undefined}/>
+          onOpenWorkspace={host && renderWorkItems ? openWorkspace : undefined} host={host}/>
       </ProjectHomeColumn> : null}
     </ProjectContextRail>
   </div>;

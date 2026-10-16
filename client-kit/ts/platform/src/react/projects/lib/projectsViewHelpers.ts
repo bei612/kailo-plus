@@ -18,6 +18,22 @@ export function formatExactTimestamp(createdAt: number) {
     second: "2-digit",
   });
 }
+// Original repository file-list helpers (REPOSITORY_ENTRY_PAGE_SIZE, formatLastChangedAt,
+// formatFileSize, nextRepositoryEntryLimit); dates use the platform locale.
+export const REPOSITORY_ENTRY_PAGE_SIZE = 200;
+export function formatLastChangedAt(timestamp: number | null) {
+  if (!timestamp) return "—";
+  return new Date(timestamp * 1_000).toLocaleString(getLocale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+export function formatFileSize(size: number | null) {
+  if (size === null) return "—";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+export function nextRepositoryEntryLimit(current: number, total: number) {
+  return Math.min(current + REPOSITORY_ENTRY_PAGE_SIZE, total);
+}
 const PROJECTS_VIEW_MODE_STORAGE_KEY = "buzz.projects.viewMode";
 const PROJECTS_FILTER_STORAGE_KEY = "buzz.projects.filter";
 const PROJECTS_SORT_STORAGE_KEY = "buzz.projects.sort";

@@ -1,7 +1,8 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/ProjectHomeContextPanel.tsx.
-// Original channel and Tasks/Reviews sections. Git/management consumers remain un-restored;
-// do not turn those missing consumers into empty or alternative destinations.
-import { ChevronDown, CircleDot, GitPullRequest, Hash } from "lucide-react";
+// Original channel and Tasks/Reviews sections, plus Commits/Files when the host offers Git reads
+// (DD-118). People, activity counts and management consumers remain un-restored; do not turn
+// those missing consumers into empty or alternative destinations.
+import { ChevronDown, CircleDot, FileCode2, GitCommitHorizontal, GitPullRequest, Hash } from "lucide-react";
 import * as React from "react";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -10,6 +11,9 @@ import { SECTION_ACTION_VISIBILITY_CLASS } from "../sidebar/sidebarSectionStyles
 import { ProjectChannelIcon } from "./ProjectChannelIcon";
 import { listProjectBoundChannels } from "./lib/projectRelatedChannels";
 import type { Project } from "./projectModels";
+import type { ProjectsHost } from "./projectEnumeration";
+import { useProjectRepoSnapshotQuery } from "./projectGitQueries";
+import type { ProjectHomeWorkspaceSheetTab } from "./ProjectHomeWorkspaceSheet";
 type Channel = { id: string; name: string };
 const PROJECT_HOME_SIDEBAR_ROW_CLASS =
   "h-8 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-left text-sm font-normal text-sidebar-foreground/80 transition-[background-color,color] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50";
@@ -161,12 +165,38 @@ function ChannelContextRow({
 }
 
 
-export function ProjectHomeContextPanel({ project, channels, onOpenChannel, activeWorkspaceTab, onOpenWorkspace }: {
+/** Original Commits/Files rows; the Files count is the first repository's snapshot size. */
+function ProjectHomeGitNav({ host, project, activeWorkspaceTab, onOpenWorkspace }: {
+  host: ProjectsHost;
+  project: Project;
+  activeWorkspaceTab?: ProjectHomeWorkspaceSheetTab | null;
+  onOpenWorkspace: (tab: ProjectHomeWorkspaceSheetTab, repositoryId: string) => void;
+}) {
+  const t = useUiT();
+  const firstRepository = project.repositories[0] ?? null;
+  const snapshotQuery = useProjectRepoSnapshotQuery(host, firstRepository, firstRepository?.defaultBranch ?? null, null, Boolean(firstRepository));
+  const fileCount = snapshotQuery.data?.files.length;
+  return <>
+    <ContextNavButton disabled={!firstRepository} icon={<GitCommitHorizontal/>}
+      onClick={() => { if (firstRepository) onOpenWorkspace("commits", firstRepository.id); }}
+      pressed={activeWorkspaceTab === "commits"} testId="project-home-context-commits">
+      {t("projects.workItem.commits")}
+    </ContextNavButton>
+    <ContextNavButton count={fileCount != null && fileCount > 0 ? fileCount : undefined} disabled={!firstRepository} icon={<FileCode2/>}
+      onClick={() => { if (firstRepository) onOpenWorkspace("files", firstRepository.id); }}
+      pressed={activeWorkspaceTab === "files"} testId="project-home-context-files">
+      {t("projects.git.files")}
+    </ContextNavButton>
+  </>;
+}
+
+export function ProjectHomeContextPanel({ project, channels, onOpenChannel, activeWorkspaceTab, onOpenWorkspace, host }: {
   project: Project;
   channels: Channel[];
   onOpenChannel: (channelId: string) => void;
-  activeWorkspaceTab?: "issues" | "prs" | null;
-  onOpenWorkspace?: (tab: "issues" | "prs", repositoryId: string) => void;
+  activeWorkspaceTab?: ProjectHomeWorkspaceSheetTab | null;
+  onOpenWorkspace?: (tab: ProjectHomeWorkspaceSheetTab, repositoryId: string) => void;
+  host?: ProjectsHost;
 }) {
   const t = useUiT();
   const channelsById = new Map(channels.map(channel => [channel.id, channel]));
@@ -186,6 +216,7 @@ export function ProjectHomeContextPanel({ project, channels, onOpenChannel, acti
           pressed={activeWorkspaceTab === "prs"} testId="project-home-context-reviews">
           {t("projects.list.reviews")}
         </ContextNavButton>
+        {host?.git ? <ProjectHomeGitNav host={host} project={project} activeWorkspaceTab={activeWorkspaceTab} onOpenWorkspace={onOpenWorkspace}/> : null}
       </ContextSection> : null}
       <ContextSection
         collapsible

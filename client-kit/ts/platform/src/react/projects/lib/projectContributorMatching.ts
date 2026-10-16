@@ -1,7 +1,11 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/lib/projectContributorMatching.ts::signedProjectContributorPubkeys,
-// projectContributorActivityCounts and commitAuthorPubkeysFromPullRequests, unchanged.
-// The Git author/profile matchers have no shared consumer yet and stay in the fixed source.
+// projectContributorActivityCounts and commitAuthorPubkeysFromPullRequests, unchanged; the Git
+// author/profile matchers (profileForCommitAuthor, profileForCommit) serve the
+// restored commit list (DD-118). The viewer's local git identity has no Web source.
+import type { UserProfileLookup } from "../../messages/system/identity";
+import { parseDirectAuthorInput as parsePubkeyInput } from "../../workflow-author-candidates";
+import type { ProjectRepoCommit, ProjectRepoContributor } from "../projectGit";
 
 type SignedProjectContributorSources = {
   owner: string;
@@ -130,4 +134,74 @@ export function commitAuthorPubkeysFromPullRequests(
     }
   }
   return byHash;
+}
+
+// Git author strings are unauthenticated — anyone can commit under any
+// name/email — so a profile match here is a display heuristic, never an
+// identity claim. Matching is limited to exact equality against profile
+// fields. Callers must present matches as unverified.
+function profileMatchesContributor(contributor: ProjectRepoContributor, profile: UserProfileLookup[string] | undefined, pubkey?: string) {
+  if (!profile) return false;
+  const name = contributor.name.trim().toLowerCase();
+  const email = contributor.email.trim().toLowerCase();
+  const candidates = [pubkey, profile.displayName, profile.nip05Handle, profile.ownerPubkey]
+    .map((value) => value?.trim().toLowerCase() ?? "")
+    .filter(Boolean);
+  return (name.length > 0 && candidates.includes(name)) || (email.length > 0 && candidates.includes(email));
+}
+
+export function profileForCommitAuthor(commit: ProjectRepoCommit, profiles: UserProfileLookup | undefined) {
+  if (!profiles) return null;
+  // A Git author may use their Nostr key as the name/email. This is still an
+  // unauthenticated display hint—the signed PR mapping remains authoritative.
+  const claimedPubkey = parsePubkeyInput(commit.authorName) ?? parsePubkeyInput(commit.authorEmail);
+  if (claimedPubkey) {
+    const profile = profiles[claimedPubkey];
+    if (profile) return { pubkey: claimedPubkey, profile };
+  }
+  const contributor = { name: commit.authorName, email: commit.authorEmail, commitCount: 0, lastCommitAt: commit.timestamp };
+  for (const [pubkey, profile] of Object.entries(profiles)) {
+    if (profileMatchesContributor(contributor, profile, pubkey)) return { pubkey, profile };
+  }
+  return null;
+}
+
+export type ViewerGitIdentity = {
+  pubkey: string | null;
+  name?: string | null;
+  email?: string | null;
+};
+
+function commitMatchesViewerGitIdentity(commit: ProjectRepoCommit, viewer: ViewerGitIdentity) {
+  // Email-only equality: a display name is not an identity.
+  const email = commit.authorEmail.trim().toLowerCase();
+  const viewerEmail = viewer.email?.trim().toLowerCase() ?? "";
+  return email.length > 0 && email === viewerEmail;
+}
+
+/**
+ * Resolve the best-known profile for a commit, in order of confidence:
+ * 1. the signed PR-event mapping (verified publisher),
+ * 2. the exact-match git author heuristic,
+ * 3. the viewer's own git identity (display-only).
+ */
+export function profileForCommit(
+  commit: ProjectRepoCommit,
+  profiles: UserProfileLookup | undefined,
+  commitAuthorPubkeys?: Map<string, string>,
+  viewerGitIdentity?: ViewerGitIdentity | null,
+) {
+  const mappedPubkey = commitAuthorPubkeys?.get(commit.hash.toLowerCase()) ?? commitAuthorPubkeys?.get(commit.shortHash.toLowerCase());
+  if (mappedPubkey) {
+    const profile = profiles?.[mappedPubkey.toLowerCase()];
+    if (profile) return { pubkey: mappedPubkey.toLowerCase(), profile };
+  }
+  const authorMatch = profileForCommitAuthor(commit, profiles);
+  if (authorMatch) return authorMatch;
+  if (viewerGitIdentity?.pubkey && commitMatchesViewerGitIdentity(commit, viewerGitIdentity)) {
+    const pubkey = viewerGitIdentity.pubkey.toLowerCase();
+    const profile = profiles?.[pubkey];
+    if (profile) return { pubkey, profile };
+  }
+  return null;
 }
