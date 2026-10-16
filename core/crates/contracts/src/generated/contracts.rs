@@ -1485,6 +1485,11 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
 
+    /// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+    /// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_update: Option<WorkspaceUpdateClass>,
+
     /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_visibility: Option<WorkspaceVisibility>,
@@ -2313,9 +2318,46 @@ pub enum ChannelType {
     Stream,
 }
 
-/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+/// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+/// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+///
+/// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+/// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+/// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceUpdateClass {
+    /// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_ttl: Option<bool>,
+
+    /// 原 9002 about；空字符串清空描述。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+    /// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopen: Option<bool>,
+
+    /// 设置原 Buzz 临时频道的不活跃期限（秒）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+
+    /// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkspaceVisibility>,
+}
+
+/// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
 ///
 /// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 ///
 /// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5627,6 +5669,11 @@ pub struct DelegatedActionMetadataV1 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverableWorkspace {
+    /// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
+    /// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_reopen: Option<bool>,
+
     pub channel: ChannelClass,
 
     pub created_at: String,
@@ -5639,10 +5686,20 @@ pub struct DiscoverableWorkspace {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub join_action_key: Option<JoinActionKey>,
 
+    /// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
+    /// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leave_action_key: Option<LeaveActionKey>,
+
     pub member_count: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub membership_state: Option<WorkspaceMembershipState>,
+
+    /// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
+    /// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_action_key: Option<UpdateActionKey>,
 
     pub visibility: WorkspaceVisibility,
 }
@@ -5662,6 +5719,10 @@ pub struct ChannelClass {
 
     pub name: String,
 
+    /// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_deadline: Option<String>,
 
@@ -5673,6 +5734,12 @@ pub struct ChannelClass {
 pub enum JoinActionKey {
     #[serde(rename = "workspace.join")]
     WorkspaceJoin,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum LeaveActionKey {
+    #[serde(rename = "workspace.leave")]
+    WorkspaceLeave,
 }
 
 /// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
@@ -5695,6 +5762,12 @@ pub enum WorkspaceMembershipState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UpdateActionKey {
+    #[serde(rename = "workspace.update")]
+    WorkspaceUpdate,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverableWorkspacePage {
     pub items: Vec<DiscoverableWorkspacePageItem>,
@@ -5706,6 +5779,11 @@ pub struct DiscoverableWorkspacePage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverableWorkspacePageItem {
+    /// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
+    /// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_reopen: Option<bool>,
+
     pub channel: ChannelClass,
 
     pub created_at: String,
@@ -5718,10 +5796,20 @@ pub struct DiscoverableWorkspacePageItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub join_action_key: Option<JoinActionKey>,
 
+    /// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
+    /// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leave_action_key: Option<LeaveActionKey>,
+
     pub member_count: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub membership_state: Option<WorkspaceMembershipState>,
+
+    /// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
+    /// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_action_key: Option<UpdateActionKey>,
 
     pub visibility: WorkspaceVisibility,
 }
@@ -6084,6 +6172,11 @@ pub struct CommandClass {
     /// Workspace 内动作的执行 Workspace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+
+    /// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+    /// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_update: Option<WorkspaceUpdateClass>,
 
     /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7764,6 +7857,10 @@ pub struct WebChannelView {
 
     pub name: String,
 
+    /// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_deadline: Option<String>,
 
@@ -8037,6 +8134,15 @@ pub struct WebPublishMessageRequest {
     /// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_event_id: Option<String>,
+}
+
+/// Web HUMAN 修改已准入 Workspace 对应 Channel 的原主题（DD-119、09 §3）。BFF 以本人 SERVER 身份按 DD-81 签发严格
+/// h+topic 两标签的 kind 9002，幂等键沿原发布的 Idempotency-Key 请求头；不接受 raw tags、signed event
+/// 或任何管理标签。结果不明只对账不重签；已归档 Channel 不接受。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebPublishTopicRequest {
+    /// 原频道主题；空字符串清空主题，不改变频道名称、描述、TTL 或成员。
+    pub topic: String,
 }
 
 /// DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
@@ -9514,6 +9620,38 @@ pub struct WorkspaceChannelCreate {
     /// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_seconds: Option<i64>,
+}
+
+/// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+/// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+/// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceUpdate {
+    /// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_ttl: Option<bool>,
+
+    /// 原 9002 about；空字符串清空描述。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+    /// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopen: Option<bool>,
+
+    /// 设置原 Buzz 临时频道的不活跃期限（秒）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+
+    /// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkspaceVisibility>,
 }
 
 /// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。

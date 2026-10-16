@@ -481,6 +481,9 @@
 //    webPublishMessageRequest, err := UnmarshalWebPublishMessageRequest(bytes)
 //    bytes, err = webPublishMessageRequest.Marshal()
 //
+//    webPublishTopicRequest, err := UnmarshalWebPublishTopicRequest(bytes)
+//    bytes, err = webPublishTopicRequest.Marshal()
+//
 //    webSearchQuery, err := UnmarshalWebSearchQuery(bytes)
 //    bytes, err = webSearchQuery.Marshal()
 //
@@ -621,6 +624,9 @@
 //
 //    workspaceChannelCreate, err := UnmarshalWorkspaceChannelCreate(bytes)
 //    bytes, err = workspaceChannelCreate.Marshal()
+//
+//    workspaceUpdate, err := UnmarshalWorkspaceUpdate(bytes)
+//    bytes, err = workspaceUpdate.Marshal()
 //
 //    workspaceVisibility, err := UnmarshalWorkspaceVisibility(bytes)
 //    bytes, err = workspaceVisibility.Marshal()
@@ -2363,6 +2369,16 @@ func (r *WebPublishMessageRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalWebPublishTopicRequest(data []byte) (WebPublishTopicRequest, error) {
+	var r WebPublishTopicRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebPublishTopicRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalWebSearchQuery(data []byte) (WebSearchQuery, error) {
 	var r WebSearchQuery
 	err := json.Unmarshal(data, &r)
@@ -2830,6 +2846,16 @@ func UnmarshalWorkspaceChannelCreate(data []byte) (WorkspaceChannelCreate, error
 }
 
 func (r *WorkspaceChannelCreate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspaceUpdate(data []byte) (WorkspaceUpdate, error) {
+	var r WorkspaceUpdate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspaceUpdate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3999,6 +4025,9 @@ type ActionCommand struct {
 	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+	// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+	WorkspaceUpdate *WorkspaceUpdateClass `json:"workspaceUpdate,omitempty"`
 	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
 }
@@ -4349,6 +4378,28 @@ type WorkspaceChannelClass struct {
 	Description *string     `json:"description,omitempty"`
 	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
 	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+}
+
+// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+//
+// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+type WorkspaceUpdateClass struct {
+	// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+	ClearTTL *bool `json:"clearTtl,omitempty"`
+	// 原 9002 about；空字符串清空描述。
+	Description *string `json:"description,omitempty"`
+	// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+	Name *string `json:"name,omitempty"`
+	// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+	// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+	Reopen *bool `json:"reopen,omitempty"`
+	// 设置原 Buzz 临时频道的不活跃期限（秒）。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+	// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -5673,15 +5724,24 @@ type DelegatedActionMetadataV1 struct {
 }
 
 type DiscoverableWorkspace struct {
+	// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
+	// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
+	CanReopen *bool        `json:"canReopen,omitempty"`
 	Channel   ChannelClass `json:"channel"`
 	CreatedAt time.Time    `json:"createdAt"`
 	ID        string       `json:"id"`
 	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
-	IsMember        bool                      `json:"isMember"`
-	JoinActionKey   *JoinActionKey            `json:"joinActionKey,omitempty"`
+	IsMember      bool           `json:"isMember"`
+	JoinActionKey *JoinActionKey `json:"joinActionKey,omitempty"`
+	// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
+	// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
+	LeaveActionKey  *LeaveActionKey           `json:"leaveActionKey,omitempty"`
 	MemberCount     int64                     `json:"memberCount"`
 	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
-	Visibility      WorkspaceVisibility       `json:"visibility"`
+	// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
+	// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
+	UpdateActionKey *UpdateActionKey    `json:"updateActionKey,omitempty"`
+	Visibility      WorkspaceVisibility `json:"visibility"`
 }
 
 // Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
@@ -5691,8 +5751,10 @@ type ChannelClass struct {
 	ChannelType ChannelType `json:"channelType"`
 	Description *string     `json:"description,omitempty"`
 	Name        string      `json:"name"`
-	TTLDeadline *time.Time  `json:"ttlDeadline,omitempty"`
-	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
+	// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
+	Topic       *string    `json:"topic,omitempty"`
+	TTLDeadline *time.Time `json:"ttlDeadline,omitempty"`
+	TTLSeconds  *int64     `json:"ttlSeconds,omitempty"`
 }
 
 type DiscoverableWorkspacePage struct {
@@ -5701,15 +5763,24 @@ type DiscoverableWorkspacePage struct {
 }
 
 type DiscoverableWorkspacePageItem struct {
+	// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
+	// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
+	CanReopen *bool        `json:"canReopen,omitempty"`
 	Channel   ChannelClass `json:"channel"`
 	CreatedAt time.Time    `json:"createdAt"`
 	ID        string       `json:"id"`
 	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
-	IsMember        bool                      `json:"isMember"`
-	JoinActionKey   *JoinActionKey            `json:"joinActionKey,omitempty"`
+	IsMember      bool           `json:"isMember"`
+	JoinActionKey *JoinActionKey `json:"joinActionKey,omitempty"`
+	// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
+	// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
+	LeaveActionKey  *LeaveActionKey           `json:"leaveActionKey,omitempty"`
 	MemberCount     int64                     `json:"memberCount"`
 	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
-	Visibility      WorkspaceVisibility       `json:"visibility"`
+	// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
+	// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
+	UpdateActionKey *UpdateActionKey    `json:"updateActionKey,omitempty"`
+	Visibility      WorkspaceVisibility `json:"visibility"`
 }
 
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
@@ -5886,6 +5957,9 @@ type CommandClass struct {
 	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+	// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+	WorkspaceUpdate *WorkspaceUpdateClass `json:"workspaceUpdate,omitempty"`
 	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
 }
@@ -6637,8 +6711,10 @@ type WebChannelView struct {
 	ChannelType ChannelType `json:"channelType"`
 	Description *string     `json:"description,omitempty"`
 	Name        string      `json:"name"`
-	TTLDeadline *time.Time  `json:"ttlDeadline,omitempty"`
-	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
+	// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
+	Topic       *string    `json:"topic,omitempty"`
+	TTLDeadline *time.Time `json:"ttlDeadline,omitempty"`
+	TTLSeconds  *int64     `json:"ttlSeconds,omitempty"`
 }
 
 // Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
@@ -6786,6 +6862,14 @@ type WebPublishMessageRequest struct {
 	MessageType    *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
+}
+
+// Web HUMAN 修改已准入 Workspace 对应 Channel 的原主题（DD-119、09 §3）。BFF 以本人 SERVER 身份按 DD-81 签发严格
+// h+topic 两标签的 kind 9002，幂等键沿原发布的 Idempotency-Key 请求头；不接受 raw tags、signed event
+// 或任何管理标签。结果不明只对账不重签；已归档 Channel 不接受。
+type WebPublishTopicRequest struct {
+	// 原频道主题；空字符串清空主题，不改变频道名称、描述、TTL 或成员。
+	Topic string `json:"topic"`
 }
 
 // DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
@@ -7635,6 +7719,25 @@ type WorkspaceChannelCreate struct {
 	Description *string     `json:"description,omitempty"`
 	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
 	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+}
+
+// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+type WorkspaceUpdate struct {
+	// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+	ClearTTL *bool `json:"clearTtl,omitempty"`
+	// 原 9002 about；空字符串清空描述。
+	Description *string `json:"description,omitempty"`
+	// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+	Name *string `json:"name,omitempty"`
+	// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+	// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+	Reopen *bool `json:"reopen,omitempty"`
+	// 设置原 Buzz 临时频道的不活跃期限（秒）。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+	// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
 }
 
 // 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
@@ -8604,9 +8707,11 @@ const (
 	Stream ChannelType = "stream"
 )
 
-// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
 //
 // DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+//
+// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 //
 // Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
 type WorkspaceVisibility string
@@ -9145,6 +9250,12 @@ const (
 	WorkspaceJoin JoinActionKey = "workspace.join"
 )
 
+type LeaveActionKey string
+
+const (
+	WorkspaceLeave LeaveActionKey = "workspace.leave"
+)
+
 // WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
 type WorkspaceMembershipState string
 
@@ -9154,6 +9265,12 @@ const (
 	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
 	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
 	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
+)
+
+type UpdateActionKey string
+
+const (
+	UpdateActionKeyWorkspaceUpdate UpdateActionKey = "workspace.update"
 )
 
 // 解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。
