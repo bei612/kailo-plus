@@ -1025,8 +1025,8 @@ async fn freeze_lifecycle_readers(
                 "tenant admin 主体不是 principal".into(),
             ));
         };
-        let principal = Uuid::parse_str(admin_subject)
-            .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        let principal =
+            Uuid::parse_str(admin_subject).map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
         if !crate::agent_definition::active_owner(tx, deletion.tenant_id, principal).await? {
             continue;
         }
