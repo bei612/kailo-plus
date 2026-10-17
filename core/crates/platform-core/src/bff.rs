@@ -563,6 +563,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::agent_installation_query::users),
         )
         .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/tools",
+            get(crate::agent_installation_query::tools),
+        )
+        .exposed_route(
             "/api/v1/agent-installations/{resource_id}/memory/core",
             get(crate::agent_memory::core),
         )

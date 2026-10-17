@@ -331,6 +331,122 @@ pub async fn users(
     }
 }
 
+#[derive(FromRow)]
+struct ToolBindingRow {
+    tool_resource_id: Uuid,
+    name: String,
+    source: String,
+    capability_contract_key: Option<String>,
+    application_binding_id: Option<Uuid>,
+    status: String,
+}
+
+/// DD-122 (8): only existing reason codes explain a non-ACTIVE ToolBinding.
+fn tool_reason(status: &str) -> Option<&'static str> {
+    match status {
+        "NO_PERMISSION" => Some("PERMISSION_DENIED"),
+        "REVOKED" => Some("BINDING_NOT_ACTIVE"),
+        "PENDING" => Some("PROJECTION_DELAYED"),
+        _ => None,
+    }
+}
+
+/// DD-122: the Tools of the Installation's current generation and their
+/// ToolBinding state. Same Workspace scope and fresh Installation read as the
+/// detail view; it never grants, resolves or repairs a binding.
+pub async fn tools(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(r) => return r,
+    };
+    if let Err(r) = read_view(&state, &ctx, id).await {
+        return r;
+    }
+    match tool_page(&state, &ctx, id).await {
+        Ok(page) => Json(page).into_response(),
+        Err(r) => r,
+    }
+}
+
+async fn tool_page(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    id: Uuid,
+) -> Result<contracts::AgentInstallationToolPage, Response> {
+    // The active generation; before the first activation, the pending one.
+    let current: Option<(i64, serde_json::Value)> = sqlx::query_as(
+        "select p.generation,v.content from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id and r.tenant_id=$2
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+        join catalog.agent_version v on v.asset_id=p.agent_version_asset_id
+        where i.resource_id=$1 and (i.active_projection_generation is null
+          or p.generation=i.active_projection_generation)
+        order by p.generation desc limit 1",
+    )
+    .bind(id)
+    .bind(ctx.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(crate::service_api::unavailable)?;
+    let Some((generation, content)) = current else {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    };
+    let rows: Vec<ToolBindingRow> = sqlx::query_as(
+        "select b.tool_resource_id,t.name,t.source,t.capability_contract_key,
+        r.application_binding_id,b.status from catalog.tool_binding b
+        join catalog.tool_definition t on t.resource_id=b.tool_resource_id
+        join catalog.resource r on r.id=t.resource_id and r.tenant_id=$3
+        where b.installation_resource_id=$1 and b.projection_generation=$2
+        order by t.source desc,t.name,b.tool_resource_id",
+    )
+    .bind(id)
+    .bind(generation)
+    .bind(ctx.tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(crate::service_api::unavailable)?;
+    let mut tools = Vec::with_capacity(rows.len());
+    let mut resolved = std::collections::BTreeSet::new();
+    for row in rows {
+        let requirement = if row.source == "APPLICATION" {
+            row.capability_contract_key
+        } else {
+            None
+        };
+        if let Some(key) = &requirement {
+            resolved.insert(key.clone());
+        }
+        tools.push(json!({
+            "toolResourceId": row.tool_resource_id, "name": row.name, "source": row.source,
+            "capabilityRequirement": requirement,
+            "applicationBindingId": row.application_binding_id,
+            "bindingStatus": row.status, "reasonCode": tool_reason(&row.status),
+        }));
+    }
+    // A requirement without an active provider has no Tool yet (17 §6).
+    if let Some(requirements) = content["capabilityRequirements"].as_array() {
+        for requirement in requirements.iter().filter_map(serde_json::Value::as_str) {
+            if !resolved.contains(requirement) {
+                tools.push(json!({
+                    "source": "APPLICATION", "capabilityRequirement": requirement,
+                    "bindingStatus": "PENDING", "reasonCode": "BINDING_NOT_ACTIVE",
+                }));
+            }
+        }
+    }
+    serde_json::from_value(json!({
+        "installationResourceId": id, "generation": generation, "tools": tools,
+    }))
+    .map_err(|_| {
+        tracing::error!("Installation Tool 事实不符合共享契约");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    })
+}
+
 pub(crate) async fn read_view(
     state: &BffState,
     ctx: &ExecutionContext,
