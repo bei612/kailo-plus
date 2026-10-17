@@ -11,6 +11,14 @@ use crate::spicedb::Consistency;
 
 const MEMORY_LIST: &str = "agent.memory.entry.list";
 const MEMORY_READ: &str = "agent.memory.entry.read";
+/// DD-122 (1): the PLATFORM_NATIVE tool set fixed by this platform build.
+pub(crate) const NATIVE_TOOLS: [&str; 2] = [MEMORY_LIST, MEMORY_READ];
+
+/// DD-122 (1): one stable Resource ID per business Tenant and native tool name,
+/// so a re-run bootstrap converges on the same row instead of minting another.
+pub(crate) fn native_tool_id(tenant: Uuid, name: &str) -> Uuid {
+    Uuid::new_v5(&tenant, name.as_bytes())
+}
 
 /// The same registered Tool permission check is used by install and PEP.
 pub(crate) async fn permission(

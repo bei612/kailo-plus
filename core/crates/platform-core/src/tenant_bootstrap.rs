@@ -435,6 +435,8 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     if let Some(p) = existing.filter(|p| effective.contains(p)) {
         ctx.ensure_metering_customer(tenant, p, initiator, &args.admin_subject)
             .await?;
+        ctx.ensure_native_tools(tenant, p, initiator, &args.slug)
+            .await?;
         return Ok(Outcome {
             tenant_id: tenant,
             admin_principal_id: Some(p),
@@ -466,8 +468,83 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     }
 
     // 4. admin 关系：Tenant 行锁内再判一次 0，写入与留痕同事务
-    ctx.grant_first_admin(tenant, principal, initiator, &params)
-        .await
+    let outcome = ctx
+        .grant_first_admin(tenant, principal, initiator, &params)
+        .await?;
+    // 5. DD-122：原生工具由这位有效 admin 拥有，逐名幂等登记
+    if let (Some(admin), "COMPLETED") = (outcome.admin_principal_id, outcome.state) {
+        ctx.ensure_native_tools(tenant, admin, initiator, &args.slug)
+            .await?;
+    }
+    Ok(outcome)
+}
+
+/// DD-122 (1)：每个原生工具一次引导意图，键与参数只由 Tenant、工具名与本构建
+/// 固定的 schema hash 决定；重跑沿用同一 ActionExecution，不另起登记。
+fn native_tool_key(tenant: Uuid, name: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("urn:platform:tenant:{tenant}:native-tool:{name}").as_bytes(),
+    )
+}
+
+fn native_tool_intent(tenant: Uuid, name: &str, input: &str, output: &str) -> serde_json::Value {
+    json!({
+        "tenantId": tenant,
+        "resourceId": crate::agent_tool::native_tool_id(tenant, name),
+        "name": name,
+        "inputSchemaHash": input,
+        "outputSchemaHash": output,
+        "source": "platform.bootstrap",
+    })
+}
+
+#[derive(sqlx::FromRow)]
+struct NativeToolRow {
+    owner_principal_id: Uuid,
+    type_key: String,
+    state: String,
+    projection_action_execution_id: Option<Uuid>,
+    name: Option<String>,
+    source: Option<String>,
+    status: Option<String>,
+    input_schema_hash: Option<String>,
+    output_schema_hash: Option<String>,
+}
+
+impl NativeToolRow {
+    /// The existing row is exactly this build's native contract in `state`.
+    fn is(&self, name: &str, input: &str, output: &str, state: &str) -> bool {
+        self.type_key == "tool.definition"
+            && self.state == state
+            && self.status.as_deref() == Some(state)
+            && self.name.as_deref() == Some(name)
+            && self.source.as_deref() == Some("PLATFORM_NATIVE")
+            && self.input_schema_hash.as_deref() == Some(input)
+            && self.output_schema_hash.as_deref() == Some(output)
+    }
+}
+
+async fn native_tool_row(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    lock: bool,
+) -> Result<Option<NativeToolRow>, String> {
+    sqlx::query_as(&format!(
+        "select r.owner_principal_id,r.type_key,r.state,r.projection_action_execution_id,
+         t.name,t.source,t.status,t.input_schema_hash,t.output_schema_hash
+         from catalog.resource r left join catalog.tool_definition t on t.resource_id=r.id
+         where r.id=$1 and r.tenant_id=$2 and r.home_workspace_id is null
+           and r.application_binding_id is null and r.component_type_key='core'
+           and r.native_type='tool.definition' and r.native_id=r.id::text{}",
+        if lock { " for update of r" } else { "" }
+    ))
+    .bind(id)
+    .bind(tenant)
+    .fetch_optional(conn)
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -664,6 +741,277 @@ impl Ctx {
                 response.status()
             )
         })
+    }
+
+    /// DD-122 (1)：业务 Tenant 按名登记本构建固定的每个 PLATFORM_NATIVE 工具，
+    /// owner 是执行引导的有效 Tenant admin；Catalog Tenant 不登记。重跑只补缺口。
+    async fn ensure_native_tools(
+        &self,
+        tenant: Uuid,
+        admin: Uuid,
+        initiator: Uuid,
+        slug: &str,
+    ) -> Result<(), String> {
+        if slug == self.catalog_slug {
+            return Ok(());
+        }
+        for name in crate::agent_tool::NATIVE_TOOLS {
+            self.ensure_native_tool(tenant, admin, initiator, name)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn ensure_native_tool(
+        &self,
+        tenant: Uuid,
+        admin: Uuid,
+        initiator: Uuid,
+        name: &str,
+    ) -> Result<(), String> {
+        let id = crate::agent_tool::native_tool_id(tenant, name);
+        let (input, output) = crate::agent_tool::schema_hashes(name)
+            .map_err(|_| format!("原生工具 {name} 的固定 schema 不可读"))?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+        if let Some(row) = native_tool_row(&mut conn, tenant, id, false).await? {
+            if row.is(name, &input, &output, "ACTIVE")
+                && row.projection_action_execution_id.is_none()
+            {
+                // 已登记：只复读 tenant/owner 投影，不另起意图、不改写。
+                let projected = self
+                    .spicedb
+                    .resource_projection_matches(
+                        &id.to_string(),
+                        &tenant.to_string(),
+                        &row.owner_principal_id.to_string(),
+                        self.page,
+                    )
+                    .await
+                    .map_err(|e| format!("复读原生工具 {name} 投影失败: {e}"))?;
+                return if projected {
+                    Ok(())
+                } else {
+                    Err(format!("原生工具 {name} 已登记但投影不一致，需对账，引导不改写"))
+                };
+            }
+        }
+        drop(conn);
+        let parameters = native_tool_intent(tenant, name, &input, &output);
+        let hash = hex::encode(Sha256::digest(parameters.to_string().as_bytes()));
+        let key = native_tool_key(tenant, name);
+
+        // 准备：Tenant 行锁内重验有效 admin，冻结意图并以 PROVISIONING 登记。
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let active: Option<bool> = sqlx::query_scalar(
+            "select state='ACTIVE' from identity.tenant where id=$1 for update",
+        )
+        .bind(tenant)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        if active != Some(true) {
+            return Err("原生工具只登记到 ACTIVE 业务 Tenant".into());
+        }
+        let effective =
+            crate::roles::effective_tenant_admins(&mut tx, &self.spicedb, tenant, self.page)
+                .await
+                .map_err(|e| format!("读有效 admin: {e:?}"))?;
+        if !effective.contains(&admin) {
+            return Err("执行引导的 admin 已不是有效 Tenant admin，不登记原生工具".into());
+        }
+        let duplicate: bool = sqlx::query_scalar(
+            "select exists(select 1 from catalog.tool_definition t
+             join catalog.resource r on r.id=t.resource_id
+             where r.tenant_id=$1 and t.name=$2 and t.source='PLATFORM_NATIVE'
+               and r.id<>$3 and r.state<>'DELETED')",
+        )
+        .bind(tenant)
+        .bind(name)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        if duplicate {
+            return Err(format!("Tenant 已有另一行原生工具 {name}，引导不重复登记"));
+        }
+        let found: Option<(Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
+            "select id,parameter_hash,parameters from admission.action_execution
+             where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
+        )
+        .bind(tenant)
+        .bind(initiator)
+        .bind(key)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let action = match found {
+            Some((action, frozen_hash, frozen))
+                if frozen_hash == hash && frozen.as_ref() == Some(&parameters) =>
+            {
+                action
+            }
+            Some(_) => return Err(format!("原生工具 {name} 的原引导意图与本构建不一致")),
+            None => {
+                let action =
+                    record_bootstrap(&mut tx, tenant, initiator, "RESOURCE", id, &hash).await?;
+                sqlx::query(
+                    "update admission.action_execution set parameters=$2,idempotency_key=$3
+                     where id=$1",
+                )
+                .bind(action)
+                .bind(&parameters)
+                .bind(key)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                action
+            }
+        };
+        let owner = match native_tool_row(&mut tx, tenant, id, true).await? {
+            None => {
+                sqlx::query(
+                    "insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,
+                     owner_principal_id,component_type_key,native_type,native_id,state,version,
+                     projection_action_execution_id)
+                     values($1,$2,'tool.definition',null,$3,'core','tool.definition',$1::text,
+                     'PROVISIONING',1,$4)",
+                )
+                .bind(id)
+                .bind(tenant)
+                .bind(admin)
+                .bind(action)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("登记原生工具 {name}: {e}"))?;
+                sqlx::query(
+                    "insert into catalog.tool_definition(resource_id,name,source,action_key,
+                     capability_contract_key,input_schema_hash,output_schema_hash,backend_ref,
+                     status)
+                     values($1,$2,'PLATFORM_NATIVE',$2,null,$3,$4,'CORE_STREAMABLE_MCP',
+                     'PROVISIONING')",
+                )
+                .bind(id)
+                .bind(name)
+                .bind(&input)
+                .bind(&output)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("登记原生工具 {name}: {e}"))?;
+                admin
+            }
+            Some(row)
+                if row.is(name, &input, &output, "PROVISIONING")
+                    && row.projection_action_execution_id == Some(action) =>
+            {
+                row.owner_principal_id
+            }
+            Some(_) => {
+                return Err(format!(
+                    "原生工具 {name} 的 Resource 与固定合同或引导意图不一致，引导不改写"
+                ))
+            }
+        };
+        tx.commit().await.map_err(|e| e.to_string())?;
+
+        // 投影：tenant/owner 关系同一原生写入，复读闭合前不置 ACTIVE。
+        let token = self
+            .spicedb
+            .replace_resource_projection(
+                &id.to_string(),
+                &tenant.to_string(),
+                &owner.to_string(),
+                &owner.to_string(),
+                None,
+            )
+            .await
+            .map_err(|e| format!("写原生工具 {name} 关系结果不明，重跑以收敛: {e}"))?;
+        let projected = self
+            .spicedb
+            .resource_projection_matches(
+                &id.to_string(),
+                &tenant.to_string(),
+                &owner.to_string(),
+                self.page,
+            )
+            .await
+            .map_err(|e| format!("复读原生工具 {name} 投影失败: {e}"))?;
+        if !projected {
+            return Err(format!("原生工具 {name} 投影复读未闭合，重跑以收敛"));
+        }
+
+        // 激活：与引导意图的 DISPATCH/OUTCOME 同事务成立。
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let locked = crate::roles::lock_tenant(&mut tx, tenant)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !locked {
+            return Err("Tenant 不存在".into());
+        }
+        let changed = sqlx::query(
+            "update catalog.resource set state='ACTIVE',projection_action_execution_id=null
+             where id=$1 and tenant_id=$2 and state='PROVISIONING'
+               and projection_action_execution_id=$3",
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(action)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let activated = sqlx::query(
+            "update catalog.tool_definition set status='ACTIVE'
+             where resource_id=$1 and status='PROVISIONING'",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        if changed.rows_affected() != 1 || activated.rows_affected() != 1 {
+            return Err(format!("原生工具 {name} 激活前状态已变化，重跑以收敛"));
+        }
+        let evidence = vec![
+            Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE),
+            Evidence::new(EvidenceKind::SpicedbZedtoken, &token),
+            Evidence::new(
+                EvidenceKind::SpicedbRelationship,
+                format!("resource:{id}#tenant@tenant:{tenant}"),
+            ),
+            Evidence::new(
+                EvidenceKind::SpicedbRelationship,
+                format!("resource:{id}#owner@principal:{owner}"),
+            ),
+        ];
+        record_dispatch(
+            &mut tx,
+            action,
+            AuditClass::core("RESOURCE"),
+            Ok(()),
+            evidence.clone(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let operation: Uuid =
+            sqlx::query_scalar("select operation_id from admission.action_execution where id = $1")
+                .bind(action)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let mut e = entry(
+            operation,
+            "outcome",
+            "OUTCOME",
+            tenant,
+            initiator,
+            "RESOURCE",
+            id,
+            &hash,
+            "ALLOW",
+            "NATIVE_TOOL_REGISTERED",
+        );
+        e.evidence_refs = evidence;
+        append(&mut tx, e).await.map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     async fn assert_bootstrap_subject_exclusive(
@@ -1270,6 +1618,55 @@ mod tests {
         ]
         .map(str::to_owned)
         .to_vec()
+    }
+
+    #[test]
+    fn native_tool_registration_keys_are_stable_per_tenant_and_name() {
+        use crate::agent_tool::{native_tool_id, NATIVE_TOOLS};
+        let tenant = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let [list, read] = NATIVE_TOOLS;
+        // A re-run converges on the same Resource and the same bootstrap intent.
+        assert_eq!(native_tool_id(tenant, list), native_tool_id(tenant, list));
+        assert_eq!(native_tool_key(tenant, list), native_tool_key(tenant, list));
+        assert_eq!(
+            native_tool_intent(tenant, list, "a", "b"),
+            native_tool_intent(tenant, list, "a", "b")
+        );
+        // One row per name and per Tenant; never shared across Tenants.
+        assert_ne!(native_tool_id(tenant, list), native_tool_id(tenant, read));
+        assert_ne!(native_tool_id(tenant, list), native_tool_id(other, list));
+        assert_ne!(native_tool_key(tenant, list), native_tool_key(tenant, read));
+        assert_ne!(native_tool_key(tenant, list), native_tool_key(other, list));
+        // The intent freezes the exact Resource and fixed schema hashes.
+        let intent = native_tool_intent(tenant, read, "in", "out");
+        assert_eq!(intent["resourceId"], json!(native_tool_id(tenant, read)));
+        assert_eq!(intent["name"], read);
+        assert_ne!(intent, native_tool_intent(tenant, read, "in", "changed"));
+    }
+
+    #[test]
+    fn native_tool_row_matches_only_the_fixed_contract_in_state() {
+        let row = NativeToolRow {
+            owner_principal_id: Uuid::new_v4(),
+            type_key: "tool.definition".into(),
+            state: "ACTIVE".into(),
+            projection_action_execution_id: None,
+            name: Some("agent.memory.entry.list".into()),
+            source: Some("PLATFORM_NATIVE".into()),
+            status: Some("ACTIVE".into()),
+            input_schema_hash: Some("in".into()),
+            output_schema_hash: Some("out".into()),
+        };
+        assert!(row.is("agent.memory.entry.list", "in", "out", "ACTIVE"));
+        assert!(!row.is("agent.memory.entry.list", "in", "out", "PROVISIONING"));
+        assert!(!row.is("agent.memory.entry.read", "in", "out", "ACTIVE"));
+        assert!(!row.is("agent.memory.entry.list", "in", "other", "ACTIVE"));
+        let missing = NativeToolRow {
+            status: None,
+            ..row
+        };
+        assert!(!missing.is("agent.memory.entry.list", "in", "out", "ACTIVE"));
     }
 
     #[test]
