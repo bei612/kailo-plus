@@ -791,7 +791,9 @@ impl Ctx {
                 return if projected {
                     Ok(())
                 } else {
-                    Err(format!("原生工具 {name} 已登记但投影不一致，需对账，引导不改写"))
+                    Err(format!(
+                        "原生工具 {name} 已登记但投影不一致，需对账，引导不改写"
+                    ))
                 };
             }
         }
@@ -802,13 +804,12 @@ impl Ctx {
 
         // 准备：Tenant 行锁内重验有效 admin，冻结意图并以 PROVISIONING 登记。
         let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
-        let active: Option<bool> = sqlx::query_scalar(
-            "select state='ACTIVE' from identity.tenant where id=$1 for update",
-        )
-        .bind(tenant)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        let active: Option<bool> =
+            sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
+                .bind(tenant)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         if active != Some(true) {
             return Err("原生工具只登记到 ACTIVE 业务 Tenant".into());
         }

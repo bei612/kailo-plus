@@ -696,9 +696,9 @@ pub(crate) async fn provision(
     }
     // A Version declaring native memory tools also needs the Agent to read its
     // own Installation, the target of those tools' contract permission.
-    let memory = tools.iter().any(|tool| {
-        tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str())
-    });
+    let memory = tools
+        .iter()
+        .any(|tool| tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str()));
     let mut writes = Vec::new();
     for tool in &granted {
         for (relation, _) in TOOL_RELATIONS {
