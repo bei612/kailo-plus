@@ -6797,3 +6797,33 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
 - 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/agent-mention-status.test.tsx`、
   `web-client/web/src/platform/ui/useAgentMentionOutcomes.test.tsx`，扩充 `bff-client.test.ts`，待 CI。Desktop 宿主、BFF 路由、部署与浏览器
   验收均未进行；不声称 V-SCN-105/106 或 DD-121 已验收。追溯记录待与后端批次合并时补。
+
+## 2026-10-17 Agent 工具链界面：安装工具、重新授予、委托工具 Scope 与 Agent 授权（DD-122 UI，源码候选，未验收）
+
+起点 main `52110c5e`（含生成的 `AgentInstallationToolPage/View`、`AgentToolBindingStatus`、`AgentInstallationToolSource`、
+`ActionCommand.grantPermission`/`ResourceGrantPermission`）；权威 DD-122 (3)(4)(5)(6)、V-SCN-108/109/111/112。本批只做 TypeScript/UI
+与共享 BFF 客户端；`GET /api/v1/agent-installations/{id}/tools`、`resource.grant_read` 接受 AGENT 与同版本升级由并行 Core 批次实现，
+本批不改 Rust、契约或数据库。源码提交 `824e6f2a`（本地分支 `feat/dd122-ui`，未 push）。
+
+- 安装工具：Installation 详情新增按需展开的“工具”区（`agents.tsx::InstallationTools`，Agents 页与频道 `WorkspaceAgentDialogs` 共用），
+  路由只在共享 `client.ts::agentInstallationTools` 一处（Web `bff` 与 Desktop 同用）；只接受本 Installation 的页。列名称、来源（平台/应用）、
+  能力需求、提供方绑定、状态：ACTIVE 已授予；NO_PERMISSION 未授予（无原因或 `PERMISSION_DENIED` 时提示“安装人需对该工具有共享权限”，
+  否则原因码文案）；PENDING 待提供方；REVOKED 已撤销。
+- 重新授予：有 NO_PERMISSION/PENDING 且新鲜读取的 Installation `canUpgrade` 时显示“重新授予工具”，复用既有 `InstallationCreate`
+  升级路径的同版本模式：提交 `agent.installation.upgrade`，assetId/assetVersion 取自新鲜读取的 pinned Version，resourceVersion 取自
+  Installation；审阅、在途阻断、UNKNOWN 同键重查均沿用原升级流程。无升级权时只提示需由可升级者重新授予。
+- 委托：修复目标页要求每个 scope `toolResourceId === undefined`、一条工具 scope 即整页拒绝的缺陷；工具 scope（自身 Installation 的记忆工具、
+  应用工具的 RESOURCE/ASSET 目标）按 Core 列出的原样可选可授，选项与授权记录显示“工具名 · 动作 · 目标”；工具名只作标签，取自工具视图，
+  取不到时显示 Tool ID。
+- Agent 授权：既有“资源读取权限”面板（`service-read-permissions.tsx`）的接收方可选“Agent”（同 Tenant Workspace Agent 的 AgentPrincipal，
+  组织级连接先选工作区），并选查看/发现/使用/执行 → `grantPermission` read/discover/consume/execute；撤销带同一 permission 与
+  `explicitConfirmation`。应用服务接收方保持原只读命令（不带 `grantPermission`）。审阅、审批、UNKNOWN 处理沿用原面板。
+- 词条：40 个（en/zh-CN），`platform_text.dart` 按原生成器投影与 80 列规则补入（规则先复现 HEAD 逐字一致；本机无 Dart 工具链，
+  未运行 `tools/gen-platform-i18n.py --check`）。
+- 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/agent-tools.test.tsx`（四种状态与原因、
+  仅在需要且可升级时提供重新授予、同版本升级精确命令与 UNKNOWN 同键重查、异 Installation 页不渲染、委托工具 scope 列出与授予、
+  异 Installation 记忆目标仍拒绝、Agent 接收方带 `grantPermission` 而服务接收方不带、撤销带 permission），扩充
+  `web-client/web/src/platform/bff-client.test.ts`（工具路由与方法），待 CI。
+- 缺口：Agent 授权的业务对象沿用该连接的源资源目录（仅在有读取接收边的连接上可达），没有通用业务对象目录；不推断工具契约所需
+  permission，由授予人选择、Core 校验。BFF 路由、部署与浏览器验收均未进行；不声称 V-SCN-108/109/111/112 或 DD-122 已验收。
+  追溯记录待与后端批次合并时补。
