@@ -2361,6 +2361,14 @@ pub(crate) async fn configuration(
         context.projection_generation,
     )
     .await?;
+    // DD-122 (5): Tool discovery is the Agent's and the Installation owner's
+    // right; the initiating member is bound by the Scope, not a Tool permission.
+    let owner = crate::agent_tool::installation_owner(
+        tx,
+        context.tenant_id,
+        context.installation_resource_id,
+    )
+    .await?;
     let mut groups: BTreeMap<(Uuid, i64, String, String), BTreeSet<String>> = BTreeMap::new();
     for tool in tools(tx, context).await? {
         if scopes(&state.governance, tx, context, parent, &tool)
@@ -2369,10 +2377,13 @@ pub(crate) async fn configuration(
         {
             continue;
         }
-        for subject in [parent.initiator_principal_id, context.agent_principal_id] {
-            permission(&state.governance, tool.resource_id, subject, "discover").await?;
-            permission(&state.governance, tool.resource_id, subject, "consume").await?;
-        }
+        crate::agent_tool::agent_rights(
+            &state.governance,
+            tool.resource_id,
+            context.agent_principal_id,
+            owner,
+        )
+        .await?;
         let key = (
             tool.binding_id,
             tool.generation,

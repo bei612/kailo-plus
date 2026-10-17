@@ -571,9 +571,11 @@ async fn validate_memory_scope(
     if !valid {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    for subject in [initiator, row.agent_principal_id] {
-        crate::agent_tool::permission(g, tool, subject, "discover").await?;
-        crate::agent_tool::permission(g, tool, subject, "consume").await?;
+    // DD-122 (5): Tool rights are the Agent's and the Installation owner's; the
+    // initiator needs only the target contract permission and `delegate`.
+    let (agent, owner) = (row.agent_principal_id, row.owner_principal_id);
+    crate::agent_tool::agent_rights(g, tool, agent, owner).await?;
+    for subject in [initiator, agent] {
         crate::agent_tool::permission(g, row.id, subject, "read").await?;
     }
     crate::agent_tool::permission(g, row.id, initiator, "delegate").await?;
@@ -659,9 +661,12 @@ async fn validate_application_scope(
     if !valid {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    for subject in [initiator, row.agent_principal_id] {
-        crate::agent_tool::permission(g, tool, subject, "discover").await?;
-        crate::agent_tool::permission(g, tool, subject, "consume").await?;
+    // DD-122 (5): as for llm_route, Tool rights are the Agent's and the
+    // Installation owner's. Both the initiator and the Agent still need the
+    // target contract permission and its exposure; the initiator `delegate`.
+    let (agent, owner) = (row.agent_principal_id, row.owner_principal_id);
+    crate::agent_tool::agent_rights(g, tool, agent, owner).await?;
+    for subject in [initiator, agent] {
         application_permission(
             g,
             &def.permission_object_type,

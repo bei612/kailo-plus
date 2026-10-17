@@ -1,5 +1,7 @@
 //! DD-24/49/99/105: ToolDefinition is a Resource extension in the existing
 //! Catalog. Its read consumers never create Resources or grant permissions.
+//! DD-122: the only Agent Tool grant is the admitted Installation projection
+//! (`provision`); revocation follows the upgrade drain and binding disable.
 
 use contracts::ReasonCode;
 use serde_json::Value;
@@ -7,17 +9,71 @@ use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::governance::{Definition, Execution, Governance, Refusal};
-use crate::spicedb::Consistency;
+use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Write};
 
 const MEMORY_LIST: &str = "agent.memory.entry.list";
 const MEMORY_READ: &str = "agent.memory.entry.read";
 /// DD-122 (1): the PLATFORM_NATIVE tool set fixed by this platform build.
 pub(crate) const NATIVE_TOOLS: [&str; 2] = [MEMORY_LIST, MEMORY_READ];
+/// DD-122 (3): the Agent relationships written on each granted Tool.
+const TOOL_RELATIONS: [(&str, &str); 2] = [("discoverer", "discover"), ("consumer", "consume")];
+/// Upper bound of relationship updates in one native write request.
+const RELATION_WRITE_BATCH: usize = 100;
 
 /// DD-122 (1): one stable Resource ID per business Tenant and native tool name,
 /// so a re-run bootstrap converges on the same row instead of minting another.
 pub(crate) fn native_tool_id(tenant: Uuid, name: &str) -> Uuid {
     Uuid::new_v5(&tenant, name.as_bytes())
+}
+
+fn relationship(object: Uuid, relation: &str, subject: Uuid) -> Relationship {
+    Relationship {
+        object_type: "resource".into(),
+        object_id: object.to_string(),
+        relation: relation.into(),
+        subject_principal: subject.to_string(),
+    }
+}
+
+fn unknown(what: &str) -> Refusal {
+    Refusal::Unavailable(format!("{what} 结果不明"))
+}
+
+/// DD-122 (5): the Agent and the Installation owner hold the Tool rights, as
+/// for llm_route. The initiating member only needs the DelegationScope, the
+/// target contract permission and `delegate`, never a Tool permission.
+pub(crate) async fn agent_rights(
+    gov: &Governance,
+    tool: Uuid,
+    agent: Uuid,
+    owner: Uuid,
+) -> Result<(), Refusal> {
+    permission(gov, tool, agent, "discover").await?;
+    permission(gov, tool, agent, "consume").await?;
+    permission(gov, tool, owner, "consume").await?;
+    Ok(())
+}
+
+/// Current active HUMAN owner of the Installation; Tool calls never fall back
+/// to the initiator when the owner has left or been disabled.
+pub(crate) async fn installation_owner(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    installation: Uuid,
+) -> Result<Uuid, Refusal> {
+    sqlx::query_scalar(
+        "select r.owner_principal_id from catalog.resource r
+        join identity.principal o on o.id=r.owner_principal_id and o.tenant_id=r.tenant_id
+          and o.kind='HUMAN' and o.status='ACTIVE'
+        join identity.tenant_membership m on m.tenant_principal_id=o.id
+          and m.tenant_id=r.tenant_id and m.state='ACTIVE'
+        where r.id=$1 and r.tenant_id=$2 and r.type_key='agent.installation'",
+    )
+    .bind(installation)
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))
 }
 
 /// The same registered Tool permission check is used by install and PEP.
@@ -49,9 +105,10 @@ pub(crate) async fn permission(
     Ok(proof.zed_token)
 }
 
-/// Candidate discovery and installation use the same registered native tools
-/// and current HUMAN consume/share checks. This only resolves references; it
-/// neither creates bindings nor grants the Agent any execution permission.
+/// Candidate discovery and installation use the same registered native tools.
+/// DD-122 (3): the initiator's Tool rights are decided by `provision`; a
+/// denial keeps the ToolBinding NO_PERMISSION and never blocks installation.
+/// This only resolves references; it creates no binding or permission.
 pub(crate) async fn installation_references(
     gov: &Governance,
     conn: &mut PgConnection,
@@ -59,19 +116,22 @@ pub(crate) async fn installation_references(
     human: Uuid,
     tools: &[String],
 ) -> Result<Vec<Uuid>, Refusal> {
+    if !crate::agent_definition::active_owner(conn, tenant, human).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
     let mut references = Vec::with_capacity(tools.len());
     for id in tools {
         let id = Uuid::parse_str(id)
             .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-        validate_reference(gov, conn, tenant, human, id).await?;
-        permission(gov, id, human, "share").await?;
+        registered(gov, conn, tenant, id).await?;
         references.push(id);
     }
     Ok(references)
 }
 
 /// 03/17: a binding is visibility configuration. It never writes a consumer,
-/// discoverer or reader relationship, and does not borrow installation rights.
+/// discoverer or reader relationship, and does not borrow installation rights;
+/// DD-122 grants happen only in `provision` of the admitted generation.
 pub(crate) async fn install_bindings(
     gov: &Governance,
     tx: &mut Transaction<'_, Postgres>,
@@ -313,18 +373,14 @@ pub(crate) async fn tool_admission(
     if !scope {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
-    permission(
+    // DD-122 (5): Tool rights belong to the Agent and the Installation owner;
+    // the initiator only needs the target contract permission and delegate.
+    let owner = installation_owner(tx, context.tenant_id, context.installation_resource_id).await?;
+    agent_rights(
         &state.governance,
         tool.resource_id,
         context.agent_principal_id,
-        "discover",
-    )
-    .await?;
-    permission(
-        &state.governance,
-        tool.resource_id,
-        context.agent_principal_id,
-        "consume",
+        owner,
     )
     .await?;
     for principal in [parent.initiator_principal_id, context.agent_principal_id] {
@@ -378,6 +434,44 @@ pub(crate) async fn validate_reference(
     human: Uuid,
     tool: Uuid,
 ) -> Result<(), Refusal> {
+    if !crate::agent_definition::active_owner(conn, tenant, human).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let owner = registered(gov, conn, tenant, tool).await?;
+    if !crate::agent_definition::active_owner(conn, tenant, owner).await? {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let proof = gov
+        .spicedb
+        .check(
+            "resource",
+            &tool.to_string(),
+            "consume",
+            &human.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| Refusal::Unavailable("Tool reference fresh consume 不可核验".into()))?;
+    if proof.zed_token.is_empty() {
+        return Err(Refusal::Unavailable(
+            "Tool reference 缺 checked revision".into(),
+        ));
+    }
+    if !proof.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    Ok(())
+}
+
+/// The exact registered PLATFORM_NATIVE Resource with its fixed schema hashes
+/// and closed tenant/owner projection. Returns the Tool owner; whether that
+/// owner is still active is decided by the caller.
+async fn registered(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    tool: Uuid,
+) -> Result<Uuid, Refusal> {
     let name: String = sqlx::query_scalar(
         "select t.name from catalog.tool_definition t
         join catalog.resource r on r.id=t.resource_id where r.id=$1 and r.tenant_id=$2",
@@ -408,30 +502,370 @@ pub(crate) async fn validate_reference(
     .fetch_optional(&mut *conn)
     .await?;
     let owner = owner.ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    if !crate::agent_definition::active_owner(conn, tenant, human).await?
-        || !crate::agent_definition::active_owner(conn, tenant, owner).await?
-        || !crate::agent_definition::projection_matches(gov, tool, tenant, owner).await?
-    {
+    if !crate::agent_definition::projection_matches(gov, tool, tenant, owner).await? {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
+    Ok(owner)
+}
+
+#[derive(sqlx::FromRow)]
+struct ProvisionTool {
+    tool_resource_id: Uuid,
+    name: String,
+    source: String,
+    owner_principal_id: Uuid,
+    home_workspace_id: Option<Uuid>,
+}
+
+/// DD-122 (3) outcome for one ToolBinding of the admitted generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Provision {
+    Grant,
+    NoPermission,
+}
+
+/// An inactive Tool owner or a definite denial of the initiator's fresh
+/// `discover`/`consume`/`share` keeps NO_PERMISSION without blocking the
+/// Installation. Any other result is unknown: the caller does not activate and
+/// leaves the generation to the original projection reconciler.
+pub(crate) fn provision_decision(
+    tool_owner_active: bool,
+    initiator_rights: Result<(), Refusal>,
+) -> Result<Provision, Refusal> {
+    if !tool_owner_active {
+        return Ok(Provision::NoPermission);
+    }
+    match initiator_rights {
+        Ok(()) => Ok(Provision::Grant),
+        Err(Refusal::Denied(_)) => Ok(Provision::NoPermission),
+        Err(error) => Err(error),
+    }
+}
+
+async fn initiator_rights(gov: &Governance, tool: Uuid, initiator: Uuid) -> Result<(), Refusal> {
+    for checked in ["discover", "consume", "share"] {
+        permission(gov, tool, initiator, checked).await?;
+    }
+    Ok(())
+}
+
+/// Read back one written relationship at least as fresh as its write.
+async fn written(
+    gov: &Governance,
+    object: Uuid,
+    checked: &str,
+    subject: Uuid,
+    token: &str,
+) -> Result<(), Refusal> {
     let proof = gov
         .spicedb
         .check(
             "resource",
-            &tool.to_string(),
-            "consume",
-            &human.to_string(),
-            Consistency::FullyConsistent,
+            &object.to_string(),
+            checked,
+            &subject.to_string(),
+            Consistency::AtLeastAsFresh(token),
         )
         .await
-        .map_err(|_| Refusal::Unavailable("Tool reference fresh consume 不可核验".into()))?;
-    if proof.zed_token.is_empty() {
-        return Err(Refusal::Unavailable(
-            "Tool reference 缺 checked revision".into(),
-        ));
+        .map_err(|_| unknown("Agent Tool 授予复读"))?;
+    if proof.zed_token.is_empty() || !proof.allowed {
+        return Err(unknown("Agent Tool 授予复读"));
     }
-    if !proof.allowed {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    Ok(())
+}
+
+/// DD-122 (3): the same admitted Installation projection as the llm_route
+/// grant (`model_route::provision`); no new Action, Workflow or authority.
+/// Returns the Tools whose ToolBinding the activation transaction sets ACTIVE.
+pub(crate) async fn provision(
+    state: &crate::service_api::ServiceState,
+    installation: Uuid,
+    version: Uuid,
+    generation: i64,
+    action: Uuid,
+) -> Result<Vec<Uuid>, Refusal> {
+    let gov = &state.governance;
+    let (tenant, workspace): (Uuid, Uuid) = sqlx::query_as(
+        "select r.tenant_id,i.workspace_id from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id where i.resource_id=$1",
+    )
+    .bind(installation)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    // Same lifecycle lock order as the route grant: Tenant, Workspace, Resource.
+    let mut lifecycle = state.pool.begin().await?;
+    let active: bool = sqlx::query_scalar(
+        "select state='ACTIVE' from identity.tenant where id=$1 for no key update",
+    )
+    .bind(tenant)
+    .fetch_one(&mut *lifecycle)
+    .await?;
+    let workspace_active: bool = sqlx::query_scalar(
+        "select state='ACTIVE' from identity.workspace
+        where id=$1 and tenant_id=$2 for no key update",
+    )
+    .bind(workspace)
+    .bind(tenant)
+    .fetch_one(&mut *lifecycle)
+    .await?;
+    if !active || !workspace_active {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let (agent, owner, initiator): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "select i.agent_principal_id,r.owner_principal_id,ae.initiator_principal_id
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution ae on ae.id=r.projection_action_execution_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+          and p.generation=$3 and p.agent_version_asset_id=$2 and p.state='PENDING'
+        join identity.principal a on a.id=i.agent_principal_id and a.tenant_id=r.tenant_id
+          and a.kind='AGENT' and a.status='ACTIVE'
+        where i.resource_id=$1 and r.tenant_id=$5 and i.workspace_id=$6
+          and r.home_workspace_id=i.workspace_id and r.state in ('PROVISIONING','ACTIVE')
+          and i.state in ('PROVISIONING','DRAINING') and ae.id=$4
+          and ae.tenant_id=r.tenant_id and ae.workspace_id=i.workspace_id and ae.target_id=r.id
+          and ae.actor_principal_id=ae.initiator_principal_id and ae.gate_state='ALLOWED'
+          and ae.dispatch_state='DISPATCHED'
+          and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
+          and ae.parameters->'params'->>'assetId'=$2::uuid::text
+        for no key update of r",
+    )
+    .bind(installation)
+    .bind(version)
+    .bind(generation)
+    .bind(action)
+    .bind(tenant)
+    .bind(workspace)
+    .fetch_optional(&mut *lifecycle)
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let mut humans = vec![owner, initiator];
+    humans.sort_unstable();
+    humans.dedup();
+    for human in humans {
+        if !crate::agent_definition::active_owner(&mut lifecycle, tenant, human).await? {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+    }
+    let tools: Vec<ProvisionTool> = sqlx::query_as(
+        "select b.tool_resource_id,t.name,t.source,r.owner_principal_id,r.home_workspace_id
+        from catalog.tool_binding b
+        join catalog.tool_definition t on t.resource_id=b.tool_resource_id and t.status='ACTIVE'
+        join catalog.resource r on r.id=t.resource_id and r.tenant_id=$4 and r.state='ACTIVE'
+          and r.type_key='tool.definition' and r.projection_action_execution_id is null
+          and (r.home_workspace_id is null or r.home_workspace_id=$5)
+        where b.installation_resource_id=$1 and b.projection_generation=$2
+          and b.agent_version_asset_id=$3 and b.workspace_id=$5
+          and b.status in ('PENDING','NO_PERMISSION','ACTIVE')
+        order by b.tool_resource_id",
+    )
+    .bind(installation)
+    .bind(generation)
+    .bind(version)
+    .bind(tenant)
+    .bind(workspace)
+    .fetch_all(&mut *lifecycle)
+    .await?;
+    let mut granted = Vec::new();
+    for tool in &tools {
+        if !gov
+            .spicedb
+            .resource_projection_matches_in_workspace(
+                &tool.tool_resource_id.to_string(),
+                &tenant.to_string(),
+                &tool.owner_principal_id.to_string(),
+                tool.home_workspace_id.map(|id| id.to_string()).as_deref(),
+                gov.cfg.relationship_page,
+            )
+            .await
+            .map_err(|_| unknown("Tool Resource 投影"))?
+        {
+            return Err(unknown("Tool Resource 投影"));
+        }
+        let owner_active =
+            crate::agent_definition::active_owner(&mut lifecycle, tenant, tool.owner_principal_id)
+                .await?;
+        let rights = if owner_active {
+            initiator_rights(gov, tool.tool_resource_id, initiator).await
+        } else {
+            Ok(())
+        };
+        if provision_decision(owner_active, rights)? == Provision::Grant {
+            granted.push(tool.tool_resource_id);
+        }
+    }
+    // A Version declaring native memory tools also needs the Agent to read its
+    // own Installation, the target of those tools' contract permission.
+    let memory = tools.iter().any(|tool| {
+        tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str())
+    });
+    let mut writes = Vec::new();
+    for tool in &granted {
+        for (relation, _) in TOOL_RELATIONS {
+            writes.push((Write::Touch, relationship(*tool, relation, agent)));
+        }
+    }
+    if memory {
+        writes.push((Write::Touch, relationship(installation, "reader", agent)));
+    }
+    if writes.is_empty() {
+        lifecycle.commit().await?;
+        return Ok(granted);
+    }
+    crate::service_api::audit_gate(state)
+        .await
+        .map_err(|_| unknown("审计 sink"))?;
+    let token = gov
+        .spicedb
+        .write(&writes)
+        .await
+        .map_err(|_| unknown("Agent Tool 授予"))?;
+    if token.is_empty() {
+        return Err(unknown("Agent Tool 授予"));
+    }
+    for tool in &granted {
+        for (_, checked) in TOOL_RELATIONS {
+            written(gov, *tool, checked, agent, &token).await?;
+        }
+    }
+    if memory {
+        written(gov, installation, "read", agent, &token).await?;
+    }
+    lifecycle.commit().await?;
+    Ok(granted)
+}
+
+/// Delete the given Agents' Tool relationships and read them back as absent.
+async fn delete_agent_relations(
+    gov: &Governance,
+    tools: &[Uuid],
+    agents: &[Uuid],
+) -> Result<(), Refusal> {
+    let mut deletes = Vec::new();
+    for tool in tools {
+        for agent in agents {
+            for (relation, _) in TOOL_RELATIONS {
+                deletes.push((Write::Delete, relationship(*tool, relation, *agent)));
+            }
+        }
+    }
+    for batch in deletes.chunks(RELATION_WRITE_BATCH) {
+        gov.spicedb
+            .write(batch)
+            .await
+            .map_err(|_| unknown("Agent Tool 关系撤销"))?;
+    }
+    let subjects: Vec<String> = agents.iter().map(Uuid::to_string).collect();
+    for tool in tools {
+        let object = tool.to_string();
+        for (relation, _) in TOOL_RELATIONS {
+            let remaining = gov
+                .spicedb
+                .read(
+                    &RelationshipFilter {
+                        object_type: "resource",
+                        object_id: Some(&object),
+                        relation: Some(relation),
+                        subject_principal: None,
+                    },
+                    gov.cfg.relationship_page,
+                )
+                .await
+                .map_err(|_| unknown("Agent Tool 关系撤销复读"))?;
+            let leaked = remaining
+                .iter()
+                .any(|held| subjects.contains(&held.subject_principal));
+            if leaked {
+                return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// DD-122 (7): after the upgrade drain the Agent keeps relationships only on
+/// Tools granted to the new generation; Tools that appear only in an older
+/// generation (or are no longer granted) lose discoverer/consumer.
+pub(crate) async fn retire_previous_generation(
+    state: &crate::service_api::ServiceState,
+    installation: Uuid,
+    generation: i64,
+    action: Uuid,
+    granted: &[Uuid],
+) -> Result<(), Refusal> {
+    let agent: Uuid = sqlx::query_scalar(
+        "select i.agent_principal_id from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution a on a.id=r.projection_action_execution_id
+        where i.resource_id=$1 and i.state='DRAINING' and i.active_projection_generation<>$2
+          and a.id=$3 and a.action_key='agent.installation.upgrade' and a.gate_state='ALLOWED'
+          and catalog.agent_installation_drained(i.resource_id)",
+    )
+    .bind(installation)
+    .bind(generation)
+    .bind(action)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let previous: Vec<Uuid> = sqlx::query_scalar(
+        "select distinct tool_resource_id from catalog.tool_binding
+        where installation_resource_id=$1 and projection_generation<>$2
+          and not (tool_resource_id=any($3::uuid[]))
+        order by tool_resource_id",
+    )
+    .bind(installation)
+    .bind(generation)
+    .bind(granted.to_vec())
+    .fetch_all(&state.pool)
+    .await?;
+    delete_agent_relations(&state.governance, &previous, &[agent]).await
+}
+
+/// DD-122 (7): disabling an application binding deletes every AgentPrincipal
+/// relationship on its Tools. Other principals' relationships are not Agent
+/// grants and stay untouched.
+pub(crate) async fn revoke_tool_agents(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    tools: &[Uuid],
+) -> Result<(), Refusal> {
+    for tool in tools {
+        let object = tool.to_string();
+        let mut subjects = Vec::new();
+        for (relation, _) in TOOL_RELATIONS {
+            let held = gov
+                .spicedb
+                .read(
+                    &RelationshipFilter {
+                        object_type: "resource",
+                        object_id: Some(&object),
+                        relation: Some(relation),
+                        subject_principal: None,
+                    },
+                    gov.cfg.relationship_page,
+                )
+                .await
+                .map_err(|_| unknown("Agent Tool 关系读取"))?;
+            for row in held {
+                if let Ok(subject) = Uuid::parse_str(&row.subject_principal) {
+                    subjects.push(subject);
+                }
+            }
+        }
+        subjects.sort_unstable();
+        subjects.dedup();
+        let agents: Vec<Uuid> = sqlx::query_scalar(
+            "select id from identity.principal
+            where tenant_id=$1 and kind='AGENT' and id=any($2::uuid[]) order by id",
+        )
+        .bind(tenant)
+        .bind(subjects)
+        .fetch_all(&mut *conn)
+        .await?;
+        if !agents.is_empty() {
+            delete_agent_relations(gov, std::slice::from_ref(tool), &agents).await?;
+        }
     }
     Ok(())
 }
@@ -574,4 +1008,49 @@ async fn directory(
         .map_err(|_| Refusal::Unavailable("Tool 目录与共享合同不一致".into()))?;
     tx.commit().await?;
     Ok(page)
+}
+
+#[cfg(test)]
+mod provision_tests {
+    use super::*;
+
+    #[test]
+    fn provision_decision_table_follows_dd122() {
+        let denied = || Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        for (owner_active, rights, expected) in [
+            (true, Ok(()), Provision::Grant),
+            (true, denied(), Provision::NoPermission),
+            (false, Ok(()), Provision::NoPermission),
+            (false, denied(), Provision::NoPermission),
+        ] {
+            assert_eq!(provision_decision(owner_active, rights).unwrap(), expected);
+        }
+        // An unverifiable or conflicting check is neither a grant nor a denial:
+        // the Installation is not activated and stays with its reconciler.
+        let unverifiable = provision_decision(true, Err(Refusal::Unavailable("x".into())));
+        assert!(matches!(unverifiable, Err(Refusal::Unavailable(_))));
+        let error = Refusal::Conflict(ReasonCode::TargetStateConflict);
+        let conflict = provision_decision(true, Err(error));
+        assert!(matches!(conflict, Err(Refusal::Conflict(_))));
+    }
+
+    #[test]
+    fn native_tool_identity_and_agent_relations_are_fixed() {
+        let tenant = Uuid::new_v4();
+        assert_eq!(
+            NATIVE_TOOLS,
+            ["agent.memory.entry.list", "agent.memory.entry.read"]
+        );
+        for name in NATIVE_TOOLS {
+            assert!(schema_hashes(name).is_ok());
+            assert_eq!(
+                native_tool_id(tenant, name),
+                Uuid::new_v5(&tenant, name.as_bytes())
+            );
+        }
+        assert_eq!(
+            TOOL_RELATIONS,
+            [("discoverer", "discover"), ("consumer", "consume")]
+        );
+    }
 }

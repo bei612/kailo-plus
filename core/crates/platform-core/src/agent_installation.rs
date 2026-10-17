@@ -37,6 +37,16 @@ const EFFECTIVE_FIELDS: [&str; 7] = [
     "replyPolicy",
 ];
 
+/// DD-122 (4): an ACTIVE Installation without a pending projection may be
+/// upgraded to any PUBLISHED Version of its Definition, including the pinned
+/// one; the new generation re-resolves and re-grants Tools under the same
+/// drain and audit.
+const UPGRADE_TARGET: &str = "select i.agent_resource_id,r.version
+    from catalog.agent_installation i
+    join catalog.resource r on r.id=i.resource_id where r.id=$1 and r.tenant_id=$2
+    and i.workspace_id=$3 and r.home_workspace_id=$3 and r.type_key='agent.installation'
+    and i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null";
+
 /// Existing ActionCommand pins both parent Resource and immutable Version; no
 /// second registration endpoint and no implicit current-published pointer.
 pub(crate) async fn target(
@@ -82,17 +92,12 @@ pub(crate) async fn target(
     }
     let installation: Option<(Uuid, i32)> = if upgrading {
         sqlx::query_as(&format!(
-            "select i.agent_resource_id,r.version from catalog.agent_installation i
-            join catalog.resource r on r.id=i.resource_id where r.id=$1 and r.tenant_id=$2
-            and i.workspace_id=$3 and r.home_workspace_id=$3 and r.type_key='agent.installation'
-            and i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null
-            and i.pinned_version_asset_id<>$4{}",
+            "{UPGRADE_TARGET}{}",
             if lock { " for update of r,i" } else { "" }
         ))
         .bind(resource)
         .bind(tenant)
         .bind(workspace)
-        .bind(params.asset_id)
         .fetch_optional(&mut *conn)
         .await?
     } else {
@@ -1678,6 +1683,13 @@ async fn initialize(
     } else {
         crate::model_route::resolve(state, installation, version, generation).await?
     };
+    // DD-122 (3): Tool grants share the route grant's admitted projection. A
+    // denied Tool stays NO_PERMISSION; an unknown result keeps it unactivated.
+    let granted = if let Some((ae, _, _)) = &admission {
+        crate::agent_tool::provision(state, installation, version, generation, ae.id).await?
+    } else {
+        Vec::new()
+    };
     let (effective_fields, effective_hash) = if provisioning {
         initialization_fields(
             &facts.snapshot,
@@ -1714,6 +1726,14 @@ async fn initialize(
         if ae.action_key == UPGRADE_ACTION {
             crate::model_route::retire_previous_generation(state, installation, generation, ae.id)
                 .await?;
+            crate::agent_tool::retire_previous_generation(
+                state,
+                installation,
+                generation,
+                ae.id,
+                &granted,
+            )
+            .await?;
         }
     }
     let current = runtime_facts(state, installation, version, generation, provisioning).await?;
@@ -1889,6 +1909,19 @@ async fn initialize(
     .bind(generation)
     .execute(&mut *tx)
     .await?;
+    // DD-122 (3): only Tools whose Agent grant was written and read back.
+    sqlx::query(
+        "update catalog.tool_binding set status='ACTIVE'
+        where installation_resource_id=$1 and projection_generation=$2
+          and agent_version_asset_id=$3 and tool_resource_id=any($4::uuid[])
+          and status in ('PENDING','NO_PERMISSION')",
+    )
+    .bind(installation)
+    .bind(generation)
+    .bind(version)
+    .bind(&granted)
+    .execute(&mut *tx)
+    .await?;
     let changed = sqlx::query(
         "update catalog.channel_agent_binding set status='ACTIVE',triggers=$3
         where installation_resource_id=$1 and workspace_id=$2 and status in ('DISABLED','ACTIVE')",
@@ -2058,6 +2091,22 @@ async fn initialization_authorization(
 #[cfg(test)]
 mod effective_field_tests {
     use super::*;
+
+    #[test]
+    fn same_version_upgrade_is_an_accepted_target() {
+        // DD-122 (4)/V-SCN-109: the upgrade target never excludes the pinned
+        // Version; only the Installation state and pending projection gate it.
+        assert!(!UPGRADE_TARGET.contains("pinned_version_asset_id"));
+        assert!(!UPGRADE_TARGET.contains("$4"));
+        for fact in [
+            "i.state='ACTIVE'",
+            "r.state='ACTIVE'",
+            "r.projection_action_execution_id is null",
+            "r.type_key='agent.installation'",
+        ] {
+            assert!(UPGRADE_TARGET.contains(fact), "{fact}");
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]

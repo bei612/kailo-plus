@@ -196,6 +196,19 @@ pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
     .bind(ae.tenant_id)
     .execute(&mut *tx)
     .await?;
+    // DD-122 (7): every Agent discoverer/consumer on this provider's Tools is
+    // deleted and read back absent under the same binding fence.
+    let tools: Vec<Uuid> = sqlx::query_scalar(
+        "select r.id from catalog.resource r
+        join catalog.tool_definition t on t.resource_id=r.id and t.source='APPLICATION'
+        where r.application_binding_id=$1 and r.tenant_id=$2 order by r.id",
+    )
+    .bind(ae.target_id)
+    .bind(ae.tenant_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let gov = &state.governance;
+    crate::agent_tool::revoke_tool_agents(gov, &mut tx, ae.tenant_id, &tools).await?;
     sqlx::query("delete from projection.application_category where binding_id=$1 and tenant_id=$2")
         .bind(ae.target_id)
         .bind(ae.tenant_id)
