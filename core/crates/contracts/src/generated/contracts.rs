@@ -1415,6 +1415,11 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explicit_confirmation: Option<bool>,
 
+    /// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+    /// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_permission: Option<ResourceGrantPermission>,
+
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
 
@@ -2159,6 +2164,20 @@ pub enum ResultExposureMode {
     ConsumeOnly,
 
     Export,
+
+    Read,
+}
+
+/// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+/// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceGrantPermission {
+    Consume,
+
+    Discover,
+
+    Execute,
 
     Read,
 }
@@ -3033,6 +3052,65 @@ pub struct AgentInstallationProjectionView {
     pub runtime_profile_key: String,
 
     pub state: AgentRuntimeProjectionState,
+}
+
+/// DD-122: the tools an Agent Installation's current generation requests and their effective
+/// state. Read-only; grants happen only through installation create/upgrade.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationToolPage {
+    pub generation: i64,
+
+    pub installation_resource_id: String,
+
+    pub tools: Vec<AgentInstallationToolView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationToolView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_id: Option<String>,
+
+    pub binding_status: AgentToolBindingStatus,
+
+    /// APPLICATION only: the requested capability contract key@version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_requirement: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<ReasonCode>,
+
+    pub source: AgentInstallationToolSource,
+
+    /// Absent when an application capability requirement has no resolved provider yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_resource_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentToolBindingStatus {
+    Active,
+
+    #[serde(rename = "NO_PERMISSION")]
+    NoPermission,
+
+    Pending,
+
+    Revoked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentInstallationToolSource {
+    Application,
+
+    #[serde(rename = "PLATFORM_NATIVE")]
+    PlatformNative,
 }
 
 /// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
@@ -6149,6 +6227,11 @@ pub struct CommandClass {
     /// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explicit_confirmation: Option<bool>,
+
+    /// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+    /// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_permission: Option<ResourceGrantPermission>,
 
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,

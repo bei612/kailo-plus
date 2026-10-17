@@ -56,6 +56,7 @@
 //     final agentInstallationCandidatePage = agentInstallationCandidatePageFromJson(jsonString);
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
+//     final agentInstallationToolPage = agentInstallationToolPageFromJson(jsonString);
 //     final agentInstallationUsePage = agentInstallationUsePageFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
 //     final agentInvocationPage = agentInvocationPageFromJson(jsonString);
@@ -623,6 +624,12 @@ AgentInstallationProjectionView agentInstallationProjectionViewFromJson(
 String agentInstallationProjectionViewToJson(
   AgentInstallationProjectionView data,
 ) => json.encode(data.toJson());
+
+AgentInstallationToolPage agentInstallationToolPageFromJson(String str) =>
+    AgentInstallationToolPage.fromJson(json.decode(str));
+
+String agentInstallationToolPageToJson(AgentInstallationToolPage data) =>
+    json.encode(data.toJson());
 
 AgentInstallationUsePage agentInstallationUsePageFromJson(String str) =>
     AgentInstallationUsePage.fromJson(json.decode(str));
@@ -4367,6 +4374,10 @@ class ActionCommand {
   ///resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
   final bool? explicitConfirmation;
 
+  ///仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+  ///授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+  final ResourceGrantPermission? grantPermission;
+
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
 
@@ -4446,6 +4457,7 @@ class ActionCommand {
     this.delegationVersion,
     this.executorInstallationResourceId,
     this.explicitConfirmation,
+    this.grantPermission,
     required this.idempotencyKey,
     this.invitationId,
     this.llmRouteCreate,
@@ -4514,6 +4526,9 @@ class ActionCommand {
     delegationVersion: json["delegationVersion"],
     executorInstallationResourceId: json["executorInstallationResourceId"],
     explicitConfirmation: json["explicitConfirmation"],
+    grantPermission: json["grantPermission"] == null
+        ? null
+        : resourceGrantPermissionValues.map[json["grantPermission"]]!,
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     llmRouteCreate: json["llmRouteCreate"] == null
@@ -4571,6 +4586,7 @@ class ActionCommand {
     "delegationVersion": delegationVersion,
     "executorInstallationResourceId": executorInstallationResourceId,
     "explicitConfirmation": explicitConfirmation,
+    "grantPermission": resourceGrantPermissionValues.reverse[grantPermission],
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
@@ -5756,6 +5772,17 @@ final resultExposureModeValues = EnumValues({
   "CONSUME_ONLY": ResultExposureMode.CONSUME_ONLY,
   "EXPORT": ResultExposureMode.EXPORT,
   "READ": ResultExposureMode.READ,
+});
+
+///仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+///授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+enum ResourceGrantPermission { CONSUME, DISCOVER, EXECUTE, READ }
+
+final resourceGrantPermissionValues = EnumValues({
+  "consume": ResourceGrantPermission.CONSUME,
+  "discover": ResourceGrantPermission.DISCOVER,
+  "execute": ResourceGrantPermission.EXECUTE,
+  "read": ResourceGrantPermission.READ,
 });
 
 ///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
@@ -7126,6 +7153,98 @@ class AgentInstallationProjectionView {
     "state": agentRuntimeProjectionStateValues.reverse[state],
   });
 }
+
+///DD-122: the tools an Agent Installation's current generation requests and their effective
+///state. Read-only; grants happen only through installation create/upgrade.
+class AgentInstallationToolPage {
+  final int generation;
+  final String installationResourceId;
+  final List<AgentInstallationToolView> tools;
+
+  AgentInstallationToolPage({
+    required this.generation,
+    required this.installationResourceId,
+    required this.tools,
+  });
+
+  factory AgentInstallationToolPage.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationToolPage(
+        generation: json["generation"],
+        installationResourceId: json["installationResourceId"],
+        tools: List<AgentInstallationToolView>.from(
+          json["tools"].map((x) => AgentInstallationToolView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "generation": generation,
+    "installationResourceId": installationResourceId,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+  });
+}
+
+class AgentInstallationToolView {
+  final String? applicationBindingId;
+  final AgentToolBindingStatus bindingStatus;
+
+  ///APPLICATION only: the requested capability contract key@version.
+  final String? capabilityRequirement;
+  final String? name;
+  final ReasonCode? reasonCode;
+  final AgentInstallationToolSource source;
+
+  ///Absent when an application capability requirement has no resolved provider yet.
+  final String? toolResourceId;
+
+  AgentInstallationToolView({
+    this.applicationBindingId,
+    required this.bindingStatus,
+    this.capabilityRequirement,
+    this.name,
+    this.reasonCode,
+    required this.source,
+    this.toolResourceId,
+  });
+
+  factory AgentInstallationToolView.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationToolView(
+        applicationBindingId: json["applicationBindingId"],
+        bindingStatus: agentToolBindingStatusValues.map[json["bindingStatus"]]!,
+        capabilityRequirement: json["capabilityRequirement"],
+        name: json["name"],
+        reasonCode: json["reasonCode"] == null
+            ? null
+            : reasonCodeValues.map[json["reasonCode"]]!,
+        source: agentInstallationToolSourceValues.map[json["source"]]!,
+        toolResourceId: json["toolResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "applicationBindingId": applicationBindingId,
+    "bindingStatus": agentToolBindingStatusValues.reverse[bindingStatus],
+    "capabilityRequirement": capabilityRequirement,
+    "name": name,
+    "reasonCode": reasonCodeValues.reverse[reasonCode],
+    "source": agentInstallationToolSourceValues.reverse[source],
+    "toolResourceId": toolResourceId,
+  });
+}
+
+enum AgentToolBindingStatus { ACTIVE, NO_PERMISSION, PENDING, REVOKED }
+
+final agentToolBindingStatusValues = EnumValues({
+  "ACTIVE": AgentToolBindingStatus.ACTIVE,
+  "NO_PERMISSION": AgentToolBindingStatus.NO_PERMISSION,
+  "PENDING": AgentToolBindingStatus.PENDING,
+  "REVOKED": AgentToolBindingStatus.REVOKED,
+});
+
+enum AgentInstallationToolSource { APPLICATION, PLATFORM_NATIVE }
+
+final agentInstallationToolSourceValues = EnumValues({
+  "APPLICATION": AgentInstallationToolSource.APPLICATION,
+  "PLATFORM_NATIVE": AgentInstallationToolSource.PLATFORM_NATIVE,
+});
 
 ///05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
 ///reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
@@ -12550,6 +12669,10 @@ class CommandClass {
   ///resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
   final bool? explicitConfirmation;
 
+  ///仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+  ///授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+  final ResourceGrantPermission? grantPermission;
+
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
 
@@ -12629,6 +12752,7 @@ class CommandClass {
     this.delegationVersion,
     this.executorInstallationResourceId,
     this.explicitConfirmation,
+    this.grantPermission,
     required this.idempotencyKey,
     this.invitationId,
     this.llmRouteCreate,
@@ -12697,6 +12821,9 @@ class CommandClass {
     delegationVersion: json["delegationVersion"],
     executorInstallationResourceId: json["executorInstallationResourceId"],
     explicitConfirmation: json["explicitConfirmation"],
+    grantPermission: json["grantPermission"] == null
+        ? null
+        : resourceGrantPermissionValues.map[json["grantPermission"]]!,
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     llmRouteCreate: json["llmRouteCreate"] == null
@@ -12754,6 +12881,7 @@ class CommandClass {
     "delegationVersion": delegationVersion,
     "executorInstallationResourceId": executorInstallationResourceId,
     "explicitConfirmation": explicitConfirmation,
+    "grantPermission": resourceGrantPermissionValues.reverse[grantPermission],
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),

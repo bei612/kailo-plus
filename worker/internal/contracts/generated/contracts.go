@@ -169,6 +169,9 @@
 //    agentInstallationProjectionView, err := UnmarshalAgentInstallationProjectionView(bytes)
 //    bytes, err = agentInstallationProjectionView.Marshal()
 //
+//    agentInstallationToolPage, err := UnmarshalAgentInstallationToolPage(bytes)
+//    bytes, err = agentInstallationToolPage.Marshal()
+//
 //    agentInstallationUsePage, err := UnmarshalAgentInstallationUsePage(bytes)
 //    bytes, err = agentInstallationUsePage.Marshal()
 //
@@ -1350,6 +1353,16 @@ func UnmarshalAgentInstallationProjectionView(data []byte) (AgentInstallationPro
 }
 
 func (r *AgentInstallationProjectionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationToolPage(data []byte) (AgentInstallationToolPage, error) {
+	var r AgentInstallationToolPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationToolPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4092,6 +4105,9 @@ type ActionCommand struct {
 	// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
 	// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
+	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
@@ -4720,6 +4736,26 @@ type AgentInstallationProjectionView struct {
 	Generation          int64                       `json:"generation"`
 	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
 	State               AgentRuntimeProjectionState `json:"state"`
+}
+
+// DD-122: the tools an Agent Installation's current generation requests and their effective
+// state. Read-only; grants happen only through installation create/upgrade.
+type AgentInstallationToolPage struct {
+	Generation             int64                       `json:"generation"`
+	InstallationResourceID string                      `json:"installationResourceId"`
+	Tools                  []AgentInstallationToolView `json:"tools"`
+}
+
+type AgentInstallationToolView struct {
+	ApplicationBindingID *string                `json:"applicationBindingId,omitempty"`
+	BindingStatus        AgentToolBindingStatus `json:"bindingStatus"`
+	// APPLICATION only: the requested capability contract key@version.
+	CapabilityRequirement *string                     `json:"capabilityRequirement,omitempty"`
+	Name                  *string                     `json:"name,omitempty"`
+	ReasonCode            *ReasonCode                 `json:"reasonCode,omitempty"`
+	Source                AgentInstallationToolSource `json:"source"`
+	// Absent when an application capability requirement has no resolved provider yet.
+	ToolResourceID *string `json:"toolResourceId,omitempty"`
 }
 
 // 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
@@ -6045,6 +6081,9 @@ type CommandClass struct {
 	// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
 	// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
+	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
@@ -8821,15 +8860,15 @@ type CapabilityPermission string
 const (
 	Approve                      CapabilityPermission = "approve"
 	Audit                        CapabilityPermission = "audit"
+	CapabilityPermissionConsume  CapabilityPermission = "consume"
 	CapabilityPermissionDiscover CapabilityPermission = "discover"
 	CapabilityPermissionExecute  CapabilityPermission = "execute"
 	CapabilityPermissionManage   CapabilityPermission = "manage"
-	Consume                      CapabilityPermission = "consume"
+	CapabilityPermissionRead     CapabilityPermission = "read"
 	Create                       CapabilityPermission = "create"
 	Delegate                     CapabilityPermission = "delegate"
 	Delete                       CapabilityPermission = "delete"
 	Export                       CapabilityPermission = "export"
-	Read                         CapabilityPermission = "read"
 	Share                        CapabilityPermission = "share"
 	TransferOwner                CapabilityPermission = "transfer_owner"
 	Update                       CapabilityPermission = "update"
@@ -8861,6 +8900,17 @@ const (
 	ConsumeOnly              ResultExposureMode = "CONSUME_ONLY"
 	ResultExposureModeEXPORT ResultExposureMode = "EXPORT"
 	ResultExposureModeREAD   ResultExposureMode = "READ"
+)
+
+// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+type ResourceGrantPermission string
+
+const (
+	ResourceGrantPermissionConsume  ResourceGrantPermission = "consume"
+	ResourceGrantPermissionDiscover ResourceGrantPermission = "discover"
+	ResourceGrantPermissionExecute  ResourceGrantPermission = "execute"
+	ResourceGrantPermissionRead     ResourceGrantPermission = "read"
 )
 
 // 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
@@ -9039,6 +9089,22 @@ const (
 	AgentInstallationStateERROR        AgentInstallationState = "ERROR"
 	AgentInstallationStatePROVISIONING AgentInstallationState = "PROVISIONING"
 	Draining                           AgentInstallationState = "DRAINING"
+)
+
+type AgentToolBindingStatus string
+
+const (
+	AgentToolBindingStatusACTIVE  AgentToolBindingStatus = "ACTIVE"
+	AgentToolBindingStatusPENDING AgentToolBindingStatus = "PENDING"
+	AgentToolBindingStatusREVOKED AgentToolBindingStatus = "REVOKED"
+	NoPermission                  AgentToolBindingStatus = "NO_PERMISSION"
+)
+
+type AgentInstallationToolSource string
+
+const (
+	AgentInstallationToolSourcePLATFORMNATIVE AgentInstallationToolSource = "PLATFORM_NATIVE"
+	Application                               AgentInstallationToolSource = "APPLICATION"
 )
 
 type InvocationStatus string
@@ -9534,7 +9600,7 @@ const (
 type SourceEnum string
 
 const (
-	PlatformNative SourceEnum = "PLATFORM_NATIVE"
+	SourcePLATFORMNATIVE SourceEnum = "PLATFORM_NATIVE"
 )
 
 type ToolStatus string

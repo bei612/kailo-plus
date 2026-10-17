@@ -1021,6 +1021,11 @@ export interface ActionCommand {
      */
     explicitConfirmation?: boolean;
     /**
+     * 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+     * 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+     */
+    grantPermission?: ResourceGrantPermission;
+    /**
      * 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
      */
     idempotencyKey: string;
@@ -1546,6 +1551,17 @@ export enum ResultExposureMode {
     ConsumeOnly = "CONSUME_ONLY",
     Export = "EXPORT",
     Read = "READ",
+}
+
+/**
+ * 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+ * 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+ */
+export enum ResourceGrantPermission {
+    Consume = "consume",
+    Discover = "discover",
+    Execute = "execute",
+    Read = "read",
 }
 
 /**
@@ -2125,6 +2141,44 @@ export interface AgentInstallationProjectionView {
     generation:          number;
     runtimeProfileKey:   string;
     state:               AgentRuntimeProjectionState;
+}
+
+/**
+ * DD-122: the tools an Agent Installation's current generation requests and their effective
+ * state. Read-only; grants happen only through installation create/upgrade.
+ */
+export interface AgentInstallationToolPage {
+    generation:             number;
+    installationResourceId: string;
+    tools:                  AgentInstallationToolView[];
+}
+
+export interface AgentInstallationToolView {
+    applicationBindingId?: string;
+    bindingStatus:         AgentToolBindingStatus;
+    /**
+     * APPLICATION only: the requested capability contract key@version.
+     */
+    capabilityRequirement?: string;
+    name?:                  string;
+    reasonCode?:            ReasonCode;
+    source:                 AgentInstallationToolSource;
+    /**
+     * Absent when an application capability requirement has no resolved provider yet.
+     */
+    toolResourceId?: string;
+}
+
+export enum AgentToolBindingStatus {
+    Active = "ACTIVE",
+    NoPermission = "NO_PERMISSION",
+    Pending = "PENDING",
+    Revoked = "REVOKED",
+}
+
+export enum AgentInstallationToolSource {
+    Application = "APPLICATION",
+    PlatformNative = "PLATFORM_NATIVE",
 }
 
 /**
@@ -4279,6 +4333,11 @@ export interface CommandClass {
      * resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
      */
     explicitConfirmation?: boolean;
+    /**
+     * 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+     * 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+     */
+    grantPermission?: ResourceGrantPermission;
     /**
      * 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
      */
