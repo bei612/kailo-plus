@@ -748,6 +748,9 @@ pub struct Params {
     pub resource_id: Option<Uuid>,
     pub resource_version: Option<i32>,
     pub receiver_resource: Option<Value>,
+    /// DD-122 (6)：resource.grant_read/revoke_read 的非 read permission；read 规范化为空，
+    /// 原有 read 意图的参数与 hash 不变
+    pub grant_permission: Option<String>,
     pub asset_id: Option<Uuid>,
     pub asset_version: Option<i32>,
     pub agent_version_content: Option<contracts::ContentClass>,
@@ -827,6 +830,9 @@ impl Params {
         if let Some(receiver) = &self.receiver_resource {
             m.insert("receiverResource".into(), receiver.clone());
         }
+        if let Some(permission) = &self.grant_permission {
+            m.insert("grantPermission".into(), json!(permission));
+        }
         if let Some(id) = self.asset_id {
             m.insert("assetId".into(), json!(id));
         }
@@ -898,6 +904,7 @@ impl Params {
             explicit_confirmation: v.get("explicitConfirmation").and_then(Value::as_bool),
             resource_id: uuid("resourceId"),
             receiver_resource: v.get("receiverResource").cloned(),
+            grant_permission: text("grantPermission"),
             resource_version: v
                 .get("resourceVersion")
                 .and_then(Value::as_i64)
@@ -1168,6 +1175,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
+        grant_permission: cmd
+            .grant_permission
+            .as_ref()
+            .map(wire)
+            .filter(|permission| permission != "read"),
         resource_version: cmd
             .resource_version
             .map(|n| i32::try_from(n).map_err(|_| bad()))
@@ -1218,7 +1230,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
-    if p.receiver_resource.is_some()
+    if (p.receiver_resource.is_some() || p.grant_permission.is_some())
         && !matches!(
             sem,
             Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
@@ -3347,6 +3359,7 @@ impl Governance {
             resource_id: None,
             resource_version: None,
             receiver_resource: None,
+            grant_permission: None,
             asset_id: None,
             asset_version: None,
             agent_version_content: None,
@@ -3452,6 +3465,7 @@ impl Governance {
             resource_version: None,
             asset_id: None,
             receiver_resource: None,
+            grant_permission: None,
             asset_version: None,
             agent_version_content: None,
             delegation_id: None,
@@ -4268,6 +4282,7 @@ impl Governance {
             cmd.action_key.as_str(),
             "resource.grant_read" | "resource.revoke_read"
         ) || cmd.receiver_resource.is_some()
+            || cmd.grant_permission.is_some()
         {
             return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
         }

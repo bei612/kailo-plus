@@ -1,5 +1,7 @@
 //! 03 §5、10 §2、17 §8：HUMAN 管理 Installation 自身权限；DD-89 的
 //! SERVICE reader 使用同一 Resource/Approval/AE/SpiceDB 派发链。
+//! DD-122 (6)：同 Tenant AgentPrincipal（经其 Installation）作为业务对象的接收者，
+//! 按工具契约所需 permission 授予；不另设 Agent 授权动作。
 //! SpiceDB 是权限权威；只保存原 AE 的单次投影意图，不另存角色/权限分配表。
 
 use contracts::{EvidenceKind, ReasonCode};
@@ -51,11 +53,36 @@ fn grant_key(action: &str) -> &'static str {
     }
 }
 
-fn relations(action: &str) -> Vec<(&'static str, &'static str)> {
+/// DD-122 (6)：`grantPermission` 到 relationship 与复核 permission 的唯一映射。
+fn read_relation(grant: Option<&str>) -> Option<(&'static str, &'static str)> {
+    match grant {
+        None | Some("read") => Some(("reader", "read")),
+        Some("discover") => Some(("discoverer", "discover")),
+        Some("consume") => Some(("consumer", "consume")),
+        Some("execute") => Some(("executor", "execute")),
+        Some(_) => None,
+    }
+}
+
+/// 一次授予/收回写入的 relationship 与复核 permission。只有 AGENT 接收者的
+/// read 动作接受非 read permission；HUMAN、SERVICE 与 Installation 自身只受 read。
+fn relations(
+    action: &str,
+    agent: bool,
+    grant: Option<&str>,
+) -> Result<Vec<(&'static str, &'static str)>, Refusal> {
+    let invalid = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    if grant.is_some_and(|grant| grant != "read") && !(agent && is_read(action)) {
+        return Err(invalid());
+    }
     if is_use(action) {
-        USE_RELATIONS.to_vec()
+        Ok(USE_RELATIONS.to_vec())
+    } else if is_read(action) {
+        read_relation(grant)
+            .map(|pair| vec![pair])
+            .ok_or_else(invalid)
     } else {
-        vec![(relation(action), permission(action))]
+        Ok(vec![(relation(action), permission(action))])
     }
 }
 
@@ -156,6 +183,18 @@ async fn permission_target(
     let Some(reference) = &params.receiver_resource else {
         if let Some(row) = installation(conn, tenant, id, lock).await? {
             return Ok(row);
+        }
+        let recipient = params.principal_id.ok_or_else(conflict)?;
+        let agent: bool = sqlx::query_scalar(
+            "select exists(select 1 from identity.principal
+            where id=$1 and tenant_id=$2 and kind='AGENT')",
+        )
+        .bind(recipient)
+        .bind(tenant)
+        .fetch_one(&mut *conn)
+        .await?;
+        if agent {
+            return agent_resource(conn, tenant, id, recipient, lock).await;
         }
         return human_resource(conn, tenant, id, params, lock).await;
     };
@@ -357,10 +396,129 @@ async fn human_resource(
         .bind(id).bind(tenant).bind(recipient).fetch_optional(conn).await?.ok_or_else(conflict)
 }
 
-fn human_recipient(row: &PermissionTarget) -> bool {
+/// DD-122 (6)：同 Tenant AgentPrincipal 经其 Installation 成为业务对象接收者。
+/// 与 HUMAN 接收者同一 Resource/binding 事实；Agent 须属于该对象的 Workspace。
+async fn agent_resource(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    id: Uuid,
+    recipient: Uuid,
+    lock: bool,
+) -> Result<PermissionTarget, Refusal> {
+    if lock {
+        let _: Option<Uuid> = sqlx::query_scalar(
+            "select id from catalog.resource where id=$1 and tenant_id=$2 for update",
+        )
+        .bind(id)
+        .bind(tenant)
+        .fetch_optional(&mut *conn)
+        .await?;
+    }
+    // Keep an inactive Agent identifiable for revoke; a grant checks the live
+    // AgentPrincipal and Installation again in agent_recipient_scope().
+    sqlx::query_as(
+        "select r.id,r.tenant_id,r.home_workspace_id as workspace_id,
+        r.owner_principal_id,recipient.id as subject_principal_id,r.version,
+        r.projection_action_execution_id,
+        jsonb_build_object('recipientKind','AGENT','installationResourceId',installed.resource_id,
+          'sourceBindingId',b.id,'sourceBindingVersion',b.version,
+          'sourceGeneration',b.active_projection_generation,
+          'sourceReleaseId',b.component_release_id) as read_edge
+        from catalog.resource r
+        join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
+        join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=t.id
+          and owner.kind='HUMAN' and owner.status='ACTIVE'
+        join identity.tenant_membership membership on membership.tenant_principal_id=owner.id
+          and membership.tenant_id=t.id and membership.state='ACTIVE'
+        join identity.principal recipient on recipient.id=$3 and recipient.tenant_id=t.id
+          and recipient.kind='AGENT'
+        join catalog.agent_installation installed on installed.agent_principal_id=recipient.id
+        join catalog.resource installation on installation.id=installed.resource_id
+          and installation.tenant_id=t.id and installation.type_key='agent.installation'
+          and installation.home_workspace_id=installed.workspace_id
+        join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=t.id
+          and b.state='ACTIVE'
+        join identity.service_principal service on service.principal_id=b.service_principal_id
+          and service.component_binding_kind='APPLICATION' and service.component_binding_id=b.id
+        join identity.principal service_actor on service_actor.id=service.principal_id
+          and service_actor.tenant_id=t.id and service_actor.kind='SERVICE'
+          and service_actor.status='ACTIVE'
+        join catalog.component_release release on release.id=b.component_release_id
+          and release.status='APPROVED' and release.approved_by_action_execution_id is not null
+        join projection.application_runtime runtime on runtime.binding_id=b.id
+          and runtime.generation=b.active_projection_generation and runtime.state='ACTIVE'
+          and runtime.component_release_id=b.component_release_id
+          and runtime.normalized_manifest_digest=release.manifest_digest
+        join catalog.resource_type_definition definition
+          on definition.id=r.resource_type_definition_id and definition.type_key=r.type_key
+          and definition.component_release_id=b.component_release_id
+          and definition.status='ACTIVE'
+        where r.id=$1 and r.tenant_id=$2 and r.state='ACTIVE'
+          and (r.home_workspace_id is null or r.home_workspace_id=installed.workspace_id)
+          and (b.workspace_id is null or b.workspace_id=installed.workspace_id)
+          and (r.projection_action_execution_id is null or exists(
+            select 1 from admission.action_execution a
+            where a.id=r.projection_action_execution_id and a.tenant_id=t.id and a.target_id=r.id
+              and a.workspace_id is not distinct from r.home_workspace_id
+              and a.action_key in ('resource.grant_read','resource.revoke_read')))
+        for share of t,owner,membership,recipient,installed,installation,b,service,service_actor,
+          release,runtime,definition",
+    )
+    .bind(id)
+    .bind(tenant)
+    .bind(recipient)
+    .fetch_optional(conn)
+    .await?
+    .ok_or_else(conflict)
+}
+
+/// A grant re-reads the live AgentPrincipal and its exact Installation.
+async fn agent_recipient_scope(
+    conn: &mut PgConnection,
+    row: &PermissionTarget,
+) -> Result<(), Refusal> {
+    let installation = row
+        .read_edge
+        .as_ref()
+        .and_then(|edge| edge["installationResourceId"].as_str())
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(conflict)?;
+    let active: Option<Uuid> = sqlx::query_scalar(
+        "select p.id from identity.principal p
+        join catalog.agent_installation i on i.agent_principal_id=p.id and i.resource_id=$3
+        join catalog.resource r on r.id=i.resource_id and r.tenant_id=p.tenant_id
+          and r.state='ACTIVE'
+        where p.id=$1 and p.tenant_id=$2 and p.kind='AGENT' and p.status='ACTIVE'
+          and i.state in ('ACTIVE','DRAINING') for share of p,i,r",
+    )
+    .bind(row.subject_principal_id)
+    .bind(row.tenant_id)
+    .bind(installation)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if active.is_none() {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok(())
+}
+
+fn recipient_kind(row: &PermissionTarget) -> Option<&str> {
     row.read_edge
         .as_ref()
-        .is_some_and(|edge| edge["recipientKind"] == "HUMAN")
+        .and_then(|edge| edge["recipientKind"].as_str())
+}
+
+fn human_recipient(row: &PermissionTarget) -> bool {
+    recipient_kind(row) == Some("HUMAN")
+}
+
+fn agent_recipient(row: &PermissionTarget) -> bool {
+    recipient_kind(row) == Some("AGENT")
+}
+
+/// HUMAN or AGENT recipient named by the command, not a receiver Resource.
+fn direct_recipient(row: &PermissionTarget) -> bool {
+    human_recipient(row) || agent_recipient(row)
 }
 
 fn permission_outcome_matches(
@@ -369,9 +527,9 @@ fn permission_outcome_matches(
     held: bool,
     allowed: bool,
 ) -> bool {
-    // HUMAN read revocation removes this explicit reader, not independent
-    // owner/role permissions. Keep the legacy AGENT/SERVICE outcome rule.
-    held == grant && (allowed == grant || (!grant && human_recipient(row)))
+    // Direct read revocation removes this explicit relationship, not independent
+    // owner/role permissions. Keep the legacy Installation/SERVICE outcome rule.
+    held == grant && (allowed == grant || (!grant && direct_recipient(row)))
 }
 
 fn conflict() -> Refusal {
@@ -385,6 +543,8 @@ fn principal_field(row: &PermissionTarget) -> &'static str {
     // Keep already-admitted Installation intents readable without rewriting them.
     if human_recipient(row) {
         "humanPrincipalId"
+    } else if agent_recipient(row) {
+        "agentPrincipalId"
     } else if row.read_edge.is_some() {
         "servicePrincipalId"
     } else {
@@ -444,6 +604,11 @@ pub(super) async fn target(
         .resource_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
     let row = target_for(conn, tenant, id, params, lock, None, &def.action_key).await?;
+    relations(
+        &def.action_key,
+        agent_recipient(&row),
+        params.grant_permission.as_deref(),
+    )?;
     if (!is_read(&def.action_key) && row.read_edge.is_some())
         || Some(row.version) != params.resource_version
         || frozen.is_some_and(|v| v != row.id)
@@ -490,7 +655,7 @@ async fn projection(g: &Governance, row: &PermissionTarget) -> Result<(), Refusa
     {
         return Err(unavailable());
     }
-    if let Some(edge) = row.read_edge.as_ref().filter(|_| !human_recipient(row)) {
+    if let Some(edge) = row.read_edge.as_ref().filter(|_| !direct_recipient(row)) {
         if !g
             .spicedb
             .resource_projection_matches_in_workspace(
@@ -522,7 +687,7 @@ async fn human(
 ) -> Result<(), Refusal> {
     human_scope(g, conn, row.tenant_id, row.workspace_id, principal).await?;
     checked(g, "resource", row.id, "share", principal).await?;
-    if let Some(edge) = row.read_edge.as_ref().filter(|_| !human_recipient(row)) {
+    if let Some(edge) = row.read_edge.as_ref().filter(|_| !direct_recipient(row)) {
         let receiver = edge["receiverResourceId"]
             .as_str()
             .and_then(|id| Uuid::parse_str(id).ok())
@@ -534,6 +699,9 @@ async fn human(
     }
     if (human_recipient(row) || is_use(action)) && is_grant(action) {
         human_recipient_scope(conn, row).await?;
+    }
+    if agent_recipient(row) && is_grant(action) {
+        agent_recipient_scope(conn, row).await?;
     }
     Ok(())
 }
@@ -894,10 +1062,12 @@ pub(super) async fn prepare_revoke(
     let ids: Vec<Uuid> = sqlx::query_scalar("select id from admission.action_execution
         where tenant_id=$1 and target_id=$2 and action_key=$3
           and ($4::uuid is null or parameters->'params'->>'principalId'=$4::uuid::text)
+          and coalesce(parameters->'params'->>'grantPermission','read')=$5
           and (gate_state in ('EVALUATING','WAITING') or (gate_state='ALLOWED' and dispatch_state in ('NOT_DISPATCHED','UNKNOWN')))
         order by id for update")
         .bind(actor.tenant_id).bind(id).bind(grant_key(action))
         .bind(if is_read(action) || is_use(action) { params.principal_id } else { None })
+        .bind(params.grant_permission.as_deref().unwrap_or("read"))
         .fetch_all(&mut **tx).await?;
     if !crate::roles::lock_tenant(tx, actor.tenant_id).await? {
         return Err(conflict());
@@ -1171,7 +1341,11 @@ pub(super) async fn dispatch(
         return Err(error);
     }
     let mut token = None;
-    let pairs = relations(&ae.action_key);
+    let pairs = relations(
+        &ae.action_key,
+        agent_recipient(&row),
+        params.grant_permission.as_deref(),
+    )?;
     if first {
         let writes: Vec<_> = pairs
             .iter()
@@ -1296,6 +1470,10 @@ pub(super) async fn dispatch(
             "HUMAN_READ_GRANTED"
         } else if human_recipient(&row) {
             "HUMAN_READ_REVOKED"
+        } else if agent_recipient(&row) && grant {
+            "AGENT_PERMISSION_GRANTED"
+        } else if agent_recipient(&row) {
+            "AGENT_PERMISSION_REVOKED"
         } else if row.read_edge.is_some() && grant {
             "SERVICE_READ_GRANTED"
         } else if row.read_edge.is_some() {
@@ -1521,6 +1699,69 @@ pub(crate) async fn use_view(
 #[cfg(test)]
 mod approval_tests {
     use super::*;
+
+    #[test]
+    fn grant_permission_maps_to_relationship_only_for_agent_read_actions() {
+        for (grant, pair) in [
+            (None, ("reader", "read")),
+            (Some("read"), ("reader", "read")),
+            (Some("discover"), ("discoverer", "discover")),
+            (Some("consume"), ("consumer", "consume")),
+            (Some("execute"), ("executor", "execute")),
+        ] {
+            assert_eq!(relations(READ_GRANT, true, grant).unwrap(), vec![pair]);
+            assert_eq!(relations(READ_REVOKE, true, grant).unwrap(), vec![pair]);
+        }
+        // HUMAN, SERVICE and the Installation's own Agent receive read only.
+        assert_eq!(
+            relations(READ_GRANT, false, None).unwrap(),
+            vec![("reader", "read")]
+        );
+        for grant in ["discover", "consume", "execute"] {
+            assert!(relations(READ_GRANT, false, Some(grant)).is_err());
+            assert!(relations(READ_REVOKE, false, Some(grant)).is_err());
+            assert!(relations(GRANT, true, Some(grant)).is_err());
+            assert!(relations(USE_GRANT, true, Some(grant)).is_err());
+        }
+        assert!(relations(READ_GRANT, true, Some("delete")).is_err());
+        assert_eq!(
+            relations(USE_GRANT, false, None).unwrap(),
+            USE_RELATIONS.to_vec()
+        );
+        assert_eq!(
+            relations(REVOKE, false, None).unwrap(),
+            vec![("executor", "execute")]
+        );
+    }
+
+    #[test]
+    fn agent_recipient_is_a_direct_recipient_with_its_own_audit_field() {
+        let row = |edge: Option<Value>| PermissionTarget {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            workspace_id: None,
+            owner_principal_id: Uuid::new_v4(),
+            subject_principal_id: Uuid::new_v4(),
+            version: 1,
+            projection_action_execution_id: None,
+            read_edge: edge,
+        };
+        let agent = row(Some(json!({"recipientKind":"AGENT"})));
+        assert!(agent_recipient(&agent) && direct_recipient(&agent));
+        assert!(!human_recipient(&agent));
+        assert_eq!(principal_field(&agent), "agentPrincipalId");
+        // Revoking the explicit relationship need not remove owner/admin power.
+        assert!(permission_outcome_matches(&agent, false, false, true));
+        let human = row(Some(json!({"recipientKind":"HUMAN"})));
+        assert!(direct_recipient(&human) && !agent_recipient(&human));
+        assert_eq!(principal_field(&human), "humanPrincipalId");
+        let service = row(Some(json!({"receiverResourceId":Uuid::new_v4()})));
+        assert!(!direct_recipient(&service));
+        assert_eq!(principal_field(&service), "servicePrincipalId");
+        assert!(!permission_outcome_matches(&service, false, false, true));
+        let installation = row(None);
+        assert_eq!(principal_field(&installation), "agentPrincipalId");
+    }
 
     #[test]
     fn service_receiver_reference_is_closed_versioned_and_optional_for_legacy() {

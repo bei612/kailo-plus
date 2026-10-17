@@ -512,6 +512,7 @@ impl Governance {
             resource_id: None,
             resource_version: None,
             receiver_resource: None,
+            grant_permission: None,
             asset_id: None,
             asset_version: None,
             agent_version_content: None,
