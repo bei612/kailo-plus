@@ -4,7 +4,9 @@ import {
   ActionGateState,
   AgentVersionState,
   AgentInstallationState,
+  AgentInstallationToolSource,
   AgentRuntimeProjectionState,
+  AgentToolBindingStatus,
   AgentTrigger,
   AgentMemoryCoreWrite,
   AgentMemoryColdWrite,
@@ -26,9 +28,11 @@ import {
   type AgentVersionView,
   type AgentVersionConfigurationPage,
   type AgentInstallationCandidate,
+  type AgentInstallationCandidatePage,
   type AgentDelegationView,
   type DelegationScopeParameters,
   type AgentInstallationView,
+  type AgentInstallationToolPage,
   type AutomationView,
   type AutomationDetailView,
   type AutomationVersionView,
@@ -1509,6 +1513,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
+  const [regrantTarget, setRegrantTarget] = useState<AgentInstallationView | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   useEffect(() => { onLockedChange(locked); }, [locked, onLockedChange]);
   const value = state.status === "ok" ? state.data : null;
@@ -1524,7 +1529,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
       : <>
         <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
+            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); setRegrantTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
@@ -1535,6 +1540,9 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
       onRecorded={() => setRevision((old) => old + 1)} />
     {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
       workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`}
+      locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
+    {regrantTarget ? <InstallationCreate key={`regrant:${regrantTarget.resourceId}`} upgrade={regrantTarget} regrant open onClose={() => setRegrantTarget(null)}
+      workspaceId={regrantTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`}
       locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
     <AgentManagementDialog open={delegationTarget !== null} title={t("agents.delegation.title")} locked={locked} onClose={() => setDelegationTarget(null)}>
       <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
@@ -1549,7 +1557,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     </> : null}
     </AgentManagementDialog>
     {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked} avatarHost={avatarHost}
-      onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
+      onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} onRegrant={setRegrantTarget} /> : null}
   </section>;
 }
 
@@ -1577,6 +1585,7 @@ export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, 
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
+  const [regrantTarget, setRegrantTarget] = useState<AgentInstallationView | null>(null);
   const recorded = () => { setRevision((old) => old + 1); onRecorded?.(); };
   return <>
     <InstallationCreate open={createOpen} onClose={() => onCreateOpenChange(false)} workspaceId={workspaceId} workspaceName={workspaceName}
@@ -1584,12 +1593,16 @@ export function WorkspaceAgentDialogs({ workspaceId, workspaceName, createOpen, 
     {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
       workspaceId={upgradeTarget.workspaceId} workspaceName={workspaceName} sourceRevision={`channel:${revision}`}
       locked={locked} onLocked={setLocked} onRecorded={recorded} /> : null}
+    {regrantTarget ? <InstallationCreate key={`regrant:${regrantTarget.resourceId}`} upgrade={regrantTarget} regrant open onClose={() => setRegrantTarget(null)}
+      workspaceId={regrantTarget.workspaceId} workspaceName={workspaceName} sourceRevision={`channel:${revision}`}
+      locked={locked} onLocked={setLocked} onRecorded={recorded} /> : null}
     <AgentManagementDialog open={selectedId !== null} title={t("agents.installation.open")} locked={locked} onClose={() => onSelectedChange(null)}>
       {selectedId ? <InstallationDetail key={`${selectedId}:${revision}`} resourceId={selectedId} workspaceId={workspaceId} locked={locked} onLocked={setLocked}
         autoManage={manageDelegation}
         onPermission={(row) => { onSelectedChange(null); setPermissionTarget(row); }}
         onManage={(row) => { onSelectedChange(null); setDelegationTarget(row); }}
-        onUpgrade={(row) => { onSelectedChange(null); setUpgradeTarget(row); }} /> : null}
+        onUpgrade={(row) => { onSelectedChange(null); setUpgradeTarget(row); }}
+        onRegrant={(row) => { onSelectedChange(null); setRegrantTarget(row); }} /> : null}
     </AgentManagementDialog>
     <AgentManagementDialog open={delegationTarget !== null} title={t("agents.delegation.title")} locked={locked} onClose={() => setDelegationTarget(null)}>
       <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
@@ -1659,8 +1672,13 @@ function InstallationTaskReceipt({ receipt, workspaceId }: { receipt: ActionSubm
   </section>;
 }
 
-function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded, upgrade, open, onClose }: {
+function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded, upgrade, regrant = false, open, onClose }: {
   workspaceId?: string; workspaceName?: string; sourceRevision: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void; upgrade?: AgentInstallationView;
+  /**
+   * DD-122 (4), V-SCN-109: re-grant tools by the same governed agent.installation.upgrade to the
+   * Installation's own freshly read pinned Version; the new generation grants what the initiator can share.
+   */
+  regrant?: boolean;
   open: boolean; onClose: () => void;
 }) {
   const client = useBffClient();
@@ -1679,12 +1697,21 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
   const actionKey = upgrade ? "agent.installation.upgrade" : "agent.installation.create";
   const offset = offsets[index] ?? 0;
   const [sources, reloadSources] = useLoad(`installation-candidates:${workspaceId}:${offset}:${sourceRevision}`,
-    async () => {
+    async (): Promise<AgentInstallationCandidatePage | null> => {
       if (!workspaceId) return null;
       if (!upgrade) return client.agentInstallationCandidates(workspaceId, offset);
       const current = await client.agentInstallation(upgrade.resourceId);
       if (!validInstallation(current) || current.resourceId !== upgrade.resourceId
         || current.workspaceId !== workspaceId || current.agentResourceId !== upgrade.agentResourceId) throw new TransportError(t("platform.loadFailed"));
+      if (regrant) {
+        if (current.canUpgrade !== true) return { workspaceId, canCreate: false, nextOffset: undefined, candidates: [] };
+        const pinned = await client.agentVersion(current.pinnedVersionAssetId);
+        if (!validVersion(pinned, upgrade.agentResourceId) || pinned.assetId !== current.pinnedVersionAssetId) throw new TransportError(t("platform.loadFailed"));
+        return { workspaceId, canCreate: true, nextOffset: undefined,
+          candidates: pinned.state === AgentVersionState.Published ? [{ agentResourceId: upgrade.agentResourceId, agentVersionAssetId: pinned.assetId,
+            displayName: pinned.content.personaIdentity.displayName, resourceVersion: current.resourceVersion,
+            assetVersion: pinned.assetVersion, ordinal: pinned.ordinal }] : [] };
+      }
       const page = await client.agentVersions(upgrade.agentResourceId, offset);
       if (page.agentResourceId !== upgrade.agentResourceId || !Array.isArray(page.versions)
         || !page.versions.every((version) => validVersion(version, upgrade.agentResourceId))) throw new TransportError(t("platform.loadFailed"));
@@ -1701,7 +1728,9 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     && (sources.data.canCreate || sources.data.candidates.length === 0)
     && (sources.data.nextOffset === undefined || (Number.isSafeInteger(sources.data.nextOffset) && sources.data.nextOffset > offset))
     ? sources.data : null;
-  const candidate = page?.canCreate ? page.candidates.find((row) => row.agentVersionAssetId === selected) : undefined;
+  const candidate = !page?.canCreate ? undefined
+    : regrant ? (page.candidates.length === 1 ? page.candidates[0] : undefined)
+    : page.candidates.find((row) => row.agentVersionAssetId === selected);
   const [tasks, reloadTasks] = useLoad("installation-actions-in-flight", client.tasks);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
   const pending = taskRows?.filter((task) => task.actionKey === actionKey
@@ -1749,17 +1778,20 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   if (!workspaceId && !intent) return null;
-  return <AgentManagementDialog open={open || intent !== null} title={t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}
+  const title = regrant && upgrade ? "agents.installation.tools.regrant" : upgrade ? "agents.upgradeVersion" : "agents.installation.create";
+  return <AgentManagementDialog open={open || intent !== null} title={t(title)}
     locked={busy || intent !== null} onClose={onClose}>
-  <section className="flex flex-col gap-3" data-testid={upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
-    <h3 className="text-sm font-medium">{t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}</h3>
+  <section className="flex flex-col gap-3" data-testid={regrant && upgrade ? "agent-installation-regrant" : upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
+    <h3 className="text-sm font-medium">{t(title)}</h3>
     <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
+    {regrant && upgrade ? <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantHint")}</p> : null}
     {upgrade ? <Notice>{t("agents.upgradeDrain")}</Notice> : null}
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {sources.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !page ? <AgentReadFailure error={sources.status === "error" ? sources.error : undefined} onRetry={reloadSources} />
         : !page.canCreate ? <Notice>{t("agents.installation.createUnavailable")}</Notice>
         : page.candidates.length === 0 ? <Notice>{t("agents.installation.noPublished")}</Notice>
+        : regrant && candidate ? <p className="break-words text-sm">{t("agents.installation.tools.regrantVersion")}: {candidate.displayName} · {candidate.ordinal} · {candidate.agentVersionAssetId}</p>
         : <label className="flex flex-col gap-1 text-sm">{t(upgrade ? "agents.upgradeTarget" : "agents.installation.definition")}
           <select disabled={locked} required value={selected} onChange={(event) => setSelected(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t("agents.automation.select")}</option>
@@ -1781,7 +1813,8 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
       <p>{t("agents.version.ordinal")}: {intent.ordinal}</p>
       <p className="text-muted-foreground">{t("agents.installation.notReady")}</p>
       <p className="text-muted-foreground">{t("agents.admission")}</p>
-      <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t(upgrade ? "agents.upgradeSubmit" : "agents.confirm")}</Button>
+      <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry")
+        : t(regrant && upgrade ? "agents.installation.tools.regrantSubmit" : upgrade ? "agents.upgradeSubmit" : "agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
     </div>}
     {submission && submissionScope && submissionScope.workspaceId === workspaceId && submissionScope.client === client ? <>
@@ -1813,6 +1846,20 @@ function validDelegationScope(scope: DelegationScopeParameters): boolean {
     && Object.values(ResultExposureMode).includes(scope.resultExposureMode)
     && typeof scope.outputSchemaHash === "string" && /^[0-9a-f]{64}$/.test(scope.outputSchemaHash)
     && typeof scope.redactionPolicy === "string" && !!scope.redactionPolicy;
+}
+
+const memoryToolActions = ["agent.memory.entry.list", "agent.memory.entry.read"];
+
+/**
+ * One offered delegation target. Invocation scopes stay automation.run / agent.invoke; DD-122 (5)
+ * tool scopes fix action, target and Tool as Core lists them, and Core revalidates each on grant.
+ */
+function validDelegationTarget(scope: DelegationScopeParameters, installation: AgentInstallationView): boolean {
+  if (!validDelegationScope(scope) || scope.targetId === undefined || scope.createWorkspaceId !== undefined) return false;
+  if (scope.toolResourceId === undefined) return scope.targetType === "RESOURCE"
+    && (scope.actionKey === "automation.run" || (scope.actionKey === "agent.invoke" && scope.targetId === installation.resourceId));
+  return (scope.targetType === "RESOURCE" || scope.targetType === "ASSET")
+    && (!memoryToolActions.includes(scope.actionKey) || scope.targetId === installation.resourceId);
 }
 
 function validDelegation(row: AgentDelegationView): boolean {
@@ -1871,13 +1918,20 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
   const targetPage = targets.status === "ok" && targets.data && installation
     && targets.data.installationResourceId === installation.resourceId && targets.data.workspaceId === installation.workspaceId
     && targets.data.resourceVersion === installation.resourceVersion && Array.isArray(targets.data.scopes)
-    && targets.data.scopes.every((scope) => validDelegationScope(scope)
-      && (scope.actionKey === "automation.run" || (scope.actionKey === "agent.invoke" && scope.targetId === installation.resourceId))
-      && scope.targetType === "RESOURCE" && scope.targetId !== undefined && scope.createWorkspaceId === undefined && scope.toolResourceId === undefined)
+    && targets.data.scopes.every((scope) => validDelegationTarget(scope, installation))
     && new Set(targets.data.scopes.map(scopeKey)).size === targets.data.scopes.length
     && (targets.data.nextOffset === undefined || (Number.isSafeInteger(targets.data.nextOffset) && targets.data.nextOffset > targetOffset))
     ? targets.data : null;
   const scope = targetPage?.scopes.find((row) => scopeKey(row) === selected);
+  // Tool names only label scopes; the scope itself (and Core's recheck) stays the authority.
+  const toolScoped = !!page?.grants.some((row) => row.parameters.scopes.some((item) => item.toolResourceId !== undefined))
+    || !!targetPage?.scopes.some((row) => row.toolResourceId !== undefined);
+  const [toolRead] = useLoad(`agent-delegation-tools:${resourceId}:${toolScoped}`,
+    () => resourceId && toolScoped ? client.agentInstallationTools(resourceId) : Promise.resolve(null));
+  const toolPage = toolRead.status === "ok" && toolRead.data && resourceId
+    && validInstallationToolPage(toolRead.data, resourceId) ? toolRead.data : null;
+  const toolNames = new Map<string, string>();
+  for (const tool of toolPage?.tools ?? []) if (tool.toolResourceId && tool.name) toolNames.set(tool.toolResourceId, tool.name);
   const from = new Date(validFrom);
   const until = new Date(expiresAt);
   const uses = maxUses.trim() === "" ? undefined : Number(maxUses);
@@ -1954,7 +2008,7 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
         <p>{t("agents.delegation.validFrom")}: {String(reviewGrant.validFrom)}</p>
         <p>{t("agents.delegation.expiresAt")}: {String(reviewGrant.expiresAt)}</p>
         <p>{t("agents.delegation.maxUses")}: {reviewGrant.maxUses ?? t("agents.delegation.noUseLimit")}</p>
-        {reviewGrant.scopes.map((row) => <DelegationScope key={scopeKey(row)} scope={row} />)}
+        {reviewGrant.scopes.map((row) => <DelegationScope key={scopeKey(row)} scope={row} toolNames={toolNames} />)}
       </> : null}
       <p className="text-muted-foreground">{t("agents.delegation.admission")}</p>
       <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
@@ -1970,7 +2024,7 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
               <p className="break-words">{t("agents.delegation.grantor")}: {row.grantorPrincipalId}</p>
               <p>{t("agents.delegation.validFrom")}: {String(row.parameters.validFrom)} · {t("agents.delegation.expiresAt")}: {String(row.parameters.expiresAt)}</p>
               <p>{t("agents.delegation.uses")}: {row.uses} · {t("agents.delegation.maxUses")}: {row.parameters.maxUses ?? t("agents.delegation.noUseLimit")}</p>
-              {row.parameters.scopes.map((item) => <DelegationScope key={scopeKey(item)} scope={item} />)}
+              {row.parameters.scopes.map((item) => <DelegationScope key={scopeKey(item)} scope={item} toolNames={toolNames} />)}
               {page.canRevoke && ["ACTIVE", "REVOKING"].includes(row.state) ? <Button className="w-fit" disabled={locked || requestBlocked} onClick={() => prepare(row)}>{t("agents.delegation.revoke")}</Button> : null}
             </section>)}
           <div className="flex gap-2">
@@ -1984,7 +2038,8 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
           {targetPage.scopes.length === 0 ? <Notice>{t("agents.delegation.noTarget")}</Notice> : <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
             <label className="flex flex-col gap-1 text-sm">{t("agents.delegation.target")}
               <select disabled={locked} required value={selected} onChange={(event) => setSelected(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-                <option value="">{t("agents.automation.select")}</option>{targetPage.scopes.map((row) => <option key={scopeKey(row)} value={scopeKey(row)}>{row.actionKey} · {row.targetId} · {row.actionVersion}</option>)}
+                <option value="">{t("agents.automation.select")}</option>{targetPage.scopes.map((row) => <option key={scopeKey(row)} value={scopeKey(row)}>
+                  {row.toolResourceId !== undefined ? `${toolNames.get(row.toolResourceId) ?? row.toolResourceId} · ` : ""}{row.actionKey} · {row.targetId} · {row.actionVersion}</option>)}
               </select>
             </label>
             <p className="text-xs text-muted-foreground">{t("agents.delegation.localTime")}</p>
@@ -2015,16 +2070,20 @@ const delegationLabels: Record<AgentDelegationView["state"], PlatformMessageKey>
   REVOKED: "agents.delegation.state.revoked", EXPIRED: "agents.delegation.state.expired",
 };
 
-function DelegationScope({ scope }: { scope: DelegationScopeParameters }) {
-  return <div className="flex flex-col gap-1 break-words text-sm">
+function DelegationScope({ scope, toolNames }: { scope: DelegationScopeParameters; toolNames: ReadonlyMap<string, string> }) {
+  const t = useT();
+  return <div className="flex flex-col gap-1 break-words text-sm" data-testid="agent-delegation-scope">
     <p>{scope.actionKey} · {scope.actionVersion} · {scope.targetType} · {scope.targetId ?? scope.createWorkspaceId}</p>
+    {scope.toolResourceId !== undefined ? <p>{t("agents.delegation.tool")}: {toolNames.get(scope.toolResourceId) ?? scope.toolResourceId}
+      {toolNames.has(scope.toolResourceId) ? <span className="break-all font-mono text-xs"> · {scope.toolResourceId}</span> : null}</p> : null}
     <p>{scope.resultExposureMode} · {scope.redactionPolicy}</p>
     <p className="break-all font-mono text-xs">{scope.outputSchemaHash}</p>
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onLocked, avatarHost }: {
+function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, avatarHost }: {
   workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+  onRegrant: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
   avatarHost?: AgentAvatarHost;
 }) {
@@ -2059,7 +2118,8 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
           {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onLocked={onLocked}
             onPermission={(row) => { setSelected(null); onPermission(row); }}
             onManage={(row) => { setSelected(null); onManage(row); }}
-            onUpgrade={(row) => { setSelected(null); onUpgrade(row); }} /> : null}
+            onUpgrade={(row) => { setSelected(null); onUpgrade(row); }}
+            onRegrant={(row) => { setSelected(null); onRegrant(row); }} /> : null}
         </AgentManagementDialog>
       </>}
   </div>;
@@ -2092,13 +2152,16 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   </div>;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onLocked, autoManage = false }: {
+function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onRegrant, onLocked, autoManage = false }: {
   resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+  /** DD-122 (4): same-version upgrade from the Tools section. */
+  onRegrant: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
   autoManage?: boolean;
 }) {
   const client = useBffClient();
   const t = useT();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
   const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
     && state.data.workspaceId === workspaceId ? state.data : null;
@@ -2135,6 +2198,8 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
       <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {row.projection.runtimeProfileKey}</p>
       <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {row.projection.configHash}</p>
     </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
+    {toolsOpen ? <InstallationTools installation={row} locked={locked} onRegrant={onRegrant} />
+      : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setToolsOpen(true)}>{t("agents.installation.tools.open")}</Button>}
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
     <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
@@ -2144,6 +2209,99 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
       ? <AgentInstallationUse installationId={resourceId} locked={locked} /> : null}
     {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} onLocked={onLocked} /> : null}
     <InstallationSessions key={`${workspaceId}:${resourceId}`} installation={row} />
+  </section>;
+}
+
+const toolStatusLabels = {
+  [AgentToolBindingStatus.Active]: "agents.installation.tools.status.active",
+  [AgentToolBindingStatus.NoPermission]: "agents.installation.tools.status.noPermission",
+  [AgentToolBindingStatus.Pending]: "agents.installation.tools.status.pending",
+  [AgentToolBindingStatus.Revoked]: "agents.installation.tools.status.revoked",
+} as const satisfies Record<AgentToolBindingStatus, PlatformMessageKey>;
+const toolSourceLabels = {
+  [AgentInstallationToolSource.PlatformNative]: "agents.installation.tools.source.platform",
+  [AgentInstallationToolSource.Application]: "agents.installation.tools.source.application",
+} as const satisfies Record<AgentInstallationToolSource, PlatformMessageKey>;
+
+type InstallationTool = AgentInstallationToolPage["tools"][number];
+
+function toolKey(tool: InstallationTool): string {
+  return JSON.stringify([tool.source, tool.toolResourceId, tool.capabilityRequirement, tool.applicationBindingId, tool.name]);
+}
+
+/** DD-122: the read-only tool view of exactly this Installation's current generation. */
+export function validInstallationToolPage(page: AgentInstallationToolPage, installationResourceId: string): boolean {
+  const text = (value: unknown) => value === undefined || (typeof value === "string" && !!value);
+  return !!page && page.installationResourceId === installationResourceId
+    && Number.isSafeInteger(page.generation) && page.generation > 0
+    && Array.isArray(page.tools) && page.tools.every((tool) => !!tool
+      && Object.values(AgentInstallationToolSource).includes(tool.source)
+      && Object.values(AgentToolBindingStatus).includes(tool.bindingStatus)
+      && (tool.reasonCode === undefined || Object.values(ReasonCode).includes(tool.reasonCode))
+      && [tool.toolResourceId, tool.name, tool.capabilityRequirement, tool.applicationBindingId].every(text)
+      // Native tools have no capability requirement or provider binding.
+      && (tool.source === AgentInstallationToolSource.Application
+        || (tool.capabilityRequirement === undefined && tool.applicationBindingId === undefined)))
+    && new Set(page.tools.map(toolKey)).size === page.tools.length;
+}
+
+/** A tool the Agent does not hold yet; a same-version upgrade may grant it (DD-122 (3)(4)). */
+function toolNeedsGrant(tool: InstallationTool): boolean {
+  return tool.bindingStatus === AgentToolBindingStatus.NoPermission || tool.bindingStatus === AgentToolBindingStatus.Pending;
+}
+
+function InstallationTools({ installation, locked, onRegrant }: {
+  installation: AgentInstallationView; locked: boolean; onRegrant: (row: AgentInstallationView) => void;
+}) {
+  const client = useBffClient();
+  const t = useT();
+  const reasonText = useReasonText();
+  const [state, reload] = useLoad(`agent-installation-tools:${installation.workspaceId}:${installation.resourceId}`,
+    () => client.agentInstallationTools(installation.resourceId));
+  const page = state.status === "ok" && validInstallationToolPage(state.data, installation.resourceId) ? state.data : null;
+  const needsGrant = page?.tools.some(toolNeedsGrant) ?? false;
+  const canRegrant = needsGrant && installation.canUpgrade === true
+    && installation.state === AgentInstallationState.Active && installation.resourceState === ResourceState.Active;
+  const detail = (tool: InstallationTool): string | null => {
+    if (tool.bindingStatus === AgentToolBindingStatus.NoPermission)
+      return tool.reasonCode === undefined || tool.reasonCode === ReasonCode.PermissionDenied
+        ? t("agents.installation.tools.noPermissionHint") : reasonText(tool.reasonCode);
+    if (tool.bindingStatus === AgentToolBindingStatus.Pending)
+      return tool.reasonCode === undefined ? t("agents.installation.tools.pendingHint") : reasonText(tool.reasonCode);
+    return tool.reasonCode === undefined ? null : reasonText(tool.reasonCode);
+  };
+  return <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-installation-tools">
+    <h4 className="text-sm font-medium">{t("agents.installation.tools.title")}</h4>
+    <p className="text-sm text-muted-foreground">{t("agents.installation.tools.boundary")}</p>
+    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+      : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
+      : <>
+        <p className="text-sm">{t("agents.installation.generation")}: {page.generation}</p>
+        {page.tools.length === 0 ? <Notice>{t("agents.installation.tools.none")}</Notice> : <div className="overflow-x-auto">
+          <Table head={[t("agents.installation.tools.name"), t("agents.installation.tools.source"), t("agents.installation.tools.requirement"),
+            t("agents.installation.tools.provider"), t("agents.installation.tools.status")]}>
+            {page.tools.map((tool) => {
+              const note = detail(tool);
+              return <tr key={toolKey(tool)} data-testid="agent-installation-tool" data-status={tool.bindingStatus}>
+                <Cell><span className="break-words">{tool.name ?? tool.capabilityRequirement ?? tool.toolResourceId ?? "—"}</span>
+                  {tool.toolResourceId ? <p className="break-all font-mono text-xs">{tool.toolResourceId}</p> : null}</Cell>
+                <Cell>{t(toolSourceLabels[tool.source])}</Cell>
+                <Cell>{tool.capabilityRequirement ?? "—"}</Cell>
+                <Cell>{tool.source === AgentInstallationToolSource.PlatformNative ? t("agents.installation.tools.platformProvider")
+                  : tool.applicationBindingId ? <span className="break-all font-mono text-xs">{tool.applicationBindingId}</span>
+                  : t("agents.installation.tools.noProvider")}</Cell>
+                <Cell><Badge tone={tool.bindingStatus === AgentToolBindingStatus.Active ? "positive" : "neutral"}>{t(toolStatusLabels[tool.bindingStatus])}</Badge>
+                  {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}</Cell>
+              </tr>;
+            })}
+          </Table>
+        </div>}
+        {canRegrant ? <>
+          <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantHint")}</p>
+          <Button className="w-fit" disabled={locked} onClick={() => onRegrant(installation)}>{t("agents.installation.tools.regrant")}</Button>
+        </> : needsGrant ? <p className="text-sm text-muted-foreground">{t("agents.installation.tools.regrantUnavailable")}</p> : null}
+      </>}
+    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
   </section>;
 }
 

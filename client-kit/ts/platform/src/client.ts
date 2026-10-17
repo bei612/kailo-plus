@@ -26,6 +26,7 @@ import type {
   AgentDelegationPage,
   AgentDelegationTargetPage,
   AgentInstallationView,
+  AgentInstallationToolPage,
   AgentSessionPage,
   AgentInvocationPage,
   AgentMemoryReadView,
@@ -253,6 +254,12 @@ export function createBffClient(transport: BffTransport) {
     },
     agentInstallation: (resourceId: string) =>
       get<AgentInstallationView>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}`),
+    /**
+     * DD-122: the current generation's requested tools and their effective ToolBinding state.
+     * Read-only; tools are granted only by agent.installation.create/upgrade.
+     */
+    agentInstallationTools: (resourceId: string) =>
+      get<AgentInstallationToolPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/tools`),
     /** 05 §2.10：成员使用权目录；读取不改变授权，开关仍走统一 Action。 */
     agentInstallationUsers: (resourceId: string) =>
       get<AgentInstallationUsePage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/users`),

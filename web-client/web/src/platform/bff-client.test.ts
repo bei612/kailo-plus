@@ -319,6 +319,18 @@ it("names the DD-121 outcome route once and asks only about the caller's own eve
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
+it("reads the DD-122 installation tool view through the shared client's single GET route", async () => {
+  const page = { installationResourceId: "installation/1", generation: 3,
+    tools: [{ source: "PLATFORM_NATIVE", name: "memory.entry.list", toolResourceId: "tool", bindingStatus: "NO_PERMISSION" }] };
+  const fetcher = vi.fn(async (_path: string, _init: RequestInit) =>
+    new Response(JSON.stringify(page), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await bff.agentInstallationTools("installation/1")).toEqual(page);
+  const [path, init] = fetcher.mock.lastCall!;
+  expect([path, init.method ?? "GET", init.body]).toEqual(["/api/v1/agent-installations/installation%2F1/tools", "GET", undefined]);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
 it("rejects an outcome page that is malformed or speaks about events that were not asked", async () => {
   const mine = "1".repeat(64);
   const reply = (body: unknown) => vi.stubGlobal("fetch", vi.fn(async () =>
