@@ -43,14 +43,86 @@ pub struct SpiceDb {
     key: String,
 }
 
-/// 固定 schema 上的一条关系，主体恒为 `principal`（`.design/03` §5）。角色写入与
-/// 读取只经这一个形状：组件注册不新增 object type，这里也不提供任意主体类型的通道。
+/// DD-122 (1)：原生 Tool Resource 上授予 `tenant:<tenant_id>#member` 的全部 relation。
+/// 权限公式不变，成员资格由 Tenant 的 `member` 关系动态展开。
+pub(crate) const TENANT_MEMBER_GRANTS: [&str; 3] = ["discoverer", "consumer", "sharer"];
+/// 主体集 `tenant#member` 的 relation 名。
+const MEMBER_RELATION: &str = "member";
+
+/// 固定 schema 上一条关系的主体（`.design/03` §5）。角色、授予与投影的主体都是
+/// `principal`；唯一的主体集是 DD-122 (1) 只写在原生 Tool Resource 的
+/// discoverer/consumer/sharer 上的 `tenant:<tenant_id>#member`——它代表该 Tenant
+/// 的每个有效成员，不是任何一个 principal。组件注册不新增 object type，这里也不
+/// 提供任意主体类型的通道。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Subject {
+    /// `principal:<id>`
+    Principal(String),
+    /// `tenant:<tenant_id>#member`
+    TenantMembers(String),
+}
+
+impl Subject {
+    /// SpiceDB 原生 SubjectReference。
+    fn to_json(&self) -> serde_json::Value {
+        match self {
+            Self::Principal(id) => {
+                serde_json::json!({ "object": { "objectType": "principal", "objectId": id } })
+            }
+            Self::TenantMembers(tenant) => {
+                let object = serde_json::json!({ "objectType": "tenant", "objectId": tenant });
+                serde_json::json!({ "object": object, "optionalRelation": MEMBER_RELATION })
+            }
+        }
+    }
+
+    /// 从原生 SubjectReference 读回。无 relation 的非 principal 主体是 object 箭头
+    /// （Resource 的 tenant/home_workspace、Workspace 的 tenant 等），不是授予主体，
+    /// 返回 `Ok(None)`；固定 schema 不允许的主体集与缺字段都是形状错误。
+    fn from_json(subject: &serde_json::Value) -> Result<Option<Self>, SpiceDbError> {
+        let text = |p: &str| subject.pointer(p).and_then(serde_json::Value::as_str);
+        let kind = text("/object/objectType");
+        let id = text("/object/objectId").filter(|id| !id.is_empty());
+        let (Some(kind), Some(id)) = (kind, id) else {
+            return Err(SpiceDbError::Unavailable("关系主体形状不符".into()));
+        };
+        let set = text("/optionalRelation").filter(|r| !r.is_empty());
+        match (kind, set) {
+            ("principal", None) => Ok(Some(Self::Principal(id.to_owned()))),
+            ("tenant", Some(MEMBER_RELATION)) => Ok(Some(Self::TenantMembers(id.to_owned()))),
+            (_, None) => Ok(None),
+            (_, Some(_)) => Err(SpiceDbError::Unavailable("未知主体集".into())),
+        }
+    }
+
+    /// 证据串中的规范写法：`principal:<id>` 或 `tenant:<id>#member`；其余不认。
+    pub fn parse(text: &str) -> Option<Self> {
+        let canonical = |id: &str| !id.is_empty() && !id.contains(['#', ':', '@']);
+        if let Some(id) = text.strip_prefix("principal:") {
+            return canonical(id).then(|| Self::Principal(id.to_owned()));
+        }
+        let id = text.strip_prefix("tenant:")?.strip_suffix("#member")?;
+        canonical(id).then(|| Self::TenantMembers(id.to_owned()))
+    }
+}
+
+impl std::fmt::Display for Subject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Principal(id) => write!(f, "principal:{id}"),
+            Self::TenantMembers(tenant) => write!(f, "tenant:{tenant}#{MEMBER_RELATION}"),
+        }
+    }
+}
+
+/// 固定 schema 上的一条关系。角色写入与读取、授予与撤销都经这一个形状；主体见
+/// [`Subject`]。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relationship {
     pub object_type: String,
     pub object_id: String,
     pub relation: String,
-    pub subject_principal: String,
+    pub subject: Subject,
 }
 
 impl Relationship {
@@ -58,8 +130,149 @@ impl Relationship {
         serde_json::json!({
             "resource": { "objectType": self.object_type, "objectId": self.object_id },
             "relation": self.relation,
-            "subject": { "object": { "objectType": "principal", "objectId": self.subject_principal } },
+            "subject": self.subject.to_json(),
         })
+    }
+
+    /// principal 主体的 ID。主体集不是任何一个 principal，返回 `None`：按
+    /// principal 判定的读者（角色、Agent 授予、撤销复读）必须显式跳过它。
+    pub fn principal(&self) -> Option<&str> {
+        match &self.subject {
+            Subject::Principal(id) => Some(id.as_str()),
+            Subject::TenantMembers(_) => None,
+        }
+    }
+
+    /// DD-122 (1)：原生 Tool 对本 Tenant 每个有效成员的全部授予。
+    pub(crate) fn tenant_member_grants(tool: &str, tenant: &str) -> [Self; 3] {
+        TENANT_MEMBER_GRANTS.map(|relation| Self {
+            object_type: "resource".into(),
+            object_id: tool.to_owned(),
+            relation: relation.into(),
+            subject: Subject::TenantMembers(tenant.to_owned()),
+        })
+    }
+
+    /// 原生 ReadRelationships 的一行；object 箭头返回 `Ok(None)`。
+    fn from_native(r: &serde_json::Value) -> Result<Option<Self>, SpiceDbError> {
+        let s = |p: &str| r.pointer(p).and_then(|x| x.as_str()).map(str::to_owned);
+        let (Some(object_type), Some(object_id), Some(relation)) = (
+            s("/resource/objectType"),
+            s("/resource/objectId"),
+            s("/relation"),
+        ) else {
+            return Err(SpiceDbError::Unavailable("关系形状不符".into()));
+        };
+        let subject = r
+            .get("subject")
+            .ok_or_else(|| SpiceDbError::Unavailable("关系缺主体".into()))?;
+        let Some(subject) = Subject::from_json(subject)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            object_type,
+            object_id,
+            relation,
+            subject,
+        }))
+    }
+}
+
+impl std::fmt::Display for Relationship {
+    /// 证据与日志的规范写法 `<type>:<id>#<relation>@<subject>`。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}#{}@{}",
+            self.object_type, self.object_id, self.relation, self.subject
+        )
+    }
+}
+
+/// 一个 Resource 上观察到的 tenant/owner/home Workspace 投影与 DD-122 成员授予。
+#[derive(Debug, Default)]
+struct ResourceProjection {
+    owners: Vec<String>,
+    tenants: Vec<String>,
+    workspaces: Vec<String>,
+    member_grants: Vec<String>,
+}
+
+impl ResourceProjection {
+    /// 别的对象、caveat、固定形状之外的箭头或主体集都使投影不可核验（`None`）。
+    /// 主体集只认 DD-122 (1) 本 Tenant 的 `tenant#member` 授予：它与 principal 授予
+    /// 一样不参与 tenant/owner/home 判定；指向别的 Tenant 的成员集是跨 Tenant 错写。
+    /// 「只写在原生 Tool 上」由唯一写者（部署引导）保证，原生 Tool 的完整授予由
+    /// [`NativeToolProjection`] 核对。
+    fn observe(rows: &[serde_json::Value], id: &str, tenant: &str) -> Option<Self> {
+        let mut seen = Self::default();
+        for r in rows {
+            let text = |p: &str| r.pointer(p).and_then(serde_json::Value::as_str);
+            if text("/resource/objectType") != Some("resource")
+                || text("/resource/objectId") != Some(id)
+                || text("/optionalCaveat/caveatName").is_some_and(|x| !x.is_empty())
+            {
+                return None;
+            }
+            let relation = text("/relation");
+            let subject_type = text("/subject/object/objectType");
+            let subject = text("/subject/object/objectId").unwrap_or_default();
+            if let Some(set) = text("/subject/optionalRelation").filter(|x| !x.is_empty()) {
+                let grant = relation.filter(|rel| TENANT_MEMBER_GRANTS.contains(rel))?;
+                let members = set == MEMBER_RELATION && subject_type == Some("tenant");
+                if !members || subject != tenant {
+                    return None;
+                }
+                seen.member_grants.push(grant.to_owned());
+                continue;
+            }
+            match (relation, subject_type) {
+                (Some("owner"), Some("principal")) => seen.owners.push(subject.to_owned()),
+                (Some("tenant"), Some("tenant")) => seen.tenants.push(subject.to_owned()),
+                (Some("home_workspace"), Some("workspace")) => {
+                    seen.workspaces.push(subject.to_owned())
+                }
+                (Some("owner" | "tenant" | "home_workspace"), _) => return None,
+                _ => {}
+            }
+        }
+        Some(seen)
+    }
+
+    fn closes(&self, tenant: &str, owner: &str, workspace: Option<&str>) -> bool {
+        self.owners == [owner]
+            && self.tenants == [tenant]
+            && match workspace {
+                Some(workspace) => self.workspaces == [workspace],
+                None => self.workspaces.is_empty(),
+            }
+    }
+}
+
+/// DD-122 (1) 原生 Tool 投影的对账结论。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeToolProjection {
+    /// tenant/owner 投影闭合，且本 Tenant 成员持有全部 DD-122 授予。
+    Closed,
+    /// tenant/owner 投影闭合，成员授予缺全部或一部分：引导可补写。
+    MembersMissing,
+    /// 投影与 Core 事实不符或不可核验：需对账，引导不改写。
+    Mismatch,
+}
+
+impl NativeToolProjection {
+    fn of(rows: &[serde_json::Value], id: &str, tenant: &str, owner: &str) -> Self {
+        match ResourceProjection::observe(rows, id, tenant) {
+            Some(seen) if seen.closes(tenant, owner, None) => {
+                let held = |grant: &&str| seen.member_grants.iter().any(|g| g == grant);
+                if TENANT_MEMBER_GRANTS.iter().all(held) {
+                    Self::Closed
+                } else {
+                    Self::MembersMissing
+                }
+            }
+            _ => Self::Mismatch,
+        }
     }
 }
 
@@ -90,9 +303,10 @@ impl SpiceDb {
         }
     }
 
-    /// Tenant 删除只删除一个明确 object 的全部关系（含 workspace#tenant），
-    /// 再以 FullyConsistent 原生 ReadRelationships 查证为空。不经只返回
-    /// principal 关系的角色列表读取，否则会遗漏 workspace 的 tenant 箭头。
+    /// Tenant 删除只删除一个明确 object 的全部关系（含 workspace#tenant 与原生
+    /// Tool 上 DD-122 的 `tenant#member` 授予），再以 FullyConsistent 原生
+    /// ReadRelationships 查证为空。过滤只按 object，不按主体：不经只返回授予主体的
+    /// 角色列表读取，否则会遗漏 workspace 的 tenant 箭头。
     pub async fn delete_object(
         &self,
         http: &reqwest::Client,
@@ -440,6 +654,8 @@ impl SpiceDb {
             .await
     }
 
+    /// tenant/owner/home Workspace 投影与 Core 事实一致。principal 授予与本 Tenant 的
+    /// DD-122 成员授予不参与判定；其余主体集、caveat 与重复箭头都不一致。
     pub(crate) async fn resource_projection_matches_in_workspace(
         &self,
         id: &str,
@@ -448,62 +664,38 @@ impl SpiceDb {
         workspace: Option<&str>,
         page: u32,
     ) -> Result<bool, SpiceDbError> {
-        let rows = self
-            .read_native(
-                &RelationshipFilter {
-                    object_type: "resource",
-                    object_id: Some(id),
-                    relation: None,
-                    subject_principal: None,
-                },
-                page,
-            )
-            .await?;
-        let mut owners = vec![];
-        let mut tenants = vec![];
-        let mut workspaces = vec![];
-        for r in rows {
-            let text = |p: &str| r.pointer(p).and_then(serde_json::Value::as_str);
-            if text("/resource/objectType") != Some("resource")
-                || text("/resource/objectId") != Some(id)
-                || text("/subject/optionalRelation").is_some_and(|x| !x.is_empty())
-                || text("/optionalCaveat/caveatName").is_some_and(|x| !x.is_empty())
-            {
-                return Ok(false);
-            }
-            match text("/relation") {
-                Some("owner") if text("/subject/object/objectType") == Some("principal") => owners
-                    .push(
-                        text("/subject/object/objectId")
-                            .unwrap_or_default()
-                            .to_owned(),
-                    ),
-                Some("tenant") if text("/subject/object/objectType") == Some("tenant") => tenants
-                    .push(
-                        text("/subject/object/objectId")
-                            .unwrap_or_default()
-                            .to_owned(),
-                    ),
-                Some("home_workspace")
-                    if text("/subject/object/objectType") == Some("workspace") =>
-                {
-                    workspaces.push(
-                        text("/subject/object/objectId")
-                            .unwrap_or_default()
-                            .to_owned(),
-                    )
-                }
-                Some("home_workspace") => return Ok(false),
-                Some("owner" | "tenant") => return Ok(false),
-                _ => {}
-            }
-        }
-        Ok(owners == [owner]
-            && tenants == [tenant]
-            && match workspace {
-                Some(workspace) => workspaces == [workspace],
-                None => workspaces.is_empty(),
-            })
+        let rows = self.read_resource(id, page).await?;
+        let seen = ResourceProjection::observe(&rows, id, tenant);
+        Ok(seen.is_some_and(|p| p.closes(tenant, owner, workspace)))
+    }
+
+    /// DD-122 (1)：原生 Tool 的 tenant/owner 投影与本 Tenant 成员的全部授予。
+    pub(crate) async fn native_tool_projection(
+        &self,
+        id: &str,
+        tenant: &str,
+        owner: &str,
+        page: u32,
+    ) -> Result<NativeToolProjection, SpiceDbError> {
+        let rows = self.read_resource(id, page).await?;
+        Ok(NativeToolProjection::of(&rows, id, tenant, owner))
+    }
+
+    async fn read_resource(
+        &self,
+        id: &str,
+        page: u32,
+    ) -> Result<Vec<serde_json::Value>, SpiceDbError> {
+        self.read_native(
+            &RelationshipFilter {
+                object_type: "resource",
+                object_id: Some(id),
+                relation: None,
+                subject_principal: None,
+            },
+            page,
+        )
+        .await
     }
 
     /// Asset 自己的 owner 关系不从 Resource owner 推断；同一原生事务固定父与 Tenant。
@@ -593,9 +785,11 @@ impl SpiceDb {
         self.delete_object(&self.http, "asset", id).await
     }
 
-    /// 以 FullyConsistent 读出满足过滤条件、主体为 principal 的全部关系。按 `page`
-    /// 分页读到底：读一半就停等于把「还没读到」当成「不存在」，而角色判定恰恰
-    /// 建立在「此外再没有别人」之上。
+    /// 以 FullyConsistent 读出满足过滤条件的全部授予关系：主体为 principal，或
+    /// DD-122 (1) 的 `tenant#member` 主体集；object 箭头不是授予，不在其中。按
+    /// `page` 分页读到底：读一半就停等于把「还没读到」当成「不存在」，而角色判定
+    /// 恰恰建立在「此外再没有别人」之上。按 principal 判定的调用方用
+    /// [`Relationship::principal`]，主体集不会被当成某个 principal。
     pub async fn read(
         &self,
         filter: &RelationshipFilter<'_>,
@@ -603,23 +797,8 @@ impl SpiceDb {
     ) -> Result<Vec<Relationship>, SpiceDbError> {
         let mut out = vec![];
         for r in self.read_native(filter, page).await? {
-            let s = |p: &str| r.pointer(p).and_then(|x| x.as_str()).map(str::to_owned);
-            let (Some(ot), Some(oi), Some(rel), Some(st), Some(si)) = (
-                s("/resource/objectType"),
-                s("/resource/objectId"),
-                s("/relation"),
-                s("/subject/object/objectType"),
-                s("/subject/object/objectId"),
-            ) else {
-                return Err(SpiceDbError::Unavailable("关系形状不符".into()));
-            };
-            if st == "principal" {
-                out.push(Relationship {
-                    object_type: ot,
-                    object_id: oi,
-                    relation: rel,
-                    subject_principal: si,
-                });
+            if let Some(relationship) = Relationship::from_native(&r)? {
+                out.push(relationship);
             }
         }
         Ok(out)
@@ -711,6 +890,153 @@ impl SpiceDb {
                     ))
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn row(relation: &str, subject: serde_json::Value) -> serde_json::Value {
+        json!({
+            "resource": { "objectType": "resource", "objectId": "tool" },
+            "relation": relation,
+            "subject": subject,
+        })
+    }
+
+    fn object(kind: &str, id: &str) -> serde_json::Value {
+        json!({ "object": { "objectType": kind, "objectId": id } })
+    }
+
+    fn members(tenant: &str) -> serde_json::Value {
+        json!({
+            "object": { "objectType": "tenant", "objectId": tenant },
+            "optionalRelation": "member",
+        })
+    }
+
+    #[test]
+    fn subjects_serialize_as_native_references() {
+        let principal = Relationship {
+            object_type: "tenant".into(),
+            object_id: "t".into(),
+            relation: "admin".into(),
+            subject: Subject::Principal("p".into()),
+        };
+        assert_eq!(
+            principal.to_json(),
+            json!({
+                "resource": { "objectType": "tenant", "objectId": "t" },
+                "relation": "admin",
+                "subject": { "object": { "objectType": "principal", "objectId": "p" } },
+            })
+        );
+        assert_eq!(principal.principal(), Some("p"));
+        assert_eq!(principal.to_string(), "tenant:t#admin@principal:p");
+        let grants = Relationship::tenant_member_grants("tool", "t");
+        let relations: Vec<&str> = grants.iter().map(|g| g.relation.as_str()).collect();
+        assert_eq!(relations, ["discoverer", "consumer", "sharer"]);
+        let resource = json!({ "objectType": "resource", "objectId": "tool" });
+        for grant in &grants {
+            assert_eq!(grant.principal(), None);
+            assert_eq!(grant.to_json()["resource"], resource);
+            assert_eq!(grant.to_json()["subject"], members("t"));
+        }
+        assert_eq!(
+            grants[1].to_string(),
+            "resource:tool#consumer@tenant:t#member"
+        );
+    }
+
+    #[test]
+    fn readers_parse_principals_and_member_sets_without_confusing_them() {
+        let read = |subject| Relationship::from_native(&row("consumer", subject));
+        let principal = read(object("principal", "p")).unwrap().unwrap();
+        assert_eq!(principal.subject, Subject::Principal("p".into()));
+        let set = read(members("t")).unwrap().unwrap();
+        assert_eq!(set.subject, Subject::TenantMembers("t".into()));
+        assert_eq!(set.principal(), None);
+        // object 箭头不是授予主体，读者不拿到它
+        assert!(read(object("tenant", "t")).unwrap().is_none());
+        assert!(read(object("workspace", "w")).unwrap().is_none());
+        // 固定 schema 之外的主体集与缺字段都是形状错误，不被当成 principal
+        let admins = json!({
+            "object": { "objectType": "tenant", "objectId": "t" },
+            "optionalRelation": "admin",
+        });
+        assert!(read(admins).is_err());
+        let principal_set = json!({
+            "object": { "objectType": "principal", "objectId": "p" },
+            "optionalRelation": "member",
+        });
+        assert!(read(principal_set).is_err());
+        assert!(read(object("principal", "")).is_err());
+        assert!(read(json!({})).is_err());
+        assert!(Relationship::from_native(&json!({ "relation": "consumer" })).is_err());
+    }
+
+    #[test]
+    fn evidence_subjects_round_trip() {
+        for subject in [
+            Subject::Principal("p".into()),
+            Subject::TenantMembers("t".into()),
+        ] {
+            assert_eq!(Subject::parse(&subject.to_string()), Some(subject));
+        }
+        for bad in [
+            "principal:",
+            "principal:p#member",
+            "tenant:t",
+            "tenant:t#admin",
+            "tenant:#member",
+            "workspace:w#member",
+        ] {
+            assert_eq!(Subject::parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn native_tool_projection_requires_every_member_grant_of_its_own_tenant() {
+        let base = [
+            row("tenant", object("tenant", "t")),
+            row("owner", object("principal", "o")),
+            row("discoverer", object("principal", "agent")),
+        ];
+        let of = |rows: &[serde_json::Value]| NativeToolProjection::of(rows, "tool", "t", "o");
+        assert_eq!(of(&base), NativeToolProjection::MembersMissing);
+        let mut granted = base.to_vec();
+        for relation in TENANT_MEMBER_GRANTS {
+            granted.push(row(relation, members("t")));
+        }
+        assert_eq!(of(&granted), NativeToolProjection::Closed);
+        let partial = &granted[..granted.len() - 1];
+        assert_eq!(of(partial), NativeToolProjection::MembersMissing);
+        // 成员授予不改变通用 tenant/owner/home 判定
+        let generic = ResourceProjection::observe(&granted, "tool", "t");
+        assert!(generic.is_some_and(|seen| seen.closes("t", "o", None)));
+        let other_owner = NativeToolProjection::of(&granted, "tool", "t", "o2");
+        assert_eq!(other_owner, NativeToolProjection::Mismatch);
+        // 别的 Tenant 的成员集、非授予 relation 上的主体集、caveat、多余 owner 都不一致
+        for wrong in [
+            row("consumer", members("other")),
+            row("owner", members("t")),
+            row("reader", members("t")),
+            row("owner", object("principal", "o2")),
+            json!({
+                "resource": { "objectType": "resource", "objectId": "tool" },
+                "relation": "sharer",
+                "subject": members("t"),
+                "optionalCaveat": { "caveatName": "c" },
+            }),
+        ] {
+            let mut rows = granted.clone();
+            rows.push(wrong);
+            assert_eq!(of(&rows), NativeToolProjection::Mismatch);
+            let generic = ResourceProjection::observe(&rows, "tool", "t");
+            assert!(!generic.is_some_and(|seen| seen.closes("t", "o", None)));
         }
     }
 }

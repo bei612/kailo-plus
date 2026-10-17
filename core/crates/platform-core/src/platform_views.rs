@@ -898,7 +898,7 @@ pub async fn list_role_members(
     };
     let parse_subjects = |rels: Vec<crate::spicedb::Relationship>| -> Option<HashSet<Uuid>> {
         rels.into_iter()
-            .map(|r| Uuid::parse_str(&r.subject_principal).ok())
+            .map(|r| r.principal().and_then(|p| Uuid::parse_str(p).ok()))
             .collect()
     };
     let (Some(tenant_admins), Some(workspace_admins)) =

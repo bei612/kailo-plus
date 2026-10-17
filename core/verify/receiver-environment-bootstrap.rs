@@ -2,7 +2,7 @@
 //! Core integration-test binary. It does not add a production CLI, HTTP route,
 //! alternate Core implementation, registration authority or suite result.
 use super::*;
-use crate::spicedb::{Consistency, Relationship, SpiceDb, Write};
+use crate::spicedb::{Consistency, Relationship, SpiceDb, Subject, Write};
 use std::{collections::BTreeSet, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -846,7 +846,7 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
                             object_type: "resource".into(),
                             object_id: resource.clone(),
                             relation: (*relation).into(),
-                            subject_principal: principal.into(),
+                            subject: Subject::Principal(principal.into()),
                         },
                     )
                 })

@@ -415,7 +415,7 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
                         object_type: "resource".into(),
                         object_id: id.to_string(),
                         relation: relation.into(),
-                        subject_principal: current.service_principal_id.to_string(),
+                        subject: Subject::Principal(current.service_principal_id.to_string()),
                     },
                 )
             }))
@@ -708,7 +708,7 @@ pub(crate) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
                             object_type: "resource".into(),
                             object_id: id.to_string(),
                             relation: relation.into(),
-                            subject_principal: current.service_principal_id.to_string(),
+                            subject: Subject::Principal(current.service_principal_id.to_string()),
                         },
                     )
                 }))

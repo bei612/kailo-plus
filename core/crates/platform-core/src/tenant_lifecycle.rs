@@ -2257,7 +2257,7 @@ async fn reconcile_tenant_relationships(
         object_type: "tenant".to_owned(),
         object_id: object.clone(),
         relation: "member".to_owned(),
-        subject_principal: principal.to_string(),
+        subject: crate::spicedb::Subject::Principal(principal.to_string()),
     };
     for chunk in members.chunks(page.max(1) as usize) {
         let updates: Vec<_> = chunk
@@ -2285,7 +2285,7 @@ async fn reconcile_tenant_relationships(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         })?
         .into_iter()
-        .map(|r| r.subject_principal)
+        .filter_map(|r| r.principal().map(str::to_owned))
         .collect();
     Ok(members.iter().all(|m| present.contains(&m.to_string())))
 }

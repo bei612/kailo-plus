@@ -40,7 +40,7 @@ use crate::membership_lifecycle::{
 };
 use crate::membership_projection::MembershipScope;
 use crate::scope_state::ScopeKind;
-use crate::spicedb::{RelationshipFilter, SpiceDb, Write};
+use crate::spicedb::{NativeToolProjection, Relationship, RelationshipFilter, SpiceDb, Write};
 use crate::temporal::TemporalClient;
 
 /// 部署引导这一 ServicePrincipal 的 audience。它是平台内一个固定身份的名字，
@@ -499,6 +499,26 @@ fn native_tool_intent(tenant: Uuid, name: &str, input: &str, output: &str) -> se
     })
 }
 
+/// DD-122 (1)：原生工具对本 Tenant 成员的授予是每个工具自己的一次引导意图，
+/// 与登记意图分开冻结，修订前已登记的工具重跑时也以同一键补齐。
+fn native_tool_members_key(tenant: Uuid, name: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("urn:platform:tenant:{tenant}:native-tool:{name}:members").as_bytes(),
+    )
+}
+
+fn native_tool_members_intent(tenant: Uuid, name: &str) -> serde_json::Value {
+    json!({
+        "tenantId": tenant,
+        "resourceId": crate::agent_tool::native_tool_id(tenant, name),
+        "name": name,
+        "subject": crate::spicedb::Subject::TenantMembers(tenant.to_string()).to_string(),
+        "relations": crate::spicedb::TENANT_MEMBER_GRANTS,
+        "source": "platform.bootstrap",
+    })
+}
+
 #[derive(sqlx::FromRow)]
 struct NativeToolRow {
     owner_principal_id: Uuid,
@@ -744,7 +764,8 @@ impl Ctx {
     }
 
     /// DD-122 (1)：业务 Tenant 按名登记本构建固定的每个 PLATFORM_NATIVE 工具，
-    /// owner 是执行引导的有效 Tenant admin；Catalog Tenant 不登记。重跑只补缺口。
+    /// owner 是执行引导的有效 Tenant admin，再授予本 Tenant 的每个有效成员；
+    /// Catalog Tenant 不登记。重跑只补缺口。
     async fn ensure_native_tools(
         &self,
         tenant: Uuid,
@@ -757,6 +778,8 @@ impl Ctx {
         }
         for name in crate::agent_tool::NATIVE_TOOLS {
             self.ensure_native_tool(tenant, admin, initiator, name)
+                .await?;
+            self.ensure_native_tool_members(tenant, admin, initiator, name)
                 .await?;
         }
         Ok(())
@@ -1013,6 +1036,188 @@ impl Ctx {
         append(&mut tx, e).await.map_err(|e| e.to_string())?;
         tx.commit().await.map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// DD-122 (1)：原生工具对本 Tenant 的每个有效成员可发现、可消费、可共享——
+    /// discoverer/consumer/sharer 写给 `tenant:<tenant>#member`，权限公式不变。
+    /// 修订前已登记、尚无成员授予的工具由重跑以自己的一次引导意图补齐；已闭合即
+    /// 不另起意图，tenant/owner 投影不一致时不改写。
+    async fn ensure_native_tool_members(
+        &self,
+        tenant: Uuid,
+        admin: Uuid,
+        initiator: Uuid,
+        name: &str,
+    ) -> Result<(), String> {
+        let id = crate::agent_tool::native_tool_id(tenant, name);
+        let (input, output) = crate::agent_tool::schema_hashes(name)
+            .map_err(|_| format!("原生工具 {name} 的固定 schema 不可读"))?;
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+        let row = native_tool_row(&mut conn, tenant, id, false).await?;
+        drop(conn);
+        let owner = match row {
+            Some(row)
+                if row.is(name, &input, &output, "ACTIVE")
+                    && row.projection_action_execution_id.is_none() =>
+            {
+                row.owner_principal_id
+            }
+            _ => return Err(format!("原生工具 {name} 未登记为 ACTIVE")),
+        };
+        if self.native_members(tenant, id, owner, name).await? {
+            return Ok(());
+        }
+        let parameters = native_tool_members_intent(tenant, name);
+        let hash = hex::encode(Sha256::digest(parameters.to_string().as_bytes()));
+        let key = native_tool_members_key(tenant, name);
+
+        // 准备：Tenant 行锁内重验有效 admin 与工具行，冻结意图。
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let active: Option<bool> =
+            sqlx::query_scalar("select state='ACTIVE' from identity.tenant where id=$1 for update")
+                .bind(tenant)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if active != Some(true) {
+            return Err("原生工具成员授予只写到 ACTIVE 业务 Tenant".into());
+        }
+        let effective =
+            crate::roles::effective_tenant_admins(&mut tx, &self.spicedb, tenant, self.page)
+                .await
+                .map_err(|e| format!("读有效 admin: {e:?}"))?;
+        if !effective.contains(&admin) {
+            return Err("执行引导的 admin 已不是有效 Tenant admin，不授予原生工具成员".into());
+        }
+        let unchanged = match native_tool_row(&mut tx, tenant, id, true).await? {
+            Some(row) => {
+                row.is(name, &input, &output, "ACTIVE")
+                    && row.projection_action_execution_id.is_none()
+                    && row.owner_principal_id == owner
+            }
+            None => false,
+        };
+        if !unchanged {
+            return Err(format!("原生工具 {name} 授予前状态已变化，重跑以收敛"));
+        }
+        let found: Option<(Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
+            "select id,parameter_hash,parameters from admission.action_execution
+             where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
+        )
+        .bind(tenant)
+        .bind(initiator)
+        .bind(key)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        let action = match found {
+            Some((action, frozen_hash, frozen))
+                if frozen_hash == hash && frozen.as_ref() == Some(&parameters) =>
+            {
+                action
+            }
+            Some(_) => return Err(format!("原生工具 {name} 的成员意图与本构建不一致")),
+            None => {
+                let action =
+                    record_bootstrap(&mut tx, tenant, initiator, "RESOURCE", id, &hash).await?;
+                sqlx::query(
+                    "update admission.action_execution set parameters=$2,idempotency_key=$3
+                     where id=$1",
+                )
+                .bind(action)
+                .bind(&parameters)
+                .bind(key)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                action
+            }
+        };
+        tx.commit().await.map_err(|e| e.to_string())?;
+
+        // 投影：三条成员授予同一原生写入，复读闭合前不留 OUTCOME。
+        let grants = Relationship::tenant_member_grants(&id.to_string(), &tenant.to_string());
+        let writes = grants.clone().map(|grant| (Write::Touch, grant));
+        let token = self
+            .spicedb
+            .write(&writes)
+            .await
+            .map_err(|e| format!("写原生工具 {name} 成员授予结果不明: {e}"))?;
+        if !self.native_members(tenant, id, owner, name).await? {
+            return Err(format!("原生工具 {name} 成员授予未闭合，重跑以收敛"));
+        }
+
+        // 留痕：与引导意图的 DISPATCH/OUTCOME 同事务成立。
+        let mut tx = self.pool.begin().await.map_err(|e| e.to_string())?;
+        let locked = crate::roles::lock_tenant(&mut tx, tenant)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !locked {
+            return Err("Tenant 不存在".into());
+        }
+        let mut evidence = vec![
+            Evidence::new(EvidenceKind::DeploymentBootstrap, AUDIENCE),
+            Evidence::new(EvidenceKind::SpicedbZedtoken, &token),
+        ];
+        for grant in &grants {
+            evidence.push(Evidence::new(EvidenceKind::SpicedbRelationship, grant));
+        }
+        record_dispatch(
+            &mut tx,
+            action,
+            AuditClass::core("RESOURCE"),
+            Ok(()),
+            evidence.clone(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let operation: Uuid =
+            sqlx::query_scalar("select operation_id from admission.action_execution where id = $1")
+                .bind(action)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let mut e = entry(
+            operation,
+            "outcome",
+            "OUTCOME",
+            tenant,
+            initiator,
+            "RESOURCE",
+            id,
+            &hash,
+            "ALLOW",
+            "NATIVE_TOOL_MEMBERS_GRANTED",
+        );
+        e.evidence_refs = evidence;
+        append(&mut tx, e).await.map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 原生工具的成员授予是否已闭合；tenant/owner 投影不一致即错误，引导不改写。
+    async fn native_members(
+        &self,
+        tenant: Uuid,
+        id: Uuid,
+        owner: Uuid,
+        name: &str,
+    ) -> Result<bool, String> {
+        let observed = self
+            .spicedb
+            .native_tool_projection(
+                &id.to_string(),
+                &tenant.to_string(),
+                &owner.to_string(),
+                self.page,
+            )
+            .await
+            .map_err(|e| format!("复读原生工具 {name} 投影失败: {e}"))?;
+        match observed {
+            NativeToolProjection::Closed => Ok(true),
+            NativeToolProjection::MembersMissing => Ok(false),
+            NativeToolProjection::Mismatch => Err(format!("原生工具 {name} 投影需对账")),
+        }
     }
 
     async fn assert_bootstrap_subject_exclusive(
@@ -1644,6 +1849,38 @@ mod tests {
         assert_eq!(intent["resourceId"], json!(native_tool_id(tenant, read)));
         assert_eq!(intent["name"], read);
         assert_ne!(intent, native_tool_intent(tenant, read, "in", "changed"));
+    }
+
+    #[test]
+    fn native_tool_member_grants_are_their_own_stable_intent() {
+        use crate::agent_tool::{native_tool_id, NATIVE_TOOLS};
+        let tenant = Uuid::new_v4();
+        let [list, read] = NATIVE_TOOLS;
+        // 重跑（含修订前已登记的工具）收敛到同一授予意图，不与登记意图共用键。
+        let key = native_tool_members_key(tenant, list);
+        assert_eq!(key, native_tool_members_key(tenant, list));
+        assert_ne!(key, native_tool_key(tenant, list));
+        assert_ne!(key, native_tool_members_key(tenant, read));
+        let intent = native_tool_members_intent(tenant, list);
+        assert_eq!(intent, native_tool_members_intent(tenant, list));
+        assert_eq!(intent["resourceId"], json!(native_tool_id(tenant, list)));
+        assert_eq!(intent["subject"], json!(format!("tenant:{tenant}#member")));
+        assert_eq!(
+            intent["relations"],
+            json!(["discoverer", "consumer", "sharer"])
+        );
+        // 写入并复读的正是这三条对本 Tenant 成员集的授予。
+        let id = native_tool_id(tenant, list).to_string();
+        let grants = Relationship::tenant_member_grants(&id, &tenant.to_string());
+        let shown: Vec<String> = grants.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                format!("resource:{id}#discoverer@tenant:{tenant}#member"),
+                format!("resource:{id}#consumer@tenant:{tenant}#member"),
+                format!("resource:{id}#sharer@tenant:{tenant}#member"),
+            ]
+        );
     }
 
     #[test]

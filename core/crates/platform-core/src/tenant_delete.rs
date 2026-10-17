@@ -1019,7 +1019,13 @@ async fn freeze_lifecycle_readers(
         .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
     let mut readers = std::collections::BTreeMap::<Uuid, Vec<String>>::new();
     for admin in admins {
-        let principal = Uuid::parse_str(&admin.subject_principal)
+        let Some(admin_subject) = admin.principal() else {
+            // 固定 schema 中 tenant#admin 只接受 principal；主体集即形状错误。
+            return Err(sqlx::Error::Protocol(
+                "tenant admin 主体不是 principal".into(),
+            ));
+        };
+        let principal = Uuid::parse_str(admin_subject)
             .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
         if !crate::agent_definition::active_owner(tx, deletion.tenant_id, principal).await? {
             continue;
@@ -1031,7 +1037,7 @@ async fn freeze_lifecycle_readers(
                 "tenant",
                 &tenant_id,
                 "manage",
-                &admin.subject_principal,
+                admin_subject,
                 crate::spicedb::Consistency::FullyConsistent,
             )
             .await

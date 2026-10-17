@@ -290,20 +290,21 @@ fn sibling_workflow(refs: &Value) -> Option<String> {
     found
 }
 
-/// `SPICEDB_RELATIONSHIP` 的值：`<type>:<id>#<relation>@principal:<subject>`。
+/// `SPICEDB_RELATIONSHIP` 的值：`<type>:<id>#<relation>@<subject>`，主体为
+/// `principal:<id>` 或 DD-122 (1) 原生 Tool 授予的 `tenant:<id>#member`。
 fn parse_relationship(value: &str) -> Option<crate::spicedb::Relationship> {
     let (object, subject) = value.split_once('@')?;
     let (object, relation) = object.split_once('#')?;
     let (object_type, object_id) = object.split_once(':')?;
-    let subject_principal = subject.strip_prefix("principal:")?;
-    [object_type, object_id, relation, subject_principal]
+    let subject = crate::spicedb::Subject::parse(subject)?;
+    [object_type, object_id, relation]
         .iter()
         .all(|p| !p.is_empty())
         .then(|| crate::spicedb::Relationship {
             object_type: object_type.to_owned(),
             object_id: object_id.to_owned(),
             relation: relation.to_owned(),
-            subject_principal: subject_principal.to_owned(),
+            subject,
         })
 }
 
@@ -463,7 +464,8 @@ async fn evidence_existence(
                         object_type: &rel.object_type,
                         object_id: Some(&rel.object_id),
                         relation: Some(&rel.relation),
-                        subject_principal: Some(&rel.subject_principal),
+                        // 主体集按 relation 读出再整条比对，不能当成 principal 过滤。
+                        subject_principal: rel.principal(),
                     },
                     RELATIONSHIP_READ_PAGE,
                 )
@@ -661,12 +663,23 @@ mod tests {
                 rel.object_type.as_str(),
                 rel.object_id.as_str(),
                 rel.relation.as_str(),
-                rel.subject_principal.as_str()
+                rel.principal()
             ),
-            ("tenant", "t-1", "manage", "p-1")
+            ("tenant", "t-1", "manage", Some("p-1"))
         );
+        let tool = parse_relationship("resource:r#consumer@tenant:t#member").expect("成员集");
+        assert_eq!(tool.to_string(), "resource:r#consumer@tenant:t#member");
+        assert_eq!(
+            tool.subject,
+            crate::spicedb::Subject::TenantMembers("t".into())
+        );
+        assert_eq!(tool.principal(), None);
         for bad in [
             "tenant:t-1#manage@tenant:t-2",
+            "resource:r-1#consumer@tenant:t-1#admin",
+            "resource:r-1#consumer@tenant:#member",
+            "resource:r-1#consumer@workspace:w-1#member",
+            "tenant:t-1#manage@principal:p-1#member",
             "tenant:t-1@principal:p-1",
             "tenant#manage@principal:p-1",
             "tenant:#manage@principal:p-1",

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     governance::{self, Actor, Definition, Governance, Refusal, Target},
     service_api::ServiceState,
-    spicedb::{Consistency, Relationship, RelationshipFilter, SpiceDb, Write},
+    spicedb::{Consistency, Relationship, RelationshipFilter, SpiceDb, Subject, Write},
 };
 
 pub(crate) const ACTION: &str = "automation.run";
@@ -209,7 +209,7 @@ async fn project_executor(
         object_type: "resource".into(),
         object_id: resource.clone(),
         relation: "executor".into(),
-        subject_principal,
+        subject: Subject::Principal(subject_principal),
     };
     let mut updates: Vec<_> = before
         .iter()

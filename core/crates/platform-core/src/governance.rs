@@ -6149,13 +6149,7 @@ impl Governance {
         .await?;
         let mut evidence = zed_evidence(token.as_deref());
         for r in &rels {
-            evidence.push(Evidence::new(
-                EvidenceKind::SpicedbRelationship,
-                format!(
-                    "{}:{}#{}@principal:{}",
-                    r.object_type, r.object_id, r.relation, r.subject_principal
-                ),
-            ));
+            evidence.push(Evidence::new(EvidenceKind::SpicedbRelationship, r));
         }
         let decision = if state == "ABORTED" { "DENY" } else { "ALLOW" };
         let result = reason

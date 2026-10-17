@@ -7,7 +7,7 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::spicedb::{Relationship, RelationshipFilter, SpiceDb, SpiceDbError};
+use crate::spicedb::{Relationship, RelationshipFilter, SpiceDb, SpiceDbError, Subject};
 
 /// 固定 schema 中给出 `tenant manage` 的那条 relation（`permission manage = admin`）。
 /// 它是 `.design/03` §5 的 schema 事实而不是部署取值：「有效 Tenant admin」按它定义
@@ -46,7 +46,7 @@ impl RoleTemplate {
                 object_type: self.object_type.clone(),
                 object_id: object_id.to_string(),
                 relation: r.clone(),
-                subject_principal: principal.to_string(),
+                subject: Subject::Principal(principal.to_string()),
             })
             .collect()
     }
@@ -128,7 +128,7 @@ pub async fn effective_tenant_admins(
         .map_err(|e| crate::governance::Refusal::Unavailable(e.to_string()))?;
     let ids: Vec<Uuid> = rels
         .iter()
-        .filter_map(|r| Uuid::parse_str(&r.subject_principal).ok())
+        .filter_map(|r| r.principal().and_then(|p| Uuid::parse_str(p).ok()))
         .collect();
     let effective: Vec<Uuid> = sqlx::query_scalar(
         "select p.id from identity.principal p

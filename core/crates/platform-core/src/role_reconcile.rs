@@ -117,7 +117,8 @@ async fn pass(g: &Governance, metrics: &Metrics) -> Result<(), String> {
 
     let mut subjects: HashMap<Uuid, Option<Subject>> = HashMap::new();
     for rel in rels {
-        let Ok(principal) = Uuid::parse_str(&rel.subject_principal) else {
+        // 角色只落在 principal 上；DD-122 成员集授予不是角色，不按成员事实删除。
+        let Some(Ok(principal)) = rel.principal().map(Uuid::parse_str) else {
             continue;
         };
         if let std::collections::hash_map::Entry::Vacant(slot) = subjects.entry(principal) {
@@ -202,10 +203,7 @@ async fn remove(g: &Governance, rel: &Relationship, tenant: Option<Uuid>) -> Res
         .write(&[(Write::Delete, rel.clone())])
         .await
         .map_err(|e| e.to_string())?;
-    let value = format!(
-        "{}:{}#{}@principal:{}",
-        rel.object_type, rel.object_id, rel.relation, rel.subject_principal
-    );
+    let value = rel.to_string();
     tracing::warn!(relationship = %value, "删除了与成员事实不符的角色关系");
     let Some(tenant) = tenant else {
         // 主体与对象在 Core 里都已不存在：没有可归属的 Tenant，审计按 03 §9 不能写
@@ -232,7 +230,7 @@ async fn remove(g: &Governance, rel: &Relationship, tenant: Option<Uuid>) -> Res
             action_version: 1,
             component_type_key: "core",
             target_type: Some("SPICEDB_RELATIONSHIP"),
-            target_id: Uuid::parse_str(&rel.subject_principal).ok(),
+            target_id: rel.principal().and_then(|p| Uuid::parse_str(p).ok()),
             parameter_hash: &value,
             decision: "DENY",
             result_code: "ROLE_REMOVED",

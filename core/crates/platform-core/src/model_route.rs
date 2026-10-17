@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     governance::Refusal,
     service_api::ServiceState,
-    spicedb::{Consistency, Relationship, Write},
+    spicedb::{Consistency, Relationship, Subject, Write},
 };
 
 #[path = "application_model_route.rs"]
@@ -1793,7 +1793,7 @@ pub(crate) async fn provision(
                     object_type: "resource".into(),
                     object_id: route_id.to_string(),
                     relation: relation.into(),
-                    subject_principal: agent.to_string(),
+                    subject: Subject::Principal(agent.to_string()),
                 },
             )
         }))

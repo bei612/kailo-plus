@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::{
     governance::{Definition, Execution, Governance, Params, Refusal, Target},
     service_api::{authorize, unavailable, ServiceState},
-    spicedb::{Consistency, Relationship, Write},
+    spicedb::{Consistency, Relationship, Subject, Write},
 };
 
 const CREATE_ACTION: &str = "agent.installation.create";
@@ -965,7 +965,7 @@ async fn create_projection(
                 object_type: "workspace".into(),
                 object_id: row.workspace_id.to_string(),
                 relation: "member".into(),
-                subject_principal: row.agent_principal_id.to_string(),
+                subject: Subject::Principal(row.agent_principal_id.to_string()),
             },
         )])
         .await

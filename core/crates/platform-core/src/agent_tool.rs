@@ -9,7 +9,7 @@ use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::governance::{Definition, Execution, Governance, Refusal};
-use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Write};
+use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Subject, Write};
 
 const MEMORY_LIST: &str = "agent.memory.entry.list";
 const MEMORY_READ: &str = "agent.memory.entry.read";
@@ -31,7 +31,7 @@ fn relationship(object: Uuid, relation: &str, subject: Uuid) -> Relationship {
         object_type: "resource".into(),
         object_id: object.to_string(),
         relation: relation.into(),
-        subject_principal: subject.to_string(),
+        subject: Subject::Principal(subject.to_string()),
     }
 }
 
@@ -772,9 +772,11 @@ async fn delete_agent_relations(
                 )
                 .await
                 .map_err(|_| unknown("Agent Tool 关系撤销复读"))?;
+            // DD-122 成员集授予不是任何 Agent 的关系，不算残留。
             let leaked = remaining
                 .iter()
-                .any(|held| subjects.contains(&held.subject_principal));
+                .filter_map(Relationship::principal)
+                .any(|held| subjects.iter().any(|s| s.as_str() == held));
             if leaked {
                 return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
             }
@@ -847,8 +849,9 @@ pub(crate) async fn revoke_tool_agents(
                 )
                 .await
                 .map_err(|_| unknown("Agent Tool 关系读取"))?;
+            // DD-122 成员集授予不是 Agent 关系：撤销只看 principal 主体。
             for row in held {
-                if let Ok(subject) = Uuid::parse_str(&row.subject_principal) {
+                if let Some(Ok(subject)) = row.principal().map(Uuid::parse_str) {
                     subjects.push(subject);
                 }
             }

@@ -13,7 +13,7 @@ use super::{
     audit, exact_definition, lock_execution, zed_evidence, Actor, Definition, Execution,
     Governance, Params, Refusal, Semantic, Target,
 };
-use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Write};
+use crate::spicedb::{Consistency, Relationship, RelationshipFilter, Subject, Write};
 
 pub(crate) const GRANT: &str = "agent.installation.execute.grant";
 pub(crate) const REVOKE: &str = "agent.installation.execute.revoke";
@@ -1235,7 +1235,7 @@ async fn held_by(
             r.object_type != "resource"
                 || r.object_id != resource
                 || r.relation != relation
-                || r.subject_principal != agent
+                || r.principal() != Some(agent.as_str())
         })
     {
         return Err(unavailable());
@@ -1356,7 +1356,7 @@ pub(super) async fn dispatch(
                         object_type: "resource".into(),
                         object_id: row.id.to_string(),
                         relation: (*relation).into(),
-                        subject_principal: row.subject_principal_id.to_string(),
+                        subject: Subject::Principal(row.subject_principal_id.to_string()),
                     },
                 )
             })
