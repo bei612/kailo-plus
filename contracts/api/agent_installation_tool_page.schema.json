@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_tool_page.schema.json",
+  "title": "AgentInstallationToolPage",
+  "description": "DD-122: the tools an Agent Installation's current generation requests and their effective state. Read-only; grants happen only through installation create/upgrade.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installationResourceId",
+    "generation",
+    "tools"
+  ],
+  "properties": {
+    "installationResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "title": "AgentInstallationToolView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "bindingStatus"
+        ],
+        "properties": {
+          "toolResourceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Absent when an application capability requirement has no resolved provider yet."
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "title": "AgentInstallationToolSource",
+            "type": "string",
+            "enum": [
+              "PLATFORM_NATIVE",
+              "APPLICATION"
+            ]
+          },
+          "capabilityRequirement": {
+            "type": "string",
+            "description": "APPLICATION only: the requested capability contract key@version."
+          },
+          "applicationBindingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bindingStatus": {
+            "title": "AgentToolBindingStatus",
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACTIVE",
+              "NO_PERMISSION",
+              "REVOKED"
+            ]
+          },
+          "reasonCode": {
+            "$ref": "../enums/reason_code.schema.json"
+          }
+        }
+      }
+    }
+  }
+}

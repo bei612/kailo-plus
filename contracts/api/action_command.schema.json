@@ -40,6 +40,12 @@
       "format": "uuid",
       "description": "成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同 Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE"
     },
+    "grantPermission": {
+      "title": "ResourceGrantPermission",
+      "type": "string",
+      "enum": ["read", "discover", "consume", "execute"],
+      "description": "仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read"
+    },
     "resourceId": {
       "type": "string",
       "format": "uuid",
