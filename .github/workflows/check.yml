@@ -46,7 +46,7 @@ jobs:
       BUILDX_BUILDER: kailo-check-${{ github.run_id }}-${{ github.run_attempt }}
       # Separately reviewed authority on design-authority, not a
       # second design copy under the code root. Checkout fetches full history.
-      DESIGN_COMMIT: 004e10618436aa2f7215302c60d729dbbdf8e69d
+      DESIGN_COMMIT: 851324d93885e84c8376e6364ebbf6abb6a40275
 
     steps:
       - uses: actions/checkout@v4
