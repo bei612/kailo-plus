@@ -124,6 +124,58 @@ fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// 07 §2.5/§3, 03 §3, DD-88/DD-94(1): the admission path selects the one
+/// source identity of an immutable release. BUILTIN_REFERENCE is the source
+/// project at an exact commit (its SOURCE_FACT/SOURCE_SEAM evidence is in 02);
+/// EXTERNAL is the vendor/artifact pair with an optional upstream commit.
+/// Fields of the other path are refused rather than ignored, so a release can
+/// never carry two competing source identities. Both paths still run the same
+/// COMPONENT_RELEASE conformance suite and the separate approval.
+fn source_identity(manifest: &Value) -> Result<(), Refusal> {
+    let commit = |value: &str, exact: bool| {
+        value.len() == 40
+            && value.bytes().all(|c| {
+                c.is_ascii_digit()
+                    || (b'a'..=b'f').contains(&c)
+                    || (!exact && (b'A'..=b'F').contains(&c))
+            })
+    };
+    match text(manifest, "admissionPath")? {
+        "BUILTIN_REFERENCE" => {
+            // A reference implementation is self-hosted from its own source;
+            // VENDOR_MANAGED storage is reserved for external SaaS (07 §2.6).
+            if manifest.get("vendor").is_some()
+                || manifest.get("artifactVersion").is_some()
+                || manifest["dataStoreIsolation"] == "VENDOR_MANAGED"
+            {
+                return Err(bad());
+            }
+            text(manifest, "sourceProject")?;
+            // Git object names are lowercase; an abbreviated or re-cased value
+            // would make two manifests name the same source differently.
+            if !commit(text(manifest, "sourceCommit")?, true) {
+                return Err(bad());
+            }
+        }
+        "EXTERNAL" => {
+            // EXTERNAL source identity is the vendor/artifact pair. Optional
+            // upstream metadata does not substitute for conformance evidence.
+            text(manifest, "vendor")?;
+            text(manifest, "artifactVersion")?;
+            if let Some(value) = manifest.get("sourceCommit") {
+                if !commit(value.as_str().ok_or_else(bad)?, false) {
+                    return Err(bad());
+                }
+            }
+            if manifest.get("sourceProject").is_some() {
+                text(manifest, "sourceProject")?;
+            }
+        }
+        _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+    Ok(())
+}
+
 // Class/connector combinations are closed design values, not release-supplied
 // execution code. Unsupported delivery modes cannot enter this dispatch path.
 pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
@@ -179,23 +231,10 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         || id.is_nil()
         || text(&manifest, "class")? != "APPLICATION"
         || text(&manifest, "platformPortKey")? != "NONE"
-        || text(&manifest, "admissionPath")? != "EXTERNAL"
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    // EXTERNAL source identity is the vendor/artifact pair. Optional upstream
-    // metadata does not substitute for the actual conformance evidence.
-    text(&manifest, "vendor")?;
-    text(&manifest, "artifactVersion")?;
-    if let Some(commit) = manifest.get("sourceCommit") {
-        let commit = commit.as_str().ok_or_else(bad)?;
-        if commit.len() != 40 || !commit.bytes().all(|c| c.is_ascii_hexdigit()) {
-            return Err(bad());
-        }
-    }
-    if manifest.get("sourceProject").is_some() {
-        text(&manifest, "sourceProject")?;
-    }
+    source_identity(&manifest)?;
     let version = text(&manifest, "version")?.to_owned();
     let parsed_version = semver::Version::parse(&version).map_err(|_| bad())?;
     if parsed_version.to_string() != version {
@@ -2936,6 +2975,63 @@ mod report_tests {
             let mut missing = fixture.clone();
             missing["steps"].as_array_mut().unwrap().remove(index);
             assert!(validate_protocol_fixture(&registration, missing).is_err());
+        }
+    }
+
+    #[test]
+    fn admission_path_selects_exactly_one_source_identity() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let builtin = json!({"admissionPath":"BUILTIN_REFERENCE","sourceProject":"kailo-plus/knowledge",
+            "sourceCommit":commit,"dataStoreIsolation":"DEDICATED_INSTANCE"});
+        source_identity(&builtin).unwrap();
+        let external = json!({"admissionPath":"EXTERNAL","vendor":"Example","artifactVersion":"2.1",
+            "dataStoreIsolation":"VENDOR_MANAGED"});
+        source_identity(&external).unwrap();
+        let mut with_upstream = external.clone();
+        with_upstream["sourceCommit"] = json!(commit.to_uppercase());
+        with_upstream["sourceProject"] = json!("example/upstream");
+        source_identity(&with_upstream).unwrap();
+        let without = |field: &str| {
+            let mut value = builtin.clone();
+            value.as_object_mut().unwrap().remove(field);
+            value
+        };
+        let with = |field: &str, value: Value| {
+            let mut changed = builtin.clone();
+            changed[field] = value;
+            changed
+        };
+        for invalid in [
+            without("sourceCommit"),
+            without("sourceProject"),
+            with("sourceProject", json!(" ")),
+            with("sourceCommit", json!(&commit[..39])),
+            with("sourceCommit", json!(format!("{commit}0"))),
+            with("sourceCommit", json!(commit.to_uppercase())),
+            with("sourceCommit", json!(commit.replace('a', "g"))),
+            with("sourceCommit", json!(40)),
+            // Mixed identities: a reference build cannot also claim a vendor
+            // artifact or vendor-managed storage.
+            with("vendor", json!("Example")),
+            with("artifactVersion", json!("2.1")),
+            with("dataStoreIsolation", json!("VENDOR_MANAGED")),
+        ] {
+            assert!(source_identity(&invalid).is_err(), "{invalid}");
+        }
+        for invalid in [
+            json!({"admissionPath":"EXTERNAL","artifactVersion":"2.1"}),
+            json!({"admissionPath":"EXTERNAL","vendor":"Example"}),
+            json!({"admissionPath":"EXTERNAL","vendor":"Example","artifactVersion":"2.1","sourceCommit":"abc"}),
+        ] {
+            assert!(source_identity(&invalid).is_err(), "{invalid}");
+        }
+        for path in [json!("PLATFORM"), json!(null), json!("builtin_reference")] {
+            let mut unknown = builtin.clone();
+            unknown["admissionPath"] = path;
+            assert!(matches!(
+                source_identity(&unknown),
+                Err(Refusal::Blocked(_)) | Err(Refusal::Precondition(_))
+            ));
         }
     }
 
