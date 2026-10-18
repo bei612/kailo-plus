@@ -270,8 +270,13 @@ describe("original Inbox project read closure",()=>{
       const created={...event("c",1,buildProjectCommentTags(f.item.repository,f.item.pullRequest,request.mentions??[],request.attachments??[]),request.body!,50),pubkey:viewer};
       observation?.onPrepared(created.id);f.rows.push(created);return new Promise(resolve=>{acknowledge=resolve;});
     });
+    // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/home/ui/ProjectInboxDetailPane.tsx renders
+    // the same ProjectPullRequestsPanel.tsx::ProjectPullRequestDetail, whose ForumComposer gets the "Request changes"
+    // secondary submit whenever canReviewProjectPullRequest holds. Here the viewer is a requested reviewer (root `p`)
+    // and the head comes from the owner's trusted 1619, so the original offers it; the primary submit stays a comment.
     const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
-      renderComposer:props=>{submit=props.onSubmit;expect("onSecondarySubmit" in props).toBe(false);return <div data-testid="original-review-composer" className={props.className}>{props.placeholder}</div>;},renderContent:content=><p>{content}</p>};
+      renderComposer:props=>{submit=props.onSubmit;expect(props.secondarySubmitLabel).toBe("Request changes");expect(typeof props.onSecondarySubmit).toBe("function");
+        return <div data-testid="original-review-composer" className={props.className}>{props.placeholder}</div>;},renderContent:content=><p>{content}</p>};
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const ui=await render(<PlatformProvider client={createBffClient({send:vi.fn()})} locale="en"><QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={pulse}>
       <ProjectInboxDetail host={f.host} workItem={f.item}/>
