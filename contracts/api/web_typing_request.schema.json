@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_typing_request.schema.json",
+  "title": "WebTypingRequest",
+  "description": "DD-120(1)：线程内输入中提示的类型化线程引用，POST /api/v1/workspaces/{workspace_id}/typing 与 /api/v1/conversations/{conversation_id}/typing 的可选请求体；缺省请求体即主频道输入。Core 以本人 SERVER 身份签发原版 kind 20002：唯一 h 标签取自已准入的 scope，按原 buildThreadReferenceTags 追加 e root/reply 标签；不接受 raw tags、频道或身份。瞬时事件最新者为准，超时不报成功也不重签。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["parentEventId"],
+  "properties": {
+    "parentEventId": { "type": "string", "description": "原 typingParentEventId：线程面板的 thread head 事件 ID（64 位小写十六进制），成为 e reply 标签" },
+    "rootEventId": { "type": "string", "description": "原 typingRootEventId：thread head 所在线程的根事件 ID；缺省或等于 parentEventId 时只发 e reply 标签" }
+  }
+}

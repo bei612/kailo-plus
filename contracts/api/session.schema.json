@@ -12,6 +12,7 @@
     "tenantId": { "type": "string", "format": "uuid" },
     "tenantMembershipId": { "type": "string", "format": "uuid" },
     "tenantPrincipalId": { "type": "string", "format": "uuid" },
+    "tenantName": { "type": "string", "description": "当前 Tenant 的显示名，也就是其绑定 Community 的名称（01 §2：一个 Tenant 绑定一个 Community），只用于界面上认出本人所在社区，不参与任何判定；读不到时缺省" },
     "platformSessionId": { "type": "string", "format": "uuid" },
     "accessMode": { "$ref": "../enums/platform_session_access_mode.schema.json" },
     "currentWorkspaceId": { "type": "string", "format": "uuid", "description": "当前选定的 Workspace；未选定时缺省" }
