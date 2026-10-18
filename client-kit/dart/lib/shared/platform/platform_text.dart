@@ -759,6 +759,8 @@ enum PlatformMessageKey {
   buzzDrawingSaveFailed,
   buzzFinishVoice,
   buzzSending,
+  buzzMessageEdited,
+  buzzMessageEditedTooltip,
   buzzSendMessage,
   buzzCollapseReplies,
   buzzTeam,
@@ -4857,6 +4859,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.buzzFinishVoice: ('Finish voice note', '完成录音'),
   PlatformMessageKey.buzzSending: ('Sending', '发送中'),
+  PlatformMessageKey.buzzMessageEdited: ('(edited)', '（已编辑）'),
+  PlatformMessageKey.buzzMessageEditedTooltip: (
+    'This message has been edited',
+    '此消息已被编辑',
+  ),
   PlatformMessageKey.buzzSendMessage: ('Send message', '发送消息'),
   PlatformMessageKey.buzzCollapseReplies: (
     'Collapse replies to this message',

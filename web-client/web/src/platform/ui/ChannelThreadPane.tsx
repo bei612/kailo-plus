@@ -97,6 +97,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     return {id: event.id, pubkey: event.pubkey, signerPubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
       author: authorLabel(event, members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName),
       body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0, reactions:messageReactions.reactions.get(event.id),
+      edited: event.edited,
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
   }), [messages, members, locale, messageReactions.reactions, authorLabel]);
   useEffect(() => {

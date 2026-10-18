@@ -6,7 +6,8 @@ import { KIND_STREAM_MESSAGE_EDIT } from "./thread/kinds";
 
 type MessageEvent = { id: string; pubkey: string; kind: number; created_at: number; content: string; tags: string[][] };
 
-export function applyMessageEdits<T extends MessageEvent>(messages: readonly T[], events: readonly MessageEvent[]): T[] {
+/** Edited rows carry `edited: true`, the original `edited: edit !== undefined` row flag. */
+export function applyMessageEdits<T extends MessageEvent>(messages: readonly T[], events: readonly MessageEvent[]): Array<T & { edited?: true }> {
   const originals = new Map(messages.map((event) => [event.id, event]));
   const edits = new Map<string, MessageEvent>();
   for (const event of events) {
@@ -21,6 +22,6 @@ export function applyMessageEdits<T extends MessageEvent>(messages: readonly T[]
   }
   return messages.map((message) => {
     const edit = edits.get(message.id);
-    return edit ? { ...message, content: edit.content, tags: applyEditTagOverlay(message.tags, edit.tags) } : message;
+    return edit ? { ...message, content: edit.content, tags: applyEditTagOverlay(message.tags, edit.tags), edited: true as const } : message;
   });
 }

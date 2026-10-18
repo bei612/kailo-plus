@@ -74,7 +74,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const authorLabel = useMessageAuthorLabels({principalId, workspaceId, conversationId: conversation?.id}, messages,
     !unavailable && !interrupted && thread.isSuccess);
   const rows: TimelineMessage[] = messages.map(event => ({id: event.id, pubkey: event.pubkey, signerPubkey:event.pubkey, kind: event.kind,
-    body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0,
+    body: event.content, tags: event.tags, createdAt: event.createdAt, depth: 0, edited: event.edited,
     author: authorLabel(event, members.find(member => member.pubkeys.includes(event.pubkey))?.displayName),
     time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()),
     reactions: messageReactions.reactions.get(event.id), ...inboxThread(event.tags)}));

@@ -344,7 +344,7 @@ export function ChannelPane({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: authorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
-    ...getThreadReference(event.tags),
+    edited: event.edited, ...getThreadReference(event.tags),
   })), [events, byPubkey, messageReactions.reactions, authorLabel]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
@@ -365,7 +365,7 @@ export function ChannelPane({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
     author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
-    ...getThreadReference(event.tags),
+    edited: event.edited, ...getThreadReference(event.tags),
   })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
   // DD-121: own top-level and open-thread messages that @mention a channel Agent (Workspace channels only).

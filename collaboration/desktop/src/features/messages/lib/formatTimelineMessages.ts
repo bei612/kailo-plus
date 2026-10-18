@@ -199,6 +199,7 @@ export function formatTimelineMessages(
       depth: getDepth(event),
       accent: currentPubkey === authorPubkey,
       pending: event.pending,
+      edited: event.edited,
       kind: event.kind,
       tags: event.tags,
       reactions: reactions.get(event.id),

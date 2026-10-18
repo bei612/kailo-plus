@@ -10,6 +10,7 @@ import { useMessageEmoji } from "./useMessageEmoji";
 import { UserAvatar } from "./UserAvatar";
 import { MessageHeaderRow, MessageAuthorText } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../sidebar/tooltip";
 import { UserNameIndicators } from "../user-status/ui/UserNameIndicators";
 import { MessageReactions } from "./reactions/MessageReactions";
 import { useReactionHandler } from "./reactions/useReactionHandler";
@@ -254,14 +255,38 @@ export function MessageRowSurface({
       </div>
     );
 
-    const statusMetadataNode = message.pending ? (
-      <p
-        className="font-normal text-muted-foreground/70"
-        data-testid="message-send-status"
-      >
-        {translateUi("buzz.sending")}…
-      </p>
-    ) : null;
+    // Fixed Buzz 779af8886caae1317b4de962082429867ab61503
+    // desktop/src/features/messages/ui/MessageRow.tsx::statusMetadataNode.
+    const statusMetadataNode =
+      message.pending || message.edited ? (
+        <>
+          {message.pending ? (
+            <p
+              className="font-normal text-muted-foreground/70"
+              data-testid="message-send-status"
+            >
+              {translateUi("buzz.sending")}…
+            </p>
+          ) : null}
+          {message.edited ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p
+                    className="text-muted-foreground/70"
+                    data-testid="message-edited"
+                  >
+                    {translateUi("buzz.messageEdited")}
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {translateUi("buzz.messageEditedTooltip")}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+        </>
+      ) : null;
 
     const inlineMetadataNode = (
       <div className="flex shrink-0 items-baseline gap-2 text-xs">

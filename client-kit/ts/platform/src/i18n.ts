@@ -853,6 +853,8 @@ export const platformMessages = {
   "buzz.drawingSaveFailed": { en: "Could not save the drawing. Please try again.", "zh-CN": "无法保存绘图，请重试。" },
   "buzz.finishVoice": { en: "Finish voice note", "zh-CN": "完成录音" },
   "buzz.sending": { en: "Sending", "zh-CN": "发送中" },
+  "buzz.messageEdited": { en: "(edited)", "zh-CN": "（已编辑）" },
+  "buzz.messageEditedTooltip": { en: "This message has been edited", "zh-CN": "此消息已被编辑" },
   "buzz.sendMessage": { en: "Send message", "zh-CN": "发送消息" },
   "buzz.collapseReplies": { en: "Collapse replies to this message", "zh-CN": "收起此消息的回复" },
   "buzz.team": { en: "Team", "zh-CN": "团队" },

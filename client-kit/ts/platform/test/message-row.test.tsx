@@ -182,7 +182,7 @@ it("overlays only the original author's same-channel latest edit while retaining
   const [result] = applyMessageEdits([original], [edit, {...edit,id:"old",created_at:0,content:"stale"},
     {...edit,id:"forged",created_at:8,pubkey:"mallory",content:"wrong author"},
     {...edit,id:"foreign",created_at:9,tags:[["h","other"],["e","original"]],content:"wrong scope"}]);
-  expect(result).toEqual({...original,content:"after",tags:[["h","channel"],["e","root","","reply"],["p","bob"],["p","carol"]]});
+  expect(result).toEqual({...original,content:"after",tags:[["h","channel"],["e","root","","reply"],["p","bob"],["p","carol"]],edited:true});
   const unscoped = {...original,tags:[]};
   expect(applyMessageEdits([unscoped], [{...edit,tags:[["e","original"]]}])).toEqual([unscoped]);
 });
@@ -256,6 +256,19 @@ it("keeps pending sends ungrouped and prevents delivered-message copy actions", 
   expect(host.querySelector('[data-testid="message-send-status"]')?.textContent).toBe("Sending…");
   expect(host.querySelector('[data-testid="copy-link-message-message"]')).toBeNull();
   expect(host.querySelector('[data-testid="more-actions-message"]')).toBeNull();
+});
+
+it("marks overlaid edits with the original (edited) status on header and continuation rows", async () => {
+  await act(async () => setLocale("zh-CN"));
+  const edited = { ...message, edited: true };
+  const header = await render(<MessageRowSurface message={edited} renderBody={() => edited.body} />);
+  expect(header.querySelector('[data-testid="message-edited"]')?.textContent).toBe("（已编辑）");
+  const continuation = await render(<MessageRowSurface message={edited} isContinuation renderBody={() => edited.body} />);
+  expect(continuation.querySelector('[data-testid="message-edited"]')).not.toBeNull();
+  await act(async () => setLocale("en"));
+  expect(header.querySelector('[data-testid="message-edited"]')?.textContent).toBe("(edited)");
+  const plain = await render(<MessageRowSurface message={message} renderBody={() => message.body} />);
+  expect(plain.querySelector('[data-testid="message-edited"]')).toBeNull();
 });
 
 it("shares the original reply banner and cancel callback with reactive Chinese and English labels", async () => {

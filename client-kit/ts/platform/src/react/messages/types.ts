@@ -34,6 +34,8 @@ export type TimelineMessage = {
   depth: number;
   accent?: boolean;
   pending?: boolean;
+  /** A same-author edit (kind 40003) has been overlaid on this message. */
+  edited?: boolean;
   highlighted?: boolean;
   kind?: number;
   tags?: string[][];

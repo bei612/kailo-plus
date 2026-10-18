@@ -91,6 +91,7 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
     prev.message.depth === next.message.depth &&
     prev.message.kind === next.message.kind &&
     prev.message.pending === next.message.pending &&
+    prev.message.edited === next.message.edited &&
     // Value comparisons, not identity: these arrays are rebuilt with fresh
     // identities on every ingest/refetch even when unchanged — identity
     // checks made every row re-render on every streamed event in an open
