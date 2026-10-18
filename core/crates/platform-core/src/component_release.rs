@@ -1427,7 +1427,9 @@ pub(crate) async fn prewrite(
     // DD-124(4): receiver steps are observed only from the isolated deployment
     // of this Core build that runs the APPROVED source release; a plan without
     // them carries no receiver environment.
-    let receiving = steps.iter().any(|step| step["operation"] == "receiver_start");
+    let receiving = steps
+        .iter()
+        .any(|step| step["operation"] == "receiver_start");
     let environment = identity.get("receiverEnvironment").cloned();
     if receiving != environment.is_some() {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));

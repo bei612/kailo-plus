@@ -959,8 +959,10 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
         grant_command["idempotencyKey"] = json!(key);
         let (grant_action, _) =
             execute_action(&mut conn, &http, &input, &token, &grant_command).await?;
-        grants.push(json!({"sourceResourceId":source,"actionExecutionId":grant_action.id,
-            "operationId":grant_action.operation_id}));
+        grants.push(
+            json!({"sourceResourceId":source,"actionExecutionId":grant_action.id,
+            "operationId":grant_action.operation_id}),
+        );
     }
     for (endpoint, resource, seeded) in &resources {
         let resource = resource.to_string();
@@ -1031,8 +1033,10 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
             .bind(resource)
             .fetch_one(&mut conn)
             .await?;
-        summary.push(json!({"role":endpoint["role"],"bindingId":endpoint["bindingId"],
-            "resourceId":resource,"version":version}));
+        summary.push(
+            json!({"role":endpoint["role"],"bindingId":endpoint["bindingId"],
+            "resourceId":resource,"version":version}),
+        );
     }
     // DD-124(4): the production plan identity names this source release; its
     // digests are those Core computed for the isolated Catalog copy above.

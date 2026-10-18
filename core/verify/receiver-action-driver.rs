@@ -265,7 +265,10 @@ impl Driver {
                 "resultExposurePolicyVersion":step["resultExposurePolicyVersion"]}});
         let response = self
             .http
-            .post(format!("{}api/v1/actions", field(&self.config, "coreOrigin")?))
+            .post(format!(
+                "{}api/v1/actions",
+                field(&self.config, "coreOrigin")?
+            ))
             .bearer_auth(token)
             .json(&command)
             .send()
@@ -374,8 +377,10 @@ impl Driver {
         let request: Value = serde_json::from_slice(body)?;
         let config = &self.config;
         let header = headers.get("idempotency-key").map(|v| v.as_bytes());
-        if !exact(&request, &["idempotencyKey", "bindingId", "generation", "expiresAt"])
-            || request["bindingId"] != config["receiverBindingId"]
+        if !exact(
+            &request,
+            &["idempotencyKey", "bindingId", "generation", "expiresAt"],
+        ) || request["bindingId"] != config["receiverBindingId"]
             || request["generation"] != config["receiverGeneration"]
             || header != request["idempotencyKey"].as_str().map(str::as_bytes)
         {
@@ -426,7 +431,10 @@ impl Driver {
             "select result_code,occurred_at from audit.audit_event
             where event_key=$1 and operation_id=$2 and tenant_id=$3",
         )
-        .bind(format!("{}:component_action:terminal", receiver.operation_id))
+        .bind(format!(
+            "{}:component_action:terminal",
+            receiver.operation_id
+        ))
         .bind(receiver.operation_id)
         .bind(receiver.tenant_id)
         .fetch_optional(&self.pool)
@@ -437,17 +445,20 @@ impl Driver {
         if result != "COMPLETED" {
             return Ok(Answer::Refused(409, r#"{"class":"CONFLICT"}"#));
         }
-        let native: Option<(Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)> =
-            sqlx::query_as(
-                "select e.native_id,e.native_status,a.created_at
+        let native: Option<(
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        )> = sqlx::query_as(
+            "select e.native_id,e.native_status,a.created_at
                 from admission.external_execution e
                 join admission.action_execution a on a.id=e.action_execution_id
                 where e.action_execution_id=$1 and e.protocol_operation='execute'
                   and e.platform_status='SUCCEEDED'",
-            )
-            .bind(receiver.id)
-            .fetch_optional(&self.pool)
-            .await?;
+        )
+        .bind(receiver.id)
+        .fetch_optional(&self.pool)
+        .await?;
         let Some((Some(native_id), Some(status), started)) = native else {
             return Ok(Answer::Pending);
         };
@@ -506,7 +517,10 @@ async fn serve_isolated_receiver_actions() -> Result<(), Error> {
     )
     .fetch_one(&mut conn)
     .await?;
-    let marker = format!("KAILO_CONFORMANCE_ONLY:{}:", field(&config, "environmentId")?);
+    let marker = format!(
+        "KAILO_CONFORMANCE_ONLY:{}:",
+        field(&config, "environmentId")?
+    );
     if !comment.is_some_and(|comment| comment.starts_with(&marker)) {
         return Err("isolated database marker refused".into());
     }
