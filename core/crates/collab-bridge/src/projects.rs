@@ -783,7 +783,9 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     if !commit_allowed && request.commit.is_some()
         || op != "CREATE_PULL_REQUEST_COMMENT" && review_comment_fields
     {
-        return Err(invalid("review comment fields on another project operation"));
+        return Err(invalid(
+            "review comment fields on another project operation",
+        ));
     }
     match operation.as_str() {
         Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE" | "ASSIGN_ISSUE" | "UNASSIGN_ISSUE") => {
@@ -1270,17 +1272,14 @@ fn comment_tags(
             })
             .collect()
     };
-    for key in std::iter::once(issue_author.as_str())
-        .chain(carried)
-        .chain(
-            request
-                .mentions
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(String::as_str),
-        )
-    {
+    for key in std::iter::once(issue_author.as_str()).chain(carried).chain(
+        request
+            .mentions
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(String::as_str),
+    ) {
         let key = key.to_lowercase();
         if !recipients.contains(&key) {
             recipients.push(key);
@@ -1351,9 +1350,7 @@ pub fn comment_publication_builder(
     // ordered after the signer's newest activity on the review, so it
     // supersedes that signer's earlier decision (reviewDecisionsForPullRequest
     // keeps the latest per author; nextProjectPullRequestReviewCreatedAt).
-    if issue.kind.as_u16() == 1618
-        && latest.is_some()
-        && !is_pull_request_review_decision(request)
+    if issue.kind.as_u16() == 1618 && latest.is_some() && !is_pull_request_review_decision(request)
     {
         return Err(invalid(
             "ordinary review comment has no previous timestamp evidence",
@@ -2916,8 +2913,14 @@ mod tests {
         assert_eq!(pull_request_head(&review, None), Some("a".repeat(40)));
         let trusted = update(&author, &"b".repeat(40));
         assert!(pull_request_update_trusted(&review, &trusted));
-        assert_eq!(pull_request_head(&review, Some(&trusted)), Some("b".repeat(40)));
-        assert!(!pull_request_update_trusted(&review, &update(&stranger, &"c".repeat(40))));
+        assert_eq!(
+            pull_request_head(&review, Some(&trusted)),
+            Some("b".repeat(40))
+        );
+        assert!(!pull_request_update_trusted(
+            &review,
+            &update(&stranger, &"c".repeat(40))
+        ));
 
         let status = |kind: u16| {
             EventBuilder::new(nostr::Kind::from(kind), "")
@@ -2943,9 +2946,25 @@ mod tests {
                 .sign_with_keys(keys)
                 .unwrap()
         };
-        assert!(review_request_names(&review, &request(&owner), &reviewer_hex));
-        assert!(review_request_names(&review, &request(&author), &reviewer_hex));
-        assert!(!review_request_names(&review, &request(&stranger), &reviewer_hex));
-        assert!(!review_request_names(&review, &request(&owner), &stranger_hex));
+        assert!(review_request_names(
+            &review,
+            &request(&owner),
+            &reviewer_hex
+        ));
+        assert!(review_request_names(
+            &review,
+            &request(&author),
+            &reviewer_hex
+        ));
+        assert!(!review_request_names(
+            &review,
+            &request(&stranger),
+            &reviewer_hex
+        ));
+        assert!(!review_request_names(
+            &review,
+            &request(&owner),
+            &stranger_hex
+        ));
     }
 }
