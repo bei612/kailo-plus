@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestStatus,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestStatusCreatedAt,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestApproval,buildProjectPullRequestStatus,canReviewProjectPullRequest,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestReviewCreatedAt,nextProjectPullRequestStatusCreatedAt,normalizeProjectPullRequestCommentAnchor,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -48,6 +48,64 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
     let enteredPublication=false;
     try {
       check();
+      // Original review comment fields ride only on a review comment (approval carries just its head).
+      if(request.operation!=="CREATE_PULL_REQUEST_COMMENT"&&(request.reviewDecision!==undefined||request.anchorPath!==undefined
+        ||request.anchorSide!==undefined||request.anchorLine!==undefined))throw new Error("Unexpected review comment fields");
+      // Original pullRequestReviews.ts / hooks.ts review writes read the review head and the reviewer
+      // authority from the trusted author/owner history (and the signer's own comments for ordering).
+      const drain=(kinds:number[],authors:string[])=>enumerateProjectEvents(async page=>{
+        const events=await relayClient.fetchEvents({kinds,authors,limit:relayQueryLimit,since:page.since,until:page.until});check();
+        if(events.some(event=>!kinds.includes(event.kind)||!authors.includes(event.pubkey)||!verifyEvent(event)))throw new Error("Review history unavailable");
+        return events;
+      },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
+      const readReview=async(root:Parameters<typeof eventToProjectPullRequest>[0],owner:string,decision:boolean)=>{
+        const actors=[...new Set([owner,root.pubkey])];
+        const lifecycle=await drain([1619,1630,1631,1632,1633],actors);
+        const comments=decision?await drain([1],[...new Set([...actors,viewer])]):[];
+        return eventToProjectPullRequest(root,lifecycle.filter(event=>event.kind===1619),comments,lifecycle.filter(event=>event.kind!==1619));
+      };
+      const reviewCommit=/^[0-9a-f]{40}([0-9a-f]{24})?$/;
+      if(request.operation==="APPROVE_PULL_REQUEST"){
+        // Fixed pullRequestReviews.ts::submitProjectPullRequestReview("approve"); CLIENT signs.
+        if(!request.targetEventId||!/^[0-9a-f]{64}$/.test(request.targetEventId)||!request.commit||!reviewCommit.test(request.commit)
+          ||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined||request.visibility!==undefined
+          ||request.title!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
+          ||request.assigneeLabel!==undefined||request.assigneePubkey!==undefined||request.priorEventId!==undefined||request.pullRequestStatus!==undefined
+          ||request.branchName!==undefined||request.targetBranch!==undefined||request.mergeBase!==undefined||request.reviewers!==undefined
+          ||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid review approval");
+        const commit=request.commit;
+        const readTarget=async()=>{
+          const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[1618],limit:1});check();
+          if(!root||root.id!==request.targetEventId||root.kind!==1618||!verifyEvent(root))throw new Error("Review unavailable");
+          const address=root.tags.find(tag=>tag[0]==="a")?.[1];
+          const [kind,owner,...identifier]=address?.split(":")??[];
+          const slug=identifier.join(":");
+          if(kind!=="30617"||!owner||!/^[0-9a-f]{64}$/.test(owner)||!slug)throw new Error("Repository coordinate unavailable");
+          const [repo]=await relayClient.fetchEvents({kinds:[30617],authors:[owner],"#d":[slug],limit:1});check();
+          if(!repo||repo.kind!==30617||repo.pubkey!==owner||!verifyEvent(repo)||!repo.tags.some(tag=>tag[0]==="d"&&tag[1]===slug))throw new Error("Repository unavailable");
+          return {root,repository:{owner,repoAddress:address!}};
+        };
+        const target=await readTarget();
+        const template=buildProjectPullRequestApproval(target.repository,{id:target.root.id,author:target.root.pubkey},commit,request.body??"");
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            const fresh=await readTarget();
+            if(fresh.root.id!==target.root.id||fresh.repository.repoAddress!==target.repository.repoAddress)throw new Error("Review changed");
+            const current=await readReview(fresh.root,fresh.repository.owner,true);
+            if(current.commit!==commit)throw new Error("Review head changed");
+            if(!canReviewProjectPullRequest(fresh.repository,current,viewer))throw new Error("Review decision denied");
+            const signed=await signRelayEvent({kind:1,content:template.content,tags:template.tags,
+              createdAt:nextProjectPullRequestReviewCreatedAt(current,Math.floor(Date.now()/1_000))});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new Error("Review approval signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==1||event.pubkey!==viewer||!verifyEvent(event)||event.content!==template.content
+          ||JSON.stringify(event.tags)!==JSON.stringify(template.tags))throw new TransportError("Review approval receipt mismatch");
+        return {eventId:event.id};
+      }
       if(request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE"||request.operation==="ASSIGN_ISSUE"||request.operation==="UNASSIGN_ISSUE"){
         const self=request.operation==="SELF_ASSIGN_ISSUE"||request.operation==="SELF_UNASSIGN_ISSUE";
         const assignee=self?viewer:request.assigneePubkey;
@@ -156,6 +214,13 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
         if(!request.targetEventId||request.workspaceId!==undefined||request.name!==undefined||request.description!==undefined
           ||request.visibility!==undefined||request.title!==undefined||request.category!==undefined||typeof request.body!=="string"||!request.body.trim()
           ||request.mentions?.some(pubkey=>!/^[0-9a-f]{64}$/.test(pubkey))||!Number.isSafeInteger(relayQueryLimit)||relayQueryLimit<1)throw new Error("Invalid task comment");
+        // Original hooks.ts::createProjectPullRequestComment review variants: line anchor and/or change request.
+        const anchored=request.anchorPath!==undefined||request.anchorSide!==undefined||request.anchorLine!==undefined;
+        const anchor=anchored?normalizeProjectPullRequestCommentAnchor({path:request.anchorPath,side:request.anchorSide,line:request.anchorLine}):null;
+        const decision=request.reviewDecision===undefined?undefined:request.reviewDecision==="request-changes"?"request-changes" as const:null;
+        const review=anchor||decision?{anchor:anchor??undefined,decision:decision??undefined,commit:request.commit??""}:undefined;
+        if(anchored&&!anchor||decision===null||(review!==undefined)!==(request.commit!==undefined)||review&&!reviewCommit.test(review.commit)
+          ||review&&targetKind!==1618)throw new Error("Invalid review comment");
         const readTarget=async()=>{
           const [root]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[targetKind],limit:1});check();
           if(!root||root.id!==request.targetEventId||root.kind!==targetKind||!verifyEvent(root))throw new Error("Project work item unavailable");
@@ -169,7 +234,7 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
         };
         const target=await readTarget();
         const content=request.body.trim();
-        const tags=buildProjectCommentTags(target.repository,targetKind===1621?eventToProjectIssue(target.root):eventToProjectPullRequest(target.root),request.mentions??[],request.attachments??[]);
+        const tags=buildProjectCommentTags(target.repository,targetKind===1621?eventToProjectIssue(target.root):eventToProjectPullRequest(target.root),request.mentions??[],request.attachments??[],review);
         enteredPublication=true;
         const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
           try{
@@ -186,6 +251,15 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
             },ProjectsQueryRequestView.WorkItemActivity,relayQueryLimit,new AbortController().signal);
             const comments=history.filter(comment=>comment.tags.some(tag=>tag[0]==="a"&&tag[1]===target.repository.repoAddress));
             createdAt=nextProjectIssueCommentCreatedAt(eventToProjectIssue(fresh.root,[],comments),Math.floor(Date.now()/1_000),viewer);
+            }
+            if(review){
+              // The named head must still be the review's; decisions need the original reviewer authority.
+              const current=await readReview(fresh.root,fresh.repository.owner,review.decision!==undefined);
+              if(current.commit!==review.commit)throw new Error("Review head changed");
+              if(review.decision){
+                if(!canReviewProjectPullRequest(fresh.repository,current,viewer))throw new Error("Review decision denied");
+                createdAt=nextProjectPullRequestReviewCreatedAt(current,Math.floor(Date.now()/1_000));
+              }
             }
             // Fixed original ordinary PR comment signs at current time. Only
             // Tasks (and separately review decisions) use monotonic activity.

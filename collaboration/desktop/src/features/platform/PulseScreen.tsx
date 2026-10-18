@@ -2,7 +2,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
-import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
+import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, useComposerSubmitMode, type PulseHost } from "@client-kit/platform/react/pulse";
 import {resolveUserLabel} from "@client-kit/platform/react/messages/system/identity";
 import { useT } from "@client-kit/platform/react/context";
 import { useNativeSession } from "./activeCommunity";
@@ -81,17 +81,18 @@ function NativePulseComposer({props}:{props:Parameters<PulseHost["renderComposer
   const session=useNativeSession();const t=useT();
   const directory=usePeopleDirectory(session.facts.communityHost+":"+session.devicePubkey,props.members===undefined);
   const people=props.members?.map(member=>({pubkey:member.pubkey,displayName:resolveUserLabel({pubkey:member.pubkey,profiles:props.profiles,fallbackName:member.displayName}),avatarUrl:props.profiles?.[member.pubkey]?.avatarUrl??null,role:member.role}))??(directory.query.isSuccess?directory.people:[]);
+  const submitMode=useComposerSubmitMode(props);
   return <div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
         containerClassName={props.className} composerHeader={props.header}
         channelName={t("platform.tab.pulse")} disabled={props.disabled} isSending={props.isSending}
         profiles={props.profiles} placeholder={props.placeholder} onCancelReply={props.onCancel}
-        toolbarExtraActions={props.onCancel ? <Button type="button" variant="ghost" disabled={props.isSending} onClick={props.onCancel}>{t("platform.cancel")}</Button> : undefined}
+        toolbarExtraActions={props.onCancel || submitMode.action ? <>{props.onCancel ? <Button type="button" variant="ghost" disabled={props.isSending} onClick={props.onCancel}>{t("platform.cancel")}</Button> : null}{submitMode.action}</> : undefined}
         mentionPeople={people}
         onSend={async(content,mentions,mediaTags)=>{
           const attachments=[...parseImetaTags(mediaTags??[]).values()].map(media=>({
             url:media.url,sha256:media.x,type:media.m,size:media.size,dim:media.dim,
             filename:media.filename,displayLabel:media.alt,blurhash:media.blurhash,thumb:media.thumb,duration:media.duration,image:media.image,
           }));
-          await props.onSubmit(content,mentions,attachments,true);
+          await submitMode.submit(content,mentions,attachments,true);
         }}/>{props.members===undefined?<PeopleDirectoryStatus directory={directory}/>:null}</div>;
 }

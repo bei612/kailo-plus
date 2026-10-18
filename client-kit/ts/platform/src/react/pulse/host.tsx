@@ -19,7 +19,10 @@ export type PulseEvent = {id:string; pubkey:string; created_at:number; kind:numb
 export type PulseComposerProps = {header?:React.ReactNode; className?:string; placeholder?:string;
   disabled?:boolean; isSending?:boolean; compact?:boolean; autocompleteBelow?:boolean; members?:ChannelMember[];
   profiles?:Record<string,UserProfileSummary>; onCancel?:()=>void;
-  onSubmit:(content:string, mentions:string[], attachments?:WebMessageAttachment[],contentIncludesAttachments?:boolean)=>Promise<unknown> | undefined};
+  onSubmit:(content:string, mentions:string[], attachments?:WebMessageAttachment[],contentIncludesAttachments?:boolean)=>Promise<unknown> | undefined;
+  /** Original ForumComposer secondary submit (e.g. "Request changes"); hosts render useComposerSubmitMode. */
+  onSecondarySubmit?:(content:string, mentions:string[], attachments?:WebMessageAttachment[],contentIncludesAttachments?:boolean)=>Promise<unknown> | undefined;
+  secondarySubmitLabel?:string};
 export type PulseHost = {
   scopeKey:string; pubkey:string;
   query:(request:PulseQueryRequest)=>Promise<PulseEvent[]>;

@@ -2,10 +2,12 @@
 // desktop/src/features/projects/ui/ProjectPullRequestsPanel.tsx, including the "Files changed"
 // section and diff stats when the workspace supplies the DD-118 review diff. The review card
 // carries the original Merge action when the Projects Git host can merge (DD-118 batch 2b).
-import {Check,ChevronDown,ChevronUp,GitBranch,History,MessageSquare,TriangleAlert,UserPlus} from "lucide-react";
+// DD-118(5) review writes: Approve on the review card, "Request changes" as the comment composer's
+// secondary submit, line comments in Files changed and the timeline's anchor chips that open them.
+import {Check,ChevronDown,ChevronUp,FileCode2,GitBranch,History,MessageSquare,TriangleAlert,UserPlus} from "lucide-react";
 import * as React from "react";
 import {translateCurrent as t} from "../../i18n";
-import type {ProjectPullRequest} from "./projectPullRequests.mjs";
+import type {ProjectPullRequest,ProjectPullRequestCommentAnchor} from "./projectPullRequests.mjs";
 import {projectPullRequestCommentTimelineKind} from "./projectPullRequests.mjs";
 import type {Repository as Project} from "./projectModels";
 import type {UserProfileLookup} from "../messages/system/identity";
@@ -26,7 +28,10 @@ import type {WebMessageAttachment} from "@client-kit/contracts";
 import {ForumComposer,usePulseHost} from "../pulse/host";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import type {ProjectsHost} from "./projectEnumeration";
-import {publishProjectPullRequestComment} from "./issueMutations";
+import {publishProjectPullRequestComment,type ProjectPullRequestCommentReview} from "./issueMutations";
+import {canReviewProjectPullRequest,hasApprovedProjectPullRequest,isProjectPullRequestHeadChanged,publishProjectPullRequestApproval,
+  readProjectPullRequestApprovalIntent} from "./pullRequestReviews";
+import type {ReviewFilesChangedControls} from "./ProjectPullRequestFilesChangedPanel";
 import {publishProjectPullRequestStatus,readProjectPullRequestStatusIntent,type ProjectPullRequestLifecycle} from "./pullRequestStatus";
 import {PullRequestReviewCard} from "./PullRequestReviewCard";
 import {mergeProjectPullRequest,readProjectPullRequestMergeIntent} from "./pullRequestMutations";
@@ -220,7 +225,7 @@ export function PullRequestDetailHeader({
 }
 
 type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel:ProjectDiscussInChannel};
-  diffStats?:{additions:number;deletions:number}|null;filesChanged?:React.ReactNode;filesCount?:number};
+  diffStats?:{additions:number;deletions:number}|null;filesChanged?:(controls:ReviewFilesChangedControls)=>React.ReactNode;filesCount?:number};
 export function ProjectPullRequestDetail(props:PullRequestDetailProps) {
  return <PullRequestDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.pullRequest.id}`} {...props}/>;
 }
@@ -236,6 +241,9 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
  let statusIntent:ReturnType<typeof readProjectPullRequestStatusIntent>=null;
  try{if(publication&&viewer)statusIntent=readProjectPullRequestStatusIntent(publication.host,publication.projectId,project,pullRequest,viewer);}
  catch{/* The click consumer reports unknown; a corrupt slot is never removed. */}
+ let approvalIntent:ReturnType<typeof readProjectPullRequestApprovalIntent>=null,approvalIntentCorrupt=false;
+ try{if(publication&&viewer)approvalIntent=readProjectPullRequestApprovalIntent(publication.host,publication.projectId,project,pullRequest,viewer);}
+ catch{approvalIntentCorrupt=true;/* Approval stays blocked; a corrupt slot is never removed. */}
  let mergeIntent:ReturnType<typeof readProjectPullRequestMergeIntent>=null,mergeIntentCorrupt=false;
  try{if(publication&&viewer)mergeIntent=readProjectPullRequestMergeIntent(publication.host,project,pullRequest,viewer);}
  catch{mergeIntentCorrupt=true;/* Merge stays blocked; a corrupt slot is never removed. */}
@@ -246,27 +254,54 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
    const profile=profileForPubkey(pubkey,profiles);
    return {pubkey,role:"member",isAgent:profile?.isAgent===true,joinedAt:new Date(0).toISOString(),displayName:profile?.displayName?.trim()||profile?.nip05Handle?.trim()||null};
  }),[project,pullRequest,profiles]);
- async function handleCommentSubmit(content:string,mentions:string[],attachments:WebMessageAttachment[]=[],contentIncludesAttachments=false){
+ async function handleCommentSubmit(content:string,mentions:string[],attachments:WebMessageAttachment[]=[],contentIncludesAttachments=false,review?:ProjectPullRequestCommentReview){
    if(!publication||sending.current)throw new TransportError(t("projects.comment.unknown"));
    sending.current=true;setIsSending(true);
    try{
      const {host,projectId}=publication;
      const body=contentIncludesAttachments?content:buildOutgoingMessage(content,attachments,new Set(attachments.filter(item=>item.spoiler).map(item=>item.url))).content;
      const result=await publishProjectPullRequestComment(host,projectId,project,pullRequest,body,mentions,attachments.filter(item=>item.sha256.length>0),lifetime.controller.signal,
-       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);},review);
      lifetime.controller.signal.throwIfAborted();
      result.complete();setConfirmed({source,pullRequest:result.pullRequest});
-     cache.setQueryData(["project-home-work-items",host.scopeKey,projectId],result.snapshot);
-     cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===host.scopeKey&&query.queryKey[2]===projectId},result.snapshot);
-     void cache.invalidateQueries({queryKey:["projects-work-items",host.scopeKey]});
-     void cache.invalidateQueries({queryKey:["projects",host.scopeKey,"inbox-work-items"]});
-     toast.success(t("projects.comment.posted"));
+     if(review?.anchor)setActiveAnchor(null);
+     refresh(host.scopeKey,projectId,result.snapshot);
+     // Original toasts: ProjectPullRequestDetail.submitComment / files panel handleSubmit.
+     toast.success(t(review?.decision?"projects.review.changesRequested":review?.anchor?"projects.review.lineComment.posted":"projects.comment.posted"));
    }catch(error){
      if(!lifetime.controller.signal.aborted){
        if(isOutcomeUnknown(error))toast.message(t("projects.comment.unknown"));
-       else toast.error(t("video.postFailed"));
+       else if(isProjectPullRequestHeadChanged(error))toast.error(t("projects.review.headChanged"));
+       else toast.error(review?.anchor?t("projects.review.lineComment.failed"):t("video.postFailed"));
      }
      throw error;
+   }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
+ }
+ function refresh(scopeKey:string,projectId:string,snapshot:Awaited<ReturnType<typeof publishProjectPullRequestApproval>>["snapshot"]){
+   cache.setQueryData(["project-home-work-items",scopeKey,projectId],snapshot);
+   cache.setQueriesData({predicate:query=>query.queryKey[0]==="project-work-item-target"&&query.queryKey[1]===scopeKey&&query.queryKey[2]===projectId},snapshot);
+   void cache.invalidateQueries({queryKey:["projects-work-items",scopeKey]});
+   void cache.invalidateQueries({queryKey:["projects",scopeKey,"inbox-work-items"]});
+ }
+ async function handleApprove(summary:string){
+   if(!publication||!viewer||sending.current)return false;
+   sending.current=true;setIsSending(true);
+   try{
+     const {host,projectId}=publication;
+     const result=await publishProjectPullRequestApproval(host,projectId,project,pullRequest,viewer,summary,lifetime.controller.signal,
+       ()=>{if(!lifetime.controller.signal.aborted)setReadUnavailable(true);});
+     lifetime.controller.signal.throwIfAborted();
+     result.complete();setConfirmed({source,pullRequest:result.pullRequest});
+     refresh(host.scopeKey,projectId,result.snapshot);
+     toast.success(t("projects.review.approve.approved"));
+     return true;
+   }catch(error){
+     if(!lifetime.controller.signal.aborted){
+       if(isOutcomeUnknown(error))toast.message(t("projects.review.approve.unknown"));
+       else if(isProjectPullRequestHeadChanged(error))toast.error(t("projects.review.headChanged"));
+       else toast.error(t("projects.review.approve.failed"));
+     }
+     return false;
    }finally{sending.current=false;if(!lifetime.controller.signal.aborted)setIsSending(false);}
  }
  async function handleStatusChange(status:ProjectPullRequestLifecycle){
@@ -319,7 +354,20 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
  }
  const mergeAction=publication?.host.git?.mergeProjectPullRequest&&!mergeIntentCorrupt&&!merged
    ?{onMerge:handleMerge,recheck:mergeIntent!==null}:undefined;
+ // Original canReviewProjectPullRequest gates both Approve and "Request changes"; a fresh read decides.
+ const canReview=Boolean(publication?.host.publish)&&canReviewProjectPullRequest(project,pullRequest,viewer);
+ const approvalAction=publication?.host.publish&&viewer&&!approvalIntentCorrupt
+   ?{canApprove:canReview&&!hasApprovedProjectPullRequest(pullRequest,viewer),recheck:approvalIntent!==null,onApprove:handleApprove}:undefined;
  const [filesOpen,setFilesOpen]=React.useState(false);
+ const [activeAnchor,setActiveAnchor]=React.useState<ProjectPullRequestCommentAnchor|null>(null);
+ const [focusedAnchor,setFocusedAnchor]=React.useState<ProjectPullRequestCommentAnchor|null>(null);
+ // Original ProjectWorkspaceTabs handleOpenPullRequestComment: open Files changed and focus the line.
+ const openInlineComment=(anchor:ProjectPullRequestCommentAnchor)=>{setFilesOpen(true);setFocusedAnchor({...anchor});};
+ const inlineComments=publication?.host.publish?{activeAnchor,canRequestChanges:canReview,
+   comments:pullRequest.comments.filter(comment=>comment.anchor&&comment.inlineCommentStatus==="current"),isSending,
+   onCancel:()=>setActiveAnchor(null),onStart:setActiveAnchor,profiles,
+   onSubmit:(anchor:ProjectPullRequestCommentAnchor,content:string,mentions:string[],attachments?:WebMessageAttachment[],contentIncludesAttachments?:boolean,decision?:"request-changes")=>
+     handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments,{anchor,...(decision?{decision}:{})})}:undefined;
  const [expandedReviewHistoryPullRequestIds,setExpandedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
  const [collapsedReviewHistoryPullRequestIds,setCollapsedReviewHistoryPullRequestIds]=React.useState<Set<string>>(()=>new Set());
   const commitCount = Math.max(1, pullRequest.updates.length + 1);
@@ -415,7 +463,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
           testId="project-detail-section-files"
           title={t("projects.git.filesChanged")}
         >
-          <div className="-mx-6">{filesChanged}</div>
+          <div className="-mx-6">{filesChanged({pullRequest,focusedAnchor,inlineComments})}</div>
         </ProjectDetailSection>
       ) : null}
       <ProjectDetailSection
@@ -607,20 +655,45 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
                         tags={item.tags}
                       />
                     ) : null}
+                    {item.anchor ? (
+                      <button
+                        aria-label={t("projects.review.lineComment.open",{path:item.anchor.path,side:item.anchor.side,line:item.anchor.line})}
+                        className="mt-1 inline-flex min-w-0 items-center gap-1 rounded-md bg-muted/65 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        data-testid="project-pull-request-anchor"
+                        onClick={() => {
+                          if (item.anchor && filesChanged) openInlineComment(item.anchor);
+                        }}
+                        type="button"
+                      >
+                        <FileCode2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{item.anchor.path}</span>
+                        <span className="shrink-0">
+                          {item.anchor.side === "new" ? "+" : "-"}
+                          {item.anchor.line}
+                        </span>
+                        {item.inlineCommentStatus === "outdated" ? (
+                          <span className="shrink-0 text-destructive">
+                            {t("projects.review.lineComment.outdated")}
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );
             })}
             {publication?.host.publish?<div className="flex min-h-12 items-start justify-start px-3 py-2.5">
               <PullRequestReviewCard repository={project} pullRequest={pullRequest} viewer={viewer} pending={isSending}
-                recoveryStatus={statusIntent?.status} onStatusChange={status=>void handleStatusChange(status)} merge={mergeAction}/>
+                recoveryStatus={statusIntent?.status} onStatusChange={status=>void handleStatusChange(status)} merge={mergeAction} approval={approvalAction}/>
             </div>:null}
           </div>
         </div>
       </ProjectDetailSection>
       {publication?.host.publish?<div className="px-6 pb-6 pt-4" data-testid="project-pull-request-comment-composer">
         <ForumComposer className="border border-border/60 bg-background/45" disabled={isSending} isSending={isSending}
-          members={members} profiles={profiles} onSubmit={handleCommentSubmit} placeholder={t("projects.comment.placeholder")}/>
+          members={members} profiles={profiles} onSubmit={(content,mentions,attachments,contentIncludesAttachments)=>handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments)}
+          onSecondarySubmit={canReview?(content,mentions,attachments,contentIncludesAttachments)=>handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments,{decision:"request-changes"}):undefined}
+          placeholder={t("projects.comment.placeholder")} secondarySubmitLabel={t("projects.review.requestChanges")}/>
       </div>:null}
     </div>
   );

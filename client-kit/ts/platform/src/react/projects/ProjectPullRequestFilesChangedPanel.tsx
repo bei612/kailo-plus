@@ -1,9 +1,11 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectPullRequestFilesChangedPanel.tsx::ProjectDiffFilesPanel and
 // ProjectPullRequestFilesChangedPanel. Same file tree, filter, diff rows, focused anchor and the
-// original truncation notice. Line-comment authoring (kind 1111 with path/line tags) is a later
-// DD-118 write and is not rendered; without it the original shows no comment affordance.
-import { FileDiff, Files, FolderGit2, GitCommitHorizontal, Search } from "lucide-react";
+// original truncation notice. DD-118(5) line comments: the original per-line "Add line comment"
+// affordance and ProjectPullRequestInlineCommentThread (current-commit inline comments plus the
+// anchored composer) render when the review detail supplies inline-comment controls; they are
+// labeled kind-1 PR comments with file/side/line tags, published through the governed host.
+import { FileDiff, Files, FolderGit2, GitCommitHorizontal, MessageSquarePlus, Search } from "lucide-react";
 import * as React from "react";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -11,9 +13,23 @@ import { BuzzLoadingState } from "./BuzzLoadingState";
 import { changedFileIconVisual } from "./projectFileIcons";
 import type { ProjectRepoDiff, ProjectRepoDiffFile } from "./projectGit";
 import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
-import type { ProjectPullRequest } from "./projectPullRequests.mjs";
+import type { ProjectPullRequest, ProjectPullRequestComment } from "./projectPullRequests.mjs";
+import type { UserProfileLookup } from "../messages/system/identity";
+import { ProjectPullRequestInlineCommentThread, type ProjectInlineCommentSubmit } from "./ProjectPullRequestInlineComments";
 
 export type ProjectDiffAnchor = { line: number; path: string; side: "old" | "new" };
+
+/** Original InlineCommentControls, owned by the review detail that publishes them. */
+export type InlineCommentControls = {
+  activeAnchor: ProjectDiffAnchor | null;
+  canRequestChanges: boolean;
+  comments: ProjectPullRequestComment[];
+  isSending: boolean;
+  onCancel: () => void;
+  onStart: (anchor: ProjectDiffAnchor) => void;
+  onSubmit: (anchor: ProjectDiffAnchor, ...args: Parameters<ProjectInlineCommentSubmit>) => Promise<unknown>;
+  profiles?: UserProfileLookup;
+};
 
 function fileName(path: string) {
   return path.split("/").pop() || path;
@@ -139,7 +155,11 @@ function errorMessage(error: unknown) {
   return message.replace(/(^|[\s'"`])(?:[A-Za-z]:)?[\\/][^\s'"`]+/g, "$1…");
 }
 
-function DiffPreview({ file, focusedAnchor }: { file: ProjectRepoDiffFile; focusedAnchor?: ProjectDiffAnchor | null }) {
+function DiffPreview({ file, focusedAnchor, inlineComments }: {
+  file: ProjectRepoDiffFile;
+  focusedAnchor?: ProjectDiffAnchor | null;
+  inlineComments?: InlineCommentControls;
+}) {
   const t = useUiT();
   const rows = diffRows(file);
   const focusedRowRef = React.useRef<HTMLDivElement | null>(null);
@@ -185,27 +205,56 @@ function DiffPreview({ file, focusedAnchor }: { file: ProjectRepoDiffFile; focus
       ) : null}
       {rows.map((row) => {
         const anchor = commentAnchorForRow(file, row);
+        const comments = anchor && inlineComments
+          ? inlineComments.comments.filter((comment) => comment.anchor && anchorsEqual(comment.anchor, anchor)) : [];
+        const isActive = anchorsEqual(inlineComments?.activeAnchor ?? null, anchor);
         const isFocused = anchorsEqual(highlightedAnchor, anchor);
         return (
-          <div
-            className={cn("group grid min-h-5 grid-cols-[3rem_3rem_2rem_1.5rem_minmax(0,1fr)]", diffLineClassName(row.type),
-              isFocused && "bg-primary/10 ring-1 ring-primary/40 ring-inset")}
-            data-line={anchor?.line}
-            data-path={anchor?.path}
-            data-side={anchor?.side}
-            data-testid={isFocused ? "project-diff-focused-line" : anchor ? "project-diff-line" : undefined}
-            key={row.key}
-            ref={isFocused ? focusedRowRef : undefined}
-            tabIndex={isFocused ? -1 : undefined}
-          >
-            <span className="select-none border-border/40 border-r px-2 text-right text-muted-foreground/70">{row.oldLine ?? " "}</span>
-            <span className="select-none border-border/40 border-r px-2 text-right text-muted-foreground/70">{row.newLine ?? " "}</span>
-            <span className="flex select-none items-center justify-center" />
-            <span className={cn("select-none px-2", row.type === "add" && "text-green-500", row.type === "delete" && "text-destructive")}>
-              {linePrefix(row.type)}
-            </span>
-            <code className="min-w-0 whitespace-pre pr-3 text-foreground">{row.content || " "}</code>
-          </div>
+          <React.Fragment key={row.key}>
+            <div
+              className={cn("group grid min-h-5 grid-cols-[3rem_3rem_2rem_1.5rem_minmax(0,1fr)]", diffLineClassName(row.type),
+                isFocused && "bg-primary/10 ring-1 ring-primary/40 ring-inset")}
+              data-line={anchor?.line}
+              data-path={anchor?.path}
+              data-side={anchor?.side}
+              data-testid={isFocused ? "project-diff-focused-line" : anchor ? "project-diff-line" : undefined}
+              ref={isFocused ? focusedRowRef : undefined}
+              tabIndex={isFocused ? -1 : undefined}
+            >
+              <span className="select-none border-border/40 border-r px-2 text-right text-muted-foreground/70">{row.oldLine ?? " "}</span>
+              <span className="select-none border-border/40 border-r px-2 text-right text-muted-foreground/70">{row.newLine ?? " "}</span>
+              <span className="flex select-none items-center justify-center">
+                {anchor && inlineComments ? (
+                  <button
+                    aria-label={t("projects.review.lineComment.commentOn", { path: anchor.path, side: anchor.side, line: anchor.line })}
+                    className={cn("flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 focus-visible:outline-hidden group-hover:opacity-100",
+                      (comments.length > 0 || isActive) && "opacity-100")}
+                    data-testid="project-diff-add-comment"
+                    onClick={() => inlineComments.onStart(anchor)}
+                    title={t("projects.review.lineComment.add")}
+                    type="button"
+                  >
+                    <MessageSquarePlus className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </span>
+              <span className={cn("select-none px-2", row.type === "add" && "text-green-500", row.type === "delete" && "text-destructive")}>
+                {linePrefix(row.type)}
+              </span>
+              <code className="min-w-0 whitespace-pre pr-3 text-foreground">{row.content || " "}</code>
+            </div>
+            {anchor && inlineComments ? (
+              <ProjectPullRequestInlineCommentThread
+                activeAnchor={isActive ? anchor : null}
+                canRequestChanges={inlineComments.canRequestChanges}
+                comments={comments}
+                isSending={inlineComments.isSending}
+                onCancel={inlineComments.onCancel}
+                onSubmit={(...args) => inlineComments.onSubmit(anchor, ...args)}
+                profiles={inlineComments.profiles}
+              />
+            ) : null}
+          </React.Fragment>
         );
       })}
     </div>
@@ -248,10 +297,19 @@ function FileTreeItems({ node, onSelect, selectedPath, depth = 0 }: {
   });
 }
 
-export function ProjectPullRequestFilesChangedPanel({ error, diff, focusedAnchor, isLoading, pullRequest }: {
+/** What the review detail hands its Files changed body: the shown review, focus and line-comment controls. */
+export type ReviewFilesChangedControls = {
+  pullRequest: ProjectPullRequest;
+  focusedAnchor?: ProjectDiffAnchor | null;
+  inlineComments?: InlineCommentControls;
+};
+
+export function ProjectPullRequestFilesChangedPanel({ error, diff, focusedAnchor, inlineComments, isLoading, pullRequest }: {
   error: unknown;
   diff: ProjectRepoDiff | null | undefined;
   focusedAnchor?: ProjectDiffAnchor | null;
+  /** Present when the review detail can publish line comments for this review. */
+  inlineComments?: InlineCommentControls;
   isLoading: boolean;
   pullRequest: ProjectPullRequest | null;
 }) {
@@ -263,13 +321,14 @@ export function ProjectPullRequestFilesChangedPanel({ error, diff, focusedAnchor
       error={error}
       focusedAnchor={focusedAnchor}
       headerLabel={pullRequest ? `${pullRequest.title} · ${pullRequest.commit?.slice(0, 7) ?? t("projects.git.reviewLabel")}` : ""}
+      inlineComments={pullRequest ? inlineComments : undefined}
       isLoading={isLoading}
       subject="review"
     />
   );
 }
 
-export function ProjectDiffFilesPanel({ className, error, diff, fileTreeClassName, isLoading, embedded = false, focusedAnchor, headerLabel, subject }: {
+export function ProjectDiffFilesPanel({ className, error, diff, fileTreeClassName, isLoading, embedded = false, focusedAnchor, headerLabel, inlineComments, subject }: {
   /** Extra classes for the file-tree/diff grid container. */
   className?: string;
   /** Overrides the file tree's default `max-h-96` cap, e.g. for full-height layouts. */
@@ -281,6 +340,7 @@ export function ProjectDiffFilesPanel({ className, error, diff, fileTreeClassNam
   embedded?: boolean;
   focusedAnchor?: ProjectDiffAnchor | null;
   headerLabel: string;
+  inlineComments?: InlineCommentControls;
   subject: "review" | "commit";
 }) {
   const t = useUiT();
@@ -381,7 +441,7 @@ export function ProjectDiffFilesPanel({ className, error, diff, fileTreeClassNam
                   <span className="text-destructive">-{selectedFile.deletions}</span>
                 </div>
               </header>
-              <DiffPreview file={selectedFile} focusedAnchor={focusedAnchor} />
+              <DiffPreview file={selectedFile} focusedAnchor={focusedAnchor} inlineComments={inlineComments} />
             </article>
           ) : (
             <div className="border border-border/60 bg-background/45 p-4 text-sm text-muted-foreground">{t("projects.git.noFilterMatch")}</div>

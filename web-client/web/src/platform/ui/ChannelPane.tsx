@@ -971,7 +971,7 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
@@ -987,6 +987,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   compact?: boolean;
   autocompleteBelow?: boolean;
   composerHeader?: React.ReactNode;
+  /** Host toolbar actions after Cancel (original ForumComposer secondary submit menu). */
+  toolbarExtraActions?: React.ReactNode;
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[]) => Promise<unknown>;
   onCancel?: () => void;
@@ -1589,7 +1591,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       onRemoveAddressedAgent: removeAddressedAgent,
       pulseVersionByPubkey: addressPulse.pulseVersionByPubkey,
       shakeVersionByPubkey: addressPulse.shakeVersionByPubkey,
-      extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
+      extraActions: onCancel || toolbarExtraActions ? <>{onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : null}{toolbarExtraActions}</> : undefined,
       editor: richText.editor, formattingDisabled: disabled || sending, isEmojiPickerOpen, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
       isVoiceNoteProcessing: voiceNote.status !== "recording",

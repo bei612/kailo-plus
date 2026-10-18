@@ -13,7 +13,7 @@ import { useUiT } from "../context";
 import { useUsersBatchQuery } from "../pulse/host";
 import { ActivityPanel } from "./ProjectCommitsPanel";
 import { ProjectCommitDetailPanel } from "./ProjectCommitDetailPanel";
-import { ProjectPullRequestFilesChangedPanel } from "./ProjectPullRequestFilesChangedPanel";
+import { ProjectPullRequestFilesChangedPanel, type ReviewFilesChangedControls } from "./ProjectPullRequestFilesChangedPanel";
 import { findReadmeFile, type GitDataState, ProjectOverviewPanel } from "./ProjectReadmePanel";
 import { RepositoryFilesPanel } from "./ProjectRepositoryPanel";
 import { ProjectRepositoryUnavailableState } from "./ProjectRepositoryUnavailableState";
@@ -156,7 +156,7 @@ export function RepositoryGitWorkspace({ host, repository, projectId, pullReques
   </>;
 }
 
-/** Original selected-review Files changed body, diff stats and count. */
+/** Original selected-review Files changed body (rendered by the detail with its line-comment controls), diff stats and count. */
 export function useReviewFilesChanged(host: ProjectsHost, repository: Repository, pullRequest: ProjectPullRequest) {
   const reviewDiffBranch = pullRequest.targetBranch || repository.defaultBranch;
   const diffQuery = useProjectRepoDiffQuery(host, repository, reviewDiffBranch, pullRequest, true);
@@ -164,7 +164,8 @@ export function useReviewFilesChanged(host: ProjectsHost, repository: Repository
   const diff = diffQuery.data;
   return {
     diffStats: diff ? { additions: diff.additions, deletions: diff.deletions } : null,
-    filesChanged: <ProjectPullRequestFilesChangedPanel diff={diff} error={diffQuery.error} isLoading={diffQuery.isLoading} pullRequest={pullRequest} />,
+    filesChanged: (controls: ReviewFilesChangedControls) => <ProjectPullRequestFilesChangedPanel diff={diff} error={diffQuery.error}
+      focusedAnchor={controls.focusedAnchor} inlineComments={controls.inlineComments} isLoading={diffQuery.isLoading} pullRequest={controls.pullRequest} />,
     filesCount: diff?.files.length,
   };
 }

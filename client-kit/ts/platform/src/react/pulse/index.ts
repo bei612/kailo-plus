@@ -12,3 +12,4 @@ export { detectPrefixQuery } from "./detectPrefixQuery";
 export { mentionOccurrences } from "./mentionOccurrences";
 export type { MentionPubkeyCandidate } from "./extractMentionPubkeys";
 export { usePeopleDirectory, PeopleDirectoryStatus } from "./usePeopleDirectory";
+export { useComposerSubmitMode } from "./ComposerSubmitMode";
