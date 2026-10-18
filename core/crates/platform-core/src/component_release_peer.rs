@@ -65,11 +65,11 @@ pub(super) async fn prewrite(
     }
     for contract in contracts {
         for case in contract["vectors"]["cases"].as_array().ok_or_else(bad)? {
-            // DD-124 preconditions, captures and receiver-direction steps need
+            // DD-124 preconditions, captures and receiver-direction cases need
             // the REMOTE_ADAPTER typed slots and the isolated receiver
             // deployment; a native MCP peer has none, so such a contract is
             // blocked.
-            if case.get("preconditions").is_some() {
+            if case.get("preconditions").is_some() || case.get("direction").is_some() {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
             }
             for step in case["steps"].as_array().ok_or_else(bad)? {
@@ -80,7 +80,6 @@ pub(super) async fn prewrite(
                     "referenceResourceKey",
                     "bindings",
                     "captures",
-                    "direction",
                 ]
                 .iter()
                 .any(|field| step.get(field).is_some())

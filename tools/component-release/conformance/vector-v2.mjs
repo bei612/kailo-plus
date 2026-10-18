@@ -16,8 +16,9 @@ export const SOURCES = Object.freeze(['PRECONDITION', 'CAPTURE']);
 export const SIDES = Object.freeze(['INPUT', 'EXPECTED']);
 export const SLOTS = Object.freeze(['CONTENT_REFERENCE_NATIVE_OBJECT_REF', 'CONTENT_REFERENCE_NATIVE_REVISION',
   'GENERATED_REF', 'ACTION_EXECUTION_ID', 'OPERATION_ID']);
-// DD-124(4): a RECEIVER step depends on the service read edge; it runs only in
-// the isolated receiver deployment and the production plan observes it.
+// DD-124(3)(4): a RECEIVER case depends on the service read edge; it runs
+// wholly in the isolated receiver deployment and the production plan observes
+// each of its steps.
 export const DIRECTIONS = Object.freeze(['FORWARD', 'RECEIVER']);
 // Same closed member names as Core's capability_vector.rs: nativeRevision is
 // implementation-generated wherever it appears; these ids only Core generates.
@@ -37,11 +38,12 @@ const reserved = (v) => typeof v === 'string' && v.startsWith('{{');
 
 export const placeholder = (source, key) => `{{${source}:${key}}}`;
 
-// Absent is FORWARD (Core capability_vector.rs is_receiver).
-export function isReceiver(step) {
-  if (step.direction === undefined) return false;
-  if (!DIRECTIONS.includes(step.direction)) refuse(`${step.stepKey}: direction ${step.direction} is not FORWARD or RECEIVER`);
-  return step.direction === 'RECEIVER';
+// The direction of a whole case; absent is FORWARD (Core capability_vector.rs
+// is_receiver). A RECEIVER case runs wholly in the isolated deployment.
+export function isReceiver(vectorCase) {
+  if (vectorCase.direction === undefined) return false;
+  if (!DIRECTIONS.includes(vectorCase.direction)) refuse(`${vectorCase.caseKey}: direction ${vectorCase.direction} is not FORWARD or RECEIVER`);
+  return vectorCase.direction === 'RECEIVER';
 }
 
 function exact(value, required, optional, label) {
@@ -149,7 +151,7 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
   if (!vectors.cases.length) refuse(`${label}: no cases`);
   const caseKeys = new Set();
   const cases = vectors.cases.map((vectorCase) => {
-    exact(vectorCase, ['caseKey', 'steps'], ['preconditions'], `${label} case`);
+    exact(vectorCase, ['caseKey', 'steps'], ['preconditions', 'direction'], `${label} case`);
     const where = `${label}:${vectorCase.caseKey}`;
     if (!identifier(vectorCase.caseKey) || caseKeys.has(vectorCase.caseKey)) refuse(`${where}: unique caseKey required`);
     caseKeys.add(vectorCase.caseKey);
@@ -180,17 +182,16 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
     const emitted = new Map(); // precondition key -> first INPUT step index
     // DD-124(4): every platform Resource id of a receiver-direction case is a
     // precondition the isolated Core's real resource.create returned.
-    const receiving = vectorCase.steps.some((step) => isObject(step) && isReceiver(step));
+    const receiving = isReceiver(vectorCase);
+    const inputs = [];
     const expectations = [];
     const steps = vectorCase.steps.map((step, index) => {
       exact(step, ['stepKey', 'contractKey', 'inputJson', 'expectedOutputJson'],
-        ['referenceResourceId', 'referenceAssetId', 'referenceResourceKey', 'bindings', 'captures', 'direction'], `${where} step`);
+        ['referenceResourceId', 'referenceAssetId', 'referenceResourceKey', 'bindings', 'captures'], `${where} step`);
       const at = `${where}/${step.stepKey}`;
       if (!nonempty(step.stepKey) || stepKeys.has(step.stepKey) || !nonempty(step.contractKey)) refuse(`${at}: unique stepKey and contractKey required`);
       stepKeys.add(step.stepKey);
       const documents = { INPUT: parseJson(step.inputJson, `${at}.inputJson`), EXPECTED: parseJson(step.expectedOutputJson, `${at}.expectedOutputJson`) };
-      // A RECEIVER step is observed, never sent: it names the receiver
-      // Resource and has no result body of its own.
       const keyed = step.referenceResourceKey;
       if (keyed !== undefined && !preconditions.has(keyed)) refuse(`${at}: referenceResourceKey ${keyed} is not a precondition of the case`);
       const literal = step.referenceResourceId !== undefined;
@@ -200,10 +201,11 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
       // Naming the target sends that precondition with this step.
       if (keyed !== undefined && !emitted.has(keyed)) emitted.set(keyed, index);
       const reference = literal || keyed !== undefined;
-      const receiver = isReceiver(step);
-      if (receiver && (!reference || step.referenceAssetId !== undefined
-        || canonicalText(documents.EXPECTED) !== '{}')) {
-        refuse(`${at}: a RECEIVER step names only its receiver Resource and expects {}`);
+      // Every step of a RECEIVER case is observed, never sent: it names the
+      // receiver Resource by precondition and no business result is compared.
+      const receiver = receiving;
+      if (receiver && (keyed === undefined || canonicalText(documents.EXPECTED) !== '{}')) {
+        refuse(`${at}: a step of a RECEIVER case names its receiver Resource by precondition and expects {}`);
       }
       const captures = step.captures ?? [];
       if (!Array.isArray(captures)) refuse(`${at}.captures: array`);
@@ -227,7 +229,7 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
         }
         if (['ACTION_EXECUTION_ID', 'OPERATION_ID'].includes(capture.slot)) {
           if (receiver && !Object.hasOwn(capture, 'pointer')) { admission.set(capture.key, null); continue; }
-          refuse(`${at}/${capture.key}: Core execution ids are captured only by a RECEIVER step in the isolated receiver deployment (DD-124(4))`);
+          refuse(`${at}/${capture.key}: Core execution ids are captured only in a RECEIVER case in the isolated receiver deployment (DD-124(4))`);
         }
         refuse(`${at}/${capture.key}: slot ${capture.slot} is not capturable here`);
       }
@@ -256,8 +258,9 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
           if (!emitted.has(binding.key)) emitted.set(binding.key, index);
         } else if (binding.source === 'PRECONDITION' && binding.side === 'EXPECTED' && emitted.has(binding.key)) {
           // verified after it was sent
-        } else if (binding.source === 'CAPTURE' && !receiver && produced.has(binding.key) && produced.get(binding.key) < index) {
-          // a RECEIVER request is never substituted with an earlier value
+        } else if (binding.source === 'CAPTURE' && produced.has(binding.key) && produced.get(binding.key) < index) {
+          // an earlier value: Core substitutes it (FORWARD) or the isolated
+          // deployment admits it from its own run (RECEIVER)
           consumed.add(binding.key);
         } else if (binding.source === 'CAPTURE' && binding.side === 'EXPECTED' && own.get(binding.pointer) === binding.key) {
           // self-captured generated result position
@@ -290,6 +293,7 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
         }
       }
       expectations.push(documents.EXPECTED);
+      inputs.push(documents.INPUT);
       return { stepKey: step.stepKey, contractKey: step.contractKey, direction: receiver ? 'RECEIVER' : 'FORWARD',
         referenceResourceId: step.referenceResourceId, referenceResourceKey: step.referenceResourceKey,
         referenceAssetId: step.referenceAssetId, input: documents.INPUT, expected: documents.EXPECTED, bindings, captures, values };
@@ -297,23 +301,33 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
     for (const key of produced.keys()) if (!consumed.has(key)) refuse(`${where}: capture ${key} is never consumed by a later step`);
     for (const [key, precondition] of preconditions) {
       const from = emitted.get(key) ?? refuse(`${where}: precondition ${key} is never sent as INPUT`);
+      // A RECEIVER case compares no business result: a later input, which
+      // Core compares with the isolated admission, verifies the property.
+      const verifying = receiving ? inputs : expectations;
       for (const [name, value] of Object.entries(precondition.properties)) {
-        if (!expectations.slice(from).some((document) => hasMember(document, name, value))) {
-          refuse(`${where}: precondition ${key} property ${name} is never verified by a literal expectation`);
+        if (!verifying.slice(from).some((document) => hasMember(document, name, value))) {
+          refuse(`${where}: precondition ${key} property ${name} is never verified by a literal ${receiving ? 'input' : 'expectation'}`);
         }
       }
     }
-    return { caseKey: vectorCase.caseKey, preconditions: [...preconditions.values()], steps };
+    return { caseKey: vectorCase.caseKey, direction: receiving ? 'RECEIVER' : 'FORWARD',
+      preconditions: [...preconditions.values()], steps };
   });
   return { generatedRefs: generated, preconditionKinds: [...kinds.keys()], cases };
 }
 
 // The suite carries an actually observed value into a later request (Core
-// capability_vector.rs has_roundtrip): V2 needs one INPUT CAPTURE binding on a
-// FORWARD step (a RECEIVER step's own INPUT captures describe its admission).
+// capability_vector.rs has_roundtrip): V2 needs one INPUT CAPTURE of an
+// earlier step (a step's own admission identifiers are not a roundtrip).
 export function hasRoundtripV2(vectors) {
-  return vectors.cases.some((c) => (c.steps ?? []).some((s) => s.direction !== 'RECEIVER'
-    && (s.bindings ?? []).some((b) => b.source === 'CAPTURE' && b.side === 'INPUT')));
+  return vectors.cases.some((c) => {
+    const earlier = new Set();
+    return (c.steps ?? []).some((s) => {
+      const carried = (s.bindings ?? []).some((b) => b.source === 'CAPTURE' && b.side === 'INPUT' && earlier.has(b.key));
+      for (const capture of s.captures ?? []) earlier.add(capture.key);
+      return carried;
+    });
+  });
 }
 
 // Substitute already-known values into one step document. Used only where the

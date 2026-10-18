@@ -34,6 +34,8 @@
 //                    real resource.create returned, Resource versions after the read grants)",
 //   "resultExposurePolicyId", "resultExposurePolicyVersion", "fileStorageActionVersion",
 //   "weknoraOrigin":"http://<isolated WeKnora app>/", "weknoraApiKeyFile":"/abs", "knowledgeBaseId",
+//   "sourceText":"<fixture UTF-8 text of each source file>" (fixture content; a RECEIVER case
+//                  compares no business result, DD-124(4)),
 //   "retiredText":"<fixture text of the retired source file>",
 //   "timeoutMs":<int>, "waitSeconds":<int>,
 //   "nativeOut":"/abs/native-seed.json", "out":"/abs/native-facts.json" }
@@ -158,7 +160,8 @@ async function main() {
     for (const item of preconditions.filter((entry) => entry.kind === 'source_file')) {
       const revision = preconditions.find((entry) => entry.caseKey === item.caseKey && entry.kind === 'source_revision')
         ?? fail(`${item.caseKey}: source_file without source_revision`);
-      const file = await createFile(folderOf(item.sourceKey), item.properties.displayName, revision.properties.text, item.properties.mediaType);
+      if (!nonempty(seed.sourceText)) fail('sourceText is required for a source file');
+      const file = await createFile(folderOf(item.sourceKey), item.properties.displayName, seed.sourceText, item.properties.mediaType);
       files.push({ caseKey: item.caseKey, fileKey: item.key, revisionKey: revision.key, sourceKey: item.sourceKey,
         displayName: item.properties.displayName, mediaType: item.properties.mediaType, ...file });
     }

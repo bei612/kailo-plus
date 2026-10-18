@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # DD-124(4), .design/07 §8A: the isolated receiver deployment of one built-in
-# REMOTE_ADAPTER release whose capability vectors carry RECEIVER steps (the
+# REMOTE_ADAPTER release whose capability vectors carry RECEIVER cases (the
 # WeKnora release on knowledge@3). CI node only. Nothing here connects to the
 # production database, production OpenBao, production keys or a production
 # binding; production containers are only inspected read-only (image digests).
@@ -27,7 +27,10 @@
 #   inputs     observe.mjs (forward adapter; receiver block) -> facts.json; conformance-inputs.mjs
 #              -> inputs/{fixture,identity,environment}.json
 #   driver     core/verify/receiver-action-driver.rs (ignored Core test) serving APPLICATION
-#              receiver steps inside the isolated Core's network namespace, plus the session refresher
+#              receiver steps (every step of a RECEIVER case: ingest, read, export, delete) inside
+#              the isolated Core's network namespace, plus the session refresher; the driver
+#              configuration lists each step's frozen input (preconditions substituted, earlier
+#              captures still as placeholders), its captures and a capturesFile in RUN_DIR
 #   down       stop the driver and remove every isolated project, volume and network of this run
 #
 # receiver.env (absolute 0600 regular file, operator-delivered, no secret values inline):

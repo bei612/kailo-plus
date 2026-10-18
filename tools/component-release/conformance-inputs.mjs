@@ -71,7 +71,7 @@
 //                       "byContract"?: { "<contractKey>": { …same… } },
 //                       "byStep"?: { "<category>:<version>:<caseKey>/<stepKey>": { …same… } } },
 //   "nativeReceivers"?: [ { "caseKey", "stepKey", "contractKey", "request": ComponentNativeReceiverRequest } ],
-//                        // NATIVE_INTERNAL keys and V2 RECEIVER steps; importConfigRef only for a native batch
+//                        // NATIVE_INTERNAL keys and every step of a V2 RECEIVER case; importConfigRef only for a native batch
 //   "preconditions"?: [ { "caseKey": "<category>:<version>:<caseKey>", "key", "value" } ]
 // }
 //
@@ -87,12 +87,13 @@
 // is its target Resource; in a receiver-direction case every platform Resource
 // is such a precondition, created by the isolated Core's real resource.create.
 //
-// DD-124(4): a V2 step with direction RECEIVER (and every NATIVE_INTERNAL key)
-// becomes receiver_start/receiver_observe, observed only from the isolated
-// receiver deployment (tools/component-release/receiver-run.sh). Its request is
-// never substituted; a native batch names the frozen importConfigRef, an
-// APPLICATION receiver action (knowledge.ingest) names none and is served by
-// environment.receiverActionBaseUrl. Such a plan must carry receiverEnvironment
+// DD-124(3)(4): every step of a V2 case with direction RECEIVER (and every
+// NATIVE_INTERNAL key) becomes receiver_start/receiver_observe, observed only
+// from the isolated receiver deployment (tools/component-release/receiver-run.sh);
+// steps are never split between directions. Its request is never substituted;
+// a native batch names the frozen importConfigRef, an APPLICATION receiver
+// action (knowledge.ingest/read/export/search/delete) names none and is served
+// by environment.receiverActionBaseUrl. Such a plan must carry receiverEnvironment
 // (the isolated Core build and the production APPROVED source release), which
 // Core re-checks against its own build and Catalog; a plan without receiver
 // steps must not.
@@ -615,18 +616,18 @@ function vectorPlan(facts, release, registrations, placeholderAe, preconditions)
             `${caseKey}/${stepKey} target precondition ${step.referenceResourceKey}`);
         }
         const native = release.native.has(step.contractKey);
-        // DD-124(3)(4): a V2 RECEIVER step runs in the isolated deployment; a
-        // NATIVE_MANAGED key in V2 must be marked so for that exact step.
-        const receiver = step.direction === 'RECEIVER';
-        if (receiver && format !== 'V2') {
-          refuse(`${caseKey}/${stepKey}: direction is a V2 field`);
+        // DD-124(3)(4): every step of a V2 RECEIVER case runs in the isolated
+        // deployment; a NATIVE_MANAGED key in V2 must be in such a case.
+        const receiver = vectorCase.direction === 'RECEIVER';
+        if (vectorCase.direction !== undefined && format !== 'V2') {
+          refuse(`${caseKey}: direction is a V2 field`);
         }
         if (native && !receiver && format === 'V2') {
-          refuse(`${caseKey}/${stepKey}: NATIVE_INTERNAL key ${step.contractKey} needs a RECEIVER V2 step; Core blocks this release`);
+          refuse(`${caseKey}/${stepKey}: NATIVE_INTERNAL key ${step.contractKey} needs a RECEIVER V2 case; Core blocks this release`);
         }
         if (native || receiver) {
           const matches = receivers.filter((r) => r.caseKey === caseKey && r.stepKey === stepKey && r.contractKey === step.contractKey);
-          if (matches.length !== 1) refuse(`${caseKey}/${stepKey}: exactly one nativeReceivers entry required (NATIVE_INTERNAL key or RECEIVER step)`);
+          if (matches.length !== 1) refuse(`${caseKey}/${stepKey}: exactly one nativeReceivers entry required (NATIVE_INTERNAL key or RECEIVER case step)`);
           exactKeys(matches[0], ['caseKey', 'stepKey', 'contractKey', 'request'], [], `nativeReceivers ${caseKey}/${stepKey}`);
           const request = matches[0].request;
           exactKeys(request, ['idempotencyKey', 'bindingId', 'generation', 'expiresAt'], ['importConfigRef'], `nativeReceivers ${caseKey}/${stepKey}.request`);

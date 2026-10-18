@@ -1972,7 +1972,7 @@ mod registration_tests {
             draft["valueJson"] = json!("\"another marker\"");
         });
         assert!(registration(&unverified).is_err());
-        // Isolated-Core identifiers exist only in a RECEIVER step (DD-124(4)).
+        // Isolated-Core identifiers exist only in a RECEIVER case (DD-124(4)).
         let receiver = edit_step(&raw, 1, |step| {
             let capture = json!({"key":"receiver","slot":"ACTION_EXECUTION_ID"});
             step["captures"].as_array_mut().unwrap().push(capture);
@@ -2002,10 +2002,10 @@ mod registration_tests {
     }
 
     /// DD-124(3): knowledge@3 keeps the @2 keys, permissions, schemas and
-    /// declarations; only the suffix and the V2 vectors change, and every step
-    /// that depends on the service read edge is a RECEIVER step.
+    /// declarations; only the suffix and the V2 vectors change, and every case
+    /// that depends on the service read edge is a RECEIVER case.
     #[test]
-    fn knowledge_v3_keeps_v2_contract_and_marks_read_edge_steps_receiver() {
+    fn knowledge_v3_keeps_v2_contract_and_marks_read_edge_cases_receiver() {
         let registered = registration(&knowledge_v3()).expect("DD-124(3) knowledge@3");
         let legacy: Value = serde_json::from_str(include_str!(
             "../../../../contracts/adapter/knowledge.v2/registration.json"
@@ -2030,18 +2030,24 @@ mod registration_tests {
         assert!(vector::has_roundtrip(&registered.vectors));
         let mut receivers = BTreeSet::new();
         for case in registered.vectors["cases"].as_array().unwrap() {
+            // A case that depends on the read edge runs wholly in the isolated
+            // deployment; no step of it is split off as FORWARD.
+            if !vector::is_receiver(case).unwrap() {
+                assert_eq!(case["caseKey"], "knowledge_search");
+                continue;
+            }
             for step in case["steps"].as_array().unwrap() {
-                if vector::is_receiver(step).unwrap() {
-                    receivers.insert(step["contractKey"].as_str().unwrap().to_owned());
-                }
+                receivers.insert(step["contractKey"].as_str().unwrap().to_owned());
             }
         }
-        let read_edge = BTreeSet::from([
-            "knowledge.ingest@v3".to_owned(),
-            "knowledge.sync_apply@v3".to_owned(),
-            "knowledge.sync_retire@v3".to_owned(),
-        ]);
-        assert_eq!(receivers, read_edge);
+        for key in [
+            "knowledge.ingest@v3",
+            "knowledge.sync_apply@v3",
+            "knowledge.sync_retire@v3",
+            "knowledge.delete@v3",
+        ] {
+            assert!(receivers.contains(key), "{key}");
+        }
     }
 
     #[test]
@@ -2049,27 +2055,35 @@ mod registration_tests {
         let raw = knowledge_v3();
         assert!(registration(&raw).is_ok());
         // knowledge_native_apply: the receiver admission binds its own batch
-        // and SOURCE read execution; a forward step cannot hold either.
-        let forward = edit_case_step(&raw, 1, 0, |step| {
-            step.as_object_mut().unwrap().remove("direction");
+        // and SOURCE read execution; a forward case cannot hold either.
+        let forward = edit_v2(&raw, |vectors| {
+            vectors["cases"][2]
+                .as_object_mut()
+                .unwrap()
+                .remove("direction");
         });
         assert!(registration(&forward).is_err());
-        let unknown = edit_case_step(&raw, 1, 0, |step| {
-            step["direction"] = json!("BOTH");
+        let unknown = edit_v2(&raw, |vectors| {
+            vectors["cases"][2]["direction"] = json!("BOTH");
         });
         assert!(registration(&unknown).is_err());
-        let unnamed = edit_case_step(&raw, 1, 0, |step| {
+        // Direction belongs to the whole case, never to one step.
+        let split = edit_case_step(&raw, 2, 0, |step| {
+            step["direction"] = json!("RECEIVER");
+        });
+        assert!(registration(&split).is_err());
+        let unnamed = edit_case_step(&raw, 2, 0, |step| {
             step.as_object_mut().unwrap().remove("referenceResourceKey");
         });
         assert!(registration(&unnamed).is_err());
         // A generated admission field keeps its exact INPUT position.
-        let moved = edit_case_step(&raw, 1, 0, |step| {
+        let moved = edit_case_step(&raw, 2, 0, |step| {
             step["captures"][0]["pointer"] = json!("/importConfigRef");
         });
         assert!(registration(&moved).is_err());
         // An execution identifier is bound only where the admission carries
         // one, and every Core execution member is captured.
-        let misplaced = edit_case_step(&raw, 1, 0, |step| {
+        let misplaced = edit_case_step(&raw, 2, 0, |step| {
             edit_json(step, "inputJson", |input| {
                 input["batchId"] = json!("{{CAPTURE:read_execution}}");
                 input["sourceReadActionExecutionId"] = json!("{{CAPTURE:batch}}");
@@ -2078,7 +2092,7 @@ mod registration_tests {
             step["bindings"][3]["pointer"] = json!("/batchId");
         });
         assert!(registration(&misplaced).is_err());
-        let literal = edit_case_step(&raw, 1, 0, |step| {
+        let literal = edit_case_step(&raw, 2, 0, |step| {
             edit_json(step, "inputJson", |input| {
                 input["sourceReadActionExecutionId"] = json!(Uuid::new_v4());
             });
@@ -2086,20 +2100,25 @@ mod registration_tests {
             step["captures"].as_array_mut().unwrap().pop();
         });
         assert!(registration(&literal).is_err());
-        // knowledge_roundtrip: a receiver request is never substituted, so a
-        // RECEIVER step cannot consume an earlier step's capture.
-        let substituted = edit_case_step(&raw, 2, 4, |step| {
-            step["direction"] = json!("RECEIVER");
-            step["referenceResourceKey"] = json!("receiver");
+        // knowledge_roundtrip: production compares no business result of a
+        // RECEIVER case; a precondition property is verified by the isolated
+        // admission's input instead.
+        let compared = edit_case_step(&raw, 3, 1, |step| {
+            step["expectedOutputJson"] = json!("{\"text\":\"Kailo\"}");
         });
-        assert!(registration(&substituted).is_err());
+        assert!(registration(&compared).is_err());
+        let unverified = edit_v2(&raw, |vectors| {
+            let source = &mut vectors["cases"][3]["preconditions"][2];
+            source["properties"][0]["valueJson"] = json!("\"missing.md\"");
+        });
+        assert!(registration(&unverified).is_err());
         // The V1 format cannot carry a direction.
         let seed: Value = serde_json::from_str(include_str!(
             "../../../../contracts/adapter/file_storage.v1/registration.json"
         ))
         .unwrap();
-        let smuggled = edit_step(&seed, 0, |step| {
-            step["direction"] = json!("FORWARD");
+        let smuggled = edit_v2(&seed, |vectors| {
+            vectors["cases"][0]["direction"] = json!("FORWARD");
         });
         assert!(registration(&smuggled).is_err());
     }
@@ -2111,24 +2130,24 @@ mod registration_tests {
     fn receiver_cases_name_every_resource_by_precondition() {
         let raw = knowledge_v3();
         let registered = registration(&raw).unwrap();
-        let literal_target = edit_case_step(&raw, 1, 0, |step| {
+        let literal_target = edit_case_step(&raw, 2, 0, |step| {
             step.as_object_mut().unwrap().remove("referenceResourceKey");
             step["referenceResourceId"] = json!(Uuid::new_v4());
         });
         assert!(registration(&literal_target).is_err());
-        let both = edit_case_step(&raw, 2, 1, |step| {
+        let both = edit_case_step(&raw, 3, 1, |step| {
             step["referenceResourceId"] = json!(Uuid::new_v4());
         });
         assert!(registration(&both).is_err());
         // The receiver precondition is still sent by the read step's target.
-        let literal_member = edit_case_step(&raw, 2, 1, |step| {
+        let literal_member = edit_case_step(&raw, 3, 1, |step| {
             edit_json(step, "inputJson", |input| {
                 input["resourceId"] = json!(Uuid::new_v4());
             });
             step["bindings"].as_array_mut().unwrap().remove(0);
         });
         assert!(registration(&literal_member).is_err());
-        let undeclared = edit_case_step(&raw, 1, 0, |step| {
+        let undeclared = edit_case_step(&raw, 2, 0, |step| {
             step["referenceResourceKey"] = json!("missing");
         });
         assert!(registration(&undeclared).is_err());
@@ -2153,7 +2172,7 @@ mod registration_tests {
         let fixture = json!({"preconditions":entries});
         let values = vector::fixture_values(&fixture, &contracts).unwrap();
         let case = "knowledge:3:knowledge_roundtrip";
-        let read = &registered.vectors["cases"][2]["steps"][1];
+        let read = &registered.vectors["cases"][3]["steps"][1];
         let (input, _, _, target) = vector::freeze_step(read, case, &values).unwrap();
         let input: Value = serde_json::from_str(&input).unwrap();
         assert_eq!(target.as_deref(), Some(receiver.as_str()));

@@ -35,8 +35,8 @@
 // (node / draft revision / share link); a role or Resource mapping the Cells
 // native model cannot honour is a release blocker (exit 3) like above.
 //
-// WeKnora V2 (knowledge@3, DD-124(3)(4)): every step that depends on the
-// service read edge is a RECEIVER step observed only in the isolated receiver
+// WeKnora V2 (knowledge@3, DD-124(3)(4)): every case that depends on the
+// service read edge is a RECEIVER case observed only in the isolated receiver
 // deployment (tools/component-release/receiver-run.sh); its Resources are
 // preconditions whose values the isolated Core's real resource.create returned,
 // its source file/revision preconditions come
@@ -234,12 +234,12 @@ function weknoraV2(category, version, analysed, push) {
     for (const step of vectorCase.steps) {
       const at = `${caseKey}/${step.stepKey}`;
       const verb = verbOf(step.contractKey, category);
-      const receiver = step.direction === 'RECEIVER';
-      // Every step that reads the source edge is observed in the isolated
-      // receiver deployment; a FORWARD ingest or sync would need production
-      // source reads the plan cannot hold.
-      if (['ingest', 'sync_apply', 'sync_retire'].includes(verb) !== receiver) {
-        fail(`${at}: ${step.contractKey} must ${receiver ? 'not ' : ''}be a RECEIVER step for WeKnora`);
+      const receiver = vectorCase.direction === 'RECEIVER';
+      // A case that reads the source edge runs wholly in the isolated receiver
+      // deployment; a FORWARD ingest or sync would need production source
+      // reads the plan cannot hold.
+      if (['ingest', 'sync_apply', 'sync_retire'].includes(verb) && !receiver) {
+        fail(`${at}: ${step.contractKey} must be in a RECEIVER case for WeKnora`);
       }
       for (const capture of step.captures) {
         const isolated = receiver && ['ACTION_EXECUTION_ID', 'OPERATION_ID', 'GENERATED_REF'].includes(capture.slot);

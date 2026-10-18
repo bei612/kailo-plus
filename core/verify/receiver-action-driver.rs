@@ -13,10 +13,18 @@
 //! ExternalExecution and each anchored SOURCE read observed through the
 //! original observe-only branch with the receiver's SERVICE identity. Pending
 //! work is answered 503 and observed again; nothing is predicted or filled in.
+//! DD-124(3)(4): every step of a RECEIVER case runs here; a later step's input
+//! carries the values the case's earlier steps captured in this isolated run,
+//! derived from their own reads exactly as Core re-derives them.
 use super::*;
-use std::{os::unix::fs::PermissionsExt, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap, os::unix::fs::PermissionsExt, path::Path, sync::Arc, time::Duration,
+};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
+
+/// Values the isolated run captured, per plan case key (DD-124(3)(4)).
+type Captured = BTreeMap<String, BTreeMap<String, String>>;
 
 const DENIED: &str = r#"{"class":"DENIED","reason":"PERMISSION_DENIED"}"#;
 
@@ -88,6 +96,7 @@ fn prepare(mut config: Value) -> Result<Value, Error> {
         "oidcClientSecretFile",
         "actors",
         "steps",
+        "capturesFile",
         "httpTimeoutSeconds",
         "maxBodyBytes",
     ];
@@ -101,6 +110,9 @@ fn prepare(mut config: Value) -> Result<Value, Error> {
         }
     }
     field(&config, "listen")?.parse::<std::net::SocketAddr>()?;
+    if !Path::new(field(&config, "capturesFile")?).is_absolute() {
+        return Err("absolute isolated capture state file required".into());
+    }
     uuid_of(&config, "environmentId")?;
     uuid_of(&config, "receiverBindingId")?;
     for key in [
@@ -134,11 +146,16 @@ fn prepare(mut config: Value) -> Result<Value, Error> {
             "caseKey",
             "stepKey",
             "input",
+            "captures",
             "resultExposurePolicyId",
             "resultExposurePolicyVersion",
         ];
-        if !exact(step, &keys) || !step["input"].is_object() {
-            return Err("step needs its frozen input and isolated exposure policy".into());
+        if !exact(step, &keys) || !step["input"].is_object() || !step["captures"].is_array() {
+            return Err("step needs its frozen input, captures and exposure policy".into());
+        }
+        for capture in step["captures"].as_array().into_iter().flatten() {
+            field(capture, "key")?;
+            field(capture, "slot")?;
         }
         uuid_of(step, "resultExposurePolicyId")?;
         if step["resultExposurePolicyVersion"]
@@ -159,10 +176,70 @@ fn prepare(mut config: Value) -> Result<Value, Error> {
     Ok(config)
 }
 
+/// `{{CAPTURE:key}}` positions of a frozen input filled with the values this
+/// isolated run captured earlier in the same case; None while one is unknown.
+fn substituted(value: &Value, known: &BTreeMap<String, String>) -> Option<Value> {
+    match value {
+        Value::String(text) if text.starts_with("{{") => {
+            let key = text.strip_prefix("{{CAPTURE:")?.strip_suffix("}}")?;
+            known.get(key).map(|value| json!(value))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(substituted(item, known)?);
+            }
+            Some(Value::Array(out))
+        }
+        Value::Object(fields) => {
+            let mut out = serde_json::Map::new();
+            for (name, item) in fields {
+                out.insert(name.clone(), substituted(item, known)?);
+            }
+            Some(Value::Object(out))
+        }
+        other => Some(other.clone()),
+    }
+}
+
+/// The values a capturing step yields, derived from its own read exactly as
+/// Core derives them (capability_vector.rs receiver_values).
+fn captured_values(step: &Value, reads: &[Value]) -> Result<BTreeMap<String, String>, Error> {
+    let mut values = BTreeMap::new();
+    let declared = step["captures"].as_array().ok_or("captures missing")?;
+    if declared.is_empty() {
+        return Ok(values);
+    }
+    let read = reads.first().ok_or("a capturing step completed without reads")?;
+    let encoded = field(&read["readRequest"], "receiverArgumentsJson")?;
+    let arguments: Value = serde_json::from_str(encoded)?;
+    for capture in declared {
+        let value = match (field(capture, "slot")?, capture.get("pointer")) {
+            ("CONTENT_REFERENCE_NATIVE_OBJECT_REF", None) => {
+                &read["receiverReceipt"]["nativeObjectRef"]
+            }
+            ("CONTENT_REFERENCE_NATIVE_REVISION", None) => {
+                &read["receiverReceipt"]["nativeRevision"]
+            }
+            ("ACTION_EXECUTION_ID", None) => &read["actionExecutionId"],
+            ("OPERATION_ID", None) => &read["operationId"],
+            ("GENERATED_REF", Some(Value::String(at))) => {
+                arguments["input"].pointer(at).ok_or("absent")?
+            }
+            _ => return Err("unsupported capture slot".into()),
+        };
+        let text = value.as_str().filter(|text| !text.trim().is_empty());
+        let text = text.ok_or("empty captured value")?;
+        values.insert(field(capture, "key")?.to_owned(), text.to_owned());
+    }
+    Ok(values)
+}
+
 struct Driver {
     config: Value,
     pool: sqlx::PgPool,
     http: reqwest::Client,
+    captured: std::sync::Mutex<Captured>,
 }
 
 enum Answer {
@@ -236,9 +313,33 @@ impl Driver {
         .await?)
     }
 
+    /// The step's frozen input with the case's earlier captured values; a value
+    /// this isolated run has not captured yet keeps the step pending.
+    fn admission_input(&self, step: &Value) -> Result<Option<Value>, Error> {
+        let captured = self.captured.lock().map_err(|_| "capture state poisoned")?;
+        let empty = BTreeMap::new();
+        let known = captured.get(field(step, "caseKey")?).unwrap_or(&empty);
+        Ok(substituted(&step["input"], known))
+    }
+
+    /// Retains a capturing step's values for the later steps of its case.
+    fn remember(&self, case: &str, values: BTreeMap<String, String>) -> Result<(), Error> {
+        if values.is_empty() {
+            return Ok(());
+        }
+        let mut captured = self.captured.lock().map_err(|_| "capture state poisoned")?;
+        captured.entry(case.to_owned()).or_default().extend(values);
+        let path = field(&self.config, "capturesFile")?;
+        let staged = format!("{path}.next");
+        std::fs::write(&staged, serde_json::to_vec(&*captured)?)?;
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o600))?;
+        std::fs::rename(&staged, path)?;
+        Ok(())
+    }
+
     /// The signed actor's own isolated session submits the frozen input once;
     /// a later call for the same key only observes what Core retained.
-    async fn submit(&self, claims: &Value, step: &Value, key: Uuid) -> Result<u16, Error> {
+    async fn submit(&self, claims: &Value, input: &Value, key: Uuid) -> Result<u16, Error> {
         let actor = uuid_of(claims, "actor_principal_id")?;
         let session = self.config["actors"]
             .as_array()
@@ -260,7 +361,7 @@ impl Driver {
         .await?;
         let command = json!({"actionKey":claims["action_key"],"idempotencyKey":key,
             "resourceId":target,"resourceVersion":version,"componentAction":{
-                "actionVersion":claims["action_definition_version"],"inputReference":step["input"],
+                "actionVersion":claims["action_definition_version"],"inputReference":input,
                 "resultExposurePolicyId":step["resultExposurePolicyId"],
                 "resultExposurePolicyVersion":step["resultExposurePolicyVersion"]}});
         let response = self
@@ -318,8 +419,10 @@ impl Driver {
         .bind(receiver.id.to_string())
         .fetch_all(&self.pool)
         .await?;
+        // The action is terminal: a step that read no source has none, and
+        // its case as a whole must still carry reads (Core checks this).
         if executions.is_empty() {
-            return Ok(None);
+            return Ok(Some(Vec::new()));
         }
         let token = self.service_token().await?;
         let mut reads = Vec::new();
@@ -409,7 +512,10 @@ impl Driver {
         let receiver = match self.submitted(actor, key).await? {
             Some(receiver) => receiver,
             None => {
-                let status = self.submit(&claims, step, key).await?;
+                let Some(input) = self.admission_input(step)? else {
+                    return Ok(Answer::Pending);
+                };
+                let status = self.submit(&claims, &input, key).await?;
                 match self.submitted(actor, key).await? {
                     Some(receiver) => receiver,
                     // The isolated Core's own synchronous refusal of this actor.
@@ -465,6 +571,7 @@ impl Driver {
         let Some(reads) = self.reads(&receiver).await? else {
             return Ok(Answer::Pending);
         };
+        self.remember(field(step, "caseKey")?, captured_values(step, &reads)?)?;
         Ok(Answer::Observation(
             json!({"request":request,"nativeBatchId":Uuid::parse_str(&native_id)?,
             "nativeStatus":status,"startedAt":started.to_rfc3339(),
@@ -535,7 +642,20 @@ async fn serve_isolated_receiver_actions() -> Result<(), Error> {
         ))
         .build()?;
     let listen: std::net::SocketAddr = field(&config, "listen")?.parse()?;
-    let driver = Arc::new(Driver { config, pool, http });
+    // A restarted driver continues from the values it already captured.
+    let state = field(&config, "capturesFile")?;
+    let captured: Captured = if Path::new(state).exists() {
+        serde_json::from_slice(&private_file(state)?)?
+    } else {
+        Captured::new()
+    };
+    let captured = std::sync::Mutex::new(captured);
+    let driver = Arc::new(Driver {
+        config,
+        pool,
+        http,
+        captured,
+    });
     let mut router = axum::Router::new();
     for operation in ["receiver_start", "receiver_observe"] {
         let driver = driver.clone();
@@ -565,7 +685,9 @@ fn driver_configuration_is_isolated_and_exact() {
         "oidcClientSecretFile":"/isolated/secret","actors":[
             {"principalId":Uuid::new_v4(),"tokenFile":"/isolated/actor"},
             {"principalId":Uuid::new_v4(),"tokenFile":"/isolated/denied"}],
+        "capturesFile":"/isolated/captures.json",
         "steps":[{"caseKey":"knowledge:3:knowledge_roundtrip","stepKey":"ingest","input":{},
+            "captures":[{"key":"document","slot":"CONTENT_REFERENCE_NATIVE_OBJECT_REF"}],
             "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}],
         "httpTimeoutSeconds":5,"maxBodyBytes":65536});
     assert!(prepare(config.clone()).is_ok());

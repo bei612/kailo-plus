@@ -47,7 +47,7 @@
 // the candidate's own SUCCEEDED responses during its run, and nothing observed
 // here is published as a vector expectation.
 //
-// DD-124(4): RECEIVER steps are not observed here at all. With "receiver",
+// DD-124(3)(4): steps of RECEIVER cases are not observed here at all. With "receiver",
 // facts.nativeReceivers names each of them for the isolated receiver
 // deployment (one frozen request per step; a native batch names the frozen
 // importConfigRef, i.e. its seeded precondition, an APPLICATION receiver
@@ -160,7 +160,8 @@ async function receiverFacts(run, manifest, preconditions) {
     if (vectors.formatVersion !== 'V2') continue;
     for (const vectorCase of vectors.cases) {
       const caseKey = `${categoryKey}:${contractVersion}:${vectorCase.caseKey}`;
-      for (const step of vectorCase.steps.filter((item) => item.direction === 'RECEIVER')) {
+      if (vectorCase.direction !== 'RECEIVER') continue;
+      for (const step of vectorCase.steps) {
         const request = { idempotencyKey: uuidv5(run.seed, `receiver:${caseKey}/${step.stepKey}`),
           bindingId: receiver.bindingId, generation: receiver.generation, expiresAt: receiver.expiresAt };
         const input = JSON.parse(step.inputJson);

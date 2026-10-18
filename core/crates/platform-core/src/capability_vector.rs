@@ -199,11 +199,11 @@ pub(crate) fn is_v2(vectors: &Value) -> bool {
     vectors["formatVersion"] == V2
 }
 
-/// DD-124(3)(4): a RECEIVER step depends on the service read edge and runs in
-/// the isolated deployment; the production plan only observes it. Absent is
-/// FORWARD. V1 vectors never carry the field.
-pub(crate) fn is_receiver(step: &Value) -> Result<bool, Refusal> {
-    match step.get("direction") {
+/// DD-124(3)(4): a RECEIVER case depends on the service read edge and runs
+/// entirely in the isolated deployment; the production plan only observes
+/// each of its steps. Absent is FORWARD. V1 vectors never carry the field.
+pub(crate) fn is_receiver(case: &Value) -> Result<bool, Refusal> {
+    match case.get("direction") {
         None => Ok(false),
         Some(value) => match value.as_str() {
             Some(FORWARD) => Ok(false),
@@ -214,22 +214,24 @@ pub(crate) fn is_receiver(step: &Value) -> Result<bool, Refusal> {
 }
 
 /// A runnable REMOTE_ADAPTER suite carries at least one actually observed
-/// value into a later request: V1 `referenceFromStepKey`, V2 INPUT CAPTURE.
+/// value into a later request: V1 `referenceFromStepKey`, V2 an INPUT CAPTURE
+/// of an earlier step (in a RECEIVER case the isolated admission carries it;
+/// a step's own admission identifiers are not a roundtrip).
 pub(crate) fn has_roundtrip(vectors: &Value) -> bool {
     for case in list(vectors, "cases").unwrap_or_default() {
+        let mut earlier = BTreeSet::new();
         for step in list(case, "steps").unwrap_or_default() {
             if step.get("referenceFromStepKey").is_some() {
                 return true;
             }
-            // A RECEIVER step's own INPUT captures describe the isolated
-            // admission; they are not a value carried into a later request.
-            if is_receiver(step).unwrap_or(true) {
-                continue;
-            }
             for binding in bindings(step).unwrap_or_default() {
-                if binding.source == CAPTURE && binding.side == INPUT {
+                let carried = earlier.contains(binding.key);
+                if binding.source == CAPTURE && binding.side == INPUT && carried {
                     return true;
                 }
+            }
+            for capture in captures(step).unwrap_or_default() {
+                earlier.insert(capture.key.to_owned());
             }
         }
     }
@@ -244,10 +246,10 @@ fn v1_only(vectors: &Value, cases: &[Value]) -> Result<(), Refusal> {
     ];
     for case in cases {
         fields.push(case.get("preconditions"));
+        fields.push(case.get("direction"));
         for step in list(case, "steps")? {
             fields.push(step.get("bindings"));
             fields.push(step.get("captures"));
-            fields.push(step.get("direction"));
             fields.push(step.get("referenceResourceKey"));
         }
     }
@@ -328,12 +330,11 @@ fn validate_case(
     let mut produced = BTreeMap::new();
     let mut consumed = BTreeSet::new();
     let mut emitted = BTreeMap::new();
-    // DD-124(4): in a receiver-direction case every platform Resource id is a
-    // precondition the isolated Core's real resource.create returned.
-    let mut receiving = false;
-    for step in steps {
-        receiving |= is_receiver(step)?;
-    }
+    // DD-124(3)(4): a RECEIVER case runs wholly in the isolated deployment;
+    // every platform Resource id of it is a precondition the isolated Core's
+    // real resource.create returned.
+    let receiver = is_receiver(case)?;
+    let mut inputs = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         if step.get("referenceFromStepKey").is_some() {
             return Err(bad());
@@ -350,7 +351,7 @@ fn validate_case(
             None => None,
         };
         let literal = step.get("referenceResourceId").is_some();
-        if (keyed.is_some() || receiving) && (literal || step.get("referenceAssetId").is_some()) {
+        if (keyed.is_some() || receiver) && (literal || step.get("referenceAssetId").is_some()) {
             return Err(bad());
         }
         // Naming the target sends that precondition with this step.
@@ -358,12 +359,9 @@ fn validate_case(
             emitted.entry(key).or_insert(index);
         }
         let reference = literal || keyed.is_some();
-        // DD-124(4): a RECEIVER step is observed, never sent. It names the
-        // receiver Resource and has no result body of its own.
-        let receiver = is_receiver(step)?;
-        if receiver
-            && (!reference || step.get("referenceAssetId").is_some() || expected != json!({}))
-        {
+        // DD-124(4): a step of a RECEIVER case is observed, never sent. It
+        // names the receiver Resource and no business result is compared.
+        if receiver && (keyed.is_none() || expected != json!({})) {
             return Err(bad());
         }
         let mut own = BTreeMap::new();
@@ -386,7 +384,7 @@ fn validate_case(
                 {
                     admission.insert(capture.key, Some(at));
                 }
-                // Isolated-Core identifiers exist only for a RECEIVER step.
+                // Isolated-Core identifiers exist only in a RECEIVER case.
                 (ACTION_SLOT | OPERATION_SLOT, None) if receiver => {
                     admission.insert(capture.key, None);
                 }
@@ -412,9 +410,9 @@ fn validate_case(
             {
                 return Err(bad());
             }
-            // A RECEIVER step may bind its own isolated admission identifiers
-            // where that admission carries them (an execution id member or the
-            // exact generated position).
+            // A step of a RECEIVER case may bind its own isolated admission
+            // identifiers where that admission carries them (an execution id
+            // member or the exact generated position).
             let admitted = admission.get(binding.key).is_some_and(|at| match at {
                 Some(at) => *at == binding.pointer,
                 None => CORE_MEMBERS.contains(&member_of(binding.pointer).as_str()),
@@ -424,11 +422,10 @@ fn validate_case(
                     emitted.entry(binding.key).or_insert(index);
                 }
                 (PRECONDITION, EXPECTED) if emitted.contains_key(binding.key) => {}
-                // A RECEIVER request is not substituted: it cannot carry an
-                // earlier step's value.
-                (CAPTURE, _)
-                    if !receiver && produced.get(binding.key).is_some_and(|at| *at < index) =>
-                {
+                // An earlier step's value: the production Core substitutes it
+                // for a FORWARD case; in a RECEIVER case the isolated
+                // deployment admits it from its own run.
+                (CAPTURE, _) if produced.get(binding.key).is_some_and(|at| *at < index) => {
                     consumed.insert(binding.key);
                 }
                 (CAPTURE, EXPECTED) if own.get(binding.pointer) == Some(&binding.key) => {}
@@ -459,7 +456,7 @@ fn validate_case(
                 let implementation = GENERATED_MEMBERS.contains(&member)
                     || generated.contains(&(contract, side, path.as_str()));
                 let core = CORE_MEMBERS.contains(&member);
-                let resource = receiving && RESOURCE_MEMBERS.contains(&member);
+                let resource = receiver && RESOURCE_MEMBERS.contains(&member);
                 let unbound = binding.is_none();
                 let uncaptured = binding.is_none_or(|(source, _)| *source != CAPTURE);
                 let unseeded = binding.is_none_or(|(source, _)| *source != PRECONDITION);
@@ -472,13 +469,17 @@ fn validate_case(
             }
         }
         expectations.push(expected);
+        inputs.push(input);
     }
     if produced.keys().any(|key| !consumed.contains(key)) {
         return Err(bad());
     }
+    // A RECEIVER case compares no business result; a property is verified by
+    // a later input, which Core compares with the isolated admission.
+    let verifying = if receiver { &inputs } else { &expectations };
     for (key, properties) in &preconditions {
         let from = *emitted.get(key).ok_or_else(bad)?;
-        let later = &expectations[from..];
+        let later = &verifying[from..];
         for (name, value) in properties {
             if !later.iter().any(|doc| has_member(doc, name, value)) {
                 return Err(bad());
@@ -714,7 +715,7 @@ pub(crate) fn observed(
     Ok(values)
 }
 
-/// DD-124(4): the read of a RECEIVER step's completed observation and the
+/// DD-124(4): the read of a RECEIVER case step's completed observation and the
 /// receiver admission the isolated Core produced for it. A native batch admits
 /// one SERVICE receiver per read; an APPLICATION receiver action anchors every
 /// read and its frozen arguments carry the input the isolated Core admitted.
@@ -748,7 +749,7 @@ pub(crate) fn receiver_admission<'a>(
     Ok((read, arguments["input"].clone()))
 }
 
-/// The captures of a RECEIVER step, read from that admission only: the SOURCE
+/// The captures of a RECEIVER case step, read from that admission only: the SOURCE
 /// read ActionExecution and Operation the isolated Core generated, the
 /// receiver's own read_receipt reference, or a generated admission field.
 pub(crate) fn receiver_values(
