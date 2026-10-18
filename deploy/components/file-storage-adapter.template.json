@@ -1,0 +1,41 @@
+{
+  "$comment": "Cells adapter controlled configuration (file-storage/adapter/src/query-revision.mjs configuration()). Render with: adapter-delivery.py config --plan <bind plan> --template this --delivery-dir <CELLS_ADAPTER_DELIVERY_DIR> --out <CELLS_ADAPTER_CONFIG_FILE>. bindingId, tenantId, workspaceId and management.validation are filled from the plan. Replace every remaining {{...}} with the native facts. Core requires the adapter to map EVERY release action (list, read, list_revisions, export, write, delete, share), so readEdge, write, delete and share are mandatory; write/delete/share additionally require the native action delivery (CELLS_NATIVE_ACTION_CONFIG_FILE, file-storage/deploy/verify/deployment.md) whose nativeJobId values must match. actionTokenJwksFile must be inside the delivery directory (start.sh checks owner and 0400/0600): install the public-only ActionToken JWKS there.",
+  "nativeWorkspaceId": "{{plan:nativeScopeRef}}",
+  "nativeRootRef": "{{Cells root node UUID of the bound workspace}}",
+  "cellsRestBaseUrl": "http://cells:8080",
+  "cellsBearerFile": "{{secretFile:cells_bearer}}",
+  "actionTokenIssuer": "{{issuer from ACTION_TOKEN_SIGNING_FILE}}",
+  "actionTokenAudience": "kailo-adapter-file-storage",
+  "actionTokenJwksFile": "{{deliveryDir}}/action-token-jwks.json",
+  "corePepUrl": "{{http://<BFF_SERVICE_NAME>:<SERVICE_CONTAINER_PORT>}}/service/v1/adapter/pep_check",
+  "oidcTokenUrl": "{{OIDC_ISSUER}}/protocol/openid-connect/token",
+  "oidcClientId": "{{independent adapter client id, e.g. file-storage-adapter-<first 8 of bindingId>}}",
+  "oidcClientSecretFile": "{{secretFile:oidc_client_secret}}",
+  "timeoutMs": 10000,
+  "maxBodyBytes": 1048576,
+  "listenHost": "0.0.0.0",
+  "listenPort": 8080,
+  "readEdge": {
+    "downloadOrigin": "{{CELLS_EXTERNAL origin, e.g. http://192.168.0.193:58092}}"
+  },
+  "write": {
+    "nativeJobId": "{{native write job id, equal to CELLS_NATIVE_ACTION_CONFIG_FILE write.nativeJobId}}"
+  },
+  "delete": {
+    "nativeJobId": "{{native delete job id, equal to CELLS_NATIVE_ACTION_CONFIG_FILE delete.nativeJobId}}",
+    "usageMeasurements": [{"meterKey": "{{approved COUNT meter key}}", "quantitySource": "COUNT"}]
+  },
+  "share": {
+    "nativeJobId": "{{native share job id}}",
+    "usageMeasurements": [{"meterKey": "{{approved COUNT meter key}}", "quantitySource": "COUNT"}]
+  },
+  "mcp": {
+    "path": "/mcp",
+    "gatewayIssuer": "{{GATEWAY_SERVICE_ISSUER}}",
+    "gatewayAudience": "kailo-adapter-file-storage",
+    "gatewayJwksFile": "{{deliveryDir}}/gateway-service-jwks.json",
+    "gatewayCaller": "{{GATEWAY_SERVICE_CALLER_ID}}",
+    "gatewayMaxTokenSeconds": "{{GATEWAY_SERVICE_MAX_TOKEN_SECONDS as a JSON integer}}",
+    "tools": "{{tools}}"
+  }
+}

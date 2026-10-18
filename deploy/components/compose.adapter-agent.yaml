@@ -1,0 +1,39 @@
+# Component-specific OpenBao Agent for one REMOTE_ADAPTER binding (07 §1.2,
+# DD-70/94). Used where the component's own Compose has no Agent service
+# (file-storage: file-storage/deploy/compose.adapter.yaml consumes an already
+# delivered directory). The HCL, role-id and wrapped one-use secret-id are
+# written by deploy/components/adapter-delivery.py reader into the private
+# bootstrap directory; the Agent renders the binding secrets (field `value`)
+# into the private delivery directory and serves the api_proxy socket there.
+# No token sink, cache, host port or platform credential; no binding is
+# created or asserted by starting it.
+name: ${ADAPTER_AGENT_PROJECT:?explicit component agent project required}
+
+services:
+  adapter-agent:
+    image: ${ADAPTER_AGENT_IMAGE:?fixed OpenBao image digest required}
+    user: ${ADAPTER_AGENT_UID:?delivery owner UID required}:${ADAPTER_AGENT_GID:?delivery owner GID required}
+    restart: on-failure
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: ${ADAPTER_AGENT_CPUS:-0.25}
+    mem_limit: ${ADAPTER_AGENT_MEMORY:-128m}
+    memswap_limit: ${ADAPTER_AGENT_MEMORY:-128m}
+    entrypoint: [bao]
+    command: [agent, "-config=${ADAPTER_AGENT_BOOTSTRAP_DIR:?private bootstrap directory required}/adapter-agent.hcl"]
+    volumes:
+      - type: bind
+        source: ${ADAPTER_AGENT_BOOTSTRAP_DIR:?private bootstrap directory required}
+        target: ${ADAPTER_AGENT_BOOTSTRAP_DIR:?private bootstrap directory required}
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${ADAPTER_AGENT_DELIVERY_DIR:?private delivery directory required}
+        target: ${ADAPTER_AGENT_DELIVERY_DIR:?private delivery directory required}
+        bind: {create_host_path: false}
+    networks: [platform]
+
+networks:
+  platform:
+    external: true
+    name: ${ADAPTER_AGENT_PLATFORM_NETWORK:?existing Core/OpenBao network required}

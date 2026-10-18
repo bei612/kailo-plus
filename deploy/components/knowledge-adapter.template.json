@@ -1,0 +1,17 @@
+{
+  "$comment": "WeKnora adapter controlled configuration (knowledge/adapter/src/query-revision.mjs configuration(); the native app consumes the same file as KNOWLEDGE_MCP_ADAPTER_CONFIG_FILE). Render with: adapter-delivery.py config --plan <bind plan> --template this --delivery-dir <KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY> --out <KNOWLEDGE_ADAPTER_CONFIG_FILE>. The bind plan's nativeScopeRef must be the WeKnora knowledge base UUID (isolation RESOURCE_FILTER). native_mcp_bearer is the token of a WeKnora MCP endpoint (/mcp/<endpoint_id>) created in the native admin UI; actionTokenJwksFile is the public-only file rendered by start-core.sh --prepare-action-token (mounted read-only as KNOWLEDGE_ADAPTER_JWKS_FILE).",
+  "nativeKnowledgeBaseId": "{{plan:nativeScopeRef}}",
+  "nativeMcpUrl": "http://app:8080/mcp/{{WeKnora MCP endpoint id}}",
+  "nativeMcpBearerFile": "{{secretFile:native_mcp_bearer}}",
+  "actionTokenIssuer": "{{issuer from ACTION_TOKEN_SIGNING_FILE}}",
+  "actionTokenAudience": "kailo-adapter-knowledge",
+  "actionTokenJwksFile": "{{absolute jwksFile from ACTION_TOKEN_SIGNING_FILE (= KNOWLEDGE_ADAPTER_JWKS_FILE)}}",
+  "corePepUrl": "{{http://<BFF_SERVICE_NAME>:<SERVICE_CONTAINER_PORT>}}/service/v1/adapter/pep_check",
+  "oidcTokenUrl": "{{OIDC_ISSUER}}/protocol/openid-connect/token",
+  "oidcClientId": "{{independent adapter client id, e.g. knowledge-adapter-<first 8 of bindingId>}}",
+  "oidcClientSecretFile": "{{secretFile:oidc_client_secret}}",
+  "timeoutMs": 10000,
+  "maxBodyBytes": 1048576,
+  "listenHost": "0.0.0.0",
+  "listenPort": 8080
+}
