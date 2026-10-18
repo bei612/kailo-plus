@@ -132,7 +132,8 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6">
       {profile?<ProfileSummaryView profile={profile} displayName={memberProfileDisplayName(profile,target)}
         pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
-        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
+        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}
+        presencePubkeys={[...new Set([target.pubkey,...(target.alternatePubkeys??[])])]}/>
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>

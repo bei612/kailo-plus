@@ -16,6 +16,46 @@ import { cn } from "../profile/buzz/shared/lib/cn";
 import { MaskedAvatarBadgeFrame, STATUS_DOT_MASK_CURVE } from "../messages/thread/MaskedAvatarBadgeFrame";
 import { ProfilePrimaryActions } from "./UserProfilePrimaryActions";
 import { ProfileTabContentTransition } from "./ProfileTabContentTransition";
+import { usePresenceHost } from "../presence/context";
+import { usePresenceQuery } from "../presence/hooks";
+import { aggregatePresence, getPresenceLabelKey } from "../presence/lib/presence";
+import { PresenceDot } from "../presence/ui/PresenceBadge";
+import { newestVisibleUserStatus, useUserStatusQuery } from "../user-status/hooks";
+import { StatusEmoji } from "../user-status/ui/StatusEmoji";
+
+const PROFILE_HERO_PRESENCE_BADGE = {
+  cutout: { cx: 68, cy: 68, r: 15 },
+  shell: { bottom: 0, height: 24, right: 0, width: 24 },
+} as const;
+
+/**
+ * Fixed Buzz UserProfilePanelSections::ProfileHero presence badge. DD-120 (5): aggregated over the
+ * person's admitted keys; no presence fact (or no presence host) leaves the avatar unbadged.
+ */
+function ProfileHeroPresenceFrame({ pubkeys, children }: { pubkeys: readonly string[]; children: React.ReactNode }) {
+  const locale = useUiLocale();
+  const presence = usePresenceQuery(pubkeys);
+  const presenceStatus = aggregatePresence(presence.isSuccess ? presence.data : undefined, pubkeys);
+  return <MaskedAvatarBadgeFrame className="h-20 w-20" shape="circle" size={80}
+    badge={presenceStatus ? <span aria-label={translate(locale, getPresenceLabelKey(presenceStatus))}
+      className="flex h-6 w-6 items-center justify-center rounded-full" data-testid="user-profile-presence-badge" role="img">
+      <PresenceDot className="h-3.5 w-3.5" status={presenceStatus} />
+    </span> : null}
+    badgeBox={PROFILE_HERO_PRESENCE_BADGE.shell} curve={STATUS_DOT_MASK_CURVE} cutout={PROFILE_HERO_PRESENCE_BADGE.cutout}>
+    {children}
+  </MaskedAvatarBadgeFrame>;
+}
+
+/** Fixed Buzz ProfileHero user status line under the name. */
+function ProfileHeroUserStatus({ pubkeys }: { pubkeys: readonly string[] }) {
+  const userStatusQuery = useUserStatusQuery(pubkeys);
+  const userStatus = newestVisibleUserStatus(userStatusQuery.data, pubkeys);
+  if (!userStatus || (!userStatus.text && !userStatus.emoji)) return null;
+  return <p className="text-sm text-muted-foreground" data-testid="user-profile-user-status">
+    {userStatus.emoji ? <StatusEmoji className="mr-1 inline h-3.5 w-3.5" value={userStatus.emoji} /> : null}
+    {userStatus.text}
+  </p>;
+}
 
 export function ProfileSummaryView({
   displayName,
@@ -25,6 +65,7 @@ export function ProfileSummaryView({
   mediaUrl,
   onMessage,
   messagePending,
+  presencePubkeys,
 }: {
   displayName: string;
   profile: Pick<Profile, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
@@ -33,8 +74,12 @@ export function ProfileSummaryView({
   mediaUrl: (url: string) => string;
   onMessage?:()=>void;
   messagePending?:boolean;
+  /** Every admitted key of this person for DD-120 presence and status; defaults to `pubkey`. */
+  presencePubkeys?: readonly string[];
 }) {
   const locale = useUiLocale();
+  const presenceHost = usePresenceHost();
+  const identityKeys = presencePubkeys && presencePubkeys.length > 0 ? presencePubkeys : [pubkey];
   const fields = React.useMemo(
     () => buildPublicFields({ profile, pubkey, locale }),
     [profile, pubkey, locale],
@@ -45,9 +90,8 @@ export function ProfileSummaryView({
       <div>
         <div className="flex flex-col items-center gap-3 text-center">
           <AvatarHostProvider value={{ locale, rewriteMediaUrl: mediaUrl }}>
-            <MaskedAvatarBadgeFrame className="h-20 w-20" shape="circle" size={80}
-              badgeBox={{bottom:0,height:24,right:0,width:24}} curve={STATUS_DOT_MASK_CURVE} cutout={{cx:68,cy:68,r:15}}>
-              <ProfileAvatar
+            {(() => {
+              const avatar = <ProfileAvatar
                 avatarUrl={profile?.avatarUrl ?? null}
                 className="h-full w-full text-xl"
                 iconClassName="h-8 w-8"
@@ -55,8 +99,13 @@ export function ProfileSummaryView({
                 plain
                 shape="circle"
                 testId="user-profile-avatar"
-              />
-            </MaskedAvatarBadgeFrame>
+              />;
+              return presenceHost ? <ProfileHeroPresenceFrame pubkeys={identityKeys}>{avatar}</ProfileHeroPresenceFrame>
+                : <MaskedAvatarBadgeFrame className="h-20 w-20" shape="circle" size={80}
+                  badgeBox={PROFILE_HERO_PRESENCE_BADGE.shell} curve={STATUS_DOT_MASK_CURVE} cutout={PROFILE_HERO_PRESENCE_BADGE.cutout}>
+                  {avatar}
+                </MaskedAvatarBadgeFrame>;
+            })()}
           </AvatarHostProvider>
 
           <div className="flex flex-col items-center gap-1">
@@ -74,6 +123,7 @@ export function ProfileSummaryView({
               />
             ) : null}
             {profile?.nip05Handle ? <p className="text-sm text-muted-foreground">{profile.nip05Handle}</p> : null}
+            {presenceHost ? <ProfileHeroUserStatus pubkeys={identityKeys} /> : null}
           </div>
         </div>
       </div>

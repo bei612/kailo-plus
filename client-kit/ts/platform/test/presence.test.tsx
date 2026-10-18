@@ -34,6 +34,7 @@ import { ingestPresenceStreamEvent, PresenceHostProvider } from "../src/react/pr
 import { useSelfPresence, type PresenceHost, type PresenceSession } from "../src/react/presence/context";
 import type { BffReply, BffRequest } from "../src/transport";
 import { click, render, settle } from "./render";
+import { ProfileSummaryView } from "../src/react/pulse/ProfileSummaryView";
 
 const WILL = "8e39cba681211b3782d0e4483e9343719b9b7be66515252da5491f26421896b1";
 const OTHER = "44b8e82baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -266,5 +267,25 @@ describe("presence surfaces", () => {
     await act(async () => { vi.advanceTimersByTime(3 * PRESENCE_HEARTBEAT_INTERVAL_MS); });
     await settle();
     expect(host.updates.filter((status) => status === "online")).toHaveLength(2);
+  });
+});
+
+describe("original profile panel hero presence and status (DD-120)", () => {
+  const profile = { displayName: "Will", avatarUrl: null, about: null, nip05Handle: null };
+  it("badges the hero through any admitted key and shows the newest visible status", async () => {
+    const host = { ...presenceHost({ [OTHER]: "away" }),
+      queryUserStatus: async (pubkeys: string[]) => ({ statuses: pubkeys.includes(WILL)
+        ? [{ pubkey: WILL, text: "Heads down", emoji: "🎧", eventId: "f".repeat(64), createdAt: Math.floor(Date.now() / 1000) }] : [] }) };
+    const view = await withHost(host, <ProfileSummaryView displayName="Will" profile={profile} pubkey={WILL}
+      presencePubkeys={[WILL, OTHER]} copy={async () => {}} mediaUrl={(url) => url} />);
+    await settle();
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="user-profile-presence-badge"]')?.getAttribute("aria-label")).toBe("Away"));
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="user-profile-user-status"]')?.textContent).toContain("Heads down"));
+  });
+  it("leaves the hero unbadged without a presence host", async () => {
+    const view = await render(<ProfileSummaryView displayName="Will" profile={profile} pubkey={WILL}
+      copy={async () => {}} mediaUrl={(url) => url} />);
+    expect(view.querySelector('[data-testid="user-profile-presence-badge"]')).toBeNull();
+    expect(view.querySelector('[data-testid="user-profile-user-status"]')).toBeNull();
   });
 });
