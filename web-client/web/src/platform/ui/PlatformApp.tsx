@@ -52,6 +52,7 @@ import { ChannelManagementSheet } from "@client-kit/platform/react/channel-manag
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
 import { getChannelDescription } from "@client-kit/platform/react/channel-description";
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
+import { SidebarLoadingContent, useSidebarLoadingShape } from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -251,6 +252,19 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     return preview ? [preview] : [];
   });
   const rows = useMemo(() => workspaces.isError ? [] : workspaces.data ?? [], [workspaces.isError, workspaces.data]);
+  // Original sidebar skeleton: shown only until the channel and DM lists first settle.
+  const sidebarSettled = useRef(false);
+  if (!workspaces.isPending && !conversations.loading) sidebarSettled.current = true;
+  const sidebarLoading = !sidebarSettled.current;
+  const people = searchDirectory.data?.people;
+  const sidebarLoadingChannels = useMemo(() => rows.filter((workspace) => workspace.isMember === true)
+    .map((workspace) => ({ id: workspace.id, label: workspace.name })), [rows]);
+  const sidebarLoadingDms = useMemo(() => conversations.items.map((conversation) => ({ id: conversation.id,
+    label: conversation.participantPrincipalIds.filter((id) => id !== session.tenantPrincipalId)
+      .map((id) => people?.find((person) => person.principalId === id)?.displayName ?? id).join(", ") })),
+  [conversations.items, people, session.tenantPrincipalId]);
+  const sidebarLoadingShape = useSidebarLoadingShape({ scopeKey: `${session.tenantId}:${session.tenantPrincipalId}`,
+    channels: sidebarLoadingChannels, directMessages: sidebarLoadingDms, isLoading: sidebarLoading });
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
   // An explicit URL target is not permission and must never fall back to another channel.
   const activeRow = chosen ? rows.find((workspace) => workspace.id === chosen)
@@ -578,12 +592,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               selectedId={navigation.applicationBindingId}
               onSelect={(binding) => { void navigation.openApplication(binding.bindingId, binding.workspaceId); }}
               workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
-            <ConversationSidebar key={searchScopeKey} currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
-              onUnreadChange={dmUnread.onUnreadChange}
-              error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
-              onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
-              onCloseSelected={() => setTab("inbox")}
-              onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
+            {sidebarLoading ? <SidebarLoadingContent shape={sidebarLoadingShape} /> : <>
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
               directory={searchDirectory.isError ? undefined : searchDirectory.data?.workspaces}
               forcedUnread={forcedUnread} onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
@@ -606,6 +615,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               {preferenceUnknown ? translate(getLocale(), "sidebar.preferenceUnknown") : t("platform.loadFailed")}
               <Button size="sm" onClick={() => void userState.refresh()}>{t("platform.retry")}</Button>
             </p> : null}
+            {/* Original group order: Starred, Channels, Forums, then Direct messages. */}
+            <ConversationSidebar key={searchScopeKey} currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
+              onUnreadChange={dmUnread.onUnreadChange}
+              error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
+              onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
+              onCloseSelected={() => setTab("inbox")}
+              onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
+            </>}
             </AppSidebarFrame>
         <ContentSurface>
           {tab === "channel" && active && activeRow?.isMember === true && !workspaces.isError && !channel.isError && channel.data ?

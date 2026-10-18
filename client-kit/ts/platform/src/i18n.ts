@@ -1072,6 +1072,7 @@ export const platformMessages = {
   "sidebar.unreadDmTarget": { en: "Go to unread direct message from {name}. {directionLabel}.", "zh-CN": "前往来自{name}的未读私聊。{directionLabel}。" },
   "sidebar.visibilityUnknown": { en: "Outcome not yet known. Retry confirms the same operation.", "zh-CN": "操作结果尚未确定，重试将确认同一操作。" },
   "sidebar.messages": { en: "Messages", "zh-CN": "私聊" },
+  "sidebar.directMessages": { en: "Direct messages", "zh-CN": "私聊" },
   "sidebar.newMessage": { en: "New message", "zh-CN": "新消息" },
   "sidebar.channels": { en: "Channels", "zh-CN": "频道" },
   "sidebar.forums": { en: "Forums", "zh-CN": "论坛" },

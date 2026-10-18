@@ -110,7 +110,7 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     return participants && (isPair || participants.length === 1) ? participants[0]?.pubkeys ?? [] : [];
   }))];
   const group = (starred: boolean, presence: PresenceLookup | undefined) => <ChannelGroupSection
-      title={t(starred ? "sidebar.starred" : "sidebar.messages")}
+      title={t(starred ? "sidebar.starred" : "sidebar.directMessages")}
       items={error ? [] : sortDmChannelsForSidebar(rows.filter((row) => Boolean(userState.preferences[row.id]?.starred) === starred), {}, sortModeFor(starred ? "starred" : "dms"))}
       sortMode={sortModeFor(starred ? "starred" : "dms")}
       onSortModeChange={mode => setSortModeFor(starred ? "starred" : "dms", mode)}
