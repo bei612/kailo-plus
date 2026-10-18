@@ -508,6 +508,9 @@
 //    webSearchQuery, err := UnmarshalWebSearchQuery(bytes)
 //    bytes, err = webSearchQuery.Marshal()
 //
+//    webTypingRequest, err := UnmarshalWebTypingRequest(bytes)
+//    bytes, err = webTypingRequest.Marshal()
+//
 //    webUserStatusPage, err := UnmarshalWebUserStatusPage(bytes)
 //    bytes, err = webUserStatusPage.Marshal()
 //
@@ -2489,6 +2492,16 @@ func UnmarshalWebSearchQuery(data []byte) (WebSearchQuery, error) {
 }
 
 func (r *WebSearchQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebTypingRequest(data []byte) (WebTypingRequest, error) {
+	var r WebTypingRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebTypingRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6825,7 +6838,10 @@ type PlatformSessionView struct {
 	PlatformSessionID  string `json:"platformSessionId"`
 	TenantID           string `json:"tenantId"`
 	TenantMembershipID string `json:"tenantMembershipId"`
-	TenantPrincipalID  string `json:"tenantPrincipalId"`
+	// 当前 Tenant 的显示名，也就是其绑定 Community 的名称（01 §2：一个 Tenant 绑定一个
+	// Community），只用于界面上认出本人所在社区，不参与任何判定；读不到时缺省
+	TenantName        *string `json:"tenantName,omitempty"`
+	TenantPrincipalID string  `json:"tenantPrincipalId"`
 }
 
 // GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
@@ -7164,6 +7180,17 @@ type WebSearchQuery struct {
 	Q         string   `json:"q"`
 	Since     *int64   `json:"since,omitempty"`
 	Until     *int64   `json:"until,omitempty"`
+}
+
+// DD-120(1)：线程内输入中提示的类型化线程引用，POST /api/v1/workspaces/{workspace_id}/typing 与
+// /api/v1/conversations/{conversation_id}/typing 的可选请求体；缺省请求体即主频道输入。Core 以本人 SERVER 身份签发原版
+// kind 20002：唯一 h 标签取自已准入的 scope，按原 buildThreadReferenceTags 追加 e root/reply 标签；不接受 raw
+// tags、频道或身份。瞬时事件最新者为准，超时不报成功也不重签。
+type WebTypingRequest struct {
+	// 原 typingParentEventId：线程面板的 thread head 事件 ID（64 位小写十六进制），成为 e reply 标签
+	ParentEventID string `json:"parentEventId"`
+	// 原 typingRootEventId：thread head 所在线程的根事件 ID；缺省或等于 parentEventId 时只发 e reply 标签
+	RootEventID *string `json:"rootEventId,omitempty"`
 }
 
 // DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and

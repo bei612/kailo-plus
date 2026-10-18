@@ -5448,7 +5448,12 @@ export interface PlatformSessionView {
     platformSessionId:  string;
     tenantId:           string;
     tenantMembershipId: string;
-    tenantPrincipalId:  string;
+    /**
+     * 当前 Tenant 的显示名，也就是其绑定 Community 的名称（01 §2：一个 Tenant 绑定一个
+     * Community），只用于界面上认出本人所在社区，不参与任何判定；读不到时缺省
+     */
+    tenantName?:       string;
+    tenantPrincipalId: string;
 }
 
 /**
@@ -5987,6 +5992,23 @@ export interface WebSearchQuery {
     q:          string;
     since?:     number;
     until?:     number;
+}
+
+/**
+ * DD-120(1)：线程内输入中提示的类型化线程引用，POST /api/v1/workspaces/{workspace_id}/typing 与
+ * /api/v1/conversations/{conversation_id}/typing 的可选请求体；缺省请求体即主频道输入。Core 以本人 SERVER 身份签发原版
+ * kind 20002：唯一 h 标签取自已准入的 scope，按原 buildThreadReferenceTags 追加 e root/reply 标签；不接受 raw
+ * tags、频道或身份。瞬时事件最新者为准，超时不报成功也不重签。
+ */
+export interface WebTypingRequest {
+    /**
+     * 原 typingParentEventId：线程面板的 thread head 事件 ID（64 位小写十六进制），成为 e reply 标签
+     */
+    parentEventId: string;
+    /**
+     * 原 typingRootEventId：thread head 所在线程的根事件 ID；缺省或等于 parentEventId 时只发 e reply 标签
+     */
+    rootEventId?: string;
 }
 
 /**

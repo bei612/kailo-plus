@@ -169,6 +169,7 @@
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
 //     final webPublishTopicRequest = webPublishTopicRequestFromJson(jsonString);
 //     final webSearchQuery = webSearchQueryFromJson(jsonString);
+//     final webTypingRequest = webTypingRequestFromJson(jsonString);
 //     final webUserStatusPage = webUserStatusPageFromJson(jsonString);
 //     final webUserStatusQueryRequest = webUserStatusQueryRequestFromJson(jsonString);
 //     final webUserStatusUpdateRequest = webUserStatusUpdateRequestFromJson(jsonString);
@@ -1302,6 +1303,12 @@ WebSearchQuery webSearchQueryFromJson(String str) =>
     WebSearchQuery.fromJson(json.decode(str));
 
 String webSearchQueryToJson(WebSearchQuery data) => json.encode(data.toJson());
+
+WebTypingRequest webTypingRequestFromJson(String str) =>
+    WebTypingRequest.fromJson(json.decode(str));
+
+String webTypingRequestToJson(WebTypingRequest data) =>
+    json.encode(data.toJson());
 
 WebUserStatusPage webUserStatusPageFromJson(String str) =>
     WebUserStatusPage.fromJson(json.decode(str));
@@ -15451,6 +15458,10 @@ class PlatformSessionView {
   final String platformSessionId;
   final String tenantId;
   final String tenantMembershipId;
+
+  ///当前 Tenant 的显示名，也就是其绑定 Community 的名称（01 §2：一个 Tenant 绑定一个
+  ///Community），只用于界面上认出本人所在社区，不参与任何判定；读不到时缺省
+  final String? tenantName;
   final String tenantPrincipalId;
 
   PlatformSessionView({
@@ -15461,6 +15472,7 @@ class PlatformSessionView {
     required this.platformSessionId,
     required this.tenantId,
     required this.tenantMembershipId,
+    this.tenantName,
     required this.tenantPrincipalId,
   });
 
@@ -15473,6 +15485,7 @@ class PlatformSessionView {
         platformSessionId: json["platformSessionId"],
         tenantId: json["tenantId"],
         tenantMembershipId: json["tenantMembershipId"],
+        tenantName: json["tenantName"],
         tenantPrincipalId: json["tenantPrincipalId"],
       );
 
@@ -15484,6 +15497,7 @@ class PlatformSessionView {
     "platformSessionId": platformSessionId,
     "tenantId": tenantId,
     "tenantMembershipId": tenantMembershipId,
+    "tenantName": tenantName,
     "tenantPrincipalId": tenantPrincipalId,
   });
 }
@@ -16728,6 +16742,29 @@ class WebSearchQuery {
     "since": since,
     "until": until,
   });
+}
+
+///DD-120(1)：线程内输入中提示的类型化线程引用，POST /api/v1/workspaces/{workspace_id}/typing 与
+////api/v1/conversations/{conversation_id}/typing 的可选请求体；缺省请求体即主频道输入。Core 以本人 SERVER 身份签发原版
+///kind 20002：唯一 h 标签取自已准入的 scope，按原 buildThreadReferenceTags 追加 e root/reply 标签；不接受 raw
+///tags、频道或身份。瞬时事件最新者为准，超时不报成功也不重签。
+class WebTypingRequest {
+  ///原 typingParentEventId：线程面板的 thread head 事件 ID（64 位小写十六进制），成为 e reply 标签
+  final String parentEventId;
+
+  ///原 typingRootEventId：thread head 所在线程的根事件 ID；缺省或等于 parentEventId 时只发 e reply 标签
+  final String? rootEventId;
+
+  WebTypingRequest({required this.parentEventId, this.rootEventId});
+
+  factory WebTypingRequest.fromJson(Map<String, dynamic> json) =>
+      WebTypingRequest(
+        parentEventId: json["parentEventId"],
+        rootEventId: json["rootEventId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"parentEventId": parentEventId, "rootEventId": rootEventId});
 }
 
 ///DD-120: the latest verified 30315 per requested pubkey; empty content means cleared and
