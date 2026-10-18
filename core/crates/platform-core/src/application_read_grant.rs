@@ -1344,7 +1344,7 @@ mod tests {
             "authorizationTargetNativeRef":"retained-source-root"});
         let digest = collab_bridge::limits::canonical_digest(&arguments);
         let raw = json!({"receiverBindingId":binding,"sourceResourceId":target,
-            "actionKey":"file_storage.read@v1","actionVersion":1,"nativeBatch":batch,
+            "actionKey":"file_storage.read@v2","actionVersion":1,"nativeBatch":batch,
             "idempotencyKey":key,"inputJson":collab_bridge::limits::canonical_json(&input)});
         let command = collab_bridge::limits::canonical_digest(&json!({"receiverBindingId":binding,
             "sourceResourceId":target,"actionKey":raw["actionKey"],"actionVersion":1,
@@ -1355,7 +1355,7 @@ mod tests {
             operation_id: operation,
             tenant_id: caller.tenant,
             workspace_id: caller.workspace,
-            action_key: "file_storage.read@v1".into(),
+            action_key: "file_storage.read@v2".into(),
             action_version: 1,
             initiator_principal_id: caller.principal,
             actor_principal_id: caller.principal,
@@ -1516,7 +1516,7 @@ mod tests {
                 &mut conn,
                 &admitted,
                 Uuid::new_v4(),
-                "file_storage.read@v1",
+                "file_storage.read@v2",
                 1
             )
             .await,

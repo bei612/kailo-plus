@@ -8,10 +8,23 @@ use crate::{
 use axum::http::StatusCode;
 use contracts::{ActionCommand, ActionSubmission};
 
+/// The compiled `file_storage.edit_session` consumer. FILE_STORAGE@2 differs
+/// from @1 only in its conformance vectors (DD-124(3)); bindings that already
+/// pin the deprecated @1 keep working (DD-102(5)). Each key is matched exactly.
 pub(crate) fn is_action(key: &str) -> bool {
     matches!(
         key,
-        "file_storage.open_view@v1" | "file_storage.open_edit@v1"
+        "file_storage.open_view@v1"
+            | "file_storage.open_edit@v1"
+            | "file_storage.open_view@v2"
+            | "file_storage.open_edit@v2"
+    )
+}
+
+pub(crate) fn is_edit(key: &str) -> bool {
+    matches!(
+        key,
+        "file_storage.open_edit@v1" | "file_storage.open_edit@v2"
     )
 }
 

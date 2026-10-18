@@ -34,10 +34,7 @@ async fn original_reference(
 ) -> Result<(String, String), Refusal> {
     if session.id != ae.id
         || session.action_execution_id != ae.id
-        || !matches!(
-            ae.action_key.as_str(),
-            "file_storage.open_view@v1" | "file_storage.open_edit@v1"
-        )
+        || !super::command::is_action(&ae.action_key)
         || ae.actor_principal_id != ae.initiator_principal_id
         || !matches!(ae.dispatch_state.as_str(), "UNKNOWN" | "DISPATCHED")
     {

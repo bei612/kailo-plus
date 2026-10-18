@@ -169,13 +169,10 @@ async fn fresh_for_mode(
     if !matches!(ae.gate_state.as_str(), "EVALUATING" | "WAITING" | "ALLOWED")
         || ae.actor_principal_id != ae.initiator_principal_id
         || def.execution_mode != "PROTOCOL"
-        || !matches!(
-            def.action_key.as_str(),
-            "file_storage.open_view@v1" | "file_storage.open_edit@v1"
-        )
+        || !command::is_action(&def.action_key)
         || !matches!(def.target_type.as_str(), "RESOURCE" | "ASSET")
         || def.permission
-            != if def.action_key == "file_storage.open_edit@v1" {
+            != if command::is_edit(&def.action_key) {
                 "update"
             } else {
                 "read"
@@ -491,7 +488,7 @@ pub(crate) async fn admit_session(state: &ServiceState, ae: &Execution) -> Resul
     {
         return Err(unknown());
     }
-    let conflict = def.action_key == "file_storage.open_edit@v1"
+    let conflict = command::is_edit(&def.action_key)
         && response["nativeRevision"] != reference["nativeRevision"];
     // No original root/session lock is held over the adapter's two Core PEP
     // callbacks. Re-check identity, permissions and generation after the read.
@@ -526,7 +523,7 @@ pub(crate) async fn admit_session(state: &ServiceState, ae: &Execution) -> Resul
     }
     // The AE UUID is only this one-to-one technical locator. Tenant, actor,
     // target, revision and expiry are all frozen facts, not derivable authority.
-    let mode = if def.action_key == "file_storage.open_edit@v1" {
+    let mode = if command::is_edit(&def.action_key) {
         "EDIT"
     } else {
         "VIEW"

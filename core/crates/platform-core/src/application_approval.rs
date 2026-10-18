@@ -56,7 +56,8 @@ pub(crate) async fn lock_parent_refs(
           and human.kind='HUMAN'
         where a.id=$1 and a.component_binding_kind='APPLICATION' and a.parent_action_execution_id is null
           and a.actor_principal_id=a.initiator_principal_id
-          and a.action_key in ('file_storage.open_view@v1','file_storage.open_edit@v1') for update of a")
+          and a.action_key in ('file_storage.open_view@v1','file_storage.open_edit@v1',
+            'file_storage.open_view@v2','file_storage.open_edit@v2') for update of a")
         .bind(id).fetch_optional(&mut *conn).await?;
     if root.is_some() {
         return Ok(root);
