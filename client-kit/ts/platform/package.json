@@ -281,6 +281,7 @@
     "./react/composer/features/messages/lib/emojiSearch": "./src/react/composer/features/messages/lib/emojiSearch.ts",
     "./react/composer/features/messages/lib/mentionRanking": "./src/react/composer/features/messages/lib/mentionRanking.ts",
     "./react/composer/features/messages/lib/useComposerAutofocus": "./src/react/composer/features/messages/lib/useComposerAutofocus.ts",
+    "./react/composer/features/messages/lib/useComposerSpoilerParticles": "./src/react/composer/features/messages/lib/useComposerSpoilerParticles.ts",
     "./react/composer/features/messages/ui/ComposerChannelLinksContext": "./src/react/composer/features/messages/ui/ComposerChannelLinksContext.tsx",
     "./react/composer/features/messages/ui/useAgentAddressLockPicker": "./src/react/composer/features/messages/ui/useAgentAddressLockPicker.ts",
     "./react/composer/features/messages/ui/useComposerAgentDirectory": "./src/react/composer/features/messages/ui/useComposerAgentDirectory.ts",

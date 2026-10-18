@@ -6,6 +6,7 @@ import { useComposerChannelLinkSources } from "@client-kit/platform/react/compos
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
 import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
 import { useComposerAutofocus } from "@client-kit/platform/react/composer/features/messages/lib/useComposerAutofocus";
+import { useComposerSpoilerParticles } from "@client-kit/platform/react/composer/features/messages/lib/useComposerSpoilerParticles";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
@@ -1214,6 +1215,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   // goes to the end as richText.focus does; the bottom-docked composer needs no scroll.
   const focusComposerEnd = useCallback(() => { richText.editor?.commands.focus("end", { scrollIntoView: false }); }, [richText.editor]);
   useComposerAutofocus(focusComposerEnd, draftKey, disabled || sending || compact);
+  // Original composer spoiler particles over `||spoiler||` marks while editing.
+  const composerScrollRef = useRef<HTMLDivElement>(null);
+  useComposerSpoilerParticles(richText.editor, composerScrollRef);
   const registerMentionPubkey = useCallback((displayName: string, pubkey: string) => {
     const label=selectedMentionLabel(displayName,pubkey,humanBindings.current);
     pasteBinding.claimMentionIntent(label);
@@ -1510,7 +1514,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       hasComposerContent: Boolean(draft.trim() || pending.length || problem || dragging),
       autocompleteOpen: humanSuggestions.length > 0 || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
     } : {})}
-    containerClassName={containerClassName}
+    containerClassName={containerClassName} scrollRef={composerScrollRef}
     header={<>{composerHeader}<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
       isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} /></>}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
