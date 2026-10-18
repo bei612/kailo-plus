@@ -10,10 +10,13 @@ export function deleteConfiguration(value, config) {
   if (!exactKeys(value, ['nativeJobId', 'usageMeasurements']) || !nonempty(value.nativeJobId)
     || value.nativeJobId.trim() !== value.nativeJobId
     || !config.management?.validation?.actionVersions.some(action => action.actionKey === deleteAction)
-    || !Array.isArray(value.usageMeasurements) || value.usageMeasurements.length === 0
+    || !Array.isArray(value.usageMeasurements)
     || value.usageMeasurements.some(item => item?.quantitySource !== 'COUNT')) throw new Refused(503);
   // This action reports one fully acknowledged operation. Recursive delete
-  // does not prove the byte count of every removed descendant.
+  // does not prove the byte count of every removed descendant. An explicit
+  // empty mapping is the approved release's `meters=[]`/`usageSource=NONE`
+  // (design 08 §9.2 registers no Cells delete meter; 11 §4(4), 03 §4): Core
+  // then freezes `{"meters":[]}` and never asks for usage (application_execution.rs).
   readMeasurements(value.usageMeasurements, 0);
   return Object.freeze(JSON.parse(canonical(value)));
 }
@@ -103,7 +106,8 @@ export async function observeDelete(config, deadline, raw, key, token, operation
   const current = await claimsForNode(config, token, args, operation, [deleteAction]);
   await freshPep(config, deadline, token, args, current, operation);
   if (operation === 'observe') return result;
-  if (result.execution.platformStatus !== 'SUCCEEDED') throw new Refused(503);
+  // No registered meter: never report a fabricated zero/empty usage record.
+  if (result.execution.platformStatus !== 'SUCCEEDED' || config.delete.usageMeasurements.length === 0) throw new Refused(503);
   return {externalExecutionId:args.externalExecutionId, idempotencyKey:key, nativeType:'job', nativeId:result.execution.nativeId,
     measurements:readMeasurements(config.delete.usageMeasurements, 0).map(entry => ({...entry, occurredAt:result.execution.terminalAt}))};
 }

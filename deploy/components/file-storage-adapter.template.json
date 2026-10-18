@@ -1,5 +1,5 @@
 {
-  "$comment": "Cells adapter controlled configuration (file-storage/adapter/src/query-revision.mjs configuration()). Render with: adapter-delivery.py config --plan <bind plan> --template this --delivery-dir <CELLS_ADAPTER_DELIVERY_DIR> --env-file <platform deploy/local/.env> --action-token-signing-file <ACTION_TOKEN_SIGNING_FILE> --public-file action-token-jwks.json=<signing jwksFile> --public-file gateway-service-jwks.json=<GATEWAY_SERVICE_JWKS_FILE> --set nativeRootRef=<Cells workspace root node UUID> --set downloadOrigin=<CELLS_EXTERNAL> --set-json deleteUsageMeasurements=<file> --set-json shareUsageMeasurements=<file> --release-dir <rendered release> --registration contracts/adapter/file_storage.v1/registration.json --out <CELLS_ADAPTER_CONFIG_FILE>. bindingId, tenantId, workspaceId and management.validation come from the plan. FILE_STORAGE@v1 has no optional operation: Core requires the adapter to map all seven release actions (component_release.rs validate_declarations; application_binding_native.rs validate), so readEdge, write, delete, share and cellShare are mandatory. Their nativeJobId values are the deterministic {{job:*}} identities that file-storage-native-action.template.json renders into the native delivery (file-storage/deploy/start.sh --platform-adapter compares them). delete/share usageMeasurements must name meters the approved release actually declares; the current release declares none (meters [] and usageSource NONE on every action) while deleteConfiguration/shareConfiguration require at least one COUNT meter, so this configuration cannot be completed honestly until that release/adapter decision is made (see the component-integration report).",
+  "$comment": "Cells adapter controlled configuration (file-storage/adapter/src/query-revision.mjs configuration()). Render with: adapter-delivery.py config --plan <bind plan> --template this --delivery-dir <CELLS_ADAPTER_DELIVERY_DIR> --env-file <platform deploy/local/.env> --action-token-signing-file <ACTION_TOKEN_SIGNING_FILE> --public-file action-token-jwks.json=<signing jwksFile> --public-file gateway-service-jwks.json=<GATEWAY_SERVICE_JWKS_FILE> --set nativeRootRef=<Cells workspace root node UUID> --set downloadOrigin=<CELLS_EXTERNAL> --release-dir <rendered release> --registration contracts/adapter/file_storage.v1/registration.json --out <CELLS_ADAPTER_CONFIG_FILE>. bindingId, tenantId, workspaceId and management.validation come from the plan. FILE_STORAGE@v1 has no optional operation: Core requires the adapter to map all seven release actions (component_release.rs validate_declarations; application_binding_native.rs validate), so readEdge, readExecution (the native read Task that list/read/list_revisions/export execute through, node-execution.mjs), write, delete, share and cellShare are mandatory. Their nativeJobId values are the deterministic {{job:*}} identities that file-storage-native-action.template.json renders into the native delivery (file-storage/deploy/start.sh --platform-adapter compares them). readExecution/delete/share usageMeasurements are the approved release's explicit empty meter set: every Cells action declares quotaPolicy NONE, meters [] and usageSource NONE and the capability declares meter UNSUPPORTED (design 08 §9.2 registers no Cells delete/share meter; Core has no governed registration path for release-declared OpenMeter meters yet). A later release that declares meters must change this mapping to the same COUNT meter keys; the adapter refuses extract_usage while the mapping is empty.",
   "nativeWorkspaceId": "{{plan:nativeScopeRef}}",
   "nativeRootRef": "{{set:nativeRootRef}}",
   "cellsRestBaseUrl": "http://cells:8080",
@@ -18,16 +18,20 @@
   "readEdge": {
     "downloadOrigin": "{{set:downloadOrigin}}"
   },
+  "readExecution": {
+    "nativeJobId": "{{job:read}}",
+    "usageMeasurements": []
+  },
   "write": {
     "nativeJobId": "{{job:write}}"
   },
   "delete": {
     "nativeJobId": "{{job:delete}}",
-    "usageMeasurements": "{{setjson:deleteUsageMeasurements}}"
+    "usageMeasurements": []
   },
   "share": {
     "nativeJobId": "{{job:share}}",
-    "usageMeasurements": "{{setjson:shareUsageMeasurements}}"
+    "usageMeasurements": []
   },
   "cellShare": {
     "nativeJobId": "{{job:cell-share}}",

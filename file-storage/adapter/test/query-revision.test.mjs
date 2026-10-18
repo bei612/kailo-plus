@@ -350,7 +350,7 @@ async function setup(t, changes = {}, identities = ids) {
   if (changes.bindingReconcile) config.cellShare={nativeJobId:'delivered-cell-job',bindingGeneration:2};
   if (changes.share) {
     config.cellShare={nativeJobId:'delivered-cell-job',bindingGeneration:2};
-    config.share={nativeJobId:'delivered-share-job',usageMeasurements:[{meterKey:'approved_share_count',quantitySource:'COUNT'}]};
+    config.share={nativeJobId:'delivered-share-job',usageMeasurements:[{meterKey:'approved_share_count',quantitySource:'COUNT'}],...changes.shareConfig};
   }
   if (changes.delete) config.delete={nativeJobId:'delivered-delete-job',usageMeasurements:[{meterKey:'approved_delete_count',quantitySource:'COUNT'}],...changes.deleteConfig};
   if (changes.write) config.write={nativeJobId:'delivered-version-job',usageMeasurements:[{meterKey:'approved_write_count',quantitySource:'COUNT'},{meterKey:'approved_write_bytes',quantitySource:'CONTENT_BYTES'}],...changes.writeConfig};
@@ -506,6 +506,17 @@ test('native share observe and usage only read the same original Job task',async
     if(operation==='observe')assert.equal(result.execution.platformStatus,'SUCCEEDED');
     else assert.deepEqual(result,{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7],measurements:[{meterKey:'approved_share_count',quantity:1,occurredAt:'2026-10-09T00:00:00Z'}]});
     assert.equal(fixture.state.shareRevocations,undefined);assert.equal(fixture.state.shareObservations,1);assert.equal(fixture.state.peps,2);
+  });
+});
+
+test('native share with the release\'s explicit empty meter set observes but never reports usage',async t=>{
+  for(const operation of ['observe','extract_usage'])await t.test(operation,async nested=>{
+    const fixture=await setup(nested,{share:true,shareConfig:{usageMeasurements:[]},operation,validation:true,businessAction:'file_storage.share@v1',
+      arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'job',nativeId:ids[7]}});
+    const response=await fixture.invoke({path:`/platform-adapter/v1/${operation}`});
+    if(operation==='observe'){assert.equal(response.status,200);assert.equal((await response.json()).execution.platformStatus,'SUCCEEDED');}
+    else assert.equal(response.status,503);
+    assert.equal(fixture.state.shareRevocations,undefined);
   });
 });
 

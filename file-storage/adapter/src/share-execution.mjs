@@ -10,9 +10,11 @@ export function shareConfiguration(value, config) {
   if (!exactKeys(value, ['nativeJobId', 'usageMeasurements']) || !nonempty(value.nativeJobId)
     || value.nativeJobId.trim() !== value.nativeJobId
     || !config.management?.validation?.actionVersions.some(action => action.actionKey === shareAction)
-    || !Array.isArray(value.usageMeasurements) || value.usageMeasurements.length === 0
+    || !Array.isArray(value.usageMeasurements)
     || value.usageMeasurements.some(item => item?.quantitySource !== 'COUNT')) throw new Refused(503);
-  // One acknowledged share revocation; file bytes are never deleted.
+  // One acknowledged share revocation; file bytes are never deleted. An
+  // explicit empty mapping mirrors the approved release's `meters=[]` and
+  // `usageSource=NONE` (design 08 §9.2 registers no Cells share meter).
   readMeasurements(value.usageMeasurements, 0);
   if (!config.cellShare) throw new Refused(503);
   return Object.freeze(JSON.parse(canonical(value)));
@@ -99,7 +101,8 @@ export async function observeShare(config, deadline, raw, key, token, operation 
   const current = await claimsForNode(config, token, args, operation, [shareAction]);
   await freshPep(config, deadline, token, args, current, operation);
   if (operation === 'observe') return result;
-  if (result.execution.platformStatus !== 'SUCCEEDED') throw new Refused(503);
+  // No registered meter: never report a fabricated zero/empty usage record.
+  if (result.execution.platformStatus !== 'SUCCEEDED' || config.share.usageMeasurements.length === 0) throw new Refused(503);
   return {externalExecutionId:args.externalExecutionId, idempotencyKey:key, nativeType:'job', nativeId:result.execution.nativeId,
     measurements:readMeasurements(config.share.usageMeasurements, 0).map(entry => ({...entry, occurredAt:result.execution.terminalAt}))};
 }

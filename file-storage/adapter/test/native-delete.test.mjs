@@ -51,6 +51,22 @@ test('delete observation and count usage consume original terminal Task, never r
   assert.equal(f.state.deletions,undefined);
 });
 
+test('delete with the release\'s explicit empty meter set executes and observes but never reports usage',async t=>{
+  const f=await setup(t,{delete:true,deleteConfig:{usageMeasurements:[]},validation:true,operation:'execute',businessHuman:true,
+    businessAction:deleteKey,arguments:deleteArguments(true)});
+  const executed=await f.invoke({path:'/platform-adapter/v1/execute',key:adapterIds[7],
+    raw:canonical({actionKey:deleteKey,idempotencyKey:adapterIds[7],arguments:f.requestArguments})});
+  assert.equal(executed.status,200);assert.equal(f.state.deletions,1);
+  for (const operation of ['observe','extract_usage']) await t.test(operation,async nested=>{
+    const o=await setup(nested,{delete:true,deleteConfig:{usageMeasurements:[]},validation:true,operation,businessHuman:true,
+      businessAction:deleteKey,deleteResult:completedDelete(),arguments:{externalExecutionId:adapterIds[8],idempotencyKey:adapterIds[7],nativeType:'job'}});
+    const result=await o.invoke({path:`/platform-adapter/v1/${operation}`});
+    if (operation==='observe') assert.deepEqual(await result.json(),{...completedDelete(),resultJson:'{}'});
+    else assert.equal(result.status,503);
+    assert.equal(o.state.deletions,undefined);
+  });
+});
+
 test('native delete uses the original Gateway MCP transport and the same governed executor',async t=>{
   for (const businessHuman of [true,false]) await t.test(`${businessHuman}`,async nested=>{
     const f=await setup(nested,{delete:true,mcp:true,validation:true,operation:'execute',businessHuman,

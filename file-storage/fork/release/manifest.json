@@ -37,7 +37,7 @@
       "contractVersion": 1,
       "cancel": "UNSUPPORTED",
       "observe": "SUPPORTED",
-      "meter": "SUPPORTED",
+      "meter": "UNSUPPORTED",
       "revisionQuery": "SUPPORTED",
       "versionedModel": "UNSUPPORTED",
       "onlineEditing": "UNSUPPORTED",

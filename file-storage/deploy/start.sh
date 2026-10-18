@@ -88,7 +88,7 @@ try:
         required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
                     'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
                     'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
-        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads', 'delete', 'cellShare'}, 'native actor delivery fields must match the existing consumer')
+        require(isinstance(delivery, dict) and required <= set(delivery) <= required | {'workspaceId', 'write', 'read', 'draftUploads', 'delete', 'share', 'cellShare'}, 'native actor delivery fields must match the existing consumer')
         def canonical_uuid(value):
             require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
         for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
@@ -128,6 +128,17 @@ try:
                 require(isinstance(deletion[key], str) and deletion[key].strip() == deletion[key] != '', 'native delete identifiers must be delivered')
             canonical_uuid(deletion['resultExposurePolicyId'])
             require(deletion['nativeJobId'] not in (delivery.get('read', {}).get('nativeJobId'), delivery.get('write', {}).get('nativeJobId')), 'native delete task owner must be distinct')
+        if 'share' in delivery:
+            # common/auth/native-action.go NativeShareDelivery: the original
+            # file_storage.share@v1 link-revocation consumer (idm/share/rest/native-link.go).
+            sharing = delivery['share']
+            require(isinstance(sharing, dict) and set(sharing) == {'nativeJobId', 'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native share metadata must match its original Task/HUMAN consumers')
+            for key in ('actionVersion', 'resultExposurePolicyVersion'):
+                require(type(sharing[key]) is int and sharing[key] > 0, 'native share versions must come from the approved binding')
+            for key in ('nativeJobId', 'nativeType'):
+                require(isinstance(sharing[key], str) and sharing[key].strip() == sharing[key] != '', 'native share identifiers must be delivered')
+            canonical_uuid(sharing['resultExposurePolicyId'])
+            require(sharing['nativeJobId'] not in tuple(delivery.get(kind, {}).get('nativeJobId') for kind in ('read', 'write', 'delete', 'cellShare')), 'native share task owner must be distinct')
         if 'cellShare' in delivery:
             share = delivery['cellShare']
             require(isinstance(share, dict) and set(share) == {'nativeJobId', 'bindingGeneration', 'nativeType', 'grantActionVersion', 'revokeActionVersion'}, 'native Cell metadata must match its original Task/HUMAN consumers')
@@ -135,7 +146,7 @@ try:
                 require(type(share[key]) is int and share[key] > 0, 'native Cell versions must come from the approved binding and original platform actions')
             for key in ('nativeJobId', 'nativeType'):
                 require(isinstance(share[key], str) and share[key].strip() == share[key] != '', 'native Cell identifiers must be delivered')
-            require(share['nativeJobId'] not in tuple(delivery.get(kind, {}).get('nativeJobId') for kind in ('read', 'write', 'delete')), 'native Cell task owner must be distinct')
+            require(share['nativeJobId'] not in tuple(delivery.get(kind, {}).get('nativeJobId') for kind in ('read', 'write', 'delete', 'share')), 'native Cell task owner must be distinct')
         for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
             require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
         for key in ('maxResponseBytes', 'clientSecretMaxBytes'):
@@ -241,6 +252,14 @@ try:
         require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
         require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
         require(any(action['actionKey'] == 'file_storage.delete@v1' and action['actionVersion'] == native['delete']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
+    if 'share' in conf:
+        native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
+        require(conf['share']['nativeJobId'] == native['share']['nativeJobId'])
+        require(all(conf[key] == native[key] for key in ('bindingId', 'tenantId', 'nativeRootRef')))
+        require(conf.get('workspaceId') == native.get('workspaceId'))
+        require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
+        require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
+        require(any(action['actionKey'] == 'file_storage.share@v1' and action['actionVersion'] == native['share']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     for key in ('cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile'):
         delivered(conf[key])
     for item in conf['management']['validation']['secretDeliveries']:
