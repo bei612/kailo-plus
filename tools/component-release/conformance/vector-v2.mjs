@@ -16,10 +16,14 @@ export const SOURCES = Object.freeze(['PRECONDITION', 'CAPTURE']);
 export const SIDES = Object.freeze(['INPUT', 'EXPECTED']);
 export const SLOTS = Object.freeze(['CONTENT_REFERENCE_NATIVE_OBJECT_REF', 'CONTENT_REFERENCE_NATIVE_REVISION',
   'GENERATED_REF', 'ACTION_EXECUTION_ID', 'OPERATION_ID']);
+// DD-124(4): a RECEIVER step depends on the service read edge; it runs only in
+// the isolated receiver deployment and the production plan observes it.
+export const DIRECTIONS = Object.freeze(['FORWARD', 'RECEIVER']);
 // Same closed member names as Core's capability_vector.rs: nativeRevision is
 // implementation-generated wherever it appears; these ids only Core generates.
 const GENERATED_MEMBERS = Object.freeze(['nativeRevision']);
-const CORE_MEMBERS = Object.freeze(['actionExecutionId', 'receiverActionExecutionId', 'operationId']);
+const CORE_MEMBERS = Object.freeze(['actionExecutionId', 'receiverActionExecutionId', 'operationId',
+  'sourceReadActionExecutionId']);
 
 export class VectorRefusal extends Error {}
 const refuse = (message) => { throw new VectorRefusal(message); };
@@ -30,6 +34,13 @@ const identifier = (v) => typeof v === 'string' && /^[a-z][a-z0-9_]*$/.test(v);
 const reserved = (v) => typeof v === 'string' && v.startsWith('{{');
 
 export const placeholder = (source, key) => `{{${source}:${key}}}`;
+
+// Absent is FORWARD (Core capability_vector.rs is_receiver).
+export function isReceiver(step) {
+  if (step.direction === undefined) return false;
+  if (!DIRECTIONS.includes(step.direction)) refuse(`${step.stepKey}: direction ${step.direction} is not FORWARD or RECEIVER`);
+  return step.direction === 'RECEIVER';
+}
 
 function exact(value, required, optional, label) {
   if (!isObject(value)) refuse(`${label}: object required`);
@@ -168,26 +179,41 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
     const expectations = [];
     const steps = vectorCase.steps.map((step, index) => {
       exact(step, ['stepKey', 'contractKey', 'inputJson', 'expectedOutputJson'],
-        ['referenceResourceId', 'referenceAssetId', 'bindings', 'captures'], `${where} step`);
+        ['referenceResourceId', 'referenceAssetId', 'bindings', 'captures', 'direction'], `${where} step`);
       const at = `${where}/${step.stepKey}`;
       if (!nonempty(step.stepKey) || stepKeys.has(step.stepKey) || !nonempty(step.contractKey)) refuse(`${at}: unique stepKey and contractKey required`);
       stepKeys.add(step.stepKey);
       const documents = { INPUT: parseJson(step.inputJson, `${at}.inputJson`), EXPECTED: parseJson(step.expectedOutputJson, `${at}.expectedOutputJson`) };
+      // A RECEIVER step is observed, never sent: it names the receiver
+      // Resource and has no result body of its own.
+      const receiver = isReceiver(step);
+      if (receiver && (step.referenceResourceId === undefined || step.referenceAssetId !== undefined
+        || canonicalText(documents.EXPECTED) !== '{}')) {
+        refuse(`${at}: a RECEIVER step names only referenceResourceId and expects {}`);
+      }
       const captures = step.captures ?? [];
       if (!Array.isArray(captures)) refuse(`${at}.captures: array`);
       const own = new Map(); // GENERATED_REF pointer -> own capture key
+      // RECEIVER: own isolated admission identifiers -> exact INPUT pointer
+      // (GENERATED_REF) or null (Core execution id, bound at a Core member).
+      const admission = new Map();
       for (const capture of captures) {
         exact(capture, ['key', 'slot'], ['pointer'], `${at}.captures[]`);
         if (!identifier(capture.key) || produced.has(capture.key)) refuse(`${at}: capture key unique in the case required`);
         produced.set(capture.key, index);
         if (['CONTENT_REFERENCE_NATIVE_OBJECT_REF', 'CONTENT_REFERENCE_NATIVE_REVISION'].includes(capture.slot)
           && !Object.hasOwn(capture, 'pointer') && step.referenceResourceId !== undefined) continue;
-        if (capture.slot === 'GENERATED_REF' && isGenerated(step.contractKey, 'EXPECTED', capture.pointer)) {
+        if (capture.slot === 'GENERATED_REF' && !receiver && isGenerated(step.contractKey, 'EXPECTED', capture.pointer)) {
           own.set(capture.pointer, capture.key);
           continue;
         }
+        if (capture.slot === 'GENERATED_REF' && receiver && isGenerated(step.contractKey, 'INPUT', capture.pointer)) {
+          admission.set(capture.key, capture.pointer);
+          continue;
+        }
         if (['ACTION_EXECUTION_ID', 'OPERATION_ID'].includes(capture.slot)) {
-          refuse(`${at}/${capture.key}: receiver-direction captures run only in the isolated receiver deployment (DD-124(4))`);
+          if (receiver && !Object.hasOwn(capture, 'pointer')) { admission.set(capture.key, null); continue; }
+          refuse(`${at}/${capture.key}: Core execution ids are captured only by a RECEIVER step in the isolated receiver deployment (DD-124(4))`);
         }
         refuse(`${at}/${capture.key}: slot ${capture.slot} is not capturable here`);
       }
@@ -210,19 +236,30 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
           refuse(`${at}: ${position} must hold exactly ${placeholder(binding.source, binding.key)}, declared once`);
         }
         declared.set(position, binding);
+        const admitted = admission.has(binding.key) && (admission.get(binding.key) === null
+          ? CORE_MEMBERS.includes(tokens(binding.pointer).at(-1)) : admission.get(binding.key) === binding.pointer);
         if (binding.source === 'PRECONDITION' && binding.side === 'INPUT' && preconditions.has(binding.key)) {
           if (!emitted.has(binding.key)) emitted.set(binding.key, index);
         } else if (binding.source === 'PRECONDITION' && binding.side === 'EXPECTED' && emitted.has(binding.key)) {
           // verified after it was sent
-        } else if (binding.source === 'CAPTURE' && produced.has(binding.key) && produced.get(binding.key) < index) {
+        } else if (binding.source === 'CAPTURE' && !receiver && produced.has(binding.key) && produced.get(binding.key) < index) {
+          // a RECEIVER request is never substituted with an earlier value
           consumed.add(binding.key);
         } else if (binding.source === 'CAPTURE' && binding.side === 'EXPECTED' && own.get(binding.pointer) === binding.key) {
           // self-captured generated result position
+        } else if (binding.source === 'CAPTURE' && binding.side === 'INPUT' && admitted) {
+          // the isolated admission's own identifier
+          consumed.add(binding.key);
         } else refuse(`${at}: ${binding.source} ${binding.key} at ${position} is not available here`);
       }
       for (const [pointer, key] of own) {
         const bound = declared.get(`EXPECTED${pointer}`);
         if (bound?.source !== 'CAPTURE' || bound.key !== key) refuse(`${at}: own GENERATED_REF ${key} must be bound at EXPECTED${pointer}`);
+      }
+      for (const [key, pointer] of admission) {
+        if (pointer === null) continue;
+        const bound = declared.get(`INPUT${pointer}`);
+        if (bound?.source !== 'CAPTURE' || bound.key !== key) refuse(`${at}: receiver GENERATED_REF ${key} must be bound at INPUT${pointer}`);
       }
       const values = [];
       for (const side of SIDES) {
@@ -238,7 +275,8 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
         }
       }
       expectations.push(documents.EXPECTED);
-      return { stepKey: step.stepKey, contractKey: step.contractKey, referenceResourceId: step.referenceResourceId,
+      return { stepKey: step.stepKey, contractKey: step.contractKey, direction: receiver ? 'RECEIVER' : 'FORWARD',
+        referenceResourceId: step.referenceResourceId,
         referenceAssetId: step.referenceAssetId, input: documents.INPUT, expected: documents.EXPECTED, bindings, captures, values };
     });
     for (const key of produced.keys()) if (!consumed.has(key)) refuse(`${where}: capture ${key} is never consumed by a later step`);
@@ -256,9 +294,11 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
 }
 
 // The suite carries an actually observed value into a later request (Core
-// capability_vector.rs has_roundtrip): V2 needs one INPUT CAPTURE binding.
+// capability_vector.rs has_roundtrip): V2 needs one INPUT CAPTURE binding on a
+// FORWARD step (a RECEIVER step's own INPUT captures describe its admission).
 export function hasRoundtripV2(vectors) {
-  return vectors.cases.some((c) => (c.steps ?? []).some((s) => (s.bindings ?? []).some((b) => b.source === 'CAPTURE' && b.side === 'INPUT')));
+  return vectors.cases.some((c) => (c.steps ?? []).some((s) => s.direction !== 'RECEIVER'
+    && (s.bindings ?? []).some((b) => b.source === 'CAPTURE' && b.side === 'INPUT')));
 }
 
 // Substitute already-known values into one step document. Used only where the

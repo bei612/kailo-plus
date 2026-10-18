@@ -35,6 +35,14 @@
 // (node / draft revision / share link); a role or Resource mapping the Cells
 // native model cannot honour is a release blocker (exit 3) like above.
 //
+// WeKnora V2 (knowledge@3, DD-124(3)(4)): every step that depends on the
+// service read edge is a RECEIVER step observed only in the isolated receiver
+// deployment (tools/component-release/receiver-run.sh); its Resources are the
+// bootstrap's literal Resources, its source file/revision preconditions come
+// from the isolated Core's actual contract read of the APPROVED source release
+// and its import configurations from WeKnora's own data source entry. Execution
+// ids and batch ids are captured from the isolated Core and candidate only.
+//
 // Usage: node tools/component-release/conformance/vector-requirements.mjs \
 //          --component file-storage|knowledge [--out /abs/requirements.json]
 // Writes nothing else; contacts nothing.
@@ -60,6 +68,10 @@ const EVIDENCE = {
   coreAe: 'Core admission creates ActionExecution ids itself (governance.rs); no native or platform API accepts a caller-chosen AE id',
   readGrant: 'knowledge ingest@v2 calls request_read_grant with receiverActionExecutionId = the Core-signed probe AE (knowledge/adapter/src/service-read.mjs); Core admits only an APPLICATION AE it holds for that receiver binding (core/crates/platform-core/src/application_read_grant.rs), which an isolated Core cannot hold for a production registration AE, and 07 §8A forbids simulating that grant',
   receiver: 'NATIVE_INTERNAL receiver steps need the isolated Core of 07 §8A (core/verify/receiver-environment-bootstrap.rs; its real-environment entry is still #[ignore]) and Core-minted SOURCE read AEs',
+  isolatedResource: 'DD-124(4), 07 §8A: tools/component-release/receiver-run.sh bootstraps the isolated deployment with the vector-literal Resources (core/verify/receiver-environment-bootstrap.rs) and grants the read edge through the governed grant_read; nothing is written to production',
+  isolatedSource: 'DD-124(4): the source file is created through the APPROVED source release\'s native entry in the isolated deployment; the seed records the typed ContentReference the isolated Core\'s actual contract read returned (never a vector value)',
+  weknoraImport: 'knowledge/internal/application/service/datasource_file_storage.go: a file_storage data source of the receiver knowledge base is created through WeKnora\'s own /api/v1/datasource entry (internal/router/routes_infra.go); its id is the importConfigRef the seed records',
+  isolatedCapture: 'DD-124(4): the isolated Core creates the receiver admission, SOURCE read ActionExecutions and the candidate its batch; Core verifies they are absent from the frozen plan and fixture',
   cellsLink: 'file-storage/idm/share/client.go UpsertLink: a new public link (PUT /a/share/link, Uuid empty) takes the UUID Cells mints for its link workspace; the seed records that returned Uuid',
   capture: 'DD-124(2): Core takes the value from the candidate\'s own SUCCEEDED wire response (typed ContentReference or generatedRefs field) during the run; the seed creates nothing and no expectation is written here',
   cellsRoot: 'file-storage/idm/share/native-link.go nativeShareIntent: a governed revoke targets the Resource whose native ref is the binding nativeRootRef',
@@ -198,6 +210,49 @@ function cellsV2(category, version, analysed, push) {
   }
 }
 
+// knowledge@3 (DD-124(3)(4)): classify each precondition by its registered
+// kind and each step Resource as an isolated bootstrap Resource.
+const WEKNORA_KINDS = {
+  import_config: { class: 'precondition', role: 'import-config', evidence: 'weknoraImport' },
+  retiring_import_config: { class: 'precondition', role: 'retiring-import-config', evidence: 'weknoraImport' },
+  source_file: { class: 'precondition', role: 'source-file', evidence: 'isolatedSource' },
+  source_revision: { class: 'precondition', role: 'source-revision', evidence: 'isolatedSource' },
+};
+
+function weknoraV2(category, version, analysed, push) {
+  for (const vectorCase of analysed.cases) {
+    const caseKey = `${category}:${version}:${vectorCase.caseKey}`;
+    for (const precondition of vectorCase.preconditions) {
+      const known = WEKNORA_KINDS[precondition.kind] ?? fail(`${caseKey}/${precondition.key}: kind ${precondition.kind} is not classified for WeKnora`);
+      push({ at: `${caseKey}/${precondition.key}`, kind: 'weknora-precondition', caseKey, key: precondition.key,
+        contractKind: precondition.kind, role: known.role, properties: precondition.properties, class: known.class,
+        evidence: EVIDENCE[known.evidence] });
+    }
+    for (const step of vectorCase.steps) {
+      const at = `${caseKey}/${step.stepKey}`;
+      const verb = verbOf(step.contractKey, category);
+      const receiver = step.direction === 'RECEIVER';
+      // Every step that reads the source edge is observed in the isolated
+      // receiver deployment; a FORWARD ingest or sync would need production
+      // source reads the plan cannot hold.
+      if (['ingest', 'sync_apply', 'sync_retire'].includes(verb) !== receiver) {
+        fail(`${at}: ${step.contractKey} must ${receiver ? 'not ' : ''}be a RECEIVER step for WeKnora`);
+      }
+      for (const capture of step.captures) {
+        const isolated = receiver && ['ACTION_EXECUTION_ID', 'OPERATION_ID', 'GENERATED_REF'].includes(capture.slot);
+        push({ at, kind: 'capture', key: capture.key, slot: capture.slot, ...(capture.pointer ? { pointer: capture.pointer } : {}),
+          class: 'capture', evidence: isolated ? EVIDENCE.isolatedCapture : EVIDENCE.capture });
+      }
+      const resources = new Set([step.referenceResourceId, step.input?.resourceId, step.input?.sourceResourceId,
+        ...(step.expected?.citations ?? []).map((citation) => citation.resourceId)].filter((id) => id !== undefined));
+      for (const resourceId of resources) {
+        if (!UUID.test(resourceId)) fail(`${at}: literal Resource ${resourceId} must be a UUID`);
+        push({ at, kind: 'platform-resource', caseKey, resourceId, verb, class: 'observed', evidence: EVIDENCE.isolatedResource });
+      }
+    }
+  }
+}
+
 function cells(caseKey, step, input, expected, push) {
   const verb = verbOf(step.contractKey, 'file_storage');
   const at = `${caseKey}/${step.stepKey}`;
@@ -276,8 +331,8 @@ function main() {
   for (const { category, version, format, vectors: document, cases } of vectors(manifest)) {
     formats.push({ categoryKey: category, contractVersion: version, formatVersion: format });
     if (format === 'V2') {
-      if (component.native !== 'cells') fail(`${category}@${version}: V2 vectors are not classified for ${component.native} by this tool`);
-      cellsV2(category, version, analyseV2(document, `${category}@${version}`), (entry) => requirements.push(entry));
+      const classify = component.native === 'cells' ? cellsV2 : weknoraV2;
+      classify(category, version, analyseV2(document, `${category}@${version}`), (entry) => requirements.push(entry));
       continue;
     }
     for (const vectorCase of cases) {

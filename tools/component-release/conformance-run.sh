@@ -13,7 +13,7 @@
 #   0 gate      vector-requirements.mjs: frozen vectors vs. native mintability
 #               (exit 3 = release blocked by the contract, nothing started)
 #   1 native    the component's own start.sh with the isolated env (Cells; the
-#               knowledge pipeline stops after stage 0 for knowledge@2)
+#               knowledge pipeline continues in receiver-run.sh after stage 0)
 #   2 seed      native-API fixture (Cells: seed-cells.mjs) -> native-facts.json;
 #               for V2 vectors (DD-124) it records each case precondition as the
 #               identity the native entry returned (never a vector value)
@@ -107,9 +107,9 @@ if [[ $gate == 3 ]]; then
 fi
 [[ $gate == 0 ]] || { echo 'vector requirement analysis failed' >&2; exit 1; }
 if [[ $component == knowledge ]]; then
-  # The isolated WeKnora pipeline (native seed, receiver Core of 07 §8A) is
-  # defined only once a knowledge contract version passes stage 0.
-  echo 'knowledge: no isolated pipeline is defined beyond stage 0 for this contract version' >&2
+  # DD-124(4): knowledge@3 cases depend on the service read edge; they run only
+  # in the isolated receiver deployment (own Core/Worker/SpiceDB/Temporal/OpenBao).
+  echo 'knowledge: vectors pass stage 0; continue with tools/component-release/receiver-run.sh (07 §8A receiver deployment)' >&2
   exit 3
 fi
 

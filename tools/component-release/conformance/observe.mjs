@@ -35,6 +35,9 @@
 //                 resultExposurePolicyId, resultExposurePolicyVersion },
 //   "vectorContexts":{ "default":{ resultExposurePolicyId, resultExposurePolicyVersion } },
 //   "nativeFactsFile":"/abs/native-facts.json"   (seed output; required for V2 vectors),
+//   "receiver"?:{ bindingId, generation, expiresAt,      (DD-124(4); receiver-run.sh only)
+//                 receiverEnvironmentFile:"/abs owner-only ComponentConformanceReceiverEnvironment",
+//                 receiverActionBaseUrl, nativeReadAuthorities:[ComponentNativeReadAuthority] },
 //   "out":"/abs/facts.json" }
 //
 // DD-124 (V2 vectors): PRECONDITION values are copied unchanged from the seed's
@@ -43,6 +46,13 @@
 // capture values. CAPTURE values do not exist here at all: Core takes them from
 // the candidate's own SUCCEEDED responses during its run, and nothing observed
 // here is published as a vector expectation.
+//
+// DD-124(4): RECEIVER steps are not observed here at all. With "receiver",
+// facts.nativeReceivers names each of them for the isolated receiver
+// deployment (one frozen request per step; a native batch names the frozen
+// importConfigRef, i.e. its seeded precondition, an APPLICATION receiver
+// action names none) and facts.receiverEnvironment carries the isolated Core
+// build and the APPROVED source release that Core re-checks itself.
 
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { chmod, lstat, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -51,6 +61,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { canonical, object } from '../../../client-kit/adapter/protocol.mjs';
 import { openProvider } from '../conformance-provider.mjs';
+import { parseVectors } from './vector-v2.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ERROR_STATUSES = [[403, 'DENIED'], [501, 'BLOCKED'], [404, 'PRECONDITION'], [429, 'LIMIT'], [409, 'CONFLICT'], [500, 'UNKNOWN']];
@@ -130,6 +141,42 @@ async function seededPreconditions(path) {
     seen.add(`${item.caseKey}/${item.key}`);
   }
   return facts.preconditions.map(({ caseKey, key, value }) => ({ caseKey, key, value }));
+}
+
+async function receiverFacts(run, manifest, preconditions) {
+  if (run.receiver === undefined) return {};
+  const receiver = run.receiver;
+  const keys = ['bindingId', 'expiresAt', 'generation', 'nativeReadAuthorities', 'receiverActionBaseUrl', 'receiverEnvironmentFile'];
+  if (!object(receiver) || Object.keys(receiver).sort().join() !== keys.join()) fail(`observe.json receiver: exactly ${keys.join(', ')}`);
+  if (!UUID.test(receiver.bindingId) || !Number.isSafeInteger(receiver.generation) || receiver.generation <= 0
+    || !(Date.parse(receiver.expiresAt) > Date.now()) || !Array.isArray(receiver.nativeReadAuthorities)
+    || typeof receiver.receiverActionBaseUrl !== 'string') fail('observe.json receiver: invalid binding, deadline or delivery');
+  const receiverEnvironment = await ownerOnly(receiver.receiverEnvironmentFile);
+  const values = new Map((preconditions ?? []).map((item) => [`${item.caseKey}/${item.key}`, item.value]));
+  const nativeReceivers = [];
+  for (const { categoryKey, contractVersion } of manifest.implements ?? []) {
+    const file = new URL(`../../../contracts/adapter/${categoryKey}.v${contractVersion}/registration.json`, import.meta.url);
+    const vectors = parseVectors(JSON.parse(await readFile(file, 'utf8')));
+    if (vectors.formatVersion !== 'V2') continue;
+    for (const vectorCase of vectors.cases) {
+      const caseKey = `${categoryKey}:${contractVersion}:${vectorCase.caseKey}`;
+      for (const step of vectorCase.steps.filter((item) => item.direction === 'RECEIVER')) {
+        const request = { idempotencyKey: uuidv5(run.seed, `receiver:${caseKey}/${step.stepKey}`),
+          bindingId: receiver.bindingId, generation: receiver.generation, expiresAt: receiver.expiresAt };
+        const input = JSON.parse(step.inputJson);
+        if (Object.hasOwn(input, 'importConfigRef')) {
+          const bound = (step.bindings ?? []).find((item) => item.side === 'INPUT' && item.pointer === '/importConfigRef');
+          request.importConfigRef = bound === undefined ? input.importConfigRef
+            : bound.source === 'PRECONDITION' ? values.get(`${caseKey}/${bound.key}`) : undefined;
+          if (!UUID.test(request.importConfigRef ?? '')) fail(`${caseKey}/${step.stepKey}: no seeded import configuration`);
+        }
+        nativeReceivers.push({ caseKey, stepKey: step.stepKey, contractKey: step.contractKey, request });
+      }
+    }
+  }
+  if (!nativeReceivers.length) fail('observe.json receiver: the release has no RECEIVER vector step');
+  return { nativeReceivers, receiverEnvironment,
+    environment: { receiverActionBaseUrl: receiver.receiverActionBaseUrl, nativeReadAuthorities: receiver.nativeReadAuthorities } };
 }
 
 async function main() {
@@ -244,8 +291,10 @@ async function main() {
     const redacted = await call('map_native_status_error', contexts[4], { ...redactionRequest, idempotencyKey: key('redaction') });
     if (JSON.stringify(redacted).includes(marker)) fail('redaction probe text was disclosed');
 
+    const receiving = await receiverFacts(run, manifest, preconditions);
     const facts = { formatVersion: 1, seed: run.seed, artifactDigest: manifest.adapterBuildRef,
-      environment: { adapterBaseUrl: run.suiteAdapterBaseUrl, maxResponseBytes: run.maxResponseBytes, maxSteps: run.maxSteps },
+      environment: { adapterBaseUrl: run.suiteAdapterBaseUrl, maxResponseBytes: run.maxResponseBytes, maxSteps: run.maxSteps,
+        ...(receiving.environment ?? {}) },
       identity: run.identity, principals: run.principals, bindingManagement: run.bindingManagement,
       protocol: {
         handshake: { expected: handshake },
@@ -258,7 +307,8 @@ async function main() {
         errorMappings,
         redaction: { request: redactionRequest, expected: redacted },
       },
-      vectorContexts: run.vectorContexts, ...(preconditions ? { preconditions } : {}) };
+      vectorContexts: run.vectorContexts, ...(preconditions ? { preconditions } : {}),
+      ...(receiving.nativeReceivers ? { nativeReceivers: receiving.nativeReceivers, receiverEnvironment: receiving.receiverEnvironment } : {}) };
     const fd = openSync(run.out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
     try { writeSync(fd, `${JSON.stringify(facts, null, 2)}\n`); } finally { closeSync(fd); }
     process.stdout.write(`${JSON.stringify({ facts: run.out, artifactDigest: manifest.adapterBuildRef, errorMappings: errorMappings.length })}\n`);

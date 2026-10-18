@@ -46,7 +46,10 @@
 //   "seed": "<uuid>",                       // UUIDv5 namespace for step/execution ids
 //   "artifactDigest": "<64 lowercase hex>",  // = manifest.adapterBuildRef
 //   "environment": { "adapterBaseUrl": "http(s)://host:port/", "maxResponseBytes": <int>,
-//                    "maxSteps": <int>, "nativeReadAuthorities"?: [ComponentNativeReadAuthority] },
+//                    "maxSteps": <int>, "nativeReadAuthorities"?: [ComponentNativeReadAuthority],
+//                    "receiverActionBaseUrl"?: "http(s)://host:port/" },   // isolated APPLICATION receiver entry
+//   "receiverEnvironment"?: { "isolatedCoreBuildId", "sourceReleaseId",     // DD-124(4); required iff the
+//                             "sourceArtifactDigest", "sourceManifestDigest" },  // plan has receiver steps
 //   "identity": { "issuer", "audience", "tokenSeconds", "secretLocator": "platform/…",
 //                 "secretVersion", "secretAudience", "privateKeyField", "jwksFile": "/abs" },
 //   "principals": { "tenantId", "workspaceId"?, "actorPrincipalId", "deniedActorPrincipalId",
@@ -68,6 +71,7 @@
 //                       "byContract"?: { "<contractKey>": { …same… } },
 //                       "byStep"?: { "<category>:<version>:<caseKey>/<stepKey>": { …same… } } },
 //   "nativeReceivers"?: [ { "caseKey", "stepKey", "contractKey", "request": ComponentNativeReceiverRequest } ],
+//                        // NATIVE_INTERNAL keys and V2 RECEIVER steps; importConfigRef only for a native batch
 //   "preconditions"?: [ { "caseKey": "<category>:<version>:<caseKey>", "key", "value" } ]
 // }
 //
@@ -78,6 +82,16 @@
 // substitutes when it freezes the plan. CAPTURE values are never an input: Core
 // takes them from the candidate's own SUCCEEDED responses during the run, so a
 // facts file cannot carry them and no expectation is rewritten here.
+//
+// DD-124(4): a V2 step with direction RECEIVER (and every NATIVE_INTERNAL key)
+// becomes receiver_start/receiver_observe, observed only from the isolated
+// receiver deployment (tools/component-release/receiver-run.sh). Its request is
+// never substituted; a native batch names the frozen importConfigRef, an
+// APPLICATION receiver action (knowledge.ingest) names none and is served by
+// environment.receiverActionBaseUrl. Such a plan must carry receiverEnvironment
+// (the isolated Core build and the production APPROVED source release), which
+// Core re-checks against its own build and Catalog; a plan without receiver
+// steps must not.
 //
 // The script injects only deterministic identifiers: each protocol request and
 // execution expectation receives its step idempotencyKey (a supplied different
@@ -506,9 +520,15 @@ function buildIdentity(facts, release, fixtureSteps, vectorSteps) {
 
   const id = facts.identity;
   exactKeys(id, ['issuer', 'audience', 'tokenSeconds', 'secretLocator', 'secretVersion', 'secretAudience', 'privateKeyField', 'jwksFile'], [], 'identity');
+  const receiving = vectorSteps.some(({ probe }) => probe.operation === 'receiver_start');
+  if (receiving !== (facts.receiverEnvironment !== undefined)) {
+    refuse(receiving ? 'receiverEnvironment is required: the plan has receiver steps (DD-124(4))'
+      : 'receiverEnvironment must be omitted: the plan has no receiver steps');
+  }
   return { artifactDigest: facts.artifactDigest, issuer: id.issuer, audience: id.audience, tokenSeconds: id.tokenSeconds,
     secretLocator: id.secretLocator, secretVersion: id.secretVersion, secretAudience: id.secretAudience,
-    privateKeyField: id.privateKeyField, jwksFile: id.jwksFile, contexts };
+    privateKeyField: id.privateKeyField, jwksFile: id.jwksFile, contexts,
+    ...(receiving ? { receiverEnvironment: facts.receiverEnvironment } : {}) };
 }
 
 // Mirror of component_conformance_identity::validate/result_policy_id.
@@ -521,6 +541,15 @@ function verifyIdentity(identity, adapterDigest, productionAudience) {
   if (!isAbsolute(text(identity.jwksFile, 'identity.jwksFile'))) refuse('identity.jwksFile: absolute public JWKS path');
   for (const key of ['issuer', 'secretAudience', 'privateKeyField']) text(identity[key], `identity.${key}`);
   if (!identity.contexts.length) refuse('identity.contexts: non-empty');
+  if (identity.receiverEnvironment !== undefined) {
+    // component_conformance_identity::validate; Core also requires the build to
+    // be its own and the source release APPROVED with read_edge SOURCE/BOTH.
+    const environment = identity.receiverEnvironment;
+    exactKeys(environment, ['isolatedCoreBuildId', 'sourceReleaseId', 'sourceArtifactDigest', 'sourceManifestDigest'], [], 'receiverEnvironment');
+    if (!/^[0-9a-f]{40}$/.test(environment.isolatedCoreBuildId ?? '')) refuse('receiverEnvironment.isolatedCoreBuildId: the isolated Core PlatformBuildInfo buildId (40 lowercase hex)');
+    uuid(environment.sourceReleaseId, 'receiverEnvironment.sourceReleaseId');
+    for (const f of ['sourceArtifactDigest', 'sourceManifestDigest']) if (!HEX64.test(environment[f] ?? '')) refuse(`receiverEnvironment.${f}: 64 lowercase hex`);
+  }
   const unique = new Set();
   for (const c of identity.contexts) {
     const where = `context ${c.caseKey}/${c.stepKey}/${c.operation}`;
@@ -555,7 +584,7 @@ function vectorPlan(facts, release, registrations, placeholderAe, preconditions)
   if (!Array.isArray(receivers)) refuse('nativeReceivers: array');
   const used = new Set();
   const probes = [];
-  for (const { category, version, cases } of registrations) {
+  for (const { category, version, cases, format } of registrations) {
     for (const vectorCase of cases) {
       for (const step of vectorCase.steps) {
         const caseKey = `${category}:${version}:${text(vectorCase.caseKey, 'vector caseKey')}`;
@@ -575,20 +604,38 @@ function vectorPlan(facts, release, registrations, placeholderAe, preconditions)
         }
         const probe = { caseKey, stepKey, operation: 'execute', contractKey: step.contractKey, idempotencyKey: key, inputJson };
         for (const field of ['referenceResourceId', 'referenceAssetId', 'referenceFromStepKey']) if (step[field] !== undefined) probe[field] = step[field];
-        if (release.native.has(step.contractKey)) {
+        const native = release.native.has(step.contractKey);
+        // DD-124(3)(4): a V2 RECEIVER step runs in the isolated deployment; a
+        // NATIVE_MANAGED key in V2 must be marked so for that exact step.
+        const receiver = step.direction === 'RECEIVER';
+        if (receiver && format !== 'V2') {
+          refuse(`${caseKey}/${stepKey}: direction is a V2 field`);
+        }
+        if (native && !receiver && format === 'V2') {
+          refuse(`${caseKey}/${stepKey}: NATIVE_INTERNAL key ${step.contractKey} needs a RECEIVER V2 step; Core blocks this release`);
+        }
+        if (native || receiver) {
           const matches = receivers.filter((r) => r.caseKey === caseKey && r.stepKey === stepKey && r.contractKey === step.contractKey);
-          if (matches.length !== 1) refuse(`${caseKey}/${stepKey}: exactly one nativeReceivers entry required (NATIVE_INTERNAL/NATIVE contract)`);
+          if (matches.length !== 1) refuse(`${caseKey}/${stepKey}: exactly one nativeReceivers entry required (NATIVE_INTERNAL key or RECEIVER step)`);
           exactKeys(matches[0], ['caseKey', 'stepKey', 'contractKey', 'request'], [], `nativeReceivers ${caseKey}/${stepKey}`);
           const request = matches[0].request;
-          exactKeys(request, ['idempotencyKey', 'importConfigRef', 'bindingId', 'generation', 'expiresAt'], [], `nativeReceivers ${caseKey}/${stepKey}.request`);
-          for (const f of ['idempotencyKey', 'importConfigRef', 'bindingId']) uuid(request[f], `nativeReceivers ${caseKey}/${stepKey}.request.${f}`);
+          exactKeys(request, ['idempotencyKey', 'bindingId', 'generation', 'expiresAt'], ['importConfigRef'], `nativeReceivers ${caseKey}/${stepKey}.request`);
+          for (const f of ['idempotencyKey', 'bindingId']) uuid(request[f], `nativeReceivers ${caseKey}/${stepKey}.request.${f}`);
           if (!positiveInt(request.generation)) refuse(`nativeReceivers ${caseKey}/${stepKey}: generation`);
           const expires = Date.parse(request.expiresAt);
           if (!Number.isFinite(expires) || expires <= Date.now()) refuse(`nativeReceivers ${caseKey}/${stepKey}: expiresAt must be a future RFC3339 time`);
-          if (JSON.parse(step.inputJson).importConfigRef !== request.importConfigRef) refuse(`nativeReceivers ${caseKey}/${stepKey}: importConfigRef must equal the vector input`);
+          // A native batch is started for the exact frozen import
+          // configuration; an APPLICATION receiver action names none.
+          if (native) {
+            uuid(request.importConfigRef, `nativeReceivers ${caseKey}/${stepKey}.request.importConfigRef`);
+            if (JSON.parse(inputJson).importConfigRef !== request.importConfigRef) refuse(`nativeReceivers ${caseKey}/${stepKey}: importConfigRef must equal the frozen vector input`);
+          } else if (request.importConfigRef !== undefined) {
+            refuse(`nativeReceivers ${caseKey}/${stepKey}: an APPLICATION receiver action names no importConfigRef`);
+          }
           used.add(`${caseKey}/${stepKey}`);
           probe.operation = 'receiver_start';
           probe.receiverRequest = { ...request, idempotencyKey: key };
+          probe.application = !native;
         }
         probes.push({ probe });
       }
@@ -674,11 +721,16 @@ function checkPlan(identity, fixtureSteps, vectorProbes) {
 
 function buildEnvironment(facts) {
   const env = facts.environment;
-  exactKeys(env, ['adapterBaseUrl', 'maxResponseBytes', 'maxSteps'], ['nativeReadAuthorities'], 'environment');
-  let url;
-  try { url = new URL(env.adapterBaseUrl); } catch { refuse('environment.adapterBaseUrl: absolute URL'); }
-  if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash
-    || !['', '/'].includes(url.pathname)) refuse('environment.adapterBaseUrl: http(s) origin with path "/" only');
+  exactKeys(env, ['adapterBaseUrl', 'maxResponseBytes', 'maxSteps'], ['nativeReadAuthorities', 'receiverActionBaseUrl'], 'environment');
+  // worker isolatedOrigin
+  const origin = (value, label) => {
+    let url;
+    try { url = new URL(value); } catch { refuse(`${label}: absolute URL`); }
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash
+      || !['', '/'].includes(url.pathname)) refuse(`${label}: http(s) origin with path "/" only`);
+  };
+  origin(env.adapterBaseUrl, 'environment.adapterBaseUrl');
+  if (env.receiverActionBaseUrl !== undefined) origin(env.receiverActionBaseUrl, 'environment.receiverActionBaseUrl');
   if (!positiveInt(env.maxResponseBytes) || !positiveInt(env.maxSteps)) refuse('environment: positive maxResponseBytes/maxSteps');
   const out = { artifactDigest: facts.artifactDigest, adapterBaseUrl: env.adapterBaseUrl,
     maxResponseBytes: env.maxResponseBytes, maxSteps: env.maxSteps };
@@ -693,6 +745,7 @@ function buildEnvironment(facts) {
     }
     out.nativeReadAuthorities = env.nativeReadAuthorities;
   }
+  if (env.receiverActionBaseUrl !== undefined) out.receiverActionBaseUrl = env.receiverActionBaseUrl;
   return out;
 }
 
@@ -709,7 +762,7 @@ function main() {
   const options = args(process.argv.slice(2));
   const facts = ownerOnlyJson(options.facts, '--facts');
   exactKeys(facts, ['formatVersion', 'seed', 'artifactDigest', 'environment', 'identity', 'principals', 'bindingManagement', 'protocol'],
-    ['vectorContexts', 'nativeReceivers', 'preconditions'], 'facts');
+    ['vectorContexts', 'nativeReceivers', 'preconditions', 'receiverEnvironment'], 'facts');
   if (facts.formatVersion !== 1) refuse('facts.formatVersion must be 1');
   uuid(facts.seed, 'facts.seed');
   const manifest = plainJson(options.manifest, '--manifest');
@@ -727,6 +780,11 @@ function main() {
   if (preconditions.length) fixture.preconditions = preconditions;
   const identity = buildIdentity(facts, release, fixtureSteps, vectorProbes.map(({ probe }) => ({ probe })));
   const environment = buildEnvironment(facts);
+  // Worker routes an APPLICATION receiver step only to the isolated
+  // deployment's receiver entry and blocks it otherwise.
+  if (vectorProbes.some(({ probe }) => probe.application) && environment.receiverActionBaseUrl === undefined) {
+    refuse('environment.receiverActionBaseUrl is required: the plan has APPLICATION receiver steps (receiver-run.sh driver)');
+  }
 
   verifyFixture(fixture, manifest.adapterBuildRef, release.cancelSupported);
   verifyIdentity(identity, manifest.adapterBuildRef, release.productionAudience);
