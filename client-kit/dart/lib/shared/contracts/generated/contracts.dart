@@ -195,7 +195,10 @@
 //     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
 //     final capabilityContractRegistration = capabilityContractRegistrationFromJson(jsonString);
+//     final capabilityVectorBinding = capabilityVectorBindingFromJson(jsonString);
+//     final capabilityVectorCapture = capabilityVectorCaptureFromJson(jsonString);
 //     final componentActionInput = componentActionInputFromJson(jsonString);
+//     final componentConformanceCaptureValue = componentConformanceCaptureValueFromJson(jsonString);
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
 //     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
@@ -1462,11 +1465,31 @@ String capabilityContractRegistrationToJson(
   CapabilityContractRegistration data,
 ) => json.encode(data.toJson());
 
+CapabilityVectorBinding capabilityVectorBindingFromJson(String str) =>
+    CapabilityVectorBinding.fromJson(json.decode(str));
+
+String capabilityVectorBindingToJson(CapabilityVectorBinding data) =>
+    json.encode(data.toJson());
+
+CapabilityVectorCapture capabilityVectorCaptureFromJson(String str) =>
+    CapabilityVectorCapture.fromJson(json.decode(str));
+
+String capabilityVectorCaptureToJson(CapabilityVectorCapture data) =>
+    json.encode(data.toJson());
+
 ComponentActionInput componentActionInputFromJson(String str) =>
     ComponentActionInput.fromJson(json.decode(str));
 
 String componentActionInputToJson(ComponentActionInput data) =>
     json.encode(data.toJson());
+
+ComponentConformanceCaptureValue componentConformanceCaptureValueFromJson(
+  String str,
+) => ComponentConformanceCaptureValue.fromJson(json.decode(str));
+
+String componentConformanceCaptureValueToJson(
+  ComponentConformanceCaptureValue data,
+) => json.encode(data.toJson());
 
 ComponentConformanceEnvironment componentConformanceEnvironmentFromJson(
   String str,
@@ -11119,6 +11142,10 @@ class ComponentConformanceWireDigests {
   ///仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
   ///secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
   final String? bindingDigest;
+
+  ///DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
+  ///generatedRefs 输出字段取出的值。
+  final List<CaptureElement>? captures;
   final NativeReceiverObservationClass? nativeReceiverObservation;
   final String requestDigest;
   final String responseDigest;
@@ -11126,6 +11153,7 @@ class ComponentConformanceWireDigests {
 
   ComponentConformanceWireDigests({
     this.bindingDigest,
+    this.captures,
     this.nativeReceiverObservation,
     required this.requestDigest,
     required this.responseDigest,
@@ -11135,6 +11163,11 @@ class ComponentConformanceWireDigests {
   factory ComponentConformanceWireDigests.fromJson(Map<String, dynamic> json) =>
       ComponentConformanceWireDigests(
         bindingDigest: json["bindingDigest"],
+        captures: json["captures"] == null
+            ? null
+            : List<CaptureElement>.from(
+                json["captures"]!.map((x) => CaptureElement.fromJson(x)),
+              ),
         nativeReceiverObservation: json["nativeReceiverObservation"] == null
             ? null
             : NativeReceiverObservationClass.fromJson(
@@ -11147,11 +11180,30 @@ class ComponentConformanceWireDigests {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingDigest": bindingDigest,
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "nativeReceiverObservation": nativeReceiverObservation?.toJson(),
     "requestDigest": requestDigest,
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
   });
+}
+
+///DD-124(2): one captured value of the current suite run. Core derives it only from the
+///candidate's actual wire response or typed ContentReference; it is kept only in that
+///step's observation evidence and re-checked when the report is recorded. Never a fixture,
+///seed or administrator value.
+class CaptureElement {
+  final String key;
+  final String value;
+
+  CaptureElement({required this.key, required this.value});
+
+  factory CaptureElement.fromJson(Map<String, dynamic> json) =>
+      CaptureElement(key: json["key"], value: json["value"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
 }
 
 ///原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
@@ -11420,6 +11472,9 @@ class ComponentConformanceWireObservation {
 ///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 ///history 承接，不建立另一执行账本。
 class ProbeClass {
+  ///DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+  ///或管理员值替代。
+  final List<CaptureElement>? captures;
   final ReferenceElement? contentReference;
   final PlanClass plan;
 
@@ -11428,6 +11483,7 @@ class ProbeClass {
   final int stepIndex;
 
   ProbeClass({
+    this.captures,
     this.contentReference,
     required this.plan,
     this.reconcile,
@@ -11435,6 +11491,11 @@ class ProbeClass {
   });
 
   factory ProbeClass.fromJson(Map<String, dynamic> json) => ProbeClass(
+    captures: json["captures"] == null
+        ? null
+        : List<CaptureElement>.from(
+            json["captures"]!.map((x) => CaptureElement.fromJson(x)),
+          ),
     contentReference: json["contentReference"] == null
         ? null
         : ReferenceElement.fromJson(json["contentReference"]),
@@ -11444,6 +11505,9 @@ class ProbeClass {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "contentReference": contentReference?.toJson(),
     "plan": plan.toJson(),
     "reconcile": reconcile,
@@ -11527,6 +11591,12 @@ final connectorKindValues = EnumValues({
 });
 
 class PlanStep {
+  ///DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+  ///在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+  final List<BindingElement>? bindings;
+
+  ///DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+  final List<CaptureClass>? captures;
   final String caseKey;
 
   ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
@@ -11549,6 +11619,8 @@ class PlanStep {
   final String stepKey;
 
   PlanStep({
+    this.bindings,
+    this.captures,
     required this.caseKey,
     this.contractKey,
     required this.expectedHttpStatus,
@@ -11565,6 +11637,16 @@ class PlanStep {
   });
 
   factory PlanStep.fromJson(Map<String, dynamic> json) => PlanStep(
+    bindings: json["bindings"] == null
+        ? null
+        : List<BindingElement>.from(
+            json["bindings"]!.map((x) => BindingElement.fromJson(x)),
+          ),
+    captures: json["captures"] == null
+        ? null
+        : List<CaptureClass>.from(
+            json["captures"]!.map((x) => CaptureClass.fromJson(x)),
+          ),
     caseKey: json["caseKey"],
     contractKey: json["contractKey"],
     expectedHttpStatus: json["expectedHttpStatus"],
@@ -11583,6 +11665,12 @@ class PlanStep {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindings": bindings == null
+        ? null
+        : List<dynamic>.from(bindings!.map((x) => x.toJson())),
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "caseKey": caseKey,
     "contractKey": contractKey,
     "expectedHttpStatus": expectedHttpStatus,
@@ -11598,6 +11686,103 @@ class PlanStep {
     "stepKey": stepKey,
   });
 }
+
+///DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+///into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+///exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+///EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+///digest fixes the declaration, never the value.
+class BindingElement {
+  final String key;
+  final String pointer;
+  final CapabilityVectorSide side;
+  final CapabilityVectorBindingSource source;
+
+  BindingElement({
+    required this.key,
+    required this.pointer,
+    required this.side,
+    required this.source,
+  });
+
+  factory BindingElement.fromJson(Map<String, dynamic> json) => BindingElement(
+    key: json["key"],
+    pointer: json["pointer"],
+    side: capabilityVectorSideValues.map[json["side"]]!,
+    source: capabilityVectorBindingSourceValues.map[json["source"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "key": key,
+    "pointer": pointer,
+    "side": capabilityVectorSideValues.reverse[side],
+    "source": capabilityVectorBindingSourceValues.reverse[source],
+  });
+}
+
+///DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected
+///output.
+enum CapabilityVectorSide { EXPECTED, INPUT }
+
+final capabilityVectorSideValues = EnumValues({
+  "EXPECTED": CapabilityVectorSide.EXPECTED,
+  "INPUT": CapabilityVectorSide.INPUT,
+});
+
+///DD-124(1)(2): the two non-literal value sources of a V2 conformance vector. Every other
+///value is LITERAL; there is no third binding source.
+enum CapabilityVectorBindingSource { CAPTURE, PRECONDITION }
+
+final capabilityVectorBindingSourceValues = EnumValues({
+  "CAPTURE": CapabilityVectorBindingSource.CAPTURE,
+  "PRECONDITION": CapabilityVectorBindingSource.PRECONDITION,
+});
+
+///DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+///of the same case. key is unique in the case and must be consumed at least once. pointer
+///is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+///step's contract key.
+class CaptureClass {
+  final String key;
+  final String? pointer;
+  final CapabilityVectorCaptureSlot slot;
+
+  CaptureClass({required this.key, this.pointer, required this.slot});
+
+  factory CaptureClass.fromJson(Map<String, dynamic> json) => CaptureClass(
+    key: json["key"],
+    pointer: json["pointer"],
+    slot: capabilityVectorCaptureSlotValues.map[json["slot"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "key": key,
+    "pointer": pointer,
+    "slot": capabilityVectorCaptureSlotValues.reverse[slot],
+  });
+}
+
+///DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
+///adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
+///vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the
+///isolated Core generated for a receiver-direction step.
+enum CapabilityVectorCaptureSlot {
+  ACTION_EXECUTION_ID,
+  CONTENT_REFERENCE_NATIVE_OBJECT_REF,
+  CONTENT_REFERENCE_NATIVE_REVISION,
+  GENERATED_REF,
+  OPERATION_ID,
+}
+
+final capabilityVectorCaptureSlotValues = EnumValues({
+  "ACTION_EXECUTION_ID": CapabilityVectorCaptureSlot.ACTION_EXECUTION_ID,
+  "CONTENT_REFERENCE_NATIVE_OBJECT_REF":
+      CapabilityVectorCaptureSlot.CONTENT_REFERENCE_NATIVE_OBJECT_REF,
+  "CONTENT_REFERENCE_NATIVE_REVISION":
+      CapabilityVectorCaptureSlot.CONTENT_REFERENCE_NATIVE_REVISION,
+  "GENERATED_REF": CapabilityVectorCaptureSlot.GENERATED_REF,
+  "OPERATION_ID": CapabilityVectorCaptureSlot.OPERATION_ID,
+});
 
 enum McpResultKind { ERROR, RESULT }
 
@@ -18621,58 +18806,166 @@ class AutomationVersionContentTrigger {
 }
 
 ///DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
-///JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+///JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
+///LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
+///captures 只属于 V2，V1 仍按原规则执行。
 class CapabilityConformanceVectors {
   final List<Case> cases;
   final CapabilityVectorFormat formatVersion;
 
+  ///V2 only. Contract fields whose values the implementation generates (opaque non-empty
+  ///strings). nativeRevision is always implementation-generated and need not be listed. A
+  ///listed position present in a step document may never be LITERAL; EXPECTED entries are the
+  ///only output fields a GENERATED_REF capture may read.
+  final List<CapabilityVectorGeneratedRef>? generatedRefs;
+
+  ///V2 only. Closed list of native object kinds a case may declare as preconditions and the
+  ///properties each must verify by a literal expectation.
+  final List<CapabilityVectorPreconditionKind>? preconditionKinds;
+
   CapabilityConformanceVectors({
     required this.cases,
     required this.formatVersion,
+    this.generatedRefs,
+    this.preconditionKinds,
   });
 
   factory CapabilityConformanceVectors.fromJson(Map<String, dynamic> json) =>
       CapabilityConformanceVectors(
         cases: List<Case>.from(json["cases"].map((x) => Case.fromJson(x))),
         formatVersion: capabilityVectorFormatValues.map[json["formatVersion"]]!,
+        generatedRefs: json["generatedRefs"] == null
+            ? null
+            : List<CapabilityVectorGeneratedRef>.from(
+                json["generatedRefs"]!.map(
+                  (x) => CapabilityVectorGeneratedRef.fromJson(x),
+                ),
+              ),
+        preconditionKinds: json["preconditionKinds"] == null
+            ? null
+            : List<CapabilityVectorPreconditionKind>.from(
+                json["preconditionKinds"]!.map(
+                  (x) => CapabilityVectorPreconditionKind.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "cases": List<dynamic>.from(cases.map((x) => x.toJson())),
     "formatVersion": capabilityVectorFormatValues.reverse[formatVersion],
+    "generatedRefs": generatedRefs == null
+        ? null
+        : List<dynamic>.from(generatedRefs!.map((x) => x.toJson())),
+    "preconditionKinds": preconditionKinds == null
+        ? null
+        : List<dynamic>.from(preconditionKinds!.map((x) => x.toJson())),
   });
 }
 
 class Case {
   final String caseKey;
+
+  ///V2 only. Native objects the isolated fixture creates through the candidate's own native
+  ///entry before the run; the fixture supplies only their actual identifiers. Every
+  ///registered property of the kind is declared with its literal value and verified by a
+  ///later literal expectation of this case.
+  final List<CapabilityVectorPrecondition>? preconditions;
   final List<Step> steps;
 
-  Case({required this.caseKey, required this.steps});
+  Case({required this.caseKey, this.preconditions, required this.steps});
 
   factory Case.fromJson(Map<String, dynamic> json) => Case(
     caseKey: json["caseKey"],
+    preconditions: json["preconditions"] == null
+        ? null
+        : List<CapabilityVectorPrecondition>.from(
+            json["preconditions"]!.map(
+              (x) => CapabilityVectorPrecondition.fromJson(x),
+            ),
+          ),
     steps: List<Step>.from(json["steps"].map((x) => Step.fromJson(x))),
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "caseKey": caseKey,
+    "preconditions": preconditions == null
+        ? null
+        : List<dynamic>.from(preconditions!.map((x) => x.toJson())),
     "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
   });
 }
 
+class CapabilityVectorPrecondition {
+  final String key;
+  final String kind;
+  final List<CapabilityVectorPreconditionProperty> properties;
+
+  CapabilityVectorPrecondition({
+    required this.key,
+    required this.kind,
+    required this.properties,
+  });
+
+  factory CapabilityVectorPrecondition.fromJson(Map<String, dynamic> json) =>
+      CapabilityVectorPrecondition(
+        key: json["key"],
+        kind: json["kind"],
+        properties: List<CapabilityVectorPreconditionProperty>.from(
+          json["properties"].map(
+            (x) => CapabilityVectorPreconditionProperty.fromJson(x),
+          ),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "key": key,
+    "kind": kind,
+    "properties": List<dynamic>.from(properties.map((x) => x.toJson())),
+  });
+}
+
+class CapabilityVectorPreconditionProperty {
+  final String name;
+  final String valueJson;
+
+  CapabilityVectorPreconditionProperty({
+    required this.name,
+    required this.valueJson,
+  });
+
+  factory CapabilityVectorPreconditionProperty.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityVectorPreconditionProperty(
+    name: json["name"],
+    valueJson: json["valueJson"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"name": name, "valueJson": valueJson});
+}
+
 class Step {
+  ///V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
+  ///exactly once.
+  final List<BindingElement>? bindings;
+
+  ///V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
+  ///provides to later steps.
+  final List<CaptureClass>? captures;
   final String contractKey;
   final String expectedOutputJson;
   final String inputJson;
   final String? referenceAssetId;
 
-  ///只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
-  ///目标一起进入规范化参数 hash。
+  ///V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定
+  ///Resource/Asset 目标一起进入规范化参数 hash。
   final String? referenceFromStepKey;
   final String? referenceResourceId;
   final String stepKey;
 
   Step({
+    this.bindings,
+    this.captures,
     required this.contractKey,
     required this.expectedOutputJson,
     required this.inputJson,
@@ -18683,6 +18976,16 @@ class Step {
   });
 
   factory Step.fromJson(Map<String, dynamic> json) => Step(
+    bindings: json["bindings"] == null
+        ? null
+        : List<BindingElement>.from(
+            json["bindings"]!.map((x) => BindingElement.fromJson(x)),
+          ),
+    captures: json["captures"] == null
+        ? null
+        : List<CaptureClass>.from(
+            json["captures"]!.map((x) => CaptureClass.fromJson(x)),
+          ),
     contractKey: json["contractKey"],
     expectedOutputJson: json["expectedOutputJson"],
     inputJson: json["inputJson"],
@@ -18693,6 +18996,12 @@ class Step {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindings": bindings == null
+        ? null
+        : List<dynamic>.from(bindings!.map((x) => x.toJson())),
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "contractKey": contractKey,
     "expectedOutputJson": expectedOutputJson,
     "inputJson": inputJson,
@@ -18703,11 +19012,63 @@ class Step {
   });
 }
 
-enum CapabilityVectorFormat { V1 }
+enum CapabilityVectorFormat { V1, V2 }
 
 final capabilityVectorFormatValues = EnumValues({
   "V1": CapabilityVectorFormat.V1,
+  "V2": CapabilityVectorFormat.V2,
 });
+
+class CapabilityVectorGeneratedRef {
+  final String contractKey;
+  final String pointer;
+  final CapabilityVectorSide side;
+
+  CapabilityVectorGeneratedRef({
+    required this.contractKey,
+    required this.pointer,
+    required this.side,
+  });
+
+  factory CapabilityVectorGeneratedRef.fromJson(Map<String, dynamic> json) =>
+      CapabilityVectorGeneratedRef(
+        contractKey: json["contractKey"],
+        pointer: json["pointer"],
+        side: capabilityVectorSideValues.map[json["side"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contractKey": contractKey,
+    "pointer": pointer,
+    "side": capabilityVectorSideValues.reverse[side],
+  });
+}
+
+class CapabilityVectorPreconditionKind {
+  final String description;
+  final String kind;
+  final List<String> properties;
+
+  CapabilityVectorPreconditionKind({
+    required this.description,
+    required this.kind,
+    required this.properties,
+  });
+
+  factory CapabilityVectorPreconditionKind.fromJson(
+    Map<String, dynamic> json,
+  ) => CapabilityVectorPreconditionKind(
+    description: json["description"],
+    kind: json["kind"],
+    properties: List<String>.from(json["properties"].map((x) => x)),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "kind": kind,
+    "properties": List<dynamic>.from(properties.map((x) => x)),
+  });
+}
 
 ///固定 Catalog 自然键，不授予业务能力 consume 权限。
 class CapabilityContractRef {
@@ -18907,6 +19268,69 @@ class CapabilityContractRegistrationResourceTypeFamilyClass {
       _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
+///DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+///into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+///exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+///EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+///digest fixes the declaration, never the value.
+class CapabilityVectorBinding {
+  final String key;
+  final String pointer;
+  final CapabilityVectorSide side;
+  final CapabilityVectorBindingSource source;
+
+  CapabilityVectorBinding({
+    required this.key,
+    required this.pointer,
+    required this.side,
+    required this.source,
+  });
+
+  factory CapabilityVectorBinding.fromJson(Map<String, dynamic> json) =>
+      CapabilityVectorBinding(
+        key: json["key"],
+        pointer: json["pointer"],
+        side: capabilityVectorSideValues.map[json["side"]]!,
+        source: capabilityVectorBindingSourceValues.map[json["source"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "key": key,
+    "pointer": pointer,
+    "side": capabilityVectorSideValues.reverse[side],
+    "source": capabilityVectorBindingSourceValues.reverse[source],
+  });
+}
+
+///DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+///of the same case. key is unique in the case and must be consumed at least once. pointer
+///is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+///step's contract key.
+class CapabilityVectorCapture {
+  final String key;
+  final String? pointer;
+  final CapabilityVectorCaptureSlot slot;
+
+  CapabilityVectorCapture({
+    required this.key,
+    this.pointer,
+    required this.slot,
+  });
+
+  factory CapabilityVectorCapture.fromJson(Map<String, dynamic> json) =>
+      CapabilityVectorCapture(
+        key: json["key"],
+        pointer: json["pointer"],
+        slot: capabilityVectorCaptureSlotValues.map[json["slot"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "key": key,
+    "pointer": pointer,
+    "slot": capabilityVectorCaptureSlotValues.reverse[slot],
+  });
+}
+
 ///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
 ///ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
 ///仍校验原目标、能力 schema、审批和用量。
@@ -18946,6 +19370,23 @@ class ComponentActionInput {
     "resultExposurePolicyId": resultExposurePolicyId,
     "resultExposurePolicyVersion": resultExposurePolicyVersion,
   });
+}
+
+///DD-124(2): one captured value of the current suite run. Core derives it only from the
+///candidate's actual wire response or typed ContentReference; it is kept only in that
+///step's observation evidence and re-checked when the report is recorded. Never a fixture,
+///seed or administrator value.
+class ComponentConformanceCaptureValue {
+  final String key;
+  final String value;
+
+  ComponentConformanceCaptureValue({required this.key, required this.value});
+
+  factory ComponentConformanceCaptureValue.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformanceCaptureValue(key: json["key"], value: json["value"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"key": key, "value": value});
 }
 
 ///07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -19035,11 +19476,16 @@ class ComponentNativeReadAuthority {
 class ComponentConformanceFixture {
   final String artifactDigest;
   final List<ComponentNativeReceiverFixture>? nativeReceivers;
+
+  ///DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
+  ///在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
+  final List<ComponentConformancePreconditionValue>? preconditions;
   final List<PlanStep> steps;
 
   ComponentConformanceFixture({
     required this.artifactDigest,
     this.nativeReceivers,
+    this.preconditions,
     required this.steps,
   });
 
@@ -19053,6 +19499,13 @@ class ComponentConformanceFixture {
                   (x) => ComponentNativeReceiverFixture.fromJson(x),
                 ),
               ),
+        preconditions: json["preconditions"] == null
+            ? null
+            : List<ComponentConformancePreconditionValue>.from(
+                json["preconditions"]!.map(
+                  (x) => ComponentConformancePreconditionValue.fromJson(x),
+                ),
+              ),
         steps: List<PlanStep>.from(
           json["steps"].map((x) => PlanStep.fromJson(x)),
         ),
@@ -19063,6 +19516,9 @@ class ComponentConformanceFixture {
     "nativeReceivers": nativeReceivers == null
         ? null
         : List<dynamic>.from(nativeReceivers!.map((x) => x.toJson())),
+    "preconditions": preconditions == null
+        ? null
+        : List<dynamic>.from(preconditions!.map((x) => x.toJson())),
     "steps": List<dynamic>.from(steps.map((x) => x.toJson())),
   });
 }
@@ -19094,6 +19550,30 @@ class ComponentNativeReceiverFixture {
     "request": request.toJson(),
     "stepKey": stepKey,
   });
+}
+
+class ComponentConformancePreconditionValue {
+  ///计划内 case 键 <categoryKey>:<contractVersion>:<caseKey>。
+  final String caseKey;
+  final String key;
+  final String value;
+
+  ComponentConformancePreconditionValue({
+    required this.caseKey,
+    required this.key,
+    required this.value,
+  });
+
+  factory ComponentConformancePreconditionValue.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentConformancePreconditionValue(
+    caseKey: json["caseKey"],
+    key: json["key"],
+    value: json["value"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"caseKey": caseKey, "key": key, "value": value});
 }
 
 ///仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
@@ -21717,6 +22197,9 @@ class ComponentConformanceObservation {
 class ObservationElement {
   ///成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
   final String? bindingDigest;
+
+  ///DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+  final List<CaptureElement>? captures;
   final String caseKey;
   final ReferenceElement? contentReference;
   final ErrorClass? errorClass;
@@ -21735,6 +22218,7 @@ class ObservationElement {
 
   ObservationElement({
     this.bindingDigest,
+    this.captures,
     required this.caseKey,
     this.contentReference,
     this.errorClass,
@@ -21753,6 +22237,11 @@ class ObservationElement {
   factory ObservationElement.fromJson(Map<String, dynamic> json) =>
       ObservationElement(
         bindingDigest: json["bindingDigest"],
+        captures: json["captures"] == null
+            ? null
+            : List<CaptureElement>.from(
+                json["captures"]!.map((x) => CaptureElement.fromJson(x)),
+              ),
         caseKey: json["caseKey"],
         contentReference: json["contentReference"] == null
             ? null
@@ -21786,6 +22275,9 @@ class ObservationElement {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingDigest": bindingDigest,
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "caseKey": caseKey,
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],
@@ -21906,6 +22398,12 @@ class ComponentConformancePlan {
 }
 
 class ComponentConformancePlanStep {
+  ///DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+  ///在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+  final List<BindingElement>? bindings;
+
+  ///DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+  final List<CaptureClass>? captures;
   final String caseKey;
 
   ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
@@ -21928,6 +22426,8 @@ class ComponentConformancePlanStep {
   final String stepKey;
 
   ComponentConformancePlanStep({
+    this.bindings,
+    this.captures,
     required this.caseKey,
     this.contractKey,
     required this.expectedHttpStatus,
@@ -21945,6 +22445,16 @@ class ComponentConformancePlanStep {
 
   factory ComponentConformancePlanStep.fromJson(Map<String, dynamic> json) =>
       ComponentConformancePlanStep(
+        bindings: json["bindings"] == null
+            ? null
+            : List<BindingElement>.from(
+                json["bindings"]!.map((x) => BindingElement.fromJson(x)),
+              ),
+        captures: json["captures"] == null
+            ? null
+            : List<CaptureClass>.from(
+                json["captures"]!.map((x) => CaptureClass.fromJson(x)),
+              ),
         caseKey: json["caseKey"],
         contractKey: json["contractKey"],
         expectedHttpStatus: json["expectedHttpStatus"],
@@ -21963,6 +22473,12 @@ class ComponentConformancePlanStep {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindings": bindings == null
+        ? null
+        : List<dynamic>.from(bindings!.map((x) => x.toJson())),
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "caseKey": caseKey,
     "contractKey": contractKey,
     "expectedHttpStatus": expectedHttpStatus,
@@ -21982,6 +22498,9 @@ class ComponentConformancePlanStep {
 ///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 ///history 承接，不建立另一执行账本。
 class ComponentConformanceProbe {
+  ///DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+  ///或管理员值替代。
+  final List<CaptureElement>? captures;
   final ReferenceElement? contentReference;
   final PlanClass plan;
 
@@ -21990,6 +22509,7 @@ class ComponentConformanceProbe {
   final int stepIndex;
 
   ComponentConformanceProbe({
+    this.captures,
     this.contentReference,
     required this.plan,
     this.reconcile,
@@ -21998,6 +22518,11 @@ class ComponentConformanceProbe {
 
   factory ComponentConformanceProbe.fromJson(Map<String, dynamic> json) =>
       ComponentConformanceProbe(
+        captures: json["captures"] == null
+            ? null
+            : List<CaptureElement>.from(
+                json["captures"]!.map((x) => CaptureElement.fromJson(x)),
+              ),
         contentReference: json["contentReference"] == null
             ? null
             : ReferenceElement.fromJson(json["contentReference"]),
@@ -22007,6 +22532,9 @@ class ComponentConformanceProbe {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "contentReference": contentReference?.toJson(),
     "plan": plan.toJson(),
     "reconcile": reconcile,
@@ -22017,6 +22545,9 @@ class ComponentConformanceProbe {
 class ComponentConformanceStepObservation {
   ///成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
   final String? bindingDigest;
+
+  ///DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+  final List<CaptureElement>? captures;
   final String caseKey;
   final ReferenceElement? contentReference;
   final ErrorClass? errorClass;
@@ -22035,6 +22566,7 @@ class ComponentConformanceStepObservation {
 
   ComponentConformanceStepObservation({
     this.bindingDigest,
+    this.captures,
     required this.caseKey,
     this.contentReference,
     this.errorClass,
@@ -22054,6 +22586,11 @@ class ComponentConformanceStepObservation {
     Map<String, dynamic> json,
   ) => ComponentConformanceStepObservation(
     bindingDigest: json["bindingDigest"],
+    captures: json["captures"] == null
+        ? null
+        : List<CaptureElement>.from(
+            json["captures"]!.map((x) => CaptureElement.fromJson(x)),
+          ),
     caseKey: json["caseKey"],
     contentReference: json["contentReference"] == null
         ? null
@@ -22085,6 +22622,9 @@ class ComponentConformanceStepObservation {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingDigest": bindingDigest,
+    "captures": captures == null
+        ? null
+        : List<dynamic>.from(captures!.map((x) => x.toJson())),
     "caseKey": caseKey,
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],

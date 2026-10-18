@@ -3693,11 +3693,27 @@ export interface ComponentConformanceWireDigests {
      * 仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
      * secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
      */
-    bindingDigest?:             string;
+    bindingDigest?: string;
+    /**
+     * DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
+     * generatedRefs 输出字段取出的值。
+     */
+    captures?:                  CaptureElement[];
     nativeReceiverObservation?: NativeReceiverObservationClass;
     requestDigest:              string;
     responseDigest:             string;
     resultDigest?:              string;
+}
+
+/**
+ * DD-124(2): one captured value of the current suite run. Core derives it only from the
+ * candidate's actual wire response or typed ContentReference; it is kept only in that
+ * step's observation evidence and re-checked when the report is recorded. Never a fixture,
+ * seed or administrator value.
+ */
+export interface CaptureElement {
+    key:   string;
+    value: string;
 }
 
 /**
@@ -3794,6 +3810,11 @@ export interface ComponentConformanceWireObservation {
  * history 承接，不建立另一执行账本。
  */
 export interface ProbeClass {
+    /**
+     * DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+     * 或管理员值替代。
+     */
+    captures?:         CaptureElement[];
     contentReference?: ContentReferenceElement;
     plan:              PlanClass;
     /**
@@ -3834,7 +3855,16 @@ export enum ConnectorKind {
 }
 
 export interface PlanStep {
-    caseKey: string;
+    /**
+     * DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+     */
+    bindings?: BindingElement[];
+    /**
+     * DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+     */
+    captures?: CaptureClass[];
+    caseKey:   string;
     /**
      * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
      * native 任务元数据。
@@ -3857,6 +3887,64 @@ export interface PlanStep {
     referenceResourceId?:     string;
     requestJson:              string;
     stepKey:                  string;
+}
+
+/**
+ * DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+ * into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+ * exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+ * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+ * digest fixes the declaration, never the value.
+ */
+export interface BindingElement {
+    key:     string;
+    pointer: string;
+    side:    CapabilityVectorSide;
+    source:  CapabilityVectorBindingSource;
+}
+
+/**
+ * DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected
+ * output.
+ */
+export enum CapabilityVectorSide {
+    Expected = "EXPECTED",
+    Input = "INPUT",
+}
+
+/**
+ * DD-124(1)(2): the two non-literal value sources of a V2 conformance vector. Every other
+ * value is LITERAL; there is no third binding source.
+ */
+export enum CapabilityVectorBindingSource {
+    Capture = "CAPTURE",
+    Precondition = "PRECONDITION",
+}
+
+/**
+ * DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+ * of the same case. key is unique in the case and must be consumed at least once. pointer
+ * is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+ * step's contract key.
+ */
+export interface CaptureClass {
+    key:      string;
+    pointer?: string;
+    slot:     CapabilityVectorCaptureSlot;
+}
+
+/**
+ * DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
+ * adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
+ * vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the
+ * isolated Core generated for a receiver-direction step.
+ */
+export enum CapabilityVectorCaptureSlot {
+    ActionExecutionID = "ACTION_EXECUTION_ID",
+    ContentReferenceNativeObjectRef = "CONTENT_REFERENCE_NATIVE_OBJECT_REF",
+    ContentReferenceNativeRevision = "CONTENT_REFERENCE_NATIVE_REVISION",
+    GeneratedRef = "GENERATED_REF",
+    OperationID = "OPERATION_ID",
 }
 
 export enum MCPResultKind {
@@ -6653,26 +6741,68 @@ export interface AutomationVersionContentTriggerClass {
 
 /**
  * DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
- * JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+ * JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
+ * LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
+ * captures 只属于 V2，V1 仍按原规则执行。
  */
 export interface CapabilityConformanceVectors {
     cases:         Case[];
     formatVersion: CapabilityVectorFormat;
+    /**
+     * V2 only. Contract fields whose values the implementation generates (opaque non-empty
+     * strings). nativeRevision is always implementation-generated and need not be listed. A
+     * listed position present in a step document may never be LITERAL; EXPECTED entries are the
+     * only output fields a GENERATED_REF capture may read.
+     */
+    generatedRefs?: CapabilityVectorGeneratedRef[];
+    /**
+     * V2 only. Closed list of native object kinds a case may declare as preconditions and the
+     * properties each must verify by a literal expectation.
+     */
+    preconditionKinds?: CapabilityVectorPreconditionKind[];
 }
 
 export interface Case {
     caseKey: string;
-    steps:   Step[];
+    /**
+     * V2 only. Native objects the isolated fixture creates through the candidate's own native
+     * entry before the run; the fixture supplies only their actual identifiers. Every
+     * registered property of the kind is declared with its literal value and verified by a
+     * later literal expectation of this case.
+     */
+    preconditions?: CapabilityVectorPrecondition[];
+    steps:          Step[];
+}
+
+export interface CapabilityVectorPrecondition {
+    key:        string;
+    kind:       string;
+    properties: CapabilityVectorPreconditionProperty[];
+}
+
+export interface CapabilityVectorPreconditionProperty {
+    name:      string;
+    valueJson: string;
 }
 
 export interface Step {
+    /**
+     * V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
+     * exactly once.
+     */
+    bindings?: BindingElement[];
+    /**
+     * V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
+     * provides to later steps.
+     */
+    captures?:          CaptureClass[];
     contractKey:        string;
     expectedOutputJson: string;
     inputJson:          string;
     referenceAssetId?:  string;
     /**
-     * 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
-     * 目标一起进入规范化参数 hash。
+     * V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定
+     * Resource/Asset 目标一起进入规范化参数 hash。
      */
     referenceFromStepKey?: string;
     referenceResourceId?:  string;
@@ -6681,6 +6811,19 @@ export interface Step {
 
 export enum CapabilityVectorFormat {
     V1 = "V1",
+    V2 = "V2",
+}
+
+export interface CapabilityVectorGeneratedRef {
+    contractKey: string;
+    pointer:     string;
+    side:        CapabilityVectorSide;
+}
+
+export interface CapabilityVectorPreconditionKind {
+    description: string;
+    kind:        string;
+    properties:  string[];
 }
 
 /**
@@ -6731,6 +6874,32 @@ export interface CapabilityContractRegistrationResourceTypeFamilyClass {
 }
 
 /**
+ * DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+ * into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+ * exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+ * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+ * digest fixes the declaration, never the value.
+ */
+export interface CapabilityVectorBinding {
+    key:     string;
+    pointer: string;
+    side:    CapabilityVectorSide;
+    source:  CapabilityVectorBindingSource;
+}
+
+/**
+ * DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+ * of the same case. key is unique in the case and must be consumed at least once. pointer
+ * is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+ * step's contract key.
+ */
+export interface CapabilityVectorCapture {
+    key:      string;
+    pointer?: string;
+    slot:     CapabilityVectorCaptureSlot;
+}
+
+/**
  * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
  * ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
  * 仍校验原目标、能力 schema、审批和用量。
@@ -6745,6 +6914,17 @@ export interface ComponentActionInput {
     inputReference?:             ContentReferenceElement;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;
+}
+
+/**
+ * DD-124(2): one captured value of the current suite run. Core derives it only from the
+ * candidate's actual wire response or typed ContentReference; it is kept only in that
+ * step's observation evidence and re-checked when the report is recorded. Never a fixture,
+ * seed or administrator value.
+ */
+export interface ComponentConformanceCaptureValue {
+    key:   string;
+    value: string;
 }
 
 /**
@@ -6778,7 +6958,12 @@ export interface ComponentNativeReadAuthority {
 export interface ComponentConformanceFixture {
     artifactDigest:   string;
     nativeReceivers?: ComponentNativeReceiverFixture[];
-    steps:            PlanStep[];
+    /**
+     * DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
+     * 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
+     */
+    preconditions?: ComponentConformancePreconditionValue[];
+    steps:          PlanStep[];
 }
 
 export interface ComponentNativeReceiverFixture {
@@ -6786,6 +6971,15 @@ export interface ComponentNativeReceiverFixture {
     contractKey: string;
     request:     RequestClass;
     stepKey:     string;
+}
+
+export interface ComponentConformancePreconditionValue {
+    /**
+     * 计划内 case 键 <categoryKey>:<contractVersion>:<caseKey>。
+     */
+    caseKey: string;
+    key:     string;
+    value:   string;
 }
 
 /**
@@ -7710,7 +7904,11 @@ export interface ObservationElement {
     /**
      * 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
      */
-    bindingDigest?:             string;
+    bindingDigest?: string;
+    /**
+     * DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+     */
+    captures?:                  CaptureElement[];
     caseKey:                    string;
     contentReference?:          ContentReferenceElement;
     errorClass?:                ErrorClass;
@@ -7765,7 +7963,16 @@ export interface ComponentConformancePlan {
 }
 
 export interface ComponentConformancePlanStep {
-    caseKey: string;
+    /**
+     * DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+     */
+    bindings?: BindingElement[];
+    /**
+     * DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+     */
+    captures?: CaptureClass[];
+    caseKey:   string;
     /**
      * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
      * native 任务元数据。
@@ -7795,6 +8002,11 @@ export interface ComponentConformancePlanStep {
  * history 承接，不建立另一执行账本。
  */
 export interface ComponentConformanceProbe {
+    /**
+     * DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+     * 或管理员值替代。
+     */
+    captures?:         CaptureElement[];
     contentReference?: ContentReferenceElement;
     plan:              PlanClass;
     /**
@@ -7808,7 +8020,11 @@ export interface ComponentConformanceStepObservation {
     /**
      * 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
      */
-    bindingDigest?:             string;
+    bindingDigest?: string;
+    /**
+     * DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+     */
+    captures?:                  CaptureElement[];
     caseKey:                    string;
     contentReference?:          ContentReferenceElement;
     errorClass?:                ErrorClass;

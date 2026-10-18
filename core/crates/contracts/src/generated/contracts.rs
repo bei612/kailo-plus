@@ -5332,6 +5332,11 @@ pub struct ComponentConformanceWireDigests {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_digest: Option<String>,
 
+    /// DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
+    /// generatedRefs 输出字段取出的值。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureElement>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receiver_observation: Option<NativeReceiverObservationClass>,
 
@@ -5341,6 +5346,17 @@ pub struct ComponentConformanceWireDigests {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_digest: Option<String>,
+}
+
+/// DD-124(2): one captured value of the current suite run. Core derives it only from the
+/// candidate's actual wire response or typed ContentReference; it is kept only in that
+/// step's observation evidence and re-checked when the report is recorded. Never a fixture,
+/// seed or administrator value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureElement {
+    pub key: String,
+
+    pub value: String,
 }
 
 /// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
@@ -5472,6 +5488,11 @@ pub struct ComponentConformanceWireObservation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeClass {
+    /// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+    /// 或管理员值替代。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureElement>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_reference: Option<ReferenceElement>,
 
@@ -5530,6 +5551,15 @@ pub enum ConnectorKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanStep {
+    /// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+    /// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<Vec<BindingElement>>,
+
+    /// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureClass>>,
+
     pub case_key: String,
 
     /// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
@@ -5565,6 +5595,81 @@ pub struct PlanStep {
     pub request_json: String,
 
     pub step_key: String,
+}
+
+/// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+/// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+/// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+/// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+/// digest fixes the declaration, never the value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BindingElement {
+    pub key: String,
+
+    pub pointer: String,
+
+    pub side: CapabilityVectorSide,
+
+    pub source: CapabilityVectorBindingSource,
+}
+
+/// DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected
+/// output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilityVectorSide {
+    #[serde(rename = "EXPECTED")]
+    Expected,
+
+    #[serde(rename = "INPUT")]
+    Input,
+}
+
+/// DD-124(1)(2): the two non-literal value sources of a V2 conformance vector. Every other
+/// value is LITERAL; there is no third binding source.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilityVectorBindingSource {
+    #[serde(rename = "CAPTURE")]
+    Capture,
+
+    #[serde(rename = "PRECONDITION")]
+    Precondition,
+}
+
+/// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+/// of the same case. key is unique in the case and must be consumed at least once. pointer
+/// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+/// step's contract key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureClass {
+    pub key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<String>,
+
+    pub slot: CapabilityVectorCaptureSlot,
+}
+
+/// DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
+/// adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
+/// vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the
+/// isolated Core generated for a receiver-direction step.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CapabilityVectorCaptureSlot {
+    #[serde(rename = "ACTION_EXECUTION_ID")]
+    ActionExecutionId,
+
+    #[serde(rename = "CONTENT_REFERENCE_NATIVE_OBJECT_REF")]
+    ContentReferenceNativeObjectRef,
+
+    #[serde(rename = "CONTENT_REFERENCE_NATIVE_REVISION")]
+    ContentReferenceNativeRevision,
+
+    #[serde(rename = "GENERATED_REF")]
+    GeneratedRef,
+
+    #[serde(rename = "OPERATION_ID")]
+    OperationId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9344,13 +9449,27 @@ pub struct AutomationVersionContentTrigger {
 }
 
 /// DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
-/// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+/// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
+/// LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
+/// captures 只属于 V2，V1 仍按原规则执行。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityConformanceVectors {
     pub cases: Vec<Case>,
 
     pub format_version: CapabilityVectorFormat,
+
+    /// V2 only. Contract fields whose values the implementation generates (opaque non-empty
+    /// strings). nativeRevision is always implementation-generated and need not be listed. A
+    /// listed position present in a step document may never be LITERAL; EXPECTED entries are the
+    /// only output fields a GENERATED_REF capture may read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_refs: Option<Vec<CapabilityVectorGeneratedRef>>,
+
+    /// V2 only. Closed list of native object kinds a case may declare as preconditions and the
+    /// properties each must verify by a literal expectation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub precondition_kinds: Option<Vec<CapabilityVectorPreconditionKind>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9358,12 +9477,46 @@ pub struct CapabilityConformanceVectors {
 pub struct Case {
     pub case_key: String,
 
+    /// V2 only. Native objects the isolated fixture creates through the candidate's own native
+    /// entry before the run; the fixture supplies only their actual identifiers. Every
+    /// registered property of the kind is declared with its literal value and verified by a
+    /// later literal expectation of this case.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preconditions: Option<Vec<CapabilityVectorPrecondition>>,
+
     pub steps: Vec<Step>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityVectorPrecondition {
+    pub key: String,
+
+    pub kind: String,
+
+    pub properties: Vec<CapabilityVectorPreconditionProperty>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityVectorPreconditionProperty {
+    pub name: String,
+
+    pub value_json: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Step {
+    /// V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
+    /// exactly once.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<Vec<BindingElement>>,
+
+    /// V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
+    /// provides to later steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureClass>>,
+
     pub contract_key: String,
 
     pub expected_output_json: String,
@@ -9373,8 +9526,8 @@ pub struct Step {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_asset_id: Option<String>,
 
-    /// 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
-    /// 目标一起进入规范化参数 hash。
+    /// V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定
+    /// Resource/Asset 目标一起进入规范化参数 hash。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_from_step_key: Option<String>,
 
@@ -9387,6 +9540,27 @@ pub struct Step {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CapabilityVectorFormat {
     V1,
+
+    V2,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityVectorGeneratedRef {
+    pub contract_key: String,
+
+    pub pointer: String,
+
+    pub side: CapabilityVectorSide,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityVectorPreconditionKind {
+    pub description: String,
+
+    pub kind: String,
+
+    pub properties: Vec<String>,
 }
 
 /// 固定 Catalog 自然键，不授予业务能力 consume 权限。
@@ -9457,6 +9631,36 @@ pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
     pub type_key: String,
 }
 
+/// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+/// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+/// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+/// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+/// digest fixes the declaration, never the value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityVectorBinding {
+    pub key: String,
+
+    pub pointer: String,
+
+    pub side: CapabilityVectorSide,
+
+    pub source: CapabilityVectorBindingSource,
+}
+
+/// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+/// of the same case. key is unique in the case and must be consumed at least once. pointer
+/// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+/// step's contract key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityVectorCapture {
+    pub key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<String>,
+
+    pub slot: CapabilityVectorCaptureSlot,
+}
+
 /// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
 /// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
 /// 仍校验原目标、能力 schema、审批和用量。
@@ -9476,6 +9680,17 @@ pub struct ComponentActionInput {
     pub result_exposure_policy_id: String,
 
     pub result_exposure_policy_version: i64,
+}
+
+/// DD-124(2): one captured value of the current suite run. Core derives it only from the
+/// candidate's actual wire response or typed ContentReference; it is kept only in that
+/// step's observation evidence and re-checked when the report is recorded. Never a fixture,
+/// seed or administrator value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentConformanceCaptureValue {
+    pub key: String,
+
+    pub value: String,
 }
 
 /// 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -9522,6 +9737,11 @@ pub struct ComponentConformanceFixture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receivers: Option<Vec<ComponentNativeReceiverFixture>>,
 
+    /// DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
+    /// 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preconditions: Option<Vec<ComponentConformancePreconditionValue>>,
+
     pub steps: Vec<PlanStep>,
 }
 
@@ -9535,6 +9755,17 @@ pub struct ComponentNativeReceiverFixture {
     pub request: RequestClass,
 
     pub step_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentConformancePreconditionValue {
+    /// 计划内 case 键 <categoryKey>:<contractVersion>:<caseKey>。
+    pub case_key: String,
+
+    pub key: String,
+
+    pub value: String,
 }
 
 /// 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
@@ -10755,6 +10986,10 @@ pub struct ObservationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_digest: Option<String>,
 
+    /// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureElement>>,
+
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -10841,6 +11076,15 @@ pub struct ComponentConformancePlan {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformancePlanStep {
+    /// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+    /// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<Vec<BindingElement>>,
+
+    /// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureClass>>,
+
     pub case_key: String,
 
     /// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
@@ -10883,6 +11127,11 @@ pub struct ComponentConformancePlanStep {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformanceProbe {
+    /// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+    /// 或管理员值替代。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureElement>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_reference: Option<ReferenceElement>,
 
@@ -10901,6 +11150,10 @@ pub struct ComponentConformanceStepObservation {
     /// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_digest: Option<String>,
+
+    /// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub captures: Option<Vec<CaptureElement>>,
 
     pub case_key: String,
 

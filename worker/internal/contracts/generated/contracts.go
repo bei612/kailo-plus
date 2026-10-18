@@ -586,8 +586,17 @@
 //    capabilityContractRegistration, err := UnmarshalCapabilityContractRegistration(bytes)
 //    bytes, err = capabilityContractRegistration.Marshal()
 //
+//    capabilityVectorBinding, err := UnmarshalCapabilityVectorBinding(bytes)
+//    bytes, err = capabilityVectorBinding.Marshal()
+//
+//    capabilityVectorCapture, err := UnmarshalCapabilityVectorCapture(bytes)
+//    bytes, err = capabilityVectorCapture.Marshal()
+//
 //    componentActionInput, err := UnmarshalComponentActionInput(bytes)
 //    bytes, err = componentActionInput.Marshal()
+//
+//    componentConformanceCaptureValue, err := UnmarshalComponentConformanceCaptureValue(bytes)
+//    bytes, err = componentConformanceCaptureValue.Marshal()
 //
 //    componentConformanceEnvironment, err := UnmarshalComponentConformanceEnvironment(bytes)
 //    bytes, err = componentConformanceEnvironment.Marshal()
@@ -2755,6 +2764,26 @@ func (r *CapabilityContractRegistration) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalCapabilityVectorBinding(data []byte) (CapabilityVectorBinding, error) {
+	var r CapabilityVectorBinding
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityVectorBinding) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalCapabilityVectorCapture(data []byte) (CapabilityVectorCapture, error) {
+	var r CapabilityVectorCapture
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *CapabilityVectorCapture) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentActionInput(data []byte) (ComponentActionInput, error) {
 	var r ComponentActionInput
 	err := json.Unmarshal(data, &r)
@@ -2762,6 +2791,16 @@ func UnmarshalComponentActionInput(data []byte) (ComponentActionInput, error) {
 }
 
 func (r *ComponentActionInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentConformanceCaptureValue(data []byte) (ComponentConformanceCaptureValue, error) {
+	var r ComponentConformanceCaptureValue
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentConformanceCaptureValue) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5706,11 +5745,23 @@ type ComponentConformanceAuthorization struct {
 type ComponentConformanceWireDigests struct {
 	// 仅成功 validate_binding：严格解析既有 AdapterBindingObservation 并核对请求的 SecretRef 后，仅去除实际
 	// secretReads.requestId 的固定字段摘要。完整实际响应仍由 responseDigest 固定；不代替绑定激活的 OpenBao 审计核验。
-	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	BindingDigest *string `json:"bindingDigest,omitempty"`
+	// DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
+	// generatedRefs 输出字段取出的值。
+	Captures                  []CaptureElement                `json:"captures,omitempty"`
 	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
 	RequestDigest             string                          `json:"requestDigest"`
 	ResponseDigest            string                          `json:"responseDigest"`
 	ResultDigest              *string                         `json:"resultDigest,omitempty"`
+}
+
+// DD-124(2): one captured value of the current suite run. Core derives it only from the
+// candidate's actual wire response or typed ContentReference; it is kept only in that
+// step's observation evidence and re-checked when the report is recorded. Never a fixture,
+// seed or administrator value.
+type CaptureElement struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
@@ -5789,6 +5840,9 @@ type ComponentConformanceWireObservation struct {
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 // history 承接，不建立另一执行账本。
 type ProbeClass struct {
+	// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+	// 或管理员值替代。
+	Captures         []CaptureElement         `json:"captures,omitempty"`
 	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
 	Plan             PlanClass                `json:"plan"`
 	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -5816,7 +5870,12 @@ type PlanClass struct {
 }
 
 type PlanStep struct {
-	CaseKey string `json:"caseKey"`
+	// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+	// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+	Bindings []BindingElement `json:"bindings,omitempty"`
+	// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+	Captures []CaptureClass `json:"captures,omitempty"`
+	CaseKey  string         `json:"caseKey"`
 	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
 	// native 任务元数据。
 	ContractKey *string `json:"contractKey,omitempty"`
@@ -5833,6 +5892,28 @@ type PlanStep struct {
 	ReferenceResourceID     *string                       `json:"referenceResourceId,omitempty"`
 	RequestJSON             string                        `json:"requestJson"`
 	StepKey                 string                        `json:"stepKey"`
+}
+
+// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+// digest fixes the declaration, never the value.
+type BindingElement struct {
+	Key     string                        `json:"key"`
+	Pointer string                        `json:"pointer"`
+	Side    CapabilityVectorSide          `json:"side"`
+	Source  CapabilityVectorBindingSource `json:"source"`
+}
+
+// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+// of the same case. key is unique in the case and must be consumed at least once. pointer
+// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+// step's contract key.
+type CaptureClass struct {
+	Key     string                      `json:"key"`
+	Pointer *string                     `json:"pointer,omitempty"`
+	Slot    CapabilityVectorCaptureSlot `json:"slot"`
 }
 
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -7681,27 +7762,71 @@ type AutomationVersionContentTriggerClass struct {
 }
 
 // DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
-// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。
+// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
+// LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
+// captures 只属于 V2，V1 仍按原规则执行。
 type CapabilityConformanceVectors struct {
 	Cases         []Case                 `json:"cases"`
 	FormatVersion CapabilityVectorFormat `json:"formatVersion"`
+	// V2 only. Contract fields whose values the implementation generates (opaque non-empty
+	// strings). nativeRevision is always implementation-generated and need not be listed. A
+	// listed position present in a step document may never be LITERAL; EXPECTED entries are the
+	// only output fields a GENERATED_REF capture may read.
+	GeneratedRefs []CapabilityVectorGeneratedRef `json:"generatedRefs,omitempty"`
+	// V2 only. Closed list of native object kinds a case may declare as preconditions and the
+	// properties each must verify by a literal expectation.
+	PreconditionKinds []CapabilityVectorPreconditionKind `json:"preconditionKinds,omitempty"`
 }
 
 type Case struct {
 	CaseKey string `json:"caseKey"`
-	Steps   []Step `json:"steps"`
+	// V2 only. Native objects the isolated fixture creates through the candidate's own native
+	// entry before the run; the fixture supplies only their actual identifiers. Every
+	// registered property of the kind is declared with its literal value and verified by a
+	// later literal expectation of this case.
+	Preconditions []CapabilityVectorPrecondition `json:"preconditions,omitempty"`
+	Steps         []Step                         `json:"steps"`
+}
+
+type CapabilityVectorPrecondition struct {
+	Key        string                                 `json:"key"`
+	Kind       string                                 `json:"kind"`
+	Properties []CapabilityVectorPreconditionProperty `json:"properties"`
+}
+
+type CapabilityVectorPreconditionProperty struct {
+	Name      string `json:"name"`
+	ValueJSON string `json:"valueJson"`
 }
 
 type Step struct {
-	ContractKey        string  `json:"contractKey"`
-	ExpectedOutputJSON string  `json:"expectedOutputJson"`
-	InputJSON          string  `json:"inputJson"`
-	ReferenceAssetID   *string `json:"referenceAssetId,omitempty"`
-	// 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset
-	// 目标一起进入规范化参数 hash。
+	// V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
+	// exactly once.
+	Bindings []BindingElement `json:"bindings,omitempty"`
+	// V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
+	// provides to later steps.
+	Captures           []CaptureClass `json:"captures,omitempty"`
+	ContractKey        string         `json:"contractKey"`
+	ExpectedOutputJSON string         `json:"expectedOutputJson"`
+	InputJSON          string         `json:"inputJson"`
+	ReferenceAssetID   *string        `json:"referenceAssetId,omitempty"`
+	// V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定
+	// Resource/Asset 目标一起进入规范化参数 hash。
 	ReferenceFromStepKey *string `json:"referenceFromStepKey,omitempty"`
 	ReferenceResourceID  *string `json:"referenceResourceId,omitempty"`
 	StepKey              string  `json:"stepKey"`
+}
+
+type CapabilityVectorGeneratedRef struct {
+	ContractKey string               `json:"contractKey"`
+	Pointer     string               `json:"pointer"`
+	Side        CapabilityVectorSide `json:"side"`
+}
+
+type CapabilityVectorPreconditionKind struct {
+	Description string   `json:"description"`
+	Kind        string   `json:"kind"`
+	Properties  []string `json:"properties"`
 }
 
 // 固定 Catalog 自然键，不授予业务能力 consume 权限。
@@ -7745,6 +7870,28 @@ type CapabilityContractRegistrationResourceTypeFamilyClass struct {
 	TypeKey string `json:"typeKey"`
 }
 
+// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
+// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
+// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
+// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
+// digest fixes the declaration, never the value.
+type CapabilityVectorBinding struct {
+	Key     string                        `json:"key"`
+	Pointer string                        `json:"pointer"`
+	Side    CapabilityVectorSide          `json:"side"`
+	Source  CapabilityVectorBindingSource `json:"source"`
+}
+
+// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
+// of the same case. key is unique in the case and must be consumed at least once. pointer
+// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
+// step's contract key.
+type CapabilityVectorCapture struct {
+	Key     string                      `json:"key"`
+	Pointer *string                     `json:"pointer,omitempty"`
+	Slot    CapabilityVectorCaptureSlot `json:"slot"`
+}
+
 // Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
 // ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
 // 仍校验原目标、能力 schema、审批和用量。
@@ -7756,6 +7903,15 @@ type ComponentActionInput struct {
 	InputReference              *ContentReferenceElement `json:"inputReference,omitempty"`
 	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
 	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
+}
+
+// DD-124(2): one captured value of the current suite run. Core derives it only from the
+// candidate's actual wire response or typed ContentReference; it is kept only in that
+// step's observation evidence and re-checked when the report is recorded. Never a fixture,
+// seed or administrator value.
+type ComponentConformanceCaptureValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -7783,7 +7939,10 @@ type ComponentNativeReadAuthority struct {
 type ComponentConformanceFixture struct {
 	ArtifactDigest  string                           `json:"artifactDigest"`
 	NativeReceivers []ComponentNativeReceiverFixture `json:"nativeReceivers,omitempty"`
-	Steps           []PlanStep                       `json:"steps"`
+	// DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
+	// 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
+	Preconditions []ComponentConformancePreconditionValue `json:"preconditions,omitempty"`
+	Steps         []PlanStep                              `json:"steps"`
 }
 
 type ComponentNativeReceiverFixture struct {
@@ -7791,6 +7950,13 @@ type ComponentNativeReceiverFixture struct {
 	ContractKey string       `json:"contractKey"`
 	Request     RequestClass `json:"request"`
 	StepKey     string       `json:"stepKey"`
+}
+
+type ComponentConformancePreconditionValue struct {
+	// 计划内 case 键 <categoryKey>:<contractVersion>:<caseKey>。
+	CaseKey string `json:"caseKey"`
+	Key     string `json:"key"`
+	Value   string `json:"value"`
 }
 
 // 仅用于07§8A隔离套件的模拟上下文投递。不是生产 Catalog、Delegation 或
@@ -8489,7 +8655,9 @@ type ComponentConformanceObservation struct {
 
 type ObservationElement struct {
 	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	BindingDigest *string `json:"bindingDigest,omitempty"`
+	// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+	Captures                  []CaptureElement                `json:"captures,omitempty"`
 	CaseKey                   string                          `json:"caseKey"`
 	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
 	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
@@ -8534,7 +8702,12 @@ type ComponentConformancePlan struct {
 }
 
 type ComponentConformancePlanStep struct {
-	CaseKey string `json:"caseKey"`
+	// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
+	// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+	Bindings []BindingElement `json:"bindings,omitempty"`
+	// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
+	Captures []CaptureClass `json:"captures,omitempty"`
+	CaseKey  string         `json:"caseKey"`
 	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
 	// native 任务元数据。
 	ContractKey *string `json:"contractKey,omitempty"`
@@ -8556,6 +8729,9 @@ type ComponentConformancePlanStep struct {
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 // history 承接，不建立另一执行账本。
 type ComponentConformanceProbe struct {
+	// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
+	// 或管理员值替代。
+	Captures         []CaptureElement         `json:"captures,omitempty"`
 	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
 	Plan             PlanClass                `json:"plan"`
 	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -8565,7 +8741,9 @@ type ComponentConformanceProbe struct {
 
 type ComponentConformanceStepObservation struct {
 	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-	BindingDigest             *string                         `json:"bindingDigest,omitempty"`
+	BindingDigest *string `json:"bindingDigest,omitempty"`
+	// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
+	Captures                  []CaptureElement                `json:"captures,omitempty"`
 	CaseKey                   string                          `json:"caseKey"`
 	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
 	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
@@ -8760,12 +8938,12 @@ const (
 type ErrorClass string
 
 const (
-	ErrorClassBLOCKED  ErrorClass = "BLOCKED"
-	ErrorClassCONFLICT ErrorClass = "CONFLICT"
-	ErrorClassDENIED   ErrorClass = "DENIED"
-	ErrorClassUNKNOWN  ErrorClass = "UNKNOWN"
-	Limit              ErrorClass = "LIMIT"
-	Precondition       ErrorClass = "PRECONDITION"
+	ErrorClassBLOCKED      ErrorClass = "BLOCKED"
+	ErrorClassCONFLICT     ErrorClass = "CONFLICT"
+	ErrorClassDENIED       ErrorClass = "DENIED"
+	ErrorClassPRECONDITION ErrorClass = "PRECONDITION"
+	ErrorClassUNKNOWN      ErrorClass = "UNKNOWN"
+	Limit                  ErrorClass = "LIMIT"
 )
 
 type VariantKind string
@@ -9416,32 +9594,32 @@ const (
 type EvidenceKind string
 
 const (
-	ActionExecutionID           EvidenceKind = "ACTION_EXECUTION_ID"
-	AdmitActionExecutionID      EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
-	AgentgatewayUsageID         EvidenceKind = "AGENTGATEWAY_USAGE_ID"
-	ApprovalPolicy              EvidenceKind = "APPROVAL_POLICY"
-	ApprovalWorkflowID          EvidenceKind = "APPROVAL_WORKFLOW_ID"
-	BuzzDeletionInventoryDigest EvidenceKind = "BUZZ_DELETION_INVENTORY_DIGEST"
-	BuzzDeletionRequestID       EvidenceKind = "BUZZ_DELETION_REQUEST_ID"
-	BuzzEventID                 EvidenceKind = "BUZZ_EVENT_ID"
-	BuzzPubkey                  EvidenceKind = "BUZZ_PUBKEY"
-	DeploymentBootstrap         EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
-	ExternalSubjectSha256       EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
-	OpenmeterEventID            EvidenceKind = "OPENMETER_EVENT_ID"
-	OriginalActionExecutionID   EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
-	PlatformSessionID           EvidenceKind = "PLATFORM_SESSION_ID"
-	SecretRefRehomeID           EvidenceKind = "SECRET_REF_REHOME_ID"
-	SpicedbRelationship         EvidenceKind = "SPICEDB_RELATIONSHIP"
-	SpicedbZedtoken             EvidenceKind = "SPICEDB_ZEDTOKEN"
-	TemporalFirstRunID          EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
-	TemporalRunID               EvidenceKind = "TEMPORAL_RUN_ID"
-	TemporalWorkflowID          EvidenceKind = "TEMPORAL_WORKFLOW_ID"
-	TenantDeleteSubprocessID    EvidenceKind = "TENANT_DELETE_SUBPROCESS_ID"
-	TenantInvitationID          EvidenceKind = "TENANT_INVITATION_ID"
-	TenantLifecycleSnapshotID   EvidenceKind = "TENANT_LIFECYCLE_SNAPSHOT_ID"
-	TenantMembershipID          EvidenceKind = "TENANT_MEMBERSHIP_ID"
-	TraceID                     EvidenceKind = "TRACE_ID"
-	UsageEventID                EvidenceKind = "USAGE_EVENT_ID"
+	AdmitActionExecutionID        EvidenceKind = "ADMIT_ACTION_EXECUTION_ID"
+	AgentgatewayUsageID           EvidenceKind = "AGENTGATEWAY_USAGE_ID"
+	ApprovalPolicy                EvidenceKind = "APPROVAL_POLICY"
+	ApprovalWorkflowID            EvidenceKind = "APPROVAL_WORKFLOW_ID"
+	BuzzDeletionInventoryDigest   EvidenceKind = "BUZZ_DELETION_INVENTORY_DIGEST"
+	BuzzDeletionRequestID         EvidenceKind = "BUZZ_DELETION_REQUEST_ID"
+	BuzzEventID                   EvidenceKind = "BUZZ_EVENT_ID"
+	BuzzPubkey                    EvidenceKind = "BUZZ_PUBKEY"
+	DeploymentBootstrap           EvidenceKind = "DEPLOYMENT_BOOTSTRAP"
+	EvidenceKindACTIONEXECUTIONID EvidenceKind = "ACTION_EXECUTION_ID"
+	ExternalSubjectSha256         EvidenceKind = "EXTERNAL_SUBJECT_SHA256"
+	OpenmeterEventID              EvidenceKind = "OPENMETER_EVENT_ID"
+	OriginalActionExecutionID     EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
+	PlatformSessionID             EvidenceKind = "PLATFORM_SESSION_ID"
+	SecretRefRehomeID             EvidenceKind = "SECRET_REF_REHOME_ID"
+	SpicedbRelationship           EvidenceKind = "SPICEDB_RELATIONSHIP"
+	SpicedbZedtoken               EvidenceKind = "SPICEDB_ZEDTOKEN"
+	TemporalFirstRunID            EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
+	TemporalRunID                 EvidenceKind = "TEMPORAL_RUN_ID"
+	TemporalWorkflowID            EvidenceKind = "TEMPORAL_WORKFLOW_ID"
+	TenantDeleteSubprocessID      EvidenceKind = "TENANT_DELETE_SUBPROCESS_ID"
+	TenantInvitationID            EvidenceKind = "TENANT_INVITATION_ID"
+	TenantLifecycleSnapshotID     EvidenceKind = "TENANT_LIFECYCLE_SNAPSHOT_ID"
+	TenantMembershipID            EvidenceKind = "TENANT_MEMBERSHIP_ID"
+	TraceID                       EvidenceKind = "TRACE_ID"
+	UsageEventID                  EvidenceKind = "USAGE_EVENT_ID"
 )
 
 // EvidenceRef 的敏感级别。SUMMARY 在当前 audit permission 下可解引用；RESTRICTED 还需 ResultExposure
@@ -9612,6 +9790,38 @@ type ConnectorKind string
 const (
 	ProtocolPeer  ConnectorKind = "PROTOCOL_PEER"
 	RemoteAdapter ConnectorKind = "REMOTE_ADAPTER"
+)
+
+// DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected
+// output.
+type CapabilityVectorSide string
+
+const (
+	Expected CapabilityVectorSide = "EXPECTED"
+	Input    CapabilityVectorSide = "INPUT"
+)
+
+// DD-124(1)(2): the two non-literal value sources of a V2 conformance vector. Every other
+// value is LITERAL; there is no third binding source.
+type CapabilityVectorBindingSource string
+
+const (
+	CapabilityVectorBindingSourcePRECONDITION CapabilityVectorBindingSource = "PRECONDITION"
+	Capture                                   CapabilityVectorBindingSource = "CAPTURE"
+)
+
+// DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
+// adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
+// vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the
+// isolated Core generated for a receiver-direction step.
+type CapabilityVectorCaptureSlot string
+
+const (
+	CapabilityVectorCaptureSlotACTIONEXECUTIONID CapabilityVectorCaptureSlot = "ACTION_EXECUTION_ID"
+	ContentReferenceNativeObjectRef              CapabilityVectorCaptureSlot = "CONTENT_REFERENCE_NATIVE_OBJECT_REF"
+	ContentReferenceNativeRevision               CapabilityVectorCaptureSlot = "CONTENT_REFERENCE_NATIVE_REVISION"
+	GeneratedRef                                 CapabilityVectorCaptureSlot = "GENERATED_REF"
+	OperationID                                  CapabilityVectorCaptureSlot = "OPERATION_ID"
 )
 
 type MCPResultKind string
@@ -10027,6 +10237,7 @@ type CapabilityVectorFormat string
 
 const (
 	V1 CapabilityVectorFormat = "V1"
+	V2 CapabilityVectorFormat = "V2"
 )
 
 type NativeDocumentSelectionActionKey string
