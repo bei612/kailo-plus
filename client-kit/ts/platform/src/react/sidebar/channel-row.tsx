@@ -25,10 +25,13 @@ function UnreadDotBadge({
 
 
 export function ChannelRow({ channel, label, isActive, hasUnread, hasThreadUnread, isMuted, onSelectChannel,
-  glyph, ephemeralBadge, Button = SidebarMenuButton,
+  glyph, ephemeralBadge, labelAdornment, Button = SidebarMenuButton,
 }: { channel: SidebarChannel; label?: string; isActive: boolean; hasUnread: boolean; hasThreadUnread: boolean;
   isMuted?: boolean; onSelectChannel: (id: string) => void; glyph: (className: string) => ReactNode;
-  ephemeralBadge?: ReactNode; Button?: ComponentType<ComponentProps<typeof SidebarMenuButton>>;
+  ephemeralBadge?: ReactNode;
+  /** Original 1:1 DM UserNameIndicators after the label. */
+  labelAdornment?: ReactNode;
+  Button?: ComponentType<ComponentProps<typeof SidebarMenuButton>>;
 }) {
   const resolvedLabel = label ?? channel.name;
   const showsEphemeralBadge = Boolean(ephemeralBadge) && !isMuted && !hasThreadUnread;
@@ -62,6 +65,7 @@ export function ChannelRow({ channel, label, isActive, hasUnread, hasThreadUnrea
         data-sidebar-row-label
       >
         <span className="min-w-0 truncate">{resolvedLabel}</span>
+        {labelAdornment}
       </span>
       {showsEphemeralBadge ? ephemeralBadge : null}
       {isMuted ? (

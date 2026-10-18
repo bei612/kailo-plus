@@ -1,10 +1,11 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/sidebar/ui/SidebarSection.tsx.
 // Reuses the original row/group/context menu; only Core's admitted references are listed.
-import { useEffect, useState } from "react";
-import { CircleDot, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 import type { ConversationView } from "@client-kit/contracts";
-import { useT } from "../context";
+import { useLocale, useT } from "../context";
+import { AvatarHostProvider } from "../profile/avatar-host";
 import { ChannelGroupSection } from "../sidebar/channel-group";
 import { ChannelRow } from "../sidebar/channel-row";
 import { TooltipProvider } from "../sidebar/tooltip";
@@ -17,6 +18,10 @@ import { useConversationState } from "./use-conversation-state";
 import { ChannelContextMenuItems } from "../sidebar/channel-context-menu";
 import { canPreviewUnreadDm } from "../sidebar/MoreUnreadButton";
 import type { ConversationUnreadEntry } from "../sidebar/useSidebarUnreadOverflow";
+import { usePresenceHost } from "../presence/context";
+import type { PresenceLookup } from "../presence/lib/presence";
+import { UserNameIndicators } from "../user-status/ui/UserNameIndicators";
+import { DmChannelIcon, DmPresenceLookup, dmPresenceStatus, type SidebarDmParticipant } from "./dm-channel-icon";
 
 export function ConversationList({ currentPrincipalId, items, loading, error, selectedId, onSelect, onNewMessage, onReload, onCloseSelected, events, lastMessageAtByChannelId, reads, onUnreadChange }: {
   currentPrincipalId: string;
@@ -58,6 +63,17 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     if (selectedChannel && userState.hidden?.has(selectedChannel)) onCloseSelected?.();
   }, [selectedChannel, userState.hidden, onCloseSelected]);
   const names = new Map(directory.items.map((person) => [person.principalId, person.displayName]));
+  const presenceHost = usePresenceHost();
+  const locale = useLocale();
+  // DM row avatars carry no media URL (as the DM header); initials never reach the network.
+  const avatarView = useMemo(() => ({ locale, rewriteMediaUrl: () => null }), [locale]);
+  // Original dmParticipantsByChannelId: every other participant, resolved from the admitted directory.
+  const participantsFor = (conversation: ConversationView): SidebarDmParticipant[] | undefined => {
+    const others = conversation.participantPrincipalIds.filter((id) => id !== currentPrincipalId);
+    const people = others.map((id) => directory.items.find((person) => person.principalId === id));
+    if (people.every((person) => person === undefined)) return undefined;
+    return others.map((id, index) => ({ avatarUrl: null, label: people[index]?.displayName ?? id, pubkeys: people[index]?.pubkeys ?? [] }));
+  };
   const rows = items.filter((conversation) => admitted.has(conversation.channelId) && userState.hidden !== null && !userState.hidden.has(conversation.channelId)).map((conversation) => ({
     ...conversation,
     lastMessageAt: lastMessageAtByChannelId?.get(conversation.channelId) ?? null,
@@ -88,7 +104,12 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     }) : [];
   useEffect(() => { onUnreadChange?.(unreadEntries); });
   useEffect(() => () => { onUnreadChange?.([]); }, [onUnreadChange]);
-  const group = (starred: boolean) => <ChannelGroupSection
+  const pairPresencePubkeys = [...new Set(rows.flatMap((conversation) => {
+    const participants = participantsFor(conversation);
+    const isPair = conversation.participantPrincipalIds.length === 2;
+    return participants && (isPair || participants.length === 1) ? participants[0]?.pubkeys ?? [] : [];
+  }))];
+  const group = (starred: boolean, presence: PresenceLookup | undefined) => <ChannelGroupSection
       title={t(starred ? "sidebar.starred" : "sidebar.messages")}
       items={error ? [] : sortDmChannelsForSidebar(rows.filter((row) => Boolean(userState.preferences[row.id]?.starred) === starred), {}, sortModeFor(starred ? "starred" : "dms"))}
       sortMode={sortModeFor(starred ? "starred" : "dms")}
@@ -107,11 +128,16 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
         onUnstarChannel={userState.canWrite ? () => userState.preference(conversation.id, {starred: false}) : undefined}
         onMuteChannel={userState.canWrite ? () => userState.preference(conversation.id, {muted: true}) : undefined}
         onUnmuteChannel={userState.canWrite ? () => userState.preference(conversation.id, {muted: false}) : undefined} />}
-      renderRow={(conversation) => <>
+      renderRow={(conversation) => { const participants = participantsFor(conversation);
+        const isPair = conversation.participantPrincipalIds.length === 2;
+        const single = participants && (isPair || participants.length === 1) ? participants[0] : undefined;
+        return <>
         <ChannelRow channel={{...conversation, id: conversation.channelId}} isActive={selectedId === conversation.id}
           isMuted={userState.preferences[conversation.id]?.muted}
           hasUnread={(unreadCounts.get(conversation.channelId) ?? 0) > 0} hasThreadUnread={false} onSelectChannel={() => onSelect(conversation)}
-          glyph={() => <CircleDot className="h-4 w-4" />} />
+          glyph={() => <DmChannelIcon channelName={conversation.name} isPair={isPair} participants={participants}
+            presenceStatus={participants ? dmPresenceStatus(presence, isPair, participants) : undefined} />}
+          labelAdornment={single ? <UserNameIndicators className="ml-1" pubkey={single.pubkeys[0]} pubkeys={single.pubkeys} size="dm" /> : null} />
         {(unreadCounts.get(conversation.channelId) ?? 0) > 0 && selectedId !== conversation.id ? <span
           className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground tabular-nums pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 transition-opacity max-md:opacity-0 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0"
           data-testid={`channel-unread-${conversation.name}`}>
@@ -122,13 +148,16 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
           className="absolute right-1 top-1/2 z-10 -translate-y-1/2 after:absolute after:-inset-2 after:md:hidden group-data-[collapsible=icon]:hidden flex size-6 items-center justify-center p-1 text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring peer-data-[active=true]/menu-button:text-sidebar-active-foreground/75 peer-data-[active=true]/menu-button:hover:text-sidebar-active-foreground [&>svg]:size-4 [&>svg]:shrink-0 group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 md:opacity-0 disabled:cursor-wait"
           data-sidebar="menu-action" data-testid={`hide-dm-${conversation.name}`} type="button"
           onClick={(event) => { event.stopPropagation(); userState.hide(conversation); }}><X className="h-4 w-4" /></button>
-      </>} />;
+      </>; }} />;
+  const groups = (presence: PresenceLookup | undefined) => <AvatarHostProvider value={avatarView}>
+    {rows.some((row) => userState.preferences[row.id]?.starred) ? group(true, presence) : null}
+    {group(false, presence)}
+  </AvatarHostProvider>;
   return <TooltipProvider>
     {error || userState.failed || userState.unknown || reads?.failed || reads?.unknown ? <p role={userState.unknown || reads?.unknown ? "status" : "alert"} className="px-4 text-sm">
       {t(reads?.unknown ? "inbox.readUnknown" : userState.unknown ? "sidebar.visibilityUnknown" : "platform.loadFailed")}
       <button type="button" disabled={userState.pending || reads?.pending} onClick={() => { if (error) onReload(); else if (reads?.failed || reads?.unknown) void reads.refresh(); else void userState.retry(); }}>{t("platform.retry")}</button>
     </p> : loading || !userState.ready ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
-    {rows.some((row) => userState.preferences[row.id]?.starred) ? group(true) : null}
-    {group(false)}
+    {presenceHost ? <DmPresenceLookup pubkeys={pairPresencePubkeys}>{groups}</DmPresenceLookup> : groups(undefined)}
   </TooltipProvider>;
 }
