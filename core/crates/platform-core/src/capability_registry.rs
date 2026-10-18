@@ -73,6 +73,9 @@ mod tests {
             "/api/v1/conversations/{conversation_id}/messages/delete"
         ));
         assert!(action_exposed("identity.custom_emoji.publish"));
+        // DD-123：额度页（admin/auditor fresh audit）与设置动作（fresh manage）
+        assert!(route_exposed("/api/v1/tenant/quotas"));
+        assert!(action_exposed("tenant.quota.set"));
         // DD-120：在线状态、输入中提示与用户状态
         assert!(route_exposed("/api/v1/presence"));
         assert!(route_exposed("/api/v1/presence/query"));

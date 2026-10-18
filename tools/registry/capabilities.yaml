@@ -366,7 +366,9 @@ capabilities:
   - /api/v1/operations
   - /api/v1/operations/summary
   - /api/v1/usage-billing
-  actions: []
+  - /api/v1/tenant/quotas
+  actions:
+  - tenant.quota.set
   tools: []
   workflow_kinds: []
 - id: metering.core_authentication

@@ -323,6 +323,58 @@ async fn role_template_of(
     Ok(crate::roles::template(conn, k, v).await?)
 }
 
+/// 受控配置钉住的平台 meter 集合（DD-123 固定 key）与 ACTIVE 定义不一致时，版本内容
+/// 不可变，只能登记新版本并退役旧版本；旧版本仍是已准入动作的证据。返回应插入的
+/// 新版本号：没有任何版本为 1，ACTIVE 且 meters 一致为 None。全部版本已退役说明有人
+/// 主动关闭了该动作，不复活。调用方在同一事务内插入新版本。
+pub(crate) async fn meter_version(
+    tx: &mut Transaction<'_, Postgres>,
+    action: &str,
+    meters: &[String],
+) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query("select pg_advisory_xact_lock(hashtext($1))")
+        .bind(action)
+        .execute(&mut **tx)
+        .await?;
+    let active: Option<(i32, Vec<String>)> = sqlx::query_as(
+        "select version, meters from catalog.action_definition
+         where action_key = $1 and status = 'ACTIVE' and component_release_id is null
+         for update",
+    )
+    .bind(action)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let latest: Option<i32> = sqlx::query_scalar(
+        "select max(version) from catalog.action_definition
+         where action_key = $1 and component_release_id is null",
+    )
+    .bind(action)
+    .fetch_one(&mut **tx)
+    .await?;
+    match (active, latest) {
+        (Some((_, current)), _) if current.as_slice() == meters => Ok(None),
+        (Some((version, _)), Some(latest)) => {
+            sqlx::query(
+                "update catalog.action_definition set status = 'RETIRED'
+                 where action_key = $1 and version = $2 and component_release_id is null",
+            )
+            .bind(action)
+            .bind(version)
+            .execute(&mut **tx)
+            .await?;
+            tracing::warn!(
+                action,
+                retired = version,
+                registered = latest + 1,
+                "平台 meter 钉住集合变化，登记新 ActionDefinition 版本"
+            );
+            Ok(Some(latest + 1))
+        }
+        (None, None) => Ok(Some(1)),
+        _ => Ok(None),
+    }
+}
+
 pub(crate) async fn active_definition(
     pool: &PgPool,
     key: &str,
@@ -436,6 +488,9 @@ pub enum Semantic {
     TenantRestore,
     /// DD-96(4)、DD-99/100：业务 Tenant 自己的受限会话从 SUSPENDED 发起删除。
     TenantDelete,
+    /// DD-123：Tenant admin 直接设置本 Tenant 的平台额度；SYNC，派发只写 OpenMeter
+    /// entitlement，先落意图，结果不明只对账。
+    TenantQuotaSet,
     WorkspaceMemberAdd,
     WorkspaceMemberRevoke,
     TenantMemberRevoke,
@@ -504,6 +559,7 @@ impl Semantic {
             "tenant.suspend" => Self::TenantSuspend,
             "tenant.restore" => Self::TenantRestore,
             "tenant.delete" => Self::TenantDelete,
+            "tenant.quota.set" => Self::TenantQuotaSet,
             "workspace.member.add" => Self::WorkspaceMemberAdd,
             "workspace.member.revoke" => Self::WorkspaceMemberRevoke,
             "tenant.member.revoke" => Self::TenantMemberRevoke,
@@ -643,6 +699,7 @@ impl Semantic {
                     | Self::WorkspaceJoin
                     | Self::ConversationOpen
                     | Self::TenantDelete
+                    | Self::TenantQuotaSet
                     | Self::AgentDefinitionCreate
                     | Self::LlmRouteCreate
                     | Self::AgentDefinitionUpdate
@@ -698,6 +755,7 @@ impl Semantic {
                     | Self::LlmRouteCreate
                     | Self::TenantSuspend
                     | Self::TenantRestore
+                    | Self::TenantQuotaSet
                     | Self::AgentVersionPublish
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
@@ -768,6 +826,8 @@ pub struct Params {
     pub application_binding_id: Option<Uuid>,
     pub application_binding_version: Option<i32>,
     pub resource_create: Option<Value>,
+    /// tenant.quota.set 的规范化参数（DD-123）：额度项与每期上限
+    pub tenant_quota_setting: Option<Value>,
 }
 
 impl Params {
@@ -787,6 +847,9 @@ impl Params {
         }
         if let Some(input) = &self.resource_create {
             m.insert("resourceCreate".into(), input.clone());
+        }
+        if let Some(setting) = &self.tenant_quota_setting {
+            m.insert("tenantQuotaSetting".into(), setting.clone());
         }
         if let Some(input) = &self.application_binding_create {
             m.insert("applicationBindingCreate".into(), input.clone());
@@ -938,6 +1001,7 @@ impl Params {
             component_release_id: uuid("componentReleaseId"),
             application_binding_create: v.get("applicationBindingCreate").cloned(),
             resource_create: v.get("resourceCreate").cloned(),
+            tenant_quota_setting: v.get("tenantQuotaSetting").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
                 .get("applicationBindingVersion")
@@ -1089,6 +1153,68 @@ mod workspace_channel_tests {
     }
 }
 
+#[cfg(test)]
+mod tenant_quota_command_tests {
+    use super::{parse_command, Params, Semantic};
+
+    fn command(setting: serde_json::Value, confirmed: bool) -> contracts::ActionCommand {
+        let value = serde_json::json!({
+            "actionKey": "tenant.quota.set",
+            "idempotencyKey": uuid::Uuid::new_v4(),
+            "explicitConfirmation": confirmed,
+            "tenantQuotaSetting": setting,
+        });
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn quota_setting_is_explicit_closed_and_frozen() {
+        assert_eq!(
+            Semantic::from_key("tenant.quota.set"),
+            Some(Semantic::TenantQuotaSet)
+        );
+        let setting = serde_json::json!({"feature": "agent_tokens", "limitPerPeriod": 5});
+        let valid = command(setting.clone(), true);
+        let parsed = parse_command(Semantic::TenantQuotaSet, &valid).unwrap();
+        assert_eq!(parsed.to_json()["tenantQuotaSetting"], setting);
+        let frozen = Params::from_json(&parsed.to_json());
+        assert_eq!(frozen.as_ref(), Some(&parsed));
+        assert_eq!(
+            crate::tenant_quota::setting(&parsed).ok(),
+            Some(("agent_tokens", 5))
+        );
+        // 未显式确认、负数上限、别的语义携带额度参数都拒绝
+        let unconfirmed = command(setting.clone(), false);
+        assert!(parse_command(Semantic::TenantQuotaSet, &unconfirmed).is_err());
+        let negative = serde_json::json!({"feature": "agent_tokens", "limitPerPeriod": -1});
+        let negative = command(negative, true);
+        assert!(parse_command(Semantic::TenantQuotaSet, &negative).is_err());
+        let foreign = command(setting, true);
+        assert!(parse_command(Semantic::WorkspaceJoin, &foreign).is_err());
+    }
+
+    #[test]
+    fn quota_refusal_records_only_the_quota_dimension() {
+        use super::automation_dimensions as dimensions;
+        use contracts::ReasonCode;
+        let na = "NOT_APPLICABLE";
+        let exhausted = Some(&ReasonCode::QuotaExhausted);
+        assert_eq!(
+            dimensions("DENY", exhausted),
+            ["ALLOW", "ALLOW", "ALLOW", "DENY"]
+        );
+        let denied = Some(&ReasonCode::PermissionDenied);
+        assert_eq!(dimensions("DENY", denied), ["ALLOW", "DENY", na, na]);
+        let scope = Some(&ReasonCode::ScopeGuardFailed);
+        assert_eq!(dimensions("DENY", scope), ["DENY", na, na, na]);
+        assert_eq!(dimensions("ALLOW", None), ["ALLOW"; 4]);
+        let unavailable = Some(&ReasonCode::DependencyUnavailable);
+        assert_eq!(dimensions("NOT_APPLICABLE", unavailable), [na; 4]);
+        let abandoned = Some(&ReasonCode::AdmissionAbandoned);
+        assert_eq!(dimensions("DENY", abandoned), [na; 4]);
+    }
+}
+
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
     if cmd.workspace_visibility.is_some() && sem != Semantic::WorkspaceCreate {
@@ -1098,6 +1224,9 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     if cmd.workspace_update.is_some() != (sem == Semantic::WorkspaceUpdate) {
+        return Err(bad());
+    }
+    if cmd.tenant_quota_setting.is_some() != (sem == Semantic::TenantQuotaSet) {
         return Err(bad());
     }
     if cmd
@@ -1229,6 +1358,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map(serde_json::to_value)
             .transpose()
             .map_err(|_| bad())?,
+        tenant_quota_setting: cmd
+            .tenant_quota_setting
+            .as_ref()
+            .map(crate::tenant_quota::normalize)
+            .transpose()?,
     };
     if (p.receiver_resource.is_some() || p.grant_permission.is_some())
         && !matches!(
@@ -1490,6 +1624,17 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.name.is_none()
                 && p.explicit_confirmation.is_none()
         }
+        // 额度项与上限已由 normalize 校验；目标固定为会话 Tenant，不接受别的定位字段
+        Semantic::TenantQuotaSet => {
+            p.tenant_quota_setting.is_some()
+                && p.workspace_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.explicit_confirmation == Some(true)
+        }
         Semantic::TenantSuspend | Semantic::TenantRestore => {
             p.tenant_id.is_some()
                 && p.workspace_id.is_none()
@@ -1749,6 +1894,9 @@ async fn resolve_target(
         }
         Semantic::LlmRouteCreate => {
             crate::model_route::create_target(conn, tenant, def, p, frozen, lock).await
+        }
+        Semantic::TenantQuotaSet => {
+            crate::tenant_quota::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::AutomationCreate
         | Semantic::AutomationPublish
@@ -2466,6 +2614,38 @@ pub struct Actor {
     pub human_identity_id: Option<Uuid>,
 }
 
+/// 额度阶段（CHECK）的拒绝原因：只在 scope、授权与 Delegation 都已成立之后产生。
+fn quota_reason(reason: &ReasonCode) -> bool {
+    matches!(
+        reason,
+        ReasonCode::QuotaExhausted | ReasonCode::BindingNotActive | ReasonCode::RateLimited
+    )
+}
+
+/// 非 HUMAN 路径一次判定的分维度结论 `[scope, authorization, delegation, quota]`。
+/// 判定顺序是 scope → 授权/Delegation → Quota：额度拒绝说明前三维已成立；其余拒绝
+/// 只确定它所在的那一维，之后的维度没有被判定（NOT_APPLICABLE）。依赖不可用时
+/// 各维都没有结论。
+pub(crate) fn automation_dimensions(
+    outcome: &str,
+    reason: Option<&ReasonCode>,
+) -> [&'static str; 4] {
+    const NA: &str = "NOT_APPLICABLE";
+    match (outcome, reason) {
+        ("ALLOW", _) => ["ALLOW"; 4],
+        ("DENY", Some(reason)) if quota_reason(reason) => ["ALLOW", "ALLOW", "ALLOW", "DENY"],
+        ("DENY", Some(ReasonCode::PermissionDenied)) => ["ALLOW", "DENY", NA, NA],
+        // 判定被放弃（EVALUATING 过期）：没有任何一维得出结论。
+        ("DENY", Some(ReasonCode::AdmissionAbandoned)) => [NA; 4],
+        ("DENY", _) => ["DENY", NA, NA, NA],
+        _ => [NA; 4],
+    }
+}
+
+/// OpenMeter CHECK 读不到原生额度事实时的依赖说明；派发前的重新准入据此把它与
+/// 其他依赖不可用区分开，作为 DEPENDENCY_UNAVAILABLE 呈现。
+pub(crate) const QUOTA_UNVERIFIABLE: &str = "OpenMeter CHECK 的 entitlement/credit 无法查证";
+
 pub(crate) struct Evaluation {
     pub(crate) allowed: bool,
     pub(crate) scope: &'static str,
@@ -3047,9 +3227,7 @@ impl Governance {
                                     Some(ReasonCode::RateLimited)
                                 }
                                 Err(crate::openmeter::Error::Unknown) => {
-                                    return Err(Refusal::Unavailable(
-                                        "OpenMeter CHECK 的 entitlement/credit 无法查证".into(),
-                                    ))
+                                    return Err(Refusal::Unavailable(QUOTA_UNVERIFIABLE.into()))
                                 }
                             }
                         }
@@ -3129,18 +3307,22 @@ impl Governance {
             }
             Err(error) => ("DENY", None, Some(error.reason())),
         };
+        // 每一维记它自己的结论：额度拒绝不能把 scope/授权/Delegation 也记成 DENY。
+        let [scope, authorization, delegation, quota] =
+            automation_dimensions(outcome, reason.as_ref());
         sqlx::query("insert into admission.action_decision
             (id,operation_id,action_execution_id,phase,tenant_id,workspace_id,
              authenticated_principal_id,acting_principal_id,action_key,action_version,target_id,parameter_hash,
              scope_decision,authorization_decision,delegation_decision,approval_decision,
              capacity_decision,quota_decision,audit_decision,zed_token,reason_code)
-            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$13,
-                    'NOT_APPLICABLE',$16,$13,'RECORDED',$14,$15)")
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$17,$18,
+                    'NOT_APPLICABLE',$16,$19,'RECORDED',$14,$15)")
             .bind(Uuid::new_v4()).bind(ae.operation_id).bind(ae.id).bind(phase).bind(ae.tenant_id)
             .bind(ae.workspace_id).bind(ae.initiator_principal_id).bind(ae.actor_principal_id)
             .bind(&ae.action_key).bind(ae.action_version).bind(ae.target_id).bind(&ae.parameter_hash)
-            .bind(outcome).bind(token).bind(reason.as_ref().map(wire))
-            .bind(if message_only { "NOT_APPLICABLE" } else { "REQUIRED" }).execute(&mut **tx).await?;
+            .bind(scope).bind(token).bind(reason.as_ref().map(wire))
+            .bind(if message_only { "NOT_APPLICABLE" } else { "REQUIRED" })
+            .bind(authorization).bind(delegation).bind(quota).execute(&mut **tx).await?;
         let source = ae
             .parameters
             .as_ref()
@@ -3377,6 +3559,7 @@ impl Governance {
             application_binding_id: None,
             application_binding_version: None,
             resource_create: None,
+            tenant_quota_setting: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3482,6 +3665,7 @@ impl Governance {
             application_binding_id: None,
             application_binding_version: None,
             resource_create: None,
+            tenant_quota_setting: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -4929,6 +5113,7 @@ impl Governance {
             || matches!(
                 sem,
                 Semantic::TenantDelete
+                    | Semantic::TenantQuotaSet
                     | Semantic::AgentDefinitionCreate
                     | Semantic::LlmRouteCreate
                     | Semantic::AgentDefinitionUpdate
@@ -5171,6 +5356,10 @@ impl Governance {
                 }
                 Semantic::LlmRouteCreate => {
                     crate::model_route::create_prewrite(tx, ae, def, params).await?;
+                    Ok(None)
+                }
+                Semantic::TenantQuotaSet => {
+                    crate::tenant_quota::prewrite(self, tx, ae, params).await?;
                     Ok(None)
                 }
                 Semantic::TenantMemberInvite => {
@@ -5423,7 +5612,8 @@ impl Governance {
             | Semantic::AutomationDelete
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
-            | Semantic::TenantRestore => {
+            | Semantic::TenantRestore
+            | Semantic::TenantQuotaSet => {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
@@ -6905,6 +7095,8 @@ impl Governance {
                 crate::agent_version::dispatch(self, ae_id, &def).await
             } else if sem == Semantic::LlmRouteCreate {
                 crate::model_route::create_dispatch(self, ae_id, &def).await
+            } else if sem == Semantic::TenantQuotaSet {
+                crate::tenant_quota::dispatch(self, ae_id, &def).await
             } else if sem.is_automation() {
                 crate::automation::management_dispatch(self, ae_id, &def, sem).await
             } else if matches!(
@@ -7041,7 +7233,8 @@ impl Governance {
                 | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
-                | Semantic::TenantRestore => Err(StatusCode::CONFLICT.into_response()),
+                | Semantic::TenantRestore
+                | Semantic::TenantQuotaSet => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),

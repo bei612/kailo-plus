@@ -29,6 +29,10 @@ pub(crate) enum RuntimeError {
     Protocol,
     #[error("runtime 请求需要独立治理准入")]
     AdmissionRequired,
+    /// DD-123：派发前的 fresh CHECK 给出确定原因（QUOTA_EXHAUSTED 或
+    /// DEPENDENCY_UNAVAILABLE）；不折叠为重新准入，原因码随 Invocation/AE 保留。
+    #[error("runtime 回合被额度准入拒绝")]
+    QuotaRefused(contracts::ReasonCode),
 }
 
 /// 只来自查证后的 RuntimeProjection；绝不从 prompt 接收 provider 或路径。
@@ -1556,6 +1560,7 @@ impl Process {
                         let category = match error {
                             RuntimeError::Protocol => "INVALID_RPC_RESPONSE",
                             RuntimeError::AdmissionRequired => "ADMISSION_REQUIRED",
+                            RuntimeError::QuotaRefused(_) => "QUOTA_REFUSED",
                             RuntimeError::Unavailable | RuntimeError::Unknown => "IO_UNAVAILABLE",
                         };
                         diagnostic.emit("READ", None, category);

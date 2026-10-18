@@ -211,7 +211,7 @@ pub(crate) async fn deployment_principal(
     Ok(id)
 }
 
-async fn record_bootstrap(
+pub(crate) async fn record_bootstrap(
     tx: &mut Transaction<'_, Postgres>,
     tenant: Uuid,
     initiator: Uuid,
@@ -437,6 +437,8 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
             .await?;
         ctx.ensure_native_tools(tenant, p, initiator, &args.slug)
             .await?;
+        ctx.ensure_platform_quota(tenant, initiator, &args.slug)
+            .await?;
         return Ok(Outcome {
             tenant_id: tenant,
             admin_principal_id: Some(p),
@@ -474,6 +476,9 @@ pub async fn run(args: Args) -> Result<Outcome, String> {
     // 5. DD-122：原生工具由这位有效 admin 拥有，逐名幂等登记
     if let (Some(admin), "COMPLETED") = (outcome.admin_principal_id, outcome.state) {
         ctx.ensure_native_tools(tenant, admin, initiator, &args.slug)
+            .await?;
+        // 6. DD-123：平台 meter/feature 幂等登记；Customer ACTIVE 后建立默认额度
+        ctx.ensure_platform_quota(tenant, initiator, &args.slug)
             .await?;
     }
     Ok(outcome)
@@ -761,6 +766,28 @@ impl Ctx {
                 response.status()
             )
         })
+    }
+
+    /// DD-123 (3)、V-SCN-113：平台 meter/feature 是全局事实，记在 Catalog 下由部署引导
+    /// 幂等登记；业务 Tenant 的 Customer ACTIVE 后以同一意图路径建立默认硬限制额度，
+    /// 已有 Tenant 由重跑补齐。Catalog Tenant 没有业务额度。
+    async fn ensure_platform_quota(
+        &self,
+        tenant: Uuid,
+        initiator: Uuid,
+        slug: &str,
+    ) -> Result<(), String> {
+        let catalog: Uuid = sqlx::query_scalar("select id from identity.tenant where slug = $1")
+            .bind(&self.catalog_slug)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("读取 Catalog Tenant 失败: {e}"))?;
+        let (pool, openmeter) = (&self.pool, &self.openmeter);
+        crate::tenant_quota::ensure_platform_meters(pool, openmeter, catalog, initiator).await?;
+        if slug == self.catalog_slug {
+            return Ok(());
+        }
+        crate::tenant_quota::ensure_default_quotas(pool, openmeter, tenant, initiator).await
     }
 
     /// DD-122 (1)：业务 Tenant 按名登记本构建固定的每个 PLATFORM_NATIVE 工具，
@@ -1743,7 +1770,7 @@ impl Ctx {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn entry<'a>(
+pub(crate) fn entry<'a>(
     operation: Uuid,
     stage: &str,
     event_type: &'a str,

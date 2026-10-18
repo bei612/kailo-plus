@@ -56,27 +56,32 @@ pub(crate) async fn register(g: &Governance) -> Result<(), String> {
         .filter(|key| !key.trim().is_empty() && key.trim() == key)
         .ok_or("agent.invoke 缺少 AGENT_CAPACITY_POOL_KEY")?;
     let mut tx = g.pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query(
-        "insert into catalog.action_definition
-        (action_key,version,component_type_key,target_type,tenant_rule,workspace_rule,
-         permission,permission_object_type,execution_mode,confirmation_mode,
-         workflow_type,capacity_policy,capacity_pool_key,quota_policy,meters,
-         result_exposure,audit_policy,obs_correlation_mode,obs_progress_source,
-         obs_terminal_source,obs_usage_source,obs_cost_source,obs_redaction_policy,status)
-        select $1,1,'core','RESOURCE','SESSION_TENANT','TARGET_HOME_WORKSPACE',
-          'execute','resource','TEMPORAL','NONE',$2,'PLATFORM_SLOT',$3,'CHECK',$4,
-          'NONE','FULL_LIFECYCLE','OPERATION_REF','TEMPORAL','TEMPORAL','OPENMETER',
-          'NONE','PLATFORM_METADATA_ONLY','ACTIVE'
-        where not exists(select 1 from catalog.action_definition where action_key=$1)
-        on conflict do nothing",
-    )
-    .bind(ACTION)
-    .bind(crate::agent_task::WORKFLOW_TYPE)
-    .bind(pool)
-    .bind(keys)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| format!("agent.invoke 登记失败: {e}"))?;
+    // DD-123：meter 钉住集合改为固定平台 meter 时登记新版本，而不是拒绝启动。
+    let version = governance::meter_version(&mut tx, ACTION, &keys)
+        .await
+        .map_err(|e| format!("agent.invoke 版本核对失败: {e}"))?;
+    if let Some(version) = version {
+        sqlx::query(
+            "insert into catalog.action_definition
+            (action_key,version,component_type_key,target_type,tenant_rule,workspace_rule,
+             permission,permission_object_type,execution_mode,confirmation_mode,
+             workflow_type,capacity_policy,capacity_pool_key,quota_policy,meters,
+             result_exposure,audit_policy,obs_correlation_mode,obs_progress_source,
+             obs_terminal_source,obs_usage_source,obs_cost_source,obs_redaction_policy,status)
+            values ($1,$5,'core','RESOURCE','SESSION_TENANT','TARGET_HOME_WORKSPACE',
+              'execute','resource','TEMPORAL','NONE',$2,'PLATFORM_SLOT',$3,'CHECK',$4,
+              'NONE','FULL_LIFECYCLE','OPERATION_REF','TEMPORAL','TEMPORAL','OPENMETER',
+              'NONE','PLATFORM_METADATA_ONLY','ACTIVE')",
+        )
+        .bind(ACTION)
+        .bind(crate::agent_task::WORKFLOW_TYPE)
+        .bind(pool)
+        .bind(keys)
+        .bind(version)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("agent.invoke 登记失败: {e}"))?;
+    }
     let installations: Vec<(Uuid,Uuid,i64)> = sqlx::query_as("select r.tenant_id,i.resource_id,i.active_projection_generation
         from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
         join catalog.channel_agent_binding cb on cb.installation_resource_id=i.resource_id and cb.status='ACTIVE'
@@ -256,6 +261,8 @@ fn matches_source(row: &Installation, event: &Event, trigger: &str) -> bool {
 }
 
 /// Grant 行锁保护撤销/用量；原 HUMAN/Agent/Installation/Action scope 均精确求交。
+/// DD-123：`quota` 只在派发新回合之前为真；已开始的一轮（回帖、工具调用）按 CHECK
+/// 语义允许跑完，不在中途以额度拒绝。
 #[allow(clippy::too_many_arguments)]
 async fn fresh(
     state: &ServiceState,
@@ -266,6 +273,7 @@ async fn fresh(
     grant: Uuid,
     def: &Definition,
     operation: Option<Uuid>,
+    quota: bool,
 ) -> Result<String, Refusal> {
     let scope = row.scope();
     crate::automation::source_human(&state.governance, tx, &scope, human, pubkey).await?;
@@ -334,10 +342,12 @@ async fn fresh(
         }
         revision = Some(check.zed_token);
     }
-    state
-        .governance
-        .check_automation_quota(row.tenant_id, def)
-        .await?;
+    if quota {
+        state
+            .governance
+            .check_automation_quota(row.tenant_id, def)
+            .await?;
+    }
     let live: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_grant
         where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp() and expires_at>clock_timestamp())")
         .bind(grant).fetch_one(&mut **tx).await?;
@@ -494,6 +504,7 @@ async fn recheck(
         frozen.delegation_id,
         &def,
         Some(ae.operation_id),
+        turn.is_none(),
     )
     .await?;
     state
@@ -672,6 +683,7 @@ async fn admit(
                 grant,
                 &def,
                 None,
+                true,
             )
             .await
         }
@@ -791,7 +803,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
             || !row.triggers.iter().any(|v| v == trigger) { return Err(conflict()); }
         let used: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
             .bind(frozen.delegation_id).bind(ae.operation_id).fetch_one(&mut *tx).await?;
-        let revision = fresh(state,&mut tx,&row,ae.initiator_principal_id,pubkey,frozen.delegation_id,&def,used.then_some(ae.operation_id)).await?;
+        let revision = fresh(state,&mut tx,&row,ae.initiator_principal_id,pubkey,frozen.delegation_id,&def,used.then_some(ae.operation_id),true).await?;
         Ok::<_,Refusal>(revision)
         }.await;
         state

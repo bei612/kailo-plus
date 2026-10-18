@@ -374,6 +374,34 @@ async fn lock_tenant(
     Ok(())
 }
 
+/// 模型派发准备的拒绝：额度给出的确定原因码与其余需要重新准入的情形分开，
+/// 使回合不把 QUOTA_EXHAUSTED/DEPENDENCY_UNAVAILABLE 折叠为重新准入（DD-123）。
+#[derive(Debug)]
+pub(crate) enum TurnRefusal {
+    Quota(contracts::ReasonCode),
+    Admission(&'static str),
+}
+
+impl From<&'static str> for TurnRefusal {
+    fn from(reason: &'static str) -> Self {
+        Self::Admission(reason)
+    }
+}
+
+/// fresh CHECK 结论到回合拒绝的映射：读不到原生事实是 DEPENDENCY_UNAVAILABLE，
+/// 额度不足是 QUOTA_EXHAUSTED；其余（binding/meter 配置）仍要求重新准入。
+pub(crate) fn refusal_of(checked: Result<bool, crate::openmeter::Error>) -> Option<TurnRefusal> {
+    use contracts::ReasonCode;
+    match checked {
+        Ok(true) => None,
+        Ok(false) => Some(TurnRefusal::Quota(ReasonCode::QuotaExhausted)),
+        Err(crate::openmeter::Error::Unknown) => {
+            Some(TurnRefusal::Quota(ReasonCode::DependencyUnavailable))
+        }
+        Err(_) => Some(TurnRefusal::Admission("模型 fresh Quota 不可核验")),
+    }
+}
+
 /// SS-COD-TRACE：只在真实 invocation/slot/quota 事实齐备之后、原生模型副作用之前持久。
 pub(crate) async fn prepare_turn(
     tx: &mut Transaction<'_, Postgres>,
@@ -381,7 +409,7 @@ pub(crate) async fn prepare_turn(
     projection: &crate::agent_runtime::RuntimeRef,
     invocation: Uuid,
     thread: &str,
-) -> Result<String, &'static str> {
+) -> Result<String, TurnRefusal> {
     // Invocation DISPATCHING and its mandatory trace share the caller's
     // transaction. A failed CHECK must not strand an unsent turn in UNKNOWN.
     lock_tenant(tx, invocation).await?;
@@ -398,7 +426,7 @@ pub(crate) async fn prepare_turn(
         || facts.namespace != openmeter.namespace()
         || facts.subject_key_prefix != format!("{}:", facts.tenant_id)
     {
-        return Err("模型 projection/OpenMeter scope 不一致");
+        return Err("模型 projection/OpenMeter scope 不一致".into());
     }
     let subject = format!(
         "{}{}",
@@ -414,12 +442,11 @@ pub(crate) async fn prepare_turn(
         )
         .await
         .map_err(|_| "模型实际 meter/Customer subject 映射不可核验")?;
-    if !openmeter
+    let checked = openmeter
         .check_quota(facts.tenant_id, &facts.customer_id, &facts.meters)
-        .await
-        .map_err(|_| "模型 fresh Quota 不可核验")?
-    {
-        return Err("模型 fresh Quota 拒绝");
+        .await;
+    if let Some(refusal) = refusal_of(checked) {
+        return Err(refusal);
     }
     let trace = Uuid::new_v4().simple().to_string();
     let span = Uuid::new_v4().simple().to_string()[..16].to_owned();
@@ -433,7 +460,7 @@ pub(crate) async fn prepare_turn(
         .bind(invocation_meter.map(serde_json::to_value).transpose().map_err(|_| "Invocation meter 投影不可编码")?)
         .execute(&mut **tx).await.map_err(|_| "模型 trace 不可持久")?;
     if inserted.rows_affected() != 1 {
-        return Err("模型已有 dispatch 意图；只能按原生引用观察");
+        return Err("模型已有 dispatch 意图；只能按原生引用观察".into());
     }
     usage_audit(
         tx,
@@ -2421,5 +2448,30 @@ mod usage_tests {
             frozen_turn_meters("agent.invoke", sum, None, &["different.tokens".to_owned()])
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod turn_refusal_tests {
+    use super::{refusal_of, TurnRefusal};
+    use contracts::ReasonCode;
+
+    #[test]
+    fn quota_refusals_keep_their_reason_codes() {
+        assert!(refusal_of(Ok(true)).is_none());
+        assert!(matches!(
+            refusal_of(Ok(false)),
+            Some(TurnRefusal::Quota(ReasonCode::QuotaExhausted))
+        ));
+        let unknown = Err(crate::openmeter::Error::Unknown);
+        assert!(matches!(
+            refusal_of(unknown),
+            Some(TurnRefusal::Quota(ReasonCode::DependencyUnavailable))
+        ));
+        let binding = Err(crate::openmeter::Error::Precondition);
+        assert!(matches!(
+            refusal_of(binding),
+            Some(TurnRefusal::Admission(_))
+        ));
     }
 }

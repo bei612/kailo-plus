@@ -418,6 +418,98 @@ pub(crate) struct InvoiceFact {
     pub issued_at: Option<String>,
 }
 
+/// DD-123：v2 Customer entitlement 的只读投影。数值保持原生，Core 不复制余额或用量。
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeEntitlement {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub feature_key: String,
+    pub customer_id: Option<String>,
+    pub is_soft_limit: Option<bool>,
+    pub issue: Option<NativeIssue>,
+    pub issue_after_reset: Option<f64>,
+    pub usage_period: Option<NativeUsagePeriod>,
+    pub current_usage_period: Option<EntitlementPeriod>,
+    pub metadata: Option<BTreeMap<String, String>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl NativeEntitlement {
+    /// 原生 ID 是 ULID；路径与归属只接受请求的 Customer 与 feature key。
+    fn validate(self, customer_id: &str, feature_key: &str) -> Result<Self, Error> {
+        if !valid_customer_id(&self.id)
+            || self.feature_key != feature_key
+            || self
+                .customer_id
+                .as_deref()
+                .is_some_and(|id| id != customer_id)
+        {
+            return Err(Error::Conflict);
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct NativeIssue {
+    pub amount: f64,
+}
+
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct NativeUsagePeriod {
+    pub interval: Option<String>,
+    #[serde(rename = "intervalISO")]
+    pub interval_iso: Option<String>,
+    pub anchor: Option<DateTime<Utc>>,
+}
+
+/// 当前周期只取结束时刻（下一次按月重置），开始时刻不另存。
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct EntitlementPeriod {
+    pub to: DateTime<Utc>,
+}
+
+/// v2 entitlement value：只读展示，不据此另算余额。
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeEntitlementValue {
+    pub has_access: bool,
+    pub usage: Option<f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EntitlementPage {
+    total_count: u64,
+    page: u64,
+    page_size: u64,
+    items: Vec<NativeEntitlement>,
+}
+
+/// v2 entitlement 列表的单页请求条数；读取总是翻到底。
+const ENTITLEMENT_PAGE_SIZE: u64 = 100;
+
+/// 部署引导比对固定平台 meter 所需的原生字段（DD-123）。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct MeterShape {
+    pub id: String,
+    pub key: String,
+    pub aggregation: String,
+    pub event_type: String,
+    pub value_property: Option<String>,
+    pub dimensions: BTreeMap<String, String>,
+}
+
+/// 部署引导比对固定平台 feature 所需的原生字段（DD-123）。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FeatureShape {
+    pub id: String,
+    pub meter_id: Option<String>,
+    pub filtered: bool,
+}
+
 #[derive(Deserialize)]
 struct MeterQueryResult {
     data: Vec<MeterQueryRow>,
@@ -825,6 +917,9 @@ impl OpenMeter {
         {
             return Err(Error::Unknown);
         }
+        // DD-123：额度项是 feature；没有任何未删除 feature 的 meter 只计用量（如记忆
+        // 明文字节），不是额度项。动作至少要有一个 meter 落在额度项上，否则仍 fail closed。
+        let mut governed = 0_usize;
         for key in meters {
             if !valid_meter_key(key) {
                 return Err(Error::Precondition);
@@ -851,9 +946,10 @@ impl OpenMeter {
                 .query_pairs_mut()
                 .append_pair("filter[meter_id][oeq]", &meter.id);
             let features: Vec<Feature> = self.collection(feature_url).await?;
-            if features.is_empty() {
-                return Err(Error::Precondition);
+            if !features.iter().any(|feature| feature.deleted_at.is_none()) {
+                continue;
             }
+            governed += 1;
             let mut feature_ids = HashSet::new();
             let mut feature_keys = HashSet::new();
             let mut selected = None;
@@ -912,6 +1008,9 @@ impl OpenMeter {
             if !access.has_access {
                 return Ok(false);
             }
+        }
+        if governed == 0 {
+            return Err(Error::Precondition);
         }
         Ok(true)
     }
@@ -1635,6 +1734,254 @@ impl OpenMeter {
                 })
             })
             .collect()
+    }
+
+    /// v1/v2 原生路径与 Customer 集合共用唯一配置的 origin 与部署前缀。
+    fn native_api_url(&self, segments: &[&str]) -> Result<Url, Error> {
+        let prefix = self
+            .customers
+            .path()
+            .strip_suffix("/api/v3/openmeter/customers")
+            .ok_or(Error::Precondition)?
+            .to_owned();
+        let mut url = self.customers.clone();
+        url.set_path(&prefix);
+        url.path_segments_mut()
+            .map_err(|_| Error::Unknown)?
+            .pop_if_empty()
+            .extend(segments);
+        Ok(url)
+    }
+
+    fn entitlements_url(&self, customer_id: &str, tail: &[&str]) -> Result<Url, Error> {
+        if !valid_customer_id(customer_id) {
+            return Err(Error::Conflict);
+        }
+        let mut segments = vec!["api", "v2", "customers", customer_id, "entitlements"];
+        segments.extend_from_slice(tail);
+        self.native_api_url(&segments)
+    }
+
+    /// DD-123：按确定 key（Customer + feature）读当前 entitlement；404 是原生「无」。
+    pub(crate) async fn entitlement(
+        &self,
+        customer_id: &str,
+        feature_key: &str,
+    ) -> Result<Option<NativeEntitlement>, Error> {
+        if !valid_resource_key(feature_key) {
+            return Err(Error::Precondition);
+        }
+        let response = self
+            .http
+            .get(self.entitlements_url(customer_id, &[feature_key])?)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        match response.status() {
+            StatusCode::NOT_FOUND => Ok(None),
+            StatusCode::OK => {
+                let entitlement: NativeEntitlement =
+                    response.json().await.map_err(|_| Error::Unknown)?;
+                entitlement.validate(customer_id, feature_key).map(Some)
+            }
+            status => Err(status_error(status)),
+        }
+    }
+
+    /// 含已删除（被 override 替换）的完整历史；对账只按意图 ID 查证，不按时间猜。
+    pub(crate) async fn entitlement_history(
+        &self,
+        customer_id: &str,
+        feature_key: &str,
+    ) -> Result<Vec<NativeEntitlement>, Error> {
+        if !valid_resource_key(feature_key) {
+            return Err(Error::Precondition);
+        }
+        let base = self.entitlements_url(customer_id, &[])?;
+        let mut items: Vec<NativeEntitlement> = Vec::new();
+        let mut number = 1_u64;
+        loop {
+            let mut url = base.clone();
+            url.query_pairs_mut()
+                .append_pair("includeDeleted", "true")
+                .append_pair("page", &number.to_string())
+                .append_pair("pageSize", &ENTITLEMENT_PAGE_SIZE.to_string());
+            let page: EntitlementPage = self.read(url).await?;
+            let seen = items.len() as u64;
+            if page.page != number
+                || page.page_size == 0
+                || page.total_count < seen
+                || page.items.len() as u64 != page.page_size.min(page.total_count - seen)
+            {
+                return Err(Error::Unknown);
+            }
+            items.extend(page.items);
+            if items.len() as u64 == page.total_count {
+                break;
+            }
+            number = number.checked_add(1).ok_or(Error::Unknown)?;
+        }
+        items
+            .into_iter()
+            .filter(|item| item.feature_key == feature_key)
+            .map(|item| item.validate(customer_id, feature_key))
+            .collect()
+    }
+
+    /// 调用方已持久化意图与 DISPATCH；本方法只发一次 POST，不重试。
+    pub(crate) async fn create_entitlement(
+        &self,
+        customer_id: &str,
+        body: &Value,
+    ) -> Result<NativeEntitlement, Error> {
+        let feature_key = body_feature(body)?;
+        let url = self.entitlements_url(customer_id, &[])?;
+        let response = self
+            .http
+            .post(url)
+            .json(body)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        written_entitlement(response, customer_id, feature_key).await
+    }
+
+    /// 原生 override 以被替换的确切 entitlement ID 定位；它已被替换或删除时原生拒绝，
+    /// 因此并发的另一次设置不会被静默覆盖。只发一次 PUT，不重试。
+    pub(crate) async fn override_entitlement(
+        &self,
+        customer_id: &str,
+        replaced_id: &str,
+        body: &Value,
+    ) -> Result<NativeEntitlement, Error> {
+        if !valid_customer_id(replaced_id) {
+            return Err(Error::Conflict);
+        }
+        let feature_key = body_feature(body)?;
+        let url = self.entitlements_url(customer_id, &[replaced_id, "override"])?;
+        let response = self
+            .http
+            .put(url)
+            .json(body)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        written_entitlement(response, customer_id, feature_key).await
+    }
+
+    /// 当前周期的原生 access/usage；只读展示，不另算余额。
+    pub(crate) async fn entitlement_value(
+        &self,
+        customer_id: &str,
+        feature_key: &str,
+    ) -> Result<NativeEntitlementValue, Error> {
+        if !valid_resource_key(feature_key) {
+            return Err(Error::Precondition);
+        }
+        let url = self.entitlements_url(customer_id, &[feature_key, "value"])?;
+        self.read(url).await
+    }
+
+    /// 全部未删除的原生 meter；部署引导以它核对平台 meter 与 event type 唯一性。
+    pub(crate) async fn live_meters(&self) -> Result<Vec<MeterShape>, Error> {
+        let native: Vec<Meter> = self.collection(self.collection_url("meters")?).await?;
+        native
+            .into_iter()
+            .filter(|meter| meter.deleted_at.is_none())
+            .map(|meter| {
+                if !valid_customer_id(&meter.id) {
+                    return Err(Error::Conflict);
+                }
+                Ok(MeterShape {
+                    id: meter.id,
+                    key: meter.key,
+                    aggregation: meter.aggregation,
+                    event_type: meter.event_type,
+                    value_property: meter.value_property,
+                    dimensions: meter.dimensions.unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+
+    /// 调用方已持久化引导意图。meter key 原生唯一，重复 POST 只会得到冲突，不会多建。
+    pub(crate) async fn create_meter(&self, body: &Value) -> Result<(), Error> {
+        self.create_in("meters", body).await
+    }
+
+    /// 同 key 的全部未删除 feature；多于一个即原生配置冲突，由调用方拒绝。
+    pub(crate) async fn live_features(&self, key: &str) -> Result<Vec<FeatureShape>, Error> {
+        if !valid_resource_key(key) {
+            return Err(Error::Precondition);
+        }
+        let mut features_url = self.collection_url("features")?;
+        features_url
+            .query_pairs_mut()
+            .append_pair("filter[key][eq]", key);
+        let native: Vec<Feature> = self.collection(features_url).await?;
+        native
+            .into_iter()
+            .filter(|feature| feature.deleted_at.is_none())
+            .map(|feature| {
+                if !valid_customer_id(&feature.id) || feature.key != key {
+                    return Err(Error::Conflict);
+                }
+                let filtered = feature
+                    .meter
+                    .as_ref()
+                    .and_then(|meter| meter.filters.as_ref())
+                    .is_some_and(|filters| !filters.is_empty());
+                Ok(FeatureShape {
+                    id: feature.id,
+                    meter_id: feature.meter.map(|meter| meter.id),
+                    filtered,
+                })
+            })
+            .collect()
+    }
+
+    /// 调用方已持久化引导意图。feature key 原生唯一，重复 POST 只会得到冲突。
+    pub(crate) async fn create_feature(&self, body: &Value) -> Result<(), Error> {
+        self.create_in("features", body).await
+    }
+
+    async fn create_in(&self, collection: &str, body: &Value) -> Result<(), Error> {
+        let response = self
+            .http
+            .post(self.collection_url(collection)?)
+            .json(body)
+            .send()
+            .await
+            .map_err(|_| Error::Unknown)?;
+        match response.status() {
+            StatusCode::CREATED => Ok(()),
+            status => Err(status_error(status)),
+        }
+    }
+}
+
+fn body_feature(body: &Value) -> Result<&str, Error> {
+    body.get("featureKey")
+        .and_then(Value::as_str)
+        .filter(|key| valid_resource_key(key))
+        .ok_or(Error::Precondition)
+}
+
+/// 写入回应只作线索：201 仍须由调用方按意图 ID 回读查证。被替换对象已不存在
+/// 是确定的未写入，归为冲突。
+async fn written_entitlement(
+    response: reqwest::Response,
+    customer_id: &str,
+    feature_key: &str,
+) -> Result<NativeEntitlement, Error> {
+    match response.status() {
+        StatusCode::CREATED => {
+            let entitlement: NativeEntitlement =
+                response.json().await.map_err(|_| Error::Unknown)?;
+            entitlement.validate(customer_id, feature_key)
+        }
+        StatusCode::NOT_FOUND => Err(Error::Conflict),
+        status => Err(status_error(status)),
     }
 }
 

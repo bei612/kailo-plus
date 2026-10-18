@@ -1054,6 +1054,10 @@ async fn first_turn(
                 "UNKNOWN_EXTERNAL_RESULT",
             );
         }
+        Err(crate::agent_runtime::RuntimeError::QuotaRefused(reason)) => {
+            timing.outcome("DISPATCH_QUOTA_REFUSED");
+            return refuse_quota(state, invocation, reason).await;
+        }
         Err(_) => {
             timing.outcome("DISPATCH_ADMISSION_UNAVAILABLE");
             return result(
@@ -1553,7 +1557,10 @@ async fn prepare_dispatch(
     }
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation.id)
         .await
-        .map_err(|_| RuntimeError::AdmissionRequired)?;
+        .map_err(|refusal| match quota_reason(&refusal) {
+            Some(reason) => RuntimeError::QuotaRefused(reason),
+            None => RuntimeError::AdmissionRequired,
+        })?;
     let changed = sqlx::query(
         "update catalog.agent_invocation set status='DISPATCHING',updated_at=now()
         where id=$1 and status='CREATED' and not cancel_pending and runtime_turn_id is null",
@@ -1608,12 +1615,106 @@ async fn commit_dispatch(
     thread: &str,
 ) -> Result<String, crate::agent_runtime::RuntimeError> {
     use crate::agent_runtime::RuntimeError;
+    use crate::gateway_usage::TurnRefusal;
     let trace =
         crate::gateway_usage::prepare_turn(&mut tx, openmeter, projection, invocation, thread)
             .await
-            .map_err(|_| RuntimeError::AdmissionRequired)?;
+            .map_err(|refusal| match refusal {
+                // DD-123：额度拒绝保留原因码，不折叠为重新准入。
+                TurnRefusal::Quota(reason) => RuntimeError::QuotaRefused(reason),
+                TurnRefusal::Admission(step) => {
+                    tracing::debug!(invocation_id = %invocation, step,
+                        "agent model dispatch preparation refused");
+                    RuntimeError::AdmissionRequired
+                }
+            })?;
     tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
     Ok(trace)
+}
+
+/// DD-123：派发前重新准入里的额度结论保留原因码——QUOTA_EXHAUSTED，或 OpenMeter
+/// 读不到原生事实时的 DEPENDENCY_UNAVAILABLE；其余拒绝仍要求重新准入。
+fn quota_reason(refusal: &crate::governance::Refusal) -> Option<contracts::ReasonCode> {
+    use crate::governance::{Refusal, QUOTA_UNVERIFIABLE};
+    use contracts::ReasonCode;
+    match refusal {
+        Refusal::Limit(ReasonCode::QuotaExhausted) => Some(ReasonCode::QuotaExhausted),
+        Refusal::Unavailable(dependency) if dependency == QUOTA_UNVERIFIABLE => {
+            Some(ReasonCode::DependencyUnavailable)
+        }
+        _ => None,
+    }
+}
+
+/// DD-123、V-SCN-114/116：派发前 fresh CHECK 的确定额度拒绝。QUOTA_EXHAUSTED 时该回合
+/// 确定未发出：Invocation 终结为 FAILED，原因码记到 AE 供 DD-121 的提及结论呈现，
+/// 容量随后释放；不调用 Agent，也没有 UsageEvent。读不到原生事实
+/// （DEPENDENCY_UNAVAILABLE）不是终态：保持 CREATED，下一轮 Activity 重新准入。
+async fn refuse_quota(
+    state: &ServiceState,
+    invocation: &Invocation,
+    reason: contracts::ReasonCode,
+) -> Response {
+    let id = invocation.id;
+    if reason != contracts::ReasonCode::QuotaExhausted {
+        let waiting = crate::governance::wire(&reason);
+        return result(id, TaskStatus::Running, &waiting);
+    }
+    match fail_unsent_quota(state, invocation, &reason).await {
+        Ok(true) => release_holder(state, id, false, "QUOTA_EXHAUSTED").await,
+        Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        Err(error) => unavailable(error),
+    }
+}
+
+/// 与 lost-birth 同一组「确定未发出」证明：没有 turn/trace/usage/reply 意图。
+async fn fail_unsent_quota(
+    state: &ServiceState,
+    invocation: &Invocation,
+    reason: &contracts::ReasonCode,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = state.pool.begin().await?;
+    state.capacity.lock_pool(&mut tx).await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let changed = sqlx::query(
+        "update catalog.agent_invocation i set status='FAILED',updated_at=now()
+         where i.id=$1 and i.action_execution_id=$2 and i.status='CREATED'
+           and i.runtime_turn_id is null and i.native_status is null
+           and i.reply_event_id is null and i.post_message_intent is null
+           and cardinality(i.automation_step_event_ids)=0
+           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+           and not exists(select 1 from outbox.usage_event u
+             where u.invocation_id=i.id or u.operation_id=$3)",
+    )
+    .bind(invocation.id)
+    .bind(ae.id)
+    .bind(ae.operation_id)
+    .execute(&mut *tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let code = crate::governance::wire(reason);
+    sqlx::query("update admission.action_execution set reason_code=$2,updated_at=now() where id=$1")
+        .bind(ae.id)
+        .bind(&code)
+        .execute(&mut *tx)
+        .await?;
+    let def = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
+    let refusal = crate::governance::Refusal::Limit(reason.clone());
+    state
+        .governance
+        .record_automation_decision(&mut tx, &ae, &def, "RECHECK", Err(&refusal))
+        .await?;
+    let evidence = vec![
+        crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+        crate::audit::Evidence::new(EvidenceKind::TemporalWorkflowId, &invocation.workflow_id),
+    ];
+    let outcome = ("quota-refused", "DECISION", code.as_str());
+    turn_audit(state, &mut tx, &ae, invocation.id, outcome, evidence).await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 async fn record_turn(
@@ -4384,5 +4485,27 @@ mod thread_context_tests {
         assert!(text.contains("研究助理 (agent): 三点"));
         assert!(text.contains("you: 我之前说过"));
         assert!(text.contains("npub:unknownpubke: ?"));
+    }
+}
+
+#[cfg(test)]
+mod quota_refusal_tests {
+    use super::quota_reason;
+    use crate::governance::{Refusal, QUOTA_UNVERIFIABLE};
+    use contracts::ReasonCode;
+
+    #[test]
+    fn dispatch_recheck_keeps_quota_reasons_distinct() {
+        let exhausted = Refusal::Limit(ReasonCode::QuotaExhausted);
+        assert_eq!(quota_reason(&exhausted), Some(ReasonCode::QuotaExhausted));
+        let unreadable = Refusal::Unavailable(QUOTA_UNVERIFIABLE.into());
+        assert_eq!(
+            quota_reason(&unreadable),
+            Some(ReasonCode::DependencyUnavailable)
+        );
+        let spicedb = Refusal::Unavailable("SpiceDB".into());
+        assert_eq!(quota_reason(&spicedb), None);
+        let denied = Refusal::Denied(ReasonCode::PermissionDenied);
+        assert_eq!(quota_reason(&denied), None);
     }
 }

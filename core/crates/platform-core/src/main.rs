@@ -93,6 +93,7 @@ mod temporal;
 mod tenant_bootstrap;
 mod tenant_delete;
 mod tenant_lifecycle;
+mod tenant_quota;
 mod user_state;
 mod user_status;
 mod web_profile;

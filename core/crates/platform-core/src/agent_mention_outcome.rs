@@ -254,4 +254,16 @@ mod tests {
         assert_eq!(lost.state, AgentMentionOutcomeState::Failed);
         assert_eq!(lost.reason_code, Some(ReasonCode::DependencyUnavailable));
     }
+
+    #[test]
+    fn mention_outcome_keeps_quota_exhausted_at_admission_and_dispatch() {
+        // DD-123：准入时额度不足是 DENIED；派发前 fresh CHECK 拒绝使 Invocation FAILED，
+        // AE 保留同一原因码，不折叠为重新准入。
+        let admission = outcome("DENIED", Some("QUOTA_EXHAUSTED"), None, None);
+        assert_eq!(admission.state, AgentMentionOutcomeState::Denied);
+        assert_eq!(admission.reason_code, Some(ReasonCode::QuotaExhausted));
+        let dispatch = outcome("ALLOWED", Some("QUOTA_EXHAUSTED"), Some("FAILED"), None);
+        assert_eq!(dispatch.state, AgentMentionOutcomeState::Failed);
+        assert_eq!(dispatch.reason_code, Some(ReasonCode::QuotaExhausted));
+    }
 }

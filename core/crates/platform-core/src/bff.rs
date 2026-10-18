@@ -616,6 +616,9 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/usage-billing",
             get(crate::business_observability::usage_billing),
         )
+        // DD-123 (5)：平台额度只对 Tenant admin 与 auditor 可见（tenant audit，fresh Check），
+        // 数值直接读 OpenMeter；设置走受治理动作 tenant.quota.set
+        .exposed_route("/api/v1/tenant/quotas", get(crate::tenant_quota::quotas))
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
         .exposed_route(
             crate::client_keys::REGISTER_PATH,
