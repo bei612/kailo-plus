@@ -206,6 +206,10 @@ vi.mock("@/platform/bff-client", () => ({
   fetchUserState: vi.fn(),
   setWorkspacePreference: vi.fn(),
   signOut: vi.fn(),
+  // The shell's original connection card reads the aggregated BFF stream state.
+  streamConnectionState: () => "idle",
+  subscribeStreamConnection: () => () => {},
+  reconnectStreams: vi.fn(async () => true),
 }));
 
 beforeEach(() => {

@@ -520,6 +520,47 @@ export type StreamFrame =
   | { type: "ended" };
 
 /**
+ * Buzz 779af8886caae1317b4de962082429867ab61503 shared/api/relayClientShared.ts ConnectionState,
+ * without the native-only `stalled`: the Web connection is the set of open BFF streams
+ * (SS-WEB-RELAY), never a browser Relay socket. `idle` means no stream is open.
+ */
+export type StreamConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "disconnected";
+type StreamConnection = { state: Exclude<StreamConnectionState, "idle">; reconnect: () => Promise<void> };
+const streamConnections = new Set<StreamConnection>();
+const streamConnectionListeners = new Set<() => void>();
+let streamConnectionSnapshot: StreamConnectionState = "idle";
+function aggregateStreamConnection(): StreamConnectionState {
+  if (streamConnections.size === 0) return "idle";
+  const states = new Set([...streamConnections].map((connection) => connection.state));
+  // The worst open stream decides: one unreachable scope is an unreachable connection.
+  for (const state of ["disconnected", "reconnecting", "connecting"] as const) if (states.has(state)) return state;
+  return "connected";
+}
+function publishStreamConnection() {
+  const next = aggregateStreamConnection();
+  if (next === streamConnectionSnapshot) return;
+  streamConnectionSnapshot = next;
+  for (const listener of [...streamConnectionListeners]) listener();
+}
+/** The aggregated BFF stream connection state (useSyncExternalStore snapshot). */
+export function streamConnectionState(): StreamConnectionState {
+  return streamConnectionSnapshot;
+}
+export function subscribeStreamConnection(listener: () => void): () => void {
+  streamConnectionListeners.add(listener);
+  return () => { streamConnectionListeners.delete(listener); };
+}
+/**
+ * Original useReconnectRelay: retry every open stream now instead of waiting for its server retry
+ * interval. Each stream still probes the session first; revoked streams never reopen. Resolves
+ * once every attempt settled, with whether the aggregate is connected again.
+ */
+export async function reconnectStreams(): Promise<boolean> {
+  await Promise.all([...streamConnections].map((connection) => connection.reconnect()));
+  return streamConnectionSnapshot === "connected";
+}
+
+/**
  * 打开一条 Workspace 事件流。
  *
  * 服务端把 generation 作为事件 id、把重连间隔作为 retry 下发。断线后先关闭
@@ -536,8 +577,45 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
   let retryMillis: number | undefined;
   let reopen: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let connectedOnce = false;
+  // A user-requested reconnect skips the server retry wait once, after the same session probe.
+  let reconnectNow = false;
+  let recovering = false;
+  // Callers of a requested reconnect wait until this attempt connects, ends or falls back to the
+  // server retry interval.
+  let attemptWaiters: (() => void)[] = [];
+  const settleAttempt = () => {
+    const waiters = attemptWaiters;
+    attemptWaiters = [];
+    for (const resolve of waiters) resolve();
+  };
+  const connection: StreamConnection = { state: "connecting", reconnect: () => {
+    if (stopped || connection.state === "connected") return Promise.resolve();
+    const settled = new Promise<void>((resolve) => { attemptWaiters.push(resolve); });
+    if (!recovering && connection.state !== "connecting") {
+      clearTimeout(reopen);
+      reopen = undefined;
+      reconnectNow = true;
+      void recover();
+    }
+    return settled;
+  } };
+  const setConnection = (state: StreamConnection["state"]) => {
+    connection.state = state;
+    publishStreamConnection();
+    if (state === "connected" || state === "disconnected") settleAttempt();
+  };
+  // A revocation or ended session is not a connectivity problem: it leaves the aggregate.
+  const leaveConnection = () => {
+    streamConnections.delete(connection);
+    publishStreamConnection();
+    settleAttempt();
+  };
+  streamConnections.add(connection);
+  publishStreamConnection();
 
   const recover = async () => {
+    recovering = true;
     try {
       // EventSource cannot expose an HTTP status or stop a cross-origin
       // redirect itself. Probe through the existing manual-redirect transport
@@ -545,26 +623,44 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
       transport.invalidateReads();
       await bff.session();
     } catch (error) {
+      recovering = false;
+      reconnectNow = false;
       if (stopped) return;
       if (error instanceof SessionEndedError ||
         (error instanceof BffError && (error.status === 401 || error.status === 403))) {
         stopped = true;
+        leaveConnection();
         onFrame({ type: "ended" });
         return;
       }
-      if (retryMillis !== undefined) reopen = setTimeout(() => { void recover(); }, retryMillis);
-      else onFrame({ type: "ended" });
+      if (retryMillis !== undefined) {
+        reopen = setTimeout(() => { void recover(); }, retryMillis);
+        settleAttempt();
+      } else {
+        setConnection("disconnected");
+        onFrame({ type: "ended" });
+      }
       return;
     }
+    recovering = false;
     if (stopped) return;
-    if (retryMillis !== undefined) reopen = setTimeout(open, retryMillis);
-    else onFrame({ type: "ended" });
+    const immediate = reconnectNow;
+    reconnectNow = false;
+    if (immediate) open();
+    else if (retryMillis !== undefined) {
+      reopen = setTimeout(open, retryMillis);
+      settleAttempt();
+    } else {
+      setConnection("disconnected");
+      onFrame({ type: "ended" });
+    }
   };
 
   const open = () => {
     if (stopped) return;
     clearTimeout(reopen);
     reopen = undefined;
+    setConnection(connectedOnce ? "reconnecting" : "connecting");
     const es = new EventSource(conversationId
       ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/stream`
       : `/api/v1/workspaces/${workspaceId}/stream`);
@@ -598,6 +694,8 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("live", () => {
       if (stopped || source !== es) return;
+      connectedOnce = true;
+      setConnection("connected");
       onFrame({ type: "live" });
     });
     es.addEventListener("closed", (e) => {
@@ -613,6 +711,7 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
         clearTimeout(reopen);
         reopen = undefined;
         es.close();
+        leaveConnection();
       }
       onFrame({ type: "closed", reason });
     });
@@ -624,6 +723,7 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
       es.close();
       source = undefined;
       clearTimeout(reopen);
+      setConnection(connectedOnce ? "reconnecting" : "connecting");
       onFrame({ type: "interrupted" });
       void recover();
     });
@@ -634,5 +734,6 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     stopped = true;
     clearTimeout(reopen);
     source?.close();
+    leaveConnection();
   };
 }

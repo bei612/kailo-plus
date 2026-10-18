@@ -1,10 +1,18 @@
 import React, { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+  POOF_DURATION_MS,
+  POOF_ORIGIN_CLASS,
+  POOF_POINTER_ORIGIN_CLASS,
+  POOF_TRIGGER_CLASS,
+} from "@client-kit/platform/react/sidebar/poof-burst-classes";
 
-export const POOF_TRIGGER_CLASS = "buzz-poof-trigger";
-export const POOF_ORIGIN_CLASS = "buzz-poof-origin";
-export const POOF_POINTER_ORIGIN_CLASS = "buzz-poof-pointer-origin";
-
-export const POOF_DURATION_MS = 430;
+// The markers are shared with the client-kit sidebar action cards.
+export {
+  POOF_DURATION_MS,
+  POOF_ORIGIN_CLASS,
+  POOF_POINTER_ORIGIN_CLASS,
+  POOF_TRIGGER_CLASS,
+};
 
 const POOF_SOUND_URL = "/pow/plop.m4a";
 const POOF_SIZE_SCALE = 0.6375;

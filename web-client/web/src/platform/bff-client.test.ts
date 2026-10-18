@@ -3,7 +3,7 @@ import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, 
 import { AGENT_MENTION_OUTCOME_QUERY_LIMIT, agentMentionOutcomesPath, queryAgentMentionOutcomes } from "./bff-client";
 import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
   releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
-import { publishTyping } from "./bff-client";
+import { publishTyping, reconnectStreams, streamConnectionState, subscribeStreamConnection } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -253,6 +253,59 @@ it("retries only the session probe while unavailable and never reopens after cle
   stop();
   await vi.runAllTimersAsync();
   expect(Source.instances).toHaveLength(1);
+});
+
+it("aggregates the open BFF streams into the original connection states and leaves on cleanup", async () => {
+  const seen: string[] = [];
+  const unsubscribe = subscribeStreamConnection(() => seen.push(streamConnectionState()));
+  expect(streamConnectionState()).toBe("idle");
+  const stopA = openStream("workspace-a", () => {});
+  const stopB = openStream("workspace-b", () => {});
+  expect(streamConnectionState()).toBe("connecting");
+  const [a, b] = Source.instances;
+  a.frame("retry", "25"); b.frame("retry", "25");
+  a.frame("live");
+  expect(streamConnectionState()).toBe("connecting");
+  b.frame("live");
+  expect(streamConnectionState()).toBe("connected");
+  // One interrupted scope is an interrupted connection, until its server-timed reopen is live.
+  b.frame("error");
+  expect(streamConnectionState()).toBe("reconnecting");
+  await vi.advanceTimersByTimeAsync(25);
+  Source.instances[2].frame("live");
+  expect(streamConnectionState()).toBe("connected");
+  // A revoked scope is not a connectivity problem and leaves the aggregate.
+  Source.instances[2].frame("error");
+  expect(streamConnectionState()).toBe("reconnecting");
+  a.frame("closed", "scope-revoked");
+  expect(streamConnectionState()).toBe("reconnecting");
+  stopB();
+  expect(streamConnectionState()).toBe("idle");
+  stopA();
+  unsubscribe();
+  expect(seen).toEqual(["connecting", "connected", "reconnecting", "connected", "reconnecting", "idle"]);
+});
+
+it("reconnects a disconnected stream at once after the session probe, never a revoked one", async () => {
+  const frames: StreamFrame[] = [];
+  const stop = openStream("workspace-a", (frame) => frames.push(frame));
+  // No server retry interval yet: the first failure is reported as disconnected.
+  Source.instances[0].frame("error");
+  await vi.runAllTimersAsync();
+  expect(streamConnectionState()).toBe("disconnected");
+  expect(frames).toEqual([{ type: "interrupted" }, { type: "ended" }]);
+  const reconnected = reconnectStreams();
+  await vi.waitFor(() => expect(Source.instances).toHaveLength(2));
+  expect(bff.session).toHaveBeenCalledTimes(2);
+  expect(streamConnectionState()).toBe("connecting");
+  Source.instances[1].frame("live");
+  await expect(reconnected).resolves.toBe(true);
+  expect(streamConnectionState()).toBe("connected");
+  Source.instances[1].frame("closed", "session-revoked");
+  expect(streamConnectionState()).toBe("idle");
+  await expect(reconnectStreams()).resolves.toBe(false);
+  expect(Source.instances).toHaveLength(2);
+  stop();
 });
 
 it("uses one top-level login navigation for concurrent expired-session responses", async () => {

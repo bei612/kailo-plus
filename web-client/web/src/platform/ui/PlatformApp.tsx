@@ -67,6 +67,8 @@ import { useConversationUnreadProjection, useSidebarUnreadOverflow } from "@clie
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
+import { RelayConnectionOverlay, SidebarRelayConnectionFooterCard } from "@client-kit/platform/react/sidebar/relay-connection-overlay";
+import { useStreamConnectionCard } from "./StreamConnection";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { WebPresenceHost } from "./PresenceHost";
 import { UserNameIndicators } from "@client-kit/platform/react/user-status";
@@ -183,6 +185,8 @@ function Notice({ text }: { text: string }) {
 function SignedIn({ session }: { session: PlatformSessionView }) {
   const notificationSettings = useBrowserNotifications();
   const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
+  // Original relay connection card and collapsed-sidebar overlay, over the BFF streams.
+  const connectionCard = useStreamConnectionCard();
   const workspaces = useQuery(platformQueries.workspaces);
   const queryClient = useQueryClient();
   const userState = useInboxState(bff);
@@ -585,8 +589,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 bottomClassName="bottom-full" emphasis={sidebarOverflow.hasHighPriorityBelow ? "primary" : "default"}
                 onClick={() => nextUnreadDmBelowId ? sidebarOverflow.scrollToChannel(nextUnreadDmBelowId) : sidebarOverflow.scrollToNextBelow()}
                 position="bottom" testId="sidebar-unread-below" /> : null}
-              footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
-                onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
+              footer={<><SidebarRelayConnectionFooterCard card={connectionCard} />
+                <SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
+                onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu></>}
               dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
                 <CreateChannelDialog key={`forum:${session.tenantPrincipalId}`} open={newForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
                 <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
@@ -726,6 +731,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 section={navigation.settingsSection} onSectionChange={navigation.setSettingsSection} />
             </div> : null}
           </div>
+          <RelayConnectionOverlay card={connectionCard} />
         </SidebarProvider>
       </div>
     </div>
