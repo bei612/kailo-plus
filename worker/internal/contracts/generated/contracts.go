@@ -280,6 +280,9 @@
 //    capabilityContractView, err := UnmarshalCapabilityContractView(bytes)
 //    bytes, err = capabilityContractView.Marshal()
 //
+//    channelTemplateRequest, err := UnmarshalChannelTemplateRequest(bytes)
+//    bytes, err = channelTemplateRequest.Marshal()
+//
 //    clientKeyView, err := UnmarshalClientKeyView(bytes)
 //    bytes, err = clientKeyView.Marshal()
 //
@@ -333,6 +336,9 @@
 //
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
+//
+//    followedPrincipalRequest, err := UnmarshalFollowedPrincipalRequest(bytes)
+//    bytes, err = followedPrincipalRequest.Marshal()
 //
 //    invitationRedemptionView, err := UnmarshalInvitationRedemptionView(bytes)
 //    bytes, err = invitationRedemptionView.Marshal()
@@ -439,6 +445,18 @@
 //    platformSessionView, err := UnmarshalPlatformSessionView(bytes)
 //    bytes, err = platformSessionView.Marshal()
 //
+//    sidebarAssignmentRequest, err := UnmarshalSidebarAssignmentRequest(bytes)
+//    bytes, err = sidebarAssignmentRequest.Marshal()
+//
+//    sidebarSectionRequest, err := UnmarshalSidebarSectionRequest(bytes)
+//    bytes, err = sidebarSectionRequest.Marshal()
+//
+//    sidebarSectionOrderRequest, err := UnmarshalSidebarSectionOrderRequest(bytes)
+//    bytes, err = sidebarSectionOrderRequest.Marshal()
+//
+//    sidebarSortRequest, err := UnmarshalSidebarSortRequest(bytes)
+//    bytes, err = sidebarSortRequest.Marshal()
+//
 //    taskView, err := UnmarshalTaskView(bytes)
 //    bytes, err = taskView.Marshal()
 //
@@ -447,6 +465,9 @@
 //
 //    tenantQuotaPage, err := UnmarshalTenantQuotaPage(bytes)
 //    bytes, err = tenantQuotaPage.Marshal()
+//
+//    threadPreferenceRequest, err := UnmarshalThreadPreferenceRequest(bytes)
+//    bytes, err = threadPreferenceRequest.Marshal()
 //
 //    usageBillingView, err := UnmarshalUsageBillingView(bytes)
 //    bytes, err = usageBillingView.Marshal()
@@ -1747,6 +1768,16 @@ func (r *CapabilityContractView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalChannelTemplateRequest(data []byte) (ChannelTemplateRequest, error) {
+	var r ChannelTemplateRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ChannelTemplateRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalClientKeyView(data []byte) (ClientKeyView, error) {
 	var r ClientKeyView
 	err := json.Unmarshal(data, &r)
@@ -1924,6 +1955,16 @@ func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
 }
 
 func (r *EvidenceView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFollowedPrincipalRequest(data []byte) (FollowedPrincipalRequest, error) {
+	var r FollowedPrincipalRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FollowedPrincipalRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2277,6 +2318,46 @@ func (r *PlatformSessionView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalSidebarAssignmentRequest(data []byte) (SidebarAssignmentRequest, error) {
+	var r SidebarAssignmentRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SidebarAssignmentRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSidebarSectionRequest(data []byte) (SidebarSectionRequest, error) {
+	var r SidebarSectionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SidebarSectionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSidebarSectionOrderRequest(data []byte) (SidebarSectionOrderRequest, error) {
+	var r SidebarSectionOrderRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SidebarSectionOrderRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSidebarSortRequest(data []byte) (SidebarSortRequest, error) {
+	var r SidebarSortRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SidebarSortRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalTaskView(data []byte) (TaskView, error) {
 	var r TaskView
 	err := json.Unmarshal(data, &r)
@@ -2304,6 +2385,16 @@ func UnmarshalTenantQuotaPage(data []byte) (TenantQuotaPage, error) {
 }
 
 func (r *TenantQuotaPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalThreadPreferenceRequest(data []byte) (ThreadPreferenceRequest, error) {
+	var r ThreadPreferenceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ThreadPreferenceRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5286,8 +5377,8 @@ type ApprovalDecisionRequest struct {
 	Decision ApprovalDecision `json:"decision"`
 }
 
-// GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history
-// 的投影。
+// GET /api/v1/approvals（待我审批）、GET /api/v1/approvals/initiated（本人发起且已有结果的审批，DD-125(5) Inbox
+// Needs action 的第二来源）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history 的投影。
 type ApprovalView struct {
 	ActionExecutionID string               `json:"actionExecutionId"`
 	ActionKey         string               `json:"actionKey"`
@@ -5725,6 +5816,22 @@ type CapabilityContractView struct {
 	RegisteredByActionExecutionID *string                  `json:"registeredByActionExecutionId,omitempty"`
 	SchemaSetDigest               string                   `json:"schemaSetDigest"`
 	Status                        CapabilityContractStatus `json:"status"`
+}
+
+// PUT /api/v1/user-state/channel-templates/{templateId} 的请求体（DD-125(4)、03
+// CollaborationUserState.channel_templates）：新建或替换本人的原频道模板；templateId 由客户端以 UUID 生成。字段沿原
+// ChannelTemplateRecord；agentResourceIds 只引用同 Tenant 的 AgentDefinition Resource（≙ 原
+// persona），原 runtime/model/backend 与 team 条目不适用。canvasTemplate 不超过 64 KiB，每人至多 200
+// 个模板。模板不授予任何权限：应用时仍逐项提交 workspace.create、workspace.canvas.set 与
+// agent.installation.create。DELETE 同一路径以 UserStateVersion 为请求体。version 不符即 409。
+type ChannelTemplateRequest struct {
+	AgentResourceIDS []string            `json:"agentResourceIds"`
+	CanvasTemplate   *string             `json:"canvasTemplate,omitempty"`
+	ChannelType      ChannelType         `json:"channelType"`
+	Description      *string             `json:"description,omitempty"`
+	Name             string              `json:"name"`
+	Version          int64               `json:"version"`
+	Visibility       WorkspaceVisibility `json:"visibility"`
 }
 
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -6171,6 +6278,16 @@ type EvidenceView struct {
 	UnavailableReason *EvidenceUnavailableReason `json:"unavailableReason,omitempty"`
 	// 该 ID 的版本；证据未登记版本时缺省
 	Version *int64 `json:"version,omitempty"`
+}
+
+// PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
+// CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一
+// Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前
+// ACTIVE，取消关注也接受其已撤销的历史公钥。读取时按被关注 Principal 的全部 ACTIVE 公钥展开。version 不符即 409。
+type FollowedPrincipalRequest struct {
+	Followed bool   `json:"followed"`
+	Pubkey   string `json:"pubkey"`
+	Version  int64  `json:"version"`
 }
 
 // POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
@@ -7002,6 +7119,44 @@ type PlatformSessionView struct {
 	TenantPrincipalID string  `json:"tenantPrincipalId"`
 }
 
+// PUT /api/v1/user-state/sidebar-assignments 的请求体（DD-125(5)）：原
+// assignChannel/unassignChannel。channelKey 是原生 Buzz Channel ID，必须属于本人当前是成员的 Workspace
+// 或参与中的私聊；sectionId 缺省即移出分区，给出时必须是现有分区。每人至多 1000 个归属（原
+// MAX_CHANNEL_SECTION_ASSIGNMENTS）。失去资格的归属保留但不呈现。version 不符即 409。
+type SidebarAssignmentRequest struct {
+	ChannelKey string  `json:"channelKey"`
+	SectionID  *string `json:"sectionId,omitempty"`
+	Version    int64   `json:"version"`
+}
+
+// PUT /api/v1/user-state/sidebar-sections/{sectionId} 的请求体（DD-125(5)、03
+// CollaborationUserState.sidebar_sections）：新建或改名原自定义频道分区；sectionId 由客户端以 UUID 生成。name
+// 去首尾空白后非空，icon 缺省即无图标，order 是原分区顺序。每人至多 100 个分区（原 MAX_CHANNEL_SECTIONS）。version 不符即
+// 409。DELETE 同一路径以 UserStateVersion 为请求体，同时清除指向该分区的归属与该分区的排序分组。
+type SidebarSectionRequest struct {
+	Icon    *string `json:"icon,omitempty"`
+	Name    string  `json:"name"`
+	Order   int64   `json:"order"`
+	Version int64   `json:"version"`
+}
+
+// PUT /api/v1/user-state/sidebar-section-order 的请求体（DD-125(5)）：原
+// reorderSections/moveSectionUp/moveSectionDown 的结果顺序。sectionIds 必须恰为当前全部分区 ID 的一个排列，Core
+// 按下标写回 order。version 不符即 409。
+type SidebarSectionOrderRequest struct {
+	SectionIDS []string `json:"sectionIds"`
+	Version    int64    `json:"version"`
+}
+
+// PUT /api/v1/user-state/sidebar-sort 的请求体（DD-125(5)、03
+// CollaborationUserState.sidebar_sort）：原分组排序。groupKey 只接受原固定分组 starred/channels/forums/dms
+// 或 section:<现有分区 ID>；每人至多 104 个分组（原 MAX_CHANNEL_SORT_GROUPS）。version 不符即 409。
+type SidebarSortRequest struct {
+	GroupKey string          `json:"groupKey"`
+	Mode     SidebarSortMode `json:"mode"`
+	Version  int64           `json:"version"`
+}
+
 // GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
 // 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
 type TaskView struct {
@@ -7069,6 +7224,17 @@ type TenantQuotaView struct {
 	Usage          *float64           `json:"usage,omitempty"`
 }
 
+// PUT /api/v1/user-state/threads 的请求体（DD-40、DD-125(1)、03
+// CollaborationUserState.thread_preferences）。threadKey 为 thread:<Buzz root event id>，Core
+// 以本人 SERVER 身份回读根事件并核验当前 Workspace 成员或私聊参与资格。保留原联动：followed=true 记 FOLLOWED（关注即解除静音），false
+// 记 MUTED（取消关注即静音）；每人至多 500 条，超出淘汰最早写入的关注。version 是读到的 CollaborationUserState 版本，不符即 409。不是
+// Governed Action。
+type ThreadPreferenceRequest struct {
+	Followed  bool   `json:"followed"`
+	ThreadKey string `json:"threadKey"`
+	Version   int64  `json:"version"`
+}
+
 // GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
 // §7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core
 // 不复制或聚合成账本；投递计数只来自 Core UsageEvent outbox。缺口用确定状态表达，不显示零或已结算。
@@ -7130,8 +7296,9 @@ type UsageMeterView struct {
 	State    MeterUsageState `json:"state"`
 }
 
-// CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT
-// /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
+// CollaborationUserState 写入成功后的新版本（/api/v1/user-state/* 各 PUT/DELETE 的 200 回应）。DD-125 的
+// DELETE /api/v1/user-state/sidebar-sections/{sectionId} 与 DELETE
+// /api/v1/user-state/channel-templates/{templateId} 也以它为请求体：version 是读到的版本，不符即 409。
 type UserStateVersion struct {
 	Version int64 `json:"version"`
 }
@@ -7319,6 +7486,12 @@ type WebPublishMessageRequest struct {
 	MessageType    *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
+	// DD-125(1) 原“发送到频道”：当前 Channel 中一条线程回复的 Relay 事件 ID。BFF 回读该回复，要求作者为本人或本人是其 Installation
+	// owner，按原 getSendToChannelSemantics 只复制正文与 emoji/imeta/link-preview/mention
+	// 标签、重算提及并排除源作者，由线程根按原截断规则生成 buzz:sent-from-thread，以本人身份发一条新的顶层 kind:9，沿 DD-81 幂等与对账。与
+	// parentEventId、editEventId、deleteEventId 互斥；content 须为空且不带附件、提及或 Installation
+	// 提及——正文与标签只取自回读的源事件，不接受 Browser 提交的原始标签。
+	SendToChannelSourceEventID *string `json:"sendToChannelSourceEventId,omitempty"`
 }
 
 // Web HUMAN 修改已准入 Workspace 对应 Channel 的原主题（DD-119、09 §3）。BFF 以本人 SERVER 身份按 DD-81 签发严格
@@ -10267,6 +10440,15 @@ type PlatformSessionAccessMode string
 const (
 	Full                PlatformSessionAccessMode = "FULL"
 	LifecycleRestricted PlatformSessionAccessMode = "LIFECYCLE_RESTRICTED"
+)
+
+// 原 Buzz 侧栏分组排序（channelSortPreference.ts::ChannelSortMode）：alpha 按名称，recent
+// 按最近消息（DD-125(5)）。
+type SidebarSortMode string
+
+const (
+	Alpha  SidebarSortMode = "alpha"
+	Recent SidebarSortMode = "recent"
 )
 
 // TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at
