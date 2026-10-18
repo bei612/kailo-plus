@@ -5,6 +5,7 @@ import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
 import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
+import { useComposerAutofocus } from "@client-kit/platform/react/composer/features/messages/lib/useComposerAutofocus";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
@@ -1209,6 +1210,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     onLinkSelectionChange: (info) => linkSelectionRef.current(info),
     onLinkShortcut: () => linkShortcutRef.current(),
   });
+  // Original MessageComposer: focus on mount and on channel/thread (draft key) change. The caret
+  // goes to the end as richText.focus does; the bottom-docked composer needs no scroll.
+  const focusComposerEnd = useCallback(() => { richText.editor?.commands.focus("end", { scrollIntoView: false }); }, [richText.editor]);
+  useComposerAutofocus(focusComposerEnd, draftKey, disabled || sending || compact);
   const registerMentionPubkey = useCallback((displayName: string, pubkey: string) => {
     const label=selectedMentionLabel(displayName,pubkey,humanBindings.current);
     pasteBinding.claimMentionIntent(label);
