@@ -3869,7 +3869,8 @@ mod report_tests {
                 "displayName":"conformance.txt","mediaType":"text/plain"}});
         let raw = response.to_string();
         let digests = super::wire_digests(step, &request, "execute", 200, &raw).unwrap();
-        assert_eq!(serde_json::to_value(digests).unwrap()["captures"], captures);
+        let digests = serde_json::to_value(digests).unwrap();
+        assert_eq!(digests["captures"], captures);
         // DD-124(5): a terminal without its native status is not evidence.
         response["execution"]
             .as_object_mut()
