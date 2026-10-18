@@ -12,7 +12,7 @@ const webVersion = (JSON.parse(readFileSync(new URL("./package.json", import.met
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/",
   define: {
-    "import.meta.env.VITE_APP_VERSION": JSON.stringify(webVersion),
+    __BUZZ_WEB_VERSION__: JSON.stringify(webVersion),
   },
   plugins: [
     profileAssets(import.meta.url),

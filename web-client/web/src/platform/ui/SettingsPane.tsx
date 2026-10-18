@@ -50,7 +50,7 @@ export function SettingsPane({ active = true, fallbackDisplayName, onClose, sect
   const invitations=useInvitationSettingsState();
   return (
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}
-      appVersion={import.meta.env.VITE_APP_VERSION ?? null}>
+      appVersion={typeof __BUZZ_WEB_VERSION__ === "string" ? __BUZZ_WEB_VERSION__ : null}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       <div hidden={section !== "profile"}><WebProfileSettings fallbackDisplayName={fallbackDisplayName} /></div>
       {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
