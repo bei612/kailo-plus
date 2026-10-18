@@ -9,7 +9,12 @@ import { newestVisibleUserStatus, useUserStatusQuery } from "../user-status/hook
 import { StatusEmoji } from "../user-status/ui/StatusEmoji";
 import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "../profile/avatar-host";
-import { useUiLocale } from "../context";
+import { useUiLocale, useUiT } from "../context";
+import { MessageSquare } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "../profile/buzz/shared/ui/button";
+import { Spinner } from "../profile/buzz/shared/ui/spinner";
+import { useProfileDirectMessage } from "./profile-direct-message";
 import type { WebProfileView } from "@client-kit/contracts";
 import { usePulseHost } from "./host";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -186,7 +191,8 @@ export function UserProfilePopoverSurface({
       </PopoverAnchor>
       {open ? (
         renderBody({canOpenProfilePanel,onContentMouseEnter:handleContentMouseEnter,
-          onMouseLeave:handleMouseLeave,onTriggerClick:handleTriggerClick,pubkey,role})
+          onMouseLeave:handleMouseLeave,onTriggerClick:handleTriggerClick,pubkey,role,
+          onClose:()=>{clearHoverTimer();setOpen(false);}})
       ) : null}
     </Popover>
   );
@@ -204,6 +210,8 @@ export type ProfilePopoverBodyProps = {
   onTriggerClick: (event: React.MouseEvent) => void;
   pubkey: string;
   role?: string;
+  /** Closes the hover card (original handleMessage closes it after navigating). */
+  onClose?: () => void;
 };
 
 function PulseProfilePopoverBody(props: ProfilePopoverBodyProps) {
@@ -251,21 +259,50 @@ function PresenceProfileAvatar({ pubkeys, ...avatar }: {
   );
 }
 
-function ProfileStatusLine({ pubkeys }: { pubkeys: readonly string[] }) {
+function ProfileStatusLine({ pubkeys, actions }: { pubkeys: readonly string[]; actions?: React.ReactNode }) {
   const userStatusQuery = useUserStatusQuery(pubkeys);
   const userStatus = newestVisibleUserStatus(userStatusQuery.data, pubkeys);
   const userStatusText = userStatus?.text.trim() ?? "";
-  if (!userStatusText && !userStatus?.emoji) return null;
+  const hasUserStatus = Boolean(userStatusText || userStatus?.emoji);
+  if (!hasUserStatus && !actions) return null;
   return (
     <>
       <div aria-hidden="true" className="my-1 border-t border-border/60" />
-      <StatusLine>
+      {hasUserStatus ? <StatusLine>
         {userStatus?.emoji ? (
           <StatusEmoji className="h-3.5 w-3.5 shrink-0" value={userStatus.emoji} />
         ) : null}
         {userStatusText ? <span className="truncate">{userStatusText}</span> : null}
-      </StatusLine>
+      </StatusLine> : null}
+      {actions}
     </>
+  );
+}
+
+/** Original hover-card Message action (Wave needs a design decision and is not offered). */
+function ProfileMessageAction({ pubkey, onClose }: { pubkey: string; onClose?: () => void }) {
+  const t = useUiT();
+  const directMessage = useProfileDirectMessage();
+  const mounted = React.useRef(true);
+  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [pending, setPending] = React.useState(false);
+  if (!directMessage) return null;
+  return (
+    <div className="flex gap-2">
+      <Button className="min-w-0 flex-1" data-testid={`user-profile-popover-message-${pubkey}`} disabled={pending}
+        onClick={() => {
+          if (pending) return;
+          setPending(true);
+          void directMessage.open(pubkey).then(
+            () => { if (mounted.current) onClose?.(); },
+            (error: unknown) => { toast.error(error instanceof Error ? error.message : t("platform.profile.openDmFailed")); },
+          ).finally(() => { if (mounted.current) setPending(false); });
+        }}
+        size="sm" type="button" variant="outline">
+        {pending ? <Spinner aria-hidden="true" className="h-3.5 w-3.5 border-2" /> : <MessageSquare />}
+        {t("platform.profile.message")}
+      </Button>
+    </div>
   );
 }
 
@@ -274,6 +311,7 @@ export function UserProfilePopoverBody({
   onContentMouseEnter,
   onMouseLeave,
   onTriggerClick,
+  onClose,
   pubkey,
   role,
   profile,
@@ -289,6 +327,10 @@ export function UserProfilePopoverBody({
 }) {
   const locale=useUiLocale();
   const presenceHost = usePresenceHost();
+  const directMessage = useProfileDirectMessage();
+  // Original showMessageAction: other people only, once the profile is loaded; agents are not DM targets (03 L122).
+  const messageAction = directMessage && profile && role !== "bot" && directMessage.canMessage(pubkey)
+    ? <ProfileMessageAction onClose={onClose} pubkey={pubkey} /> : null;
   const identityKeys = presencePubkeys && presencePubkeys.length > 0 ? presencePubkeys : [pubkey];
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
   const profileDescription = profile?.about?.trim() ?? "";
@@ -355,7 +397,8 @@ export function UserProfilePopoverBody({
           {profileHeaderContent}
         </div>
       )}
-      {presenceHost ? <ProfileStatusLine pubkeys={identityKeys} /> : null}
+      {presenceHost ? <ProfileStatusLine actions={messageAction} pubkeys={identityKeys} />
+        : messageAction ? <><div aria-hidden="true" className="my-1 border-t border-border/60" />{messageAction}</> : null}
       </div>
     </PopoverContent>
   );

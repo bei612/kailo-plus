@@ -942,6 +942,7 @@ enum PlatformMessageKey {
   platformProfileCopyField,
   platformProfilePanelInfo,
   platformProfileMessage,
+  platformProfileOpenDmFailed,
   platformProfileMore,
   platformProfileLess,
   platformProfileResize,
@@ -5226,6 +5227,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformProfileCopyField: ('Copy {field}', '复制{field}'),
   PlatformMessageKey.platformProfilePanelInfo: ('Info', '信息'),
   PlatformMessageKey.platformProfileMessage: ('Message', '发消息'),
+  PlatformMessageKey.platformProfileOpenDmFailed: (
+    'Couldn\'t open the direct message.',
+    '无法打开私聊。',
+  ),
   PlatformMessageKey.platformProfileMore: ('more', '展开'),
   PlatformMessageKey.platformProfileLess: ('less', '收起'),
   PlatformMessageKey.platformProfileResize: (

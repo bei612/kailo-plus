@@ -1039,6 +1039,7 @@ export const platformMessages = {
   "platform.profile.copyField": { en: "Copy {field}", "zh-CN": "复制{field}" },
   "platform.profile.panelInfo": { en: "Info", "zh-CN": "信息" },
   "platform.profile.message": { en: "Message", "zh-CN": "发消息" },
+  "platform.profile.openDmFailed": { en: "Couldn't open the direct message.", "zh-CN": "无法打开私聊。" },
   "platform.profile.more": { en: "more", "zh-CN": "展开" },
   "platform.profile.less": { en: "less", "zh-CN": "收起" },
   "platform.profile.resize": { en: "Resize profile panel", "zh-CN": "调整资料面板大小" },

@@ -53,6 +53,7 @@ import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-chan
 import { getChannelDescription } from "@client-kit/platform/react/channel-description";
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 import { requestOpenCreateAgent } from "@client-kit/platform/react/open-create-agent-event";
+import { ProfileDirectMessageProvider } from "@client-kit/platform/react/pulse/profile-direct-message";
 import { SidebarLoadingContent, useSidebarLoadingShape } from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -527,7 +528,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       workspaceBody
     );
 
+  // Original hover-card Message: only for keys known not to be the signed-in person's own.
+  const ownPubkeys = searchDirectory.isSuccess && !searchDirectory.isFetching
+    ? new Set(searchDirectory.data.people.find((person) => person.principalId === session.tenantPrincipalId)?.pubkeys ?? []) : null;
+  const profileDirectMessage = { open: openDirectMessage,
+    canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey) };
   return (
+    <ProfileDirectMessageProvider value={profileDirectMessage}>
     <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>
     <BffMessageLinkHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId}
       onOpenProject={(id,target)=>navigation.openProject(id,target)}
@@ -716,5 +723,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </div>
     </BffMessageLinkHost>
     </BffReminderHost>
+    </ProfileDirectMessageProvider>
   );
 }
