@@ -90,10 +90,19 @@ done
 # audit device 由 secret-store-config.hcl 声明式配置，不经 API 启用——该版本
 # 直接拒绝 API 创建（SF-OBA-11）。此处只核验它确实生效：零 device 时
 # audit broker 的 fail-closed 分支被短路，取用不留痕（SF-OBA-06）。
-if root audit list 2>/dev/null | grep -q 'file'; then
+audit_devices=$(root audit list 2>/dev/null || true)
+if grep -q '^file/' <<<"$audit_devices"; then
   echo "audit device 已生效（声明式）"
 else
   echo "audit device 未生效：检查 secret-store-config.hcl 的 audit 块" >&2
+  exit 2
+fi
+# Core 激活取证读的有界观察副本（03 §9、DD-70）。缺它时取用照常留痕，但任何带
+# SecretRef 的 binding 都无法证明读取已审计、停在 PROVISIONING，因此在这里就报出。
+if grep -q '^core-observed/' <<<"$audit_devices"; then
+  echo "core-observed/ audit device 已生效"
+else
+  echo "core-observed/ audit device 未生效：检查 secret-store-config.hcl 与 data/secret-store-audit（secret-store-audit-dir.sh --check）" >&2
   exit 2
 fi
 

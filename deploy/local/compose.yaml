@@ -719,6 +719,18 @@ services:
       # 地址加 Web 端兑换页的路径，一次性凭据接在 # 之后（fragment 不发往任何服务端）
       TENANT_INVITATION_TTL_SECONDS: ${TENANT_INVITATION_TTL_SECONDS:?必须显式提供，禁止硬编码}
       TENANT_INVITATION_LINK_BASE: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}/app/invite
+      # binding 激活前核对 adapter 的 SecretRef 读取已被 OpenBao audit 记录（03 §9、DD-70）。
+      # 读的是 core-observed/ device 的有界观察副本（secret-store-config.hcl），只读挂载，
+      # 经附加组 OPENBAO_AUDIT_READER_GID 读取；不挂完整 device 所在的 raft 数据目录。
+      OPENBAO_AUDIT_LOG_FILE: /openbao/audit-observed/audit.log
+      OPENBAO_AUDIT_LOG_MAX_BYTES: ${OPENBAO_AUDIT_LOG_MAX_BYTES:?必须显式提供 audit 观察副本读取上界}
+    group_add: ["${OPENBAO_AUDIT_READER_GID:?必须显式提供 audit 观察副本属组}"]
+    volumes:
+      - type: bind
+        source: ./data/secret-store-audit
+        target: /openbao/audit-observed
+        read_only: true
+        bind: { create_host_path: false }
     env_file:
       - ./secrets/core-db-url.env
       - ./secrets/openbao-core.env
@@ -918,6 +930,10 @@ services:
         target: /openbao/config/config.hcl
     volumes:
       - ./data/secret-store:/openbao/data
+      # 第二个 audit device（core-observed/）的单独目录：属组为 OPENBAO_AUDIT_READER_GID、
+      # setgid 2750，由 bootstrap.sh 预建；目录缺失或属主不对时该 device 无法打开、
+      # 解封失败（core.go postUnseal 的 audit 建立），不会静默少一份审计。
+      - ./data/secret-store-audit:/openbao/audit-observed
     # 具名卷由 Docker 以 root 创建，而镜像以 uid 100 运行；不改成 root 运行，
     # 而是让卷归属进程自身的 uid，保持最小权限。
     user: "100:1000"
@@ -933,6 +949,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 40
+
+  # core-observed/ audit device 的大小上界（03 §9、DD-70）。OpenBao 的 file device
+  # 只追加、不轮转；Core 对超过 OPENBAO_AUDIT_LOG_MAX_BYTES 的观察文件整体拒绝，
+  # 所以这里在达到 OPENBAO_AUDIT_LOG_BOUND_BYTES（必须更小）时原地截断。device 以
+  # O_APPEND 打开，截断后下一行从文件头继续写，不需要 SIGHUP。被截掉的行仍在完整的
+  # file/ device 中；正在取证的读取若恰好被截掉，只让那一轮回 503、下一轮重读。
+  # 与 openbao 同一 digest 的镜像、同一 uid，不接任何网络，只挂这一个目录。
+  openbao-audit-bound:
+    image: openbao/openbao@sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6
+    network_mode: none
+    depends_on:
+      openbao: { condition: service_started }
+    user: "100:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      AUDIT_FILE: /openbao/audit-observed/audit.log
+      BOUND_BYTES: ${OPENBAO_AUDIT_LOG_BOUND_BYTES:?必须显式提供 audit 观察副本截断阈值}
+      INTERVAL_SECONDS: ${OPENBAO_AUDIT_BOUND_INTERVAL_SECONDS:?必须显式提供 audit 观察副本检查间隔}
+    volumes:
+      - ./data/secret-store-audit:/openbao/audit-observed
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$BOUND_BYTES" in ''|*[!0-9]*|0*) echo 'BOUND_BYTES 必须是正整数' >&2; exit 2;; esac
+        case "$$INTERVAL_SECONDS" in ''|*[!0-9]*|0*) echo 'INTERVAL_SECONDS 必须是正整数' >&2; exit 2;; esac
+        trap 'exit 0' TERM INT
+        while :; do
+          size=$$(stat -c %s "$$AUDIT_FILE" 2>/dev/null || echo 0)
+          if [ "$$size" -ge "$$BOUND_BYTES" ]; then : > "$$AUDIT_FILE"; fi
+          sleep "$$INTERVAL_SECONDS" & wait $$!
+        done
 
   # namespace 是运行前提而非业务动作：它必须在 Core 连接之前存在。
   # 用 server 镜像而非 auto-setup 之后，这一步要显式做。

@@ -37,6 +37,8 @@ wait_healthy() {
 step "1. OpenBao：新节点初始化 → 强制恢复快照 → 以原分片解封"
 mkdir -p data/secret-store
 sudo -n chown 100:1000 data/secret-store
+# 第二个 audit device 的目录不在快照里；解封前必须就位（secret-store-config.hcl）
+./secret-store-audit-dir.sh --prepare >/dev/null
 DC up -d openbao >/dev/null 2>&1
 wait_bao sealed
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT

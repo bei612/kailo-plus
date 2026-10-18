@@ -309,6 +309,15 @@ if [ -n "${BUZZ_DELETION_PORT:-}" ]; then
     exit 2
   }
 fi
+# core-observed/ audit 观察副本（DD-70）：Core 读取上界、截断阈值与读取属组。
+for audit_key in OPENBAO_AUDIT_READER_GID OPENBAO_AUDIT_LOG_MAX_BYTES OPENBAO_AUDIT_LOG_BOUND_BYTES \
+  OPENBAO_AUDIT_BOUND_INTERVAL_SECONDS; do
+  [[ "${!audit_key:-}" =~ ^[1-9][0-9]*$ ]] || { echo "$audit_key 必须是正整数" >&2; exit 2; }
+done
+(( OPENBAO_AUDIT_LOG_BOUND_BYTES < OPENBAO_AUDIT_LOG_MAX_BYTES )) && (( OPENBAO_AUDIT_READER_GID != 1000 )) || {
+  echo 'OPENBAO_AUDIT_LOG_BOUND_BYTES 必须小于 OPENBAO_AUDIT_LOG_MAX_BYTES，OPENBAO_AUDIT_READER_GID 不得为 OpenBao 进程组 1000' >&2
+  exit 2
+}
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
@@ -895,6 +904,9 @@ if [ "$(stat -c %u data/secret-store)" != "100" ]; then
     printf '  需要一次 sudo 设置 data/secret-store 属主为 100:1000\n' >&2; exit 2; }
 fi
 printf '  已就绪：data/secret-store（uid 100）\n'
+# core-observed/ audit device 的目录（Core 激活取证读的有界观察副本，DD-70）：
+# OpenBao 解封时要能打开它，否则 audit 建立失败、无法解封。
+./secret-store-audit-dir.sh --prepare | sed 's/^/  /'
 
 mkdir -p secrets/idp-import
 # namespace 名来自 .env，不写死在 realm 定义里：Temporal 的 default claim mapper

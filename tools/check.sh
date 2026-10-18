@@ -1219,9 +1219,12 @@ for probe, pattern in (
 declared = set(d.get("networks") or {})
 for name, svc in (d.get("services") or {}).items():
     nets = set(svc.get("networks") or [])
-    # 01 §8 与 07 §1：网络归属必须显式声明，默认网络会让边界失效
-    if not nets:
+    # 01 §8 与 07 §1：网络归属必须显式声明，默认网络会让边界失效。
+    # 显式 network_mode: none（不接任何网络）比任一网络都窄，同样算显式声明。
+    if not nets and svc.get("network_mode") != "none":
         bad.append(f"{name}: 未声明 networks，会落到默认网络")
+    if nets and "network_mode" in svc:
+        bad.append(f"{name}: networks 与 network_mode 不能同时声明")
     for n in nets - declared:
         bad.append(f"{name}: 使用了未声明的 network {n}")
     # 公开入口与管理面不得同属一个服务（SS-AGW-ADMIN 的编排层表达）
@@ -1294,6 +1297,22 @@ if os.path.exists(bao_cfg):
     # 该版本只接受声明式配置，且必须给满 type 与 path 两个块标签（SF-OBA-11）
     if not re.search(r'^\s*audit\s+"[^"]+"\s+"[^"]+"\s*\{', body, re.M):
         bad.append("secret-store-config.hcl: 缺少带 type 与 path 两个标签的 audit 块（SF-OBA-06/11）")
+    # 03 §9、DD-70：Core 激活前读取取证用的 core-observed/ device 必须写到单独、
+    # 被 openbao 读写挂载且只被 core-bff 只读挂载的目录，不得指向 raft 数据目录。
+    observed = re.search(r'^audit\s+"file"\s+"core-observed/"\s*\{\s*options\s*=\s*\{([^}]*)\}', body, re.M)
+    observed_path = re.search(r'file_path\s*=\s*"([^"]+)"', observed.group(1)) if observed else None
+    services = d.get("services") or {}
+    core_env = (services.get("core-bff", {}).get("environment") or {})
+    core_mounts = [v for v in services.get("core-bff", {}).get("volumes") or [] if isinstance(v, dict)
+                   and v.get("target") == "/openbao/audit-observed"]
+    bao_mounts = [v for v in services.get("openbao", {}).get("volumes") or []
+                  if isinstance(v, str) and v.endswith(":/openbao/audit-observed")]
+    if (not observed_path or observed_path.group(1) != "/openbao/audit-observed/audit.log"
+            or core_env.get("OPENBAO_AUDIT_LOG_FILE") != observed_path.group(1)
+            or len(core_mounts) != 1 or core_mounts[0].get("read_only") is not True
+            or len(bao_mounts) != 1 or bao_mounts[0].split(":")[0] != core_mounts[0].get("source")
+            or bao_mounts[0].split(":")[0] == "./data/secret-store"):
+        bad.append("core-observed/ audit device 必须写 /openbao/audit-observed/audit.log，并由 core-bff 只读挂载同一单独目录（DD-70）")
     for svc, spec in (d.get("services") or {}).items():
         if "openbao" in (spec.get("image") or "") and "-dev" in " ".join(spec.get("command") or []):
             bad.append(f"{svc}: 使用了 server -dev，07 §1 禁止它进入任何 active 拓扑")

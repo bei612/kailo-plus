@@ -36,3 +36,21 @@ audit "file" "file/" {
     file_path = "/openbao/data/audit.log"
   }
 }
+
+# 第二个 file device 只为 Core 激活前的读取取证（03 §9、DD-70）：binding 的全部
+# SecretRef 读取须已被 OpenBao audit 记录，Core 的 AuditObserver::verify_secret_reads
+# 读原生 audit 行核对 request/response、role、版本与时间。上面那个 device 是完整、
+# 持久的审计记录，与 raft 数据同目录、uid 100、0600，不能挂进 Core；这一份写到单独
+# 目录（宿主属组为部署指定的 OPENBAO_AUDIT_READER_GID、setgid 2750），文件 0640，
+# Core 以该附加组只读挂载。它是有界观察副本：compose 的 openbao-audit-bound 在超过
+# OPENBAO_AUDIT_LOG_BOUND_BYTES 时截断，Core 对超过 OPENBAO_AUDIT_LOG_MAX_BYTES 的
+# 文件按不可用拒绝。截断丢掉的旧行仍在上面的完整 device 中；本轮取证缺行只让该轮
+# Workflow 等下一轮重新读取，不会被当作已审计。broker 只要求至少一个 device 成功，
+# 这份写失败不影响取用本身，只会让激活取证失败关闭。
+# options 一经声明即固定：已登记的声明式 device 修改选项会被拒绝（validateAuditFromConfig）。
+audit "file" "core-observed/" {
+  options = {
+    file_path = "/openbao/audit-observed/audit.log"
+    mode      = "0640"
+  }
+}

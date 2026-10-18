@@ -50,6 +50,13 @@ implementation:
     - core/crates/platform-core/src/bff.rs
     - deploy/local/start-core.sh
     - deploy/local/.env.example
+    # DD-70 激活取证：core-observed/ audit 观察副本的声明、挂载、目录与上界。
+    - deploy/local/secret-store-config.hcl
+    - deploy/local/compose.yaml
+    - deploy/local/secret-store-init.sh
+    - deploy/local/secret-store-audit-dir.sh
+    - deploy/local/bootstrap.sh
+    - deploy/local/dr-restore.sh
     - tools/check.sh
     - worker/workflows/application_binding.go
     - worker/workflows/component_action.go

@@ -103,6 +103,21 @@ for k in OPENBAO_AUDIT_LOG_FILE OPENBAO_AUDIT_LOG_MAX_BYTES; do
   "${D[@]}" inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(container core-bff)" | grep -q "^$k=." \
     && ok "core-bff 有 $k" || bad "core-bff 无 $k（binding secret 读取审计核对必然失败，binding 停在 PROVISIONING）"
 done
+gid=$(value OPENBAO_AUDIT_READER_GID)
+groups=$("${D[@]}" inspect -f '{{json .HostConfig.GroupAdd}}' "$(container core-bff)" 2>/dev/null)
+[ -n "$gid" ] && grep -q "\"$gid\"" <<<"$groups" && ok "core-bff 附加组含 OPENBAO_AUDIT_READER_GID=$gid" \
+  || bad "core-bff 附加组 ${groups:-?} 不含 OPENBAO_AUDIT_READER_GID=${gid:-未设置}"
+"${D[@]}" inspect -f '{{range .Mounts}}{{println .Destination .RW}}{{end}}' "$(container core-bff)" | grep -qx '/openbao/audit-observed false' \
+  && ok "core-bff 只读挂载 /openbao/audit-observed" || bad "core-bff 未只读挂载 /openbao/audit-observed"
+"${D[@]}" inspect -f '{{range .Mounts}}{{println .Destination .RW}}{{end}}' "$(container openbao)" | grep -qx '/openbao/audit-observed true' \
+  && ok "openbao 挂载 /openbao/audit-observed（需从发布树重建 openbao）" || bad "openbao 未挂载 /openbao/audit-observed"
+b=$(container openbao-audit-bound); [ -n "$b" ] && [ "$("${D[@]}" inspect -f '{{.State.Status}}' "$b")" = running ] \
+  && ok "openbao-audit-bound 运行中" || bad "openbao-audit-bound 未运行（观察副本会超过上界后被 Core 拒绝）"
+(cd "$S" && ./secret-store-audit-dir.sh --check 2>&1 | sed 's/^/  /') || bad "data/secret-store-audit 属主/权限不符"
+size=$(sudo -n stat -c %s "$R/data/secret-store-audit/audit.log" 2>/dev/null || echo missing)
+max=$(value OPENBAO_AUDIT_LOG_MAX_BYTES)
+[[ "$size" =~ ^[0-9]+$ ]] && [ -n "$max" ] && [ "$size" -le "$max" ] && ok "core-observed audit.log ${size} B ≤ ${max} B" \
+  || bad "core-observed audit.log：${size}（上界 ${max:-未设置}）"
 
 echo "== 5. Web CSP frame-src（buzz-web Caddy）"
 csp=$(curl -sS -m 15 -D - -o /dev/null "${public:-http://192.168.0.193:58090}/app/" | tr -d '\r' | grep -i '^content-security-policy:' || true)

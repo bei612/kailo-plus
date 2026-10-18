@@ -24,6 +24,9 @@ cd "$(dirname "$0")"
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
   "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
+# DD-70：Core 只读挂载 core-observed/ audit 观察副本；目录缺失或属组不对时
+# binding 激活取证必然失败，在取一次性投递之前就拒绝。
+./secret-store-audit-dir.sh --check >/dev/null
 if [ "$prepare_action_token" = true ]; then
   : "${ACTION_TOKEN_SIGNING_FILE:?}" "${ACTION_TOKEN_PUBLIC_JWKS_LOCATOR:?}" \
     "${ACTION_TOKEN_JWKS_READER_ROLE:?}" "${CHECK_CPUS:?}" "${CHECK_MEMORY:?}"
