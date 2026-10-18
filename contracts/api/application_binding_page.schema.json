@@ -8,6 +8,26 @@
   "properties": {
     "canCreate": {"type": "boolean"},
     "nextOffset": {"type": "integer"},
+    "bindableReleases": {"type": "array", "description": "仅 canCreate=true 时给出：Catalog 中已 APPROVED 的 APPLICATION release 的绑定所需公开声明（03 §9）。secretSchema 只含键与格式声明，供 Tenant admin 按项提交 bindingSecretValues；不含任何 secret 值、SecretRef、locator 或 Catalog 管理权。", "items": {
+      "title": "ApplicationBindableRelease",
+      "type": "object", "additionalProperties": false,
+      "required": ["componentReleaseId", "componentTypeKey", "version", "secretSchema"],
+      "properties": {
+        "componentReleaseId": {"type": "string", "format": "uuid"},
+        "componentTypeKey": {"type": "string"},
+        "version": {"type": "string"},
+        "secretSchema": {"type": "array", "items": {
+          "title": "ApplicationBindableSecret",
+          "type": "object", "additionalProperties": false,
+          "required": ["secretKey", "valueType", "lengthOrFormat"],
+          "properties": {
+            "secretKey": {"type": "string"},
+            "valueType": {"type": "string"},
+            "lengthOrFormat": {"type": "string"}
+          }
+        }}
+      }
+    }},
     "bindings": {"type": "array", "items": {
       "title": "ApplicationBindingView",
       "type": "object", "additionalProperties": false,

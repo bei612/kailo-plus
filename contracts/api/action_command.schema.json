@@ -136,6 +136,20 @@
     "applicationBindingCreate": {
       "$ref": "../domain/application_binding_create.schema.json"
     },
+    "bindingSecretValues": {
+      "type": "array",
+      "description": "仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成 SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。",
+      "items": {
+        "title": "ApplicationBindingSecretValue",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["secretKey", "value"],
+        "properties": {
+          "secretKey": {"type": "string"},
+          "value": {"type": "string"}
+        }
+      }
+    },
     "applicationBindingId": {"type": "string", "format": "uuid"},
     "applicationBindingVersion": {"type": "integer"},
     "componentReleaseRegistration": {

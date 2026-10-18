@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/application_binding_create.schema.json",
   "title": "ApplicationBindingCreate",
-  "description": "DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原 ActionCommand。",
+  "description": "DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一 ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。",
   "type": "object", "additionalProperties": false,
   "required": ["bindingId", "componentReleaseId", "servicePrincipalId", "adapterServiceRef", "nativeInstanceRef", "isolationMode", "capabilityCategories", "normalizedConfigJson", "secretRefs", "modelCallMode", "callIdentityMode", "retainOnTenantDelete"],
   "properties": {
@@ -22,7 +22,9 @@
     },
     "normalizedConfigJson": {"type": "string"},
     "secretRefs": {
-      "type": "array", "items": {
+      "type": "array",
+      "description": "必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。",
+      "items": {
         "title": "ApplicationBindingSecretRef", "type": "object", "additionalProperties": false,
         "required": ["secretKey", "locator", "version", "audience"],
         "properties": {
