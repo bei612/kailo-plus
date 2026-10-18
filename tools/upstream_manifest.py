@@ -53,6 +53,11 @@ def _list(m, key):
     return [str(x) for x in (m.get(key) or [])]
 
 
+# source_commit：构建所用源码树的 commit（干净工作区的 HEAD）；build_time_utc：构建时刻
+# （UTC，%Y-%m-%dT%H:%M:%S）。两者都由 build-upstream.sh 现场推出。
+BUILD_FACT_KINDS = {"source_commit", "build_time_utc"}
+
+
 def _components(m):
     """可选的原生 gitlink 展开声明；不是另一份上游版本权威。"""
     pins = m.get("source_components")
@@ -228,6 +233,19 @@ def problems(path, m, check_digest=True):
             bad.append(f"{name}: build_args 有重复项")
         if set(build_args) & set(_list(a, "build_secrets")):
             bad.append(f"{name}: 同一变量不能既是 build_args 又是 build_secrets")
+        # 构建事实：不是部署配置，而是本次构建自身的事实，由 build-upstream.sh 从冻结源码
+        # 与构建时刻推出，不接受调用方给值，也不回退任何默认值。
+        facts = a.get("build_facts") or {}
+        if not isinstance(facts, dict):
+            bad.append(f"{name}: build_facts 必须是 变量名: 事实种类 的映射")
+            facts = {}
+        for x, kind in facts.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(x)):
+                bad.append(f"{name}: build_facts 只登记变量名（大写字母、数字、下划线），得到 {x!r}")
+            if kind not in BUILD_FACT_KINDS:
+                bad.append(f"{name}: build_facts.{x} 的种类 {kind!r} 不在 {sorted(BUILD_FACT_KINDS)} 内")
+            if x in build_args or x in _list(a, "build_secrets"):
+                bad.append(f"{name}: {x} 不能既是 build_facts 又是 build_args/build_secrets")
         art, src = str(a.get("artifact_digest") or ""), str(a.get("source_digest") or "")
         if art == "none":
             if src != "none":
@@ -644,6 +662,8 @@ def plan(name):
     print(f"dockerfile={q(str(art.get('build_dockerfile') or ''))}")
     print("secrets=(" + " ".join(q(x) for x in _list(art, "build_secrets")) + ")")
     print("build_args=(" + " ".join(q(x) for x in _list(art, "build_args")) + ")")
+    facts = art.get("build_facts") or {}
+    print("build_facts=(" + " ".join(q(f"{k}={v}") for k, v in facts.items()) + ")")
     print(f"blocked={q(str(art.get('blocked') or ''))}")
 
 

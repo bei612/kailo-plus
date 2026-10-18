@@ -52,6 +52,21 @@ for a in "${build_args[@]}"; do
   arg_args+=(--build-arg "$a=${!a}")
 done
 
+# 构建事实（来源记录 build_facts）：本次构建自身的事实，不是部署配置，因此由这里从
+# 冻结的源码树与构建时刻推出；源码树不干净时拒绝，不以未提交内容冒充某个 commit。
+for f in "${build_facts[@]}"; do
+  name=${f%%=*}; kind=${f#*=}
+  case "$kind" in
+    source_commit)
+      [ -z "$(git status --porcelain --untracked-files=no)" ] || {
+        echo "拒绝构建：$artifact 的构建事实 $name 需要干净的源码树" >&2; exit 2; }
+      value=$(git rev-parse HEAD) ;;
+    build_time_utc) value=$(date -u +%Y-%m-%dT%H:%M:%S) ;;
+    *) echo "拒绝构建：$artifact 的构建事实 $name 种类 $kind 未定义" >&2; exit 2 ;;
+  esac
+  arg_args+=(--build-arg "$name=$value")
+done
+
 export DOCKER_BUILDKIT=1
 
 echo "== 源码：$tree（基准 ${base:0:12}） =="
