@@ -12,6 +12,7 @@
   "properties": {
     "workspaceVisibility": { "$ref": "../domain/workspace_visibility.schema.json", "description": "仅 workspace.create 使用；省略保持旧命令的 private 可见性。" },
     "workspaceChannel": {"$ref": "../domain/workspace_channel_create.schema.json"},
+    "tenantQuotaSetting": {"$ref": "../domain/tenant_quota_setting.schema.json", "description": "仅 tenant.quota.set（DD-123）"},
     "workspaceUpdate": {"$ref": "../domain/workspace_update.schema.json", "description": "仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。"},
     "conversationOpen": {"$ref": "conversation_open_request.schema.json"},
     "componentAction": {"$ref": "../domain/component_action_input.schema.json"},

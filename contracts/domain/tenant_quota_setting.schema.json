@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/tenant_quota_setting.schema.json",
+  "title": "TenantQuotaSetting",
+  "description": "DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit OpenMeter entitlement for the platform feature, resetting monthly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "feature",
+    "limitPerPeriod"
+  ],
+  "properties": {
+    "feature": {
+      "title": "TenantQuotaFeature",
+      "type": "string",
+      "enum": [
+        "agent_tokens",
+        "automation_runs",
+        "agent_memory_writes"
+      ]
+    },
+    "limitPerPeriod": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    }
+  }
+}

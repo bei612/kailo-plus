@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/tenant_quota_page.schema.json",
+  "title": "TenantQuotaPage",
+  "description": "DD-123: platform quota items of the Tenant read from OpenMeter (the only authority). Tenant admin and auditor only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "quotas"
+  ],
+  "properties": {
+    "quotas": {
+      "type": "array",
+      "items": {
+        "title": "TenantQuotaView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "feature",
+          "hasAccess",
+          "hardLimit"
+        ],
+        "properties": {
+          "feature": {
+            "title": "TenantQuotaFeature",
+            "type": "string",
+            "enum": [
+              "agent_tokens",
+              "automation_runs",
+              "agent_memory_writes"
+            ]
+          },
+          "limitPerPeriod": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "usage": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hasAccess": {
+            "type": "boolean"
+          },
+          "hardLimit": {
+            "type": "boolean"
+          },
+          "periodResetAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
