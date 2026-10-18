@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
+import { Refused, PepDenied, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   verifiedClaims, verifyBindingManagementToken, secret, freshPep, readMeasurements, recordReadReceipt,
   nativeStatusErrorArguments, mapNativeStatusError } from '../../../client-kit/adapter/protocol.mjs';
 import { sourceReference, sourceFile } from './service-read.mjs';
@@ -486,7 +486,8 @@ export function createAdapter(rawConfig) {
       } catch (error) {
         const status = error instanceof Refused ? error.status : 503;
         if (!response.headersSent) response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-        response.end(JSON.stringify({ class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
+        response.end(JSON.stringify(error instanceof PepDenied ? error.body
+          : { class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
       }
       return;
     }
@@ -612,7 +613,10 @@ export function createAdapter(rawConfig) {
     } catch (error) {
       const status = error instanceof Refused ? error.status : 503;
       response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      response.end(JSON.stringify({ class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
+      // Core's definite PEP denial keeps its closed reason (the conformance
+      // permission-denied probe); other refusals keep their existing classes.
+      response.end(JSON.stringify(error instanceof PepDenied ? error.body
+        : { class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
     }
   }));
   server.requestTimeout = config.timeoutMs;

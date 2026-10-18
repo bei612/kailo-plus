@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
+import { Refused, PepDenied, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   verifiedClaims, verifyBindingManagementToken, secret, jsonFetch, freshPep,
   nativeStatusErrorArguments, mapNativeStatusError } from '../../../client-kit/adapter/protocol.mjs';
 export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
@@ -435,7 +435,9 @@ export function createAdapter(rawConfig) {
     } catch (error) {
       if (!response.headersSent) response.writeHead(error instanceof Refused ? error.status : 503,
         { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      response.end('{"error":"adapter request refused"}');
+      // Only Core's own definite PEP denial is reported as the wire DENIED
+      // class; local refusals keep the opaque body and disclose nothing.
+      response.end(error instanceof PepDenied ? JSON.stringify(error.body) : '{"error":"adapter request refused"}');
     }
   });
   server.requestTimeout = config.timeoutMs;

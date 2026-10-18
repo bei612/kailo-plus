@@ -11,6 +11,19 @@ export class Refused extends Error {
   }
 }
 
+// A definite DENIED decision from the binding-authenticated Core PEP: its
+// closed ErrorBody (governance.rs Refusal::respond, contracts ErrorBody) with
+// HTTP 403. Only this answer may be reported to the caller as the wire DENIED
+// class (Core's permission-denied conformance probe, component_release.rs
+// prewrite). Every other PEP failure, including a bare 403, stays 503/UNKNOWN.
+const PEP_DENIAL_REASONS = Object.freeze(['PERMISSION_DENIED', 'SCOPE_GUARD_FAILED', 'APPROVAL_DENIED']);
+export class PepDenied extends Refused {
+  constructor(reason) {
+    super(403);
+    this.body = Object.freeze({ class: 'DENIED', reason });
+  }
+}
+
 export function object(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -257,14 +270,33 @@ export async function recordReadReceipt(config, deadline, receipt) {
     || result.receiptDigest!==digest) throw new Refused(503);
 }
 
+async function pepAnswer(config, deadline, bearer, body) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Refused(503);
+  let response;
+  try {
+    response = await fetch(config.corePepUrl, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(remaining),
+      headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' }, body });
+  } catch { throw new Refused(503); }
+  let value;
+  try {
+    if (!response.body || !response.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+      await response.body?.cancel();
+      throw new Refused(503);
+    }
+    value = JSON.parse(await boundedBody(response.body, config.maxBodyBytes));
+  } catch { throw new Refused(503); }
+  if (response.status === 403 && object(value) && value.class === 'DENIED' && PEP_DENIAL_REASONS.includes(value.reason)
+    && (exactKeys(value, ['class', 'reason'])
+      || (exactKeys(value, ['class', 'reason', 'operationId']) && nonempty(value.operationId)))) throw new PepDenied(value.reason);
+  if (!response.ok) throw new Refused(503);
+  return value;
+}
+
 export async function freshPep(config, deadline, token, args, claims, operation = 'query_revision') {
   const bearer = await serviceBearer(config, deadline);
-  const answer = await jsonFetch(config, deadline, config.corePepUrl, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ bindingId: config.bindingId, actionToken: token,
-      operation, argumentsJson: canonical(args) }),
-  });
+  const answer = await pepAnswer(config, deadline, bearer, JSON.stringify({ bindingId: config.bindingId, actionToken: token,
+    operation, argumentsJson: canonical(args) }));
   const keys = ['actionExecutionId', 'operationId', 'authorizationMinZedToken'];
   if (object(answer) && Object.hasOwn(answer, 'nativeTaskDeadline')) {
     keys.push('nativeTaskDeadline');

@@ -728,6 +728,24 @@ test('native error mapping refuses NONE, malformed intent, foreign scope and rev
   });
 });
 
+test('only a definite Core PEP DENIED body becomes the wire DENIED class; other PEP failures stay unavailable', async t => {
+  for (const [label, status, body, expectedStatus, expectedBody] of [
+    ['core denial', 403, { class: 'DENIED', reason: 'PERMISSION_DENIED' }, 403, { class: 'DENIED', reason: 'PERMISSION_DENIED' }],
+    ['core scope denial with operation', 403, { class: 'DENIED', reason: 'SCOPE_GUARD_FAILED', operationId: ids[6] }, 403, { class: 'DENIED', reason: 'SCOPE_GUARD_FAILED' }],
+    ['bare 403', 403, {}, 503, { error: 'adapter request refused' }],
+    ['blocked is not a denial', 403, { class: 'BLOCKED', reason: 'CAPABILITY_BLOCKED' }, 503, { error: 'adapter request refused' }],
+    ['denial body with success status', 200, { class: 'DENIED', reason: 'PERMISSION_DENIED' }, 503, { error: 'adapter request refused' }],
+  ]) await t.test(label, async nested => {
+    const fixture = await setup(nested, { operation: 'map_native_status_error', arguments: { idempotencyKey: ids[7], nativeStatus: 409 },
+      pep: (_state, response) => reply(response, status, body) });
+    const response = await fixture.invoke({ path: '/platform-adapter/v1/map_native_status_error' });
+    assert.equal(response.status, expectedStatus);
+    assert.deepEqual(await response.json(), expectedBody);
+    assert.equal(fixture.state.peps, 1);
+    assert.deepEqual(fixture.state.nativeReads, []);
+  });
+});
+
 test('native error mapping retains the original HUMAN business policy without borrowing PAT NONE', async t => {
   const fixture = await setup(t, { operation: 'map_native_status_error',
     arguments: { idempotencyKey: ids[7], nativeStatus: 403 } });
