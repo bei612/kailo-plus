@@ -17,8 +17,10 @@ import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
 import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
+  /** The channel's admitted Agent identities; their messages use the original squircle avatar. */
+  agentPubkeys?: ReadonlySet<string>;
   conversation?: ConversationView;
   typingEntries?: readonly TypingIndicatorEntry[];
   profiles?: ComponentProps<typeof ThreadPanelSurface>["profiles"];
@@ -97,9 +99,9 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     return {id: event.id, pubkey: event.pubkey, signerPubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
       author: authorLabel(event, members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName),
       body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0, reactions:messageReactions.reactions.get(event.id),
-      edited: event.edited,
+      edited: event.edited, isAgent: agentPubkeys?.has(event.pubkey.toLowerCase()) === true,
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
-  }), [messages, members, locale, messageReactions.reactions, authorLabel]);
+  }), [messages, members, locale, messageReactions.reactions, authorLabel, agentPubkeys]);
   useEffect(() => {
     const targetId = routeTargetMessageId ?? selected.id;
     if (expandedTarget.current === targetId) return;
@@ -208,7 +210,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         const target={principalId,workspaceId,conversationId:conversation?.id,eventId:row.message.id,pubkey:row.message.pubkey!};
         const identity=kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar target={target}
           profile={{value:authorLabel.profile(row.message.id)}}
-          accent={row.message.accent} className="shrink-0" displayName={row.message.author} testId="message-avatar" /></div>
+          accent={row.message.accent} className="shrink-0" displayName={row.message.author}
+          shape={row.message.isAgent ? "squircle" : "circle"} testId="message-avatar" /></div>
           : node;
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}

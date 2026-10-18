@@ -344,8 +344,8 @@ export function ChannelPane({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: authorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
-    edited: event.edited, ...getThreadReference(event.tags),
-  })), [events, byPubkey, messageReactions.reactions, authorLabel]);
+    edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
+  })), [events, byPubkey, messageReactions.reactions, authorLabel, agentTypingPubkeys]);
   // Original ChannelScreen merges freshly read route context with its channel
   // window. Search results and URL ids are not permission to reuse stale bodies.
   const routeReadId = targetMessageId ?? effectiveThreadHeadId;
@@ -365,8 +365,8 @@ export function ChannelPane({
     id: event.id, createdAt: event.createdAt, pubkey: event.pubkey, signerPubkey: event.pubkey,
     author: routeAuthorLabel(event, byPubkey.get(event.pubkey)?.displayName),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
-    edited: event.edited, ...getThreadReference(event.tags),
-  })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel]);
+    edited: event.edited, isAgent: agentTypingPubkeys.has(event.pubkey.toLowerCase()), ...getThreadReference(event.tags),
+  })) : [], [routeContextAvailable, routeContext.messages, byPubkey, routeAuthorLabel, agentTypingPubkeys]);
   const routeMessageById = useMemo(() => new Map([...timelineMessages, ...routeMessages].map(message => [message.id, message])), [timelineMessages, routeMessages]);
   // DD-121: own top-level and open-thread messages that @mention a channel Agent (Workspace channels only).
   const mentionAgents = useMemo<MentionableAgent[]>(() => (typingAgents.data?.agents ?? []).map(agent =>
@@ -817,7 +817,8 @@ export function ChannelPane({
                   onOpen={() => handleOpenAuthor(message)}>{kind === "avatar" ? <div className="relative shrink-0"><MessageAuthorAvatar
                     target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
                     profile={{value:routeMessages.some(event=>event.id===message.id)?routeAuthorLabel.profile(message.id):authorLabel.profile(message.id)}}
-                    accent={message.accent} className="shrink-0" displayName={message.author} testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
+                    accent={message.accent} className="shrink-0" displayName={message.author} shape={message.isAgent ? "squircle" : "circle"}
+                    testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
                   onDelete={canDelete && message.kind === 9 && message.signerPubkey === ownProfile.data?.pubkey ? deleteMessageDialog.requestDelete : undefined}
@@ -909,7 +910,7 @@ export function ChannelPane({
     </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
-      channelName={channelName}
+      channelName={channelName} agentPubkeys={agentTypingPubkeys}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}

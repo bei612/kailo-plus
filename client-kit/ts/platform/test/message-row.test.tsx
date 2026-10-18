@@ -271,6 +271,13 @@ it("marks overlaid edits with the original (edited) status on header and continu
   expect(plain.querySelector('[data-testid="message-edited"]')).toBeNull();
 });
 
+it("uses the original squircle avatar for agent authors only", async () => {
+  const agent = await render(<MessageRowSurface message={{ ...message, isAgent: true }} renderBody={() => message.body} />);
+  expect(agent.querySelector('[data-testid="message-avatar"]')?.getAttribute("data-avatar-shape")).toBe("squircle");
+  const human = await render(<MessageRowSurface message={message} renderBody={() => message.body} />);
+  expect(human.querySelector('[data-testid="message-avatar"]')?.getAttribute("data-avatar-shape")).toBe("circle");
+});
+
 it("shares the original reply banner and cancel callback with reactive Chinese and English labels", async () => {
   const cancel = vi.fn();
   const host = await render(<ComposerReplyBanner replyTarget={message} onCancelReply={cancel} />);

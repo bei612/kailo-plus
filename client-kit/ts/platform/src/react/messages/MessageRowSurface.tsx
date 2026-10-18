@@ -206,6 +206,8 @@ export function MessageRowSurface({
           avatarUrl={message.avatarUrl ?? null}
           className="shrink-0"
           displayName={message.author}
+          // Fixed Buzz MessageRow: agent authors use the squircle avatar.
+          shape={message.isAgent ? "squircle" : "circle"}
           testId="message-avatar"
         />
       </div>
