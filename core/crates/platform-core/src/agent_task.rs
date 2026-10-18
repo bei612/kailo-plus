@@ -1696,11 +1696,13 @@ async fn fail_unsent_quota(
         return Ok(false);
     }
     let code = crate::governance::wire(reason);
-    sqlx::query("update admission.action_execution set reason_code=$2,updated_at=now() where id=$1")
-        .bind(ae.id)
-        .bind(&code)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "update admission.action_execution set reason_code=$2,updated_at=now() where id=$1",
+    )
+    .bind(ae.id)
+    .bind(&code)
+    .execute(&mut *tx)
+    .await?;
     let def = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
     let refusal = crate::governance::Refusal::Limit(reason.clone());
     state

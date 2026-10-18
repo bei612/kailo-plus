@@ -652,7 +652,7 @@ pub(crate) async fn prewrite(
 ) -> Result<(), Refusal> {
     let (feature, limit) = setting(p)?;
     let namespace = g.openmeter.namespace();
-    let customer = active_customer(&mut **tx, ae.tenant_id, namespace)
+    let customer = active_customer(tx, ae.tenant_id, namespace)
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?;
     sqlx::query(
