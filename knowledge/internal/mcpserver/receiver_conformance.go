@@ -15,6 +15,17 @@ import (
 
 const nativeReceiverConformanceTool = "kailo_receiver_conformance"
 
+// nativeReceiverAction is a NATIVE_MANAGED receiver key of a knowledge contract
+// version this release serves (knowledge@3 is current, DD-124(3)).
+func nativeReceiverAction(key string) bool {
+	for _, version := range []string{"@v2", "@v3"} {
+		if key == "knowledge.sync_apply"+version || key == "knowledge.sync_retire"+version {
+			return true
+		}
+	}
+	return false
+}
+
 // This private adapter seam is not in native tool discovery. Ordinary platform
 // PEP does not admit conformance operations; an isolated fixture must deliver
 // its own trusted identity/PEP, while the actual importer still calls the real
@@ -32,8 +43,7 @@ func (s *Server) handleNativeReceiverConformance(ctx context.Context, req mcp.Ca
 	var args map[string]json.RawMessage
 	if err != nil || (operation != "receiver_start" && operation != "receiver_observe") ||
 		json.Unmarshal(claims["native_arguments"], &args) != nil || len(args) != 5 ||
-		nativeText(claims, "target_type") != "RESOURCE" ||
-		(nativeText(claims, "action_key") != "knowledge.sync_apply@v2" && nativeText(claims, "action_key") != "knowledge.sync_retire@v2") ||
+		nativeText(claims, "target_type") != "RESOURCE" || !nativeReceiverAction(nativeText(claims, "action_key")) ||
 		!nativeUUID(nativeText(args, "idempotencyKey")) || !nativeUUID(nativeText(args, "importConfigRef")) ||
 		nativeText(args, "bindingId") != delivery.ep.PlatformBindingID ||
 		nativeNumber(args, "generation") <= 0 || nativeNumber(args, "generation") != nativeNumber(admitted, "bindingGeneration") {

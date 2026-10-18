@@ -292,6 +292,39 @@ func TestExportDocumentUsesOriginalBytesAndEditorScope(t *testing.T) {
 	}
 }
 
+// A file ingested from a typed source reference exports with that reference's
+// media type, and the synchronous export reports its native terminal status
+// (DD-124(5)); a file without a recorded source keeps the octet-stream default.
+func TestExportDocumentKeepsTheImportedSourceMediaType(t *testing.T) {
+	for _, recorded := range []string{"text/plain", ""} {
+		t.Run("source="+recorded, func(t *testing.T) {
+			kb := &types.KnowledgeBase{ID: "kb", TenantID: 1}
+			srv := newScopeTestServer(kb)
+			metadata := map[string]string{}
+			if recorded != "" {
+				metadata["source_media_type"] = recorded
+			}
+			encoded, err := json.Marshal(metadata)
+			require.NoError(t, err)
+			doc := &types.Knowledge{ID: "doc", TenantID: 1, KnowledgeBaseID: "kb", Type: "file",
+				UpdatedAt: time.Now(), Metadata: types.JSON(encoded)}
+			service := &exportKnowledgeService{stubKnowledgeService: stubKnowledgeService{docs: map[string]*types.Knowledge{"doc": doc}}, body: "source bytes"}
+			srv.knowledgeService = service
+			ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolExportDocument}}
+			result, err := srv.handleExportDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{"knowledge_id": "doc"}))
+			require.NoError(t, err)
+			require.False(t, result.IsError)
+			data := result.StructuredContent.(map[string]any)
+			want := recorded
+			if want == "" {
+				want = "application/octet-stream"
+			}
+			require.Equal(t, want, data["media_type"])
+			require.Equal(t, "completed", data["status"])
+		})
+	}
+}
+
 func TestAddDocumentRetryKeyUsesTheAuthenticatedNativeEndpoint(t *testing.T) {
 	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
 	service := &exportKnowledgeService{}

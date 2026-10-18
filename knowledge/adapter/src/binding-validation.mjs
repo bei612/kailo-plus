@@ -6,10 +6,10 @@ function executionMapping(action) {
   if (!exactKeys(action, ['actionKey', 'actionVersion']) || (!Number.isSafeInteger(action.actionVersion) || action.actionVersion <= 0)) throw new Refused(503);
   // These actions belong to the existing receiver's SyncLog/Asynq task, not
   // the adapter's ordinary execute surface. Keep its native task identity.
-  if (['knowledge.sync_apply@v2', 'knowledge.sync_retire@v2'].includes(action.actionKey)) {
+  if (/^knowledge\.sync_(apply|retire)@v[23]$/.test(action.actionKey)) {
     return { ...action, nativeType: 'datasource:sync', cancelCapability: 'UNSUPPORTED' };
   }
-  const operation = /^knowledge\.(search|read|export|ingest|delete)@v[12]$/.exec(action.actionKey)?.[1];
+  const operation = /^knowledge\.(search|read|export|ingest|delete)@v[123]$/.exec(action.actionKey)?.[1];
   if (!operation || action.actionKey === 'knowledge.search@v1') throw new Refused(503);
   return { ...action, nativeType: { search: 'search_knowledge', read: 'read_document',
     export: 'export_document', ingest: 'add_document', delete: 'delete_document' }[operation],

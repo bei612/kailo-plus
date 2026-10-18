@@ -22,7 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const transportHeader = 'x-kailo-gateway-authorization';
 // Ordinary governed execution only. Receiver sync contracts keep their original
 // receiver direction and are never Agent tools.
-const executable = /^knowledge\.(search|read|export|ingest|delete)@v[12]$/;
+const executable = /^knowledge\.(search|read|export|ingest|delete)@v[123]$/;
 
 export function mcpConfiguration(value, config) {
   if (value === undefined) return undefined;

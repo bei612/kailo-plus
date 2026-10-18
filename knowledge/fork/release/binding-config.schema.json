@@ -33,9 +33,13 @@
         "meterKeys": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 1,
+          "description": "DD-124(6): component model usage is metered only on the platform meter component_model_tokens; no component-specific meter is registered.",
           "items": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "component_model_tokens"
+            ]
           }
         }
       }

@@ -64,11 +64,19 @@ func (s *Server) handleExportDocument(ctx context.Context, req mcp.CallToolReque
 	mediaType := "application/octet-stream"
 	if document.IsManual() {
 		mediaType = "text/markdown"
+	} else if metadata, metadataErr := document.Metadata.Map(); metadataErr == nil {
+		// A file imported from a typed source reference keeps that reference's
+		// media type; its stored bytes are the source bytes unchanged.
+		if recorded, ok := metadata["source_media_type"].(string); ok && recorded != "" {
+			mediaType = recorded
+		}
 	}
+	// DD-124(5): the native terminal status of this synchronous export; the
+	// adapter carries it unchanged and never fills one in.
 	return jsonResult(map[string]any{
 		"knowledge_id": document.ID, "knowledge_base_id": kb.ID,
 		"native_revision": document.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		"content_base64":  base64.StdEncoding.EncodeToString(body),
-		"media_type":      mediaType, "filename": filename,
+		"media_type":      mediaType, "filename": filename, "status": nativeCompleted,
 	})
 }

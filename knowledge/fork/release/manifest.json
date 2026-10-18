@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "weknora",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -28,13 +28,13 @@
   "implements": [
     {
       "categoryKey": "knowledge",
-      "contractVersion": 2
+      "contractVersion": 3
     }
   ],
   "capabilityDeclarations": [
     {
       "categoryKey": "knowledge",
-      "contractVersion": 2,
+      "contractVersion": 3,
       "cancel": "UNSUPPORTED",
       "observe": "SUPPORTED",
       "meter": "SUPPORTED",
@@ -75,10 +75,10 @@
     {
       "typeKey": "knowledge.base",
       "capabilityCategory": "knowledge",
-      "capabilityContractVersion": 2,
+      "capabilityContractVersion": 3,
       "incrementalContracts": [
         {
-          "contractKey": "knowledge.sync_apply@v2",
+          "contractKey": "knowledge.sync_apply@v3",
           "role": "NATIVE_INTERNAL",
           "engine": "NATIVE",
           "stableKeyRule": "Original WeKnora DataSource/SyncLog task identity derived from the frozen importConfigRef and batchId; the receiver never mints a second task for the same batch.",
@@ -88,7 +88,7 @@
           "readinessSemantics": "Native parse completion with matching SOURCE and RECEIVER read receipts."
         },
         {
-          "contractKey": "knowledge.sync_retire@v2",
+          "contractKey": "knowledge.sync_retire@v3",
           "role": "NATIVE_INTERNAL",
           "engine": "NATIVE",
           "stableKeyRule": "Original WeKnora DataSource/SyncLog task identity derived from the frozen importConfigRef and batchId; the receiver never mints a second task for the same batch.",
@@ -106,9 +106,9 @@
   ],
   "actionDefinitions": [
     {
-      "actionKey": "knowledge.search@v2",
+      "actionKey": "knowledge.search@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.search@v2",
+      "capabilityContractKey": "knowledge.search@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -141,9 +141,9 @@
       "outputSchemaDigest": "293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6"
     },
     {
-      "actionKey": "knowledge.read@v2",
+      "actionKey": "knowledge.read@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.read@v2",
+      "capabilityContractKey": "knowledge.read@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -176,9 +176,9 @@
       "outputSchemaDigest": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a"
     },
     {
-      "actionKey": "knowledge.export@v2",
+      "actionKey": "knowledge.export@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.export@v2",
+      "capabilityContractKey": "knowledge.export@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -211,9 +211,9 @@
       "outputSchemaDigest": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e"
     },
     {
-      "actionKey": "knowledge.ingest@v2",
+      "actionKey": "knowledge.ingest@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.ingest@v2",
+      "capabilityContractKey": "knowledge.ingest@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -246,9 +246,9 @@
       "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
     },
     {
-      "actionKey": "knowledge.delete@v2",
+      "actionKey": "knowledge.delete@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.delete@v2",
+      "capabilityContractKey": "knowledge.delete@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -281,9 +281,9 @@
       "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
     },
     {
-      "actionKey": "knowledge.sync_apply@v2",
+      "actionKey": "knowledge.sync_apply@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.sync_apply@v2",
+      "capabilityContractKey": "knowledge.sync_apply@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -316,9 +316,9 @@
       "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
     },
     {
-      "actionKey": "knowledge.sync_retire@v2",
+      "actionKey": "knowledge.sync_retire@v3",
       "version": 1,
-      "capabilityContractKey": "knowledge.sync_retire@v2",
+      "capabilityContractKey": "knowledge.sync_retire@v3",
       "componentTypeKey": "weknora",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -355,8 +355,8 @@
     {
       "name": "knowledge.search",
       "source": "APPLICATION",
-      "actionKey": "knowledge.search@v2",
-      "capabilityContractKey": "knowledge.search@v2",
+      "actionKey": "knowledge.search@v3",
+      "capabilityContractKey": "knowledge.search@v3",
       "inputSchemaHash": "9c2fe9762111c1e93a19017a10e9403fb537083419ba45c46312aafe8b95aaab",
       "outputSchemaHash": "293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6",
       "backendRef": "adapter-mcp",
@@ -365,8 +365,8 @@
     {
       "name": "knowledge.read",
       "source": "APPLICATION",
-      "actionKey": "knowledge.read@v2",
-      "capabilityContractKey": "knowledge.read@v2",
+      "actionKey": "knowledge.read@v3",
+      "capabilityContractKey": "knowledge.read@v3",
       "inputSchemaHash": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
       "outputSchemaHash": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
       "backendRef": "adapter-mcp",

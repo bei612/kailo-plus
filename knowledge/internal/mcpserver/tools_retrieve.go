@@ -183,8 +183,17 @@ func (s *Server) runSearchKnowledgeWithFilter(
 	}
 	args, _ := json.Marshal(callArgs)
 	res, execErr := tool.Execute(ctx, args)
+	// DD-124(5): a successful native search reports its own terminal status;
+	// the adapter carries it unchanged and never fills one in.
+	if execErr == nil && res != nil && res.Success && res.Data != nil {
+		res.Data["status"] = nativeCompleted
+	}
 	return toolResultFromAgentTool(res, execErr), nil
 }
+
+// nativeCompleted is the native terminal status of a synchronous MCP read
+// (search, export) that finished with a complete result.
+const nativeCompleted = "completed"
 
 func (s *Server) handleGrepChunks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	ep, err := endpointFromContext(ctx)

@@ -263,8 +263,10 @@ func (s *Server) authorizeNativePlatformTool(ctx context.Context, ep *types.MCPE
 	key, tool := nativeText(claims, "action_key"), req.Params.Name
 	action := ""
 	for _, name := range []string{"search", "read", "export", "ingest", "delete"} {
-		if key == "knowledge."+name+"@v1" || key == "knowledge."+name+"@v2" {
-			action = name
+		for _, version := range []string{"@v1", "@v2", "@v3"} {
+			if key == "knowledge."+name+version {
+				action = name
+			}
 		}
 	}
 	var arguments, input map[string]json.RawMessage

@@ -16,11 +16,17 @@ const QUERY_PATH = '/platform-adapter/v1/query_revision';
 // across concurrently executing bindings and users.
 const nativeAdmission = new AsyncLocalStorage();
 
-// Both immutable capability contracts use the same original native consumer.
-// Keep the signed key/version intact through PEP, hashing and observations.
+// Every immutable capability contract version (knowledge@3 is the current one,
+// DD-124(3)) uses the same original native consumer. Keep the signed key/version
+// intact through PEP, hashing and observations.
 function nativeKnowledgeAction(key) {
-  return /^knowledge\.(search|read|export|ingest|delete)@v[12]$/.exec(key)?.[1];
+  return /^knowledge\.(search|read|export|ingest|delete)@v[123]$/.exec(key)?.[1];
 }
+
+// NATIVE_MANAGED receiver keys keep their original receiver direction.
+const RECEIVER_KEY = /^knowledge\.sync_(apply|retire)@v[23]$/;
+// search exists as a governed citation tool only from knowledge@2 on.
+const SEARCH_KEY = /^knowledge\.search@v[23]$/;
 
 export function configuration(value) {
   const required = ['bindingId', 'tenantId', 'nativeKnowledgeBaseId', 'nativeMcpUrl',
@@ -129,7 +135,7 @@ export async function verifyKnowledgeToken(token, config, args, operation = 'que
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || claims.target_type !== 'RESOURCE'
     || (['receiver_start', 'receiver_observe'].includes(operation)
-      ? !['knowledge.sync_apply@v2', 'knowledge.sync_retire@v2'].includes(claims.action_key)
+      ? !RECEIVER_KEY.test(claims.action_key ?? '')
       : nativeKnowledgeAction(claims.action_key) === undefined)
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
     || !Number.isSafeInteger(claims.result_exposure_policy_version) || claims.result_exposure_policy_version <= 0
@@ -335,7 +341,7 @@ async function recordCreationReceipt(value, observation, config, deadline, key) 
 }
 
 async function executeOperation(config, deadline, request, claims, token, targetResource) {
-  if (claims.action_key === 'knowledge.search@v2') {
+  if (SEARCH_KEY.test(claims.action_key)) {
     const args = request.arguments;
     if (!exactKeys(args, ['target', 'input']) || !exactKeys(args.target, ['resourceId'])
       || args.target.resourceId !== claims.target_id || !exactKeys(args.input, ['query'])
@@ -348,10 +354,12 @@ async function executeOperation(config, deadline, request, claims, token, target
     const found = await nativeTool(config, deadline, 'search_knowledge', {
       query: args.input.query, knowledge_base_ids: [config.nativeKnowledgeBaseId],
     });
+    // DD-124(5): the terminal carries the native search's own status value;
+    // the adapter never fills it.
     if (found.query !== nativeQuery || !Array.isArray(found.knowledge_base_ids)
       || found.knowledge_base_ids.length !== 1 || found.knowledge_base_ids[0] !== config.nativeKnowledgeBaseId
       || !Array.isArray(found.results) || !Number.isSafeInteger(found.count)
-      || found.count !== found.results.length) throw new Refused(503);
+      || found.count !== found.results.length || !nonempty(found.status)) throw new Refused(503);
     const documents = new Set();
     const references = new Set();
     const citations = [];
@@ -382,7 +390,7 @@ async function executeOperation(config, deadline, request, claims, token, target
     }
     const at = new Date().toISOString();
     const result = { execution: { idempotencyKey: request.idempotencyKey, nativeType: 'search_knowledge',
-      nativeId: config.nativeKnowledgeBaseId, nativeStatus: 'completed', platformStatus: 'SUCCEEDED',
+      nativeId: config.nativeKnowledgeBaseId, nativeStatus: found.status, platformStatus: 'SUCCEEDED',
       cancelCapability: 'UNSUPPORTED', lastObservedAt: at, terminalAt: at },
       resultJson: canonical({ citations }), ...(citations.length === 0 ? {} : { contentReferences: citations }) };
     if (Buffer.byteLength(JSON.stringify(result), 'utf8') > config.maxBodyBytes) throw new Refused(503);
@@ -425,26 +433,31 @@ async function executeOperation(config, deadline, request, claims, token, target
   // full-text read. Export is independent of indexing and uses original bytes.
   let result;
   let nativeType;
+  // DD-124(5): the native status the terminal was decided from: the read
+  // document's parse status, or the native export's own status value.
+  let nativeStatus;
   if (nativeKnowledgeAction(claims.action_key) === 'read') {
     if (document.parse_status !== 'completed') throw new Refused(503);
     result = await readText(config, deadline, reference);
     nativeType = 'read_document';
+    nativeStatus = document.parse_status;
   } else if (nativeKnowledgeAction(claims.action_key) === 'export') {
     const exported = await nativeTool(config, deadline, 'export_document', { knowledge_id: reference.nativeObjectRef });
     if (exported.knowledge_id !== reference.nativeObjectRef
       || exported.knowledge_base_id !== config.nativeKnowledgeBaseId
       || exported.native_revision !== reference.nativeRevision || typeof exported.content_base64 !== 'string'
       || Buffer.from(exported.content_base64, 'base64').toString('base64') !== exported.content_base64
-      || !nonempty(exported.media_type) || !nonempty(exported.filename)) throw new Refused(503);
+      || !nonempty(exported.media_type) || !nonempty(exported.filename) || !nonempty(exported.status)) throw new Refused(503);
     result = { contentBase64: exported.content_base64, mediaType: exported.media_type, filename: exported.filename };
     nativeType = 'export_document';
+    nativeStatus = exported.status;
   } else {
     throw new Refused(404);
   }
   await originalDocument(config, deadline, reference);
   const at = new Date().toISOString();
   return { execution: { idempotencyKey: request.idempotencyKey, nativeType,
-    nativeId: reference.nativeObjectRef, nativeStatus: 'completed', platformStatus: 'SUCCEEDED',
+    nativeId: reference.nativeObjectRef, nativeStatus, platformStatus: 'SUCCEEDED',
     cancelCapability: 'UNSUPPORTED', lastObservedAt: at, terminalAt: at },
     resultJson: JSON.stringify(result), contentReference: reference };
 }

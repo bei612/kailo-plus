@@ -93,8 +93,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const state = { baoReads, peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const completedAt = new Date(Date.now()-1000).toISOString();
-  const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
-  const search = action === 'knowledge.search@v2';
+  const ingest=/^knowledge\.ingest@v[123]$/.test(action ?? '');
+  const search = /^knowledge\.search@v[23]$/.test(action ?? '');
   const searchQueries = {
     'padded-search': [' \t source search \r\n', 'source search'],
     'unicode-padded-search': ['\u0085\u3000跨服务来源\u3000\u0085', '跨服务来源'],
@@ -220,6 +220,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
             : mode === 'wrong-query' ? 'unrelated search' : searchQueries[mode]?.[1] ?? intent.input.query,
           knowledge_base_ids: [ids[1]], count: mode === 'count-mismatch' ? 1 : results.length,
           results: mode === 'missing-results' ? undefined : results,
+          status: mode === 'missing-native-status' ? undefined : 'completed',
         } } });
     }
     if (body.params.name==='add_document') {
@@ -251,6 +252,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [], structuredContent: {
         knowledge_id: ids[2], knowledge_base_id: ids[1], native_revision: revision,
         content_base64: Buffer.from('native bytes').toString('base64'), media_type: 'text/markdown', filename: 'native.md',
+        status: mode === 'missing-native-status' ? undefined : 'completed',
       } } });
     }
     assert.equal(body.params.name, 'read_document');
@@ -299,7 +301,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   if (mcp) {
     const gatewayJwks = join(directory, 'gateway-jwks');
     await writeFile(gatewayJwks, JSON.stringify({ keys: [{ ...gateway.publicKey.export({ format: 'jwk' }), kid: 'gateway' }] }));
-    const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url), 'utf8'));
+    const contract = action.slice(action.lastIndexOf('@v') + 2);
+    const registration = JSON.parse(await readFile(new URL(`../../../contracts/adapter/knowledge.v${contract}/registration.json`, import.meta.url), 'utf8'));
     const digest = registration.operationContracts.find(value => value.contractKey === action).inputSchemaDigest;
     const inputSchema = registration.schemaDocuments.map(value => JSON.parse(value))
       .find(value => createHash('sha256').update(canonical(value)).digest('hex') === digest);
@@ -394,34 +397,36 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
 }
 
 test('native receiver binding maps the registered actions without enabling ordinary execute', async t => {
-  const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url)));
-  const actions = registration.operationContracts.map(({ contractKey }) => ({ actionKey: contractKey, actionVersion: 1 }));
-  const run = await fixture(t, 'ok', 'application_binding.create', 'validate_binding', undefined, undefined, undefined, 'HUMAN', actions);
-  const response = await run.invoke();
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.executionMappings.length, actions.length);
-  for (const actionKey of ['knowledge.sync_apply@v2', 'knowledge.sync_retire@v2']) {
-    assert.deepEqual(body.executionMappings.find(value => value.actionKey === actionKey), {
-      actionKey, actionVersion: 1, nativeType: 'datasource:sync', cancelCapability: 'UNSUPPORTED',
-    });
-    const ordinary = await fixture(t, 'ok', actionKey, 'execute');
-    assert.equal((await ordinary.invoke()).status, 401);
-    assert.equal(ordinary.state.native, 0);
-    assert.equal(ordinary.state.grants, 0);
-  }
-  for (const actionKey of ['knowledge.sync_apply@v1', 'knowledge.sync_retire@v3', 'knowledge.sync_unknown@v2']) {
-    assert.throws(() => configuration({ ...run.config, management: { ...run.config.management,
-      validation: { ...run.config.management.validation, actionVersions: [{ actionKey, actionVersion: 1 }] },
-    } }), error => error.status === 503);
-  }
+  for (const contract of ['2', '3']) await t.test(`knowledge@${contract}`, async nested => {
+    const registration = JSON.parse(await readFile(new URL(`../../../contracts/adapter/knowledge.v${contract}/registration.json`, import.meta.url)));
+    const actions = registration.operationContracts.map(({ contractKey }) => ({ actionKey: contractKey, actionVersion: 1 }));
+    const run = await fixture(nested, 'ok', 'application_binding.create', 'validate_binding', undefined, undefined, undefined, 'HUMAN', actions);
+    const response = await run.invoke();
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.executionMappings.length, actions.length);
+    for (const actionKey of [`knowledge.sync_apply@v${contract}`, `knowledge.sync_retire@v${contract}`]) {
+      assert.deepEqual(body.executionMappings.find(value => value.actionKey === actionKey), {
+        actionKey, actionVersion: 1, nativeType: 'datasource:sync', cancelCapability: 'UNSUPPORTED',
+      });
+      const ordinary = await fixture(nested, 'ok', actionKey, 'execute');
+      assert.equal((await ordinary.invoke()).status, 401);
+      assert.equal(ordinary.state.native, 0);
+      assert.equal(ordinary.state.grants, 0);
+    }
+    for (const actionKey of ['knowledge.sync_apply@v1', 'knowledge.sync_retire@v4', 'knowledge.sync_unknown@v2']) {
+      assert.throws(() => configuration({ ...run.config, management: { ...run.config.management,
+        validation: { ...run.config.management.validation, actionVersions: [{ actionKey, actionVersion: 1 }] },
+      } }), error => error.status === 503);
+    }
+  });
 });
 
 test('native receiver conformance calls only its original scoped driver', async t => {
   for (const operation of ['receiver_start', 'receiver_observe']) {
     for (const mode of ['ok', 'deny', 'revoke', 'wrong-generation', 'wrong-target', 'foreign-batch-request']) {
-      await t.test(`${operation}/${mode}`, async nested => {
-        const f = await fixture(nested, mode, 'knowledge.sync_apply@v2', operation);
+      for (const actionKey of ['knowledge.sync_apply@v2', 'knowledge.sync_retire@v3']) await t.test(`${operation}/${mode}/${actionKey}`, async nested => {
+        const f = await fixture(nested, mode, actionKey, operation);
         const response = await f.invoke();
         // Existing shared jsonFetch does not disclose the upstream PEP error;
         // refusal or revocation is UNAVAILABLE, while a local scope mismatch
@@ -984,10 +989,10 @@ test('actual read/export consume the signed typed reference and native content',
   }
 });
 
-test('knowledge v2 keeps every original native action and does not rewrite the signed action key',async t=>{
-  for (const operation of ['read','export','ingest','delete']) {
-    await t.test(operation,async nested=>{
-      const {invoke,state}=await fixture(nested,'ok',`knowledge.${operation}@v2`);
+test('knowledge v2 and v3 keep every original native action and do not rewrite the signed action key',async t=>{
+  for (const version of ['v2','v3']) for (const operation of ['search','read','export','ingest','delete']) {
+    await t.test(`${version}/${operation}`,async nested=>{
+      const {invoke,state}=await fixture(nested,'ok',`knowledge.${operation}@${version}`);
       const answer=await invoke();
       assert.equal(answer.status,200);
       assert.equal((await answer.json()).execution.platformStatus,'SUCCEEDED');
@@ -996,10 +1001,33 @@ test('knowledge v2 keeps every original native action and does not rewrite the s
     });
   }
   await t.test('unknown version remains denied',async nested=>{
-    const {invoke,state}=await fixture(nested,'ok','knowledge.read@v3');
+    const {invoke,state}=await fixture(nested,'ok','knowledge.read@v4');
     assert.equal((await invoke()).status,401);
     assert.equal(state.native,0);
   });
+});
+
+// DD-124(5): a terminal carries the native status it was decided from; the
+// adapter never fills it with a constant, and a native answer without one is
+// incomplete terminal evidence.
+test('knowledge terminals carry the native status value and refuse its absence',async t=>{
+  for (const action of ['knowledge.search@v3','knowledge.read@v3','knowledge.export@v3']) {
+    await t.test(action,async nested=>{
+      const {invoke}=await fixture(nested,'ok',action);
+      const answer=await invoke();
+      assert.equal(answer.status,200);
+      const {execution}=await answer.json();
+      assert.equal(execution.platformStatus,'SUCCEEDED');
+      assert.equal(execution.nativeStatus,'completed');
+    });
+    if (action==='knowledge.read@v3') continue;
+    await t.test(`${action}/missing-native-status`,async nested=>{
+      const {invoke}=await fixture(nested,'missing-native-status',action);
+      const answer=await invoke();
+      assert.equal(answer.status,503);
+      assert.equal((await answer.json()).execution,undefined);
+    });
+  }
 });
 
 test('native pending, later revision and permission loss never yield a terminal read', async t => {
