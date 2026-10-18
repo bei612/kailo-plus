@@ -50,6 +50,7 @@ import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfac
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
+import { getChannelDescription } from "@client-kit/platform/react/channel-description";
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -608,7 +609,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             </AppSidebarFrame>
         <ContentSurface>
           {tab === "channel" && active && activeRow?.isMember === true && !workspaces.isError && !channel.isError && channel.data ?
-            <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
+            <ChatHeader title={channel.data.name} description={getChannelDescription(channel.data, getLocale())}
               channelType={channel.data.channelType}
               statusBadge={<ChannelEphemeralBadge channel={{ id: active, ttlSeconds: channel.data.ttlSeconds, ttlDeadline: channel.data.ttlDeadline }}
                 testId="chat-ephemeral-badge" variant="header" />}
@@ -631,7 +632,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
                 }}/>
             </AvatarHostProvider> : tab === "channel" && joinRow ? <ChatHeader title={joinRow.channel.name}
-              description={joinRow.channel.description ?? undefined} channelType={joinRow.channel.channelType}
+              description={getChannelDescription(joinRow.channel, getLocale())} channelType={joinRow.channel.channelType}
               leadingContent={<ChannelGlyph channel={{channelType: joinRow.channel.channelType, visibility: joinRow.visibility}} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelJoinButton key={joinRow.id} workspace={joinRow}
                 onJoined={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} />}

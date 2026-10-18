@@ -1350,6 +1350,8 @@ export const platformMessages = {
   "channel.ttl.days7": { en: "7 days", "zh-CN": "7 天" },
   "channel.ttl.days14": { en: "14 days", "zh-CN": "14 天" },
   "channel.ttl.days30": { en: "30 days", "zh-CN": "30 天" },
+  "channel.description.archived": { en: "Archived.", "zh-CN": "已归档。" },
+  "channel.description.fallback": { en: "Channel details and activity.", "zh-CN": "频道详情与动态。" },
   "channel.ephemeral.cleansUpAutomatically": {
     en: "Ephemeral channel. Cleans up automatically after inactivity.",
     "zh-CN": "临时频道。不活跃后自动清理。",

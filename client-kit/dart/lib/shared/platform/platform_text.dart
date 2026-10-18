@@ -1232,6 +1232,8 @@ enum PlatformMessageKey {
   channelTtlDays7,
   channelTtlDays14,
   channelTtlDays30,
+  channelDescriptionArchived,
+  channelDescriptionFallback,
   channelEphemeralCleansUpAutomatically,
   channelEphemeralCleansUpAfter,
   channelEphemeralCleanupDueNow,
@@ -5829,6 +5831,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.channelTtlDays7: ('7 days', '7 天'),
   PlatformMessageKey.channelTtlDays14: ('14 days', '14 天'),
   PlatformMessageKey.channelTtlDays30: ('30 days', '30 天'),
+  PlatformMessageKey.channelDescriptionArchived: ('Archived.', '已归档。'),
+  PlatformMessageKey.channelDescriptionFallback: (
+    'Channel details and activity.',
+    '频道详情与动态。',
+  ),
   PlatformMessageKey.channelEphemeralCleansUpAutomatically: (
     'Ephemeral channel. Cleans up automatically after inactivity.',
     '临时频道。不活跃后自动清理。',
