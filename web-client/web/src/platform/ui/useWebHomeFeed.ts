@@ -52,7 +52,11 @@ export function homeFeedNotifications(snapshot: InboxSnapshot): HomeFeedNotifica
 type Reads = ReturnType<typeof useInboxState>;
 
 export function useWebHomeFeed({ client, visibility, principalId, reads, activeWorkspaceId, activeConversationChannelId, onOpen }: {
-  /** The shell's BFF client and DM visibility host, the same ones InboxPane reads through. */
+  /**
+   * The shell's BFF client and DM visibility host, the same ones InboxPane reads through. Both
+   * (like the identity) define the feed's scope: a new object starts a new feed, with a new
+   * first-feed-seen pass, so hosts pass stable instances.
+   */
   client: BffClient;
   visibility: ConversationVisibilityHost;
   principalId: string;

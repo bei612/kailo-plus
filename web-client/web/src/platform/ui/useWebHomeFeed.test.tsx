@@ -16,6 +16,9 @@ const state = vi.hoisted(() => ({
   next: null as null | Omit<InboxSnapshot, "scope">,
   loads: 0,
   notify: vi.fn<(message: Notify) => void>(),
+  // The shell's real inputs are module constants (bff, conversationVisibility) and a memoized
+  // ProjectsHost; the doubles must be just as stable or every render would restart the feed.
+  projectsHost: {},
 }));
 vi.mock("./inbox-snapshot", async (original) => ({
   ...await original<typeof import("./inbox-snapshot")>(),
@@ -24,7 +27,7 @@ vi.mock("./inbox-snapshot", async (original) => ({
     return state.next ? { ...state.next, scope } : null;
   },
 }));
-vi.mock("./ProjectsPane", () => ({ useProjectsHost: () => ({}) }));
+vi.mock("./ProjectsPane", () => ({ useProjectsHost: () => state.projectsHost }));
 vi.mock("./BrowserNotifications", () => ({ useBrowserNotifications: () => ({ notify: state.notify }) }));
 
 const own = "a".repeat(64), peer = "b".repeat(64), author = "c".repeat(64), root = "d".repeat(64);
@@ -55,12 +58,14 @@ const reads = (preferences: { workspace?: Record<string, { muted: boolean }>; co
   failed: false, unknown: false, readAt: () => null, visibleChannels: new Set(["w1", "w2", "dm-native"]),
 }) as unknown as Parameters<typeof useWebHomeFeed>[0]["reads"];
 
+const client = {} as BffClient;
+const visibility = {} as ConversationVisibilityHost;
 let host: HTMLDivElement;
 let root_: Root;
 let result: ReturnType<typeof useWebHomeFeed>;
 const onOpen = vi.fn(async () => undefined);
 function Probe({ positions, activeWorkspaceId = "w2" }: { positions: ReturnType<typeof reads>; activeWorkspaceId?: string }) {
-  result = useWebHomeFeed({ client: {} as BffClient, visibility: {} as ConversationVisibilityHost, principalId: "me",
+  result = useWebHomeFeed({ client, visibility, principalId: "me",
     reads: positions, activeWorkspaceId, activeConversationChannelId: null, onOpen });
   return null;
 }
