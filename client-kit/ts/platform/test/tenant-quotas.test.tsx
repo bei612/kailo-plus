@@ -20,6 +20,7 @@ beforeEach(() => {
 });
 
 const quotas = {
+  setActionKey: "tenant.quota.set",
   quotas: [
     { feature: "agent_memory_writes", hasAccess: true, hardLimit: true },
     { feature: "automation_runs", limitPerPeriod: 10000, usage: 25, hasAccess: true, hardLimit: false,
@@ -185,7 +186,17 @@ describe("TenantQuotaSection", () => {
     expect(host.querySelector("[data-testid=tenant-quota-outcome]")?.textContent).toContain("Quota set");
   });
 
-  it("a definite refusal (e.g. an auditor without Tenant manage) is shown and nothing is retried", async () => {
+  it("an auditor's page carries no set action: the table is read-only", async () => {
+    const auditorPage = { quotas: quotas.quotas };
+    const host = await mount(transport((r) => (r.path === "/api/v1/tenant/quotas"
+      ? { status: 200, body: auditorPage } : forbidden)));
+    await settle();
+    expect(rows(host)).toHaveLength(3);
+    expect(host.querySelectorAll("[data-testid=tenant-quota-row] button")).toHaveLength(0);
+    expect([...host.querySelectorAll("th")].map((h) => h.textContent)).not.toContain("Action");
+  });
+
+  it("a definite refusal (e.g. Tenant manage revoked after the page loaded) is shown and nothing is retried", async () => {
     const t = routes(() => forbidden);
     const host = await mount(t);
     await settle();

@@ -6844,6 +6844,8 @@ type TenantInvitationView struct {
 // Tenant admin and auditor only.
 type TenantQuotaPage struct {
 	Quotas []TenantQuotaView `json:"quotas"`
+	// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
+	SetActionKey *SetActionKey `json:"setActionKey,omitempty"`
 }
 
 type TenantQuotaView struct {
@@ -9848,6 +9850,12 @@ const (
 	Redeemed                      TenantInvitationStatus = "REDEEMED"
 	TenantInvitationStatusEXPIRED TenantInvitationStatus = "EXPIRED"
 	TenantInvitationStatusREVOKED TenantInvitationStatus = "REVOKED"
+)
+
+type SetActionKey string
+
+const (
+	TenantQuotaSet SetActionKey = "tenant.quota.set"
 )
 
 // 用量与账单页中额度、账单两类 Customer

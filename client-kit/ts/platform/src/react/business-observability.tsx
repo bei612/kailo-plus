@@ -406,6 +406,8 @@ export function TenantQuotaSection() {
   if (state.status === "pending" && !shown.current) return null;
 
   const quotas = state.status === "ok" ? validQuotas(state.data) : null;
+  // 后端只对此刻持有 Tenant manage 的调用者给出可执行动作键；审计员只读，不出现设置入口
+  const settable = state.status === "ok" && state.data?.setActionKey === QUOTA_ACTION_KEY;
   const number = (value: number) => new Intl.NumberFormat(locale).format(value);
   const limitText = (q: TenantQuotaView) => (q.limitPerPeriod === undefined ? t("quota.notSet") : number(q.limitPerPeriod));
   const usedText = (q: TenantQuotaView) => (q.usage === undefined ? "—" : number(q.usage));
@@ -477,7 +479,7 @@ export function TenantQuotaSection() {
               t("quota.kind"),
               t("quota.resetAt"),
               t("usage.access"),
-              t("platform.action"),
+              ...(settable ? [t("platform.action")] : []),
             ]}
           >
             {quotas.map((q) => (
@@ -495,9 +497,11 @@ export function TenantQuotaSection() {
                     {t(q.hasAccess ? "usage.hasAccess" : "usage.noAccess")}
                   </Badge>
                 </Cell>
-                <Cell>
-                  <Button disabled={locked || draft !== null} onClick={() => open(q)}>{t("quota.set")}</Button>
-                </Cell>
+                {settable ? (
+                  <Cell>
+                    <Button disabled={locked || draft !== null} onClick={() => open(q)}>{t("quota.set")}</Button>
+                  </Cell>
+                ) : null}
               </tr>
             ))}
           </Table>

@@ -15555,17 +15555,24 @@ final tenantInvitationStatusValues = EnumValues({
 class TenantQuotaPage {
   final List<TenantQuotaView> quotas;
 
-  TenantQuotaPage({required this.quotas});
+  ///Present only when the caller may set quotas now (Tenant manage); auditors read without it.
+  final SetActionKey? setActionKey;
+
+  TenantQuotaPage({required this.quotas, this.setActionKey});
 
   factory TenantQuotaPage.fromJson(Map<String, dynamic> json) =>
       TenantQuotaPage(
         quotas: List<TenantQuotaView>.from(
           json["quotas"].map((x) => TenantQuotaView.fromJson(x)),
         ),
+        setActionKey: json["setActionKey"] == null
+            ? null
+            : setActionKeyValues.map[json["setActionKey"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "quotas": List<dynamic>.from(quotas.map((x) => x.toJson())),
+    "setActionKey": setActionKeyValues.reverse[setActionKey],
   });
 }
 
@@ -15607,6 +15614,12 @@ class TenantQuotaView {
     "usage": usage,
   });
 }
+
+enum SetActionKey { TENANT_QUOTA_SET }
+
+final setActionKeyValues = EnumValues({
+  "tenant.quota.set": SetActionKey.TENANT_QUOTA_SET,
+});
 
 ///GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
 ///§7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core

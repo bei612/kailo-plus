@@ -5500,6 +5500,10 @@ export enum TenantInvitationStatus {
  */
 export interface TenantQuotaPage {
     quotas: TenantQuotaView[];
+    /**
+     * Present only when the caller may set quotas now (Tenant manage); auditors read without it.
+     */
+    setActionKey?: SetActionKey;
 }
 
 export interface TenantQuotaView {
@@ -5509,6 +5513,10 @@ export interface TenantQuotaView {
     limitPerPeriod?: number;
     periodResetAt?:  Date;
     usage?:          number;
+}
+
+export enum SetActionKey {
+    TenantQuotaSet = "tenant.quota.set",
 }
 
 /**

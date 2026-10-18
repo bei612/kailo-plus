@@ -7838,8 +7838,13 @@ pub enum TenantInvitationStatus {
 /// DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
 /// Tenant admin and auditor only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TenantQuotaPage {
     pub quotas: Vec<TenantQuotaView>,
+
+    /// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub set_action_key: Option<SetActionKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7859,6 +7864,12 @@ pub struct TenantQuotaView {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SetActionKey {
+    #[serde(rename = "tenant.quota.set")]
+    TenantQuotaSet,
 }
 
 /// GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
