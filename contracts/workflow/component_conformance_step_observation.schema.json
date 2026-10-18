@@ -7,6 +7,7 @@
   "required": ["caseKey", "stepKey", "operation", "requestDigest", "responseDigest", "httpStatus"],
   "properties": {
     "contentReference": {"$ref": "../domain/content_reference.schema.json"},
+    "captures": {"type": "array", "description": "DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。", "items": {"$ref": "../domain/component_conformance_capture_value.schema.json"}},
     "nativeScopeObservation": {"$ref": "../adapter/protocol.v1/scope_observation.schema.json"},
     "nativeReceiverObservation": {"$ref": "../domain/component_native_receiver_observation.schema.json"},
     "operation": {"$ref": "../enums/component_conformance_operation.schema.json"},

@@ -39,6 +39,8 @@
           ,"referenceResourceId": {"type": "string", "format": "uuid"}
           ,"referenceAssetId": {"type": "string", "format": "uuid"}
           ,"referenceFromStepKey": {"type": "string"}
+          ,"bindings": {"type": "array", "description": "DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。", "items": {"$ref": "../domain/capability_vector_binding.schema.json"}}
+          ,"captures": {"type": "array", "description": "DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。", "items": {"$ref": "../domain/capability_vector_capture.schema.json"}}
         }
       }
     }

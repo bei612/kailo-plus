@@ -9,6 +9,20 @@
   "properties": {
     "artifactDigest": {"type": "string"},
     "steps": {"$ref": "../workflow/component_conformance_plan.schema.json#/properties/steps"},
+    "preconditions": {
+      "type": "array",
+      "description": "DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。",
+      "items": {
+        "title": "ComponentConformancePreconditionValue",
+        "type": "object", "additionalProperties": false,
+        "required": ["caseKey", "key", "value"],
+        "properties": {
+          "caseKey": {"type": "string", "description": "计划内 case 键 <categoryKey>:<contractVersion>:<caseKey>。"},
+          "key": {"type": "string"},
+          "value": {"type": "string"}
+        }
+      }
+    },
     "nativeReceivers": {
       "type": "array",
       "items": {

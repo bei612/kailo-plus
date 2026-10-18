@@ -1,0 +1,134 @@
+{
+  "formatVersion": "V2",
+  "generatedRefs": [
+    {
+      "contractKey": "records.publish@v2",
+      "side": "INPUT",
+      "pointer": "/nativeObjectRef"
+    },
+    {
+      "contractKey": "records.publish@v2",
+      "side": "EXPECTED",
+      "pointer": "/receiptRef"
+    },
+    {
+      "contractKey": "records.revisions@v2",
+      "side": "INPUT",
+      "pointer": "/receiptRef"
+    }
+  ],
+  "preconditionKinds": [
+    {
+      "kind": "record",
+      "properties": [
+        "displayName",
+        "mediaType"
+      ],
+      "description": "Native record under the admitted Resource, created through the candidate's native entry."
+    },
+    {
+      "kind": "draft",
+      "properties": [],
+      "description": "Unpublished draft revision of the case's record."
+    }
+  ],
+  "cases": [
+    {
+      "caseKey": "capture_roundtrip",
+      "preconditions": [
+        {
+          "key": "record",
+          "kind": "record",
+          "properties": [
+            {
+              "name": "displayName",
+              "valueJson": "\"fixture.txt\""
+            },
+            {
+              "name": "mediaType",
+              "valueJson": "\"text/plain\""
+            }
+          ]
+        },
+        {
+          "key": "draft",
+          "kind": "draft",
+          "properties": []
+        }
+      ],
+      "steps": [
+        {
+          "stepKey": "publish",
+          "contractKey": "records.publish@v2",
+          "inputJson": "{\"resourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"nativeObjectRef\":\"{{PRECONDITION:record}}\",\"nativeRevision\":\"{{PRECONDITION:draft}}\"}",
+          "expectedOutputJson": "{\"receiptRef\":\"{{CAPTURE:receipt}}\"}",
+          "referenceResourceId": "8a385544-3c3f-52e0-bbfa-2795f6046543",
+          "bindings": [
+            {
+              "source": "PRECONDITION",
+              "key": "record",
+              "side": "INPUT",
+              "pointer": "/nativeObjectRef"
+            },
+            {
+              "source": "PRECONDITION",
+              "key": "draft",
+              "side": "INPUT",
+              "pointer": "/nativeRevision"
+            },
+            {
+              "source": "CAPTURE",
+              "key": "receipt",
+              "side": "EXPECTED",
+              "pointer": "/receiptRef"
+            }
+          ],
+          "captures": [
+            {
+              "key": "published",
+              "slot": "CONTENT_REFERENCE_NATIVE_REVISION"
+            },
+            {
+              "key": "receipt",
+              "slot": "GENERATED_REF",
+              "pointer": "/receiptRef"
+            }
+          ]
+        },
+        {
+          "stepKey": "revisions",
+          "contractKey": "records.revisions@v2",
+          "inputJson": "{\"resourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"nativeObjectRef\":\"{{PRECONDITION:record}}\",\"receiptRef\":\"{{CAPTURE:receipt}}\"}",
+          "expectedOutputJson": "{\"citations\":[{\"resourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"nativeObjectRef\":\"{{PRECONDITION:record}}\",\"nativeRevision\":\"{{CAPTURE:published}}\",\"displayName\":\"fixture.txt\",\"mediaType\":\"text/plain\"}]}",
+          "referenceResourceId": "8a385544-3c3f-52e0-bbfa-2795f6046543",
+          "bindings": [
+            {
+              "source": "PRECONDITION",
+              "key": "record",
+              "side": "INPUT",
+              "pointer": "/nativeObjectRef"
+            },
+            {
+              "source": "CAPTURE",
+              "key": "receipt",
+              "side": "INPUT",
+              "pointer": "/receiptRef"
+            },
+            {
+              "source": "PRECONDITION",
+              "key": "record",
+              "side": "EXPECTED",
+              "pointer": "/citations/0/nativeObjectRef"
+            },
+            {
+              "source": "CAPTURE",
+              "key": "published",
+              "side": "EXPECTED",
+              "pointer": "/citations/0/nativeRevision"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

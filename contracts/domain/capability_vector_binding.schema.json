@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/capability_vector_binding.schema.json",
+  "title": "CapabilityVectorBinding",
+  "description": "DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer into the step input (INPUT) or expected output (EXPECTED); the literal there must be exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE; EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan digest fixes the declaration, never the value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "key", "side", "pointer"],
+  "properties": {
+    "source": {"$ref": "../enums/capability_vector_binding_source.schema.json"},
+    "key": {"type": "string"},
+    "side": {"$ref": "../enums/capability_vector_side.schema.json"},
+    "pointer": {"type": "string"}
+  }
+}

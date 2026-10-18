@@ -10,6 +10,11 @@
     "reconcile": {"type": "boolean", "description": "只查询同一步冻结幂等键；不再发送原 execute/CREATE。"},
     "plan": {"$ref": "component_conformance_plan.schema.json"},
     "stepIndex": {"type": "integer"},
-    "contentReference": {"$ref": "../domain/content_reference.schema.json"}
+    "contentReference": {"$ref": "../domain/content_reference.schema.json"},
+    "captures": {
+      "type": "array",
+      "description": "DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture 或管理员值替代。",
+      "items": {"$ref": "../domain/component_conformance_capture_value.schema.json"}
+    }
   }
 }

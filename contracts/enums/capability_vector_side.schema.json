@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_vector_side.schema.json",
+  "title": "CapabilityVectorSide",
+  "description": "DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected output.",
+  "type": "string",
+  "enum": ["INPUT", "EXPECTED"]
+}

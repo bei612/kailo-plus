@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_vector_binding_source.schema.json",
+  "title": "CapabilityVectorBindingSource",
+  "description": "DD-124(1)(2): the two non-literal value sources of a V2 conformance vector. Every other value is LITERAL; there is no third binding source.",
+  "type": "string",
+  "enum": ["PRECONDITION", "CAPTURE"]
+}

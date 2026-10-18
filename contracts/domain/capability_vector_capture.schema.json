@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/capability_vector_capture.schema.json",
+  "title": "CapabilityVectorCapture",
+  "description": "DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps of the same case. key is unique in the case and must be consumed at least once. pointer is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the step's contract key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "slot"],
+  "properties": {
+    "key": {"type": "string"},
+    "slot": {"$ref": "../enums/capability_vector_capture_slot.schema.json"},
+    "pointer": {"type": "string"}
+  }
+}

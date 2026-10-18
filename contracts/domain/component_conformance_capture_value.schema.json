@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_conformance_capture_value.schema.json",
+  "title": "ComponentConformanceCaptureValue",
+  "description": "DD-124(2): one captured value of the current suite run. Core derives it only from the candidate's actual wire response or typed ContentReference; it is kept only in that step's observation evidence and re-checked when the report is recorded. Never a fixture, seed or administrator value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "value"],
+  "properties": {
+    "key": {"type": "string"},
+    "value": {"type": "string"}
+  }
+}

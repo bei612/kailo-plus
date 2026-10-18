@@ -3,5 +3,5 @@
   "$id": "enums/capability_vector_format.schema.json",
   "title": "CapabilityVectorFormat",
   "type": "string",
-  "enum": ["V1"]
+  "enum": ["V1", "V2"]
 }
