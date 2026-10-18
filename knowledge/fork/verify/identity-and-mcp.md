@@ -1779,3 +1779,50 @@ Source SHA-256: `request.ts`
 verification. No frontend build, full-project gate, live IdP/browser acceptance,
 screenshots, deployment or component binding activation is claimed; this is
 not proof of complete component governance or Cells-to-WeKnora integration.
+
+## 2026-10-18 Gateway MCP transport of the knowledge adapter (source only)
+
+Authority: `.design/08` §5 (WeKnora native workspace MCP row) and §9.1/§9.2
+("复用原生 MCP 经 AgentGateway 注册"; REMOTE_ADAPTER), `.design/07` §5 and
+§2.5 (REMOTE_ADAPTER is required because the release declares ActionToken,
+service read edge and receiver capabilities), DD-14/37/49, SS-AGW-ADMIN.
+
+1. **Why the adapter is in the path.** Core publishes one AgentGateway route
+   per binding generation whose MCP target is the adapter directory entry's
+   `mcpUrl` with `adapter_backend_auth` (Gateway service JWT for the binding
+   audience in `x-kailo-gateway-authorization`), and ExtMcp injects the
+   dispatched ActionToken/Idempotency-Key for each `tools/call`
+   (`application_binding_gateway.rs::publish`, `service_auth.rs::adapter_backend_auth`,
+   `agent_tool_pep.rs`). The bound native endpoint `/mcp/:endpoint_id`
+   only accepts calls that carry the adapter's `X-Kailo-Native-Action` proof
+   and re-checks them with Core PEP (`internal/mcpserver/platform_binding.go`),
+   and its tool names/argument shapes are native (`search_knowledge`, ...),
+   not the release ToolDefinitions (`knowledge.search`). A direct Gateway
+   target on the native endpoint therefore cannot authenticate, authorize or
+   map the call; the earlier "no MCP surface" state left every knowledge
+   binding with tools unable to publish its route (no `mcpUrl`).
+2. **Change.** `knowledge/adapter/src/mcp.mjs` serves the release tools at the
+   delivered `mcp.path` (same wire contract as `file-storage/adapter/src/mcp.mjs`,
+   kept separate so the frozen file-storage adapter digest does not change).
+   Each `tools/call` runs `query-revision.mjs::governedExecute`, the same
+   function now used by `/platform-adapter/v1/execute` (ActionToken check,
+   signed target/parameter hash, both fresh PEP phases, admitted KB scope),
+   and every native read is still performed by the existing WeKnora MCP
+   endpoint with the original proof. No second knowledge engine, catalog,
+   credential or result store is introduced; tools/list only returns the
+   controlled delivery rendered from the approved release and the ACTIVE
+   knowledge@2 contract schemas (`deploy/components/adapter-delivery.py config`).
+3. **Compatibility.** Without `mcp` in the controlled configuration the
+   adapter behaves as before. The execute route keeps its wire shape and
+   refusals; its body moved into `governedExecute` unchanged in order.
+   knowledge-adapter (and knowledge-service, whose inputs include
+   `knowledge/`) source digests change: both must be rebuilt by CI and
+   recorded before deployment. No schema, migration or Core change.
+4. **Evidence status.** Two `node:test` cases were added to
+   `knowledge/adapter/test/query-revision.test.mjs` (SDK MCP client through the
+   real Gateway header contract: governed search result equals the HTTP
+   route's; foreign Gateway JWT, missing/foreign Idempotency-Key and unknown
+   tool are refused before any PEP/native call). They were written on the
+   development box, where Node is not run by policy; they have not been
+   executed yet. No deployment, binding activation or Agent tool acceptance
+   is claimed.

@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput, actor = 'HUMAN', boundActions) {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput, actor = 'HUMAN', boundActions, mcp = false) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -293,6 +293,25 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   if (action?.startsWith('knowledge.delete@') && mode!=='unmetered') config.readEdge={sourceActionVersion:1,
     usageMeasurements:[{meterKey:'native_delete_count',quantitySource:mode==='bytes-meter'?'CONTENT_BYTES':'COUNT'}]};
   if (managing && mode !== 'missing-management') config.management = management;
+  // Gateway MCP transport: the same binding's controlled delivery (management
+  // validation + tools rendered from the release and its ACTIVE contract).
+  const gateway = mcp ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : undefined;
+  if (mcp) {
+    const gatewayJwks = join(directory, 'gateway-jwks');
+    await writeFile(gatewayJwks, JSON.stringify({ keys: [{ ...gateway.publicKey.export({ format: 'jwk' }), kid: 'gateway' }] }));
+    const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url), 'utf8'));
+    const digest = registration.operationContracts.find(value => value.contractKey === action).inputSchemaDigest;
+    const inputSchema = registration.schemaDocuments.map(value => JSON.parse(value))
+      .find(value => createHash('sha256').update(canonical(value)).digest('hex') === digest);
+    assert.ok(inputSchema);
+    config.management = { ...management, validation: { ...validation, actionVersions: [{ actionKey: action, actionVersion: 1 }],
+      secretDeliveries: [['native', nativeSecretFile], ['pep', oidcSecretFile]].map(([secretKey, secretFile]) => ({ secretKey,
+        locator: `tenants/${ids[7]}/native/${secretKey}`, version: 1, audience: `fixture-${secretKey}`, secretFile,
+        secretSocket: join(directory, 'agent.sock'), secretValueKey: 'value' })) } };
+    config.mcp = { path: '/mcp', gatewayIssuer: `${origin}/gateway-issuer`, gatewayAudience: config.actionTokenAudience,
+      gatewayJwksFile: gatewayJwks, gatewayCaller: 'fixture-gateway', gatewayMaxTokenSeconds: 61,
+      tools: [{ name: action.slice(0, action.indexOf('@')), actionKey: action, actionVersion: 1, inputSchema, inputSchemaDigest: digest }] };
+  }
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
@@ -336,11 +355,38 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       delete claims.result_exposure_policy_id; delete claims.result_exposure_policy_version;
     }
   }
-  const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
-  const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
-  const token = `${header}.${payload}.${signature}`;
-  return { config, state, args, reference, revision, intent, completedAt, taskId:ids[9], invoke: (route = operation, options = {}) => fetch(`${endpoint}/${receiving ? 'component-conformance' : 'platform-adapter'}/v1/${route}`, {
+  const signed = (value, key, kid) => {
+    const encoded = Buffer.from(JSON.stringify({ alg: 'ES256', kid, typ: 'JWT' })).toString('base64url');
+    const body = Buffer.from(JSON.stringify(value)).toString('base64url');
+    return `${encoded}.${body}.${sign('sha256', Buffer.from(`${encoded}.${body}`), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;
+  };
+  const token = signed(claims, privateKey, 'test');
+  // The SDK client sees the Gateway transport: its service JWT on every MCP
+  // request, and ExtMcp's dispatched ActionToken/Idempotency-Key on tools/call.
+  const mcpClient = async (headers = {}) => {
+    const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
+      import('@modelcontextprotocol/sdk/client/index.js'),
+      import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+    ]);
+    const issued = Math.floor(Date.now() / 1000);
+    const outgoing = { 'x-kailo-gateway-authorization': `Bearer ${signed({ iss: config.mcp.gatewayIssuer,
+      aud: config.mcp.gatewayAudience, sub: 'fixture-gateway', azp: 'fixture-gateway', iat: issued - 1, exp: issued + 60 },
+    gateway.privateKey, 'gateway')}`, ...headers };
+    const transport = new StreamableHTTPClientTransport(new URL(`${endpoint}${config.mcp.path}`), {
+      fetch: async (url, options) => {
+        const sent = new Headers(options?.headers);
+        for (const [name, value] of Object.entries(outgoing)) {
+          if (value === undefined) sent.delete(name); else sent.set(name, value);
+        }
+        return fetch(url, { ...options, headers: sent });
+      },
+    });
+    const client = new Client({ name: 'knowledge-gateway-wire-verifier', version: '1' }, { capabilities: {} });
+    await client.connect(transport);
+    t.after(async () => { await client.close(); });
+    return { client, outgoing };
+  };
+  return { config, state, args, reference, revision, intent, completedAt, taskId:ids[9], token, mcpClient, invoke: (route = operation, options = {}) => fetch(`${endpoint}/${receiving ? 'component-conformance' : 'platform-adapter'}/v1/${route}`, {
     method: 'POST', headers: { authorization: `Bearer ${options.token ?? token}`, 'content-type': 'application/json',
       'idempotency-key': options.key ?? args.idempotencyKey },
     body: options.raw ?? canonical(bodyValue),
@@ -979,4 +1025,51 @@ test('scope, revision evidence and post-read revocation fail closed', async t =>
       if (mode === 'deny' || mode === 'foreign-token') assert.equal(state.native, 0);
     });
   }
+});
+
+test('Gateway MCP tools/call runs the same governed search execution as the adapter execute route', async t => {
+  const { state, reference, args, token, mcpClient } = await fixture(t, 'ok', 'knowledge.search@v2',
+    undefined, undefined, undefined, undefined, 'HUMAN', undefined, true);
+  const { client, outgoing } = await mcpClient();
+  const listed = await client.listTools();
+  assert.deepEqual(listed.tools.map(tool => tool.name), ['knowledge.search']);
+  assert.equal(listed.tools[0].inputSchema.type, 'object');
+  assert.equal(state.peps + state.native, 0);
+  outgoing.authorization = `Bearer ${token}`;
+  outgoing['idempotency-key'] = args.idempotencyKey;
+  const called = await client.callTool({ name: 'knowledge.search', arguments: { query: 'search fixture' } });
+  assert.equal(called.isError, false);
+  assert.deepEqual(called.content, []);
+  const citations = [reference, { ...reference, nativeObjectRef: 'opaque/source-object', displayName: 'other source' }];
+  assert.deepEqual(JSON.parse(called.structuredContent.resultJson), { citations });
+  assert.deepEqual(called.structuredContent.contentReferences, citations);
+  assert.equal(called.structuredContent.execution.idempotencyKey, args.idempotencyKey);
+  assert.equal(JSON.stringify(called).includes('MUST NOT LEAK'), false);
+  assert.deepEqual(state.methods, ['search_knowledge', 'read_document']);
+  assert.equal(state.peps, 2);
+});
+
+test('Gateway MCP refuses a foreign Gateway identity, a missing dispatch key and an unknown tool before native access', async t => {
+  for (const scenario of ['foreign-gateway', 'missing-key', 'unknown-tool', 'foreign-key']) await t.test(scenario, async nested => {
+    const { state, args, token, mcpClient } = await fixture(nested, 'ok', 'knowledge.search@v2',
+      undefined, undefined, undefined, undefined, 'HUMAN', undefined, true);
+    if (scenario === 'foreign-gateway') {
+      const forged = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+      const encoded = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'gateway', typ: 'JWT' })).toString('base64url');
+      const now = Math.floor(Date.now() / 1000);
+      const body = Buffer.from(JSON.stringify({ iss: 'forged', aud: 'knowledge-test', sub: 'fixture-gateway',
+        azp: 'fixture-gateway', iat: now - 1, exp: now + 60 })).toString('base64url');
+      const signature = sign('sha256', Buffer.from(`${encoded}.${body}`), { key: forged.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+      await assert.rejects(mcpClient({ 'x-kailo-gateway-authorization': `Bearer ${encoded}.${body}.${signature}` }));
+    } else {
+      const { client, outgoing } = await mcpClient();
+      outgoing.authorization = `Bearer ${token}`;
+      outgoing['idempotency-key'] = scenario === 'missing-key' ? undefined
+        : scenario === 'foreign-key' ? randomUUID() : args.idempotencyKey;
+      await assert.rejects(client.callTool({ name: scenario === 'unknown-tool' ? 'knowledge.read' : 'knowledge.search',
+        arguments: { query: 'search fixture' } }));
+    }
+    assert.equal(state.native, 0);
+    assert.equal(state.peps, 0);
+  });
 });

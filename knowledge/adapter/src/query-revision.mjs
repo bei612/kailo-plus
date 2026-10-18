@@ -8,6 +8,7 @@ import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   nativeStatusErrorArguments, mapNativeStatusError } from '../../../client-kit/adapter/protocol.mjs';
 import { sourceReference, sourceFile } from './service-read.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from './binding-validation.mjs';
+import { mcpConfiguration, handleMcp } from './mcp.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
@@ -27,7 +28,7 @@ export function configuration(value) {
     'corePepUrl', 'oidcTokenUrl', 'oidcClientId', 'oidcClientSecretFile',
     'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some(key => !Object.hasOwn(value, key))
-    || Object.keys(value).some(key => ![...required, 'workspaceId', 'readEdge', 'management'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some(key => ![...required, 'workspaceId', 'readEdge', 'management', 'mcp'].includes(key))) throw new Refused(503);
   if (value.management !== undefined && (!exactKeys(value.management,
     ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange',
       ...(value.management?.validation === undefined ? [] : ['validation'])])
@@ -55,7 +56,7 @@ export function configuration(value) {
   for (const key of ['nativeMcpBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile']) {
     if (!value[key].startsWith('/')) throw new Refused(503);
   }
-  return Object.freeze({ ...value });
+  return Object.freeze({ ...value, ...(value.mcp === undefined ? {} : { mcp: mcpConfiguration(value.mcp, value) }) });
 }
 
 async function bindingManagement(config, deadline, token, args, operation) {
@@ -448,9 +449,47 @@ async function executeOperation(config, deadline, request, claims, token, target
     resultJson: JSON.stringify(result), contentReference: reference };
 }
 
+const NIL = '00000000-0000-0000-0000-000000000000';
+
+// The adapter's single governed execution consumer, shared by the original
+// /platform-adapter/v1/execute route and the Gateway MCP transport (mcp.mjs).
+// request = {idempotencyKey, actionKey, arguments}; the native MCP proof binds
+// this exact signed intent for the bound native endpoint's own Core PEP check.
+export async function governedExecute(config, deadline, token, request) {
+  const proof = Buffer.from(canonical({ actionToken: token, argumentsJson: canonical(request.arguments),
+    operation: 'execute' })).toString('base64url');
+  return nativeAdmission.run({ proof }, async () => {
+    const intent = request.arguments;
+    const claims = await verifyKnowledgeToken(token, config, intent, 'execute');
+    if (request.actionKey !== claims.action_key || claims.idempotency_key !== request.idempotencyKey
+      || request.idempotencyKey === NIL || !UUID.test(claims.external_execution_id)
+      || claims.external_execution_id === NIL) throw new Refused(401);
+    const admitted = await freshPep(config, deadline, token, intent, claims, 'execute');
+    // Every knowledge action targets the admitted KnowledgeBase Resource;
+    // a signed document/source reference cannot select the receiver scope.
+    if (admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId
+      || admitted.targetResource?.nativeScopeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
+    const value = await executeOperation(config, deadline, request, claims, token, admitted.targetResource);
+    const current = await verifyKnowledgeToken(token, config, intent, 'execute');
+    const disclosed = await freshPep(config, deadline, token, intent, current, 'execute');
+    if (canonical(disclosed.targetResource) !== canonical(admitted.targetResource)) throw new Refused(403);
+    return value;
+  });
+}
+
 export function createAdapter(rawConfig) {
   const config = configuration(rawConfig);
   const server = createServer((request, response) => nativeAdmission.run({}, async () => {
+    if (config.mcp && request.url === config.mcp.path) {
+      try {
+        await handleMcp(config, request, response, governedExecute);
+      } catch (error) {
+        const status = error instanceof Refused ? error.status : 503;
+        if (!response.headersSent) response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify({ class: status === 401 || status === 403 ? 'DENIED' : 'UNAVAILABLE' }));
+      }
+      return;
+    }
     try {
       const operation = request.url === QUERY_PATH ? 'query_revision'
         : request.url === '/component-conformance/v1/receiver_start' ? 'receiver_start'
@@ -515,20 +554,16 @@ export function createAdapter(rawConfig) {
         || !UUID.test(args.externalExecutionId) || !UUID.test(args.idempotencyKey)
         || args.idempotencyKey !== request.headers['idempotency-key'] || !['delete_document','add_document'].includes(args.nativeType)
         || (args.nativeId !== undefined && !UUID.test(args.nativeId)))) throw new Refused(400);
-      const intent = operation === 'execute' ? args.arguments : args;
       const token = request.headers.authorization.slice('Bearer '.length);
+      if (operation === 'execute') {
+        const value = await governedExecute(config, deadline, token, args);
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
+      const intent = args;
       const claims = await verifyKnowledgeToken(token, config, intent, operation);
-      if (operation === 'execute' && (args.actionKey !== claims.action_key
-        || claims.idempotency_key !== args.idempotencyKey
-        || args.idempotencyKey === '00000000-0000-0000-0000-000000000000'
-        || !UUID.test(claims.external_execution_id)
-        || claims.external_execution_id === '00000000-0000-0000-0000-000000000000')) throw new Refused(401);
-      const admitted = await freshPep(config, deadline, token, intent, claims, operation);
-      const executing = operation === 'execute';
-      // Every knowledge action targets the admitted KnowledgeBase Resource;
-      // a signed document/source reference cannot select the receiver scope.
-      if (executing && (admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId
-        || admitted.targetResource?.nativeScopeRef !== config.nativeKnowledgeBaseId)) throw new Refused(403);
+      await freshPep(config, deadline, token, intent, claims, operation);
       let value;
       if (operation === 'map_native_status_error') {
         value = mapNativeStatusError(args);
@@ -568,12 +603,10 @@ export function createAdapter(rawConfig) {
           };
         } else value=observed;
       } else {
-        value = executing ? await executeOperation(config, deadline, args, claims, token, admitted.targetResource)
-          : await nativeRevision(config, deadline, args);
+        value = await nativeRevision(config, deadline, args);
       }
       const current = await verifyKnowledgeToken(token, config, intent, operation);
-      const disclosed = await freshPep(config, deadline, token, intent, current, operation);
-      if (executing && canonical(disclosed.targetResource) !== canonical(admitted.targetResource)) throw new Refused(403);
+      await freshPep(config, deadline, token, intent, current, operation);
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       response.end(JSON.stringify(value));
     } catch (error) {
