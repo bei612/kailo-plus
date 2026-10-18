@@ -10,7 +10,7 @@
     "formatVersion": {"$ref": "../enums/capability_vector_format.schema.json"},
     "generatedRefs": {
       "type": "array",
-      "description": "V2 only. Contract fields whose values the implementation generates (opaque non-empty strings). nativeRevision is always implementation-generated and need not be listed. A listed position present in a step document may never be LITERAL; EXPECTED entries are the only output fields a GENERATED_REF capture may read.",
+      "description": "V2 only. Contract fields whose values the implementation generates (opaque non-empty strings). nativeRevision is always implementation-generated and need not be listed. A listed position present in a step document may never be LITERAL; EXPECTED entries are the only output fields a GENERATED_REF capture of a FORWARD step may read. A RECEIVER step is not sent by the production Core: its input is the receiver admission the isolated Core produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own contract key.",
       "items": {
         "title": "CapabilityVectorGeneratedRef",
         "type": "object",
@@ -96,6 +96,10 @@
                   "type": "array",
                   "description": "V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence provides to later steps.",
                   "items": {"$ref": "capability_vector_capture.schema.json"}
+                },
+                "direction": {
+                  "$ref": "../enums/capability_vector_step_direction.schema.json",
+                  "description": "V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated deployment and is observed by the production plan only through receiver_start/receiver_observe. It names the receiver Resource in referenceResourceId and expects {}. Its inputJson describes the receiver admission the isolated Core performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or GENERATED_REF captures where that admission carries identifiers the isolated Core or the implementation generated. Its evidence is the isolated run's native batch or execution, both read_receipts and the native terminal status, all generated in this run."
                 }
               }
             }

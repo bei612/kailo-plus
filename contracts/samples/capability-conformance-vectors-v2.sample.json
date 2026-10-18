@@ -15,6 +15,11 @@
       "contractKey": "records.revisions@v2",
       "side": "INPUT",
       "pointer": "/receiptRef"
+    },
+    {
+      "contractKey": "records.import@v2",
+      "side": "INPUT",
+      "pointer": "/batchId"
     }
   ],
   "preconditionKinds": [
@@ -127,6 +132,57 @@
               "pointer": "/citations/0/nativeRevision"
             }
           ]
+        }
+      ]
+    },
+    {
+      "caseKey": "receiver_import",
+      "preconditions": [
+        {
+          "key": "config",
+          "kind": "draft",
+          "properties": []
+        }
+      ],
+      "steps": [
+        {
+          "stepKey": "import",
+          "contractKey": "records.import@v2",
+          "inputJson": "{\"importConfigRef\":\"{{PRECONDITION:config}}\",\"batchId\":\"{{CAPTURE:batch}}\",\"sourceReadActionExecutionId\":\"{{CAPTURE:read_execution}}\"}",
+          "expectedOutputJson": "{}",
+          "referenceResourceId": "8a385544-3c3f-52e0-bbfa-2795f6046543",
+          "bindings": [
+            {
+              "source": "PRECONDITION",
+              "key": "config",
+              "side": "INPUT",
+              "pointer": "/importConfigRef"
+            },
+            {
+              "source": "CAPTURE",
+              "key": "batch",
+              "side": "INPUT",
+              "pointer": "/batchId"
+            },
+            {
+              "source": "CAPTURE",
+              "key": "read_execution",
+              "side": "INPUT",
+              "pointer": "/sourceReadActionExecutionId"
+            }
+          ],
+          "captures": [
+            {
+              "key": "batch",
+              "slot": "GENERATED_REF",
+              "pointer": "/batchId"
+            },
+            {
+              "key": "read_execution",
+              "slot": "ACTION_EXECUTION_ID"
+            }
+          ],
+          "direction": "RECEIVER"
         }
       ]
     }

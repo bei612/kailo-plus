@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_conformance_receiver_environment.schema.json",
+  "title": "ComponentConformanceReceiverEnvironment",
+  "description": "DD-124(4), 07 §8A: identity of the isolated receiver deployment a plan with receiver_start/receiver_observe steps observes. isolatedCoreBuildId is the PlatformBuildInfo CORE buildId of the isolated Core/Worker and must equal the current production Core build. sourceReleaseId with its artifact and manifest digests names the production Catalog release, APPROVED and declaring read_edge SOURCE or BOTH, that the isolated deployment runs as the source. It is delivered with the isolated identity, fixed by the plan identity digest and copied into the plan; it is not evidence that any step passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isolatedCoreBuildId", "sourceReleaseId", "sourceArtifactDigest", "sourceManifestDigest"],
+  "properties": {
+    "isolatedCoreBuildId": {"type": "string"},
+    "sourceReleaseId": {"type": "string", "format": "uuid"},
+    "sourceArtifactDigest": {"type": "string"},
+    "sourceManifestDigest": {"type": "string"}
+  }
+}

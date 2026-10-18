@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/component_native_receiver_observation.schema.json",
   "title": "ComponentNativeReceiverObservation",
-  "description": "原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个 SOURCE/RECEIVER 回执及冻结请求。",
+  "description": "原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个 SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无 nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。",
   "type": "object", "additionalProperties": false,
   "required": ["request", "nativeBatchId", "nativeStatus", "startedAt", "completed", "readOperations"],
   "properties": {
@@ -17,10 +17,10 @@
       "items": {
         "title": "ComponentNativeReadObservation",
         "type": "object", "additionalProperties": false,
-        "required": ["readRequest", "nativeBatch", "sourceResourceId", "actionExecutionId", "receiverActionExecutionId", "receiverGeneration", "operationId", "sourceBindingId", "sourceReceipt", "receiverReceipt"],
+        "required": ["readRequest", "sourceResourceId", "actionExecutionId", "receiverActionExecutionId", "receiverGeneration", "operationId", "sourceBindingId", "sourceReceipt", "receiverReceipt"],
         "properties": {
           "readRequest": {"$ref": "../adapter/protocol.v1/read_grant_request.schema.json"},
-          "nativeBatch": {"$ref": "../adapter/protocol.v1/read_grant_request.schema.json#/properties/nativeBatch"},
+          "nativeBatch": {"$ref": "../adapter/protocol.v1/read_grant_request.schema.json#/properties/nativeBatch", "description": "原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带 receiverActionExecutionId）。"},
           "sourceResourceId": {"type": "string", "format": "uuid"},
           "actionExecutionId": {"type": "string", "format": "uuid"},
           "receiverActionExecutionId": {"type": "string", "format": "uuid"},

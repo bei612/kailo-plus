@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/capability_vector_capture.schema.json",
   "title": "CapabilityVectorCapture",
-  "description": "DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps of the same case. key is unique in the case and must be consumed at least once. pointer is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the step's contract key.",
+  "description": "DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps of the same case. key is unique in the case and must be consumed at least once. pointer is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the step's contract key; in a RECEIVER step it equals an INPUT entry and reads the receiver admission the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER steps; a RECEIVER step takes CONTENT_REFERENCE_* from the receiver's own read_receipt of that admission.",
   "type": "object",
   "additionalProperties": false,
   "required": ["key", "slot"],

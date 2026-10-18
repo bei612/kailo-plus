@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/capability_vector_step_direction.schema.json",
+  "title": "CapabilityVectorStepDirection",
+  "description": "DD-124(3)(4): FORWARD steps are driven by the production Core probe execute. RECEIVER marks a step that depends on the service read edge (an ingest consuming a source through READ_EDGE, a NATIVE_MANAGED receiver key); it runs in the isolated deployment of 07 §8A and the production plan only observes it through receiver_start/receiver_observe. A case with a RECEIVER step is a receiver-direction case.",
+  "type": "string",
+  "enum": ["FORWARD", "RECEIVER"]
+}

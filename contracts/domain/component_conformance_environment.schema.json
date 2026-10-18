@@ -11,6 +11,7 @@
     "adapterBaseUrl": {"type": "string"},
     "maxResponseBytes": {"type": "integer"},
     "maxSteps": {"type": "integer"},
+    "receiverActionBaseUrl": {"type": "string", "description": "DD-124(4)：仅隔离部署内 APPLICATION 接收方动作（省略 importConfigRef 的 receiver_start/receiver_observe）。平台维护的隔离部署入口 origin，不是候选 adapter；它以隔离 HUMAN 经隔离 Core 原 Action Admission 准入与派发并观察该动作。"},
     "nativeReadAuthorities": {
       "type": "array",
       "description": "仅隔离原生接收方套件：原 receiver ServicePrincipal 的受控 OIDC 投递，逐 binding/generation 选择；不是生产绑定注册表，不转发 Worker 的平台 bearer。",

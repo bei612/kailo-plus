@@ -8,6 +8,12 @@
   "secretAudience": "core-conformance",
   "privateKeyField": "privateKey",
   "jwksFile": "/fixture/isolated-jwks.json",
+  "receiverEnvironment": {
+    "isolatedCoreBuildId": "0123456789abcdef0123456789abcdef01234567",
+    "sourceReleaseId": "4f9c2a1e-6b7d-4c3e-9a8b-1d2e3f405162",
+    "sourceArtifactDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourceManifestDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
   "contexts": [{
     "caseKey": "knowledge:1:roundtrip",
     "stepKey": "read",

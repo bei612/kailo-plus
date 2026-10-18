@@ -8,7 +8,7 @@
   "required": ["receiverBindingId", "sourceResourceId", "actionKey", "actionVersion", "idempotencyKey", "inputJson"],
   "properties": {
     "receiverBindingId": {"type": "string", "format": "uuid"},
-    "observeActionExecutionId": {"type": "string", "format": "uuid", "description": "只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。"},
+    "observeActionExecutionId": {"type": "string", "format": "uuid", "description": "只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与 receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。"},
     "receiverActionExecutionId": {"type": "string", "format": "uuid"},
     "receiverArgumentsJson": {"type": "string"},
     "nativeBatch": {

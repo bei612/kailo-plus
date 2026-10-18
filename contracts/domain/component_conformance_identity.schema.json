@@ -15,6 +15,7 @@
     "secretAudience": {"type": "string"},
     "privateKeyField": {"type": "string"},
     "jwksFile": {"type": "string"},
+    "receiverEnvironment": {"$ref": "component_conformance_receiver_environment.schema.json", "description": "DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源 release，随身份摘要进入原计划。"},
     "contexts": {
       "type": "array", "minItems": 1,
       "items": {

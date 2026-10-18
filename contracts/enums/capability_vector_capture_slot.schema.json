@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/capability_vector_capture_slot.schema.json",
   "title": "CapabilityVectorCaptureSlot",
-  "description": "DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the adapter's typed ContentReference; GENERATED_REF reads an output field listed in the vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the isolated Core generated for a receiver-direction step.",
+  "description": "DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the adapter's typed ContentReference; GENERATED_REF reads an output field listed in the vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the SOURCE read ActionExecution and Operation the isolated Core generated for a RECEIVER step in this run (never present in the plan or fixture).",
   "type": "string",
   "enum": ["CONTENT_REFERENCE_NATIVE_OBJECT_REF", "CONTENT_REFERENCE_NATIVE_REVISION", "GENERATED_REF", "ACTION_EXECUTION_ID", "OPERATION_ID"]
 }

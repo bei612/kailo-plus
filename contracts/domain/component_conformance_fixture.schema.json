@@ -25,6 +25,7 @@
     },
     "nativeReceivers": {
       "type": "array",
+      "description": "接收方向步骤（V1 NATIVE_INTERNAL/NATIVE 契约步骤，V2 direction=RECEIVER 步骤）各恰一项的冻结接收方请求；Core 以计划步骤幂等键替换 idempotencyKey。DD-124(4)：NATIVE_MANAGED 键的请求携带与已代入向量输入一致的 importConfigRef；APPLICATION 接收方动作省略它。请求只是隔离部署内的启动/观察引用，不含任何执行、operation 或批次标识。",
       "items": {
         "title": "ComponentNativeReceiverFixture",
         "type": "object", "additionalProperties": false,

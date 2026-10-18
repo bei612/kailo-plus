@@ -18,6 +18,7 @@
     "suiteDigest": {"type": "string"},
     "planDigest": {"type": "string"},
     "identityDigest": {"type": "string", "description": "独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。"},
+    "receiverEnvironment": {"$ref": "../domain/component_conformance_receiver_environment.schema.json", "description": "DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。"},
     "steps": {
       "type": "array",
       "items": {
@@ -30,7 +31,7 @@
           "stepKey": {"type": "string"},
           "operation": {"$ref": "../enums/component_conformance_operation.schema.json"},
           "contractKey": {"type": "string", "description": "只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是 native 任务元数据。"},
-          "nativeReceiverInputJson": {"type": "string", "description": "仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。"},
+          "nativeReceiverInputJson": {"type": "string", "description": "仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。"},
           "idempotencyKey": {"type": "string"},
           "requestJson": {"type": "string"},
           "expectedResponseJson": {"type": "string"},
@@ -39,7 +40,7 @@
           ,"referenceResourceId": {"type": "string", "format": "uuid"}
           ,"referenceAssetId": {"type": "string", "format": "uuid"}
           ,"referenceFromStepKey": {"type": "string"}
-          ,"bindings": {"type": "array", "description": "DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。", "items": {"$ref": "../domain/capability_vector_binding.schema.json"}}
+          ,"bindings": {"type": "array", "description": "DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core 以它们比对隔离 Core 实际产生的接收方准入。", "items": {"$ref": "../domain/capability_vector_binding.schema.json"}}
           ,"captures": {"type": "array", "description": "DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。", "items": {"$ref": "../domain/capability_vector_capture.schema.json"}}
         }
       }

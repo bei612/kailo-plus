@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/component_native_receiver_request.schema.json",
   "title": "ComponentNativeReceiverRequest",
-  "description": "07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。",
+  "description": "07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["idempotencyKey", "importConfigRef", "bindingId", "generation", "expiresAt"],
+  "required": ["idempotencyKey", "bindingId", "generation", "expiresAt"],
   "properties": {
     "idempotencyKey": {"type": "string", "format": "uuid"},
     "importConfigRef": {"type": "string", "format": "uuid"},
