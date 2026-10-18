@@ -993,6 +993,10 @@ enum PlatformMessageKey {
   sidebarUnmute,
   sidebarStar,
   sidebarUnstar,
+  sidebarLeaveConfirm,
+  sidebarLeaveChannelDescription,
+  sidebarChannelActionsLoading,
+  sidebarChannelActionsUnavailable,
   sidebarUnread,
   sidebarProjectsMoreActions,
   sidebarProjectsShow,
@@ -5264,6 +5268,19 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.sidebarUnmute: ('Unmute channel', '取消静音'),
   PlatformMessageKey.sidebarStar: ('Star channel', '收藏频道'),
   PlatformMessageKey.sidebarUnstar: ('Unstar channel', '取消收藏'),
+  PlatformMessageKey.sidebarLeaveConfirm: ('Leave', '退出'),
+  PlatformMessageKey.sidebarLeaveChannelDescription: (
+    'Leave "{name}"? You\'ll stop receiving its messages and can rejoin later.',
+    '退出“{name}”？你将不再收到该频道的消息，之后可以重新加入。',
+  ),
+  PlatformMessageKey.sidebarChannelActionsLoading: (
+    'Loading channel actions...',
+    '正在加载频道操作…',
+  ),
+  PlatformMessageKey.sidebarChannelActionsUnavailable: (
+    'Channel actions unavailable',
+    '频道操作不可用',
+  ),
   PlatformMessageKey.sidebarUnread: ('unread', '未读'),
   PlatformMessageKey.sidebarProjectsMoreActions: (
     'More actions for Projects',

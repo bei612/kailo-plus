@@ -579,6 +579,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               forcedUnread={forcedUnread} onMarkChannelUnread={markManualUnread} onClearChannelManualUnread={clearManualUnread}
               onActivity={setChannelActivity}
               onUnreadChange={setSidebarUnread}
+              onChannelActionRecorded={() => {
+                // Same DD-119 readback as the management sheet: descriptor, admitted and search directories.
+                void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", session.tenantPrincipalId] });
+                void workspaces.refetch();
+                void searchDirectory.refetch();
+              }}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
               onSelect={(id) => { void navigation.openChannel(id); }}
               onCreate={() => setCreateChannelOpen(true)}

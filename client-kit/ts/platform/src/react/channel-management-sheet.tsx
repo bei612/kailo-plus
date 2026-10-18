@@ -32,7 +32,7 @@ import { Button } from "./profile/buzz/shared/ui/button";
 import { Textarea } from "./profile/buzz/shared/ui/textarea";
 import { Input } from "./composer/shared/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
-import { useBffClient, useLocale, useT, type Translate } from "./context";
+import { useBffClient, useLocale, useT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { ChannelGlyph } from "./channel-glyph";
 import { PanelSectionGroup } from "./pulse/PanelSectionGroup";
@@ -50,8 +50,8 @@ import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS, formatTtlDuration }
 import { ChannelPermissionsSettings } from "./channel-permissions-settings";
 import { CHANNEL_FORM_FIELD_CONTROL_CLASS, CHANNEL_FORM_FIELD_SHELL_CLASS } from "./roles";
 import {
-  channelManagementQueryKey, useChannelManagementHints, useGovernedChannelAction, useTopicPublication,
-  type ChannelActionOutcome, type ChannelManagementHost,
+  CHANNEL_CONVERGENCE_REREAD_MS, channelActionOutcomeText, channelManagementQueryKey, useChannelManagementHints,
+  useGovernedChannelAction, useTopicPublication, type ChannelActionOutcome, type ChannelManagementHost,
 } from "./channel-management-actions";
 
 export type { ChannelManagementHost } from "./channel-management-actions";
@@ -61,7 +61,6 @@ const MAX_VISIBLE_AVATARS = 3;
 // without an inline style (MAX_VISIBLE_AVATARS avatars plus the overflow chip).
 const STACK_Z_CLASSES = ["z-[1]", "z-[2]", "z-[3]", "z-[4]"] as const;
 /** Bounded readback after a recorded change: the governed workflow converges asynchronously. */
-const CONVERGENCE_REREAD_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
 export type ChannelManagementChannel = {
   channelId: string;
@@ -109,22 +108,12 @@ export type ChannelWorkflowNavigation = {
   onCreateWorkflow: () => void;
 };
 
-function outcomeText(t: Translate, outcome: ChannelActionOutcome): string {
-  switch (outcome.kind) {
-    case "recorded": return t("channelManagement.actionRecorded", { operation: outcome.operation });
-    case "waiting": return t("channelManagement.actionWaiting", { operation: outcome.operation });
-    case "unknown": return t("workspace.lifecycle.unknown", { operation: outcome.operation ?? "—" });
-    case "aborted": return t("workspace.lifecycle.aborted", { reason: outcome.reason, operation: outcome.operation });
-    case "rejected": return t("workspace.lifecycle.rejected", { reason: outcome.reason });
-  }
-}
-
 function ActionOutcome({ outcome, testId }: { outcome: ChannelActionOutcome | null; testId: string }) {
   const t = useT();
   if (!outcome) return null;
   const settled = outcome.kind === "recorded" || outcome.kind === "waiting";
   return <p className={cn("text-sm", settled ? "text-muted-foreground" : "text-destructive")} data-testid={testId}
-    role={settled ? "status" : "alert"}>{outcomeText(t, outcome)}</p>;
+    role={settled ? "status" : "alert"}>{channelActionOutcomeText(t, outcome)}</p>;
 }
 
 export function ChannelManagementSheet({ open, onOpenChange, roster, channel, isDark, onOpenMembers, onCopy, workflows, management }: {
@@ -195,7 +184,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
     for (const timer of rereadTimers.current) window.clearTimeout(timer);
     reread();
     let at = 0;
-    rereadTimers.current = CONVERGENCE_REREAD_MS.map((delay) => { at += delay; return window.setTimeout(reread, at); });
+    rereadTimers.current = CHANNEL_CONVERGENCE_REREAD_MS.map((delay) => { at += delay; return window.setTimeout(reread, at); });
   }, [queryClient, workspaceId]);
   const update = useGovernedChannelAction(readBack);
   const reopen = useGovernedChannelAction(readBack);
@@ -527,7 +516,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                 {update.outcome && update.outcome.kind !== "recorded" && update.outcome.kind !== "waiting" ? (
                   <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
                     data-testid="channel-management-edit-error" role="alert">
-                    {outcomeText(t, update.outcome)}
+                    {channelActionOutcomeText(t, update.outcome)}
                   </p>
                 ) : null}
               </div>

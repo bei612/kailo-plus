@@ -1090,6 +1090,13 @@ export const platformMessages = {
   "sidebar.unmute": { en: "Unmute channel", "zh-CN": "取消静音" },
   "sidebar.star": { en: "Star channel", "zh-CN": "收藏频道" },
   "sidebar.unstar": { en: "Unstar channel", "zh-CN": "取消收藏" },
+  "sidebar.leaveConfirm": { en: "Leave", "zh-CN": "退出" },
+  "sidebar.leaveChannelDescription": {
+    en: "Leave \"{name}\"? You'll stop receiving its messages and can rejoin later.",
+    "zh-CN": "退出“{name}”？你将不再收到该频道的消息，之后可以重新加入。",
+  },
+  "sidebar.channelActionsLoading": { en: "Loading channel actions...", "zh-CN": "正在加载频道操作…" },
+  "sidebar.channelActionsUnavailable": { en: "Channel actions unavailable", "zh-CN": "频道操作不可用" },
   "sidebar.unread": { en: "unread", "zh-CN": "未读" },
   "sidebar.projects.moreActions": { en: "More actions for Projects", "zh-CN": "项目的更多操作" },
   "sidebar.projects.show": { en: "Show", "zh-CN": "显示" },

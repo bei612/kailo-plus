@@ -17,7 +17,7 @@ import type { BffClient } from "../client";
 import { newIdempotencyKey } from "../governance";
 import { BffError, TransportError, writeFailure } from "../transport";
 import { loadChannelDirectory } from "./channel-browser/loadChannelDirectory";
-import { useBffClient, useFailureText, useReasonText } from "./context";
+import { useBffClient, useFailureText, useReasonText, type Translate } from "./context";
 
 /** Host seam for the parts that differ between Web and Desktop. */
 export type ChannelManagementHost = {
@@ -95,12 +95,25 @@ export function useChannelManagementHints(workspaceId: string | undefined, chann
   });
 }
 
+/** Bounded readback after a recorded change converges through its workflow (reads only, never a resend). */
+export const CHANNEL_CONVERGENCE_REREAD_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
+
 export type ChannelActionOutcome =
   | { kind: "recorded"; operation: string }
   | { kind: "waiting"; operation: string }
   | { kind: "aborted"; operation: string; reason: string }
   | { kind: "unknown"; operation?: string }
   | { kind: "rejected"; reason: string };
+
+export function channelActionOutcomeText(t: Translate, outcome: ChannelActionOutcome): string {
+  switch (outcome.kind) {
+    case "recorded": return t("channelManagement.actionRecorded", { operation: outcome.operation });
+    case "waiting": return t("channelManagement.actionWaiting", { operation: outcome.operation });
+    case "unknown": return t("workspace.lifecycle.unknown", { operation: outcome.operation ?? "—" });
+    case "aborted": return t("workspace.lifecycle.aborted", { reason: outcome.reason, operation: outcome.operation });
+    case "rejected": return t("workspace.lifecycle.rejected", { reason: outcome.reason });
+  }
+}
 
 /**
  * One governed channel action. A new intent is frozen with its idempotency key before it is

@@ -13,7 +13,8 @@ const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: unde
   // Core's batched endpoint, modeled as the per-channel binding and window it replaces.
   activity: vi.fn(async ({ items }: { items: { workspaceId: string; messageType: string }[] }) => ({ items: await Promise.all(items.map(async ({ workspaceId, messageType }) => ({
     workspaceId, channelId: (await snapshot.channel(workspaceId)).channelId, events: (await snapshot.messages(workspaceId, { messageType })).events }))) })),
-  menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void; markRead?: (id: string) => void; markUnread?: (id: string) => void }>() }));
+  menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void; markRead?: (id: string) => void; markUnread?: (id: string) => void;
+    leave?: unknown; owner?: { workspaceId: string; channelId: string } }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
@@ -33,10 +34,11 @@ vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
     <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
-  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel }: {
+  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel, onLeaveChannel, ownerActions }: {
     channel: { id: string }; copyChannelId: string | null; onMarkChannelRead?: (id: string) => void; onMarkChannelUnread?: (id: string) => void; onStarChannel?: unknown;
-    onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void;
-  }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel, markRead: onMarkChannelRead, markUnread: onMarkChannelUnread }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
+    onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void; onLeaveChannel?: unknown; ownerActions?: { workspaceId: string; channelId: string };
+  }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel, markRead: onMarkChannelRead, markUnread: onMarkChannelUnread,
+    leave: onLeaveChannel, owner: ownerActions }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
@@ -269,4 +271,27 @@ it("uses the actual forum-post window for Forum activity and canonical read cont
     snapshot.types.two = "stream";
     snapshot.channel.mockImplementation(async (workspace: string) => ({channelId:`native-${workspace}`,channelType:"stream"}));
   }
+});
+
+it("offers the original Leave on joined stream rows with a BFF leave hint and Archive hint reads on observed native IDs (DD-119)", () => {
+  snapshot.failed = false; snapshot.fetching = false;
+  const withLeave = ["one", "two"].map((id) => ({ id, visibility: "open", isMember: true, memberCount: 1, leaveActionKey: "workspace.leave",
+    channel: { channelId: `native-${id}`, channelType: snapshot.types[id], name: id, archived: false } })) as unknown as ComponentProps<typeof ChannelSidebar>["directory"];
+  const page = (rows: ComponentProps<typeof ChannelSidebar>["directory"], isMember = true) => renderToStaticMarkup(<ChannelSidebar principalId="me"
+    workspaces={[{ id: "one", name: "One", slug: "one", isMember }, { id: "two", name: "Two", slug: "two", isMember }]} directory={rows}
+    selectedId="one" active reads={reads} preferencePending={false}
+    onSelect={vi.fn()} onCreate={vi.fn()} onCreateForum={vi.fn()} onSetPreference={vi.fn()} />);
+  page(withLeave);
+  expect(snapshot.menus.get("one")?.leave).toBeTypeOf("function");
+  // Original Forums group has no Leave entry, but keeps the owner Archive entry.
+  expect(snapshot.menus.get("two")?.leave).toBeUndefined();
+  expect(snapshot.menus.get("one")?.owner).toMatchObject({ workspaceId: "one", channelId: "native-one" });
+  expect(snapshot.menus.get("two")?.owner).toMatchObject({ workspaceId: "two", channelId: "native-two" });
+  page(directory());
+  expect(snapshot.menus.get("one")?.leave).toBeUndefined();
+  page(withLeave, false);
+  expect(snapshot.menus.get("one")?.owner).toBeUndefined();
+  snapshot.failed = true;
+  try { page(withLeave); expect(snapshot.menus.get("one")?.owner).toBeUndefined(); }
+  finally { snapshot.failed = false; }
 });

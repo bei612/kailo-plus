@@ -6,6 +6,7 @@ import { TransportError } from "@client-kit/platform/transport";
 import { useT } from "@client-kit/platform/react/context";
 import { ChannelGroupSection, type SidebarChannel } from "@client-kit/platform/react/sidebar/channel-group";
 import { ChannelContextMenuItems } from "@client-kit/platform/react/sidebar/channel-context-menu";
+import { useChannelSidebarActionDialogs } from "@client-kit/platform/react/sidebar/channel-section-dialogs";
 import { ChannelRow } from "@client-kit/platform/react/sidebar/channel-row";
 import { sortChannelsForSidebar } from "@client-kit/platform/react/sidebar/channel-sort";
 import { useChannelSortPreference } from "@client-kit/platform/react/sidebar/useChannelSortPreference";
@@ -26,7 +27,7 @@ type Group = "starred" | "channels" | "forums";
 
 export function ChannelSidebar({ principalId, workspaces, directory, selectedId, active, reads, preferencePending,
   onSelect, onCreate, onCreateForum, onSetPreference, onActivity, onUnreadChange,
-  forcedUnread = {}, onMarkChannelUnread, onClearChannelManualUnread,
+  forcedUnread = {}, onMarkChannelUnread, onClearChannelManualUnread, onChannelActionRecorded,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
@@ -45,6 +46,8 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
   forcedUnread?: ForcedUnreadMap;
   onMarkChannelUnread?: (channelId: string) => void;
   onClearChannelManualUnread?: (channelId: string) => void;
+  /** DD-119 readback after a recorded Leave/Archive from the context menu. */
+  onChannelActionRecorded?: () => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
@@ -118,6 +121,8 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     if (!canWritePreference) return;
     onSetPreference(id, { starred: preferences[id]?.starred ?? false, muted: preferences[id]?.muted ?? false, ...change });
   };
+  const { requestLeaveChannel, requestArchiveChannel, dialog: channelActionDialog } =
+    useChannelSidebarActionDialogs(() => onChannelActionRecorded?.());
   const copy = (text: string, success: string) => {
     void Promise.resolve().then(() => navigator.clipboard.writeText(text))
       .then(() => toast.success(success), () => toast.error(t("platform.loadFailed")));
@@ -138,7 +143,9 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       hasUnread={unread.has(channel.id)} hasThreadUnread={unread.has(channel.id)}
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
       glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />}
-    renderContextMenu={(channel) => <ChannelContextMenuItems channel={channel}
+    renderContextMenu={(channel) => { const nativeChannelId = joined.some((row) => row.id === channel.id) && messages.isSuccess
+      ? messages.data?.get(channel.id)?.channelId : undefined;
+      return <ChannelContextMenuItems channel={channel}
       copyChannelId={messages.isSuccess && !messages.isFetching && joined.some((row) => row.id === channel.id)
         ? messages.data?.get(channel.id)?.channelId ?? null : null}
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
@@ -148,7 +155,13 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       onStarChannel={key !== "forums" && canWritePreference ? (id) => updatePreference(id, { starred: true }) : undefined}
       onUnstarChannel={key !== "forums" && canWritePreference ? (id) => updatePreference(id, { starred: false }) : undefined}
       onMuteChannel={canWritePreference ? (id) => updatePreference(id, { muted: true }) : undefined}
-      onUnmuteChannel={canWritePreference ? (id) => updatePreference(id, { muted: false }) : undefined} />}
+      onUnmuteChannel={canWritePreference ? (id) => updatePreference(id, { muted: false }) : undefined}
+      // Original Leave in Starred/Channels (not Forums); shown on the BFF leaveActionKey (DD-119(8)).
+      onLeaveChannel={key !== "forums" && directory?.find((row) => row.id === channel.id)?.leaveActionKey !== undefined
+        ? (row) => requestLeaveChannel({ workspaceId: row.id, name: row.name }) : undefined}
+      // Archive reads the lifecycle hint on menu open (DD-119(5)); it needs the observed native channel ID.
+      ownerActions={nativeChannelId ? { workspaceId: channel.id, channelId: nativeChannelId,
+        onArchiveChannel: (row) => requestArchiveChannel({ workspaceId: row.id, name: row.name }) } : undefined} />; }}
   />;
   const streamRows = rows.filter((row) => row.channelType === "stream" || (row.isMember !== true && row.channelType === undefined));
   const starred = streamRows.filter((row) => preferences[row.id]?.starred);
@@ -159,5 +172,6 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     {starred.length > 0 ? group("starred", starred) : null}
     {group("channels", streamRows.filter((row) => !preferences[row.id]?.starred))}
     <FeatureGate feature="forum">{group("forums", rows.filter((row) => row.channelType === "forum"))}</FeatureGate>
+    {channelActionDialog}
   </TooltipProvider>;
 }
