@@ -54,6 +54,7 @@ import { getChannelDescription } from "@client-kit/platform/react/channel-descri
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 import { requestOpenCreateAgent } from "@client-kit/platform/react/open-create-agent-event";
 import { ProfileDirectMessageProvider } from "@client-kit/platform/react/pulse/profile-direct-message";
+import { ComposerChannelLinksProvider } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { SidebarLoadingContent, useSidebarLoadingShape } from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -538,6 +539,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey) };
   return (
     <ProfileDirectMessageProvider value={profileDirectMessage}>
+    {/* Original `#channel` composer suggestions: the admitted directory's channel names. */}
+    <ComposerChannelLinksProvider channels={searchDirectory.isError ? undefined : searchDirectory.data?.channels}>
     <BffReminderHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId} onOpen={openSearchChannel}>
     <BffMessageLinkHost scopeKey={searchScopeKey} principalId={session.tenantPrincipalId}
       onOpenProject={(id,target)=>navigation.openProject(id,target)}
@@ -728,6 +731,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </div>
     </BffMessageLinkHost>
     </BffReminderHost>
+    </ComposerChannelLinksProvider>
     </ProfileDirectMessageProvider>
   );
 }
