@@ -271,7 +271,10 @@ pub(crate) fn delete_section(state: &mut CollabState, id: Uuid, now: &str) -> Re
     if state.sections.sections.len() == before {
         return Err(Reject::NotFound);
     }
-    state.sections.assignments.retain(|_, section| *section != id);
+    state
+        .sections
+        .assignments
+        .retain(|_, section| *section != id);
     state.sort.remove(&format!("section:{id}"));
     state.sections.updated_at = Some(now.to_owned());
     Ok(())
@@ -520,7 +523,9 @@ async fn commit(
         None if expected == 0 => CollabState::default(),
         None => return Ok(None),
     };
-    change.apply(&mut document, &now).map_err(Commit::Rejected)?;
+    change
+        .apply(&mut document, &now)
+        .map_err(Commit::Rejected)?;
     let json = |value: serde_json::Result<serde_json::Value>| value.map_err(|_| Commit::Malformed);
     let threads = json(serde_json::to_value(&document.threads))?;
     let sections = json(serde_json::to_value(&document.sections))?;
@@ -787,8 +792,8 @@ pub(crate) async fn put_followed_principal(
     let Ok(Json(request)) = body else {
         return Reject::Invalid.response();
     };
-    let canonical = nostr::PublicKey::from_hex(&request.pubkey)
-        .is_ok_and(|key| key.to_hex() == request.pubkey);
+    let canonical =
+        nostr::PublicKey::from_hex(&request.pubkey).is_ok_and(|key| key.to_hex() == request.pubkey);
     if !canonical {
         return Reject::Invalid.response();
     }

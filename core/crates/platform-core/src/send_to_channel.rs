@@ -116,7 +116,10 @@ fn tag_value(tag: &[String]) -> String {
 }
 
 fn is_pubkey(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Original `getSendToChannelSemantics`. Returns the recomputed mention pubkeys (source
@@ -653,7 +656,10 @@ mod tests {
             ("parentEventId", serde_json::json!(id)),
             ("editEventId", serde_json::json!(id)),
             ("mentionPubkeys", serde_json::json!([id])),
-            ("sendToChannelSourceEventId", serde_json::json!("A".repeat(64))),
+            (
+                "sendToChannelSourceEventId",
+                serde_json::json!("A".repeat(64)),
+            ),
             ("messageType", serde_json::json!("FORUM_POST")),
         ] {
             let mut invalid = base.clone();
