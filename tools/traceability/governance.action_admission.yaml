@@ -46,7 +46,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/governance_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/platform-core/src/spicedb.rs, core/crates/platform-core/src/temporal.rs, core/crates/platform-core/src/client_keys.rs, worker/workflows/approval.go, worker/workflows/approval_can_test.go, core/verify/drill-approval-can.sh, worker/activities/core_api.go, docs/adr/ADR-10-core-spicedb-client.md, client-kit/ts/platform/src/governance.ts, client-kit/ts/platform/src/react/governance.tsx, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop, collaboration/mobile]
+  paths: [core/crates/platform-core/src/governance.rs, client-kit/ts/platform/src/react/inbox/needs-action.tsx, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/governance_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/platform-core/src/spicedb.rs, core/crates/platform-core/src/temporal.rs, core/crates/platform-core/src/client_keys.rs, worker/workflows/approval.go, worker/workflows/approval_can_test.go, core/verify/drill-approval-can.sh, worker/activities/core_api.go, docs/adr/ADR-10-core-spicedb-client.md, client-kit/ts/platform/src/governance.ts, client-kit/ts/platform/src/react/governance.tsx, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop, collaboration/mobile]
   # Tasks/Approvals 页：Web 与 Desktop 是共用包 client-kit/ts/platform 的同一份组件；
   # Mobile 为受权只读视图（apps/02 §4），不渲染撤回与决定
   surfaces: [web, desktop, mobile]

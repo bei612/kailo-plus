@@ -33,7 +33,7 @@ function AgentRow({ agent, selected, disabled, onToggle }: {
       selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
       disabled && "cursor-not-allowed opacity-50",
     )}>
-    <UserAvatar displayName={agent.name} shape="squircle" className="h-9 w-9 shrink-0 text-xs" />
+    <UserAvatar avatarUrl={null} displayName={agent.name} shape="squircle" className="h-9 w-9 shrink-0 text-xs" />
     <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{agent.name}</span>
     <span aria-hidden className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded border",
       selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background")}>
