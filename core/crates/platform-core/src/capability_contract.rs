@@ -1731,7 +1731,11 @@ mod registration_tests {
         assert!(registration(&value).is_ok());
         for invalid in [
             json!([{"case":"read","expected":"same revision"}]),
-            json!({"formatVersion":"V2","cases":valid["cases"]}),
+            // V2 is a known format (DD-124); an unbound placeholder is what it must refuse.
+            json!({"formatVersion":"V2","cases":[{"caseKey":"read_roundtrip","steps":[{
+                "contractKey":"records.read@v1","stepKey":"read",
+                "inputJson":"{\"nativeRef\":\"{{CAPTURE:missing}}\"}",
+                "expectedOutputJson":"{\"nativeRef\":\"fixture\"}"}]}]}),
             json!({"formatVersion":"V1","cases":[]}),
             json!({"formatVersion":"V1","cases":[{"caseKey":"empty","steps":[]}]}),
             vector_input(json!({}), json!({"nativeRef":"fixture"})),
@@ -1894,8 +1898,15 @@ mod registration_tests {
         assert!(vector::has_roundtrip(&registered.vectors));
         let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
         let order: Vec<_> = steps.iter().map(|step| step["stepKey"].clone()).collect();
-        let flow = json!(["list", "write", "list_revisions", "read", "export", "share",
-            "delete"]);
+        let flow = json!([
+            "list",
+            "write",
+            "list_revisions",
+            "read",
+            "export",
+            "share",
+            "delete"
+        ]);
         assert_eq!(json!(order), flow);
         assert_eq!(steps[1]["captures"][0]["key"], "published_revision");
         assert_eq!(steps[2]["bindings"][2]["key"], "published_revision");
@@ -2044,7 +2055,9 @@ mod registration_tests {
             .as_object_mut()
             .unwrap()
             .remove("nativeStatus");
-        assert!(vector::capture(&write, &unconfirmed, None).unwrap().is_none());
+        assert!(vector::capture(&write, &unconfirmed, None)
+            .unwrap()
+            .is_none());
         let recorded = json!({"contentReference":response["contentReference"],"captures":observed});
         let values = vector::observed(&write, &recorded).unwrap();
         let want = [("published_revision".to_owned(), "published".to_owned())];

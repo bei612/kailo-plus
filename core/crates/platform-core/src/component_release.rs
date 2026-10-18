@@ -3878,6 +3878,9 @@ mod report_tests {
             .remove("nativeStatus");
         let raw = response.to_string();
         let digests = super::wire_digests(step, &request, "execute", 200, &raw).unwrap();
-        assert!(serde_json::to_value(digests).unwrap().get("captures").is_none());
+        assert!(serde_json::to_value(digests)
+            .unwrap()
+            .get("captures")
+            .is_none());
     }
 }
