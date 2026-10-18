@@ -1,0 +1,401 @@
+{
+  "id": "{{releaseId}}",
+  "componentTypeKey": "weknora",
+  "version": "1.0.0",
+  "class": "APPLICATION",
+  "platformPortKey": "NONE",
+  "manifestSchemaVersion": 1,
+  "admissionPath": "BUILTIN_REFERENCE",
+  "sourceProject": "kailo-plus/knowledge",
+  "sourceCommit": "{{sourceCommit}}",
+  "bindingConfigSchemaVersion": 1,
+  "bindingConfigSchemaDigest": "{{bindingConfigSchemaDigest}}",
+  "adapterProtocolRange": "1",
+  "frontendDelivery": {
+    "mode": "NATIVE_PAGE",
+    "extensionSlots": [],
+    "editorOrigins": [],
+    "nativePageOrigins": [
+      "{{nativePageOrigin}}"
+    ]
+  },
+  "executionConnector": {
+    "mode": "REMOTE_ADAPTER",
+    "adapterProtocolRange": "1",
+    "actionTokenAudience": "kailo-adapter-knowledge"
+  },
+  "adapterBuildRef": "{{adapterBuildRef}}",
+  "implements": [
+    {
+      "categoryKey": "knowledge",
+      "contractVersion": 2
+    }
+  ],
+  "capabilityDeclarations": [
+    {
+      "categoryKey": "knowledge",
+      "contractVersion": 2,
+      "cancel": "UNSUPPORTED",
+      "observe": "SUPPORTED",
+      "meter": "SUPPORTED",
+      "revisionQuery": "SUPPORTED",
+      "versionedModel": "UNSUPPORTED",
+      "onlineEditing": "UNSUPPORTED",
+      "readEdge": "RECEIVER",
+      "tenantDelete": "RETAIN_ON_TENANT_DELETE"
+    }
+  ],
+  "allowedModelCallModes": [
+    "PLATFORM_LLM_ROUTE"
+  ],
+  "dataStoreIsolation": "DEDICATED_INSTANCE",
+  "dataLocation": "Platform-operated dedicated WeKnora instance with its own database, vector store and object storage on the deployment's private component network.",
+  "secretSchema": [
+    {
+      "secretKey": "native_mcp_bearer",
+      "valueType": "STRING",
+      "lengthOrFormat": "{\"maxLength\":4096,\"minLength\":16,\"pattern\":\"^\\\\S+$\",\"type\":\"string\"}",
+      "rotationClass": "SERVICE_CREDENTIAL",
+      "deliveryMode": "FILE",
+      "restartRequired": false
+    },
+    {
+      "secretKey": "oidc_client_secret",
+      "valueType": "STRING",
+      "lengthOrFormat": "{\"maxLength\":4096,\"minLength\":16,\"pattern\":\"^\\\\S+$\",\"type\":\"string\"}",
+      "rotationClass": "SERVICE_CREDENTIAL",
+      "deliveryMode": "FILE",
+      "restartRequired": false
+    }
+  ],
+  "targetResourceTypeKeys": [
+    "knowledge.base"
+  ],
+  "resourceTypeDefinitions": [
+    {
+      "typeKey": "knowledge.base",
+      "capabilityCategory": "knowledge",
+      "capabilityContractVersion": 2,
+      "incrementalContracts": [
+        {
+          "contractKey": "knowledge.sync_apply@v2",
+          "role": "NATIVE_INTERNAL",
+          "engine": "NATIVE",
+          "stableKeyRule": "Original WeKnora DataSource/SyncLog task identity derived from the frozen importConfigRef and batchId; the receiver never mints a second task for the same batch.",
+          "revisionRule": "Source revision recorded by the SOURCE read receipt of the same Operation; a different revision is a new batch.",
+          "deleteSemantics": "NONE",
+          "reconciliationTrigger": "ComponentTaskWorkflow observe of the original native sync task; lost acknowledgements reread the same task.",
+          "readinessSemantics": "Native parse completion with matching SOURCE and RECEIVER read receipts."
+        },
+        {
+          "contractKey": "knowledge.sync_retire@v2",
+          "role": "NATIVE_INTERNAL",
+          "engine": "NATIVE",
+          "stableKeyRule": "Original WeKnora DataSource/SyncLog task identity derived from the frozen importConfigRef and batchId; the receiver never mints a second task for the same batch.",
+          "revisionRule": "Source revision recorded by the SOURCE read receipt of the same Operation; a different revision is a new batch.",
+          "deleteSemantics": "RETIRE_SOURCE_DERIVED_DOCUMENTS",
+          "reconciliationTrigger": "ComponentTaskWorkflow observe of the original native sync task; lost acknowledgements reread the same task.",
+          "readinessSemantics": "Native parse completion with matching SOURCE and RECEIVER read receipts."
+        }
+      ],
+      "llmGatewayContract": "NOT_USED",
+      "transferFormats": [],
+      "tenantDeleteActionKey": "NONE",
+      "status": "ACTIVE"
+    }
+  ],
+  "actionDefinitions": [
+    {
+      "actionKey": "knowledge.search@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.search@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "consume",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "CONSUME_ONLY",
+        "outputSchemaHash": "293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "9c2fe9762111c1e93a19017a10e9403fb537083419ba45c46312aafe8b95aaab",
+      "outputSchemaDigest": "293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6"
+    },
+    {
+      "actionKey": "knowledge.read@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.read@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "read",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a"
+    },
+    {
+      "actionKey": "knowledge.export@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.export@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "export",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "EXPORT",
+        "outputSchemaHash": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e"
+    },
+    {
+      "actionKey": "knowledge.ingest@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.ingest@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "update",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "actionKey": "knowledge.delete@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.delete@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "delete",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "actionKey": "knowledge.sync_apply@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.sync_apply@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "update",
+      "executionMode": "SYNC",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "NONE",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NONE",
+        "terminalSource": "SYNC_RESULT",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "39da2cbd89a808375860923bd136f52b65787c2074d41f8777d20bc22906fbf1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    },
+    {
+      "actionKey": "knowledge.sync_retire@v2",
+      "version": 1,
+      "capabilityContractKey": "knowledge.sync_retire@v2",
+      "componentTypeKey": "weknora",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "delete",
+      "executionMode": "SYNC",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "NONE",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NONE",
+        "terminalSource": "SYNC_RESULT",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "39da2cbd89a808375860923bd136f52b65787c2074d41f8777d20bc22906fbf1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f"
+    }
+  ],
+  "toolDefinitions": [
+    {
+      "name": "knowledge.search",
+      "source": "APPLICATION",
+      "actionKey": "knowledge.search@v2",
+      "capabilityContractKey": "knowledge.search@v2",
+      "inputSchemaHash": "9c2fe9762111c1e93a19017a10e9403fb537083419ba45c46312aafe8b95aaab",
+      "outputSchemaHash": "293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6",
+      "backendRef": "adapter-mcp",
+      "status": "ACTIVE"
+    },
+    {
+      "name": "knowledge.read",
+      "source": "APPLICATION",
+      "actionKey": "knowledge.read@v2",
+      "capabilityContractKey": "knowledge.read@v2",
+      "inputSchemaHash": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaHash": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
+      "backendRef": "adapter-mcp",
+      "status": "ACTIVE"
+    }
+  ],
+  "businessObservabilityContract": {
+    "correlationSources": [
+      "OPERATION_ID",
+      "NATIVE_REF"
+    ],
+    "businessStateSources": [
+      "CORE_ACTION",
+      "TEMPORAL",
+      "NATIVE_STATUS"
+    ],
+    "aggregationDimensions": [
+      "tenant_id",
+      "workspace_id",
+      "action_key",
+      "component_binding_ref"
+    ],
+    "redactionPolicy": "PLATFORM_METADATA_ONLY"
+  },
+  "frontendPresentationContract": {
+    "integrationMode": "NONE",
+    "themeMapping": {},
+    "localeMapping": {},
+    "themeChangePolicy": "NONE",
+    "localeResolutionPolicy": "NONE"
+  }
+}

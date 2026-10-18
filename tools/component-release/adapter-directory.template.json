@@ -1,0 +1,51 @@
+{
+  "adapters": [
+    {
+      "component": "file-storage",
+      "release": "{{rendered file-storage release dir, output of render.mjs}}",
+      "adapterServiceRef": "file-storage-adapter",
+      "baseUrl": "http://file-storage-adapter:8080/",
+      "mcpUrl": "{{adapter MCP URL: same origin as baseUrl plus the adapter configuration mcp.path}}",
+      "nativeInstanceRef": "{{Cells instance reference, identical to the binding nativeInstanceRef}}",
+      "timeoutSeconds": 30,
+      "maxResponseBytes": 1048576,
+      "secretReaders": [
+        {
+          "servicePrincipalId": "{{binding servicePrincipalId (uuid) chosen for application_binding.create}}",
+          "roleName": "{{component-isolated OpenBao AppRole name used by the adapter's OpenBao Agent}}"
+        }
+      ]
+    },
+    {
+      "component": "knowledge",
+      "release": "{{rendered knowledge release dir, output of render.mjs}}",
+      "adapterServiceRef": "knowledge-adapter",
+      "baseUrl": "http://knowledge-adapter:8080/",
+      "nativeInstanceRef": "{{WeKnora instance reference, identical to the binding nativeInstanceRef}}",
+      "timeoutSeconds": 30,
+      "maxResponseBytes": 1048576,
+      "secretReaders": [
+        {
+          "servicePrincipalId": "{{binding servicePrincipalId (uuid)}}",
+          "roleName": "{{component-isolated OpenBao AppRole name}}"
+        }
+      ]
+    },
+    {
+      "component": "data-query",
+      "release": "{{rendered data-query release dir, output of render.mjs}}",
+      "adapterServiceRef": "data-query-ui",
+      "baseUrl": "http://wren-ui:3000/",
+      "mcpUrl": "http://wren-ui:3000/api/platform-adapter/mcp",
+      "nativeInstanceRef": "{{Wren instance reference, identical to the binding nativeInstanceRef}}",
+      "timeoutSeconds": 30,
+      "maxResponseBytes": 1048576,
+      "secretReaders": [
+        {
+          "servicePrincipalId": "{{binding servicePrincipalId (uuid)}}",
+          "roleName": "{{component-isolated OpenBao AppRole name}}"
+        }
+      ]
+    }
+  ]
+}

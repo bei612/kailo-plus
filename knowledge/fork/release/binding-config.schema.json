@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BindingConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nativePageUrl",
+    "modelGateway"
+  ],
+  "properties": {
+    "nativePageUrl": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact native page entry URL; its origin must be one of the release nativePageOrigins and the deployment NATIVE_PAGE_ORIGINS."
+    },
+    "modelGateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "routeResourceIds",
+        "meterKeys"
+      ],
+      "properties": {
+        "routeResourceIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "meterKeys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

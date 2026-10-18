@@ -1,0 +1,6 @@
+{
+  "componentReleaseId": "{{releaseId}}",
+  "manifestDigest": "{{manifestDigest}}",
+  "webArtifacts": [],
+  "backendDelivery": "EXTERNAL_SERVICE"
+}

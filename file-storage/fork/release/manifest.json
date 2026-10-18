@@ -1,0 +1,390 @@
+{
+  "id": "{{releaseId}}",
+  "componentTypeKey": "cells",
+  "version": "1.0.0",
+  "class": "APPLICATION",
+  "platformPortKey": "NONE",
+  "manifestSchemaVersion": 1,
+  "admissionPath": "BUILTIN_REFERENCE",
+  "sourceProject": "kailo-plus/file-storage",
+  "sourceCommit": "{{sourceCommit}}",
+  "bindingConfigSchemaVersion": 1,
+  "bindingConfigSchemaDigest": "{{bindingConfigSchemaDigest}}",
+  "adapterProtocolRange": "1",
+  "frontendDelivery": {
+    "mode": "NATIVE_PAGE",
+    "extensionSlots": [],
+    "editorOrigins": [],
+    "nativePageOrigins": [
+      "{{nativePageOrigin}}"
+    ]
+  },
+  "executionConnector": {
+    "mode": "REMOTE_ADAPTER",
+    "adapterProtocolRange": "1",
+    "actionTokenAudience": "kailo-adapter-file-storage"
+  },
+  "adapterBuildRef": "{{adapterBuildRef}}",
+  "implements": [
+    {
+      "categoryKey": "file_storage",
+      "contractVersion": 1
+    }
+  ],
+  "capabilityDeclarations": [
+    {
+      "categoryKey": "file_storage",
+      "contractVersion": 1,
+      "cancel": "UNSUPPORTED",
+      "observe": "SUPPORTED",
+      "meter": "SUPPORTED",
+      "revisionQuery": "SUPPORTED",
+      "versionedModel": "UNSUPPORTED",
+      "onlineEditing": "UNSUPPORTED",
+      "readEdge": "SOURCE",
+      "tenantDelete": "RETAIN_ON_TENANT_DELETE"
+    }
+  ],
+  "allowedModelCallModes": [
+    "NONE"
+  ],
+  "dataStoreIsolation": "DEDICATED_INSTANCE",
+  "dataLocation": "Platform-operated dedicated Cells instance with its own database and object storage on the deployment's private component network.",
+  "secretSchema": [
+    {
+      "secretKey": "cells_bearer",
+      "valueType": "STRING",
+      "lengthOrFormat": "{\"maxLength\":4096,\"minLength\":16,\"pattern\":\"^\\\\S+$\",\"type\":\"string\"}",
+      "rotationClass": "SERVICE_CREDENTIAL",
+      "deliveryMode": "FILE",
+      "restartRequired": false
+    },
+    {
+      "secretKey": "oidc_client_secret",
+      "valueType": "STRING",
+      "lengthOrFormat": "{\"maxLength\":4096,\"minLength\":16,\"pattern\":\"^\\\\S+$\",\"type\":\"string\"}",
+      "rotationClass": "SERVICE_CREDENTIAL",
+      "deliveryMode": "FILE",
+      "restartRequired": false
+    }
+  ],
+  "targetResourceTypeKeys": [
+    "file_storage.space"
+  ],
+  "resourceTypeDefinitions": [
+    {
+      "typeKey": "file_storage.space",
+      "capabilityCategory": "file_storage",
+      "capabilityContractVersion": 1,
+      "incrementalContracts": [],
+      "llmGatewayContract": "NOT_USED",
+      "transferFormats": [],
+      "tenantDeleteActionKey": "NONE",
+      "status": "ACTIVE"
+    }
+  ],
+  "actionDefinitions": [
+    {
+      "actionKey": "file_storage.list@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.list@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "discover",
+      "executionMode": "SYNC",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "NONE",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NONE",
+        "terminalSource": "SYNC_RESULT",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "6297c97bfcb3975b61c3399f0c6ee2031bb235219a932238a985f3b2be6a397e",
+      "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952"
+    },
+    {
+      "actionKey": "file_storage.read@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.read@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "read",
+      "executionMode": "SYNC",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "NONE",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NONE",
+        "terminalSource": "SYNC_RESULT",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "f78c0c26024a6cbe0b7fdea554900466b971f19b81fa540fdec7abae1ec1adc0",
+      "outputSchemaDigest": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519"
+    },
+    {
+      "actionKey": "file_storage.list_revisions@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.list_revisions@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "read",
+      "executionMode": "SYNC",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "NONE",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NONE",
+        "terminalSource": "SYNC_RESULT",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "177e81ee505c62a2d72d9f1980f5036d059ebdd02bf49b39b02187be21553f46",
+      "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952"
+    },
+    {
+      "actionKey": "file_storage.export@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.export@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "export",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "EXPORT",
+        "outputSchemaHash": "dda94bac4d567ee74dbd4e6ffbeb2dac22a632040e6c1678a78c85863431bbda",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "0a66498b10d2fd507390e0b12adfe0d7aec5b221078819274b42411a48bcf77c",
+      "outputSchemaDigest": "dda94bac4d567ee74dbd4e6ffbeb2dac22a632040e6c1678a78c85863431bbda"
+    },
+    {
+      "actionKey": "file_storage.write@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.write@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "update",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "edc4171f9e58baf7a9922e69d20de81e618380b37aae1702562afeb3258e25ff",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "5b6c181982ee6b9f68cc53560a0eb2247258ba43ee48c95e687486d2f9bb8eef",
+      "outputSchemaDigest": "edc4171f9e58baf7a9922e69d20de81e618380b37aae1702562afeb3258e25ff"
+    },
+    {
+      "actionKey": "file_storage.delete@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.delete@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "delete",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "786616b4695a505b17d4913bc7ba6f16ea5ce9ebb532a10e9c4b44e53148f2e5",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "86512a9d7233d12d56ae7fd68b2910ddb8fac58e99b56f00d5a1404ac6378738",
+      "outputSchemaDigest": "786616b4695a505b17d4913bc7ba6f16ea5ce9ebb532a10e9c4b44e53148f2e5"
+    },
+    {
+      "actionKey": "file_storage.share@v1",
+      "version": 1,
+      "capabilityContractKey": "file_storage.share@v1",
+      "componentTypeKey": "cells",
+      "targetType": "RESOURCE",
+      "tenantRule": "SESSION_TENANT",
+      "workspaceRule": "TARGET_HOME_WORKSPACE",
+      "permission": "share",
+      "executionMode": "TEMPORAL",
+      "confirmationMode": "NONE",
+      "approvalPolicyId": "NONE",
+      "workflowType": "ComponentTaskWorkflow",
+      "capacityPolicy": "NATIVE",
+      "capacityPoolKey": "NONE",
+      "quotaPolicy": "NONE",
+      "meters": [],
+      "resultExposurePolicy": {
+        "mode": "READ",
+        "outputSchemaHash": "114f80ea9861f65cf219ae1821237653f323122ab7ef7fccf29dfbe780bad75b",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "auditPolicy": "FULL_LIFECYCLE",
+      "businessObservabilityPolicy": {
+        "correlationMode": "OPERATION_NATIVE_REF",
+        "progressSource": "NATIVE",
+        "terminalSource": "NATIVE",
+        "usageSource": "NONE",
+        "costSource": "NONE",
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "status": "ACTIVE",
+      "inputSchemaDigest": "34dc1d2d4209f7ec934c8e44cf47e0ac6cdd4e30a04a407de40cd2a8e7eb6c2e",
+      "outputSchemaDigest": "114f80ea9861f65cf219ae1821237653f323122ab7ef7fccf29dfbe780bad75b"
+    }
+  ],
+  "toolDefinitions": [
+    {
+      "name": "file_storage.list",
+      "source": "APPLICATION",
+      "actionKey": "file_storage.list@v1",
+      "capabilityContractKey": "file_storage.list@v1",
+      "inputSchemaHash": "6297c97bfcb3975b61c3399f0c6ee2031bb235219a932238a985f3b2be6a397e",
+      "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+      "backendRef": "adapter-mcp",
+      "status": "ACTIVE"
+    },
+    {
+      "name": "file_storage.read",
+      "source": "APPLICATION",
+      "actionKey": "file_storage.read@v1",
+      "capabilityContractKey": "file_storage.read@v1",
+      "inputSchemaHash": "f78c0c26024a6cbe0b7fdea554900466b971f19b81fa540fdec7abae1ec1adc0",
+      "outputSchemaHash": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519",
+      "backendRef": "adapter-mcp",
+      "status": "ACTIVE"
+    },
+    {
+      "name": "file_storage.list_revisions",
+      "source": "APPLICATION",
+      "actionKey": "file_storage.list_revisions@v1",
+      "capabilityContractKey": "file_storage.list_revisions@v1",
+      "inputSchemaHash": "177e81ee505c62a2d72d9f1980f5036d059ebdd02bf49b39b02187be21553f46",
+      "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+      "backendRef": "adapter-mcp",
+      "status": "ACTIVE"
+    }
+  ],
+  "businessObservabilityContract": {
+    "correlationSources": [
+      "OPERATION_ID",
+      "NATIVE_REF"
+    ],
+    "businessStateSources": [
+      "CORE_ACTION",
+      "TEMPORAL",
+      "NATIVE_STATUS"
+    ],
+    "aggregationDimensions": [
+      "tenant_id",
+      "workspace_id",
+      "action_key",
+      "component_binding_ref"
+    ],
+    "redactionPolicy": "PLATFORM_METADATA_ONLY"
+  },
+  "frontendPresentationContract": {
+    "integrationMode": "NONE",
+    "themeMapping": {},
+    "localeMapping": {},
+    "themeChangePolicy": "NONE",
+    "localeResolutionPolicy": "NONE"
+  }
+}
