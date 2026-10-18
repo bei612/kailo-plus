@@ -135,10 +135,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       assert.notEqual(request.headers.authorization,`Bearer ${nativeSecret}`);
       assert.deepEqual(body,{receiverBindingId:ids[0],receiverActionExecutionId:ids[5],sourceResourceId:reference.resourceId,
         receiverArgumentsJson:canonical({target:{resourceId:ids[8]},input:reference}),
-        actionKey:'file_storage.read@v1',actionVersion:1,idempotencyKey:args.idempotencyKey,inputJson:canonical(reference)});
+        actionKey:'file_storage.read@v2',actionVersion:1,idempotencyKey:args.idempotencyKey,inputJson:canonical(reference)});
       return reply(response,200,{actionExecutionId:randomUUID(),sourceBindingId:randomUUID(),operationId:readOperation,
         endpoint:`${origin}${mode==='prefixed'?'/registered-prefix':''}/platform-adapter/v1/execute`,actionToken:'source-only',expiresAt:Math.floor(Date.now()/1000)+60,
-        argumentsJson:canonical({actionKey:'file_storage.read@v1',idempotencyKey:args.idempotencyKey,
+        argumentsJson:canonical({actionKey:'file_storage.read@v2',idempotencyKey:args.idempotencyKey,
           arguments:{targetType:'RESOURCE',targetId:reference.resourceId,input:reference,authorizationTargetNativeRef:ids[2]}})});
     }
     if (['/platform-adapter/v1/execute','/registered-prefix/platform-adapter/v1/execute'].includes(request.url)) {

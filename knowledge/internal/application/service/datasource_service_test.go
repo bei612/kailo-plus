@@ -1514,7 +1514,7 @@ func TestFileStorageRecoveredApplicationSurvivesNextBatchAndSourceRevocation(t *
 				case "/execute":
 					sourceCalls++
 					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))
-					require.Equal(t, "file_storage.list@v1", request["actionKey"], "recovery must not re-read or upload source bytes")
+					require.Equal(t, "file_storage.list@v2", request["actionKey"], "recovery must not re-read or upload source bytes")
 					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": request["idempotencyKey"],
 						"items": []any{}, "listingDigest": fileStorageDigest([]byte("[]")), "nativeRevision": fileStorageDigest([]byte("[]"))}))
 				default:

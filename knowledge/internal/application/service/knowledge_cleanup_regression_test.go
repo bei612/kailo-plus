@@ -544,7 +544,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 				case "/oidc":
 					_, _ = w.Write([]byte(`{"access_token":"receiver-service-token","token_type":"Bearer","expires_in":3600}`))
 				case "/service/v1/adapter/request_read_grant":
-					args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+					args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v2", "idempotencyKey": key,
 						"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root,
 							"input": map[string]string{"resourceId": source}}})
 					receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": binding, "authorizationTargetNativeRef": kb,
@@ -584,7 +584,7 @@ func TestFileStorageRetirementAuthorizesAtNativeEnqueue(t *testing.T) {
 			}
 			if scenario == "missing-write" || scenario == "wrong-native" || scenario == "wrong-task" || scenario == "independent-native" {
 				if scenario == "wrong-native" || scenario == "wrong-task" {
-					grant, err := transport.grant(ctx, run, source, "file_storage.list@v1", 1, key, transport.config.RetireActionKey, 1, map[string]string{"resourceId": source})
+					grant, err := transport.grant(ctx, run, source, "file_storage.list@v2", 1, key, transport.config.RetireActionKey, 1, map[string]string{"resourceId": source})
 					require.NoError(t, err)
 					write := &fileStorageWrite{transport: transport, run: run, nativeID: id, grants: []*fileStorageGrant{grant}}
 					if scenario == "wrong-native" {

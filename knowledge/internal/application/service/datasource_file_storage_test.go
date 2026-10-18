@@ -51,7 +51,7 @@ func TestFileStorageFrozenBatchChecksGenerationBeforeSource(t *testing.T) {
 				case "/oidc":
 					_, _ = w.Write([]byte(`{"access_token":"receiver-test-token","token_type":"Bearer","expires_in":3600}`))
 				case "/service/v1/adapter/request_read_grant":
-					args, err := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+					args, err := json.Marshal(map[string]any{"actionKey": "file_storage.list@v2", "idempotencyKey": key,
 						"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": source, "input": map[string]string{"resourceId": source}}})
 					require.NoError(t, err)
 					receiverArgs, err := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": resource, "authorizationTargetNativeRef": run.knowledgeBaseID,
@@ -111,7 +111,7 @@ func TestFileStorageReceiverRetainsOriginalBilateralObservation(t *testing.T) {
 				sourceReceipt[field] = value
 			}
 			sourceReceipt["bindingId"], sourceReceipt["role"] = source, "SOURCE"
-			grant := &fileStorageGrant{key: key, request: map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(), "actionKey": "file_storage.read@v1", "actionVersion": 1, "inputJson": "{}", "idempotencyKey": key, "nativeBatch": map[string]any{"batchId": batch, "importConfigRef": dataSource, "receiverResourceId": resource, "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}},
+			grant := &fileStorageGrant{key: key, request: map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(), "actionKey": "file_storage.read@v2", "actionVersion": 1, "inputJson": "{}", "idempotencyKey": key, "nativeBatch": map[string]any{"batchId": batch, "importConfigRef": dataSource, "receiverResourceId": resource, "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}},
 				value: fileStorageTestWire(t, map[string]any{"outcome": "COMPLETED", "actionExecutionId": uuid.NewString(), "receiverActionExecutionId": uuid.NewString(), "receiverGeneration": 3, "operationId": operation, "sourceBindingId": source, "sourceReceipt": sourceReceipt, "receiverReceipt": receiver})}
 			transport := &fileStorageTransport{config: &config.FileStorageSyncConfig{BindingID: binding, ReceiverResourceID: resource, MaxBodyBytes: 65536}}
 			retained := &fileStorageReadObservations{batchID: batch, dataSourceID: dataSource, generation: 3, values: map[string]json.RawMessage{}}
@@ -180,7 +180,7 @@ func TestFileStorageReceiverAcknowledgementBindsExactReceipt(t *testing.T) {
 			operation, binding, native := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			sourceExecution := uuid.NewString()
 			originalRequest := map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(),
-				"actionKey": "file_storage.read@v1", "actionVersion": 1, "idempotencyKey": operation, "inputJson": `{}`,
+				"actionKey": "file_storage.read@v2", "actionVersion": 1, "idempotencyKey": operation, "inputJson": `{}`,
 				"nativeBatch": map[string]any{"receiverResourceId": uuid.NewString(), "importConfigRef": uuid.NewString(),
 					"batchId": uuid.NewString(), "actionKey": "knowledge.sync_apply@v2", "actionVersion": 1}}
 			originalBytes, err := json.Marshal(originalRequest)
@@ -333,7 +333,7 @@ func TestFileStorageTransportUsesOwnIdentityAndExactNativeReceiver(t *testing.T)
 		}
 		receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": ids[1], "authorizationTargetNativeRef": root,
 			"input": map[string]any{"sourceResourceId": ids[3], "importConfigRef": ids[4], "batchId": ids[5], "sourceReadActionExecutionId": ids[6]}})
-		args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": ids[7],
+		args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v2", "idempotencyKey": ids[7],
 			"arguments": map[string]any{"targetType": "RESOURCE", "targetId": ids[3], "input": map[string]string{"resourceId": ids[3]}, "authorizationTargetNativeRef": uuid.NewString()}})
 		granted++
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"operationId": ids[7], "actionExecutionId": ids[6], "sourceBindingId": ids[3],
@@ -348,11 +348,11 @@ func TestFileStorageTransportUsesOwnIdentityAndExactNativeReceiver(t *testing.T)
 	transport, err := newFileStorageTransport(cfg)
 	require.NoError(t, err)
 	run := fileStorageRun{dataSourceID: ids[4], syncLogID: ids[5]}
-	grant, err := transport.grant(context.Background(), run, ids[3], "file_storage.list@v1", 1, ids[7], cfg.ApplyActionKey, 1, map[string]string{"resourceId": ids[3]})
+	grant, err := transport.grant(context.Background(), run, ids[3], "file_storage.list@v2", 1, ids[7], cfg.ApplyActionKey, 1, map[string]string{"resourceId": ids[3]})
 	require.NoError(t, err)
 	require.Equal(t, ids[7], grant.key)
 	wrongTarget = true
-	_, err = transport.grant(context.Background(), run, ids[3], "file_storage.list@v1", 1, ids[7], cfg.ApplyActionKey, 1, map[string]string{"resourceId": ids[3]})
+	_, err = transport.grant(context.Background(), run, ids[3], "file_storage.list@v2", 1, ids[7], cfg.ApplyActionKey, 1, map[string]string{"resourceId": ids[3]})
 	require.ErrorContains(t, err, "receiver grant does not match")
 	require.Equal(t, 2, granted)
 }
@@ -815,7 +815,7 @@ func TestFileStorageDiscoveryCheckpointsBeforeNextSource(t *testing.T) {
 					} else if sourceCalls > 0 {
 						response["outcome"] = "PENDING"
 					} else {
-						args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v1", "idempotencyKey": key,
+						args, _ := json.Marshal(map[string]any{"actionKey": "file_storage.list@v2", "idempotencyKey": key,
 							"arguments": map[string]any{"targetType": "RESOURCE", "targetId": source, "authorizationTargetNativeRef": root, "input": map[string]string{"resourceId": source}}})
 						receiverArgs, _ := json.Marshal(map[string]any{"targetType": "RESOURCE", "targetId": root, "authorizationTargetNativeRef": run.knowledgeBaseID,
 							"input": map[string]string{"sourceResourceId": source, "importConfigRef": run.dataSourceID, "batchId": run.syncLogID, "sourceReadActionExecutionId": key}})

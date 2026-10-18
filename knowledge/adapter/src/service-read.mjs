@@ -25,7 +25,7 @@ export async function sourceFile(config, deadline, reference, key, claims) {
     method:'POST',headers:{authorization:`Bearer ${bearer}`,'content-type':'application/json'},
     body:JSON.stringify({receiverBindingId:config.bindingId,receiverActionExecutionId:claims.action_execution_id,
       receiverArgumentsJson:canonical({target:{resourceId:claims.target_id},input:reference}),
-      sourceResourceId:reference.resourceId,actionKey:'file_storage.read@v1',
+      sourceResourceId:reference.resourceId,actionKey:'file_storage.read@v2',
       actionVersion:config.readEdge.sourceActionVersion,idempotencyKey:key,inputJson:canonical(reference)}),
   });
   if (!exactKeys(grant,['actionExecutionId','operationId','sourceBindingId','endpoint','actionToken','expiresAt','argumentsJson'])
@@ -37,7 +37,7 @@ export async function sourceFile(config, deadline, reference, key, claims) {
   // discard a registered reverse-proxy path or guess the source host locally.
   let request;
   try { request=JSON.parse(grant.argumentsJson); } catch { throw new Refused(503); }
-  if (!exactKeys(request,['actionKey','idempotencyKey','arguments']) || request.actionKey!=='file_storage.read@v1'
+  if (!exactKeys(request,['actionKey','idempotencyKey','arguments']) || request.actionKey!=='file_storage.read@v2'
     || request.idempotencyKey!==key || grant.argumentsJson!==canonical(request)
     || request.arguments?.targetType!=='RESOURCE' || request.arguments.targetId!==reference.resourceId
     || canonical(request.arguments.input)!==canonical(reference)) throw new Refused(503);

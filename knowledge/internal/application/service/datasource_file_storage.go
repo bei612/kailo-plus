@@ -331,7 +331,7 @@ type fileStorageListing struct {
 }
 
 func (c *fileStorageConnector) listing(ctx context.Context, run fileStorageRun, source, key, action string, version int64, saved fileStorageSavedListing) (*fileStorageListing, error) {
-	grant, err := c.transport.grant(ctx, run, source, "file_storage.list@v1", c.transport.config.ListActionVersion,
+	grant, err := c.transport.grant(ctx, run, source, "file_storage.list@v2", c.transport.config.ListActionVersion,
 		key, action, version, map[string]string{"resourceId": source})
 	if err != nil {
 		return nil, err
@@ -477,7 +477,7 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 	for _, ref := range item.References {
 		source := fileStorageText(ref, "resourceId")
 		readKey := fileStorageKey(item.BatchID, source, fileStorageText(ref, "nativeObjectRef"), fileStorageText(ref, "nativeRevision"))
-		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.read@v1", c.transport.config.ReadActionVersion,
+		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.read@v2", c.transport.config.ReadActionVersion,
 			readKey, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, ref)
 		if err != nil {
 			return fileStorageGroup{}, err
@@ -579,7 +579,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		}
 		priorRun := run
 		priorRun.syncLogID = batch
-		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.list@v1", c.transport.config.ListActionVersion,
+		grant, err := c.transport.grant(ctx, priorRun, source, "file_storage.list@v2", c.transport.config.ListActionVersion,
 			saved.Key, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, map[string]string{"resourceId": source})
 		if err != nil {
 			return nil, err
@@ -660,7 +660,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 	for _, source := range cfg.ResourceIDs {
 		for _, ref := range listings[source].items {
 			key := fileStorageKey(run.syncLogID, source, fileStorageText(ref, "nativeObjectRef"), fileStorageText(ref, "nativeRevision"))
-			grant, err := c.transport.grant(ctx, run, source, "file_storage.read@v1", c.transport.config.ReadActionVersion,
+			grant, err := c.transport.grant(ctx, run, source, "file_storage.read@v2", c.transport.config.ReadActionVersion,
 				key, c.transport.config.ApplyActionKey, c.transport.config.ApplyActionVersion, ref)
 			if err != nil {
 				return nil, err
@@ -928,7 +928,7 @@ func (c *fileStorageConnector) retire(ctx context.Context, run fileStorageRun, k
 		}
 		priorRun := run
 		priorRun.syncLogID = intent.BatchID
-		grant, err = c.transport.grant(ctx, priorRun, intent.SourceResourceID, "file_storage.list@v1", c.transport.config.ListActionVersion,
+		grant, err = c.transport.grant(ctx, priorRun, intent.SourceResourceID, "file_storage.list@v2", c.transport.config.ListActionVersion,
 			intent.Key, c.transport.config.RetireActionKey, c.transport.config.RetireActionVersion, map[string]string{"resourceId": intent.SourceResourceID})
 	} else {
 		source := fileStorageText(old.References[0], "resourceId")
