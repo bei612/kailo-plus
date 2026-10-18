@@ -11,7 +11,7 @@
     "steps": {"$ref": "../workflow/component_conformance_plan.schema.json#/properties/steps"},
     "preconditions": {
       "type": "array",
-      "description": "DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。",
+      "description": "DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识（接收方向 case 的平台 Resource 前置值为隔离 Core 经真实 resource.create 登记既有原生引用后返回的 Resource ID，DD-124(4)）；Core 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。",
       "items": {
         "title": "ComponentConformancePreconditionValue",
         "type": "object", "additionalProperties": false,

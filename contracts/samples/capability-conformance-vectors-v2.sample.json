@@ -35,6 +35,11 @@
       "kind": "draft",
       "properties": [],
       "description": "Unpublished draft revision of the case's record."
+    },
+    {
+      "kind": "receiver_resource",
+      "properties": [],
+      "description": "Receiver platform Resource registered by the isolated Core's real resource.create over an existing native object (DD-124(4)); its value is the returned Resource id."
     }
   ],
   "cases": [
@@ -142,6 +147,11 @@
           "key": "config",
           "kind": "draft",
           "properties": []
+        },
+        {
+          "key": "receiver",
+          "kind": "receiver_resource",
+          "properties": []
         }
       ],
       "steps": [
@@ -150,7 +160,7 @@
           "contractKey": "records.import@v2",
           "inputJson": "{\"importConfigRef\":\"{{PRECONDITION:config}}\",\"batchId\":\"{{CAPTURE:batch}}\",\"sourceReadActionExecutionId\":\"{{CAPTURE:read_execution}}\"}",
           "expectedOutputJson": "{}",
-          "referenceResourceId": "8a385544-3c3f-52e0-bbfa-2795f6046543",
+          "referenceResourceKey": "receiver",
           "bindings": [
             {
               "source": "PRECONDITION",
