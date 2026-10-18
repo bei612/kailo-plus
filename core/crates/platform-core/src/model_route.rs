@@ -1467,6 +1467,22 @@ async fn subject_audit(
     Ok(())
 }
 
+/// The governed writers of a usage subject: an admitted Installation
+/// projection of either lifecycle action (create, or upgrade of the same
+/// Installation to a new generation, 17 §6 / DD-122 (3)(4)) and the
+/// application binding projection. The subject is keyed by the Installation,
+/// not the generation, so an upgrade re-verifies the same subject under its
+/// own Operation instead of borrowing the create Operation's evidence.
+const USAGE_SUBJECT_WRITERS: [&str; 3] = [
+    "agent.installation.create",
+    "agent.installation.upgrade",
+    "application_binding.create",
+];
+
+pub(crate) fn usage_subject_writer(action_key: &str) -> bool {
+    USAGE_SUBJECT_WRITERS.contains(&action_key)
+}
+
 /// DD-38：已有安装 projection 的副作用依赖，不创建 Invocation 或商业账本。
 /// lifecycle 保留 Tenant 锁，Core-only 身份只允许此受治理写者；native PUT 没有 CAS。
 pub(crate) async fn ensure_usage_subject(
@@ -1496,10 +1512,7 @@ pub(crate) async fn ensure_usage_subject(
     let context = crate::platform_keys::action_audit_context(lifecycle, action, tenant).await?;
     if context.target_id != installation
         || context.workspace_id != workspace
-        || !matches!(
-            context.action_key.as_str(),
-            "agent.installation.create" | "application_binding.create"
-        )
+        || !usage_subject_writer(&context.action_key)
     {
         return Err(conflict());
     }
@@ -1688,9 +1701,12 @@ pub(crate) async fn provision(
     version: Uuid,
     generation: i64,
     action: Uuid,
+    step: &mut crate::agent_installation::Step,
 ) -> Result<RuntimeModel, Refusal> {
+    step.enter("model_route.installation_scope");
     let (route_id, tenant, workspace, agent) =
         installation_scope(state, installation, version, generation, Some(action)).await?;
+    step.enter("model_route.lifecycle_lock");
     // Tenant/Workspace 生命周期锁与下方真实 membership 锁共同覆盖外部授信。
     // NO KEY UPDATE 仍阻止状态修改，并允许内层 intent 的外键 KEY SHARE 检查。
     let mut lifecycle = state.pool.begin().await?;
@@ -1715,6 +1731,7 @@ pub(crate) async fn provision(
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     installation_scope(state, installation, version, generation, Some(action)).await?;
+    step.enter("model_route.admitted_action");
     let (owner,initiator):(Uuid,Uuid)=sqlx::query_as("select r.owner_principal_id,ae.initiator_principal_id
         from catalog.resource r join admission.action_execution ae on ae.id=r.projection_action_execution_id
         where r.id=$1 and r.tenant_id=$2 and r.home_workspace_id=$3 and r.state in ('PROVISIONING','ACTIVE')
@@ -1725,6 +1742,7 @@ pub(crate) async fn provision(
         for no key update of r")
         .bind(installation).bind(tenant).bind(workspace).bind(action)
         .fetch_optional(&mut *lifecycle).await?.ok_or_else(conflict)?;
+    step.enter("model_route.route_owners");
     let route: Route = sqlx::query_as(&format!("{ROUTE} for no key update of r,m"))
         .bind(route_id)
         .bind(tenant)
@@ -1739,6 +1757,7 @@ pub(crate) async fn provision(
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
     }
+    step.enter("model_route.initiator_route");
     // 17 §6 的安装 Model binding，不是 Version 引用或 asset.consume 的隐式授权。
     // 原安装 AE 已持久冻结 scope/version/AGENT；发起 HUMAN 必须仍有执行与分享权。
     let human_route = checked_route(
@@ -1771,6 +1790,7 @@ pub(crate) async fn provision(
     if !shared.allowed {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
+    step.enter("model_route.usage_subject");
     crate::service_api::audit_gate(state)
         .await
         .map_err(|_| unavailable())?;
@@ -1783,6 +1803,7 @@ pub(crate) async fn provision(
         action,
     )
     .await?;
+    step.enter("model_route.agent_grant");
     let written = state
         .governance
         .spicedb
@@ -1814,6 +1835,7 @@ pub(crate) async fn provision(
     if bound_route != route {
         return Err(conflict());
     }
+    step.enter("model_route.gateway");
     let gateway = Gateway::from_env()?;
     gateway.check_route(&route).await?;
     gateway.check_authentication().await?;
@@ -1826,6 +1848,7 @@ pub(crate) async fn provision(
         &format!("llm-route/{route_id}/{installation}/{generation}"),
     );
     let principal = Uuid::new_v5(&Uuid::NAMESPACE_OID, locator.as_bytes());
+    step.enter("model_route.binding_intent");
     let mut intent = state.pool.begin().await?;
     // Registered SERVICE identity is only the restricted gateway caller, never actor/owner.
     sqlx::query(
@@ -1866,6 +1889,7 @@ pub(crate) async fn provision(
     {
         return Err(conflict());
     }
+    step.enter("model_route.binding_secret");
     // 生命周期/投影的原生行锁与持久意图串行化同一 generation 的外部写入。
     let mut lock = state.pool.begin().await?;
     sqlx::query(
@@ -1919,6 +1943,7 @@ pub(crate) async fn provision(
     if secret.expose().is_empty() {
         return Err(unavailable());
     }
+    step.enter("model_route.native_key");
     let key = key_projection(
         &route.native_id,
         tenant,
@@ -1964,9 +1989,11 @@ pub(crate) async fn provision(
     } else {
         lock.commit().await?;
     }
+    step.enter("model_route.native_model");
     let (id, revision) = gateway.find_key(&key).await?.ok_or_else(unavailable)?;
     // stored 配置成功仍不等于 runtime reload 成功；真实数据面以专属 key 查询模型。
     gateway.check_model(&route.native_id, &secret).await?;
+    step.enter("model_route.route_recheck");
     let fresh = checked_route(
         state,
         route_id,
@@ -1983,6 +2010,7 @@ pub(crate) async fn provision(
         return Err(conflict());
     }
     installation_scope(state, installation, version, generation, Some(action)).await?;
+    step.enter("model_route.binding_activate");
     let changed=sqlx::query("update catalog.agent_model_binding set native_dispatch_started=true,native_key_id=$3,native_key_revision=$4,
         secret_status='ACTIVE' where installation_resource_id=$1 and projection_generation=$2
         and secret_status in ('PENDING','ACTIVE')")
@@ -1990,6 +2018,7 @@ pub(crate) async fn provision(
     if changed.rows_affected() != 1 {
         return Err(conflict());
     }
+    step.enter("model_route.resolve");
     let model = resolve(state, installation, version, generation).await?;
     lifecycle.commit().await?;
     Ok(model)
@@ -3042,5 +3071,38 @@ mod credential_retirement_checks {
         credential.native_key_revision = Some(1);
         credential.native_key_id = None;
         assert!(credential.retirement_key(None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod usage_subject_writer_checks {
+    use super::*;
+
+    #[test]
+    fn installation_upgrade_reuses_the_installation_usage_subject() {
+        // 17 §6 / DD-122 (4): every admitted Installation generation, created
+        // or upgraded, provisions its route credential through the same
+        // usage subject; refusing the upgrade parked it in DRAINING forever.
+        for writer in [
+            "agent.installation.create",
+            "agent.installation.upgrade",
+            "application_binding.create",
+        ] {
+            assert!(usage_subject_writer(writer), "{writer}");
+        }
+    }
+
+    #[test]
+    fn other_actions_cannot_write_a_usage_subject() {
+        for other in [
+            "agent.invoke",
+            "automation.run",
+            "agent.installation.disable",
+            "application_binding.disable",
+            "llm_route.create",
+            "",
+        ] {
+            assert!(!usage_subject_writer(other), "{other}");
+        }
     }
 }

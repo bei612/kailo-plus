@@ -641,7 +641,13 @@ pub(crate) async fn advance(
     match prepared {
         Ok(()) => {}
         Err(error) => {
-            tracing::warn!(installation=%id,reason=?error.reason(),"Installation creation 对账未闭合");
+            let step = if ae.action_key == UPGRADE_ACTION {
+                "drain_upgrade"
+            } else {
+                "create_projection"
+            };
+            tracing::warn!(installation=%id,action=%action,step,kind=refusal_kind(&error),
+                reason=?error.reason(),"Installation creation 对账未闭合");
             return creation_result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
         }
     }
@@ -655,8 +661,10 @@ pub(crate) async fn advance(
             });
             creation_result(id, TaskStatus::Completed, "NONE")
         }
-        Err(error) => {
-            tracing::warn!(installation=%id,reason=?error.reason(),"Installation readiness 未闭合");
+        Err(stalled) => {
+            tracing::warn!(installation=%id,action=%action,generation=input.projection_generation,
+                step=stalled.step,kind=refusal_kind(&stalled.refusal),reason=?stalled.refusal.reason(),
+                "Installation readiness 未闭合");
             creation_result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT")
         }
     }
@@ -1636,9 +1644,10 @@ pub(crate) async fn reconcile(
     for (installation, version, generation, provisioning) in pending {
         match initialize(state, installation, version, generation, provisioning).await {
             Ok(()) => outcomes.push("agent.runtime.ready"),
-            Err(error) => {
+            Err(stalled) => {
                 // UNKNOWN 留在原有意图中重查，不把 spawn/timeout 写成业务失败或终态。
-                tracing::warn!(%installation,generation,reason=?error.reason(),
+                tracing::warn!(%installation,generation,provisioning,step=stalled.step,
+                    kind=refusal_kind(&stalled.refusal),reason=?stalled.refusal.reason(),
                     "Agent runtime 初始化未闭合；禁止启动新 turn");
                 outcomes.push("agent.runtime.unverified");
                 if provisioning {
@@ -1653,21 +1662,76 @@ pub(crate) async fn reconcile(
     Ok(outcomes)
 }
 
+/// The initialization step entered last. An unactivated generation is logged
+/// with this name, the refusal class and its reason code only: never a value,
+/// SecretRef locator, native payload or dependency error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Step(&'static str);
+
+impl Step {
+    pub(crate) fn enter(&mut self, name: &'static str) {
+        self.0 = name;
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        self.0
+    }
+}
+
+/// A refused or unverified initialization round and the step that stopped it.
+pub(crate) struct Stalled {
+    pub step: &'static str,
+    pub refusal: Refusal,
+}
+
+/// Refusal class without its free-text detail; `reason` alone cannot tell a
+/// missing readiness row (Precondition) from a changed snapshot (Conflict).
+fn refusal_kind(refusal: &Refusal) -> &'static str {
+    match refusal {
+        Refusal::Denied(_) => "DENIED",
+        Refusal::Blocked(_) => "BLOCKED",
+        Refusal::Precondition(_) => "PRECONDITION",
+        Refusal::Limit(_) => "LIMIT",
+        Refusal::Conflict(_) => "CONFLICT",
+        Refusal::Unavailable(_) => "UNAVAILABLE",
+    }
+}
+
 async fn initialize(
     state: &ServiceState,
     installation: Uuid,
     version: Uuid,
     generation: i64,
     provisioning: bool,
+) -> Result<(), Stalled> {
+    let mut step = Step("runtime");
+    let result =
+        initialize_steps(state, installation, version, generation, provisioning, &mut step).await;
+    result.map_err(|refusal| Stalled {
+        step: step.name(),
+        refusal,
+    })
+}
+
+async fn initialize_steps(
+    state: &ServiceState,
+    installation: Uuid,
+    version: Uuid,
+    generation: i64,
+    provisioning: bool,
+    step: &mut Step,
 ) -> Result<(), Refusal> {
     let runtime = state
         .agent_runtime
         .as_ref()
         .ok_or(Refusal::Unavailable("Agent runtime 未投递".into()))?;
+    step.enter("runtime_facts");
     let facts = runtime_facts(state, installation, version, generation, provisioning).await?;
+    step.enter("audit_gate");
     crate::service_api::audit_gate(state)
         .await
         .map_err(|_| Refusal::Unavailable("审计 sink 未就绪".into()))?;
+    step.enter("initialization_admission");
     let admission = if provisioning {
         Some(initialization_admission(state, installation, &facts).await?)
     } else {
@@ -1675,21 +1739,24 @@ async fn initialize(
     };
     if let Some((ae, _, _)) = &admission {
         if ae.action_key == UPGRADE_ACTION {
+            step.enter("drain_upgrade");
             drain_upgrade(state, installation, ae.id, version, generation).await?;
         }
     }
     let model = if let Some((ae, _, _)) = &admission {
-        crate::model_route::provision(state, installation, version, generation, ae.id).await?
+        crate::model_route::provision(state, installation, version, generation, ae.id, step).await?
     } else {
+        step.enter("model_route.resolve");
         crate::model_route::resolve(state, installation, version, generation).await?
     };
     // DD-122 (3): Tool grants share the route grant's admitted projection. A
     // denied Tool stays NO_PERMISSION; an unknown result keeps it unactivated.
     let granted = if let Some((ae, _, _)) = &admission {
-        crate::agent_tool::provision(state, installation, version, generation, ae.id).await?
+        crate::agent_tool::provision(state, installation, version, generation, ae.id, step).await?
     } else {
         Vec::new()
     };
+    step.enter("effective_fields");
     let (effective_fields, effective_hash) = if provisioning {
         initialization_fields(
             &facts.snapshot,
@@ -1704,6 +1771,7 @@ async fn initialize(
             facts.projection_config_hash.clone(),
         )
     };
+    step.enter("model_secret");
     let token = state
         .secrets
         .read(&model.secret_ref, "value")
@@ -1718,14 +1786,17 @@ async fn initialize(
         instructions: facts.content.instructions.clone(),
     };
     // 回读关键 config 成立才可推进；既有进程匹配同代/hash 时不重启，不发 turn。
+    step.enter("runtime_ensure");
     runtime
         .ensure(&state.pool, &projection, token.expose())
         .await
         .map_err(|_| Refusal::Unavailable("Agent runtime 原生初始化结果不明".into()))?;
     if let Some((ae, _, _)) = &admission {
         if ae.action_key == UPGRADE_ACTION {
+            step.enter("model_route.retire_previous_generation");
             crate::model_route::retire_previous_generation(state, installation, generation, ae.id)
                 .await?;
+            step.enter("agent_tool.retire_previous_generation");
             crate::agent_tool::retire_previous_generation(
                 state,
                 installation,
@@ -1736,6 +1807,7 @@ async fn initialize(
             .await?;
         }
     }
+    step.enter("runtime_facts.recheck");
     let current = runtime_facts(state, installation, version, generation, provisioning).await?;
     if current.snapshot != facts.snapshot {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
@@ -1743,6 +1815,7 @@ async fn initialize(
     let Some((ae, def, _)) = admission else {
         return Ok(());
     };
+    step.enter("activation.scope");
     let mut tx = state.pool.begin().await?;
     let locked = crate::governance::lock_execution(&mut tx, ae.id).await?;
     // 与暂停/撤权遵循同一锁顺序；网络期间发生的变更必须在原事务边界再次拒绝。
@@ -1780,6 +1853,7 @@ async fn initialize(
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
     }
+    step.enter("activation.ready_row");
     let mut locked_row: InstallationRow = sqlx::query_as(&format!(
         "{READY_ROW} for update of i,r,p,agent,dr,d,av,v,cb,m,a,c,tb,wb"
     ))
@@ -1793,12 +1867,14 @@ async fn initialize(
     if locked_row != facts.snapshot {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    step.enter("activation.authorization");
     let proof = initialization_authorization(state, installation, &facts, &locked, &def).await?;
     let mut evidence = runtime_authorization(state, installation, &locked_row, true).await?;
     evidence.push(crate::audit::Evidence::new(
         contracts::EvidenceKind::SpicedbZedtoken,
         proof,
     ));
+    step.enter("activation.effective_fields");
     if locked_row.effective_fields != effective_fields {
         let changed = sqlx::query(
             "update catalog.agent_runtime_projection set effective_fields=$4,config_hash=$5
@@ -1837,6 +1913,7 @@ async fn initialize(
         )
         .await?;
     }
+    step.enter("activation.verify_projection");
     // A successful initialize proves only loaded fields, not policy execution.
     // Preserve those facts even when missing consumers prevent ACTIVE/trigger.
     if let Err(reason) = verify_projection(
@@ -1850,6 +1927,7 @@ async fn initialize(
         tx.commit().await?;
         return Err(reason);
     }
+    step.enter("activation.resource");
     let changed = sqlx::query(
         "update catalog.resource r set state='ACTIVE',version=version+1,
             projection_action_execution_id=null where r.id=$1 and r.tenant_id=$2
@@ -1866,6 +1944,7 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    step.enter("activation.projection");
     let changed = sqlx::query(
         "update catalog.agent_runtime_projection set state='ACTIVE'
         where installation_resource_id=$1 and generation=$2 and agent_version_asset_id=$3
@@ -1880,6 +1959,7 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    step.enter("activation.installation");
     let changed = sqlx::query(
         "update catalog.agent_installation set state='ACTIVE',active_projection_generation=$2,pinned_version_asset_id=$3
         where resource_id=$1 and ((state='PROVISIONING' and pinned_version_asset_id=$3)
@@ -1893,6 +1973,7 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    step.enter("activation.generation_bindings");
     sqlx::query(
         "update catalog.agent_runtime_projection set state='REVOKED'
         where installation_resource_id=$1 and generation<>$2 and state='ACTIVE'",
@@ -1922,6 +2003,7 @@ async fn initialize(
     .bind(&granted)
     .execute(&mut *tx)
     .await?;
+    step.enter("activation.channel_binding");
     let changed = sqlx::query(
         "update catalog.channel_agent_binding set status='ACTIVE',triggers=$3
         where installation_resource_id=$1 and workspace_id=$2 and status in ('DISABLED','ACTIVE')",
@@ -1941,6 +2023,7 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    step.enter("activation.commit");
     crate::agent_invocation::initialize_ingress(&mut tx, facts.tenant_id, installation, generation)
         .await?;
     projection_audit(
@@ -2106,6 +2189,33 @@ mod effective_field_tests {
         ] {
             assert!(UPGRADE_TARGET.contains(fact), "{fact}");
         }
+    }
+
+    #[test]
+    fn every_installation_projection_action_provisions_its_usage_subject() {
+        // 17 §6 / DD-122 (3)(4): an admitted upgrade generation provisions its
+        // route credential through the same consumer as create. A usage
+        // subject guard that knew only create refused every approved upgrade
+        // with TARGET_STATE_CONFLICT and parked the Installation in DRAINING.
+        for action in [CREATE_ACTION, UPGRADE_ACTION] {
+            assert!(crate::model_route::usage_subject_writer(action), "{action}");
+        }
+    }
+
+    #[test]
+    fn stalled_initialization_names_its_step_and_class_only() {
+        let mut step = Step("runtime");
+        step.enter("model_route.usage_subject");
+        assert_eq!(step.name(), "model_route.usage_subject");
+        // Same reason code, different failure: a missing readiness row versus
+        // a snapshot that changed during native verification.
+        let missing = Refusal::Precondition(ReasonCode::TargetStateConflict);
+        let changed = Refusal::Conflict(ReasonCode::TargetStateConflict);
+        assert_eq!(missing.reason(), changed.reason());
+        assert_ne!(refusal_kind(&missing), refusal_kind(&changed));
+        // The unknown-result detail can carry dependency text; only its class is logged.
+        let unknown = Refusal::Unavailable("dependency detail".into());
+        assert_eq!(refusal_kind(&unknown), "UNAVAILABLE");
     }
 
     #[tokio::test]

@@ -583,8 +583,10 @@ pub(crate) async fn provision(
     version: Uuid,
     generation: i64,
     action: Uuid,
+    step: &mut crate::agent_installation::Step,
 ) -> Result<Vec<Uuid>, Refusal> {
     let gov = &state.governance;
+    step.enter("agent_tool.installation_scope");
     let (tenant, workspace): (Uuid, Uuid) = sqlx::query_as(
         "select r.tenant_id,i.workspace_id from catalog.agent_installation i
         join catalog.resource r on r.id=i.resource_id where i.resource_id=$1",
@@ -612,6 +614,7 @@ pub(crate) async fn provision(
     if !active || !workspace_active {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
+    step.enter("agent_tool.admitted_action");
     let (agent, owner, initiator): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "select i.agent_principal_id,r.owner_principal_id,ae.initiator_principal_id
         from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
@@ -647,6 +650,7 @@ pub(crate) async fn provision(
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
     }
+    step.enter("agent_tool.binding_rights");
     let tools: Vec<ProvisionTool> = sqlx::query_as(
         "select b.tool_resource_id,t.name,t.source,r.owner_principal_id,r.home_workspace_id
         from catalog.tool_binding b
@@ -699,6 +703,7 @@ pub(crate) async fn provision(
     let memory = tools
         .iter()
         .any(|tool| tool.source == "PLATFORM_NATIVE" && NATIVE_TOOLS.contains(&tool.name.as_str()));
+    step.enter("agent_tool.agent_grant");
     let mut writes = Vec::new();
     for tool in &granted {
         for (relation, _) in TOOL_RELATIONS {
