@@ -315,7 +315,9 @@ fn parameter_hash(context: &Value, operation: &str, parameters: &Value) -> Resul
     ))
 }
 
-fn contextual_claims(
+/// The exact claims Core signs for one identity context and request; the
+/// isolated receiver driver (core/verify) verifies against the same function.
+pub(crate) fn contextual_claims(
     context: &Value,
     action: Uuid,
     operation: Uuid,

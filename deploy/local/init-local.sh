@@ -1,22 +1,33 @@
 #!/usr/bin/env bash
 # 本地拓扑的一次性入口：复用现有密钥、schema、Core 和 Tenant 引导脚本。
 # 无参数补齐现有环境；--fresh --confirm-delete=platform-local 仅清空本 Compose 项目。
+# --isolated-receiver=<kailo-receiver-*>：DD-124(4)/07 §8A 的隔离接收方部署，只在
+# tools/component-release/receiver-run.sh 暂存的副本（compose 项目名已改写）中使用：
+# 不构建任何镜像，Core/Worker 取与生产同一固定 digest，密钥、数据与端口均为本副本自有。
 set -euo pipefail
 cd "$(dirname "$0")"
 
 usage() {
-  echo '用法：./init-local.sh [--fresh --confirm-delete=platform-local]' >&2
+  echo '用法：./init-local.sh [--fresh --confirm-delete=platform-local | --isolated-receiver=<kailo-receiver-*>]' >&2
   exit 2
 }
 
 fresh=false
+isolated=
 case "${1:-}" in
   '') [ "$#" -eq 0 ] || usage ;;
   --fresh)
     [ "$#" -eq 2 ] && [ "$2" = '--confirm-delete=platform-local' ] || usage
     fresh=true ;;
+  --isolated-receiver=*)
+    [ "$#" -eq 1 ] || usage
+    isolated=${1#--isolated-receiver=}
+    [[ "$isolated" =~ ^kailo-receiver-[a-z0-9-]+$ ]] || usage ;;
   *) usage ;;
 esac
+# 隔离模式只启动已固定的镜像；生产模式保持原构建路径。
+no_build=()
+if [ -n "$isolated" ]; then no_build=(--no-build --pull never); fi
 
 [ -s .env ] || { echo '缺少 deploy/local/.env；先复制 .env.example 并填写' >&2; exit 2; }
 set -a
@@ -36,7 +47,10 @@ set +a
 : "${VERIFY_TENANT_NAME:?缺少 VERIFY_TENANT_NAME}"
 : "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?缺少 VERIFY_BOOTSTRAP_WAIT_SECONDS}"
 : "${CORE_DB_PORT:?缺少 CORE_DB_PORT}"
-: "${BUILDX_BUILDER:?必须选择有 cgroup CPU/内存限额的 BuildKit builder}"
+: "${BUILDX_BUILDER:=}"
+[ -n "$isolated" ] || [ -n "$BUILDX_BUILDER" ] || {
+  echo '必须选择有 cgroup CPU/内存限额的 BuildKit builder' >&2; exit 2;
+}
 [[ "$VERIFY_BOOTSTRAP_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]] || {
   echo 'VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数' >&2; exit 2;
 }
@@ -47,12 +61,18 @@ done
 # 不启动容器；正常启动时它还会再次校验，避免单独调用 bootstrap 绕开前提。
 ./bootstrap.sh --validate-config
 project=$(sed -n 's/^name: //p' compose.yaml)
-[ "$project" = platform-local ] || { echo 'Compose 项目名不是 platform-local，拒绝操作' >&2; exit 2; }
+[ "$project" = "${isolated:-platform-local}" ] || {
+  echo "Compose 项目名不是 ${isolated:-platform-local}，拒绝操作" >&2; exit 2;
+}
+if [ -n "$isolated" ]; then
+  # 隔离副本只绑回环，绝不与生产共享公开入口。
+  [ "${PUBLIC_BIND_ADDR:-}" = 127.0.0.1 ] || { echo '隔离接收方部署的 PUBLIC_BIND_ADDR 必须为 127.0.0.1' >&2; exit 2; }
+fi
 
 # 构建前检查现有编译任务与主机压力。真正的编译限额由 builder 容器 cgroup 执行；
 # 只在宿主包一层 scope 不能约束 Docker daemon 中的构建进程。
-if ps -eo comm= | grep -Eq '^(cargo|rustc|go|compile|link|buildx)$' \
-  || ps -eo args= | grep -Eq '[d]ocker (compose|buildx) .*build'; then
+if [ -z "$isolated" ] && { ps -eo comm= | grep -Eq '^(cargo|rustc|go|compile|link|buildx)$' \
+  || ps -eo args= | grep -Eq '[d]ocker (compose|buildx) .*build'; }; then
   echo '已有编译或 Docker 构建任务，拒绝并行构建；稍后重试' >&2
   exit 2
 fi
@@ -62,10 +82,11 @@ container_safety_init
 CONTAINER_DOCKER=(sudo -n --preserve-env=BUILDX_BUILDER docker)
 CONTAINER_PRIVILEGE=(sudo -n)
 container_resource_preflight
-builder_receipt=$(container_require_limited_builder)
-printf '%s\n' "$builder_receipt"
-# 直接使用共享检查已核验的各节点预算，保留可用内存须大于 builder 限额的前提。
-memory_limit=$(python3 - "$builder_receipt" <<'PY'
+if [ -z "$isolated" ]; then
+  builder_receipt=$(container_require_limited_builder)
+  printf '%s\n' "$builder_receipt"
+  # 直接使用共享检查已核验的各节点预算，保留可用内存须大于 builder 限额的前提。
+  memory_limit=$(python3 - "$builder_receipt" <<'PY'
 import json, sys
 budgets = [json.loads(line.split(": ", 1)[1])["memory"]
            for line in sys.argv[1].splitlines() if line.startswith("容器限额 ")]
@@ -74,11 +95,12 @@ if not budgets:
     sys.exit(2)
 print(max(budgets))
 PY
-)
-available_kib=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
-[ "$((available_kib * 1024))" -gt "$memory_limit" ] || {
-  echo '主机可用内存小于或等于 builder 限额，拒绝开始构建' >&2; exit 2;
-}
+  )
+  available_kib=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+  [ "$((available_kib * 1024))" -gt "$memory_limit" ] || {
+    echo '主机可用内存小于或等于 builder 限额，拒绝开始构建' >&2; exit 2;
+  }
+fi
 : "${CHECK_CPUS:?执行配置必须提供 CHECK_CPUS}"
 : "${CHECK_MEMORY:?执行配置必须提供 CHECK_MEMORY}"
 recipe_digest=$(sha256sum ../../tools/check.Dockerfile | cut -d' ' -f1)
@@ -179,10 +201,10 @@ fi
 
 ./bootstrap.sh
 compose config --quiet
-compose up -d --wait core-db
+compose up -d --wait "${no_build[@]}" core-db
 migrate_core_database
 
-compose up -d openbao
+compose up -d "${no_build[@]}" openbao
 deadline=$(( $(date +%s) + VERIFY_BOOTSTRAP_WAIT_SECONDS ))
 while :; do
   status=$(compose exec -T openbao bao status -format=json 2>/dev/null || true)
@@ -193,7 +215,7 @@ done
 ./secret-store-init.sh
 
 # Compose 自己等待 health 与依赖任务；namespace/schema 作业还要查终态。
-compose up -d --wait keycloak temporal spicedb buzz-relay
+compose up -d --wait "${no_build[@]}" keycloak temporal spicedb buzz-relay
 compose up -d --wait --no-build openmeter openmeter-sink-worker
 ./bootstrap.sh --sync-client-redirects
 ./bootstrap.sh --sync-realm-locales
@@ -212,8 +234,13 @@ platform_subject=$(../../core/verify/idp-subject.sh "$PLATFORM_ADMIN_USER") || {
 compose run --rm --no-deps temporal-namespace
 compose run --rm --no-deps spicedb-schema
 
-./start-core.sh
-compose build worker
+if [ -n "$isolated" ]; then
+  # 与生产同一固定 Core/Worker 构建（DD-124(4)）；隔离部署绝不另行构建。
+  ./start-core.sh --no-build
+else
+  ./start-core.sh
+  compose build worker
+fi
 compose up -d --wait --no-build worker buzz-web agentgateway otel-collector
 curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null
 
@@ -228,4 +255,5 @@ compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$PLATFORM_CATALOG_TENANT_SLUG" --name "$PLATFORM_CATALOG_TENANT_SLUG" \
   --admin-subject "$platform_subject" --admin-display-name "$PLATFORM_ADMIN_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
+[ -z "$isolated" ] || { echo "$isolated 隔离接收方部署已就绪（CONFORMANCE_ONLY，不是生产环境）。"; exit 0; }
 echo 'platform-local 已就绪；业务 Tenant 首位管理员为 BOOTSTRAP_USER，平台管理员为 PLATFORM_ADMIN_USER，走查用户为 VERIFY_USER；三份口令分别存于 secrets/。'

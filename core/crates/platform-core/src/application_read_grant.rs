@@ -914,6 +914,10 @@ fn validate_claims(
 mod receiver_environment_bootstrap;
 
 #[cfg(test)]
+#[path = "../../../verify/receiver-action-driver.rs"]
+mod receiver_action_driver;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
