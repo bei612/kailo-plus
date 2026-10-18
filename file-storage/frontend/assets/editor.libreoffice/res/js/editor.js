@@ -147,8 +147,8 @@ export default class Editor extends React.Component {
         return (
             <div style={{display: 'flex', flexDirection: 'column', width: '100%', height: '100%'}}>
                 {kailoDelivery ? <div>
-                    <button disabled={exportingReference} onClick={() => this.openInKailo('file_storage.open_view@v1')}>{messages['libreoffice.kailo_view']}</button>
-                    <button disabled={exportingReference || this.props.node.hasMetadataInBranch('node_readonly', 'true')} onClick={() => this.openInKailo('file_storage.open_edit@v1')}>{messages['libreoffice.kailo_edit']}</button>
+                    <button disabled={exportingReference} onClick={() => this.openInKailo('file_storage.open_view@v2')}>{messages['libreoffice.kailo_view']}</button>
+                    <button disabled={exportingReference || this.props.node.hasMetadataInBranch('node_readonly', 'true')} onClick={() => this.openInKailo('file_storage.open_edit@v2')}>{messages['libreoffice.kailo_edit']}</button>
                 </div> : null}
                 {referenceError ? <div role="alert">{messages['libreoffice.kailo_reference_unavailable']}</div> : null}
                 {url ? <iframe src={url} style={{backgroundColor: "white", width: "100%", height: "100%", border: 0, flex: 1}}></iframe> : null}

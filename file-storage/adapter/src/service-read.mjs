@@ -16,7 +16,7 @@ export function readConfiguration(value) {
   return Object.freeze({ ...value, downloadOrigin: url.origin });
 }
 
-export async function claimsForRead(config, token, args, actionKey = 'file_storage.read@v1') {
+export async function claimsForRead(config, token, args, actionKey = 'file_storage.read@v2') {
   const claims = await verifiedClaims(token, config);
   for (const key of ['jti','tenant_id','actor_principal_id','operation_id','action_execution_id','target_id']) {
     if (!UUID.test(claims[key])) throw new Refused(401);
@@ -110,7 +110,7 @@ export async function readFile(config, deadline, raw, key, token) {
   let request;
   try { request=JSON.parse(raw); } catch { throw new Refused(400); }
   if (!exactKeys(request,['actionKey','idempotencyKey','arguments'])
-    || request.actionKey !== 'file_storage.read@v1' || !UUID.test(request.idempotencyKey)
+    || request.actionKey !== 'file_storage.read@v2' || !UUID.test(request.idempotencyKey)
     || request.idempotencyKey !== key || raw !== canonical(request)) throw new Refused(400);
   const args=request.arguments;
   if (!exactKeys(args,['targetType','targetId','input','authorizationTargetNativeRef'])

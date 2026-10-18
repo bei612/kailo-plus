@@ -181,7 +181,7 @@ func NativeShareAuthority(request *http.Request, raw, operation string) (NativeS
 	// never infer task ownership from the current delivered generation.
 	var generation int64
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.share@v1", delivery.Share.ActionVersion, delivery.Share.ResultExposurePolicyID, delivery.Share.ResultExposurePolicyVersion, &generation, nil)
+		"file_storage.share@v2", delivery.Share.ActionVersion, delivery.Share.ResultExposurePolicyID, delivery.Share.ResultExposurePolicyVersion, &generation, nil)
 	return delivery, claims, target, arguments, generation, err
 }
 
@@ -195,7 +195,7 @@ func NativeDeleteAuthority(request *http.Request, raw, operation string) (Native
 		deadline = &delivery.ExecutionDeadline
 	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.delete@v1", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion, &delivery.ExecutionGeneration, deadline)
+		"file_storage.delete@v2", delivery.Delete.ActionVersion, delivery.Delete.ResultExposurePolicyID, delivery.Delete.ResultExposurePolicyVersion, &delivery.ExecutionGeneration, deadline)
 	return delivery, claims, target, arguments, err
 }
 
@@ -224,7 +224,7 @@ func NativeWriteAuthority(request *http.Request, raw, operation string) (NativeW
 		return delivery, nil, nil, "", refused
 	}
 	claims, target, arguments, err := nativeMutationAuthority(request, raw, operation, delivery.NativeActorDelivery, delivery.WorkspaceID,
-		"file_storage.write@v1", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion, nil, nil)
+		"file_storage.write@v2", delivery.Write.ActionVersion, delivery.Write.ResultExposurePolicyID, delivery.Write.ResultExposurePolicyVersion, nil, nil)
 	return delivery, claims, target, arguments, err
 }
 

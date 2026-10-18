@@ -85,11 +85,11 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		return refused
 	}
 	action := stringClaim(claims, "action_key")
-	listing := action == "file_storage.list@v1"
-	writing := action == "file_storage.write@v1"
+	listing := action == "file_storage.list@v2"
+	writing := action == "file_storage.write@v2"
 	uploading := writing && operation == "upload"
-	deleting := action == "file_storage.delete@v1"
-	if !listing && !writing && !deleting && action != "file_storage.read@v1" && action != "file_storage.list_revisions@v1" && action != "file_storage.export@v1" {
+	deleting := action == "file_storage.delete@v2"
+	if !listing && !writing && !deleting && action != "file_storage.read@v2" && action != "file_storage.list_revisions@v2" && action != "file_storage.export@v2" {
 		return refused
 	}
 	var args map[string]interface{}
@@ -105,7 +105,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		inputSize = 6
 	} else if deleting {
 		inputSize = 3
-	} else if action == "file_storage.list_revisions@v1" {
+	} else if action == "file_storage.list_revisions@v2" {
 		inputSize = 2
 	}
 	validWriting := true
@@ -114,7 +114,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 			_, validWriting = auth.NativeUploadInput(input)
 			validWriting = validWriting && requested == delivery.NativeRootRef && requested == target["nativeRef"]
 		} else {
-			validWriting = validWriteReference(stringClaim(input, "nativeObjectRef"), requested, false) && operation == "promote" && requested == target["nativeRef"]
+			validWriting = validWriteReference(stringClaim(input, "nativeObjectRef"), requested) && operation == "promote" && requested == target["nativeRef"]
 		}
 	}
 	if !inputOK || !targetOK || len(argumentTarget) != 1 || argumentTarget["resourceId"] != target["resourceId"] || input["resourceId"] != target["resourceId"] ||
@@ -197,7 +197,7 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		(operation == "node" && !listing && requested != root.GetUuid() && requested != admitted.GetUuid() && requested != input["nativeObjectRef"]) {
 		return refused
 	}
-	if (operation == "versions" && action == "file_storage.list_revisions@v1") || (operation == "lookup" && listing) {
+	if (operation == "versions" && action == "file_storage.list_revisions@v2") || (operation == "lookup" && listing) {
 		// This original handler, not an adapter assertion, owns the single
 		// complete enumeration and its original create-only native Task.
 		if _, err := auth.NativeReadAuthority(req.Request, proofs[0], "execute", true); err != nil {

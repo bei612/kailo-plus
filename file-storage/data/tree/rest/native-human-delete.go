@@ -90,7 +90,7 @@ func (h *Handler) platformDeleteNodes(req *restful.Request, resp *restful.Respon
 		// The deployment's actual registered root is the common Resource.
 		// resolveResource must return it; no ancestor registration or fallback
 		// Resource is invented for a multi-selection.
-		selector := map[string]interface{}{"actionKey": "file_storage.delete@v1", "actionVersion": delivery.Delete.ActionVersion,
+		selector := map[string]interface{}{"actionKey": "file_storage.delete@v2", "actionVersion": delivery.Delete.ActionVersion,
 			"nativeType": delivery.Delete.NativeType, "nativeRef": delivery.NativeRootRef}
 		if delivery.WorkspaceID != "" {
 			selector["workspaceId"] = delivery.WorkspaceID
@@ -121,7 +121,7 @@ func (h *Handler) platformDeleteNodes(req *restful.Request, resp *restful.Respon
 		if err != nil {
 			return true, refused
 		}
-		command := map[string]interface{}{"actionKey": "file_storage.delete@v1", "idempotencyKey": keys[0], "resourceId": id, "resourceVersion": version,
+		command := map[string]interface{}{"actionKey": "file_storage.delete@v2", "idempotencyKey": keys[0], "resourceId": id, "resourceVersion": version,
 			"componentAction": map[string]interface{}{"actionVersion": delivery.Delete.ActionVersion, "inputJson": string(encodedInput),
 				"resultExposurePolicyId": delivery.Delete.ResultExposurePolicyID, "resultExposurePolicyVersion": delivery.Delete.ResultExposurePolicyVersion}}
 		if delivery.WorkspaceID != "" {
@@ -153,7 +153,7 @@ func (h *Handler) platformDeleteNodes(req *restful.Request, resp *restful.Respon
 	op, _ := submission["operationId"].(string)
 	ae, _ := submission["actionExecutionId"].(string)
 	if !inputOK || len(input) != 3 || !auth.NativeActorUUID(resourceID) || encodeErr != nil || string(actualIDs) != string(expectedIDs) || input["removePermanently"] != request.RemovePermanently ||
-		!submissionOK || !auth.NativeActorUUID(op) || !auth.NativeActorUUID(ae) || submission["actionKey"] != "file_storage.delete@v1" {
+		!submissionOK || !auth.NativeActorUUID(op) || !auth.NativeActorUUID(ae) || submission["actionKey"] != "file_storage.delete@v2" {
 		return true, refused
 	}
 	switch submission["gateState"] {

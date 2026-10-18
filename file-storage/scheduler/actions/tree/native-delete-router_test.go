@@ -110,7 +110,7 @@ func TestNativeDeleteRecursiveRevocationStopsFollowingWriteAndKeepsUnknown(t *te
 	const root = "00000000-0000-4000-8000-000000000006"
 	deadline := time.Now().Add(time.Minute).UTC().Truncate(time.Second).Format("2006-01-02T15:04:05.000Z")
 	claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": actor, "initiating_human_principal_id": actor,
-		"operation_id": key, "action_execution_id": key, "action_key": "file_storage.delete@v1", "target_type": "RESOURCE", "target_id": root, "external_execution_id": external, "idempotency_key": key}
+		"operation_id": key, "action_execution_id": key, "action_key": "file_storage.delete@v2", "target_type": "RESOURCE", "target_id": root, "external_execution_id": external, "idempotency_key": key}
 	input := map[string]interface{}{"resourceId": root, "nativeObjectRefs": []interface{}{root}, "removePermanently": true}
 	payload, _ := json.Marshal(claims)
 	token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"

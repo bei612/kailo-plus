@@ -52,7 +52,7 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 		if err != nil || json.Unmarshal(payload, &claims) != nil {
 			return errors.WithStack(errors.StatusForbidden)
 		}
-		if claims["action_key"] == "file_storage.share@v1" {
+		if claims["action_key"] == "file_storage.share@v2" {
 			return nativeShareObservation(req, resp, proof)
 		}
 		return nativeDeleteObservation(req, resp, proof)
@@ -64,7 +64,7 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 		}
 		payload, er := base64.RawURLEncoding.DecodeString(parts[1])
 		var claims map[string]interface{}
-		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1" && claims["action_key"] != "file_storage.list_revisions@v1" && claims["action_key"] != "file_storage.list@v1") {
+		if er != nil || json.Unmarshal(payload, &claims) != nil || (claims["action_key"] != "file_storage.read@v2" && claims["action_key"] != "file_storage.export@v2" && claims["action_key"] != "file_storage.list_revisions@v2" && claims["action_key"] != "file_storage.list@v2") {
 			return errors.WithStack(errors.StatusForbidden)
 		}
 	}
@@ -109,7 +109,10 @@ func nativeTaskObservation(req *restful.Request, resp *restful.Response, proof s
 			if id, present := read.Input["nativeId"]; present && id != receipt.NativeObjectRef {
 				return errors.WithStack(errors.StatusConflict)
 			}
+			// DD-124(5): the terminal carries the raw status of the same
+			// persisted Task the receipt was verified from (only Finished).
 			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = receipt.NativeObjectRef, "SUCCEEDED", receipt.CompletedAt
+			answer["nativeStatus"] = task.GetStatus().String()
 			response["contentBytes"], response["contentSha256"] = receipt.ContentBytes, receipt.ContentSHA256
 			if receipt.ContentReference != nil {
 				response["contentReference"] = receipt.ContentReference

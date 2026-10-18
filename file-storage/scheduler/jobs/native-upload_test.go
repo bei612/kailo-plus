@@ -18,7 +18,7 @@ func uploadTaskFixture(t *testing.T, multipart bool, size int64) *jobproto.Task 
 		"nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(size), "multipart": multipart}
 	claims := map[string]interface{}{"tenant_id": uuid.New(), "actor_principal_id": principal, "initiating_human_principal_id": principal,
 		"external_execution_id": uuid.New(), "idempotency_key": key, "action_execution_id": uuid.New(), "operation_id": uuid.New(),
-		"action_key": "file_storage.write@v1", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": input["resourceId"],
+		"action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": input["resourceId"],
 		"result_exposure_policy_id": uuid.New(), "result_exposure_policy_version": float64(1)}
 	task, err := NewNativeUploadTask(binding, 1, NativeUploadJob("write", binding, 1).ID, key, "native-user", user, claims, input)
 	if err != nil {

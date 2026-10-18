@@ -30,7 +30,7 @@ func TestNativeHumanReadAdmissionConsumesOriginalResolvedResourceAndPEP(t *testi
 			input := map[string]interface{}{"resourceId": resourceID, "nativeObjectRef": node, "nativeRevision": "fixed", "displayName": "file", "mediaType": "text/plain"}
 			claims := map[string]interface{}{"action_execution_id": requestKey, "operation_id": operation, "tenant_id": binding,
 				"actor_principal_id": actor, "initiating_human_principal_id": actor, "idempotency_key": requestKey,
-				"action_key": "file_storage.export@v1", "target_type": "RESOURCE", "target_id": resourceID}
+				"action_key": "file_storage.export@v2", "target_type": "RESOURCE", "target_id": resourceID}
 			if scenario == "foreign-key" {
 				claims["idempotency_key"] = node
 			}
@@ -95,7 +95,7 @@ func TestNativeHumanReadAdmissionConsumesOriginalResolvedResourceAndPEP(t *testi
 				OIDCTokenURL: server.URL + "/token", ClientID: "binding", ClientSecretFile: secret, RequestTimeout: "1s", MaxResponseBytes: 8192, ClientSecretMaxBytes: 128},
 				TenantID: binding, NativeRootRef: binding, NativeScopeRef: binding, NativeInstanceRef: "native-instance"}
 			links, _ := json.Marshal(map[string]interface{}{"actors": []map[string]interface{}{{"principalId": actor, "kind": "HUMAN", "userUuid": nativeUser}},
-				"read": map[string]interface{}{"human": map[string]interface{}{"actions": map[string]interface{}{"file_storage.export@v1": map[string]interface{}{"actionVersion": 1, "nativeType": "folder", "resultExposurePolicyId": resourceID, "resultExposurePolicyVersion": 1}}}}})
+				"read": map[string]interface{}{"human": map[string]interface{}{"actions": map[string]interface{}{"file_storage.export@v2": map[string]interface{}{"actionVersion": 1, "nativeType": "folder", "resultExposurePolicyId": resourceID, "resultExposurePolicyVersion": 1}}}}})
 			if err := json.Unmarshal(links, &d); err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +104,7 @@ func TestNativeHumanReadAdmissionConsumesOriginalResolvedResourceAndPEP(t *testi
 				user = node
 			}
 			ctx := claim.ToContext(context.Background(), claim.Claims{Subject: user})
-			ctx = context.WithValue(ctx, nativeHumanReadContextKey{}, &nativeHumanReadIntent{delivery: d, token: "human", key: requestKey, action: "file_storage.export@v1", revision: "fixed"})
+			ctx = context.WithValue(ctx, nativeHumanReadContextKey{}, &nativeHumanReadIntent{delivery: d, token: "human", key: requestKey, action: "file_storage.export@v2", revision: "fixed"})
 			read, err := AdmitNativeHumanRead(ctx, node, "fixed", "file", "text/plain")
 			if scenario == "allowed" {
 				if err != nil || read == nil || !read.IsHumanSynchronous() || strings.Join(calls, ",") != "resolve,admit,pep" {

@@ -40,7 +40,7 @@ export async function documentLifecycle(config, deadline, raw, key, token, opera
     || claims.action_execution_id !== args.protocolSessionId) throw new Refused(401);
   await freshPep(config, deadline, token, args, claims, operation);
   const bearer = await secret(config.cellsBearerFile);
-  const base = fixedUrl(config.cellsRestBaseUrl);
+  const base = fixedUrl(config.cellsRestV1BaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   // The native endpoint checks the same frozen PAT UUID/node/expiry against
   // Core's binding-authenticated lifecycle PEP, and returns no PAT secret.

@@ -86,7 +86,7 @@ func NativeShareTaskIntent(task *jobproto.Task) (*NativeShareIntent, error) {
 	decoder.DisallowUnknownFields()
 	if err != nil || decoder.Decode(&value) != nil || decoder.Decode(new(interface{})) != io.EOF || !auth.NativeActorUUID(value.BindingID) || value.Generation <= 0 ||
 		!auth.NativeActorUUID(value.NativeUserID) || !auth.NativeActorUUID(value.ShareID) || !auth.NativeActorUUID(value.HiddenUserID) ||
-		value.HiddenUserLogin == "" || value.DocumentID == "" || len(value.Roots) == 0 || value.Scope["action_key"] != "file_storage.share@v1" ||
+		value.HiddenUserLogin == "" || value.DocumentID == "" || len(value.Roots) == 0 || value.Scope["action_key"] != "file_storage.share@v2" ||
 		value.Scope["idempotency_key"] != task.GetID() || !auth.NativeActorUUID(claimString(value.Scope, "external_execution_id")) {
 		return nil, errors.WithStack(errors.StatusConflict)
 	}

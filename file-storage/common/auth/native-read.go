@@ -99,9 +99,9 @@ func NativeReadAuthority(request *http.Request, raw, operation string, service b
 		return nativeSourceReadAuthority(request, delivery, proof.ActionToken, proof.ArgumentsJSON, sourceArgs)
 	}
 	claims, target, err := delivery.AuthorizeOperation(ctx, proof.ActionToken, proof.ArgumentsJSON, operation)
-	revisions := claims["action_key"] == "file_storage.list_revisions@v1"
-	listing := claims["action_key"] == "file_storage.list@v1"
-	if err != nil || (!listing && !revisions && claims["action_key"] != "file_storage.read@v1" && claims["action_key"] != "file_storage.export@v1") ||
+	revisions := claims["action_key"] == "file_storage.list_revisions@v2"
+	listing := claims["action_key"] == "file_storage.list@v2"
+	if err != nil || (!listing && !revisions && claims["action_key"] != "file_storage.read@v2" && claims["action_key"] != "file_storage.export@v2") ||
 		claims["tenant_id"] != delivery.TenantID || claims["target_type"] != "RESOURCE" {
 		return nil, refused
 	}

@@ -18,7 +18,7 @@
   },
   "write": {
     "nativeJobId": "{{job:write}}",
-    "actionVersion": "{{action:file_storage.write@v1}}",
+    "actionVersion": "{{action:file_storage.write@v2}}",
     "nativeType": "{{set:writeNativeType}}",
     "resultExposurePolicyId": "{{set:writeResultExposurePolicyId}}",
     "resultExposurePolicyVersion": "{{setint:writeResultExposurePolicyVersion}}"
@@ -26,7 +26,7 @@
   "delete": {
     "nativeJobId": "{{job:delete}}",
     "bindingGeneration": "{{setint:bindingGeneration}}",
-    "actionVersion": "{{action:file_storage.delete@v1}}",
+    "actionVersion": "{{action:file_storage.delete@v2}}",
     "nativeType": "{{set:deleteNativeType}}",
     "resultExposurePolicyId": "{{set:deleteResultExposurePolicyId}}",
     "resultExposurePolicyVersion": "{{setint:deleteResultExposurePolicyVersion}}",
@@ -34,7 +34,7 @@
   },
   "share": {
     "nativeJobId": "{{job:share}}",
-    "actionVersion": "{{action:file_storage.share@v1}}",
+    "actionVersion": "{{action:file_storage.share@v2}}",
     "nativeType": "{{set:shareNativeType}}",
     "resultExposurePolicyId": "{{set:shareResultExposurePolicyId}}",
     "resultExposurePolicyVersion": "{{setint:shareResultExposurePolicyVersion}}"

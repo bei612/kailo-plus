@@ -92,7 +92,7 @@ func (h *Handler) Lookup(req *restful.Request, resp *restful.Response) error {
 	}
 	ctx := req.Request.Context()
 	if read := auth.NativeReadFromContext(ctx); read != nil {
-		if read.Claims["action_key"] != "file_storage.list@v1" || input.Scope == nil || input.Scope.Root == nil || !input.Scope.Recursive ||
+		if read.Claims["action_key"] != "file_storage.list@v2" || input.Scope == nil || input.Scope.Root == nil || !input.Scope.Recursive ||
 			input.Scope.Root.Uuid != read.Input["nativeObjectRef"] || input.Offset != 0 || input.Limit != 0 ||
 			input.SortField != "" || input.SortDirDesc || len(input.Flags) != 1 || input.Flags[0] != rest.Flag_WithMetaDefaults {
 			return errors.WithStack(errors.StatusForbidden)

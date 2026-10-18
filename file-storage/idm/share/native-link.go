@@ -102,25 +102,28 @@ func NativeShareRemoved(ctx context.Context, task *jobproto.Task) (bool, error) 
 
 // This archives observed removal of the exact three frozen native references.
 // It never dispatches DeleteLink, including under a binding's management fence.
-func archiveNativeShare(ctx context.Context, task *jobproto.Task, beforeReceipt func() error) (string, error) {
+// archiveNativeShare returns the terminal time and the raw TaskStatus of the
+// persisted share Task it was proven from (DD-124(5)); both are empty while
+// the original removal is unproven.
+func archiveNativeShare(ctx context.Context, task *jobproto.Task, beforeReceipt func() error) (string, string, error) {
 	if terminal, err := jobstore.NativeShareTerminal(task); err == nil {
-		return terminal, nil
+		return terminal, task.GetStatus().String(), nil
 	}
 	removed, err := NativeShareRemoved(ctx, task)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !removed {
-		return "", nil
+		return "", "", nil
 	}
 	if beforeReceipt != nil {
 		if err := beforeReceipt(); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 	body, err := jobstore.NativeCellTaskIntent(task)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	next := proto.Clone(task).(*jobproto.Task)
 	next.Status, next.EndTime = jobproto.TaskStatus_Finished, int32(time.Now().Unix())
@@ -128,9 +131,13 @@ func archiveNativeShare(ctx context.Context, task *jobproto.Task, beforeReceipt 
 		{Success: true, JsonBody: body, Vars: map[string]string{jobstore.NativeShareResult: "true"}}}}})
 	ack, err := jobsc.JobServiceClient(ctx).PutTask(ctx, &jobproto.PutTaskRequest{Task: next})
 	if err != nil || !proto.Equal(ack.GetTask(), next) {
-		return "", nativeShareUnknown()
+		return "", "", nativeShareUnknown()
 	}
-	return jobstore.NativeShareTerminal(ack.Task)
+	terminal, err := jobstore.NativeShareTerminal(ack.Task)
+	if err != nil {
+		return "", "", err
+	}
+	return terminal, ack.Task.GetStatus().String(), nil
 }
 
 func nativeShareUnknown() error {
@@ -290,12 +297,13 @@ func (sc *Client) NativeShareExecution(request *http.Request, proof, operation, 
 		if operation != "execute" && intent.Scope["external_execution_id"] != args["externalExecutionId"] {
 			return nil, nativeCellRefused()
 		}
-		terminal, err := archiveNativeShare(ctx, task, fresh)
+		terminal, nativeStatus, err := archiveNativeShare(ctx, task, fresh)
 		if err != nil {
 			return nil, err
 		}
 		if terminal != "" {
 			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = key, "SUCCEEDED", terminal
+			answer["nativeStatus"] = nativeStatus
 		}
 	}
 	if err := fresh(); err != nil {

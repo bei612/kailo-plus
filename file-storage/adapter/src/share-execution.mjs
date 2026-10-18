@@ -1,10 +1,10 @@
 import { Refused, exactKeys, nonempty, canonical, freshPep, fixedUrl, secret,
   readMeasurements } from '../../../client-kit/adapter/protocol.mjs';
 import { claimsForNode } from './node-execution.mjs';
-import { actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
+import { NATIVE_FINISHED, actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const shareAction = 'file_storage.share@v1';
+export const shareAction = 'file_storage.share@v2';
 
 export function shareConfiguration(value, config) {
   if (!exactKeys(value, ['nativeJobId', 'usageMeasurements']) || !nonempty(value.nativeJobId)
@@ -49,15 +49,17 @@ function nativeResult(config, native, key, nativeId) {
   const execution = native?.execution;
   if (!exactKeys(native, ['execution']) || !exactKeys(execution, ['idempotencyKey', 'nativeType', 'platformStatus', 'cancelCapability', 'lastObservedAt',
     ...(Object.hasOwn(execution ?? {}, 'nativeId') ? ['nativeId'] : []),
+    ...(Object.hasOwn(execution ?? {}, 'nativeStatus') ? ['nativeStatus'] : []),
     ...(Object.hasOwn(execution ?? {}, 'terminalAt') ? ['terminalAt'] : [])])
     || execution.idempotencyKey !== key || execution.nativeType !== 'job' || execution.cancelCapability !== 'UNSUPPORTED'
     || !nonempty(execution.lastObservedAt) || !Number.isFinite(Date.parse(execution.lastObservedAt)) || Date.parse(execution.lastObservedAt) > Date.now()
     || !['UNKNOWN', 'SUCCEEDED'].includes(execution.platformStatus)) throw new Refused(503);
   if (execution.platformStatus !== 'SUCCEEDED') {
-    if (Object.hasOwn(execution, 'nativeId') || Object.hasOwn(execution, 'terminalAt') || nativeId !== undefined) throw new Refused(503);
+    if (Object.hasOwn(execution, 'nativeId') || Object.hasOwn(execution, 'terminalAt') || Object.hasOwn(execution, 'nativeStatus')
+      || nativeId !== undefined) throw new Refused(503);
     return {execution};
   }
-  if (execution.nativeId !== key || (nativeId !== undefined && nativeId !== key)
+  if (execution.nativeId !== key || (nativeId !== undefined && nativeId !== key) || execution.nativeStatus !== NATIVE_FINISHED
     || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
     || Date.parse(execution.terminalAt) > Date.parse(execution.lastObservedAt)) throw new Refused(503);
   const result = {execution, resultJson:'{}'};
@@ -74,7 +76,7 @@ export async function executeShare(config, deadline, raw, key, token) {
   const claims = await claimsForNode(config, token, args, 'execute', [shareAction]);
   if (claims.idempotency_key !== key || !UUID.test(claims.external_execution_id)) throw new Refused(401);
   const resource = admittedResource(config, await freshPep(config, deadline, token, args, claims, 'execute'), claims);
-  const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
+  const base = fixedUrl(config.cellsRestV1BaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline, new URL(`share/link/${input.nativeShareRef}`, base), {
     method:'DELETE', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json', 'idempotency-key':key},
   });
@@ -92,7 +94,7 @@ export async function observeShare(config, deadline, raw, key, token, operation 
     || (Object.hasOwn(args, 'nativeId') && args.nativeId !== key)) throw new Refused(400);
   const claims = await claimsForNode(config, token, args, operation, [shareAction]);
   await freshPep(config, deadline, token, args, claims, operation);
-  const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
+  const base = fixedUrl(config.cellsRestV1BaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline, new URL('jobs/user', base), {
     method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json', 'x-kailo-native-operation':operation},
     body:canonical({JobIDs:[config.share.nativeJobId], LoadTasks:'Any'}),

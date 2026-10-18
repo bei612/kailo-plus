@@ -169,7 +169,7 @@ func (u *NativeUploadExecution) Fresh(ctx context.Context) error {
 		expires.After(time.Unix(int64(input["nativeDeadline"].(float64)), 0)) ||
 		claims["action_execution_id"] != u.ActionExecutionID || claims["external_execution_id"] != u.ExternalExecutionID || claims["idempotency_key"] != u.Key ||
 		claims["actor_principal_id"] != claims["initiating_human_principal_id"] || claims["agent_principal_id"] != nil ||
-		claims["action_key"] != "file_storage.write@v1" || claims["target_id"] != input["resourceId"] ||
+		claims["action_key"] != "file_storage.write@v2" || claims["target_id"] != input["resourceId"] ||
 		claims["action_definition_version"] != float64(u.Delivery.Write.ActionVersion) ||
 		claims["result_exposure_policy_id"] != u.Delivery.Write.ResultExposurePolicyID ||
 		claims["result_exposure_policy_version"] != float64(u.Delivery.Write.ResultExposurePolicyVersion) ||

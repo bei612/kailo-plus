@@ -98,6 +98,8 @@ func nativeWriteObservation(req *restful.Request, resp *restful.Response, proof 
 					return errors.WithStack(errors.StatusConflict)
 				}
 				answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
+				// DD-124(5): raw status of the persisted upload Task verified above.
+				answer["nativeStatus"] = task.GetStatus().String()
 				resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
 				return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
 			}
@@ -115,19 +117,18 @@ func nativeWriteObservation(req *restful.Request, resp *restful.Response, proof 
 				}
 				intent, _ := jobstore.NativeWriteTaskIntent(task)
 				answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
+				// DD-124(5): raw status of the persisted promote Task verified above.
+				answer["nativeStatus"] = task.GetStatus().String()
 				content := intent.InputReference
 				// Retain only original metadata; no native body or task log is disclosed.
 				content = map[string]interface{}{"resourceId": content["resourceId"], "nativeRevision": revision.VersionId, "displayName": content["displayName"], "mediaType": content["mediaType"]}
 				// The native node is frozen in the original command reference, not a
-				// second resource directory. Decode only the already persisted intent.
-				var reference struct {
-					NodeUUID string `json:"nodeUuid"`
-					Publish  bool   `json:"publish"`
-				}
-				if json.Unmarshal([]byte(claimText(intent.InputReference, "nativeObjectRef")), &reference) != nil || !auth.NativeActorUUID(reference.NodeUUID) || reference.Publish {
+				// second resource directory: its ContentReference native_object_ref.
+				node := claimText(intent.InputReference, "nativeObjectRef")
+				if !auth.NativeActorUUID(node) {
 					return errors.WithStack(errors.StatusConflict)
 				}
-				content["nativeObjectRef"] = reference.NodeUUID
+				content["nativeObjectRef"] = node
 				resp.Header().Set("X-Kailo-Native-Actor", delivery.TenantID+":"+delivery.BindingID+":"+actorKind(claims)+":"+claimText(claims, "actor_principal_id"))
 				return resp.WriteHeaderAndJson(http.StatusOK, map[string]interface{}{"execution": answer, "contentReference": content, "contentBytes": revision.Size}, "application/json")
 			}

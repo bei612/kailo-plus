@@ -36,7 +36,7 @@ function nodePath(node, id, workspace, kind) {
 // the binding's INSTANCE_SERVICE credential or a browser-supplied service key.
 export async function nativeDocumentSelection(delivery, nodeId, actionKey, read) {
   const fixed = referenceDelivery(delivery);
-  if (!uuid.test(nodeId) || !['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(actionKey)) refused();
+  if (!uuid.test(nodeId) || !['file_storage.open_view@v2', 'file_storage.open_edit@v2'].includes(actionKey)) refused();
   const root = await read(`n/node/${fixed.nativeRootRef}?Flags=WithVersionsAll`, 'GET');
   const rootPath = nodePath(root, fixed.nativeRootRef, fixed.nativeWorkspaceId, 'COLLECTION');
   const node = await read(`n/node/${nodeId}?Flags=WithVersionsAll`, 'GET');

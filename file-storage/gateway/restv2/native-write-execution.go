@@ -49,7 +49,7 @@ func (h *Handler) executeNativePromote(req *restful.Request, resp *restful.Respo
 	if !valid || !targetOK || len(argumentTarget) != 1 || len(key) != 1 || !actorUUID(key[0]) ||
 		claims["idempotency_key"] != key[0] || input["resourceId"] != target["resourceId"] || argumentTarget["resourceId"] != target["resourceId"] ||
 		target["nativeRef"] != nodeID || target["nativeInstanceRef"] != delivery.NativeInstanceRef || target["nativeScopeRef"] != delivery.NativeScopeRef ||
-		!validWriteReference(stringClaim(input, "nativeObjectRef"), nodeID, false) || input["nativeRevision"] != draftID {
+		!validWriteReference(stringClaim(input, "nativeObjectRef"), nodeID) || input["nativeRevision"] != draftID {
 		return refused
 	}
 	parameters := new(rest.PromoteParameters)
@@ -226,12 +226,14 @@ func writeNativeTaskResult(resp *restful.Response, task *jobs.Task) error {
 	revision, err := jobstore.NativeWriteRevision(task)
 	if err == nil {
 		intent, _ := jobstore.NativeWriteTaskIntent(task)
-		var reference nativeWriteReference
-		if json.Unmarshal([]byte(stringClaim(intent.InputReference, "nativeObjectRef")), &reference) != nil || reference.Publish || !actorUUID(reference.NodeUUID) {
+		node := stringClaim(intent.InputReference, "nativeObjectRef")
+		if !actorUUID(node) {
 			return errors.WithStack(errors.StatusConflict)
 		}
 		observation["nativeId"], observation["platformStatus"], observation["terminalAt"] = revision.VersionId, "SUCCEEDED", time.Unix(int64(task.EndTime), 0).UTC().Format(time.RFC3339)
-		response["contentReference"] = map[string]interface{}{"resourceId": intent.InputReference["resourceId"], "nativeObjectRef": reference.NodeUUID, "nativeRevision": revision.VersionId, "displayName": intent.InputReference["displayName"], "mediaType": intent.InputReference["mediaType"]}
+		// DD-124(5): raw status of the persisted Task NativeWriteRevision verified.
+		observation["nativeStatus"] = task.GetStatus().String()
+		response["contentReference"] = map[string]interface{}{"resourceId": intent.InputReference["resourceId"], "nativeObjectRef": node, "nativeRevision": revision.VersionId, "displayName": intent.InputReference["displayName"], "mediaType": intent.InputReference["mediaType"]}
 		response["contentBytes"] = revision.Size
 	}
 	return resp.WriteHeaderAndJson(http.StatusOK, response, "application/json")

@@ -1,5 +1,5 @@
 import { Refused, exactKeys, canonical, nonempty, fixedUrl, secret, freshPep, verifyBindingManagementToken } from '../../../client-kit/adapter/protocol.mjs';
-import { nativeJsonFetch } from './native-actor.mjs';
+import { NATIVE_FINISHED, nativeJsonFetch } from './native-actor.mjs';
 import { createHash } from 'node:crypto';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -29,7 +29,7 @@ export async function reconcileBinding(config, deadline, raw, key, token) {
     proof:Buffer.from(canonical({actionToken:token, argumentsJson:raw})).toString('base64url'),
     acknowledgement:`${config.tenantId}:${config.bindingId}:RECONCILE:${claims.action_execution_id}`,
   }};
-  const base = fixedUrl(config.cellsRestBaseUrl);
+  const base = fixedUrl(config.cellsRestV1BaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/,'')}/`;
   const result = await nativeJsonFetch(native, deadline, new URL('jobs/user',base), {
     method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`,
@@ -47,6 +47,7 @@ export async function reconcileBinding(config, deadline, raw, key, token) {
       || (!upload && (item.nativeType !== 'job' || item.nativeId !== item.idempotencyKey))
       || (upload && terminal && !nonempty(item.nativeId)) || item.cancelCapability !== 'UNSUPPORTED'
       || !['SUCCEEDED','UNKNOWN'].includes(item.platformStatus) || !nonempty(item.nativeStatus)
+      || (terminal && item.nativeStatus !== NATIVE_FINISHED)
       || !Number.isFinite(Date.parse(item.lastObservedAt))
       || (terminal && (!Number.isFinite(Date.parse(item.terminalAt)) || Date.parse(item.terminalAt)>Date.parse(item.lastObservedAt)))) throw new Refused(503);
     keys.add(item.idempotencyKey);

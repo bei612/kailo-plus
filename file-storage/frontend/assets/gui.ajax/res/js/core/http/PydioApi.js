@@ -706,7 +706,7 @@ class PydioApi{
                 const endpoint = new URL(url, document.location.href);
                 if (!current() || endpoint.origin !== document.location.origin || endpoint.username || endpoint.password) throw new Error(pydio.MessageHash[391]);
                 const response = await fetch(endpoint.href, {credentials: 'same-origin', redirect: 'error',
-                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.read@v1'}});
+                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.read@v2'}});
                 if (!response.ok || !current()) throw new Error(pydio.MessageHash[391]);
                 const content = await response.text();
                 if (!current()) throw new Error(pydio.MessageHash[391]);
@@ -830,7 +830,7 @@ class PydioApi{
                 const endpoint = new URL(url, document.location.href);
                 if (endpoint.origin !== document.location.origin) throw new Error(pydio.MessageHash[391]);
                 return fetch(endpoint.href, {credentials: 'same-origin', redirect: 'error',
-                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.export@v1'}})
+                    headers: {'Idempotency-Key': requestKey, 'X-Kailo-Native-Read': 'file_storage.export@v2'}})
                     .then(response => {
                         if (!response.ok || !this.isVersionTargetCurrent(node, target)) throw new Error(pydio.MessageHash[391]);
                         return response.blob();

@@ -96,7 +96,7 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		return err
 	}
 	if !exists {
-		selector := map[string]interface{}{"actionKey": "file_storage.write@v1", "actionVersion": delivery.Write.ActionVersion,
+		selector := map[string]interface{}{"actionKey": "file_storage.write@v2", "actionVersion": delivery.Write.ActionVersion,
 			"nativeType": delivery.Write.NativeType, "nativeRef": delivery.NativeRootRef}
 		if delivery.WorkspaceID != "" {
 			selector["workspaceId"] = delivery.WorkspaceID
@@ -126,7 +126,7 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		if err != nil {
 			return err
 		}
-		command := map[string]interface{}{"actionKey": "file_storage.write@v1", "idempotencyKey": input.Uuid,
+		command := map[string]interface{}{"actionKey": "file_storage.write@v2", "idempotencyKey": input.Uuid,
 			"resourceId": resource["resourceId"], "resourceVersion": resource["resourceVersion"], "componentAction": map[string]interface{}{
 				"actionVersion": delivery.Write.ActionVersion, "inputJson": string(canonical), "resultExposurePolicyId": delivery.Write.ResultExposurePolicyID,
 				"resultExposurePolicyVersion": delivery.Write.ResultExposurePolicyVersion}}
@@ -147,7 +147,7 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		return refused
 	}
 	submission, valid := observed["submission"].(map[string]interface{})
-	if !valid || !actorUUID(stringClaim(submission, "actionExecutionId")) || submission["actionKey"] != "file_storage.write@v1" {
+	if !valid || !actorUUID(stringClaim(submission, "actionExecutionId")) || submission["actionKey"] != "file_storage.write@v2" {
 		return refused
 	}
 	result := &rest.NativeUploadResponse{ActionExecutionId: stringClaim(submission, "actionExecutionId"), NativeIntentId: input.Uuid, NativeNodeId: stringClaim(metadata, "nativeNodeId")}

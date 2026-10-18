@@ -10,7 +10,7 @@ const node = { Uuid: ids[5], Type: 'LEAF', Path: 'documents/root/document.docx',
   ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', StorageETag: 'original-etag' };
 const versions = { Versions: [{ VersionId: 'old-version', IsHead: false, ETag: 'old' },
   { VersionId: 'actual-native-version', IsHead: true, ETag: 'original-etag' }] };
-const action = 'file_storage.open_view@v1';
+const action = 'file_storage.open_view@v2';
 
 function reader(changes = {}) {
   const calls = [];

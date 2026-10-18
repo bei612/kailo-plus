@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "cells",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -28,13 +28,13 @@
   "implements": [
     {
       "categoryKey": "file_storage",
-      "contractVersion": 1
+      "contractVersion": 2
     }
   ],
   "capabilityDeclarations": [
     {
       "categoryKey": "file_storage",
-      "contractVersion": 1,
+      "contractVersion": 2,
       "cancel": "UNSUPPORTED",
       "observe": "SUPPORTED",
       "meter": "UNSUPPORTED",
@@ -75,7 +75,7 @@
     {
       "typeKey": "file_storage.space",
       "capabilityCategory": "file_storage",
-      "capabilityContractVersion": 1,
+      "capabilityContractVersion": 2,
       "incrementalContracts": [],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
@@ -85,9 +85,9 @@
   ],
   "actionDefinitions": [
     {
-      "actionKey": "file_storage.list@v1",
+      "actionKey": "file_storage.list@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.list@v1",
+      "capabilityContractKey": "file_storage.list@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -120,9 +120,9 @@
       "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952"
     },
     {
-      "actionKey": "file_storage.read@v1",
+      "actionKey": "file_storage.read@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.read@v1",
+      "capabilityContractKey": "file_storage.read@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -155,9 +155,9 @@
       "outputSchemaDigest": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519"
     },
     {
-      "actionKey": "file_storage.list_revisions@v1",
+      "actionKey": "file_storage.list_revisions@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.list_revisions@v1",
+      "capabilityContractKey": "file_storage.list_revisions@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -190,9 +190,9 @@
       "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952"
     },
     {
-      "actionKey": "file_storage.export@v1",
+      "actionKey": "file_storage.export@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.export@v1",
+      "capabilityContractKey": "file_storage.export@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -225,9 +225,9 @@
       "outputSchemaDigest": "dda94bac4d567ee74dbd4e6ffbeb2dac22a632040e6c1678a78c85863431bbda"
     },
     {
-      "actionKey": "file_storage.write@v1",
+      "actionKey": "file_storage.write@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.write@v1",
+      "capabilityContractKey": "file_storage.write@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -260,9 +260,9 @@
       "outputSchemaDigest": "edc4171f9e58baf7a9922e69d20de81e618380b37aae1702562afeb3258e25ff"
     },
     {
-      "actionKey": "file_storage.delete@v1",
+      "actionKey": "file_storage.delete@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.delete@v1",
+      "capabilityContractKey": "file_storage.delete@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -295,9 +295,9 @@
       "outputSchemaDigest": "786616b4695a505b17d4913bc7ba6f16ea5ce9ebb532a10e9c4b44e53148f2e5"
     },
     {
-      "actionKey": "file_storage.share@v1",
+      "actionKey": "file_storage.share@v2",
       "version": 1,
-      "capabilityContractKey": "file_storage.share@v1",
+      "capabilityContractKey": "file_storage.share@v2",
       "componentTypeKey": "cells",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -334,8 +334,8 @@
     {
       "name": "file_storage.list",
       "source": "APPLICATION",
-      "actionKey": "file_storage.list@v1",
-      "capabilityContractKey": "file_storage.list@v1",
+      "actionKey": "file_storage.list@v2",
+      "capabilityContractKey": "file_storage.list@v2",
       "inputSchemaHash": "6297c97bfcb3975b61c3399f0c6ee2031bb235219a932238a985f3b2be6a397e",
       "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
       "backendRef": "adapter-mcp",
@@ -344,8 +344,8 @@
     {
       "name": "file_storage.read",
       "source": "APPLICATION",
-      "actionKey": "file_storage.read@v1",
-      "capabilityContractKey": "file_storage.read@v1",
+      "actionKey": "file_storage.read@v2",
+      "capabilityContractKey": "file_storage.read@v2",
       "inputSchemaHash": "f78c0c26024a6cbe0b7fdea554900466b971f19b81fa540fdec7abae1ec1adc0",
       "outputSchemaHash": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519",
       "backendRef": "adapter-mcp",
@@ -354,8 +354,8 @@
     {
       "name": "file_storage.list_revisions",
       "source": "APPLICATION",
-      "actionKey": "file_storage.list_revisions@v1",
-      "capabilityContractKey": "file_storage.list_revisions@v1",
+      "actionKey": "file_storage.list_revisions@v2",
+      "capabilityContractKey": "file_storage.list_revisions@v2",
       "inputSchemaHash": "177e81ee505c62a2d72d9f1980f5036d059ebdd02bf49b39b02187be21553f46",
       "outputSchemaHash": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
       "backendRef": "adapter-mcp",

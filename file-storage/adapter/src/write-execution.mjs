@@ -3,10 +3,10 @@
 import { Refused, exactKeys, nonempty, canonical, freshPep, fixedUrl, secret,
   readMeasurements } from '../../../client-kit/adapter/protocol.mjs';
 import { claimsForNode } from './node-execution.mjs';
-import { actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
+import { NATIVE_FINISHED, actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const writeAction = 'file_storage.write@v1';
+export const writeAction = 'file_storage.write@v2';
 
 export function writeConfiguration(value, config) {
   if (!exactKeys(value, ['nativeJobId', ...(value?.usageMeasurements === undefined ? [] : ['usageMeasurements'])])
@@ -36,10 +36,11 @@ function writeInput(args) {
   }
   if (!exactKeys(args.input, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
     || !['nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(args.input[field]))) throw new Refused(400);
-  const reference = parsed(args.input.nativeObjectRef);
-  if (!exactKeys(reference, ['nodeUuid', 'publish']) || !UUID.test(reference.nodeUuid)
-    || reference.publish !== false) throw new Refused(400);
-  return reference.nodeUuid;
+  // file_storage@2: the target is the node's own ContentReference
+  // native_object_ref (Cells node UUID, design 08 §9.2); a governed promote
+  // never publishes (Cells restv2 validWriteReference).
+  if (!UUID.test(args.input.nativeObjectRef)) throw new Refused(400);
+  return args.input.nativeObjectRef;
 }
 
 function admittedResource(config, admitted, claims, node) {
@@ -54,17 +55,18 @@ function nativeResult(config, native, key, target, input, nativeId) {
   const execution = native?.execution;
   if (!exactKeys(execution, ['idempotencyKey', 'nativeType', 'platformStatus', 'cancelCapability', 'lastObservedAt',
     ...(Object.hasOwn(execution ?? {}, 'nativeId') ? ['nativeId'] : []),
+    ...(Object.hasOwn(execution ?? {}, 'nativeStatus') ? ['nativeStatus'] : []),
     ...(Object.hasOwn(execution ?? {}, 'terminalAt') ? ['terminalAt'] : [])])
     || execution.idempotencyKey !== key || execution.nativeType !== 'version' || execution.cancelCapability !== 'UNSUPPORTED'
     || !nonempty(execution.lastObservedAt) || !Number.isFinite(Date.parse(execution.lastObservedAt))
     || !['UNKNOWN', 'RUNNING', 'SUCCEEDED'].includes(execution.platformStatus)) throw new Refused(503);
   if (execution.platformStatus !== 'SUCCEEDED') {
     if (!exactKeys(native, ['execution']) || Object.hasOwn(execution, 'nativeId') || Object.hasOwn(execution, 'terminalAt')
-      || nativeId !== undefined) throw new Refused(503);
+      || Object.hasOwn(execution, 'nativeStatus') || nativeId !== undefined) throw new Refused(503);
     return {execution};
   }
   if (!exactKeys(native, ['execution', 'contentReference', 'contentBytes']) || !nonempty(execution.nativeId)
-    || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
+    || execution.nativeStatus !== NATIVE_FINISHED || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
     || !Number.isSafeInteger(native.contentBytes) || native.contentBytes < 0
     || !exactKeys(native.contentReference, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
     || native.contentReference.resourceId !== target || !UUID.test(native.contentReference.nativeObjectRef)
@@ -118,7 +120,7 @@ export async function observeWrite(config, deadline, raw, key, token, operation 
     || (Object.hasOwn(args, 'nativeId') && !nonempty(args.nativeId))) throw new Refused(400);
   const claims = await claimsForNode(config, token, args, operation, [writeAction]);
   await freshPep(config, deadline, token, args, claims, operation);
-  const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
+  const base = fixedUrl(config.cellsRestV1BaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline, new URL('jobs/user', base), {
     method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json',
       'x-kailo-native-operation':operation}, body:canonical({JobIDs:[config.write.nativeJobId], LoadTasks:'Any'}),

@@ -169,7 +169,7 @@ export async function listFiles(config, deadline, raw, key, token) {
   if (!config.readEdge) throw new Refused(503);
   let request;
   try { request=JSON.parse(raw); } catch { throw new Refused(400); }
-  if (!exactKeys(request,['actionKey','idempotencyKey','arguments']) || request.actionKey !== 'file_storage.list@v1'
+  if (!exactKeys(request,['actionKey','idempotencyKey','arguments']) || request.actionKey !== 'file_storage.list@v2'
     || !UUID.test(key) || request.idempotencyKey !== key || raw !== canonical(request)) throw new Refused(400);
   const args=request.arguments;
   if (!exactKeys(args,['targetType','targetId','input','authorizationTargetNativeRef'])

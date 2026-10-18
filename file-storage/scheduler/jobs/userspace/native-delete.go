@@ -38,7 +38,7 @@ func (e *nativeDeleteExecution) fresh(ctx context.Context) error {
 // Lost claim/job/broker ACKs are observation-only, never a second dispatch.
 func DeleteNodesGoverned(ctx context.Context, delivery auth.NativeDeleteDelivery, key string, claims, input map[string]interface{}) (*jobs.Task, error) {
 	current, valid := claim.FromContext(ctx)
-	if !valid || !auth.NativeActorUUID(key) || claims["idempotency_key"] != key || claims["action_key"] != "file_storage.delete@v1" {
+	if !valid || !auth.NativeActorUUID(key) || claims["idempotency_key"] != key || claims["action_key"] != "file_storage.delete@v2" {
 		return nil, errors.WithStack(errors.StatusForbidden)
 	}
 	client := jobsc.JobServiceClient(ctx)

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
@@ -167,13 +168,11 @@ func NativeWriteRevision(task *jobproto.Task) (*tree.ContentRevision, error) {
 		return nil, err
 	}
 	var revision *tree.ContentRevision
-	var reference struct {
-		NodeUUID string `json:"nodeUuid"`
-		Publish  bool   `json:"publish"`
-	}
+	// file_storage@2: the write target is the node's own ContentReference
+	// native_object_ref (its UUID); a governed promote never publishes.
 	nativeRef, valid := intent.InputReference["nativeObjectRef"].(string)
 	sourceRevision, _ := intent.InputReference["nativeRevision"].(string)
-	if !valid || json.Unmarshal([]byte(nativeRef), &reference) != nil || reference.NodeUUID == "" || reference.Publish || sourceRevision == "" {
+	if !valid || !auth.NativeActorUUID(nativeRef) || sourceRevision == "" {
 		return nil, errors.WithStack(errors.StatusConflict)
 	}
 	for _, entry := range task.ActionsLogs {
@@ -181,7 +180,7 @@ func NativeWriteRevision(task *jobproto.Task) (*tree.ContentRevision, error) {
 			if output.GetVars()[NativeVersionResult] != "true" {
 				continue
 			}
-			relation, _ := json.Marshal([]string{task.ID, entry.GetAction().GetID(), reference.NodeUUID})
+			relation, _ := json.Marshal([]string{task.ID, entry.GetAction().GetID(), nativeRef})
 			digest := sha256.Sum256(relation)
 			current := new(tree.ContentRevision)
 			if entry.GetAction().GetID() == "" || !output.Success || protojson.Unmarshal(output.JsonBody, current) != nil || current.VersionId != hex.EncodeToString(digest[:]) || current.VersionId == sourceRevision || current.Draft || current.OwnerUuid != intent.NativeUserID || current.Size < 0 || current.Location == nil || current.ETag == "" || (revision != nil && !proto.Equal(current, revision)) {

@@ -66,7 +66,7 @@ func PrepareNativeHumanRead(request *http.Request) error {
 	keys, actions, versions := request.Header.Values("Idempotency-Key"), request.Header.Values("X-Kailo-Native-Read"), request.URL.Query()["versionId"]
 	if value.Scan(&d) != nil || d.Read == nil || d.Read.Human == nil || d.MaxResponseBytes <= 0 ||
 		len(keys) != 1 || !NativeActorUUID(keys[0]) || len(actions) != 1 || len(versions) != 1 || versions[0] == "" ||
-		request.Header.Get("Range") != "" || (actions[0] != "file_storage.read@v1" && actions[0] != "file_storage.export@v1") {
+		request.Header.Get("Range") != "" || (actions[0] != "file_storage.read@v2" && actions[0] != "file_storage.export@v2") {
 		return refused
 	}
 	a, ok := d.Read.Human.Actions[actions[0]]

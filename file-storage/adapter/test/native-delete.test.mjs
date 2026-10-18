@@ -6,14 +6,14 @@ import { setup, mcpWireClient } from './query-revision.test.mjs';
 import { canonical } from '../src/query-revision.mjs';
 
 const adapterIds = Array.from({length:12}, (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
-const deleteKey = 'file_storage.delete@v1';
+const deleteKey = 'file_storage.delete@v2';
 const deleteArguments = permanent => ({target:{resourceId:adapterIds[10]},input:{resourceId:adapterIds[10],
   nativeObjectRefs:[adapterIds[3],adapterIds[2]],removePermanently:permanent}});
 const completedDelete = () => ({execution:{idempotencyKey:adapterIds[7],nativeType:'job',nativeId:adapterIds[7],
-  platformStatus:'SUCCEEDED',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'}});
+  platformStatus:'SUCCEEDED',nativeStatus:'Finished',cancelCapability:'UNSUPPORTED',lastObservedAt:'2026-10-09T00:00:00Z',terminalAt:'2026-10-09T00:00:00Z'}});
 
 test('pending native coordinator exposes only the original task identity for fresh admission',async t=>{
-  const pending=completedDelete();pending.execution.platformStatus='UNKNOWN';delete pending.execution.terminalAt;
+  const pending=completedDelete();pending.execution.platformStatus='UNKNOWN';delete pending.execution.terminalAt;delete pending.execution.nativeStatus;
   const f=await setup(t,{delete:true,validation:true,operation:'execute',businessHuman:true,businessAction:deleteKey,
     arguments:deleteArguments(true),deleteResult:pending});
   const result=await f.invoke({path:'/platform-adapter/v1/execute',key:adapterIds[7],
@@ -82,7 +82,7 @@ test('native delete uses the original Gateway MCP transport and the same governe
 });
 
 test('delete refuses ambiguous input, forged terminal evidence, missing actor ACK and revoked post-dispatch access',async t=>{
-  for (const scenario of ['empty','duplicate','foreign-resource','extra-field','missing-ee','missing-key','missing-actor','wrong-key','missing-terminal','unknown-status','unconfirmed-id','unexpected-body','revoked']) await t.test(scenario,async nested=>{
+  for (const scenario of ['empty','duplicate','foreign-resource','extra-field','missing-ee','missing-key','missing-actor','wrong-key','missing-terminal','missing-native-status','constant-native-status','unknown-status','unconfirmed-id','unexpected-body','revoked']) await t.test(scenario,async nested=>{
     const args=deleteArguments(false), native=completedDelete();
     if (scenario==='empty') args.input.nativeObjectRefs=[];
     if (scenario==='duplicate') args.input.nativeObjectRefs=[adapterIds[3],adapterIds[3]];
@@ -90,6 +90,8 @@ test('delete refuses ambiguous input, forged terminal evidence, missing actor AC
     if (scenario==='extra-field') args.input.content='forbidden';
     if (scenario==='wrong-key') native.execution.idempotencyKey=adapterIds[0];
     if (scenario==='missing-terminal') delete native.execution.terminalAt;
+    if (scenario==='missing-native-status') delete native.execution.nativeStatus;
+    if (scenario==='constant-native-status') native.execution.nativeStatus='SUCCEEDED';
     if (scenario==='unknown-status') native.execution.platformStatus='FUTURE';
     if (scenario==='unconfirmed-id') native.execution.platformStatus='UNKNOWN';
     if (scenario==='unexpected-body') native.body='forbidden';

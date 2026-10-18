@@ -100,7 +100,7 @@ func (h *SharesHandler) nativeRevokeShare(req *restful.Request, rsp *restful.Res
 		if err != nil || !link.GetPoliciesContextEditable() {
 			return true, refused
 		}
-		selector := map[string]interface{}{"actionKey": "file_storage.share@v1", "actionVersion": delivery.Share.ActionVersion,
+		selector := map[string]interface{}{"actionKey": "file_storage.share@v2", "actionVersion": delivery.Share.ActionVersion,
 			"nativeType": delivery.Share.NativeType, "nativeRef": delivery.NativeRootRef}
 		if delivery.WorkspaceID != "" {
 			selector["workspaceId"] = delivery.WorkspaceID
@@ -121,7 +121,7 @@ func (h *SharesHandler) nativeRevokeShare(req *restful.Request, rsp *restful.Res
 		if err != nil {
 			return true, err
 		}
-		command := map[string]interface{}{"actionKey": "file_storage.share@v1", "idempotencyKey": keys[0], "resourceId": resourceID, "resourceVersion": version,
+		command := map[string]interface{}{"actionKey": "file_storage.share@v2", "idempotencyKey": keys[0], "resourceId": resourceID, "resourceVersion": version,
 			"componentAction": map[string]interface{}{"actionVersion": delivery.Share.ActionVersion, "inputJson": string(input),
 				"resultExposurePolicyId": delivery.Share.ResultExposurePolicyID, "resultExposurePolicyVersion": delivery.Share.ResultExposurePolicyVersion}}
 		if delivery.WorkspaceID != "" {
@@ -145,7 +145,7 @@ func (h *SharesHandler) nativeRevokeShare(req *restful.Request, rsp *restful.Res
 	submission, _ := observed["submission"].(map[string]interface{})
 	op, _ := submission["operationId"].(string)
 	ae, _ := submission["actionExecutionId"].(string)
-	if submission["actionKey"] != "file_storage.share@v1" || !auth.NativeActorUUID(op) || !auth.NativeActorUUID(ae) {
+	if submission["actionKey"] != "file_storage.share@v2" || !auth.NativeActorUUID(op) || !auth.NativeActorUUID(ae) {
 		return true, refused
 	}
 	for key := range observed {

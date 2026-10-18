@@ -359,7 +359,7 @@ func TestNativeUploadS3RequiresImmutableVersionAndTaskAcknowledgement(t *testing
 				}
 				ctx = acl.WithPresetACL(ctx, access)
 				input := map[string]interface{}{"resourceId": resource, "nativeIntentId": intent, "nativeNodeId": nodeID, "nativeDeadline": float64(time.Now().Add(time.Hour).Unix()), "contentLength": float64(size), "multipart": false}
-				claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v1", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "operation_id": operation, "action_execution_id": ae, "external_execution_id": ee, "idempotency_key": key, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
+				claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "operation_id": operation, "action_execution_id": ae, "external_execution_id": ee, "idempotency_key": key, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
 				payload, _ := json.Marshal(claims)
 				token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"
 				arguments, _ := json.Marshal(map[string]interface{}{"target": map[string]interface{}{"resourceId": resource}, "input": input})

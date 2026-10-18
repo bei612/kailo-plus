@@ -161,7 +161,7 @@ func TestNativeUploadPublicationRecoveryUsesOriginalTaskAndCleanup(t *testing.T)
 				"nativeDeadline": float64(deadline.Unix()), "contentLength": float64(0), "multipart": false}
 			claims := map[string]interface{}{"tenant_id": uuid.New(), "actor_principal_id": principal, "initiating_human_principal_id": principal,
 				"external_execution_id": uuid.New(), "idempotency_key": key, "action_execution_id": uuid.New(), "operation_id": uuid.New(),
-				"action_key": "file_storage.write@v1", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": input["resourceId"],
+				"action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": input["resourceId"],
 				"result_exposure_policy_id": uuid.New(), "result_exposure_policy_version": float64(1)}
 			job := jobstore.NativeUploadJob("native-write", binding, 3)
 			task, err := jobstore.NewNativeUploadTask(binding, 3, job.ID, key, "native-owner", user, claims, input)

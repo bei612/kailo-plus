@@ -18,7 +18,7 @@ import (
 
 func TestPromoteResultRequiresTerminalReceipt(t *testing.T) {
 	const node = "00000000-0000-4000-8000-000000000001"
-	input := map[string]interface{}{"resourceId": "resource", "nativeObjectRef": `{"nodeUuid":"` + node + `","publish":false}`, "nativeRevision": "original-draft", "displayName": "file.txt", "mediaType": "text/plain"}
+	input := map[string]interface{}{"resourceId": "resource", "nativeObjectRef": node, "nativeRevision": "original-draft", "displayName": "file.txt", "mediaType": "text/plain"}
 	task, err := jobstore.NewNativeWriteTask("binding", "native-write-job", "operation-key", "native-user", "native-user-uuid", map[string]interface{}{}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +61,10 @@ func TestPromoteResultRequiresTerminalReceipt(t *testing.T) {
 			}
 			if observation["platformStatus"] != want {
 				t.Fatalf("unproved synchronous execution status: %v", observation["platformStatus"])
+			}
+			// DD-124(5): only the terminal carries the raw native Task status.
+			if (scenario == "complete" && observation["nativeStatus"] != jobs.TaskStatus_Finished.String()) || (scenario != "complete" && observation["nativeStatus"] != nil) {
+				t.Fatalf("terminal native status not taken from the persisted Task: %v", observation["nativeStatus"])
 			}
 			if scenario == "complete" {
 				if answer["contentBytes"] != float64(0) || answer["contentReference"].(map[string]interface{})["nativeRevision"] != revision.VersionId {

@@ -189,7 +189,7 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 				if err := store.ClaimJob(ctx, coordinatorJob); err != nil {
 					t.Fatal(err)
 				}
-				coordinator, err := jobstore.NewNativeWriteTask("binding", coordinatorJob.ID, key, "owner", "native-user", map[string]interface{}{"action_key": "file_storage.delete@v1"}, map[string]interface{}{"nativeObjectRefs": ids, "removePermanently": !strings.Contains(mode, "recycle")})
+				coordinator, err := jobstore.NewNativeWriteTask("binding", coordinatorJob.ID, key, "owner", "native-user", map[string]interface{}{"action_key": "file_storage.delete@v2"}, map[string]interface{}{"nativeObjectRefs": ids, "removePermanently": !strings.Contains(mode, "recycle")})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -264,13 +264,13 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 						t.Fatal(err)
 					}
 				}
-				completed, err := jobstore.NativeDeleteTerminal(ctx, coordinator, 65536)
+				completed, nativeStatus, err := jobstore.NativeDeleteTerminal(ctx, coordinator, 65536)
 				want := mode == "delete-complete" || mode == "recycle-complete" || mode == "missing-dispatch-ack" || mode == "recycle-missing-dispatch-ack"
-				if want && (err != nil || completed != 123) {
-					t.Fatalf("actual complete ACKs not accepted: %d %v", completed, err)
+				if want && (err != nil || completed != 123 || nativeStatus != jobproto.TaskStatus_Finished.String()) {
+					t.Fatalf("actual complete ACKs not accepted: %d %q %v", completed, nativeStatus, err)
 				}
-				if !want && (err == nil || completed != 0) {
-					t.Fatalf("unconfirmed deletion became terminal: %d %v", completed, err)
+				if !want && (err == nil || completed != 0 || nativeStatus != "") {
+					t.Fatalf("unconfirmed deletion became terminal: %d %q %v", completed, nativeStatus, err)
 				}
 				stored, err := jobstore.ReadNativeWriteTask(ctx, coordinatorJob.ID, key, 65536)
 				if err != nil {
@@ -280,9 +280,9 @@ func TestNativeDeleteTerminalRequiresOriginalPerNodeAcknowledgements(t *testing.
 					t.Fatal("coordinator terminal did not match native evidence")
 				}
 				if want {
-					completed, err := jobstore.NativeDeleteTerminal(ctx, stored, 65536)
-					if err != nil || completed != 123 {
-						t.Fatalf("persisted terminal did not survive observation: %d %v", completed, err)
+					completed, nativeStatus, err := jobstore.NativeDeleteTerminal(ctx, stored, 65536)
+					if err != nil || completed != 123 || nativeStatus != stored.Status.String() {
+						t.Fatalf("persisted terminal did not survive observation: %d %q %v", completed, nativeStatus, err)
 					}
 				}
 				stripped := proto.Clone(childJob).(*jobproto.Job)
@@ -668,8 +668,10 @@ func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
 		if err != nil || !jobstore.NativeWriteJobMatches(job, "existing-version-job") {
 			t.Fatal(err)
 		}
-		claims := map[string]interface{}{"tenant_id": "tenant", "actor_principal_id": "actor", "initiating_human_principal_id": "actor", "action_execution_id": "execution", "operation_id": "operation", "action_key": "file_storage.write@v1", "target_id": "resource", "target_type": "RESOURCE", "action_definition_version": float64(1), "result_exposure_policy_id": "policy", "result_exposure_policy_version": float64(1), "jti": "transient", "authorization_min_zed_token": "transient"}
-		input := map[string]interface{}{"resourceId": "resource", "nativeObjectRef": `{"nodeUuid":"native-node","publish":false}`, "nativeRevision": "opaque-draft", "displayName": "file.txt", "mediaType": "text/plain"}
+		claims := map[string]interface{}{"tenant_id": "tenant", "actor_principal_id": "actor", "initiating_human_principal_id": "actor", "action_execution_id": "execution", "operation_id": "operation", "action_key": "file_storage.write@v2", "target_id": "resource", "target_type": "RESOURCE", "action_definition_version": float64(1), "result_exposure_policy_id": "policy", "result_exposure_policy_version": float64(1), "jti": "transient", "authorization_min_zed_token": "transient"}
+		// The write target is the node's own native_object_ref (file_storage@2).
+		node := "5d0b3c7e-8f1a-4c2b-9d3e-0a1b2c3d4e5f"
+		input := map[string]interface{}{"resourceId": "resource", "nativeObjectRef": node, "nativeRevision": "opaque-draft", "displayName": "file.txt", "mediaType": "text/plain"}
 		task, err := jobstore.NewNativeWriteTask("binding", job.ID, "native-operation-key", "native-user", "native-user-uuid", claims, input)
 		if err != nil {
 			t.Fatal(err)
@@ -677,7 +679,7 @@ func TestNativeWriteTaskRetainsExactIntentAndVersion(t *testing.T) {
 		if err = store.ClaimTask(task); err != nil {
 			t.Fatal(err)
 		}
-		relation, _ := json.Marshal([]string{task.ID, jobstore.NativeVersionActionID, "native-node"})
+		relation, _ := json.Marshal([]string{task.ID, jobstore.NativeVersionActionID, node})
 		digest := sha256.Sum256(relation)
 		revision := &tree.ContentRevision{VersionId: hex.EncodeToString(digest[:]), OwnerUuid: "native-user-uuid", ETag: "native-etag", Size: 0, Location: &tree.Node{Uuid: "version-location"}}
 		body, _ := protojson.Marshal(revision)
@@ -845,13 +847,13 @@ func TestNativeReadTaskRecordsActualStreamOnce(t *testing.T) {
 		for index, scenario := range []string{"complete", "empty", "source-open-failed", "partial-source", "close-failed", "claim-ACK-lost", "running-ACK-lost", "completion-ACK-lost", "revoked-before-open", "revoked-after-copy", "revoked-before-disclosure", "empty-revoked-before-disclosure", "empty-completion-ACK-lost", "oversized-content", "unbounded-source", "versions-complete", "versions-response-failed", "versions-source-failed", "versions-completion-ACK-lost", "directory-complete", "directory-empty", "directory-response-failed", "directory-source-failed", "directory-completion-ACK-lost"} {
 			t.Run(scenario, func(t *testing.T) {
 				key := fmt.Sprintf("00000000-0000-4000-8000-%012d", index+30)
-				claims := map[string]interface{}{"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[2], "action_execution_id": ids[3], "target_id": ids[4], "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "action_definition_version": float64(1), "result_exposure_policy_id": ids[5], "result_exposure_policy_version": float64(1), "external_execution_id": ids[6], "idempotency_key": key}
+				claims := map[string]interface{}{"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[2], "action_execution_id": ids[3], "target_id": ids[4], "target_type": "RESOURCE", "action_key": "file_storage.read@v2", "action_definition_version": float64(1), "result_exposure_policy_id": ids[5], "result_exposure_policy_version": float64(1), "external_execution_id": ids[6], "idempotency_key": key}
 				revisions := strings.HasPrefix(scenario, "versions-")
 				listing := strings.HasPrefix(scenario, "directory-")
 				if revisions {
-					claims["action_key"] = "file_storage.list_revisions@v1"
+					claims["action_key"] = "file_storage.list_revisions@v2"
 				} else if listing {
-					claims["action_key"] = "file_storage.list@v1"
+					claims["action_key"] = "file_storage.list@v2"
 				}
 				target := map[string]interface{}{"resourceId": ids[4], "nativeType": "folder", "nativeRef": ids[7], "nativeInstanceRef": "native-instance", "nativeScopeRef": ids[8]}
 				pepCalls := 0

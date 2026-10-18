@@ -1,7 +1,6 @@
 package restv2
 
 import (
-	"encoding/json"
 	"net/http"
 	"path"
 	"strings"
@@ -22,21 +21,14 @@ import (
 // platform-bound installation cannot fall back to the independent native copy.
 type nativeWriteDelivery = auth.NativeWriteDelivery
 
-// The opaque ContentReference freezes the original PromoteParameters.Publish
-// alongside the exact native node. A canonical encoding also rejects duplicate
-// keys, unknown fields, omitted/non-bool publish and alternative spellings.
-type nativeWriteReference struct {
-	NodeUUID string `json:"nodeUuid"`
-	Publish  bool   `json:"publish"`
-}
-
-func writeReference(node string, publish bool) string {
-	value, _ := json.Marshal(nativeWriteReference{NodeUUID: node, Publish: publish})
-	return string(value)
-}
-
-func validWriteReference(raw, node string, publish bool) bool {
-	return actorUUID(node) && raw == writeReference(node, publish)
+// file_storage@2 write targets the exact native node by the same opaque
+// native_object_ref its ContentReference carries (the node UUID, design 08
+// §9.2), so a reference returned by list/read/write is directly writable and a
+// conformance precondition is the identity Cells itself returned (DD-124(1)).
+// A governed promote is always PromoteParameters.Publish=false; no second
+// encoding or alternative spelling of the same node is accepted.
+func validWriteReference(raw, node string) bool {
+	return actorUUID(node) && raw == node
 }
 
 func referenceMap(value interface{}) (map[string]interface{}, bool) {
@@ -65,7 +57,10 @@ func (h *Handler) platformPromoteVersion(req *restful.Request, resp *restful.Res
 	}
 	var delivery nativeWriteDelivery
 	keys := req.Request.Header.Values("Idempotency-Key")
-	if value.Scan(&delivery) != nil || len(keys) != 1 || !actorUUID(keys[0]) ||
+	// A platform-bound promote is file_storage.write@v2, which never publishes
+	// (its terminal below refuses publish); refuse before any submission
+	// instead of dispatching a write whose requested publish cannot be honoured.
+	if publish || value.Scan(&delivery) != nil || len(keys) != 1 || !actorUUID(keys[0]) ||
 		!actorUUID(node.GetUuid()) || draftID == "" || strings.TrimSpace(draftID) != draftID || node.GetType() != tree.NodeType_LEAF ||
 		delivery.Write.ActionVersion <= 0 || delivery.Write.ResultExposurePolicyVersion <= 0 ||
 		!actorUUID(delivery.Write.ResultExposurePolicyID) || delivery.Write.NativeType == "" ||
@@ -93,7 +88,7 @@ func (h *Handler) platformPromoteVersion(req *restful.Request, resp *restful.Res
 			revision.GetOwnerUuid() != current.Subject || revision.GetLocation() == nil || revision.GetSize() < 0 {
 			return true, refused
 		}
-		selector := map[string]interface{}{"actionKey": "file_storage.write@v1", "actionVersion": delivery.Write.ActionVersion,
+		selector := map[string]interface{}{"actionKey": "file_storage.write@v2", "actionVersion": delivery.Write.ActionVersion,
 			"nativeType": delivery.Write.NativeType, "nativeRef": node.Uuid}
 		if delivery.WorkspaceID != "" {
 			selector["workspaceId"] = delivery.WorkspaceID
@@ -115,9 +110,9 @@ func (h *Handler) platformPromoteVersion(req *restful.Request, resp *restful.Res
 		if strings.TrimSpace(mediaType) == "" || displayName == "." || displayName == "/" || strings.TrimSpace(displayName) == "" {
 			return true, refused
 		}
-		input := map[string]interface{}{"resourceId": resource["resourceId"], "nativeObjectRef": writeReference(node.Uuid, publish),
+		input := map[string]interface{}{"resourceId": resource["resourceId"], "nativeObjectRef": node.Uuid,
 			"nativeRevision": draftID, "displayName": displayName, "mediaType": mediaType}
-		command := map[string]interface{}{"actionKey": "file_storage.write@v1", "idempotencyKey": keys[0],
+		command := map[string]interface{}{"actionKey": "file_storage.write@v2", "idempotencyKey": keys[0],
 			"resourceId": resource["resourceId"], "resourceVersion": resource["resourceVersion"],
 			"componentAction": map[string]interface{}{"actionVersion": delivery.Write.ActionVersion, "inputReference": input,
 				"resultExposurePolicyId": delivery.Write.ResultExposurePolicyID, "resultExposurePolicyVersion": delivery.Write.ResultExposurePolicyVersion}}
@@ -144,9 +139,9 @@ func (h *Handler) platformPromoteVersion(req *restful.Request, resp *restful.Res
 		}
 	}
 	if !ok || !submissionOK || !actorUUID(stringClaim(submission, "operationId")) ||
-		!actorUUID(stringClaim(submission, "actionExecutionId")) || submission["actionKey"] != "file_storage.write@v1" ||
+		!actorUUID(stringClaim(submission, "actionExecutionId")) || submission["actionKey"] != "file_storage.write@v2" ||
 		stringClaim(submission, "gateState") == "" || stringClaim(submission, "dispatchState") == "" ||
-		!validWriteReference(stringClaim(input, "nativeObjectRef"), node.Uuid, publish) || input["nativeRevision"] != draftID {
+		!validWriteReference(stringClaim(input, "nativeObjectRef"), node.Uuid) || input["nativeRevision"] != draftID {
 		return true, refused
 	}
 	resp.Header().Set("Cache-Control", "no-store")

@@ -63,8 +63,10 @@ func nativeDeleteObservation(req *restful.Request, resp *restful.Response, proof
 			return refused
 		}
 		answer["nativeId"] = task.ID
-		if completedAt, terminalError := jobstore.NativeDeleteTerminal(req.Request.Context(), task, delivery.MaxResponseBytes); terminalError == nil {
+		if completedAt, nativeStatus, terminalError := jobstore.NativeDeleteTerminal(req.Request.Context(), task, delivery.MaxResponseBytes); terminalError == nil {
 			answer["nativeId"], answer["platformStatus"], answer["terminalAt"] = task.ID, "SUCCEEDED", time.Unix(int64(completedAt), 0).UTC().Format(time.RFC3339)
+			// DD-124(5): raw status of the persisted coordinator Task.
+			answer["nativeStatus"] = nativeStatus
 		}
 	}
 	// All child lookups are awaits. No evidence is released on a stale PEP.

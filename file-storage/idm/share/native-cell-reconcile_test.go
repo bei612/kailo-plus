@@ -125,6 +125,9 @@ func TestNativeCellBindingReconcileOriginalTaskStream(t *testing.T) {
 				if item["platformStatus"] != want {
 					t.Fatalf("native terminal %v != %s", item, want)
 				}
+				if want == "SUCCEEDED" && item["nativeStatus"] != "Finished" {
+					t.Fatalf("terminal without its persisted native status: %v", item)
+				}
 			}
 		})
 	}

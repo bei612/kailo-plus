@@ -32,7 +32,7 @@ function executionMapping(action, config) {
   if (action.actionKey === writeAction && config.write) return {...action, nativeType:'version', cancelCapability:'UNSUPPORTED'};
   if (action.actionKey === deleteAction && config.delete) return {...action, nativeType:'job', cancelCapability:'UNSUPPORTED'};
   if (action.actionKey === shareAction && config.share) return {...action, nativeType:'job', cancelCapability:'UNSUPPORTED'};
-  if (['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(action.actionKey) && config.documentLaunch) {
+  if (['file_storage.open_view@v2', 'file_storage.open_edit@v2'].includes(action.actionKey) && config.documentLaunch) {
     return { ...action, nativeType: 'document.pat', cancelCapability: 'SUPPORTED' };
   }
   throw new Refused(503);
@@ -57,7 +57,7 @@ export function nativeVersionSize(version) {
 
 export function configuration(value) {
   const required = ['bindingId', 'tenantId', 'nativeWorkspaceId', 'nativeRootRef',
-    'cellsRestBaseUrl', 'cellsBearerFile', 'actionTokenIssuer', 'actionTokenAudience',
+    'cellsRestBaseUrl', 'cellsRestV1BaseUrl', 'cellsBearerFile', 'actionTokenIssuer', 'actionTokenAudience',
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
@@ -83,7 +83,14 @@ export function configuration(value) {
     if (!Number.isSafeInteger(value[key]) || value[key] <= 0) throw new Refused(503);
   }
   if (value.listenPort > 65535) throw new Refused(503);
-  for (const key of ['cellsRestBaseUrl', 'corePepUrl', 'oidcTokenUrl', 'actionTokenIssuer']) fixedUrl(value[key]);
+  for (const key of ['cellsRestBaseUrl', 'cellsRestV1BaseUrl', 'corePepUrl', 'oidcTokenUrl', 'actionTokenIssuer']) fixedUrl(value[key]);
+  // One dedicated Cells instance serves two original REST mounts
+  // (common/naming.go DefaultRouteREST "/a" for jobs/user, share/link and
+  // auth/token; DefaultRouteRESTv2 "/v2" for n/*). Both bases address that
+  // same native origin; neither is a fallback for the other.
+  const restV2 = fixedUrl(value.cellsRestBaseUrl), restV1 = fixedUrl(value.cellsRestV1BaseUrl);
+  if (restV1.origin !== restV2.origin
+    || restV1.pathname.replace(/\/$/, '') === restV2.pathname.replace(/\/$/, '')) throw new Refused(503);
   const pep = fixedUrl(value.corePepUrl);
   if (pep.pathname !== '/service/v1/adapter/pep_check') throw new Refused(503);
   for (const key of ['cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile']) {
@@ -159,7 +166,7 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
           || (operation === 'map_native_status_error' && config.share && claims.action_key === shareAction))
           || !UUID.test(claims.result_exposure_policy_id) || !Number.isSafeInteger(claims.result_exposure_policy_version)
           || claims.result_exposure_policy_version <= 0) throw new Refused(401);
-      } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
+      } else if (!['file_storage.open_view@v2', 'file_storage.open_edit@v2'].includes(claims.action_key)
         || ['result_exposure_policy_id', 'result_exposure_policy_version'].some(key => Object.hasOwn(claims, key))) {
         throw new Refused(401);
       }
@@ -395,7 +402,7 @@ export function createAdapter(rawConfig) {
           response.end(canonical(value));
           return;
         }
-        if (body?.actionKey === 'file_storage.list@v1') {
+        if (body?.actionKey === 'file_storage.list@v2') {
           const listing=await listFiles(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
           response.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});
           // Keep the embedded item bytes identical to the SOURCE receipt's
@@ -403,7 +410,7 @@ export function createAdapter(rawConfig) {
           response.end(canonical(listing));
           return;
         }
-        if (body?.actionKey === 'file_storage.read@v1') {
+        if (body?.actionKey === 'file_storage.read@v2') {
           const file=await readFile(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
           response.writeHead(200,{'content-type':'application/octet-stream','cache-control':'no-store',
             'content-length':String(file.bytes.length),'x-kailo-native-object-ref':file.nativeObjectRef,

@@ -91,7 +91,7 @@ func TestNativeDeleteCoordinatorClaimsBeforeDispatchAndNeverReplaysLostACK(t *te
 			delivery.ExecutionGeneration = 1
 			delivery.ExecutionDeadline = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
 			claims := map[string]interface{}{"tenant_id": actor, "actor_principal_id": actor, "initiating_human_principal_id": actor,
-				"idempotency_key": key, "action_execution_id": key, "external_execution_id": external, "action_key": "file_storage.delete@v1"}
+				"idempotency_key": key, "action_execution_id": key, "external_execution_id": external, "action_key": "file_storage.delete@v2"}
 			input := map[string]interface{}{"nativeObjectRefs": []string{native}, "removePermanently": true}
 			_, err := DeleteNodesGoverned(ctx, delivery, key, claims, input)
 			if (err == nil) != (mode == "success") {

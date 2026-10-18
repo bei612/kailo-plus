@@ -90,7 +90,7 @@ export async function launchDocument(config, deadline, raw, key, token) {
   const args = launchInput(raw, key);
   const claims = await verifyToken(token, config, args, 'execute');
   if (claims.agent_principal_id !== undefined || claims.action_execution_id !== args.protocolSessionId
-    || (claims.action_key === 'file_storage.open_edit@v1' ? args.admittedMode !== 'EDIT' : args.admittedMode !== 'VIEW')) {
+    || (claims.action_key === 'file_storage.open_edit@v2' ? args.admittedMode !== 'EDIT' : args.admittedMode !== 'VIEW')) {
     throw new Refused(401);
   }
   await freshPep(config, deadline, token, args, claims, 'execute');
@@ -102,7 +102,7 @@ export async function launchDocument(config, deadline, raw, key, token) {
   if (args.admittedMode === 'EDIT' && native.head !== args.reference.nativeRevision) throw new Refused(409);
   const action = await discoveryAction(config, deadline, native.path, args.admittedMode);
   const bearer = await secret(config.cellsBearerFile);
-  const base = fixedUrl(config.cellsRestBaseUrl);
+  const base = fixedUrl(config.cellsRestV1BaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   // This POST is issued once by Core's OPENING/UNKNOWN dispatch fence. It must
   // never be retried by the adapter after a missing ACK. The original native

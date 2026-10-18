@@ -130,7 +130,7 @@ try:
             require(deletion['nativeJobId'] not in (delivery.get('read', {}).get('nativeJobId'), delivery.get('write', {}).get('nativeJobId')), 'native delete task owner must be distinct')
         if 'share' in delivery:
             # common/auth/native-action.go NativeShareDelivery: the original
-            # file_storage.share@v1 link-revocation consumer (idm/share/rest/native-link.go).
+            # file_storage.share@v2 link-revocation consumer (idm/share/rest/native-link.go).
             sharing = delivery['share']
             require(isinstance(sharing, dict) and set(sharing) == {'nativeJobId', 'actionVersion', 'nativeType', 'resultExposurePolicyId', 'resultExposurePolicyVersion'}, 'native share metadata must match its original Task/HUMAN consumers')
             for key in ('actionVersion', 'resultExposurePolicyVersion'):
@@ -222,6 +222,13 @@ try:
         require(stat.S_ISSOCK(entry.st_mode) if socket else stat.S_ISREG(entry.st_mode))
         return path
     conf = json.loads(delivered(env['CELLS_ADAPTER_CONFIG_FILE']).read_text())
+    # This instance mounts REST v2 at /v2 and the original REST API at /a
+    # (common/naming.go; the readiness probe above uses /a/frontend/bootconf).
+    from urllib.parse import urlsplit
+    rest_v2, rest_v1 = urlsplit(conf['cellsRestBaseUrl']), urlsplit(conf['cellsRestV1BaseUrl'])
+    require(rest_v2.scheme in ('http', 'https') and rest_v2.netloc and (rest_v1.scheme, rest_v1.netloc) == (rest_v2.scheme, rest_v2.netloc))
+    require(rest_v2.path.rstrip('/') == '/v2' and rest_v1.path.rstrip('/') == '/a')
+    require(not any((u.query, u.fragment, u.username, u.password) for u in (rest_v2, rest_v1)))
     if 'cellShare' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['cellShare'] == {key: native['cellShare'][key] for key in ('nativeJobId', 'bindingGeneration')})
@@ -243,7 +250,7 @@ try:
         require(conf.get('workspaceId') == native.get('workspaceId'))
         require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
         require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
-        require(any(action['actionKey'] == 'file_storage.write@v1' and action['actionVersion'] == native['write']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
+        require(any(action['actionKey'] == 'file_storage.write@v2' and action['actionVersion'] == native['write']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     if 'delete' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['delete']['nativeJobId'] == native['delete']['nativeJobId'])
@@ -251,7 +258,7 @@ try:
         require(conf.get('workspaceId') == native.get('workspaceId'))
         require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
         require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
-        require(any(action['actionKey'] == 'file_storage.delete@v1' and action['actionVersion'] == native['delete']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
+        require(any(action['actionKey'] == 'file_storage.delete@v2' and action['actionVersion'] == native['delete']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     if 'share' in conf:
         native = json.loads(pathlib.Path(env['CELLS_NATIVE_ACTION_CONFIG_FILE']).read_text())
         require(conf['share']['nativeJobId'] == native['share']['nativeJobId'])
@@ -259,7 +266,7 @@ try:
         require(conf.get('workspaceId') == native.get('workspaceId'))
         require(conf['nativeWorkspaceId'] == native['nativeScopeRef'])
         require(conf['management']['validation']['nativeInstanceRef'] == native['nativeInstanceRef'])
-        require(any(action['actionKey'] == 'file_storage.share@v1' and action['actionVersion'] == native['share']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
+        require(any(action['actionKey'] == 'file_storage.share@v2' and action['actionVersion'] == native['share']['actionVersion'] for action in conf['management']['validation']['actionVersions']))
     for key in ('cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile'):
         delivered(conf[key])
     for item in conf['management']['validation']['secretDeliveries']:

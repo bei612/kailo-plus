@@ -5,11 +5,11 @@ import { Refused, exactKeys, nonempty, canonical, verifiedClaims, freshPep, fixe
 import { nativeFile, nativeRevisionListing } from './service-read.mjs';
 import { nativeTaskListing, nativeTaskListingTarget } from './service-list.mjs';
 import { nativeDocumentNode } from './query-revision.mjs';
-import { actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
+import { NATIVE_FINISHED, actorConfiguration, nativeJsonFetch } from './native-actor.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-export const nodeActions = Object.freeze(['file_storage.read@v1', 'file_storage.list@v1',
-  'file_storage.list_revisions@v1', 'file_storage.export@v1']);
+export const nodeActions = Object.freeze(['file_storage.read@v2', 'file_storage.list@v2',
+  'file_storage.list_revisions@v2', 'file_storage.export@v2']);
 
 export function readExecutionConfiguration(value) {
   if (!exactKeys(value, ['nativeJobId', 'usageMeasurements']) || !nonempty(value.nativeJobId)
@@ -24,7 +24,7 @@ function readTaskResult(native, key, target, input, nativeId, enumeration, expec
   if (!exactKeys(native, terminal ? ['execution', 'found', 'contentBytes', 'contentSha256', 'measurements',
     ...(enumeration ? [] : ['contentReference'])] : ['execution', 'found'])
     || typeof native.found !== 'boolean' || !exactKeys(execution, ['idempotencyKey', 'nativeType', 'platformStatus', 'cancelCapability', 'lastObservedAt',
-      ...(terminal ? ['nativeId', 'terminalAt'] : [])]) || execution.idempotencyKey !== key || execution.nativeType !== 'node'
+      ...(terminal ? ['nativeId', 'nativeStatus', 'terminalAt'] : [])]) || execution.idempotencyKey !== key || execution.nativeType !== 'node'
     || execution.cancelCapability !== 'UNSUPPORTED' || !['UNKNOWN', 'RUNNING', 'SUCCEEDED'].includes(execution.platformStatus)
     || !nonempty(execution.lastObservedAt) || !Number.isFinite(Date.parse(execution.lastObservedAt))) throw new Refused(503);
   if (!terminal) {
@@ -32,7 +32,8 @@ function readTaskResult(native, key, target, input, nativeId, enumeration, expec
     return native;
   }
   const reference = native.contentReference;
-  if (!native.found || !UUID.test(execution.nativeId) || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
+  if (!native.found || !UUID.test(execution.nativeId) || execution.nativeStatus !== NATIVE_FINISHED
+    || !nonempty(execution.terminalAt) || !Number.isFinite(Date.parse(execution.terminalAt))
     || !Number.isSafeInteger(native.contentBytes) || native.contentBytes < 0 || !/^[a-f0-9]{64}$/.test(native.contentSha256)
     || !Array.isArray(native.measurements) || (enumeration && native.contentBytes <= 0)
     || (!enumeration && (!exactKeys(reference, ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
@@ -46,14 +47,14 @@ function readTaskResult(native, key, target, input, nativeId, enumeration, expec
 }
 
 async function nativeReadTask(config, deadline, token, args, claims, key, operation, expectedNativeId) {
-  const base = fixedUrl(config.cellsRestBaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
+  const base = fixedUrl(config.cellsRestV1BaseUrl); base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const native = await nativeJsonFetch(actorConfiguration(config, token, args, claims), deadline, new URL('jobs/user', base), {
     method:'POST', headers:{authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json',
       'idempotency-key':key, 'x-kailo-native-operation':operation},
     body:canonical({JobIDs:[config.readExecution.nativeJobId], LoadTasks:'Any'}),
   });
   const result = readTaskResult(native, key, claims.target_id, operation === 'execute' ? args.input : undefined, args.nativeId,
-    ['file_storage.list@v1','file_storage.list_revisions@v1'].includes(claims.action_key), expectedNativeId);
+    ['file_storage.list@v2','file_storage.list_revisions@v2'].includes(claims.action_key), expectedNativeId);
   if (result.execution.platformStatus === 'SUCCEEDED'
     && canonical(readMeasurements(config.readExecution.usageMeasurements, result.contentBytes)) !== canonical(result.measurements)) throw new Refused(503);
   return result;
@@ -109,9 +110,9 @@ export async function executeNode(config, deadline, raw, key, token) {
   if (!config.readEdge) throw new Refused(503);
   const request = requestValue(raw, key);
   const args = request.arguments;
-  const listing = request.actionKey === 'file_storage.list@v1';
-  const revisions = request.actionKey === 'file_storage.list_revisions@v1';
-  const exporting = request.actionKey === 'file_storage.export@v1';
+  const listing = request.actionKey === 'file_storage.list@v2';
+  const revisions = request.actionKey === 'file_storage.list_revisions@v2';
+  const exporting = request.actionKey === 'file_storage.export@v2';
   if (!exactKeys(args.input, listing ? ['resourceId'] : revisions ? ['resourceId', 'nativeObjectRef']
     : ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
     || !UUID.test(args.input.resourceId) || (!listing && (!UUID.test(args.input.nativeObjectRef)

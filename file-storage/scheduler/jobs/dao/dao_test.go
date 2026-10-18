@@ -207,7 +207,7 @@ func TestDAO_NativeShareUsesOriginalBindingFence(t *testing.T) {
 			}
 		}
 		intent := jo.NativeShareIntent{BindingID: binding, Generation: 1, NativeUserID: user, ShareID: uuid.New(), HiddenUserID: uuid.New(), HiddenUserLogin: "original-hidden", DocumentID: "original-hash", Roots: []string{uuid.New()}}
-		claims := map[string]interface{}{"action_key": "file_storage.share@v1", "external_execution_id": uuid.New(), "idempotency_key": key,
+		claims := map[string]interface{}{"action_key": "file_storage.share@v2", "external_execution_id": uuid.New(), "idempotency_key": key,
 			"tenant_id": uuid.New(), "actor_principal_id": user, "initiating_human_principal_id": user, "operation_id": uuid.New(), "action_execution_id": uuid.New(),
 			"target_type": "RESOURCE", "target_id": uuid.New(), "result_exposure_policy_id": uuid.New(), "result_exposure_policy_version": 1, "action_definition_version": 1}
 		task, err := jo.NewNativeShareTask(share.ID, key, "native-user", intent, claims)

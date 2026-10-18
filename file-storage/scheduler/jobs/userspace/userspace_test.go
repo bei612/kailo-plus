@@ -85,7 +85,7 @@ func TestManagedDeleteOnlyResolvesExistingClaim(t *testing.T) {
 	ctx := claim.ToContext(context.Background(), claim.Claims{Name: "native-owner", Subject: "native-user"})
 	delivery := auth.NativeDeleteDelivery{}
 	delivery.BindingID, delivery.Delete.NativeJobID, delivery.MaxResponseBytes = "binding", "coordinator", 4096
-	claims := map[string]interface{}{"idempotency_key": key, "action_key": "file_storage.delete@v1"}
+	claims := map[string]interface{}{"idempotency_key": key, "action_key": "file_storage.delete@v2"}
 	input := map[string]interface{}{"nativeObjectRefs": []string{"native-node"}, "removePermanently": true}
 	for _, mode := range []string{"absent", "existing", "foreign"} {
 		t.Run(mode, func(t *testing.T) {

@@ -139,7 +139,7 @@ func NativeReadTaskMatches(task *jobproto.Task, read *auth.NativeReadExecution, 
 	}
 	intent, err := NativeWriteTaskIntent(task)
 	inputSize := 7
-	if read.Claims["action_key"] == "file_storage.list_revisions@v1" || read.Claims["action_key"] == "file_storage.list@v1" {
+	if read.Claims["action_key"] == "file_storage.list_revisions@v2" || read.Claims["action_key"] == "file_storage.list@v2" {
 		inputSize = 4
 	}
 	if err != nil || len(intent.InputReference) != inputSize {
@@ -155,12 +155,12 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 	if err != nil {
 		return nil, refused
 	}
-	enumeration := intent.Scope["action_key"] == "file_storage.list_revisions@v1" || intent.Scope["action_key"] == "file_storage.list@v1"
+	enumeration := intent.Scope["action_key"] == "file_storage.list_revisions@v2" || intent.Scope["action_key"] == "file_storage.list@v2"
 	inputSize := 7
 	if enumeration {
 		inputSize = 4
 	}
-	if (!enumeration && intent.Scope["action_key"] != "file_storage.read@v1" && intent.Scope["action_key"] != "file_storage.export@v1") ||
+	if (!enumeration && intent.Scope["action_key"] != "file_storage.read@v2" && intent.Scope["action_key"] != "file_storage.export@v2") ||
 		task.GetStatus() != jobproto.TaskStatus_Finished || task.GetEndTime() <= 0 || len(intent.InputReference) != inputSize {
 		return nil, refused
 	}
@@ -240,7 +240,7 @@ func NativeReadTaskReceipt(task *jobproto.Task) (*NativeReadReceipt, error) {
 // read. A partial stream or failed close leaves its original Task non-terminal.
 func CopyNativeRead(ctx context.Context, read *auth.NativeReadExecution, expectedBytes int64, writer io.Writer, open func() (io.ReadCloser, error)) error {
 	current, ok := claim.FromContext(ctx)
-	enumeration := read.Claims["action_key"] == "file_storage.list_revisions@v1" || read.Claims["action_key"] == "file_storage.list@v1"
+	enumeration := read.Claims["action_key"] == "file_storage.list_revisions@v2" || read.Claims["action_key"] == "file_storage.list@v2"
 	if !ok || (expectedBytes < 0 && (!enumeration || expectedBytes != -1)) || read.Delivery.Read == nil {
 		return errors.WithStack(errors.StatusForbidden)
 	}

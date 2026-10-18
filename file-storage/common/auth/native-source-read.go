@@ -21,7 +21,7 @@ func nativeSourceReadAuthority(request *http.Request, delivery NativeActorDelive
 		return nil, refused
 	}
 	claims, err := delivery.AuthorizeSourceRead(ctx, token, arguments)
-	if err != nil || claims["tenant_id"] != delivery.TenantID || claims["action_key"] != "file_storage.read@v1" || claims["target_type"] != "RESOURCE" {
+	if err != nil || claims["tenant_id"] != delivery.TenantID || claims["action_key"] != "file_storage.read@v2" || claims["target_type"] != "RESOURCE" {
 		return nil, refused
 	}
 	for _, key := range []string{"tenant_id", "actor_principal_id", "operation_id", "action_execution_id", "target_id", "idempotency_key", "jti"} {

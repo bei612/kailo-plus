@@ -29,7 +29,7 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 		t.Run(scenario, func(t *testing.T) {
 			deadline := time.Now().Add(time.Minute).UTC().Truncate(time.Second).Format("2006-01-02T15:04:05.000Z")
 			claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": actor, "initiating_human_principal_id": actor,
-				"operation_id": key, "action_execution_id": key, "action_key": "file_storage.delete@v1", "target_type": "RESOURCE", "target_id": root,
+				"operation_id": key, "action_execution_id": key, "action_key": "file_storage.delete@v2", "target_type": "RESOURCE", "target_id": root,
 				"external_execution_id": external, "idempotency_key": key}
 			payload, _ := json.Marshal(claims)
 			token := "fixture." + base64.RawURLEncoding.EncodeToString(payload) + ".fixture"

@@ -4,6 +4,12 @@
 // silently execute with the transport service's ACL.
 import { Refused, boundedBody, canonical, nonempty } from '../../../client-kit/adapter/protocol.mjs';
 
+// Fixed release mapping of the original Cells jobs.TaskStatus (DD-124(5),
+// 06 §6): only a persisted native "Finished" Task maps to SUCCEEDED, and every
+// terminal observation must carry that raw value exactly as Cells reported it.
+// The adapter validates the native fact; it never fills the field itself.
+export const NATIVE_FINISHED = 'Finished';
+
 export function actorConfiguration(config, token, args, claims) {
   const kind = claims.agent_principal_id === undefined ? 'HUMAN' : 'AGENT';
   return Object.freeze({...config, nativeActorContext: Object.freeze({

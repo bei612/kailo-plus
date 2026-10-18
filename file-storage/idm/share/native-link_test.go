@@ -601,7 +601,7 @@ func TestNativeShareExecutionObservesAfterArchivingAcrossSecond(t *testing.T) {
 	execution := result["execution"].(map[string]interface{})
 	observed, e1 := time.Parse(time.RFC3339Nano, execution["lastObservedAt"].(string))
 	terminal, e2 := time.Parse(time.RFC3339Nano, execution["terminalAt"].(string))
-	if e1 != nil || e2 != nil || terminal.After(observed) || execution["platformStatus"] != "SUCCEEDED" || pepCalls != 3 || store.writes != 1 || docs.deletes != 0 {
+	if e1 != nil || e2 != nil || terminal.After(observed) || execution["platformStatus"] != "SUCCEEDED" || execution["nativeStatus"] != "Finished" || pepCalls != 3 || store.writes != 1 || docs.deletes != 0 {
 		t.Fatalf("invalid final observation: %v pep=%d writes=%d", execution, pepCalls, store.writes)
 	}
 }
@@ -613,7 +613,7 @@ func nativeLinkFixture(t *testing.T) (*jobproto.Task, *jobstore.NativeShareInten
 		ids[i] = fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)
 	}
 	intent := &jobstore.NativeShareIntent{BindingID: ids[0], Generation: 2, NativeUserID: ids[1], ShareID: ids[2], HiddenUserID: ids[3], HiddenUserLogin: "original-hidden-user", DocumentID: "original-share-hash", Roots: []string{ids[4]}}
-	claims := map[string]interface{}{"action_key": "file_storage.share@v1", "external_execution_id": ids[4], "idempotency_key": ids[5],
+	claims := map[string]interface{}{"action_key": "file_storage.share@v2", "external_execution_id": ids[4], "idempotency_key": ids[5],
 		"tenant_id": ids[0], "actor_principal_id": ids[1], "initiating_human_principal_id": ids[1], "operation_id": ids[3], "action_execution_id": ids[4],
 		"target_type": "RESOURCE", "target_id": ids[2], "result_exposure_policy_id": ids[3], "result_exposure_policy_version": 1, "action_definition_version": 1}
 	task, err := jobstore.NewNativeShareTask(jobstore.NativeShareJob("share-native-job", ids[0], 2).ID, ids[5], "native-owner", *intent, claims)
@@ -644,7 +644,7 @@ func TestNativeShareRevokeArchivesOnlyExactDispatchedRemoval(t *testing.T) {
 			grpcclient.RegisterMock(common.ServiceWorkspaceGRPC, &idm.WorkspaceServiceStub{WorkspaceServiceServer: &nativeLinkWorkspaces{intent: intent, scenario: scenario}})
 			grpcclient.RegisterMock(common.ServiceJobsGRPC, store)
 			fresh := 0
-			terminal, err := archiveNativeShare(context.Background(), task, func() error {
+			terminal, nativeStatus, err := archiveNativeShare(context.Background(), task, func() error {
 				fresh++
 				if scenario == "fresh-refused" {
 					return errors.New("revoked")
@@ -652,14 +652,14 @@ func TestNativeShareRevokeArchivesOnlyExactDispatchedRemoval(t *testing.T) {
 				return nil
 			})
 			if scenario == "removed" {
-				if err != nil || terminal == "" || store.writes != 1 || fresh != 1 {
-					t.Fatalf("confirmed original removal not archived: %q %v writes=%d fresh=%d", terminal, err, store.writes, fresh)
+				if err != nil || terminal == "" || nativeStatus != jobproto.TaskStatus_Finished.String() || store.writes != 1 || fresh != 1 {
+					t.Fatalf("confirmed original removal not archived: %q %q %v writes=%d fresh=%d", terminal, nativeStatus, err, store.writes, fresh)
 				}
 				if _, err := jobstore.NativeShareTerminal(store.task); err != nil {
 					t.Fatal(err)
 				}
-			} else if terminal != "" {
-				t.Fatalf("unproven %s became terminal: %s", scenario, terminal)
+			} else if terminal != "" || nativeStatus != "" {
+				t.Fatalf("unproven %s became terminal: %s %s", scenario, terminal, nativeStatus)
 			}
 			if scenario == "document-error" || scenario == "user-error" || scenario == "workspace-error" || scenario == "changed-claim" || scenario == "fresh-refused" || scenario == "receipt-lost-ack" || scenario == "receipt-empty-ack" {
 				if err == nil {
@@ -668,9 +668,9 @@ func TestNativeShareRevokeArchivesOnlyExactDispatchedRemoval(t *testing.T) {
 			}
 			if scenario == "receipt-lost-ack" {
 				store.scenario = "removed"
-				terminal, err = archiveNativeShare(context.Background(), store.task, nil)
-				if err != nil || terminal == "" || store.writes != 1 {
-					t.Fatalf("persisted receipt recovery rewrote or lost evidence: %q %v", terminal, err)
+				terminal, nativeStatus, err = archiveNativeShare(context.Background(), store.task, nil)
+				if err != nil || terminal == "" || nativeStatus != store.task.Status.String() || store.writes != 1 {
+					t.Fatalf("persisted receipt recovery rewrote or lost evidence: %q %q %v", terminal, nativeStatus, err)
 				}
 			}
 			if docs.deletes != 0 {

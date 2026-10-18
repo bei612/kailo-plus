@@ -83,7 +83,7 @@ func directoryReadContext(t *testing.T) context.Context {
 	if err := config.Set(ctx, delivery, "services", common.ServiceRestNamespace_+"n", "platform"); err != nil {
 		t.Fatal(err)
 	}
-	claims, _ := json.Marshal(map[string]interface{}{"tenant_id": ids[3], "actor_principal_id": ids[2], "initiating_human_principal_id": ids[2], "action_key": "file_storage.list@v1",
+	claims, _ := json.Marshal(map[string]interface{}{"tenant_id": ids[3], "actor_principal_id": ids[2], "initiating_human_principal_id": ids[2], "action_key": "file_storage.list@v2",
 		"target_type": "RESOURCE", "target_id": ids[3], "operation_id": ids[5], "action_execution_id": ids[6], "result_exposure_policy_id": ids[5], "external_execution_id": ids[6], "idempotency_key": ids[5]})
 	args, _ := json.Marshal(map[string]interface{}{"target": map[string]interface{}{"resourceId": ids[3]}, "input": map[string]interface{}{"resourceId": ids[3]}})
 	proof, _ := json.Marshal(map[string]interface{}{"actionToken": "header." + base64.RawURLEncoding.EncodeToString(claims) + ".authority-proof", "argumentsJson": string(args)})

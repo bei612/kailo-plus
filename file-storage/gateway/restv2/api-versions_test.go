@@ -548,7 +548,7 @@ func TestNativeUploadCompletionReadsOriginalReceiptVersionAndCurrentNode(t *test
 			grpcclient.RegisterMock(common.ServiceVersionsGRPC, &tree.NodeVersionerStub{NodeVersionerServer: versions})
 			encodedInput, _ := json.Marshal(input)
 			reference := map[string]interface{}{"externalExecutionId": ids[9], "idempotencyKey": ids[10], "nativeIntentId": ids[5], "bindingGeneration": 3}
-			observed := map[string]interface{}{"submission": map[string]interface{}{"actionKey": "file_storage.write@v1", "operationId": ids[5], "actionExecutionId": ids[6], "gateState": "ALLOWED", "dispatchState": "DISPATCHED"}, "inputJson": string(encodedInput), "nativeExecution": reference, "terminalStatus": "COMPLETED", "nativeType": "version", "nativeId": versionID}
+			observed := map[string]interface{}{"submission": map[string]interface{}{"actionKey": "file_storage.write@v2", "operationId": ids[5], "actionExecutionId": ids[6], "gateState": "ALLOWED", "dispatchState": "DISPATCHED"}, "inputJson": string(encodedInput), "nativeExecution": reference, "terminalStatus": "COMPLETED", "nativeType": "version", "nativeId": versionID}
 			switch scenario {
 			case "wrong-action":
 				observed["submission"].(map[string]interface{})["actionExecutionId"] = ids[11]
@@ -786,7 +786,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 		return nodes.NewTestPool(c, nodes.MakeFakeClientsPool(freshTree, nativeVersionDeleteIndex))
 	})
 	for _, scenario := range []string{"independent", "native-execution-on-independent", "native-execution-proof", "new", "opaque-draft-revision", "empty-draft-revision", "whitespace-draft-revision", "pending", "unknown", "unknown-enum", "explicit-unknown", "explicit-running", "null-terminal", "empty-terminal", "nonstring-terminal", "terminated", "timed-out", "completed", "completed-publish", "completed-node-unavailable", "completed-foreign-node", "completed-folder-node", "completed-revoked-acl", "failed", "canceled", "denied-before-dispatch", "revoked-after-unknown-dispatch",
-		"lost-submit-ack", "unavailable-observe", "foreign-node", "duplicate-ref-key", "unknown-ref-field", "non-bool-publish",
+		"lost-submit-ack", "unavailable-observe", "foreign-node", "legacy-wrapped-ref", "urn-ref", "padded-ref",
 		"wrong-resource", "wrong-draft-owner", "wrong-published-owner", "wrong-native-type", "draft-is-not-completion",
 		"duplicate-idempotency-key", "missing-human-cookie", "another-native-session", "missing-write-metadata"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -848,9 +848,9 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 				}
 			}
 			publish := scenario == "completed-publish"
-			input := map[string]interface{}{"resourceId": ids[1], "nativeObjectRef": writeReference(ids[3], publish),
+			input := map[string]interface{}{"resourceId": ids[1], "nativeObjectRef": ids[3],
 				"nativeRevision": draftID, "displayName": "empty.txt", "mediaType": "text/plain"}
-			observed := map[string]interface{}{"submission": map[string]interface{}{"actionKey": "file_storage.write@v1",
+			observed := map[string]interface{}{"submission": map[string]interface{}{"actionKey": "file_storage.write@v2",
 				"operationId": ids[5], "actionExecutionId": ids[6], "gateState": "ALLOWED", "dispatchState": "DISPATCHED"}, "inputReference": input}
 			switch scenario {
 			case "pending":
@@ -892,13 +892,14 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 				observed["submission"].(map[string]interface{})["gateState"] = "REVOKED"
 				observed["submission"].(map[string]interface{})["dispatchState"] = "UNKNOWN"
 			case "foreign-node":
-				input["nativeObjectRef"] = writeReference(ids[0], false)
-			case "duplicate-ref-key":
-				input["nativeObjectRef"] = `{"nodeUuid":"` + ids[3] + `","publish":true,"publish":false}`
-			case "unknown-ref-field":
-				input["nativeObjectRef"] = `{"nodeUuid":"` + ids[3] + `","publish":false,"scope":"other"}`
-			case "non-bool-publish":
-				input["nativeObjectRef"] = `{"nodeUuid":"` + ids[3] + `","publish":"false"}`
+				input["nativeObjectRef"] = ids[0]
+			case "legacy-wrapped-ref":
+				// file_storage@2 has one encoding: the node's native_object_ref.
+				input["nativeObjectRef"] = `{"nodeUuid":"` + ids[3] + `","publish":false}`
+			case "urn-ref":
+				input["nativeObjectRef"] = "urn:uuid:" + ids[3]
+			case "padded-ref":
+				input["nativeObjectRef"] = ids[3] + " "
 			}
 			commands, observations, resolutions := 0, 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -914,7 +915,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 				}
 				if selector, ok := request["resolveResource"].(map[string]interface{}); ok {
 					resolutions++
-					if selector["nativeRef"] != ids[3] || selector["nativeType"] != "native-file" || selector["workspaceId"] != ids[7] || selector["actionKey"] != "file_storage.write@v1" {
+					if selector["nativeRef"] != ids[3] || selector["nativeType"] != "native-file" || selector["workspaceId"] != ids[7] || selector["actionKey"] != "file_storage.write@v2" {
 						t.Error("original resource selector was not exact")
 					}
 					resource := map[string]interface{}{"resourceId": ids[1], "resourceVersion": 1, "nativeType": "native-file", "nativeRef": ids[3], "nativeInstanceRef": "native-instance", "nativeScopeRef": ids[7]}
@@ -930,7 +931,7 @@ func TestNativePromoteUsesOriginalHumanAction(t *testing.T) {
 					actual, _ := json.Marshal(component["inputReference"])
 					expected, _ := json.Marshal(input)
 					if string(actual) != string(expected) || command["idempotencyKey"] != ids[5] || command["workspaceId"] != ids[7] || command["resourceVersion"] != float64(1) ||
-						command["actionKey"] != "file_storage.write@v1" || component["resultExposurePolicyId"] != ids[6] {
+						command["actionKey"] != "file_storage.write@v2" || component["resultExposurePolicyId"] != ids[6] {
 						t.Error("native persisted draft or policy was not frozen in the original ActionCommand")
 					}
 					if scenario == "lost-submit-ack" {

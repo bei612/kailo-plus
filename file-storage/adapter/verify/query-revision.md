@@ -3744,3 +3744,55 @@ exit 1、9 failed/1 passed；断言实际看到了发给后来用户的旧归档
 本批没有浏览器截图、实际归档下载或三端设备验收，不声称完整还原。已在途
 full/docs 使用更早输入，不覆盖本次新源码；原生组件统一构建前须纳入本批，
 不能把此前冻结 Cells 镜像作为包含此修复的发布。本增量尚未部署。
+
+## 2026-10-18 DD-124：file_storage@2、终态原生状态与 Cells REST 双挂载
+
+权威：`.design/02` DD-124(1)(2)(3)(5)(6)、SF-CEL-02/16；`07` §2.4、§5.2、§8A；
+`08` §4、§9.1–9.2；`16` V-SCN-117–123。设计基线
+`origin/design-authority`（2026-10-18 fetch）。
+
+1. 终态原生状态（DD-124(5)、V-SCN-121）。Cells 产生终态观察的五处原入口
+   现在于 `SUCCEEDED` 时携带据以判定的原生 Task 状态原值
+   `jobs.TaskStatus.String()`（只会是 `Finished`）：`scheduler/jobs/rest/native-read.go`
+   （已校验回执的同一 Task）、`native-write.go` 两个分支（上传发布 Task、promote
+   Task）、`gateway/restv2/native-write-execution.go writeNativeTaskResult`、
+   `scheduler/jobs/rest/native-delete.go`（`NativeDeleteTerminal` 改为返回已持久化
+   协调 Task 的状态）、`idm/share/native-link.go`（`archiveNativeShare` 返回所据
+   Task 的状态；同时修正 `native-cell-reconcile.go` 中终态仍报归档前 `Running`
+   的问题）。非终态不带该字段。adapter 的 node/write/delete/share 精确键校验
+   改为：终态必须恰带 `nativeStatus` 且等于固定 release 映射值 `Finished`，
+   非终态不得携带；adapter 只核验、从不补写。`document-launch.mjs` 的
+   `nativeStatus:'CREATED'` 常量仍在在线编辑条件键路径上（本 release
+   `onlineEditing=UNSUPPORTED`，不暴露），在线编辑门禁闭合前须由 Cells PAT
+   创建应答给出原生状态后再改。
+2. `file_storage@2`（DD-124(3)(6)）。release `implements[file_storage@2]`、
+   版本 `2.0.0`，七个契约键与 Tool 均为 `@v2`，schema digest 与 @1 相同；
+   `meter=UNSUPPORTED`，全部 ActionDefinition `meters=[]`、`quotaPolicy=NONE`、
+   `usageSource=NONE`；adapter 模板 readExecution/write/delete/share 与原生
+   `read` 投递的 `usageMeasurements` 均为显式空集。Cells Go、前端 JS、adapter、
+   部署模板与 knowledge 读取边对 Cells 契约键的引用同步改为 `@v2`
+   （不设别名，旧 `@v1` 一律拒绝）。write 目标 `nativeObjectRef` 改为节点自身
+   ContentReference `native_object_ref`（节点 UUID），使原生入口返回的标识可以
+   直接作为 `PRECONDITION`；原 `{"nodeUuid","publish"}` 包装不再接受，平台绑定下
+   的 HUMAN promote 若请求 `publish=true` 在提交前拒绝（其终态本就拒绝发布）。
+3. REST 挂载。Cells 原 REST 在 `/a`（`jobs/user`、`share/link`、`auth/token/document`），
+   REST v2 在 `/v2`（`n/*`）（`common/naming.go`）。生产模板此前
+   `cellsRestBaseUrl=http://cells:8080`，两类路径均落在根路径而不可达；现分为
+   `cellsRestBaseUrl=http://cells:8080/v2` 与 `cellsRestV1BaseUrl=http://cells:8080/a`，
+   adapter 要求二者同源且不同挂载，`start.sh --platform-adapter` 核对固定挂载。
+   单测改为 `/v2` 与 `/a` 分别挂载。
+4. 一致性工具（DD-124(1)(2)、V-SCN-117–119）。`tools/component-release/conformance/vector-v2.mjs`
+   按 Core `capability_vector.rs` 相同规则读取 V2 向量并把每个值分为
+   LITERAL/PRECONDITION/CAPTURE；`vector-requirements.mjs` 按冻结步骤的消费方式
+   推出每个前置对象的 Cells 原生角色（节点/草稿/分享）与 Resource 原生对象，
+   同一 Resource 需两个原生对象即判阻断；`seed-cells.mjs` 经原生入口建立并只
+   记录 Cells 返回的标识（被写节点由执行者草稿模式上传建立，使 promote 前无
+   已发布 revision；分享经 `PUT /a/share/link` 建在绑定根上）；`observe.mjs`
+   原样携带种子记录，拒绝操作员提供前置或捕获值；`conformance-inputs.mjs`
+   要求每个前置声明恰一值并写入 `fixture.preconditions`。捕获值只由 Core 在
+   运行中取自候选的实际应答，本工具链不产生任何期望。
+
+验证边界：开发机按规则未运行 node/go；只做了 `bash -n`、`start.sh` 内嵌
+Python 编译与 JSON 解析。Go 与 node 单测、gofmt/vet、adapter 与 Cells 镜像
+构建以及隔离一致性运行均须在 CI 节点执行；`file_storage@2` 契约文件由契约
+批次提交，本批 `registered file_storage@2 write vector` 用例依赖它。

@@ -101,8 +101,8 @@ func TestNativeWriteObservationDoesNotInventActiveExecution(t *testing.T) {
 	user, service, principal, resource, key, execution, binding, node, policy := ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], ids[6], ids[7], ids[8]
 	grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: &writeObservationUser{user: &idm.User{Uuid: user, Login: "native-user"}}})
 	grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &writeObservationPolicy{subject: user}})
-	claims := map[string]interface{}{"tenant_id": resource, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v1", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "operation_id": key, "action_execution_id": execution, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
-	input := map[string]interface{}{"resourceId": resource, "nativeObjectRef": `{"nodeUuid":"` + node + `","publish":false}`, "nativeRevision": "original-draft", "displayName": "file.txt", "mediaType": "text/plain"}
+	claims := map[string]interface{}{"tenant_id": resource, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.write@v2", "action_definition_version": float64(1), "target_type": "RESOURCE", "target_id": resource, "operation_id": key, "action_execution_id": execution, "result_exposure_policy_id": policy, "result_exposure_policy_version": float64(1)}
+	input := map[string]interface{}{"resourceId": resource, "nativeObjectRef": node, "nativeRevision": "original-draft", "displayName": "file.txt", "mediaType": "text/plain"}
 	completed, err := jobstore.NewNativeWriteTask(binding, "native-write-job", key, "native-user", user, claims, input)
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +197,9 @@ func TestNativeWriteObservationDoesNotInventActiveExecution(t *testing.T) {
 				}
 				if observation["platformStatus"] != want || pepCalls != 2 || connection.calls != 1 {
 					t.Fatalf("unproved active/terminal result or missing fresh lookup: %v calls=%d/%d", observation, pepCalls, connection.calls)
+				}
+				if (scenario == "complete" && observation["nativeStatus"] != "Finished") || (scenario != "complete" && observation["nativeStatus"] != nil) {
+					t.Fatalf("terminal native status not taken from the persisted Task: %v", observation)
 				}
 				if scenario != "complete" && (answer["contentReference"] != nil || observation["terminalAt"] != nil) {
 					t.Fatal("unproved terminal evidence disclosed")

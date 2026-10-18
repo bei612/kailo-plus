@@ -112,12 +112,14 @@ func ReconcileNativeCells(ctx context.Context, delivery auth.NativeCellShareDeli
 		task := shares[id]
 		item := map[string]interface{}{"idempotencyKey": id, "nativeType": "job", "nativeId": id,
 			"nativeStatus": task.Status.String(), "platformStatus": "UNKNOWN", "cancelCapability": "UNSUPPORTED", "lastObservedAt": time.Now().UTC().Format(time.RFC3339Nano)}
-		terminal, err := archiveNativeShare(ctx, task, nil)
+		terminal, nativeStatus, err := archiveNativeShare(ctx, task, nil)
 		if err != nil {
 			return nil, err
 		}
 		if terminal != "" {
-			item["platformStatus"], item["terminalAt"] = "SUCCEEDED", terminal
+			// The pre-archive status above may still be Running; a terminal
+			// reports the raw status of the persisted Task it came from.
+			item["nativeStatus"], item["platformStatus"], item["terminalAt"] = nativeStatus, "SUCCEEDED", terminal
 		}
 		observations = append(observations, item)
 	}

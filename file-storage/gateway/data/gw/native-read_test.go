@@ -209,7 +209,7 @@ func TestGovernedReadCompletesBeforeReturningMinIOReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{"HUMAN", "AGENT"} {
-		for _, action := range []string{"file_storage.read@v1", "file_storage.export@v1"} {
+		for _, action := range []string{"file_storage.read@v2", "file_storage.export@v2"} {
 			for _, size := range []int64{0, 12} {
 				for _, scenario := range []string{"revision-mismatch", "complete", "final-PEP-denied", "completion-ACK-lost"} {
 					t.Run(kind+"/"+action+"/"+strconv.FormatInt(size, 10)+"/"+scenario, func(t *testing.T) {

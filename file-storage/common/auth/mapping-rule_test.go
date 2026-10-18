@@ -121,13 +121,13 @@ func TestNativeReadAuthorityConsumesExactActorAndOriginalOperation(t *testing.T)
 			}
 			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: user})
 			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadOIDCPolicy{}})
-			claims := map[string]interface{}{"tenant_id": targetID, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.read@v1", "target_type": "RESOURCE", "target_id": targetID, "operation_id": key, "action_execution_id": ee, "result_exposure_policy_id": key, "external_execution_id": ee, "idempotency_key": key}
+			claims := map[string]interface{}{"tenant_id": targetID, "actor_principal_id": principal, "initiating_human_principal_id": principal, "action_key": "file_storage.read@v2", "target_type": "RESOURCE", "target_id": targetID, "operation_id": key, "action_execution_id": ee, "result_exposure_policy_id": key, "external_execution_id": ee, "idempotency_key": key}
 			revisions := strings.HasPrefix(scenario, "revision-")
 			listing := strings.HasPrefix(scenario, "list-")
 			if revisions {
-				claims["action_key"] = "file_storage.list_revisions@v1"
+				claims["action_key"] = "file_storage.list_revisions@v2"
 			} else if listing {
-				claims["action_key"] = "file_storage.list@v1"
+				claims["action_key"] = "file_storage.list@v2"
 			}
 			if scenario == "revision-unsigned-key" || scenario == "list-unsigned-key" {
 				delete(claims, "idempotency_key")
@@ -287,7 +287,7 @@ func TestNativeSourceReadConsumesOriginalServiceProof(t *testing.T) {
 			grpcclient.RegisterMock(common.ServiceUserGRPC, &idm.UserServiceStub{UserServiceServer: user})
 			grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &nativeReadOIDCPolicy{}})
 			claims := map[string]interface{}{"tenant_id": resource, "actor_principal_id": receiver, "operation_id": key,
-				"action_execution_id": execution, "target_id": resource, "target_type": "RESOURCE", "action_key": "file_storage.read@v1", "idempotency_key": key, "jti": execution}
+				"action_execution_id": execution, "target_id": resource, "target_type": "RESOURCE", "action_key": "file_storage.read@v2", "idempotency_key": key, "jti": execution}
 			if scenario == "human-claim" {
 				claims["initiating_human_principal_id"] = receiver
 			}
