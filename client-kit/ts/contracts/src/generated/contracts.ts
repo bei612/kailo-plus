@@ -5010,9 +5010,29 @@ export interface ProjectsGitRefResponse {
  * admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
  * signed current announcement; it does not delete its channel or repositories.
  * CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
- * repository (DD-118); the push itself is not part of this request.
+ * repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
+ * and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
+ * original labeled kind-1 review comments (desktop
+ * pullRequestReviews.ts::submitProjectPullRequestReview,
+ * hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
+ * no new Nostr kind (DD-118(5)).
  */
 export interface ProjectsPublishRequest {
+    /**
+     * Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
+     */
+    anchorLine?: number;
+    /**
+     * Original inline diff anchor `file` (normalizeProjectPullRequestCommentAnchor):
+     * repository-relative, no leading slash, backslash, NUL, empty, `.` or `..` segment; at
+     * most 4096 UTF-16 code units. Only on CREATE_PULL_REQUEST_COMMENT, together with
+     * anchorSide, anchorLine and commit.
+     */
+    anchorPath?: string;
+    /**
+     * Original inline diff anchor `side`.
+     */
+    anchorSide?: ProjectPullRequestCommentSide;
     /**
      * Original transient display label, trimmed and limited to 128 Unicode characters by the
      * consumer. Never an identity or authorization claim.
@@ -5037,7 +5057,11 @@ export interface ProjectsPublishRequest {
     branchName?: string;
     category?:   ProjectIssueCategory;
     /**
-     * Original 1618 `c`: compare branch head read from the trusted repository state.
+     * Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
+     * state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
+     * anchor: the review head the reviewer looked at; the consumer refuses with
+     * TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
+     * those review comments and refused on ordinary comments.
      */
     commit?:      string;
     description?: string;
@@ -5060,6 +5084,13 @@ export interface ProjectsPublishRequest {
      */
     pullRequestStatus?: ProjectPullRequestLifecycleStatus;
     /**
+     * Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+     * adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+     * never the review author, may request changes on an open or draft review; readers trust
+     * nothing else (projectPullRequests.mjs).
+     */
+    reviewDecision?: ProjectPullRequestCommentDecision;
+    /**
      * Original requested reviewers (p tags beside the repository owner). Never a signing
      * identity or grant.
      */
@@ -5076,6 +5107,14 @@ export interface ProjectsPublishRequest {
     title?:       string;
     visibility?:  ProjectListingVisibility;
     workspaceId?: string;
+}
+
+/**
+ * Original inline diff anchor `side`.
+ */
+export enum ProjectPullRequestCommentSide {
+    New = "new",
+    Old = "old",
 }
 
 export interface AttachmentElement {
@@ -5124,6 +5163,7 @@ export enum ProjectIssueCategory {
 }
 
 export enum ProjectPublicationOperation {
+    ApprovePullRequest = "APPROVE_PULL_REQUEST",
     AssignIssue = "ASSIGN_ISSUE",
     CreateIssue = "CREATE_ISSUE",
     CreateIssueComment = "CREATE_ISSUE_COMMENT",
@@ -5147,6 +5187,16 @@ export enum ProjectPullRequestLifecycleStatus {
     Closed = "closed",
     Draft = "draft",
     Open = "open",
+}
+
+/**
+ * Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+ * adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+ * never the review author, may request changes on an open or draft review; readers trust
+ * nothing else (projectPullRequests.mjs).
+ */
+export enum ProjectPullRequestCommentDecision {
+    RequestChanges = "request-changes",
 }
 
 export enum ProjectListingVisibility {

@@ -14481,8 +14481,25 @@ class ProjectsGitRefResponse {
 ///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 ///signed current announcement; it does not delete its channel or repositories.
 ///CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-///repository (DD-118); the push itself is not part of this request.
+///repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
+///and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
+///original labeled kind-1 review comments (desktop
+///pullRequestReviews.ts::submitProjectPullRequestReview,
+///hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
+///no new Nostr kind (DD-118(5)).
 class ProjectsPublishRequest {
+  ///Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
+  final int? anchorLine;
+
+  ///Original inline diff anchor `file` (normalizeProjectPullRequestCommentAnchor):
+  ///repository-relative, no leading slash, backslash, NUL, empty, `.` or `..` segment; at
+  ///most 4096 UTF-16 code units. Only on CREATE_PULL_REQUEST_COMMENT, together with
+  ///anchorSide, anchorLine and commit.
+  final String? anchorPath;
+
+  ///Original inline diff anchor `side`.
+  final ProjectPullRequestCommentSide? anchorSide;
+
   ///Original transient display label, trimmed and limited to 128 Unicode characters by the
   ///consumer. Never an identity or authorization claim.
   final String? assigneeLabel;
@@ -14502,7 +14519,11 @@ class ProjectsPublishRequest {
   final String? branchName;
   final ProjectIssueCategory? category;
 
-  ///Original 1618 `c`: compare branch head read from the trusted repository state.
+  ///Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
+  ///state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
+  ///anchor: the review head the reviewer looked at; the consumer refuses with
+  ///TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
+  ///those review comments and refused on ordinary comments.
   final String? commit;
   final String? description;
   final List<String>? mentions;
@@ -14521,6 +14542,12 @@ class ProjectsPublishRequest {
   ///review author or repository owner signs it.
   final ProjectPullRequestLifecycleStatus? pullRequestStatus;
 
+  ///Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+  ///adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+  ///never the review author, may request changes on an open or draft review; readers trust
+  ///nothing else (projectPullRequests.mjs).
+  final ProjectPullRequestCommentDecision? reviewDecision;
+
   ///Original requested reviewers (p tags beside the repository owner). Never a signing
   ///identity or grant.
   final List<String>? reviewers;
@@ -14536,6 +14563,9 @@ class ProjectsPublishRequest {
   final String? workspaceId;
 
   ProjectsPublishRequest({
+    this.anchorLine,
+    this.anchorPath,
+    this.anchorSide,
     this.assigneeLabel,
     this.assigneePubkey,
     this.attachments,
@@ -14550,6 +14580,7 @@ class ProjectsPublishRequest {
     required this.operation,
     this.priorEventId,
     this.pullRequestStatus,
+    this.reviewDecision,
     this.reviewers,
     this.targetBranch,
     this.targetEventId,
@@ -14558,46 +14589,58 @@ class ProjectsPublishRequest {
     this.workspaceId,
   });
 
-  factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
-      ProjectsPublishRequest(
-        assigneeLabel: json["assigneeLabel"],
-        assigneePubkey: json["assigneePubkey"],
-        attachments: json["attachments"] == null
-            ? null
-            : List<AttachmentElement>.from(
-                json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
-              ),
-        body: json["body"],
-        branchName: json["branchName"],
-        category: json["category"] == null
-            ? null
-            : projectIssueCategoryValues.map[json["category"]]!,
-        commit: json["commit"],
-        description: json["description"],
-        mentions: json["mentions"] == null
-            ? null
-            : List<String>.from(json["mentions"]!.map((x) => x)),
-        mergeBase: json["mergeBase"],
-        name: json["name"],
-        operation: projectPublicationOperationValues.map[json["operation"]]!,
-        priorEventId: json["priorEventId"],
-        pullRequestStatus: json["pullRequestStatus"] == null
-            ? null
-            : projectPullRequestLifecycleStatusValues
-                  .map[json["pullRequestStatus"]]!,
-        reviewers: json["reviewers"] == null
-            ? null
-            : List<String>.from(json["reviewers"]!.map((x) => x)),
-        targetBranch: json["targetBranch"],
-        targetEventId: json["targetEventId"],
-        title: json["title"],
-        visibility: json["visibility"] == null
-            ? null
-            : projectListingVisibilityValues.map[json["visibility"]]!,
-        workspaceId: json["workspaceId"],
-      );
+  factory ProjectsPublishRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => ProjectsPublishRequest(
+    anchorLine: json["anchorLine"],
+    anchorPath: json["anchorPath"],
+    anchorSide: json["anchorSide"] == null
+        ? null
+        : projectPullRequestCommentSideValues.map[json["anchorSide"]]!,
+    assigneeLabel: json["assigneeLabel"],
+    assigneePubkey: json["assigneePubkey"],
+    attachments: json["attachments"] == null
+        ? null
+        : List<AttachmentElement>.from(
+            json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
+          ),
+    body: json["body"],
+    branchName: json["branchName"],
+    category: json["category"] == null
+        ? null
+        : projectIssueCategoryValues.map[json["category"]]!,
+    commit: json["commit"],
+    description: json["description"],
+    mentions: json["mentions"] == null
+        ? null
+        : List<String>.from(json["mentions"]!.map((x) => x)),
+    mergeBase: json["mergeBase"],
+    name: json["name"],
+    operation: projectPublicationOperationValues.map[json["operation"]]!,
+    priorEventId: json["priorEventId"],
+    pullRequestStatus: json["pullRequestStatus"] == null
+        ? null
+        : projectPullRequestLifecycleStatusValues
+              .map[json["pullRequestStatus"]]!,
+    reviewDecision: json["reviewDecision"] == null
+        ? null
+        : projectPullRequestCommentDecisionValues.map[json["reviewDecision"]]!,
+    reviewers: json["reviewers"] == null
+        ? null
+        : List<String>.from(json["reviewers"]!.map((x) => x)),
+    targetBranch: json["targetBranch"],
+    targetEventId: json["targetEventId"],
+    title: json["title"],
+    visibility: json["visibility"] == null
+        ? null
+        : projectListingVisibilityValues.map[json["visibility"]]!,
+    workspaceId: json["workspaceId"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "anchorLine": anchorLine,
+    "anchorPath": anchorPath,
+    "anchorSide": projectPullRequestCommentSideValues.reverse[anchorSide],
     "assigneeLabel": assigneeLabel,
     "assigneePubkey": assigneePubkey,
     "attachments": attachments == null
@@ -14617,6 +14660,8 @@ class ProjectsPublishRequest {
     "priorEventId": priorEventId,
     "pullRequestStatus":
         projectPullRequestLifecycleStatusValues.reverse[pullRequestStatus],
+    "reviewDecision":
+        projectPullRequestCommentDecisionValues.reverse[reviewDecision],
     "reviewers": reviewers == null
         ? null
         : List<dynamic>.from(reviewers!.map((x) => x)),
@@ -14627,6 +14672,14 @@ class ProjectsPublishRequest {
     "workspaceId": workspaceId,
   });
 }
+
+///Original inline diff anchor `side`.
+enum ProjectPullRequestCommentSide { NEW, OLD }
+
+final projectPullRequestCommentSideValues = EnumValues({
+  "new": ProjectPullRequestCommentSide.NEW,
+  "old": ProjectPullRequestCommentSide.OLD,
+});
 
 class AttachmentElement {
   ///原 Buzz imeta 模糊预览编码。
@@ -14713,6 +14766,7 @@ final projectIssueCategoryValues = EnumValues({
 });
 
 enum ProjectPublicationOperation {
+  APPROVE_PULL_REQUEST,
   ASSIGN_ISSUE,
   CREATE_ISSUE,
   CREATE_ISSUE_COMMENT,
@@ -14728,6 +14782,7 @@ enum ProjectPublicationOperation {
 }
 
 final projectPublicationOperationValues = EnumValues({
+  "APPROVE_PULL_REQUEST": ProjectPublicationOperation.APPROVE_PULL_REQUEST,
   "ASSIGN_ISSUE": ProjectPublicationOperation.ASSIGN_ISSUE,
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
@@ -14753,6 +14808,16 @@ final projectPullRequestLifecycleStatusValues = EnumValues({
   "closed": ProjectPullRequestLifecycleStatus.CLOSED,
   "draft": ProjectPullRequestLifecycleStatus.DRAFT,
   "open": ProjectPullRequestLifecycleStatus.OPEN,
+});
+
+///Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+///adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+///never the review author, may request changes on an open or draft review; readers trust
+///nothing else (projectPullRequests.mjs).
+enum ProjectPullRequestCommentDecision { REQUEST_CHANGES }
+
+final projectPullRequestCommentDecisionValues = EnumValues({
+  "request-changes": ProjectPullRequestCommentDecision.REQUEST_CHANGES,
 });
 
 enum ProjectListingVisibility { LISTED, UNLISTED }

@@ -7121,10 +7121,30 @@ pub struct ProjectsGitRefResponse {
 /// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 /// signed current announcement; it does not delete its channel or repositories.
 /// CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-/// repository (DD-118); the push itself is not part of this request.
+/// repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
+/// and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
+/// original labeled kind-1 review comments (desktop
+/// pullRequestReviews.ts::submitProjectPullRequestReview,
+/// hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
+/// no new Nostr kind (DD-118(5)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
+    /// Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_line: Option<i64>,
+
+    /// Original inline diff anchor `file` (normalizeProjectPullRequestCommentAnchor):
+    /// repository-relative, no leading slash, backslash, NUL, empty, `.` or `..` segment; at
+    /// most 4096 UTF-16 code units. Only on CREATE_PULL_REQUEST_COMMENT, together with
+    /// anchorSide, anchorLine and commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_path: Option<String>,
+
+    /// Original inline diff anchor `side`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_side: Option<ProjectPullRequestCommentSide>,
+
     /// Original transient display label, trimmed and limited to 128 Unicode characters by the
     /// consumer. Never an identity or authorization claim.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7152,7 +7172,11 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<ProjectIssueCategory>,
 
-    /// Original 1618 `c`: compare branch head read from the trusted repository state.
+    /// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
+    /// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
+    /// anchor: the review head the reviewer looked at; the consumer refuses with
+    /// TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
+    /// those review comments and refused on ordinary comments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
 
@@ -7182,6 +7206,13 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_request_status: Option<ProjectPullRequestLifecycleStatus>,
 
+    /// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+    /// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+    /// never the review author, may request changes on an open or draft review; readers trust
+    /// nothing else (projectPullRequests.mjs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_decision: Option<ProjectPullRequestCommentDecision>,
+
     /// Original requested reviewers (p tags beside the repository owner). Never a signing
     /// identity or grant.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7204,6 +7235,15 @@ pub struct ProjectsPublishRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+/// Original inline diff anchor `side`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectPullRequestCommentSide {
+    New,
+
+    Old,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7265,6 +7305,9 @@ pub enum ProjectIssueCategory {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectPublicationOperation {
+    #[serde(rename = "APPROVE_PULL_REQUEST")]
+    ApprovePullRequest,
+
     #[serde(rename = "ASSIGN_ISSUE")]
     AssignIssue,
 
@@ -7312,6 +7355,17 @@ pub enum ProjectPullRequestLifecycleStatus {
     Draft,
 
     Open,
+}
+
+/// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+/// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+/// never the review author, may request changes on an open or draft review; readers trust
+/// nothing else (projectPullRequests.mjs).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectPullRequestCommentDecision {
+    #[serde(rename = "request-changes")]
+    RequestChanges,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

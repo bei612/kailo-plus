@@ -6602,8 +6602,22 @@ type ProjectsGitRefResponse struct {
 // admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
 // signed current announcement; it does not delete its channel or repositories.
 // CREATE_PULL_REQUEST publishes the original NIP-34 1618 review for a branch already on the
-// repository (DD-118); the push itself is not part of this request.
+// repository (DD-118); the push itself is not part of this request. APPROVE_PULL_REQUEST
+// and the request-changes / inline-line variants of CREATE_PULL_REQUEST_COMMENT publish the
+// original labeled kind-1 review comments (desktop
+// pullRequestReviews.ts::submitProjectPullRequestReview,
+// hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
+// no new Nostr kind (DD-118(5)).
 type ProjectsPublishRequest struct {
+	// Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
+	AnchorLine *int64 `json:"anchorLine,omitempty"`
+	// Original inline diff anchor `file` (normalizeProjectPullRequestCommentAnchor):
+	// repository-relative, no leading slash, backslash, NUL, empty, `.` or `..` segment; at
+	// most 4096 UTF-16 code units. Only on CREATE_PULL_REQUEST_COMMENT, together with
+	// anchorSide, anchorLine and commit.
+	AnchorPath *string `json:"anchorPath,omitempty"`
+	// Original inline diff anchor `side`.
+	AnchorSide *ProjectPullRequestCommentSide `json:"anchorSide,omitempty"`
 	// Original transient display label, trimmed and limited to 128 Unicode characters by the
 	// consumer. Never an identity or authorization claim.
 	AssigneeLabel *string `json:"assigneeLabel,omitempty"`
@@ -6619,7 +6633,11 @@ type ProjectsPublishRequest struct {
 	// Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
 	BranchName *string               `json:"branchName,omitempty"`
 	Category   *ProjectIssueCategory `json:"category,omitempty"`
-	// Original 1618 `c`: compare branch head read from the trusted repository state.
+	// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
+	// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
+	// anchor: the review head the reviewer looked at; the consumer refuses with
+	// TARGET_STATE_CONFLICT unless it is still the review's current trusted head. Required by
+	// those review comments and refused on ordinary comments.
 	Commit      *string  `json:"commit,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	Mentions    []string `json:"mentions,omitempty"`
@@ -6634,6 +6652,11 @@ type ProjectsPublishRequest struct {
 	// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
 	// review author or repository owner signs it.
 	PullRequestStatus *ProjectPullRequestLifecycleStatus `json:"pullRequestStatus,omitempty"`
+	// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+	// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+	// never the review author, may request changes on an open or draft review; readers trust
+	// nothing else (projectPullRequests.mjs).
+	ReviewDecision *ProjectPullRequestCommentDecision `json:"reviewDecision,omitempty"`
 	// Original requested reviewers (p tags beside the repository owner). Never a signing
 	// identity or grant.
 	Reviewers []string `json:"reviewers,omitempty"`
@@ -9764,6 +9787,14 @@ const (
 	DeleteBranch ProjectGitRefOperation = "DELETE_BRANCH"
 )
 
+// Original inline diff anchor `side`.
+type ProjectPullRequestCommentSide string
+
+const (
+	New ProjectPullRequestCommentSide = "new"
+	Old ProjectPullRequestCommentSide = "old"
+)
+
 type ProjectIssueCategory string
 
 const (
@@ -9775,6 +9806,7 @@ const (
 type ProjectPublicationOperation string
 
 const (
+	ApprovePullRequest                ProjectPublicationOperation = "APPROVE_PULL_REQUEST"
 	AssignIssue                       ProjectPublicationOperation = "ASSIGN_ISSUE"
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
@@ -9798,6 +9830,16 @@ const (
 	Closed                                ProjectPullRequestLifecycleStatus = "closed"
 	Draft                                 ProjectPullRequestLifecycleStatus = "draft"
 	ProjectPullRequestLifecycleStatusOpen ProjectPullRequestLifecycleStatus = "open"
+)
+
+// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
+// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
+// never the review author, may request changes on an open or draft review; readers trust
+// nothing else (projectPullRequests.mjs).
+type ProjectPullRequestCommentDecision string
+
+const (
+	RequestChanges ProjectPullRequestCommentDecision = "request-changes"
 )
 
 type ProjectListingVisibility string
