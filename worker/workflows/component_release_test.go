@@ -361,3 +361,38 @@ func TestComponentReleaseRefusalCannotRegister(t *testing.T) {
 	}
 	env.AssertNotCalled(t, "RecordComponentConformance", mock.Anything, mock.Anything)
 }
+
+func TestComponentReleaseCapturesComeOnlyFromEarlierSameCaseObservations(t *testing.T) {
+	var step generated.PlanStep
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"read","operation":"execute",
+		"contractKey":"file_storage.read@v2","idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
+		"captures":[{"key":"receipt","slot":"GENERATED_REF","pointer":"/receiptRef"}],
+		"bindings":[{"source":"CAPTURE","key":"published_revision","side":"INPUT","pointer":"/nativeRevision"},
+		{"source":"CAPTURE","key":"receipt","side":"EXPECTED","pointer":"/receiptRef"}]}`), &step); err != nil {
+		t.Fatal(err)
+	}
+	var observations []generated.ComponentConformanceStepObservation
+	if err := json.Unmarshal([]byte(`[
+		{"caseKey":"knowledge:3:ingest","stepKey":"write","operation":"execute","requestDigest":"r","responseDigest":"s","httpStatus":200,
+		"captures":[{"key":"published_revision","value":"foreign-case"}]},
+		{"caseKey":"file_storage:2:native_file","stepKey":"write","operation":"execute","requestDigest":"r","responseDigest":"s","httpStatus":200,
+		"captures":[{"key":"published_revision","value":"published"}]}]`), &observations); err != nil {
+		t.Fatal(err)
+	}
+	var probe generated.ComponentConformanceProbe
+	if err := componentReleaseCaptures(&probe, step, observations); err != nil {
+		t.Fatal(err)
+	}
+	// The step's own GENERATED_REF is normalized by Core, never supplied here.
+	if len(probe.Captures) != 1 || probe.Captures[0].Key != "published_revision" || probe.Captures[0].Value != "published" {
+		t.Fatalf("captures = %+v", probe.Captures)
+	}
+	probe = generated.ComponentConformanceProbe{}
+	if componentReleaseCaptures(&probe, step, observations[:1]) == nil {
+		t.Fatal("another case's capture was supplied")
+	}
+	probe = generated.ComponentConformanceProbe{}
+	if err := componentReleaseCaptures(&probe, generated.PlanStep{CaseKey: step.CaseKey}, observations); err != nil || len(probe.Captures) != 0 {
+		t.Fatal("a step without bindings must not carry captures")
+	}
+}

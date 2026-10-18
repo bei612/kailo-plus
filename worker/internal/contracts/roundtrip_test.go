@@ -1423,6 +1423,33 @@ func TestCapabilityVectorsRoundtrip(t *testing.T) {
 	}
 }
 
+// DD-124: the V2 value-source fields survive the generated type unchanged.
+func TestCapabilityVectorsV2Roundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "capability-conformance-vectors-v2.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original map[string]any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.CapabilityConformanceVectors
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back map[string]any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("V2 vector round-trip changed fields: %s", encoded)
+	}
+}
+
 func TestFileStorageShareRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "file-storage-share.sample.json"))
 	if err != nil {

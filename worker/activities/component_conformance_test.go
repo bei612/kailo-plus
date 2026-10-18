@@ -641,3 +641,75 @@ func TestComponentConformancePlanDigestCoversWireArguments(t *testing.T) {
 		t.Fatal("wire argument mutation did not invalidate frozen digest")
 	}
 }
+
+func TestComponentConformanceCapturesMirrorCoreBindings(t *testing.T) {
+	var read generated.PlanStep
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"read","operation":"execute",
+		"contractKey":"file_storage.read@v2","idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
+		"bindings":[{"source":"CAPTURE","key":"published_revision","side":"INPUT","pointer":"/nativeRevision"}]}`), &read); err != nil {
+		t.Fatal(err)
+	}
+	probe := generated.ComponentConformanceProbe{Plan: generated.PlanClass{Steps: []generated.PlanStep{read}}}
+	if validProbeCaptures(probe) == nil {
+		t.Fatal("missing capture value accepted")
+	}
+	for _, scenario := range []struct {
+		raw   string
+		valid bool
+	}{
+		{`[{"key":"published_revision","value":"published"}]`, true},
+		{`[{"key":"published_revision","value":"{{CAPTURE:published_revision}}"}]`, false},
+		{`[{"key":"published_revision","value":" "}]`, false},
+		{`[{"key":"other","value":"published"}]`, false},
+		{`[{"key":"published_revision","value":"a"},{"key":"published_revision","value":"a"}]`, false},
+	} {
+		probe.Captures = nil
+		if err := json.Unmarshal([]byte(scenario.raw), &probe.Captures); err != nil {
+			t.Fatal(err)
+		}
+		if (validProbeCaptures(probe) == nil) != scenario.valid {
+			t.Fatalf("capture values %s", scenario.raw)
+		}
+	}
+	var write generated.PlanStep
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"write","operation":"execute",
+		"contractKey":"file_storage.write@v2","idempotencyKey":"write","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
+		"captures":[{"key":"published_revision","slot":"CONTENT_REFERENCE_NATIVE_REVISION"}]}`), &write); err != nil {
+		t.Fatal(err)
+	}
+	var observation generated.ComponentConformanceStepObservation
+	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"write","operation":"execute",
+		"requestDigest":"r","responseDigest":"s","httpStatus":200,
+		"contentReference":{"resourceId":"8a385544-3c3f-52e0-bbfa-2795f6046543","nativeObjectRef":"node","nativeRevision":"published",
+		"displayName":"conformance.txt","mediaType":"text/plain"},
+		"captures":[{"key":"published_revision","value":"published"}],
+		"nativeObservation":{"idempotencyKey":"write","nativeType":"version","platformStatus":"SUCCEEDED","cancelCapability":"UNSUPPORTED",
+		"nativeStatus":"Finished","lastObservedAt":"2026-10-18T00:00:00Z","terminalAt":"2026-10-18T00:00:00Z"}}`), &observation); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyConformanceCaptures(write, observation); err != nil {
+		t.Fatal(err)
+	}
+	// A current head or any value other than the typed slot is not the capture.
+	drifted := observation
+	drifted.Captures = append(drifted.Captures[:0:0], observation.Captures...)
+	drifted.Captures[0].Value = "head"
+	if verifyConformanceCaptures(write, drifted) == nil {
+		t.Fatal("capture differing from the typed reference accepted")
+	}
+	missing := observation
+	missing.Captures = nil
+	if verifyConformanceCaptures(write, missing) == nil {
+		t.Fatal("successful producer without its declared capture accepted")
+	}
+	if verifyConformanceCaptures(read, observation) == nil {
+		t.Fatal("capture on a step that declares none accepted")
+	}
+	running := missing
+	native := *observation.NativeObservation
+	native.PlatformStatus = "RUNNING"
+	running.NativeObservation = &native
+	if err := verifyConformanceCaptures(write, running); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -6,14 +6,14 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-88, DD-102, DD-108]
+  decisions: [DD-88, DD-102, DD-108, DD-124]
   facts: []
   seams: []
   blockers: []
   entities: [CapabilityCategory, CapabilityContract]
 
 validation:
-  scenarios: []
+  scenarios: [V-SCN-117, V-SCN-119]
   evidence:
     - dimension: 安全边界
       ref: core/verify/capability-contracts.md
@@ -22,10 +22,10 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/capability_contract.rs, core/crates/platform-core/src/platform_bootstrap.rs, contracts/adapter/data_query.v1/registration.json, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/bff.rs, core/crates/platform-core/src/main.rs, client-kit/ts/platform/src/react/capability-contracts.tsx, client-kit/ts/platform/src/react/pages.tsx, client-kit/ts/platform/src/client.ts]
+  paths: [core/crates/platform-core/src/capability_contract.rs, core/crates/platform-core/src/capability_vector.rs, contracts/adapter/file_storage.v2/registration.json, core/crates/platform-core/src/platform_bootstrap.rs, contracts/adapter/data_query.v1/registration.json, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/bff.rs, core/crates/platform-core/src/main.rs, client-kit/ts/platform/src/react/capability-contracts.tsx, client-kit/ts/platform/src/react/pages.tsx, client-kit/ts/platform/src/client.ts]
   surfaces: [web, desktop]
-  schemas: [contracts/api/action_command.schema.json, contracts/api/capability_contract_page.schema.json, contracts/api/capability_contract_view.schema.json, contracts/domain/capability_contract_registration.schema.json, contracts/domain/capability_contract_ref.schema.json, contracts/domain/capability_conformance_vectors.schema.json, contracts/enums/capability_vector_format.schema.json, contracts/enums/capability_permission.schema.json, contracts/enums/capability_required_declaration.schema.json, contracts/enums/capability_surface.schema.json, contracts/enums/capability_contract_status.schema.json]
-  migrations: [core/migrations/20261004013000_capability_contract.up.sql, core/migrations/20261004013000_capability_contract.down.sql, core/migrations/20261004014000_capability_vector_format.up.sql, core/migrations/20261004014000_capability_vector_format.down.sql, core/migrations/20261010040000_capability_data_query_seed.up.sql, core/migrations/20261010040000_capability_data_query_seed.down.sql]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/capability_contract_page.schema.json, contracts/api/capability_contract_view.schema.json, contracts/domain/capability_contract_registration.schema.json, contracts/domain/capability_contract_ref.schema.json, contracts/domain/capability_conformance_vectors.schema.json, contracts/enums/capability_vector_format.schema.json, contracts/enums/capability_vector_binding_source.schema.json, contracts/enums/capability_vector_side.schema.json, contracts/enums/capability_vector_capture_slot.schema.json, contracts/domain/capability_vector_binding.schema.json, contracts/domain/capability_vector_capture.schema.json, contracts/enums/capability_permission.schema.json, contracts/enums/capability_required_declaration.schema.json, contracts/enums/capability_surface.schema.json, contracts/enums/capability_contract_status.schema.json]
+  migrations: [core/migrations/20261004013000_capability_contract.up.sql, core/migrations/20261004013000_capability_contract.down.sql, core/migrations/20261004014000_capability_vector_format.up.sql, core/migrations/20261004014000_capability_vector_format.down.sql, core/migrations/20261010040000_capability_data_query_seed.up.sql, core/migrations/20261010040000_capability_data_query_seed.down.sql, core/migrations/20261018120000_capability_vector_v2.up.sql, core/migrations/20261018120000_capability_vector_v2.down.sql]
 
 runtime:
   routes: [/api/v1/platform/capability-contracts]

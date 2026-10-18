@@ -22,6 +22,9 @@ use crate::{
     spicedb::Consistency,
 };
 
+#[path = "capability_vector.rs"]
+pub(crate) mod vector;
+
 pub(crate) const REGISTER: &str = "capability_contract.register";
 pub(crate) const APPROVE: &str = "capability_contract.approve";
 pub(crate) const DEPRECATE: &str = "capability_contract.deprecate";
@@ -453,6 +456,10 @@ fn vectors(
     if covered.len() != operations.len() {
         return Err(bad());
     }
+    // DD-124: V2 value sources, bindings and the implementation-generated
+    // literal ban; V1 keeps its original rules and cannot carry V2 fields.
+    let keys: BTreeSet<&str> = operations.keys().copied().collect();
+    vector::validate(&canonical, &keys)?;
     Ok(canonical)
 }
 
@@ -758,22 +765,30 @@ pub(crate) async fn target(
     let row: Option<(Uuid, String)> = sqlx::query_as(&format!(
         "select id,status from catalog.capability_contract where category_key=$1 and contract_version=$2 and catalog_tenant_id=$3 {}",
         if lock { "for update" } else { "" })).bind(&category).bind(version).bind(tenant).fetch_optional(conn).await?;
-    let expected = match sem {
-        Semantic::CapabilityContractRegister => None,
-        Semantic::CapabilityContractApprove => Some("DRAFT"),
-        Semantic::CapabilityContractDeprecate => Some("ACTIVE"),
-        _ => return Err(bad()),
-    };
-    if match expected {
-        None => row.is_some(),
-        Some(status) => !row.is_some_and(|(found, state)| found == id && state == status),
-    } {
+    let current = row.as_ref().map(|(found, state)| (*found, state.as_str()));
+    if !admissible(sem, current, id)? {
         return Err(conflict());
     }
     Ok(Target {
         id,
         version,
         workspace_id: None,
+    })
+}
+
+/// DD-102 / DD-124(3): register needs no row, approve only a DRAFT, and
+/// deprecate an ACTIVE contract or a DRAFT that must never become ACTIVE.
+/// A DEPRECATED contract, including a withdrawn DRAFT, is never approved.
+fn admissible(sem: Semantic, row: Option<(Uuid, &str)>, id: Uuid) -> Result<bool, Refusal> {
+    let expected: &[&str] = match sem {
+        Semantic::CapabilityContractRegister => &[],
+        Semantic::CapabilityContractApprove => &["DRAFT"],
+        Semantic::CapabilityContractDeprecate => &["ACTIVE", "DRAFT"],
+        _ => return Err(bad()),
+    };
+    Ok(match row {
+        None => expected.is_empty(),
+        Some((found, state)) => found == id && expected.contains(&state),
     })
 }
 
@@ -894,7 +909,7 @@ pub(crate) async fn prewrite(
         let sql = if sem == Semantic::CapabilityContractApprove {
             "update catalog.capability_contract set status='ACTIVE',approved_by_action_execution_id=$1 where id=$2 and catalog_tenant_id=$3 and status='DRAFT'"
         } else {
-            "update catalog.capability_contract set status='DEPRECATED',deprecated_by_action_execution_id=$1 where id=$2 and catalog_tenant_id=$3 and status='ACTIVE'"
+            "update catalog.capability_contract set status='DEPRECATED',deprecated_by_action_execution_id=$1 where id=$2 and catalog_tenant_id=$3 and status in ('ACTIVE','DRAFT')"
         };
         if sqlx::query(sql)
             .bind(ae.id)
@@ -968,7 +983,7 @@ pub async fn list(
             // Decode through the same generated DTO; unknown catalog enum never becomes ACTIVE.
             let view:ContractElement=serde_json::from_value(json!({"categoryKey":row.category_key,"contractVersion":row.contract_version,"status":row.status,
                 "schemaSetDigest":row.schema_set_digest,"conformanceSuiteDigest":row.conformance_suite_digest,"registeredByActionExecutionId":row.registered_by_action_execution_id,"bootstrapActionExecutionId":row.bootstrap_action_execution_id,
-                "canApprove":row.status=="DRAFT" && capabilities[APPROVE],"canDeprecate":row.status=="ACTIVE" && capabilities[DEPRECATE]})).map_err(|_|bad())?;
+                "canApprove":row.status=="DRAFT" && capabilities[APPROVE],"canDeprecate":matches!(row.status.as_str(),"ACTIVE"|"DRAFT") && capabilities[DEPRECATE]})).map_err(|_|bad())?;
             views.push(view);
         }
         Ok::<_,Refusal>(CapabilityContractPage { contracts:views,can_register:capabilities[REGISTER],
@@ -1825,6 +1840,260 @@ mod registration_tests {
         assert!(registration(&value).is_err());
         value["categoryKey"] = json!("component");
         assert!(registration(&value).is_err());
+    }
+
+    fn file_storage_v2() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/file_storage.v2/registration.json"
+        ))
+        .unwrap()
+    }
+
+    fn edit_v2(raw: &Value, edit: impl FnOnce(&mut Value)) -> Value {
+        let mut changed = raw.clone();
+        let mut vectors: Value =
+            serde_json::from_str(changed["testVectorsJson"].as_str().unwrap()).unwrap();
+        edit(&mut vectors);
+        changed["testVectorsJson"] = json!(vectors.to_string());
+        changed
+    }
+
+    fn edit_step(raw: &Value, index: usize, edit: impl FnOnce(&mut Value)) -> Value {
+        edit_v2(raw, |vectors| {
+            edit(&mut vectors["cases"][0]["steps"][index]);
+        })
+    }
+
+    fn edit_json(step: &mut Value, field: &str, edit: impl FnOnce(&mut Value)) {
+        let mut document: Value = serde_json::from_str(step[field].as_str().unwrap()).unwrap();
+        edit(&mut document);
+        step[field] = json!(document.to_string());
+    }
+
+    #[test]
+    fn file_storage_v2_changes_only_vectors_and_binds_generated_identifiers() {
+        let registered = registration(&file_storage_v2()).expect("DD-124 V2 vectors");
+        let seed = builtin_file_storage().unwrap();
+        assert_eq!(registered.category, "file_storage");
+        assert_eq!(registered.version, 2);
+        // Keys, permissions, schemas and declarations are those of @1.
+        assert_eq!(registered.schemas, seed.schemas);
+        assert_eq!(registered.schema_digest, seed.schema_digest);
+        let mut expected = seed.content.clone();
+        expected["contractVersion"] = json!(2);
+        for operation in expected["operationContracts"].as_array_mut().unwrap() {
+            let key = operation["contractKey"]
+                .as_str()
+                .unwrap()
+                .replace("@v1", "@v2");
+            operation["contractKey"] = json!(key);
+        }
+        assert_eq!(registered.content, expected);
+        assert_ne!(registered.suite_digest, seed.suite_digest);
+        assert_eq!(registered.vectors["formatVersion"], "V2");
+        assert!(vector::has_roundtrip(&registered.vectors));
+        let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
+        let order: Vec<_> = steps.iter().map(|step| step["stepKey"].clone()).collect();
+        let flow = json!(["list", "write", "list_revisions", "read", "export", "share",
+            "delete"]);
+        assert_eq!(json!(order), flow);
+        assert_eq!(steps[1]["captures"][0]["key"], "published_revision");
+        assert_eq!(steps[2]["bindings"][2]["key"], "published_revision");
+        assert_eq!(steps[2]["bindings"][2]["side"], "EXPECTED");
+    }
+
+    #[test]
+    fn v2_register_rejects_literal_generated_values_and_unbound_placeholders() {
+        let raw = file_storage_v2();
+        // V-SCN-117: the published head revision written as a literal.
+        let literal = edit_step(&raw, 2, |step| {
+            edit_json(step, "expectedOutputJson", |expected| {
+                expected["citations"][0]["nativeRevision"] = json!("head-revision");
+            });
+            step["bindings"].as_array_mut().unwrap().pop();
+        });
+        assert!(registration(&literal).is_err());
+        // A listed generated ref (the native share) cannot be caller-chosen.
+        let share = edit_v2(&raw, |vectors| {
+            vectors["cases"][0]["preconditions"]
+                .as_array_mut()
+                .unwrap()
+                .pop();
+            let step = &mut vectors["cases"][0]["steps"][5];
+            edit_json(step, "inputJson", |input| {
+                input["nativeShareRef"] = json!("fixture-share");
+            });
+            step.as_object_mut().unwrap().remove("bindings");
+        });
+        assert!(registration(&share).is_err());
+        let undeclared = edit_step(&raw, 0, |step| {
+            edit_json(step, "inputJson", |input| {
+                input["resourceId"] = json!("{{PRECONDITION:file}}");
+            });
+        });
+        assert!(registration(&undeclared).is_err());
+        let misplaced = edit_step(&raw, 3, |step| {
+            step["bindings"][1]["pointer"] = json!("/displayName");
+        });
+        assert!(registration(&misplaced).is_err());
+    }
+
+    #[test]
+    fn v2_register_requires_capture_order_consumption_and_verified_preconditions() {
+        let raw = file_storage_v2();
+        // A capture is produced before it is used; list_revisions before write
+        // would also expect a precondition that was never sent as INPUT.
+        let reordered = edit_v2(&raw, |vectors| {
+            vectors["cases"][0]["steps"]
+                .as_array_mut()
+                .unwrap()
+                .swap(1, 2);
+        });
+        assert!(registration(&reordered).is_err());
+        let unused = edit_step(&raw, 1, |step| {
+            let capture = json!({"key":"node","slot":"CONTENT_REFERENCE_NATIVE_OBJECT_REF"});
+            step["captures"].as_array_mut().unwrap().push(capture);
+        });
+        assert!(registration(&unused).is_err());
+        // V-SCN-119: a precondition property no literal expectation verifies.
+        let unverified = edit_v2(&raw, |vectors| {
+            let draft = &mut vectors["cases"][0]["preconditions"][1]["properties"][0];
+            draft["valueJson"] = json!("\"another marker\"");
+        });
+        assert!(registration(&unverified).is_err());
+        let receiver = edit_step(&raw, 1, |step| {
+            let capture = json!({"key":"receiver","slot":"ACTION_EXECUTION_ID"});
+            step["captures"].as_array_mut().unwrap().push(capture);
+        });
+        assert!(matches!(registration(&receiver), Err(Refusal::Blocked(_))));
+    }
+
+    #[test]
+    fn v1_and_v2_value_sources_cannot_be_mixed() {
+        let raw = file_storage_v2();
+        let v1 = edit_v2(&raw, |vectors| {
+            vectors["formatVersion"] = json!("V1");
+        });
+        assert!(registration(&v1).is_err());
+        let reference = edit_step(&raw, 3, |step| {
+            step["inputJson"] = json!("{}");
+            step["referenceFromStepKey"] = json!("write");
+            step.as_object_mut().unwrap().remove("bindings");
+        });
+        assert!(registration(&reference).is_err());
+        let seed: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/file_storage.v1/registration.json"
+        ))
+        .unwrap();
+        let smuggled = edit_step(&seed, 0, |step| {
+            step["captures"] = json!([]);
+        });
+        assert!(registration(&smuggled).is_err());
+    }
+
+    #[test]
+    fn v2_values_are_frozen_substituted_captured_and_rechecked() {
+        let registered = registration(&file_storage_v2()).unwrap();
+        let contract = json!({"content":registered.content,"vectors":registered.vectors});
+        let contracts = [contract];
+        let case = "file_storage:2:native_file";
+        let fixture = json!({"preconditions":[
+            {"caseKey":case,"key":"file","value":"native-node"},
+            {"caseKey":case,"key":"draft","value":"draft-version"},
+            {"caseKey":case,"key":"share","value":"native-share"}]});
+        let values = vector::fixture_values(&fixture, &contracts).unwrap();
+        for changed in [
+            json!({"preconditions":[]}),
+            json!({"preconditions":[{"caseKey":case,"key":"file","value":"{{CAPTURE:x}}"}]}),
+        ] {
+            assert!(vector::fixture_values(&changed, &contracts).is_err());
+        }
+        let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
+        let (input, _, bindings) = vector::freeze_step(&steps[1], case, &values).unwrap();
+        let input: Value = serde_json::from_str(&input).unwrap();
+        assert_eq!(input["nativeObjectRef"], "native-node");
+        assert_eq!(input["nativeRevision"], "draft-version");
+        assert!(bindings.is_empty());
+        let (input, expected, bindings) = vector::freeze_step(&steps[2], case, &values).unwrap();
+        let plan = json!({"bindings":bindings});
+        let input: Value = serde_json::from_str(&input).unwrap();
+        let mut request = json!({"arguments":{"input":input}});
+        let mut expected: Value = serde_json::from_str(&expected).unwrap();
+        let probe = json!({"captures":[{"key":"published_revision","value":"published"}]});
+        let captured = vector::probe_values(&plan, &probe).unwrap();
+        vector::apply(&plan, &captured, &mut request, &mut expected).unwrap();
+        let sent = &request["arguments"]["input"];
+        assert_eq!(sent["nativeObjectRef"], "native-node");
+        assert_eq!(expected["citations"][0]["nativeObjectRef"], "native-node");
+        assert_eq!(expected["citations"][0]["nativeRevision"], "published");
+        for changed in [
+            json!({}),
+            json!({"captures":[{"key":"other","value":"published"}]}),
+            json!({"captures":[{"key":"published_revision","value":"{{CAPTURE:x}}"}]}),
+        ] {
+            assert!(vector::probe_values(&plan, &changed).is_err());
+        }
+        // Only an actual SUCCEEDED response with its native status is captured.
+        let write = json!({"captures":steps[1]["captures"]});
+        let response = json!({"execution":{"platformStatus":"SUCCEEDED","nativeStatus":"Finished"},
+            "contentReference":{"nativeObjectRef":"native-node","nativeRevision":"published"}});
+        let observed = vector::capture(&write, &response, None).unwrap().unwrap();
+        assert_eq!(observed, probe["captures"].as_array().unwrap().clone());
+        let mut unconfirmed = response.clone();
+        unconfirmed["execution"]
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeStatus");
+        assert!(vector::capture(&write, &unconfirmed, None).unwrap().is_none());
+        let recorded = json!({"contentReference":response["contentReference"],"captures":observed});
+        let values = vector::observed(&write, &recorded).unwrap();
+        let want = [("published_revision".to_owned(), "published".to_owned())];
+        assert_eq!(values, want);
+        let mut drifted = recorded.clone();
+        drifted["contentReference"]["nativeRevision"] = json!("current-head");
+        assert!(vector::observed(&write, &drifted).is_err());
+        assert!(vector::observed(&json!({}), &recorded).is_err());
+    }
+
+    #[test]
+    fn self_captured_generated_ref_is_normalized_not_predicted() {
+        let step = json!({
+            "captures":[{"key":"receipt","slot":"GENERATED_REF","pointer":"/receiptRef"}],
+            "bindings":[{"source":"CAPTURE","key":"receipt","side":"EXPECTED",
+                "pointer":"/receiptRef"}]});
+        let response = json!({"execution":{"platformStatus":"SUCCEEDED","nativeStatus":"done"}});
+        let mut result = json!({"receiptRef":"generated-by-candidate","state":"ok"});
+        let captured = vector::capture(&step, &response, Some(&mut result))
+            .unwrap()
+            .unwrap();
+        assert_eq!(captured[0]["value"], "generated-by-candidate");
+        let mut expected = json!({"receiptRef":"{{CAPTURE:receipt}}","state":"ok"});
+        assert_eq!(result, expected);
+        // The same step needs no earlier value and keeps its placeholder.
+        let values = vector::probe_values(&step, &json!({})).unwrap();
+        vector::apply(&step, &values, &mut json!({}), &mut expected).unwrap();
+        assert_eq!(expected, result);
+        let mut missing = json!({"state":"ok"});
+        let captured = vector::capture(&step, &response, Some(&mut missing)).unwrap();
+        assert!(captured.is_none());
+    }
+
+    #[test]
+    fn deprecate_withdraws_a_draft_and_approve_refuses_deprecated() {
+        let id = Uuid::new_v4();
+        let approve = Semantic::CapabilityContractApprove;
+        let deprecate = Semantic::CapabilityContractDeprecate;
+        let register = Semantic::CapabilityContractRegister;
+        assert!(admissible(approve, Some((id, "DRAFT")), id).unwrap());
+        assert!(!admissible(approve, Some((id, "DEPRECATED")), id).unwrap());
+        assert!(!admissible(approve, Some((id, "ACTIVE")), id).unwrap());
+        assert!(admissible(deprecate, Some((id, "DRAFT")), id).unwrap());
+        assert!(admissible(deprecate, Some((id, "ACTIVE")), id).unwrap());
+        assert!(!admissible(deprecate, Some((id, "DEPRECATED")), id).unwrap());
+        assert!(!admissible(deprecate, Some((Uuid::new_v4(), "DRAFT")), id).unwrap());
+        assert!(!admissible(deprecate, None, id).unwrap());
+        assert!(admissible(register, None, id).unwrap());
+        assert!(!admissible(register, Some((id, "DEPRECATED")), id).unwrap());
     }
 
     #[test]

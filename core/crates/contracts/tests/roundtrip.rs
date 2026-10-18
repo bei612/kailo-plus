@@ -879,6 +879,17 @@ fn capability_vectors_roundtrip_preserves_order_and_encoded_values() {
 }
 
 #[test]
+fn capability_vectors_v2_roundtrip_preserves_value_sources() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("capability-conformance-vectors-v2.sample.json"),
+    )
+    .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::CapabilityConformanceVectors = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn pulse_requests_and_native_limit_roundtrip() {
     let raw =
         fs::read_to_string(sample_path().with_file_name("pulse-publish.sample.json")).unwrap();

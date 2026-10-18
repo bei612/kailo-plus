@@ -9,6 +9,7 @@ use sha2::Digest;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+use crate::capability_contract::vector;
 use crate::governance::{Definition, Execution, Params, Refusal, Target};
 
 #[path = "component_release_approval.rs"]
@@ -572,18 +573,7 @@ pub(crate) async fn active_contracts(
             }
             continue;
         }
-        let has_roundtrip = contract["vectors"]["cases"]
-            .as_array()
-            .ok_or_else(bad)?
-            .iter()
-            .any(|case| {
-                case["steps"].as_array().is_some_and(|steps| {
-                    steps
-                        .iter()
-                        .any(|step| step.get("referenceFromStepKey").is_some())
-                })
-            });
-        if !has_roundtrip {
+        if !vector::has_roundtrip(&contract["vectors"]) {
             return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
         }
     }
@@ -923,7 +913,11 @@ fn validate_protocol_fixture(
     registration: &Registration,
     fixture: Value,
 ) -> Result<Value, Refusal> {
-    exact_fields(&fixture, &["artifactDigest", "steps"], &["nativeReceivers"])?;
+    exact_fields(
+        &fixture,
+        &["artifactDigest", "steps"],
+        &["nativeReceivers", "preconditions"],
+    )?;
     let typed: contracts::ComponentConformanceFixture =
         serde_json::from_value(fixture.clone()).map_err(|_| bad())?;
     if serde_json::to_value(typed).map_err(|_| bad())? != fixture
@@ -1249,6 +1243,9 @@ pub(crate) async fn prewrite(
         return peer::prewrite(tx, ae, &registration, &contracts).await;
     }
     let fixture = protocol_fixture(&registration)?;
+    // DD-124(1): fixture values are only the candidate's natively created
+    // identifiers. They are frozen into the plan before any token is signed.
+    let preconditions = vector::fixture_values(&fixture, &contracts)?;
     let mut steps = fixture["steps"].as_array().ok_or_else(bad)?.clone();
     let mut native_cases = BTreeSet::new();
     let mut contract_digests = Vec::new();
@@ -1265,10 +1262,17 @@ pub(crate) async fn prewrite(
                 let key =
                     Uuid::new_v5(&ae.id, format!("{case_key}:{step_key}").as_bytes()).to_string();
                 let contract_key = text(step, "contractKey")?;
+                let (input, expected, bindings) = if vector::is_v2(&contract["vectors"]) {
+                    vector::freeze_step(step, &case_key, &preconditions)?
+                } else {
+                    let input = text(step, "inputJson")?.to_owned();
+                    let expected = text(step, "expectedOutputJson")?.to_owned();
+                    (input, expected, Vec::new())
+                };
                 // The vector body is interpreted only as capability input. It
                 // cannot select an endpoint, credential, protocol verb or code.
                 let mut request = json!({"idempotencyKey":key,"contractKey":contract_key,
-                    "inputJson":text(step,"inputJson")?});
+                    "inputJson":input});
                 for field in ["referenceResourceId", "referenceAssetId"] {
                     if let Some(value) = step.get(field) {
                         request[field] = value.clone();
@@ -1277,7 +1281,15 @@ pub(crate) async fn prewrite(
                 let mut probe = json!({"caseKey":case_key,"stepKey":step_key,"operation":"execute",
                     "contractKey":contract_key,"idempotencyKey":key,
                     "requestJson":serde_json::to_string(&request).map_err(|_|bad())?,
-                    "expectedResponseJson":text(step,"expectedOutputJson")?,"expectedHttpStatus":200});
+                    "expectedResponseJson":expected,"expectedHttpStatus":200});
+                // DD-124(2): only CAPTURE declarations remain; their values are
+                // substituted by Core before signing and before comparison.
+                if !bindings.is_empty() {
+                    probe["bindings"] = json!(bindings);
+                }
+                if let Some(captures) = step.get("captures") {
+                    probe["captures"] = captures.clone();
+                }
                 let native = registration.manifest["resourceTypeDefinitions"]
                     .as_array()
                     .ok_or_else(bad)?
@@ -1294,6 +1306,11 @@ pub(crate) async fn prewrite(
                             && incremental["engine"] == "NATIVE"
                     });
                 if native {
+                    if step.get("bindings").is_some() || step.get("captures").is_some() {
+                        // Receiver-direction values come only from the isolated
+                        // Core of 07 §8A (DD-124(4)), never this production plan.
+                        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+                    }
                     let mappings: Vec<_> = fixture["nativeReceivers"]
                         .as_array()
                         .ok_or_else(bad)?
@@ -1343,6 +1360,19 @@ pub(crate) async fn prewrite(
                     .as_object_mut()
                     .ok_or_else(bad)?
                     .remove("nativeReceiverInputJson");
+                // The denied replay sends the same substituted request: keep the
+                // INPUT bindings only; a refused step captures nothing.
+                let replay: Vec<_> = bindings
+                    .iter()
+                    .filter(|binding| binding["side"] == "INPUT")
+                    .cloned()
+                    .collect();
+                let object = probe.as_object_mut().ok_or_else(bad)?;
+                object.remove("bindings");
+                object.remove("captures");
+                if !replay.is_empty() {
+                    probe["bindings"] = json!(replay);
+                }
                 probe["expectedHttpStatus"] = json!(403);
                 probe["expectedResponseJson"] =
                     json!(json!({"class":"DENIED","reason":"PERMISSION_DENIED"}).to_string());
@@ -1470,6 +1500,7 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
     let mut last_native: BTreeMap<String, Value> = BTreeMap::new();
     let mut last_scope: BTreeMap<String, Value> = BTreeMap::new();
     let mut content_references: BTreeMap<(String, String), Value> = BTreeMap::new();
+    let mut captured: BTreeMap<(String, String), String> = BTreeMap::new();
     for (step, observation) in steps.iter().zip(observations) {
         if step["caseKey"] != observation["caseKey"]
             || step["stepKey"] != observation["stepKey"]
@@ -1481,6 +1512,8 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
         }
         let mut request: Value =
             serde_json::from_str(text(step, "requestJson")?).map_err(|_| bad())?;
+        let mut expected: Value =
+            serde_json::from_str(text(step, "expectedResponseJson")?).map_err(|_| bad())?;
         let source_reference = step
             .get("referenceFromStepKey")
             .map(|source| {
@@ -1495,6 +1528,16 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
             .transpose()?;
         if let Some(reference) = &source_reference {
             apply_probe_reference(&mut request, reference)?;
+        }
+        // DD-124(2): the values come only from earlier recorded observations;
+        // this step's own captures are recorded after its substitution.
+        let case = text(step, "caseKey")?;
+        let values = vector::recorded_values(step, case, &captured)?;
+        vector::apply(step, &values, &mut request, &mut expected)?;
+        for (key, value) in vector::observed(step, observation)? {
+            if captured.insert((case.to_owned(), key), value).is_some() {
+                return Err(bad());
+            }
         }
         let actual_operation = text(observation, "operation")?;
         if actual_operation == "reconcile"
@@ -1522,8 +1565,6 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
                 return Err(bad());
             }
         }
-        let expected: Value =
-            serde_json::from_str(text(step, "expectedResponseJson")?).map_err(|_| bad())?;
         if matches!(actual_operation, "receiver_start" | "receiver_observe")
             && observation["httpStatus"] == 200
         {
@@ -1840,7 +1881,7 @@ fn validate_probe_input(
     Ok(())
 }
 
-fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), Refusal> {
+fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value, Value), Refusal> {
     let mut presented = input["plan"].clone();
     presented["runId"] = json!("");
     if presented != *plan {
@@ -1857,6 +1898,8 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), 
         .clone();
     let mut request: Value =
         serde_json::from_str(text(&step, "requestJson")?).map_err(|_| bad())?;
+    let mut expected: Value =
+        serde_json::from_str(text(&step, "expectedResponseJson")?).map_err(|_| bad())?;
     let mut operation = text(&step, "operation")?.to_owned();
     if let Some(previous) = step.get("referenceFromStepKey") {
         let source = plan["steps"].as_array().ok_or_else(bad)?[..index]
@@ -1888,6 +1931,14 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), 
     } else if input.get("contentReference").is_some() {
         return Err(bad());
     }
+    // DD-124(2): substitute the captured values before the token is signed
+    // (the parameter hash covers them) and before the expectation is digested.
+    if step.get("bindings").is_some() {
+        let values = vector::probe_values(&step, input)?;
+        vector::apply(&step, &values, &mut request, &mut expected)?;
+    } else if input.get("captures").is_some() {
+        return Err(bad());
+    }
     if input["reconcile"].as_bool() == Some(true) {
         match operation.as_str() {
             "resolve_native_scope" => request["mode"] = json!("LOOKUP"),
@@ -1899,7 +1950,7 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), 
             _ => (),
         }
     }
-    Ok((step, operation, request))
+    Ok((step, operation, request, expected))
 }
 
 async fn fresh_suite(
@@ -2031,7 +2082,7 @@ pub(crate) async fn authorize_probe(
         if !valid_policy(&mut tx,&def).await? { return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)); }
         let plan:Value=sqlx::query_scalar("select component_conformance_plan from admission.action_execution where id=$1 and component_conformance_observation is null")
             .bind(ae.id).fetch_optional(&mut *tx).await?.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
-        let (step,operation,request)=probe_request(&plan,&input)?;
+        let (step,operation,request,expected)=probe_request(&plan,&input)?;
         let params=ae.parameters.as_ref().and_then(|v|v.get("params")).and_then(Params::from_json).ok_or_else(bad)?;
         let release=registration(params.component_release_registration.as_ref().ok_or_else(bad)?)?;
         let contracts=active_contracts(&mut tx,ae.tenant_id,&release).await?;
@@ -2057,7 +2108,6 @@ pub(crate) async fn authorize_probe(
             .fetch_one(&mut *tx).await?;
         if collides { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
         let token=crate::component_conformance_identity::sign(&state,&identity,context,ae.id,ae.operation_id,&operation,&request).await?;
-        let expected:Value=serde_json::from_str(text(&step,"expectedResponseJson")?).map_err(|_|bad())?;
         let authorization:contracts::ComponentConformanceAuthorization=serde_json::from_value(json!({"token":token,
             "requestDigest":collab_bridge::limits::canonical_digest(&request),"requestJson":collab_bridge::limits::canonical_json(&request),
             "expectedResponseDigest":collab_bridge::limits::canonical_digest(&expected),"operation":operation})).map_err(|_|bad())?;
@@ -2138,6 +2188,7 @@ fn binding_comparison(request: &Value, response: &Value) -> Result<Value, Refusa
 }
 
 fn wire_digests(
+    step: &Value,
     request: &Value,
     operation: &str,
     status: i64,
@@ -2170,9 +2221,14 @@ fn wire_digests(
             if response["execution"]["platformStatus"] != "SUCCEEDED" {
                 return Err(bad());
             }
-            let result: Value =
+            let mut result: Value =
                 serde_json::from_str(raw.as_str().ok_or_else(bad)?).map_err(|_| bad())?;
             crate::application_tool::citation_output(&response, &result)?;
+            // DD-124: captured only from this actual SUCCEEDED response with
+            // its native status; a self-captured position is normalized.
+            if let Some(captures) = vector::capture(step, &response, Some(&mut result))? {
+                out["captures"] = json!(captures);
+            }
             out["resultDigest"] = json!(collab_bridge::limits::canonical_digest(&result));
         } else if response.get("contentReferences").is_some() {
             return Err(bad());
@@ -2313,8 +2369,8 @@ pub(crate) async fn observe_probe(
         if !valid_policy(&mut tx,&def).await? { return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)); }
         let plan:Value=sqlx::query_scalar("select component_conformance_plan from admission.action_execution where id=$1 and component_conformance_observation is null")
             .bind(ae.id).fetch_optional(&mut *tx).await?.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
-        let (_,operation,request)=probe_request(&plan,probe)?;
-        let out=wire_digests(&request,&operation,input["httpStatus"].as_i64().ok_or_else(bad)?,text(&input,"responseJson")?)?;
+        let (step,operation,request,_)=probe_request(&plan,probe)?;
+        let out=wire_digests(&step,&request,&operation,input["httpStatus"].as_i64().ok_or_else(bad)?,text(&input,"responseJson")?)?;
         tx.commit().await?;
         Ok::<_,Refusal>(out)
     }.await;
@@ -2694,6 +2750,16 @@ async fn read_releases(
 mod report_tests {
     use super::*;
 
+    /// The original call shape: a frozen step without DD-124 captures.
+    fn wire_digests(
+        request: &Value,
+        operation: &str,
+        status: i64,
+        raw: &str,
+    ) -> Result<contracts::ComponentConformanceWireDigests, Refusal> {
+        super::wire_digests(&json!({}), request, operation, status, raw)
+    }
+
     #[test]
     fn receiver_wire_keeps_real_batch_and_bilateral_read_identity() {
         let binding = Uuid::new_v4();
@@ -2714,7 +2780,7 @@ mod report_tests {
         let read = json!({"actionExecutionId":Uuid::new_v4(),"receiverActionExecutionId":Uuid::new_v4(),
             "receiverGeneration":3,"operationId":operation,"sourceBindingId":source,"sourceResourceId":resource,
             "nativeBatch":batch,"sourceReceipt":receipt,"receiverReceipt":receiver,
-            "readRequest":{"receiverBindingId":binding,"sourceResourceId":resource,"actionKey":"file_storage.read@v1",
+            "readRequest":{"receiverBindingId":binding,"sourceResourceId":resource,"actionKey":"file_storage.read@v2",
             "actionVersion":1,"inputJson":"{}","idempotencyKey":key,"nativeBatch":batch}});
         let observation = json!({"request":request,"nativeBatchId":batch["batchId"],"nativeStatus":"success",
             "startedAt":"2026-01-01T00:00:00Z","finishedAt":"2026-01-01T00:00:02Z","completed":true,"readOperations":[read]});
@@ -3485,7 +3551,7 @@ mod report_tests {
             "nativeRevision":"immutable-revision","displayName":"fixture","mediaType":"text/plain"});
         let mut probe = json!({"plan":plan,"stepIndex":1,"contentReference":reference});
         probe["plan"]["runId"] = json!(Uuid::new_v4());
-        let (_, operation, request) = probe_request(&plan, &probe).unwrap();
+        let (_, operation, request, _) = probe_request(&plan, &probe).unwrap();
         assert_eq!(operation, "execute");
         assert_eq!(request["arguments"]["input"], reference);
         assert!(request.get("contentReference").is_none());
@@ -3503,7 +3569,7 @@ mod report_tests {
         changed.as_object_mut().unwrap().remove("contentReference");
         assert!(probe_request(&plan, &changed).is_err());
         probe["reconcile"] = json!(true);
-        let (_, operation, request) = probe_request(&plan, &probe).unwrap();
+        let (_, operation, request, _) = probe_request(&plan, &probe).unwrap();
         assert_eq!(operation, "reconcile");
         assert_eq!(
             request,
@@ -3678,5 +3744,141 @@ mod report_tests {
         ignored["observations"][1]["requestDigest"] =
             json!(collab_bridge::limits::canonical_digest(&original));
         assert!(verify_report(&plan, &ignored).is_err());
+    }
+
+    fn terminal(key: Uuid) -> Value {
+        json!({"idempotencyKey":key,"nativeType":"version","platformStatus":"SUCCEEDED",
+            "cancelCapability":"UNSUPPORTED","nativeStatus":"Finished",
+            "lastObservedAt":"2026-10-18T00:00:00Z","terminalAt":"2026-10-18T00:00:00Z"})
+    }
+
+    /// A V2 write captures its published revision from the typed slot; the
+    /// later read and its permission-denied replay send that value (V-SCN-118).
+    fn captured_suite() -> (Value, Value, Value) {
+        let hash = collab_bridge::limits::canonical_digest;
+        let resource = Uuid::new_v4();
+        let case = "file_storage:2:native_file";
+        let reference = json!({"resourceId":resource,"nativeObjectRef":"native-node",
+            "nativeRevision":"published","displayName":"conformance.txt",
+            "mediaType":"text/plain"});
+        let captures = json!([{"key":"published_revision","value":"published"}]);
+        let binding = json!({"source":"CAPTURE","key":"published_revision","side":"INPUT",
+            "pointer":"/nativeRevision"});
+        let write_key = Uuid::new_v4();
+        let read_key = Uuid::new_v4();
+        let write = json!({"idempotencyKey":write_key,"actionKey":"file_storage.write@v2",
+            "arguments":{"target":{"resourceId":resource},"input":{"resourceId":resource}}});
+        let frozen = json!({"idempotencyKey":read_key,"actionKey":"file_storage.read@v2",
+            "arguments":{"target":{"resourceId":resource},"input":{"resourceId":resource,
+                "nativeRevision":"{{CAPTURE:published_revision}}"}}});
+        let mut sent = frozen.clone();
+        sent["arguments"]["input"]["nativeRevision"] = json!("published");
+        let output = json!({"text":"marker"});
+        let denied = json!({"class":"DENIED","reason":"PERMISSION_DENIED"});
+        let steps = json!([
+            {"caseKey":case,"stepKey":"write","operation":"execute",
+                "contractKey":"file_storage.write@v2","idempotencyKey":write_key,
+                "requestJson":write.to_string(),"expectedResponseJson":"{}",
+                "expectedHttpStatus":200,"referenceResourceId":resource,
+                "captures":[{"key":"published_revision",
+                    "slot":"CONTENT_REFERENCE_NATIVE_REVISION"}]},
+            {"caseKey":case,"stepKey":"read","operation":"execute",
+                "contractKey":"file_storage.read@v2","idempotencyKey":read_key,
+                "requestJson":frozen.to_string(),"expectedResponseJson":output.to_string(),
+                "expectedHttpStatus":200,"referenceResourceId":resource,"bindings":[binding]},
+            {"caseKey":case,"stepKey":"permission-denied:read","operation":"execute",
+                "idempotencyKey":read_key,"requestJson":frozen.to_string(),
+                "expectedResponseJson":denied.to_string(),"expectedHttpStatus":403,
+                "referenceResourceId":resource,"bindings":[binding]}
+        ]);
+        let observations = json!([
+            {"caseKey":case,"stepKey":"write","operation":"execute",
+                "requestDigest":hash(&write),"responseDigest":"a".repeat(64),"httpStatus":200,
+                "contentReference":reference,"captures":captures,
+                "resultDigest":hash(&json!({})),"nativeObservation":terminal(write_key)},
+            {"caseKey":case,"stepKey":"read","operation":"execute",
+                "requestDigest":hash(&sent),"responseDigest":"a".repeat(64),"httpStatus":200,
+                "contentReference":reference,"resultDigest":hash(&output),
+                "nativeObservation":terminal(read_key)},
+            {"caseKey":case,"stepKey":"permission-denied:read","operation":"execute",
+                "requestDigest":hash(&sent),"responseDigest":hash(&denied),"httpStatus":403}
+        ]);
+        let plan = json!({"actionExecutionId":Uuid::new_v4(),"operationId":Uuid::new_v4(),
+            "componentReleaseId":Uuid::new_v4(),"workflowId":"isolated-component-workflow",
+            "artifactDigest":"b".repeat(64),"contractDigests":["c".repeat(64)],
+            "suiteDigest":"d".repeat(64),"planDigest":"e".repeat(64),"runId":"","steps":steps});
+        let mut report = plan.clone();
+        report.as_object_mut().unwrap().remove("steps");
+        report["runId"] = json!(Uuid::new_v4());
+        report["observations"] = observations;
+        (plan, report, captures)
+    }
+
+    #[test]
+    fn captured_revision_is_substituted_before_signing_and_rechecked_on_record() {
+        let (plan, report, captures) = captured_suite();
+        verify_report(&plan, &report).unwrap();
+        // Core signs the substituted request; the denied replay sends the same.
+        let mut probe = json!({"plan":plan,"stepIndex":1,"captures":captures});
+        probe["plan"]["runId"] = json!(Uuid::new_v4());
+        let (_, _, read, expected) = probe_request(&plan, &probe).unwrap();
+        assert_eq!(read["arguments"]["input"]["nativeRevision"], "published");
+        assert_eq!(expected, json!({"text":"marker"}));
+        probe["stepIndex"] = json!(2);
+        let (_, _, replay, _) = probe_request(&plan, &probe).unwrap();
+        assert_eq!(replay, read);
+        let mut missing = probe.clone();
+        missing.as_object_mut().unwrap().remove("captures");
+        assert!(probe_request(&plan, &missing).is_err());
+        let mut unexpected = probe.clone();
+        unexpected["stepIndex"] = json!(0);
+        assert!(probe_request(&plan, &unexpected).is_err());
+        // The recorded capture must equal the typed slot, exist exactly where
+        // declared, and be the value the later requests actually carried.
+        let mut drifted = report.clone();
+        drifted["observations"][0]["captures"][0]["value"] = json!("head");
+        assert!(verify_report(&plan, &drifted).is_err());
+        let mut absent = report.clone();
+        absent["observations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("captures");
+        assert!(verify_report(&plan, &absent).is_err());
+        let mut stray = report.clone();
+        stray["observations"][1]["captures"] = captures.clone();
+        assert!(verify_report(&plan, &stray).is_err());
+        let mut head = report.clone();
+        head["observations"][0]["captures"][0]["value"] = json!("head");
+        head["observations"][0]["contentReference"]["nativeRevision"] = json!("head");
+        assert!(verify_report(&plan, &head).is_err());
+        let original: Value =
+            serde_json::from_str(plan["steps"][1]["requestJson"].as_str().unwrap()).unwrap();
+        let mut unsubstituted = report.clone();
+        unsubstituted["observations"][1]["requestDigest"] =
+            json!(collab_bridge::limits::canonical_digest(&original));
+        assert!(verify_report(&plan, &unsubstituted).is_err());
+    }
+
+    #[test]
+    fn wire_capture_reads_only_the_declared_slot_of_a_native_terminal() {
+        let (plan, _, captures) = captured_suite();
+        let step = &plan["steps"][0];
+        let request: Value = serde_json::from_str(step["requestJson"].as_str().unwrap()).unwrap();
+        let key = Uuid::parse_str(step["idempotencyKey"].as_str().unwrap()).unwrap();
+        let mut response = json!({"execution":terminal(key),"resultJson":"{}",
+            "contentReference":{"resourceId":step["referenceResourceId"],
+                "nativeObjectRef":"native-node","nativeRevision":"published",
+                "displayName":"conformance.txt","mediaType":"text/plain"}});
+        let raw = response.to_string();
+        let digests = super::wire_digests(step, &request, "execute", 200, &raw).unwrap();
+        assert_eq!(serde_json::to_value(digests).unwrap()["captures"], captures);
+        // DD-124(5): a terminal without its native status is not evidence.
+        response["execution"]
+            .as_object_mut()
+            .unwrap()
+            .remove("nativeStatus");
+        let raw = response.to_string();
+        let digests = super::wire_digests(step, &request, "execute", 200, &raw).unwrap();
+        assert!(serde_json::to_value(digests).unwrap().get("captures").is_none());
     }
 }

@@ -277,6 +277,11 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 		return uncertain()
 	}
 	observation.ResponseDigest = digests.ResponseDigest
+	// DD-124(2): Core read these from this actual response's closed slots; they
+	// stay only in this step's observation and are re-checked on record.
+	if len(digests.Captures) != 0 {
+		observation.Captures = digests.Captures
+	}
 	if digests.NativeReceiverObservation != nil {
 		if (string(step.Operation) != "receiver_start" && string(step.Operation) != "receiver_observe") ||
 			response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -547,6 +552,9 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 	if observation.BindingDigest != nil {
 		return errors.New("binding observation on a non-binding probe")
 	}
+	if err := verifyConformanceCaptures(step, observation); err != nil {
+		return err
+	}
 	if step.ReferenceResourceID != nil && observation.NativeObservation != nil &&
 		string(observation.NativeObservation.PlatformStatus) == "SUCCEEDED" && observation.ContentReference == nil {
 		return errors.New("native success did not supply its typed content reference")
@@ -595,6 +603,74 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 	return nil
 }
 
+// DD-124(2): exactly the declared captures, only from a SUCCEEDED native
+// terminal, and a typed-slot capture equals the typed ContentReference. A
+// missing slot is a definite mismatch, never a value Worker can supply.
+func verifyConformanceCaptures(step generated.PlanStep, observation generated.ComponentConformanceStepObservation) error {
+	succeeded := observation.NativeObservation != nil && string(observation.NativeObservation.PlatformStatus) == "SUCCEEDED"
+	if len(step.Captures) == 0 || !succeeded {
+		if len(observation.Captures) != 0 {
+			return errors.New("captured values without a declared successful producer")
+		}
+		return nil
+	}
+	if len(observation.Captures) != len(step.Captures) {
+		return errors.New("declared captures are missing from the actual response")
+	}
+	for index, capture := range step.Captures {
+		value := observation.Captures[index]
+		if value.Key != capture.Key || strings.TrimSpace(value.Value) == "" || strings.HasPrefix(value.Value, "{{") {
+			return errors.New("captured value differs from its declaration")
+		}
+		reference := observation.ContentReference
+		switch string(capture.Slot) {
+		case "CONTENT_REFERENCE_NATIVE_OBJECT_REF":
+			if reference == nil || reference.NativeObjectRef != value.Value {
+				return errors.New("captured object differs from the typed reference")
+			}
+		case "CONTENT_REFERENCE_NATIVE_REVISION":
+			if reference == nil || reference.NativeRevision != value.Value {
+				return errors.New("captured revision differs from the typed reference")
+			}
+		case "GENERATED_REF":
+		default:
+			return errors.New("capture slot is not executable by this runner")
+		}
+	}
+	return nil
+}
+
+// DD-124(2): the probe carries exactly the values its CAPTURE bindings read
+// from earlier steps; an EXPECTED binding to this step's own capture keeps
+// its placeholder. Values are never a fixture or an operator input.
+func validProbeCaptures(input generated.ComponentConformanceProbe) error {
+	step := input.Plan.Steps[input.StepIndex]
+	own := make(map[string]bool)
+	for _, capture := range step.Captures {
+		own[capture.Key] = true
+	}
+	needed := make(map[string]bool)
+	for _, binding := range step.Bindings {
+		if string(binding.Source) != "CAPTURE" {
+			return errors.New("only CAPTURE bindings remain in a frozen plan")
+		}
+		if !own[binding.Key] {
+			needed[binding.Key] = true
+		}
+	}
+	seen := make(map[string]bool)
+	for _, value := range input.Captures {
+		if !needed[value.Key] || seen[value.Key] || strings.TrimSpace(value.Value) == "" || strings.HasPrefix(value.Value, "{{") {
+			return errors.New("capture value is not a declared binding")
+		}
+		seen[value.Key] = true
+	}
+	if len(seen) != len(needed) {
+		return errors.New("declared capture value is missing")
+	}
+	return nil
+}
+
 func (candidate *componentCandidate) validatePlan(plan generated.PlanClass) error {
 	if plan.ArtifactDigest != candidate.configuration.ArtifactDigest || len(plan.Steps) == 0 ||
 		int64(len(plan.Steps)) > candidate.configuration.MaxSteps ||
@@ -634,6 +710,18 @@ func (candidate *componentCandidate) validatePlan(plan generated.PlanClass) erro
 		}
 		if err := decodeConformanceJSON([]byte(step.ExpectedResponseJSON), &parsed); err != nil {
 			return errors.New("invalid conformance expectation")
+		}
+		for _, binding := range step.Bindings {
+			side := string(binding.Side)
+			if string(binding.Source) != "CAPTURE" || (side != "INPUT" && side != "EXPECTED") ||
+				binding.Key == "" || !strings.HasPrefix(binding.Pointer, "/") || step.ContractKey == nil {
+				return errors.New("invalid frozen capture binding")
+			}
+		}
+		for _, capture := range step.Captures {
+			if capture.Key == "" || step.ContractKey == nil {
+				return errors.New("invalid frozen capture declaration")
+			}
 		}
 	}
 	return nil
@@ -692,6 +780,10 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 		// arguments.input slot and returns the exact canonical wire below.
 	} else if input.ContentReference != nil {
 		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("步骤未授权外部引用", ErrTypeRejected, nil)
+	}
+	if err := validProbeCaptures(input); err != nil {
+		// Core substitutes and signs; the Worker only forwards recorded values.
+		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("捕获值与冻结绑定不符", ErrTypeRejected, nil)
 	}
 	if input.Reconcile != nil && *input.Reconcile {
 		// This is the protocol's original idempotency-key observation, not a

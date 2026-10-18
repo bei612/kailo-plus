@@ -47,6 +47,9 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 				return task.fail(temporal.NewNonRetryableApplicationError("原步骤缺真实内容引用", activities.ErrTypeRejected, nil))
 			}
 		}
+		if err := componentReleaseCaptures(&probe, plan.Steps[index], in.ReleaseObservations); err != nil {
+			return task.fail(err)
+		}
 		if in.ReleaseReconcile {
 			reconcile := true
 			probe.Reconcile = &reconcile
@@ -138,6 +141,40 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 		return task.fail(temporal.NewNonRetryableApplicationError("登记回执与原执行不符", activities.ErrTypeRejected, nil))
 	}
 	return task.complete()
+}
+
+// DD-124(2): a CAPTURE binding reads only a value recorded by an earlier
+// accepted observation of the same case in this Workflow's own history. An
+// EXPECTED binding to this step's own capture keeps its placeholder; Core
+// normalizes the actual result there. Plans without bindings add nothing.
+func componentReleaseCaptures(probe *generated.ComponentConformanceProbe, step generated.PlanStep, observations []generated.ComponentConformanceStepObservation) error {
+	own := make(map[string]bool)
+	for _, capture := range step.Captures {
+		own[capture.Key] = true
+	}
+	added := make(map[string]bool)
+	for _, binding := range step.Bindings {
+		if string(binding.Source) != "CAPTURE" || own[binding.Key] || added[binding.Key] {
+			continue
+		}
+		added[binding.Key] = true
+		found := false
+		for _, previous := range observations {
+			if previous.CaseKey != step.CaseKey {
+				continue
+			}
+			for _, value := range previous.Captures {
+				if !found && value.Key == binding.Key {
+					probe.Captures = append(probe.Captures, value)
+					found = true
+				}
+			}
+		}
+		if !found {
+			return temporal.NewNonRetryableApplicationError("捕获值缺同 case 的实际观察", activities.ErrTypeRejected, nil)
+		}
+	}
+	return nil
 }
 
 // Derived from original Workflow observations, not a second execution ledger.
