@@ -17,6 +17,18 @@ export type SoundName = (typeof SOUND_NAMES)[number];
 export const SOUND_SLOTS = ["dm", "mention", "thread_reply", "needs_action"] as const;
 export type SoundSlot = (typeof SOUND_SLOTS)[number];
 
+// Original agent job slots (kinds 43001-43006): nothing emits these events, so the original
+// renders them disabled with a "Coming soon" badge behind View all. Display only; they hold no
+// stored preference here.
+export const COMING_SOON_SLOTS = ["job_accepted", "job_progress", "job_result", "job_error"] as const;
+export type ComingSoonSlot = (typeof COMING_SOON_SLOTS)[number];
+export const RECOMMENDED_SOUND_BY_COMING_SOON_SLOT: Record<ComingSoonSlot, SoundName> = {
+  job_accepted: "boo",
+  job_progress: "dng",
+  job_result: "unison",
+  job_error: "oh-no",
+};
+
 export const RECOMMENDED_SOUND_BY_SLOT: Record<SoundSlot, SoundName> = {
   dm: "unison",
   mention: "ping",

@@ -43,6 +43,22 @@ describe("shared original notification settings", () => {
     expect(actual.settings.slotAlertsEnabled).toEqual({ dm: false, mention: true, thread_reply: false, needs_action: true });
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.dm).toBe(false);
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.thread_reply).toBe(false);
+    // Original View all: the four agent job slots render disabled with Coming soon and store nothing.
+    setLocale("en");
+    expect(view.querySelector('[data-testid="notifications-alerts-enabled-job_result"]')).toBeNull();
+    const toggle = view.querySelector<HTMLButtonElement>('[data-testid="notifications-toggle-coming-soon"]')!;
+    expect(toggle.textContent).toBe("View all");
+    await click(toggle);
+    for (const slot of ["job_accepted", "job_progress", "job_result", "job_error"]) {
+      const row = view.querySelector<HTMLButtonElement>(`[data-testid="notifications-alerts-enabled-${slot}"]`)!;
+      expect(row.disabled).toBe(true);
+      expect(row.getAttribute("aria-checked")).toBe("false");
+    }
+    expect(view.textContent).toContain("Coming soon");
+    expect(toggle.textContent).toBe("Show less");
+    expect(Object.keys(actual.settings.slotAlertsEnabled).sort()).toEqual(["dm", "mention", "needs_action", "thread_reply"]);
+    await click(toggle);
+    expect(view.querySelector('[data-testid="notifications-alerts-enabled-job_result"]')).toBeNull();
   });
   it("does not persist an old identity's settings or delayed permission into the next identity", async () => {
     localStorage.clear();

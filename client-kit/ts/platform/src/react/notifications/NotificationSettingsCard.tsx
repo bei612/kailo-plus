@@ -1,10 +1,16 @@
+import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
+import { Button } from "../profile/buzz/shared/ui/button";
 import type {
   DesktopNotificationPermissionState,
   NotificationSettings,
 } from "./settings";
 import {
+  COMING_SOON_SLOTS,
+  DEFAULT_SLOT_SOUNDS,
+  RECOMMENDED_SOUND_BY_COMING_SOON_SLOT,
   RECOMMENDED_SOUND_BY_SLOT,
   SOUND_SLOTS,
   type SoundName,
@@ -19,6 +25,19 @@ import {
 } from "../settings-option-group";
 import { SettingsSectionHeader } from "../settings-surface";
 import { SoundPicker } from "./SoundPicker";
+
+const comingSoonLabelKeys = {
+  job_accepted: "platform.notifications.jobAccepted",
+  job_progress: "platform.notifications.jobProgress",
+  job_result: "platform.notifications.jobResult",
+  job_error: "platform.notifications.jobError",
+} as const;
+const comingSoonDescriptionKeys = {
+  job_accepted: "platform.notifications.jobAcceptedDescription",
+  job_progress: "platform.notifications.jobProgressDescription",
+  job_result: "platform.notifications.jobResultDescription",
+  job_error: "platform.notifications.jobErrorDescription",
+} as const;
 
 export function NotificationSettingsCard({
   isUpdatingDesktopNotifications,
@@ -54,6 +73,7 @@ export function NotificationSettingsCard({
   const anyAlertsOn = SOUND_SLOTS.some(
     (slot) => notificationSettings.slotAlertsEnabled[slot],
   );
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
   return (
     <section className="min-w-0" data-testid="settings-notifications">
@@ -164,6 +184,7 @@ export function NotificationSettingsCard({
             </SettingsOptionGroup>
 
             {anyAlertsOn ? (
+              <div className="space-y-4">
               <SettingsOptionGroup title={translate(locale, "platform.notifications.alertSounds")}>
                 {SOUND_SLOTS.map((slot) => {
                   const alertsOn = notificationSettings.slotAlertsEnabled[slot];
@@ -206,7 +227,39 @@ export function NotificationSettingsCard({
                     </SettingsOptionRow>
                   );
                 })}
+                {showComingSoon ? COMING_SOON_SLOTS.map((slot) => (
+                  <SettingsOptionRow aria-disabled className="cursor-not-allowed opacity-40" key={slot}>
+                    <div className="min-w-0">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        {translate(locale, comingSoonLabelKeys[slot])}
+                        <span className="rounded-full bg-muted/70 px-2 py-0.5 text-2xs font-normal uppercase tracking-wide text-muted-foreground">
+                          {translate(locale, "platform.notifications.comingSoon")}
+                        </span>
+                      </span>
+                      <p className="text-sm font-normal text-muted-foreground/70" data-settings-subcopy>
+                        {translate(locale, comingSoonDescriptionKeys[slot])}
+                      </p>
+                    </div>
+                    <span className="flex items-center gap-3">
+                      <span className="pointer-events-none opacity-40 transition-opacity duration-200">
+                        <SoundPicker disabled onChange={() => {}} recommended={RECOMMENDED_SOUND_BY_COMING_SOON_SLOT[slot]}
+                          value={DEFAULT_SLOT_SOUNDS.dm} />
+                      </span>
+                      <Switch checked={false} data-testid={`notifications-alerts-enabled-${slot}`} disabled
+                        id={`alerts-enabled-${slot}-switch`} />
+                    </span>
+                  </SettingsOptionRow>
+                )) : null}
               </SettingsOptionGroup>
+              <div className="flex justify-center">
+                <Button data-testid="notifications-toggle-coming-soon" onClick={() => setShowComingSoon((current) => !current)}
+                  size="sm" type="button" variant="secondary">
+                  {showComingSoon
+                    ? <><ChevronUp className="h-4 w-4" />{translate(locale, "platform.notifications.showLess")}</>
+                    : <><ChevronDown className="h-4 w-4" />{translate(locale, "platform.notifications.viewAll")}</>}
+                </Button>
+              </div>
+              </div>
             ) : null}
           </>
         ) : null}
