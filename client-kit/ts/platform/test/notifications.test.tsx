@@ -44,7 +44,7 @@ describe("shared original notification settings", () => {
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.dm).toBe(false);
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.thread_reply).toBe(false);
     // Original View all: the four agent job slots render disabled with Coming soon and store nothing.
-    setLocale("en");
+    await act(async () => setLocale("en"));
     expect(view.querySelector('[data-testid="notifications-alerts-enabled-job_result"]')).toBeNull();
     const toggle = view.querySelector<HTMLButtonElement>('[data-testid="notifications-toggle-coming-soon"]')!;
     expect(toggle.textContent).toBe("View all");
