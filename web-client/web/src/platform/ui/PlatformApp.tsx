@@ -508,6 +508,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <WorkflowsPage workspaceId={chosen ?? active ?? undefined} messageHost={webWorkflowMessageHost}
         workflowRoute={navigation.workflowRoute}
         onWorkflowRouteChange={(route, workspaceId) => { void navigation.openWorkflow(route, workspaceId); }}
+        workflowCreateRoute={navigation.workflowCreateRoute}
+        onWorkflowCreateRouteChange={navigation.openWorkflowCreate
+          ? (open, workspaceId) => { void navigation.openWorkflowCreate(open, workspaceId); } : undefined}
         workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("workflows", workspaceId); }} />
     ) : tab === "tasks" ? (
@@ -692,7 +695,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
               workflows={{
                 onOpenWorkflow: (workflowId) => { setManageOpenFor(null); void navigation.openWorkflow({ workflowId, workspaceId: active }, active); },
-                onCreateWorkflow: () => { setManageOpenFor(null); void navigation.openTab("workflows", active); },
+                // Original goNewWorkflowForChannel: the create editor for this channel.
+                onCreateWorkflow: () => { setManageOpenFor(null); void navigation.openWorkflowCreate(true, active); },
               }}
               onCopy={writeTextToClipboard} /> : null}
           {tab === "conversation" && chosenConversation ? <>

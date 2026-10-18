@@ -26,7 +26,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 export function platformLocationSearch(search: Record<string, unknown>): {
   workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string;thread?: string; item?: string;
   post?: string; replyId?: string; section?: SettingsSection;
-  view?: "edit" | "duplicate";
+  view?: "edit" | "duplicate" | "create";
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -46,8 +46,9 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     post: reference("post"),
     replyId: reference("replyId"),
     section: isSettingsSection(search.section) ? search.section : undefined,
-    // Original /workflows/$workflowId ?view= editor target; any other value is dropped.
-    view: search.view === "edit" || search.view === "duplicate" ? search.view : undefined,
+    // Original /workflows/$workflowId ?view=edit|duplicate and /workflows?view=create editor targets;
+    // any other value is dropped.
+    view: search.view === "edit" || search.view === "duplicate" || search.view === "create" ? search.view : undefined,
   };
 }
 
@@ -186,7 +187,13 @@ export function usePlatformNavigation(scopeKey?: string) {
     applicationBindingId: params.bindingId ?? null,
     projectId: tab === "projects" ? search.projectId ?? null : null,
     projectWorkItemTarget: tab === "projects" ? {repositoryId:search.repositoryId,issueId:search.issueId,pullRequestId:search.pullRequestId,tab:search.tab,commitHash:search.commitHash,filePath:search.filePath} : undefined,
-    workflowRoute: params.workflowId ? { workflowId: params.workflowId, view: search.view, workspaceId: search.workspaceId } : null,
+    workflowRoute: params.workflowId ? { workflowId: params.workflowId,
+      view: search.view === "create" ? undefined : search.view, workspaceId: search.workspaceId } : null,
+    /** Original /workflows?view=create (goNewWorkflow / goNewWorkflowForChannel). */
+    workflowCreateRoute: tab === "workflows" && !params.workflowId && search.view === "create",
+    openWorkflowCreate: (open: boolean, workspaceId?: string) => open
+      ? navigate({ to: "/$section", params: { section: "workflows" }, search: { workspaceId, view: "create" }, state: navigationState() })
+      : navigate({ to: "/$section", params: { section: "workflows" }, search: { workspaceId }, replace: true, resetScroll: false }),
     openWorkflow: (route: { workflowId: string; view?: "edit" | "duplicate"; workspaceId?: string } | null, workspaceId?: string) => route
       ? navigate({ to: "/workflows/$workflowId", params: { workflowId: route.workflowId },
         search: { workspaceId: route.workspaceId, view: route.view }, state: navigationState() })

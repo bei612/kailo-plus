@@ -82,3 +82,30 @@ describe("original URL-addressable workflow target", () => {
     expect(changes).toHaveLength(0);
   });
 });
+
+describe("original /workflows?view=create target", () => {
+  it("opens the governed create editor from the URL and leaves the target on close", async () => {
+    const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
+      if (request.path === "/api/v1/workspaces") return {status: 200, body: [{id: "workspace", name: "Channel", slug: "channel"}]};
+      if (request.path === "/api/v1/tasks") return {status: 200, body: []};
+      if (request.path.startsWith("/api/v1/automations?")) return {status: 200, body: {automations: [], canCreate: true, availableApprovalPolicies: []}};
+      return {status: 503, body: undefined};
+    });
+    const changes: Array<[boolean, string | undefined]> = [];
+    function Host() {
+      const [create, setCreate] = useState(true);
+      return <AutomationManagement workspaceId="workspace" onWorkspaceChange={() => undefined} workflowRoute={null}
+        onWorkflowRouteChange={() => undefined} workflowCreateRoute={create}
+        onWorkflowCreateRouteChange={(open, workspaceId) => { changes.push([open, workspaceId]); setCreate(open); }} />;
+    }
+    await render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false}}})}>
+      <PlatformProvider client={createBffClient({send})} locale="en"><Host /></PlatformProvider></QueryClientProvider>);
+    await settle();
+    const editor = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    expect(editor).not.toBeNull();
+    await click(button(editor, "Close"));
+    expect(changes.at(-1)).toEqual([false, "workspace"]);
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    expect(send.mock.calls.some(([request]) => request.method !== "GET")).toBe(false);
+  });
+});

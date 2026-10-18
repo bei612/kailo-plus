@@ -147,6 +147,9 @@ export type WorkflowRoute = { workflowId: string; view?: "edit" | "duplicate"; w
 export type WorkflowRouteNavigation = {
   workflowRoute?: WorkflowRoute | null;
   onWorkflowRouteChange?: (route: WorkflowRoute | null, workspaceId?: string) => void;
+  /** Original /workflows?view=create: the governed create editor is the URL target. */
+  workflowCreateRoute?: boolean;
+  onWorkflowCreateRouteChange?: (open: boolean, workspaceId?: string) => void;
 };
 
 type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
@@ -391,7 +394,8 @@ type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause"
   | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
-export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation, workflowRoute, onWorkflowRouteChange }:
+export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation, workflowRoute, onWorkflowRouteChange,
+  workflowCreateRoute = false, onWorkflowCreateRouteChange }:
   WorkspaceNavigation & WorkflowRouteNavigation & {
   renderRunHistory?: (resourceId: string, workspaceId: string, receipt?: ActionSubmission) => ReactNode;
   workflowNavigation?: WorkflowNavigation;
@@ -430,6 +434,11 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
     // Do not erase the current draft when a requested scope change is blocked.
     if (!locked) { setEdit(null); setEditorOpen(false); setSelectedAutomation(null); setRunReceipt(null); }
   }, [selection]);
+  // Original /workflows?view=create opens the same governed create editor as the list's New workflow.
+  const createRouted = !!onWorkflowCreateRouteChange;
+  useEffect(() => {
+    if (createRouted && workflowCreateRoute && workspace && !locked) { setEdit(null); setEditorOpen(true); }
+  }, [createRouted, workflowCreateRoute, workspace?.id]);
   return <section className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-automations">
     {/* Buzz WorkflowsView has one trailing refresh. The host supplies the page title. */}
     <div className="flex min-w-0 items-start justify-between gap-4">
@@ -471,7 +480,11 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
         }
       }} /> : null}
     <AutomationAction workspaceId={workspace?.id} workspaces={workspaces} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation}
-      onClose={() => { setEditorOpen(false); if (routed && workflowRoute?.view) onWorkflowRouteChange?.(null, workspace?.id); }}
+      onClose={() => {
+        setEditorOpen(false);
+        if (routed && workflowRoute?.view) onWorkflowRouteChange?.(null, workspace?.id);
+        if (createRouted && workflowCreateRoute) onWorkflowCreateRouteChange?.(false, workspace?.id);
+      }}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
       onRecorded={(command, submission) => {
         const issued = submission.webhookSecret;
@@ -488,6 +501,8 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
         setEdit(null); setEditorOpen(false); setRevision((old) => old + 1);
         // A recorded edit/copy leaves its ?view= target, as the original editor closes back.
         if (routed && workflowRoute?.view && command.actionKey !== "automation.run") onWorkflowRouteChange?.(null, workspace?.id);
+        // A routed list selection above already leaves ?view=create; otherwise close it here.
+        if (createRouted && workflowCreateRoute && !routed) onWorkflowCreateRouteChange?.(false, workspace?.id);
         if (command.actionKey === "automation.create" && command.workspaceId
           && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched
           && workspaces?.some((candidate) => candidate.id === command.workspaceId)) {
@@ -498,7 +513,10 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
     {webhookSecret ? <WorkflowWebhookSecretDialog secret={webhookSecret} onContinue={() => setWebhookSecret(null)} /> : null}
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
       selected={shownAutomation} onSelect={selectAutomation}
-      onCreate={() => { setEdit(null); setEditorOpen(true); }}
+      onCreate={() => {
+        if (createRouted) onWorkflowCreateRouteChange?.(true, workspace.id);
+        else { setEdit(null); setEditorOpen(true); }
+      }}
       onEdit={(value) => { setEdit(value); setEditorOpen(true); }}
       renderRunHistory={renderRunHistory ? (resourceId, workspaceId) => renderRunHistory(resourceId, workspaceId,
         runReceipt?.resourceId === resourceId && runReceipt.workspaceId === workspaceId ? runReceipt.submission : undefined) : undefined} /> : null}
