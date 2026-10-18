@@ -224,8 +224,11 @@ describe("Web original settings host", () => {
       expect(markup).not.toMatch(/private.key|provider.credential|pairing/i);
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();
+      // Original Settings footer: the host's own app version.
+      expect(host.querySelector('[data-testid="settings-version"]')?.textContent).toMatch(/^v\d+\.\d+\.\d+/);
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(23);
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(24);
+      expect(host.querySelector('[data-shortcut="always-address-agent"]')).not.toBeNull();
       for (const id of ["quick-search", "find-in-channel", "mark-current-read", "mark-all-read"])
         expect(host.querySelector(`[data-shortcut="${id}"]`)).not.toBeNull();
       expect([...host.querySelectorAll('[data-shortcut]')].slice(0, 12).map(row => row.getAttribute("data-shortcut"))).toEqual([
@@ -249,6 +252,15 @@ describe("Web original settings host", () => {
       expect(host.textContent).toContain("YAML-defined automations with approval gates");
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="feature-toggle-workflows"]')!.click());
       expect(JSON.parse(localStorage.getItem("buzz-feature-overrides-v1")!).workflows).toBe(true);
+      // Original Agents › Conversations device preference consumed by the shared composer.
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-agents"]')!.click());
+      const mentions = host.querySelector<HTMLButtonElement>("#settings-automatic-agent-mentions-switch")!;
+      expect(host.querySelector('[data-testid="settings-agents"]')?.textContent).toContain("Automatically mention agents");
+      const before = mentions.getAttribute("aria-checked");
+      await act(async () => mentions.click());
+      expect(mentions.getAttribute("aria-checked")).not.toBe(before);
+      expect(localStorage.getItem("buzz.messages.keepMentionedAgentsPinned")).toBe(String(before !== "true"));
+      await act(async () => mentions.click());
     } finally {
       await act(async () => root.unmount());
       host.remove();

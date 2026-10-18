@@ -529,7 +529,7 @@ describe("shared Buzz settings presentation", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-profile"]')!);
     expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
     expect([...host.querySelectorAll('[data-testid^="settings-nav-"]')].map(node => node.getAttribute("data-testid"))).toEqual([
-      "settings-nav-profile", "settings-nav-appearance", "settings-nav-notifications", "settings-nav-shortcuts", "settings-nav-custom-emoji", "settings-nav-experimental",
+      "settings-nav-profile", "settings-nav-appearance", "settings-nav-notifications", "settings-nav-shortcuts", "settings-nav-custom-emoji", "settings-nav-agents", "settings-nav-experimental",
     ]);
     await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-experimental"]')!);
     expect(host.querySelector('[data-testid="settings-panel-experimental"]')?.textContent).toBe("experimental");

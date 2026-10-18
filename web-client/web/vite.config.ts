@@ -1,12 +1,19 @@
 /// <reference types="vitest/config" />
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import { profileAssets } from "../../client-kit/ts/platform/profile-assets.ts";
+
+// Original Settings footer `v{appVersion}`: the browser host reports its own package version.
+const webVersion = (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string }).version;
 
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/",
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(webVersion),
+  },
   plugins: [
     profileAssets(import.meta.url),
     {

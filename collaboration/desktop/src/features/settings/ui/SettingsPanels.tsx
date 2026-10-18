@@ -15,6 +15,7 @@ import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
+import { AgentsSettingsPanel } from "@client-kit/platform/react/agents-settings";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 
@@ -29,6 +30,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "shortcuts",
   "community-members",
   "custom-emoji",
+  "agents",
   "experimental",
 ];
 
@@ -92,6 +94,8 @@ export function renderSettingsSection(
       return <ThemeSettingsCard />;
     case "shortcuts":
       return <KeyboardShortcutsCard />;
+    case "agents":
+      return <AgentsSettingsPanel />;
     case "experimental":
       return <ExperimentalFeaturesCard />;
     default: {

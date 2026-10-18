@@ -2740,6 +2740,8 @@ enum PlatformMessageKey {
   platformShortcutsSendMessageDescription,
   platformShortcutsNewLineLabel,
   platformShortcutsNewLineDescription,
+  platformShortcutsAlwaysAddressAgentLabel,
+  platformShortcutsAlwaysAddressAgentDescription,
   platformShortcutsCloseDialogLabel,
   platformShortcutsCloseDialogDescription,
   platformShortcutsFormatBoldLabel,
@@ -2755,6 +2757,11 @@ enum PlatformMessageKey {
   platformSettingsPersonal,
   platformSettingsApp,
   platformSettingsExperimental,
+  platformSettingsAgents,
+  platformSettingsAgentsDescription,
+  platformSettingsAgentsConversations,
+  platformSettingsAutomaticAgentMentions,
+  platformSettingsAutomaticAgentMentionsDescription,
   previewDescription,
   previewFeatures,
   previewWorkflowsName,
@@ -9694,6 +9701,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Insert a line break in the composer',
     '在编辑框中换行',
   ),
+  PlatformMessageKey.platformShortcutsAlwaysAddressAgentLabel: (
+    'Always address agent',
+    '始终指定 Agent',
+  ),
+  PlatformMessageKey.platformShortcutsAlwaysAddressAgentDescription: (
+    'Address the default agent, or toggle the highlighted agent',
+    '指定默认 Agent，或切换高亮的 Agent',
+  ),
   PlatformMessageKey.platformShortcutsCloseDialogLabel: (
     'Close dialog',
     '关闭对话框',
@@ -9733,6 +9748,23 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformSettingsPersonal: ('Personal', '个人设置'),
   PlatformMessageKey.platformSettingsApp: ('App', '应用'),
   PlatformMessageKey.platformSettingsExperimental: ('Experiments', '实验功能'),
+  PlatformMessageKey.platformSettingsAgents: ('Agents', 'Agent'),
+  PlatformMessageKey.platformSettingsAgentsDescription: (
+    'Control how agents behave in conversations and run on this machine.',
+    '控制 Agent 在对话中的行为以及在本机上的运行方式。',
+  ),
+  PlatformMessageKey.platformSettingsAgentsConversations: (
+    'Conversations',
+    '对话',
+  ),
+  PlatformMessageKey.platformSettingsAutomaticAgentMentions: (
+    'Automatically mention agents',
+    '自动提及 Agent',
+  ),
+  PlatformMessageKey.platformSettingsAutomaticAgentMentionsDescription: (
+    'Address selected agents in thread replies',
+    '在线程回复中指定已选的 Agent',
+  ),
   PlatformMessageKey.previewDescription: (
     'These features are functional but still being refined. Enable them to try new capabilities early.',
     '这些功能可以使用，但仍在持续完善。启用后即可提前体验新能力。',
