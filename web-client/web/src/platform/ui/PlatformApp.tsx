@@ -107,6 +107,7 @@ import { TopbarSearch } from "./TopbarSearch";
 import { useWebSearchDirectory } from "./search";
 import type { SearchHit } from "@client-kit/platform/react/search/types";
 import { useWebMarkAsReadShortcuts } from "./useMarkAsReadShortcuts";
+import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -191,6 +192,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const workspaces = useQuery(platformQueries.workspaces);
   const queryClient = useQueryClient();
   const userState = useInboxState(bff);
+  // DD-125: thread follows, sidebar sections/sort, templates and Pulse follows share
+  // this Core state and CAS queue; panes read them from the provider below.
+  const preferences = useCollaborationPreferenceActions(bff, userState);
   // The original per-device manual source is presentation state, not another
   // read-line authority. Browser partitioning uses its trusted platform scope.
   const unreadIdentity = JSON.stringify([session.tenantId, session.tenantPrincipalId]);
@@ -551,6 +555,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const profileDirectMessage = { open: openDirectMessage,
     canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey) };
   return (
+    <CollaborationPreferencesProvider value={preferences}>
     <ProfileDirectMessageProvider value={profileDirectMessage}>
     {/* Original `#channel` composer suggestions: the admitted directory's channel names. */}
     <ComposerChannelLinksProvider channels={searchDirectory.isError ? undefined : searchDirectory.data?.channels}>
@@ -748,5 +753,6 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </BffReminderHost>
     </ComposerChannelLinksProvider>
     </ProfileDirectMessageProvider>
+    </CollaborationPreferencesProvider>
   );
 }

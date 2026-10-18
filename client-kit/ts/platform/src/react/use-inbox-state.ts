@@ -1,4 +1,4 @@
-import type { ReadMarkRequest, ConversationView } from "@client-kit/contracts";
+import type { ReadMarkRequest, ConversationView, UserStateVersion } from "@client-kit/contracts";
 import { loadInboxConversations } from "./conversations/hidden-dm-inbox-action";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BffClient } from "../client";
@@ -132,6 +132,55 @@ export function useInboxState(client: BffClient) {
     [client],
   );
 
+  // DD-125 preference writes share the same CAS and queue as read marks. `send`
+  // receives the version it must present; on its ACK the acknowledged change is
+  // projected locally (the same rule Core applied), or, without a local rule, the
+  // state is re-read without clearing what is on screen. A conflict or failure
+  // re-reads the authority; nothing is reissued with a fresher version.
+  const update = useCallback(
+    (
+      send: (version: number) => Promise<UserStateVersion>,
+      patch?: (state: CollaborationUserState, now: string) => CollaborationUserState,
+    ) => {
+      const generation = epoch.current;
+      const result = queue.current.then(async () => {
+        if (generation !== epoch.current || intent.current || !current.current) return false;
+        const version = current.current.version;
+        writing.current = true;
+        setPending(true);
+        try {
+          const ack = await send(version);
+          if (generation !== epoch.current) return false;
+          if (ack?.version !== version + 1) throw new TransportError("Invalid user-state CAS response");
+          if (!current.current) return false;
+          if (patch) {
+            current.current = { ...patch(current.current, new Date().toISOString()), version: ack.version };
+            setState(current.current);
+          } else {
+            const next = checkedUserState(await client.collaborationUserState());
+            if (generation !== epoch.current) return false;
+            if (next.version >= ack.version) {
+              current.current = next;
+              setState(next);
+            } else {
+              void refresh();
+            }
+          }
+          return true;
+        } catch {
+          if (generation === epoch.current) void refresh();
+          return false;
+        } finally {
+          writing.current = false;
+          setPending(false);
+        }
+      });
+      queue.current = result.then(() => undefined);
+      return result;
+    },
+    [client, refresh],
+  );
+
   // Rechecking is read-only. Unknown writes are never silently reissued with a
   // fresh version, which could overwrite a newer read position from another end.
   const readAt = useCallback(
@@ -154,6 +203,7 @@ export function useInboxState(client: BffClient) {
     pending,
     refresh,
     write,
+    update,
     readAt,
     eventReadAt,
     visibleChannels,

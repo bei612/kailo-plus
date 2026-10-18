@@ -1,5 +1,6 @@
 // Inbox aggregation extracted from Buzz Home (779af8886caae1317b4de962082429867ab61503).
 // Hosts supply already admitted events. This module grants no access and holds no user state.
+import { checkCollaborationPreferences, type CollaborationPreferences } from "./collaboration-preferences";
 import type { ConversationView } from "@client-kit/contracts";
 import type { BffClient } from "./client";
 import { translate, type PlatformLocale } from "./i18n";
@@ -293,7 +294,8 @@ export function matchesInbox(
 }
 
 // These response shapes already belong to the Core user_state reader (DD-40).
-// Unlike ReadMarkRequest they have no generated contract in this baseline.
+// Unlike ReadMarkRequest they have no generated contract in this baseline: the
+// contract subset cannot express maps. DD-125 adds the CollaborationPreferences.
 export type CollaborationUserState = {
   workspacePreferences: Record<
     string,
@@ -303,7 +305,7 @@ export type CollaborationUserState = {
   projectPreferences?: Record<string, {selected:boolean;updatedAt:string}>;
   readContexts: Record<string, string>;
   version: number;
-};
+} & CollaborationPreferences;
 
 export function checkedUserState(
   value: CollaborationUserState,
@@ -329,6 +331,7 @@ export function checkedUserState(
   ) {
     throw new Error("Invalid CollaborationUserState");
   }
+  checkCollaborationPreferences(value);
   return value;
 }
 

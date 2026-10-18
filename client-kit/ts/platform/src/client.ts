@@ -71,6 +71,13 @@ import type {
   DiscoverableWorkspacePage,
   ReadMarkRequest,
   UserStateVersion,
+  ThreadPreferenceRequest,
+  SidebarSectionRequest,
+  SidebarSectionOrderRequest,
+  SidebarAssignmentRequest,
+  SidebarSortRequest,
+  ChannelTemplateRequest,
+  FollowedPrincipalRequest,
   WebProfileView,
   WebMessageAuthorQuery,
   WebMessageAuthorView,
@@ -232,6 +239,27 @@ export function createBffClient(transport: BffTransport) {
     },
     markRead: (body: ReadMarkRequest) =>
       call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/read", body }),
+
+    // DD-125 personal preferences: same CollaborationUserState version CAS as read marks.
+    // None is a Governed Action; Core re-checks every key against the caller's admission.
+    setThreadPreference: (body: ThreadPreferenceRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/threads", body }),
+    setSidebarSection: (sectionId: string, body: SidebarSectionRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/sidebar-sections/${encodeURIComponent(sectionId)}`, body }),
+    deleteSidebarSection: (sectionId: string, body: UserStateVersion) =>
+      call<UserStateVersion>({ method: "DELETE", path: `/api/v1/user-state/sidebar-sections/${encodeURIComponent(sectionId)}`, body }),
+    setSidebarSectionOrder: (body: SidebarSectionOrderRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/sidebar-section-order", body }),
+    setSidebarAssignment: (body: SidebarAssignmentRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/sidebar-assignments", body }),
+    setSidebarSort: (body: SidebarSortRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/sidebar-sort", body }),
+    setChannelTemplate: (templateId: string, body: ChannelTemplateRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/channel-templates/${encodeURIComponent(templateId)}`, body }),
+    deleteChannelTemplate: (templateId: string, body: UserStateVersion) =>
+      call<UserStateVersion>({ method: "DELETE", path: `/api/v1/user-state/channel-templates/${encodeURIComponent(templateId)}`, body }),
+    setFollowedPrincipal: (body: FollowedPrincipalRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/followed-principals", body }),
 
     /** Tenant 稳定定义；列表逐项经 discover 过滤，详情和 Version 由 BFF fresh read。 */
     agentDefinitions: (offset?: number) =>
@@ -423,6 +451,8 @@ export function createBffClient(transport: BffTransport) {
 
     /** 待我审批：未决、我尚未决定、我此刻能满足某个选择器。 */
     pendingApprovals: () => get<ApprovalView[]>("/api/v1/approvals"),
+    /** DD-125(5): approvals I initiated that reached a result (Inbox Needs action). */
+    initiatedApprovals: () => get<ApprovalView[]>("/api/v1/approvals/initiated"),
 
     /** 一项审批：发起者、已决定者或此刻合格的审批者可见。 */
     approval: (workflowId: string) =>
