@@ -207,6 +207,7 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 | Delegation & Approval | 谁可委托什么、有效期/次数、等待中的审批 | `delegate/approve` |
 | Operations & Usage | Invocation/Workflow、tool/model/native refs、token/cost、Quota/Capacity | `read/audit` 与 ResultExposurePolicy |
 | Memory | core、cold-memory slug、Session 固定 core event、读写/冲突/usage；不默认暴露正文 | Installation Resource `read/update/audit` |
+| Sessions 转写与活动 | 按 AgentSession 读取 Codex thread item（消息、思考、计划、工具）与实时 item、回合开始时刻、活动标题与中断；其他成员只见 Agent 20002 的工作中信号（DD-125(6)） | Installation Resource `audit`；中断按 DD-84 扩展为发起人或 Installation `manage` |
 
 表单预览必须先显示将创建的 Version、影响的 Installation、权限/owner/审批、Quota/Capacity 与投影差异。保存 DRAFT 不等于发布，发布不等于安装，安装不等于已授权，Projection ACTIVE 不等于某次工具调用必然获准。
 
@@ -237,6 +238,7 @@ Core AgentRuntimeProjection
 - runtime 回应成功但 Buzz reply 发布失败：Invocation 不标成功；保留 runtime outcome 与 reply failure evidence，由原 operation 对账，不能另建无关联回复。
 - core 读取失败：区分 `ABSENT` 与 `UNREADABLE`，后者不注入 onboarding 也不覆盖写；已建 Session 不因新 head 静默改变。
 - memory 写入冲突：发布后重读不是本 event 则记 `CONFLICT`，不自动重发；Workspace/Installation 撤权后每次 memory tool fresh Check 拒绝新操作（SF-BUZ-16/17、DD-67/68）。
+- 原版生命周期入口（DD-125(6)）：停止、从频道移除与删除都是 `agent.installation.disable`，此时另以 CONTROL 9001 移出 Channel roster，资料与历史保留；启动是 `agent.installation.enable`，只接受 `DISABLED` 且 pinned Version 仍 `PUBLISHED`，以新 generation 重建投影、roster 与 ToolBinding 授予；重启是同版本 `agent.installation.upgrade`。原 respondTo 的 owner-only 与 allowlist 分别对应默认与逐成员使用授权（`05` §2.10），不提供 anyone。
 
 ## 11. 明确排除
 

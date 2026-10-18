@@ -154,11 +154,22 @@ Browser 不直连 Relay 也不持有 signer。这一边界同时覆盖消息、p
 
 固定上游 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/desktop/src/features/profile/lib/animatedAvatarCapture.ts::{openAvatarCamera,stopAvatarCamera,createSegmenter}` 使用视频摄像头、停止媒体轨道及 MediaPipe 分割；`.references/buzz/desktop/src-tauri/tauri.conf.json::app.security.csp` 已包含 `wasm-unsafe-eval`（SF-DSK-03）。依据 REQ-08 与用户要求的原版功能复用，宿主可执行随自身版本固定的头像 WASM，Web 使用 `script-src 'self' 'wasm-unsafe-eval'`，不允许 JavaScript `unsafe-eval` 或外域脚本；WASM、loader 与模型均由宿主同源提供，版本与字节固定，不从运行时组件配置取得。
 
-Web 摄像头许可仅为 `camera=(self)`，且须由用户在头像控件中发起并取得浏览器授权；不申请麦克风。拒绝授权、无设备或非安全上下文时呈现明确不可用原因，不宣称采集成功；退出采集、切换身份或关闭页面时释放媒体轨道，不后台持续采集。该许可是同源宿主能力，不是同源模块之间的权限隔离；跨源组件页面不得取得摄像头委派。DD-60 的“不因 release 放宽”仍成立：组件登记、Tenant 与 binding 不能改变这些宿主策略，外部页面和文档编辑器仍按 `07` 的隔离边界承载。Mobile 不因此成为组件宿主。
+Web 摄像头许可仅为 `camera=(self)`，且须由用户在头像控件中发起并取得浏览器授权；麦克风许可仅为 `microphone=(self)`，只在用户发起的语音留言与 Huddle（DD-125(3)）中申请。拒绝授权、无设备或非安全上下文时呈现明确不可用原因，不宣称采集成功；退出采集、切换身份或关闭页面时释放媒体轨道，不后台持续采集。该许可是同源宿主能力，不是同源模块之间的权限隔离；跨源组件页面不得取得摄像头或麦克风委派。DD-60 的“不因 release 放宽”仍成立：组件登记、Tenant 与 binding 不能改变这些宿主策略，外部页面和文档编辑器仍按 `07` 的隔离边界承载。Mobile 不因此成为组件宿主。
 
 ### Agent 公开资料
 
 Agent 在频道、线程与工作流结果中的作者名和头像来自其自身身份签名的 kind:0，与 HUMAN 一样只由 Relay 呈现。Core 按 DD-117 以 Installation 的 AGENT `SERVER` 身份，把 pinned AgentVersion 的 `personaIdentity` 投影为 `display_name`、`picture`、`about`，在创建与升级激活后发布、在对账中补发，结果不明按 event ID 对账；Installation 或 AGENT binding 离开 ACTIVE 后保留最后一份资料、不再更新。提及候选使用的安装目录展示名与该资料同源于同一 Version，但不替代 Relay 资料。上游托管 Agent 由 Desktop 以 Agent 密钥发布同一形态的资料（SF-BUZ-48）。
+
+### 原版审核、Huddle、Canvas 与偏好的协议边界
+
+DERIVED_DESIGN（REQ-24、DD-125，承接 SF-BUZ-52 至 SF-BUZ-57）：
+
+- 成员白名单按交付顺序新增 1984（举报）与 48100、48106、24810（Huddle）；9040–9044、9005、40100 与 Huddle 临时频道的 9007/9000/9001/9002 仍只收 CONTROL；kind 3 不加入，Pulse 关注由 Core 保存。先部署读写这些 kind 的 Core，再投递并重启 Relay，最后交付控件。
+- 审核命令、Canvas 与 Huddle 临时频道投影由 Core 以 Tenant CONTROL 签名，CONTROL 只是签名者；审核读取以 CONTROL 经 NIP-98 调用 Relay `/moderation/*`，结果只回给持有 Tenant `manage` 的请求者。Relay 自签的审核通知私聊以本人身份只读呈现。
+- Huddle 音频：Desktop 以本人 CLIENT 身份直连 Relay 音频连接（DD-75）；Web 经 BFF 音频桥，一条桥对应一个 (PlatformSession, HuddleBuzzBinding)，Core 以本人 SERVER 身份签 22242、原样转发 Opus 帧，登出、撤权或绑定结束时关闭。它是专用于临时频道的音频连接，不并入在线状态租约。BFF 只为本人上行做转写、只为本人合成朗读，不以 Agent 身份接入房间。
+- Agent 回合运行期间，Core 以该 Installation 的 AGENT 身份沿 DD-120(1) 的瞬时路径发 20002，作为成员可见的“工作中”信号。
+- 链接预览抓取由 BFF 代 Web 执行：只允许 http/https 与默认端口；每一跳在 DNS 解析后拒绝回环、私网、链路本地、CGNAT、组播、ULA 与部署登记的内部网段，并只连接已校验地址；至多 3 次跳转、256 KB，不带 cookie 与凭据；按 Principal 限速，超额以 `LIMIT` 类拒绝；审计只记主机与 URL 摘要。预览图以本人身份上传为 Relay 媒体。
+- GIF 搜索与分享上报由 BFF 以本人身份经 NIP-98 调用 Relay `/gifs/*`，只在 TenantBuzzBinding 的 NIP-11 快照广告 `gif` 时提供。
 
 ### BFF Relay 连接模型
 
