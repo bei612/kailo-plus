@@ -328,7 +328,14 @@ async fn page(
             },
         )
         .await?;
-    let can_create = decision.allowed
+    // The Catalog Tenant owns releases, never business bindings: target()
+    // refuses its create, so the page must not offer the control either.
+    let catalog = {
+        let mut conn = state.pool.acquire().await?;
+        crate::platform_bootstrap::is_catalog_tenant(&mut conn, actor.tenant_id).await?
+    };
+    let can_create = !catalog
+        && decision.allowed
         && decision
             .zed_token
             .as_deref()
