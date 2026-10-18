@@ -12,8 +12,8 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs]
-    source_digest: sha256:334e8df25567d4668efca9099f75f6abb23b5114b438d147f4c2d0931f2e03c4
-    artifact_digest: sha256:9d67a0e5263420ca41260c0793a25f3d6f8457816d549c07fc52207ae2e103f8
+    source_digest: sha256:32ba606e35e5f9cc57a3c7a411b90ac8e28aab49c76ddbd17f23e5e31dbf582d
+    artifact_digest: sha256:5bc69224c774cb1f997d144b48ecc0eab44235ab965acbc757c8aa8b08c94636
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service
@@ -34,7 +34,7 @@ artifacts:
     build_dockerfile: data-query/wren-engine/ibis-server/Dockerfile
     inputs: [data-query/wren-engine/ibis-server/, data-query/wren-engine/wren-core-py/, data-query/wren-engine/wren-core/, data-query/wren-engine/wren-core-base/]
     source_digest: sha256:6d71cc61000fe37c8fbc57235a7b2d43acc9dbb2d1b73d07c70c7f61d7f3f164
-    artifact_digest: sha256:3120ee0d1da585569f4440c9d9e58640c66004594600afcaa2503ca723278f86
+    artifact_digest: sha256:792b843117cef6f9617c7ad1191a65fcc9cb1e9e66371970cbca6ffde28acda1
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
 compatibility_evidence: [data-query/fork/verify/native-integration.md]
