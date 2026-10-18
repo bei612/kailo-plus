@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/component_native_receiver_observation.schema.json",
   "title": "ComponentNativeReceiverObservation",
-  "description": "原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个 SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无 nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。",
+  "description": "原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个 SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无 nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个 case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。",
   "type": "object", "additionalProperties": false,
   "required": ["request", "nativeBatchId", "nativeStatus", "startedAt", "completed", "readOperations"],
   "properties": {

@@ -142,6 +142,7 @@
     },
     {
       "caseKey": "receiver_import",
+      "direction": "RECEIVER",
       "preconditions": [
         {
           "key": "config",
@@ -191,8 +192,7 @@
               "key": "read_execution",
               "slot": "ACTION_EXECUTION_ID"
             }
-          ],
-          "direction": "RECEIVER"
+          ]
         }
       ]
     }

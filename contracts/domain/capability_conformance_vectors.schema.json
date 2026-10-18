@@ -10,7 +10,7 @@
     "formatVersion": {"$ref": "../enums/capability_vector_format.schema.json"},
     "generatedRefs": {
       "type": "array",
-      "description": "V2 only. Contract fields whose values the implementation generates (opaque non-empty strings). nativeRevision is always implementation-generated and need not be listed. A listed position present in a step document may never be LITERAL; EXPECTED entries are the only output fields a GENERATED_REF capture of a FORWARD step may read. A RECEIVER step is not sent by the production Core: its input is the receiver admission the isolated Core produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own contract key.",
+      "description": "V2 only. Contract fields whose values the implementation generates (opaque non-empty strings). nativeRevision is always implementation-generated and need not be listed. A listed position present in a step document may never be LITERAL; EXPECTED entries are the only output fields a GENERATED_REF capture of a FORWARD step may read. A step of a RECEIVER case is not sent by the production Core: its input is the admission the isolated Core produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own contract key.",
       "items": {
         "title": "CapabilityVectorGeneratedRef",
         "type": "object",
@@ -46,9 +46,13 @@
         "required": ["caseKey", "steps"],
         "properties": {
           "caseKey": {"type": "string"},
+          "direction": {
+            "$ref": "../enums/capability_vector_case_direction.schema.json",
+            "description": "V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the isolated deployment; the production plan observes each of its steps only through receiver_start/receiver_observe and accepts the isolated Core's execution and operation ids, both read_receipts, native batch or execution and native terminal evidence, never business results: every step names the receiver Resource by referenceResourceKey and expects {}. Every platform Resource id of the case, typed or a resourceId/sourceResourceId/assetId member of a step document, is a PRECONDITION. A step input is the admission the isolated Core performs: it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or GENERATED_REF captures and earlier steps' captures, which the isolated deployment supplies from its own run. The case as a whole carries the source reads; Core compares a step's input with the admission whenever its evidence has reads."
+          },
           "preconditions": {
             "type": "array",
-            "description": "V2 only. Native objects the isolated fixture creates through the candidate's own native entry before the run; the fixture supplies only their actual identifiers. Every registered property of the kind is declared with its literal value and verified by a later literal expectation of this case.",
+            "description": "V2 only. Native objects the isolated fixture creates through the candidate's own native entry before the run; the fixture supplies only their actual identifiers. Every registered property of the kind is declared with its literal value and verified by a later literal expectation of this case; in a RECEIVER case, whose expectations are {}, by a literal member of a later step input, which Core compares with the isolated admission.",
             "items": {
               "title": "CapabilityVectorPrecondition",
               "type": "object",
@@ -84,7 +88,7 @@
                 "contractKey": {"type": "string"},
                 "inputJson": {"type": "string"},
                 "expectedOutputJson": {"type": "string"},
-                "referenceResourceId": {"type": "string", "format": "uuid", "description": "Literal platform Resource id of the step target. DD-124(4): a case with a RECEIVER step never names a platform Resource by literal; it uses referenceResourceKey."},
+                "referenceResourceId": {"type": "string", "format": "uuid", "description": "Literal platform Resource id of the step target. DD-124(4): a RECEIVER case never names a platform Resource by literal; it uses referenceResourceKey."},
                 "referenceAssetId": {"type": "string", "format": "uuid"},
                 "referenceResourceKey": {"type": "string", "description": "V2 only. Key of a PRECONDITION of this case whose fixture value is the step's reference Resource id; Core freezes that value into the plan step's referenceResourceId. DD-124(4): in a receiver-direction case it is the id the isolated Core's real resource.create (DD-98 existing native reference) returned. Mutually exclusive with referenceResourceId, referenceAssetId and referenceFromStepKey; it counts as this step sending that precondition."},
                 "referenceFromStepKey": {"type": "string", "description": "V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定 Resource/Asset 目标一起进入规范化参数 hash。"},
@@ -97,10 +101,6 @@
                   "type": "array",
                   "description": "V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence provides to later steps.",
                   "items": {"$ref": "capability_vector_capture.schema.json"}
-                },
-                "direction": {
-                  "$ref": "../enums/capability_vector_step_direction.schema.json",
-                  "description": "V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated deployment and is observed by the production plan only through receiver_start/receiver_observe. It names the receiver Resource by referenceResourceKey and expects {}. In a case with a RECEIVER step every platform Resource id, typed or a resourceId/sourceResourceId/assetId member of a step document, is a PRECONDITION, never a LITERAL. Its inputJson describes the receiver admission the isolated Core performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or GENERATED_REF captures where that admission carries identifiers the isolated Core or the implementation generated. Its evidence is the isolated run's native batch or execution, both read_receipts and the native terminal status, all generated in this run."
                 }
               }
             }

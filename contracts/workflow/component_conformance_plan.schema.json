@@ -31,7 +31,7 @@
           "stepKey": {"type": "string"},
           "operation": {"$ref": "../enums/component_conformance_operation.schema.json"},
           "contractKey": {"type": "string", "description": "只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是 native 任务元数据。"},
-          "nativeReceiverInputJson": {"type": "string", "description": "仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。"},
+          "nativeReceiverInputJson": {"type": "string", "description": "仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。"},
           "idempotencyKey": {"type": "string"},
           "requestJson": {"type": "string"},
           "expectedResponseJson": {"type": "string"},
