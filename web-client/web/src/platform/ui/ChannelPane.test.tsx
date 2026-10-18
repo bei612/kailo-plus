@@ -13,6 +13,7 @@ import type { MessageAuthor } from "./MessageAuthorProfile";
 import { parseMentionClipboardRecords } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { SETTLE_FRAME_COUNT, SETTLE_MOTION_WINDOW_MS } from "@client-kit/platform/react/messages/timeline/useSettleGatedPrependMessages";
 import { toast } from "sonner";
+import { CollaborationPreferencesProvider, type CollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -372,6 +373,32 @@ it("routes ordinary live DM messages through the DM slot while honoring self, mu
   expect(state.notify).toHaveBeenCalledTimes(1);
   await act(async () => { state.receive!({type: "closed", reason: "scope-revoked"}); });
   await send("revoked");
+  expect(state.notify).toHaveBeenCalledTimes(1);
+});
+
+it("alerts replies in followed threads and never in muted ones, per the original shouldNotifyForEvent (DD-125(1))", async () => {
+  state.members.data = [{ principalId: "human-a", pubkeys: ["own"], displayName: "Me" }, { principalId: "human-b", pubkeys: ["peer"], displayName: "Alice" }];
+  let followed = new Set<string>(), muted = new Set<string>();
+  const preferences = { writable: true, isFollowingThread: (id: string) => followed.has(id), isThreadMuted: (id: string) => muted.has(id) } as unknown as CollaborationPreferenceActions;
+  await act(async () => { root.render(<CollaborationPreferencesProvider value={preferences}><TooltipProvider>
+    <ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider></CollaborationPreferencesProvider>); });
+  await act(async () => {
+    state.receive!({ type: "snapshot", events: [{ id: "event-a", pubkey: "author-a", kind: 9, created_at: 1, tags: [], content: "existing message" },
+      { id: "bounds", pubkey: "relay", kind: 39006, created_at: 1, tags: [["d", "channel-a:head"]], content: JSON.stringify({ has_more: false, next_cursor: null }) }] });
+    state.receive!({ type: "live" });
+  });
+  const reply = (id: string, pubkey = "peer") => act(async () => {
+    state.receive!({ type: "event", event: { id, pubkey, kind: 9, created_at: 3, tags: [["e", "event-a", "", "root"], ["e", "event-a", "", "reply"]], content: "Reply" } });
+  });
+  await reply("unfollowed-reply");
+  expect(state.notify).not.toHaveBeenCalled();
+  followed = new Set(["event-a"]);
+  await reply("followed-reply");
+  expect(state.notify).toHaveBeenCalledWith(expect.objectContaining({ eventId: "followed-reply", slot: "thread_reply" }));
+  // Unfollowing mutes: even the person's own participation no longer alerts.
+  followed = new Set(); muted = new Set(["event-a"]);
+  await reply("own-reply", "own");
+  await reply("muted-reply");
   expect(state.notify).toHaveBeenCalledTimes(1);
 });
 

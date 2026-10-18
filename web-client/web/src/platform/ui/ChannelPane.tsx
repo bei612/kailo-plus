@@ -55,6 +55,7 @@ import { t } from "@/shared/i18n";
 import { toast } from "sonner";
 import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useAgentMentionOutcomes, type MentionableAgent } from "./useAgentMentionOutcomes";
+import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
@@ -343,6 +344,12 @@ export function ChannelPane({
   );
   const typingAgents = useComposerAgentDirectory(bff, {workspaceId, principalId: myPrincipalId}, !conversation && live && !denied && !metadataPending);
   const agentTypingPubkeys = useMemo(() => new Set(typingAgents.data?.agents.map(agent => agent.pubkey.toLowerCase())), [typingAgents.data]);
+  // Original canManageMessageForCurrentUser "own Agent": Installations this person owns here.
+  const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
+    .filter(agent => agent.installation.ownerPrincipalId === myPrincipalId).map(agent => agent.pubkey.toLowerCase())),
+  [typingAgents.data, myPrincipalId]);
+  // DD-125(1): thread follow/mute live in Core CollaborationUserState (shared provider).
+  const preferences = useCollaborationPreferences();
   const humanTypingEntries = window.typing.filter(entry => !mine.has(entry.pubkey)
     && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey));
   const typingPubkeys = humanTypingEntries
@@ -575,12 +582,18 @@ export function ChannelPane({
       mine.size === 0 || mine.has(event.pubkey)) return;
     const mentioned = event.tags.some((tag) => tag[0] === "p" && mine.has(tag[1] ?? ""));
     const thread = getThreadReference(event.tags);
+    // Original shouldNotifyForEvent order: broadcast reply, mention, muted channel, then a
+    // reply only in a thread that is not muted and is participated, followed or authored.
+    const threadMuted = thread.rootId !== null && preferences?.isThreadMuted(thread.rootId) === true;
+    const followed = thread.rootId !== null && preferences?.isFollowingThread(thread.rootId) === true;
     const participated = thread.rootId !== null && (events.some((prior) => mine.has(prior.pubkey) &&
       (prior.id === thread.rootId || getThreadReference(prior.tags).rootId === thread.rootId)) ||
       (channelId !== undefined && reactionThreadInteractionRoots(rawEvents, mine, channelId).has(thread.rootId)));
     // Original mention precedence and thread-participation semantics. Ordinary
     // channel activity is not falsely promoted into a desktop alert.
-    if (conversation ? muted : !mentioned && (muted || !participated || !thread.parentId)) return;
+    if (!isBroadcastReply(event.tags) && (conversation
+      ? muted || (!mentioned && thread.parentId !== null && threadMuted)
+      : !mentioned && (muted || !thread.parentId || threadMuted || !(participated || followed)))) return;
     const slot = conversation ? "dm" : mentioned ? "mention" : "thread_reply";
     const notification = formatMessageNotification({ source: slot, senderName: byPubkey.get(event.pubkey)?.displayName, content: event.content });
     notifications?.notify({ eventId: event.id, ...notification, slot,
@@ -836,6 +849,10 @@ export function ChannelPane({
                   onMarkRead={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, true) : undefined}
                   onMarkUnread={canMarkMessage ? target => markMessageSubtree(target, routedTimelineMessages, false) : undefined}
                   onReply={(message.kind === 9 || message.kind === 40002 || message.kind === KIND_STREAM_MESSAGE_DIFF) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
+                  // Original TimelineMessageRow: thread heads with a summary carry the explicit follow.
+                  isFollowingThread={entry.summary ? preferences?.isFollowingThread(message.id) === true : undefined}
+                  onFollowThread={entry.summary && preferences?.writable && live && !denied ? (target) => { void preferences.followThread(target.id); } : undefined}
+                  onUnfollowThread={entry.summary && preferences?.writable && live && !denied ? (target) => { void preferences.unfollowThread(target.id); } : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 messageId={message.id}
@@ -920,7 +937,7 @@ export function ChannelPane({
     </Suspense> : null}
     {threadAdmissionAvailable ? <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
     {replaceThreadWithIdleAuxiliary && !profileTarget && !systemProfileTarget && !participantProfileTarget ? idleAuxiliarySurface : replyTarget ? <div ref={threadSurface.ref} inert={threadSurface.covered || undefined} aria-hidden={threadSurface.covered || undefined} key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`} className={profileTarget || systemProfileTarget || participantProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer escapeEnabled={!threadSurface.covered} hasActiveEdit={threadEditTarget!==null} active={focusThread && !profileTarget && !systemProfileTarget && !participantProfileTarget} channelName={channelName} onClose={handleCloseThread}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
-      channelName={channelName} agentPubkeys={agentTypingPubkeys}
+      channelName={channelName} agentPubkeys={agentTypingPubkeys} ownedAgentPubkeys={ownedAgentPubkeys}
       restoreDraftKey={restoreDraftKey} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       channelId={conversation?.channelId ?? channelId}
       conversation={conversation}

@@ -37,7 +37,7 @@ import type {
   AgentMentionOutcomeQueryRequest,
   WebTypingRequest,
 } from "@client-kit/contracts";
-import { AgentMentionOutcomeState, ReasonCode, WebPresenceStatus } from "@client-kit/contracts";
+import { AgentMentionOutcomeState, ReasonCode, WebMessageType, WebPresenceStatus } from "@client-kit/contracts";
 import { KIND_PRESENCE_UPDATE, KIND_USER_STATUS } from "@client-kit/platform/react/thread/kinds";
 import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
@@ -362,6 +362,23 @@ export async function publishConversationMessage(conversationId: string, content
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId, mentionPubkeys } satisfies WebPublishMessageRequest),
   }));
+}
+/**
+ * DD-125(1) original "Send to channel": only the source thread reply is named. Core
+ * re-reads it in the admitted channel, checks it is the caller's or their Agent's,
+ * and signs a new top-level message with its body and semantic tags (DD-81 key).
+ */
+export async function publishSendToChannel(target: { workspaceId: string } | { conversationId: string },
+  sourceEventId: string, idempotencyKey: string): Promise<{ eventId: string; operationId: string }> {
+  const path = "conversationId" in target
+    ? `/api/v1/conversations/${encodeURIComponent(target.conversationId)}/messages`
+    : `/api/v1/workspaces/${target.workspaceId}/messages`;
+  const receipt = unwrap<{ eventId: string; operationId: string }>({ method: "POST", path }, await transport.exchange(path, {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ content: "", messageType: WebMessageType.Stream, sendToChannelSourceEventId: sourceEventId } satisfies WebPublishMessageRequest),
+  }));
+  if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Send to channel has no confirmed receipt.");
+  return receipt;
 }
 export async function uploadConversationMedia(conversationId: string, file: File, options?: MediaUploadOptions): Promise<MediaDescriptor> {
   const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/media`;

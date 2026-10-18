@@ -13,9 +13,11 @@ import { ChannelThreadPane } from "./ChannelThreadPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
+import { CollaborationPreferencesProvider, type CollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
+import { TransportError } from "@client-kit/platform/transport";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({typing:vi.fn(),composer:vi.fn(),richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({sendToChannel:vi.fn(),typing:vi.fn(),composer:vi.fn(),richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query,conversationMessages:state.conversationQuery}), useLocale: () => "en", useT: () => (key: string) => key,
@@ -32,6 +34,7 @@ vi.mock("@/platform/bff-client", async(original) => ({
   },
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
+  publishSendToChannel: (...args: unknown[]) => state.sendToChannel(...args),
   publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),
   publishTyping: (...args: unknown[]) => state.typing(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
@@ -45,6 +48,8 @@ const rootEvent = event(rootId, "Root body", [], 1);
 const reply = event(replyId, "Nested body", [["e", rootId, "", "root"], ["e", rootId, "", "reply"]], 2);
 const selected = {id: replyId, createdAt: 2, pubkey: author, author: "Alice", body: "Nested body", tags: reply.tags, depth: 0, time: ""};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
+// DD-125: the shell's Core preference actions; null keeps the pane as before (controls hidden).
+let preferences: CollaborationPreferenceActions | null = null;
 async function settle() {for (let i = 0; i < 30; i++) await act(async () => {
   await vi.advanceTimersByTimeAsync(10);
   frameData.delta=10; frameData.timestamp+=10; frameData.isProcessing=true;
@@ -58,7 +63,9 @@ function LayoutThread({layoutEnabled, ...props}: import("react").ComponentProps<
   return layoutEnabled ? <FocusThreadDrawer active={mode === "focus"} onClose={props.onClose}>{pane}</FocusThreadDrawer> : pane;
 }
 async function mount(routeTargetMessageId?:string, conversation?:ConversationView, search?:{searchMessageId:string;searchQuery:string}, typingEntries: import("react").ComponentProps<typeof ChannelThreadPane>["typingEntries"] = [], layoutEnabled = false, restoreDraftKey?:string) {
-  await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
+  const withPreferences = (node: import("react").ReactNode) => preferences
+    ? <CollaborationPreferencesProvider value={preferences}>{node}</CollaborationPreferencesProvider> : node;
+  await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>{withPreferences(
     <LayoutThread workspaceId="workspace" principalId="human" selected={selected} layoutEnabled={layoutEnabled}
       conversation={conversation} channelId={conversation?.channelId}
       routeTargetMessageId={routeTargetMessageId} restoreDraftKey={restoreDraftKey} autoSendDraftKey={restoreDraftKey}
@@ -67,12 +74,13 @@ async function mount(routeTargetMessageId?:string, conversation?:ConversationVie
       profiles={{["d".repeat(64)]:{displayName:"Peer",avatarUrl:null,nip05Handle:null,ownerPubkey:null}}}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
       disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
-  </TooltipProvider></QueryClientProvider>));
+  )}</TooltipProvider></QueryClientProvider>));
   await settle();
 }
 beforeEach(() => {
   MotionGlobalConfig.useManualTiming=true;
-  vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); setLocale("en"); state.outcome = "";state.receive=null;
+  vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); setLocale("en"); state.outcome = "";state.receive=null;
+  preferences = null;
   setThreadViewMode("split");
   state.richContent=false;
   vi.stubGlobal("Image",function(){
@@ -319,4 +327,60 @@ it("renders the original thread author avatars through admitted media and remove
   expect(state.openAuthor).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
   await act(async()=>state.receive!({type:"interrupted"}));await settle();
   expect(host.querySelector("img")).toBeNull();expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
+});
+
+async function openMenu(messageId: string) {
+  const trigger = host.querySelector<HTMLElement>(`[data-testid="more-actions-${messageId}"]`);
+  expect(trigger).not.toBeNull();
+  await act(async () => { trigger!.focus(); trigger!.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true})); });
+  await settle();
+}
+
+it("follows and unfollows the open thread root through Core preferences (DD-125(1))", async () => {
+  const followThread = vi.fn(async () => true), unfollowThread = vi.fn(async () => true);
+  let notified = false;
+  preferences = {writable: true, isNotifiedForThread: () => notified, followThread, unfollowThread} as unknown as CollaborationPreferenceActions;
+  await mount();
+  await openMenu(rootId);
+  const follow = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => /follow/i.test(item.textContent ?? ""));
+  expect(follow?.textContent).toMatch(/^(Follow thread|buzz\.followThread)$/);
+  await act(async () => follow!.click());
+  expect(followThread).toHaveBeenCalledWith(rootId);
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})));
+  // Following unmuted the thread: the head now offers the coupled unfollow (mute).
+  notified = true;
+  preferences = {...preferences, isNotifiedForThread: () => notified} as CollaborationPreferenceActions;
+  await mount();
+  await openMenu(rootId);
+  const unfollow = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => /unfollow/i.test(item.textContent ?? ""));
+  await act(async () => unfollow!.click());
+  expect(unfollowThread).toHaveBeenCalledWith(rootId);
+  // Only the thread head carries the follow; replies never do.
+  expect(host.querySelector(`[data-testid="send-to-channel-${rootId}"]`)).toBeNull();
+});
+
+it("sends an own thread reply to the channel by source ID and keeps the intent key while unknown", async () => {
+  state.sendToChannel.mockRejectedValueOnce(new TransportError("timeout")).mockResolvedValue({eventId: "d".repeat(64), operationId: "operation"});
+  await mount();
+  await openMenu(replyId);
+  const send = document.querySelector<HTMLElement>(`[data-testid="send-to-channel-${replyId}"]`);
+  expect(send).not.toBeNull();
+  await act(async () => send!.click());
+  await settle();
+  expect(state.sendToChannel).toHaveBeenLastCalledWith({workspaceId: "workspace"}, replyId, expect.stringMatching(/^[0-9a-f-]{36}$/));
+  const firstKey = state.sendToChannel.mock.calls[0]![2];
+  await openMenu(replyId);
+  await act(async () => document.querySelector<HTMLElement>(`[data-testid="send-to-channel-${replyId}"]`)!.click());
+  await settle();
+  // The unknown first attempt is answered with the same key, never a second signed copy.
+  expect(state.sendToChannel.mock.calls[1]![2]).toBe(firstKey);
+  expect(state.publish).not.toHaveBeenCalled();
+});
+
+it("does not offer Send to channel on another person's reply", async () => {
+  const other = "e".repeat(64);
+  state.query.mockResolvedValue({events: [rootEvent, {...reply, pubkey: other}]});
+  await mount();
+  await openMenu(replyId);
+  expect(document.querySelector(`[data-testid="send-to-channel-${replyId}"]`)).toBeNull();
 });

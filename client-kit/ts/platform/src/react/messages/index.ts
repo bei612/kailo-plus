@@ -18,6 +18,7 @@ export * from "./messageGrouping";
 export * from "./messageOrder";
 export * from "./observeElementBlockSize";
 export * from "./sentFromThread";
+export * from "./sendToChannel";
 export * from "./SentFromThreadLine";
 export * from "./SentFromThreadLink";
 export * from "./threadTreeLayout";

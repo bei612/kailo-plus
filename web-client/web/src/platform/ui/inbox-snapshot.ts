@@ -11,6 +11,7 @@ import {
   type WorkspaceView,
 } from "@client-kit/contracts";
 import type { BffClient } from "@client-kit/platform/client";
+import type { CollaborationPreferences } from "@client-kit/platform/collaboration-preferences";
 import { aggregateInbox, inboxConversation, inboxReadContext, inboxReply, loadOwnedAgentIdentities } from "@client-kit/platform/inbox";
 import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
@@ -26,7 +27,7 @@ export type InboxSnapshot = {
   scope: object;
   mentions: InboxEvent[];
   activity: InboxEvent[];
-  /** Channel thread replies admitted by the original interest rule (authored, replied, mentioned). */
+  /** Channel thread replies admitted by the original interest rule (authored, replied, mentioned, followed; never muted). */
   interestReplyIds: Set<string>;
   projectItems: ProjectInboxWorkItem[];
   workspaces: WorkspaceView[];
@@ -39,6 +40,19 @@ export type InboxSnapshot = {
   hiddenDm: ReadonlySet<string>;
 };
 
+/**
+ * DD-125(1) original isNotifiedForThread over the implicit interest roots (authored,
+ * replied, mentioned): an explicit Core follow joins the set, a mute leaves it.
+ */
+export function applyThreadPreferences(roots: Set<string>, threadPreferences: CollaborationPreferences["threadPreferences"]): Set<string> {
+  for (const [key, preference] of Object.entries(threadPreferences ?? {})) {
+    const rootId = key.slice("thread:".length);
+    if (preference.state === "FOLLOWED") roots.add(rootId);
+    else roots.delete(rootId);
+  }
+  return roots;
+}
+
 /** The read positions an Inbox projection needs (useInboxState). */
 export type InboxReads = {
   readAt: (key: string) => number | null;
@@ -49,8 +63,10 @@ export type InboxReads = {
  * Build one Inbox snapshot. Returns null when `isCurrent` reports that a newer load or scope
  * superseded this one; any unverifiable read throws.
  */
-export async function loadInboxSnapshot({ client, principalId, visibility, projectsHost, scope: selectionScope, isCurrent, signal }: {
+export async function loadInboxSnapshot({ client, principalId, visibility, projectsHost, scope: selectionScope, isCurrent, signal, threadPreferences }: {
   client: BffClient;
+  /** DD-125(1) Core thread follows/mutes; absent keeps the original implicit interest only. */
+  threadPreferences?: CollaborationPreferences["threadPreferences"];
   principalId: string;
   visibility: ConversationVisibilityHost | null;
   projectsHost: ProjectsHost;
@@ -139,6 +155,7 @@ export async function loadInboxSnapshot({ client, principalId, visibility, proje
     );
     const reactionContext = [...events, ...inboxReactionEvents(page.events, channel.channelId)];
     for (const rootId of reactionThreadInteractionRoots(reactionContext, own, channel.channelId)) roots.add(rootId);
+    applyThreadPreferences(roots, threadPreferences);
     next.mentions.push(
       ...events
         .filter((event) => !own.has(event.pubkey) && mentioned(event))

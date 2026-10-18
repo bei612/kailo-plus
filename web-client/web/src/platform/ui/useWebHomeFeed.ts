@@ -74,6 +74,9 @@ export function useWebHomeFeed({ client, visibility, principalId, reads, activeW
   const generation = useRef(0);
   const loading = useRef(false);
   const read = useRef<AbortController | null>(null);
+  // DD-125(1): each poll reads the latest Core thread follows/mutes without restarting it.
+  const threadPreferences = useRef(reads.state?.threadPreferences);
+  threadPreferences.current = reads.state?.threadPreferences;
 
   useEffect(() => {
     // A new identity never shows or alerts from the previous one's snapshot.
@@ -88,7 +91,8 @@ export function useWebHomeFeed({ client, visibility, principalId, reads, activeW
       read.current = controller;
       try {
         const next = await loadInboxSnapshot({ client, principalId, visibility, projectsHost, scope,
-          isCurrent: () => !stopped && epoch === generation.current, signal: controller.signal });
+          isCurrent: () => !stopped && epoch === generation.current, signal: controller.signal,
+          threadPreferences: threadPreferences.current });
         if (next && !stopped && epoch === generation.current) setSnapshot(next);
       } catch {
         // Keep the last admitted snapshot; the next poll or focus reads again.

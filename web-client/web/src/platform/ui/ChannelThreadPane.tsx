@@ -1,13 +1,14 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
-import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, isThreadReply, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
-import { publishMessage, publishConversationMessage, publishTyping, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { publishMessage, publishConversationMessage, publishSendToChannel, publishTyping, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
@@ -18,10 +19,12 @@ import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
 import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys, ownedAgentPubkeys }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   /** The channel's admitted Agent identities; their messages use the original squircle avatar. */
   agentPubkeys?: ReadonlySet<string>;
+  /** Installations the viewer owns in this channel: their replies offer the original Send to channel. */
+  ownedAgentPubkeys?: ReadonlySet<string>;
   conversation?: ConversationView;
   typingEntries?: readonly TypingIndicatorEntry[];
   profiles?: ComponentProps<typeof ThreadPanelSurface>["profiles"];
@@ -132,6 +135,23 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   }, [unavailable, interrupted, disabled, editTarget, onCancelEdit]);
   const loading = thread.isPending || thread.hasNextPage || thread.isFetchingNextPage;
   const currentMember = members.find(member => member.principalId === principalId);
+  const ownPubkeys = useMemo(() => new Set(members.find(member => member.principalId === principalId)?.pubkeys ?? []),
+    [members, principalId]);
+  // DD-125(1): the original thread follow (MessageThreadPanel head action) over Core
+  // CollaborationUserState. The head shows isNotifiedForThread: an explicit follow, or the
+  // original implicit interest (authored, replied or mentioned) unless the thread is muted.
+  const preferences = useCollaborationPreferences();
+  const implicitInterest = rows.some(row => ownPubkeys.has(row.signerPubkey ?? "") ||
+    (row.tags ?? []).some(tag => tag[0] === "p" && ownPubkeys.has(tag[1] ?? "")));
+  const threadFollowAvailable = Boolean(preferences?.writable) && !unavailable && !interrupted && !loading;
+  const isFollowingThread = preferences?.isNotifiedForThread(rootId, implicitInterest) === true;
+  const followThread = useCallback(() => { void preferences?.followThread(rootId); }, [preferences, rootId]);
+  const unfollowThread = useCallback(() => { void preferences?.unfollowThread(rootId); }, [preferences, rootId]);
+  // Original useStableSendToChannel + canSendMessageToChannel: settled kind 9 replies of the
+  // viewer or of an Agent they own. Core re-reads the reply and decides (DD-125(1), DD-81).
+  const sendToChannel = useSendToChannelIntent(useCallback((sourceEventId: string, key: string) =>
+    publishSendToChannel(conversation ? { conversationId: conversation.id } : { workspaceId }, sourceEventId, key),
+  [conversation, workspaceId]));
   const memberActive = conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === channelId && conversation.participantPrincipalIds.includes(principalId) && Boolean(currentMember)
     : currentMember && "state" in currentMember && currentMember.state === WorkspaceMembershipState.Active;
@@ -229,6 +249,11 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
+        isFollowingThread={row.message.id === rootId ? isFollowingThread : undefined}
+        onFollowThread={row.message.id === rootId && threadFollowAvailable && !isFollowingThread ? followThread : undefined}
+        onUnfollowThread={row.message.id === rootId && threadFollowAvailable && isFollowingThread ? unfollowThread : undefined}
+        onSendToChannel={row.message.id !== rootId && !disabled && !unavailable && !interrupted && Boolean(memberActive) &&
+          canSendMessageToChannel(row.message, ownPubkeys, ownedAgentPubkeys) ? sendToChannel : undefined}
         isUnread={isMessageUnread?.(row.message)}
         onMarkRead={!disabled && !unavailable && !interrupted && !loading && onMarkRead ? message => onMarkRead(message, rows) : undefined}
         onMarkUnread={!disabled && !unavailable && !interrupted && !loading && onMarkUnread ? message => onMarkUnread(message, rows) : undefined}
