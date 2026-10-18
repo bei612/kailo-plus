@@ -1086,8 +1086,12 @@ export interface ActionCommand {
     /**
      * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
      */
-    tenantId?:         string;
-    workspaceChannel?: WorkspaceChannelClass;
+    tenantId?: string;
+    /**
+     * 仅 tenant.quota.set（DD-123）
+     */
+    tenantQuotaSetting?: TenantQuotaSettingClass;
+    workspaceChannel?:   WorkspaceChannelClass;
     /**
      * Workspace 内动作的执行 Workspace
      */
@@ -1675,6 +1679,23 @@ export interface ResourceCreateClass {
     nativeRef:      string;
     nativeType:     string;
     typeKey:        string;
+}
+
+/**
+ * 仅 tenant.quota.set（DD-123）
+ *
+ * DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+ * OpenMeter entitlement for the platform feature, resetting monthly.
+ */
+export interface TenantQuotaSettingClass {
+    feature:        TenantQuotaFeature;
+    limitPerPeriod: number;
+}
+
+export enum TenantQuotaFeature {
+    AgentMemoryWrites = "agent_memory_writes",
+    AgentTokens = "agent_tokens",
+    AutomationRuns = "automation_runs",
 }
 
 /**
@@ -4399,8 +4420,12 @@ export interface CommandClass {
     /**
      * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
      */
-    tenantId?:         string;
-    workspaceChannel?: WorkspaceChannelClass;
+    tenantId?: string;
+    /**
+     * 仅 tenant.quota.set（DD-123）
+     */
+    tenantQuotaSetting?: TenantQuotaSettingClass;
+    workspaceChannel?:   WorkspaceChannelClass;
     /**
      * Workspace 内动作的执行 Workspace
      */
@@ -5467,6 +5492,23 @@ export enum TenantInvitationStatus {
     Issued = "ISSUED",
     Redeemed = "REDEEMED",
     Revoked = "REVOKED",
+}
+
+/**
+ * DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
+ * Tenant admin and auditor only.
+ */
+export interface TenantQuotaPage {
+    quotas: TenantQuotaView[];
+}
+
+export interface TenantQuotaView {
+    feature:         TenantQuotaFeature;
+    hardLimit:       boolean;
+    hasAccess:       boolean;
+    limitPerPeriod?: number;
+    periodResetAt?:  Date;
+    usage?:          number;
 }
 
 /**
@@ -6949,6 +6991,15 @@ export interface TaskStateReport {
      * 固定格式的业务 workflow ID
      */
     workflowId: string;
+}
+
+/**
+ * DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+ * OpenMeter entitlement for the platform feature, resetting monthly.
+ */
+export interface TenantQuotaSetting {
+    feature:        TenantQuotaFeature;
+    limitPerPeriod: number;
 }
 
 /**

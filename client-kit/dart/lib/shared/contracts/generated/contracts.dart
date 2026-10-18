@@ -148,6 +148,7 @@
 //     final platformSessionView = platformSessionViewFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
+//     final tenantQuotaPage = tenantQuotaPageFromJson(jsonString);
 //     final usageBillingView = usageBillingViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final webChannelView = webChannelViewFromJson(jsonString);
@@ -215,6 +216,7 @@
 //     final resourceCreate = resourceCreateFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
+//     final tenantQuotaSetting = tenantQuotaSettingFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
 //     final workspaceChannelCreate = workspaceChannelCreateFromJson(jsonString);
 //     final workspaceUpdate = workspaceUpdateFromJson(jsonString);
@@ -1179,6 +1181,12 @@ TenantInvitationView tenantInvitationViewFromJson(String str) =>
 String tenantInvitationViewToJson(TenantInvitationView data) =>
     json.encode(data.toJson());
 
+TenantQuotaPage tenantQuotaPageFromJson(String str) =>
+    TenantQuotaPage.fromJson(json.decode(str));
+
+String tenantQuotaPageToJson(TenantQuotaPage data) =>
+    json.encode(data.toJson());
+
 UsageBillingView usageBillingViewFromJson(String str) =>
     UsageBillingView.fromJson(json.decode(str));
 
@@ -1584,6 +1592,12 @@ TaskStateReport taskStateReportFromJson(String str) =>
     TaskStateReport.fromJson(json.decode(str));
 
 String taskStateReportToJson(TaskStateReport data) =>
+    json.encode(data.toJson());
+
+TenantQuotaSetting tenantQuotaSettingFromJson(String str) =>
+    TenantQuotaSetting.fromJson(json.decode(str));
+
+String tenantQuotaSettingToJson(TenantQuotaSetting data) =>
     json.encode(data.toJson());
 
 WorkflowRef workflowRefFromJson(String str) =>
@@ -4425,6 +4439,9 @@ class ActionCommand {
 
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
+
+  ///仅 tenant.quota.set（DD-123）
+  final TenantQuotaSettingClass? tenantQuotaSetting;
   final WorkspaceChannelClass? workspaceChannel;
 
   ///Workspace 内动作的执行 Workspace
@@ -4473,6 +4490,7 @@ class ActionCommand {
     this.slug,
     this.sourceEventId,
     this.tenantId,
+    this.tenantQuotaSetting,
     this.workspaceChannel,
     this.workspaceId,
     this.workspaceUpdate,
@@ -4554,6 +4572,9 @@ class ActionCommand {
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
+    tenantQuotaSetting: json["tenantQuotaSetting"] == null
+        ? null
+        : TenantQuotaSettingClass.fromJson(json["tenantQuotaSetting"]),
     workspaceChannel: json["workspaceChannel"] == null
         ? null
         : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
@@ -4602,6 +4623,7 @@ class ActionCommand {
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
+    "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
     "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
     "workspaceUpdate": workspaceUpdate?.toJson(),
@@ -6024,6 +6046,39 @@ class ResourceCreateClass {
     "typeKey": typeKey,
   });
 }
+
+///仅 tenant.quota.set（DD-123）
+///
+///DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+///OpenMeter entitlement for the platform feature, resetting monthly.
+class TenantQuotaSettingClass {
+  final TenantQuotaFeature feature;
+  final int limitPerPeriod;
+
+  TenantQuotaSettingClass({
+    required this.feature,
+    required this.limitPerPeriod,
+  });
+
+  factory TenantQuotaSettingClass.fromJson(Map<String, dynamic> json) =>
+      TenantQuotaSettingClass(
+        feature: tenantQuotaFeatureValues.map[json["feature"]]!,
+        limitPerPeriod: json["limitPerPeriod"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "feature": tenantQuotaFeatureValues.reverse[feature],
+    "limitPerPeriod": limitPerPeriod,
+  });
+}
+
+enum TenantQuotaFeature { AGENT_MEMORY_WRITES, AGENT_TOKENS, AUTOMATION_RUNS }
+
+final tenantQuotaFeatureValues = EnumValues({
+  "agent_memory_writes": TenantQuotaFeature.AGENT_MEMORY_WRITES,
+  "agent_tokens": TenantQuotaFeature.AGENT_TOKENS,
+  "automation_runs": TenantQuotaFeature.AUTOMATION_RUNS,
+});
 
 ///workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
 class WorkspaceChannelClass {
@@ -12720,6 +12775,9 @@ class CommandClass {
 
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
+
+  ///仅 tenant.quota.set（DD-123）
+  final TenantQuotaSettingClass? tenantQuotaSetting;
   final WorkspaceChannelClass? workspaceChannel;
 
   ///Workspace 内动作的执行 Workspace
@@ -12768,6 +12826,7 @@ class CommandClass {
     this.slug,
     this.sourceEventId,
     this.tenantId,
+    this.tenantQuotaSetting,
     this.workspaceChannel,
     this.workspaceId,
     this.workspaceUpdate,
@@ -12849,6 +12908,9 @@ class CommandClass {
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
+    tenantQuotaSetting: json["tenantQuotaSetting"] == null
+        ? null
+        : TenantQuotaSettingClass.fromJson(json["tenantQuotaSetting"]),
     workspaceChannel: json["workspaceChannel"] == null
         ? null
         : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
@@ -12897,6 +12959,7 @@ class CommandClass {
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
+    "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
     "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
     "workspaceUpdate": workspaceUpdate?.toJson(),
@@ -15486,6 +15549,64 @@ final tenantInvitationStatusValues = EnumValues({
   "REDEEMED": TenantInvitationStatus.REDEEMED,
   "REVOKED": TenantInvitationStatus.REVOKED,
 });
+
+///DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
+///Tenant admin and auditor only.
+class TenantQuotaPage {
+  final List<TenantQuotaView> quotas;
+
+  TenantQuotaPage({required this.quotas});
+
+  factory TenantQuotaPage.fromJson(Map<String, dynamic> json) =>
+      TenantQuotaPage(
+        quotas: List<TenantQuotaView>.from(
+          json["quotas"].map((x) => TenantQuotaView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "quotas": List<dynamic>.from(quotas.map((x) => x.toJson())),
+  });
+}
+
+class TenantQuotaView {
+  final TenantQuotaFeature feature;
+  final bool hardLimit;
+  final bool hasAccess;
+  final int? limitPerPeriod;
+  final DateTime? periodResetAt;
+  final double? usage;
+
+  TenantQuotaView({
+    required this.feature,
+    required this.hardLimit,
+    required this.hasAccess,
+    this.limitPerPeriod,
+    this.periodResetAt,
+    this.usage,
+  });
+
+  factory TenantQuotaView.fromJson(Map<String, dynamic> json) =>
+      TenantQuotaView(
+        feature: tenantQuotaFeatureValues.map[json["feature"]]!,
+        hardLimit: json["hardLimit"],
+        hasAccess: json["hasAccess"],
+        limitPerPeriod: json["limitPerPeriod"],
+        periodResetAt: json["periodResetAt"] == null
+            ? null
+            : DateTime.parse(json["periodResetAt"]),
+        usage: json["usage"]?.toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "feature": tenantQuotaFeatureValues.reverse[feature],
+    "hardLimit": hardLimit,
+    "hasAccess": hasAccess,
+    "limitPerPeriod": limitPerPeriod,
+    "periodResetAt": periodResetAt?.toIso8601String(),
+    "usage": usage,
+  });
+}
 
 ///GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
 ///§7–8），调用方须对该范围持有 audit permission，每次 fresh Check。committed usage、额度与账单直接读 OpenMeter，Core
@@ -19765,6 +19886,26 @@ class TaskStateReport {
     "status": taskStatusValues.reverse[status],
     "waitingReason": waitingReason,
     "workflowId": workflowId,
+  });
+}
+
+///DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+///OpenMeter entitlement for the platform feature, resetting monthly.
+class TenantQuotaSetting {
+  final TenantQuotaFeature feature;
+  final int limitPerPeriod;
+
+  TenantQuotaSetting({required this.feature, required this.limitPerPeriod});
+
+  factory TenantQuotaSetting.fromJson(Map<String, dynamic> json) =>
+      TenantQuotaSetting(
+        feature: tenantQuotaFeatureValues.map[json["feature"]]!,
+        limitPerPeriod: json["limitPerPeriod"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "feature": tenantQuotaFeatureValues.reverse[feature],
+    "limitPerPeriod": limitPerPeriod,
   });
 }
 

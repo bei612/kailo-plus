@@ -1483,6 +1483,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 
+    /// 仅 tenant.quota.set（DD-123）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_quota_setting: Option<TenantQuotaSettingClass>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_channel: Option<WorkspaceChannelClass>,
 
@@ -2313,6 +2317,31 @@ pub struct ResourceCreateClass {
     pub native_type: String,
 
     pub type_key: String,
+}
+
+/// 仅 tenant.quota.set（DD-123）
+///
+/// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+/// OpenMeter entitlement for the platform feature, resetting monthly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantQuotaSettingClass {
+    pub feature: TenantQuotaFeature,
+
+    pub limit_per_period: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TenantQuotaFeature {
+    #[serde(rename = "agent_memory_writes")]
+    AgentMemoryWrites,
+
+    #[serde(rename = "agent_tokens")]
+    AgentTokens,
+
+    #[serde(rename = "automation_runs")]
+    AutomationRuns,
 }
 
 /// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
@@ -6296,6 +6325,10 @@ pub struct CommandClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 
+    /// 仅 tenant.quota.set（DD-123）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_quota_setting: Option<TenantQuotaSettingClass>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_channel: Option<WorkspaceChannelClass>,
 
@@ -7800,6 +7833,32 @@ pub enum TenantInvitationStatus {
 
     #[serde(rename = "REVOKED")]
     Revoked,
+}
+
+/// DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
+/// Tenant admin and auditor only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenantQuotaPage {
+    pub quotas: Vec<TenantQuotaView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantQuotaView {
+    pub feature: TenantQuotaFeature,
+
+    pub hard_limit: bool,
+
+    pub has_access: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_per_period: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub period_reset_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<f64>,
 }
 
 /// GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
@@ -9800,6 +9859,16 @@ pub struct TaskStateReport {
 
     /// 固定格式的业务 workflow ID
     pub workflow_id: String,
+}
+
+/// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+/// OpenMeter entitlement for the platform feature, resetting monthly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantQuotaSetting {
+    pub feature: TenantQuotaFeature,
+
+    pub limit_per_period: i64,
 }
 
 /// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取

@@ -445,6 +445,9 @@
 //    tenantInvitationView, err := UnmarshalTenantInvitationView(bytes)
 //    bytes, err = tenantInvitationView.Marshal()
 //
+//    tenantQuotaPage, err := UnmarshalTenantQuotaPage(bytes)
+//    bytes, err = tenantQuotaPage.Marshal()
+//
 //    usageBillingView, err := UnmarshalUsageBillingView(bytes)
 //    bytes, err = usageBillingView.Marshal()
 //
@@ -645,6 +648,9 @@
 //
 //    taskStateReport, err := UnmarshalTaskStateReport(bytes)
 //    bytes, err = taskStateReport.Marshal()
+//
+//    tenantQuotaSetting, err := UnmarshalTenantQuotaSetting(bytes)
+//    bytes, err = tenantQuotaSetting.Marshal()
 //
 //    workflowRef, err := UnmarshalWorkflowRef(bytes)
 //    bytes, err = workflowRef.Marshal()
@@ -2276,6 +2282,16 @@ func (r *TenantInvitationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalTenantQuotaPage(data []byte) (TenantQuotaPage, error) {
+	var r TenantQuotaPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantQuotaPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalUsageBillingView(data []byte) (UsageBillingView, error) {
 	var r UsageBillingView
 	err := json.Unmarshal(data, &r)
@@ -2943,6 +2959,16 @@ func UnmarshalTaskStateReport(data []byte) (TaskStateReport, error) {
 }
 
 func (r *TaskStateReport) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantQuotaSetting(data []byte) (TenantQuotaSetting, error) {
+	var r TenantQuotaSetting
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantQuotaSetting) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4141,8 +4167,10 @@ type ActionCommand struct {
 	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
 	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
-	TenantID         *string                `json:"tenantId,omitempty"`
-	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
+	TenantID *string `json:"tenantId,omitempty"`
+	// 仅 tenant.quota.set（DD-123）
+	TenantQuotaSetting *TenantQuotaSettingClass `json:"tenantQuotaSetting,omitempty"`
+	WorkspaceChannel   *WorkspaceChannelClass   `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
@@ -4490,6 +4518,15 @@ type ResourceCreateClass struct {
 	NativeRef      string `json:"nativeRef"`
 	NativeType     string `json:"nativeType"`
 	TypeKey        string `json:"typeKey"`
+}
+
+// 仅 tenant.quota.set（DD-123）
+//
+// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+// OpenMeter entitlement for the platform feature, resetting monthly.
+type TenantQuotaSettingClass struct {
+	Feature        TenantQuotaFeature `json:"feature"`
+	LimitPerPeriod int64              `json:"limitPerPeriod"`
 }
 
 // workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
@@ -6117,8 +6154,10 @@ type CommandClass struct {
 	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
 	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
-	TenantID         *string                `json:"tenantId,omitempty"`
-	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
+	TenantID *string `json:"tenantId,omitempty"`
+	// 仅 tenant.quota.set（DD-123）
+	TenantQuotaSetting *TenantQuotaSettingClass `json:"tenantQuotaSetting,omitempty"`
+	WorkspaceChannel   *WorkspaceChannelClass   `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
@@ -6799,6 +6838,21 @@ type TenantInvitationView struct {
 	// 兑换者自报的显示名，只作展示
 	RedeemerDisplayName *string                `json:"redeemerDisplayName,omitempty"`
 	Status              TenantInvitationStatus `json:"status"`
+}
+
+// DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
+// Tenant admin and auditor only.
+type TenantQuotaPage struct {
+	Quotas []TenantQuotaView `json:"quotas"`
+}
+
+type TenantQuotaView struct {
+	Feature        TenantQuotaFeature `json:"feature"`
+	HardLimit      bool               `json:"hardLimit"`
+	HasAccess      bool               `json:"hasAccess"`
+	LimitPerPeriod *int64             `json:"limitPerPeriod,omitempty"`
+	PeriodResetAt  *time.Time         `json:"periodResetAt,omitempty"`
+	Usage          *float64           `json:"usage,omitempty"`
 }
 
 // GET /api/v1/usage-billing：Tenant 或其中一个 Workspace 在区间内的用量与账单视图（.design/11 §6–7、.design/14
@@ -7915,6 +7969,13 @@ type TaskStateReport struct {
 	WorkflowID string `json:"workflowId"`
 }
 
+// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+// OpenMeter entitlement for the platform feature, resetting monthly.
+type TenantQuotaSetting struct {
+	Feature        TenantQuotaFeature `json:"feature"`
+	LimitPerPeriod int64              `json:"limitPerPeriod"`
+}
+
 // Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 // platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17
 // 迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。
@@ -8927,6 +8988,14 @@ type ExpectedHeadState string
 const (
 	ExpectedHeadStateABSENT ExpectedHeadState = "ABSENT"
 	ExpectedHeadStateFOUND  ExpectedHeadState = "FOUND"
+)
+
+type TenantQuotaFeature string
+
+const (
+	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
+	AgentTokens       TenantQuotaFeature = "agent_tokens"
+	AutomationRuns    TenantQuotaFeature = "automation_runs"
 )
 
 type ChannelType string
