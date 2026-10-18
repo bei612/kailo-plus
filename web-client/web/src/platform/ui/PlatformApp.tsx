@@ -69,6 +69,7 @@ import { NativeApplicationPage } from "@client-kit/platform/react/native-applica
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { RelayConnectionOverlay, SidebarRelayConnectionFooterCard } from "@client-kit/platform/react/sidebar/relay-connection-overlay";
 import { useStreamConnectionCard } from "./StreamConnection";
+import { useWebHomeFeed } from "./useWebHomeFeed";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { WebPresenceHost } from "./PresenceHost";
 import { UserNameIndicators } from "@client-kit/platform/react/user-status";
@@ -322,6 +323,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     checkCurrent();
     await navigation.openConversation(conversation.id);
   }
+  // Original AppShell Home feed: the Home badge on every view and background alerts for every
+  // admitted channel and DM; the open scope keeps its own live alerts in ChannelPane.
+  const homeFeed = useWebHomeFeed({ client: bff, visibility: conversationVisibility, principalId: session.tenantPrincipalId,
+    reads: userState, activeWorkspaceId: tab === "channel" ? active : null,
+    activeConversationChannelId: tab === "conversation" ? chosenConversation?.channelId ?? null : null,
+    onOpen: (channelId, target) => openSearchChannel(channelId, target) });
+  // While Inbox is open its own list is what the person sees; elsewhere the shell feed keeps it.
+  const homeBadgeCount = tab === "inbox" && inboxUnreadCount !== null ? inboxUnreadCount : homeFeed.unreadCount;
   const setTab = (next: Exclude<PlatformTab, "conversation" | "application">) => { void navigation.openTab(next, active); };
   const settingsReturn = useRef<() => void>(() => { void navigation.openTab("channel"); });
   useEffect(() => {
@@ -599,7 +608,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
               <AppSidebarPrimaryMenu onSelectHome={() => setTab("inbox")}
                 homeBadgeEnabled={notificationSettings?.settings.homeBadgeEnabled === true}
-                homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
+                homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && homeBadgeCount !== null ? homeBadgeCount : undefined}
                 onSelectPlatformSection={setTab}
                 projectsOverviewActive={!navigation.projectId}
                 projectsSection={<SidebarProjects scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}

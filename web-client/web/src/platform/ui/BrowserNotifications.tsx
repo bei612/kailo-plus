@@ -10,6 +10,8 @@ const browserHost: NotificationHost = {
   getPermission: async () => typeof Notification === "undefined" ? "unsupported" : Notification.permission,
   requestPermission: async () => typeof Notification === "undefined" ? "unsupported" : Notification.requestPermission(),
 };
+/** Original home-feed seen-set bound (features/notifications/use-feed-desktop-notifications.ts). */
+const DELIVERED_EVENT_LIMIT = 500;
 type BrowserNotificationsState = ReturnType<typeof useNotificationSettings> & {
   pubkey: string | undefined;
   sendReminder: (message: { title: string; body: string }) => Promise<boolean>;
@@ -23,9 +25,12 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
   const controller = useNotificationSettings(profile.isSuccess ? profile.data.pubkey : undefined, browserHost);
   const active = useRef(true);
   const displayed = useRef(new Map<string | Notification, Notification>());
+  // Original trackSeenEvent: an event alerts once even when two paths see it (the open
+  // channel's live stream and the shell's Home feed), bounded like the original seen set.
+  const delivered = useRef(new Set<string>());
   useEffect(() => {
     active.current = true;
-    return () => { active.current = false; for (const notification of displayed.current.values()) notification.close(); displayed.current.clear(); };
+    return () => { active.current = false; for (const notification of displayed.current.values()) notification.close(); displayed.current.clear(); delivered.current.clear(); };
   }, [principalId]);
   const value = useMemo<BrowserNotificationsState>(() => ({
     ...controller,
@@ -46,7 +51,7 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
       if (!active.current || !profile.isSuccess || !controller.settings.desktopEnabled ||
         !controller.settings.slotAlertsEnabled[message.slot] || typeof Notification === "undefined" || Notification.permission !== "granted") return;
       if (document.visibilityState === "visible" && !controller.settings.notifyWhileViewing) return;
-      if (displayed.current.has(message.eventId)) return;
+      if (displayed.current.has(message.eventId) || delivered.current.has(message.eventId)) return;
       try {
         // Same browser branch as original Buzz sendDesktopNotification: native
         // notification is silent; the selected original slot supplies sound.
@@ -54,6 +59,8 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
         displayed.current.set(message.eventId, notification);
         notification.onclick = () => { if (active.current) { window.focus(); message.onOpen(); } notification.close(); };
         notification.onclose = () => displayed.current.delete(message.eventId);
+        delivered.current.add(message.eventId);
+        if (delivered.current.size > DELIVERED_EVENT_LIMIT) delivered.current.delete(delivered.current.values().next().value!);
         playNotificationSound(controller.settings.sounds[message.slot]);
       } catch { /* Original delivery miss: no success receipt and no sound. */ }
     },
