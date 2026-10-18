@@ -1,7 +1,10 @@
 import { readFile } from 'fs/promises';
 import { request } from 'http';
 import { Client } from 'pg';
-import { IProjectRepository } from '../repositories/projectRepository';
+import {
+  IProjectRepository,
+  WREN_AI_CONNECTION_INFO,
+} from '../repositories/projectRepository';
 import { ApiHistoryRepository } from '../repositories/apiHistoryRepository';
 import { encryptConnectionInfo, toIbisConnectionInfo } from '../dataSource';
 import { DataSourceName } from '../types';
@@ -90,6 +93,38 @@ async function loadBindingDelivery(
       throw unavailable();
   }
   return value;
+}
+
+// 03 §9 / DD-70: Core's governed application_binding.create writes each binding
+// secret once as the single KV v2 field `value` holding the submitted string.
+// The release's `connection` secret is the JSON text of the original Wren
+// Postgres connectionInfo object; no other KV shape is a governed write. Parser
+// errors are not propagated: their messages can echo secret bytes.
+export function governedConnectionInfo(
+  data: unknown,
+): WREN_AI_CONNECTION_INFO {
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    Object.keys(data).join(',') !== 'value' ||
+    typeof (data as { value: unknown }).value !== 'string'
+  )
+    throw denied();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse((data as { value: string }).value);
+  } catch {
+    throw denied();
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    Object.keys(parsed).length === 0
+  )
+    throw denied();
+  return parsed as WREN_AI_CONNECTION_INFO;
 }
 
 // No cache or token sink: the original Agent's Unix API proxy performs a fresh,
@@ -311,8 +346,8 @@ export class NativeBindingService {
       this.config.serviceClientSecretFile,
       'utf8',
     );
+    const connectionInfo = governedConnectionInfo(secret.value);
     if (
-      !secret.value.connectionInfo ||
       typeof service.value.value !== 'string' ||
       !serviceValue ||
       serviceValue.trim() !== serviceValue ||
@@ -323,7 +358,7 @@ export class NativeBindingService {
     const actual = toIbisConnectionInfo(project.type, project.connectionInfo);
     const delivered = toIbisConnectionInfo(
       project.type,
-      encryptConnectionInfo(project.type, secret.value.connectionInfo),
+      encryptConnectionInfo(project.type, connectionInfo),
     );
     if (canonical(actual) !== canonical(delivered)) throw denied();
     await verifyPostgresReader(

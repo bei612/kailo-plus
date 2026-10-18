@@ -501,8 +501,10 @@ must be the same project selected by the original UI's `getCurrentProject`,
 not a different project reachable only through an adapter-supplied ID. Other
 isolation modes are refused. Dedicated deployment ownership, its database and
 credentials remain controlled deployment facts; matching a project alone does
-not prove infrastructure isolation. Its pinned KV v2 value has `connectionInfo` in the original
-Wren Postgres shape (`host`, `port`, `database`, `user`, `password`, `ssl`). The
+not prove infrastructure isolation. Its pinned KV v2 value is the single string field `value`
+written by Core's governed `application_binding.create` (03 §9); the string is the JSON text of
+the original Wren Postgres `connectionInfo` (`host`, `port`, `database`, `user`, `password`,
+`ssl`). Any other KV shape is refused (`governedConnectionInfo`). The
 value stays in process memory and must equal the original project's decrypted
 connection. It does not create or alter that project or database account. Other
 datasource validators remain unavailable; they are not silently classified as

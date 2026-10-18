@@ -1972,10 +1972,11 @@ integration('original Wren query handler, SDK and native history', () => {
                       : serviceSecret,
                   }
                 : {
-                    connectionInfo: {
+                    // Core's governed binding secret write: one string field.
+                    value: JSON.stringify({
                       ...credential,
                       ...(wrongCredential ? { password: 'wrong-fixture' } : {}),
-                    },
+                    }),
                   },
             },
           }),
