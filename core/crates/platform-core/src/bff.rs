@@ -773,9 +773,10 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
         Ok((identity, access_mode)) => {
             // 会话在身份解析**之后**建立：解析不过就没有会话可用，撤权因此
             // 对下一个请求立刻生效，不需要等任何凭证过期（`.design/03` §4.1）。
-            let (Ok(human), Ok(membership)) = (
+            let (Ok(human), Ok(membership), Ok(tenant)) = (
                 identity.human_identity_id.parse::<uuid::Uuid>(),
                 identity.tenant_membership_id.parse::<uuid::Uuid>(),
+                identity.tenant_id.parse::<uuid::Uuid>(),
             ) else {
                 tracing::warn!("解析出的身份 ID 不是 UUID");
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -790,6 +791,18 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
             .await
             {
                 Ok(n) => n,
+                Err(e) => return error_response(IdentityError::Unavailable(e)),
+            };
+            // Tenant 名即其绑定 Community 的名称（`.design/01` §2），同样只用于界面上
+            // 认出所在社区（原版侧栏资料卡），不参与任何判定；空名不下发。
+            let tenant_name = match sqlx::query_scalar::<_, String>(
+                "select name from identity.tenant where id = $1",
+            )
+            .bind(tenant)
+            .fetch_one(pool)
+            .await
+            {
+                Ok(n) => Some(n).filter(|n| !n.trim().is_empty()),
                 Err(e) => return error_response(IdentityError::Unavailable(e)),
             };
             match session::ensure_mode(
@@ -809,6 +822,8 @@ async fn current_session(State(state): State<BffState>, headers: HeaderMap) -> R
                         tenant_id: identity.tenant_id,
                         tenant_membership_id: identity.tenant_membership_id,
                         tenant_principal_id: identity.tenant_principal_id,
+                        // 缺省而不是 null（contracts/README.md §1）
+                        tenant_name,
                         platform_session_id: s.id.to_string(),
                         access_mode,
                         // 未选定 Workspace 时缺省，不写 null（contracts/README.md §1）

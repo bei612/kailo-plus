@@ -24,7 +24,7 @@ use collab_bridge::operator::LimitKind;
 use collab_bridge::stream::{Lease, PublishError, SessionKey};
 use contracts::{
     ErrorClass, ReasonCode, WebPresencePage, WebPresenceQueryRequest, WebPresenceStatus,
-    WebPresenceUpdateRequest, WebPresenceView,
+    WebPresenceUpdateRequest, WebPresenceView, WebTypingRequest,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -318,13 +318,26 @@ pub(crate) async fn workspace_typing(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,
     headers: HeaderMap,
+    body: axum::body::Bytes,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(v) => v,
         Err(r) => return r,
     };
+    let Some(thread) = typing_thread(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     match admit_collaboration_workspace_scope(&state, &ctx, workspace_id).await {
-        Ok(scope) => typing(&state, &ctx, scope.channel_id, scope.community_host).await,
+        Ok(scope) => {
+            typing(
+                &state,
+                &ctx,
+                scope.channel_id,
+                scope.community_host,
+                thread.as_ref(),
+            )
+            .await
+        }
         Err(failure) => failure.into_response(),
     }
 }
@@ -334,40 +347,98 @@ pub(crate) async fn conversation_typing(
     State(state): State<BffState>,
     Path(conversation_id): Path<Uuid>,
     headers: HeaderMap,
+    body: axum::body::Bytes,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(v) => v,
         Err(r) => return r,
     };
+    let Some(thread) = typing_thread(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     match crate::conversations::admit(&state, &ctx, conversation_id).await {
-        Ok(scope) => typing(&state, &ctx, scope.channel_id, scope.community_host).await,
+        Ok(scope) => {
+            typing(
+                &state,
+                &ctx,
+                scope.channel_id,
+                scope.community_host,
+                thread.as_ref(),
+            )
+            .await
+        }
         Err(response) => response,
     }
 }
 
-/// 原版 `sendTypingIndicator` 的主频道形状：空 content，唯一 `["h", channel]`。线程内
-/// 输入还需原 `e` root/reply 标签，要先有类型化的线程引用契约，此处不接受任何标签输入。
+/// 原版 `buildThreadReferenceTags` 的线程引用：`parent` 是线程面板的 thread head，
+/// `root` 只在不同于 `parent` 时出现。
+#[derive(Debug, PartialEq)]
+struct TypingThread {
+    parent: String,
+    root: Option<String>,
+}
+
+/// 请求体缺省即主频道输入（`Some(None)`）；有请求体时必须是类型化的
+/// `WebTypingRequest`，事件 ID 为 64 位小写十六进制，否则整次请求无效（`None`）。
+/// 只接受这两个 ID，不接受 raw tags、频道或身份（DD-39）。
+fn typing_thread(body: &[u8]) -> Option<Option<TypingThread>> {
+    if body.is_empty() {
+        return Some(None);
+    }
+    let request: WebTypingRequest = serde_json::from_slice(body).ok()?;
+    if !is_event_id(&request.parent_event_id) {
+        return None;
+    }
+    let root = match request.root_event_id {
+        Some(root) if !is_event_id(&root) => return None,
+        Some(root) if root != request.parent_event_id => Some(root),
+        _ => None,
+    };
+    Some(Some(TypingThread {
+        parent: request.parent_event_id,
+        root,
+    }))
+}
+
+fn is_event_id(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(is_lower_hex)
+}
+
+/// 原版 `sendTypingIndicator` 的形状：空 content，唯一 `["h", channel]` 取自已准入的
+/// scope；线程内输入按原 `buildThreadReferenceTags` 追加 `e` root/reply 标签。
 async fn typing(
     state: &BffState,
     ctx: &ExecutionContext,
     channel: String,
     host: String,
+    thread: Option<&TypingThread>,
 ) -> Response {
     let publisher = match publisher(state, ctx, host).await {
         Ok(v) => v,
         Err(r) => return r,
     };
-    let event = typing_event(&publisher.keys, &channel);
+    let event = typing_event(&publisher.keys, &channel, thread);
     match event {
         Some(event) => publisher.send(state, &event, Lease::Unchanged).await,
         None => unavailable(),
     }
 }
 
-fn typing_event(keys: &nostr::Keys, channel: &str) -> Option<nostr::Event> {
-    let tag = nostr::Tag::parse(["h", channel]).ok()?;
+fn typing_event(
+    keys: &nostr::Keys,
+    channel: &str,
+    thread: Option<&TypingThread>,
+) -> Option<nostr::Event> {
+    let mut tags = vec![nostr::Tag::parse(["h", channel]).ok()?];
+    if let Some(thread) = thread {
+        if let Some(root) = &thread.root {
+            tags.push(nostr::Tag::parse(["e", root.as_str(), "", "root"]).ok()?);
+        }
+        tags.push(nostr::Tag::parse(["e", thread.parent.as_str(), "", "reply"]).ok()?);
+    }
     nostr::EventBuilder::new(nostr::Kind::Custom(KIND_TYPING_INDICATOR as u16), "")
-        .tags([tag])
+        .tags(tags)
         .sign_with_keys(keys)
         .ok()
 }
@@ -561,11 +632,72 @@ mod tests {
             assert_eq!(parse_status(status_text(&status)), Some(status));
         }
         let channel = Uuid::from_u128(7).to_string();
-        let typing = typing_event(&keys, &channel).unwrap();
+        let typing = typing_event(&keys, &channel, None).unwrap();
         assert_eq!(u32::from(typing.kind.as_u16()), KIND_TYPING_INDICATOR);
         assert!(typing.content.is_empty());
         let tags: Vec<_> = typing.tags.iter().map(nostr::Tag::as_slice).collect();
-        assert_eq!(tags, vec![["h".to_owned(), channel]]);
+        assert_eq!(tags, vec![vec!["h".to_owned(), channel.clone()]]);
         assert!(typing.verify().is_ok());
+
+        // 原 buildThreadReferenceTags：root 不同于 thread head 时 root 在前，reply 在后
+        let (root, head) = ("a".repeat(64), "b".repeat(64));
+        let thread = TypingThread {
+            parent: head.clone(),
+            root: Some(root.clone()),
+        };
+        let typing = typing_event(&keys, &channel, Some(&thread)).unwrap();
+        let tags: Vec<_> = typing.tags.iter().map(nostr::Tag::as_slice).collect();
+        let tag = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            tags,
+            vec![
+                tag(&["h", channel.as_str()]),
+                tag(&["e", root.as_str(), "", "root"]),
+                tag(&["e", head.as_str(), "", "reply"]),
+            ]
+        );
+        assert!(typing.verify().is_ok());
+    }
+
+    #[test]
+    fn typing_body_is_absent_or_a_typed_thread_reference() {
+        let (root, head) = ("a".repeat(64), "b".repeat(64));
+        assert_eq!(typing_thread(b""), Some(None));
+        let body = |value: Value| serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            typing_thread(&body(json!({"parentEventId": head, "rootEventId": root}))),
+            Some(Some(TypingThread {
+                parent: head.clone(),
+                root: Some(root.clone()),
+            }))
+        );
+        // root 缺省或等于 thread head：只有 reply 标签
+        for request in [
+            json!({"parentEventId": head}),
+            json!({"parentEventId": head, "rootEventId": head}),
+        ] {
+            assert_eq!(
+                typing_thread(&body(request)),
+                Some(Some(TypingThread {
+                    parent: head.clone(),
+                    root: None,
+                }))
+            );
+        }
+        // 缺 thread head、非 64 位小写十六进制或不是 JSON 一律无效
+        for request in [
+            json!({}),
+            json!({"parentEventId": "B".repeat(64)}),
+            json!({"parentEventId": head, "rootEventId": "x"}),
+        ] {
+            assert_eq!(typing_thread(&body(request)), None);
+        }
+        assert_eq!(typing_thread(b"not json"), None);
+        // 契约外字段（raw tags、频道）从不进入事件：标签只由准入 scope 与两个 ID 构成
+        let thread = typing_thread(&body(json!({"parentEventId": head, "tags": [["p", root]]})))
+            .unwrap()
+            .unwrap();
+        let typing = typing_event(&nostr::Keys::generate(), "channel", Some(&thread)).unwrap();
+        assert_eq!(typing.tags.len(), 2);
     }
 }
