@@ -2078,7 +2078,7 @@ async fn publish(
                 Err(_) => return StatusCode::BAD_REQUEST.into_response(),
             }
         } else {
-            content.push_str(request.body.as_deref().unwrap_or_default().trim());
+            content.push_str(&collab_bridge::projects::comment_content(request));
         }
         match project_comment_media(request, &community_host) {
             Ok(tags) => media_tags.extend(tags),
@@ -2182,6 +2182,28 @@ async fn publish(
             match crate::projects::latest_pull_request_status(
                 &state,
                 &client,
+                pull_request,
+                &community_host,
+            )
+            .await
+            {
+                Ok(latest) => latest,
+                Err(response) => return response,
+            }
+        } else if requested_kind == 1
+            && collab_bridge::projects::is_pull_request_review_comment(request)
+        {
+            // DD-118(5) original review decisions and line comments: the named
+            // head must still be the review's trusted head, decisions need the
+            // original reviewer authority, and are ordered after the signer's
+            // newest activity on the review.
+            let Some(pull_request) = project_target.as_ref() else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            match crate::projects::pull_request_review_preconditions(
+                &state,
+                &client,
+                request,
                 pull_request,
                 &community_host,
             )

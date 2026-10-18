@@ -275,6 +275,140 @@ pub(crate) async fn latest_pull_request_status(
     }
 }
 
+/// Trusted review activity the original reviewer rules read.
+#[derive(Clone, Copy)]
+enum ReviewActivity<'a> {
+    /// projectPullRequests.mjs::trustedUpdatesForPullRequest: the newest
+    /// trusted 1619 sets the review head.
+    Update,
+    /// reviewersForPullRequest: a trusted review request naming this signer.
+    RequestFor(&'a str),
+}
+
+/// Newest trusted review activity. Only the review author and repository
+/// owner are trusted, so SQL-pushed authors/kinds bound the original
+/// (created_at DESC, id ASC) keyset pages; the review root is matched locally
+/// because Relay applies tag filters after its SQL limit. The first match is
+/// the newest; a full page is never evidence of absence.
+async fn newest_review_activity(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    pull_request: &nostr::Event,
+    activity: ReviewActivity<'_>,
+    community_host: &str,
+) -> Result<Option<nostr::Event>, Response> {
+    use collab_bridge::projects as review;
+    let (owner, author) = review::pull_request_status_actors(pull_request)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let mut authors = vec![owner.clone()];
+    if author != owner {
+        authors.push(author);
+    }
+    let kinds: [u16; 1] = match activity {
+        ReviewActivity::Update => [1619],
+        ReviewActivity::RequestFor(_) => [1],
+    };
+    let wanted = |event: &nostr::Event| match activity {
+        ReviewActivity::Update => review::pull_request_update_trusted(pull_request, event),
+        ReviewActivity::RequestFor(signer) => {
+            review::review_request_names(pull_request, event, signer)
+        }
+    };
+    let cap = community_limits(state, community_host)
+        .await
+        .map_err(IntoResponse::into_response)?
+        .max_limit;
+    let cap = usize::try_from(cap)
+        .ok()
+        .filter(|cap| *cap > 0)
+        .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    let mut cursor: Option<(u64, String)> = None;
+    loop {
+        let mut filter = json!({"kinds":kinds,"authors":authors,"limit":cap});
+        if let Some((until, before_id)) = &cursor {
+            filter["until"] = json!(until);
+            filter["before_id"] = json!(before_id);
+        }
+        let rows = client
+            .query(&state.http, &[filter])
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        validate_project_page(&events, &kinds, None, cap, cursor.as_ref())?;
+        if events
+            .iter()
+            .any(|event| !authors.contains(&event.pubkey.to_hex()))
+        {
+            return Err(StatusCode::BAD_GATEWAY.into_response());
+        }
+        if let Some(event) = events.iter().find(|event| wanted(event)) {
+            return Ok(Some(event.clone()));
+        }
+        if events.len() < cap {
+            return Ok(None);
+        }
+        let last = events
+            .last()
+            .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+        cursor = Some((last.created_at.as_secs(), last.id.to_hex()));
+    }
+}
+
+/// DD-118(5) original review comments (desktop pullRequestReviews.ts,
+/// hooks.ts::createProjectPullRequestComment). Decisions and line comments
+/// name the review head they apply to: the trusted head is read fresh and a
+/// moved head is TARGET_STATE_CONFLICT, never a comment on code the reviewer
+/// did not see. Decisions also need the original canReviewProjectPullRequest
+/// authority (repository owner or requested reviewer, never the review
+/// author, on an open or draft review); readers ignore anyone else's
+/// decision, so Core refuses it before signing. Returns the signer's newest
+/// activity on the review as decision ordering evidence.
+pub(crate) async fn pull_request_review_preconditions(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    request: &contracts::ProjectsPublishRequest,
+    pull_request: &nostr::Event,
+    community_host: &str,
+) -> Result<Option<nostr::Event>, Response> {
+    use collab_bridge::projects as review;
+    let (owner, author) = review::pull_request_status_actors(pull_request)
+        .map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let head_update = newest_review_activity(
+        state,
+        client,
+        pull_request,
+        ReviewActivity::Update,
+        community_host,
+    )
+    .await?;
+    let head = review::pull_request_head(pull_request, head_update.as_ref());
+    if head.as_deref() != request.commit.as_deref() {
+        return Err(crate::projects_git_ref::conflict(None));
+    }
+    if !review::is_pull_request_review_decision(request) {
+        return Ok(None);
+    }
+    let signer = client.pubkey_hex();
+    let status = latest_pull_request_status(state, client, pull_request, community_host).await?;
+    let mut allowed = signer != author && review::pull_request_reviewable(status.as_ref());
+    if allowed && signer != owner && !review::pull_request_root_reviewer(pull_request, &signer) {
+        let request_for = ReviewActivity::RequestFor(&signer);
+        allowed = newest_review_activity(state, client, pull_request, request_for, community_host)
+            .await?
+            .is_some();
+    }
+    if !allowed {
+        return Err(crate::web_transport::error_body(
+            StatusCode::FORBIDDEN,
+            contracts::ErrorClass::Denied,
+            contracts::ReasonCode::PermissionDenied,
+            None,
+        ));
+    }
+    latest_comment(state, client, pull_request, community_host).await
+}
+
 #[allow(clippy::result_large_err)]
 fn validate_project_page(
     events: &[nostr::Event],

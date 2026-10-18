@@ -43,6 +43,174 @@ pub fn is_pull_request_status(request: &ProjectsPublishRequest) -> bool {
         .is_ok_and(|value| value.as_str() == Some("SET_PULL_REQUEST_STATUS"))
 }
 
+/// Fixed projectPullRequests.mjs labels. NIP-34 has no review kind: review
+/// requests, decisions and inline comments are labeled kind-1 PR comments.
+pub const PR_REVIEW_REQUEST_LABEL: &str = "review-request";
+pub const PR_APPROVAL_LABEL: &str = "approval";
+pub const PR_CHANGES_REQUESTED_LABEL: &str = "changes-requested";
+pub const PR_INLINE_COMMENT_LABEL: &str = "inline-comment";
+/// pullRequestReviews.ts REVIEW_DECISION_DETAILS.approve.content: the signed
+/// content of an approval without a summary (protocol text, not UI copy).
+pub const PR_APPROVAL_CONTENT: &str = "Approved these changes";
+/// Original normalizeProjectPullRequestCommentAnchor path bound (UTF-16 units).
+const PR_ANCHOR_PATH_LIMIT: usize = 4_096;
+/// JavaScript Number.isSafeInteger upper bound for the original anchor line.
+const PR_ANCHOR_LINE_LIMIT: i64 = 9_007_199_254_740_991;
+
+/// Fixed pullRequestReviews.ts::submitProjectPullRequestReview("approve").
+pub fn is_pull_request_approval(request: &ProjectsPublishRequest) -> bool {
+    serde_json::to_value(&request.operation)
+        .is_ok_and(|value| value.as_str() == Some("APPROVE_PULL_REQUEST"))
+}
+
+/// hooks.ts ProjectPullRequestCommentDecision "request-changes".
+fn requests_changes(request: &ProjectsPublishRequest) -> bool {
+    serde_json::to_value(&request.review_decision)
+        .is_ok_and(|value| value.as_str() == Some("request-changes"))
+}
+
+/// The original review decisions: an approval, or a review comment that
+/// requests changes. Both need the original reviewer authority and ordering.
+pub fn is_pull_request_review_decision(request: &ProjectsPublishRequest) -> bool {
+    is_pull_request_approval(request) || requests_changes(request)
+}
+
+/// Review comments that name the review head (`c`): decisions and inline
+/// line comments. Ordinary PR comments carry no commit.
+pub fn is_pull_request_review_comment(request: &ProjectsPublishRequest) -> bool {
+    is_pull_request_review_decision(request) || request.anchor_path.is_some()
+}
+
+/// Original normalizeProjectPullRequestCommentAnchor: validate, never
+/// normalize, an attacker-controlled path; side is old/new; line is a safe
+/// positive integer. All three fields together or none.
+fn comment_anchor(
+    request: &ProjectsPublishRequest,
+) -> Result<Option<(&str, &'static str, i64)>, OperatorError> {
+    let bad = || invalid("Comment location is invalid.");
+    let side = serde_json::to_value(&request.anchor_side).map_err(|_| bad())?;
+    let side = match side.as_str() {
+        None if side.is_null() => None,
+        Some("old") => Some("old"),
+        Some("new") => Some("new"),
+        _ => return Err(bad()),
+    };
+    match (request.anchor_path.as_deref(), side, request.anchor_line) {
+        (None, None, None) => Ok(None),
+        (Some(path), Some(side), Some(line)) => {
+            let units = path.encode_utf16().count();
+            if units == 0
+                || units > PR_ANCHOR_PATH_LIMIT
+                || path.starts_with('/')
+                || path.contains('\\')
+                || path.contains('\0')
+                || path
+                    .split('/')
+                    .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+                || !(1..=PR_ANCHOR_LINE_LIMIT).contains(&line)
+            {
+                return Err(bad());
+            }
+            Ok(Some((path, side, line)))
+        }
+        _ => Err(bad()),
+    }
+}
+
+/// Signed content of a project comment: the trimmed body, or for an approval
+/// without a summary the original default text.
+pub fn comment_content(request: &ProjectsPublishRequest) -> String {
+    let body = request.body.as_deref().unwrap_or_default().trim();
+    if is_pull_request_approval(request) && body.is_empty() {
+        return PR_APPROVAL_CONTENT.to_owned();
+    }
+    body.to_owned()
+}
+
+fn first_tag<'a>(event: &'a Event, name: &str) -> Option<&'a str> {
+    event
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .find(|tag| tag.first().is_some_and(|field| field == name))
+        .and_then(|tag| tag.get(1))
+        .map(String::as_str)
+}
+
+fn names_root(event: &Event, root: &Event) -> bool {
+    let id = root.id.to_hex();
+    event.tags.iter().any(|tag| {
+        let fields = tag.as_slice();
+        fields
+            .first()
+            .is_some_and(|name| name == "e" || name == "E")
+            && fields.get(1) == Some(&id)
+    })
+}
+
+/// Original projectPullRequests.mjs::trustedUpdatesForPullRequest: a 1619
+/// signed by the review author or repository owner whose `E` is the review.
+pub fn pull_request_update_trusted(pull_request: &Event, event: &Event) -> bool {
+    let Ok((owner, author)) = pull_request_status_actors(pull_request) else {
+        return false;
+    };
+    let signer = event.pubkey.to_hex();
+    event.kind.as_u16() == 1619
+        && event.verify().is_ok()
+        && (signer == owner || signer == author)
+        && first_tag(event, "E") == Some(pull_request.id.to_hex().as_str())
+}
+
+/// Original eventToProjectPullRequest `commit`: `c` of the newest trusted
+/// update, else of the review itself.
+pub fn pull_request_head(pull_request: &Event, latest_update: Option<&Event>) -> Option<String> {
+    first_tag(latest_update.unwrap_or(pull_request), "c").map(str::to_owned)
+}
+
+/// Original canReviewProjectPullRequest status rule: only an Open or Draft
+/// review takes decisions (statusFromEvent: 1631 Merged, 1632 Closed).
+pub fn pull_request_reviewable(latest_status: Option<&Event>) -> bool {
+    !latest_status.is_some_and(|event| matches!(event.kind.as_u16(), 1631 | 1632))
+}
+
+/// Original reviewersForPullRequest root part: `p` tags on the review.
+pub fn pull_request_root_reviewer(pull_request: &Event, signer: &str) -> bool {
+    pull_request.tags.iter().any(|tag| {
+        let fields = tag.as_slice();
+        fields.first().is_some_and(|name| name == "p")
+            && fields
+                .get(1)
+                .is_some_and(|key| key.to_lowercase() == signer)
+    })
+}
+
+/// Original reviewersForPullRequest comment part: a review request signed by
+/// the review author or repository owner whose `p` tags name `signer`.
+pub fn review_request_names(pull_request: &Event, event: &Event, signer: &str) -> bool {
+    let Ok((owner, author)) = pull_request_status_actors(pull_request) else {
+        return false;
+    };
+    let actor = event.pubkey.to_hex();
+    event.kind.as_u16() == 1
+        && event.verify().is_ok()
+        && (actor == owner || actor == author)
+        && names_root(event, pull_request)
+        && event.tags.iter().any(|tag| {
+            let fields = tag.as_slice();
+            fields.first().is_some_and(|name| name == "t")
+                && fields
+                    .get(1)
+                    .is_some_and(|label| label.to_lowercase() == PR_REVIEW_REQUEST_LABEL)
+        })
+        && event.tags.iter().any(|tag| {
+            let fields = tag.as_slice();
+            fields.first().is_some_and(|name| name == "p")
+                && fields
+                    .get(1)
+                    .is_some_and(|key| key.to_lowercase() == signer)
+        })
+}
+
 fn pull_request_status_kind(request: &ProjectsPublishRequest) -> Result<u16, OperatorError> {
     let status = serde_json::to_value(&request.pull_request_status)
         .map_err(|_| invalid("invalid review status"))?;
@@ -585,7 +753,8 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     let op = operation.as_str().unwrap_or_default();
     let comment = matches!(op, "CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT");
     let titled = matches!(op, "CREATE_ISSUE" | "CREATE_PULL_REQUEST");
-    let bodied = titled || comment;
+    let approval = op == "APPROVE_PULL_REQUEST";
+    let bodied = titled || comment || approval;
     if !titled && request.title.is_some()
         || op != "CREATE_ISSUE" && request.category.is_some()
         || !bodied && request.body.is_some()
@@ -596,11 +765,25 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
     if op != "CREATE_PULL_REQUEST"
         && (request.branch_name.is_some()
             || request.target_branch.is_some()
-            || request.commit.is_some()
             || request.merge_base.is_some()
             || request.reviewers.is_some())
     {
         return Err(invalid("review fields on another project operation"));
+    }
+    // The review head (`c`) rides on review creation and the original review
+    // comments only; decisions and line anchors only on review comments.
+    let commit_allowed = matches!(
+        op,
+        "CREATE_PULL_REQUEST" | "CREATE_PULL_REQUEST_COMMENT" | "APPROVE_PULL_REQUEST"
+    );
+    let review_comment_fields = request.review_decision.is_some()
+        || request.anchor_path.is_some()
+        || request.anchor_side.is_some()
+        || request.anchor_line.is_some();
+    if !commit_allowed && request.commit.is_some()
+        || op != "CREATE_PULL_REQUEST_COMMENT" && review_comment_fields
+    {
+        return Err(invalid("review comment fields on another project operation"));
     }
     match operation.as_str() {
         Some("SELF_ASSIGN_ISSUE" | "SELF_UNASSIGN_ISSUE" | "ASSIGN_ISSUE" | "UNASSIGN_ISSUE") => {
@@ -669,6 +852,36 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
                     })
             {
                 return Err(invalid("invalid issue comment"));
+            }
+            // Original createProjectPullRequestComment: a line anchor or a
+            // change request needs the review head; ordinary comments have none.
+            let anchored = comment_anchor(request)?.is_some();
+            let review = anchored || requests_changes(request);
+            if request.review_decision.is_some() && !requests_changes(request)
+                || review != request.commit.is_some()
+                || request
+                    .commit
+                    .as_deref()
+                    .is_some_and(|value| !commit_id(value))
+            {
+                return Err(invalid("A review commit is required for review comments."));
+            }
+            Ok(1)
+        }
+        Some("APPROVE_PULL_REQUEST") => {
+            // Original submitProjectPullRequestReview: the review and the head
+            // it approves; the optional summary is the body.
+            if !request
+                .target_event_id
+                .as_deref()
+                .is_some_and(canonical_event_id)
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+                || !request.commit.as_deref().is_some_and(commit_id)
+            {
+                return Err(invalid("The review has no commit to inspect."));
             }
             Ok(1)
         }
@@ -969,7 +1182,7 @@ pub fn comment_target_kind(request: &ProjectsPublishRequest) -> Result<u16, Oper
             | "ASSIGN_ISSUE"
             | "UNASSIGN_ISSUE",
         ) => Ok(1621),
-        Some("CREATE_PULL_REQUEST_COMMENT") => Ok(1618),
+        Some("CREATE_PULL_REQUEST_COMMENT" | "APPROVE_PULL_REQUEST") => Ok(1618),
         _ => Err(invalid("invalid comment operation")),
     }
 }
@@ -1037,13 +1250,28 @@ fn comment_tags(
     let repository_owner = repository.split(':').nth(1).unwrap_or_default();
     let mut recipients = vec![repository_owner.to_owned()];
     let issue_author = issue.pubkey.to_hex();
+    // Original submitProjectPullRequestReview tags only the repository owner
+    // and the review author; comments add the review's recipients and mentions.
+    let approval = is_pull_request_approval(request);
+    if approval && !media_tags.is_empty() {
+        return Err(invalid("approval media is not supported"));
+    }
+    let carried: Vec<&str> = if approval {
+        Vec::new()
+    } else {
+        issue
+            .tags
+            .iter()
+            .filter_map(|tag| {
+                let fields = tag.as_slice();
+                (fields.first().is_some_and(|name| name == "p"))
+                    .then(|| fields.get(1).map(String::as_str))
+                    .flatten()
+            })
+            .collect()
+    };
     for key in std::iter::once(issue_author.as_str())
-        .chain(issue.tags.iter().filter_map(|tag| {
-            let fields = tag.as_slice();
-            (fields.first().is_some_and(|name| name == "p"))
-                .then(|| fields.get(1).map(String::as_str))
-                .flatten()
-        }))
+        .chain(carried)
         .chain(
             request
                 .mentions
@@ -1068,6 +1296,30 @@ fn comment_tags(
         vec!["a".to_owned(), repository.to_owned()],
     ];
     tags.extend(recipients.into_iter().map(|key| vec!["p".to_owned(), key]));
+    let commit = request.commit.as_deref().unwrap_or_default();
+    let label = |value: &str| vec!["t".to_owned(), value.to_owned()];
+    let head = || vec!["c".to_owned(), commit.to_owned()];
+    if approval {
+        tags.extend([label(PR_APPROVAL_LABEL), head()]);
+    }
+    // Original hooks.ts::createProjectPullRequestComment ordering: inline
+    // anchor tags, then the change-request label (with `c` unless anchored).
+    let anchor = comment_anchor(request)?;
+    if let Some((path, side, line)) = anchor {
+        tags.extend([
+            label(PR_INLINE_COMMENT_LABEL),
+            head(),
+            vec!["file".to_owned(), path.to_owned()],
+            vec!["side".to_owned(), side.to_owned()],
+            vec!["line".to_owned(), line.to_string()],
+        ]);
+    }
+    if requests_changes(request) {
+        tags.push(label(PR_CHANGES_REQUESTED_LABEL));
+        if anchor.is_none() {
+            tags.push(head());
+        }
+    }
     tags.extend_from_slice(media_tags);
     tags.into_iter()
         .map(Tag::parse)
@@ -1095,8 +1347,14 @@ pub fn comment_publication_builder(
         comment_tags(request, issue, media_tags)?
     };
     // Original ordinary PR comments use signing time; only Tasks and review
-    // decisions have an activity-based monotonic timestamp. No decision here.
-    if issue.kind.as_u16() == 1618 && latest.is_some() {
+    // decisions have an activity-based monotonic timestamp. A decision is
+    // ordered after the signer's newest activity on the review, so it
+    // supersedes that signer's earlier decision (reviewDecisionsForPullRequest
+    // keeps the latest per author; nextProjectPullRequestReviewCreatedAt).
+    if issue.kind.as_u16() == 1618
+        && latest.is_some()
+        && !is_pull_request_review_decision(request)
+    {
         return Err(invalid(
             "ordinary review comment has no previous timestamp evidence",
         ));
@@ -1118,12 +1376,7 @@ pub fn comment_publication_builder(
         if assignment {
             assignment_content(request)?
         } else {
-            request
-                .body
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .to_owned()
+            comment_content(request)
         },
     )
     .tags(tags)
@@ -1147,12 +1400,7 @@ pub fn comment_publication_matches(
     let content = if assignment {
         assignment_content(request)?
     } else {
-        request
-            .body
-            .as_deref()
-            .unwrap_or_default()
-            .trim()
-            .to_owned()
+        comment_content(request)
     };
     let tags = if assignment {
         assignment_tags(request, issue, &event.pubkey.to_hex())?
@@ -2432,5 +2680,272 @@ mod tests {
             .filter(|tag| tag[0] == "p")
             .count();
         assert_eq!(owners, 1);
+    }
+
+    #[test]
+    fn review_decisions_and_line_comments_keep_the_original_labeled_shape() {
+        let owner = Keys::generate();
+        let author = Keys::generate();
+        let reviewer = Keys::generate();
+        let owner_hex = owner.public_key().to_hex();
+        let author_hex = author.public_key().to_hex();
+        let reviewer_hex = reviewer.public_key().to_hex();
+        let signer = reviewer_hex.as_str();
+        let repository = format!("30617:{owner_hex}:repo");
+        let head = "a".repeat(40);
+        let review = EventBuilder::new(nostr::Kind::from(1618), "review")
+            .tags([
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+                Tag::parse(["p", owner_hex.as_str()]).unwrap(),
+                Tag::parse(["p", reviewer_hex.as_str()]).unwrap(),
+                Tag::parse(["c", head.as_str()]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .unwrap();
+        let root = vec![
+            "e".to_owned(),
+            review.id.to_hex(),
+            String::new(),
+            "root".to_owned(),
+        ];
+
+        // submitProjectPullRequestReview: owner and author recipients, the
+        // approval label and the approved head; no summary signs the default.
+        let approve: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"APPROVE_PULL_REQUEST","targetEventId":review.id.to_hex(),"commit":head
+        }))
+        .unwrap();
+        assert_eq!(publication_kind(&approve).unwrap(), 1);
+        assert_eq!(comment_target_kind(&approve).unwrap(), 1618);
+        assert!(is_pull_request_review_decision(&approve));
+        let event = comment_publication_builder(&approve, &review, None, signer, &[])
+            .unwrap()
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        assert_eq!(event.content, PR_APPROVAL_CONTENT);
+        assert_eq!(
+            review_tags(&event),
+            vec![
+                root.clone(),
+                tag("a", &repository),
+                tag("p", &owner_hex),
+                tag("p", &author_hex),
+                tag("t", PR_APPROVAL_LABEL),
+                tag("c", &head),
+            ]
+        );
+        assert!(comment_publication_matches(&approve, &review, &event, &[]).unwrap());
+        let mut summary = approve.clone();
+        summary.body = Some("  Looks good  ".into());
+        assert_eq!(comment_content(&summary), "Looks good");
+        assert!(!comment_publication_matches(&summary, &review, &event, &[]).unwrap());
+        let media = vec![vec!["imeta".to_owned(), "url original-media".to_owned()]];
+        let with_media = comment_publication_builder(&approve, &review, None, signer, &media);
+        assert!(with_media.is_err());
+
+        // A decision follows the signer's newest activity on the review.
+        let future = Timestamp::now().as_secs() + 120;
+        let earlier = EventBuilder::new(nostr::Kind::from(1), "earlier")
+            .tags([
+                Tag::parse(["e", review.id.to_hex().as_str(), "", "root"]).unwrap(),
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from_secs(future))
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        let ordered = comment_publication_builder(&approve, &review, Some(&earlier), signer, &[])
+            .unwrap()
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        assert_eq!(ordered.created_at.as_secs(), future + 1);
+
+        // createProjectPullRequestComment: recipients, inline anchor tags, then
+        // the change-request label without a second `c`.
+        let inline: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"CREATE_PULL_REQUEST_COMMENT","targetEventId":review.id.to_hex(),
+            "body":" Rename this ","commit":head,"reviewDecision":"request-changes",
+            "anchorPath":"src/lib.rs","anchorSide":"new","anchorLine":12
+        }))
+        .unwrap();
+        assert_eq!(publication_kind(&inline).unwrap(), 1);
+        assert!(is_pull_request_review_comment(&inline));
+        let event = comment_publication_builder(&inline, &review, None, signer, &[])
+            .unwrap()
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        assert_eq!(event.content, "Rename this");
+        let recipients = vec![
+            root.clone(),
+            tag("a", &repository),
+            tag("p", &owner_hex),
+            tag("p", &author_hex),
+            tag("p", &reviewer_hex),
+        ];
+        let mut expected = recipients.clone();
+        expected.extend([
+            tag("t", PR_INLINE_COMMENT_LABEL),
+            tag("c", &head),
+            tag("file", "src/lib.rs"),
+            tag("side", "new"),
+            tag("line", "12"),
+            tag("t", PR_CHANGES_REQUESTED_LABEL),
+        ]);
+        assert_eq!(review_tags(&event), expected);
+        assert!(comment_publication_matches(&inline, &review, &event, &[]).unwrap());
+
+        // Change request on the conversation: label then the reviewed head.
+        let mut general = inline.clone();
+        general.anchor_path = None;
+        general.anchor_side = None;
+        general.anchor_line = None;
+        let event = comment_publication_builder(&general, &review, None, signer, &[])
+            .unwrap()
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        let mut expected = recipients.clone();
+        expected.extend([tag("t", PR_CHANGES_REQUESTED_LABEL), tag("c", &head)]);
+        assert_eq!(review_tags(&event), expected);
+
+        // A plain line comment is not a decision: signing time, no label.
+        let mut line = inline.clone();
+        line.review_decision = None;
+        assert!(!is_pull_request_review_decision(&line));
+        assert!(is_pull_request_review_comment(&line));
+        let unordered = comment_publication_builder(&line, &review, Some(&earlier), signer, &[]);
+        assert!(unordered.is_err());
+        let event = comment_publication_builder(&line, &review, None, signer, &[])
+            .unwrap()
+            .sign_with_keys(&reviewer)
+            .unwrap();
+        let mut expected = recipients;
+        expected.extend([
+            tag("t", PR_INLINE_COMMENT_LABEL),
+            tag("c", &head),
+            tag("file", "src/lib.rs"),
+            tag("side", "new"),
+            tag("line", "12"),
+        ]);
+        assert_eq!(review_tags(&event), expected);
+
+        let comment = json!({
+            "operation":"CREATE_PULL_REQUEST_COMMENT","targetEventId":review.id.to_hex(),
+            "body":"note","commit":head,"anchorPath":"src/lib.rs","anchorSide":"old","anchorLine":3
+        });
+        let parse = |value: serde_json::Value| -> ProjectsPublishRequest {
+            serde_json::from_value(value).unwrap()
+        };
+        assert_eq!(publication_kind(&parse(comment.clone())).unwrap(), 1);
+        for (field, bad) in [
+            ("anchorPath", json!("/src/lib.rs")),
+            ("anchorPath", json!("src/../lib.rs")),
+            ("anchorPath", json!("src//lib.rs")),
+            ("anchorPath", json!("src\\lib.rs")),
+            ("anchorPath", json!("src/./lib.rs")),
+            ("anchorPath", json!("x".repeat(4_097))),
+            ("anchorLine", json!(0)),
+            ("commit", json!("x")),
+        ] {
+            let mut invalid = comment.clone();
+            invalid[field] = bad;
+            assert!(publication_kind(&parse(invalid)).is_err(), "{field}");
+        }
+        for field in ["anchorSide", "anchorLine", "commit"] {
+            let mut missing = comment.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(publication_kind(&parse(missing)).is_err(), "{field}");
+        }
+        // Ordinary comments carry no head; review fields stay on their operation.
+        let mut ordinary = comment.clone();
+        for field in ["anchorPath", "anchorSide", "anchorLine"] {
+            ordinary.as_object_mut().unwrap().remove(field);
+        }
+        assert!(publication_kind(&parse(ordinary.clone())).is_err());
+        ordinary.as_object_mut().unwrap().remove("commit");
+        assert_eq!(publication_kind(&parse(ordinary.clone())).unwrap(), 1);
+        let mut issue = ordinary.clone();
+        issue["operation"] = json!("CREATE_ISSUE_COMMENT");
+        issue["reviewDecision"] = json!("request-changes");
+        assert!(publication_kind(&parse(issue)).is_err());
+        let approval = json!({
+            "operation":"APPROVE_PULL_REQUEST","targetEventId":review.id.to_hex(),"commit":head
+        });
+        for (field, bad) in [
+            ("mentions", json!([])),
+            ("reviewDecision", json!("request-changes")),
+            ("anchorPath", json!("src/lib.rs")),
+            ("title", json!("t")),
+            ("commit", json!("A".repeat(40))),
+        ] {
+            let mut invalid = approval.clone();
+            invalid[field] = bad;
+            assert!(publication_kind(&parse(invalid)).is_err(), "{field}");
+        }
+        let mut headless = approval;
+        headless.as_object_mut().unwrap().remove("commit");
+        assert!(publication_kind(&parse(headless)).is_err());
+    }
+
+    #[test]
+    fn review_head_reviewers_and_lifecycle_follow_original_trust() {
+        let owner = Keys::generate();
+        let author = Keys::generate();
+        let reviewer = Keys::generate();
+        let stranger = Keys::generate();
+        let owner_hex = owner.public_key().to_hex();
+        let reviewer_hex = reviewer.public_key().to_hex();
+        let stranger_hex = stranger.public_key().to_hex();
+        let repository = format!("30617:{owner_hex}:repo");
+        let review = EventBuilder::new(nostr::Kind::from(1618), "review")
+            .tags([
+                Tag::parse(["a", repository.as_str()]).unwrap(),
+                Tag::parse(["c", "a".repeat(40).as_str()]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .unwrap();
+        let id = review.id.to_hex();
+        let update = |keys: &Keys, commit: &str| {
+            EventBuilder::new(nostr::Kind::from(1619), "")
+                .tags([
+                    Tag::parse(["a", repository.as_str()]).unwrap(),
+                    Tag::parse(["E", id.as_str()]).unwrap(),
+                    Tag::parse(["c", commit]).unwrap(),
+                ])
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        assert_eq!(pull_request_head(&review, None), Some("a".repeat(40)));
+        let trusted = update(&author, &"b".repeat(40));
+        assert!(pull_request_update_trusted(&review, &trusted));
+        assert_eq!(pull_request_head(&review, Some(&trusted)), Some("b".repeat(40)));
+        assert!(!pull_request_update_trusted(&review, &update(&stranger, &"c".repeat(40))));
+
+        let status = |kind: u16| {
+            EventBuilder::new(nostr::Kind::from(kind), "")
+                .tags([Tag::parse(["e", id.as_str(), "", "root"]).unwrap()])
+                .sign_with_keys(&owner)
+                .unwrap()
+        };
+        assert!(pull_request_reviewable(None));
+        assert!(pull_request_reviewable(Some(&status(1630))));
+        assert!(pull_request_reviewable(Some(&status(1633))));
+        assert!(!pull_request_reviewable(Some(&status(1631))));
+        assert!(!pull_request_reviewable(Some(&status(1632))));
+
+        assert!(!pull_request_root_reviewer(&review, &reviewer_hex));
+        let request = |keys: &Keys| {
+            EventBuilder::new(nostr::Kind::from(1), "Requested a review")
+                .tags([
+                    Tag::parse(["e", id.as_str(), "", "root"]).unwrap(),
+                    Tag::parse(["a", repository.as_str()]).unwrap(),
+                    Tag::parse(["p", reviewer_hex.as_str()]).unwrap(),
+                    Tag::parse(["t", PR_REVIEW_REQUEST_LABEL]).unwrap(),
+                ])
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        assert!(review_request_names(&review, &request(&owner), &reviewer_hex));
+        assert!(review_request_names(&review, &request(&author), &reviewer_hex));
+        assert!(!review_request_names(&review, &request(&stranger), &reviewer_hex));
+        assert!(!review_request_names(&review, &request(&owner), &stranger_hex));
     }
 }
