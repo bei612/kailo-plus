@@ -50,6 +50,11 @@
           }
         }
       }
+    },
+    "setActionKey": {
+      "type": "string",
+      "const": "tenant.quota.set",
+      "description": "Present only when the caller may set quotas now (Tenant manage); auditors read without it."
     }
   }
 }
