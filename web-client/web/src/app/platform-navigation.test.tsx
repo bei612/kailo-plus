@@ -24,7 +24,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
-    data-can-back={String(navigation.canGoBack)} data-can-forward={String(navigation.canGoForward)}
+    data-can-back={String(navigation.canGoBack)} data-can-forward={String(navigation.canGoForward)} data-settings-section={navigation.settingsSection ?? undefined}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
     data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
     data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send} data-inbox-item={navigation.inboxItemId}
@@ -53,6 +53,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     <button onClick={() => {void navigation.consumeDraftSend();}}>consume draft send</button>
     <button onClick={() => navigation.setInboxItemId("a".repeat(64))}>select inbox item</button>
     <button onClick={() => navigation.setInboxItemId(null)}>clear inbox item</button>
+    <button onClick={() => navigation.setSettingsSection("appearance")}>settings appearance</button>
   </div>;
 } }));
 
@@ -442,4 +443,22 @@ it.each(["agents", "workflows"])("keeps the %s workspace selection in the origin
   await act(async () => root!.unmount()); root = undefined; node!.remove();
   await mount(url);
   expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-b");
+});
+
+it("keeps the original /settings?section= target and rewrites it in place when switching sections", async () => {
+  const router = await mount("/app/settings?section=notifications");
+  const tab = () => node!.querySelector("[data-tab]")!;
+  expect(tab().getAttribute("data-settings-section")).toBe("notifications");
+  const length = router.history.length;
+  await act(async () => {[...node!.querySelectorAll("button")].find(button => button.textContent === "settings appearance")!.click();});
+  await act(async () => { await router.load(); });
+  expect(tab().getAttribute("data-settings-section")).toBe("appearance");
+  expect(router.history.location.search).toBe("?section=appearance");
+  expect(router.history.length).toBe(length);
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  await mount("/app/settings?section=not-a-section");
+  expect(tab().getAttribute("data-settings-section")).toBeNull();
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  await mount("/app/inbox?section=appearance");
+  expect(tab().getAttribute("data-settings-section")).toBeNull();
 });

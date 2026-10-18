@@ -6,7 +6,7 @@ import { SettingsViewSurface, SettingsSectionHeader, type SettingsSection } from
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
 import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
-export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
+export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, settingsSectionValues, isSettingsSection, type SettingsSection } from "./settings-surface";
 export { ExperimentalFeaturesCard } from "./experimental-features-settings";
 import {
   setLocale,

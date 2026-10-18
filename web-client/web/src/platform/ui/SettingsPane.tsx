@@ -35,10 +35,16 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
 }
 // The table describes the real shared Tiptap handlers, not new key bindings.
 
-export function SettingsPane({ active = true, fallbackDisplayName, onClose }: { active?: boolean; fallbackDisplayName?: string; onClose?: () => void }) {
+export function SettingsPane({ active = true, fallbackDisplayName, onClose, section: routedSection, onSectionChange }: {
+  active?: boolean; fallbackDisplayName?: string; onClose?: () => void;
+  /** Original /settings?section= target; with onSectionChange the URL owns the open section. */
+  section?: SettingsSection | null; onSectionChange?: (section: SettingsSection) => void;
+}) {
   const locale = useUiLocale();
   const appearance = useTheme();
-  const [section, setSection] = useState<SettingsSection>("profile");
+  const [localSection, setLocalSection] = useState<SettingsSection>("profile");
+  const section = onSectionChange ? routedSection ?? "profile" : localSection;
+  const setSection = onSectionChange ?? setLocalSection;
   const [emojiVisited, setEmojiVisited] = useState(false);
   useEffect(() => { if (section === "custom-emoji") setEmojiVisited(true); }, [section]);
   const invitations=useInvitationSettingsState();

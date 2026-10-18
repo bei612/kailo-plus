@@ -5,6 +5,7 @@ import { platformNavigationSections, type PlatformNavigationSection } from "@cli
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { createSearchHighlightNavigation } from "@client-kit/platform/react/search/searchHighlightNavigation";
 import { selectSearchHighlightRouteState } from "@client-kit/platform/react/search/searchHighlightRouteState";
+import { isSettingsSection, type SettingsSection } from "@client-kit/platform/react/settings-surface";
 
 export type PlatformSection = PlatformNavigationSection | "inbox" | "settings";
 export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message" | "application";
@@ -13,6 +14,8 @@ const THREAD_SEARCH_KEYS = ["thread", "messageId", "threadRootId"] as const;
 const INBOX_SEARCH_KEYS = ["item"] as const;
 // Original /channels/$channelId/posts/$postId?replyId: Web keeps forum post references on the channel URL.
 const FORUM_SEARCH_KEYS = ["post", "replyId"] as const;
+// Original /settings?section=: the open Settings section is part of the settings entry.
+const SETTINGS_SEARCH_KEYS = ["section"] as const;
 
 export function isPlatformSection(value: string): value is PlatformSection {
   return value === "inbox" || value === "settings" || platformNavigationSections.some((section) => section === value);
@@ -22,7 +25,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
   workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string;thread?: string; item?: string;
-  post?: string; replyId?: string;
+  post?: string; replyId?: string; section?: SettingsSection;
   view?: "edit" | "duplicate";
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
@@ -42,6 +45,7 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     item: reference("item"),
     post: reference("post"),
     replyId: reference("replyId"),
+    section: isSettingsSection(search.section) ? search.section : undefined,
     // Original /workflows/$workflowId ?view= editor target; any other value is dropped.
     view: search.view === "edit" || search.view === "duplicate" ? search.view : undefined,
   };
@@ -99,6 +103,11 @@ export function usePlatformNavigation(scopeKey?: string) {
   const threadHistory = useHistorySearchState(THREAD_SEARCH_KEYS, search, navigateSearch);
   const inboxHistory = useHistorySearchState(INBOX_SEARCH_KEYS, search, navigateSearch);
   const forumHistory = useHistorySearchState(FORUM_SEARCH_KEYS, search, navigateSearch);
+  const settingsHistory = useHistorySearchState(SETTINGS_SEARCH_KEYS, search, navigateSearch);
+  /** Original handleSettingsSectionChange: section switches rewrite the settings entry. */
+  const setSettingsSection = useCallback((section: SettingsSection) => {
+    settingsHistory.applyPatch({ section }, { replace: true });
+  }, [settingsHistory.applyPatch]);
   /** Original goForumPost: opening a post (or a reply in it) pushes a history entry. */
   const setForumPost = useCallback((post: string | null, replyId?: string | null, options?: HistorySearchSetterOptions) => {
     forumHistory.applyPatch({ post, replyId: post ? replyId ?? null : null }, options);
@@ -161,6 +170,8 @@ export function usePlatformNavigation(scopeKey?: string) {
       return draftTarget && current.searchHighlightScope === scopeKey && current.draftNavigation?.key === draftTarget.key
         ? {...previous, draftNavigation:{...current.draftNavigation,send:false}} : previous;
     }} as never),
+    settingsSection: tab === "settings" && isSettingsSection(settingsHistory.values.section) ? settingsHistory.values.section : null,
+    setSettingsSection,
     forumPostId: params.channelId ? forumHistory.values.post : null,
     forumReplyId: params.channelId && forumHistory.values.post ? forumHistory.values.replyId : null,
     setForumPost,
