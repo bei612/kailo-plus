@@ -156,8 +156,12 @@ function cellsV2(category, version, analysed, push) {
           evidence: EVIDENCE.cellsNode });
       } else if (role === 'draft') {
         // Created together with its node by the actor's draft-mode upload, so
-        // the promoted revision is the node's first published one.
-        push({ ...base, node, text: literal(node, 'text'), owner: 'conformance-actor', evidence: EVIDENCE.cellsDraft });
+        // the promoted revision is the node's first published one. Its bytes
+        // are the draft_revision's own literal text property.
+        const text = typeof precondition.properties.text === 'string' ? precondition.properties.text : literal(node, 'text');
+        const read = literal(node, 'text');
+        if (read !== '' && read !== text) fail(`${caseKey}/${key}: draft text differs from the case's literal read/export expectation`);
+        push({ ...base, node, text, owner: 'conformance-actor', evidence: EVIDENCE.cellsDraft });
       } else {
         push({ ...base, target: 'binding-root', evidence: `${EVIDENCE.cellsLink}; ${EVIDENCE.cellsRoot}` });
       }
@@ -165,9 +169,18 @@ function cellsV2(category, version, analysed, push) {
     // Resource -> native object. Cells admits a governed promote only on the
     // written node's Resource and a revoke only on the binding root Resource.
     for (const step of vectorCase.steps) {
-      if (step.referenceResourceId === undefined) continue;
+      // The step's Resource is its typed referenceResourceId when present
+      // (write/read/export) and otherwise the literal input resourceId that
+      // the isolated identity context targets (list, list_revisions, share,
+      // delete); never a bound value.
+      const inputResource = step.bindings.some((b) => b.side === 'INPUT' && b.pointer === '/resourceId') ? undefined : step.input?.resourceId;
+      const resourceId = step.referenceResourceId ?? inputResource;
       const verb = verbOf(step.contractKey, category);
       const at = `${caseKey}/${step.stepKey}`;
+      if (resourceId === undefined) continue;
+      if (!UUID.test(resourceId) || (step.referenceResourceId !== undefined && inputResource !== undefined && inputResource !== step.referenceResourceId)) {
+        fail(`${at}: step Resource must be one literal UUID (referenceResourceId and input resourceId agree)`);
+      }
       const target = (pointer) => {
         const bound = inputBinding(step, pointer);
         return bound?.source === 'PRECONDITION' && roles.get(bound.key)?.role === 'node' ? { precondition: bound.key } : null;
@@ -177,7 +190,7 @@ function cellsV2(category, version, analysed, push) {
       else if (verb === 'list') nativeObject = JSON.stringify(step.expected) === '{"citations":[]}' ? { emptyFolder: true } : null;
       else if (verb === 'delete') nativeObject = target('/nativeObjectRefs/0');
       else nativeObject = target('/nativeObjectRef');
-      push({ at, kind: 'platform-resource', caseKey, resourceId: step.referenceResourceId, verb,
+      push({ at, kind: 'platform-resource', caseKey, resourceId, verb,
         ...(nativeObject ? { nativeObject, class: 'observed', evidence: verb === 'share' ? EVIDENCE.cellsRoot : verb === 'write' ? EVIDENCE.cellsPromote
           : 'simulated isolated Resource id; the conformance provider maps it to the observed native object (07 §8A)' }
           : { class: 'unmintable', evidence: `${verb} Resource has no native object a seed can create before the run (non-empty listing or captured node)` }) });

@@ -30,7 +30,8 @@
 //   node component-bind.mjs --component file-storage|knowledge|data-query --release-dir <rendered dir>
 //     --native-page-url <url> --native-instance-ref <ref> [--native-scope-ref <ref>]
 //     [--adapter-service-ref <ref>] [--isolation-mode <mode>] [--workspace-id <uuid>]
-//     [--model-route-ids <uuid,...> --meter-keys <key,...>]     (knowledge modelGateway)
+//     [--model-route-ids <uuid,...> --meter-keys component_model_tokens]  (modelGateway; DD-124(6):
+//                                     the platform meter is the only component meter)
 //     [--model-call-mode NONE|PLATFORM_LLM_ROUTE] [--client-id <adapter IdP client id>] [--account admin] [--attempt N]
 //     --plan-out <plan.json> (--plan-only | --secret-values-file <file>) [--wait-seconds 1800]
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -78,6 +79,10 @@ await main(async () => {
   const meters = list(args['meter-keys']);
   if (routes.length || meters.length) {
     if (!routes.length || !meters.length || routes.some((id) => !UUID.test(id))) throw new FlowError('--model-route-ids (uuids) and --meter-keys go together', 2);
+    // DD-124(6): component model usage is metered only on the platform meter
+    // component_model_tokens (registered by the platform bootstrap); Core
+    // refuses any other binding meter reference.
+    if (meters.length !== 1 || meters[0] !== 'component_model_tokens') throw new FlowError('--meter-keys must be exactly component_model_tokens (DD-124(6))', 2);
     normalizedConfig.modelGateway = { routeResourceIds: routes, meterKeys: meters };
   }
   const modelCallMode = args['model-call-mode'] ?? manifest.allowedModelCallModes?.[0] ?? 'NONE';

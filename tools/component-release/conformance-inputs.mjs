@@ -64,7 +64,7 @@
 //     "redaction": { "request": {…}, "expected": {…} }
 //   },
 //   "vectorContexts": { "default"?: { "resultExposurePolicyId", "resultExposurePolicyVersion",
-//                                     "target"? },
+//                                     "target"? },   (default: the step's literal input resourceId)
 //                       "byContract"?: { "<contractKey>": { …same… } },
 //                       "byStep"?: { "<category>:<version>:<caseKey>/<stepKey>": { …same… } } },
 //   "nativeReceivers"?: [ { "caseKey", "stepKey", "contractKey", "request": ComponentNativeReceiverRequest } ],
@@ -471,7 +471,22 @@ function buildIdentity(facts, release, fixtureSteps, vectorSteps) {
     let target;
     if (probe.referenceAssetId !== undefined) target = { targetType: 'ASSET', targetId: probe.referenceAssetId };
     else if (probe.referenceResourceId !== undefined) target = { targetType: 'RESOURCE', targetId: probe.referenceResourceId };
-    else target = targetOf(override.target, `vectorContexts target for ${pathKey}`);
+    else {
+      // Steps without a typed reference (V2 list, list_revisions, share,
+      // delete) target the Resource their literal input names; an explicit
+      // vectorContexts target must be that same Resource, since Core signs
+      // the context target and the adapter requires it to equal the input.
+      let inputResource;
+      try { inputResource = JSON.parse(probe.inputJson)?.resourceId; } catch { inputResource = undefined; }
+      if (override.target !== undefined) {
+        target = targetOf(override.target, `vectorContexts target for ${pathKey}`);
+        if (inputResource !== undefined && (target.targetType !== 'RESOURCE' || target.targetId !== inputResource)) {
+          refuse(`vectorContexts target for ${pathKey} must be the step input resourceId ${inputResource}`);
+        }
+      } else if (typeof inputResource === 'string') {
+        target = { targetType: 'RESOURCE', targetId: uuid(inputResource, `${pathKey} input resourceId`) };
+      } else target = targetOf(undefined, `vectorContexts target for ${pathKey}`);
+    }
     const receiver = probe.operation === 'receiver_start';
     const fields = { ...base, actionKey: probe.contractKey, actionDefinitionVersion: actionVersion(probe.contractKey),
       ...target, ...policy(override, `vectorContexts for ${pathKey}`),
