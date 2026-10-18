@@ -274,6 +274,28 @@ it.each(["", "   ", "  Profile name  "])("uses the original display-name fallbac
   }
 });
 
+it.each([["Acme community", "Acme community"], [undefined, "tenant"], ["   ", "tenant"]])(
+  "shows the original community line from the session Tenant name %j", async (tenantName, expected) => {
+    state.read.mockResolvedValue(profile);
+    const session: PlatformSessionView = {
+      accessMode: PlatformSessionAccessMode.Full, displayName: "Signed-in human",
+      humanIdentityId: "human", platformSessionId: "session", tenantId: "tenant",
+      tenantMembershipId: "membership", tenantPrincipalId: "principal",
+      ...(tenantName === undefined ? {} : { tenantName }),
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    try {
+      await act(async () => root.render(<QueryClientProvider client={queryClient}><PlatformProvider client={client} locale="en">
+        <WebSidebarProfileCard session={session} settingsOpen={false} onOpenSettings={vi.fn()} onSignOut={vi.fn()} />
+      </PlatformProvider></QueryClientProvider>));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      const line = host.querySelector('[data-testid="sidebar-profile-card"] [data-buzz-sidebar-secondary]');
+      expect(line?.textContent).toContain(expected);
+    } finally {
+      queryClient.clear();
+    }
+  });
+
 it.each(["different event", "different signer", "read error"])("does not turn an accepted PUT plus %s into saved", async (failure) => {
   state.read.mockResolvedValueOnce(profile);
   if (failure === "read error") state.read.mockRejectedValue(new Error("private response detail"));

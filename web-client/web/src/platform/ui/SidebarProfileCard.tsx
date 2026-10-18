@@ -39,7 +39,10 @@ export function WebSidebarProfileCard({ session, onOpenSettings, onSignOut, sett
   const statusFailed = (error: unknown) => toast.error(translate(getLocale(),
     isOutcomeUnknown(error) ? "userStatus.saveUnknown" : "userStatus.saveFailed"));
   const publishStatus = (input: UserStatusInput) => setUserStatus.mutate(input, { onError: statusFailed });
-  return <SidebarProfileCard communityLabel={session.tenantId} resolvedDisplayName={displayName}
+  // Original SidebarProfileCard community line: the active Community's name. The Tenant's
+  // display name is that name (01 §2); an older Core without it keeps the Tenant ID.
+  const communityLabel = session.tenantName?.trim() || session.tenantId;
+  return <SidebarProfileCard communityLabel={communityLabel} resolvedDisplayName={displayName}
     onOpenSettings={onOpenSettings} onSignOut={onSignOut}
     avatar={avatar("sidebar-profile-avatar")} popoverAvatar={avatar()}
     selfPresenceStatus={presence?.currentStatus} isPresencePending={presence?.isPending}
