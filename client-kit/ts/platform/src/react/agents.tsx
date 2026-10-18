@@ -42,6 +42,7 @@ import {
   type PlatformToolPage,
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
 import { parseDocument, stringify } from "yaml";
 import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Webhook, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
@@ -168,6 +169,15 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const [installationLocked, setInstallationLocked] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const blocked = locked || versionLocked;
+  // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
+  // create dialog the New agent card opens, only while that card would be enabled.
+  const createAvailable = useRef(false);
+  createAvailable.current = !blocked && edit === null && versionEdit === null;
+  useEffect(() => {
+    const open = () => { if (createAvailable.current) setCreateOpen(true); };
+    if (consumePendingOpenCreateAgent()) open();
+    return subscribeOpenCreateAgent(open);
+  }, []);
   const data = state.status === "ok" ? state.data : null;
   const page = data && Array.isArray(data.definitions) && data.definitions.every(validDefinition)
     && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset))

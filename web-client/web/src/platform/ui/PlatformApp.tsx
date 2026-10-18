@@ -52,6 +52,7 @@ import { ChannelManagementSheet } from "@client-kit/platform/react/channel-manag
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
 import { getChannelDescription } from "@client-kit/platform/react/channel-description";
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
+import { requestOpenCreateAgent } from "@client-kit/platform/react/open-create-agent-event";
 import { SidebarLoadingContent, useSidebarLoadingShape } from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
@@ -558,7 +559,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onOpenChannel={channelId=>{void openSearchChannel(channelId).catch(()=>toast.error(t("platform.loadFailed")));}}
                 onOpenResult={(hit,query)=>{if(hit.channelId)void openSearchChannel(hit.channelId,hit,query).catch(()=>toast.error(t("platform.loadFailed")));}}
                 onOpenUser={user=>openDirectMessage(user.pubkey)}
-                onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)} />
+                onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)}
+                onCreateAgent={()=>{requestOpenCreateAgent();setTab("agents");}} />
               </AppSidebarPinnedHeaderFrame>}
               above={sidebarOverflow.unreadAboveCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadAboveCount}
                 emphasis={sidebarOverflow.hasHighPriorityAbove ? "primary" : "default"} onClick={sidebarOverflow.scrollToNextAbove} position="top" testId="sidebar-unread-above" /> : null}

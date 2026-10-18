@@ -325,7 +325,7 @@ it("mounts the same original search in the fixed pinned sidebar header, with rea
   expect(host.querySelector('[data-testid="actual-web-search-host"]')?.closest('[data-testid="sidebar-pinned-header"]')).not.toBeNull();
   expect(state.search?.onBrowseChannels).toBeTypeOf("function");
   expect(state.search?.onCreateChannel).toBeTypeOf("function");
-  expect(state.search?.onCreateAgent).toBeUndefined();
+  expect(state.search?.onCreateAgent).toBeTypeOf("function");
   await state.search!.onOpenUser!({pubkey:"b".repeat(64),displayName:null,avatarUrl:null,nip05Handle:null,ownerPubkey:null,isAgent:false});
   expect(state.openDm).toHaveBeenCalledWith("b".repeat(64));
   expect(state.openConversation).toHaveBeenCalledWith("actual-dm");

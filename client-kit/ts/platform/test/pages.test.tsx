@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
+import { requestOpenCreateAgent } from "../src/react/open-create-agent-event";
 import { PlatformProvider } from "../src/react/context";
 import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/react/memory";
 import { ToolManagement, validPlatformToolPage } from "../src/react/tools";
@@ -1767,6 +1768,21 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(host.querySelector("[role=dialog]") as HTMLElement, "Close"));
     await click(button(card, "View definition"));
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1" });
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("opens the same governed create dialog for the original search Actions request", async () => {
+    // A request made before the page mounts is consumed once on mount (original requestOpenCreateAgent).
+    requestOpenCreateAgent();
+    const t = routes();
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    expect(host.querySelector("[role=dialog] [data-testid=agent-definition-editor]")).not.toBeNull();
+    await click(button(host.querySelector("[role=dialog]") as HTMLElement, "Close"));
+    expect(host.querySelector("[role=dialog] [data-testid=agent-definition-editor]")).toBeNull();
+    await act(async () => requestOpenCreateAgent());
+    await settle();
+    expect(host.querySelector("[role=dialog] [data-testid=agent-definition-editor]")).not.toBeNull();
     expect(posts(t)).toHaveLength(0);
   });
 
