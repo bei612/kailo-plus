@@ -15,7 +15,7 @@ artifacts:
     build_dockerfile: file-storage/adapter/Dockerfile
     inputs: [file-storage/adapter/Dockerfile, file-storage/adapter/Dockerfile.dockerignore, file-storage/adapter/package.json, file-storage/adapter/package-lock.json, file-storage/adapter/src/, client-kit/adapter/]
     source_digest: sha256:6ccd12a879286b4ea7f7eb53d7700d64c59e78b93c2128aa301a2562a46aae10
-    artifact_digest: sha256:bab90859da59913f42d5deba2f025006f06c61f8c2c8b9c5bc33683e0fd3f0a6
+    artifact_digest: sha256:95c1ebdb83fde0e7bea4ab8f3676f8392ded6596e8b42bf4bd4c2dc99ad236d6
     blocked: This frozen candidate adapter is built, pushed and independently read back by digest, but not deployed. Live SecretRef delivery, approved release/binding and full tool/resource acceptance remain unverified.
   - name: file-storage-service
     kind: image

@@ -63,7 +63,7 @@ release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
   artifacts:
     - name: web-client
-      digest: sha256:ff7822d82a73cb1c07a3b72b990e9eb0ab776d975b43ca3c7b1008f103d895ae
+      digest: sha256:d41e87b9570db39803e5f61f808008ced476aee5ccd2f84b3b01fb903cd3870d
   # 记录本批已构建、未部署的共享管理页候选；不能代替后端或业务验收。
   # 2026-10-05 Web 三 HUMAN/两 Agent 的六次回复与用量终态已实测；见上方 evidence。
   # 约 165 秒交互延迟、原生设备与完整接缝尚未闭合，不据此计为 ready/PASS。

@@ -49,5 +49,5 @@ release:
     - name: model-gateway
       digest: sha256:3ca36716a3e92177f0d3a3e143bcd7bacf5d17ae73b3f2fd31f1dec6eca4dbaa
     - name: web-client
-      digest: sha256:ff7822d82a73cb1c07a3b72b990e9eb0ab776d975b43ca3c7b1008f103d895ae
+      digest: sha256:d41e87b9570db39803e5f61f808008ced476aee5ccd2f84b3b01fb903cd3870d
   gate: blocked_until_seams_closed
