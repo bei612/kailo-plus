@@ -24,6 +24,8 @@ pub(crate) mod pep;
 mod projection;
 #[path = "application_binding_read.rs"]
 pub(crate) mod read;
+#[path = "application_binding_secret.rs"]
+pub(crate) mod secret;
 #[path = "application_read_grant.rs"]
 pub(crate) mod read_grant;
 
@@ -222,7 +224,6 @@ pub(crate) fn validate_params(params: &Params, creating: bool) -> Result<(), Ref
 
 async fn approved_release(
     conn: &mut PgConnection,
-    tenant: Uuid,
     request: &Requested,
 ) -> Result<Value, Refusal> {
     let row: Option<(Value, Value, String)> = sqlx::query_as(
@@ -293,18 +294,12 @@ async fn approved_release(
     if request.retain != retained {
         return Err(invalid());
     }
-    let secrets = manifest["secretSchema"].as_array().ok_or_else(blocked)?;
-    if secrets.len() != request.secret_refs.len() {
+    // 03 §9: SecretRefs are produced only by this action's own governed
+    // OpenBao write (secret::stage). A caller-selected locator could adopt a
+    // value written by an operator side channel or another binding.
+    manifest["secretSchema"].as_array().ok_or_else(blocked)?;
+    if !request.secret_refs.is_empty() {
         return Err(invalid());
-    }
-    for reference in &request.secret_refs {
-        if !secrets
-            .iter()
-            .any(|s| s["secretKey"] == reference["secretKey"])
-            || !text(reference, "locator")?.starts_with(&format!("tenants/{tenant}/"))
-        {
-            return Err(invalid());
-        }
     }
     // DD-89/94: the governed create transaction owns this binding's SERVICE
     // identity. Requiring a pre-existing row had no production producer and
@@ -391,7 +386,7 @@ pub(crate) async fn target(
         if frozen.is_some_and(|id| id != request.id) {
             return Err(conflict());
         }
-        approved_release(conn, tenant, &request).await?;
+        approved_release(conn, &request).await?;
         let exists: bool = sqlx::query_scalar(
             "select exists(select 1 from catalog.application_binding where id=$1)",
         )
@@ -473,7 +468,9 @@ pub(crate) async fn prewrite(
         if request.id != ae.target_id || params.workspace_id != ae.workspace_id {
             return Err(conflict());
         }
-        let manifest = approved_release(tx, ae.tenant_id, &request).await?;
+        let manifest = approved_release(tx, &request).await?;
+        // Exactly the references frozen before the governed OpenBao write.
+        let secret_refs = secret::frozen(ae, &manifest, request.id)?;
         if native::Connector::from_manifest(&manifest)? == native::Connector::ProtocolPeer {
             let adapter = native::Adapter::resolve(
                 &request.adapter_ref,
@@ -482,7 +479,7 @@ pub(crate) async fn prewrite(
             )?;
             let mut binding = json!({"bindingId":request.id,"tenantId":ae.tenant_id,
                 "servicePrincipalId":request.service,"configDigest":request.config_digest,
-                "isolationMode":request.isolation,"secretRefs":request.secret_refs});
+                "isolationMode":request.isolation,"secretRefs":secret_refs});
             if let Some(workspace) = ae.workspace_id {
                 binding["workspaceId"] = json!(workspace);
             }
@@ -509,7 +506,7 @@ pub(crate) async fn prewrite(
             .bind(request.id).bind(ae.tenant_id).bind(ae.workspace_id).bind(text(&manifest,"componentTypeKey")?)
             .bind(request.release).bind(request.service).bind(&request.adapter_ref).bind(&request.native_instance)
             .bind(&request.native_scope).bind(&request.isolation).bind(json!(categories)).bind(&request.config)
-            .bind(&request.config_digest).bind(json!(request.secret_refs)).bind(request.retain).bind(ae.id)
+            .bind(&request.config_digest).bind(json!(secret_refs)).bind(request.retain).bind(ae.id)
             .bind(&request.model_mode)
             .fetch_one(&mut **tx).await?;
         let assigned = sqlx::query("update identity.service_principal set component_binding_kind='APPLICATION',component_binding_id=$1

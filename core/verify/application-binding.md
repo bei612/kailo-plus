@@ -1645,3 +1645,31 @@ Data tmp/cache、无导出或下载。输入为当前实施文档与设计，两
 覆盖，不冒充固定发布树 full。期间 markdownlint 发生 Data 读等待，未重启。
 同目录 `check-docs.log` SHA-256：
 `fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。
+
+## 2026-10-18 binding secret 的受治理写入（源码阶段，未运行）
+
+设计依据 `03` §9（约 930 行）、DD-70、V-SCN-47：Tenant admin 在 binding 配置界面
+提交 secret 值，Core 在同一 `application_binding.create` Governed Action 内写入
+该 Tenant 的 OpenBao namespace，只记版本号；不以运维旁路写入的 KV 冒充受治理写入。
+
+- 输入：`ActionCommand.bindingSecretValues` 只在 `application_binding.create` 上被接受
+  （`governance_api::submit_action` 早拒其他命令），并立即转成无 Debug/Serialize 的
+  `secret::Staged`；`Params`、ActionExecution、history、审计与回应都不含值。
+  `ApplicationBindingCreate.secretRefs` 必须为空，调用方自选 locator 一律拒绝。
+- 顺序：scope、permission、target、EXPLICIT 确认与 quota 全部通过后，`decide()` 调
+  `application_binding::secret::stage`：先把按 binding ID 派生的确切引用
+  `application-binding/<bindingId>/<secretKey>`（version 1，REMOTE_ADAPTER 的 audience
+  为 manifest `actionTokenAudience`）冻结进仍为 EVALUATING 的 AE `bindingSecretRefs`，
+  再以既有 CAS=0 `write_once` 写入；已有不同值为 CONFLICT，不追加第二个版本。
+  确定拒绝关门；OpenBao 不可用保持 EVALUATING，由同一幂等键携带原值重试；不带值的
+  重入只接受原请求已写成的 version 1。
+- prewrite 只把冻结引用（`secret::frozen` 复核 key 集合、version、audience 与 locator
+  派生）写进 binding；激活仍由 adapter 的版本钉定读取与 OpenBao 审计核对决定。
+- Web 绑定面板按 `ApplicationBindingPage.bindableReleases` 的 secretSchema 生成密码字段，
+  值只留在组件内存，成功记录后清空。
+
+已加针对性测试：`application_binding::secret::tests` 三项、
+`read::read_resource_tests::bindable_secret_projection_keeps_only_public_declaration`、
+Web `application-bindings.test.tsx` 三项。开发机未编译、未运行任何测试；契约生成物、
+`tools/gen-platform-i18n.py` 的 Dart 输出、cargo test/clippy/fmt 与 vitest 均待 CI。
+没有部署、登记、批准或激活组件。

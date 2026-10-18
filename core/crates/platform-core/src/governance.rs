@@ -20,6 +20,7 @@
 //! 以 `consume_window` 为上界；ALLOWED 而未派发由对账作业按同一 workflow ID 重新
 //! 驱动，结果不明停在 UNKNOWN 直到 Temporal 给出观察（`governance_reconcile`）。
 
+use crate::application_binding::secret::Staged;
 use crate::audit::Evidence;
 use contracts::EvidenceKind;
 use std::time::Duration;
@@ -4474,6 +4475,7 @@ impl Governance {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn replay_with_native_origin(
         &self,
         actor: Actor,
@@ -4481,6 +4483,7 @@ impl Governance {
         key: &str,
         params: &Params,
         origin: &Option<crate::application_action::native_human::Origin>,
+        staged: Option<&Staged>,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
         let op = Some(existing.operation_id);
         if &crate::application_action::native_human::Origin::from_execution(&existing)
@@ -4511,7 +4514,7 @@ impl Governance {
             .map_err(|error| (error, op))?;
             tx.commit().await.map_err(|error| (error.into(), op))?;
         }
-        self.replay(actor, existing, key, params).await
+        self.replay(actor, existing, key, params, staged).await
     }
 
     async fn submit_with_native_origin(
@@ -4546,6 +4549,8 @@ impl Governance {
             return Err((Refusal::Blocked(ReasonCode::CapabilityBlocked), None));
         }
         let params = parse_command(sem, cmd).map_err(|r| (r, None))?;
+        // 03 §9：binding secret 值只在本次请求内存中经过，不进入 Params/AE。
+        let staged = Staged::from_command(cmd).map_err(|r| (r, None))?;
 
         // 幂等：同一发起者、同一键回答原 operation
         if let Some(existing) = self
@@ -4554,7 +4559,14 @@ impl Governance {
             .map_err(|e| (e.into(), None))?
         {
             return self
-                .replay_with_native_origin(actor, existing, &cmd.action_key, &params, &origin)
+                .replay_with_native_origin(
+                    actor,
+                    existing,
+                    &cmd.action_key,
+                    &params,
+                    &origin,
+                    staged.as_ref(),
+                )
                 .await;
         }
 
@@ -4654,6 +4666,7 @@ impl Governance {
                                 &cmd.action_key,
                                 &params,
                                 &origin,
+                                staged.as_ref(),
                             )
                             .await;
                     }
@@ -4670,7 +4683,7 @@ impl Governance {
         for old in revoked {
             self.invalidate(old).await;
         }
-        self.decide(actor, ae.id, &def, sem, &params).await
+        self.decide(actor, ae.id, &def, sem, &params, staged.as_ref()).await
     }
 
     /// 由 Core 自己打开（不经 BFF 语义命令）的一条 EVALUATING ActionExecution 的
@@ -4701,7 +4714,7 @@ impl Governance {
             principal_id: ae.initiator_principal_id,
             human_identity_id: None,
         };
-        self.decide(actor, ae.id, &def, sem, &params).await
+        self.decide(actor, ae.id, &def, sem, &params, None).await
     }
 
     async fn by_idempotency(
@@ -4729,6 +4742,7 @@ impl Governance {
         existing: Execution,
         key: &str,
         params: &Params,
+        staged: Option<&Staged>,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
         let op = Some(existing.operation_id);
         if existing.action_key != key || existing.params().as_ref() != Some(params) {
@@ -4744,7 +4758,7 @@ impl Governance {
                     .map_err(|e| (e.into(), op))?;
                 let sem = Semantic::from_key(&def.action_key)
                     .ok_or((Refusal::Blocked(ReasonCode::CapabilityBlocked), op))?;
-                return self.decide(actor, existing.id, &def, sem, params).await;
+                return self.decide(actor, existing.id, &def, sem, params, staged).await;
             }
             ("ALLOWED", "NOT_DISPATCHED" | "UNKNOWN") => {
                 self.dispatch(existing.id).await;
@@ -4770,6 +4784,7 @@ impl Governance {
         def: &Definition,
         sem: Semantic,
         params: &Params,
+        staged: Option<&Staged>,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
         let ae = load_execution(&self.pool, ae_id)
             .await
@@ -4876,6 +4891,35 @@ impl Governance {
             .await
             .map_err(|e| (e.into(), op))?;
             return Err((Refusal::from_reason(reason), op));
+        }
+
+        // 03 §9：全部准入成立后、门禁落定前，在同一 Governed Action 内先冻结
+        // SecretRef 再写 OpenBao。确定拒绝即关门；不可用保持 EVALUATING，
+        // 由同一幂等键携带原值重试。
+        if sem == Semantic::ApplicationBindingCreate {
+            match crate::application_binding::secret::stage(self, &ae, params, staged).await {
+                Ok(()) => {}
+                Err(
+                    r @ (Refusal::Conflict(_)
+                    | Refusal::Precondition(_)
+                    | Refusal::Denied(_)
+                    | Refusal::Blocked(_)),
+                ) => {
+                    self.close_gate(
+                        &ae,
+                        def,
+                        "ADMISSION",
+                        "DENIED",
+                        &eval,
+                        &r.reason(),
+                        actor.human_identity_id,
+                    )
+                    .await
+                    .map_err(|e| (e.into(), op))?;
+                    return Err((r, op));
+                }
+                Err(r) => return Err((r, op)),
+            }
         }
 
         let mut tx = self.pool.begin().await.map_err(|e| (e.into(), op))?;

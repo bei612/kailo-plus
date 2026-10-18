@@ -74,6 +74,13 @@ pub async fn submit_action(
     if cmd.source_event_id.is_some() && cmd.action_key != crate::agent_invocation::ACTION {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // Transient binding secret values belong only to the governed binding
+    // create; no other consumer may receive, persist or echo them (03 §9).
+    if cmd.binding_secret_values.is_some()
+        && (cmd.action_key != crate::application_binding::CREATE || cmd.component_action.is_some())
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     let result = if crate::protocol_session::command::is_action(&cmd.action_key) {
         crate::protocol_session::command::submit(&state, &ctx, &headers, &cmd).await
     } else if cmd.component_action.is_some() {

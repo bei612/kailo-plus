@@ -37,6 +37,7 @@ implementation:
     - core/crates/platform-core/src/application_binding_gateway.rs
     - core/crates/platform-core/src/application_binding_credentials.rs
     - core/crates/platform-core/src/application_binding_read.rs
+    - core/crates/platform-core/src/application_binding_secret.rs
     - core/crates/platform-core/src/application_binding_pep.rs
     - core/crates/platform-core/src/application_tool.rs
     - core/crates/platform-core/src/application_action.rs
@@ -67,6 +68,7 @@ implementation:
     - contracts/api/application_read_resource_page.schema.json
     - contracts/api/application_native_page.schema.json
     - contracts/domain/application_binding_create.schema.json
+    - contracts/api/action_command.schema.json
     - contracts/domain/component_action_input.schema.json
     - contracts/api/native_human_action_request.schema.json
     - contracts/api/native_human_action_result.schema.json

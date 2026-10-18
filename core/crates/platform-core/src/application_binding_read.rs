@@ -430,6 +430,9 @@ async fn page(
     if rows.len() == usize::try_from(limit).map_err(|_| invalid())? {
         value["nextOffset"] = json!(offset + limit);
     }
+    if can_create {
+        value["bindableReleases"] = json!(bindable_releases(&state.pool).await?);
+    }
     let page: contracts::ApplicationBindingPage =
         serde_json::from_value(value.clone()).map_err(|_| blocked())?;
     if serde_json::to_value(&page).map_err(|_| blocked())? != value {
@@ -438,9 +441,68 @@ async fn page(
     Ok(page)
 }
 
+/// 03 §9: a Tenant admin submits binding secret values against the approved
+/// release's declared secretSchema. Only the public declaration leaves the
+/// Catalog: key, value type and format. The same filters as approved_release
+/// apply; create still re-admits the exact release, so this list grants
+/// nothing by itself.
+async fn bindable_releases(pool: &sqlx::PgPool) -> Result<Vec<Value>, Refusal> {
+    let rows: Vec<(Uuid, String, String, Value)> = sqlx::query_as(
+        "select r.id,r.component_type_key,r.version,r.manifest->'secretSchema'
+         from catalog.component_release r join catalog.component_definition d
+           on d.type_key=r.component_type_key and d.catalog_tenant_id=r.catalog_tenant_id
+         where r.status='APPROVED' and r.approved_by_action_execution_id is not null
+           and d.class='APPLICATION' and d.status='ACTIVE'
+           and r.manifest->'frontendDelivery'->>'mode' in ('NONE','NATIVE_PAGE')
+         order by r.component_type_key,r.version,r.id",
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|(id, type_key, version, secrets)| {
+            Ok(json!({"componentReleaseId":id,"componentTypeKey":type_key,"version":version,
+                "secretSchema":bindable_secrets(&secrets)?}))
+        })
+        .collect()
+}
+
+fn bindable_secrets(declared: &Value) -> Result<Vec<Value>, Refusal> {
+    declared
+        .as_array()
+        .ok_or_else(blocked)?
+        .iter()
+        .map(|secret| {
+            Ok(json!({"secretKey":text(secret,"secretKey").map_err(|_| blocked())?,
+                "valueType":text(secret,"valueType").map_err(|_| blocked())?,
+                "lengthOrFormat":text(secret,"lengthOrFormat").map_err(|_| blocked())?}))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod read_resource_tests {
     use super::*;
+
+    #[test]
+    fn bindable_secret_projection_keeps_only_public_declaration() {
+        let declared = json!([{"secretKey":"native_api_key","valueType":"STRING",
+            "lengthOrFormat":"{\"type\":\"string\",\"minLength\":16}","rotationClass":"SERVICE_CREDENTIAL",
+            "deliveryMode":"FILE","restartRequired":false}]);
+        assert_eq!(
+            bindable_secrets(&declared).unwrap(),
+            vec![json!({"secretKey":"native_api_key","valueType":"STRING",
+                "lengthOrFormat":"{\"type\":\"string\",\"minLength\":16}"})]
+        );
+        assert!(bindable_secrets(&json!([])).unwrap().is_empty());
+        for invalid in [
+            json!(null),
+            json!({}),
+            json!([{"secretKey":"native_api_key","valueType":"STRING"}]),
+            json!([{"secretKey":"","valueType":"STRING","lengthOrFormat":"x"}]),
+        ] {
+            assert!(bindable_secrets(&invalid).is_err(), "{invalid}");
+        }
+    }
 
     #[test]
     fn directory_query_cannot_select_a_service_identity_or_unknown_direction() {
