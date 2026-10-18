@@ -92,6 +92,12 @@ func (s *knowledgeService) StartKnowledgeDeleteTask(ctx context.Context, kbID, i
 	}
 	row := plan.knowledge[0]
 	payload := types.KnowledgeListDeletePayload{TenantID: row.TenantID, KnowledgeBaseID: kbID, KnowledgeIDs: []string{id}, ExpectedRevision: revision, TaskID: taskID, Initiator: types.TaskInitiatorFromContext(ctx)}
+	// SS-WEK-MATERIALIZATION: a bound execute retains its original execution
+	// reference with the durable deletion task; the worker admits it freshly.
+	payload.PlatformNativeTask, err = boundPlatformNativeTask(ctx, types.PlatformNativeTaskDeleteDocument, taskID)
+	if err != nil {
+		return nil, err
+	}
 	// A prior inspector/plan read is not authorization for this first queue
 	// write. Reapply the native KB grant and the admitted connector's original
 	// RECEIVER grant at the actual dispatch boundary, not on task observation.
@@ -186,7 +192,8 @@ func (s *knowledgeService) dispatchPendingKnowledgeDeletions(ctx context.Context
 		if info == nil || info.ID != payload.TaskID || info.Type != types.TypeKnowledgeListDelete ||
 			json.Unmarshal(info.Payload, &queued) != nil || queued.TaskID != payload.TaskID ||
 			queued.TenantID != payload.TenantID || queued.KnowledgeBaseID != payload.KnowledgeBaseID ||
-			len(queued.KnowledgeIDs) != 1 || queued.KnowledgeIDs[0] != payload.KnowledgeIDs[0] || queued.ExpectedRevision != payload.ExpectedRevision {
+			len(queued.KnowledgeIDs) != 1 || queued.KnowledgeIDs[0] != payload.KnowledgeIDs[0] || queued.ExpectedRevision != payload.ExpectedRevision ||
+			!queued.PlatformNativeTask.Same(payload.PlatformNativeTask) {
 			return false, fmt.Errorf("native deletion queue acknowledgement differs from the durable intent")
 		}
 		retained = append(retained, retainedTask{op: *op, payload: *payload})

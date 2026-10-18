@@ -74,6 +74,25 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 			return nil, err
 		}
 	}
+	// SS-WEK-MATERIALIZATION: a bound execute retains its original execution
+	// reference with the durable parse task it creates; the worker consumes
+	// that task only under a fresh native task admission.
+	nativeTask, err := boundPlatformNativeTask(ctx, types.PlatformNativeTaskAddDocument, creationID)
+	if err != nil {
+		return nil, err
+	}
+	if nativeTask != nil {
+		encoded, err := json.Marshal(nativeTask)
+		if err != nil || creationID == "" || channel == fileStorageConnectorType {
+			return nil, fmt.Errorf("bound native creation has no durable creation identity")
+		}
+		owned := make(map[string]string, len(metadata)+1)
+		for key, value := range metadata {
+			owned[key] = value
+		}
+		owned[platformNativeTaskMetadataKey] = string(encoded)
+		metadata = owned
+	}
 	if channel == fileStorageConnectorType {
 		tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
 		if creationID == "" {

@@ -452,6 +452,9 @@ type KnowledgeListDeletePayload struct {
 	// Conditional MCP tasks retain the admitted revision and their stable native queue identity.
 	ExpectedRevision string `json:"expected_revision,omitempty"`
 	TaskID           string `json:"task_id,omitempty"`
+	// A bound HUMAN execution's retained reference; its worker step is
+	// admitted only through a fresh native task execution ticket.
+	PlatformNativeTask *PlatformNativeTask `json:"platform_native_task,omitempty"`
 }
 
 // KnowledgeListReparsePayload represents the batch knowledge reparse task payload

@@ -31,9 +31,10 @@ const fileStorageBindingMetadataKey = "platform_receiver_binding_id"
 const fileStorageGenerationMetadataKey = "platform_receiver_generation"
 
 // File/URL connector inputs and ordinary uploads are user-authored metadata.
-// These two internal fields are established only by the admitted native writer.
+// These internal fields are established only by the admitted native writer or
+// the bound execution that created the native task.
 func validateFileStorageOwnershipInput(metadata map[string]string) error {
-	for _, key := range []string{fileStorageBindingMetadataKey, fileStorageGenerationMetadataKey} {
+	for _, key := range []string{fileStorageBindingMetadataKey, fileStorageGenerationMetadataKey, platformNativeTaskMetadataKey} {
 		if _, supplied := metadata[key]; supplied {
 			return fmt.Errorf("native receiver ownership metadata is reserved")
 		}

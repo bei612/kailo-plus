@@ -49,7 +49,8 @@ func (r *taskPendingOpsRepository) StageKnowledgeDeletion(ctx context.Context, p
 				prior.ScopeID != payload.KnowledgeBaseID || prior.Op != "delete" ||
 				original.TenantID != payload.TenantID || original.KnowledgeBaseID != payload.KnowledgeBaseID ||
 				original.TaskID != payload.TaskID || original.KnowledgeIDs[0] != payload.KnowledgeIDs[0] ||
-				original.ExpectedRevision != payload.ExpectedRevision {
+				original.ExpectedRevision != payload.ExpectedRevision ||
+				!original.PlatformNativeTask.Same(payload.PlatformNativeTask) {
 				return errors.New("native deletion identity conflicts with its original intent")
 			}
 			return nil

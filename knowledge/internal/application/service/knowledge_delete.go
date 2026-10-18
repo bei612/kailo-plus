@@ -851,6 +851,17 @@ func (s *knowledgeService) ProcessKnowledgeListDelete(ctx context.Context, t *as
 		if s.config == nil || s.config.KnowledgeBase == nil || s.config.KnowledgeBase.DeleteReceiptRetention <= 0 {
 			return fmt.Errorf("conditional deletion retention unavailable: %w", asynq.SkipRetry)
 		}
+		// SS-WEK-MATERIALIZATION: a bound execution's retained deletion runs
+		// only under a fresh native task admission of that same execution; a
+		// refusal leaves the step unconsumed (UNKNOWN), never a fabricated result.
+		if task := payload.PlatformNativeTask; task != nil {
+			if task.NativeType != types.PlatformNativeTaskDeleteDocument || task.NativeID != taskID {
+				return fmt.Errorf("conditional deletion reference mismatch: %w", asynq.SkipRetry)
+			}
+			if err := s.admitPlatformNativeTask(ctx, task, true); err != nil {
+				return fmt.Errorf("conditional deletion admission: %v: %w", err, asynq.SkipRetry)
+			}
+		}
 		ctx = context.WithValue(ctx, wikiDeleteTaskKey{}, wikiDeleteReceipt{
 			TaskID: taskID, TenantID: payload.TenantID, KnowledgeBaseID: kbID,
 			KnowledgeID: ids[0], Revision: payload.ExpectedRevision,

@@ -289,12 +289,10 @@ func (s *Server) authorizeNativePlatformTool(ctx context.Context, ep *types.MCPE
 				(tool == types.MCPEndpointToolReadDocument && req.GetBool("metadata_only", false) &&
 					req.GetString("knowledge_id", "") == nativeText(arguments, "nativeObjectRef")))
 	case "execute":
-		// The original parse/delete workers have no fresh platform job
-		// authorization consumer. Never serialize this ingress token or let it
-		// stand in for the authorization of those later native writes.
-		if tool == types.MCPEndpointToolAddDocument || tool == types.MCPEndpointToolDeleteDocument {
-			return ctx, errors.New("bound native delayed execution is unavailable")
-		}
+		// SS-WEK-MATERIALIZATION: add/delete create durable native tasks. This
+		// ingress token is never serialized; only the original execution
+		// reference is retained, and the parse/delete worker consumes the task
+		// under a fresh request_native_task_execution_admission ticket.
 		var target map[string]json.RawMessage
 		if json.Unmarshal(admitted["targetResource"], &target) != nil ||
 			nativeText(target, "resourceId") != nativeText(claims, "target_id") ||
@@ -313,12 +311,23 @@ func (s *Server) authorizeNativePlatformTool(ctx context.Context, ep *types.MCPE
 			allowed = (tool == types.MCPEndpointToolExportDocument ||
 				(tool == types.MCPEndpointToolReadDocument && req.GetBool("metadata_only", false))) &&
 				req.GetString("knowledge_id", "") == nativeText(input, "nativeObjectRef")
+		case "ingest":
+			allowed = tool == types.MCPEndpointToolAddDocument && boundIngest(req, kbID, claims, input)
+		case "delete":
+			allowed = tool == types.MCPEndpointToolDeleteDocument && boundDelete(req, kbID, claims, input)
 		}
 	}
 	if !allowed {
 		return ctx, errors.New("native tool differs from the admitted operation and scope")
 	}
 	ctx = context.WithValue(ctx, types.MCPEndpointContextKey, delivery.ep)
+	if operation == "execute" && (action == "ingest" || action == "delete") {
+		task, err := nativeTaskReference(delivery, claims, admitted, key)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = types.WithPlatformNativeTask(ctx, task)
+	}
 	if operation == "execute" && (action == "read" || action == "export") {
 		if s.knowledgeService == nil || s.kbService == nil {
 			return ctx, errors.New("native document authorization unavailable")
@@ -329,4 +338,55 @@ func (s *Server) authorizeNativePlatformTool(ctx context.Context, ep *types.MCPE
 		}
 	}
 	return ctx, nil
+}
+
+// A bound ingest creates exactly the admitted source file once: the frozen
+// execution key, the admitted source reference and the receiver knowledge base.
+func boundIngest(req mcp.CallToolRequest, kbID string, claims, input map[string]json.RawMessage) bool {
+	var reference map[string]string
+	if json.Unmarshal([]byte(req.GetString("source_reference_json", "")), &reference) != nil {
+		return false
+	}
+	for _, field := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
+		if reference[field] == "" || reference[field] != nativeText(input, field) {
+			return false
+		}
+	}
+	key := nativeText(claims, "idempotency_key")
+	return nativeUUID(key) && !req.GetBool("observe_only", false) && req.GetString("knowledge_base_id", "") == kbID &&
+		req.GetString("idempotency_key", "") == key && req.GetString("filename", "") == nativeText(input, "displayName") &&
+		req.GetString("file_base64", "") != ""
+}
+
+// A bound delete starts exactly the admitted conditional deletion once.
+func boundDelete(req mcp.CallToolRequest, kbID string, claims, input map[string]json.RawMessage) bool {
+	key := nativeText(claims, "idempotency_key")
+	return nativeUUID(key) && !req.GetBool("observe_only", false) && req.GetString("knowledge_base_id", "") == kbID &&
+		req.GetString("idempotency_key", "") == key &&
+		req.GetString("knowledge_id", "") == nativeText(input, "nativeObjectRef") &&
+		req.GetString("expected_revision", "") == nativeText(input, "nativeRevision")
+}
+
+// The original execution reference retained with the durable native task:
+// identifiers and the frozen generation/deadline Core's PEP returned for this
+// execute, and the digest of its admitted arguments. No token is kept.
+func nativeTaskReference(delivery *nativeAdapterDelivery, claims, admitted map[string]json.RawMessage, key string) (types.PlatformNativeTask, error) {
+	refused := errors.New("bound native task has no frozen execution reference")
+	var generation int64
+	deadline := nativeText(admitted, "nativeTaskDeadline")
+	end, err := time.Parse(time.RFC3339Nano, deadline)
+	if json.Unmarshal(admitted["bindingGeneration"], &generation) != nil || generation <= 0 || err != nil || !end.After(time.Now()) {
+		return types.PlatformNativeTask{}, refused
+	}
+	digest, err := types.PlatformArgumentsDigest(string(claims["native_arguments"]))
+	if err != nil {
+		return types.PlatformNativeTask{}, refused
+	}
+	task := types.PlatformNativeTask{BindingID: delivery.ep.PlatformBindingID, ActionExecutionID: nativeText(claims, "action_execution_id"), ExternalExecutionID: nativeText(claims, "external_execution_id"), IdempotencyKey: nativeText(claims, "idempotency_key"), ActionKey: key, Generation: generation, Deadline: deadline, ArgumentsDigest: digest}
+	for _, value := range []string{task.BindingID, task.ActionExecutionID, task.ExternalExecutionID, task.IdempotencyKey} {
+		if !nativeUUID(value) {
+			return types.PlatformNativeTask{}, refused
+		}
+	}
+	return task, nil
 }

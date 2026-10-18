@@ -34,6 +34,7 @@ type nativeBindingFixture struct {
 	peps       int
 	deny       bool
 	foreign    bool
+	deadline   string
 }
 
 func newNativeBindingFixture(t *testing.T) *nativeBindingFixture {
@@ -81,10 +82,14 @@ func newNativeBindingFixture(t *testing.T) *nativeBindingFixture {
 		if f.foreign {
 			op = uuid.NewString()
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"actionExecutionId": f.claims["action_execution_id"],
+		answer := map[string]any{"actionExecutionId": f.claims["action_execution_id"],
 			"operationId": op, "authorizationMinZedToken": "fresh",
 			"bindingGeneration": 9,
-			"targetResource":    map[string]any{"resourceId": f.claims["target_id"], "nativeRef": kb, "nativeScopeRef": kb}})
+			"targetResource":    map[string]any{"resourceId": f.claims["target_id"], "nativeRef": kb, "nativeScopeRef": kb}}
+		if f.deadline != "" {
+			answer["nativeTaskDeadline"] = f.deadline
+		}
+		_ = json.NewEncoder(w).Encode(answer)
 	}))
 	t.Cleanup(core.Close)
 	dir := t.TempDir()
@@ -214,23 +219,59 @@ func TestNativeBindingRejectsCredentialRotatedBetweenEndpointReads(t *testing.T)
 	require.Zero(t, f.peps)
 }
 
-func TestNativeBindingDoesNotTurnIngressAdmissionIntoDelayedWriteAuthority(t *testing.T) {
+// SS-WEK-MATERIALIZATION: a bound add/delete execute is admitted only for the
+// exact admitted native call and retains just the original execution reference
+// (never the ingress token) for the durable task's fresh admission.
+func TestNativeBindingRetainsOnlyTheOriginalExecutionReferenceForDelayedTasks(t *testing.T) {
 	for _, action := range []string{"ingest", "delete"} {
-		t.Run(action, func(t *testing.T) {
-			f := newNativeBindingFixture(t)
-			f.operation = "execute"
-			f.claims["action_key"] = "knowledge." + action + "@v2"
-			f.claims["idempotency_key"] = uuid.NewString()
-			f.arguments = map[string]any{"target": map[string]any{"resourceId": f.claims["target_id"]}, "input": map[string]any{}}
-			tool := types.MCPEndpointToolAddDocument
-			if action == "delete" {
-				tool = types.MCPEndpointToolDeleteDocument
-			}
-			req := f.request(t, tool, map[string]any{"knowledge_base_id": f.config["nativeKnowledgeBaseId"], "idempotency_key": f.claims["idempotency_key"]})
-			_, err := f.server.authorizeNativePlatformTool(context.Background(), f.ep, req)
-			require.ErrorContains(t, err, "delayed execution")
-			require.Equal(t, 1, f.peps, "the rejection is not evidence that ingress PEP failed")
-		})
+		for _, change := range []string{"", "no-deadline", "observe", "foreign-key", "foreign-target"} {
+			t.Run(action+"/"+change, func(t *testing.T) {
+				f := newNativeBindingFixture(t)
+				f.operation = "execute"
+				f.deadline = time.Now().Add(time.Hour).UTC().Format("2006-01-02T15:04:05.000Z07:00")
+				f.claims["action_key"] = "knowledge." + action + "@v3"
+				f.claims["idempotency_key"] = uuid.NewString()
+				f.claims["external_execution_id"] = uuid.NewString()
+				kb := f.config["nativeKnowledgeBaseId"]
+				input := map[string]any{"resourceId": uuid.NewString(), "nativeObjectRef": uuid.NewString(), "nativeRevision": "revision", "displayName": "conformance.md", "mediaType": "text/markdown"}
+				f.arguments = map[string]any{"target": map[string]any{"resourceId": f.claims["target_id"]}, "input": input}
+				reference, err := json.Marshal(input)
+				require.NoError(t, err)
+				tool := types.MCPEndpointToolAddDocument
+				args := map[string]any{"knowledge_base_id": kb, "idempotency_key": f.claims["idempotency_key"], "filename": "conformance.md", "file_base64": "eA==", "source_reference_json": string(reference), "read_operation_id": uuid.NewString()}
+				if action == "delete" {
+					tool = types.MCPEndpointToolDeleteDocument
+					args = map[string]any{"knowledge_base_id": kb, "idempotency_key": f.claims["idempotency_key"], "knowledge_id": input["nativeObjectRef"], "expected_revision": input["nativeRevision"]}
+				}
+				switch change {
+				case "no-deadline":
+					f.deadline = ""
+				case "observe":
+					args["observe_only"] = true
+				case "foreign-key":
+					args["idempotency_key"] = uuid.NewString()
+				case "foreign-target":
+					args["knowledge_base_id"] = uuid.NewString()
+				}
+				ctx, err := f.server.authorizeNativePlatformTool(context.Background(), f.ep, f.request(t, tool, args))
+				if change != "" {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				task, bound := types.PlatformNativeTaskFrom(ctx)
+				require.True(t, bound)
+				encoded, err := json.Marshal(f.arguments)
+				require.NoError(t, err)
+				digest, err := types.PlatformArgumentsDigest(string(encoded))
+				require.NoError(t, err)
+				want := types.PlatformNativeTask{BindingID: f.config["bindingId"].(string), ActionExecutionID: f.claims["action_execution_id"].(string), ExternalExecutionID: f.claims["external_execution_id"].(string), IdempotencyKey: f.claims["idempotency_key"].(string), ActionKey: f.claims["action_key"].(string), Generation: 9, Deadline: f.deadline, ArgumentsDigest: digest}
+				require.Equal(t, want, task)
+				retained, err := json.Marshal(task)
+				require.NoError(t, err)
+				require.NotContains(t, string(retained), "fixture.", "the ingress token is never retained")
+			})
+		}
 	}
 }
 

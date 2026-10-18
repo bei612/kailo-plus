@@ -3451,6 +3451,26 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		return nil // 幂等：已完成的任务直接返回
 	}
 
+	// SS-WEK-MATERIALIZATION: a bound execution's parse runs only under a
+	// fresh native task admission of that same execution and within its
+	// frozen deadline; a refusal leaves the step unconsumed (UNKNOWN).
+	nativeTask, nativeBound, err := platformNativeTaskOf(knowledge.Metadata, types.PlatformNativeTaskAddDocument, knowledge.ID)
+	if err != nil {
+		return fmt.Errorf("native document processing reference: %v: %w", err, asynq.SkipRetry)
+	}
+	if nativeBound {
+		if err := s.admitPlatformNativeTask(ctx, nativeTask, true); err != nil {
+			return fmt.Errorf("native document processing admission: %v: %w", err, asynq.SkipRetry)
+		}
+		deadline, err := time.Parse(time.RFC3339Nano, nativeTask.Deadline)
+		if err != nil {
+			return fmt.Errorf("native document processing deadline: %w", asynq.SkipRetry)
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+
 	if knowledge.ParseStatus == types.ParseStatusFailed {
 		// 检查是否可恢复（例如：超时、临时错误等）
 		// 对于不可恢复的错误，直接返回
