@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
-import { ApplicationBindingsPanel, bindingDocument } from "../src/react/application-bindings";
+import { ApplicationBindingsPanel, bindingDocument, bindingSecretValues, validBindingPage } from "../src/react/application-bindings";
 import { NativeApplicationPage, validNativePage } from "../src/react/native-application-page";
 import { NativeApplicationEntries } from "../src/react/native-application-entries";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
@@ -18,9 +18,11 @@ const creation = {
   bindingId: "connection-fixture", componentReleaseId: "release-fixture", servicePrincipalId: "service-fixture",
   adapterServiceRef: "adapter-fixture", nativeInstanceRef: "native-fixture", isolationMode: "NAMESPACE",
   capabilityCategories: [{ category: "knowledge", version: 1 }], normalizedConfigJson: '{"id":9007199254740993}',
-  secretRefs: [{ secretKey: "api_key", locator: "secret-ref-fixture", version: 1, audience: "adapter-fixture" }],
+  secretRefs: [],
   modelCallMode: "NONE", callIdentityMode: "INSTANCE_SERVICE", retainOnTenantDelete: true,
 };
+const bindable = { componentReleaseId: "release-fixture", componentTypeKey: "external_fixture", version: "1.0.0",
+  secretSchema: [{ secretKey: "api_key", valueType: "STRING", lengthOrFormat: '{"type":"string","minLength":8}' }] };
 const dispatched = (actionKey: string) => ({ actionKey, actionExecutionId: "binding-action", operationId: "binding-operation",
   gateState: "ALLOWED", dispatchState: "DISPATCHED", workflowId: "binding-workflow" });
 
@@ -157,11 +159,15 @@ describe("shared external service connection management", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("submits creation through the original action without interpreting native configuration or claiming active", async () => {
     const { host, send } = await mount((request) => request.method === "GET"
-      ? { status: 200, body: { bindings: [], canCreate: true } }
+      ? { status: 200, body: { bindings: [], canCreate: true, bindableReleases: [bindable] } }
       : { status: 200, body: dispatched("application_binding.create") });
     const document = host.querySelector("textarea");
     if (!document) throw new Error("connection document is absent");
     await type(document, JSON.stringify(creation));
+    const secret = host.querySelector<HTMLInputElement>('[data-testid="binding-secrets"] input');
+    if (!secret) throw new Error("declared secret field is absent");
+    expect(secret.type).toBe("password");
+    await type(secret, "fixture-value-0001");
     await click(button(host, "Review connection"));
     expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
     await click(button(host, "Submit governed request"));
@@ -169,10 +175,44 @@ describe("shared external service connection management", () => {
     expect(writes).toHaveLength(1);
     expect(writes[0]?.[0]).toMatchObject({ path: "/api/v1/actions", body: {
       actionKey: "application_binding.create", explicitConfirmation: true, applicationBindingCreate: creation,
+      bindingSecretValues: [{ secretKey: "api_key", value: "fixture-value-0001" }],
     } });
+    // The value is not rendered back and the field is cleared once the command is recorded.
+    expect(host.textContent).not.toContain("fixture-value-0001");
+    expect(host.querySelector<HTMLInputElement>('[data-testid="binding-secrets"] input')).toBeNull();
     expect(host.textContent).toContain("No connections in this scope.");
     expect(host.textContent).toContain("Check its task for the outcome");
     expect(button(host, "View connection task")).toBeTruthy();
+  });
+
+  it("requires every declared secret of a listed approved release before review", async () => {
+    for (const releases of [[bindable], []]) {
+      const { host, send } = await mount((request) => request.method === "GET"
+        ? { status: 200, body: { bindings: [], canCreate: true, bindableReleases: releases } }
+        : { status: 200, body: dispatched("application_binding.create") });
+      const document = host.querySelector("textarea");
+      if (!document) throw new Error("connection document is absent");
+      await type(document, JSON.stringify(creation));
+      await click(button(host, "Review connection"));
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain("Enter every secret");
+      expect([...host.querySelectorAll("button")].some((element) => element.textContent === "Submit governed request")).toBe(false);
+      expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+    }
+  });
+
+  it("pairs secret values with the release declaration and validates bindable releases", () => {
+    expect(bindingSecretValues(bindable, { api_key: "fixture-value-0001", other: "ignored" }))
+      .toEqual([{ secretKey: "api_key", value: "fixture-value-0001" }]);
+    expect(bindingSecretValues(bindable, { api_key: "" })).toBeNull();
+    expect(bindingSecretValues(undefined, { api_key: "fixture-value-0001" })).toBeNull();
+    expect(bindingSecretValues({ ...bindable, secretSchema: [] }, {})).toEqual([]);
+    const page = { bindings: [], canCreate: true, bindableReleases: [bindable] };
+    expect(validBindingPage(page as never, undefined, 0)).toBe(true);
+    for (const invalid of [{ ...page, canCreate: false }, { ...page, bindableReleases: [bindable, bindable] },
+      { ...page, bindableReleases: [{ ...bindable, secretSchema: [{ secretKey: "api_key" }] }] },
+      { ...page, bindableReleases: [{ ...bindable, componentReleaseId: "" }] }]) {
+      expect(validBindingPage(invalid as never, undefined, 0)).toBe(false);
+    }
   });
 
   it("disconnects only the exact binding version and explains that native data is preserved", async () => {
@@ -224,7 +264,8 @@ describe("shared external service connection management", () => {
   it("rejects extra credential fields and unsafe numeric selectors while preserving config bytes", () => {
     expect(bindingDocument(JSON.stringify(creation))?.normalizedConfigJson).toBe(creation.normalizedConfigJson);
     expect(bindingDocument(JSON.stringify({ ...creation, password: "not-a-real-secret" }))).toBeNull();
-    expect(bindingDocument(JSON.stringify({ ...creation, secretRefs: [{ ...creation.secretRefs[0], value: "not-a-real-secret" }] }))).toBeNull();
+    expect(bindingDocument(JSON.stringify({ ...creation, secretRefs: [{ secretKey: "api_key", locator: "secret-ref-fixture", version: 1, audience: "adapter-fixture" }] }))).toBeNull();
+    expect(bindingDocument(JSON.stringify({ ...creation, secretRefs: [{ secretKey: "api_key", value: "not-a-real-secret" }] }))).toBeNull();
     expect(bindingDocument(JSON.stringify({ ...creation, capabilityCategories: [{ category: "knowledge", version: Number.MAX_SAFE_INTEGER + 1 }] }))).toBeNull();
   });
 

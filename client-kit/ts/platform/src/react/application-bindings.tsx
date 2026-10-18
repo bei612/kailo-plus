@@ -28,8 +28,23 @@ const states = {
 const nonempty = (value: unknown): value is string => typeof value === "string" && !!value.trim();
 const positive = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
+type BindableRelease = NonNullable<ApplicationBindingPage["bindableReleases"]>[number];
+type SecretValues = NonNullable<ActionCommand["bindingSecretValues"]>;
+
+/** Only public secretSchema declarations; values are entered separately and never part of the page. */
+function validBindableReleases(releases: ApplicationBindingPage["bindableReleases"], canCreate: boolean): boolean {
+  if (releases === undefined) return true;
+  return canCreate && Array.isArray(releases)
+    && new Set(releases.map((release) => release?.componentReleaseId)).size === releases.length
+    && releases.every((release) => !!release && [release.componentReleaseId, release.componentTypeKey, release.version].every(nonempty)
+      && Array.isArray(release.secretSchema)
+      && new Set(release.secretSchema.map((secret) => secret?.secretKey)).size === release.secretSchema.length
+      && release.secretSchema.every((secret) => !!secret && [secret.secretKey, secret.valueType, secret.lengthOrFormat].every(nonempty)));
+}
+
 export function validBindingPage(page: ApplicationBindingPage, workspaceId: string | undefined, offset: number): boolean {
   return !!page && typeof page.canCreate === "boolean" && Array.isArray(page.bindings)
+    && validBindableReleases(page.bindableReleases, page.canCreate)
     && (page.nextOffset === undefined || (positive(page.nextOffset) && page.nextOffset > offset))
     && new Set(page.bindings.map((row) => row?.bindingId)).size === page.bindings.length
     && page.bindings.every((row) => !!row && row.workspaceId === workspaceId
@@ -43,7 +58,15 @@ export function validBindingPage(page: ApplicationBindingPage, workspaceId: stri
       && row.capabilityCategories.every((capability) => !!capability && nonempty(capability.category) && positive(capability.version)));
 }
 
-/** Validate the generated command's shape, not its authority: Core rechecks all references. */
+/** Pair every declared secret with exactly one non-empty value, in declaration order. */
+export function bindingSecretValues(release: BindableRelease | undefined, values: Record<string, string>): SecretValues | null {
+  if (!release) return null;
+  const entries = release.secretSchema.map((secret) => ({ secretKey: secret.secretKey, value: values[secret.secretKey] ?? "" }));
+  return entries.every((entry) => entry.value.length > 0) ? entries : null;
+}
+
+/** Validate the generated command's shape, not its authority: Core rechecks all references.
+ * secretRefs must be empty: Core alone produces SecretRefs from the governed write (03 §9). */
 export function bindingDocument(source: string): ApplicationBindingCreate | null {
   try {
     const value = JSON.parse(source);
@@ -61,10 +84,7 @@ export function bindingDocument(source: string): ApplicationBindingCreate | null
       || !Array.isArray(value.capabilityCategories) || value.capabilityCategories.length === 0
       || !value.capabilityCategories.every((item: ApplicationBindingCreate["capabilityCategories"][number]) => item
         && Object.keys(item).every((key) => ["category", "version"].includes(key)) && nonempty(item.category) && positive(item.version))
-      || !Array.isArray(value.secretRefs)
-      || !value.secretRefs.every((item: ApplicationBindingCreate["secretRefs"][number]) => item
-        && Object.keys(item).every((key) => ["secretKey", "locator", "version", "audience"].includes(key))
-        && [item.secretKey, item.locator, item.audience].every(nonempty) && positive(item.version))) return null;
+      || !Array.isArray(value.secretRefs) || value.secretRefs.length !== 0) return null;
     const config = JSON.parse(value.normalizedConfigJson);
     if (!config || typeof config !== "object" || Array.isArray(config)) return null;
     return value;
@@ -105,6 +125,9 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
   const page = state.status === "ok" && validBindingPage(state.data, workspaceId, offset) ? state.data : null;
   const [document, setDocument] = useState("");
   const [invalid, setInvalid] = useState(false);
+  // Held only in this component's memory until the command resolves; never logged or persisted.
+  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
+  const [secretsMissing, setSecretsMissing] = useState(false);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
   const [submission, setSubmission] = useState<ActionSubmission | null>(null);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
@@ -122,12 +145,20 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
     if (intent || sending.current) return;
     setSubmission(null); setFailure(null); setIntent(command); lockScope(true);
   };
+  const parsedDocument = bindingDocument(document);
+  const release = page?.bindableReleases?.find((item) => item.componentReleaseId === parsedDocument?.componentReleaseId);
   const create = () => {
     if (!page?.canCreate) return;
     const parsed = bindingDocument(document);
     setInvalid(!parsed);
-    if (parsed) prepare({ actionKey: "application_binding.create", workspaceId,
-      idempotencyKey: newIdempotencyKey(), explicitConfirmation: true, applicationBindingCreate: parsed });
+    if (!parsed) return;
+    const selected = page.bindableReleases?.find((item) => item.componentReleaseId === parsed.componentReleaseId);
+    const secrets = bindingSecretValues(selected, secretValues);
+    setSecretsMissing(!secrets);
+    if (!secrets) return;
+    prepare({ actionKey: "application_binding.create", workspaceId,
+      idempotencyKey: newIdempotencyKey(), explicitConfirmation: true, applicationBindingCreate: parsed,
+      ...(secrets.length ? { bindingSecretValues: secrets } : {}) });
   };
   const disable = (binding: ApplicationBindingView) => {
     if (!binding.canDisable) return;
@@ -152,7 +183,9 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
         setIntent(null); lockScope(false);
-        if (result.dispatchState === ActionDispatchState.Dispatched && intent.applicationBindingCreate) setDocument("");
+        if (result.dispatchState === ActionDispatchState.Dispatched && intent.applicationBindingCreate) {
+          setDocument(""); setSecretValues({});
+        }
       }
     } catch (error) {
       // A later refusal cannot establish the outcome of an earlier uncertain write.
@@ -192,7 +225,25 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
               value={document} disabled={!!intent || busy} onChange={(event) => { setDocument(event.target.value); setInvalid(false); }} />
           </label>
           <p className="text-sm text-muted-foreground">{t("bindings.documentHelp")}</p>
+          {page.bindableReleases?.length ? <div className="text-sm">
+            <p>{t("bindings.releases")}</p>
+            <ul className="font-mono text-xs">{page.bindableReleases.map((item) =>
+              <li key={item.componentReleaseId} className="break-all">{`${item.componentTypeKey}@${item.version} · ${item.componentReleaseId}`}</li>)}</ul>
+          </div> : null}
+          {release?.secretSchema.length ? <fieldset className="flex flex-col gap-2" data-testid="binding-secrets">
+            <legend className="text-sm">{t("bindings.secrets")}</legend>
+            {release.secretSchema.map((secret) => <label key={secret.secretKey} className="text-sm">
+              <span className="font-mono">{secret.secretKey}</span>
+              <input type="password" autoComplete="new-password" spellCheck={false}
+                className="ml-2 rounded-md border border-input bg-transparent px-2 py-1"
+                value={secretValues[secret.secretKey] ?? ""} disabled={!!intent || busy}
+                onChange={(event) => { const value = event.target.value;
+                  setSecretValues((old) => ({ ...old, [secret.secretKey]: value })); setSecretsMissing(false); }} />
+            </label>)}
+            <p className="text-sm text-muted-foreground">{t("bindings.secretsHelp")}</p>
+          </fieldset> : null}
           {invalid ? <p role="alert">{t("bindings.invalid")}</p> : null}
+          {secretsMissing ? <p role="alert">{t("bindings.secretsMissing")}</p> : null}
           <Button className="w-fit" disabled={!!intent || busy || !document.trim()} onClick={create}>{t("bindings.create")}</Button>
         </div> : null}
         {page.bindings.length === 0 ? <Notice>{t("bindings.none")}</Notice> : <div className="overflow-x-auto">
