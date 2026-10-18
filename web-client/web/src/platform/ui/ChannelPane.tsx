@@ -39,6 +39,7 @@ import {
   bff,
   type BuzzEvent,
   type MediaDescriptor,
+  type MediaUploadOptions,
   markRead,
   publishMessage,
   publishConversationMessage,
@@ -102,6 +103,7 @@ import { useLinkEditor } from "@client-kit/platform/react/composer/features/mess
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
+import type { UploadingAttachmentPreview } from "@client-kit/platform/react/composer/features/messages/lib/attachmentPreview";
 import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
 import type { ImetaMedia } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 
@@ -861,7 +863,7 @@ export function ChannelPane({
         autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
         disabled={deleteMessageDialog.pending || denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== mainEditTarget.signerPubkey}
         onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
-        onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
+        onUpload={conversation ? (file, options) => uploadConversationMedia(conversation.id, file, options) : undefined}
         onMediaUrl={conversation ? (sha) => mediaUrl(conversation.id, sha, conversation.id) : undefined}
         onPublish={async (content, attachments, key, mentions, mentionPubkeys) => {
           const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, mainEditTarget.id, undefined, mentionPubkeys)
@@ -881,7 +883,7 @@ export function ChannelPane({
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
-            onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
+            onUpload={(file, options) => uploadConversationMedia(conversation.id, file, options)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
             containerClassName="px-5 pb-0" layoutMode="dock"
             onTyping={notifyTyping}
@@ -993,7 +995,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   onSendingChange?: (sending: boolean) => void;
   replyTarget?: { author: string; body: string; id: string } | null;
   onCancelReply?: () => void;
-  onUpload?: (file: File) => Promise<MediaDescriptor>;
+  /** Host upload; forwarding `options` gives the original per-file progress and cancel. */
+  onUpload?: (file: File, options?: MediaUploadOptions) => Promise<MediaDescriptor>;
   onMediaUrl?: (sha256: string) => string;
   disabled?: boolean;
   placeholder?: string;
@@ -1034,6 +1037,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const [draftRevision, setDraftRevision] = useState(0);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
+  // Original useMediaUpload uploadingPreviews/cancelUpload: one preview per in-flight file with
+  // its byte progress; cancel aborts that request and drops its preview at once.
+  const [uploadingPreviews, setUploadingPreviews] = useState<UploadingAttachmentPreview[]>([]);
+  const activeUploads = useRef(new Map<number, AbortController>());
+  const nextUploadPreviewId = useRef(0);
   const [problem, setProblem] = useState<string | null>(null);
   const [problemNeutral, setProblemNeutral] = useState(false);
   const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
@@ -1106,19 +1114,40 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     return new Uint8Array(await response.arrayBuffer());
   }, [resolveMediaUrl]);
 
+  const finishUpload = useCallback((previewId: number) => {
+    if (!activeUploads.current.delete(previewId)) return;
+    setUploading((n) => Math.max(0, n - 1));
+    setUploadingPreviews((previews) => previews.filter((preview) => preview.id !== previewId));
+  }, []);
+  const cancelUpload = useCallback((previewId: number) => {
+    const upload = activeUploads.current.get(previewId);
+    if (!upload) return;
+    upload.abort();
+    finishUpload(previewId);
+  }, [finishUpload]);
   const attach = useCallback(
     async (files: FileList | readonly File[] | null) => {
       for (const file of Array.from(files ?? [])) {
         if (!owner.active) return;
         const queuedAttachment = { file };
         queuedAttachmentsRef.current.push(queuedAttachment);
+        const previewId = nextUploadPreviewId.current++;
+        const upload = new AbortController();
+        activeUploads.current.set(previewId, upload);
         setUploading((n) => n + 1);
+        setUploadingPreviews((previews) => [...previews, { id: previewId, filename: file.name, type: file.type || undefined, progress: null }]);
+        const options: MediaUploadOptions = { signal: upload.signal, onProgress: (progress) => {
+          if (!owner.active || upload.signal.aborted) return;
+          setUploadingPreviews((previews) => previews.map((preview) => preview.id === previewId ? { ...preview, progress } : preview));
+        } };
         try {
           if (!onUpload && !workspaceId) throw new Error("Message destination is unavailable.");
-          const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
-          if (owner.active) setPending((p) => [...p, { name: file.name, descriptor: { ...descriptor, filename: file.name }, receivedAt: Date.now() }]);
+          const descriptor = await (onUpload ? onUpload(file, options) : uploadMedia(workspaceId!, file, options));
+          if (owner.active && !upload.signal.aborted) setPending((p) => [...p, { name: file.name, descriptor: { ...descriptor, filename: file.name }, receivedAt: Date.now() }]);
         } catch (e) {
           if (!owner.active) return;
+          // Original cancelUpload: a canceled file raises no problem and never becomes imeta.
+          if (upload.signal.aborted) continue;
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
@@ -1128,11 +1157,12 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
           );
         } finally {
           queuedAttachmentsRef.current = queuedAttachmentsRef.current.filter((entry) => entry !== queuedAttachment);
-          if (owner.active) setUploading((n) => n - 1);
+          if (owner.active) finishUpload(previewId);
+          else activeUploads.current.delete(previewId);
         }
       }
     },
-    [workspaceId, onUpload, owner, queuedAttachmentsRef],
+    [workspaceId, onUpload, owner, queuedAttachmentsRef, finishUpload],
   );
 
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -1323,6 +1353,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
     setSending(false);
     setUploading(0);
+    // Original beginNewDraftEpoch: uploads of the previous draft can never land in this one.
+    for (const upload of activeUploads.current.values()) upload.abort();
+    activeUploads.current.clear();
+    setUploadingPreviews([]);
     setIsEmojiPickerOpen(false);
     setProblem(null);
     setProblemNeutral(false);
@@ -1601,6 +1635,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       ) : null}
       <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
         fetchMediaBytes={fetchMediaBytes} AudioAttachment={BffAudioAttachment} isUploading={uploading > 0} uploadingCount={uploading}
+        uploadingPreviews={uploadingPreviews} onCancelUpload={cancelUpload}
         onRemove={attachmentActions.handleRemoveAttachment} onEditSave={attachmentActions.handleAttachmentEditSave}
         onRevert={attachmentActions.handleAttachmentRevert} onToggleSpoiler={attachmentActions.handleToggleAttachmentSpoiler}
         spoileredUrls={attachmentActions.spoileredAttachmentUrls}

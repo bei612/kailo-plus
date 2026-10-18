@@ -194,7 +194,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       onCancelEdit={!sending && !unresolved ? handleCancelEdit : undefined} onConfirmed={handleCancelEdit}
       onRequestEmptyEditDelete={deleteDialog.requestDelete} disabled={!canEdit(editTarget) || deleteDialog.pending || Boolean(deleteDialog.unresolvedMessageId)}
       mentionPeople={mentionPeopleFromMembers(members)} onSendingChange={setSending}
-      onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
+      onUpload={conversation ? (file, options) => uploadConversationMedia(conversation.id, file, options) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onPublish={async(content, attachments, key, installations, mentionPubkeys)=>{
         if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw new Error(t("inbox.replyUnavailable"));
@@ -224,7 +224,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       channelType={conversation ? "dm" : forum ? "forum" : undefined}
       audienceContext={conversation || !messages.find(event => event.id === anchorRoot) ? null : {type: "thread", rootTags: messages.find(event => event.id === anchorRoot)!.tags}}
       mentionPeople={mentionPeopleFromMembers(members)}
-      onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
+      onUpload={conversation ? (file, options) => uploadConversationMedia(conversation.id, file, options) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onSendingChange={setSending}
       replyTarget={replyTarget ?? null}

@@ -4,6 +4,7 @@ import { AGENT_MENTION_OUTCOME_QUERY_LIMIT, agentMentionOutcomesPath, queryAgent
 import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
   releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
 import { publishTyping, reconnectStreams, streamConnectionState, subscribeStreamConnection } from "./bff-client";
+import { UploadCanceledError, uploadConversationMedia, uploadMedia } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -306,6 +307,61 @@ it("reconnects a disconnected stream at once after the session probe, never a re
   await expect(reconnectStreams()).resolves.toBe(false);
   expect(Source.instances).toHaveLength(2);
   stop();
+});
+
+class FakeUpload extends EventTarget {
+  static instances: FakeUpload[] = [];
+  upload = new EventTarget();
+  status = 0;
+  responseText = "";
+  opened: [string, string] | null = null;
+  headers: Record<string, string> = {};
+  body: unknown;
+  constructor() {
+    super();
+    FakeUpload.instances.push(this);
+  }
+  open(method: string, url: string) { this.opened = [method, url]; }
+  setRequestHeader(name: string, value: string) { this.headers[name] = value; }
+  send(body: unknown) { this.body = body; }
+  abort() { this.dispatchEvent(new Event("abort")); }
+  progress(loaded: number, total: number) {
+    this.upload.dispatchEvent(Object.assign(new Event("progress"), { lengthComputable: true, loaded, total }));
+  }
+  respond(status: number, body?: unknown) {
+    this.status = status;
+    this.responseText = body === undefined ? "" : JSON.stringify(body);
+    this.dispatchEvent(new Event("load"));
+  }
+}
+
+it("uploads attachment media with byte progress, the BFF reply rules and a real cancel", async () => {
+  FakeUpload.instances = [];
+  vi.stubGlobal("XMLHttpRequest", FakeUpload);
+  const file = new File(["four"], "a.png", { type: "image/png" });
+  const descriptor = { sha256: "a".repeat(64), size: 4, type: "image/png", url: "https://relay.invalid/media/a" };
+  const progress: number[] = [];
+  const done = uploadMedia("w1", file, { onProgress: (percent) => progress.push(percent) });
+  const sent = FakeUpload.instances[0]!;
+  expect([sent.opened, sent.headers["Content-Type"], sent.body]).toEqual([["POST", "/api/v1/workspaces/w1/media"], "image/png", file]);
+  sent.progress(1, 4); sent.progress(4, 4);
+  sent.respond(200, descriptor);
+  await expect(done).resolves.toEqual(descriptor);
+  expect(progress).toEqual([25, 100]);
+
+  // The fixed BFF size bound stays a definite 413 refusal.
+  const tooLarge = uploadConversationMedia("c 1", file, {});
+  expect(FakeUpload.instances[1]!.opened).toEqual(["POST", "/api/v1/conversations/c%201/media"]);
+  FakeUpload.instances[1]!.respond(413);
+  await expect(tooLarge).rejects.toMatchObject({ status: 413 });
+
+  // Cancel aborts the request; an already canceled intent never sends.
+  const controller = new AbortController();
+  const canceled = uploadMedia("w1", file, { signal: controller.signal });
+  controller.abort();
+  await expect(canceled).rejects.toBeInstanceOf(UploadCanceledError);
+  await expect(uploadMedia("w1", file, { signal: controller.signal })).rejects.toBeInstanceOf(UploadCanceledError);
+  expect(FakeUpload.instances).toHaveLength(3);
 });
 
 it("uses one top-level login navigation for concurrent expired-session responses", async () => {

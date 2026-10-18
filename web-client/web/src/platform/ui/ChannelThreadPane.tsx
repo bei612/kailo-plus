@@ -238,7 +238,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
     renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={conversation ? undefined : workspaceId} draftIdentity={principalId}
       channelType={conversation ? "dm" : "stream"}
-      onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
+      onUpload={conversation ? (file, options) => uploadConversationMedia(conversation.id, file, options) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       audienceContext={editTarget || !data.threadHead?.tags ? null : {type: "thread", rootTags: data.threadHead.tags}}
       editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}

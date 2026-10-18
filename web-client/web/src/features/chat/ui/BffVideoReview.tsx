@@ -135,7 +135,7 @@ function VideoComposer(props: VideoReviewComposerProps) {
     mentionPeople={host.mentionPeople} disabled={props.disabled || !host.available || host.canSendComment === false}
     containerClassName={props.containerClassName} placeholder={props.placeholder}
     replyTarget={props.replyTarget} onCancelReply={props.onCancelReply}
-    onUpload={host.conversationId ? file => uploadConversationMedia(host.conversationId!, file) : undefined}
+    onUpload={host.conversationId ? (file, options) => uploadConversationMedia(host.conversationId!, file, options) : undefined}
     onMediaUrl={hash => mediaUrl(host.workspaceId, hash, host.conversationId)}
     onPublish={async (content, attachments, key, installations, mentionPubkeys) => {
       if (!host.available || host.canSendComment === false || host.submission.current) throw new TransportError(t("platform.sendUnknown", {operation: ""}));

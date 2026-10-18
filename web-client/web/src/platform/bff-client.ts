@@ -54,12 +54,13 @@ export { BffError } from "@client-kit/platform/transport";
  * 网关会话已不在：浏览器只能经一次顶层导航重新登录，由网关带去 IdP。
  */
 let returningToLogin = false;
+function returnToLogin() {
+  if (returningToLogin) return;
+  returningToLogin = true;
+  window.location.assign(window.location.href);
+}
 const transport = createFetchTransport({
-  onSessionEnded: () => {
-    if (returningToLogin) return;
-    returningToLogin = true;
-    window.location.assign(window.location.href);
-  },
+  onSessionEnded: returnToLogin,
   settleMs: SETTLED_READ_MS,
   settled: isSettledRead,
 });
@@ -329,8 +330,9 @@ export async function publishMessageReaction(workspaceId: string, conversationId
   if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reaction has no confirmed receipt.");
   return receipt;
 }
-export async function uploadPulseMedia(file: File): Promise<MediaDescriptor> {
+export async function uploadPulseMedia(file: File, options?: MediaUploadOptions): Promise<MediaDescriptor> {
   const path = "/api/v1/pulse/media";
+  if (options) return uploadWithProgress(path, file, options);
   return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",
     headers:{"Content-Type":file.type || "application/octet-stream"},body:file}));
 }
@@ -361,8 +363,9 @@ export async function publishConversationMessage(conversationId: string, content
     body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId, mentionPubkeys } satisfies WebPublishMessageRequest),
   }));
 }
-export async function uploadConversationMedia(conversationId: string, file: File): Promise<MediaDescriptor> {
+export async function uploadConversationMedia(conversationId: string, file: File, options?: MediaUploadOptions): Promise<MediaDescriptor> {
   const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/media`;
+  if (options) return uploadWithProgress(path, file, options);
   return unwrap({ method: "POST", path }, await transport.exchange(path, {
     method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
   }));
@@ -477,8 +480,9 @@ export function markRead(mark: ReadMarkRequest): Promise<UserStateVersion> {
 }
 
 /** 上传一份媒体。签名由 BFF 以本人身份代做，Browser 不接触 Relay。 */
-export async function uploadMedia(workspaceId: string, file: File): Promise<MediaDescriptor> {
+export async function uploadMedia(workspaceId: string, file: File, options?: MediaUploadOptions): Promise<MediaDescriptor> {
   const path = `/api/v1/workspaces/${workspaceId}/media`;
+  if (options) return uploadWithProgress(path, file, options);
   return unwrap(
     { method: "POST", path },
     await transport.exchange(path, {
@@ -487,6 +491,81 @@ export async function uploadMedia(workspaceId: string, file: File): Promise<Medi
       body: file,
     }),
   );
+}
+
+/**
+ * Buzz 779af8886caae1317b4de962082429867ab61503 useMediaUpload: the composer shows each upload's
+ * byte progress and can cancel it. `onProgress` receives 0–100; aborting `signal` cancels.
+ */
+export type MediaUploadOptions = { onProgress?: (percent: number) => void; signal?: AbortSignal };
+
+/** The person canceled an attachment upload before its receipt; no message references it. */
+export class UploadCanceledError extends Error {
+  constructor() {
+    super("Attachment upload canceled");
+    this.name = "UploadCanceledError";
+  }
+}
+
+/**
+ * The same BFF media POST and reply rules as `transport.exchange`, sent with XMLHttpRequest
+ * because fetch exposes no upload progress. The BFF still signs the Blossom authorization with
+ * the person's identity (DD-39); nothing here reaches the Relay.
+ *
+ * Cancel aborts the request. Media upload is not a governed publication: the blob is
+ * content-addressed and only a later message publish (DD-81) references it, so a cancel whose
+ * bytes already reached the BFF leaves at most an unreferenced blob and is never retried.
+ */
+function uploadWithProgress(path: string, file: File, options: MediaUploadOptions): Promise<MediaDescriptor> {
+  return new Promise<MediaDescriptor>((resolve, reject) => {
+    const { signal, onProgress } = options;
+    if (signal?.aborted) {
+      reject(new UploadCanceledError());
+      return;
+    }
+    // A write: shared settled reads end before it is sent, as in the fetch transport.
+    transport.invalidateReads();
+    const request = new XMLHttpRequest();
+    const abort = () => request.abort();
+    const done = () => signal?.removeEventListener("abort", abort);
+    signal?.addEventListener("abort", abort, { once: true });
+    request.open("POST", path);
+    request.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    });
+    request.addEventListener("abort", () => {
+      done();
+      reject(new UploadCanceledError());
+    });
+    request.addEventListener("error", () => {
+      done();
+      // XHR follows the gateway's login redirect and only reports a network error. Probe the
+      // session through the manual-redirect transport, which sends an ended session to login.
+      void bff.session({ fresh: true }).catch(() => undefined);
+      reject(new TransportError(`POST ${path}：network error`));
+    });
+    request.addEventListener("load", () => {
+      done();
+      if (request.status === 401) {
+        returnToLogin();
+        reject(new SessionEndedError());
+        return;
+      }
+      let body: unknown;
+      try {
+        body = request.status === 204 || !request.responseText ? undefined : JSON.parse(request.responseText);
+      } catch {
+        body = undefined;
+      }
+      try {
+        resolve(unwrap<MediaDescriptor>({ method: "POST", path }, { status: request.status, body }));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.send(file);
+  });
 }
 
 /** Own community profile media, with the same actor-signed Blossom consumer. */

@@ -17,6 +17,7 @@ import {
   type AgentInstallationView,
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
+import type { MediaUploadOptions } from "@/platform/bff-client";
 import { draftMessageTarget } from "./InboxDrafts";
 import { clearAllDrafts, loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
@@ -160,6 +161,40 @@ it("the real Web voice toolbar records one original WAV, uploads through its exi
   expect(publish).toHaveBeenCalledTimes(1);
   expect(publish.mock.calls[0]![1]).toEqual([{...descriptor,filename:recording.name,spoiler:false}]);
   expect(host.querySelector('[data-testid="remove-composer-voice-note"]')).toBeNull();
+});
+
+it("shows the original per-file upload progress and cancels one upload without a problem or attachment", async () => {
+  type Descriptor = {sha256:string;size:number;type:string;url:string};
+  const uploads: {options?: MediaUploadOptions; resolve: (descriptor: Descriptor) => void}[] = [];
+  const upload = vi.fn((_file: File, options?: MediaUploadOptions) => new Promise<Descriptor>(resolve => { uploads.push({options, resolve}); }));
+  const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="upload-progress" onUpload={upload} />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "with a file");
+  const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
+  await act(async () => {
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["one"], "one.txt", { type: "text/plain" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  expect(upload).toHaveBeenCalledTimes(1);
+  const progress = () => host.querySelector('[data-testid="upload-progress"]');
+  // No byte counts yet: the original indeterminate bar, then the reported percentage.
+  expect(progress()).not.toBeNull();
+  expect(progress()!.getAttribute("aria-valuenow")).toBeNull();
+  await act(async () => uploads[0]!.options!.onProgress!(40));
+  expect(progress()!.getAttribute("aria-valuenow")).toBe("40");
+  expect(button(host, "platform.send").disabled).toBe(true);
+
+  await click(host.querySelector<HTMLButtonElement>('button[aria-label="Cancel upload"]')!);
+  expect(uploads[0]!.options!.signal!.aborted).toBe(true);
+  expect(button(host, "platform.send").disabled).toBe(false);
+  await vi.waitFor(() => expect(progress()).toBeNull(), {timeout: 3_000});
+  // A late receipt for the canceled request never becomes an attachment or a problem.
+  await act(async () => uploads[0]!.resolve({ sha256: "a".repeat(64), size: 3, type: "text/plain", url: "media:one" }));
+  await settle();
+  expect(host.textContent).not.toContain("one.txt");
+  expect(host.textContent).not.toContain("platform.uploadFailed");
+  await click(button(host, "platform.send"));
+  expect(state.publish.mock.calls[0]?.[2]).toEqual([]);
 });
 
 it("the real Web discard control releases the microphone without uploading or publishing", async () => {

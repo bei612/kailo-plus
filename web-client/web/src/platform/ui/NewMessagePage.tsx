@@ -31,10 +31,10 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened, initi
         if (!url) throw new Error(t("dm.attachmentUnavailable"));
         return url;
       }}
-      onUpload={async (file) => {
+      onUpload={async (file, options) => {
         const conversation = await host.prepareConversation();
         if (!scope.active) throw new Error(t("dm.viewInactive"));
-        const descriptor = await uploadConversationMedia(conversation.id, file);
+        const descriptor = await uploadConversationMedia(conversation.id, file, options);
         if (!scope.active) throw new Error(t("dm.viewInactive"));
         scope.media.set(descriptor.sha256, mediaUrl(conversation.id, descriptor.sha256, conversation.id));
         return descriptor;
