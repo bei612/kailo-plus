@@ -49,6 +49,7 @@ import {
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
+import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -601,6 +602,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           {tab === "channel" && active && activeRow?.isMember === true && !workspaces.isError && !channel.isError && channel.data ?
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
               channelType={channel.data.channelType}
+              statusBadge={<ChannelEphemeralBadge channel={{ id: active, ttlSeconds: channel.data.ttlSeconds, ttlDeadline: channel.data.ttlDeadline }}
+                testId="chat-ephemeral-badge" variant="header" />}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
                 onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"} />}

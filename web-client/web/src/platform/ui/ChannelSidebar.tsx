@@ -14,6 +14,7 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { inboxReadContexts, type useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChannelGlyph } from "@client-kit/platform/react/channel-glyph";
+import { ChannelEphemeralBadge, isEphemeralChannel } from "@client-kit/platform/react/ephemeral-channel";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { bff } from "@/platform/bff-client";
@@ -139,10 +140,14 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     onCreateChannel={key === "channels" ? onCreate : key === "forums" ? onCreateForum : undefined}
     createChannelLabel={t(key === "forums" ? "sidebar.newForum" : "channel.browser.title")}
     createTestId={key === "forums" ? "create-forum" : "create-channel"}
-    renderRow={(channel) => <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
+    renderRow={(channel) => { const ttl = directory?.find((row) => row.id === channel.id)?.channel;
+      return <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
       hasUnread={unread.has(channel.id)} hasThreadUnread={unread.has(channel.id)}
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
-      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />}
+      // DD-119(3,6): the original TTL badge from the admitted directory's channel metadata.
+      ephemeralBadge={ttl && isEphemeralChannel(ttl) ? <ChannelEphemeralBadge channel={{ id: channel.id, ttlSeconds: ttl.ttlSeconds, ttlDeadline: ttl.ttlDeadline }}
+        testId={`channel-ephemeral-${channel.name}`} variant="sidebar" /> : undefined}
+      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />; }}
     renderContextMenu={(channel) => { const nativeChannelId = joined.some((row) => row.id === channel.id) && messages.isSuccess
       ? messages.data?.get(channel.id)?.channelId : undefined;
       return <ChannelContextMenuItems channel={channel}
