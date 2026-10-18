@@ -11,6 +11,8 @@ export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-me
 export type PlatformDraftNavigation = { key: string; send: boolean; editEventId?: string };
 const THREAD_SEARCH_KEYS = ["thread", "messageId", "threadRootId"] as const;
 const INBOX_SEARCH_KEYS = ["item"] as const;
+// Original /channels/$channelId/posts/$postId?replyId: Web keeps forum post references on the channel URL.
+const FORUM_SEARCH_KEYS = ["post", "replyId"] as const;
 
 export function isPlatformSection(value: string): value is PlatformSection {
   return value === "inbox" || value === "settings" || platformNavigationSections.some((section) => section === value);
@@ -20,6 +22,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
   workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string; repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string;thread?: string; item?: string;
+  post?: string; replyId?: string;
   view?: "edit" | "duplicate";
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
@@ -37,6 +40,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     filePath: reference("filePath"),
     thread: reference("thread"),
     item: reference("item"),
+    post: reference("post"),
+    replyId: reference("replyId"),
     // Original /workflows/$workflowId ?view= editor target; any other value is dropped.
     view: search.view === "edit" || search.view === "duplicate" ? search.view : undefined,
   };
@@ -93,6 +98,11 @@ export function usePlatformNavigation(scopeKey?: string) {
   const navigateSearch = useCallback((options: HistorySearchNavigation) => { void navigate(options as never); }, [navigate]);
   const threadHistory = useHistorySearchState(THREAD_SEARCH_KEYS, search, navigateSearch);
   const inboxHistory = useHistorySearchState(INBOX_SEARCH_KEYS, search, navigateSearch);
+  const forumHistory = useHistorySearchState(FORUM_SEARCH_KEYS, search, navigateSearch);
+  /** Original goForumPost: opening a post (or a reply in it) pushes a history entry. */
+  const setForumPost = useCallback((post: string | null, replyId?: string | null, options?: HistorySearchSetterOptions) => {
+    forumHistory.applyPatch({ post, replyId: post ? replyId ?? null : null }, options);
+  }, [forumHistory.applyPatch]);
   const setInboxItemId = useCallback((item: string | null) => {
     inboxHistory.applyPatch({ item });
   }, [inboxHistory.applyPatch]);
@@ -151,6 +161,11 @@ export function usePlatformNavigation(scopeKey?: string) {
       return draftTarget && current.searchHighlightScope === scopeKey && current.draftNavigation?.key === draftTarget.key
         ? {...previous, draftNavigation:{...current.draftNavigation,send:false}} : previous;
     }} as never),
+    forumPostId: params.channelId ? forumHistory.values.post : null,
+    forumReplyId: params.channelId && forumHistory.values.post ? forumHistory.values.replyId : null,
+    setForumPost,
+    /** Original closeForumPost: step back through history when possible, else replace with the channel. */
+    closeForumPost: () => { if (canGoBack) router.history.back(); else setForumPost(null, null, { replace: true }); },
     threadHeadId: params.channelId || params.conversationId || projectChannelRoute ? threadHistory.values.thread : null,
     setThreadHeadId,
     clearMessageRouteTarget,

@@ -34,7 +34,7 @@ const reply={...post,id:replyId,kind:45003,created_at:2,tags:[...post.tags,["e",
 const bounds={...post,id:"e".repeat(64),kind:39006,tags:[["d","channel:head"]],content:JSON.stringify({has_more:false,next_cursor:null})};
 let host:HTMLDivElement, root:Root, cache:QueryClient;
 const startDm=vi.fn();
-async function mount(principal="human", search?:Pick<ComponentProps<typeof ForumPane>, "target"|"searchMessageId"|"searchQuery"|"searchActivationId">) {
+async function mount(principal="human", search?:Pick<ComponentProps<typeof ForumPane>, "target"|"searchMessageId"|"searchQuery"|"searchActivationId"|"postRoute">) {
   await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
     <ForumPane workspaceId="workspace" channelId="channel" archived={false} myPrincipalId={principal} onStartDm={startDm} {...search} />
   </TooltipProvider></QueryClientProvider></PlatformProvider>));
@@ -194,4 +194,23 @@ it("does not equate another bound pubkey with the active SERVER signer", async (
   await mount();
   expect(host.querySelector('[aria-label="Delete post"]')).toBeNull();
   expect(api.delete).not.toHaveBeenCalled();
+});
+
+it("follows the original post route: opening pushes it, Back closes it and history entries reselect the post",async()=>{
+  const route=(postId:string|null,reply:string|null=null)=>({postId,replyId:reply,open:vi.fn(),close:vi.fn(),clear:vi.fn()});
+  const closed=route(null);
+  await mount("human",{postRoute:closed});
+  await act(async()=>host.querySelector<HTMLElement>('[role="button"][tabindex="0"]')!.click());
+  expect(closed.open).toHaveBeenCalledWith(postId,null);
+  await vi.waitFor(()=>expect(host.querySelector(`[data-forum-event-id="${replyId}"]`)).not.toBeNull());
+  const back=[...host.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.includes("Back"))!;
+  await act(async()=>back.click());
+  expect(closed.close).toHaveBeenCalledOnce();
+  expect(host.querySelector('[data-forum-event-id]')).toBeNull();
+  // Forward/reload to /channels/:id?post=…&replyId=… selects the post and scrolls to the reply.
+  await mount("human",{postRoute:route(postId,replyId)});
+  await vi.waitFor(()=>expect(host.querySelector(`[data-forum-event-id="${replyId}"]`)).not.toBeNull());
+  await vi.waitFor(()=>expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
+  await mount("human",{postRoute:route(null)});
+  expect(host.querySelector('[data-forum-event-id]')).toBeNull();
 });

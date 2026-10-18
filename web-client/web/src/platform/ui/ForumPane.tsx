@@ -35,7 +35,21 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, onStartDm, memberProfileRequest }: {
+const isEventId = (value: string | null | undefined): value is string => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+
+/** Original /channels/$channelId/posts/$postId?replyId history, carried on this channel's URL. */
+export type ForumPostRoute = {
+  postId: string | null;
+  replyId: string | null;
+  /** goForumPost: push (or replace) the selected post reference. */
+  open: (postId: string, replyId?: string | null, options?: { replace?: boolean }) => void;
+  /** closeForumPost: back through history, else replace with the channel. */
+  close: () => void;
+  /** Drop a stale reference (deleted or unavailable post) without a new entry. */
+  clear: () => void;
+};
+
+export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, searchMessageId, searchQuery, searchActivationId, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, onStartDm, memberProfileRequest, postRoute }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
   metadataPending?: boolean;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -49,23 +63,54 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   onStartDm?: (pubkey: string) => void;
   /** Header members dialog request; rendered only while this member stays ACTIVE here. */
   memberProfileRequest?: MemberProfileRequest;
+  /** URL history for the selected post; omitted keeps selection local to this pane. */
+  postRoute?: ForumPostRoute;
 }) {
   const labels = useForumLabels();
   const queryClient = useQueryClient();
   const key = React.useMemo(() => ["platform", "forum", myPrincipalId, workspaceId, channelId] as const, [myPrincipalId, workspaceId, channelId]);
+  const initialRoutePost = postRoute && isEventId(postRoute.postId) ? postRoute.postId : null;
   const [selectedPostId, setSelectedPostId] = React.useState<string | null>(() => {
+    if (initialRoutePost) return initialRoutePost;
     const prefix = `forum:${workspaceId}:`;
     const parent = restoreDraftKey?.startsWith(prefix) ? restoreDraftKey.slice(prefix.length) : undefined;
-    return parent && /^[0-9a-f]{64}$/.test(parent) ? parent : null;
+    return isEventId(parent) ? parent : null;
   });
-  const [targetEventId, setTargetEventId] = React.useState<string | null>(null);
+  const [targetEventId, setTargetEventId] = React.useState<string | null>(() =>
+    initialRoutePost && postRoute && isEventId(postRoute.replyId) ? postRoute.replyId : null);
   usePreviewFeatureWarning(selectedPostId ? "forum" : "");
+  const postRouteRef = React.useRef(postRoute);
+  postRouteRef.current = postRoute;
+  // The last URL reference this pane applied or wrote; a route change is applied once (Back/Forward).
+  const appliedRoute = React.useRef({ postId: postRoute?.postId ?? null, replyId: postRoute?.replyId ?? null });
+  const routePostId = postRoute ? postRoute.postId : undefined;
+  const routeReplyId = postRoute ? postRoute.replyId : undefined;
+  React.useEffect(() => {
+    if (routePostId === undefined || routeReplyId === undefined) return;
+    if (appliedRoute.current.postId === routePostId && appliedRoute.current.replyId === routeReplyId) return;
+    appliedRoute.current = { postId: routePostId, replyId: routeReplyId };
+    const post = isEventId(routePostId) ? routePostId : null;
+    setSelectedPostId(post);
+    setTargetEventId(post && isEventId(routeReplyId) ? routeReplyId : null);
+  }, [routePostId, routeReplyId]);
+  /** Selection changes write the original post route; an unrouted host keeps local state. */
+  const selectPost = React.useCallback((id: string | null, how: "open" | "close" | "clear" | "replace" = id ? "open" : "close", replyId: string | null = null) => {
+    setSelectedPostId(id);
+    const route = postRouteRef.current;
+    if (!route) return;
+    appliedRoute.current = { postId: id, replyId: id ? replyId : null };
+    if (id && how === "replace") route.open(id, replyId, { replace: true });
+    else if (id) route.open(id, replyId);
+    else if (how === "clear") route.clear();
+    else route.close();
+  }, []);
   React.useEffect(() => {
     if (target?.channelId === channelId) {
-      setSelectedPostId(target.threadRootId ?? target.messageId);
+      const post = target.threadRootId ?? target.messageId;
+      selectPost(post, "replace", target.messageId === post ? null : target.messageId);
       setTargetEventId(target.messageId);
     }
-  }, [target, channelId, searchActivationId]);
+  }, [target, channelId, searchActivationId, selectPost]);
   const [denied, setDenied] = React.useState<string | null>(null);
   const [interrupted, setInterrupted] = React.useState(false);
   const [profileTarget, setProfileTarget] = React.useState<MessageAuthor | null>(null);
@@ -153,7 +198,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden"><div className="min-h-0 min-w-0 flex-1"><ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
     initialComposerOpen={restoreDraftKey === `forum:${workspaceId}:post`}
     targetEventId={targetEventId} onTargetReached={() => setTargetEventId(null)}
-    onSelectPost={(id) => { setProfileTarget(null); setMemberTarget(null); setSelectedPostId(id); }} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
+    onSelectPost={(id) => { setProfileTarget(null); setMemberTarget(null); selectPost(id); }} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
     post={root ? project(root) : undefined} replies={replies} loading={selectedQuery.isPending} error={error ? String(error) : null}
     hasMore={selectedQuery.hasNextPage} loadingMore={selectedQuery.isFetchingNextPage} onMore={() => { void selectedQuery.fetchNextPage(); }}
     onRetry={() => { void queryClient.invalidateQueries({ queryKey: key }); void members.refetch(); }} labels={labels} formatTime={relativeTime}
@@ -165,7 +210,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
         const receipt = await deleteMessage(workspaceId, message.eventId,
           original.kind === 45001 ? WebMessageType.ForumPost : original.kind === 45003 ? WebMessageType.ForumComment : WebMessageType.Stream);
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Deletion has no confirmed receipt");
-        if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
+        if (mounted.current && selectedPostId === message.eventId) selectPost(null, "clear");
         void queryClient.invalidateQueries({ queryKey: key });
       }} /> : null}
     renderAuthor={(message, large, preview) => { const name = authorLabel({id:message.eventId,pubkey:message.pubkey}, authors.get(message.pubkey)?.displayName);

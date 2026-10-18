@@ -406,7 +406,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onStartDm={openDirectMessage} memberProfileRequest={memberProfileRequest}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink}
       target={messageTarget?.channelId === active ? {...messageTarget,channelId:channel.data.channelId} : undefined}
-      searchMessageId={navigation.searchHighlight?.messageId} searchQuery={navigation.searchHighlight?.query} searchActivationId={navigation.searchHighlight?.activationId} /> :
+      searchMessageId={navigation.searchHighlight?.messageId} searchQuery={navigation.searchHighlight?.query} searchActivationId={navigation.searchHighlight?.activationId}
+      postRoute={navigation.setForumPost ? { postId: navigation.forumPostId ?? null, replyId: navigation.forumReplyId ?? null,
+        open: (postId, replyId, options) => navigation.setForumPost(postId, replyId, options), close: navigation.closeForumPost,
+        clear: () => navigation.setForumPost(null, null, { replace: true }) } : undefined} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
       onNavigationGuardChange={navigation.registerThreadNavigationGuard}
