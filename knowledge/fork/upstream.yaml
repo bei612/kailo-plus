@@ -13,8 +13,8 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:39d33955338fc74d93b1b6b1dc40f48294f98d1c860d795b06398be24c521087
-    artifact_digest: sha256:1e9947c187c8ce58d8c2e13a9ad4e37c7f3fb3f4a3e2925379e8aaa0172c18bd
+    source_digest: sha256:1527c664a12a4eac4c62928caf94398fca43f38f9025fbc582b73d451c0666ed
+    artifact_digest: sha256:5a26a5e64d0aa3d5b7d0b148a6463d079bc5c7fea73e652b23efb462f5393b56
     blocked: The frozen adapter candidate built, pushed and passed immutable registry digest readback; it is not deployed. Live Agent activation audit, approved release/binding and full component conformance remain unverified. See fork/verify/release-20261009-272693.md.
   - name: knowledge-service
     kind: image
@@ -23,8 +23,8 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:6673f089611b150174fc89740ba1c683ce0f7ea2062266814adba38988cc23bc
-    artifact_digest: sha256:89f5febf82c70107fa11d6f518585341fa0973d1dd075369beb9ca8d76b68409
+    source_digest: sha256:16c8fd8c37ac4bd42efe1f12d9c8228a256e1987fb5d461e36ac61ec54b8d562
+    artifact_digest: sha256:fa9fb73dc81d5680c8dcfae0b00a42f8305303180c0210a6d6a829947cb243b3
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image

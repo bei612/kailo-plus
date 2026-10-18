@@ -14,8 +14,8 @@ artifacts:
     build_context: .
     build_dockerfile: file-storage/adapter/Dockerfile
     inputs: [file-storage/adapter/Dockerfile, file-storage/adapter/Dockerfile.dockerignore, file-storage/adapter/package.json, file-storage/adapter/package-lock.json, file-storage/adapter/src/, client-kit/adapter/]
-    source_digest: sha256:c53c9adbaacbf7014588f3e46e9c04d458fca0a0f7d1da3d1a0423f84127b4cd
-    artifact_digest: sha256:34554e5e4887eee972f5b298f3774af1e111f9b6c301e828a91cd266544074fe
+    source_digest: sha256:f3362821180fc08d90f3508c2ff03f1fa11bd73e9b5234ad0e2464844f234449
+    artifact_digest: sha256:28cbddc054c2601231b063e55886dacdfd1b388cc2fe9352ec3fea6a63c3b9a4
     blocked: This frozen candidate adapter is built, pushed and independently read back by digest, but not deployed. Live SecretRef delivery, approved release/binding and full tool/resource acceptance remain unverified.
   - name: file-storage-service
     kind: image
@@ -24,8 +24,8 @@ artifacts:
     inputs: [file-storage/]
     build_args: [CELLS_VERSION, DOCKER_ENTRYPOINT_SRC_DIR]
     build_facts: {GIT_REV: source_commit, BUILD_STAMP: build_time_utc}
-    source_digest: sha256:f2304eaa6eafce655c47e5a5ad883454638c48cdbb9f8a9c748a5c1c680518ff
-    artifact_digest: sha256:e800f96019547a6b8276e02168b71f75275479585d9191a350e168b62674dfcd
+    source_digest: sha256:62c3c91c8c88a2445794f2813fe0ad4db8e39a962e1e64501c6f34cf2447670b
+    artifact_digest: sha256:ff390819ebb941ddbfafe6e5b75522593a1d28b90d248441779d4d767687ac11
     blocked: This clean-source candidate at 4f2ac2885a9a27395814e2efa5e00ea7da654f97 is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
