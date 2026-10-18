@@ -27,9 +27,12 @@ import (
 // production ApplicationBinding. Neither endpoint nor credentials come from a
 // user action or Temporal payload. The Core service identity is never forwarded.
 type componentCandidate struct {
-	configuration  generated.ComponentConformanceEnvironment
-	http           *http.Client
-	digestResponse func(context.Context, generated.PlanStep, []byte, int64) (generated.ComponentConformanceWireDigests, error)
+	configuration generated.ComponentConformanceEnvironment
+	// DD-124(4): the platform-maintained isolated deployment entry for an
+	// APPLICATION receiver action; never the candidate adapter.
+	receiverActionBase string
+	http               *http.Client
+	digestResponse     func(context.Context, generated.PlanStep, []byte, int64) (generated.ComponentConformanceWireDigests, error)
 }
 
 func decodeConformanceJSON(body []byte, target any) error {
@@ -114,14 +117,19 @@ func validAdapterOperation(operation generated.ComponentConformanceOperation) bo
 	}
 }
 
+func isolatedOrigin(value string) bool {
+	endpoint, err := url.Parse(value)
+	return err == nil && endpoint.Hostname() != "" && endpoint.User == nil &&
+		endpoint.RawQuery == "" && endpoint.Fragment == "" && endpoint.Opaque == "" &&
+		(endpoint.Scheme == "http" || endpoint.Scheme == "https") &&
+		(endpoint.Path == "" || endpoint.Path == "/")
+}
+
 func newComponentCandidate(configuration generated.ComponentConformanceEnvironment) (*componentCandidate, error) {
-	endpoint, err := url.Parse(configuration.AdapterBaseURL)
-	if err != nil || endpoint.Hostname() == "" || endpoint.User != nil ||
-		endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Opaque != "" ||
-		(endpoint.Scheme != "http" && endpoint.Scheme != "https") ||
-		(endpoint.Path != "" && endpoint.Path != "/") ||
+	if !isolatedOrigin(configuration.AdapterBaseURL) ||
 		configuration.MaxResponseBytes <= 0 || configuration.MaxSteps <= 0 ||
-		!validConformanceDigest(configuration.ArtifactDigest) {
+		!validConformanceDigest(configuration.ArtifactDigest) ||
+		(configuration.ReceiverActionBaseURL != nil && !isolatedOrigin(*configuration.ReceiverActionBaseURL)) {
 		return nil, errors.New("invalid isolated candidate configuration")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -129,12 +137,30 @@ func newComponentCandidate(configuration generated.ComponentConformanceEnvironme
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	configuration.AdapterBaseURL = strings.TrimRight(configuration.AdapterBaseURL, "/")
+	receiverActionBase := ""
+	if configuration.ReceiverActionBaseURL != nil {
+		receiverActionBase = strings.TrimRight(*configuration.ReceiverActionBaseURL, "/")
+	}
 	return &componentCandidate{
-		configuration: configuration,
+		configuration:      configuration,
+		receiverActionBase: receiverActionBase,
 		http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
 	}, nil
+}
+
+// DD-124(4): a frozen receiver request that names no import configuration is
+// an isolated APPLICATION receiver action (an ingest through READ_EDGE). The
+// platform-maintained isolated deployment admits and dispatches it through the
+// isolated Core; a NATIVE_MANAGED batch is started by the candidate itself.
+func receiverActionRequest(step generated.PlanStep) (bool, error) {
+	var request map[string]json.RawMessage
+	if err := decodeConformanceJSON([]byte(step.RequestJSON), &request); err != nil {
+		return false, err
+	}
+	_, batch := request["importConfigRef"]
+	return !batch, nil
 }
 
 func validConformanceDigest(value string) bool {
@@ -217,6 +243,7 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 		return observation
 	}
 	path := "/platform-adapter/v1/"
+	base := candidate.configuration.AdapterBaseURL
 	if string(step.Operation) == "receiver_start" || string(step.Operation) == "receiver_observe" {
 		_, identity, err := candidate.receiverReadAuthority(step)
 		if err != nil {
@@ -226,9 +253,21 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 			return uncertain()
 		}
 		path = "/component-conformance/v1/"
+		action, err := receiverActionRequest(step)
+		if err != nil {
+			return uncertain()
+		}
+		if action {
+			if candidate.receiverActionBase == "" {
+				class := generated.ErrorClass("BLOCKED")
+				observation.ErrorClass = &class
+				return observation
+			}
+			base = candidate.receiverActionBase
+		}
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		candidate.configuration.AdapterBaseURL+path+string(step.Operation),
+		base+path+string(step.Operation),
 		strings.NewReader(step.RequestJSON))
 	if err != nil {
 		return uncertain()

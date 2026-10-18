@@ -315,7 +315,7 @@ async fn validate_reference_and_policy(
         }
     } else if matches!(
         f.application.definition.action_key.as_str(),
-        "knowledge.ingest@v1" | "knowledge.ingest@v2"
+        "knowledge.ingest@v1" | "knowledge.ingest@v2" | "knowledge.ingest@v3"
     ) {
         // An import targets the receiver knowledge base, while its typed
         // reference identifies the source. Neither ID can substitute for the
@@ -435,7 +435,7 @@ fn normalized(cmd: &ActionCommand) -> Result<FrozenCommand, Refusal> {
     if (kind == "RESOURCE"
         && !matches!(
             cmd.action_key.as_str(),
-            "knowledge.ingest@v1" | "knowledge.ingest@v2"
+            "knowledge.ingest@v1" | "knowledge.ingest@v2" | "knowledge.ingest@v3"
         )
         && (reference["resourceId"] != json!(target) || reference.get("assetId").is_some()))
         || (kind == "ASSET" && reference["assetId"] != json!(target))
@@ -1193,7 +1193,11 @@ mod tests {
         let mut raw = command();
         let source = Uuid::new_v4();
         raw["componentAction"]["inputReference"]["resourceId"] = json!(source);
-        for action in ["knowledge.ingest@v1", "knowledge.ingest@v2"] {
+        for action in [
+            "knowledge.ingest@v1",
+            "knowledge.ingest@v2",
+            "knowledge.ingest@v3",
+        ] {
             raw["actionKey"] = json!(action);
             let frozen = normalized(&serde_json::from_value(raw.clone()).unwrap()).unwrap();
             assert_eq!(frozen.arguments["target"]["resourceId"], raw["resourceId"]);
@@ -1202,7 +1206,8 @@ mod tests {
         for action in [
             "knowledge.read@v1",
             "knowledge.read@v2",
-            "knowledge.ingest@v3",
+            "knowledge.read@v3",
+            "knowledge.ingest@v4",
         ] {
             raw["actionKey"] = json!(action);
             assert!(normalized(&serde_json::from_value(raw.clone()).unwrap()).is_err());

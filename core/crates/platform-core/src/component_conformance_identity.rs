@@ -53,6 +53,26 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
     for key in ["issuer", "secretAudience", "privateKeyField"] {
         nonempty(value, key)?;
     }
+    // DD-124(4): the isolated receiver deployment (Core build and production
+    // source release). Core checks it against the Catalog when it freezes the
+    // plan; here only its closed shape is refused early.
+    if let Some(environment) = value.get("receiverEnvironment") {
+        let hex = |text: &str, length: usize| {
+            text.len() == length
+                && text
+                    .bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        };
+        if !hex(nonempty(environment, "isolatedCoreBuildId")?, 40)
+            || !hex(nonempty(environment, "sourceArtifactDigest")?, 64)
+            || !hex(nonempty(environment, "sourceManifestDigest")?, 64)
+            || Uuid::parse_str(nonempty(environment, "sourceReleaseId")?)
+                .map_err(|_| refused())?
+                .is_nil()
+        {
+            return Err(refused());
+        }
+    }
     let contexts = value["contexts"]
         .as_array()
         .filter(|c| !c.is_empty())
@@ -256,7 +276,13 @@ fn parameter_hash(context: &Value, operation: &str, parameters: &Value) -> Resul
         {
             return Err(refused());
         }
+        // DD-124(4): a native batch names its import configuration; an
+        // isolated APPLICATION receiver action names none.
+        let configured = parameters.get("importConfigRef").is_some();
         for field in ["idempotencyKey", "importConfigRef", "bindingId"] {
+            if field == "importConfigRef" && !configured {
+                continue;
+            }
             if Uuid::parse_str(nonempty(parameters, field)?)
                 .map_err(|_| refused())?
                 .is_nil()

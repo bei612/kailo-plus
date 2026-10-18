@@ -13,10 +13,16 @@ fn source_commit(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn core_build() -> Result<Value, Refusal> {
-    let build = option_env!("PLATFORM_BUILD_ID")
+/// The PlatformBuildInfo CORE buildId (source commit) of this exact binary.
+/// DD-124(4) binds the isolated receiver deployment to it.
+pub(crate) fn core_build_id() -> Result<&'static str, Refusal> {
+    option_env!("PLATFORM_BUILD_ID")
         .filter(|value| source_commit(value))
-        .ok_or_else(unavailable)?;
+        .ok_or_else(unavailable)
+}
+
+fn core_build() -> Result<Value, Refusal> {
+    let build = core_build_id()?;
     // These are the actually implemented protocol/registry entries. Unsupported
     // Host API, embedded drivers and platform-port releases remain unavailable.
     Ok(

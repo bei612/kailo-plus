@@ -1260,7 +1260,10 @@ pub(crate) async fn prewrite(
                 let key =
                     Uuid::new_v5(&ae.id, format!("{case_key}:{step_key}").as_bytes()).to_string();
                 let contract_key = text(step, "contractKey")?;
-                let (input, expected, bindings) = if vector::is_v2(&contract["vectors"]) {
+                let v2 = vector::is_v2(&contract["vectors"]);
+                // DD-124(3)(4): a RECEIVER step runs in the isolated deployment.
+                let receiver = v2 && vector::is_receiver(step)?;
+                let (input, expected, bindings) = if v2 {
                     vector::freeze_step(step, &case_key, &preconditions)?
                 } else {
                     let input = text(step, "inputJson")?.to_owned();
@@ -1303,12 +1306,12 @@ pub(crate) async fn prewrite(
                             && incremental["role"] == "NATIVE_INTERNAL"
                             && incremental["engine"] == "NATIVE"
                     });
-                if native {
-                    if step.get("bindings").is_some() || step.get("captures").is_some() {
-                        // Receiver-direction values come only from the isolated
-                        // Core of 07 §8A (DD-124(4)), never this production plan.
-                        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-                    }
+                // A NATIVE_MANAGED key is only ever observed in the receiver
+                // direction; a V2 vector must say so for that exact step.
+                if v2 && native && !receiver {
+                    return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+                }
+                if native || receiver {
                     let mappings: Vec<_> = fixture["nativeReceivers"]
                         .as_array()
                         .ok_or_else(bad)?
@@ -1326,9 +1329,19 @@ pub(crate) async fn prewrite(
                     }
                     let mut original = mappings[0]["request"].clone();
                     original["idempotencyKey"] = json!(key);
-                    let input: Value =
-                        serde_json::from_str(text(step, "inputJson")?).map_err(|_| bad())?;
-                    if input["importConfigRef"] != original["importConfigRef"]
+                    // The frozen input already carries the fixture's
+                    // precondition values; only own captures stay declared.
+                    let frozen: Value = serde_json::from_str(&input).map_err(|_| bad())?;
+                    // A native batch is started by the candidate for its exact
+                    // import configuration; an APPLICATION receiver action is
+                    // admitted by the isolated Core and names none.
+                    let configured = if native {
+                        original.get("importConfigRef").is_some()
+                            && frozen["importConfigRef"] == original["importConfigRef"]
+                    } else {
+                        original.get("importConfigRef").is_none()
+                    };
+                    if !configured
                         || chrono::DateTime::parse_from_rfc3339(text(&original, "expiresAt")?)
                             .map_err(|_| bad())?
                             <= chrono::Utc::now()
@@ -1337,7 +1350,7 @@ pub(crate) async fn prewrite(
                     }
                     probe["operation"] = json!("receiver_start");
                     probe["requestJson"] = json!(collab_bridge::limits::canonical_json(&original));
-                    probe["nativeReceiverInputJson"] = step["inputJson"].clone();
+                    probe["nativeReceiverInputJson"] = json!(input);
                 }
                 for field in [
                     "referenceResourceId",
@@ -1359,12 +1372,17 @@ pub(crate) async fn prewrite(
                     .ok_or_else(bad)?
                     .remove("nativeReceiverInputJson");
                 // The denied replay sends the same substituted request: keep the
-                // INPUT bindings only; a refused step captures nothing.
-                let replay: Vec<_> = bindings
-                    .iter()
-                    .filter(|binding| binding["side"] == "INPUT")
-                    .cloned()
-                    .collect();
+                // INPUT bindings only; a refused step captures nothing. A
+                // receiver request is never substituted, so it keeps none.
+                let replay: Vec<_> = if native || receiver {
+                    Vec::new()
+                } else {
+                    bindings
+                        .iter()
+                        .filter(|binding| binding["side"] == "INPUT")
+                        .cloned()
+                        .collect()
+                };
                 let object = probe.as_object_mut().ok_or_else(bad)?;
                 object.remove("bindings");
                 object.remove("captures");
@@ -1406,6 +1424,17 @@ pub(crate) async fn prewrite(
         }
     }
     crate::component_conformance_identity::check_plan(&identity, &steps)?;
+    // DD-124(4): receiver steps are observed only from the isolated deployment
+    // of this Core build that runs the APPROVED source release; a plan without
+    // them carries no receiver environment.
+    let receiving = steps.iter().any(|step| step["operation"] == "receiver_start");
+    let environment = identity.get("receiverEnvironment").cloned();
+    if receiving != environment.is_some() {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if let Some(environment) = &environment {
+        receiver_source(tx, ae.tenant_id, environment, true).await?;
+    }
     let identity_digest = collab_bridge::limits::canonical_digest(&identity);
     let suite_digest = collab_bridge::limits::canonical_digest(
         &json!({"fixture":fixture,"contracts":contracts,"identityDigest":identity_digest}),
@@ -1416,6 +1445,9 @@ pub(crate) async fn prewrite(
         "workflowId":workflow,"runId":"","componentReleaseId":registration.id,
         "artifactDigest":registration.adapter_digest,"contractDigests":contract_digests,
         "suiteDigest":suite_digest,"planDigest":"","identityDigest":identity_digest,"steps":steps});
+    if let Some(environment) = environment {
+        plan["receiverEnvironment"] = environment;
+    }
     plan["planDigest"] = json!(collab_bridge::limits::canonical_digest(&plan));
     let typed: contracts::ComponentConformancePlan =
         serde_json::from_value(plan.clone()).map_err(|_| bad())?;
@@ -1429,6 +1461,67 @@ pub(crate) async fn prewrite(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     Ok(1)
+}
+
+/// DD-124(4): the isolated receiver deployment named by a plan runs this Core
+/// build (`build`) and the production Catalog's APPROVED release of a category
+/// that declares the source read edge, at its registered artifact and manifest.
+/// A later approval re-checks only the source release, not the Core build.
+pub(crate) async fn receiver_source(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    environment: &Value,
+    build: bool,
+) -> Result<(), Refusal> {
+    exact_fields(
+        environment,
+        &[
+            "isolatedCoreBuildId",
+            "sourceReleaseId",
+            "sourceArtifactDigest",
+            "sourceManifestDigest",
+        ],
+        &[],
+    )?;
+    let commit = text(environment, "isolatedCoreBuildId")?;
+    if commit.len() != 40
+        || !commit
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        || !digest(text(environment, "sourceArtifactDigest")?)
+        || !digest(text(environment, "sourceManifestDigest")?)
+    {
+        return Err(bad());
+    }
+    if build && commit != crate::platform_build_info::core_build_id()? {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    let source = Uuid::parse_str(text(environment, "sourceReleaseId")?).map_err(|_| bad())?;
+    let row: Option<(Value, String, String)> = sqlx::query_as(
+        "select manifest,adapter_build_ref,manifest_digest from catalog.component_release
+        where id=$1 and catalog_tenant_id=$2 and status='APPROVED' for share",
+    )
+    .bind(source)
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((manifest, artifact, manifest_digest)) = row else {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    };
+    let declared = manifest["capabilityDeclarations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|item| matches!(item["readEdge"].as_str(), Some("SOURCE" | "BOTH")));
+    if !declared {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    if environment["sourceArtifactDigest"] != artifact
+        || environment["sourceManifestDigest"] != manifest_digest
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    Ok(())
 }
 
 pub(crate) async fn start(
@@ -1499,6 +1592,9 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
     let mut last_scope: BTreeMap<String, Value> = BTreeMap::new();
     let mut content_references: BTreeMap<(String, String), Value> = BTreeMap::new();
     let mut captured: BTreeMap<(String, String), String> = BTreeMap::new();
+    // DD-124(4): every identifier the isolated Core generated for a receiver
+    // step is absent from the frozen plan, which carries every fixture value.
+    let frozen = collab_bridge::limits::canonical_json(plan);
     for (step, observation) in steps.iter().zip(observations) {
         if step["caseKey"] != observation["caseKey"]
             || step["stepKey"] != observation["stepKey"]
@@ -1527,14 +1623,28 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
         if let Some(reference) = &source_reference {
             apply_probe_reference(&mut request, reference)?;
         }
-        // DD-124(2): the values come only from earlier recorded observations;
-        // this step's own captures are recorded after its substitution.
         let case = text(step, "caseKey")?;
-        let values = vector::recorded_values(step, case, &captured)?;
-        vector::apply(step, &values, &mut request, &mut expected)?;
-        for (key, value) in vector::observed(step, observation)? {
-            if captured.insert((case.to_owned(), key), value).is_some() {
+        let receiver_step = matches!(
+            text(step, "operation")?,
+            "receiver_start" | "receiver_observe"
+        );
+        if receiver_step {
+            // A receiver request is never substituted; its captures are
+            // re-derived from its own isolated evidence below. A refused or
+            // unfinished receiver observation carries none.
+            if observation["httpStatus"] != 200 && observation.get("captures").is_some() {
                 return Err(bad());
+            }
+        } else {
+            // DD-124(2): the values come only from earlier recorded
+            // observations; this step's own captures are recorded after its
+            // substitution.
+            let values = vector::recorded_values(step, case, &captured)?;
+            vector::apply(step, &values, &mut request, &mut expected)?;
+            for (key, value) in vector::observed(step, observation)? {
+                if captured.insert((case.to_owned(), key), value).is_some() {
+                    return Err(bad());
+                }
             }
         }
         let actual_operation = text(observation, "operation")?;
@@ -1570,8 +1680,6 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
                 .get("nativeReceiverObservation")
                 .ok_or_else(bad)?;
             validate_receiver_observation(&request, native)?;
-            let input: Value =
-                serde_json::from_str(text(step, "nativeReceiverInputJson")?).map_err(|_| bad())?;
             if native["completed"] != true
                 || expected != json!({})
                 || observation.get("nativeObservation").is_some()
@@ -1580,19 +1688,37 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
                 || observation.get("contentReference").is_some()
                 || observation.get("resultDigest").is_some()
                 || source_reference.is_some()
-                || !native["readOperations"]
-                    .as_array()
-                    .ok_or_else(bad)?
-                    .iter()
-                    .any(|read| {
-                        read["nativeBatch"]["actionKey"] == step["contractKey"]
-                            && read["nativeBatch"]["receiverResourceId"]
-                                == step["referenceResourceId"]
-                            && read["sourceResourceId"] == input["sourceResourceId"]
-                            && read["nativeBatch"]["importConfigRef"] == input["importConfigRef"]
-                    })
             {
                 return Err(bad());
+            }
+            // DD-124(4): the receiver admission the isolated Core actually
+            // produced equals the frozen input with this step's own captured
+            // identifiers, which are exactly the recorded ones.
+            let (read, admitted) = vector::receiver_admission(step, native)?;
+            let values = vector::receiver_values(step, read, &admitted)?;
+            vector::receiver_recorded(observation, &values)?;
+            if vector::receiver_input(step, &values)? != admitted {
+                return Err(bad());
+            }
+            // The isolated Core generated these in this run; none may be a
+            // value the plan or its fixture could have supplied.
+            let mut generated = vec![text(native, "nativeBatchId")?];
+            for read in native["readOperations"].as_array().ok_or_else(bad)? {
+                for field in [
+                    "actionExecutionId",
+                    "receiverActionExecutionId",
+                    "operationId",
+                ] {
+                    generated.push(text(read, field)?);
+                }
+            }
+            if generated.iter().any(|id| frozen.contains(id)) {
+                return Err(bad());
+            }
+            for (key, value) in values {
+                if captured.insert((case.to_owned(), key), value).is_some() {
+                    return Err(bad());
+                }
             }
             continue;
         }
@@ -1931,7 +2057,10 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value, V
     }
     // DD-124(2): substitute the captured values before the token is signed
     // (the parameter hash covers them) and before the expectation is digested.
-    if step.get("bindings").is_some() {
+    // A receiver request is never substituted (DD-124(4)): its own capture
+    // declarations describe the isolated admission and are checked on record.
+    let receiver = matches!(operation.as_str(), "receiver_start" | "receiver_observe");
+    if step.get("bindings").is_some() && !receiver {
         let values = vector::probe_values(&step, input)?;
         vector::apply(&step, &values, &mut request, &mut expected)?;
     } else if input.get("captures").is_some() {
@@ -2081,6 +2210,11 @@ pub(crate) async fn authorize_probe(
         let plan:Value=sqlx::query_scalar("select component_conformance_plan from admission.action_execution where id=$1 and component_conformance_observation is null")
             .bind(ae.id).fetch_optional(&mut *tx).await?.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
         let (step,operation,request,expected)=probe_request(&plan,&input)?;
+        // DD-124(4): the isolated deployment must still run this Core build and
+        // the APPROVED source release the frozen plan names.
+        if matches!(operation.as_str(),"receiver_start"|"receiver_observe") {
+            receiver_source(&mut tx,ae.tenant_id,plan.get("receiverEnvironment").ok_or_else(bad)?,true).await?;
+        }
         let params=ae.parameters.as_ref().and_then(|v|v.get("params")).and_then(Params::from_json).ok_or_else(bad)?;
         let release=registration(params.component_release_registration.as_ref().ok_or_else(bad)?)?;
         let contracts=active_contracts(&mut tx,ae.tenant_id,&release).await?;
@@ -2200,6 +2334,15 @@ fn wire_digests(
         "responseDigest":collab_bridge::limits::canonical_digest(&response)});
     if (200..300).contains(&status) && matches!(operation, "receiver_start" | "receiver_observe") {
         validate_receiver_observation(request, &response)?;
+        // DD-124(4): a receiver step's captures come only from the completed
+        // run the isolated Core admitted; they are re-derived on record.
+        if response["completed"] == true && step.get("captures").is_some() {
+            let (read, input) = vector::receiver_admission(step, &response)?;
+            let values = vector::receiver_values(step, read, &input)?;
+            if let Some(captures) = vector::receiver_wire(&values) {
+                out["captures"] = captures;
+            }
+        }
         out["nativeReceiverObservation"] = response.clone();
     }
     if (200..300).contains(&status) && operation == "validate_binding" {
@@ -2261,6 +2404,11 @@ fn validate_receiver_observation(request: &Value, observation: &Value) -> Result
         return Err(bad());
     }
     text(observation, "nativeStatus")?;
+    // DD-124(4): a native batch names its import configuration and admits one
+    // SERVICE receiver per read. An isolated APPLICATION receiver action names
+    // none; it is the single anchor of every read, carried by its request.
+    let batched = request.get("importConfigRef").is_some();
+    let mut anchor: Option<&str> = None;
     let mut operations = BTreeSet::new();
     let mut executions = BTreeSet::new();
     let mut keys = BTreeSet::new();
@@ -2278,16 +2426,33 @@ fn validate_receiver_observation(request: &Value, observation: &Value) -> Result
                 return Err(bad());
             }
         }
+        let receiver_execution = text(read, "receiverActionExecutionId")?;
         if !operations.insert(text(read, "operationId")?)
             || !executions.insert(text(read, "actionExecutionId")?)
-            || !executions.insert(text(read, "receiverActionExecutionId")?)
-            || read["nativeBatch"]["batchId"] != observation["nativeBatchId"]
-            || read["nativeBatch"]["importConfigRef"] != request["importConfigRef"]
         {
             return Err(bad());
         }
-        if read["readRequest"]["nativeBatch"] != read["nativeBatch"]
-            || read["receiverGeneration"] != request["generation"]
+        if batched {
+            if !executions.insert(receiver_execution)
+                || read["nativeBatch"]["batchId"] != observation["nativeBatchId"]
+                || read["nativeBatch"]["importConfigRef"] != request["importConfigRef"]
+                || read["readRequest"]["nativeBatch"] != read["nativeBatch"]
+                || read["readRequest"]
+                    .get("receiverActionExecutionId")
+                    .is_some()
+            {
+                return Err(bad());
+            }
+        } else if read.get("nativeBatch").is_some()
+            || read["readRequest"].get("nativeBatch").is_some()
+            || read["readRequest"]["receiverActionExecutionId"] != receiver_execution
+            || text(&read["readRequest"], "receiverArgumentsJson").is_err()
+            || anchor.is_some_and(|anchor| anchor != receiver_execution)
+        {
+            return Err(bad());
+        }
+        anchor = Some(receiver_execution);
+        if read["receiverGeneration"] != request["generation"]
             || read["readRequest"]["sourceResourceId"] != read["sourceResourceId"]
             || read["readRequest"]["receiverBindingId"] != request["bindingId"]
             || read["readRequest"]
@@ -2333,6 +2498,12 @@ fn validate_receiver_observation(request: &Value, observation: &Value) -> Result
             if completed > chrono::Utc::now() || finished.is_some_and(|at| completed > at) {
                 return Err(bad());
             }
+        }
+    }
+    // The anchoring receiver action is not one of its own SOURCE reads.
+    if let Some(anchor) = anchor.filter(|_| !batched) {
+        if !executions.insert(anchor) {
+            return Err(bad());
         }
     }
     Ok(())
@@ -2454,6 +2625,11 @@ pub(crate) async fn record(
             }
         } else {
             fresh_suite(&state, &mut tx, &ae, text(&report, "runId")?).await?;
+            // DD-124(4): receiver evidence is accepted only while the isolated
+            // deployment is this Core build and the source release is APPROVED.
+            if let Some(environment) = plan.get("receiverEnvironment") {
+                receiver_source(&mut tx, ae.tenant_id, environment, true).await?;
+            }
             let current_contracts = active_contracts(&mut tx, ae.tenant_id, &release).await?;
             let digests: Vec<_> = current_contracts
                 .iter()
@@ -3855,6 +4031,212 @@ mod report_tests {
         unsubstituted["observations"][1]["requestDigest"] =
             json!(collab_bridge::limits::canonical_digest(&original));
         assert!(verify_report(&plan, &unsubstituted).is_err());
+    }
+
+    /// A completed DD-124(4) receiver step: a native batch (`batched`) whose
+    /// receiver admission binds its own batch and SOURCE read execution, or an
+    /// isolated APPLICATION ingest that anchors its read and captures the
+    /// receiver's own document reference.
+    fn receiver_suite(batched: bool) -> (Value, Value) {
+        let hash = collab_bridge::limits::canonical_digest;
+        let (binding, source_binding, operation) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let (receiver_resource, source_resource) = (Uuid::new_v4(), Uuid::new_v4());
+        let (execution, child, key) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let (batch, import, step_key) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let mut request = json!({"bindingId":binding,"generation":3,"idempotencyKey":step_key,
+            "expiresAt":"2999-01-01T00:00:00Z"});
+        let receipt = json!({"bindingId":source_binding,"operationId":operation,
+            "idempotencyKey":key,"role":"SOURCE","nativeObjectRef":"source-node",
+            "nativeRevision":"source-version",
+            "contentSha256":"a".repeat(64),"contentBytes":34,"completedAt":"2026-10-18T00:00:01Z",
+            "measurements":[]});
+        let mut receiver = receipt.clone();
+        receiver["bindingId"] = json!(binding);
+        receiver["role"] = json!("RECEIVER");
+        receiver["nativeObjectRef"] = json!("knowledge-document");
+        receiver["nativeRevision"] = json!("2026-10-18T00:00:01.000001Z");
+        let reference = json!({"resourceId":source_resource,"nativeObjectRef":"source-node",
+            "nativeRevision":"source-version","displayName":"conformance.md",
+            "mediaType":"text/markdown"});
+        let mut read = json!({"actionExecutionId":execution,"receiverActionExecutionId":child,
+            "receiverGeneration":3,"operationId":operation,"sourceBindingId":source_binding,
+            "sourceResourceId":source_resource,"sourceReceipt":receipt,"receiverReceipt":receiver,
+            "readRequest":{"receiverBindingId":binding,"sourceResourceId":source_resource,
+                "actionKey":"file_storage.read@v2","actionVersion":1,"idempotencyKey":key,
+                "inputJson":reference.to_string()}});
+        let (contract, input, bindings, captures) = if batched {
+            request["importConfigRef"] = json!(import);
+            let native = json!({"receiverResourceId":receiver_resource,"importConfigRef":import,
+                "batchId":batch,"actionKey":"knowledge.sync_apply@v3","actionVersion":1});
+            read["nativeBatch"] = native.clone();
+            read["readRequest"]["nativeBatch"] = native;
+            let input = json!({"sourceResourceId":source_resource,"importConfigRef":import,
+                "batchId":"{{CAPTURE:batch}}",
+                "sourceReadActionExecutionId":"{{CAPTURE:read_execution}}"});
+            let bindings = json!([
+                {"source":"CAPTURE","key":"batch","side":"INPUT","pointer":"/batchId"},
+                {"source":"CAPTURE","key":"read_execution","side":"INPUT",
+                    "pointer":"/sourceReadActionExecutionId"}]);
+            let captures = json!([{"key":"batch","slot":"GENERATED_REF","pointer":"/batchId"},
+                {"key":"read_execution","slot":"ACTION_EXECUTION_ID"}]);
+            ("knowledge.sync_apply@v3", input, bindings, captures)
+        } else {
+            let arguments = json!({"target":{"resourceId":receiver_resource},"input":reference});
+            read["readRequest"]["receiverActionExecutionId"] = json!(child);
+            read["readRequest"]["receiverArgumentsJson"] =
+                json!(collab_bridge::limits::canonical_json(&arguments));
+            let captures = json!([
+                {"key":"document","slot":"CONTENT_REFERENCE_NATIVE_OBJECT_REF"},
+                {"key":"document_revision","slot":"CONTENT_REFERENCE_NATIVE_REVISION"}]);
+            ("knowledge.ingest@v3", reference, json!([]), captures)
+        };
+        let native = json!({"request":request,"nativeBatchId":batch,"nativeStatus":"success",
+            "startedAt":"2026-10-18T00:00:00Z","finishedAt":"2026-10-18T00:00:02Z",
+            "completed":true,"readOperations":[read]});
+        let case = "knowledge:3:receiver";
+        let mut step = json!({"caseKey":case,"stepKey":"receive","operation":"receiver_start",
+            "contractKey":contract,"idempotencyKey":step_key,
+            "requestJson":collab_bridge::limits::canonical_json(&request),
+            "expectedResponseJson":"{}","expectedHttpStatus":200,
+            "referenceResourceId":receiver_resource,"nativeReceiverInputJson":input.to_string(),
+            "captures":captures});
+        if batched {
+            step["bindings"] = bindings;
+        }
+        let values = if batched {
+            json!([{"key":"batch","value":batch},{"key":"read_execution","value":execution}])
+        } else {
+            json!([{"key":"document","value":"knowledge-document"},
+                {"key":"document_revision","value":"2026-10-18T00:00:01.000001Z"}])
+        };
+        let observation = json!({"caseKey":case,"stepKey":"receive","operation":"receiver_start",
+            "requestDigest":hash(&request),"responseDigest":hash(&native),"httpStatus":200,
+            "nativeReceiverObservation":native,"captures":values});
+        let plan = json!({"actionExecutionId":Uuid::new_v4(),"operationId":Uuid::new_v4(),
+            "componentReleaseId":Uuid::new_v4(),"workflowId":"isolated-component-workflow",
+            "artifactDigest":"b".repeat(64),"contractDigests":["c".repeat(64)],
+            "suiteDigest":"d".repeat(64),"planDigest":"e".repeat(64),"runId":"","steps":[step]});
+        let mut report = plan.clone();
+        report.as_object_mut().unwrap().remove("steps");
+        report["runId"] = json!(Uuid::new_v4());
+        report["observations"] = json!([observation]);
+        (plan, report)
+    }
+
+    #[test]
+    fn receiver_step_accepts_only_its_own_isolated_admission_and_identifiers() {
+        for batched in [true, false] {
+            let (plan, report) = receiver_suite(batched);
+            verify_report(&plan, &report).unwrap();
+            let native = &report["observations"][0]["nativeReceiverObservation"];
+            // Core derives the same values from the actual wire response.
+            let step = &plan["steps"][0];
+            let request: Value =
+                serde_json::from_str(step["requestJson"].as_str().unwrap()).unwrap();
+            let digests =
+                super::wire_digests(step, &request, "receiver_start", 200, &native.to_string())
+                    .unwrap();
+            assert_eq!(
+                serde_json::to_value(digests).unwrap()["captures"],
+                report["observations"][0]["captures"]
+            );
+            let mut drifted = report.clone();
+            drifted["observations"][0]["captures"][1]["value"] = json!(Uuid::new_v4());
+            assert!(verify_report(&plan, &drifted).is_err(), "{batched}");
+            let mut absent = report.clone();
+            absent["observations"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("captures");
+            assert!(verify_report(&plan, &absent).is_err(), "{batched}");
+            // The admission consumed exactly the frozen input.
+            let mut other = plan.clone();
+            let mut input: Value =
+                serde_json::from_str(step["nativeReceiverInputJson"].as_str().unwrap()).unwrap();
+            let field = if batched {
+                "sourceResourceId"
+            } else {
+                "nativeRevision"
+            };
+            input[field] = json!("another-source");
+            other["steps"][0]["nativeReceiverInputJson"] = json!(input.to_string());
+            assert!(verify_report(&other, &report).is_err(), "{batched}");
+            // An identifier the plan or fixture could have supplied is not
+            // evidence the isolated Core generated it in this run.
+            let mut predicted = plan.clone();
+            let mut claimed = report.clone();
+            let execution = native["readOperations"][0]["actionExecutionId"].clone();
+            predicted["workflowId"] = execution.clone();
+            claimed["workflowId"] = execution;
+            assert!(verify_report(&predicted, &claimed).is_err(), "{batched}");
+            let mut unfinished = report.clone();
+            unfinished["observations"][0]["nativeReceiverObservation"]["completed"] = json!(false);
+            assert!(verify_report(&plan, &unfinished).is_err(), "{batched}");
+        }
+    }
+
+    #[test]
+    fn application_receiver_reads_share_one_isolated_anchor() {
+        let (plan, report) = receiver_suite(false);
+        let native = &report["observations"][0]["nativeReceiverObservation"];
+        let request = &native["request"];
+        assert!(validate_receiver_observation(request, native).is_ok());
+        let mut batched = native.clone();
+        batched["readOperations"][0]["nativeBatch"] = json!({"batchId":native["nativeBatchId"]});
+        assert!(validate_receiver_observation(request, &batched).is_err());
+        let mut unanchored = native.clone();
+        unanchored["readOperations"][0]["readRequest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("receiverActionExecutionId");
+        assert!(validate_receiver_observation(request, &unanchored).is_err());
+        let mut second = native.clone();
+        let mut read = native["readOperations"][0].clone();
+        read["actionExecutionId"] = json!(Uuid::new_v4());
+        read["operationId"] = json!(Uuid::new_v4());
+        read["sourceReceipt"]["operationId"] = read["operationId"].clone();
+        read["receiverReceipt"]["operationId"] = read["operationId"].clone();
+        let key = Uuid::new_v4();
+        read["readRequest"]["idempotencyKey"] = json!(key);
+        read["sourceReceipt"]["idempotencyKey"] = json!(key);
+        read["receiverReceipt"]["idempotencyKey"] = json!(key);
+        second["readOperations"]
+            .as_array_mut()
+            .unwrap()
+            .push(read.clone());
+        assert!(validate_receiver_observation(request, &second).is_ok());
+        let mut foreign = second.clone();
+        foreign["readOperations"][1]["receiverActionExecutionId"] = json!(Uuid::new_v4());
+        foreign["readOperations"][1]["readRequest"]["receiverActionExecutionId"] =
+            foreign["readOperations"][1]["receiverActionExecutionId"].clone();
+        assert!(validate_receiver_observation(request, &foreign).is_err());
+        let mut own = native.clone();
+        own["readOperations"][0]["receiverActionExecutionId"] =
+            native["readOperations"][0]["actionExecutionId"].clone();
+        own["readOperations"][0]["readRequest"]["receiverActionExecutionId"] =
+            native["readOperations"][0]["actionExecutionId"].clone();
+        assert!(validate_receiver_observation(request, &own).is_err());
+        // The anchored arguments name the receiver Resource of the step.
+        let mut retargeted = report.clone();
+        let encoded = native["readOperations"][0]["readRequest"]["receiverArgumentsJson"]
+            .as_str()
+            .unwrap();
+        let mut arguments: Value = serde_json::from_str(encoded).unwrap();
+        arguments["target"]["resourceId"] = json!(Uuid::new_v4());
+        let observed = &mut retargeted["observations"][0]["nativeReceiverObservation"];
+        observed["readOperations"][0]["readRequest"]["receiverArgumentsJson"] =
+            json!(arguments.to_string());
+        assert!(verify_report(&plan, &retargeted).is_err());
+        // A receiver request is never substituted by a probe.
+        let mut probe = json!({"plan":plan,"stepIndex":0,
+            "captures":[{"key":"document","value":"knowledge-document"}]});
+        probe["plan"]["runId"] = json!(Uuid::new_v4());
+        assert!(probe_request(&plan, &probe).is_err());
+        probe.as_object_mut().unwrap().remove("captures");
+        let (_, operation, request, expected) = probe_request(&plan, &probe).unwrap();
+        assert_eq!(operation, "receiver_start");
+        assert_eq!(request, native["request"]);
+        assert_eq!(expected, json!({}));
     }
 
     #[test]

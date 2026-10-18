@@ -65,8 +65,10 @@ pub(super) async fn prewrite(
     }
     for contract in contracts {
         for case in contract["vectors"]["cases"].as_array().ok_or_else(bad)? {
-            // DD-124 preconditions and captures need the REMOTE_ADAPTER typed
-            // slots; a native MCP peer has none, so such a contract is blocked.
+            // DD-124 preconditions, captures and receiver-direction steps need
+            // the REMOTE_ADAPTER typed slots and the isolated receiver
+            // deployment; a native MCP peer has none, so such a contract is
+            // blocked.
             if case.get("preconditions").is_some() {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
             }
@@ -77,6 +79,7 @@ pub(super) async fn prewrite(
                     "referenceFromStepKey",
                     "bindings",
                     "captures",
+                    "direction",
                 ]
                 .iter()
                 .any(|field| step.get(field).is_some())

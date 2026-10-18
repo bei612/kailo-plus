@@ -26,7 +26,8 @@ func TestNativeReceiverConformanceReadsIsolatedCoreAuthority(t *testing.T) {
 	for _, scenario := range []string{"committed", "missing-ae", "changed-receipt", "changed-generation", "unexpected-token", "wrong-binding", "duplicate-delivery", "missing-delivery"} {
 		t.Run(scenario, func(t *testing.T) {
 			binding, batch, source, execution, child, operation, key := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
-			request := generated.ComponentNativeReceiverRequest{BindingID: binding, Generation: 3, ImportConfigRef: uuid.NewString(), IdempotencyKey: key, ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
+			importConfig := uuid.NewString()
+			request := generated.ComponentNativeReceiverRequest{BindingID: binding, Generation: 3, ImportConfigRef: &importConfig, IdempotencyKey: key, ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
 			rawRequest, _ := json.Marshal(request)
 			completedAt := time.Now().UTC().Format(time.RFC3339)
 			receipt := func(owner, role string) map[string]any {
@@ -37,7 +38,7 @@ func TestNativeReceiverConformanceReadsIsolatedCoreAuthority(t *testing.T) {
 			proof := map[string]any{"actionExecutionId": execution, "receiverActionExecutionId": child, "receiverGeneration": 3, "operationId": operation, "sourceBindingId": source,
 				"sourceReceipt": receipt(source, "SOURCE"), "receiverReceipt": receipt(binding, "RECEIVER")}
 			readRequest := map[string]any{"receiverBindingId": binding, "sourceResourceId": uuid.NewString(), "actionKey": "file_storage.read@v1", "actionVersion": 1, "inputJson": "{}", "idempotencyKey": key,
-				"nativeBatch": map[string]any{"batchId": batch, "importConfigRef": request.ImportConfigRef, "receiverResourceId": uuid.NewString(), "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}}
+				"nativeBatch": map[string]any{"batchId": batch, "importConfigRef": importConfig, "receiverResourceId": uuid.NewString(), "actionKey": "knowledge.sync_apply@v2", "actionVersion": 2}}
 			if scenario == "wrong-binding" {
 				readRequest["receiverBindingId"] = uuid.NewString()
 			}
@@ -119,6 +120,121 @@ func TestNativeReceiverConformanceReadsIsolatedCoreAuthority(t *testing.T) {
 				t.Fatalf("lookups=%d want=%d", lookups, want)
 			}
 		})
+	}
+}
+
+// DD-124(4): an isolated APPLICATION receiver action (no import configuration)
+// is driven through the platform-maintained isolated deployment entry, never the
+// candidate adapter, and its anchored reads are still confirmed at the isolated
+// Core. A NATIVE_MANAGED batch keeps the candidate's own receiver entry.
+func TestReceiverActionStepUsesTheIsolatedDeploymentEntry(t *testing.T) {
+	binding, source, execution, child, operation, key, step := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	resource, receiverResource := uuid.NewString(), uuid.NewString()
+	request := map[string]any{"bindingId": binding, "generation": 3, "idempotencyKey": step, "expiresAt": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
+	completedAt := time.Now().UTC().Format(time.RFC3339)
+	receipt := func(owner, role, object string) map[string]any {
+		return map[string]any{"bindingId": owner, "role": role, "operationId": operation, "idempotencyKey": key,
+			"nativeObjectRef": object, "nativeRevision": "original-revision", "contentSha256": strings.Repeat("a", 64),
+			"contentBytes": 34, "completedAt": completedAt, "measurements": []any{}}
+	}
+	proof := map[string]any{"actionExecutionId": execution, "receiverActionExecutionId": child, "receiverGeneration": 3, "operationId": operation, "sourceBindingId": source,
+		"sourceReceipt": receipt(source, "SOURCE", "source-node"), "receiverReceipt": receipt(binding, "RECEIVER", "knowledge-document")}
+	reference := `{"displayName":"conformance.md","mediaType":"text/markdown","nativeObjectRef":"source-node","nativeRevision":"original-revision","resourceId":"` + resource + `"}`
+	readRequest := map[string]any{"receiverBindingId": binding, "sourceResourceId": resource, "actionKey": "file_storage.read@v2", "actionVersion": 1, "inputJson": reference, "idempotencyKey": key,
+		"receiverActionExecutionId": child, "receiverArgumentsJson": `{"input":` + reference + `,"target":{"resourceId":"` + receiverResource + `"}}`}
+	read := map[string]any{"readRequest": readRequest, "sourceResourceId": resource}
+	for field, value := range proof {
+		read[field] = value
+	}
+	body, _ := json.Marshal(map[string]any{"request": request, "nativeBatchId": uuid.NewString(), "nativeStatus": "completed", "startedAt": time.Now().Add(-time.Second).UTC().Format(time.RFC3339),
+		"finishedAt": completedAt, "completed": true, "readOperations": []any{read}})
+	var adapterCalls, actionCalls, lookups atomic.Int32
+	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		adapterCalls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer adapter.Close()
+	isolated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/token":
+			_, _ = io.WriteString(w, `{"access_token":"isolated-receiver-token","expires_in":300}`)
+		case "/component-conformance/v1/receiver_start":
+			actionCalls.Add(1)
+			if r.Header.Get("Authorization") != "Bearer production-signed-probe" || r.Header.Get("Idempotency-Key") != step {
+				t.Error("isolated entry did not receive the original signed probe")
+			}
+			_, _ = w.Write(body)
+		case "/service/v1/adapter/request_read_grant":
+			lookups.Add(1)
+			var actual map[string]any
+			if json.NewDecoder(r.Body).Decode(&actual) != nil || actual["observeActionExecutionId"] != execution ||
+				actual["receiverActionExecutionId"] != child || actual["nativeBatch"] != nil {
+				t.Error("anchored read was not observed through its original receiver action")
+			}
+			response := map[string]any{"outcome": "COMPLETED"}
+			for field, value := range proof {
+				response[field] = value
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		default:
+			t.Errorf("unexpected isolated path %s", r.URL.Path)
+		}
+	}))
+	defer isolated.Close()
+	secretFile := filepath.Join(t.TempDir(), "receiver-credential")
+	if err := os.WriteFile(secretFile, []byte("receiver-only-fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := conformanceJSONDigest([]byte(`{"candidate":"isolated-fixture"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := generated.ComponentConformanceEnvironment{AdapterBaseURL: adapter.URL, ArtifactDigest: digest, MaxResponseBytes: 65536, MaxSteps: 8,
+		NativeReadAuthorities: []generated.ComponentNativeReadAuthority{{BindingID: binding, Generation: 3, CoreBaseURL: isolated.URL,
+			OidcTokenURL: isolated.URL + "/token", OidcClientID: "isolated-receiver", OidcClientSecretFile: secretFile}}}
+	rawRequest, _ := json.Marshal(request)
+	planStep := generated.PlanStep{CaseKey: "knowledge:3:knowledge_roundtrip", StepKey: "ingest", Operation: "receiver_start",
+		IdempotencyKey: step, RequestJSON: string(rawRequest), ExpectedResponseJSON: "{}", ExpectedHTTPStatus: http.StatusOK}
+	digests := func(_ context.Context, step generated.PlanStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
+		requestHash := sha256.Sum256([]byte(step.RequestJSON))
+		responseHash, err := conformanceJSONDigest(body)
+		return generated.ComponentConformanceWireDigests{RequestDigest: hex.EncodeToString(requestHash[:]), ResponseDigest: responseHash}, err
+	}
+	// Without the isolated deployment entry the step is blocked, never sent to
+	// the candidate adapter.
+	candidate, err := newComponentCandidate(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.digestResponse = digests
+	observation := candidate.call(context.Background(), planStep, "production-signed-probe")
+	if observation.ErrorClass == nil || string(*observation.ErrorClass) != "BLOCKED" || adapterCalls.Load() != 0 || actionCalls.Load() != 0 {
+		t.Fatalf("receiver action without isolated entry: %+v", observation)
+	}
+	entry := isolated.URL + "/"
+	configuration.ReceiverActionBaseURL = &entry
+	candidate, err = newComponentCandidate(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.digestResponse = digests
+	observation = candidate.call(context.Background(), planStep, "production-signed-probe")
+	if observation.ErrorClass != nil || observation.HTTPStatus != http.StatusOK || adapterCalls.Load() != 0 || actionCalls.Load() != 1 || lookups.Load() != 1 {
+		t.Fatalf("receiver action not driven through the isolated entry: %+v", observation)
+	}
+	// A native batch names its import configuration and stays on the candidate.
+	request["importConfigRef"] = uuid.NewString()
+	rawRequest, _ = json.Marshal(request)
+	planStep.RequestJSON = string(rawRequest)
+	_ = candidate.call(context.Background(), planStep, "production-signed-probe")
+	if adapterCalls.Load() != 1 || actionCalls.Load() != 1 {
+		t.Fatal("native receiver batch left the candidate's own receiver entry")
+	}
+	invalid := "http://isolated.invalid/path"
+	configuration.ReceiverActionBaseURL = &invalid
+	if _, err := newComponentCandidate(configuration); err == nil {
+		t.Fatal("isolated entry with a path accepted")
 	}
 }
 

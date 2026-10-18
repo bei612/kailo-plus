@@ -516,6 +516,15 @@ pub(super) async fn observation(
     if !attached {
         return Err(denied());
     }
+    observed_response(ae, p, outcome, terminal).map(Some)
+}
+
+fn observed_response(
+    ae: &Execution,
+    p: &Value,
+    outcome: &str,
+    terminal: bool,
+) -> Result<Value, Refusal> {
     let mut response = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
         "sourceBindingId":uuid(&p["readBilling"]["SOURCE"],"bindingId")?,"outcome":outcome});
     if terminal {
@@ -524,7 +533,73 @@ pub(super) async fn observation(
         response["receiverActionExecutionId"] = p["receiverActionExecutionId"].clone();
         response["receiverGeneration"] = p["readBilling"]["RECEIVER"]["generation"].clone();
     }
-    Ok(Some(response))
+    Ok(response)
+}
+
+/// DD-124(4): the retained outcome of a SOURCE read anchored on an isolated
+/// APPLICATION receiver action (the 07 §8A receiver ingest). Only the original
+/// anchor, both historical implementation generations and the completed
+/// receipts are disclosed; observing never renews the grant.
+pub(super) async fn anchored_observation(
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &Execution,
+) -> Result<Option<Value>, Refusal> {
+    if ae.gate_state != "ALLOWED" || !matches!(ae.dispatch_state.as_str(), "DISPATCHED" | "UNKNOWN")
+    {
+        return Ok(None);
+    }
+    let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let terminal: bool = sqlx::query_scalar(
+        "select exists(select 1 from audit.audit_event
+        where event_key=$1 and operation_id=$2 and tenant_id=$3 and result_code='COMPLETED')",
+    )
+    .bind(format!("{}:service_read:terminal", ae.operation_id))
+    .bind(ae.operation_id)
+    .bind(ae.tenant_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let Some(outcome) = observed_outcome(
+        p,
+        &ae.dispatch_state,
+        terminal,
+        chrono::Utc::now().timestamp(),
+    )?
+    else {
+        return Ok(None);
+    };
+    let attached: bool = sqlx::query_scalar(
+        "select exists(select 1 from admission.action_execution a
+         join projection.application_runtime source on source.binding_id=a.component_binding_id
+           and source.generation=a.component_projection_generation
+           and source.component_release_id=a.component_release_id
+         join admission.action_execution receiver
+           on receiver.id=(a.parameters->>'receiverActionExecutionId')::uuid
+           and receiver.tenant_id=a.tenant_id
+           and receiver.workspace_id is not distinct from a.workspace_id
+           and receiver.component_binding_kind='APPLICATION'
+           and receiver.component_binding_id=(a.parameters->>'receiverBindingId')::uuid
+           and receiver.component_projection_generation
+             =(a.parameters->>'receiverGeneration')::bigint
+           and receiver.operation_id=(a.parameters->>'receiverOperationId')::uuid
+           and receiver.component_release_id
+             =(a.parameters->'readBilling'->'RECEIVER'->>'releaseId')::uuid
+           and receiver.gate_state='ALLOWED'
+         where a.id=$1 and a.parameters->'nativeBatch' is null
+           and a.component_binding_kind='APPLICATION'
+           and a.component_binding_id=(a.parameters->'readBilling'->'SOURCE'->>'bindingId')::uuid
+           and a.component_release_id=(a.parameters->'readBilling'->'SOURCE'->>'releaseId')::uuid
+           and a.component_projection_generation
+             =(a.parameters->'readBilling'->'SOURCE'->>'generation')::bigint
+           and receiver.component_projection_generation
+             =(a.parameters->'readBilling'->'RECEIVER'->>'generation')::bigint)",
+    )
+    .bind(ae.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !attached {
+        return Err(denied());
+    }
+    observed_response(ae, p, outcome, terminal).map(Some)
 }
 
 fn observed_outcome(

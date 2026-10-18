@@ -88,11 +88,27 @@ fn validate_observation_request(
     let arguments = json!({"targetType":"RESOURCE","targetId":ae.target_id,
         "input":input,"authorizationTargetNativeRef":text(p,"readNativeRoot")?});
     let digest = collab_bridge::limits::canonical_digest(&arguments);
-    let command = collab_bridge::limits::canonical_digest(&json!({
-        "receiverBindingId":binding,"sourceResourceId":ae.target_id,
-        "actionKey":ae.action_key,"actionVersion":ae.action_version,
-        "argumentHash":digest,"nativeBatch":raw["nativeBatch"]}));
-    if !is_service(ae)
+    let mut command = json!({"receiverBindingId":binding,"sourceResourceId":ae.target_id,
+        "actionKey":ae.action_key,"actionVersion":ae.action_version,"argumentHash":digest});
+    // The original read is a native batch or, DD-124(4), anchored on the same
+    // APPLICATION receiver action with the same frozen receiver arguments.
+    let original = match raw.get("nativeBatch") {
+        Some(batch) => {
+            command["nativeBatch"] = batch.clone();
+            p["nativeBatch"].is_object() && *batch == p["nativeBatch"]
+        }
+        None => {
+            command["receiverActionExecutionId"] = raw["receiverActionExecutionId"].clone();
+            let encoded = text(raw, "receiverArgumentsJson")?;
+            let receiver: Value = serde_json::from_str(encoded).map_err(|_| invalid())?;
+            p.get("nativeBatch").is_none()
+                && raw["receiverActionExecutionId"] == p["receiverActionExecutionId"]
+                && receiver["input"] == *input
+        }
+    };
+    let command = collab_bridge::limits::canonical_digest(&command);
+    if !original
+        || !is_service(ae)
         || caller.tenant != ae.tenant_id
         || caller.workspace != ae.workspace_id
         || caller.principal != ae.actor_principal_id
@@ -102,8 +118,6 @@ fn validate_observation_request(
         || raw["actionKey"] != ae.action_key
         || raw["actionVersion"] != ae.action_version
         || raw["idempotencyKey"] != p["idempotencyKey"]
-        || !p["nativeBatch"].is_object()
-        || raw["nativeBatch"] != p["nativeBatch"]
         || input != &p["readReference"]
         || input["resourceId"] != json!(ae.target_id)
         || p["toolParameterHash"] != digest
@@ -545,9 +559,6 @@ async fn observe_retained(
         .get("observeActionExecutionId")
         .map(|_| uuid(raw, "observeActionExecutionId"))
         .transpose()?;
-    if observe.is_some() && batch.is_none() {
-        return Err(invalid());
-    }
     let previous: Option<Uuid> = sqlx::query_scalar(
         "select id from admission.action_execution
         where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
@@ -578,6 +589,23 @@ async fn observe_retained(
                 "sourceBindingId":uuid(&ae.parameters.as_ref().ok_or_else(invalid)?["readBilling"]["SOURCE"],"bindingId")?,"outcome":"UNKNOWN"}),
             ));
         }
+    }
+    // DD-124(4): a read anchored on an APPLICATION receiver action is observed
+    // only on explicit request. Without it the original admission path is kept;
+    // an observation never renews the grant or re-enters admission.
+    if let (Some(ae), None, Some(_)) = (&previous, batch, observe) {
+        if read_caller(tx, binding).await? != *caller {
+            return Err(denied());
+        }
+        validate_observation_request(caller, ae, raw, input)?;
+        if let Some(observed) = native_receiver::anchored_observation(tx, ae).await? {
+            return Ok(Some(observed));
+        }
+        let p = ae.parameters.as_ref().ok_or_else(invalid)?;
+        return Ok(Some(
+            json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
+            "sourceBindingId":uuid(&p["readBilling"]["SOURCE"],"bindingId")?,"outcome":"UNKNOWN"}),
+        ));
     }
     Ok(None)
 }

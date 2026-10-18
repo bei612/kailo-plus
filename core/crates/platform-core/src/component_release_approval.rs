@@ -73,11 +73,46 @@ pub(crate) async fn target(
     }
     let release = stored_release(conn, tenant, id).await?;
     active_contracts(conn, tenant, &release).await?;
+    let plan: Option<Option<Value>> = sqlx::query_scalar(
+        "select registered.component_conformance_plan from catalog.component_release r
+        join admission.action_execution registered
+          on registered.id=r.registered_by_action_execution_id
+        where r.id=$1 and r.catalog_tenant_id=$2",
+    )
+    .bind(id)
+    .bind(tenant)
+    .fetch_optional(&mut *conn)
+    .await?;
+    receiver_approval(conn, tenant, &release.manifest, plan.flatten().as_ref()).await?;
     Ok(Target {
         id,
         version: 1,
         workspace_id: None,
     })
+}
+
+/// DD-124(4): a release that receives through the service read edge is
+/// approved only while the source release its isolated receiver evidence came
+/// from is an APPROVED release of a category declaring the source edge. A later
+/// Core upgrade does not invalidate receiver evidence already accepted.
+async fn receiver_approval(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    manifest: &Value,
+    plan: Option<&Value>,
+) -> Result<(), Refusal> {
+    let receives = manifest["capabilityDeclarations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|item| matches!(item["readEdge"].as_str(), Some("RECEIVER" | "BOTH")));
+    if !receives {
+        return Ok(());
+    }
+    let environment = plan
+        .and_then(|plan| plan.get("receiverEnvironment"))
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    receiver_source(conn, tenant, environment, false).await
 }
 
 async fn stored_release(
@@ -282,6 +317,7 @@ pub(crate) async fn record(
                 return Err(Refusal::Denied(ReasonCode::PermissionDenied));
             }
             approved(&state.governance, &mut tx, &ae, false).await?;
+            receiver_approval(&mut tx, ae.tenant_id, &manifest, Some(&plan)).await?;
             let release = stored_release(&mut tx, ae.tenant_id, release_id).await?;
             let contracts = active_contracts(&mut tx, ae.tenant_id, &release).await?;
             let digests: Vec<_> = contracts.iter().map(collab_bridge::limits::canonical_digest).collect();

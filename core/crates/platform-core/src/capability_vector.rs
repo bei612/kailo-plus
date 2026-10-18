@@ -6,7 +6,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use contracts::ReasonCode;
 use serde_json::{json, Value};
 
 use super::{bad, identifier};
@@ -17,16 +16,21 @@ const PRECONDITION: &str = "PRECONDITION";
 const CAPTURE: &str = "CAPTURE";
 const INPUT: &str = "INPUT";
 const EXPECTED: &str = "EXPECTED";
+const FORWARD: &str = "FORWARD";
+const RECEIVER: &str = "RECEIVER";
 const OBJECT_SLOT: &str = "CONTENT_REFERENCE_NATIVE_OBJECT_REF";
 const REVISION_SLOT: &str = "CONTENT_REFERENCE_NATIVE_REVISION";
 const GENERATED_SLOT: &str = "GENERATED_REF";
+const ACTION_SLOT: &str = "ACTION_EXECUTION_ID";
+const OPERATION_SLOT: &str = "OPERATION_ID";
 /// `native_revision` is implementation-generated wherever it appears.
 const GENERATED_MEMBERS: [&str; 1] = ["nativeRevision"];
 /// Identifiers that only Core generates for an admission or a receipt.
-const CORE_MEMBERS: [&str; 3] = [
+const CORE_MEMBERS: [&str; 4] = [
     "actionExecutionId",
     "receiverActionExecutionId",
     "operationId",
+    "sourceReadActionExecutionId",
 ];
 
 pub(crate) fn placeholder(source: &str, key: &str) -> String {
@@ -65,6 +69,16 @@ fn document(step: &Value, field: &str) -> Result<Value, Refusal> {
 
 fn escape(token: &str) -> String {
     token.replace('~', "~0").replace('/', "~1")
+}
+
+/// The object member a JSON Pointer ends in (unescaped).
+fn member_of(pointer: &str) -> String {
+    pointer
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .replace("~1", "/")
+        .replace("~0", "~")
 }
 
 /// Every position of a document with its JSON Pointer and object member name.
@@ -181,6 +195,20 @@ pub(crate) fn is_v2(vectors: &Value) -> bool {
     vectors["formatVersion"] == V2
 }
 
+/// DD-124(3)(4): a RECEIVER step depends on the service read edge and runs in
+/// the isolated deployment; the production plan only observes it. Absent is
+/// FORWARD. V1 vectors never carry the field.
+pub(crate) fn is_receiver(step: &Value) -> Result<bool, Refusal> {
+    match step.get("direction") {
+        None => Ok(false),
+        Some(value) => match value.as_str() {
+            Some(FORWARD) => Ok(false),
+            Some(RECEIVER) => Ok(true),
+            _ => Err(bad()),
+        },
+    }
+}
+
 /// A runnable REMOTE_ADAPTER suite carries at least one actually observed
 /// value into a later request: V1 `referenceFromStepKey`, V2 INPUT CAPTURE.
 pub(crate) fn has_roundtrip(vectors: &Value) -> bool {
@@ -188,6 +216,11 @@ pub(crate) fn has_roundtrip(vectors: &Value) -> bool {
         for step in list(case, "steps").unwrap_or_default() {
             if step.get("referenceFromStepKey").is_some() {
                 return true;
+            }
+            // A RECEIVER step's own INPUT captures describe the isolated
+            // admission; they are not a value carried into a later request.
+            if is_receiver(step).unwrap_or(true) {
+                continue;
             }
             for binding in bindings(step).unwrap_or_default() {
                 if binding.source == CAPTURE && binding.side == INPUT {
@@ -210,6 +243,7 @@ fn v1_only(vectors: &Value, cases: &[Value]) -> Result<(), Refusal> {
         for step in list(case, "steps")? {
             fields.push(step.get("bindings"));
             fields.push(step.get("captures"));
+            fields.push(step.get("direction"));
         }
     }
     if fields.iter().any(Option::is_some) {
@@ -297,20 +331,37 @@ fn validate_case(
         let input = document(step, "inputJson")?;
         let expected = document(step, "expectedOutputJson")?;
         let reference = step.get("referenceResourceId").is_some();
+        // DD-124(4): a RECEIVER step is observed, never sent. It names the
+        // receiver Resource and has no result body of its own.
+        let receiver = is_receiver(step)?;
+        if receiver
+            && (!reference || step.get("referenceAssetId").is_some() || expected != json!({}))
+        {
+            return Err(bad());
+        }
         let mut own = BTreeMap::new();
+        // Own receiver captures bound in this step's INPUT: the isolated
+        // admission's identifiers (GENERATED_REF keeps its exact pointer).
+        let mut admission = BTreeMap::new();
         for capture in captures(step)? {
             if produced.insert(capture.key, index).is_some() {
                 return Err(bad());
             }
             match (capture.slot, capture.pointer) {
                 (OBJECT_SLOT | REVISION_SLOT, None) if reference => {}
-                (GENERATED_SLOT, Some(at)) if generated.contains(&(contract, EXPECTED, at)) => {
+                (GENERATED_SLOT, Some(at))
+                    if !receiver && generated.contains(&(contract, EXPECTED, at)) =>
+                {
                     own.insert(at, capture.key);
                 }
-                ("ACTION_EXECUTION_ID" | "OPERATION_ID", _) => {
-                    // Receiver-direction identifiers exist only in the isolated
-                    // Core of 07 §8A; this runner cannot observe them yet.
-                    return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+                (GENERATED_SLOT, Some(at))
+                    if receiver && generated.contains(&(contract, INPUT, at)) =>
+                {
+                    admission.insert(capture.key, Some(at));
+                }
+                // Isolated-Core identifiers exist only for a RECEIVER step.
+                (ACTION_SLOT | OPERATION_SLOT, None) if receiver => {
+                    admission.insert(capture.key, None);
                 }
                 _ => return Err(bad()),
             }
@@ -334,21 +385,42 @@ fn validate_case(
             {
                 return Err(bad());
             }
+            // A RECEIVER step may bind its own isolated admission identifiers
+            // where that admission carries them (an execution id member or the
+            // exact generated position).
+            let admitted = admission.get(binding.key).is_some_and(|at| match at {
+                Some(at) => *at == binding.pointer,
+                None => CORE_MEMBERS.contains(&member_of(binding.pointer).as_str()),
+            });
             match (binding.source, binding.side) {
                 (PRECONDITION, INPUT) if preconditions.contains_key(binding.key) => {
                     emitted.entry(binding.key).or_insert(index);
                 }
                 (PRECONDITION, EXPECTED) if emitted.contains_key(binding.key) => {}
-                (CAPTURE, _) if produced.get(binding.key).is_some_and(|at| *at < index) => {
+                // A RECEIVER request is not substituted: it cannot carry an
+                // earlier step's value.
+                (CAPTURE, _)
+                    if !receiver && produced.get(binding.key).is_some_and(|at| *at < index) =>
+                {
                     consumed.insert(binding.key);
                 }
                 (CAPTURE, EXPECTED) if own.get(binding.pointer) == Some(&binding.key) => {}
+                (CAPTURE, INPUT) if admitted => {
+                    consumed.insert(binding.key);
+                }
                 _ => return Err(bad()),
             }
         }
         for (at, key) in &own {
             if bound.get(&(EXPECTED, *at)) != Some(&(CAPTURE, *key)) {
                 return Err(bad());
+            }
+        }
+        for (key, at) in &admission {
+            if let Some(at) = at {
+                if bound.get(&(INPUT, *at)) != Some(&(CAPTURE, *key)) {
+                    return Err(bad());
+                }
             }
         }
         for (side, document) in [(INPUT, &input), (EXPECTED, &expected)] {
@@ -595,4 +667,106 @@ pub(crate) fn observed(
         values.push((capture.key.to_owned(), value.to_owned()));
     }
     Ok(values)
+}
+
+/// DD-124(4): the read of a RECEIVER step's completed observation and the
+/// receiver admission the isolated Core produced for it. A native batch admits
+/// one SERVICE receiver per read; an APPLICATION receiver action anchors every
+/// read and its frozen arguments carry the input the isolated Core admitted.
+pub(crate) fn receiver_admission<'a>(
+    step: &Value,
+    native: &'a Value,
+) -> Result<(&'a Value, Value), Refusal> {
+    let reads = list(native, "readOperations")?;
+    let batch = native["request"].get("importConfigRef").is_some();
+    let read = if batch {
+        reads.iter().find(|read| {
+            read["nativeBatch"]["actionKey"] == step["contractKey"]
+                && read["nativeBatch"]["receiverResourceId"] == step["referenceResourceId"]
+        })
+    } else {
+        reads.first()
+    }
+    .ok_or_else(bad)?;
+    if batch {
+        let input = json!({"sourceResourceId":read["sourceResourceId"],
+            "importConfigRef":read["nativeBatch"]["importConfigRef"],
+            "batchId":read["nativeBatch"]["batchId"],
+            "sourceReadActionExecutionId":read["actionExecutionId"]});
+        return Ok((read, input));
+    }
+    let encoded = text(&read["readRequest"], "receiverArgumentsJson")?;
+    let arguments: Value = serde_json::from_str(encoded).map_err(|_| bad())?;
+    if arguments["target"]["resourceId"] != step["referenceResourceId"] {
+        return Err(bad());
+    }
+    Ok((read, arguments["input"].clone()))
+}
+
+/// The captures of a RECEIVER step, read from that admission only: the SOURCE
+/// read ActionExecution and Operation the isolated Core generated, the
+/// receiver's own read_receipt reference, or a generated admission field.
+pub(crate) fn receiver_values(
+    step: &Value,
+    read: &Value,
+    input: &Value,
+) -> Result<Vec<(String, String)>, Refusal> {
+    let mut values = Vec::new();
+    for capture in captures(step)? {
+        let value = match (capture.slot, capture.pointer) {
+            (ACTION_SLOT, None) => &read["actionExecutionId"],
+            (OPERATION_SLOT, None) => &read["operationId"],
+            (OBJECT_SLOT, None) => &read["receiverReceipt"]["nativeObjectRef"],
+            (REVISION_SLOT, None) => &read["receiverReceipt"]["nativeRevision"],
+            (GENERATED_SLOT, Some(at)) => input.pointer(at).ok_or_else(bad)?,
+            _ => return Err(bad()),
+        };
+        let usable = value.as_str().filter(|text| !text.trim().is_empty());
+        let usable = usable.filter(|_| !reserved(value)).ok_or_else(bad)?;
+        values.push((capture.key.to_owned(), usable.to_owned()));
+    }
+    Ok(values)
+}
+
+/// The frozen receiver input with the step's own captured identifiers. Core
+/// requires it to equal the admission the isolated Core actually produced.
+pub(crate) fn receiver_input(step: &Value, values: &[(String, String)]) -> Result<Value, Refusal> {
+    let mut input = document(step, "nativeReceiverInputJson")?;
+    for binding in list(step, "bindings")? {
+        let key = text(binding, "key")?;
+        if binding["source"] != CAPTURE || binding["side"] != INPUT {
+            return Err(bad());
+        }
+        let (_, value) = values.iter().find(|(own, _)| *own == key).ok_or_else(bad)?;
+        substitute(&mut input, binding, value)?;
+    }
+    Ok(input)
+}
+
+/// The recorded captures of a receiver observation equal the recomputed ones.
+pub(crate) fn receiver_recorded(
+    observation: &Value,
+    values: &[(String, String)],
+) -> Result<(), Refusal> {
+    let supplied = list(observation, "captures")?;
+    let present = observation.get("captures").is_some();
+    if supplied.len() != values.len() || (present && supplied.is_empty()) {
+        return Err(bad());
+    }
+    for (entry, (key, value)) in supplied.iter().zip(values) {
+        if entry["key"] != key.as_str() || entry["value"] != value.as_str() {
+            return Err(bad());
+        }
+    }
+    Ok(())
+}
+
+/// The wire form of receiver captures for the step observation.
+pub(crate) fn receiver_wire(values: &[(String, String)]) -> Option<Value> {
+    (!values.is_empty()).then(|| {
+        json!(values
+            .iter()
+            .map(|(key, value)| json!({"key":key,"value":value}))
+            .collect::<Vec<_>>())
+    })
 }

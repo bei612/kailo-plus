@@ -1972,11 +1972,135 @@ mod registration_tests {
             draft["valueJson"] = json!("\"another marker\"");
         });
         assert!(registration(&unverified).is_err());
+        // Isolated-Core identifiers exist only in a RECEIVER step (DD-124(4)).
         let receiver = edit_step(&raw, 1, |step| {
             let capture = json!({"key":"receiver","slot":"ACTION_EXECUTION_ID"});
             step["captures"].as_array_mut().unwrap().push(capture);
         });
-        assert!(matches!(registration(&receiver), Err(Refusal::Blocked(_))));
+        assert!(matches!(
+            registration(&receiver),
+            Err(Refusal::Precondition(_))
+        ));
+    }
+
+    fn knowledge_v3() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/knowledge.v3/registration.json"
+        ))
+        .unwrap()
+    }
+
+    fn edit_case_step(
+        raw: &Value,
+        case: usize,
+        index: usize,
+        edit: impl FnOnce(&mut Value),
+    ) -> Value {
+        edit_v2(raw, |vectors| {
+            edit(&mut vectors["cases"][case]["steps"][index]);
+        })
+    }
+
+    /// DD-124(3): knowledge@3 keeps the @2 keys, permissions, schemas and
+    /// declarations; only the suffix and the V2 vectors change, and every step
+    /// that depends on the service read edge is a RECEIVER step.
+    #[test]
+    fn knowledge_v3_keeps_v2_contract_and_marks_read_edge_steps_receiver() {
+        let registered = registration(&knowledge_v3()).expect("DD-124(3) knowledge@3");
+        let legacy: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/knowledge.v2/registration.json"
+        ))
+        .unwrap();
+        let previous = registration(&legacy).unwrap();
+        assert_eq!(registered.category, "knowledge");
+        assert_eq!(registered.version, 3);
+        assert_eq!(registered.schemas, previous.schemas);
+        assert_eq!(registered.schema_digest, previous.schema_digest);
+        let mut expected = previous.content.clone();
+        expected["contractVersion"] = json!(3);
+        for operation in expected["operationContracts"].as_array_mut().unwrap() {
+            let key = operation["contractKey"]
+                .as_str()
+                .unwrap()
+                .replace("@v2", "@v3");
+            operation["contractKey"] = json!(key);
+        }
+        assert_eq!(registered.content, expected);
+        assert_eq!(registered.vectors["formatVersion"], "V2");
+        assert!(vector::has_roundtrip(&registered.vectors));
+        let mut receivers = BTreeSet::new();
+        for case in registered.vectors["cases"].as_array().unwrap() {
+            for step in case["steps"].as_array().unwrap() {
+                if vector::is_receiver(step).unwrap() {
+                    receivers.insert(step["contractKey"].as_str().unwrap().to_owned());
+                }
+            }
+        }
+        let read_edge = BTreeSet::from([
+            "knowledge.ingest@v3".to_owned(),
+            "knowledge.sync_apply@v3".to_owned(),
+            "knowledge.sync_retire@v3".to_owned(),
+        ]);
+        assert_eq!(receivers, read_edge);
+    }
+
+    #[test]
+    fn v2_receiver_steps_bind_only_their_own_isolated_identifiers() {
+        let raw = knowledge_v3();
+        assert!(registration(&raw).is_ok());
+        // knowledge_native_apply: the receiver admission binds its own batch
+        // and SOURCE read execution; a forward step cannot hold either.
+        let forward = edit_case_step(&raw, 1, 0, |step| {
+            step.as_object_mut().unwrap().remove("direction");
+        });
+        assert!(registration(&forward).is_err());
+        let unknown = edit_case_step(&raw, 1, 0, |step| {
+            step["direction"] = json!("BOTH");
+        });
+        assert!(registration(&unknown).is_err());
+        let unnamed = edit_case_step(&raw, 1, 0, |step| {
+            step.as_object_mut().unwrap().remove("referenceResourceId");
+        });
+        assert!(registration(&unnamed).is_err());
+        // A generated admission field keeps its exact INPUT position.
+        let moved = edit_case_step(&raw, 1, 0, |step| {
+            step["captures"][0]["pointer"] = json!("/importConfigRef");
+        });
+        assert!(registration(&moved).is_err());
+        // An execution identifier is bound only where the admission carries
+        // one, and every Core execution member is captured.
+        let misplaced = edit_case_step(&raw, 1, 0, |step| {
+            edit_json(step, "inputJson", |input| {
+                input["sourceResourceId"] = json!("{{CAPTURE:read_execution}}");
+                input["sourceReadActionExecutionId"] = json!(Uuid::new_v4());
+            });
+            step["bindings"][2]["pointer"] = json!("/sourceResourceId");
+        });
+        assert!(registration(&misplaced).is_err());
+        let literal = edit_case_step(&raw, 1, 0, |step| {
+            edit_json(step, "inputJson", |input| {
+                input["sourceReadActionExecutionId"] = json!(Uuid::new_v4());
+            });
+            step["bindings"].as_array_mut().unwrap().pop();
+            step["captures"].as_array_mut().unwrap().pop();
+        });
+        assert!(registration(&literal).is_err());
+        // knowledge_roundtrip: a receiver request is never substituted, so a
+        // RECEIVER step cannot consume an earlier step's capture.
+        let substituted = edit_case_step(&raw, 2, 4, |step| {
+            step["direction"] = json!("RECEIVER");
+            step["referenceResourceId"] = json!(Uuid::new_v4());
+        });
+        assert!(registration(&substituted).is_err());
+        // The V1 format cannot carry a direction.
+        let seed: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/file_storage.v1/registration.json"
+        ))
+        .unwrap();
+        let smuggled = edit_step(&seed, 0, |step| {
+            step["direction"] = json!("FORWARD");
+        });
+        assert!(registration(&smuggled).is_err());
     }
 
     #[test]
