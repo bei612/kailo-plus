@@ -746,3 +746,32 @@ open 1630 / draft 1633 / closed 1632；merged 1631 走 git，不在界面发布�
 | 任务右栏“评论 2”把分配记录计入 | `projectIssues.mjs::commentsForIssue` 把该任务的全部 kind:1（含 `t=assignment`）作为评论，`ProjectWorkItemContextDetails` 显示 `issue.comments.length`；注释写明分配记录作为普通评论可读 | 与原版一致，原样保留 |
 | 分配记录文案为英文 “Assigned this task to npub…” | `issueAssignments.ts` 固定英文正文；`IssueAssigneesRow.labelForPubkey` 无显示名时回退 `truncateNpub`；时间线按普通评论渲染 | 与原版一致，原样保留（账号无显示名所致） |
 | 侧栏“项目”为空，而本人刚创建了项目 | `useCreateProjectMutation.onSuccess` 创建后 `addProjectToSidebar` | 缺失需恢复，已修：创建确认后经同一 Core CAS 加入侧栏，并通知已挂载的侧栏重读；写入失败不影响已确认的创建 |
+
+## 2026-10-18 Review 决定与行内评论（DD-118(5)）受控发布链
+
+依据固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/projects/pullRequestReviews.ts::{canReviewProjectPullRequest,submitProjectPullRequestReview}`、
+`hooks.ts::createProjectPullRequestComment`（`decision: "request-changes"`、行锚 `file/side/line`）、
+`projectPullRequests.mjs`（`approval`/`changes-requested`/`inline-comment` 标签、受信审阅人、
+`nextProjectPullRequestReviewCreatedAt`）、`ui/PullRequestReviewCard.tsx`（Approve 与可选总结对话框）、
+`ui/ProjectPullRequestInlineComments.tsx`、`ui/ProjectPullRequestFilesChangedPanel.tsx`（逐行“Add line comment”）、
+`forum/ui/ForumComposer.tsx`（Comment / Request changes 次提交菜单）。原版注释写明 Relay 不注册 kind 1111，
+这些都是带标签的 `kind:1` PR 评论，因此不新增 Nostr kind、动作定义或迁移。
+
+- 契约（独立首提交）：`APPROVE_PULL_REQUEST`（`targetEventId`、`commit`、可选 `body`）；
+  `CREATE_PULL_REQUEST_COMMENT` 可带 `reviewDecision=request-changes` 与 `anchorPath/anchorSide/anchorLine`，
+  此时必须带 `commit`；其余操作一律不得携带。生成物由 CI 的 `tools/gen.sh` 产出。
+- Bridge：`comment_tags` 按原顺序签 `e root`、`a`、`p`（批准只含 owner 与作者），随后行锚
+  `t inline-comment`、`c`、`file`、`side`、`line`，再 `t changes-requested`（无锚时带 `c`），最后 imeta；
+  无总结的批准签原文 “Approved these changes”。路径按原 `normalizeProjectPullRequestCommentAnchor`
+  只校验不归一化。决定排在签名者对该 Review 最新活动之后（覆盖其上一决定）；普通行评论用签名时刻。
+  单测 `review_decisions_and_line_comments_keep_the_original_labeled_shape`、
+  `review_head_reviewers_and_lifecycle_follow_original_trust`。
+- BFF：同一 `projects.publish` 准入、幂等、DISPATCH/OUTCOME 审计与对账；签名前重读受信 1619 得到当前
+  Review 头，与请求 `commit` 不同即 `TARGET_STATE_CONFLICT`；决定另核原 `canReviewProjectPullRequest`
+  （owner 或被请求审阅人、非作者、Open/Draft），否则 `PERMISSION_DENIED`。读取按作者与 kind 下推分页、
+  本地匹配根标签。
+- 共享 UI / Native：Web 与 Desktop 共用 Approve、Request changes、Files changed 行评论与时间线行锚；
+  Desktop 以本人 CLIENT 签名走同一头部与审阅人校验。结果不明保留同一意图（只存摘要与引用，不存正文）。
+- 未执行：本机不编译、不跑测试；Rust fmt/clippy/test、vitest、Dart 生成核对与业务验收待 CI 与部署。
+- 仍未恢复：请求审阅人（review-request）、更新 revision（1619）与 managed-agent owner 代签。
