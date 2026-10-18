@@ -758,12 +758,10 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
                 return Err(bad());
             }
         }
-        let meters = action["meters"].as_array().ok_or_else(bad)?;
-        if meters
-            .iter()
-            .any(|meter| meter.as_str().is_none_or(|key| key.trim().is_empty()))
-            || (action["quotaPolicy"] == "NONE" && !meters.is_empty())
-        {
+        // DD-124(6): phase one registers no component-specific meter. Model
+        // usage is metered by the platform meter fixed with Core, so every
+        // APPLICATION action declares no meter and no quota policy.
+        if action["meters"] != json!([]) || action["quotaPolicy"] != "NONE" {
             return Err(bad());
         }
         let exposure = &action["resultExposurePolicy"];

@@ -1180,6 +1180,7 @@ impl OpenMeter {
                                 "$.component_binding_id"
                                     | "$.component_release_id"
                                     | "$.component_projection_generation"
+                                    | "$.model_call_mode"
                             ),
                         }
                     })

@@ -83,18 +83,10 @@ pub(crate) fn configuration(
     let meters: Vec<String> =
         serde_json::from_value(value["meterKeys"].clone()).map_err(|_| invalid())?;
     // Gateway model metering is not the native MCP tool's NONE usage source.
-    // These references remain constrained by the approved bindingConfigSchema;
-    // their actual aggregation/event/quantity mapping is read from OpenMeter.
-    if meters.is_empty()
-        || meters
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != meters.len()
-        || meters
-            .iter()
-            .any(|key| key.trim().is_empty() || key.trim() != key)
-    {
+    // DD-124(6): the only reference is the platform meter fixed with Core and
+    // registered by the deployment bootstrap; no component meter exists, and
+    // its actual aggregation/event/quantity mapping is still read from OpenMeter.
+    if meters != [crate::tenant_quota::COMPONENT_MODEL_TOKENS_METER] {
         return Err(blocked());
     }
     let routes: Vec<Uuid> =
@@ -952,15 +944,8 @@ async fn admit(
                 caller_audits.push((ae, definition));
             }
         }
-        let customer = projection["customerId"].as_str().ok_or_else(unavailable)?;
-        if !state
-            .openmeter
-            .check_quota(current.tenant_id, customer, &config.meters)
-            .await
-            .map_err(|_| unavailable())?
-        {
-            return Err(Refusal::Denied(ReasonCode::QuotaExhausted));
-        }
+        // DD-124(6): `component_model_tokens` is metered and audited, but it is
+        // not a Tenant quota item in phase one, so there is no CHECK here.
     }
     crate::service_api::audit_gate(state)
         .await
@@ -1058,7 +1043,7 @@ mod tests {
         let manifest = json!({"allowedModelCallModes":["NONE","PLATFORM_LLM_ROUTE"],
             "capabilityDeclarations":[{"categoryKey":"knowledge","contractVersion":1,"meter":"SUPPORTED"}]});
         let config = json!({"modelGateway":{"routeResourceIds":[Uuid::new_v4()],
-            "meterKeys":["model_input_tokens"]}});
+            "meterKeys":["component_model_tokens"]}});
         assert!(configuration("PLATFORM_LLM_ROUTE", &config, &category, &manifest).is_ok());
         assert!(configuration("NONE", &config, &category, &manifest).is_err());
         assert!(configuration("SELF_MANAGED_MODEL", &config, &category, &manifest).is_err());
@@ -1066,6 +1051,9 @@ mod tests {
         unsupported["capabilityDeclarations"][0]["meter"] = json!("UNSUPPORTED");
         assert!(configuration("PLATFORM_LLM_ROUTE", &config, &category, &unsupported).is_err());
         assert!(configuration("PLATFORM_LLM_ROUTE", &config, &json!([]), &manifest).is_err());
+        let mut other = config.clone();
+        other["modelGateway"]["meterKeys"] = json!(["model_input_tokens"]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &other, &category, &manifest).is_err());
         for field in ["routeResourceIds", "meterKeys"] {
             let mut empty = config.clone();
             empty["modelGateway"][field] = json!([]);

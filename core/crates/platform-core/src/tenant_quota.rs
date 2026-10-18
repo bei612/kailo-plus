@@ -58,6 +58,10 @@ pub(crate) const AUTOMATION_RUN_METER: &str = "automation_run";
 pub(crate) const MEMORY_READ_METER: &str = "agent_memory_read_count";
 pub(crate) const MEMORY_WRITE_METER: &str = "agent_memory_write_count";
 pub(crate) const MEMORY_BYTES_METER: &str = "agent_memory_plaintext_bytes";
+/// DD-124(6)：业务能力 binding 的模型 usage 只计入这一随 Core 固定的平台 meter；
+/// binding 的 meter 引用只能是它。它一期不是额度项：没有 feature，`tenant.quota.set`
+/// 的封闭额度项集合不含它。组件专属 meter 一期不登记。
+pub(crate) const COMPONENT_MODEL_TOKENS_METER: &str = "component_model_tokens";
 
 const INSTALLATION_DIMENSION: (&str, &str) = (
     "agent_installation_resource_id",
@@ -75,7 +79,7 @@ pub(crate) struct PlatformMeter {
     pub dimensions: &'static [(&'static str, &'static str)],
 }
 
-pub(crate) static PLATFORM_METERS: [PlatformMeter; 5] = [
+pub(crate) static PLATFORM_METERS: [PlatformMeter; 6] = [
     PlatformMeter {
         key: AGENT_TOKENS_METER,
         name: "Agent model tokens",
@@ -124,6 +128,25 @@ pub(crate) static PLATFORM_METERS: [PlatformMeter; 5] = [
         event_type: "kailo.agent.memory.bytes",
         value_property: Some("$.plaintext_bytes"),
         dimensions: &[("workspace_id", "$.workspace_id"), INSTALLATION_DIMENSION],
+    },
+    PlatformMeter {
+        key: COMPONENT_MODEL_TOKENS_METER,
+        name: "Component model tokens",
+        aggregation: "sum",
+        event_type: "kailo.component.model.tokens",
+        value_property: Some("$.totalTokens"),
+        dimensions: &[
+            ("workspace_id", "$.workspace_id"),
+            ("component_binding_id", "$.component_binding_id"),
+            ("component_release_id", "$.component_release_id"),
+            (
+                "component_projection_generation",
+                "$.component_projection_generation",
+            ),
+            ("model_call_mode", "$.model_call_mode"),
+            ("provider", "$.provider"),
+            ("model", "$.model"),
+        ],
     },
 ];
 
@@ -1478,6 +1501,35 @@ mod tests {
         );
         assert_eq!(body(MEMORY_READ_METER)["aggregation"], "count");
         assert_eq!(body(MEMORY_WRITE_METER)["aggregation"], "count");
+    }
+
+    #[test]
+    fn component_model_meter_is_metered_but_never_a_quota_item() {
+        let meter = PLATFORM_METERS
+            .iter()
+            .find(|meter| meter.key == COMPONENT_MODEL_TOKENS_METER)
+            .expect("DD-124(6) platform meter");
+        let body = meter_request(meter);
+        assert_eq!(body["aggregation"], "sum");
+        assert_eq!(body["value_property"], "$.totalTokens");
+        for dimension in [
+            "workspace_id",
+            "component_binding_id",
+            "component_release_id",
+            "component_projection_generation",
+            "model_call_mode",
+            "provider",
+            "model",
+        ] {
+            assert_eq!(body["dimensions"][dimension], format!("$.{dimension}"));
+        }
+        for feature in &PLATFORM_FEATURES {
+            assert_ne!(feature.meter, COMPONENT_MODEL_TOKENS_METER);
+            assert_ne!(feature.key, COMPONENT_MODEL_TOKENS_METER);
+        }
+        let setting = json!({"feature":COMPONENT_MODEL_TOKENS_METER,"limitPerPeriod":1});
+        let parsed = serde_json::from_value::<contracts::TenantQuotaSettingClass>(setting);
+        assert!(parsed.is_err(), "tenant.quota.set has no such quota item");
     }
 
     #[test]

@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98]
+  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98, DD-124]
   # 此列表仅登记 EXT-BASE 决策；跨阶段消费者由既有核验记录关联。
   # DD-12 属 EXT-DATA，DD-70/DD-71 属 S1，不把通用接入重新归为具体组件。
   facts: []
@@ -15,7 +15,7 @@ design:
   entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
 
 validation:
-  scenarios: []
+  scenarios: [V-SCN-122]
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
@@ -32,6 +32,10 @@ implementation:
   owners: [team-platform]
   paths:
     - core/crates/platform-core/src/application_binding.rs
+    - core/crates/platform-core/src/application_model_route.rs
+    - core/crates/platform-core/src/tenant_quota.rs
+    - core/crates/platform-core/src/gateway_usage.rs
+    - core/crates/platform-core/src/openmeter.rs
     - core/crates/platform-core/src/application_binding_peer.rs
     - core/crates/platform-core/src/application_binding_native.rs
     - core/crates/platform-core/src/application_binding_gateway.rs

@@ -790,11 +790,14 @@ async fn correlate(
     if meters.is_empty() {
         return Err("Gateway usage 冻结 meter 为空");
     }
+    // DD-124(6) / 07 §8.3: a binding's durable Gateway usage exists only in
+    // PLATFORM_LLM_ROUTE mode; it is the component_model_tokens dimension.
     let dimensions = if let Some(binding) = origin.component_binding_id {
         json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,
             "operation_id":origin.operation_id,"component_binding_id":binding,
             "component_release_id":origin.component_release_id,
             "component_projection_generation":origin.component_projection_generation,
+            "model_call_mode":"PLATFORM_LLM_ROUTE",
             "attribution":if origin.binding_attribution {"BINDING"} else {"OPERATION"},
             "provider":provider,"model":model})
     } else {
