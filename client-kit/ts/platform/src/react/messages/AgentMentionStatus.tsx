@@ -22,7 +22,7 @@ export type AgentMentionStatusEntry = {
   delegable?: boolean;
 };
 
-export type AgentMentionDenial = "delegation" | "use" | "unavailable";
+export type AgentMentionDenial = "delegation" | "use" | "quota" | "unavailable";
 
 /**
  * Refusals that only an administrator can lift: the Installation's capability/scope/binding or
@@ -42,12 +42,16 @@ const ADMIN_REASONS: ReadonlySet<ReasonCode> = new Set([
  * - PERMISSION_DENIED while the sender holds execute use → the delegation is missing or
  *   expired: offer renewal (opens that Installation's delegation management);
  * - PERMISSION_DENIED without execute use, or an ADMIN_REASONS code → an admin must grant use;
- * - anything else (quota, rate, dependency, conflict, unknown or absent code) → temporarily
+ * - QUOTA_EXHAUSTED → the organization's Agent quota is used up; only an admin can raise it
+ *   (DD-123 (5): members see no limit or usage figures);
+ * - anything else (rate, dependency, conflict, unknown or absent code) → temporarily
  *   unavailable; a new @mention later is admitted normally (the denied one never is).
+ *   DEPENDENCY_UNAVAILABLE (OpenMeter unreadable) stays here: it says nothing about the quota.
  */
 export function agentMentionDenial(reasonCode: ReasonCode | undefined, delegable: boolean): AgentMentionDenial {
   if (reasonCode === ReasonCode.PermissionDenied) return delegable ? "delegation" : "use";
   if (reasonCode !== undefined && ADMIN_REASONS.has(reasonCode)) return "use";
+  if (reasonCode === ReasonCode.QuotaExhausted) return "quota";
   return "unavailable";
 }
 
@@ -87,7 +91,8 @@ export function AgentMentionStatus({ entries, onRenewDelegation, className }: {
           </p>;
         }
         return <p key={entry.key} className="text-destructive" data-state="denied" data-denial={denial}>
-          {t(denial === "use" ? "agentMention.useRequired" : "agentMention.unavailable", { name: entry.name })}
+          {t(denial === "use" ? "agentMention.useRequired" : denial === "quota" ? "agentMention.quotaExhausted"
+            : "agentMention.unavailable", { name: entry.name })}
         </p>;
       })}
     </div>

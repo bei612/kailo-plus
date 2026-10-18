@@ -331,6 +331,17 @@ it("reads the DD-122 installation tool view through the shared client's single G
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
+it("reads the DD-123 tenant quota view through the shared client's single GET route", async () => {
+  const page = { quotas: [{ feature: "agent_tokens", limitPerPeriod: 10000000, usage: 12, hasAccess: true, hardLimit: true }] };
+  const fetcher = vi.fn(async (_path: string, _init: RequestInit) =>
+    new Response(JSON.stringify(page), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await bff.tenantQuotas()).toEqual(page);
+  const [path, init] = fetcher.mock.lastCall!;
+  expect([path, init.method ?? "GET", init.body]).toEqual(["/api/v1/tenant/quotas", "GET", undefined]);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
 it("rejects an outcome page that is malformed or speaks about events that were not asked", async () => {
   const mine = "1".repeat(64);
   const reply = (body: unknown) => vi.stubGlobal("fetch", vi.fn(async () =>

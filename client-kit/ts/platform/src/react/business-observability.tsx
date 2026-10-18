@@ -2,16 +2,24 @@
 // Web 与 Desktop 渲染同一份组件，数据全部经 BFF。范围视图与用量账单由服务端按
 // audit permission fresh 授权；页面只呈现服务端给出的确定状态，缺失事实不显示成零、
 // 成功、失败或已结算，读取失败也不渲染成「没有」。
+//
+// DD-123：「组织额度」一节只对 Tenant admin 与 auditor 出现（其余 403 整节不渲染）；
+// 设置走受治理动作 tenant.quota.set（显式确认、无审批），与其他治理写入共用同一
+// 提交、结果不明同键重查的路径。
 
 import {
+  type ActionCommand,
   type BusinessOperationPage,
   type BusinessOperationSummary,
   type OperationElement,
+  TenantQuotaFeature,
+  type TenantQuotaPage,
+  type TenantQuotaView,
   type UsageBillingView,
   UsageSectionState,
   type WorkspaceView,
 } from "@client-kit/contracts";
-import { type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { businessOperationPhase } from "../governance";
 import {
@@ -22,6 +30,9 @@ import {
   usageCustomerStateMessages,
   usageSettlementStatusMessages,
 } from "../i18n";
+import { type ChannelActionOutcome, useGovernedChannelAction } from "./channel-management-actions";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
+import { Input } from "./composer/shared/ui/input";
 import { useBffClient, useCurrentPrincipalId, useLocale, useT } from "./context";
 import { isForbidden, ScopeSelect } from "./pages";
 import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
@@ -174,6 +185,7 @@ export function UsageBillingPage() {
   return (
     <div className="flex flex-col gap-6" data-testid="usage-billing">
       <p className="text-xs text-muted-foreground">{t("usage.explain")}</p>
+      <TenantQuotaSection />
       <div className="flex flex-wrap items-center gap-2">
         <ScopeSelect
           scope={controls.scope}
@@ -312,6 +324,241 @@ export function UsageBillingPage() {
         )}
       </LoadState>
     </div>
+  );
+}
+
+const QUOTA_ACTION_KEY = "tenant.quota.set";
+/** contracts/domain/tenant_quota_setting.schema.json 的上限。 */
+const QUOTA_LIMIT_MAX = 1_000_000_000_000;
+
+/** 呈现顺序与 DD-123 (1) 一致；Record 保证新增额度项时编译期补齐。 */
+const quotaOrder: Record<TenantQuotaFeature, number> = {
+  [TenantQuotaFeature.AgentTokens]: 0,
+  [TenantQuotaFeature.AutomationRuns]: 1,
+  [TenantQuotaFeature.AgentMemoryWrites]: 2,
+};
+
+const quotaFeatureLabel: Record<TenantQuotaFeature, PlatformMessageKey> = {
+  [TenantQuotaFeature.AgentTokens]: "quota.feature.agentTokens",
+  [TenantQuotaFeature.AutomationRuns]: "quota.feature.automationRuns",
+  [TenantQuotaFeature.AgentMemoryWrites]: "quota.feature.agentMemoryWrites",
+};
+
+const quotaExhaustedLabel: Record<TenantQuotaFeature, PlatformMessageKey> = {
+  [TenantQuotaFeature.AgentTokens]: "quota.exhausted.agentTokens",
+  [TenantQuotaFeature.AutomationRuns]: "quota.exhausted.automationRuns",
+  [TenantQuotaFeature.AgentMemoryWrites]: "quota.exhausted.agentMemoryWrites",
+};
+
+/** 只接受契约内的页：额度项不重复、数值非负、时间可解析；否则按读取失败处理，不猜。 */
+function validQuotas(page: TenantQuotaPage | null | undefined): TenantQuotaView[] | null {
+  if (!page || !Array.isArray(page.quotas)) return null;
+  const seen = new Set<string>();
+  for (const q of page.quotas) {
+    if (!q || typeof q.feature !== "string" || !Object.hasOwn(quotaOrder, q.feature) || seen.has(q.feature)
+      || typeof q.hasAccess !== "boolean" || typeof q.hardLimit !== "boolean"
+      || (q.limitPerPeriod !== undefined && !(Number.isSafeInteger(q.limitPerPeriod) && q.limitPerPeriod >= 0))
+      || (q.usage !== undefined && !(typeof q.usage === "number" && Number.isFinite(q.usage) && q.usage >= 0))
+      || (q.periodResetAt !== undefined && Number.isNaN(new Date(q.periodResetAt).getTime())))
+      return null;
+    seen.add(q.feature);
+  }
+  return [...page.quotas].sort((a, b) => quotaOrder[a.feature] - quotaOrder[b.feature]);
+}
+
+/** 输入框里的每月上限；只接受 0..QUOTA_LIMIT_MAX 的十进制整数。 */
+function parseQuotaLimit(value: string): number | null {
+  const text = value.trim();
+  if (!/^\d{1,13}$/.test(text)) return null;
+  const limit = Number(text);
+  return Number.isSafeInteger(limit) && limit <= QUOTA_LIMIT_MAX ? limit : null;
+}
+
+function quotaOutcomeText(t: ReturnType<typeof useT>, outcome: ChannelActionOutcome): string {
+  switch (outcome.kind) {
+    case "recorded": return t("quota.applied", { operation: outcome.operation });
+    case "waiting": return t("workspace.lifecycle.recorded", { operation: outcome.operation });
+    case "unknown": return t("workspace.lifecycle.unknown", { operation: outcome.operation ?? "—" });
+    case "aborted": return t("workspace.lifecycle.aborted", { reason: outcome.reason, operation: outcome.operation });
+    case "rejected": return t("workspace.lifecycle.rejected", { reason: outcome.reason });
+  }
+}
+
+type QuotaDraft = { quota: TenantQuotaView; value: string; step: "edit" | "review" };
+
+/**
+ * DD-123 (5)：组织额度。上限、已用与剩余直接来自 OpenMeter，缺失的事实显示「—」或「未设置」，
+ * 不补零。不可用的额度项给出横幅：新的请求正在被拒绝。设置额度先填写、再核对、后提交；
+ * 结果不明保留原命令与幂等键，只允许重查原请求。Core 对每次设置重新核对 Tenant manage。
+ */
+export function TenantQuotaSection() {
+  const client = useBffClient();
+  const t = useT();
+  const locale = useLocale();
+  const [state, reload] = useLoad("tenant-quotas", client.tenantQuotas);
+  const action = useGovernedChannelAction(reload);
+  const [draft, setDraft] = useState<QuotaDraft | null>(null);
+  // 读到过一次之后，刷新期间保留本节（含结论），不闪成「不存在」
+  const shown = useRef(false);
+  if (state.status === "ok") shown.current = true;
+  // 普通成员（403）整节不出现；首次读取中也不先画一个空壳
+  if (state.status === "error" && isForbidden(state.error)) return null;
+  if (state.status === "pending" && !shown.current) return null;
+
+  const quotas = state.status === "ok" ? validQuotas(state.data) : null;
+  const number = (value: number) => new Intl.NumberFormat(locale).format(value);
+  const limitText = (q: TenantQuotaView) => (q.limitPerPeriod === undefined ? t("quota.notSet") : number(q.limitPerPeriod));
+  const usedText = (q: TenantQuotaView) => (q.usage === undefined ? "—" : number(q.usage));
+  const resetText = (at: TenantQuotaView["periodResetAt"]) => at === undefined ? "—" : t("quota.utc", {
+    at: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(at)),
+  });
+  const locked = action.busy || action.unknown;
+  const parsed = draft ? parseQuotaLimit(draft.value) : null;
+  const reviewLimit = draft?.step === "review" ? parsed : null;
+
+  const open = (quota: TenantQuotaView) => {
+    if (locked) return;
+    action.dismiss();
+    setDraft({ quota, value: quota.limitPerPeriod === undefined ? "" : String(quota.limitPerPeriod), step: "edit" });
+  };
+  const review = (event: FormEvent) => {
+    event.preventDefault();
+    if (draft && parsed !== null) setDraft({ ...draft, step: "review" });
+  };
+  const confirm = async (quota: TenantQuotaView, limitPerPeriod: number) => {
+    // EXPLICIT：确认位随命令冻结；幂等键由共用提交路径在首次发送前生成
+    const command: Omit<ActionCommand, "idempotencyKey"> = {
+      actionKey: QUOTA_ACTION_KEY,
+      tenantQuotaSetting: { feature: quota.feature, limitPerPeriod },
+      explicitConfirmation: true,
+    };
+    const result = await action.submit(command);
+    if (result !== null) setDraft(null);
+  };
+
+  const outcome = action.outcome;
+  return (
+    <Section title={t("quota.title")} testId="tenant-quotas">
+      <p className="text-xs text-muted-foreground">{t("quota.explain")}</p>
+      {outcome ? (
+        <div className="flex flex-wrap items-center gap-2" role={outcome.kind === "recorded" || outcome.kind === "waiting"
+          ? "status" : "alert"} data-testid="tenant-quota-outcome">
+          <p className="break-words text-sm">{quotaOutcomeText(t, outcome)}</p>
+          {action.unknown ? (
+            <Button disabled={action.busy} onClick={() => void action.submit()}>
+              {action.busy ? t("platform.loading") : t("workspace.lifecycle.retry")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {state.status === "pending" ? (
+        <p role="status" className="text-sm text-muted-foreground">{t("platform.loading")}</p>
+      ) : !quotas ? (
+        <Notice role="alert">
+          <span>{t("platform.loadFailed")}</span>
+          <Button onClick={reload}>{t("platform.retry")}</Button>
+        </Notice>
+      ) : quotas.length === 0 ? (
+        <Notice>{t("quota.none")}</Notice>
+      ) : (
+        <>
+          {quotas.filter((q) => !q.hasAccess).map((q) => (
+            <p key={q.feature} role="alert" data-testid="tenant-quota-exhausted" data-feature={q.feature}
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {t(quotaExhaustedLabel[q.feature])}
+            </p>
+          ))}
+          <Table
+            head={[
+              t("usage.feature"),
+              t("quota.limit"),
+              t("quota.used"),
+              t("quota.remaining"),
+              t("quota.kind"),
+              t("quota.resetAt"),
+              t("usage.access"),
+              t("platform.action"),
+            ]}
+          >
+            {quotas.map((q) => (
+              <tr key={q.feature} data-testid="tenant-quota-row" data-feature={q.feature}>
+                <Cell title={q.feature}>{t(quotaFeatureLabel[q.feature])}</Cell>
+                <Cell mono>{limitText(q)}</Cell>
+                <Cell mono>{usedText(q)}</Cell>
+                <Cell mono>
+                  {q.limitPerPeriod === undefined || q.usage === undefined ? "—" : number(Math.max(q.limitPerPeriod - q.usage, 0))}
+                </Cell>
+                <Cell>{t(q.hardLimit ? "quota.hard" : "quota.soft")}</Cell>
+                <Cell>{resetText(q.periodResetAt)}</Cell>
+                <Cell>
+                  <Badge tone={q.hasAccess ? "positive" : "negative"}>
+                    {t(q.hasAccess ? "usage.hasAccess" : "usage.noAccess")}
+                  </Badge>
+                </Cell>
+                <Cell>
+                  <Button disabled={locked || draft !== null} onClick={() => open(q)}>{t("quota.set")}</Button>
+                </Cell>
+              </tr>
+            ))}
+          </Table>
+        </>
+      )}
+      <Dialog open={draft !== null} onOpenChange={(next) => { if (!next && !action.busy) setDraft(null); }}>
+        {draft ? (
+          <DialogContent className="max-w-md" data-testid="tenant-quota-dialog">
+            <DialogHeader>
+              <DialogTitle>{t("quota.dialogTitle", { feature: t(quotaFeatureLabel[draft.quota.feature]) })}</DialogTitle>
+              <DialogDescription>
+                {t("quota.current", { limit: limitText(draft.quota), used: usedText(draft.quota) })}
+              </DialogDescription>
+            </DialogHeader>
+            {reviewLimit !== null ? (
+              <div className="flex flex-col gap-3" role="group" data-testid="tenant-quota-review">
+                <p className="text-sm">
+                  {t("quota.reviewText", {
+                    feature: t(quotaFeatureLabel[draft.quota.feature]),
+                    from: limitText(draft.quota),
+                    to: number(reviewLimit),
+                  })}
+                </p>
+                {draft.quota.usage !== undefined && reviewLimit <= draft.quota.usage ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t("quota.belowUsage", { used: usedText(draft.quota) })}
+                  </p>
+                ) : null}
+                <div className="flex justify-end gap-2">
+                  <Button disabled={action.busy} onClick={() => setDraft({ ...draft, step: "edit" })}>{t("platform.back")}</Button>
+                  <Button disabled={action.busy} onClick={() => void confirm(draft.quota, reviewLimit)}>
+                    {action.busy ? t("platform.loading") : t("quota.confirm")}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <form className="flex flex-col gap-3" onSubmit={review} noValidate>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span>{t("quota.newLimit")}</span>
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="off"
+                    data-testid="tenant-quota-input"
+                    aria-invalid={draft.value.trim() !== "" && parsed === null}
+                    value={draft.value}
+                    onChange={(event) => setDraft({ ...draft, value: event.target.value, step: "edit" })}
+                  />
+                </label>
+                {draft.value.trim() !== "" && parsed === null ? (
+                  <p role="alert" className="text-sm text-destructive">{t("quota.invalid")}</p>
+                ) : null}
+                <div className="flex justify-end gap-2">
+                  <Button onClick={() => setDraft(null)}>{t("platform.cancel")}</Button>
+                  <Button type="submit" disabled={parsed === null}>{t("quota.review")}</Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        ) : null}
+      </Dialog>
+    </Section>
   );
 }
 

@@ -6827,3 +6827,27 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
 - 缺口：Agent 授权的业务对象沿用该连接的源资源目录（仅在有读取接收边的连接上可达），没有通用业务对象目录；不推断工具契约所需
   permission，由授予人选择、Core 校验。BFF 路由、部署与浏览器验收均未进行；不声称 V-SCN-108/109/111/112 或 DD-122 已验收。
   追溯记录待与后端批次合并时补。
+
+## 2026-10-18 组织额度：用量页额度一节、设置额度与 @提及额度用完（DD-123 UI，源码候选，未验收）
+
+起点 main `59662ede`（含生成的 `TenantQuotaFeature`、`TenantQuotaSetting`、`ActionCommand.tenantQuotaSetting`、`TenantQuotaPage/View`）；
+权威 DD-123 (1)(5)、V-SCN-114/115/116。本批只做 TypeScript/UI 与共享 BFF 客户端；`GET /api/v1/tenant/quotas` 与 `tenant.quota.set`
+由并行 Core 批次实现，本批不改 Rust、契约或数据库（本地分支 `feat/dd123-ui`，未 push）。
+
+- 用量页：`business-observability.tsx::TenantQuotaSection` 挂在 Web/Desktop 共用的「用量与账单」页顶部，路由只在共享
+  `client.ts::tenantQuotas` 一处。按 Agent token、自动化运行、记忆写入列每月上限、已用、剩余、硬/软限制、重置时间（UTC）与可用性；
+  缺失事实显示「未设置」或「—」，不补零；`hasAccess=false` 的项给出横幅（如“新的 Agent 调用正在被拒绝”）。403（普通成员）整节不渲染；
+  不合契约的页按读取失败处理。
+- 设置额度：每行“设置额度” → 对话框填写整数（0..1e12）→ 核对（原值→新值、硬限制按月重置立即生效、无需审批；新值不高于已用量时警示）
+  → 显式确认提交 `{actionKey:"tenant.quota.set", idempotencyKey, tenantQuotaSetting:{feature, limitPerPeriod}, explicitConfirmation:true}`，
+  复用既有受治理提交 `useGovernedChannelAction`（幂等键 `newIdempotencyKey`，结果不明冻结原命令只允许同键重查，期间锁定设置入口），
+  成功后重读额度。契约未给出“可设置”提示，按钮对能读到本节者（admin 与 auditor）显示，auditor 提交由 Core 以 `PERMISSION_DENIED`
+  拒绝并如实显示。
+- @提及：`AgentMentionStatus` 的 `QUOTA_EXHAUSTED` 独立分支“{name} 未响应：组织的 Agent 额度已用完，请联系管理员”，不显示数字、无重试；
+  `DEPENDENCY_UNAVAILABLE` 仍为暂不可用。
+- 词条：30 个（en/zh-CN，含 `actions.tenant.quota.set`），`platform_text.dart` 按原生成器投影与 80 列规则补入（规则先复现 HEAD 逐字一致；
+  本机无 Dart 工具链，未运行 `tools/gen-platform-i18n.py --check`）。
+- 验证：本机按约束未运行 tsc、vitest、构建或浏览器；新增 `client-kit/ts/platform/test/tenant-quotas.test.tsx`（行与横幅、中文、403 隐藏、
+  不合契约、填写→核对→确认的精确命令与刷新、低于已用量警示、UNKNOWN 同键重查、拒绝如实显示），扩充 `agent-mention-status.test.tsx`
+  与 `web-client/web/src/platform/bff-client.test.ts`（额度路由），待 CI。BFF 路由、部署与浏览器验收均未进行；不声称 V-SCN-114/115/116
+  或 DD-123 已验收。追溯记录待与后端批次合并时补。

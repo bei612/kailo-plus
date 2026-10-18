@@ -20,7 +20,9 @@ it("maps DENIED reasons to renewal, admin grant or retry-later", () => {
   expect(agentMentionDenial(ReasonCode.PermissionDenied, false)).toBe("use");
   expect(agentMentionDenial(ReasonCode.CapabilityBlocked, true)).toBe("use");
   expect(agentMentionDenial(ReasonCode.ScopeGuardFailed, true)).toBe("use");
-  expect(agentMentionDenial(ReasonCode.QuotaExhausted, true)).toBe("unavailable");
+  // DD-123: an exhausted organization quota has its own admin-facing line, even for a non-delegable sender.
+  expect(agentMentionDenial(ReasonCode.QuotaExhausted, true)).toBe("quota");
+  expect(agentMentionDenial(ReasonCode.QuotaExhausted, false)).toBe("quota");
   expect(agentMentionDenial(ReasonCode.DependencyUnavailable, true)).toBe("unavailable");
   expect(agentMentionDenial(undefined, true)).toBe("unavailable");
 });
@@ -53,6 +55,24 @@ it("offers delegation renewal only for a delegable PERMISSION_DENIED and never r
   // Without a host navigation there is no dead action.
   const bare = await render(<AgentMentionStatus entries={[entry(AgentMentionOutcomeState.Denied, { reasonCode: ReasonCode.PermissionDenied, delegable: true })]} />);
   expect(bare.querySelector("button")).toBeNull();
+});
+
+it("DD-123: QUOTA_EXHAUSTED says the organization quota is used up; DEPENDENCY_UNAVAILABLE stays temporary", async () => {
+  const host = await render(<AgentMentionStatus onRenewDelegation={() => {}} entries={[
+    entry(AgentMentionOutcomeState.Denied, { reasonCode: ReasonCode.QuotaExhausted, delegable: true }),
+    entry(AgentMentionOutcomeState.Denied, { key: "installation-b", name: "Writer", reasonCode: ReasonCode.DependencyUnavailable, delegable: true }),
+  ]} />);
+  const quota = host.querySelector('[data-denial="quota"]');
+  expect(quota?.textContent).toBe("Research did not respond: your organization's Agent quota is used up. Contact an admin.");
+  expect(host.querySelector('[data-denial="unavailable"]')?.textContent).toBe("Writer did not respond: temporarily unavailable. Try again later.");
+  // Read-only: no retry or renewal for a quota refusal, and no figures shown to the member.
+  expect(host.querySelectorAll("button")).toHaveLength(0);
+  expect(host.textContent).not.toMatch(/\d/);
+  await act(async () => setLocale("zh-CN"));
+  const zh = await render(<AgentMentionStatus entries={[
+    entry(AgentMentionOutcomeState.Denied, { name: "研究助理", reasonCode: ReasonCode.QuotaExhausted }),
+  ]} />);
+  expect(zh.textContent).toBe("研究助理 未响应：组织的 Agent 额度已用完，请联系管理员");
 });
 
 it("renders the Chinese copy from the shared catalog", async () => {

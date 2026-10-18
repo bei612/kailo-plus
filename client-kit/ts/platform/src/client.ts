@@ -56,6 +56,7 @@ import type {
   NativeCommunityFacts,
   OwnAuditEntry,
   UsageBillingView,
+  TenantQuotaPage,
   PlatformInfo,
   PlatformToolPage,
   PlatformSessionView,
@@ -390,6 +391,9 @@ export function createBffClient(transport: BffTransport) {
       if (workspaceId) query.set("workspaceId", workspaceId);
       return get<UsageBillingView>(`/api/v1/usage-billing?${query}`);
     },
+
+    /** DD-123：本 Tenant 的平台额度（OpenMeter 唯一权威）；只对 Tenant admin 与 auditor 开放，其余 403。 */
+    tenantQuotas: () => get<TenantQuotaPage>("/api/v1/tenant/quotas"),
 
     /** 单条证据解引用：每次 fresh 授权；不可用时只有原因，没有任何 ref 内容。 */
     auditEvidence: (eventId: string, index: number) =>
