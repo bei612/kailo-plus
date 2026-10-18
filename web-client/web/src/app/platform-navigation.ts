@@ -5,7 +5,7 @@ import { platformNavigationSections, type PlatformNavigationSection } from "@cli
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { createSearchHighlightNavigation } from "@client-kit/platform/react/search/searchHighlightNavigation";
 import { selectSearchHighlightRouteState } from "@client-kit/platform/react/search/searchHighlightRouteState";
-import { isSettingsSection, type SettingsSection } from "@client-kit/platform/react/settings-surface";
+import { isSettingsSection, type SettingsSection } from "@client-kit/platform/react/settings-sections";
 
 export type PlatformSection = PlatformNavigationSection | "inbox" | "settings";
 export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message" | "application";

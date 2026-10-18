@@ -13,14 +13,8 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, us
 import { topChromeBackdrop } from "./messages/chromeLayout";
 import { cn } from "./profile/buzz/shared/lib/cn";
 
-export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts" | "community-members" | "custom-emoji" | "agents" | "experimental";
-/** Every section a host may route to (original /settings?section=). */
-export const settingsSectionValues: readonly SettingsSection[] = [
-  "profile", "appearance", "notifications", "shortcuts", "community-members", "custom-emoji", "agents", "experimental",
-];
-export function isSettingsSection(value: unknown): value is SettingsSection {
-  return typeof value === "string" && (settingsSectionValues as readonly string[]).includes(value);
-}
+import type { SettingsSection } from "./settings-sections";
+export { isSettingsSection, settingsSectionValues, type SettingsSection } from "./settings-sections";
 export const settingsSectionKeys = {
   profile: "platform.settings.profile", appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications", shortcuts: "platform.settings.shortcuts",
