@@ -1,5 +1,5 @@
 import { act, useState, type ReactNode } from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PresenceHostProvider } from "../src/react/presence/host";
 import type { PresenceHost } from "../src/react/presence/context";
@@ -220,8 +220,8 @@ describe("original DM row avatar, presence dot and count (DD-120)",()=>{
       updatePresence:async()=>{},queryUserStatus:async()=>({statuses:[]}),updateUserStatus:async()=>({eventId:"e".repeat(64)}),
     };
     const host=await mountRows(presence);
-    await settle();
-    expect(host.querySelector('[data-testid="channel-presence-Bob"]')?.getAttribute("data-presence-status")).toBe("online");
+    // Directory, visibility and the batched presence read resolve over several turns.
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="channel-presence-Bob"]')?.getAttribute("data-presence-status")).toBe("online"));
     expect(host.querySelector('[data-testid="channel-presence-Zara"]')).toBeNull();
     expect(calls).toHaveLength(1);
     expect([...calls[0]!].sort()).toEqual(["b".repeat(64),"c".repeat(64),"d".repeat(64)]);

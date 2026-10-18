@@ -24,8 +24,8 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 const channel = { id: "w", name: "general", lastMessageAt: null };
 
-const recorded = (command: ActionCommand): BffReply => ({ status: 200, body: {
-  actionExecutionId: "execution", actionKey: command.actionKey, operationId: "operation",
+const recorded = (command: ActionCommand, operationId = "operation"): BffReply => ({ status: 200, body: {
+  actionExecutionId: "execution", actionKey: command.actionKey, operationId,
   gateState: ActionGateState.Allowed, dispatchState: ActionDispatchState.Dispatched,
 } });
 
@@ -130,7 +130,9 @@ describe("original sidebar Leave/Archive over DD-119 governed actions", () => {
   it("keeps an UNKNOWN leave frozen and re-checks only the same request", async () => {
     let writes = 0;
     const m = await mount(backend({ action: (command) => ++writes === 1
-      ? { status: 503, body: { class: ErrorClass.Unknown, operationId: "uncertain" } } : recorded(command) }));
+      ? { status: 503, body: { class: ErrorClass.Unknown, operationId: "uncertain" } }
+      // The re-check answers the same operation the uncertain write created (as in channel-management.test).
+      : recorded(command, "uncertain") }));
     await openMenu(m.host);
     await choose("Leave channel");
     const dialog = document.querySelector<HTMLElement>("[data-testid=leave-channel-dialog]")!;

@@ -1,5 +1,5 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/app/RootErrorBoundary.tsx.
-// Root-level render fence (block/buzz#5078): an uncaught render error shows the original
+// Root-level render fence (upstream block/buzz issue 5078): an uncaught render error shows the original
 // degraded splash with Reload instead of a blank page. Copy is localized at render time.
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { translateCurrent } from "../i18n";

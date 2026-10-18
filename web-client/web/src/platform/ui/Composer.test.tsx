@@ -170,7 +170,13 @@ it("the real Web discard control releases the microphone without uploading or pu
   await click(host.querySelector<HTMLButtonElement>('[aria-label="Discard voice note"]')!);
   expect(track.stop).toHaveBeenCalledTimes(1);
   expect(upload).not.toHaveBeenCalled(); expect(publish).not.toHaveBeenCalled();
-  expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull();
+  // The recorder is idle at once: the original ingress controls (with Record) return immediately.
+  expect(host.querySelector('[aria-label="Record voice note"]')).not.toBeNull();
+  // The original MessageComposerToolbar AnimatePresence then plays the recorder's exit; it is only
+  // instant when no animation frame has advanced its enter animation yet.
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="voice-note-recorder"]')).toBeNull(), {timeout: 3000});
+  expect(track.stop).toHaveBeenCalledTimes(1);
+  expect(upload).not.toHaveBeenCalled(); expect(publish).not.toHaveBeenCalled();
 });
 
 it("a Web recording upload acknowledgement from an old actor cannot enter the next actual draft", async () => {
