@@ -902,6 +902,41 @@ pub async fn list_pending_approvals(State(state): State<BffState>, headers: Head
     (StatusCode::OK, Json(out)).into_response()
 }
 
+/// `GET /api/v1/approvals/initiated`（DD-125(5)）：本人发起、已有结果的审批，是 Inbox
+/// "Needs action" 取代 Buzz workflow 46010–46012 的第二来源（第一来源是上面的待我审批）。
+/// 只读 Temporal 投影，不建第二份审批状态；处理仍走既有审批决定，“完成”只在本机。
+pub async fn list_initiated_approvals(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_lifecycle_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let g = &state.governance;
+    let rows: Result<Vec<ApprovalRow>, _> = sqlx::query_as(&format!(
+        "{APPROVAL_QUERY} and ae.initiator_principal_id = $2 and ap.status not in ('REQUESTED', 'WAITING') and (not $3 or ae.action_key = 'tenant.delete') order by ae.created_at desc limit $4"
+    ))
+    .bind(ctx.tenant_id)
+    .bind(ctx.tenant_principal_id)
+    .bind(ctx.access_mode == contracts::PlatformSessionAccessMode::LifecycleRestricted)
+    .bind(g.cfg.page_limit)
+    .fetch_all(&g.pool)
+    .await;
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) => return Refusal::from(e).respond(None),
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        match row.view() {
+            Some(v) => out.push(v),
+            None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
+    (StatusCode::OK, Json(out)).into_response()
+}
+
 /// `GET /api/v1/approvals/{workflowId}`：发起者、已决定者或此刻合格的审批者可见。
 pub async fn get_approval(
     State(state): State<BffState>,

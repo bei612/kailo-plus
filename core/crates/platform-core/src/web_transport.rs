@@ -1808,6 +1808,12 @@ async fn publish(
             (contracts::WebMessageType::Stream, None, None, None)
         }
     };
+    // DD-125(1): the original Send to channel. Only the source reply's ID is
+    // accepted; its body and semantic tags are re-read below, never supplied.
+    let send_source = match &publication {
+        Publication::Message(req) => req.send_to_channel_source_event_id.clone(),
+        _ => None,
+    };
     if edit_event_id.is_none()
         && delete_event_id.is_none()
         && !valid_message_intent(&message_type, parent_event_id.as_deref())
@@ -1853,7 +1859,7 @@ async fn publish(
         i32::from(message_kind(&message_type))
     };
     if let Publication::Message(request) = &publication {
-        if !valid_deletion_request(request) {
+        if !valid_deletion_request(request) || !crate::send_to_channel::valid_request(request) {
             return StatusCode::BAD_REQUEST.into_response();
         }
         if edit_event_id.is_some()
@@ -1913,9 +1919,10 @@ async fn publish(
         parent_event_id: Option<String>,
         edit_event_id: Option<String>,
         delete_event_id: Option<String>,
+        send_to_channel_source_event_id: Option<String>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1954,6 +1961,7 @@ async fn publish(
             || p.parent_event_id != parent_event_id
             || p.edit_event_id != edit_event_id
             || p.delete_event_id != delete_event_id
+            || p.send_to_channel_source_event_id != send_source
         {
             return StatusCode::CONFLICT.into_response();
         }
@@ -2086,9 +2094,36 @@ async fn publish(
         }
     }
 
-    if message.is_some() && delete_event_id.is_none() {
+    if message.is_some() && delete_event_id.is_none() && send_source.is_none() {
         match crate::custom_emoji::message_tags(&state, &client, &content).await {
             Ok(tags) => media_tags.extend(tags),
+            Err(response) => return response,
+        }
+    }
+
+    // DD-125(1): body, copied semantic tags (emoji included), recomputed mentions and
+    // `buzz:sent-from-thread` come from the re-read reply in this admitted channel.
+    if let Some(source) = send_source.as_deref() {
+        let destination = match target {
+            MessageTarget::Workspace(id) => (Some(id), None),
+            MessageTarget::Conversation(id) => (None, Some(id)),
+            MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+        let prepared = crate::send_to_channel::prepare(
+            &state,
+            &ctx,
+            &client,
+            &channel_id,
+            source,
+            destination,
+        )
+        .await;
+        match prepared {
+            Ok(prepared) => {
+                content = prepared.content;
+                media_tags = prepared.tags;
+                mentions = prepared.mentions;
+            }
             Err(response) => return response,
         }
     }
@@ -2495,8 +2530,8 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -2508,6 +2543,7 @@ async fn publish(
             .bind(&edit_event_id)
             .bind(&delete_event_id)
             .bind(&human_mentions)
+            .bind(&send_source)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -2522,10 +2558,11 @@ async fn publish(
                 parent_event_id: Option<String>,
                 edit_event_id: Option<String>,
                 delete_event_id: Option<String>,
+                send_to_channel_source_event_id: Option<String>,
                 target_ids: Vec<Option<Uuid>>,
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
-                "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
+                "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -2541,6 +2578,7 @@ async fn publish(
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
                 && frozen.edit_event_id == edit_event_id
                 && frozen.delete_event_id == delete_event_id
+                && frozen.send_to_channel_source_event_id == send_source
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(

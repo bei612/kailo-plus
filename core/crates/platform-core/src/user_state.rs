@@ -33,6 +33,9 @@ pub struct UserStateResponse {
     pub conversation_preferences: serde_json::Value,
     pub project_preferences: serde_json::Value,
     pub read_contexts: serde_json::Value,
+    /// DD-125: thread follows, sidebar sections/sort, channel templates, Pulse follows.
+    #[serde(flatten)]
+    pub collab: crate::user_state_collab::CollabView,
     pub version: i32,
 }
 
@@ -42,6 +45,8 @@ struct UserStateRow {
     conversation_preferences: serde_json::Value,
     project_preferences: serde_json::Value,
     read_contexts: serde_json::Value,
+    #[sqlx(flatten)]
+    collab: crate::user_state_collab::CollabColumns,
     version: i32,
 }
 
@@ -51,7 +56,8 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
         Err(r) => return r,
     };
     match sqlx::query_as::<_, UserStateRow>(
-        "select workspace_preferences, conversation_preferences, project_preferences, read_contexts, version
+        "select workspace_preferences, conversation_preferences, project_preferences, read_contexts, version,
+                thread_preferences, sidebar_sections, sidebar_sort, channel_templates, followed_principals
          from identity.collaboration_user_state where tenant_principal_id = $1",
     )
     .bind(ctx.tenant_principal_id)
@@ -67,11 +73,16 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 conversation_preferences: serde_json::json!({}),
                 project_preferences: serde_json::json!({}),
                 read_contexts: serde_json::json!({}),
+                collab: Default::default(),
                 version: 0,
             }),
         )
             .into_response(),
         Ok(Some(row)) => {
+            let Some(collab) = row.collab.parse() else {
+                tracing::warn!("DD-125 用户状态不符合写入方的形状");
+                return user_state_unavailable();
+            };
             let Some(project_preferences)=row.project_preferences.as_object() else {
                 return user_state_unavailable();
             };
@@ -98,7 +109,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 tracing::warn!("用户状态不符合数据库的对象形状约束");
                 return user_state_unavailable();
             };
-            let event_ids: HashSet<EventId> = contexts
+            let mut event_ids: HashSet<EventId> = contexts
                 .keys()
                 .filter_map(|key| {
                     key.strip_prefix("msg:")
@@ -106,6 +117,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 })
                 .filter_map(|id| EventId::from_hex(id).ok())
                 .collect();
+            event_ids.extend(collab.thread_roots());
             let readable_events = match readable_event_ids(&state, &ctx, &event_ids).await {
                 Ok(events) => events,
                 Err(r) => return r,
@@ -117,6 +129,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             let mut channel_ids: Vec<Uuid> =
                 contexts.keys().filter_map(|key| key.parse().ok()).collect();
             channel_ids.extend(readable_events.values().filter_map(|(channel, _)| *channel));
+            channel_ids.extend(collab.assigned_channels());
             channel_ids.sort_unstable();
             channel_ids.dedup();
             let channels: Vec<(Uuid, Uuid)> = if channel_ids.is_empty() {
@@ -170,6 +183,18 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 Ok(channels) => visible_channels.extend(channels),
                 Err(response) => return response,
             }
+            let collab = match crate::user_state_collab::view(
+                &state,
+                &ctx,
+                collab,
+                &readable_events,
+                &visible_channels,
+            )
+            .await
+            {
+                Ok(view) => view,
+                Err(response) => return response,
+            };
             let mut visible_preferences = serde_json::Map::new();
             for (key, preference) in conversation_preferences {
                 let Ok(id) = key.parse::<Uuid>() else {
@@ -217,6 +242,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                             .map(|(key, value)| (key.clone(), value.clone()))
                             .collect(),
                     ),
+                    collab,
                     version: row.version,
                 }),
             )
@@ -494,7 +520,7 @@ pub async fn put_read_mark(
 
 /// 请求里的版本换成库里版本列的类型。契约的 `integer` 在 Rust 侧是 `i64`，
 /// 库列是 `integer`：超出范围的值不可能是读到过的版本，按请求非法拒绝。
-fn stored_version(v: i64) -> Option<i32> {
+pub(crate) fn stored_version(v: i64) -> Option<i32> {
     i32::try_from(v).ok()
 }
 
@@ -723,7 +749,7 @@ impl ReadScope {
 
 /// 临时查证事件所属的可读原生 Channel（Workspace 或私聊）；正文不入 Core。
 /// Relay 自己执行 author-only、result-gated 与 Channel 可读策略，本侧不重写它们。
-async fn readable_event_ids(
+pub(crate) async fn readable_event_ids(
     state: &BffState,
     ctx: &ExecutionContext,
     requested: &HashSet<EventId>,
@@ -921,7 +947,7 @@ async fn readable_event_ids(
     Ok(readable)
 }
 
-fn user_state_unavailable() -> Response {
+pub(crate) fn user_state_unavailable() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(contracts::ErrorBody {

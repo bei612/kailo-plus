@@ -689,6 +689,37 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/user-state/conversations/{conversation_id}",
             axum::routing::put(crate::user_state::put_conversation_preference),
         )
+        // DD-125: thread follow, sidebar sections/sort, channel templates, Pulse follows.
+        .exposed_route(
+            "/api/v1/user-state/threads",
+            axum::routing::put(crate::user_state_collab::put_thread_preference),
+        )
+        .exposed_route(
+            "/api/v1/user-state/sidebar-sections/{section_id}",
+            axum::routing::put(crate::user_state_collab::put_sidebar_section)
+                .delete(crate::user_state_collab::delete_sidebar_section),
+        )
+        .exposed_route(
+            "/api/v1/user-state/sidebar-section-order",
+            axum::routing::put(crate::user_state_collab::put_sidebar_section_order),
+        )
+        .exposed_route(
+            "/api/v1/user-state/sidebar-assignments",
+            axum::routing::put(crate::user_state_collab::put_sidebar_assignment),
+        )
+        .exposed_route(
+            "/api/v1/user-state/sidebar-sort",
+            axum::routing::put(crate::user_state_collab::put_sidebar_sort),
+        )
+        .exposed_route(
+            "/api/v1/user-state/channel-templates/{template_id}",
+            axum::routing::put(crate::user_state_collab::put_channel_template)
+                .delete(crate::user_state_collab::delete_channel_template),
+        )
+        .exposed_route(
+            "/api/v1/user-state/followed-principals",
+            axum::routing::put(crate::user_state_collab::put_followed_principal),
+        )
         // 媒体也经 BFF 代签读写（DD-39）；上界在 BFF 侧先行设定
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/media",
@@ -728,6 +759,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/approvals",
             get(crate::governance_api::list_pending_approvals),
+        )
+        .exposed_route(
+            "/api/v1/approvals/initiated",
+            get(crate::governance_api::list_initiated_approvals),
         )
         .exposed_route(
             "/api/v1/approvals/{workflow_id}",

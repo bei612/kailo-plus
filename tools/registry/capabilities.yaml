@@ -186,6 +186,13 @@ capabilities:
   - /api/v1/user-state/conversations/{conversation_id}
   - /api/v1/user-state/projects
   - /api/v1/user-state/read
+  - /api/v1/user-state/threads
+  - /api/v1/user-state/sidebar-sections/{section_id}
+  - /api/v1/user-state/sidebar-section-order
+  - /api/v1/user-state/sidebar-assignments
+  - /api/v1/user-state/sidebar-sort
+  - /api/v1/user-state/channel-templates/{template_id}
+  - /api/v1/user-state/followed-principals
   actions: []
   tools: []
   workflow_kinds: []
@@ -232,6 +239,7 @@ capabilities:
   - /api/v1/tasks
   - /api/v1/tasks/{action_execution_id}
   - /api/v1/approvals
+  - /api/v1/approvals/initiated
   - /api/v1/approvals/{workflow_id}
   - /api/v1/approvals/{workflow_id}/decision
   - /api/v1/approvals/{workflow_id}/withdraw

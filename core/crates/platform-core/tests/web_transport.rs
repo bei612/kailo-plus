@@ -267,6 +267,185 @@ async fn user_state_is_scoped_and_concurrency_safe() {
     }
 }
 
+/// DD-125(4)(5): custom sidebar sections, group sort, channel templates and Pulse
+/// follows share the same per-HUMAN CollaborationUserState version CAS. Thread follow
+/// re-reads the Relay root and is covered with the live Relay acceptance.
+#[tokio::test]
+async fn dd125_user_state_sections_templates_and_follows() {
+    let Some(e) = common::env() else { return };
+    let http = reqwest::Client::new();
+    let pool = PgPool::connect(&e.database_url).await.expect("连 Core 库");
+    let token = common::worker_token(&http, &e).await;
+
+    let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
+        Ok(f) => f,
+        Err(msg) => panic!("准备真实 Workspace 失败: {msg}"),
+    };
+    let outcome = std::panic::AssertUnwindSafe(run_dd125_user_state(&http, &e, &pool, &fx))
+        .catch_unwind()
+        .await;
+    let _ =
+        sqlx::query("delete from identity.collaboration_user_state where tenant_principal_id = $1")
+            .bind(fx.principal)
+            .execute(&pool)
+            .await;
+    common::teardown_live_workspace(&e, &pool, &fx).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+async fn run_dd125_user_state(
+    http: &reqwest::Client,
+    e: &Env,
+    pool: &PgPool,
+    fx: &common::LiveWorkspace,
+) {
+    let put = |path: String, body: serde_json::Value| async move {
+        bff(
+            http,
+            e,
+            &fx.subject,
+            reqwest::Method::PUT,
+            &path,
+            Some(body),
+        )
+        .await
+    };
+    let section = Uuid::new_v4();
+    let section_path = format!("/api/v1/user-state/sidebar-sections/{section}");
+    let body = serde_json::json!({"name": " Launch ", "icon": "🚀", "order": 0, "version": 0});
+    let (status, created) = put(section_path.clone(), body).await;
+    assert_eq!(status, reqwest::StatusCode::OK, "section: {created}");
+    common::assert_contract::<contracts::UserStateVersion>(&created, "PUT section");
+
+    let channel: Uuid = sqlx::query_scalar(
+        "select channel_id from projection.workspace_buzz_binding where workspace_id = $1",
+    )
+    .bind(fx.workspace)
+    .fetch_one(pool)
+    .await
+    .expect("channel");
+    let assignment = serde_json::json!({
+        "channelKey": channel.to_string(),
+        "sectionId": section.to_string(),
+        "version": 1,
+    });
+    let path = "/api/v1/user-state/sidebar-assignments".to_owned();
+    let (status, body) = put(path.clone(), assignment.clone()).await;
+    assert_eq!(status, reqwest::StatusCode::OK, "assign: {body}");
+    let (status, _) = put(path.clone(), assignment).await;
+    assert_eq!(status, reqwest::StatusCode::CONFLICT, "stale version");
+    let hidden = serde_json::json!({
+        "channelKey": Uuid::new_v4().to_string(),
+        "sectionId": section.to_string(),
+        "version": 2,
+    });
+    let (status, _) = put(path, hidden).await;
+    assert_eq!(status, reqwest::StatusCode::FORBIDDEN, "hidden channel");
+
+    let sort_path = "/api/v1/user-state/sidebar-sort".to_owned();
+    let sort = serde_json::json!({
+        "groupKey": format!("section:{section}"),
+        "mode": "recent",
+        "version": 2,
+    });
+    let (status, body) = put(sort_path.clone(), sort).await;
+    assert_eq!(status, reqwest::StatusCode::OK, "sort: {body}");
+    let unknown = serde_json::json!({"groupKey": "projects", "mode": "alpha", "version": 3});
+    let (status, _) = put(sort_path, unknown).await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "unknown group");
+
+    let template = Uuid::new_v4();
+    let template_path = format!("/api/v1/user-state/channel-templates/{template}");
+    let body = serde_json::json!({
+        "name": "Incident",
+        "channelType": "stream",
+        "visibility": "private",
+        "canvasTemplate": "# {channel.name}",
+        "agentResourceIds": [],
+        "version": 3,
+    });
+    let (status, saved) = put(template_path.clone(), body).await;
+    assert_eq!(status, reqwest::StatusCode::OK, "template: {saved}");
+    let foreign = serde_json::json!({
+        "name": "Incident",
+        "channelType": "stream",
+        "visibility": "private",
+        "agentResourceIds": [Uuid::new_v4().to_string()],
+        "version": 4,
+    });
+    let (status, _) = put(template_path, foreign).await;
+    assert_eq!(status, reqwest::StatusCode::NOT_FOUND, "foreign agent");
+
+    let pubkey: String = sqlx::query_scalar(
+        "select pubkey from identity.buzz_identity_binding
+         where principal_id = $1 and state = 'ACTIVE' order by pubkey limit 1",
+    )
+    .bind(fx.principal)
+    .fetch_one(pool)
+    .await
+    .expect("pubkey");
+    let follow_path = "/api/v1/user-state/followed-principals".to_owned();
+    let follow = serde_json::json!({"pubkey": &pubkey, "followed": true, "version": 4});
+    let (status, body) = put(follow_path.clone(), follow).await;
+    assert_eq!(status, reqwest::StatusCode::OK, "follow: {body}");
+    let stranger = serde_json::json!({"pubkey": "e".repeat(64), "followed": true, "version": 5});
+    let (status, _) = put(follow_path, stranger).await;
+    assert_eq!(status, reqwest::StatusCode::NOT_FOUND, "foreign key");
+
+    let (status, state) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(state["version"], 5, "{state}");
+    let sections = &state["sidebarSections"];
+    assert_eq!(sections["sections"][0]["name"], "Launch", "{state}");
+    assert_eq!(
+        sections["assignments"][channel.to_string()],
+        section.to_string()
+    );
+    let group = format!("section:{section}");
+    assert_eq!(state["sidebarSort"][&group]["mode"], "recent", "{state}");
+    let saved = &state["channelTemplates"][template.to_string()];
+    assert_eq!(saved["name"], "Incident", "{state}");
+    // Stored per Principal, presented as every ACTIVE key of that Principal (DD-77).
+    let keys = &state["followedPrincipals"][fx.principal.to_string()]["pubkeys"];
+    let wanted = serde_json::Value::from(pubkey.clone());
+    let listed = keys.as_array().is_some_and(|keys| keys.contains(&wanted));
+    assert!(listed, "{state}");
+
+    // Deleting the section drops its assignments and its sort group with it.
+    let (status, _) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::DELETE,
+        &section_path,
+        Some(serde_json::json!({"version": 5})),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    let (_, state) = bff(
+        http,
+        e,
+        &fx.subject,
+        reqwest::Method::GET,
+        "/api/v1/user-state",
+        None,
+    )
+    .await;
+    let assignments = &state["sidebarSections"]["assignments"];
+    assert_eq!(assignments, &serde_json::json!({}), "{state}");
+    assert!(state["sidebarSort"].get(&group).is_none(), "{state}");
+}
+
 async fn run_user_state(
     http: &reqwest::Client,
     e: &Env,

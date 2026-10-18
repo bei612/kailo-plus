@@ -1,19 +1,19 @@
 capability_id: collab.user_state
-title: 收藏、静音、Projects Added 与已读由 Core CollaborationUserState 统一承载
+title: 收藏、静音、Projects Added、已读与 DD-125 个人偏好（线程关注、侧栏分区与排序、频道模板、Pulse 关注）由 Core CollaborationUserState 统一承载
 stage: S1
 status: shipped
 exposure: end_user
 
 design:
   requirements: [V-REQ-01]
-  decisions: [DD-40]
-  facts: []
+  decisions: [DD-40, DD-125]
+  facts: [SF-BUZ-54, SF-BUZ-56]
   seams: []
   blockers: []
   entities: [CollaborationUserState]
 
 validation:
-  scenarios: [V-SCN-29]
+  scenarios: [V-SCN-29, V-SCN-124, V-SCN-136, V-SCN-138, V-SCN-141]
   evidence:
     - dimension: 领域规则
       ref: web-client/fork/verify/web-surface.md
@@ -24,13 +24,13 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/user_state.rs, web-client, client-kit/ts/platform/src/inbox.ts, client-kit/ts/platform/src/react/inbox-row.tsx, client-kit/ts/platform/src/react/use-inbox-state.ts, client-kit/ts/platform/test/inbox.test.tsx, collaboration/desktop/src/features/home/lib/inbox.ts, collaboration/desktop/src/features/home/lib/inboxViewHelpers.ts, collaboration/desktop/src/features/home/ui/HomeView.tsx, collaboration/desktop/src/features/home/ui/InboxListPane.tsx]
+  paths: [core/crates/platform-core/src/user_state.rs, core/crates/platform-core/src/user_state_collab.rs, web-client, client-kit/ts/platform/src/inbox.ts, client-kit/ts/platform/src/react/inbox-row.tsx, client-kit/ts/platform/src/react/use-inbox-state.ts, client-kit/ts/platform/test/inbox.test.tsx, collaboration/desktop/src/features/home/lib/inbox.ts, collaboration/desktop/src/features/home/lib/inboxViewHelpers.ts, collaboration/desktop/src/features/home/ui/HomeView.tsx, collaboration/desktop/src/features/home/ui/InboxListPane.tsx]
   surfaces: [web, desktop]
-  schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/conversation_preference.schema.json, contracts/api/project_preference.schema.json, contracts/api/user_state_version.schema.json]
-  migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql, core/migrations/20261006180000_conversation_preferences.up.sql, core/migrations/20261007170000_project_preferences.up.sql]
+  schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/conversation_preference.schema.json, contracts/api/project_preference.schema.json, contracts/api/user_state_version.schema.json, contracts/api/thread_preference.schema.json, contracts/api/sidebar_section.schema.json, contracts/api/sidebar_section_order.schema.json, contracts/api/sidebar_assignment.schema.json, contracts/api/sidebar_sort.schema.json, contracts/api/channel_template.schema.json, contracts/api/followed_principal.schema.json, contracts/enums/sidebar_sort_mode.schema.json]
+  migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql, core/migrations/20261006180000_conversation_preferences.up.sql, core/migrations/20261007170000_project_preferences.up.sql, core/migrations/20261018160000_collaboration_user_state_dd125.up.sql, core/migrations/20261018160000_collaboration_user_state_dd125.down.sql]
 
 runtime:
-  routes: ["/api/v1/user-state", "/api/v1/user-state/workspaces/{workspace_id}", "/api/v1/user-state/conversations/{conversation_id}", "/api/v1/user-state/projects", "/api/v1/user-state/read"]
+  routes: ["/api/v1/user-state", "/api/v1/user-state/workspaces/{workspace_id}", "/api/v1/user-state/conversations/{conversation_id}", "/api/v1/user-state/projects", "/api/v1/user-state/read", "/api/v1/user-state/threads", "/api/v1/user-state/sidebar-sections/{section_id}", "/api/v1/user-state/sidebar-section-order", "/api/v1/user-state/sidebar-assignments", "/api/v1/user-state/sidebar-sort", "/api/v1/user-state/channel-templates/{template_id}", "/api/v1/user-state/followed-principals"]
 
 release:
   # 仅记录本批已构建候选；full、部署及业务验收尚未通过。
