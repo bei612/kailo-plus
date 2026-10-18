@@ -100,9 +100,7 @@ async function loadBindingDelivery(
 // The release's `connection` secret is the JSON text of the original Wren
 // Postgres connectionInfo object; no other KV shape is a governed write. Parser
 // errors are not propagated: their messages can echo secret bytes.
-export function governedConnectionInfo(
-  data: unknown,
-): WREN_AI_CONNECTION_INFO {
+export function governedConnectionInfo(data: unknown): WREN_AI_CONNECTION_INFO {
   if (
     !data ||
     typeof data !== 'object' ||
