@@ -1705,8 +1705,15 @@ async fn initialize(
     provisioning: bool,
 ) -> Result<(), Stalled> {
     let mut step = Step("runtime");
-    let result =
-        initialize_steps(state, installation, version, generation, provisioning, &mut step).await;
+    let result = initialize_steps(
+        state,
+        installation,
+        version,
+        generation,
+        provisioning,
+        &mut step,
+    )
+    .await;
     result.map_err(|refusal| Stalled {
         step: step.name(),
         refusal,
