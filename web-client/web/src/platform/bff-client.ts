@@ -35,6 +35,7 @@ import type {
   WebUserStatusUpdateRequest,
   AgentMentionOutcomePage,
   AgentMentionOutcomeQueryRequest,
+  WebTypingRequest,
 } from "@client-kit/contracts";
 import { AgentMentionOutcomeState, ReasonCode, WebPresenceStatus } from "@client-kit/contracts";
 import { KIND_PRESENCE_UPDATE, KIND_USER_STATUS } from "@client-kit/platform/react/thread/kinds";
@@ -105,8 +106,10 @@ export function releasePresence(): void {
 }
 
 /**
- * DD-120 (1): the original main-channel 20002 typing indicator. Core signs it over the person's
- * existing session connection; latest wins and nothing is re-signed, so callers ignore failures.
+ * DD-120 (1): the original 20002 typing indicator. Core signs it over the person's existing
+ * session connection; latest wins and nothing is re-signed, so callers ignore failures. Without
+ * a thread it is the main-channel shape; inside a thread the typed thread-head reference becomes
+ * the original e root/reply tags (buildThreadReferenceTags) — the browser never sends raw tags.
  */
 export function typingPath(scope: { workspaceId?: string; conversationId?: string }): string | null {
   if (scope.conversationId) return `/api/v1/conversations/${encodeURIComponent(scope.conversationId)}/typing`;
@@ -114,10 +117,13 @@ export function typingPath(scope: { workspaceId?: string; conversationId?: strin
   return null;
 }
 
-export async function publishTyping(scope: { workspaceId?: string; conversationId?: string }): Promise<void> {
+export async function publishTyping(scope: { workspaceId?: string; conversationId?: string },
+  thread?: { parentEventId: string; rootEventId?: string | null }): Promise<void> {
   const path = typingPath(scope);
   if (!path) return;
-  await call<unknown>({ method: "POST", path });
+  const body: WebTypingRequest | undefined = thread ? { parentEventId: thread.parentEventId,
+    ...(thread.rootEventId && thread.rootEventId !== thread.parentEventId ? { rootEventId: thread.rootEventId } : {}) } : undefined;
+  await call<unknown>({ method: "POST", path, ...(body ? { body } : {}) });
 }
 
 /** DD-120 (4): the latest verified `d=general` 30315 per pubkey; a cleared status is omitted. */

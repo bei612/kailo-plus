@@ -7,7 +7,8 @@ import { relativeTime } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
-import { publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { publishMessage, publishConversationMessage, publishTyping, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { useTypingBroadcast } from "./useTypingBroadcast";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels } from "./MessageAuthorProfile";
@@ -114,6 +115,14 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     setExpanded((old) => new Set([...old, ...route.expandedReplyIds]));
   }, [rows, selected.id, routeTargetMessageId, routeActivationId]);
   const data = useMemo(() => buildThreadPanelData(rows, rootId, replyId, expanded), [rows, rootId, replyId, expanded]);
+  // Original MessageThreadPanel typing: the thread head is the reply tag and its own root (if
+  // any) the root tag, whichever nested message is being answered (DD-120(1)).
+  const typingHeadId = data.threadHead?.id ?? null;
+  const typingHeadRootId = data.threadHead?.rootId ?? null;
+  const notifyThreadTyping = useTypingBroadcast(typingHeadId
+    ? `thread:${conversation ? `conversation:${conversation.id}` : `workspace:${workspaceId}`}:${typingHeadId}` : null,
+  () => typingHeadId ? publishTyping(conversation ? { conversationId: conversation.id } : { workspaceId },
+    { parentEventId: typingHeadId, rootEventId: typingHeadRootId }) : Promise.resolve());
   const unavailable = denied || thread.isError || (thread.isSuccess && !data.threadHead);
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.();
@@ -241,6 +250,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       draftChannelId={restoredDraft?.replyId === replyId ? restoredDraft.scope : workspaceId} disabled={composer.disabled || Boolean(editTarget && !canSaveEdit)}
       onSendingChange={handleSendingChange}
+      onTyping={editTarget ? undefined : notifyThreadTyping}
       containerClassName={composer.containerClassName} layoutMode="dock"
       replyTarget={editTarget ? null : composer.replyTarget} onCancelReply={editTarget ? undefined : composer.onCancelReply}
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}

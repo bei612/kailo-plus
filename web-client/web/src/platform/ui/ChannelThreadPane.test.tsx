@@ -15,7 +15,7 @@ import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThread
 import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({composer:vi.fn(),richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({typing:vi.fn(),composer:vi.fn(),richContent:false,query: vi.fn(), conversationQuery:vi.fn(), conversationPublish:vi.fn(), conversationProfile:vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query,conversationMessages:state.conversationQuery}), useLocale: () => "en", useT: () => (key: string) => key,
@@ -33,6 +33,7 @@ vi.mock("@/platform/bff-client", async(original) => ({
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
   publishConversationMessage: (...args: unknown[]) => state.conversationPublish(...args),
+  publishTyping: (...args: unknown[]) => state.typing(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
 vi.mock("./ChannelPane", async(original) => ({...await original<typeof import("./ChannelPane")>(),Composer: (props: import("react").ComponentProps<typeof import("./ChannelPane").Composer>) => {
@@ -167,6 +168,21 @@ it.each(["channel", "conversation"] as const)("renders only the admitted %s thre
   await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));await settle();
   expect(indicator()).toBeNull();
   expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
+});
+it.each(["channel", "conversation"] as const)("publishes the original thread-head typing from the %s thread composer, throttled", async (scope) => {
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  state.typing.mockResolvedValue(undefined);
+  await mount(undefined,conversation);
+  // The nested reply is selected, but the original reply tag is the thread head (the root).
+  const onTyping = state.composer.mock.lastCall?.[0].onTyping as (() => void) | undefined;
+  expect(onTyping).toBeTypeOf("function");
+  await act(async () => { onTyping!(); await Promise.resolve(); });
+  expect(state.typing).toHaveBeenCalledTimes(1);
+  expect(state.typing).toHaveBeenLastCalledWith(scope === "conversation" ? {conversationId:"conversation"} : {workspaceId:"workspace"},
+    {parentEventId:rootId,rootEventId:null});
+  await act(async () => { onTyping!(); await Promise.resolve(); });
+  expect(state.typing).toHaveBeenCalledTimes(1);
+  expect(state.publish).not.toHaveBeenCalled(); expect(state.conversationPublish).not.toHaveBeenCalled();
 });
 it.each([{scope:"channel",kind:9},{scope:"conversation",kind:40002}])("highlights only the searchable $kind body in the admitted $scope thread", async ({scope,kind}) => {
   state.richContent=true;

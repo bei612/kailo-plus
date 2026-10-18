@@ -976,7 +976,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
   onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
-  /** Original useTypingBroadcast trigger for the main channel composer only. */
+  /** Original useTypingBroadcast trigger (main channel, or the thread head inside a thread). */
   onTyping?: () => void;
   onEditLastOwnMessage?: () => boolean;
   onConfirmed?: () => void;

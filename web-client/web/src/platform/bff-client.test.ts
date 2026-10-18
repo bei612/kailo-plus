@@ -3,6 +3,7 @@ import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, 
 import { AGENT_MENTION_OUTCOME_QUERY_LIMIT, agentMentionOutcomesPath, queryAgentMentionOutcomes } from "./bff-client";
 import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
   releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
+import { publishTyping } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -298,6 +299,24 @@ it("names each DD-120 route once and sends only the typed presence/status intent
   releasePresence();
   await vi.waitFor(() => expect(sent()[1].keepalive).toBe(true));
   expect([sent()[0], sent()[1].method, JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/presence", "PUT", { status: "offline" }]);
+});
+
+it("sends main-channel typing without a body and thread typing as the typed thread-head reference", async () => {
+  const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetcher);
+  const sent = () => fetcher.mock.lastCall as unknown as [string, RequestInit];
+  const head = "a".repeat(64), root = "b".repeat(64);
+
+  await publishTyping({ workspaceId: "w1" });
+  expect([sent()[0], sent()[1].method, sent()[1].body]).toEqual(["/api/v1/workspaces/w1/typing", "POST", undefined]);
+
+  // Original buildThreadReferenceTags: root only when it differs from the thread head.
+  await publishTyping({ conversationId: "c1" }, { parentEventId: head, rootEventId: root });
+  expect([sent()[0], JSON.parse(String(sent()[1].body))]).toEqual(["/api/v1/conversations/c1/typing", { parentEventId: head, rootEventId: root }]);
+  for (const rootEventId of [null, undefined, head]) {
+    await publishTyping({ workspaceId: "w1" }, { parentEventId: head, rootEventId });
+    expect(JSON.parse(String(sent()[1].body))).toEqual({ parentEventId: head });
+  }
 });
 
 it("names the DD-121 outcome route once and asks only about the caller's own event IDs", async () => {
