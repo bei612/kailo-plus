@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/user_state_version.schema.json",
   "title": "UserStateVersion",
-  "description": "CollaborationUserState 写入成功后的新版本（PUT /api/v1/user-state/read 与 PUT /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。",
+  "description": "CollaborationUserState 写入成功后的新版本（/api/v1/user-state/* 各 PUT/DELETE 的 200 回应）。DD-125 的 DELETE /api/v1/user-state/sidebar-sections/{sectionId} 与 DELETE /api/v1/user-state/channel-templates/{templateId} 也以它为请求体：version 是读到的版本，不符即 409。",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],

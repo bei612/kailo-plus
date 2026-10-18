@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/channel_template.schema.json",
+  "title": "ChannelTemplateRequest",
+  "description": "PUT /api/v1/user-state/channel-templates/{templateId} 的请求体（DD-125(4)、03 CollaborationUserState.channel_templates）：新建或替换本人的原频道模板；templateId 由客户端以 UUID 生成。字段沿原 ChannelTemplateRecord；agentResourceIds 只引用同 Tenant 的 AgentDefinition Resource（≙ 原 persona），原 runtime/model/backend 与 team 条目不适用。canvasTemplate 不超过 64 KiB，每人至多 200 个模板。模板不授予任何权限：应用时仍逐项提交 workspace.create、workspace.canvas.set 与 agent.installation.create。DELETE 同一路径以 UserStateVersion 为请求体。version 不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "channelType", "visibility", "agentResourceIds", "version"],
+  "properties": {
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "channelType": {"$ref": "../domain/workspace_channel_create.schema.json#/properties/channelType"},
+    "visibility": {"$ref": "../domain/workspace_visibility.schema.json"},
+    "canvasTemplate": {"type": "string"},
+    "agentResourceIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "version": {"type": "integer"}
+  }
+}

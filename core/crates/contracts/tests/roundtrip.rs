@@ -160,6 +160,29 @@ fn project_preference_preserves_coordinate_selection_and_shared_version() {
 }
 
 #[test]
+fn collaboration_user_state_requests_preserve_original_fields_and_shared_version() {
+    // DD-125: thread follow, sidebar sections/sort, channel templates and Pulse follow share
+    // one CollaborationUserState CAS. Every request is flat; absent optionals stay absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("user-state-collaboration.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ThreadPreferenceRequest>(&value["threadPreference"]);
+    roundtrip::<contracts::SidebarSectionRequest>(&value["sidebarSection"]);
+    roundtrip::<contracts::SidebarSectionOrderRequest>(&value["sidebarSectionOrder"]);
+    roundtrip::<contracts::SidebarAssignmentRequest>(&value["sidebarAssignment"]);
+    roundtrip::<contracts::SidebarAssignmentRequest>(&value["sidebarUnassignment"]);
+    roundtrip::<contracts::SidebarSortRequest>(&value["sidebarSort"]);
+    roundtrip::<contracts::ChannelTemplateRequest>(&value["channelTemplate"]);
+    roundtrip::<contracts::FollowedPrincipalRequest>(&value["followedPrincipal"]);
+}
+
+#[test]
 fn projects_publication_preserves_native_metadata_and_exact_head_reference() {
     let value: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("projects-publication.sample.json"))
@@ -843,6 +866,7 @@ fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
         "web-forum-comment.sample.json",
         "web-message-edit.sample.json",
         "web-message-delete.sample.json",
+        "web-send-to-channel.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();

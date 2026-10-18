@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/thread_preference.schema.json",
+  "title": "ThreadPreferenceRequest",
+  "description": "PUT /api/v1/user-state/threads 的请求体（DD-40、DD-125(1)、03 CollaborationUserState.thread_preferences）。threadKey 为 thread:<Buzz root event id>，Core 以本人 SERVER 身份回读根事件并核验当前 Workspace 成员或私聊参与资格。保留原联动：followed=true 记 FOLLOWED（关注即解除静音），false 记 MUTED（取消关注即静音）；每人至多 500 条，超出淘汰最早写入的关注。version 是读到的 CollaborationUserState 版本，不符即 409。不是 Governed Action。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["threadKey", "followed", "version"],
+  "properties": {
+    "threadKey": {"type": "string", "pattern": "^thread:[0-9a-f]{64}$"},
+    "followed": {"type": "boolean"},
+    "version": {"type": "integer"}
+  }
+}

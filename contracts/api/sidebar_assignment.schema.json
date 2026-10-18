@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/sidebar_assignment.schema.json",
+  "title": "SidebarAssignmentRequest",
+  "description": "PUT /api/v1/user-state/sidebar-assignments 的请求体（DD-125(5)）：原 assignChannel/unassignChannel。channelKey 是原生 Buzz Channel ID，必须属于本人当前是成员的 Workspace 或参与中的私聊；sectionId 缺省即移出分区，给出时必须是现有分区。每人至多 1000 个归属（原 MAX_CHANNEL_SECTION_ASSIGNMENTS）。失去资格的归属保留但不呈现。version 不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channelKey", "version"],
+  "properties": {
+    "channelKey": {"type": "string", "format": "uuid"},
+    "sectionId": {"type": "string", "format": "uuid"},
+    "version": {"type": "integer"}
+  }
+}

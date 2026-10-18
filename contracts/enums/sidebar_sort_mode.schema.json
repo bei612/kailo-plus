@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/sidebar_sort_mode.schema.json",
+  "title": "SidebarSortMode",
+  "description": "原 Buzz 侧栏分组排序（channelSortPreference.ts::ChannelSortMode）：alpha 按名称，recent 按最近消息（DD-125(5)）。",
+  "type": "string",
+  "enum": ["alpha", "recent"]
+}

@@ -132,6 +132,30 @@ test("Project preference preserves original coordinate and shared CAS", () => {
   deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
 });
 
+test("DD-125 collaboration user-state requests preserve original fields and shared CAS", () => {
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/user-state-collaboration.sample.json",import.meta.url),"utf8"));
+  const thread: import("../src/generated/contracts.js").ThreadPreferenceRequest = value.threadPreference;
+  const section: import("../src/generated/contracts.js").SidebarSectionRequest = value.sidebarSection;
+  const order: import("../src/generated/contracts.js").SidebarSectionOrderRequest = value.sidebarSectionOrder;
+  const assignment: import("../src/generated/contracts.js").SidebarAssignmentRequest = value.sidebarAssignment;
+  const unassignment: import("../src/generated/contracts.js").SidebarAssignmentRequest = value.sidebarUnassignment;
+  const sort: import("../src/generated/contracts.js").SidebarSortRequest = value.sidebarSort;
+  const template: import("../src/generated/contracts.js").ChannelTemplateRequest = value.channelTemplate;
+  const follow: import("../src/generated/contracts.js").FollowedPrincipalRequest = value.followedPrincipal;
+  const actual = {
+    threadPreference: {threadKey: thread.threadKey, followed: thread.followed, version: thread.version},
+    sidebarSection: {name: section.name, icon: section.icon, order: section.order, version: section.version},
+    sidebarSectionOrder: {sectionIds: order.sectionIds, version: order.version},
+    sidebarAssignment: {channelKey: assignment.channelKey, sectionId: assignment.sectionId, version: assignment.version},
+    sidebarUnassignment: {channelKey: unassignment.channelKey, sectionId: unassignment.sectionId, version: unassignment.version},
+    sidebarSort: {groupKey: sort.groupKey, mode: sort.mode, version: sort.version},
+    channelTemplate: {name: template.name, description: template.description, channelType: template.channelType,
+      visibility: template.visibility, canvasTemplate: template.canvasTemplate, agentResourceIds: template.agentResourceIds, version: template.version},
+    followedPrincipal: {pubkey: follow.pubkey, followed: follow.followed, version: follow.version},
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});
+
 test("Projects publication preserves native metadata and exact head reference", () => {
   const sample: import("../src/generated/contracts.js").ProjectsPublishRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-publication.sample.json",import.meta.url),"utf8"));
   const actual: typeof sample = sample.map(row=>({operation:row.operation,targetEventId:row.targetEventId,workspaceId:row.workspaceId,name:row.name,description:row.description,visibility:row.visibility,title:row.title,body:row.body,category:row.category,mentions:row.mentions,attachments:row.attachments,assigneeLabel:row.assigneeLabel,priorEventId:row.priorEventId,assigneePubkey:row.assigneePubkey,pullRequestStatus:row.pullRequestStatus,branchName:row.branchName,targetBranch:row.targetBranch,commit:row.commit,mergeBase:row.mergeBase,reviewers:row.reviewers,reviewDecision:row.reviewDecision,anchorPath:row.anchorPath,anchorSide:row.anchorSide,anchorLine:row.anchorLine}));
@@ -853,7 +877,7 @@ test("canary round-trip 保留每个字段", () => {
   }
 });
 
-for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json", "web-message-edit.sample.json", "web-message-delete.sample.json"]) {
+for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json", "web-message-edit.sample.json", "web-message-delete.sample.json", "web-send-to-channel.sample.json"]) {
   test(`WebPublishMessageRequest round-trip ${sample}`, () => {
     const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
     const original: unknown = JSON.parse(raw);

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/sidebar_section.schema.json",
+  "title": "SidebarSectionRequest",
+  "description": "PUT /api/v1/user-state/sidebar-sections/{sectionId} 的请求体（DD-125(5)、03 CollaborationUserState.sidebar_sections）：新建或改名原自定义频道分区；sectionId 由客户端以 UUID 生成。name 去首尾空白后非空，icon 缺省即无图标，order 是原分区顺序。每人至多 100 个分区（原 MAX_CHANNEL_SECTIONS）。version 不符即 409。DELETE 同一路径以 UserStateVersion 为请求体，同时清除指向该分区的归属与该分区的排序分组。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "order", "version"],
+  "properties": {
+    "name": {"type": "string"},
+    "icon": {"type": "string"},
+    "order": {"type": "integer"},
+    "version": {"type": "integer"}
+  }
+}

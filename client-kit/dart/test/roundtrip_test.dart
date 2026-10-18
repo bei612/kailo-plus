@@ -1069,6 +1069,7 @@ void main() {
     'web-publish-content-only.sample.json',
     'web-message-edit.sample.json',
     'web-message-delete.sample.json',
+    'web-send-to-channel.sample.json',
   ]) {
     test('WebPublishMessageRequest round-trip $sample', () {
       final original = jsonDecode(
@@ -1080,6 +1081,35 @@ void main() {
       expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     });
   }
+  test('DD-125 collaboration user-state requests round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/user-state-collaboration.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'threadPreference': (v) => ThreadPreferenceRequest.fromJson(v).toJson(),
+      'sidebarSection': (v) => SidebarSectionRequest.fromJson(v).toJson(),
+      'sidebarSectionOrder': (v) =>
+          SidebarSectionOrderRequest.fromJson(v).toJson(),
+      'sidebarAssignment': (v) => SidebarAssignmentRequest.fromJson(v).toJson(),
+      'sidebarUnassignment': (v) =>
+          SidebarAssignmentRequest.fromJson(v).toJson(),
+      'sidebarSort': (v) => SidebarSortRequest.fromJson(v).toJson(),
+      'channelTemplate': (v) => ChannelTemplateRequest.fromJson(v).toJson(),
+      'followedPrincipal': (v) => FollowedPrincipalRequest.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
   test('canary round-trip 保留每个字段', () {
     // 相对包根定位样例，不依赖调用时的工作目录
     final file = File('../../contracts/samples/canary.sample.json');

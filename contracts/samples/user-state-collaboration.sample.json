@@ -1,0 +1,10 @@
+{
+  "threadPreference": {"threadKey": "thread:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "followed": false, "version": 3},
+  "sidebarSection": {"name": "Launch", "icon": "rocket", "order": 2, "version": 4},
+  "sidebarSectionOrder": {"sectionIds": ["00000000-0000-4000-8000-0000000000a2", "00000000-0000-4000-8000-0000000000a1"], "version": 5},
+  "sidebarAssignment": {"channelKey": "00000000-0000-4000-8000-000000000004", "sectionId": "00000000-0000-4000-8000-0000000000a1", "version": 6},
+  "sidebarUnassignment": {"channelKey": "00000000-0000-4000-8000-000000000004", "version": 7},
+  "sidebarSort": {"groupKey": "section:00000000-0000-4000-8000-0000000000a1", "mode": "recent", "version": 8},
+  "channelTemplate": {"name": "Incident room", "description": "Triage", "channelType": "stream", "visibility": "private", "canvasTemplate": "# {{channel}}", "agentResourceIds": ["00000000-0000-4000-8000-0000000000b1"], "version": 9},
+  "followedPrincipal": {"pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "followed": true, "version": 10}
+}

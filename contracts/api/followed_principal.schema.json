@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/followed_principal.schema.json",
+  "title": "FollowedPrincipalRequest",
+  "description": "PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03 CollaborationUserState.followed_principals）：原 Pulse 关注/取消关注，取代逐公钥 kind 3。pubkey 是被关注者的任一 Buzz 公钥，Core 解析为同 Tenant 的 HUMAN Principal 并按 Principal 存储；关注要求该公钥当前 ACTIVE，取消关注也接受其已撤销的历史公钥。读取时按被关注 Principal 的全部 ACTIVE 公钥展开。version 不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pubkey", "followed", "version"],
+  "properties": {
+    "pubkey": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "followed": {"type": "boolean"},
+    "version": {"type": "integer"}
+  }
+}

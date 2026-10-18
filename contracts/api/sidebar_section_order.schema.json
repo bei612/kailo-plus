@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/sidebar_section_order.schema.json",
+  "title": "SidebarSectionOrderRequest",
+  "description": "PUT /api/v1/user-state/sidebar-section-order 的请求体（DD-125(5)）：原 reorderSections/moveSectionUp/moveSectionDown 的结果顺序。sectionIds 必须恰为当前全部分区 ID 的一个排列，Core 按下标写回 order。version 不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sectionIds", "version"],
+  "properties": {
+    "sectionIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "version": {"type": "integer"}
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/sidebar_sort.schema.json",
+  "title": "SidebarSortRequest",
+  "description": "PUT /api/v1/user-state/sidebar-sort 的请求体（DD-125(5)、03 CollaborationUserState.sidebar_sort）：原分组排序。groupKey 只接受原固定分组 starred/channels/forums/dms 或 section:<现有分区 ID>；每人至多 104 个分组（原 MAX_CHANNEL_SORT_GROUPS）。version 不符即 409。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["groupKey", "mode", "version"],
+  "properties": {
+    "groupKey": {"type": "string"},
+    "mode": {"$ref": "../enums/sidebar_sort_mode.schema.json"},
+    "version": {"type": "integer"}
+  }
+}
