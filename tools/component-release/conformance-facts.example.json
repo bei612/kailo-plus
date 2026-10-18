@@ -1,0 +1,70 @@
+{
+  "formatVersion": 1,
+  "seed": "00000000-0000-5000-8000-0000000000aa",
+  "artifactDigest": "REPLACE-with-rendered-manifest-adapterBuildRef-64-lowercase-hex",
+  "environment": {
+    "adapterBaseUrl": "http://example-conformance-adapter.invalid:8080/",
+    "maxResponseBytes": 1048576,
+    "maxSteps": 64
+  },
+  "identity": {
+    "issuer": "https://example-conformance-issuer.invalid",
+    "audience": "example-conformance-only-audience",
+    "tokenSeconds": 60,
+    "secretLocator": "platform/kv/example-conformance-signing-key",
+    "secretVersion": 1,
+    "secretAudience": "example-core-openbao-audience",
+    "privateKeyField": "privateKeyPem",
+    "jwksFile": "/run/example-conformance/public-jwks.json"
+  },
+  "principals": {
+    "tenantId": "00000000-0000-5000-8000-000000000001",
+    "actorPrincipalId": "00000000-0000-5000-8000-000000000002",
+    "deniedActorPrincipalId": "00000000-0000-5000-8000-000000000003",
+    "authorizationMinZedToken": "example-simulated-conformance-revision"
+  },
+  "bindingManagement": {
+    "bindingId": "00000000-0000-5000-8000-000000000004",
+    "actionDefinitionVersion": 1
+  },
+  "protocol": {
+    "handshake": {
+      "expected": { "protocolVersion": "1", "artifactDigest": "REPLACE-with-the-same-adapterBuildRef" }
+    },
+    "validateBinding": {
+      "request": { "REPLACE": "with the observed validate_binding argument document, without idempotencyKey" },
+      "expected": { "REPLACE": "with the observed AdapterBindingObservation" }
+    },
+    "execution": {
+      "actionKey": "knowledge.read@v1",
+      "target": { "resourceId": "00000000-0000-5000-8000-000000000005" },
+      "input": {},
+      "resultExposurePolicyId": "00000000-0000-5000-8000-000000000006",
+      "resultExposurePolicyVersion": 1,
+      "expectedFirst": { "nativeType": "REPLACE-observed", "cancelCapability": "UNSUPPORTED", "platformStatus": "SUCCEEDED" },
+      "observeRequest": {},
+      "observeExpected": { "nativeType": "REPLACE-observed", "cancelCapability": "UNSUPPORTED", "platformStatus": "SUCCEEDED" }
+    },
+    "errorMappings": [
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "DENIED" } },
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "BLOCKED" } },
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "PRECONDITION" } },
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "LIMIT" } },
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "CONFLICT" } },
+      { "request": { "REPLACE": "observed native status input" }, "expected": { "class": "UNKNOWN" } }
+    ],
+    "redaction": {
+      "request": { "REPLACE": "observed native error carrying a sensitive detail" },
+      "expected": { "class": "UNKNOWN" }
+    }
+  },
+  "vectorContexts": {
+    "default": {
+      "resultExposurePolicyId": "00000000-0000-5000-8000-000000000006",
+      "resultExposurePolicyVersion": 1
+    },
+    "byContract": {
+      "knowledge.search@v1": { "target": { "resourceId": "00000000-0000-5000-8000-000000000005" } }
+    }
+  }
+}
