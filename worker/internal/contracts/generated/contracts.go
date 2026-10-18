@@ -4111,6 +4111,10 @@ type ActionCommand struct {
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
 	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
+	// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+	// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+	// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+	BindingSecretValues []ActionCommandBindingSecretValue `json:"bindingSecretValues,omitempty"`
 	// 仅 capability_contract.approve/deprecate：固定已登记版本。
 	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
@@ -4217,8 +4221,8 @@ type AgentVersionContentTurnLimits struct {
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
 }
 
-// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-// ActionCommand。
+// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 type ApplicationBindingCreateClass struct {
 	AdapterServiceRef    string                                       `json:"adapterServiceRef"`
 	BindingID            string                                       `json:"bindingId"`
@@ -4231,8 +4235,11 @@ type ApplicationBindingCreateClass struct {
 	NativeScopeRef       *string                                      `json:"nativeScopeRef,omitempty"`
 	NormalizedConfigJSON string                                       `json:"normalizedConfigJson"`
 	RetainOnTenantDelete bool                                         `json:"retainOnTenantDelete"`
-	SecretRefs           []ApplicationBindingCreateSecretRef          `json:"secretRefs"`
-	ServicePrincipalID   string                                       `json:"servicePrincipalId"`
+	// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+	// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+	// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+	SecretRefs         []ApplicationBindingCreateSecretRef `json:"secretRefs"`
+	ServicePrincipalID string                              `json:"servicePrincipalId"`
 }
 
 type ApplicationBindingCreateCapabilityCategory struct {
@@ -4351,6 +4358,11 @@ type ScheduleSpecClass struct {
 	// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
 	Kind          *ScheduleSpecKind `json:"kind,omitempty"`
 	OffsetSeconds *int64            `json:"offsetSeconds,omitempty"`
+}
+
+type ActionCommandBindingSecretValue struct {
+	SecretKey string `json:"secretKey"`
+	Value     string `json:"value"`
 }
 
 // 仅 capability_contract.approve/deprecate：固定已登记版本。
@@ -5124,9 +5136,26 @@ type AgentVersionView struct {
 
 // 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
 type ApplicationBindingPage struct {
-	Bindings   []ApplicationBindingView `json:"bindings"`
-	CanCreate  bool                     `json:"canCreate"`
-	NextOffset *int64                   `json:"nextOffset,omitempty"`
+	// 仅 canCreate=true 时给出：Catalog 中已 APPROVED 的 APPLICATION release 的绑定所需公开声明（03
+	// §9）。secretSchema 只含键与格式声明，供 Tenant admin 按项提交 bindingSecretValues；不含任何 secret
+	// 值、SecretRef、locator 或 Catalog 管理权。
+	BindableReleases []ApplicationBindableRelease `json:"bindableReleases,omitempty"`
+	Bindings         []ApplicationBindingView     `json:"bindings"`
+	CanCreate        bool                         `json:"canCreate"`
+	NextOffset       *int64                       `json:"nextOffset,omitempty"`
+}
+
+type ApplicationBindableRelease struct {
+	ComponentReleaseID string                      `json:"componentReleaseId"`
+	ComponentTypeKey   string                      `json:"componentTypeKey"`
+	SecretSchema       []ApplicationBindableSecret `json:"secretSchema"`
+	Version            string                      `json:"version"`
+}
+
+type ApplicationBindableSecret struct {
+	LengthOrFormat string `json:"lengthOrFormat"`
+	SecretKey      string `json:"secretKey"`
+	ValueType      string `json:"valueType"`
 }
 
 type ApplicationBindingView struct {
@@ -6098,6 +6127,10 @@ type CommandClass struct {
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
 	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
+	// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+	// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+	// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+	BindingSecretValues []CommandBindingSecretValue `json:"bindingSecretValues,omitempty"`
 	// 仅 capability_contract.approve/deprecate：固定已登记版本。
 	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
@@ -6165,6 +6198,11 @@ type CommandClass struct {
 	WorkspaceUpdate *WorkspaceUpdateClass `json:"workspaceUpdate,omitempty"`
 	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
+}
+
+type CommandBindingSecretValue struct {
+	SecretKey string `json:"secretKey"`
+	Value     string `json:"value"`
 }
 
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -7424,8 +7462,8 @@ type ProtocolPeerSecretReader struct {
 	ServicePrincipalID string `json:"servicePrincipalId"`
 }
 
-// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-// ActionCommand。
+// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 type ApplicationBindingCreate struct {
 	AdapterServiceRef    string                                            `json:"adapterServiceRef"`
 	BindingID            string                                            `json:"bindingId"`
@@ -7438,8 +7476,11 @@ type ApplicationBindingCreate struct {
 	NativeScopeRef       *string                                           `json:"nativeScopeRef,omitempty"`
 	NormalizedConfigJSON string                                            `json:"normalizedConfigJson"`
 	RetainOnTenantDelete bool                                              `json:"retainOnTenantDelete"`
-	SecretRefs           []ApplicationBindingCreateSecretRefClass          `json:"secretRefs"`
-	ServicePrincipalID   string                                            `json:"servicePrincipalId"`
+	// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+	// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+	// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+	SecretRefs         []ApplicationBindingCreateSecretRefClass `json:"secretRefs"`
+	ServicePrincipalID string                                   `json:"servicePrincipalId"`
 }
 
 type ApplicationBindingCreateCapabilityCategoryClass struct {

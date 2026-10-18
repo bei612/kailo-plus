@@ -4360,6 +4360,11 @@ class ActionCommand {
   ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
   final AutomationVersionContentClass? automationVersionContent;
 
+  ///仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+  ///值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+  ///SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+  final List<ActionCommandBindingSecretValue>? bindingSecretValues;
+
   ///仅 capability_contract.approve/deprecate：固定已登记版本。
   final CapabilityContractRefClass? capabilityContractRef;
 
@@ -4463,6 +4468,7 @@ class ActionCommand {
     this.assetId,
     this.assetVersion,
     this.automationVersionContent,
+    this.bindingSecretValues,
     this.capabilityContractRef,
     this.capabilityContractRegistration,
     this.componentAction,
@@ -4515,6 +4521,13 @@ class ActionCommand {
         ? null
         : AutomationVersionContentClass.fromJson(
             json["automationVersionContent"],
+          ),
+    bindingSecretValues: json["bindingSecretValues"] == null
+        ? null
+        : List<ActionCommandBindingSecretValue>.from(
+            json["bindingSecretValues"]!.map(
+              (x) => ActionCommandBindingSecretValue.fromJson(x),
+            ),
           ),
     capabilityContractRef: json["capabilityContractRef"] == null
         ? null
@@ -4596,6 +4609,9 @@ class ActionCommand {
     "assetId": assetId,
     "assetVersion": assetVersion,
     "automationVersionContent": automationVersionContent?.toJson(),
+    "bindingSecretValues": bindingSecretValues == null
+        ? null
+        : List<dynamic>.from(bindingSecretValues!.map((x) => x.toJson())),
     "capabilityContractRef": capabilityContractRef?.toJson(),
     "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
     "componentAction": componentAction?.toJson(),
@@ -4800,8 +4816,8 @@ class ContentTurnLimits {
   });
 }
 
-///DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-///ActionCommand。
+///DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+///ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 class ApplicationBindingCreateClass {
   final String adapterServiceRef;
   final String bindingId;
@@ -4814,6 +4830,10 @@ class ApplicationBindingCreateClass {
   final String? nativeScopeRef;
   final String normalizedConfigJson;
   final bool retainOnTenantDelete;
+
+  ///必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+  ///namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+  ///一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
   final List<ApplicationBindingCreateSecretRef> secretRefs;
   final String servicePrincipalId;
 
@@ -5357,6 +5377,25 @@ final scheduleSpecKindValues = EnumValues({
   "CRON": ScheduleSpecKind.CRON,
   "INTERVAL": ScheduleSpecKind.INTERVAL,
 });
+
+class ActionCommandBindingSecretValue {
+  final String secretKey;
+  final String value;
+
+  ActionCommandBindingSecretValue({
+    required this.secretKey,
+    required this.value,
+  });
+
+  factory ActionCommandBindingSecretValue.fromJson(Map<String, dynamic> json) =>
+      ActionCommandBindingSecretValue(
+        secretKey: json["secretKey"],
+        value: json["value"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"secretKey": secretKey, "value": value});
+}
 
 ///仅 capability_contract.approve/deprecate：固定已登记版本。
 ///
@@ -8592,11 +8631,16 @@ class AgentVersionView {
 
 ///当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
 class ApplicationBindingPage {
+  ///仅 canCreate=true 时给出：Catalog 中已 APPROVED 的 APPLICATION release 的绑定所需公开声明（03
+  ///§9）。secretSchema 只含键与格式声明，供 Tenant admin 按项提交 bindingSecretValues；不含任何 secret
+  ///值、SecretRef、locator 或 Catalog 管理权。
+  final List<ApplicationBindableRelease>? bindableReleases;
   final List<ApplicationBindingView> bindings;
   final bool canCreate;
   final int? nextOffset;
 
   ApplicationBindingPage({
+    this.bindableReleases,
     required this.bindings,
     required this.canCreate,
     this.nextOffset,
@@ -8604,6 +8648,13 @@ class ApplicationBindingPage {
 
   factory ApplicationBindingPage.fromJson(Map<String, dynamic> json) =>
       ApplicationBindingPage(
+        bindableReleases: json["bindableReleases"] == null
+            ? null
+            : List<ApplicationBindableRelease>.from(
+                json["bindableReleases"]!.map(
+                  (x) => ApplicationBindableRelease.fromJson(x),
+                ),
+              ),
         bindings: List<ApplicationBindingView>.from(
           json["bindings"].map((x) => ApplicationBindingView.fromJson(x)),
         ),
@@ -8612,9 +8663,70 @@ class ApplicationBindingPage {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bindableReleases": bindableReleases == null
+        ? null
+        : List<dynamic>.from(bindableReleases!.map((x) => x.toJson())),
     "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
     "canCreate": canCreate,
     "nextOffset": nextOffset,
+  });
+}
+
+class ApplicationBindableRelease {
+  final String componentReleaseId;
+  final String componentTypeKey;
+  final List<ApplicationBindableSecret> secretSchema;
+  final String version;
+
+  ApplicationBindableRelease({
+    required this.componentReleaseId,
+    required this.componentTypeKey,
+    required this.secretSchema,
+    required this.version,
+  });
+
+  factory ApplicationBindableRelease.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindableRelease(
+        componentReleaseId: json["componentReleaseId"],
+        componentTypeKey: json["componentTypeKey"],
+        secretSchema: List<ApplicationBindableSecret>.from(
+          json["secretSchema"].map(
+            (x) => ApplicationBindableSecret.fromJson(x),
+          ),
+        ),
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "componentReleaseId": componentReleaseId,
+    "componentTypeKey": componentTypeKey,
+    "secretSchema": List<dynamic>.from(secretSchema.map((x) => x.toJson())),
+    "version": version,
+  });
+}
+
+class ApplicationBindableSecret {
+  final String lengthOrFormat;
+  final String secretKey;
+  final String valueType;
+
+  ApplicationBindableSecret({
+    required this.lengthOrFormat,
+    required this.secretKey,
+    required this.valueType,
+  });
+
+  factory ApplicationBindableSecret.fromJson(Map<String, dynamic> json) =>
+      ApplicationBindableSecret(
+        lengthOrFormat: json["lengthOrFormat"],
+        secretKey: json["secretKey"],
+        valueType: json["valueType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "lengthOrFormat": lengthOrFormat,
+    "secretKey": secretKey,
+    "valueType": valueType,
   });
 }
 
@@ -12696,6 +12808,11 @@ class CommandClass {
   ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
   final AutomationVersionContentClass? automationVersionContent;
 
+  ///仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+  ///值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+  ///SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+  final List<CommandBindingSecretValue>? bindingSecretValues;
+
   ///仅 capability_contract.approve/deprecate：固定已登记版本。
   final CapabilityContractRefClass? capabilityContractRef;
 
@@ -12799,6 +12916,7 @@ class CommandClass {
     this.assetId,
     this.assetVersion,
     this.automationVersionContent,
+    this.bindingSecretValues,
     this.capabilityContractRef,
     this.capabilityContractRegistration,
     this.componentAction,
@@ -12851,6 +12969,13 @@ class CommandClass {
         ? null
         : AutomationVersionContentClass.fromJson(
             json["automationVersionContent"],
+          ),
+    bindingSecretValues: json["bindingSecretValues"] == null
+        ? null
+        : List<CommandBindingSecretValue>.from(
+            json["bindingSecretValues"]!.map(
+              (x) => CommandBindingSecretValue.fromJson(x),
+            ),
           ),
     capabilityContractRef: json["capabilityContractRef"] == null
         ? null
@@ -12932,6 +13057,9 @@ class CommandClass {
     "assetId": assetId,
     "assetVersion": assetVersion,
     "automationVersionContent": automationVersionContent?.toJson(),
+    "bindingSecretValues": bindingSecretValues == null
+        ? null
+        : List<dynamic>.from(bindingSecretValues!.map((x) => x.toJson())),
     "capabilityContractRef": capabilityContractRef?.toJson(),
     "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
     "componentAction": componentAction?.toJson(),
@@ -12966,6 +13094,22 @@ class CommandClass {
     "workspaceVisibility":
         workspaceVisibilityValues.reverse[workspaceVisibility],
   });
+}
+
+class CommandBindingSecretValue {
+  final String secretKey;
+  final String value;
+
+  CommandBindingSecretValue({required this.secretKey, required this.value});
+
+  factory CommandBindingSecretValue.fromJson(Map<String, dynamic> json) =>
+      CommandBindingSecretValue(
+        secretKey: json["secretKey"],
+        value: json["value"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"secretKey": secretKey, "value": value});
 }
 
 ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -17783,8 +17927,8 @@ class ProtocolPeerSecretReader {
   });
 }
 
-///DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-///ActionCommand。
+///DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+///ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 class ApplicationBindingCreate {
   final String adapterServiceRef;
   final String bindingId;
@@ -17798,6 +17942,10 @@ class ApplicationBindingCreate {
   final String? nativeScopeRef;
   final String normalizedConfigJson;
   final bool retainOnTenantDelete;
+
+  ///必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+  ///namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+  ///一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
   final List<ApplicationBindingCreateSecretRefClass> secretRefs;
   final String servicePrincipalId;
 

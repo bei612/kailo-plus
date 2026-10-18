@@ -1144,6 +1144,10 @@ enum PlatformMessageKey {
   bindingsCapabilities,
   bindingsDocument,
   bindingsDocumentHelp,
+  bindingsReleases,
+  bindingsSecrets,
+  bindingsSecretsHelp,
+  bindingsSecretsMissing,
   bindingsInvalid,
   bindingsReview,
   bindingsCreate,
@@ -5577,8 +5581,24 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '连接配置（JSON）',
   ),
   PlatformMessageKey.bindingsDocumentHelp: (
-    'Supply the ApplicationBindingCreate document for an approved release and registered adapter. Reference credentials by SecretRef only; never paste passwords or access tokens.',
-    '提交已批准发行版本与已登记 Adapter 的 ApplicationBindingCreate 配置。凭据只填 SecretRef 引用，不粘贴密码或访问令牌。',
+    'Supply the ApplicationBindingCreate document for an approved release and registered adapter. Keep secretRefs empty and never put passwords or access tokens in the document; enter the release\'s declared credentials in the separate fields below.',
+    '提交已批准发行版本与已登记 Adapter 的 ApplicationBindingCreate 配置。secretRefs 保持为空，配置中不要填写密码或访问令牌；发行版本声明的凭据在下方单独字段中填写。',
+  ),
+  PlatformMessageKey.bindingsReleases: (
+    'Approved releases available for connection',
+    '可接入的已批准发行版本',
+  ),
+  PlatformMessageKey.bindingsSecrets: (
+    'Credentials declared by this release',
+    '此发行版本声明的凭据',
+  ),
+  PlatformMessageKey.bindingsSecretsHelp: (
+    'Each value is written once to this organization\'s secret store by the same governed request and is never shown again. Only its versioned reference is recorded.',
+    '各项值由同一受治理请求一次写入本组织的密钥存储，之后不再显示；只记录其版本化引用。',
+  ),
+  PlatformMessageKey.bindingsSecretsMissing: (
+    'Enter every secret declared by an approved release listed above before reviewing the connection.',
+    '请先为上方所列已批准发行版本声明的每项凭据填写值，再预览接入。',
   ),
   PlatformMessageKey.bindingsInvalid: (
     'The connection document is invalid or has unsupported fields.',

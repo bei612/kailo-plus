@@ -1373,6 +1373,12 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_version_content: Option<AutomationVersionContentClass>,
 
+    /// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+    /// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+    /// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_secret_values: Option<Vec<ActionCommandBindingSecretValue>>,
+
     /// 仅 capability_contract.approve/deprecate：固定已登记版本。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_contract_ref: Option<CapabilityContractRefClass>,
@@ -1594,8 +1600,8 @@ pub struct ContentTurnLimits {
     pub max_turn_duration_seconds: i64,
 }
 
-/// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-/// ActionCommand。
+/// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+/// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBindingCreateClass {
@@ -1622,6 +1628,9 @@ pub struct ApplicationBindingCreateClass {
 
     pub retain_on_tenant_delete: bool,
 
+    /// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+    /// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+    /// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
     pub secret_refs: Vec<ApplicationBindingCreateSecretRef>,
 
     pub service_principal_id: String,
@@ -1940,6 +1949,14 @@ pub enum ScheduleSpecKind {
 
     #[serde(rename = "INTERVAL")]
     Interval,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCommandBindingSecretValue {
+    pub secret_key: String,
+
+    pub value: String,
 }
 
 /// 仅 capability_contract.approve/deprecate：固定已登记版本。
@@ -3818,12 +3835,40 @@ pub struct AgentVersionView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBindingPage {
+    /// 仅 canCreate=true 时给出：Catalog 中已 APPROVED 的 APPLICATION release 的绑定所需公开声明（03
+    /// §9）。secretSchema 只含键与格式声明，供 Tenant admin 按项提交 bindingSecretValues；不含任何 secret
+    /// 值、SecretRef、locator 或 Catalog 管理权。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindable_releases: Option<Vec<ApplicationBindableRelease>>,
+
     pub bindings: Vec<ApplicationBindingView>,
 
     pub can_create: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindableRelease {
+    pub component_release_id: String,
+
+    pub component_type_key: String,
+
+    pub secret_schema: Vec<ApplicationBindableSecret>,
+
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindableSecret {
+    pub length_or_format: String,
+
+    pub secret_key: String,
+
+    pub value_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6215,6 +6260,12 @@ pub struct CommandClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_version_content: Option<AutomationVersionContentClass>,
 
+    /// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+    /// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+    /// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_secret_values: Option<Vec<CommandBindingSecretValue>>,
+
     /// 仅 capability_contract.approve/deprecate：固定已登记版本。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_contract_ref: Option<CapabilityContractRefClass>,
@@ -6344,6 +6395,14 @@ pub struct CommandClass {
     /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_visibility: Option<WorkspaceVisibility>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandBindingSecretValue {
+    pub secret_key: String,
+
+    pub value: String,
 }
 
 /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -8913,8 +8972,8 @@ pub struct ProtocolPeerSecretReader {
     pub service_principal_id: String,
 }
 
-/// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
-/// ActionCommand。
+/// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+/// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBindingCreate {
@@ -8941,6 +9000,9 @@ pub struct ApplicationBindingCreate {
 
     pub retain_on_tenant_delete: bool,
 
+    /// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+    /// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+    /// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
     pub secret_refs: Vec<ApplicationBindingCreateSecretRefClass>,
 
     pub service_principal_id: String,

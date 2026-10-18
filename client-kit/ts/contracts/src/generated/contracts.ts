@@ -985,6 +985,12 @@ export interface ActionCommand {
      */
     automationVersionContent?: AutomationVersionContentClass;
     /**
+     * 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+     * 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+     * SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+     */
+    bindingSecretValues?: ActionCommandBindingSecretValue[];
+    /**
      * 仅 capability_contract.approve/deprecate：固定已登记版本。
      */
     capabilityContractRef?: CapabilityContractRefClass;
@@ -1166,8 +1172,8 @@ export interface AgentVersionContentTurnLimits {
 }
 
 /**
- * DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
- * ActionCommand。
+ * DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+ * ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
  */
 export interface ApplicationBindingCreateClass {
     adapterServiceRef:    string;
@@ -1181,8 +1187,13 @@ export interface ApplicationBindingCreateClass {
     nativeScopeRef?:      string;
     normalizedConfigJson: string;
     retainOnTenantDelete: boolean;
-    secretRefs:           ApplicationBindingCreateSecretRef[];
-    servicePrincipalId:   string;
+    /**
+     * 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+     * namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+     * 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+     */
+    secretRefs:         ApplicationBindingCreateSecretRef[];
+    servicePrincipalId: string;
 }
 
 export enum ApplicationCallIdentityMode {
@@ -1406,6 +1417,11 @@ export interface ScheduleSpecClass {
 export enum ScheduleSpecKind {
     Cron = "CRON",
     Interval = "INTERVAL",
+}
+
+export interface ActionCommandBindingSecretValue {
+    secretKey: string;
+    value:     string;
 }
 
 /**
@@ -2664,9 +2680,28 @@ export interface AgentVersionView {
  * 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
  */
 export interface ApplicationBindingPage {
-    bindings:    ApplicationBindingView[];
-    canCreate:   boolean;
-    nextOffset?: number;
+    /**
+     * 仅 canCreate=true 时给出：Catalog 中已 APPROVED 的 APPLICATION release 的绑定所需公开声明（03
+     * §9）。secretSchema 只含键与格式声明，供 Tenant admin 按项提交 bindingSecretValues；不含任何 secret
+     * 值、SecretRef、locator 或 Catalog 管理权。
+     */
+    bindableReleases?: ApplicationBindableRelease[];
+    bindings:          ApplicationBindingView[];
+    canCreate:         boolean;
+    nextOffset?:       number;
+}
+
+export interface ApplicationBindableRelease {
+    componentReleaseId: string;
+    componentTypeKey:   string;
+    secretSchema:       ApplicationBindableSecret[];
+    version:            string;
+}
+
+export interface ApplicationBindableSecret {
+    lengthOrFormat: string;
+    secretKey:      string;
+    valueType:      string;
 }
 
 export interface ApplicationBindingView {
@@ -4319,6 +4354,12 @@ export interface CommandClass {
      */
     automationVersionContent?: AutomationVersionContentClass;
     /**
+     * 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
+     * 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
+     * SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
+     */
+    bindingSecretValues?: CommandBindingSecretValue[];
+    /**
      * 仅 capability_contract.approve/deprecate：固定已登记版本。
      */
     capabilityContractRef?: CapabilityContractRefClass;
@@ -4439,6 +4480,11 @@ export interface CommandClass {
      * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
      */
     workspaceVisibility?: WorkspaceVisibility;
+}
+
+export interface CommandBindingSecretValue {
+    secretKey: string;
+    value:     string;
 }
 
 /**
@@ -6304,8 +6350,8 @@ export interface ProtocolPeerSecretReader {
 }
 
 /**
- * DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
- * ActionCommand。
+ * DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+ * ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
  */
 export interface ApplicationBindingCreate {
     adapterServiceRef:    string;
@@ -6319,8 +6365,13 @@ export interface ApplicationBindingCreate {
     nativeScopeRef?:      string;
     normalizedConfigJson: string;
     retainOnTenantDelete: boolean;
-    secretRefs:           ApplicationBindingCreateSecretRefClass[];
-    servicePrincipalId:   string;
+    /**
+     * 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+     * namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+     * 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+     */
+    secretRefs:         ApplicationBindingCreateSecretRefClass[];
+    servicePrincipalId: string;
 }
 
 export interface ApplicationBindingCreateCapabilityCategoryClass {
