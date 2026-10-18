@@ -21,6 +21,7 @@
       "release": "{{rendered knowledge release dir, output of render.mjs}}",
       "adapterServiceRef": "knowledge-adapter",
       "baseUrl": "http://kailo-knowledge-adapter-1:8080/",
+      "mcpUrl": "http://kailo-knowledge-adapter-1:8080/mcp",
       "nativeInstanceRef": "{{WeKnora instance reference, identical to the binding nativeInstanceRef}}",
       "timeoutSeconds": 30,
       "maxResponseBytes": 1048576,

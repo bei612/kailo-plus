@@ -1,0 +1,38 @@
+{
+  "$comment": "Native Cells current-actor/action delivery (CELLS_NATIVE_ACTION_CONFIG_FILE; consumers: file-storage/deploy/start.sh validation, tools/docker/images/cells/docker-entrypoint.sh `cells admin config set pydio.rest.n platform`, common/auth/native-action.go NativeActorDelivery/NativeWriteDelivery/NativeDeleteDelivery/NativeCellShareDelivery, file-storage/deploy/verify/deployment.md). Render into the owner-only CELLS_NATIVE_ACTION_DELIVERY_DIR (separate from the adapter delivery) with: adapter-delivery.py config --kind cells-native --plan <bind plan> --template this --delivery-dir <CELLS_NATIVE_ACTION_DELIVERY_DIR> --env-file <platform .env> --set nativeRootRef=... --set instanceServiceUuid=... --set writeNativeType=... --set deleteNativeType=... --set cellShareNativeType=... --set writeResultExposurePolicyId=... --set writeResultExposurePolicyVersion=N --set deleteResultExposurePolicyId=... --set deleteResultExposurePolicyVersion=N --set grantActionVersion=N --set revokeActionVersion=N --set bindingGeneration=N --set-json actors=<file [{principalId,kind,userUuid}]> --out <CELLS_NATIVE_ACTION_CONFIG_FILE>. The callback credential oidc_client_secret is the binding's own SecretRef rendered into this directory by the same OpenBao Agent (adapter-delivery.py reader --extra-delivery-dir <this dir> --extra-secret oidc_client_secret, compose.adapter-agent.native.yaml); clientId is the binding normalizedConfig.client_id because Core's PEP identifies the native caller only by it. nativeJobId values are the same deterministic {{job:*}} identities as file-storage-adapter.template.json. Every {{set:*}} is an observed fact, never a default: the native types and resultExposurePolicy id/version come from Core's projection of this binding's Resource and the existing policy that HUMAN component actions of this Tenant use; actors map existing Kailo HUMAN/AGENT principals to existing native Cells user UUIDs (no SERVICE). The launcher currently refuses a `share` section (start.sh allowed keys), so native file_storage.share execution stays refused until that launcher is fixed and rebuilt; activation does not depend on it.",
+  "nativeInstanceRef": "{{plan:nativeInstanceRef}}",
+  "nativeScopeRef": "{{plan:nativeScopeRef}}",
+  "nativeRootRef": "{{set:nativeRootRef}}",
+  "instanceServiceUuid": "{{set:instanceServiceUuid}}",
+  "actors": "{{setjson:actors}}",
+  "corePepUrl": "http://{{env:BFF_SERVICE_NAME}}:{{env:SERVICE_CONTAINER_PORT}}/service/v1/adapter/pep_check",
+  "oidcTokenUrl": "{{env:OIDC_ISSUER}}/protocol/openid-connect/token",
+  "clientId": "{{plan:clientId}}",
+  "clientSecretFile": "{{secretFile:oidc_client_secret}}",
+  "requestTimeout": "10s",
+  "maxResponseBytes": 1048576,
+  "clientSecretMaxBytes": 4096,
+  "write": {
+    "nativeJobId": "{{job:write}}",
+    "actionVersion": "{{action:file_storage.write@v1}}",
+    "nativeType": "{{set:writeNativeType}}",
+    "resultExposurePolicyId": "{{set:writeResultExposurePolicyId}}",
+    "resultExposurePolicyVersion": "{{setint:writeResultExposurePolicyVersion}}"
+  },
+  "delete": {
+    "nativeJobId": "{{job:delete}}",
+    "bindingGeneration": "{{setint:bindingGeneration}}",
+    "actionVersion": "{{action:file_storage.delete@v1}}",
+    "nativeType": "{{set:deleteNativeType}}",
+    "resultExposurePolicyId": "{{set:deleteResultExposurePolicyId}}",
+    "resultExposurePolicyVersion": "{{setint:deleteResultExposurePolicyVersion}}",
+    "admissionPollInterval": "5s"
+  },
+  "cellShare": {
+    "nativeJobId": "{{job:cell-share}}",
+    "bindingGeneration": "{{setint:bindingGeneration}}",
+    "nativeType": "{{set:cellShareNativeType}}",
+    "grantActionVersion": "{{setint:grantActionVersion}}",
+    "revokeActionVersion": "{{setint:revokeActionVersion}}"
+  }
+}

@@ -105,6 +105,12 @@ function entry(input) {
     secretReaders,
   };
   if (input.mcpUrl !== undefined) out.mcpUrl = url(input.mcpUrl, 'mcpUrl', false);
+  // Core publishes every release ToolDefinition as one AgentGateway route whose
+  // MCP target is this adapter's mcpUrl (application_binding_gateway.rs publish);
+  // without it the binding can never leave PROVISIONING.
+  if ((manifest.toolDefinitions ?? []).length > 0 && out.mcpUrl === undefined) {
+    fail(`${input.adapterServiceRef}: the release declares tools, so mcpUrl (the adapter's Gateway MCP path) is required`);
+  }
   // Pre-existing controlled facts are carried verbatim; Core validates them.
   for (const key of ['modelCredentialDeliveries', 'nativeHumanIdentities', 'bindings']) {
     if (input[key] === undefined) continue;

@@ -5,7 +5,12 @@
 // transiently, as bindingSecretValues; Core writes version 1 of
 // <parent>/<tenant>/<kvMount>/application-binding/<bindingId>/<secretKey>
 // (field `value`) inside the same governed action. 07 §4.6: the native page
-// entry is normalizedConfig.nativePageUrl.
+// entry is normalizedConfig.nativePageUrl. normalizedConfig.client_id is the
+// binding's own adapter IdP client: Core's adapter PEP, read-grant and native
+// task callbacks identify the binding only by it (application_binding_pep.rs
+// check, verify_binding_client), so it is unique per binding and defaults to
+// <component>-adapter-<first 8 hex of bindingId> (adapter-delivery.py client
+// registers exactly this id with the Agent-delivered oidc_client_secret).
 //
 // Two phases, same arguments:
 //   --plan-only   log in, derive the binding identity and write the plan JSON
@@ -26,7 +31,7 @@
 //     --native-page-url <url> --native-instance-ref <ref> [--native-scope-ref <ref>]
 //     [--adapter-service-ref <ref>] [--isolation-mode <mode>] [--workspace-id <uuid>]
 //     [--model-route-ids <uuid,...> --meter-keys <key,...>]     (knowledge modelGateway)
-//     [--model-call-mode NONE|PLATFORM_LLM_ROUTE] [--account admin] [--attempt N]
+//     [--model-call-mode NONE|PLATFORM_LLM_ROUTE] [--client-id <adapter IdP client id>] [--account admin] [--attempt N]
 //     --plan-out <plan.json> (--plan-only | --secret-values-file <file>) [--wait-seconds 1800]
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { attempt, canonical, deployEnv, digest, FlowError, key, log, login, main, parseArgs, privateText,
@@ -56,7 +61,7 @@ function exactOrigin(url, manifest) {
 await main(async () => {
   const args = parseArgs(process.argv.slice(2), ['component', 'release-dir', 'native-page-url', 'native-instance-ref', 'native-scope-ref',
     'adapter-service-ref', 'isolation-mode', 'workspace-id', 'model-route-ids', 'meter-keys', 'model-call-mode', 'account', 'attempt',
-    'plan-out', 'secret-values-file', 'wait-seconds'], ['plan-only']);
+    'plan-out', 'secret-values-file', 'wait-seconds', 'client-id'], ['plan-only']);
   const defaults = DEFAULTS[args.component];
   if (!defaults) throw new FlowError('--component must be file-storage, knowledge or data-query', 2);
   for (const name of ['release-dir', 'native-page-url', 'native-instance-ref', 'plan-out']) {
@@ -68,6 +73,7 @@ await main(async () => {
   const { manifest } = renderedRelease(args['release-dir']);
 
   const normalizedConfig = { nativePageUrl: exactOrigin(args['native-page-url'], manifest) };
+  if (args['client-id'] !== undefined && !/^[A-Za-z0-9_-]+$/.test(args['client-id'])) throw new FlowError('--client-id must be one IdP client id segment', 2);
   const routes = list(args['model-route-ids']);
   const meters = list(args['meter-keys']);
   if (routes.length || meters.length) {
@@ -83,6 +89,7 @@ await main(async () => {
   const tenant = await requireSession(admin);
   const bindingId = key('application_binding', tenant.tenantId, args['workspace-id'] ?? 'tenant', manifest.id, run);
   const servicePrincipalId = key('application_binding.service', bindingId);
+  normalizedConfig.client_id = args['client-id'] ?? `${args.component}-adapter-${bindingId.slice(0, 8)}`;
   const audience = manifest.executionConnector.actionTokenAudience;
   const plan = {
     tenantId: tenant.tenantId,
@@ -100,6 +107,7 @@ await main(async () => {
     capabilityCategories: manifest.implements.map((item) => ({ category: item.categoryKey, version: item.contractVersion })),
     normalizedConfig,
     configDigest: digest(normalizedConfig),
+    clientId: normalizedConfig.client_id,
     modelCallMode,
     retainOnTenantDelete: manifest.capabilityDeclarations.some((d) => d.tenantDelete === 'RETAIN_ON_TENANT_DELETE'),
     // Exactly what Core freezes (application_binding_secret.rs references()).

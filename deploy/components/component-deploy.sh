@@ -101,6 +101,8 @@ case "$component" in
       ensure_image "$(env_value "$ENV" ADAPTER_AGENT_IMAGE)"
       ensure_image "$(env_value "$ENV" CELLS_ADAPTER_IMAGE)"
       agent=("${D[@]}" compose --env-file "$ENV" -f "$S/deploy/components/compose.adapter-agent.yaml")
+      # Cells native action callback credential: same Agent, second owner-only directory.
+      [ -z "$(env_value "$ENV" ADAPTER_AGENT_EXTRA_DIR)" ] || agent+=(-f "$S/deploy/components/compose.adapter-agent.native.yaml")
       "${agent[@]}" config --quiet
       "${agent[@]}" up -d --no-build --pull never adapter-agent
       delivery=$(env_value "$ENV" CELLS_ADAPTER_DELIVERY_DIR)

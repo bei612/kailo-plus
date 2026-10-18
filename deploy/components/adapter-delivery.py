@@ -33,6 +33,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -96,6 +97,67 @@ def load_plan(path):
 
 
 # ---- config -----------------------------------------------------------------
+#
+# Template placeholders (every value comes from controlled delivery, an
+# operator-supplied native fact or the bind plan; nothing is defaulted):
+#   whole-string  {{plan:F}} {{secretFile:K}} {{socket}} {{tools}}
+#                 {{envint:NAME}} {{setint:NAME}} {{setjson:NAME}} {{action:ACTION_KEY}}
+#   embeddable    {{env:NAME}} {{signing:issuer|jwksFile}} {{set:NAME}} {{plan:F}}
+#                 {{job:NAME}} {{deliveryDir}}
+# {{env:*}} reads the platform deploy .env (--env-file, same trusted shell
+# convention as deploy/local); {{signing:*}} reads ACTION_TOKEN_SIGNING_FILE;
+# {{set:*}}/{{setint:*}} come from --set NAME=VALUE (non-secret native facts);
+# {{setjson:*}} from --set-json NAME=FILE; {{action:K}} is the plan's
+# actionVersion of K; {{job:NAME}} is the deterministic native Job identity
+# kailo-<bindingId>-<NAME> shared by the adapter and native action deliveries.
+
+WHOLE = re.compile(r"\{\{(plan|secretFile|socket|tools|envint|setint|setjson|action):?([A-Za-z0-9_.@-]*)\}\}")
+EMBEDDED = re.compile(r"\{\{(env|signing|set|plan|job|deliveryDir):?([A-Za-z0-9_.@-]*)\}\}")
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def lookup(table, name, kind):
+    require(name in table, f"template needs {{{{{kind}:{name}}}}} but it was not supplied")
+    return table[name]
+
+
+def positive_int(value, label):
+    require(isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value) is not None, f"{label} must be a positive integer")
+    return int(value)
+
+
+def whole(kind, name, values):
+    if kind == "plan":
+        return lookup(values["plan"], name, kind)
+    if kind == "secretFile":
+        return lookup(values["files"], name, kind)
+    if kind == "socket":
+        return values["socket"]
+    if kind == "tools":
+        require(values["tools"] is not None, "template needs {{tools}}: pass --release-dir and --registration")
+        return values["tools"]
+    if kind == "envint":
+        return positive_int(lookup(values["env"], name, kind), name)
+    if kind == "setint":
+        return positive_int(lookup(values["sets"], name, kind), name)
+    if kind == "setjson":
+        return lookup(values["setjson"], name, kind)
+    versions = [a["actionVersion"] for a in values["plan"]["actionVersions"] if a["actionKey"] == name]
+    require(len(versions) == 1, f"plan has no single actionVersion for {name}")
+    return versions[0]
+
+
+def embedded(kind, name, values):
+    if kind == "deliveryDir":
+        return values["deliveryDir"]
+    if kind == "job":
+        require(SEGMENT.fullmatch(name) is not None, "invalid native job name")
+        return f"kailo-{values['plan']['bindingId']}-{name}"
+    table = {"env": values["env"], "signing": values["signing"], "set": values["sets"], "plan": values["plan"]}[kind]
+    value = lookup(table, name, kind)
+    require(isinstance(value, str) and value != "", f"{kind}:{name} must be a non-empty string")
+    return value
+
 
 def fill(value, values):
     if isinstance(value, dict):
@@ -103,24 +165,26 @@ def fill(value, values):
     if isinstance(value, list):
         return [fill(v, values) for v in value]
     if isinstance(value, str):
-        if value.startswith("{{deliveryDir}}/"):
-            name = value[len("{{deliveryDir}}/"):]
-            require(SEGMENT.fullmatch(name.replace(".", "_")) is not None, "invalid delivery file name")
-            return values["deliveryDir"] + "/" + name
-        if value == "{{tools}}":
-            require(values["tools"] is not None, "template needs {{tools}}: pass --release-dir and --registration")
-            return values["tools"]
-        match = re.fullmatch(r"\{\{(plan|secretFile|deliveryDir|socket):?([A-Za-z0-9_]*)\}\}", value)
+        match = WHOLE.fullmatch(value)
         if match:
-            kind, name = match.groups()
-            if kind == "plan":
-                require(name in values["plan"], f"template references missing plan field {name}")
-                return values["plan"][name]
-            if kind == "secretFile":
-                require(name in values["files"], f"template references undeclared secret {name}")
-                return values["files"][name]
-            return values[kind]
+            return whole(*match.groups(), values)
+        return EMBEDDED.sub(lambda m: embedded(m.group(1), m.group(2), values), value)
     return value
+
+
+def placeholders(value, kinds):
+    found = set()
+    if isinstance(value, dict):
+        for item in value.values():
+            found |= placeholders(item, kinds)
+    elif isinstance(value, list):
+        for item in value:
+            found |= placeholders(item, kinds)
+    elif isinstance(value, str):
+        for kind, name in re.findall(r"\{\{([a-zA-Z]+):([A-Za-z0-9_.@-]*)\}\}", value):
+            if kind in kinds:
+                found.add(name)
+    return found
 
 
 def unresolved(value):
@@ -136,6 +200,53 @@ def canonical_digest(value):
     # whitespace, UTF-8 kept) and the adapters' canonical().
     text = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def deploy_env(path, names):
+    """Evaluate only the requested names of the trusted platform .env (it is a
+    shell file with derived values such as OIDC_ISSUER). Values stay in memory."""
+    if not names:
+        return {}
+    require(all(NAME.fullmatch(n) for n in names), "invalid environment name")
+    require(path is not None, "template reads the platform .env: pass --env-file")
+    script = 'set -a; . "$1" >/dev/null 2>&1 || exit 3; shift; for k in "$@"; do printf "%s\\0" "${!k-}"; done'
+    result = subprocess.run(["bash", "-c", script, "bash", str(Path(path).resolve()), *sorted(names)],
+                            capture_output=True, timeout=30, check=False)
+    require(result.returncode == 0, "platform .env could not be evaluated")
+    values = result.stdout.decode("utf-8").split("\0")[:-1]
+    require(len(values) == len(names), "platform .env evaluation was incomplete")
+    env = dict(zip(sorted(names), values))
+    require(all(env.values()), "a referenced platform .env value is empty: " + ",".join(k for k, v in env.items() if not v))
+    return env
+
+
+def signing_facts(path):
+    if path is None:
+        return {}
+    signing = json.loads(Path(path).read_text(encoding="utf-8"))
+    require(isinstance(signing, dict) and isinstance(signing.get("issuer"), str) and isinstance(signing.get("jwksFile"), str)
+            and Path(signing["jwksFile"]).is_absolute(), "ACTION_TOKEN_SIGNING_FILE needs issuer and absolute jwksFile")
+    # Only public facts of the delivery; secretLocator/version are not used here.
+    return {"issuer": signing["issuer"], "jwksFile": signing["jwksFile"]}
+
+
+PRIVATE_JWK_FIELDS = {"d", "p", "q", "dp", "dq", "qi", "k", "oth"}
+
+
+def install_public(delivery, spec):
+    name, _, source = spec.partition("=")
+    require(SEGMENT.fullmatch(name.replace(".", "_")) is not None and source, "--public-file NAME=SOURCE required")
+    jwks = json.loads(Path(source).read_text(encoding="utf-8"))
+    require(isinstance(jwks, dict) and set(jwks) == {"keys"} and isinstance(jwks["keys"], list) and jwks["keys"]
+            and all(isinstance(k, dict) and not set(k) & PRIVATE_JWK_FIELDS for k in jwks["keys"]),
+            f"{source}: public-only JWKS required")
+    text = json.dumps(jwks, indent=2, sort_keys=True) + "\n"
+    target = delivery / name
+    if target.exists():
+        require(private_file(str(target)) == text, f"{target} exists with different content")
+    else:
+        write_private(target, text)
+    return str(target)
 
 
 def release_tools(release_dir, registration_paths, plan):
@@ -158,6 +269,15 @@ def release_tools(release_dir, registration_paths, plan):
     return tools
 
 
+def key_values(items, label):
+    table = {}
+    for item in items or []:
+        name, sep, value = item.partition("=")
+        require(sep == "=" and NAME.fullmatch(name) is not None and name not in table, f"{label} NAME=VALUE with unique names required")
+        table[name] = value
+    return table
+
+
 def command_config(args):
     plan = load_plan(args.plan)
     tools = None
@@ -166,6 +286,8 @@ def command_config(args):
         tools = release_tools(args.release_dir, args.registration, plan)
     delivery = Path(args.delivery_dir)
     require(delivery.is_absolute(), "--delivery-dir must be absolute")
+    template = json.loads(Path(args.template).read_text(encoding="utf-8"))
+    template.pop("$comment", None)
     socket = str(delivery / args.socket_name)
     files, deliveries = {}, []
     for ref in plan["secretRefs"]:
@@ -174,32 +296,44 @@ def command_config(args):
         files[key] = str(delivery / key)
         deliveries.append({"secretKey": key, "locator": ref["locator"], "version": ref["version"], "audience": ref["audience"],
                            "secretFile": files[key], "secretSocket": socket, "secretValueKey": "value"})
-    template = json.loads(Path(args.template).read_text(encoding="utf-8"))
-    template.pop("$comment", None)
-    config = fill(template, {"plan": plan, "files": files, "deliveryDir": str(delivery), "socket": socket, "tools": tools})
+    setjson = {}
+    for name, path in key_values(args.set_json, "--set-json").items():
+        setjson[name] = json.loads(Path(path).read_text(encoding="utf-8"))
+    values = {"plan": plan, "files": files, "deliveryDir": str(delivery), "socket": socket, "tools": tools,
+              "env": deploy_env(args.env_file, placeholders(template, {"env", "envint"})),
+              "signing": signing_facts(args.action_token_signing_file),
+              "sets": key_values(args.set, "--set"), "setjson": setjson}
+    config = fill(template, values)
     config["bindingId"] = plan["bindingId"]
     config["tenantId"] = plan["tenantId"]
     if "workspaceId" in plan:
         config["workspaceId"] = plan["workspaceId"]
-    config["management"] = {
-        "componentTypeKey": plan["componentTypeKey"], "componentReleaseId": plan["componentReleaseId"],
-        "artifactDigest": plan["artifactDigest"], "protocolRange": "1",
-        "validation": {
-            "bindingVersion": plan["bindingVersion"], "servicePrincipalId": plan["servicePrincipalId"],
-            "adapterServiceRef": plan["adapterServiceRef"], "nativeInstanceRef": plan["nativeInstanceRef"],
-            "nativeScopeRef": plan["nativeScopeRef"], "isolationMode": plan["isolationMode"],
-            "normalizedConfig": plan["normalizedConfig"], "secretDeliveries": deliveries,
-            "actionVersions": plan["actionVersions"],
-        },
-    }
-    require(not unresolved(config), "template still has {{...}} placeholders; fill the native facts first")
+    if args.kind == "adapter":
+        config["management"] = {
+            "componentTypeKey": plan["componentTypeKey"], "componentReleaseId": plan["componentReleaseId"],
+            "artifactDigest": plan["artifactDigest"], "protocolRange": "1",
+            "validation": {
+                "bindingVersion": plan["bindingVersion"], "servicePrincipalId": plan["servicePrincipalId"],
+                "adapterServiceRef": plan["adapterServiceRef"], "nativeInstanceRef": plan["nativeInstanceRef"],
+                "nativeScopeRef": plan["nativeScopeRef"], "isolationMode": plan["isolationMode"],
+                "normalizedConfig": plan["normalizedConfig"], "secretDeliveries": deliveries,
+                "actionVersions": plan["actionVersions"],
+            },
+        }
+    else:
+        # Native Cells current-actor delivery (file-storage/deploy/start.sh and
+        # common/auth/native-action.go): no management or SecretRef metadata.
+        require(tools is None, "--kind cells-native has no tools")
+    require(not unresolved(config), "template still has {{...}} placeholders; supply the native facts (--set/--set-json) first")
+    for spec in args.public_file or []:
+        install_public(delivery, spec)
     out = Path(args.out)
     text = json.dumps(config, indent=2, sort_keys=True) + "\n"
     if out.exists():
         require(private_file(str(out)) == text, f"{out} exists with different content; write a new file")
     else:
         write_private(out, text)
-    print(json.dumps({"out": str(out), "bindingId": plan["bindingId"], "secretFiles": sorted(files), "socket": socket}))
+    print(json.dumps({"out": str(out), "kind": args.kind, "bindingId": plan["bindingId"], "secretFiles": sorted(files), "socket": socket}))
 
 
 # ---- reader -----------------------------------------------------------------
@@ -259,6 +393,24 @@ def command_reader(args):
     require(len(sockets) == 1, "exactly one Agent socket required")
     private_dir(outputs, "delivery directory")
     require(outputs != bootstrap and outputs not in bootstrap.parents and bootstrap not in outputs.parents, "bootstrap must not be mounted into adapter outputs")
+    # A second consumer of the same binding credential in its own directory
+    # (Cells native action callback: file-storage/deploy/start.sh requires its
+    # delivery to be separate from the adapter's). Same version-pinned path and
+    # field, rendered by the same Agent; never a copy made by this script.
+    if args.extra_secret:
+        require(args.extra_delivery_dir, "--extra-secret needs --extra-delivery-dir")
+        extra = private_dir(args.extra_delivery_dir, "--extra-delivery-dir")
+        require(all(extra != d and extra not in d.parents and d not in extra.parents for d in (outputs, bootstrap)),
+                "extra delivery directory must be separate from the adapter delivery and bootstrap")
+        by_key = {e["secretKey"]: e for e in validation["secretDeliveries"]}
+        for key in args.extra_secret:
+            require(key in by_key, f"--extra-secret {key} is not a binding secret")
+            entry = by_key[key]
+            parts = entry["locator"][len(namespace) + 1:].split("/")
+            path = parts[0] + "/data/" + "/".join(parts[1:])
+            templates.append({"contents": '{{ with secret ' + json.dumps(path + "?version=" + str(entry["version"]))
+                              + ' }}{{ index .Data.data ' + json.dumps(entry["secretValueKey"]) + ' }}{{ end }}',
+                              "destination": str(extra / key), "perms": "0600", "error_on_missing_key": True})
     role = args.role
     require(SEGMENT.fullmatch(role) is not None, "--role must be one path segment")
     token = json.loads(private_file(args.root_token_file))["root_token"]
@@ -311,6 +463,10 @@ def command_client(args):
     refused = {c for c in args.refuse_client_ids.split(",") if c}
     issuer = args.issuer.rstrip("/")
     require(isinstance(client_id, str) and SEGMENT.fullmatch(client_id) and client_id not in refused, "independent adapter client id required")
+    # Core identifies the binding's adapter caller only by normalizedConfig.client_id
+    # (application_binding_pep.rs check); the registered client must be that one.
+    require(config["management"]["validation"]["normalizedConfig"].get("client_id") == client_id,
+            "oidcClientId must equal the binding normalizedConfig.client_id")
     require(config["oidcTokenUrl"] == issuer + "/protocol/openid-connect/token", "adapter oidcTokenUrl must be the platform issuer token endpoint")
     deliveries = config["management"]["validation"]["secretDeliveries"]
     require(any(d["secretFile"] == config["oidcClientSecretFile"] for d in deliveries), "oidcClientSecretFile must be an Agent-delivered SecretRef")
@@ -365,6 +521,13 @@ def main():
     c.add_argument("--out", required=True)
     c.add_argument("--release-dir", help="render.mjs output; with --registration fills {{tools}}")
     c.add_argument("--registration", action="append", help="contracts/adapter/<category>.v<N>/registration.json (repeatable)")
+    c.add_argument("--kind", choices=["adapter", "cells-native"], default="adapter",
+                   help="adapter (adds management.validation) or the native Cells action delivery")
+    c.add_argument("--env-file", help="platform deploy/local/.env for {{env:*}} / {{envint:*}}")
+    c.add_argument("--action-token-signing-file", help="ACTION_TOKEN_SIGNING_FILE for {{signing:*}}")
+    c.add_argument("--public-file", action="append", help="NAME=SOURCE: install a public-only JWKS into the delivery directory")
+    c.add_argument("--set", action="append", help="NAME=VALUE non-secret native fact for {{set:*}} / {{setint:*}}")
+    c.add_argument("--set-json", action="append", help="NAME=FILE JSON native fact for {{setjson:*}}")
     r = sub.add_parser("reader")
     r.add_argument("--config", required=True)
     r.add_argument("--role", required=True)
@@ -376,6 +539,8 @@ def main():
     r.add_argument("--token-ttl", default="1h")
     r.add_argument("--wrap-ttl", default="30m")
     r.add_argument("--hcl-name", default="adapter-agent.hcl")
+    r.add_argument("--extra-delivery-dir", help="second owner-only directory (e.g. Cells native action delivery)")
+    r.add_argument("--extra-secret", action="append", help="binding secretKey also rendered into --extra-delivery-dir")
     r.add_argument("--timeout", type=int, default=15)
     k = sub.add_parser("client")
     k.add_argument("--config", required=True)

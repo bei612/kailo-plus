@@ -1,0 +1,12 @@
+# Overlay for compose.adapter-agent.yaml when the same binding credential has a
+# second, separate consumer directory (Cells native action callback:
+# CELLS_NATIVE_ACTION_DELIVERY_DIR, file-storage/deploy/start.sh). The Agent
+# renders the templates adapter-delivery.py reader --extra-delivery-dir wrote
+# into its HCL; this only mounts that owner-only directory for the Agent.
+services:
+  adapter-agent:
+    volumes:
+      - type: bind
+        source: ${ADAPTER_AGENT_EXTRA_DIR:?second private delivery directory required}
+        target: ${ADAPTER_AGENT_EXTRA_DIR:?second private delivery directory required}
+        bind: {create_host_path: false}
