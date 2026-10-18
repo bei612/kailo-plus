@@ -454,7 +454,7 @@ type ControlOutcome =
  * 一项审批的事实与本人可用的控制。`initiator` 可撤回，`approver` 可决定；按钮只在审批
  * 仍未决且投影可担保时出现，能不能做由 BFF 回答。
  */
-function ApprovalPanel({
+export function ApprovalPanel({
   workflowId,
   role,
   onBack,

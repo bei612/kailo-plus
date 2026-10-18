@@ -73,6 +73,8 @@ export function renderSettingsSection(
       return null; // SettingsView retains the scoped in-flight/UNKNOWN profile intent.
     case "custom-emoji":
       return null; // SettingsView keeps the scoped UNKNOWN publication intent mounted.
+    case "channel-templates":
+      return null; // DD-125(4): not offered in this host's navigation (no Core preference provider here).
     case "notifications":
       return (
         <NotificationSettingsCard

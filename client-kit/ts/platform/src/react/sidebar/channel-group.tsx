@@ -1,11 +1,15 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/sidebar/ui/CustomChannelSection.tsx::ChannelGroupSection.
 // Shared grouping, sorting and context-menu host. Adapters retain their data/transport authority.
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   CheckCheck,
   ChevronDown,
   EllipsisVertical,
+  Pencil,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { useT } from "../context";
@@ -55,10 +59,11 @@ const SORT_OPTIONS: { value: ChannelSortMode }[] = [{ value: "recent" }, { value
 
 /**
  * The "more actions" menu shown at the right edge of every sidebar channel
- * group header: mark-all-read when the group has unread activity, plus the
- * group's sort preference.
+ * group header: mark-all-read when the group has unread activity, the original
+ * custom-section management (rename, move up/down, delete) when supplied, plus
+ * the group's sort preference.
  */
-function SectionActionsMenu({
+export function SectionActionsMenu({
   sectionLabel,
   testId,
   onOpenChange,
@@ -67,6 +72,13 @@ function SectionActionsMenu({
   onNewMessage,
   sortMode,
   onSortModeChange,
+  onRenameSection,
+  onMoveSectionUp,
+  onMoveSectionDown,
+  onDeleteSection,
+  isFirstSection,
+  isLastSection,
+  disabled = false,
 }: {
   sectionLabel: string;
   testId?: string;
@@ -76,9 +88,18 @@ function SectionActionsMenu({
   onNewMessage?: () => void;
   sortMode: ChannelSortMode;
   onSortModeChange: (mode: ChannelSortMode) => void;
+  onRenameSection?: () => void;
+  onMoveSectionUp?: () => void;
+  onMoveSectionDown?: () => void;
+  onDeleteSection?: () => void;
+  isFirstSection?: boolean;
+  isLastSection?: boolean;
+  /** Preference writes are inert while the Core state is unread, pending or unknown. */
+  disabled?: boolean;
 }) {
   const t = useT();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const showSectionManagement = Boolean(onRenameSection || onDeleteSection);
 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
@@ -121,8 +142,31 @@ function SectionActionsMenu({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
         </> : null}
+        {showSectionManagement ? (
+          <>
+            {onRenameSection ? (
+              <DropdownMenuItem disabled={disabled} onSelect={() => deferMenuAction(onRenameSection)}>
+                <Pencil className="h-4 w-4" />
+                <span>{t("sidebar.section.rename")}</span>
+              </DropdownMenuItem>
+            ) : null}
+            {onMoveSectionUp ? (
+              <DropdownMenuItem disabled={disabled || isFirstSection} onSelect={() => deferMenuAction(onMoveSectionUp)}>
+                <ArrowUp className="h-4 w-4" />
+                <span>{t("sidebar.section.moveUp")}</span>
+              </DropdownMenuItem>
+            ) : null}
+            {onMoveSectionDown ? (
+              <DropdownMenuItem disabled={disabled || isLastSection} onSelect={() => deferMenuAction(onMoveSectionDown)}>
+                <ArrowDown className="h-4 w-4" />
+                <span>{t("sidebar.section.moveDown")}</span>
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger disabled={disabled}>
             <ArrowUpDown className="h-4 w-4" />
             <span>{t("sidebar.sort")}</span>
           </DropdownMenuSubTrigger>
@@ -141,6 +185,19 @@ function SectionActionsMenu({
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        {onDeleteSection ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              disabled={disabled}
+              onSelect={() => deferMenuAction(onDeleteSection)}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>{t("sidebar.section.delete")}</span>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -150,6 +207,7 @@ export function ChannelGroupSection<T extends SidebarChannel>({
   hasUnread, isCollapsed, items, listTestId, onMarkAllRead, onToggleCollapsed,
   sortMode, onSortModeChange, actionsTestId, title, onCreateChannel,
   createChannelLabel, createTestId = "create-channel", onNewMessage, renderRow, renderContextMenu,
+  actionsDisabled = false,
 }: {
   hasUnread: boolean;
   isCollapsed: boolean;
@@ -167,6 +225,8 @@ export function ChannelGroupSection<T extends SidebarChannel>({
   createTestId?: string;
   renderRow: (channel: T) => ReactNode;
   renderContextMenu?: (channel: T) => ReactNode;
+  /** Sort writes are inert while a Core-backed preference is unread, pending or unknown. */
+  actionsDisabled?: boolean;
 }) {
   const contentId = `sidebar-${listTestId}`;
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -216,6 +276,7 @@ export function ChannelGroupSection<T extends SidebarChannel>({
             onNewMessage={onNewMessage}
             sortMode={sortMode}
             onSortModeChange={onSortModeChange}
+            disabled={actionsDisabled}
           /> : null}
         </div>
       </div>

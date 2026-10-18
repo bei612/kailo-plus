@@ -14,6 +14,7 @@ import { BffError } from "@client-kit/platform/transport";
 import { useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { InboxView, useInboxViewState, type InboxViewStatus } from "@client-kit/platform/react/inbox-view";
+import { useNeedsActionSource } from "@client-kit/platform/react/inbox/needs-action";
 import { getInboxVideoReviewCommentRootId } from "@client-kit/platform/react/video-review";
 import { HomeLoadingState, InboxEmptyDetail, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
@@ -57,6 +58,8 @@ export function InboxPane({
   const t = useT();
   const locale = useLocale();
   const reads = useInboxState(client);
+  // DD-125(5): Needs action reads the caller's Temporal approvals, never Buzz workflow events.
+  const needsAction = useNeedsActionSource({ client, scopeKey: principalId });
   const visibility = useConversationVisibilityHost();
   const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: principalId, conversations: reads.conversations,
     onOpenContext: target => onOpen(target.channelId, target), onError: message => toast.error(message) });
@@ -83,6 +86,12 @@ export function InboxPane({
   useEffect(() => { view.setAutoSelectedEventId(null); setLocalSelectedItemId(null); setPublicationSelection(null); view.setSelectedDraftKey(null); setProfileTarget(null); }, [principalId]);
   const generation = useRef(0);
   const projectRead = useRef<AbortController | null>(null);
+  // DD-125(1): Core thread follows join and mutes leave the original interest roots; the
+  // snapshot is rebuilt only when that preference content changes.
+  const threadPreferences = useRef(reads.state?.threadPreferences);
+  threadPreferences.current = reads.state?.threadPreferences;
+  const threadPreferenceSignature = useMemo(() => JSON.stringify(reads.state?.threadPreferences ?? null),
+    [reads.state?.threadPreferences]);
   const load = useCallback(async () => {
     const epoch = ++generation.current;
     projectRead.current?.abort();
@@ -92,12 +101,13 @@ export function InboxPane({
     setFailed(false);
     try {
       const next = await loadInboxSnapshot({ client, principalId, visibility, projectsHost, scope: selectionScope,
-        isCurrent: () => epoch === generation.current, signal: controller.signal });
+        isCurrent: () => epoch === generation.current, signal: controller.signal,
+        threadPreferences: threadPreferences.current });
       if (next && epoch === generation.current) setSnapshot(next);
     } catch {
       if (epoch === generation.current) setFailed(true);
     }
-  }, [client, principalId, visibility,projectsHost,selectionScope]);
+  }, [client, principalId, visibility,projectsHost,selectionScope,threadPreferenceSignature]);
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -126,6 +136,7 @@ export function InboxPane({
   const refresh = () => {
     void load();
     void reads.refresh();
+    needsAction.refresh();
   };
   const messagesMode = view.isMessagesMode;
   const anchorFeedItems = useMemo(() => rows.flatMap(row => row.items), [rows]);
@@ -177,10 +188,12 @@ export function InboxPane({
   const anchor = messagesMode ? resolvedAnchor : undefined;
   const selected = anchor ? inboxScopeKey(anchor) : null;
   const coldPending = messagesMode && !resolvedAnchor && coldResolutionPending;
+  // Original Home count includes needs_action items until they are marked done locally.
+  const undoneApprovals = needsAction.status === "ready" ? needsAction.items.filter(item => !needsAction.isDone(item)).length : 0;
   useEffect(() => {
     onUnreadCount?.(failed || reads.failed || reads.unknown || !snapshot || !reads.state ? null : rows.filter((row) =>
-      row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(readItem(event))!) ?? 0))).length);
-  }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt, readItem]);
+      row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(readItem(event))!) ?? 0))).length + undoneApprovals);
+  }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt, readItem, undoneApprovals]);
   useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
   const viewRows = useMemo(() => rows.map(row => ({...row, id: row.item.id, groupItems: row.items, conversationId: row.scopeKey})), [rows]);
   type ViewRow = typeof viewRows[number];
@@ -211,6 +224,7 @@ export function InboxPane({
   return <InboxView state={view} status={status} items={viewRows} matchesFilter={matchesFilter} isRead={isRead}
     selectedConversationId={selected} coldResolutionPending={coldPending}
     onFilterChanged={() => setProfileTarget(null)}
+    needsAction={needsAction}
     onRowSelected={() => setProfileTarget(null)}
     list={{
       activeDraftCount: drafts.entries.length,

@@ -15,6 +15,7 @@ import type { WebProfileView as Profile } from "@client-kit/contracts";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { MaskedAvatarBadgeFrame, STATUS_DOT_MASK_CURVE } from "../messages/thread/MaskedAvatarBadgeFrame";
 import { ProfilePrimaryActions } from "./UserProfilePrimaryActions";
+import { useProfileFollow } from "./useProfileFollow";
 import { ProfileTabContentTransition } from "./ProfileTabContentTransition";
 import { usePresenceHost } from "../presence/context";
 import { usePresenceQuery } from "../presence/hooks";
@@ -66,6 +67,7 @@ export function ProfileSummaryView({
   onMessage,
   messagePending,
   presencePubkeys,
+  canFollow,
 }: {
   displayName: string;
   profile: Pick<Profile, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
@@ -76,10 +78,13 @@ export function ProfileSummaryView({
   messagePending?:boolean;
   /** Every admitted key of this person for DD-120 presence and status; defaults to `pubkey`. */
   presencePubkeys?: readonly string[];
+  /** Another person's profile (original Follow tile). Defaults to whether the host offers Message. */
+  canFollow?: boolean;
 }) {
   const locale = useUiLocale();
   const presenceHost = usePresenceHost();
   const identityKeys = presencePubkeys && presencePubkeys.length > 0 ? presencePubkeys : [pubkey];
+  const follow = useProfileFollow(pubkey, canFollow ?? onMessage !== undefined);
   const fields = React.useMemo(
     () => buildPublicFields({ profile, pubkey, locale }),
     [profile, pubkey, locale],
@@ -127,7 +132,7 @@ export function ProfileSummaryView({
           </div>
         </div>
       </div>
-      <ProfilePrimaryActions onMessage={onMessage} messagePending={messagePending}/>
+      <ProfilePrimaryActions onMessage={onMessage} messagePending={messagePending} follow={follow}/>
       <section className="space-y-3">
         <ProfileTabContentTransition activeTab="info" tabs={["info"]}>
           <div className="space-y-4" data-testid="user-profile-info-sections">

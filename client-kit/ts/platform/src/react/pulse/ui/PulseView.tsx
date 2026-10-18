@@ -34,6 +34,8 @@ import { Skeleton } from "../host";
 import { UserAvatar } from "../../messages/UserAvatar";
 import { VirtualizedList } from "../../forum/VirtualizedList";
 import { truncateNpub } from "../host";
+import { useCollaborationPreferences } from "../../collaboration-preferences";
+import { followedPubkeys } from "../../../collaboration-preferences";
 
 export type PulseTab =
   | "search"
@@ -81,11 +83,15 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
   const [activeTab, setActiveTab] = React.useState<PulseTab>("everyone");
   const [searchQuery, setSearchQuery] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const contactListQuery = useContactListQuery(currentPubkey);
-  const contacts = contactListQuery.data?.contacts ?? [];
+  // DD-125(5): with Core preferences the Following list is the caller's followed Principals,
+  // expanded to all of their ACTIVE keys; the per-key kind 3 is read only by hosts without them.
+  const preferences = useCollaborationPreferences();
+  const contactListQuery = useContactListQuery(preferences ? undefined : currentPubkey);
+  const contacts = contactListQuery.data?.contacts;
+  const followedState = preferences?.state;
   const contactPubkeys = React.useMemo(
-    () => contacts.map((c) => c.pubkey),
-    [contacts],
+    () => preferences ? followedPubkeys(followedState) : (contacts ?? []).map((c) => c.pubkey),
+    [preferences, followedState, contacts],
   );
   const contactPubkeySet = React.useMemo(
     () => new Set(contactPubkeys),
@@ -228,7 +234,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
           : activeTab === "agents"
             ? agentTimelineQuery
             : myNotesQuery;
-  const isLoading = activeQuery.isLoading;
+  const isLoading = activeQuery.isLoading || (activeTab === "people" && preferences !== null && preferences.state === null);
 
   const emptyMessages: Record<PulseTab, string> = {
     search: t("pulse.searchHint"),
@@ -245,7 +251,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
   function renderTimeline() {
     const error = activeQuery.error || contactListQuery.error || relayAgentsQuery.error || profilesQuery.error || reactionsQuery.error;
     if (error) return <div role="alert" className="py-6 text-sm text-destructive">{String(error)}<button type="button" onClick={() => {
-      void Promise.all([activeQuery.refetch(),contactListQuery.refetch(),relayAgentsQuery.refetch(),profilesQuery.refetch(),reactionsQuery.refetch()]);
+      void Promise.all([activeQuery.refetch(),...(preferences ? [] : [contactListQuery.refetch()]),relayAgentsQuery.refetch(),profilesQuery.refetch(),reactionsQuery.refetch()]);
     }}>{t("platform.retry")}</button></div>;
     if (isLoading) return <TimelineSkeleton />;
 

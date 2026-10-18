@@ -15,7 +15,7 @@ import { InboxPane as OriginalInboxPane, inboxEvents } from "./InboxPane";
 import { ReminderHostProvider, RemindMeLaterProvider, type ReminderHost } from "@client-kit/platform/react/reminders";
 import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({inboxMentions:vi.fn().mockResolvedValue({events:[]}),projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
+const api=vi.hoisted(()=>({inboxMentions:vi.fn().mockResolvedValue({events:[]}),projectQuery:vi.fn(),profile:vi.fn(),workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),pendingApprovals:vi.fn().mockResolvedValue([]),initiatedApprovals:vi.fn().mockResolvedValue([]),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=(key: string)=>api.readAt(key);
 // Core's admitted directory and batched activity endpoint, modeled as the per-channel binding
 // and first window they replace so every binding/window case below keeps its evidence.
@@ -820,4 +820,42 @@ it("cold start reads every joined channel's first window in one batched read, no
     expect(batch).toHaveBeenCalledOnce();
     expect(batch.mock.calls[0]![0].items).toHaveLength(joined.length);
   } finally { batch.mockRestore(); directory.mockRestore(); await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
+});
+
+describe("DD-125(5) Needs action reads Temporal approvals, not Buzz workflow events", () => {
+  it("lists my pending decision with the original label and counts it on Home until marked done locally", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    localStorage.clear(); sessionStorage.clear(); setLocale("en");
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    api.workspaces.mockReset().mockResolvedValue([]);
+    api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+    api.readFailed = false; api.readUnknown = false;
+    const waiting = { workflowId: "approval-wait", actionExecutionId: "00000000-0000-4000-8000-000000000001", actionKey: "workspace.create",
+      targetType: "WORKSPACE", targetId: "00000000-0000-4000-8000-000000000002", initiatorPrincipalId: "00000000-0000-4000-8000-000000000003",
+      status: "WAITING", expiresAt: "2026-10-20T00:00:00Z", decisions: [], roleRequirements: [] };
+    api.pendingApprovals.mockReset().mockResolvedValue([waiting]);
+    api.initiatedApprovals.mockReset().mockResolvedValue([]);
+    const unread = vi.fn();
+    api.write.mockClear();
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    try {
+      await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
+        <InboxPane principalId="human" onOpen={vi.fn()} onUnreadCount={unread} />
+      </TooltipProvider></QueryClientProvider></PlatformProvider>));
+      const row = () => host.querySelector('[data-testid="home-inbox-item-approval:approval-wait:decide"]');
+      await vi.waitFor(() => expect(row()).not.toBeNull());
+      expect(row()?.textContent).toContain("Needs action");
+      expect(api.pendingApprovals).toHaveBeenCalled();
+      expect(api.initiatedApprovals).toHaveBeenCalled();
+      await vi.waitFor(() => expect(unread).toHaveBeenLastCalledWith(1));
+      await act(async () => row()!.querySelector<HTMLButtonElement>('button[aria-label="Mark as read"]')!.click());
+      await vi.waitFor(() => expect(unread).toHaveBeenLastCalledWith(0));
+      expect(JSON.parse(localStorage.getItem("kailo-inbox-needs-action-done.v1:human") ?? "[]")).toEqual(["approval:approval-wait:decide"]);
+      expect(api.write).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals();
+    }
+  });
 });

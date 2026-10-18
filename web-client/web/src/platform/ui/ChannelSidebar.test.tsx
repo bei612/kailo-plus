@@ -14,7 +14,20 @@ const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: unde
   activity: vi.fn(async ({ items }: { items: { workspaceId: string; messageType: string }[] }) => ({ items: await Promise.all(items.map(async ({ workspaceId, messageType }) => ({
     workspaceId, channelId: (await snapshot.channel(workspaceId)).channelId, events: (await snapshot.messages(workspaceId, { messageType })).events }))) })),
   menus: new Map<string, { copyChannelId: string | null; mute?: (id: string) => void; unmute?: (id: string) => void; markRead?: (id: string) => void; markUnread?: (id: string) => void;
-    leave?: unknown; owner?: { workspaceId: string; channelId: string } }>() }));
+    leave?: unknown; owner?: { workspaceId: string; channelId: string };
+    section?: { currentSectionId?: string; disabled?: boolean; onAssign: (sectionId: string) => void; onUnassign: () => void } }>() }));
+// DD-125(5): the Core-backed section preferences; null is a host without them.
+const sectionPrefs = vi.hoisted(() => ({ value: null as null | Record<string, unknown> }));
+vi.mock("@client-kit/platform/react/collaboration-preferences", () => ({ useCollaborationPreferences: () => sectionPrefs.value }));
+vi.mock("@client-kit/platform/react/sidebar/custom-channel-section", () => ({
+  SidebarDndContext: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DroppableUngroupedBody: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DraggableChannelRow: ({ channelId, children }: { channelId: string; children: ReactNode }) => <div data-drag={channelId}>{children}</div>,
+  CustomChannelSection: ({ section, items, renderRow, renderContextMenu, disabled }: { section: { name: string }; items: { id: string }[];
+    renderRow: (row: { id: string }) => ReactNode; renderContextMenu: (row: { id: string }) => ReactNode; disabled: boolean }) =>
+    <section data-custom-section={section.name} data-disabled={disabled}>{items.map((row) => <div key={row.id}>{renderRow(row)}{renderContextMenu(row)}</div>)}</section>,
+  CreateSectionDialog: () => null, RenameSectionDialog: () => null, DeleteSectionAlertDialog: () => null,
+}));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
@@ -34,11 +47,12 @@ vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
     <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
-  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel, onLeaveChannel, ownerActions }: {
+  ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel, onLeaveChannel, ownerActions, sectionActions }: {
     channel: { id: string }; copyChannelId: string | null; onMarkChannelRead?: (id: string) => void; onMarkChannelUnread?: (id: string) => void; onStarChannel?: unknown;
     onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void; onLeaveChannel?: unknown; ownerActions?: { workspaceId: string; channelId: string };
+    sectionActions?: { currentSectionId?: string; disabled?: boolean; onAssign: (sectionId: string) => void; onUnassign: () => void };
   }) => { snapshot.menus.set(channel.id, { copyChannelId, mute: onMuteChannel, unmute: onUnmuteChannel, markRead: onMarkChannelRead, markUnread: onMarkChannelUnread,
-    leave: onLeaveChannel, owner: ownerActions }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
+    leave: onLeaveChannel, owner: ownerActions, section: sectionActions }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
@@ -294,4 +308,47 @@ it("offers the original Leave on joined stream rows with a BFF leave hint and Ar
   snapshot.failed = true;
   try { page(withLeave); expect(snapshot.menus.get("one")?.owner).toBeUndefined(); }
   finally { snapshot.failed = false; }
+});
+
+it("places an assigned joined stream channel in its original custom section, keyed by the native channel ID", async () => {
+  snapshot.failed = false;
+  snapshot.menus.clear();
+  const assignChannel = vi.fn(async () => true);
+  sectionPrefs.value = { writable: true, sections: [{ id: "s1", name: "Launch", order: 0 }], assignments: { "native-one": "s1" },
+    sortModeFor: () => "alpha", setSortModeFor: vi.fn(async () => true), assignChannel, moveSection: vi.fn(async () => true),
+    reorderSections: vi.fn(async () => true) };
+  try {
+    const html = markup({ state: { version: 3, readContexts: {}, workspacePreferences: {} } });
+    const section = html.slice(html.indexOf('data-custom-section="Launch"'));
+    expect(html).toContain('data-custom-section="Launch" data-disabled="false"');
+    expect(section.slice(0, section.indexOf("</section>"))).toContain('data-drag="native-one"');
+    const channels = html.slice(html.indexOf('data-group="sidebar.channels"'));
+    expect(channels.slice(0, channels.indexOf("</section>"))).not.toContain('data-id="one"');
+    // "Move to section" is offered for the stream row, not for the forum row.
+    expect(snapshot.menus.get("one")?.section?.currentSectionId).toBe("s1");
+    expect(snapshot.menus.get("two")?.section).toBeUndefined();
+    snapshot.menus.get("one")?.section?.onUnassign();
+    await vi.waitFor(() => expect(assignChannel).toHaveBeenCalledWith("native-one", null));
+  } finally {
+    sectionPrefs.value = null;
+  }
+});
+
+it("keeps section controls inert while the Core preferences are unconfirmed and hides them without a provider", () => {
+  snapshot.failed = false;
+  snapshot.menus.clear();
+  sectionPrefs.value = { writable: false, sections: [{ id: "s1", name: "Launch", order: 0 }], assignments: {},
+    sortModeFor: () => "alpha", setSortModeFor: vi.fn(), assignChannel: vi.fn(), moveSection: vi.fn(), reorderSections: vi.fn() };
+  try {
+    const html = markup({ state: { version: 3, readContexts: {}, workspacePreferences: {} } });
+    expect(html).toContain('data-custom-section="Launch" data-disabled="true"');
+    expect(snapshot.menus.get("one")?.section?.disabled).toBe(true);
+  } finally {
+    sectionPrefs.value = null;
+  }
+  snapshot.menus.clear();
+  const html = markup();
+  expect(html).not.toContain("data-custom-section");
+  expect(html).not.toContain("data-drag");
+  expect(snapshot.menus.get("one")?.section).toBeUndefined();
 });

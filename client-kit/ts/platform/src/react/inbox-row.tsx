@@ -3,12 +3,17 @@ import { Bell } from "lucide-react";
 import { useUiT } from "./context";
 import { MESSAGE_MARKDOWN_CLASS, MENTION_CHIP_BASE_CLASSES } from "./composer/shared/ui/mentionChip";
 
+// Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/home/ui/InboxListPane.tsx
+// uses one attention accent for both the reminder-due line and an action-required label.
+const ATTENTION_TEXT = "text-amber-600/80 dark:text-amber-300/80";
+
 /** The Buzz Home row, with host-owned profile/Markdown/actions supplied as slots. */
 export function InboxRow({
   id,
   selected,
   read,
   reminderDue = false,
+  actionRequired = false,
   sender,
   avatar,
   timestamp,
@@ -24,6 +29,8 @@ export function InboxRow({
   selected: boolean;
   read: boolean;
   reminderDue?: boolean;
+  /** Original `isActionRequired`: the label keeps the attention tone until done. */
+  actionRequired?: boolean;
   sender: ReactNode;
   avatar?: ReactNode;
   timestamp: string;
@@ -106,7 +113,7 @@ export function InboxRow({
               </span>
             </div>
             <div
-              className={`${MESSAGE_MARKDOWN_CLASS} mt-0 flex min-h-[var(--inline-chip-min-height)] min-w-0 items-center gap-1.5 text-2xs leading-3 group-hover/inbox-item:pr-[6.75rem] group-focus-within/inbox-item:pr-[6.75rem] ${read ? "font-normal text-muted-foreground/70" : "font-medium text-muted-foreground/80"}`}
+              className={`${MESSAGE_MARKDOWN_CLASS} mt-0 flex min-h-[var(--inline-chip-min-height)] min-w-0 items-center gap-1.5 text-2xs leading-3 group-hover/inbox-item:pr-[6.75rem] group-focus-within/inbox-item:pr-[6.75rem] ${actionRequired && !read ? `font-medium ${ATTENTION_TEXT}` : read ? "font-normal text-muted-foreground/70" : "font-medium text-muted-foreground/80"}`}
               data-inbox-type-label=""
             >
               <span className="shrink-0">{label}</span>
@@ -119,7 +126,7 @@ export function InboxRow({
                 </span>
               ) : null}
             </div>
-            {reminderDue ? <div className="mt-1 flex items-center gap-1 text-2xs font-medium text-amber-600/80 dark:text-amber-300/80" data-testid="home-inbox-reminder-due"><Bell className="h-3 w-3" />{t("reminders.due")}</div> : null}
+            {reminderDue ? <div className={`mt-1 flex items-center gap-1 text-2xs font-medium ${ATTENTION_TEXT}`} data-testid="home-inbox-reminder-due"><Bell className="h-3 w-3" />{t("reminders.due")}</div> : null}
             <div
               className={`mt-1.5 text-message [&_a]:font-medium [&_a]:text-current ${read ? "font-normal text-muted-foreground" : "font-semibold text-foreground"}`}
             >

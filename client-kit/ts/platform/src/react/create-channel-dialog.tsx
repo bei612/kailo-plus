@@ -3,6 +3,7 @@
 // desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent
 // The original chooser layout/focus semantics are shared by Web and Desktop.
 // DD-80 changes the write transport to the existing BFF workspace.create action.
+// DD-125(4): the original Template row; applying is separate governed submissions.
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { ChannelType, CreateActionKey } from "@client-kit/contracts";
 import { X } from "lucide-react";
@@ -10,6 +11,7 @@ import { useBffClient, useT } from "./context";
 import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "./roles";
 import { ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
+import { CreateChannelTemplateField, useChannelTemplateSelection } from "./channel-templates/CreateChannelTemplateField";
 
 /** Keep mounted across closing so an unresolved command never loses its idempotency key. */
 export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelType.Stream }: {
@@ -27,6 +29,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
     ? capability.data : null;
   const actionKey = page?.createActionKey;
   const state = useWorkspaceCreate(actionKey, channelKind, {active: open});
+  const templates = useChannelTemplateSelection(state, open);
   const pendingIntent = state.busy || state.command !== null;
   return (
     <Dialog open={open} onOpenChange={(next) => {
@@ -49,6 +52,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
                   : !page ? <p role="alert">{t("platform.loadFailed")}</p>
                   : !actionKey ? <p role="status">{t("channel.create.unavailable")}</p> : null}
                 <WorkspaceCreateForm state={state} channel />
+                <div className="mt-5 space-y-5"><CreateChannelTemplateField selection={templates} visibility={state.visibility} /></div>
               </div>
             </div>
             <div className="flex shrink-0 border-border/60 px-6 py-4 border-t-0 pt-0">

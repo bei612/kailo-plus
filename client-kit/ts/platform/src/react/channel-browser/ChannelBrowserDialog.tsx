@@ -15,6 +15,7 @@ import { ChannelType, CreateActionKey } from "@client-kit/contracts";
 import { useT, useLocale } from "../context";
 import { enumLabel, workspaceMembershipStateMessages } from "../../i18n";
 import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "../roles";
+import { CreateChannelTemplateField, useChannelTemplateSelection } from "../channel-templates/CreateChannelTemplateField";
 export type BrowserChannel = DiscoverableWorkspace & { name: string; description: string; channelType: ChannelType; archivedAt: boolean; lastMessageAt?: string | null };
 type Channel = BrowserChannel;
 import {
@@ -155,6 +156,8 @@ export function ChannelBrowserDialog({
   const entityLabel = t(isForumMode ? "channel.browser.forum" : "channel.browser.channel");
 
   const createForm = useWorkspaceCreate(createActionKey, createKind, {active: open && mode === "create", initialName: createInitialName});
+  // DD-125(4): the same original Template row as the sidebar create dialog.
+  const templateSelection = useChannelTemplateSelection(createForm, open && mode === "create");
 
   // Fuzzy match score per channel id for the current query, so both filtering
   // and relevance-ordering share one source of truth. Empty when no query.
@@ -412,6 +415,7 @@ export function ChannelBrowserDialog({
           <ChannelCreateView
             entityLabel={entityLabel}
             form={createForm}
+            templateSelection={templateSelection}
             onBack={exitCreateMode}
             onClose={() => { if (!createForm.busy && !createForm.command) onOpenChange(false); }}
           />
@@ -682,11 +686,13 @@ function CreateChannelRow({
 function ChannelCreateView({
   entityLabel,
   form,
+  templateSelection,
   onBack,
   onClose,
 }: {
   entityLabel: string;
   form: ReturnType<typeof useWorkspaceCreate>;
+  templateSelection: ReturnType<typeof useChannelTemplateSelection>;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -725,6 +731,7 @@ function ChannelCreateView({
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         <WorkspaceCreateForm state={form} channel />
+        <div className="mt-5 space-y-5"><CreateChannelTemplateField selection={templateSelection} visibility={form.visibility} /></div>
       </div>
       <div className="shrink-0 pb-6 pt-4">
         <WorkspaceCreateFormFooter state={form} />

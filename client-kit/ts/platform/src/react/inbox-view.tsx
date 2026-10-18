@@ -13,6 +13,7 @@ import { useT } from "./context";
 import { HomeLoadingState } from "./home-loading-state";
 import { InboxListPane, type InboxListPresentation } from "./inbox-list-pane";
 import { InboxLayout, type InboxFilter } from "./inbox-surface";
+import { NeedsActionDetailPane, type NeedsActionItem, type NeedsActionSource } from "./inbox/needs-action";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "./messages/thread/auxiliaryPanelLayout";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { ReminderDetailPane, useReminderHost, useRemindersQuery } from "./reminders";
@@ -130,6 +131,8 @@ export function useInboxViewState({ itemId, setItemId, heldItemId = null }: {
   const [filter, setFilter] = React.useState<InboxFilter>("all");
   const [unreadOnly, setUnreadOnly] = React.useState(false);
   const [selectedReminderId, setSelectedReminderId] = React.useState<string | null>(null);
+  // DD-125(5) Needs action: an approval item is personal like a reminder, not a feed event.
+  const [selectedNeedsActionKey, setSelectedNeedsActionKey] = React.useState<string | null>(null);
   const [selectedDraftKey, setSelectedDraftKey] = React.useState<string | null>(null);
   // Explicit selection is URL-owned; automatic desktop selection stays local.
   const [autoSelectedEventId, setAutoSelectedEventId] = React.useState<string | null>(null);
@@ -139,7 +142,7 @@ export function useInboxViewState({ itemId, setItemId, heldItemId = null }: {
   } | null>(null);
   const isDrafts = filter === "drafts";
   const isReminders = filter === "reminders";
-  const isMessagesMode = !isDrafts && !isReminders && selectedReminderId === null;
+  const isMessagesMode = !isDrafts && !isReminders && selectedReminderId === null && selectedNeedsActionKey === null;
   // `?item=` is Messages-mode-only machinery: a draft never enters the
   // FeedItem selection model.
   const urlSelectedItemId = isMessagesMode ? itemId : null;
@@ -156,6 +159,7 @@ export function useInboxViewState({ itemId, setItemId, heldItemId = null }: {
     containerRef, widthPx, isNarrow,
     filter, setFilter, unreadOnly, setUnreadOnly,
     selectedReminderId, setSelectedReminderId,
+    selectedNeedsActionKey, setSelectedNeedsActionKey,
     selectedDraftKey, setSelectedDraftKey,
     autoSelectedEventId, setAutoSelectedEventId,
     unreadBoundary, setUnreadBoundary,
@@ -207,6 +211,7 @@ export function InboxView<T extends InboxViewRow>({
   auxiliary = null,
   onRowSelected,
   onFilterChanged,
+  needsAction = null,
 }: {
   state: InboxViewState;
   status: InboxViewStatus;
@@ -234,6 +239,8 @@ export function InboxView<T extends InboxViewRow>({
   /** Host-local side effects of the original row selection. */
   onRowSelected?: (row: T) => void;
   onFilterChanged?: (filter: InboxFilter) => void;
+  /** DD-125(5): approvals waiting on me and my requests' results; absent hides the filter. */
+  needsAction?: NeedsActionSource | null;
 }) {
   const t = useT();
   const reminderHost = useReminderHost();
@@ -250,11 +257,31 @@ export function InboxView<T extends InboxViewRow>({
   ), [isRead, items, matchesFilter, selectedConversationId, unreadOnly]);
   const filteredItems = React.useMemo(() => visibleIn(filter), [filter, visibleIn]);
   const ready = status.kind === "ready";
+  const { selectedNeedsActionKey, setSelectedNeedsActionKey } = state;
+  // Original all-view includes needs_action items; Needs action shows only them.
+  const needsActionIn = React.useCallback((nextFilter: InboxFilter): readonly NeedsActionItem[] =>
+    needsAction?.status === "ready" && (nextFilter === "all" || nextFilter === "needs_action")
+      ? needsAction.items.filter((item) => !unreadOnly || !needsAction.isDone(item) || item.key === selectedNeedsActionKey)
+      : [], [needsAction, unreadOnly, selectedNeedsActionKey]);
+  const visibleNeedsAction = React.useMemo(() => needsActionIn(filter), [filter, needsActionIn]);
+  // A decision moves the item out of its list; keep its detail open until another choice.
+  const latchedNeedsAction = React.useRef<NeedsActionItem | null>(null);
+  const listedNeedsAction = needsAction?.items.find((item) => item.key === selectedNeedsActionKey) ?? null;
+  if (listedNeedsAction) latchedNeedsAction.current = listedNeedsAction;
+  if (selectedNeedsActionKey === null) latchedNeedsAction.current = null;
+  const selectedNeedsAction = latchedNeedsAction.current?.key === selectedNeedsActionKey ? latchedNeedsAction.current : null;
+  React.useEffect(() => {
+    // Original auto-selection of the first visible item, for the approval-backed list.
+    if (filter !== "needs_action" || !ready || isNarrow || widthPx === 0) return;
+    if (selectedNeedsActionKey !== null || urlSelectedItemId !== null || filteredItems.length > 0) return;
+    const first = visibleNeedsAction[0];
+    if (first) setSelectedNeedsActionKey(first.key);
+  }, [filter, ready, isNarrow, widthPx, selectedNeedsActionKey, urlSelectedItemId, filteredItems.length, visibleNeedsAction, setSelectedNeedsActionKey]);
   useHomeInboxAutoSelection({
     coldResolutionPending,
     filteredItems,
     hasFeed: ready,
-    hasPersonalSelection: drafts.hasSelection || selectedReminderId !== null,
+    hasPersonalSelection: drafts.hasSelection || selectedReminderId !== null || selectedNeedsActionKey !== null,
     homeInboxWidthPx: widthPx,
     isLoading: status.kind === "loading",
     isMessagesMode,
@@ -293,6 +320,7 @@ export function InboxView<T extends InboxViewRow>({
     state.setUnreadBoundary(null);
     state.setSelectedDraftKey(null);
     state.setSelectedReminderId(null);
+    if (!needsActionIn(nextFilter).some((item) => item.key === selectedNeedsActionKey)) setSelectedNeedsActionKey(null);
     state.setFilter(nextFilter);
     onFilterChanged?.(nextFilter);
     if (nextFilter === "drafts" || nextFilter === "reminders" || selection.preserveSelection) {
@@ -314,7 +342,11 @@ export function InboxView<T extends InboxViewRow>({
         ? "drafts"
         : selectedReminderId !== null
           ? "reminders"
-          : "messages";
+          : selectedNeedsActionKey !== null
+            ? "needs_action"
+            : "messages";
+  // The personal approval detail uses the reminder detail column rules.
+  const personalDetail = detailMode === "reminders" || detailMode === "needs_action";
   const layout = getHomePaneLayout({
     hasAuxiliaryPane,
     homeWidthPx: widthPx,
@@ -322,11 +354,11 @@ export function InboxView<T extends InboxViewRow>({
     isDrafts: detailMode === "drafts",
     isMessagesMode: detailMode === "messages",
     isNarrow,
-    isReminders: detailMode === "reminders",
+    isReminders: personalDetail,
     isSinglePanelAuxiliaryView,
     selectedDraft: drafts.hasSelection,
     selectedEvent: selectedEventId !== null,
-    selectedReminder: selectedReminderId !== null,
+    selectedReminder: selectedReminderId !== null || selectedNeedsActionKey !== null,
     threadPanelWidthPx: auxiliary?.preferredWidthPx ?? 0,
   });
 
@@ -351,9 +383,25 @@ export function InboxView<T extends InboxViewRow>({
               state.setUnreadBoundary(null);
               state.selectItem(null);
               state.setSelectedDraftKey(null);
+              setSelectedNeedsActionKey(null);
               state.setSelectedReminderId(id);
             }}
+            needsAction={needsAction ? {
+              items: visibleNeedsAction,
+              available: true,
+              selectedKey: selectedNeedsActionKey,
+              isDone: needsAction.isDone,
+              setDone: needsAction.setDone,
+              onSelect: (item) => {
+                state.setUnreadBoundary(null);
+                state.selectItem(null);
+                state.setSelectedDraftKey(null);
+                state.setSelectedReminderId(null);
+                setSelectedNeedsActionKey(item.key);
+              },
+            } : undefined}
             onSelect={(row) => {
+              setSelectedNeedsActionKey(null);
               state.setSelectedReminderId(null);
               state.setUnreadBoundary(
                 !isRead(row) ? { conversationId: row.conversationId, eventId: row.id } : null,
@@ -387,6 +435,13 @@ export function InboxView<T extends InboxViewRow>({
             pubkey={reminderHost.pubkey}
             reminder={selectedReminder}
             onBack={layout.isSinglePanelReminderDetailView ? () => state.setSelectedReminderId(null) : undefined}
+          />
+        ) : null}
+        {layout.showDetailPane && detailMode === "needs_action" ? (
+          <NeedsActionDetailPane
+            item={selectedNeedsAction}
+            onChanged={() => needsAction?.refresh()}
+            onBack={layout.isSinglePanelReminderDetailView ? () => setSelectedNeedsActionKey(null) : undefined}
           />
         ) : null}
         {layout.showDetailPane && detailMode === "drafts" ? drafts.renderDetail({

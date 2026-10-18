@@ -163,6 +163,7 @@ export function SettingsPage({
   onClose,
   active,
   appVersion,
+  channelTemplates,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -173,10 +174,13 @@ export function SettingsPage({
   onClose?:()=>void;
   active?: boolean;
   appVersion?: string | null;
+  /** DD-125(4): show the original "Channel templates" section (host provides Core preferences). */
+  channelTemplates?: boolean;
 }) {
   return (
     <SettingsViewSurface locale={locale} section={section} onSelect={onSelect} onClose={onClose}
-      active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}>
+      active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}
+      channelTemplates={channelTemplates}>
       {children}
     </SettingsViewSurface>
   );

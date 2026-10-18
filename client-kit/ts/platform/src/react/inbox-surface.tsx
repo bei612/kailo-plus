@@ -13,7 +13,7 @@ import { useRemindLater } from "./reminders/ui/RemindMeLaterProvider";
 export { HomeLoadingState } from "./home-loading-state";
 export { InboxMessageRowSurface } from "./inbox-message-row";
 
-export type InboxFilter = "all" | "project" | "mention" | "thread" | "agent_activity" | "reminders" | "drafts";
+export type InboxFilter = "all" | "project" | "mention" | "thread" | "needs_action" | "agent_activity" | "reminders" | "drafts";
 
 /** Original InboxDetailPane effect, including its existing 1_200 ms animation delay. */
 export function useInboxFocusHighlight(conversationId: string | null): boolean {
@@ -51,6 +51,7 @@ export function InboxEmptyList({ filter, unreadOnly }: { filter: Exclude<InboxFi
     project: ["inbox.projectEmpty", "inbox.projectUnreadEmpty"],
     mention: ["inbox.mentionEmpty", "inbox.mentionUnreadEmpty"],
     thread: ["inbox.threadEmpty", "inbox.threadUnreadEmpty"],
+    needs_action: ["inbox.needsActionEmpty", "inbox.needsActionUnreadEmpty"],
     agent_activity: ["inbox.agentEmpty", "inbox.agentUnreadEmpty"],
     reminders: ["reminders.empty", "reminders.unreadEmpty"],
   } as const;
@@ -69,16 +70,18 @@ export function InboxReopenStatus({id,pending,error,unknown,onRetry}: {id:string
 }
 const iconButton = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted/70 data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
 
-export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
+export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount, needsActionAvailable = false }: {
   filter: InboxFilter; onFilterChange: (filter: InboxFilter) => void; activeDraftCount?: number;
+  /** DD-125(5): offered only when the host supplies the approval-backed Needs action source. */
+  needsActionAvailable?: boolean;
 }) {
   const t = useUiT();
-  const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : `inbox.${value}`);
+  const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : value === "needs_action" ? "inbox.needsActionLabel" : `inbox.${value}`);
   const reminders = useRemindLater();
   const statusLabel = reminders.dueReminderCount > 0
     ? t(reminders.dueReminderCount === 1 ? "reminders.dueStatus" : "reminders.dueStatusPlural", { count: reminders.dueReminderCount }) : (activeDraftCount ?? 0) > 0
     ? t(activeDraftCount === 1 ? "inbox.activeDraftStatus" : "inbox.activeDraftStatusPlural", { count: activeDraftCount! }) : null;
-  const options: InboxFilter[] = ["all", "project", "mention", "thread", "agent_activity", ...(reminders.available ? ["reminders" as const] : []), ...(activeDraftCount === undefined ? [] : ["drafts" as const])];
+  const options: InboxFilter[] = ["all", "project", "mention", "thread", ...(needsActionAvailable ? ["needs_action" as const] : []), "agent_activity", ...(reminders.available ? ["reminders" as const] : []), ...(activeDraftCount === undefined ? [] : ["drafts" as const])];
   return <DropdownMenu><DropdownMenuTrigger asChild>
     <button aria-label={`${t("inbox.filterLabel", { filter: filterLabel(filter) })}${statusLabel ? `. ${statusLabel}` : ""}`} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
       <span>{filterLabel(filter)}</span><ChevronDown className="text-muted-foreground" />
@@ -95,8 +98,8 @@ export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
   </DropdownMenuContent></DropdownMenu>;
 }
 
-export function InboxListHeader({ filter, onFilterChange, activeDraftCount, unreadOnly, onUnreadOnlyChange, unreadCount, onMarkAllRead, pending = false }: {
-  filter: InboxFilter; onFilterChange: (filter: InboxFilter) => void; activeDraftCount?: number;
+export function InboxListHeader({ filter, onFilterChange, activeDraftCount, needsActionAvailable = false, unreadOnly, onUnreadOnlyChange, unreadCount, onMarkAllRead, pending = false }: {
+  filter: InboxFilter; onFilterChange: (filter: InboxFilter) => void; activeDraftCount?: number; needsActionAvailable?: boolean;
   unreadOnly: boolean; onUnreadOnlyChange: (value: boolean) => void; unreadCount: number; onMarkAllRead: () => void; pending?: boolean;
 }) {
   const t = useUiT(); const id = React.useId();
@@ -113,7 +116,7 @@ export function InboxListHeader({ filter, onFilterChange, activeDraftCount, unre
         <span>{t("inbox.markAllRead")}</span>{unreadCount > 0 ? <span className="ml-auto text-xs text-muted-foreground">{unreadCount}</span> : null}
       </button>
     </PopoverContent></Popover></div>
-    <div className="order-1 flex shrink-0 items-center justify-start"><InboxFilterMenu filter={filter} onFilterChange={onFilterChange} activeDraftCount={activeDraftCount} /></div>
+    <div className="order-1 flex shrink-0 items-center justify-start"><InboxFilterMenu filter={filter} onFilterChange={onFilterChange} activeDraftCount={activeDraftCount} needsActionAvailable={needsActionAvailable} /></div>
   </div></div></div>;
 }
 

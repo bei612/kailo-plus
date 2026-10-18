@@ -241,6 +241,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const settingsVisited=useRef(false);
   if(tab==="settings")settingsVisited.current=true;
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
+  // Original custom-section quick action (AppSidebar handleCreateChannelInSection): the
+  // channel chosen in this browser opening is assigned to that section, then forgotten.
+  const sectionBrowseAssign = useRef<((channelId: string) => void) | null>(null);
+  useEffect(() => { if (!createChannelOpen) sectionBrowseAssign.current = null; }, [createChannelOpen]);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [newForumOpen, setNewForumOpen] = useState(false);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
@@ -610,7 +614,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 <CreateChannelDialog key={`forum:${session.tenantPrincipalId}`} open={newForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
                 <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
-                onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
+                onSelect={async (workspace) => {
+                  const assignToSection = sectionBrowseAssign.current;
+                  sectionBrowseAssign.current = null;
+                  await workspaces.refetch(); await navigation.openChannel(workspace.id);
+                  assignToSection?.(workspace.channel.channelId);
+                }} /></>}>
               <AppSidebarPrimaryMenu onSelectHome={() => setTab("inbox")}
                 homeBadgeEnabled={notificationSettings?.settings.homeBadgeEnabled === true}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && homeBadgeCount !== null ? homeBadgeCount : undefined}
@@ -641,6 +650,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
               onSelect={(id) => { void navigation.openChannel(id); }}
               onCreate={() => setCreateChannelOpen(true)}
+              onBrowseChannelsForSection={(assign) => { sectionBrowseAssign.current = assign; setCreateChannelOpen(true); }}
               onCreateForum={() => setNewForumOpen(true)}
               onSetPreference={(id, value) => {
                 if (userState.state) preference.mutate({ id, ...value, version: userState.state.version });
@@ -649,7 +659,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               {preferenceUnknown ? translate(getLocale(), "sidebar.preferenceUnknown") : t("platform.loadFailed")}
               <Button size="sm" onClick={() => void userState.refresh()}>{t("platform.retry")}</Button>
             </p> : null}
-            {/* Original group order: Starred, Channels, Forums, then Direct messages. */}
+            {/* Original group order: Starred, custom sections, Channels, Forums, then Direct messages. */}
             <ConversationSidebar key={searchScopeKey} currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading} reads={userState}
               onUnreadChange={dmUnread.onUnreadChange}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}

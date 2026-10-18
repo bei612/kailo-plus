@@ -1,5 +1,7 @@
 // Web adapter for the same Buzz channel groups/rows/context menus used by Desktop.
 // Business preferences/read positions remain the existing Core user-state CAS authority.
+// DD-125(5): original custom sections (CustomChannelSection, SidebarDnd, "Move to section")
+// and group sort persist in the same Core CollaborationUserState, keyed by native channel ID.
 import { ChannelType, type DiscoverableWorkspace, type WorkspaceView } from "@client-kit/contracts";
 import { loadWorkspaceActivity } from "@client-kit/platform/react/workspace-activity";
 import { TransportError } from "@client-kit/platform/transport";
@@ -23,12 +25,21 @@ import { Button } from "@/shared/ui/button";
 import { inboxWindowEvents } from "./inbox-events";
 import { FeatureGate } from "@client-kit/platform/react/features";
 import { forcedUnreadMarker, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
+import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
+import { sectionSortGroupKey } from "@client-kit/platform/collaboration-preferences";
+import {
+  CreateSectionDialog, CustomChannelSection, DeleteSectionAlertDialog, DraggableChannelRow, DroppableUngroupedBody,
+  RenameSectionDialog, SidebarDndContext, type CustomSidebarSection, type SectionDialogValue,
+} from "@client-kit/platform/react/sidebar/custom-channel-section";
 
 type Group = "starred" | "channels" | "forums";
+const NO_SECTIONS: readonly (CustomSidebarSection & { order: number })[] = [];
+const NO_ASSIGNMENTS: Readonly<Record<string, string>> = {};
 
 export function ChannelSidebar({ principalId, workspaces, directory, selectedId, active, reads, preferencePending,
   onSelect, onCreate, onCreateForum, onSetPreference, onActivity, onUnreadChange,
   forcedUnread = {}, onMarkChannelUnread, onClearChannelManualUnread, onChannelActionRecorded,
+  onBrowseChannelsForSection,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
@@ -49,6 +60,8 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
   onClearChannelManualUnread?: (channelId: string) => void;
   /** DD-119 readback after a recorded Leave/Archive from the context menu. */
   onChannelActionRecorded?: () => void;
+  /** Original section quick action: browse channels, then assign the chosen native channel. */
+  onBrowseChannelsForSection?: (assign: (channelId: string) => void) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
@@ -128,33 +141,56 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     void Promise.resolve().then(() => navigator.clipboard.writeText(text))
       .then(() => toast.success(success), () => toast.error(t("platform.loadFailed")));
   };
-  const group = (key: Group, items: (SidebarChannel & { channelType?: ChannelType })[]) => <ChannelGroupSection
-    key={key} title={t(key === "starred" ? "sidebar.starred" : key === "forums" ? "sidebar.forums" : "sidebar.channels")}
-    items={sortChannelsForSidebar(items, sortModeFor(key))}
-    hasUnread={items.some((row) => unread.has(row.id))}
-    isCollapsed={collapsed[key]} onToggleCollapsed={() => setCollapsed((old) => ({ ...old, [key]: !old[key] }))}
-    listTestId={key === "starred" ? "starred-channel-list" : key === "forums" ? "forum-list" : "channel-list"}
-    actionsTestId={`${key}-section-actions`} sortMode={sortModeFor(key)}
-    onSortModeChange={(value) => setSortModeFor(key, value)}
-    onMarkAllRead={canWriteRead ? () => mark(items.map((row) => row.id), true) : undefined}
-    onCreateChannel={key === "channels" ? onCreate : key === "forums" ? onCreateForum : undefined}
-    createChannelLabel={t(key === "forums" ? "sidebar.newForum" : "channel.browser.title")}
-    createTestId={key === "forums" ? "create-forum" : "create-channel"}
-    renderRow={(channel) => { const ttl = directory?.find((row) => row.id === channel.id)?.channel;
-      return <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
+  // DD-125(5) custom sections: only joined stream channels with an observed native ID
+  // can be assigned (Core re-admits each key); entries for channels that are no longer
+  // visible stay in Core and are simply not rendered.
+  const sectionPrefs = useCollaborationPreferences();
+  const sections = sectionPrefs?.sections ?? NO_SECTIONS;
+  const assignments = sectionPrefs?.assignments ?? NO_ASSIGNMENTS;
+  const sectionsWritable = sectionPrefs?.writable === true;
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [createSection, setCreateSection] = useState<{ pendingChannelId: string | null } | null>(null);
+  const [renameSectionTarget, setRenameSectionTarget] = useState<CustomSidebarSection | null>(null);
+  const [deleteSectionTarget, setDeleteSectionTarget] = useState<CustomSidebarSection | null>(null);
+  const [sectionBusy, setSectionBusy] = useState(false);
+  const nativeChannelId = (workspaceId: string) => joined.some((row) => row.id === workspaceId)
+    ? directory?.find((row) => row.id === workspaceId)?.channel.channelId : undefined;
+  const sectionFailed = () => toast.error(t("sidebar.section.updateFailed"));
+  const runSectionWrite = (write: Promise<boolean>) => {
+    void write.then((ok) => { if (!ok) sectionFailed(); }, sectionFailed);
+  };
+  const sectionActionsFor = (workspaceId: string) => {
+    const native = nativeChannelId(workspaceId);
+    if (!sectionPrefs || !native) return undefined;
+    return {
+      sections, currentSectionId: assignments[native], disabled: !sectionsWritable,
+      onAssign: (sectionId: string) => runSectionWrite(sectionPrefs.assignChannel(native, sectionId)),
+      onUnassign: () => runSectionWrite(sectionPrefs.assignChannel(native, null)),
+      onCreateSection: () => setCreateSection({ pendingChannelId: native }),
+    };
+  };
+  const renderChannelRow = (channel: SidebarChannel & { channelType?: ChannelType }, draggable: boolean) => {
+    const ttl = directory?.find((row) => row.id === channel.id)?.channel;
+    const row = <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
       hasUnread={unread.has(channel.id)} hasThreadUnread={unread.has(channel.id)}
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
       // DD-119(3,6): the original TTL badge from the admitted directory's channel metadata.
       ephemeralBadge={ttl && isEphemeralChannel(ttl) ? <ChannelEphemeralBadge channel={{ id: channel.id, ttlSeconds: ttl.ttlSeconds, ttlDeadline: ttl.ttlDeadline }}
         testId={`channel-ephemeral-${channel.name}`} variant="sidebar" /> : undefined}
-      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />; }}
-    renderContextMenu={(channel) => { const nativeChannelId = joined.some((row) => row.id === channel.id) && messages.isSuccess
+      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />;
+    const native = draggable && sectionPrefs ? nativeChannelId(channel.id) : undefined;
+    return native ? <DraggableChannelRow channelId={native}>{row}</DraggableChannelRow> : row;
+  };
+  const renderChannelMenu = (channel: SidebarChannel, key: Group | "section") => {
+    const observedChannelId = joined.some((row) => row.id === channel.id) && messages.isSuccess
       ? messages.data?.get(channel.id)?.channelId : undefined;
-      return <ChannelContextMenuItems channel={channel}
+    return <ChannelContextMenuItems channel={channel}
       copyChannelId={messages.isSuccess && !messages.isFetching && joined.some((row) => row.id === channel.id)
         ? messages.data?.get(channel.id)?.channelId ?? null : null}
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
       isStarred={preferences[channel.id]?.starred} onCopy={copy}
+      // Original "Move to section" lives in the Channels group and custom sections only.
+      sectionActions={key === "channels" || key === "section" ? sectionActionsFor(channel.id) : undefined}
       onMarkChannelRead={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], true) : undefined}
       onMarkChannelUnread={canWriteRead && onMarkChannelUnread && joined.some((row) => row.id === channel.id) ? (id) => mark([id], false) : undefined}
       onStarChannel={key !== "forums" && canWritePreference ? (id) => updatePreference(id, { starred: true }) : undefined}
@@ -165,18 +201,108 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       onLeaveChannel={key !== "forums" && directory?.find((row) => row.id === channel.id)?.leaveActionKey !== undefined
         ? (row) => requestLeaveChannel({ workspaceId: row.id, name: row.name }) : undefined}
       // Archive reads the lifecycle hint on menu open (DD-119(5)); it needs the observed native channel ID.
-      ownerActions={nativeChannelId ? { workspaceId: channel.id, channelId: nativeChannelId,
-        onArchiveChannel: (row) => requestArchiveChannel({ workspaceId: row.id, name: row.name }) } : undefined} />; }}
+      ownerActions={observedChannelId ? { workspaceId: channel.id, channelId: observedChannelId,
+        onArchiveChannel: (row) => requestArchiveChannel({ workspaceId: row.id, name: row.name }) } : undefined} />;
+  };
+  const group = (key: Group, items: (SidebarChannel & { channelType?: ChannelType })[]) => <ChannelGroupSection
+    key={key} title={t(key === "starred" ? "sidebar.starred" : key === "forums" ? "sidebar.forums" : "sidebar.channels")}
+    items={sortChannelsForSidebar(items, sortModeFor(key))}
+    hasUnread={items.some((row) => unread.has(row.id))}
+    isCollapsed={collapsed[key]} onToggleCollapsed={() => setCollapsed((old) => ({ ...old, [key]: !old[key] }))}
+    listTestId={key === "starred" ? "starred-channel-list" : key === "forums" ? "forum-list" : "channel-list"}
+    actionsTestId={`${key}-section-actions`} sortMode={sortModeFor(key)}
+    onSortModeChange={(value) => setSortModeFor(key, value)}
+    actionsDisabled={Boolean(sectionPrefs) && !sectionsWritable}
+    onMarkAllRead={canWriteRead ? () => mark(items.map((row) => row.id), true) : undefined}
+    onCreateChannel={key === "channels" ? onCreate : key === "forums" ? onCreateForum : undefined}
+    createChannelLabel={t(key === "forums" ? "sidebar.newForum" : "channel.browser.title")}
+    createTestId={key === "forums" ? "create-forum" : "create-channel"}
+    renderRow={(channel) => renderChannelRow(channel, key === "channels")}
+    renderContextMenu={(channel) => renderChannelMenu(channel, key)}
   />;
   const streamRows = rows.filter((row) => row.channelType === "stream" || (row.isMember !== true && row.channelType === undefined));
   const starred = streamRows.filter((row) => preferences[row.id]?.starred);
+  // Original AppSidebar sectionBuckets: non-starred stream channels go to their assigned
+  // section when that section still exists, otherwise to the default Channels group.
+  const liveSectionIds = new Set(sections.map((section) => section.id));
+  const bySection = new Map<string, typeof streamRows>();
+  const unassigned: typeof streamRows = [];
+  for (const row of streamRows) {
+    if (preferences[row.id]?.starred) continue;
+    const native = nativeChannelId(row.id);
+    const sectionId = native ? assignments[native] : undefined;
+    if (sectionId && liveSectionIds.has(sectionId)) bySection.set(sectionId, [...(bySection.get(sectionId) ?? []), row]);
+    else unassigned.push(row);
+  }
+  const confirmCreateSection = async (value: SectionDialogValue) => {
+    if (!sectionPrefs || !createSection) return;
+    setSectionBusy(true);
+    const created = await sectionPrefs.createSection(value.name, value.icon);
+    const assigned = created && createSection.pendingChannelId
+      ? await sectionPrefs.assignChannel(createSection.pendingChannelId, created.id) : true;
+    setSectionBusy(false);
+    if (!created || !assigned) { sectionFailed(); if (!created) return; }
+    setCreateSection(null);
+  };
+  const confirmRenameSection = async (value: SectionDialogValue) => {
+    if (!sectionPrefs || !renameSectionTarget) return;
+    setSectionBusy(true);
+    const renamed = await sectionPrefs.renameSection(renameSectionTarget.id, value.name, value.icon);
+    setSectionBusy(false);
+    if (!renamed) { sectionFailed(); return; }
+    setRenameSectionTarget(null);
+  };
+  const confirmDeleteSection = async () => {
+    if (!sectionPrefs || !deleteSectionTarget) return;
+    const target = deleteSectionTarget;
+    setSectionBusy(true);
+    const deleted = await sectionPrefs.deleteSection(target.id);
+    setSectionBusy(false);
+    if (!deleted) { sectionFailed(); return; }
+    setCollapsedSections((old) => { const next = { ...old }; delete next[target.id]; return next; });
+    setDeleteSectionTarget(null);
+  };
   return <TooltipProvider>
     {messages.isError || reads.failed ? <p role="alert" className="px-4 text-sm">
       {t("platform.loadFailed")} <Button size="sm" onClick={() => { void messages.refetch(); void reads.refresh(); }}>{t("platform.retry")}</Button>
     </p> : joined.length > 0 && (messages.isPending || reads.state === null) ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
     {starred.length > 0 ? group("starred", starred) : null}
-    {group("channels", streamRows.filter((row) => !preferences[row.id]?.starred))}
+    <SidebarDndContext enabled={sectionsWritable} sectionIds={sections.map((section) => section.id)}
+      onAssignChannel={(channelId, sectionId) => { if (sectionPrefs) runSectionWrite(sectionPrefs.assignChannel(channelId, sectionId)); }}
+      onUnassignChannel={(channelId) => { if (sectionPrefs) runSectionWrite(sectionPrefs.assignChannel(channelId, null)); }}
+      onReorderSections={(sectionIds) => { if (sectionPrefs) runSectionWrite(sectionPrefs.reorderSections(sectionIds)); }}>
+      {sectionPrefs ? sections.map((section, index) => {
+        const items = bySection.get(section.id) ?? [];
+        const sortGroup = sectionSortGroupKey(section.id);
+        return <CustomChannelSection key={section.id} section={section}
+          items={sortChannelsForSidebar(items, sectionPrefs.sortModeFor(sortGroup))}
+          hasUnread={items.some((row) => unread.has(row.id))}
+          isCollapsed={collapsedSections[section.id] ?? false}
+          isFirst={index === 0} isLast={index === sections.length - 1} disabled={!sectionsWritable}
+          sortMode={sectionPrefs.sortModeFor(sortGroup)}
+          onSortModeChange={(mode) => { if (sectionsWritable) runSectionWrite(sectionPrefs.setSortModeFor(sortGroup, mode)); }}
+          onToggleCollapsed={() => setCollapsedSections((old) => ({ ...old, [section.id]: !(old[section.id] ?? false) }))}
+          onMarkSectionRead={canWriteRead ? () => mark(items.map((row) => row.id), true) : undefined}
+          onAddChannel={onBrowseChannelsForSection ? () => onBrowseChannelsForSection((channelId) =>
+            runSectionWrite(sectionPrefs.assignChannel(channelId, section.id))) : undefined}
+          onRenameSection={() => setRenameSectionTarget(section)}
+          onDeleteSection={() => setDeleteSectionTarget(section)}
+          onMoveSectionUp={() => runSectionWrite(sectionPrefs.moveSection(section.id, "up"))}
+          onMoveSectionDown={() => runSectionWrite(sectionPrefs.moveSection(section.id, "down"))}
+          renderRow={(channel) => renderChannelRow(channel, true)}
+          renderContextMenu={(channel) => renderChannelMenu(channel, "section")} />;
+      }) : null}
+      <DroppableUngroupedBody>{group("channels", unassigned)}</DroppableUngroupedBody>
+    </SidebarDndContext>
     <FeatureGate feature="forum">{group("forums", rows.filter((row) => row.channelType === "forum"))}</FeatureGate>
     {channelActionDialog}
+    {createSection ? <CreateSectionDialog open onOpenChange={(open) => { if (!open) setCreateSection(null); }}
+      pending={sectionBusy} onConfirm={(value) => void confirmCreateSection(value)} /> : null}
+    {renameSectionTarget ? <RenameSectionDialog open onOpenChange={(open) => { if (!open) setRenameSectionTarget(null); }}
+      sectionName={renameSectionTarget.name} sectionIcon={renameSectionTarget.icon}
+      pending={sectionBusy} onConfirm={(value) => void confirmRenameSection(value)} /> : null}
+    {deleteSectionTarget ? <DeleteSectionAlertDialog open onOpenChange={(open) => { if (!open) setDeleteSectionTarget(null); }}
+      sectionName={deleteSectionTarget.name} channelCount={bySection.get(deleteSectionTarget.id)?.length ?? 0}
+      pending={sectionBusy} onConfirm={() => void confirmDeleteSection()} /> : null}
   </TooltipProvider>;
 }

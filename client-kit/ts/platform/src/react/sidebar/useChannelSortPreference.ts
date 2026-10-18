@@ -1,5 +1,9 @@
 // Extracted unchanged from the pinned Buzz sidebar implementation; presentation preference only.
+// DD-125(5): when the host provides Core CollaborationUserState preferences (Web), the
+// group sort is read from and written to `sidebar_sort` instead of this device's store;
+// a host without that provider (Desktop today) keeps the original local behavior.
 import * as React from "react";
+import { useCollaborationPreferences } from "../collaboration-preferences";
 
 import {
   DEFAULT_STORE,
@@ -67,5 +71,15 @@ export function useChannelSortPreference(
     [pubkey, relayUrl],
   );
 
-  return { sortModeFor, setSortModeFor };
+  const core = useCollaborationPreferences();
+  const coreSortModeFor = core?.sortModeFor;
+  const coreSetSortModeFor = core?.setSortModeFor;
+  const coreWritable = core?.writable === true;
+  return React.useMemo(() => coreSortModeFor && coreSetSortModeFor ? {
+    sortModeFor: (group: ChannelSortGroupKey) => coreSortModeFor(group),
+    // Inert while the Core state is unread, pending or unknown; a failed write re-reads it.
+    setSortModeFor: (group: ChannelSortGroupKey, mode: ChannelSortMode) => {
+      if (coreWritable) void coreSetSortModeFor(group, mode);
+    },
+  } : { sortModeFor, setSortModeFor }, [coreSortModeFor, coreSetSortModeFor, coreWritable, sortModeFor, setSortModeFor]);
 }

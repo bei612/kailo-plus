@@ -7,11 +7,13 @@ import {
   Archive,
   Bell,
   BellOff,
+  Check,
   CheckCircle2,
   CircleDot,
   Copy,
   LoaderCircle,
   LogOut,
+  Plus,
   Star,
   StarOff,
   TriangleAlert,
@@ -26,6 +28,7 @@ import {
 import type { SidebarChannel as Channel } from "./channel-group";
 import { useT } from "../context";
 import { useChannelManagementHints } from "../channel-management-actions";
+import { StatusEmoji } from "../user-status/ui/StatusEmoji";
 
 import {
   ContextMenuItem,
@@ -68,6 +71,63 @@ function CopyChannelSubmenu({ channel, channelId, onCopy }: { channel: Channel; 
         >
           <span>{t("sidebar.copyId")}</span>
         </ContextMenuItem>
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+/**
+ * Original ChannelContextMenu.tsx::MoveToSectionSubmenu (DD-125(5)). The host
+ * persists assignments in Core CollaborationUserState keyed by the native channel
+ * ID; `disabled` keeps the entries inert while that state is unread or unconfirmed.
+ */
+export type ChannelContextMenuSectionActions = {
+  sections: readonly { id: string; name: string; icon?: string }[];
+  currentSectionId?: string;
+  onAssign: (sectionId: string) => void;
+  onUnassign: () => void;
+  onCreateSection: () => void;
+  disabled?: boolean;
+};
+
+function MoveToSectionSubmenu({ actions }: { actions: ChannelContextMenuSectionActions }) {
+  const t = useT();
+  const { sections, currentSectionId, disabled = false } = actions;
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger disabled={disabled}>
+        <ContextMenuIconSlot />
+        <span>{t("sidebar.section.moveTo")}</span>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        {sections.map((section) => (
+          <ContextMenuItem
+            key={section.id}
+            onSelect={() => deferMenuAction(() => actions.onAssign(section.id))}
+          >
+            <ContextMenuIconSlot>
+              {currentSectionId === section.id ? (
+                <Check className="h-4 w-4" />
+              ) : section.icon ? (
+                <StatusEmoji className="h-4 w-4" value={section.icon} />
+              ) : null}
+            </ContextMenuIconSlot>
+            <span>{section.name}</span>
+          </ContextMenuItem>
+        ))}
+        {sections.length > 0 ? <ContextMenuSeparator /> : null}
+        <ContextMenuItem onSelect={() => deferMenuAction(actions.onCreateSection)}>
+          <ContextMenuIconSlot>
+            <Plus className="h-4 w-4" />
+          </ContextMenuIconSlot>
+          <span>{t("sidebar.section.newEllipsis")}</span>
+        </ContextMenuItem>
+        {currentSectionId ? (
+          <ContextMenuItem onSelect={() => deferMenuAction(actions.onUnassign)}>
+            <ContextMenuIconSlot />
+            <span>{t("sidebar.section.remove")}</span>
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuSubContent>
     </ContextMenuSub>
   );
@@ -142,6 +202,7 @@ export function ChannelContextMenuItems({
   onLeaveChannel,
   ownerActions,
   onCopy,
+  sectionActions,
 }: {
   onCopy: (text: string, message: string) => void;
   channel: Channel;
@@ -163,6 +224,8 @@ export function ChannelContextMenuItems({
   onLeaveChannel?: (channel: Channel) => void;
   /** DD-119 Archive entry; omitted keeps the menu free of authority reads. */
   ownerActions?: ChannelContextMenuOwnerActions;
+  /** Original "Move to section" submenu; omitted where the original has none (Starred, Forums, DMs). */
+  sectionActions?: ChannelContextMenuSectionActions;
 }) {
   const t = useT();
   const hasProjectedUnread = hasUnread;
@@ -175,6 +238,7 @@ export function ChannelContextMenuItems({
   return (
     <>
       <CopyChannelSubmenu channel={channel} channelId={copyChannelId} onCopy={onCopy} />
+      {sectionActions ? <MoveToSectionSubmenu actions={sectionActions} /> : null}
       {showReadToggle ? <ContextMenuSeparator /> : null}
       {hasProjectedUnread && onMarkChannelRead ? (
         <ContextMenuItem
