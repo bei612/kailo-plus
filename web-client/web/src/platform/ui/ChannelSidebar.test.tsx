@@ -61,7 +61,7 @@ beforeEach(() => localStorage.setItem("buzz-feature-overrides-v1", JSON.stringif
 
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
-  failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
+  failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), update: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
   workspaceChannels: new Set(["one", "two"]), conversations: [], eventReadAt: () => 20,
 };
 const directory = () => ["one", "two"].map((id) => ({ id, visibility: "open", isMember: true, memberCount: 1,

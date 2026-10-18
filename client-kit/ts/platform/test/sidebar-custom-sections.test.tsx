@@ -165,6 +165,9 @@ const corePreferences = {
 } as unknown as CollaborationPreferenceActions;
 const unconfirmedPreferences = { ...corePreferences, writable: false } as CollaborationPreferenceActions;
 
+const sortStoreKeys = () => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+  .filter((key) => key?.startsWith("buzz-channel-sort.v1"));
+
 function SortProbe() {
   const { sortModeFor, setSortModeFor } = useChannelSortPreference("principal");
   return <button onClick={() => setSortModeFor("dms", "alpha")}>{sortModeFor("dms")}</button>;
@@ -176,7 +179,8 @@ describe("group sort follows the Core preference when the host provides it", () 
     const host = await render(<CollaborationPreferencesProvider value={corePreferences}><SortProbe /></CollaborationPreferencesProvider>);
     await act(async () => button(host, "recent").click());
     expect(coreSort).toHaveBeenCalledWith("dms", "alpha");
-    expect(localStorage.length).toBe(0);
+    // The locale reset keeps its own key; the device sort store is never written.
+    expect(sortStoreKeys()).toEqual([]);
   });
 
   it("does not write while the Core state is unread or unconfirmed", async () => {
@@ -184,5 +188,6 @@ describe("group sort follows the Core preference when the host provides it", () 
     const host = await render(<CollaborationPreferencesProvider value={unconfirmedPreferences}><SortProbe /></CollaborationPreferencesProvider>);
     await act(async () => button(host, "recent").click());
     expect(coreSort).not.toHaveBeenCalled();
+    expect(sortStoreKeys()).toEqual([]);
   });
 });
