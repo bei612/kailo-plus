@@ -50,6 +50,7 @@ import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfac
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
+import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -520,7 +521,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         <GradientLayer />
         <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
           <div className={`${tab === "settings" ? "absolute inset-x-0 top-0" : "relative"} z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground`} data-testid="app-top-chrome">
-            <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+            <div className="flex items-center gap-0.5">
+              <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+              <TopChromeHistoryButtons canGoBack={navigation.canGoBack === true} canGoForward={navigation.canGoForward === true}
+                onGoBack={() => navigation.goBack?.()} onGoForward={() => navigation.goForward?.()} />
+            </div>
             <div className="flex min-w-0 flex-1 items-center" id="app-top-chrome-content" />
           </div>
           <div className="flex min-h-0 flex-1 overflow-hidden">

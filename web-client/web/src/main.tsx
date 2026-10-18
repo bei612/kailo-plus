@@ -12,6 +12,7 @@ import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { EmojiBurstProvider } from "@client-kit/platform/react/emoji-burst";
 import { AvatarClipPaths } from "@client-kit/platform/react/thread/AvatarClipPaths";
+import { RootErrorBoundary } from "@client-kit/platform/react/root-error-boundary";
 
 initializeDocumentLanguage();
 initializeFontSizePreference();
@@ -41,16 +42,19 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <AvatarClipPaths />
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TooltipProvider>
-          <EmojiBurstProvider>
-            <App />
-            <Toaster />
-          </EmojiBurstProvider>
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    {/* Original block/buzz#5078 fence: an uncaught render error never leaves a blank page. */}
+    <RootErrorBoundary>
+      <AvatarClipPaths />
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <EmojiBurstProvider>
+              <App />
+              <Toaster />
+            </EmojiBurstProvider>
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </RootErrorBoundary>
   </React.StrictMode>,
 );

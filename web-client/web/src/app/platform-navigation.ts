@@ -1,5 +1,5 @@
 import { useBlocker, useCanGoBack, useLocation, useNavigate, useParams, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useHistorySearchState, type HistorySearchNavigation, type HistorySearchSetterOptions } from "@client-kit/platform/react/use-history-search-state";
 import { platformNavigationSections, type PlatformNavigationSection } from "@client-kit/platform/react/navigation";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
@@ -42,6 +42,38 @@ export function platformLocationSearch(search: Record<string, unknown>): {
   };
 }
 
+type RouterHistoryState = { __TSR_index?: number; __TSR_key?: string; key?: string };
+const HISTORY_KEY_LIMIT = 200;
+
+/**
+ * Fixed Buzz 779af8886caae1317b4de962082429867ab61503
+ * desktop/src/app/navigation/useBackForwardControls.ts: forward is available while this
+ * session's router index is below the furthest entry still on the same branch.
+ */
+function useCanGoForward(): boolean {
+  const locationState = useRouterState({ select: (state) => state.location.state }) as RouterHistoryState;
+  const locationIndex = locationState.__TSR_index ?? 0;
+  const locationKey = locationState.__TSR_key ?? locationState.key ?? String(locationIndex);
+  const keysByIndexRef = useRef(new Map<number, string>());
+  const [maxIndex, setMaxIndex] = useState(locationIndex);
+  useEffect(() => {
+    const keysByIndex = keysByIndexRef.current;
+    const currentKey = keysByIndex.get(locationIndex);
+    const branched = currentKey !== undefined && currentKey !== locationKey;
+    if (branched) {
+      for (const storedIndex of [...keysByIndex.keys()]) if (storedIndex >= locationIndex) keysByIndex.delete(storedIndex);
+    }
+    keysByIndex.set(locationIndex, locationKey);
+    while (keysByIndex.size > HISTORY_KEY_LIMIT) {
+      const oldest = keysByIndex.keys().next().value;
+      if (oldest === undefined) break;
+      keysByIndex.delete(oldest);
+    }
+    setMaxIndex((current) => branched ? locationIndex : Math.max(current, locationIndex));
+  }, [locationIndex, locationKey]);
+  return locationIndex < maxIndex;
+}
+
 export function usePlatformNavigation(scopeKey?: string) {
   const threadNavigationGuard = useRef<(() => boolean) | null>(null);
   const registerThreadNavigationGuard = useCallback((guard: (() => boolean) | null) => {
@@ -54,6 +86,7 @@ export function usePlatformNavigation(scopeKey?: string) {
   });
   const router = useRouter();
   const canGoBack = useCanGoBack();
+  const canGoForward = useCanGoForward();
   const navigate = useNavigate();
   const params = useParams({ strict: false });
   const search = useSearch({ from: "/_platform" });
@@ -103,8 +136,10 @@ export function usePlatformNavigation(scopeKey?: string) {
     });
   }, [navigate, params.channelId, search.workspaceId, tab]);
   return {
+    canGoBack,
+    canGoForward,
     goBack: () => { if (canGoBack) router.history.back(); },
-    goForward: () => router.history.forward(),
+    goForward: () => { if (canGoForward) router.history.forward(); },
     tab,
     inboxItemId: tab === "inbox" ? inboxHistory.values.item : null,
     setInboxItemId,

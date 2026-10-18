@@ -1318,6 +1318,12 @@ export const platformMessages = {
   "capabilities.deprecated": { en: "Deprecated", "zh-CN": "已弃用" },
   "capabilities.retired": { en: "Retired", "zh-CN": "已退役" },
   "platform.title": { en: "Platform", "zh-CN": "平台" },
+  "platform.rootError.title": { en: "Buzz failed to start", "zh-CN": "Buzz 启动失败" },
+  "platform.rootError.description": {
+    en: "Reload Buzz to try again. If this keeps happening, check that Buzz can access website data, then contact support.",
+    "zh-CN": "请重新载入 Buzz 再试。如果问题持续出现，请确认 Buzz 可以访问网站数据，然后联系支持人员。",
+  },
+  "platform.rootError.reload": { en: "Reload", "zh-CN": "重新载入" },
   "platform.workspace": { en: "Workspace", "zh-CN": "工作区" },
   "platform.workspaces": { en: "Workspaces", "zh-CN": "工作区" },
   "workspace.create.title": { en: "Create workspace", "zh-CN": "创建工作区" },

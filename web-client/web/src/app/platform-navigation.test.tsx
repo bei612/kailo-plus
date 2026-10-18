@@ -24,6 +24,7 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
+    data-can-back={String(navigation.canGoBack)} data-can-forward={String(navigation.canGoForward)}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}
     data-search-query={navigation.searchHighlight?.query} data-search-activation={navigation.searchHighlight?.activationId} data-thread={navigation.threadHeadId} data-editing={edit.editTarget?.id}
     data-draft={navigation.draftTarget?.key} data-send={navigation.draftTarget?.send} data-inbox-item={navigation.inboxItemId}
@@ -300,10 +301,16 @@ it.each(["MacIntel", "Win32"])("drives real URL history and Home from original %
     expect((await press(home)).defaultPrevented).toBe(true);
     expect(router.history.location.pathname).toBe("/app/inbox");
     expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-a");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-can-forward")).toBe("false");
     await press(back);
     expect(router.history.location.pathname).toBe("/app/channels/workspace-a");
+    // Original top-chrome Back/Forward availability follows the same session history.
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-can-back")).toBe("false");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-can-forward")).toBe("true");
     await press(forward);
     expect(router.history.location.pathname).toBe("/app/inbox");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-can-back")).toBe("true");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-can-forward")).toBe("false");
     expect(node!.querySelector("[data-tab]")?.getAttribute("data-mount")).toBe(mountId);
     await act(async () => { (node!.querySelectorAll("button")[1] as HTMLButtonElement).click(); });
     expect((await press(home)).defaultPrevented).toBe(false);
