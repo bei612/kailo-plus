@@ -34,7 +34,15 @@
 //   "execution":{ actionKey, target:{resourceId}, input:{…},
 //                 resultExposurePolicyId, resultExposurePolicyVersion },
 //   "vectorContexts":{ "default":{ resultExposurePolicyId, resultExposurePolicyVersion } },
+//   "nativeFactsFile":"/abs/native-facts.json"   (seed output; required for V2 vectors),
 //   "out":"/abs/facts.json" }
+//
+// DD-124 (V2 vectors): PRECONDITION values are copied unchanged from the seed's
+// owner-only record of what the native entry returned (seed-cells.mjs) into
+// facts.preconditions; observe.json itself may not carry precondition or
+// capture values. CAPTURE values do not exist here at all: Core takes them from
+// the candidate's own SUCCEEDED responses during its run, and nothing observed
+// here is published as a vector expectation.
 
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { chmod, lstat, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -97,13 +105,32 @@ const volatile = (execution) => {
   // Core (application_execution.rs observation) and the Worker
   // (validNativeObservation) reject a terminal observation without both a
   // nativeId and a nativeStatus; publishing it would freeze a failing plan.
+  // DD-124(5): a terminal observation carries the raw native status it was
+  // decided from; NONE/absent is only for PENDING_DISPATCH/RUNNING/UNKNOWN.
   if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(execution.platformStatus)
-    && (typeof execution.nativeStatus !== 'string' || !execution.nativeStatus.trim() || typeof execution.nativeId !== 'string')) {
-    fail(`terminal ${execution.nativeType} observation lacks nativeStatus/nativeId required by Core and Worker`);
+    && (typeof execution.nativeStatus !== 'string' || !execution.nativeStatus.trim() || execution.nativeStatus === 'NONE'
+      || typeof execution.nativeId !== 'string')) {
+    fail(`terminal ${execution.nativeType} observation lacks nativeStatus/nativeId required by Core and Worker (DD-124(5))`);
   }
   const { lastObservedAt, terminalAt, idempotencyKey, ...fixed } = execution;
   return fixed;
 };
+
+// The seed's record of identities the candidate's native entry returned
+// (seed-cells.mjs V2 output). Copied verbatim; never derived or completed here.
+async function seededPreconditions(path) {
+  if (path === undefined) return undefined;
+  const facts = await ownerOnly(path);
+  if (facts?.formatVersion !== 'V2') return undefined;
+  if (!Array.isArray(facts.preconditions)) fail('native facts: preconditions array required for V2');
+  const seen = new Set();
+  for (const item of facts.preconditions) {
+    if (!item || Object.keys(item).sort().join() !== 'caseKey,key,value' || ![item.caseKey, item.key, item.value].every((v) => typeof v === 'string' && v.trim() === v && v)
+      || seen.has(`${item.caseKey}/${item.key}`)) fail('native facts: each precondition needs one non-empty caseKey/key/value');
+    seen.add(`${item.caseKey}/${item.key}`);
+  }
+  return facts.preconditions.map(({ caseKey, key, value }) => ({ caseKey, key, value }));
+}
 
 async function main() {
   const flag = process.argv.indexOf('--run');
@@ -114,6 +141,10 @@ async function main() {
     if (!Object.hasOwn(run, key)) fail(`observe.json: missing ${key}`);
   }
   if (!UUID.test(run.seed) || !isAbsolute(run.out) || !isAbsolute(run.adapterJwksFile)) fail('observe.json: seed/out/adapterJwksFile invalid');
+  for (const key of ['preconditions', 'captures', 'captureValues', 'expectedOutputs']) {
+    if (Object.hasOwn(run, key)) fail(`observe.json: ${key} is not an operator input (DD-124: native seed record or Core run only)`);
+  }
+  const preconditions = await seededPreconditions(run.nativeFactsFile);
   const manifest = JSON.parse(await readFile(run.manifestFile, 'utf8'));
   const adapter = JSON.parse(await readFile(run.adapterConfigFile, 'utf8'));
   const validation = adapter.management?.validation;
@@ -227,7 +258,7 @@ async function main() {
         errorMappings,
         redaction: { request: redactionRequest, expected: redacted },
       },
-      vectorContexts: run.vectorContexts };
+      vectorContexts: run.vectorContexts, ...(preconditions ? { preconditions } : {}) };
     const fd = openSync(run.out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
     try { writeSync(fd, `${JSON.stringify(facts, null, 2)}\n`); } finally { closeSync(fd); }
     process.stdout.write(`${JSON.stringify({ facts: run.out, artifactDigest: manifest.adapterBuildRef, errorMappings: errorMappings.length })}\n`);

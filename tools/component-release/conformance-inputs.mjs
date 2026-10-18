@@ -67,8 +67,17 @@
 //                                     "target"? },
 //                       "byContract"?: { "<contractKey>": { …same… } },
 //                       "byStep"?: { "<category>:<version>:<caseKey>/<stepKey>": { …same… } } },
-//   "nativeReceivers"?: [ { "caseKey", "stepKey", "contractKey", "request": ComponentNativeReceiverRequest } ]
+//   "nativeReceivers"?: [ { "caseKey", "stepKey", "contractKey", "request": ComponentNativeReceiverRequest } ],
+//   "preconditions"?: [ { "caseKey": "<category>:<version>:<caseKey>", "key", "value" } ]
 // }
+//
+// DD-124 (V2 vectors): preconditions are exactly the seed's record of identities
+// the candidate's native entry returned (observe.mjs copies them from
+// seed-cells.mjs output); every V2 case precondition needs exactly one value and
+// nothing else is accepted. They become fixture.preconditions, which Core
+// substitutes when it freezes the plan. CAPTURE values are never an input: Core
+// takes them from the candidate's own SUCCEEDED responses during the run, so a
+// facts file cannot carry them and no expectation is rewritten here.
 //
 // The script injects only deterministic identifiers: each protocol request and
 // execution expectation receives its step idempotencyKey (a supplied different
@@ -92,6 +101,7 @@ import { createHash } from 'node:crypto';
 import { constants, lstatSync, openSync, readFileSync, statSync, writeSync, closeSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VectorRefusal, analyseV2, hasRoundtripV2, parseVectors, pointerSet } from './conformance/vector-v2.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -213,15 +223,49 @@ function loadRegistrations(manifest, explicit) {
   const got = registrations.map((r) => `${r.categoryKey}@${r.contractVersion}`);
   if (canonical(wanted) !== canonical(got)) refuse(`registrations ${got.join(',')} must equal manifest implements order ${wanted.join(',')}`);
   return registrations.map((registration) => {
-    const vectors = typeof registration.testVectorsJson === 'string'
-      ? JSON.parse(registration.testVectorsJson) : registration.testVectorsJson;
-    if (!isObject(vectors) || !Array.isArray(vectors.cases)) refuse(`${registration.categoryKey}: testVectorsJson cases required`);
+    const vectors = parseVectors(registration);
+    const label = `${registration.categoryKey}@${registration.contractVersion}`;
+    if (vectors.formatVersion === 'V2') {
+      // DD-124: the roundtrip is an actually observed value (an INPUT CAPTURE)
+      // carried into a later request (Core capability_vector.rs has_roundtrip).
+      const analysed = analyseV2(vectors, label, (registration.operationContracts ?? []).map((op) => op.contractKey));
+      if (!hasRoundtripV2(vectors)) refuse(`${label}: no INPUT CAPTURE roundtrip vector; Core blocks this release`);
+      return { category: registration.categoryKey, version: registration.contractVersion, format: 'V2', cases: vectors.cases, analysed };
+    }
     // active_contracts: an existing-reference registration needs one typed
     // ContentReference roundtrip vector; otherwise Core blocks registration.
     if (!vectors.cases.some((c) => (c.steps ?? []).some((s) => s.referenceFromStepKey !== undefined))) {
-      refuse(`${registration.categoryKey}@${registration.contractVersion}: no referenceFromStepKey roundtrip vector; Core blocks this release`);
+      refuse(`${label}: no referenceFromStepKey roundtrip vector; Core blocks this release`);
     }
-    return { category: registration.categoryKey, version: registration.contractVersion, cases: vectors.cases };
+    return { category: registration.categoryKey, version: registration.contractVersion, format: 'V1', cases: vectors.cases };
+  });
+}
+
+// DD-124(1): one seeded native identity per declared V2 precondition, nothing
+// more. Returned in the frozen case/declaration order for fixture.preconditions.
+function preconditionValues(facts, registrations) {
+  const declared = [];
+  for (const registration of registrations.filter((r) => r.format === 'V2')) {
+    for (const vectorCase of registration.analysed.cases) {
+      for (const item of vectorCase.preconditions) declared.push(`${registration.category}:${registration.version}:${vectorCase.caseKey}/${item.key}`);
+    }
+  }
+  const supplied = facts.preconditions ?? [];
+  if (!Array.isArray(supplied)) refuse('facts.preconditions: array');
+  const values = new Map();
+  for (const item of supplied) {
+    exactKeys(item, ['caseKey', 'key', 'value'], [], 'facts.preconditions[]');
+    const id = `${text(item.caseKey, 'preconditions[].caseKey')}/${text(item.key, 'preconditions[].key')}`;
+    if (values.has(id)) refuse(`facts.preconditions: ${id} given twice`);
+    const value = text(item.value, `preconditions ${id}.value`);
+    if (value.trim() !== value) refuse(`facts.preconditions: ${id} value must be the exact native identity`);
+    values.set(id, value);
+  }
+  for (const id of declared) if (!values.has(id)) refuse(`facts.preconditions: no seeded native identity for ${id}`);
+  for (const id of values.keys()) if (!declared.includes(id)) refuse(`facts.preconditions: ${id} is not a declared V2 precondition`);
+  return declared.map((id) => {
+    const at = id.lastIndexOf('/');
+    return { caseKey: id.slice(0, at), key: id.slice(at + 1), value: values.get(id) };
   });
 }
 
@@ -306,7 +350,7 @@ function protocolFixture(facts, release, manifest) {
 
 // Mirror of component_release::validate_protocol_fixture for implements != [].
 function verifyFixture(fixture, adapterDigest, cancelSupported) {
-  exactKeys(fixture, ['artifactDigest', 'steps'], ['nativeReceivers'], 'fixture');
+  exactKeys(fixture, ['artifactDigest', 'steps'], ['nativeReceivers', 'preconditions'], 'fixture');
   if (fixture.artifactDigest !== adapterDigest) refuse('fixture.artifactDigest differs from manifest.adapterBuildRef');
   const cases = [
     ['protocol_handshake', ['handshake']],
@@ -491,7 +535,7 @@ function verifyIdentity(identity, adapterDigest, productionAudience) {
 
 // ---- vector expansion (component_release::prewrite) and check_plan ----------
 
-function vectorPlan(facts, release, registrations, placeholderAe) {
+function vectorPlan(facts, release, registrations, placeholderAe, preconditions) {
   const receivers = facts.nativeReceivers ?? [];
   if (!Array.isArray(receivers)) refuse('nativeReceivers: array');
   const used = new Set();
@@ -502,8 +546,19 @@ function vectorPlan(facts, release, registrations, placeholderAe) {
         const caseKey = `${category}:${version}:${text(vectorCase.caseKey, 'vector caseKey')}`;
         const stepKey = text(step.stepKey, `${caseKey} stepKey`);
         const key = uuidv5(placeholderAe, `${caseKey}:${stepKey}`);
-        const probe = { caseKey, stepKey, operation: 'execute', contractKey: step.contractKey, idempotencyKey: key,
-          inputJson: step.inputJson };
+        let inputJson = step.inputJson;
+        if (step.bindings?.length) {
+          // Core freezes PRECONDITION values into the request; CAPTURE
+          // placeholders stay until the run supplies the candidate's value.
+          const input = JSON.parse(step.inputJson);
+          for (const binding of step.bindings.filter((b) => b.side === 'INPUT' && b.source === 'PRECONDITION')) {
+            const value = preconditions.find((p) => p.caseKey === caseKey && p.key === binding.key)?.value
+              ?? refuse(`${caseKey}/${stepKey}: no precondition value for ${binding.key}`);
+            pointerSet(input, binding.pointer, value);
+          }
+          inputJson = JSON.stringify(input);
+        }
+        const probe = { caseKey, stepKey, operation: 'execute', contractKey: step.contractKey, idempotencyKey: key, inputJson };
         for (const field of ['referenceResourceId', 'referenceAssetId', 'referenceFromStepKey']) if (step[field] !== undefined) probe[field] = step[field];
         if (release.native.has(step.contractKey)) {
           const matches = receivers.filter((r) => r.caseKey === caseKey && r.stepKey === stepKey && r.contractKey === step.contractKey);
@@ -639,7 +694,7 @@ function main() {
   const options = args(process.argv.slice(2));
   const facts = ownerOnlyJson(options.facts, '--facts');
   exactKeys(facts, ['formatVersion', 'seed', 'artifactDigest', 'environment', 'identity', 'principals', 'bindingManagement', 'protocol'],
-    ['vectorContexts', 'nativeReceivers'], 'facts');
+    ['vectorContexts', 'nativeReceivers', 'preconditions'], 'facts');
   if (facts.formatVersion !== 1) refuse('facts.formatVersion must be 1');
   uuid(facts.seed, 'facts.seed');
   const manifest = plainJson(options.manifest, '--manifest');
@@ -651,8 +706,10 @@ function main() {
   const fixtureSteps = protocolFixture(facts, release, manifest);
   const fixture = { artifactDigest: facts.artifactDigest, steps: fixtureSteps };
   const placeholderAe = uuidv5(facts.seed, 'placeholder-action-execution');
-  const vectorProbes = vectorPlan(facts, release, registrations, placeholderAe);
+  const preconditions = preconditionValues(facts, registrations);
+  const vectorProbes = vectorPlan(facts, release, registrations, placeholderAe, preconditions);
   if (facts.nativeReceivers?.length) fixture.nativeReceivers = facts.nativeReceivers;
+  if (preconditions.length) fixture.preconditions = preconditions;
   const identity = buildIdentity(facts, release, fixtureSteps, vectorProbes.map(({ probe }) => ({ probe })));
   const environment = buildEnvironment(facts);
 
@@ -674,6 +731,6 @@ function main() {
 try {
   main();
 } catch (error) {
-  process.stderr.write(`conformance-inputs: ${error instanceof Refusal ? error.message : 'unreadable or invalid input'}\n`);
+  process.stderr.write(`conformance-inputs: ${error instanceof Refusal || error instanceof VectorRefusal ? error.message : 'unreadable or invalid input'}\n`);
   process.exitCode = 1;
 }

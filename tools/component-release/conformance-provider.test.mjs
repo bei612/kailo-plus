@@ -43,7 +43,7 @@ async function fixture(t, change = {}) {
   });
   const nativeOrigin = await listen(native);
   t.after(() => native.close());
-  const business = { tenantId: id.tenant, workspaceId: id.workspace, actionKey: 'file_storage.read@v1', actionDefinitionVersion: 1,
+  const business = { tenantId: id.tenant, workspaceId: id.workspace, actionKey: 'file_storage.read@v2', actionDefinitionVersion: 1,
     targetType: 'RESOURCE', targetId: id.resource, resultExposurePolicyId: id.policy, resultExposurePolicyVersion: 1,
     authorizationMinZedToken: 'isolated-revision', externalExecutionId: id.external };
   const identity = { artifactDigest: 'a'.repeat(64), issuer: 'https://isolated.invalid/issuer', audience: 'isolated-adapter',
@@ -88,7 +88,7 @@ async function fixture(t, change = {}) {
     nativeRevision: 'v1', displayName: 'conformance.txt', mediaType: 'text/plain' } };
   const executeClaims = (actor) => ({ tenant_id: id.tenant, workspace_id: id.workspace, actor_principal_id: actor,
     initiating_human_principal_id: actor, operation_id: randomUUID(), action_execution_id: randomUUID(),
-    action_key: 'file_storage.read@v1', action_definition_version: 1, target_type: 'RESOURCE', target_id: id.resource,
+    action_key: 'file_storage.read@v2', action_definition_version: 1, target_type: 'RESOURCE', target_id: id.resource,
     normalized_parameter_hash: digest(args), authorization_min_zed_token: 'isolated-revision',
     result_exposure_policy_id: id.policy, result_exposure_policy_version: 1, external_execution_id: id.external,
     idempotency_key: randomUUID() });

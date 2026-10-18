@@ -20,16 +20,33 @@
 // refuses unless vector-requirements.mjs reported satisfiable=true: an
 // unmintable head revision or share link is never approximated.
 //
+// V2 vectors (DD-124, file_storage@2): the requirements list case
+// preconditions by native role instead of vector identities. The seed creates
+// each through the same native entries (a share link through the original
+// REST PUT /a/share/link, whose Uuid Cells mints) and records, per
+// <category>:<version>:<caseKey>/key, exactly the identity Cells returned:
+//   node   LEAF Uuid confirmed by GET n/node/{Uuid}; a node the case writes is
+//          created by the actor's draft-mode upload, so it has no published
+//          revision before the governed promote
+//   draft  that upload's draft VersionId, the node's only listed revision
+//   share  the ShareLink.Uuid of Cells' own create response for a link on the
+//          binding root (the only root a governed revoke admits)
+// These values are only Core's PRECONDITION inputs (fixture.preconditions);
+// they never become an expectation, and no CAPTURE value exists before Core's
+// run. A node/draft id this seed proposes is a fresh random UUID that Cells
+// must acknowledge, never a value taken from the vectors.
+//
 // Usage: node tools/component-release/conformance/seed-cells.mjs --seed /abs/seed.json
 // seed.json (owner-only):
 // { "requirementsFile":"/abs/requirements.json", "cellsOrigin":"http://<isolated cells>",
-//   "restBasePath":"/v2/", "workspaceSlug":"<existing native workspace slug>",
+//   "restBasePath":"/v2/", "restV1BasePath":"/a/" (V2 share preconditions),
+//   "workspaceSlug":"<existing native workspace slug>",
 //   "rootName":"kailo-conformance-<run>", "adminTokenFile":"/abs PAT (native admin)",
 //   "actorTokenFile":"/abs PAT of the native user linked to the conformance actor",
 //   "s3Secret":"gatewaysecret", "timeoutMs":<int>, "out":"/abs/native-facts.json" }
 // PATs come from the native `cells admin user token` command of that instance.
 
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { lstat, readFile } from 'node:fs/promises';
 import { constants, closeSync, openSync, writeSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
@@ -101,6 +118,17 @@ async function main() {
   const req = requirements.requirements;
   const root = await created(seed.rootName, 'COLLECTION');
   const workspaceId = root.ContextWorkspace?.Uuid ?? fail('root folder has no native workspace');
+  const formats = new Set((requirements.formats ?? []).map((item) => item.formatVersion));
+  if (formats.has('V2')) {
+    if (formats.size !== 1) fail('V1 and V2 vector requirements cannot be seeded together');
+    const v1 = seed.restV1BasePath === undefined ? undefined : new URL(seed.restV1BasePath, origin);
+    const facts = await seedV2({ seed, req, root, workspaceId, restCall, put, node, created, v1, admin, actor, signal });
+    const fd = openSync(seed.out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try { writeSync(fd, `${JSON.stringify(facts, null, 2)}\n`); } finally { closeSync(fd); }
+    process.stdout.write(`${JSON.stringify({ nativeFacts: seed.out, resources: Object.keys(facts.targets.resources).length,
+      preconditions: facts.preconditions.length })}\n`);
+    return;
+  }
   const resources = {};
   const observed = { folders: [], files: [], drafts: [] };
   let folderIndex = 0;
@@ -147,6 +175,102 @@ async function main() {
   const fd = openSync(seed.out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
   try { writeSync(fd, `${JSON.stringify(facts, null, 2)}\n`); } finally { closeSync(fd); }
   process.stdout.write(`${JSON.stringify({ nativeFacts: seed.out, resources: Object.keys(resources).length })}\n`);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// DD-124 V2: create every case precondition through Cells' own entries and
+// record only the identities Cells returned for it.
+async function seedV2({ seed, req, root, workspaceId, restCall, put, node, created, v1, admin, actor, signal }) {
+  const values = new Map(); // "<caseKey>/<key>" -> native identity
+  const preconditions = [];
+  const observed = { folders: [], files: [], drafts: [], shares: [] };
+  const record = (entry, value) => {
+    const id = `${entry.caseKey}/${entry.key}`;
+    if (values.has(id) || typeof value !== 'string' || !value) fail(`${id}: no unique native identity`);
+    values.set(id, value);
+    preconditions.push({ caseKey: entry.caseKey, key: entry.key, value });
+  };
+  const all = req.filter((entry) => entry.kind === 'cells-precondition');
+  const drafts = all.filter((item) => item.role === 'draft');
+  let index = 0;
+  for (const entry of all.filter((item) => item.role === 'node')) {
+    // One private folder per precondition keeps equal display names apart.
+    index += 1;
+    const folderPath = `${seed.rootName}/precondition-${index}`;
+    const folder = await created(folderPath, 'COLLECTION');
+    const path = `${folderPath}/${entry.displayName}`;
+    const proposed = randomUUID();
+    const draft = drafts.filter((item) => item.caseKey === entry.caseKey && item.node === entry.key);
+    if (draft.length > 1) fail(`${entry.key}: one draft precondition per node`);
+    if (draft.length === 1) {
+      // A node whose draft the case writes is created by the conformance
+      // actor's own draft-mode upload (handler-version.go PutObject ->
+      // routeUploadToContentRevision): Cells acknowledges the node and its
+      // owner draft, and no published revision exists before the governed
+      // promote, so the write's revision is the only one it later lists.
+      const proposedDraft = randomUUID();
+      await put(path, draft[0].text, entry.mediaType, { 'x-amz-meta-create-resource-uuid': proposed,
+        'x-amz-meta-draft-mode': 'true', 'x-amz-meta-create-version-id': proposedDraft }, actor);
+      const leaf = await restCall('GET', `n/node/${proposed}?Flags=WithMetaDefaults`, undefined, actor);
+      if (leaf?.Uuid !== proposed || leaf.Type !== 'LEAF' || leaf.ContextWorkspace?.Uuid !== workspaceId) fail(`${entry.key}: Cells did not acknowledge the draft node`);
+      const versions = await restCall('POST', `n/node/${proposed}/versions`, { FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] }, actor);
+      const listed = versions.Versions ?? [];
+      if (listed.length !== 1 || listed[0].VersionId !== proposedDraft || listed[0].Draft !== true || !listed[0].ETag) {
+        fail(`${entry.key}: Cells did not acknowledge exactly the actor's draft as the node's only revision`);
+      }
+      record(entry, leaf.Uuid);
+      record(draft[0], listed[0].VersionId);
+      observed.drafts.push({ caseKey: entry.caseKey, key: draft[0].key, nativeRef: leaf.Uuid, revision: listed[0].VersionId, etag: listed[0].ETag });
+    } else {
+      await put(path, entry.text, entry.mediaType, { 'x-amz-meta-create-resource-uuid': proposed }, admin);
+      const leaf = await node(proposed);
+      if (leaf.Uuid !== proposed || leaf.Type !== 'LEAF' || leaf.ContextWorkspace?.Uuid !== workspaceId) fail(`${entry.key}: Cells did not acknowledge the created file`);
+      record(entry, leaf.Uuid);
+    }
+    observed.folders.push({ nativeRef: folder.Uuid, path: folderPath });
+    observed.files.push({ caseKey: entry.caseKey, key: entry.key, nativeRef: values.get(`${entry.caseKey}/${entry.key}`), path });
+  }
+  for (const entry of drafts) {
+    if (!values.has(`${entry.caseKey}/${entry.key}`)) fail(`${entry.key}: draft node was not created`);
+  }
+  for (const entry of all.filter((item) => item.role === 'share')) {
+    if (!v1) fail('restV1BasePath is required to create share preconditions');
+    // The governed revoke admits only links rooted in the binding root
+    // (idm/share/native-link.go nativeShareIntent); share the root itself.
+    const target = root.Uuid;
+    const response = await fetch(new URL('share/link', v1), { method: 'PUT', redirect: 'manual', signal: signal(),
+      headers: { authorization: `Bearer ${actor}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ShareLink: { Label: `kailo-conformance-${entry.key}`, RootNodes: [{ Uuid: target }],
+        Permissions: ['Preview', 'Download'], ViewTemplateName: 'pydio_unique_strip' } }) });
+    if (!response.ok) { await response.body?.cancel(); fail(`share ${entry.key}: native HTTP ${response.status}`); }
+    const link = await response.json();
+    if (!UUID.test(link?.Uuid ?? '') || !(link.RootNodes ?? []).some((item) => item?.Uuid === target)) fail(`share ${entry.key}: Cells returned no link for the node`);
+    record(entry, link.Uuid);
+    observed.shares.push({ caseKey: entry.caseKey, key: entry.key, nativeRef: target, link: link.Uuid });
+  }
+  const resources = {};
+  let listing = 0;
+  for (const entry of req.filter((item) => item.kind === 'platform-resource')) {
+    if (entry.class !== 'observed' || !entry.nativeObject) fail(`resource ${entry.resourceId} has no seedable native object`);
+    let value;
+    if (entry.nativeObject.root) value = { nativeType: root.Type, nativeRef: root.Uuid };
+    else if (entry.nativeObject.emptyFolder) {
+      if (resources[entry.resourceId]) continue;
+      const folder = await created(`${seed.rootName}/listing-${listing += 1}`, 'COLLECTION');
+      value = { nativeType: folder.Type, nativeRef: folder.Uuid };
+      observed.folders.push({ resourceId: entry.resourceId, nativeRef: folder.Uuid, empty: true });
+    } else {
+      const ref = values.get(`${entry.caseKey}/${entry.nativeObject.precondition}`) ?? fail(`resource ${entry.resourceId}: precondition not created`);
+      value = { nativeType: 'LEAF', nativeRef: ref };
+    }
+    if (resources[entry.resourceId] && JSON.stringify(resources[entry.resourceId]) !== JSON.stringify(value)) fail(`resource ${entry.resourceId} maps to two native objects`);
+    resources[entry.resourceId] = value;
+  }
+  const expected = all.length;
+  if (preconditions.length !== expected) fail('not every precondition received a native identity');
+  return { component: 'file-storage', formatVersion: 'V2', nativeWorkspaceId: workspaceId, nativeRootRef: root.Uuid,
+    targets: { resources }, preconditions, observed };
 }
 
 main().catch((error) => {

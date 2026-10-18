@@ -48,7 +48,7 @@
 //                                          serviceClientSecretFile, artifactDigest}
 //   "targetsFile":"/abs/targets.json",     {"resources":{"<uuid>":{nativeType,nativeRef}}}
 //                                          observed by the native seed, not chosen here
-//   "nativeCheck":{"kind":"cells","restBaseUrl":"http://…/a/","bearerFile":"/abs"}
+//   "nativeCheck":{"kind":"cells","restBaseUrl":"http://…/v2/","bearerFile":"/abs"}  (Cells REST v2 mount)
 //               | {"kind":"weknora","apiBaseUrl":"http://…/","apiKeyFile":"/abs"},
 //   "requestTimeoutMs":<int>, "requestMaxBytes":<int> }
 // No secret, token or native body is logged.

@@ -14,10 +14,15 @@
 #               (exit 3 = release blocked by the contract, nothing started)
 #   1 native    the component's own start.sh with the isolated env (Cells; the
 #               knowledge pipeline stops after stage 0 for knowledge@2)
-#   2 seed      native-API fixture (Cells: seed-cells.mjs) -> native-facts.json
+#   2 seed      native-API fixture (Cells: seed-cells.mjs) -> native-facts.json;
+#               for V2 vectors (DD-124) it records each case precondition as the
+#               identity the native entry returned (never a vector value)
 #   3 delivery  isolated native-action delivery + adapter (start.sh --platform-adapter)
-#   4 observe   observe.mjs (ephemeral signer + in-process provider) -> facts.json
-#   5 inputs    conformance-inputs.mjs -> fixture.json identity.json environment.json
+#   4 observe   observe.mjs (ephemeral signer + in-process provider) -> facts.json;
+#               observe.json nativeFactsFile=<seed out> carries those precondition
+#               values unchanged (CAPTURE values exist only in Core's own run)
+#   5 inputs    conformance-inputs.mjs -> fixture.json (incl. preconditions)
+#               identity.json environment.json
 #   6 provider  publish Core's isolated identity JWKS to the adapter and keep the
 #               suite PEP provider running for component_release.register
 #

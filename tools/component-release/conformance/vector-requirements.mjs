@@ -19,6 +19,22 @@
 // capability contract version (DD-102 capability_contract.register/approve),
 // not a different fixture.
 //
+// V2 vectors (DD-124(1)(2), file_storage@2) classify every value instead:
+//
+//   LITERAL       platform-side ids, caller-chosen ids, content and metadata
+//   PRECONDITION  case preconditions[]: the seed creates each through the
+//                 original native entry and records the identity Cells
+//                 returned (precondition class below); never a vector value
+//   CAPTURE       Core takes it from the candidate's own SUCCEEDED wire
+//                 response during the run; nothing is seeded or predicted
+//
+// The vector document is first checked with the shared DD-124 reader
+// (vector-v2.mjs); a document that writes an implementation-generated identity
+// as LITERAL, or uses an undeclared placeholder, is refused. Each precondition
+// is mapped to its Cells native role from how the frozen steps consume it
+// (node / draft revision / share link); a role or Resource mapping the Cells
+// native model cannot honour is a release blocker (exit 3) like above.
+//
 // Usage: node tools/component-release/conformance/vector-requirements.mjs \
 //          --component file-storage|knowledge [--out /abs/requirements.json]
 // Writes nothing else; contacts nothing.
@@ -26,6 +42,7 @@
 import { constants, closeSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VectorRefusal, analyseV2, parseVectors } from './vector-v2.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -43,6 +60,10 @@ const EVIDENCE = {
   coreAe: 'Core admission creates ActionExecution ids itself (governance.rs); no native or platform API accepts a caller-chosen AE id',
   readGrant: 'knowledge ingest@v2 calls request_read_grant with receiverActionExecutionId = the Core-signed probe AE (knowledge/adapter/src/service-read.mjs); Core admits only an APPLICATION AE it holds for that receiver binding (core/crates/platform-core/src/application_read_grant.rs), which an isolated Core cannot hold for a production registration AE, and 07 §8A forbids simulating that grant',
   receiver: 'NATIVE_INTERNAL receiver steps need the isolated Core of 07 §8A (core/verify/receiver-environment-bootstrap.rs; its real-environment entry is still #[ignore]) and Core-minted SOURCE read AEs',
+  cellsLink: 'file-storage/idm/share/client.go UpsertLink: a new public link (PUT /a/share/link, Uuid empty) takes the UUID Cells mints for its link workspace; the seed records that returned Uuid',
+  capture: 'DD-124(2): Core takes the value from the candidate\'s own SUCCEEDED wire response (typed ContentReference or generatedRefs field) during the run; the seed creates nothing and no expectation is written here',
+  cellsRoot: 'file-storage/idm/share/native-link.go nativeShareIntent: a governed revoke targets the Resource whose native ref is the binding nativeRootRef',
+  cellsPromote: 'file-storage/gateway/restv2/native-write-execution.go executeNativePromote: a governed promote targets the Resource whose native ref is the written node',
 };
 
 class Refusal extends Error {}
@@ -66,13 +87,106 @@ const json = (path) => JSON.parse(readFileSync(resolve(root, path), 'utf8'));
 function vectors(manifest) {
   return manifest.implements.map(({ categoryKey, contractVersion }) => {
     const registration = json(`contracts/adapter/${categoryKey}.v${contractVersion}/registration.json`);
-    const parsed = typeof registration.testVectorsJson === 'string' ? JSON.parse(registration.testVectorsJson) : registration.testVectorsJson;
-    return { category: categoryKey, version: contractVersion, cases: parsed.cases };
+    const parsed = parseVectors(registration);
+    return { category: categoryKey, version: contractVersion, format: parsed.formatVersion, vectors: parsed, cases: parsed.cases };
   });
 }
 
+const verbOf = (contractKey, category) => contractKey.replace(new RegExp(`^${category}\\.|@v[0-9]+$`, 'g'), '');
+
+// V2 (DD-124): native role of every precondition, derived from the frozen
+// steps that send it, plus the native object each referenced Resource maps to.
+function cellsV2(category, version, analysed, push) {
+  for (const vectorCase of analysed.cases) {
+    const caseKey = `${category}:${version}:${vectorCase.caseKey}`;
+    const roles = new Map();
+    const assign = (key, role, at, node) => {
+      const known = roles.get(key);
+      if (known && (known.role !== role || known.node !== node)) fail(`${at}: precondition ${key} is used as both ${known.role} and ${role}`);
+      roles.set(key, { role, node });
+    };
+    const inputBinding = (step, pointer) => step.bindings.find((b) => b.side === 'INPUT' && b.pointer === pointer);
+    for (const step of vectorCase.steps) {
+      const verb = verbOf(step.contractKey, category);
+      const at = `${caseKey}/${step.stepKey}`;
+      for (const binding of step.bindings.filter((b) => b.side === 'INPUT' && b.source === 'PRECONDITION')) {
+        if (binding.pointer === '/nativeObjectRef' && ['list_revisions', 'read', 'export', 'write'].includes(verb)) assign(binding.key, 'node', at);
+        else if (verb === 'delete' && /^\/nativeObjectRefs\/(0|[1-9][0-9]*)$/.test(binding.pointer)) assign(binding.key, 'node', at);
+        else if (verb === 'write' && binding.pointer === '/nativeRevision') {
+          const node = inputBinding(step, '/nativeObjectRef');
+          if (node?.source !== 'PRECONDITION') fail(`${at}: draft precondition ${binding.key} needs the written node as a precondition`);
+          assign(binding.key, 'draft', at, node.key);
+        } else if (verb === 'share' && binding.pointer === '/nativeShareRef') assign(binding.key, 'share', at);
+        else fail(`${at}: precondition ${binding.key} at INPUT${binding.pointer} is not classified for Cells`);
+      }
+      for (const capture of step.captures) {
+        push({ at, kind: 'capture', key: capture.key, slot: capture.slot, ...(capture.pointer ? { pointer: capture.pointer } : {}),
+          class: 'capture', evidence: EVIDENCE.capture });
+      }
+    }
+    // Metadata and content of each node come from the precondition's own
+    // literal properties or the case's literal expectations, never invented.
+    const literal = (key, field) => {
+      const values = new Set();
+      const precondition = vectorCase.preconditions.find((item) => item.key === key);
+      if (typeof precondition.properties[field] === 'string') values.add(precondition.properties[field]);
+      for (const step of vectorCase.steps) {
+        const bound = inputBinding(step, '/nativeObjectRef');
+        if (bound?.source !== 'PRECONDITION' || bound.key !== key) continue;
+        const verb = verbOf(step.contractKey, category);
+        if (['read', 'export', 'write'].includes(verb) && typeof step.input[field] === 'string'
+          && !step.bindings.some((b) => b.side === 'INPUT' && b.pointer === `/${field}`)) values.add(step.input[field]);
+        if (field === 'text' && verb === 'read' && typeof step.expected.text === 'string') values.add(step.expected.text);
+        if (field === 'text' && verb === 'export' && typeof step.expected.contentBase64 === 'string') {
+          values.add(Buffer.from(step.expected.contentBase64, 'base64').toString('utf8'));
+        }
+      }
+      if (field === 'text' && typeof precondition.properties.content === 'string') values.add(precondition.properties.content);
+      // A node whose bytes no step reads is created empty; bytes no step
+      // compares are fixture content, not an expectation.
+      if (field === 'text' && values.size === 0) return '';
+      if (values.size !== 1) fail(`${caseKey}/${key}: ${values.size ? 'conflicting' : 'no'} literal ${field} for the native file`);
+      return [...values][0];
+    };
+    for (const [key, { role, node }] of roles) {
+      const precondition = vectorCase.preconditions.find((item) => item.key === key);
+      const base = { at: `${caseKey}/${key}`, kind: 'cells-precondition', caseKey, key, contractKind: precondition.kind, role, class: 'precondition' };
+      if (role === 'node') {
+        push({ ...base, displayName: literal(key, 'displayName'), mediaType: literal(key, 'mediaType'), text: literal(key, 'text'),
+          evidence: EVIDENCE.cellsNode });
+      } else if (role === 'draft') {
+        // Created together with its node by the actor's draft-mode upload, so
+        // the promoted revision is the node's first published one.
+        push({ ...base, node, text: literal(node, 'text'), owner: 'conformance-actor', evidence: EVIDENCE.cellsDraft });
+      } else {
+        push({ ...base, target: 'binding-root', evidence: `${EVIDENCE.cellsLink}; ${EVIDENCE.cellsRoot}` });
+      }
+    }
+    // Resource -> native object. Cells admits a governed promote only on the
+    // written node's Resource and a revoke only on the binding root Resource.
+    for (const step of vectorCase.steps) {
+      if (step.referenceResourceId === undefined) continue;
+      const verb = verbOf(step.contractKey, category);
+      const at = `${caseKey}/${step.stepKey}`;
+      const target = (pointer) => {
+        const bound = inputBinding(step, pointer);
+        return bound?.source === 'PRECONDITION' && roles.get(bound.key)?.role === 'node' ? { precondition: bound.key } : null;
+      };
+      let nativeObject;
+      if (verb === 'share') nativeObject = { root: true };
+      else if (verb === 'list') nativeObject = JSON.stringify(step.expected) === '{"citations":[]}' ? { emptyFolder: true } : null;
+      else if (verb === 'delete') nativeObject = target('/nativeObjectRefs/0');
+      else nativeObject = target('/nativeObjectRef');
+      push({ at, kind: 'platform-resource', caseKey, resourceId: step.referenceResourceId, verb,
+        ...(nativeObject ? { nativeObject, class: 'observed', evidence: verb === 'share' ? EVIDENCE.cellsRoot : verb === 'write' ? EVIDENCE.cellsPromote
+          : 'simulated isolated Resource id; the conformance provider maps it to the observed native object (07 §8A)' }
+          : { class: 'unmintable', evidence: `${verb} Resource has no native object a seed can create before the run (non-empty listing or captured node)` }) });
+    }
+  }
+}
+
 function cells(caseKey, step, input, expected, push) {
-  const verb = step.contractKey.replace(/^file_storage\.|@v1$/g, '');
+  const verb = verbOf(step.contractKey, 'file_storage');
   const at = `${caseKey}/${step.stepKey}`;
   switch (verb) {
     case 'list':
@@ -113,7 +227,7 @@ function cells(caseKey, step, input, expected, push) {
 }
 
 function weknora(caseKey, step, input, expected, push) {
-  const verb = step.contractKey.replace(/^knowledge\.|@v2$/g, '');
+  const verb = verbOf(step.contractKey, 'knowledge');
   const at = `${caseKey}/${step.stepKey}`;
   switch (verb) {
     case 'ingest':
@@ -145,7 +259,14 @@ function main() {
   const component = COMPONENTS[options.component];
   const manifest = json(component.manifest);
   const requirements = [];
-  for (const { category, version, cases } of vectors(manifest)) {
+  const formats = [];
+  for (const { category, version, format, vectors: document, cases } of vectors(manifest)) {
+    formats.push({ categoryKey: category, contractVersion: version, formatVersion: format });
+    if (format === 'V2') {
+      if (component.native !== 'cells') fail(`${category}@${version}: V2 vectors are not classified for ${component.native} by this tool`);
+      cellsV2(category, version, analyseV2(document, `${category}@${version}`), (entry) => requirements.push(entry));
+      continue;
+    }
     for (const vectorCase of cases) {
       const caseKey = `${category}:${version}:${vectorCase.caseKey}`;
       for (const step of vectorCase.steps) {
@@ -161,9 +282,20 @@ function main() {
       }
     }
   }
+  // One Resource maps to exactly one native object across every case.
+  const mapped = new Map();
+  for (const entry of requirements.filter((item) => item.kind === 'platform-resource' && item.nativeObject)) {
+    const value = JSON.stringify(entry.nativeObject.precondition ? { precondition: `${entry.caseKey}/${entry.nativeObject.precondition}` } : entry.nativeObject);
+    const known = mapped.get(entry.resourceId);
+    if (known !== undefined && known !== value) {
+      requirements.push({ at: entry.at, kind: 'resource-conflict', resourceId: entry.resourceId, class: 'unmintable',
+        evidence: `one Resource would need two Cells native objects (${known} and ${value}); ${EVIDENCE.cellsRoot}; ${EVIDENCE.cellsPromote}` });
+    }
+    mapped.set(entry.resourceId, known ?? value);
+  }
   const blocked = requirements.filter((entry) => entry.class === 'unmintable');
   const report = { component: options.component, manifest: component.manifest,
-    implements: manifest.implements, satisfiable: blocked.length === 0, requirements, blocked };
+    implements: manifest.implements, formats, satisfiable: blocked.length === 0, requirements, blocked };
   const text = `${JSON.stringify(report, null, 2)}\n`;
   if (options.out) {
     const fd = openSync(options.out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
@@ -180,6 +312,6 @@ function main() {
 try {
   main();
 } catch (error) {
-  process.stderr.write(`vector-requirements: ${error instanceof Refusal ? error.message : 'unreadable contract or manifest'}\n`);
+  process.stderr.write(`vector-requirements: ${error instanceof Refusal || error instanceof VectorRefusal ? error.message : 'unreadable contract or manifest'}\n`);
   process.exitCode = 1;
 }
