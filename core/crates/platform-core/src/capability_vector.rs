@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use super::{bad, identifier};
 use crate::governance::Refusal;
@@ -25,6 +26,9 @@ const ACTION_SLOT: &str = "ACTION_EXECUTION_ID";
 const OPERATION_SLOT: &str = "OPERATION_ID";
 /// `native_revision` is implementation-generated wherever it appears.
 const GENERATED_MEMBERS: [&str; 1] = ["nativeRevision"];
+/// Platform Resource/Asset identifiers inside step documents. DD-124(4): a
+/// receiver-direction case never writes them as LITERAL.
+const RESOURCE_MEMBERS: [&str; 3] = ["resourceId", "sourceResourceId", "assetId"];
 /// Identifiers that only Core generates for an admission or a receipt.
 const CORE_MEMBERS: [&str; 4] = [
     "actionExecutionId",
@@ -244,6 +248,7 @@ fn v1_only(vectors: &Value, cases: &[Value]) -> Result<(), Refusal> {
             fields.push(step.get("bindings"));
             fields.push(step.get("captures"));
             fields.push(step.get("direction"));
+            fields.push(step.get("referenceResourceKey"));
         }
     }
     if fields.iter().any(Option::is_some) {
@@ -323,6 +328,12 @@ fn validate_case(
     let mut produced = BTreeMap::new();
     let mut consumed = BTreeSet::new();
     let mut emitted = BTreeMap::new();
+    // DD-124(4): in a receiver-direction case every platform Resource id is a
+    // precondition the isolated Core's real resource.create returned.
+    let mut receiving = false;
+    for step in steps {
+        receiving |= is_receiver(step)?;
+    }
     for (index, step) in steps.iter().enumerate() {
         if step.get("referenceFromStepKey").is_some() {
             return Err(bad());
@@ -330,7 +341,23 @@ fn validate_case(
         let contract = text(step, "contractKey")?;
         let input = document(step, "inputJson")?;
         let expected = document(step, "expectedOutputJson")?;
-        let reference = step.get("referenceResourceId").is_some();
+        let keyed = match step.get("referenceResourceKey") {
+            Some(key) => Some(
+                key.as_str()
+                    .filter(|key| preconditions.contains_key(key))
+                    .ok_or_else(bad)?,
+            ),
+            None => None,
+        };
+        let literal = step.get("referenceResourceId").is_some();
+        if (keyed.is_some() || receiving) && (literal || step.get("referenceAssetId").is_some()) {
+            return Err(bad());
+        }
+        // Naming the target sends that precondition with this step.
+        if let Some(key) = keyed {
+            emitted.entry(key).or_insert(index);
+        }
+        let reference = literal || keyed.is_some();
         // DD-124(4): a RECEIVER step is observed, never sent. It names the
         // receiver Resource and has no result body of its own.
         let receiver = is_receiver(step)?;
@@ -432,9 +459,14 @@ fn validate_case(
                 let implementation = GENERATED_MEMBERS.contains(&member)
                     || generated.contains(&(contract, side, path.as_str()));
                 let core = CORE_MEMBERS.contains(&member);
+                let resource = receiving && RESOURCE_MEMBERS.contains(&member);
                 let unbound = binding.is_none();
                 let uncaptured = binding.is_none_or(|(source, _)| *source != CAPTURE);
-                if ((reserved(value) || implementation) && unbound) || (core && uncaptured) {
+                let unseeded = binding.is_none_or(|(source, _)| *source != PRECONDITION);
+                if ((reserved(value) || implementation) && unbound)
+                    || (core && uncaptured)
+                    || (resource && unseeded)
+                {
                     return Err(bad());
                 }
             }
@@ -503,12 +535,13 @@ fn substitute(document: &mut Value, binding: &Value, value: &str) -> Result<(), 
 }
 
 /// Freeze one V2 vector step: substitute the fixture PRECONDITION values and
-/// keep only the CAPTURE declarations (no values) for the runtime.
+/// keep only the CAPTURE declarations (no values) for the runtime. A target
+/// named by referenceResourceKey is returned as the frozen Resource id.
 pub(crate) fn freeze_step(
     step: &Value,
     case_key: &str,
     values: &BTreeMap<(String, String), String>,
-) -> Result<(String, String, Vec<Value>), Refusal> {
+) -> Result<(String, String, Vec<Value>, Option<String>), Refusal> {
     let mut input = document(step, "inputJson")?;
     let mut expected = document(step, "expectedOutputJson")?;
     let mut remaining = Vec::new();
@@ -526,9 +559,21 @@ pub(crate) fn freeze_step(
         };
         substitute(target, binding, value)?;
     }
+    let reference = match step.get("referenceResourceKey") {
+        Some(key) => {
+            let name = key.as_str().ok_or_else(bad)?.to_owned();
+            let value = values.get(&(case_key.to_owned(), name)).ok_or_else(bad)?;
+            let id = Uuid::parse_str(value).map_err(|_| bad())?;
+            if id.is_nil() || id.to_string() != *value {
+                return Err(bad());
+            }
+            Some(value.clone())
+        }
+        None => None,
+    };
     let input = serde_json::to_string(&input).map_err(|_| bad())?;
     let expected = serde_json::to_string(&expected).map_err(|_| bad())?;
-    Ok((input, expected, remaining))
+    Ok((input, expected, remaining, reference))
 }
 
 /// The values a probe supplies for the step's CAPTURE bindings: exactly the

@@ -27,9 +27,11 @@
 //   "registrationFile":"/abs contracts/adapter/knowledge.v3/registration.json",
 //   "cellsOrigin":"http://<isolated source Cells>", "restBasePath":"/v2/", "workspaceSlug",
 //   "adminTokenFile":"/abs native admin PAT", "s3Secret":"gatewaysecret",
-//   "sourceFolders":{ "<source Resource id>":"<folder path inside the workspace>" },
+//   "sourceFolders":{ "<category>:<version>:<caseKey>/<source Resource precondition key>":"<folder path>" },
+//                    (the native folder each source Resource precondition is registered over)
 //   "gatewayOrigin":"http://<isolated authenticated gateway>/", "humanTokenFile":"/abs isolated session",
-//   "bootstrapFile":"/abs receiver-run.sh bootstrap.json (Resource versions after the read grants)",
+//   "bootstrapFile":"/abs receiver-run.sh bootstrap.json (Resource preconditions the isolated Core's
+//                    real resource.create returned, Resource versions after the read grants)",
 //   "resultExposurePolicyId", "resultExposurePolicyVersion", "fileStorageActionVersion",
 //   "weknoraOrigin":"http://<isolated WeKnora app>/", "weknoraApiKeyFile":"/abs", "knowledgeBaseId",
 //   "retiredText":"<fixture text of the retired source file>",
@@ -79,7 +81,8 @@ function sigv4(method, url, headers, accessKey, secretKey) {
 }
 
 // Every precondition of the frozen knowledge vectors with the source Resource
-// each one belongs to (the step input that sends it), never a vector value.
+// precondition each one belongs to (the step input that sends it). DD-124(4):
+// Resource preconditions themselves are the bootstrap's resource.create ids.
 function plan(registration, requirements) {
   if (requirements.component !== 'knowledge' || requirements.satisfiable !== true) {
     fail('knowledge vector requirements are not satisfiable; seeding refused');
@@ -89,12 +92,18 @@ function plan(registration, requirements) {
   for (const vectorCase of analysed.cases) {
     const caseKey = `${registration.categoryKey}:${registration.contractVersion}:${vectorCase.caseKey}`;
     for (const precondition of vectorCase.preconditions) {
+      if (['receiver_resource', 'source_resource'].includes(precondition.kind)) {
+        out.push({ caseKey, key: precondition.key, kind: precondition.kind, properties: precondition.properties });
+        continue;
+      }
       const sending = vectorCase.steps.find((step) => step.bindings.some((b) => b.side === 'INPUT'
         && b.source === 'PRECONDITION' && b.key === precondition.key));
-      const resourceId = sending?.input.sourceResourceId ?? sending?.input.resourceId;
-      if (!UUID.test(resourceId ?? '')) fail(`${caseKey}/${precondition.key}: no literal source Resource sends it`);
-      out.push({ caseKey, key: precondition.key, kind: precondition.kind, properties: precondition.properties, resourceId,
-        step: sending });
+      const source = sending?.bindings.find((b) => b.side === 'INPUT' && b.source === 'PRECONDITION'
+        && ['/sourceResourceId', '/resourceId'].includes(b.pointer));
+      const resource = vectorCase.preconditions.find((item) => item.key === source?.key && item.kind === 'source_resource');
+      if (!resource) fail(`${caseKey}/${precondition.key}: no source Resource precondition is sent with it`);
+      out.push({ caseKey, key: precondition.key, kind: precondition.kind, properties: precondition.properties,
+        sourceKey: `${caseKey}/${resource.key}`, step: sending });
     }
   }
   return out;
@@ -138,9 +147,9 @@ async function main() {
     if (published.length !== 1 || !nonempty(published[0].VersionId)) fail(`${folder}/${name}: Cells lists no single published revision`);
     return { nativeObjectRef: proposed, nativeRevision: published[0].VersionId, path: `${folder}/${name}` };
   };
-  const folderOf = (resourceId) => {
-    const folder = seed.sourceFolders?.[resourceId];
-    if (typeof folder !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(folder) || folder.includes('..')) fail(`no native folder for source Resource ${resourceId}`);
+  const folderOf = (sourceKey) => {
+    const folder = seed.sourceFolders?.[sourceKey];
+    if (typeof folder !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(folder) || folder.includes('..')) fail(`no native folder for source Resource ${sourceKey}`);
     return folder;
   };
 
@@ -149,16 +158,16 @@ async function main() {
     for (const item of preconditions.filter((entry) => entry.kind === 'source_file')) {
       const revision = preconditions.find((entry) => entry.caseKey === item.caseKey && entry.kind === 'source_revision')
         ?? fail(`${item.caseKey}: source_file without source_revision`);
-      const file = await createFile(folderOf(item.resourceId), item.properties.displayName, revision.properties.text, item.properties.mediaType);
-      files.push({ caseKey: item.caseKey, fileKey: item.key, revisionKey: revision.key, resourceId: item.resourceId,
+      const file = await createFile(folderOf(item.sourceKey), item.properties.displayName, revision.properties.text, item.properties.mediaType);
+      files.push({ caseKey: item.caseKey, fileKey: item.key, revisionKey: revision.key, sourceKey: item.sourceKey,
         displayName: item.properties.displayName, mediaType: item.properties.mediaType, ...file });
     }
     const retiring = preconditions.filter((entry) => entry.kind === 'retiring_import_config');
     const retired = [];
     for (const item of retiring) {
       if (!nonempty(seed.retiredText)) fail('retiredText is required for a retiring import configuration');
-      const file = await createFile(folderOf(item.resourceId), `retired-${randomUUID()}.md`, seed.retiredText, 'text/markdown');
-      retired.push({ caseKey: item.caseKey, key: item.key, resourceId: item.resourceId, ...file });
+      const file = await createFile(folderOf(item.sourceKey), `retired-${randomUUID()}.md`, seed.retiredText, 'text/markdown');
+      retired.push({ caseKey: item.caseKey, key: item.key, sourceKey: item.sourceKey, ...file });
     }
     createOnly(seed.nativeOut, { component: 'knowledge', phase: 'native', files, retired });
     process.stdout.write(`${JSON.stringify({ nativeSeed: seed.nativeOut, files: files.length, retired: retired.length })}\n`);
@@ -177,10 +186,19 @@ async function main() {
     try { value = JSON.parse(text); } catch { /* non-JSON */ }
     return { status: response.status, body: value };
   };
+  const bootstrap = await ownerOnly(seed.bootstrapFile);
+  if (bootstrap.mode !== 'CONFORMANCE_ONLY' || bootstrap.setup !== 'READY' || !Array.isArray(bootstrap.preconditions)) {
+    fail('isolated bootstrap is not READY');
+  }
+  // The Resource ids the isolated Core's real resource.create returned.
+  const resourceOf = (key) => {
+    const at = key.lastIndexOf('/');
+    const found = bootstrap.preconditions.filter((item) => item.caseKey === key.slice(0, at) && item.key === key.slice(at + 1));
+    if (found.length !== 1 || !UUID.test(found[0].value ?? '')) fail(`${key}: the bootstrap registered no Resource for it`);
+    return found[0].value;
+  };
   // One governed HUMAN action of the source release through the isolated
   // Core's own endpoint, idempotent by its key; only COMPLETED is accepted.
-  const bootstrap = await ownerOnly(seed.bootstrapFile);
-  if (bootstrap.mode !== 'CONFORMANCE_ONLY' || bootstrap.setup !== 'READY') fail('isolated bootstrap is not READY');
   const governed = async (actionKey, resourceId, component, key) => {
     const version = (bootstrap.resources ?? []).find((item) => item.resourceId === resourceId && item.role === 'SOURCE')?.version;
     if (!Number.isSafeInteger(version)) fail(`source Resource ${resourceId} was not bootstrapped`);
@@ -221,10 +239,15 @@ async function main() {
 
   const values = [];
   const observed = { reads: [], dataSources: [], batches: [], deletes: [] };
+  // DD-124(4): Resource preconditions are exactly the bootstrap's returned ids.
+  for (const item of preconditions.filter((entry) => ['receiver_resource', 'source_resource'].includes(entry.kind))) {
+    values.push({ caseKey: item.caseKey, key: item.key, value: resourceOf(`${item.caseKey}/${item.key}`) });
+  }
   for (const file of native.files) {
-    const reference = { resourceId: file.resourceId, nativeObjectRef: file.nativeObjectRef, nativeRevision: file.nativeRevision,
+    const resourceId = resourceOf(file.sourceKey);
+    const reference = { resourceId, nativeObjectRef: file.nativeObjectRef, nativeRevision: file.nativeRevision,
       displayName: file.displayName, mediaType: file.mediaType };
-    const read = await governed('file_storage.read@v2', file.resourceId, { inputReference: reference }, key('read', file.nativeObjectRef));
+    const read = await governed('file_storage.read@v2', resourceId, { inputReference: reference }, key('read', file.nativeObjectRef));
     values.push({ caseKey: file.caseKey, key: file.fileKey, value: file.nativeObjectRef },
       { caseKey: file.caseKey, key: file.revisionKey, value: file.nativeRevision });
     observed.reads.push({ caseKey: file.caseKey, actionExecutionId: read, nativeObjectRef: file.nativeObjectRef });
@@ -232,7 +255,8 @@ async function main() {
   for (const item of preconditions.filter((entry) => entry.kind === 'retiring_import_config')) {
     const retired = native.retired.find((entry) => entry.caseKey === item.caseKey && entry.key === item.key)
       ?? fail(`${item.caseKey}/${item.key}: no retired source file was created`);
-    const id = await dataSource(item.resourceId, `kailo-conformance-${item.key}`);
+    const resourceId = resourceOf(item.sourceKey);
+    const id = await dataSource(resourceId, `kailo-conformance-${item.key}`);
     const log = await weknora('POST', `api/v1/datasource/${id}/sync`);
     const deadline = Date.now() + seed.waitSeconds * 1000;
     let status = log?.status;
@@ -241,15 +265,15 @@ async function main() {
       status = (await weknora('GET', `api/v1/datasource/logs/${log.id}`))?.status;
     }
     if (status !== 'success') fail(`${item.key}: native batch ended ${status}; the import configuration is not retiring`);
-    const deleted = await governed('file_storage.delete@v2', item.resourceId, { inputJson: JSON.stringify({ nativeObjectRefs: [retired.nativeObjectRef],
-      removePermanently: true, resourceId: item.resourceId }) }, key('delete', retired.nativeObjectRef));
+    const deleted = await governed('file_storage.delete@v2', resourceId, { inputJson: JSON.stringify({ nativeObjectRefs: [retired.nativeObjectRef],
+      removePermanently: true, resourceId }) }, key('delete', retired.nativeObjectRef));
     values.push({ caseKey: item.caseKey, key: item.key, value: id });
     observed.dataSources.push({ caseKey: item.caseKey, key: item.key, id });
     observed.batches.push({ dataSourceId: id, syncLogId: log.id, status });
     observed.deletes.push({ actionExecutionId: deleted, nativeObjectRef: retired.nativeObjectRef });
   }
   for (const item of preconditions.filter((entry) => entry.kind === 'import_config')) {
-    const id = await dataSource(item.resourceId, `kailo-conformance-${item.key}`);
+    const id = await dataSource(resourceOf(item.sourceKey), `kailo-conformance-${item.key}`);
     values.push({ caseKey: item.caseKey, key: item.key, value: id });
     observed.dataSources.push({ caseKey: item.caseKey, key: item.key, id });
   }

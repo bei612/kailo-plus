@@ -77,6 +77,7 @@ pub(super) async fn prewrite(
                     "referenceResourceId",
                     "referenceAssetId",
                     "referenceFromStepKey",
+                    "referenceResourceKey",
                     "bindings",
                     "captures",
                     "direction",

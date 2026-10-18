@@ -1263,19 +1263,34 @@ pub(crate) async fn prewrite(
                 let v2 = vector::is_v2(&contract["vectors"]);
                 // DD-124(3)(4): a RECEIVER step runs in the isolated deployment.
                 let receiver = v2 && vector::is_receiver(step)?;
-                let (input, expected, bindings) = if v2 {
+                let (input, expected, bindings, keyed) = if v2 {
                     vector::freeze_step(step, &case_key, &preconditions)?
                 } else {
                     let input = text(step, "inputJson")?.to_owned();
                     let expected = text(step, "expectedOutputJson")?.to_owned();
-                    (input, expected, Vec::new())
+                    (input, expected, Vec::new(), None)
                 };
+                // DD-124(4): a target named by a precondition is frozen as the
+                // fixture's Resource id, never chosen by the vector.
+                let mut references = serde_json::Map::new();
+                for field in [
+                    "referenceResourceId",
+                    "referenceAssetId",
+                    "referenceFromStepKey",
+                ] {
+                    if let Some(value) = step.get(field) {
+                        references.insert(field.to_owned(), value.clone());
+                    }
+                }
+                if let Some(resource) = keyed {
+                    references.insert("referenceResourceId".to_owned(), json!(resource));
+                }
                 // The vector body is interpreted only as capability input. It
                 // cannot select an endpoint, credential, protocol verb or code.
                 let mut request = json!({"idempotencyKey":key,"contractKey":contract_key,
                     "inputJson":input});
                 for field in ["referenceResourceId", "referenceAssetId"] {
-                    if let Some(value) = step.get(field) {
+                    if let Some(value) = references.get(field) {
                         request[field] = value.clone();
                     }
                 }
@@ -1352,14 +1367,8 @@ pub(crate) async fn prewrite(
                     probe["requestJson"] = json!(collab_bridge::limits::canonical_json(&original));
                     probe["nativeReceiverInputJson"] = json!(input);
                 }
-                for field in [
-                    "referenceResourceId",
-                    "referenceAssetId",
-                    "referenceFromStepKey",
-                ] {
-                    if let Some(value) = step.get(field) {
-                        probe[field] = value.clone();
-                    }
+                for (field, value) in &references {
+                    probe[field.as_str()] = value.clone();
                 }
                 steps.push(probe.clone());
                 // Repeat the exact request and idempotency key under a distinct

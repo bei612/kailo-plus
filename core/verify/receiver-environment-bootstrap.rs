@@ -65,7 +65,6 @@ fn prepare(mut input: Value) -> Result<Value, Error> {
             "approverTokenFile",
             "actionWaitSeconds",
             "actionPollIntervalMillis",
-            "readGrants",
             "endpoints",
         ],
     )?;
@@ -139,6 +138,7 @@ fn prepare(mut input: Value) -> Result<Value, Error> {
         .filter(|v| v.len() == 2)
         .ok_or("exactly one source and one receiver required")?;
     let mut roles = BTreeSet::new();
+    let mut targets = BTreeSet::new();
     let mut categories = BTreeSet::new();
     let mut clients = BTreeSet::new();
     for endpoint in endpoints {
@@ -266,9 +266,10 @@ fn prepare(mut input: Value) -> Result<Value, Error> {
         endpoint["configDigest"] = json!(collab_bridge::limits::canonical_digest(
             &endpoint["normalizedConfig"]
         ));
-        // DD-124(1)(4): the vectors name each platform-side Resource by its
-        // literal id; the isolated deployment bootstraps it at exactly that id
-        // over the native object the operator created through the native entry.
+        // DD-124(4): each platform Resource of a receiver-direction case is
+        // registered by the isolated Core's real resource.create over a native
+        // object created through the native entry; the id it returns is the
+        // fixture value of every precondition listed here.
         let native = json!({"instance":endpoint["nativeInstanceRef"],
             "scope":endpoint["nativeScopeRef"],"type":endpoint["nativeType"]});
         let resources = endpoint["resources"]
@@ -276,21 +277,38 @@ fn prepare(mut input: Value) -> Result<Value, Error> {
             .filter(|resources| !resources.is_empty() && (role == "SOURCE" || resources.len() == 1))
             .ok_or("SOURCE Resources and exactly one receiver Resource required")?;
         for resource in resources.iter_mut() {
-            exact(
-                resource,
-                &[
-                    "resourceId",
-                    "nativeResourceRef",
-                    "nativeEvidenceRef",
-                    "nativeEvidenceDigest",
-                ],
-            )?;
-            if !ids.insert(id(resource, "resourceId")?)
-                || !hex_digest(required(resource, "nativeEvidenceDigest")?)
-            {
-                return Err("unique Resource identity and exact evidence SHA256 required".into());
+            let mut keys = vec![
+                "resourceIdempotencyKey",
+                "nativeResourceRef",
+                "nativeEvidenceRef",
+                "nativeEvidenceDigest",
+                "preconditions",
+            ];
+            // Every SOURCE Resource is granted through its own real
+            // resource.grant_read; the receiver Resource is never granted.
+            if role == "SOURCE" {
+                keys.push("readGrantIdempotencyKey");
+            }
+            exact(resource, &keys)?;
+            for key in keys.iter().filter(|key| key.ends_with("IdempotencyKey")) {
+                if !ids.insert(id(resource, key)?) {
+                    return Err("fixture identity reused".into());
+                }
+            }
+            if !hex_digest(required(resource, "nativeEvidenceDigest")?) {
+                return Err("exact evidence SHA256 required".into());
             }
             required(resource, "nativeEvidenceRef")?;
+            // The vector preconditions this Resource's returned id satisfies.
+            let declared = resource["preconditions"].as_array();
+            let declared = declared.filter(|v| !v.is_empty()).ok_or("no targets")?;
+            for target in declared {
+                exact(target, &["caseKey", "key"])?;
+                let pair = (required(target, "caseKey")?, required(target, "key")?);
+                if !targets.insert((pair.0.to_owned(), pair.1.to_owned())) {
+                    return Err("one Resource per vector precondition".into());
+                }
+            }
             let mut identity = native.clone();
             identity["ref"] = json!(required(resource, "nativeResourceRef")?);
             resource["nativeIdentityDigest"] =
@@ -311,30 +329,6 @@ fn prepare(mut input: Value) -> Result<Value, Error> {
             &endpoint["manifest"],
         )
         .map_err(|_| "original model route configuration refused fixture input")?;
-    }
-    // Every SOURCE Resource is granted to the receiver through its own real
-    // resource.grant_read; no grant targets anything else.
-    let mut sources = BTreeSet::new();
-    for endpoint in input["endpoints"].as_array().into_iter().flatten() {
-        if endpoint["role"] == "SOURCE" {
-            for resource in endpoint["resources"].as_array().into_iter().flatten() {
-                sources.insert(id(resource, "resourceId")?);
-            }
-        }
-    }
-    let mut granted = BTreeSet::new();
-    for grant in input["readGrants"].as_array().into_iter().flatten() {
-        exact(grant, &["sourceResourceId", "idempotencyKey"])?;
-        let source = id(grant, "sourceResourceId")?;
-        if !sources.contains(&source)
-            || !granted.insert(source)
-            || !ids.insert(id(grant, "idempotencyKey")?)
-        {
-            return Err("one read grant per SOURCE Resource required".into());
-        }
-    }
-    if granted != sources {
-        return Err("one read grant per SOURCE Resource required".into());
     }
     input["inputDigest"] = json!(input_digest);
     Ok(input)
@@ -531,6 +525,7 @@ async fn execute_action(
 ) -> Result<(ActionFact, bool), Error> {
     let (terminal_stage, expected_result) = match required(command, "actionKey")? {
         "application_binding.create" => ("binding:terminal", "SUCCEEDED"),
+        "resource.create" => ("resource:terminal", "SUCCEEDED"),
         "resource.grant_read" => ("permission-outcome", "SERVICE_READ_GRANTED"),
         _ => return Err("not a receiver setup action".into()),
     };
@@ -614,133 +609,19 @@ async fn execute_action(
     }
 }
 
-/// DD-124(1)(4), 07 §8A: the vectors name platform-side Resources by literal
-/// id, so the isolated deployment bootstraps each at exactly that id. Core's
-/// own resource.create resolver and writer freeze the delivered native
-/// reference and the actual binding (APPLICATION_ADAPTER_DIRECTORY_FILE); only
-/// the admission record is the marked CONFORMANCE_ONLY bootstrap fact, without
-/// Temporal provisioning. Returns whether this call bootstrapped the Resource;
-/// an existing one must be exactly that reference and is never re-projected.
-async fn seed_resource(
-    conn: &mut PgConnection,
-    spice: &SpiceDb,
-    input: &Value,
-    endpoint: &Value,
-    resource: &Value,
-) -> Result<bool, Error> {
-    use sqlx::Connection;
-    let tenant = id(input, "tenantId")?;
-    let owner = id(input, "humanPrincipalId")?;
-    let target = id(resource, "resourceId")?;
-    let request = json!({"typeKey":endpoint["typeKey"],"nativeType":endpoint["nativeType"],
-        "nativeRef":resource["nativeResourceRef"],"evidenceRef":resource["nativeEvidenceRef"],
-        "evidenceDigest":resource["nativeEvidenceDigest"]});
-    let present: Option<bool> = sqlx::query_scalar(
-        "select coalesce(tenant_id=$2 and application_binding_id=$3 and owner_principal_id=$4
-            and state='ACTIVE' and native_type=$5 and native_id=$6 and native_identity_digest=$7
-            and reference_provision->'frozen'->'reference'=$8,false)
-        from catalog.resource where id=$1",
-    )
-    .bind(target)
-    .bind(tenant)
-    .bind(id(endpoint, "bindingId")?)
-    .bind(owner)
-    .bind(required(endpoint, "nativeType")?)
-    .bind(required(resource, "nativeResourceRef")?)
-    .bind(required(resource, "nativeIdentityDigest")?)
-    .bind(&request)
-    .fetch_optional(&mut *conn)
-    .await?;
-    match present {
-        Some(true) => return Ok(false),
-        Some(false) => return Err("existing Resource differs from the literal reference".into()),
-        None => {}
-    }
-    let params = crate::governance::Params::from_json(&json!({"resourceCreate":request}))
-        .ok_or("original resource parameters refused fixture input")?;
-    let mut tx = conn.begin().await?;
-    let definition: crate::governance::Definition = sqlx::query_as(&format!(
-        "select {} from catalog.action_definition
-        where action_key=$1 and component_release_id is null",
-        crate::governance::DEFINITION_COLUMNS
-    ))
-    .bind(crate::resource_provision::CREATE)
-    .fetch_one(&mut *tx)
-    .await?;
-    let resolved = crate::resource_provision::target(
-        &mut tx,
-        tenant,
-        owner,
-        &definition,
-        &params,
-        Some(target),
-        true,
-    )
-    .await
-    .map_err(|_| "original resource reference resolver refused fixture input")?;
-    if resolved.id != target {
-        return Err("native object already backs another Resource".into());
-    }
-    let action = Uuid::new_v4();
-    sqlx::query(
-        "insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
-        initiator_principal_id,actor_principal_id,target_id,parameter_hash,parameters,gate_state,
-        dispatch_state,correlation_id)
-        values($1,$1,$2,$3,1,$4,$4,$5,$6,$7,'ALLOWED','DISPATCHED',$1)",
-    )
-    .bind(action)
-    .bind(tenant)
-    .bind(crate::resource_provision::CREATE)
-    .bind(owner)
-    .bind(target)
-    .bind(required(input, "inputDigest")?)
-    .bind(json!({"targetVersion":0,"params":params.to_json(),"fixtureMode":"CONFORMANCE_ONLY"}))
-    .execute(&mut *tx)
-    .await?;
-    let execution: crate::governance::Execution = sqlx::query_as(&format!(
-        "select {} from admission.action_execution where id=$1",
-        crate::governance::EXECUTION_COLUMNS
-    ))
-    .bind(action)
-    .fetch_one(&mut *tx)
-    .await?;
-    crate::resource_provision::prewrite(&mut tx, &execution, &params)
-        .await
-        .map_err(|_| "original resource reference writer refused fixture input")?;
-    let activated = sqlx::query(
-        "update catalog.resource set state='ACTIVE',native_type=$2,native_id=$3,
-        projection_action_execution_id=null,version=version+1
-        where id=$1 and state='PROVISIONING'",
-    )
-    .bind(target)
-    .bind(required(endpoint, "nativeType")?)
-    .bind(required(resource, "nativeResourceRef")?)
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
-    if activated != 1 {
-        return Err("bootstrapped Resource was not provisioned by the original writer".into());
-    }
-    tx.commit().await?;
-    let (target, tenant, owner) = (target.to_string(), tenant.to_string(), owner.to_string());
-    spice
-        .replace_resource_projection(&target, &tenant, &owner, &owner, None)
-        .await?;
-    Ok(true)
-}
-
 /// Existing Core test-binary entry, not a second bootstrap API. The dedicated
 /// deployment must already contain real IdP sessions, Catalog/business tenants,
 /// SERVICE clients and approved capability contracts. The sole synthetic part
 /// is the explicitly marked isolated release-directory prerequisite in the SQL
 /// companion; it is not release conformance/approval evidence for production.
 ///
-/// Actual bindings, model delivery and read grants use Action Admission +
-/// Temporal and their original terminal audits; failure retains those original
-/// intents. Resources are bootstrapped at the vectors' literal ids through
-/// Core's own reference writer (seed_resource, DD-124(1)(4)). The printed
-/// source release facts and the isolated Core build form the plan's
-/// receiverEnvironment; this entry never runs or reports a conformance step.
+/// Actual bindings, model delivery, Resources (resource.create over existing
+/// native references, DD-98) and read grants use Action Admission + Temporal
+/// and their original terminal audits; failure retains those original intents.
+/// DD-124(4): the returned Resource ids are printed as the fixture values of
+/// the vector preconditions each Resource names; with the source release facts
+/// and the isolated Core build they form the plan inputs. This entry never runs
+/// or reports a conformance step.
 /// Never reseed a revoked permission. A partial fixture must be investigated via
 /// its actual AE; rebuilding is limited to the explicitly owned isolated DB and
 /// SpiceDB deployment, never a shared/production store.
@@ -913,22 +794,67 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
             return Err("actual binding/model delivery not active for frozen facts".into());
         }
     }
+    // DD-124(4): only the original resource.create registers a Resource; the
+    // returned id becomes the fixture value of the vector preconditions.
     let mut resources = Vec::new();
     for endpoint in endpoints {
         for resource in endpoint["resources"].as_array().ok_or("no Resources")? {
-            let seeded = seed_resource(&mut conn, &spice, &input, endpoint, resource).await?;
-            resources.push((endpoint, id(resource, "resourceId")?, seeded));
+            let command = json!({"actionKey":"resource.create",
+                "idempotencyKey":resource["resourceIdempotencyKey"],
+                "resourceCreate":{"typeKey":endpoint["typeKey"],
+                "nativeType":endpoint["nativeType"],"nativeRef":resource["nativeResourceRef"],
+                "evidenceRef":resource["nativeEvidenceRef"],
+                "evidenceDigest":resource["nativeEvidenceDigest"]}});
+            let (action, submitted) =
+                execute_action(&mut conn, &http, &input, &token, &command).await?;
+            let grant = resource
+                .get("readGrantIdempotencyKey")
+                .map(|_| id(resource, "readGrantIdempotencyKey"))
+                .transpose()?;
+            let registered: bool = sqlx::query_scalar(
+                "select exists(select 1 from catalog.resource
+                where id=$1 and tenant_id=$2 and application_binding_id=$3
+                  and owner_principal_id=$4 and type_key=$5 and native_type=$6 and native_id=$7
+                  and native_identity_digest=$8 and state='ACTIVE' and home_workspace_id is null
+                  and reference_provision->>'actionExecutionId'=$9::uuid::text
+                  and (projection_action_execution_id is null or ($10::uuid is not null and exists(
+                    select 1 from admission.action_execution a
+                    where a.id=projection_action_execution_id and a.tenant_id=$2
+                      and a.target_id=$1 and a.initiator_principal_id=$4
+                      and a.actor_principal_id=$4 and a.action_key='resource.grant_read'
+                      and a.idempotency_key=$10))))",
+            )
+            .bind(action.target_id)
+            .bind(id(&input, "tenantId")?)
+            .bind(id(endpoint, "bindingId")?)
+            .bind(id(&input, "humanPrincipalId")?)
+            .bind(required(endpoint, "typeKey")?)
+            .bind(required(endpoint, "nativeType")?)
+            .bind(required(resource, "nativeResourceRef")?)
+            .bind(required(resource, "nativeIdentityDigest")?)
+            .bind(action.id)
+            .bind(grant)
+            .fetch_one(&mut conn)
+            .await?;
+            if !registered {
+                return Err("actual native resource differs from frozen reference".into());
+            }
+            resources.push((endpoint, resource, action.target_id, submitted));
         }
     }
     let tenant = required(&input, "tenantId")?;
     let owner = required(&input, "humanPrincipalId")?;
     let receiving = endpoints.iter().find(|e| e["role"] == "RECEIVER").unwrap();
     let principal = required(receiving, "servicePrincipalId")?;
-    let receiver_resource = id(&receiving["resources"][0], "resourceId")?;
+    let receiver_resource = resources
+        .iter()
+        .find(|(endpoint, _, _, _)| endpoint["role"] == "RECEIVER")
+        .unwrap()
+        .2;
     let mut grants = Vec::new();
-    for grant in input["readGrants"].as_array().ok_or("no grants")? {
-        let source = id(grant, "sourceResourceId")?;
-        let key = id(grant, "idempotencyKey")?;
+    for (_, resource, source, _) in resources.iter().filter(|r| r.0["role"] == "SOURCE") {
+        let source = *source;
+        let key = id(resource, "readGrantIdempotencyKey")?;
         let grant_params = if let Some(action) = retained_action(&mut conn, &input, key).await? {
             let params = &action.parameters["params"];
             if params["resourceId"] != json!(source)
@@ -964,12 +890,12 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
             "operationId":grant_action.operation_id}),
         );
     }
-    for (endpoint, resource, seeded) in &resources {
+    for (endpoint, _, resource, submitted) in &resources {
         let resource = resource.to_string();
-        if *seeded && endpoint["role"] == "RECEIVER" {
+        if *submitted && endpoint["role"] == "RECEIVER" {
             // Only the isolated fixture's explicit permission prerequisite.
-            // Ownership was projected when this run bootstrapped the Resource;
-            // an existing one never re-grants a later revoked permission.
+            // Resource ownership itself was written by the real lifecycle.
+            // An existing action never re-grants a later revoked permission.
             let relations: &[&str] = &["editor", "deleter"];
             let updates: Vec<_> = relations
                 .iter()
@@ -1026,9 +952,11 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
         return Err("original receiver identity differs".into());
     }
     tx.commit().await?;
-    // The seed submits governed actions at each Resource's current version.
+    // The seed submits governed actions at each Resource's current version;
+    // every precondition the Resource names takes the id Core returned.
     let mut summary = Vec::new();
-    for (endpoint, resource, _) in &resources {
+    let mut preconditions = Vec::new();
+    for (endpoint, fixture, resource, _) in &resources {
         let version: i32 = sqlx::query_scalar("select version from catalog.resource where id=$1")
             .bind(resource)
             .fetch_one(&mut conn)
@@ -1037,6 +965,11 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
             json!({"role":endpoint["role"],"bindingId":endpoint["bindingId"],
             "resourceId":resource,"version":version}),
         );
+        for target in fixture["preconditions"].as_array().into_iter().flatten() {
+            preconditions.push(
+                json!({"caseKey":target["caseKey"],"key":target["key"],"value":resource}),
+            );
+        }
     }
     // DD-124(4): the production plan identity names this source release; its
     // digests are those Core computed for the isolated Catalog copy above.
@@ -1047,7 +980,7 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
         "inputDigest":input["inputDigest"],"setup":"READY","conformanceExecuted":false,
         "readGrants":grants,"sourceRelease":{"releaseId":source["releaseId"],
             "artifactDigest":source["artifactDigest"],"manifestDigest":source["manifestDigest"]},
-        "resources":summary})
+        "resources":summary,"preconditions":preconditions})
     );
     Ok(())
 }

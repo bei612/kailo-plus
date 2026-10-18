@@ -20,7 +20,9 @@
 #              delivery; its delivered adapter; the WeKnora candidate (native + receiver adapter for
 #              the isolated Core) and the forward adapter the production Worker calls
 #   bootstrap  core/verify/receiver-environment-bootstrap.rs (ignored Core test) against the
-#              isolated database, SpiceDB and gateway -> bootstrap.json, receiver-environment.json
+#              isolated database, SpiceDB and gateway: real bindings, resource.create (the returned
+#              Resource ids are the Resource preconditions, DD-124(4)) and resource.grant_read
+#              -> bootstrap.json, receiver-environment.json
 #   seed       seed-knowledge --phase governed -> native-facts.json (preconditions)
 #   inputs     observe.mjs (forward adapter; receiver block) -> facts.json; conformance-inputs.mjs
 #              -> inputs/{fixture,identity,environment}.json
@@ -47,7 +49,9 @@
 #   RECEIVER_FORWARD_ADAPTER_CONFIG  adapter config of the forward adapter (conformance identity issuer)
 #   RECEIVER_FORWARD_ADAPTER_JWKS    its actionTokenJwksFile (Core's isolated conformance JWKS)
 #   RECEIVER_MANIFEST          render.mjs manifest of the candidate
-#   RECEIVER_BOOTSTRAP_FILE    bootstrap input (core/verify/receiver-environment-bootstrap.rs prepare())
+#   RECEIVER_BOOTSTRAP_FILE    bootstrap input (core/verify/receiver-environment-bootstrap.rs prepare()):
+#                              each Resource lists the vector preconditions its real resource.create
+#                              id satisfies; bootstrap.json carries those ids as fixture values
 #   RECEIVER_SEED_FILE         seed-knowledge.mjs input
 #   RECEIVER_OBSERVE_FILE      observe.mjs input with "receiver" (receiverEnvironmentFile=RUN_DIR/receiver-environment.json)
 #   RECEIVER_DRIVER_FILE       driver configuration (core/verify/receiver-action-driver.rs prepare())

@@ -83,6 +83,10 @@
 // takes them from the candidate's own SUCCEEDED responses during the run, so a
 // facts file cannot carry them and no expectation is rewritten here.
 //
+// DD-124(4): a step's referenceResourceKey names the precondition whose value
+// is its target Resource; in a receiver-direction case every platform Resource
+// is such a precondition, created by the isolated Core's real resource.create.
+//
 // DD-124(4): a V2 step with direction RECEIVER (and every NATIVE_INTERNAL key)
 // becomes receiver_start/receiver_observe, observed only from the isolated
 // receiver deployment (tools/component-release/receiver-run.sh). Its request is
@@ -604,6 +608,12 @@ function vectorPlan(facts, release, registrations, placeholderAe, preconditions)
         }
         const probe = { caseKey, stepKey, operation: 'execute', contractKey: step.contractKey, idempotencyKey: key, inputJson };
         for (const field of ['referenceResourceId', 'referenceAssetId', 'referenceFromStepKey']) if (step[field] !== undefined) probe[field] = step[field];
+        // DD-124(4): a target named by a precondition is the frozen fixture
+        // value (the isolated Core's real resource.create result).
+        if (step.referenceResourceKey !== undefined) {
+          probe.referenceResourceId = uuid(preconditions.find((p) => p.caseKey === caseKey && p.key === step.referenceResourceKey)?.value,
+            `${caseKey}/${stepKey} target precondition ${step.referenceResourceKey}`);
+        }
         const native = release.native.has(step.contractKey);
         // DD-124(3)(4): a V2 RECEIVER step runs in the isolated deployment; a
         // NATIVE_MANAGED key in V2 must be marked so for that exact step.

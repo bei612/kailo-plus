@@ -24,6 +24,8 @@ export const DIRECTIONS = Object.freeze(['FORWARD', 'RECEIVER']);
 const GENERATED_MEMBERS = Object.freeze(['nativeRevision']);
 const CORE_MEMBERS = Object.freeze(['actionExecutionId', 'receiverActionExecutionId', 'operationId',
   'sourceReadActionExecutionId']);
+// DD-124(4): platform Resource/Asset ids, never LITERAL in a receiver-direction case.
+const RESOURCE_MEMBERS = Object.freeze(['resourceId', 'sourceResourceId', 'assetId']);
 
 export class VectorRefusal extends Error {}
 const refuse = (message) => { throw new VectorRefusal(message); };
@@ -176,20 +178,32 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
     const produced = new Map(); // capture key -> step index
     const consumed = new Set();
     const emitted = new Map(); // precondition key -> first INPUT step index
+    // DD-124(4): every platform Resource id of a receiver-direction case is a
+    // precondition the isolated Core's real resource.create returned.
+    const receiving = vectorCase.steps.some((step) => isObject(step) && isReceiver(step));
     const expectations = [];
     const steps = vectorCase.steps.map((step, index) => {
       exact(step, ['stepKey', 'contractKey', 'inputJson', 'expectedOutputJson'],
-        ['referenceResourceId', 'referenceAssetId', 'bindings', 'captures', 'direction'], `${where} step`);
+        ['referenceResourceId', 'referenceAssetId', 'referenceResourceKey', 'bindings', 'captures', 'direction'], `${where} step`);
       const at = `${where}/${step.stepKey}`;
       if (!nonempty(step.stepKey) || stepKeys.has(step.stepKey) || !nonempty(step.contractKey)) refuse(`${at}: unique stepKey and contractKey required`);
       stepKeys.add(step.stepKey);
       const documents = { INPUT: parseJson(step.inputJson, `${at}.inputJson`), EXPECTED: parseJson(step.expectedOutputJson, `${at}.expectedOutputJson`) };
       // A RECEIVER step is observed, never sent: it names the receiver
       // Resource and has no result body of its own.
+      const keyed = step.referenceResourceKey;
+      if (keyed !== undefined && !preconditions.has(keyed)) refuse(`${at}: referenceResourceKey ${keyed} is not a precondition of the case`);
+      const literal = step.referenceResourceId !== undefined;
+      if ((keyed !== undefined || receiving) && (literal || step.referenceAssetId !== undefined)) {
+        refuse(`${at}: a receiver-direction case names its Resources by precondition, never by literal id`);
+      }
+      // Naming the target sends that precondition with this step.
+      if (keyed !== undefined && !emitted.has(keyed)) emitted.set(keyed, index);
+      const reference = literal || keyed !== undefined;
       const receiver = isReceiver(step);
-      if (receiver && (step.referenceResourceId === undefined || step.referenceAssetId !== undefined
+      if (receiver && (!reference || step.referenceAssetId !== undefined
         || canonicalText(documents.EXPECTED) !== '{}')) {
-        refuse(`${at}: a RECEIVER step names only referenceResourceId and expects {}`);
+        refuse(`${at}: a RECEIVER step names only its receiver Resource and expects {}`);
       }
       const captures = step.captures ?? [];
       if (!Array.isArray(captures)) refuse(`${at}.captures: array`);
@@ -202,7 +216,7 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
         if (!identifier(capture.key) || produced.has(capture.key)) refuse(`${at}: capture key unique in the case required`);
         produced.set(capture.key, index);
         if (['CONTENT_REFERENCE_NATIVE_OBJECT_REF', 'CONTENT_REFERENCE_NATIVE_REVISION'].includes(capture.slot)
-          && !Object.hasOwn(capture, 'pointer') && step.referenceResourceId !== undefined) continue;
+          && !Object.hasOwn(capture, 'pointer') && reference) continue;
         if (capture.slot === 'GENERATED_REF' && !receiver && isGenerated(step.contractKey, 'EXPECTED', capture.pointer)) {
           own.set(capture.pointer, capture.key);
           continue;
@@ -266,7 +280,8 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
         for (const { pointer, name, value } of positions(documents[side])) {
           const binding = declared.get(`${side}${pointer}`);
           const implementation = GENERATED_MEMBERS.includes(name) || isGenerated(step.contractKey, side, pointer);
-          if (((reserved(value) || implementation) && !binding) || (CORE_MEMBERS.includes(name) && binding?.source !== 'CAPTURE')) {
+          if (((reserved(value) || implementation) && !binding) || (CORE_MEMBERS.includes(name) && binding?.source !== 'CAPTURE')
+            || (receiving && RESOURCE_MEMBERS.includes(name) && binding?.source !== 'PRECONDITION')) {
             refuse(`${at}: ${side}${pointer} cannot be LITERAL (reserved, implementation- or Core-generated)`);
           }
           if (!isObject(value) && !Array.isArray(value)) {
@@ -276,7 +291,7 @@ export function analyseV2(vectors, label = 'vectors', operations = undefined) {
       }
       expectations.push(documents.EXPECTED);
       return { stepKey: step.stepKey, contractKey: step.contractKey, direction: receiver ? 'RECEIVER' : 'FORWARD',
-        referenceResourceId: step.referenceResourceId,
+        referenceResourceId: step.referenceResourceId, referenceResourceKey: step.referenceResourceKey,
         referenceAssetId: step.referenceAssetId, input: documents.INPUT, expected: documents.EXPECTED, bindings, captures, values };
     });
     for (const key of produced.keys()) if (!consumed.has(key)) refuse(`${where}: capture ${key} is never consumed by a later step`);

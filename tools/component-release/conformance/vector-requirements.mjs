@@ -37,8 +37,9 @@
 //
 // WeKnora V2 (knowledge@3, DD-124(3)(4)): every step that depends on the
 // service read edge is a RECEIVER step observed only in the isolated receiver
-// deployment (tools/component-release/receiver-run.sh); its Resources are the
-// bootstrap's literal Resources, its source file/revision preconditions come
+// deployment (tools/component-release/receiver-run.sh); its Resources are
+// preconditions whose values the isolated Core's real resource.create returned,
+// its source file/revision preconditions come
 // from the isolated Core's actual contract read of the APPROVED source release
 // and its import configurations from WeKnora's own data source entry. Execution
 // ids and batch ids are captured from the isolated Core and candidate only.
@@ -68,7 +69,7 @@ const EVIDENCE = {
   coreAe: 'Core admission creates ActionExecution ids itself (governance.rs); no native or platform API accepts a caller-chosen AE id',
   readGrant: 'knowledge ingest@v2 calls request_read_grant with receiverActionExecutionId = the Core-signed probe AE (knowledge/adapter/src/service-read.mjs); Core admits only an APPLICATION AE it holds for that receiver binding (core/crates/platform-core/src/application_read_grant.rs), which an isolated Core cannot hold for a production registration AE, and 07 §8A forbids simulating that grant',
   receiver: 'NATIVE_INTERNAL receiver steps need the isolated Core of 07 §8A (core/verify/receiver-environment-bootstrap.rs; its real-environment entry is still #[ignore]) and Core-minted SOURCE read AEs',
-  isolatedResource: 'DD-124(4), 07 §8A: tools/component-release/receiver-run.sh bootstraps the isolated deployment with the vector-literal Resources (core/verify/receiver-environment-bootstrap.rs) and grants the read edge through the governed grant_read; nothing is written to production',
+  isolatedResource: 'DD-124(4), 07 §8A: the isolated Core registers each platform Resource through the real resource.create over an existing native object (DD-98; core/verify/receiver-environment-bootstrap.rs) and grants the read edge through the real resource.grant_read; the returned Resource ids are the fixture values; nothing is written to production',
   isolatedSource: 'DD-124(4): the source file is created through the APPROVED source release\'s native entry in the isolated deployment; the seed records the typed ContentReference the isolated Core\'s actual contract read returned (never a vector value)',
   weknoraImport: 'knowledge/internal/application/service/datasource_file_storage.go: a file_storage data source of the receiver knowledge base is created through WeKnora\'s own /api/v1/datasource entry (internal/router/routes_infra.go); its id is the importConfigRef the seed records',
   isolatedCapture: 'DD-124(4): the isolated Core creates the receiver admission, SOURCE read ActionExecutions and the candidate its batch; Core verifies they are absent from the frozen plan and fixture',
@@ -213,6 +214,8 @@ function cellsV2(category, version, analysed, push) {
 // knowledge@3 (DD-124(3)(4)): classify each precondition by its registered
 // kind and each step Resource as an isolated bootstrap Resource.
 const WEKNORA_KINDS = {
+  receiver_resource: { class: 'precondition', role: 'receiver-resource', evidence: 'isolatedResource' },
+  source_resource: { class: 'precondition', role: 'source-resource', evidence: 'isolatedResource' },
   import_config: { class: 'precondition', role: 'import-config', evidence: 'weknoraImport' },
   retiring_import_config: { class: 'precondition', role: 'retiring-import-config', evidence: 'weknoraImport' },
   source_file: { class: 'precondition', role: 'source-file', evidence: 'isolatedSource' },
@@ -243,11 +246,14 @@ function weknoraV2(category, version, analysed, push) {
         push({ at, kind: 'capture', key: capture.key, slot: capture.slot, ...(capture.pointer ? { pointer: capture.pointer } : {}),
           class: 'capture', evidence: isolated ? EVIDENCE.isolatedCapture : EVIDENCE.capture });
       }
-      const resources = new Set([step.referenceResourceId, step.input?.resourceId, step.input?.sourceResourceId,
-        ...(step.expected?.citations ?? []).map((citation) => citation.resourceId)].filter((id) => id !== undefined));
-      for (const resourceId of resources) {
-        if (!UUID.test(resourceId)) fail(`${at}: literal Resource ${resourceId} must be a UUID`);
-        push({ at, kind: 'platform-resource', caseKey, resourceId, verb, class: 'observed', evidence: EVIDENCE.isolatedResource });
+      // DD-124(4): every Resource of a receiver-direction case is a seeded
+      // precondition; a literal one could not be the isolated Core's own id.
+      if (step.referenceResourceId !== undefined) fail(`${at}: knowledge Resources are preconditions, not literal ids`);
+      for (const pointer of ['/resourceId', '/sourceResourceId']) {
+        if (step.input?.[pointer.slice(1)] !== undefined
+          && !step.bindings.some((b) => b.side === 'INPUT' && b.source === 'PRECONDITION' && b.pointer === pointer)) {
+          fail(`${at}: INPUT${pointer} must be a Resource precondition`);
+        }
       }
     }
   }

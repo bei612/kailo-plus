@@ -2059,7 +2059,7 @@ mod registration_tests {
         });
         assert!(registration(&unknown).is_err());
         let unnamed = edit_case_step(&raw, 1, 0, |step| {
-            step.as_object_mut().unwrap().remove("referenceResourceId");
+            step.as_object_mut().unwrap().remove("referenceResourceKey");
         });
         assert!(registration(&unnamed).is_err());
         // A generated admission field keeps its exact INPUT position.
@@ -2071,10 +2071,11 @@ mod registration_tests {
         // one, and every Core execution member is captured.
         let misplaced = edit_case_step(&raw, 1, 0, |step| {
             edit_json(step, "inputJson", |input| {
-                input["sourceResourceId"] = json!("{{CAPTURE:read_execution}}");
-                input["sourceReadActionExecutionId"] = json!(Uuid::new_v4());
+                input["batchId"] = json!("{{CAPTURE:read_execution}}");
+                input["sourceReadActionExecutionId"] = json!("{{CAPTURE:batch}}");
             });
-            step["bindings"][2]["pointer"] = json!("/sourceResourceId");
+            step["bindings"][2]["pointer"] = json!("/sourceReadActionExecutionId");
+            step["bindings"][3]["pointer"] = json!("/batchId");
         });
         assert!(registration(&misplaced).is_err());
         let literal = edit_case_step(&raw, 1, 0, |step| {
@@ -2089,7 +2090,7 @@ mod registration_tests {
         // RECEIVER step cannot consume an earlier step's capture.
         let substituted = edit_case_step(&raw, 2, 4, |step| {
             step["direction"] = json!("RECEIVER");
-            step["referenceResourceId"] = json!(Uuid::new_v4());
+            step["referenceResourceKey"] = json!("receiver");
         });
         assert!(registration(&substituted).is_err());
         // The V1 format cannot carry a direction.
@@ -2101,6 +2102,66 @@ mod registration_tests {
             step["direction"] = json!("FORWARD");
         });
         assert!(registration(&smuggled).is_err());
+    }
+
+    /// DD-124(4): a receiver-direction case names every platform Resource by a
+    /// precondition (the isolated Core's real resource.create result); the plan
+    /// freezes that fixture value as the step target.
+    #[test]
+    fn receiver_cases_name_every_resource_by_precondition() {
+        let raw = knowledge_v3();
+        let registered = registration(&raw).unwrap();
+        let literal_target = edit_case_step(&raw, 1, 0, |step| {
+            step.as_object_mut().unwrap().remove("referenceResourceKey");
+            step["referenceResourceId"] = json!(Uuid::new_v4());
+        });
+        assert!(registration(&literal_target).is_err());
+        let both = edit_case_step(&raw, 2, 1, |step| {
+            step["referenceResourceId"] = json!(Uuid::new_v4());
+        });
+        assert!(registration(&both).is_err());
+        // The receiver precondition is still sent by the read step's target.
+        let literal_member = edit_case_step(&raw, 2, 1, |step| {
+            edit_json(step, "inputJson", |input| {
+                input["resourceId"] = json!(Uuid::new_v4());
+            });
+            step["bindings"].as_array_mut().unwrap().remove(0);
+        });
+        assert!(registration(&literal_member).is_err());
+        let undeclared = edit_case_step(&raw, 1, 0, |step| {
+            step["referenceResourceKey"] = json!("missing");
+        });
+        assert!(registration(&undeclared).is_err());
+        // Forward-only cases keep their literal platform Resource ids.
+        assert!(registration(&file_storage_v2()).is_ok());
+        let contract = json!({"content":registered.content,"vectors":registered.vectors});
+        let contracts = [contract];
+        let receiver = Uuid::new_v4().to_string();
+        let mut entries = Vec::new();
+        for case in registered.vectors["cases"].as_array().unwrap() {
+            let case_key = format!("knowledge:3:{}", case["caseKey"].as_str().unwrap());
+            for item in case["preconditions"].as_array().unwrap() {
+                let key = item["key"].as_str().unwrap();
+                let value = if key == "receiver" {
+                    receiver.clone()
+                } else {
+                    Uuid::new_v4().to_string()
+                };
+                entries.push(json!({"caseKey":case_key,"key":key,"value":value}));
+            }
+        }
+        let fixture = json!({"preconditions":entries});
+        let values = vector::fixture_values(&fixture, &contracts).unwrap();
+        let case = "knowledge:3:knowledge_roundtrip";
+        let read = &registered.vectors["cases"][2]["steps"][1];
+        let (input, _, _, target) = vector::freeze_step(read, case, &values).unwrap();
+        let input: Value = serde_json::from_str(&input).unwrap();
+        assert_eq!(target.as_deref(), Some(receiver.as_str()));
+        assert_eq!(input["resourceId"], json!(receiver));
+        let mut uncanonical = values.clone();
+        let key = (case.to_owned(), "receiver".to_owned());
+        uncanonical.insert(key, receiver.to_uppercase());
+        assert!(vector::freeze_step(read, case, &uncanonical).is_err());
     }
 
     #[test]
@@ -2144,12 +2205,13 @@ mod registration_tests {
             assert!(vector::fixture_values(&changed, &contracts).is_err());
         }
         let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
-        let (input, _, bindings) = vector::freeze_step(&steps[1], case, &values).unwrap();
+        let (input, _, bindings, _) = vector::freeze_step(&steps[1], case, &values).unwrap();
         let input: Value = serde_json::from_str(&input).unwrap();
         assert_eq!(input["nativeObjectRef"], "native-node");
         assert_eq!(input["nativeRevision"], "draft-version");
         assert!(bindings.is_empty());
-        let (input, expected, bindings) = vector::freeze_step(&steps[2], case, &values).unwrap();
+        let (input, expected, bindings, _) =
+            vector::freeze_step(&steps[2], case, &values).unwrap();
         let plan = json!({"bindings":bindings});
         let input: Value = serde_json::from_str(&input).unwrap();
         let mut request = json!({"arguments":{"input":input}});
