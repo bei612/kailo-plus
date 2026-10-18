@@ -72,9 +72,10 @@ def _components(m):
 
 
 def _not_source(rel):
-    """不参与构建、不进源码摘要的本仓库文件：来源记录本身（其中有摘要）与证据文档。"""
+    """不参与构建、不进源码摘要的本仓库文件：来源记录本身（其中有摘要）、证据文档，
+    以及组件发行材料 fork/release/（manifest 引用产物 digest，与来源记录同为构建之后的元数据）。"""
     parts = rel.split("/")
-    return len(parts) >= 3 and parts[1] == "fork" and (parts[2] == "upstream.yaml" or parts[2] == "verify")
+    return len(parts) >= 3 and parts[1] == "fork" and parts[2] in ("upstream.yaml", "verify", "release")
 
 
 def records():

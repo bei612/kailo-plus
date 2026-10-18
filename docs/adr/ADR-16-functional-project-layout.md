@@ -76,7 +76,7 @@ ADR-15 已把需要修改的上游改为固定 commit 的完整源码入库，�
    与上游合并都会在改名处冲突。本仓库在二开树里新增的目录与模块按功能命名、不含产品名（例如 Desktop 的
    `src/features/platform/` 与 Rust 模块 `mod platform`）。
 3. **每个二开项目保留 `fork/` 子目录**（原 `kailo/`）：`fork/upstream.yaml`（来源记录，格式见 `06` §2）、`fork/verify/`（接缝证据）、
-   `fork/packaging/`（上游没有而由本仓库维护的构建文件）；`agent-runtime` 的固定运行配置在 `fork/runtime-config/`。只以 Go module 引用的 `temporal-sdk-go` 不设目录，来源记录归
+   `fork/packaging/`（上游没有而由本仓库维护的构建文件）；`agent-runtime` 的固定运行配置在 `fork/runtime-config/`；业务能力参考实现的 ComponentRelease 材料在 `fork/release/`（引用产物 digest 的构建后元数据，与来源记录一样不进 `source_digest`，`06` §2）。只以 Go module 引用的 `temporal-sdk-go` 不设目录，来源记录归
    Worker 所有，放在 `worker/fork/upstream.yaml`。
 4. **没有补丁，也没有构建时拷贝**：`vendor_files` 废弃。`web-client`（上游用 npm）与 `collaboration/desktop`（上游用 pnpm）以本地路径依赖
    （`file:`/`link:`）直接引用 `client-kit/ts`，`collaboration/mobile` 以 Flutter `path:` 依赖引用 `client-kit/dart`；需要改的
