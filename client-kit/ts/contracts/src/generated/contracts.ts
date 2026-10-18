@@ -818,7 +818,8 @@ export interface AdapterReadGrantRequest {
      */
     nativeBatch?: NativeBatch;
     /**
-     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
+     * receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
      */
     observeActionExecutionId?:  string;
     receiverActionExecutionId?: string;
@@ -3718,7 +3719,9 @@ export interface CaptureElement {
 
 /**
  * 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
- * SOURCE/RECEIVER 回执及冻结请求。
+ * SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
+ * 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
+ * nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
  */
 export interface NativeReceiverObservationClass {
     completed:      boolean;
@@ -3731,8 +3734,12 @@ export interface NativeReceiverObservationClass {
 }
 
 export interface NativeReceiverObservationReadOperation {
-    actionExecutionId:         string;
-    nativeBatch:               ReadOperationNativeBatch;
+    actionExecutionId: string;
+    /**
+     * 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
+     * receiverActionExecutionId）。
+     */
+    nativeBatch?:              ReadOperationNativeBatch;
     operationId:               string;
     readRequest:               ReadRequestClass;
     receiverActionExecutionId: string;
@@ -3744,6 +3751,9 @@ export interface NativeReceiverObservationReadOperation {
 }
 
 /**
+ * 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
+ * receiverActionExecutionId）。
+ *
  * Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
  * exactly one mode, freezes these references, and resolves the receiver from its
  * authenticated binding.
@@ -3773,7 +3783,8 @@ export interface ReadRequestClass {
      */
     nativeBatch?: ReadOperationNativeBatch;
     /**
-     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
+     * 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
+     * receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
      */
     observeActionExecutionId?:  string;
     receiverActionExecutionId?: string;
@@ -3783,17 +3794,20 @@ export interface ReadRequestClass {
 }
 
 /**
- * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+ * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP
+ * 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION
+ * 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution
+ * 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
  */
 export interface RequestClass {
     bindingId: string;
     /**
      * 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
      */
-    expiresAt:       string;
-    generation:      number;
-    idempotencyKey:  string;
-    importConfigRef: string;
+    expiresAt:        string;
+    generation:       number;
+    idempotencyKey:   string;
+    importConfigRef?: string;
 }
 
 /**
@@ -3840,6 +3854,10 @@ export interface PlanClass {
     operationId:    string;
     planDigest:     string;
     /**
+     * DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
+     */
+    receiverEnvironment?: ReceiverEnvironmentClass;
+    /**
      * Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
      * Describe 与同 workflow 的当前 TaskProjection 核对。
      */
@@ -3854,10 +3872,33 @@ export enum ConnectorKind {
     RemoteAdapter = "REMOTE_ADAPTER",
 }
 
+/**
+ * DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
+ *
+ * DD-124(4), 07 §8A: identity of the isolated receiver deployment a plan with
+ * receiver_start/receiver_observe steps observes. isolatedCoreBuildId is the
+ * PlatformBuildInfo CORE buildId of the isolated Core/Worker and must equal the current
+ * production Core build. sourceReleaseId with its artifact and manifest digests names the
+ * production Catalog release, APPROVED and declaring read_edge SOURCE or BOTH, that the
+ * isolated deployment runs as the source. It is delivered with the isolated identity, fixed
+ * by the plan identity digest and copied into the plan; it is not evidence that any step
+ * passed.
+ *
+ * DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源
+ * release，随身份摘要进入原计划。
+ */
+export interface ReceiverEnvironmentClass {
+    isolatedCoreBuildId:  string;
+    sourceArtifactDigest: string;
+    sourceManifestDigest: string;
+    sourceReleaseId:      string;
+}
+
 export interface PlanStep {
     /**
      * DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
-     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
+     * 以它们比对隔离 Core 实际产生的接收方准入。
      */
     bindings?: BindingElement[];
     /**
@@ -3878,7 +3919,8 @@ export interface PlanStep {
     expectedResponseJson:   string;
     idempotencyKey:         string;
     /**
-     * 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+     * 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core
+     * 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
      */
     nativeReceiverInputJson?: string;
     operation:                ComponentConformanceOperation;
@@ -3893,8 +3935,10 @@ export interface PlanStep {
  * DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
  * into the step input (INPUT) or expected output (EXPECTED); the literal there must be
  * exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
- * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
- * digest fixes the declaration, never the value.
+ * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
+ * RECEIVER step INPUT may also bind the step's own captures: Core compares that input with
+ * the admission the isolated Core actually produced. The plan digest fixes the declaration,
+ * never the value.
  */
 export interface BindingElement {
     key:     string;
@@ -3925,7 +3969,10 @@ export enum CapabilityVectorBindingSource {
  * DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
  * of the same case. key is unique in the case and must be consumed at least once. pointer
  * is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
- * step's contract key.
+ * step's contract key; in a RECEIVER step it equals an INPUT entry and reads the receiver
+ * admission the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in
+ * RECEIVER steps; a RECEIVER step takes CONTENT_REFERENCE_* from the receiver's own
+ * read_receipt of that admission.
  */
 export interface CaptureClass {
     key:      string;
@@ -3936,8 +3983,9 @@ export interface CaptureClass {
 /**
  * DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
  * adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
- * vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the identifiers the
- * isolated Core generated for a receiver-direction step.
+ * vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the SOURCE read
+ * ActionExecution and Operation the isolated Core generated for a RECEIVER step in this run
+ * (never present in the plan or fixture).
  */
 export enum CapabilityVectorCaptureSlot {
     ActionExecutionID = "ACTION_EXECUTION_ID",
@@ -6752,7 +6800,10 @@ export interface CapabilityConformanceVectors {
      * V2 only. Contract fields whose values the implementation generates (opaque non-empty
      * strings). nativeRevision is always implementation-generated and need not be listed. A
      * listed position present in a step document may never be LITERAL; EXPECTED entries are the
-     * only output fields a GENERATED_REF capture may read.
+     * only output fields a GENERATED_REF capture of a FORWARD step may read. A RECEIVER step is
+     * not sent by the production Core: its input is the receiver admission the isolated Core
+     * produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own
+     * contract key.
      */
     generatedRefs?: CapabilityVectorGeneratedRef[];
     /**
@@ -6795,8 +6846,19 @@ export interface Step {
      * V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
      * provides to later steps.
      */
-    captures?:          CaptureClass[];
-    contractKey:        string;
+    captures?:   CaptureClass[];
+    contractKey: string;
+    /**
+     * V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated
+     * deployment and is observed by the production plan only through
+     * receiver_start/receiver_observe. It names the receiver Resource in referenceResourceId
+     * and expects {}. Its inputJson describes the receiver admission the isolated Core
+     * performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or
+     * GENERATED_REF captures where that admission carries identifiers the isolated Core or the
+     * implementation generated. Its evidence is the isolated run's native batch or execution,
+     * both read_receipts and the native terminal status, all generated in this run.
+     */
+    direction?:         CapabilityVectorStepDirection;
     expectedOutputJson: string;
     inputJson:          string;
     referenceAssetId?:  string;
@@ -6807,6 +6869,27 @@ export interface Step {
     referenceFromStepKey?: string;
     referenceResourceId?:  string;
     stepKey:               string;
+}
+
+/**
+ * V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated
+ * deployment and is observed by the production plan only through
+ * receiver_start/receiver_observe. It names the receiver Resource in referenceResourceId
+ * and expects {}. Its inputJson describes the receiver admission the isolated Core
+ * performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or
+ * GENERATED_REF captures where that admission carries identifiers the isolated Core or the
+ * implementation generated. Its evidence is the isolated run's native batch or execution,
+ * both read_receipts and the native terminal status, all generated in this run.
+ *
+ * DD-124(3)(4): FORWARD steps are driven by the production Core probe execute. RECEIVER
+ * marks a step that depends on the service read edge (an ingest consuming a source through
+ * READ_EDGE, a NATIVE_MANAGED receiver key); it runs in the isolated deployment of 07 §8A
+ * and the production plan only observes it through receiver_start/receiver_observe. A case
+ * with a RECEIVER step is a receiver-direction case.
+ */
+export enum CapabilityVectorStepDirection {
+    Forward = "FORWARD",
+    Receiver = "RECEIVER",
 }
 
 export enum CapabilityVectorFormat {
@@ -6877,8 +6960,10 @@ export interface CapabilityContractRegistrationResourceTypeFamilyClass {
  * DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
  * into the step input (INPUT) or expected output (EXPECTED); the literal there must be
  * exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
- * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. The plan
- * digest fixes the declaration, never the value.
+ * EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
+ * RECEIVER step INPUT may also bind the step's own captures: Core compares that input with
+ * the admission the isolated Core actually produced. The plan digest fixes the declaration,
+ * never the value.
  */
 export interface CapabilityVectorBinding {
     key:     string;
@@ -6891,7 +6976,10 @@ export interface CapabilityVectorBinding {
  * DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
  * of the same case. key is unique in the case and must be consumed at least once. pointer
  * is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
- * step's contract key.
+ * step's contract key; in a RECEIVER step it equals an INPUT entry and reads the receiver
+ * admission the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in
+ * RECEIVER steps; a RECEIVER step takes CONTENT_REFERENCE_* from the receiver's own
+ * read_receipt of that admission.
  */
 export interface CapabilityVectorCapture {
     key:      string;
@@ -6941,6 +7029,12 @@ export interface ComponentConformanceEnvironment {
      * Worker 的平台 bearer。
      */
     nativeReadAuthorities?: ComponentNativeReadAuthority[];
+    /**
+     * DD-124(4)：仅隔离部署内 APPLICATION 接收方动作（省略 importConfigRef 的
+     * receiver_start/receiver_observe）。平台维护的隔离部署入口 origin，不是候选 adapter；它以隔离 HUMAN 经隔离 Core 原
+     * Action Admission 准入与派发并观察该动作。
+     */
+    receiverActionBaseUrl?: string;
 }
 
 export interface ComponentNativeReadAuthority {
@@ -6956,7 +7050,12 @@ export interface ComponentNativeReadAuthority {
  * 隔离开发环境受控投递的协议夹具数据，不来自登记请求。Core 只采用固定协议用例并核对全部必需覆盖；没有脚本、条件、路径表达式或通过声明。
  */
 export interface ComponentConformanceFixture {
-    artifactDigest:   string;
+    artifactDigest: string;
+    /**
+     * 接收方向步骤（V1 NATIVE_INTERNAL/NATIVE 契约步骤，V2 direction=RECEIVER 步骤）各恰一项的冻结接收方请求；Core
+     * 以计划步骤幂等键替换 idempotencyKey。DD-124(4)：NATIVE_MANAGED 键的请求携带与已代入向量输入一致的
+     * importConfigRef；APPLICATION 接收方动作省略它。请求只是隔离部署内的启动/观察引用，不含任何执行、operation 或批次标识。
+     */
     nativeReceivers?: ComponentNativeReceiverFixture[];
     /**
      * DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
@@ -6993,10 +7092,15 @@ export interface ComponentConformanceIdentity {
     issuer:          string;
     jwksFile:        string;
     privateKeyField: string;
-    secretAudience:  string;
-    secretLocator:   string;
-    secretVersion:   number;
-    tokenSeconds:    number;
+    /**
+     * DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源
+     * release，随身份摘要进入原计划。
+     */
+    receiverEnvironment?: ReceiverEnvironmentClass;
+    secretAudience:       string;
+    secretLocator:        string;
+    secretVersion:        number;
+    tokenSeconds:         number;
 }
 
 export interface ComponentConformanceIdentityContext {
@@ -7030,8 +7134,27 @@ export interface ComponentConformanceIdentityContext {
 }
 
 /**
+ * DD-124(4), 07 §8A: identity of the isolated receiver deployment a plan with
+ * receiver_start/receiver_observe steps observes. isolatedCoreBuildId is the
+ * PlatformBuildInfo CORE buildId of the isolated Core/Worker and must equal the current
+ * production Core build. sourceReleaseId with its artifact and manifest digests names the
+ * production Catalog release, APPROVED and declaring read_edge SOURCE or BOTH, that the
+ * isolated deployment runs as the source. It is delivered with the isolated identity, fixed
+ * by the plan identity digest and copied into the plan; it is not evidence that any step
+ * passed.
+ */
+export interface ComponentConformanceReceiverEnvironment {
+    isolatedCoreBuildId:  string;
+    sourceArtifactDigest: string;
+    sourceManifestDigest: string;
+    sourceReleaseId:      string;
+}
+
+/**
  * 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
- * SOURCE/RECEIVER 回执及冻结请求。
+ * SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
+ * 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
+ * nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
  */
 export interface ComponentNativeReceiverObservation {
     completed:      boolean;
@@ -7044,8 +7167,12 @@ export interface ComponentNativeReceiverObservation {
 }
 
 export interface ComponentNativeReceiverObservationReadOperation {
-    actionExecutionId:         string;
-    nativeBatch:               ReadOperationNativeBatch;
+    actionExecutionId: string;
+    /**
+     * 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
+     * receiverActionExecutionId）。
+     */
+    nativeBatch?:              ReadOperationNativeBatch;
     operationId:               string;
     readRequest:               ReadRequestClass;
     receiverActionExecutionId: string;
@@ -7057,17 +7184,20 @@ export interface ComponentNativeReceiverObservationReadOperation {
 }
 
 /**
- * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP 脚本。
+ * 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP
+ * 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION
+ * 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution
+ * 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
  */
 export interface ComponentNativeReceiverRequest {
     bindingId: string;
     /**
      * 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
      */
-    expiresAt:       string;
-    generation:      number;
-    idempotencyKey:  string;
-    importConfigRef: string;
+    expiresAt:        string;
+    generation:       number;
+    idempotencyKey:   string;
+    importConfigRef?: string;
 }
 
 /**
@@ -7953,6 +8083,10 @@ export interface ComponentConformancePlan {
     operationId:    string;
     planDigest:     string;
     /**
+     * DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
+     */
+    receiverEnvironment?: ReceiverEnvironmentClass;
+    /**
      * Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
      * Describe 与同 workflow 的当前 TaskProjection 核对。
      */
@@ -7965,7 +8099,8 @@ export interface ComponentConformancePlan {
 export interface ComponentConformancePlanStep {
     /**
      * DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
-     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。
+     * 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
+     * 以它们比对隔离 Core 实际产生的接收方准入。
      */
     bindings?: BindingElement[];
     /**
@@ -7986,7 +8121,8 @@ export interface ComponentConformancePlanStep {
     expectedResponseJson:   string;
     idempotencyKey:         string;
     /**
-     * 仅 NATIVE_INTERNAL/NATIVE 能力步骤，由 Core 保留原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
+     * 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core
+     * 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
      */
     nativeReceiverInputJson?: string;
     operation:                ComponentConformanceOperation;
