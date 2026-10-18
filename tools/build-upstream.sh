@@ -54,17 +54,18 @@ done
 
 # 构建事实（来源记录 build_facts）：本次构建自身的事实，不是部署配置，因此由这里从
 # 冻结的源码树与构建时刻推出；源码树不干净时拒绝，不以未提交内容冒充某个 commit。
-for f in "${build_facts[@]}"; do
-  name=${f%%=*}; kind=${f#*=}
-  case "$kind" in
+# 循环变量带 fact_ 前缀：$kind 是本产物的类型（image/安装包），不能被覆盖。
+for fact in "${build_facts[@]}"; do
+  fact_name=${fact%%=*}; fact_kind=${fact#*=}
+  case "$fact_kind" in
     source_commit)
       [ -z "$(git status --porcelain --untracked-files=no)" ] || {
-        echo "拒绝构建：$artifact 的构建事实 $name 需要干净的源码树" >&2; exit 2; }
-      value=$(git rev-parse HEAD) ;;
-    build_time_utc) value=$(date -u +%Y-%m-%dT%H:%M:%S) ;;
-    *) echo "拒绝构建：$artifact 的构建事实 $name 种类 $kind 未定义" >&2; exit 2 ;;
+        echo "拒绝构建：$artifact 的构建事实 $fact_name 需要干净的源码树" >&2; exit 2; }
+      fact_value=$(git rev-parse HEAD) ;;
+    build_time_utc) fact_value=$(date -u +%Y-%m-%dT%H:%M:%S) ;;
+    *) echo "拒绝构建：$artifact 的构建事实 $fact_name 种类 $fact_kind 未定义" >&2; exit 2 ;;
   esac
-  arg_args+=(--build-arg "$name=$value")
+  arg_args+=(--build-arg "$fact_name=$fact_value")
 done
 
 export DOCKER_BUILDKIT=1
