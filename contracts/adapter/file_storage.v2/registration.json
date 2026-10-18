@@ -1,0 +1,98 @@
+{
+  "categoryKey": "file_storage",
+  "contractVersion": 2,
+  "resourceTypeFamily": [
+    {
+      "typeKey": "file_storage.space",
+      "kind": "SPACE"
+    }
+  ],
+  "operationContracts": [
+    {
+      "contractKey": "file_storage.list@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "6297c97bfcb3975b61c3399f0c6ee2031bb235219a932238a985f3b2be6a397e",
+      "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+      "permission": "discover",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.read@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "f78c0c26024a6cbe0b7fdea554900466b971f19b81fa540fdec7abae1ec1adc0",
+      "outputSchemaDigest": "2733c3e62f3a6e778ef5906940782761718fa7129f7d0eba7bb8bbc80b4c9519",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.list_revisions@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "177e81ee505c62a2d72d9f1980f5036d059ebdd02bf49b39b02187be21553f46",
+      "outputSchemaDigest": "53c5d4df34e627ad15c656f318754301fb2a681e86354f18c89667a31c3f7952",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.export@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "0a66498b10d2fd507390e0b12adfe0d7aec5b221078819274b42411a48bcf77c",
+      "outputSchemaDigest": "dda94bac4d567ee74dbd4e6ffbeb2dac22a632040e6c1678a78c85863431bbda",
+      "permission": "export",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.write@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "5b6c181982ee6b9f68cc53560a0eb2247258ba43ee48c95e687486d2f9bb8eef",
+      "outputSchemaDigest": "edc4171f9e58baf7a9922e69d20de81e618380b37aae1702562afeb3258e25ff",
+      "permission": "update",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.delete@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "86512a9d7233d12d56ae7fd68b2910ddb8fac58e99b56f00d5a1404ac6378738",
+      "outputSchemaDigest": "786616b4695a505b17d4913bc7ba6f16ea5ce9ebb532a10e9c4b44e53148f2e5",
+      "permission": "delete",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "file_storage.share@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "34dc1d2d4209f7ec934c8e44cf47e0ac6cdd4e30a04a407de40cd2a8e7eb6c2e",
+      "outputSchemaDigest": "114f80ea9861f65cf219ae1821237653f323122ab7ef7fccf29dfbe780bad75b",
+      "permission": "share",
+      "targetType": "RESOURCE"
+    }
+  ],
+  "contentReferenceSemantics": {
+    "nativeObjectRefRule": "Opaque native file identity returned in the typed ContentReference slot under the admitted storage-space Resource; files and folders remain native children, not a second Core directory.",
+    "nativeRevisionRule": "Immutable native version identity. Read and export consume the frozen revision without substituting the current head; a first-byte intent is not a ContentReference and publishes no reference before immutable native ACK.",
+    "authorizationTargetRule": "Every native child and share must belong to the admitted Resource, scope and binding. HUMAN/AGENT list and list_revisions results use the existing typed-citations schema; SERVICE complete-list list_output is a separate read-edge transport and is neither this operation result nor proof of SERVICE conformance."
+  },
+  "requiredDeclarations": [
+    "CANCEL",
+    "OBSERVE",
+    "METER",
+    "TENANT_DELETE",
+    "READ_EDGE"
+  ],
+  "protocolSessionKinds": [],
+  "schemaDocuments": [
+    "{\"$id\":\"adapter/file_storage.v1/list_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"DD-89: list the source Resource through its bound native root; the client cannot supply another root or native credential.\",\"properties\":{\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\"],\"title\":\"FileStorageListInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/read_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Read the exact typed native file revision in the admitted Resource; never substitute the current head.\",\"properties\":{\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"title\":\"FileStorageReadInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/read_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary files use export.\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"title\":\"FileStorageReadOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/list_revisions_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"List published native revisions of one UUID inside the admitted Resource's bound root; no caller-supplied path or credential.\",\"properties\":{\"nativeObjectRef\":{\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\"],\"title\":\"FileStorageListRevisionsInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/list_revisions_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Published version references from the original native version collection; also supplied in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion receipt.\",\"properties\":{\"citations\":{\"items\":{\"$ref\":\"../../domain/content_reference.schema.json\"},\"type\":\"array\"}},\"required\":[\"citations\"],\"title\":\"FileStorageListRevisionsOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/export_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Export exactly the authorized typed native file revision, including empty or non-UTF-8 files.\",\"properties\":{\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"title\":\"FileStorageExportInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/export_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Immediate authorized binary result using the existing export encoding; not a persisted Core blob, URL, or native credential.\",\"properties\":{\"contentBase64\":{\"type\":\"string\"},\"filename\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"}},\"required\":[\"contentBase64\",\"mediaType\",\"filename\"],\"title\":\"FileStorageExportOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/write_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Apply an existing immutable native revision, or dispatch a native first-byte intent. An intent is not a ContentReference: its node/revision identifiers name reserved native locations only; bytes remain at the source and no result exists before the immutable native ACK.\",\"oneOf\":[{\"not\":{\"anyOf\":[{\"required\":[\"nativeIntentId\"]},{\"required\":[\"nativeNodeId\"]},{\"required\":[\"nativeDeadline\"]},{\"required\":[\"contentLength\"]},{\"required\":[\"multipart\"]}]},\"required\":[\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"]},{\"not\":{\"anyOf\":[{\"required\":[\"nativeObjectRef\"]},{\"required\":[\"nativeRevision\"]},{\"required\":[\"displayName\"]},{\"required\":[\"mediaType\"]}]},\"required\":[\"nativeIntentId\",\"nativeNodeId\",\"nativeDeadline\",\"contentLength\",\"multipart\"]}],\"properties\":{\"contentLength\":{\"minimum\":0,\"type\":\"integer\"},\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"},\"multipart\":{\"type\":\"boolean\"},\"nativeDeadline\":{\"minimum\":1,\"type\":\"integer\"},\"nativeIntentId\":{\"format\":\"uuid\",\"type\":\"string\"},\"nativeNodeId\":{\"format\":\"uuid\",\"type\":\"string\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\"],\"title\":\"FileStorageWriteInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/write_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Metadata-only write result. The exact confirmed result revision belongs in the adapter's typed ContentReference slot; an empty result, accepted write, or current head alone is not terminal evidence.\",\"properties\":{},\"required\":[],\"title\":\"FileStorageWriteOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/delete_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Delete selected native objects in the admitted Resource using the original recycle/permanent-delete choice. Each native object identity must be independently authorized and retained in the native first-dispatch claim.\",\"properties\":{\"nativeObjectRefs\":{\"items\":{\"format\":\"uuid\",\"type\":\"string\"},\"type\":\"array\"},\"removePermanently\":{\"type\":\"boolean\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRefs\",\"removePermanently\"],\"title\":\"FileStorageDeleteInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/delete_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Metadata-only result. Success requires all selected native identities to have linked durable deletion or recycle acknowledgements; an accepted job, Finished status or absent current object is not terminal evidence.\",\"properties\":{},\"required\":[],\"title\":\"FileStorageDeleteOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/share_input.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Manage an existing native share under the admitted Resource. Revocation removes access through that exact share; it neither deletes file content nor grants platform resource permission. Native share identity alone is not evidence of ownership or successful revocation.\",\"properties\":{\"nativeShareRef\":{\"minLength\":1,\"type\":\"string\"},\"operation\":{\"enum\":[\"REVOKE\"],\"title\":\"FileStorageShareOperation\",\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeShareRef\",\"operation\"],\"title\":\"FileStorageShareInput\",\"type\":\"object\"}",
+    "{\"$id\":\"adapter/file_storage.v1/share_output.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Metadata-only share result. Revocation requires an authorized first-dispatch claim and confirmed removal of the frozen native share access. An unowned missing identifier, accepted request or partial native cleanup is not successful revocation.\",\"properties\":{},\"required\":[],\"title\":\"FileStorageShareOutput\",\"type\":\"object\"}",
+    "{\"$id\":\"domain/content_reference.schema.json\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。\",\"properties\":{\"assetId\":{\"format\":\"uuid\",\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"title\":\"ContentReference\",\"type\":\"object\"}"
+  ],
+  "testVectorsJson": "{\"formatVersion\":\"V2\",\"generatedRefs\":[{\"contractKey\":\"file_storage.list_revisions@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"contractKey\":\"file_storage.list_revisions@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/citations/0/nativeObjectRef\"},{\"contractKey\":\"file_storage.read@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"contractKey\":\"file_storage.export@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"contractKey\":\"file_storage.write@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"contractKey\":\"file_storage.delete@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRefs/0\"},{\"contractKey\":\"file_storage.share@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeShareRef\"}],\"preconditionKinds\":[{\"kind\":\"file\",\"properties\":[\"displayName\",\"mediaType\"],\"description\":\"Native file under the admitted storage Resource, created through the candidate's own native entry. Before the case it has no published revision: its only revision is the case's draft_revision.\"},{\"kind\":\"draft_revision\",\"properties\":[\"text\"],\"description\":\"Unpublished immutable native draft revision of the case's file holding exactly the UTF-8 text. Applying it with write publishes a new revision whose identifier the implementation generates.\"},{\"kind\":\"share\",\"properties\":[],\"description\":\"Native share created through the candidate's own native entry under the storage Resource the share step targets (the binding root).\"}],\"cases\":[{\"caseKey\":\"native_file\",\"preconditions\":[{\"key\":\"file\",\"kind\":\"file\",\"properties\":[{\"name\":\"displayName\",\"valueJson\":\"\\\"conformance.txt\\\"\"},{\"name\":\"mediaType\",\"valueJson\":\"\\\"text/plain\\\"\"}]},{\"key\":\"draft\",\"kind\":\"draft_revision\",\"properties\":[{\"name\":\"text\",\"valueJson\":\"\\\"Kailo conformance file marker\\\"\"}]},{\"key\":\"share\",\"kind\":\"share\",\"properties\":[]}],\"steps\":[{\"stepKey\":\"list\",\"contractKey\":\"file_storage.list@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"c24bdb03-d6b0-55bb-831d-08691c124341\\\"}\",\"expectedOutputJson\":\"{\\\"citations\\\":[]}\"},{\"stepKey\":\"write\",\"contractKey\":\"file_storage.write@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRef\\\":\\\"{{PRECONDITION:file}}\\\",\\\"nativeRevision\\\":\\\"{{PRECONDITION:draft}}\\\",\\\"displayName\\\":\\\"conformance.txt\\\",\\\"mediaType\\\":\\\"text/plain\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"PRECONDITION\",\"key\":\"draft\",\"side\":\"INPUT\",\"pointer\":\"/nativeRevision\"}],\"captures\":[{\"key\":\"published_revision\",\"slot\":\"CONTENT_REFERENCE_NATIVE_REVISION\"}]},{\"stepKey\":\"list_revisions\",\"contractKey\":\"file_storage.list_revisions@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRef\\\":\\\"{{PRECONDITION:file}}\\\"}\",\"expectedOutputJson\":\"{\\\"citations\\\":[{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRef\\\":\\\"{{PRECONDITION:file}}\\\",\\\"nativeRevision\\\":\\\"{{CAPTURE:published_revision}}\\\",\\\"displayName\\\":\\\"conformance.txt\\\",\\\"mediaType\\\":\\\"text/plain\\\"}]}\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"EXPECTED\",\"pointer\":\"/citations/0/nativeObjectRef\"},{\"source\":\"CAPTURE\",\"key\":\"published_revision\",\"side\":\"EXPECTED\",\"pointer\":\"/citations/0/nativeRevision\"}]},{\"stepKey\":\"read\",\"contractKey\":\"file_storage.read@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRef\\\":\\\"{{PRECONDITION:file}}\\\",\\\"nativeRevision\\\":\\\"{{CAPTURE:published_revision}}\\\",\\\"displayName\\\":\\\"conformance.txt\\\",\\\"mediaType\\\":\\\"text/plain\\\"}\",\"expectedOutputJson\":\"{\\\"text\\\":\\\"Kailo conformance file marker\\\"}\",\"referenceResourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"CAPTURE\",\"key\":\"published_revision\",\"side\":\"INPUT\",\"pointer\":\"/nativeRevision\"}]},{\"stepKey\":\"export\",\"contractKey\":\"file_storage.export@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRef\\\":\\\"{{PRECONDITION:file}}\\\",\\\"nativeRevision\\\":\\\"{{CAPTURE:published_revision}}\\\",\\\"displayName\\\":\\\"conformance.txt\\\",\\\"mediaType\\\":\\\"text/plain\\\"}\",\"expectedOutputJson\":\"{\\\"contentBase64\\\":\\\"S2FpbG8gY29uZm9ybWFuY2UgZmlsZSBtYXJrZXI=\\\",\\\"mediaType\\\":\\\"text/plain\\\",\\\"filename\\\":\\\"conformance.txt\\\"}\",\"referenceResourceId\":\"8a385544-3c3f-52e0-bbfa-2795f6046543\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"CAPTURE\",\"key\":\"published_revision\",\"side\":\"INPUT\",\"pointer\":\"/nativeRevision\"}]},{\"stepKey\":\"share\",\"contractKey\":\"file_storage.share@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"53e2e277-c15a-53bf-8500-4e98a5578da6\\\",\\\"nativeShareRef\\\":\\\"{{PRECONDITION:share}}\\\",\\\"operation\\\":\\\"REVOKE\\\"}\",\"expectedOutputJson\":\"{}\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"share\",\"side\":\"INPUT\",\"pointer\":\"/nativeShareRef\"}]},{\"stepKey\":\"delete\",\"contractKey\":\"file_storage.delete@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"8a385544-3c3f-52e0-bbfa-2795f6046543\\\",\\\"nativeObjectRefs\\\":[\\\"{{PRECONDITION:file}}\\\"],\\\"removePermanently\\\":true}\",\"expectedOutputJson\":\"{}\",\"bindings\":[{\"source\":\"PRECONDITION\",\"key\":\"file\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRefs/0\"}]}]}]}"
+}
