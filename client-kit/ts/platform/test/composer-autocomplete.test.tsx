@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { selectChannelSuggestions, useChannelLinks, type ChannelLinkSource } from "../src/react/composer/features/messages/lib/useChannelLinks";
 import { useEmojiAutocomplete } from "../src/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { ChannelAutocomplete } from "../src/react/composer/features/messages/ui/ChannelAutocomplete";
+import { rankMentionCandidates } from "../src/react/composer/features/messages/lib/mentionRanking";
 import { render } from "./render";
 
 beforeEach(() => { HTMLElement.prototype.scrollIntoView = vi.fn(); });
@@ -59,4 +60,16 @@ it("renders the original channel overlay only for the focused composer", async (
   expect(option.textContent).toContain("#general");
   await act(async () => { option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })); });
   expect(select).toHaveBeenCalledWith(suggestion);
+});
+
+it("ranks mention candidates as the original useMentions: exact, prefix, word prefix, then pubkey", () => {
+  const people = [
+    { displayName: "Bob Alexander", pubkey: "1".repeat(64) },
+    { displayName: "Alexa", pubkey: "2".repeat(64) },
+    { displayName: "alex", pubkey: "3".repeat(64) },
+    { displayName: "Paul", pubkey: "4".repeat(64) },
+  ];
+  expect(rankMentionCandidates(people, "alex").map(({ candidate }) => candidate.displayName)).toEqual(["alex", "Alexa", "Bob Alexander"]);
+  expect(rankMentionCandidates(people, "lex")).toEqual([]);
+  expect(rankMentionCandidates(people, "").map(({ candidate }) => candidate.displayName)).toEqual(["Bob Alexander", "Alexa", "alex", "Paul"]);
 });

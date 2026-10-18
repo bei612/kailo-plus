@@ -4,6 +4,7 @@ import { ChannelAutocomplete } from "@client-kit/platform/react/composer/feature
 import { EmojiAutocomplete } from "@client-kit/platform/react/composer/features/messages/ui/EmojiAutocomplete";
 import { useComposerChannelLinkSources } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { useChannelLinks, type ChannelSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useChannelLinks";
+import { rankMentionCandidates } from "@client-kit/platform/react/composer/features/messages/lib/mentionRanking";
 import { useEmojiAutocomplete, type EmojiSuggestion } from "@client-kit/platform/react/composer/features/messages/lib/useEmojiAutocomplete";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
@@ -955,6 +956,9 @@ type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number }
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
  * 存在，而 getRandomValues 在任何上下文都可用。
  */
+/** Original useMentions MENTION_SUGGESTION_LIMIT. */
+const MENTION_SUGGESTION_LIMIT = 50;
+
 function newIntentKey(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
   b[6] = (b[6] & 0x0f) | 0x40;
@@ -1017,7 +1021,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     ? getPersistentAgentAudienceScope({ownerPubkey: agentDirectory.data.ownerPubkey, channelId: agentDirectory.data.channelId, composerKey: draftKey}) : null;
   const implicitAgentMentionProvenance = useImplicitAgentMentionProvenance(audienceScope);
   const {audience, keepMentionedAgentsPinned} = useThreadAgentAudience({isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope});
-  const humanSuggestions = useMemo(()=>mentionCandidates.filter(person=>humanQuery!==null && person.displayName.toLowerCase().includes(humanQuery.query.toLowerCase())),[mentionCandidates,humanQuery]);
+  // Original useMentions ranking (exact > prefix > word > pubkey) and suggestion limit.
+  const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(mentionCandidates, humanQuery.query)
+    .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[mentionCandidates,humanQuery]);
   const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
   const channelLinks = useChannelLinks(useComposerChannelLinkSources());
