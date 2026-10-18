@@ -355,6 +355,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
  const mergeAction=publication?.host.git?.mergeProjectPullRequest&&!mergeIntentCorrupt&&!merged
    ?{onMerge:handleMerge,recheck:mergeIntent!==null}:undefined;
  // Original canReviewProjectPullRequest gates both Approve and "Request changes"; a fresh read decides.
+ // Like the original canRequestChanges, other composers get no secondary submit props at all.
  const canReview=Boolean(publication?.host.publish)&&canReviewProjectPullRequest(project,pullRequest,viewer);
  const approvalAction=publication?.host.publish&&viewer&&!approvalIntentCorrupt
    ?{canApprove:canReview&&!hasApprovedProjectPullRequest(pullRequest,viewer),recheck:approvalIntent!==null,onApprove:handleApprove}:undefined;
@@ -692,8 +693,10 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
       {publication?.host.publish?<div className="px-6 pb-6 pt-4" data-testid="project-pull-request-comment-composer">
         <ForumComposer className="border border-border/60 bg-background/45" disabled={isSending} isSending={isSending}
           members={members} profiles={profiles} onSubmit={(content,mentions,attachments,contentIncludesAttachments)=>handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments)}
-          onSecondarySubmit={canReview?(content,mentions,attachments,contentIncludesAttachments)=>handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments,{decision:"request-changes"}):undefined}
-          placeholder={t("projects.comment.placeholder")} secondarySubmitLabel={t("projects.review.requestChanges")}/>
+          placeholder={t("projects.comment.placeholder")}
+          {...(canReview?{secondarySubmitLabel:t("projects.review.requestChanges"),
+            onSecondarySubmit:(content:string,mentions:string[],attachments?:WebMessageAttachment[],contentIncludesAttachments?:boolean)=>
+              handleCommentSubmit(content,mentions,attachments,contentIncludesAttachments,{decision:"request-changes"})}:{})}/>
       </div>:null}
     </div>
   );
