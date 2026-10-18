@@ -3,8 +3,10 @@
 // row, expansion, filter/sort and browse layout; data/navigation are host seams.
 import * as React from "react";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
-import {ArrowUpDown,ChevronDown,ChevronRight,EllipsisVertical,Folder,Folders,Hash,ListMinus,Lock,Plus,Trash2} from "lucide-react";
-import {useBffClient,useUiT} from "../context";
+import {ArrowUpDown,ChevronDown,ChevronRight,EllipsisVertical,Folder,Folders,Hash,Link2,ListMinus,Lock,Plus,Trash2} from "lucide-react";
+import {toast} from "sonner";
+import {useBffClient,useClipboardWrite,useUiT} from "../context";
+import {projectShareLink} from "../projects/projectShareLinks";
 import {CreateActionKey} from "@client-kit/contracts";
 import {useCreateProject} from "../projects/useCreateProject";
 import {cn} from "../profile/buzz/shared/lib/cn";
@@ -39,7 +41,7 @@ export function SidebarProjectsSection(props:SidebarProjectsSectionProps){
   return <SidebarProjectsContent key={props.host.scopeKey} {...props}/>;
 }
 function SidebarProjectsContent({host,membership,channels,selectedProjectId,selectedChannelId,onSelectProject,onSelectChannel}:SidebarProjectsSectionProps){
-  const t=useUiT();const cache=useQueryClient();
+  const t=useUiT();const cache=useQueryClient();const copyText=useClipboardWrite();
   const [collapsed,setCollapsed]=React.useState(false);
   const [actionsOpen,setActionsOpen]=React.useState(false);
   const [browserOpen,setBrowserOpen]=React.useState(false);
@@ -100,6 +102,7 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
         const active=project.id===selectedProjectId;
         const childChannels=listProjectChildChannels(project).flatMap(binding=>{const channel=channelsById.get(binding.channelId);return channel?[channel]:[];});
         const expanded=childChannels.length>0&&(expansion[project.projectAddress]??false);
+        const shareLink=projectShareLink(project);
         const row=({onOpen:onDelete,pending=false}:{onOpen?:()=>void;pending?:boolean})=><><ContextMenu><ContextMenuTrigger asChild><SidebarMenuItem>
           <SidebarMenuButton className={cn("data-[active=true]:!bg-transparent data-[active=true]:font-normal data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-none data-[active=true]:hover:!bg-transparent data-[active=true]:hover:text-sidebar-foreground data-[active=true]:active:!bg-transparent",childChannels.length>0&&"pr-8")}
             data-testid={`sidebar-project-${project.dtag}`} isActive={active} onClick={()=>{void selectProject(project.id);}} tooltip={project.name} type="button">
@@ -112,6 +115,10 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
             disabled={pending} onClick={event=>{event.stopPropagation();onDelete();}} showOnHover type="button"><Trash2/></SidebarMenuAction>:null}
         </SidebarMenuItem></ContextMenuTrigger><ContextMenuContent><ContextMenuItem disabled={membership.pending||!addresses.has(project.projectAddress)}
           onSelect={()=>deferMenuAction(()=>{if(lifetime.active)void membership.removeProject(project.projectAddress).catch(()=>undefined);})}><ContextMenuIconSlot><ListMinus className="h-4 w-4"/></ContextMenuIconSlot><span>{t("sidebar.projects.remove")}</span></ContextMenuItem>
+          {/* Original row "Copy link": the project's buzz:// share link, hidden when it cannot be addressed. */}
+          {shareLink?<><ContextMenuSeparator/><ContextMenuItem data-testid={`sidebar-project-copy-link-${project.dtag}`}
+            onSelect={()=>deferMenuAction(()=>{void Promise.resolve().then(()=>copyText(shareLink)).then(()=>toast.success(t("video.linkCopied")),()=>toast.error(t("platform.profile.copyFailed")));})}>
+            <ContextMenuIconSlot><Link2 className="h-4 w-4"/></ContextMenuIconSlot><span>{t("buzz.copyLink")}</span></ContextMenuItem></>:null}
           {onDelete?<><ContextMenuSeparator/><ContextMenuItem className="text-destructive focus:text-destructive" data-testid={`sidebar-project-delete-menu-${project.dtag}`}
             disabled={pending} onSelect={()=>deferMenuAction(()=>{if(lifetime.active)onDelete();})}><ContextMenuIconSlot><Trash2 className="h-4 w-4"/></ContextMenuIconSlot><span>{t("projects.delete")}</span></ContextMenuItem></>:null}
         </ContextMenuContent></ContextMenu>

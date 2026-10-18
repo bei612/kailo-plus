@@ -529,6 +529,18 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     await click(ui.querySelector<HTMLButtonElement>('[data-testid="sidebar-project-channel-p-Real channel"]')!);expect(onChannel).toHaveBeenCalledWith(childId);
     await click(ui.querySelector<HTMLButtonElement>('[data-testid="sidebar-projects-section-label"]')!);expect(ui.querySelector('[data-testid="sidebar-project-p"]')).toBeNull();
   });
+  it("copies the original project share link from the row context menu",async()=>{
+    const writeText=vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+    const {ui}=await sidebar(host([project()]));
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="sidebar-project-p"]')).not.toBeNull());
+    await act(async()=>ui.querySelector('[data-testid="sidebar-project-p"]')!.closest("li")!.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:1,clientY:1})));
+    const item=document.querySelector<HTMLElement>('[data-testid="sidebar-project-copy-link-p"]')!;
+    expect(item).not.toBeNull();
+    await click(item);
+    await act(async()=>new Promise(resolve=>setTimeout(resolve,0)));
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^buzz:\/\//));
+  });
   it("does not retain a project after the authoritative directory refresh fails",async()=>{
     const h=host();const {ui,cache}=await sidebar(h);
     await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
