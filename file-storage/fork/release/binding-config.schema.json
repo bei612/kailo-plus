@@ -4,13 +4,21 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "nativePageUrl"
+    "nativePageUrl",
+    "client_id"
   ],
   "properties": {
     "nativePageUrl": {
       "type": "string",
       "minLength": 1,
       "description": "Exact native page entry URL; its origin must be one of the release nativePageOrigins and the deployment NATIVE_PAGE_ORIGINS."
+    },
+    "client_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "This binding's own adapter IdP client id. Core's adapter PEP, read-grant and native task callbacks identify the binding only by it (unique among non-DISABLED bindings); the adapter authenticates with it and the Agent-delivered oidc_client_secret."
     }
   }
 }
