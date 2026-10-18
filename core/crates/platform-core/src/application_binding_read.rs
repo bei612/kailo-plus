@@ -460,8 +460,10 @@ async fn bindable_releases(pool: &sqlx::PgPool) -> Result<Vec<Value>, Refusal> {
     .await?;
     rows.into_iter()
         .map(|(id, type_key, version, secrets)| {
-            Ok(json!({"componentReleaseId":id,"componentTypeKey":type_key,"version":version,
-                "secretSchema":bindable_secrets(&secrets)?}))
+            Ok(
+                json!({"componentReleaseId":id,"componentTypeKey":type_key,"version":version,
+                "secretSchema":bindable_secrets(&secrets)?}),
+            )
         })
         .collect()
 }
@@ -472,9 +474,11 @@ fn bindable_secrets(declared: &Value) -> Result<Vec<Value>, Refusal> {
         .ok_or_else(blocked)?
         .iter()
         .map(|secret| {
-            Ok(json!({"secretKey":text(secret,"secretKey").map_err(|_| blocked())?,
+            Ok(
+                json!({"secretKey":text(secret,"secretKey").map_err(|_| blocked())?,
                 "valueType":text(secret,"valueType").map_err(|_| blocked())?,
-                "lengthOrFormat":text(secret,"lengthOrFormat").map_err(|_| blocked())?}))
+                "lengthOrFormat":text(secret,"lengthOrFormat").map_err(|_| blocked())?}),
+            )
         })
         .collect()
 }

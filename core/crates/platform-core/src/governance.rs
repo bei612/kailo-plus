@@ -4683,7 +4683,8 @@ impl Governance {
         for old in revoked {
             self.invalidate(old).await;
         }
-        self.decide(actor, ae.id, &def, sem, &params, staged.as_ref()).await
+        self.decide(actor, ae.id, &def, sem, &params, staged.as_ref())
+            .await
     }
 
     /// 由 Core 自己打开（不经 BFF 语义命令）的一条 EVALUATING ActionExecution 的
@@ -4758,7 +4759,9 @@ impl Governance {
                     .map_err(|e| (e.into(), op))?;
                 let sem = Semantic::from_key(&def.action_key)
                     .ok_or((Refusal::Blocked(ReasonCode::CapabilityBlocked), op))?;
-                return self.decide(actor, existing.id, &def, sem, params, staged).await;
+                return self
+                    .decide(actor, existing.id, &def, sem, params, staged)
+                    .await;
             }
             ("ALLOWED", "NOT_DISPATCHED" | "UNKNOWN") => {
                 self.dispatch(existing.id).await;

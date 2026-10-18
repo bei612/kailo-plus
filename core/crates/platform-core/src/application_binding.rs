@@ -24,10 +24,10 @@ pub(crate) mod pep;
 mod projection;
 #[path = "application_binding_read.rs"]
 pub(crate) mod read;
-#[path = "application_binding_secret.rs"]
-pub(crate) mod secret;
 #[path = "application_read_grant.rs"]
 pub(crate) mod read_grant;
+#[path = "application_binding_secret.rs"]
+pub(crate) mod secret;
 
 pub(crate) const CREATE: &str = "application_binding.create";
 pub(crate) const DISABLE: &str = "application_binding.disable";
@@ -222,10 +222,7 @@ pub(crate) fn validate_params(params: &Params, creating: bool) -> Result<(), Ref
     Ok(())
 }
 
-async fn approved_release(
-    conn: &mut PgConnection,
-    request: &Requested,
-) -> Result<Value, Refusal> {
+async fn approved_release(conn: &mut PgConnection, request: &Requested) -> Result<Value, Refusal> {
     let row: Option<(Value, Value, String)> = sqlx::query_as(
         "select r.manifest,r.binding_config_schema,r.manifest_digest
          from catalog.component_release r join catalog.component_definition d

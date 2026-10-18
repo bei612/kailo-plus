@@ -97,12 +97,9 @@ fn validate_value(declared: &Value, value: &str) -> Result<(), Refusal> {
     let schema: Value = serde_json::from_str(format).map_err(|_| blocked())?;
     let fields = schema.as_object().ok_or_else(blocked)?;
     if fields.get("type").and_then(Value::as_str) != Some("string")
-        || fields.keys().any(|key| {
-            !matches!(
-                key.as_str(),
-                "type" | "minLength" | "maxLength" | "pattern"
-            )
-        })
+        || fields
+            .keys()
+            .any(|key| !matches!(key.as_str(), "type" | "minLength" | "maxLength" | "pattern"))
     {
         return Err(blocked());
     }
@@ -115,10 +112,7 @@ fn validate_value(declared: &Value, value: &str) -> Result<(), Refusal> {
 
 /// Pair each declaration with exactly one submitted value. Missing, extra or
 /// unknown keys are refused; nothing is written for a partial set.
-fn pair<'a>(
-    manifest: &'a Value,
-    staged: &'a Staged,
-) -> Result<Vec<(&'a str, &'a str)>, Refusal> {
+fn pair<'a>(manifest: &'a Value, staged: &'a Staged) -> Result<Vec<(&'a str, &'a str)>, Refusal> {
     let declared = manifest["secretSchema"].as_array().ok_or_else(blocked)?;
     if declared.len() != staged.0.len() {
         return Err(invalid());
@@ -163,7 +157,10 @@ pub(crate) async fn stage(
     .await?;
     let manifest = manifest.ok_or_else(blocked)?;
     let refs = references(
-        |key| g.secrets.tenant_locator(ae.tenant_id, &path(request.id, key)),
+        |key| {
+            g.secrets
+                .tenant_locator(ae.tenant_id, &path(request.id, key))
+        },
         &manifest,
     )?;
     let pairs = staged.map(|staged| pair(&manifest, staged)).transpose()?;
@@ -235,8 +232,12 @@ pub(super) fn frozen(
     }
     let prefix = format!("tenants/{}/", ae.tenant_id);
     for (reference, declaration) in refs.iter().zip(declared) {
-        exact(reference, &["secretKey", "locator", "version", "audience"], &[])
-            .map_err(|_| conflict())?;
+        exact(
+            reference,
+            &["secretKey", "locator", "version", "audience"],
+            &[],
+        )
+        .map_err(|_| conflict())?;
         let key = text(declaration, "secretKey").map_err(|_| blocked())?;
         let locator = text(reference, "locator").map_err(|_| conflict())?;
         if reference["secretKey"] != key
@@ -317,10 +318,16 @@ mod tests {
                 )
             ]),
         );
-        let values = staged(&[("oidc_client_secret", "abc123"), ("native_api_key", "0123456789")]);
+        let values = staged(&[
+            ("oidc_client_secret", "abc123"),
+            ("native_api_key", "0123456789"),
+        ]);
         assert_eq!(
             pair(&release, &values).unwrap(),
-            vec![("native_api_key", "0123456789"), ("oidc_client_secret", "abc123")]
+            vec![
+                ("native_api_key", "0123456789"),
+                ("oidc_client_secret", "abc123")
+            ]
         );
         for invalid in [
             staged(&[("native_api_key", "0123456789")]),
@@ -330,8 +337,14 @@ mod tests {
                 ("oidc_client_secret", "abc123"),
                 ("extra", "x"),
             ]),
-            staged(&[("native_api_key", "short"), ("oidc_client_secret", "abc123")]),
-            staged(&[("native_api_key", "0123456789"), ("oidc_client_secret", "not valid")]),
+            staged(&[
+                ("native_api_key", "short"),
+                ("oidc_client_secret", "abc123"),
+            ]),
+            staged(&[
+                ("native_api_key", "0123456789"),
+                ("oidc_client_secret", "not valid"),
+            ]),
         ] {
             assert!(pair(&release, &invalid).is_err());
         }
@@ -343,10 +356,7 @@ mod tests {
         ] {
             let mut odd = release.clone();
             odd["secretSchema"][0] = declaration("native_api_key", format);
-            assert!(matches!(
-                pair(&odd, &values),
-                Err(Refusal::Blocked(_))
-            ));
+            assert!(matches!(pair(&odd, &values), Err(Refusal::Blocked(_))));
         }
         let mut binary = release.clone();
         binary["secretSchema"][0]["valueType"] = json!("BYTES");
