@@ -1427,6 +1427,17 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_permission: Option<ResourceGrantPermission>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_agent: Option<HuddleAgentClass>,
+
+    /// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+    /// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_start: Option<HuddleStartClass>,
+
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
 
@@ -2246,6 +2257,46 @@ pub enum ResourceGrantPermission {
     Read,
 }
 
+/// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+/// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+/// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+/// Agent。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleAgentClass {
+    pub agent_installation_resource_id: String,
+}
+
+/// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+/// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+/// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+/// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+/// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+/// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleStartClass {
+    /// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+    /// ChannelAgentBinding 且本人有 execute 的 Installation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_installation_resource_ids: Option<Vec<String>>,
+
+    /// 原 buildHuddleChannelName 生成的临时频道名
+    pub channel_name: String,
+
+    /// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creator_pubkey: Option<String>,
+
+    /// 父私聊（ConversationBuzzBinding id）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_conversation_id: Option<String>,
+
+    /// 父 Workspace；须等于 ActionCommand.workspaceId
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+}
+
 /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 ///
 /// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
@@ -2618,6 +2669,10 @@ pub struct ActionSubmission {
     pub document_launch: Option<LaunchDescriptorClass>,
 
     pub gate_state: ActionGateState,
+
+    /// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invitation: Option<InvitationClass>,
@@ -7010,6 +7065,219 @@ pub struct FollowedPrincipalRequest {
     pub version: i64,
 }
 
+/// POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
+/// ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
+/// ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleAnnouncementView {
+    /// 48106 事件 ID；尽力发布
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guidelines_event_id: Option<String>,
+
+    /// Relay 已接受或回读到 48100
+    pub started_delivered: bool,
+
+    /// 48100 事件 ID
+    pub started_event_id: String,
+}
+
+/// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+/// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleLifecycleEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admission_id: Option<String>,
+
+    /// 事件 created_at（Unix 秒）
+    pub created_at: i64,
+
+    pub ephemeral_channel_id: String,
+
+    pub event_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<String>,
+
+    pub kind: i64,
+
+    /// 48101/48102 的 p 标签
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub participant_pubkey: Option<String>,
+
+    /// 签名者公钥
+    pub pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roster_revision: Option<i64>,
+}
+
+/// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
+/// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HuddleLifecyclePage {
+    pub events: Vec<EventElement>,
+
+    /// Relay 48104 存活查询是否返回该会话
+    pub live: bool,
+}
+
+/// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+/// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventElement {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admission_id: Option<String>,
+
+    /// 事件 created_at（Unix 秒）
+    pub created_at: i64,
+
+    pub ephemeral_channel_id: String,
+
+    pub event_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<String>,
+
+    pub kind: i64,
+
+    /// 48101/48102 的 p 标签
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub participant_pubkey: Option<String>,
+
+    /// 签名者公钥
+    pub pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roster_revision: Option<i64>,
+}
+
+/// GET /api/v1/huddles：一个父 Workspace 或父私聊中本人可见、尚未结束的 Huddle（PROVISIONING 或 ACTIVE），按创建时间倒序。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HuddlePage {
+    pub items: Vec<HuddlePageItem>,
+}
+
+/// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+/// Relay 的 48101–48104 呈现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddlePageItem {
+    pub agent_installation_resource_ids: Vec<String>,
+
+    /// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+    pub channel_id: String,
+
+    pub channel_name: String,
+
+    pub created_at: String,
+
+    /// 临时频道 created_by：本人发起会话的 HUMAN 公钥
+    pub creator_pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
+
+    pub huddle_id: String,
+
+    pub initiator_principal_id: String,
+
+    /// 发起该 Huddle 的 huddle.start operation
+    pub operation_id: String,
+
+    pub parent_channel_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_conversation_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+
+    pub state: HuddleState,
+
+    pub version: i64,
+}
+
+/// HuddleBuzzBinding 状态（03 §2、DD-125(3)）：PROVISIONING 为 CONTROL 9007/9000 投影尚未回读一致（结果不明保留并按
+/// Channel UUID 对账）；ACTIVE 为投影回读一致；ENDED 为观察到 48103 或临时频道已归档，终态、不复用；ERROR 为 Relay
+/// 确定拒绝投影，不再签发。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum HuddleState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "ENDED")]
+    Ended,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+}
+
+/// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+/// Relay 的 48101–48104 呈现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleView {
+    pub agent_installation_resource_ids: Vec<String>,
+
+    /// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+    pub channel_id: String,
+
+    pub channel_name: String,
+
+    pub created_at: String,
+
+    /// 临时频道 created_by：本人发起会话的 HUMAN 公钥
+    pub creator_pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
+
+    pub huddle_id: String,
+
+    pub initiator_principal_id: String,
+
+    /// 发起该 Huddle 的 huddle.start operation
+    pub operation_id: String,
+
+    pub parent_channel_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_conversation_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+
+    pub state: HuddleState,
+
+    pub version: i64,
+}
+
+/// GET /api/v1/huddles/voice：Web Huddle
+/// 的转写与朗读是否可用（DD-125(3)、V-SCN-160）。不可用时通话、加入、发言、收听与离开不受影响。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HuddleVoiceView {
+    pub speech: HuddleVoiceAvailability,
+
+    pub transcription: HuddleVoiceAvailability,
+}
+
+/// Web Huddle 转写或朗读的可用性（DD-125(3)、V-SCN-160）：UNAVAILABLE 为 Huddle
+/// 语音推理服务未部署、超出部署登记的并发上界或不可用，此时按原版“仅语音模式”显示不可用而通话照常。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum HuddleVoiceAvailability {
+    #[serde(rename = "AVAILABLE")]
+    Available,
+
+    #[serde(rename = "UNAVAILABLE")]
+    Unavailable,
+}
+
 /// POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
 /// 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
 /// admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
@@ -7433,6 +7701,17 @@ pub struct CommandClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_permission: Option<ResourceGrantPermission>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_agent: Option<HuddleAgentClass>,
+
+    /// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+    /// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_start: Option<HuddleStartClass>,
+
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
 
@@ -7784,6 +8063,10 @@ pub struct SubmissionClass {
     pub document_launch: Option<LaunchDescriptorClass>,
 
     pub gate_state: ActionGateState,
+
+    /// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invitation: Option<InvitationClass>,
@@ -11532,6 +11815,46 @@ pub enum PublishRestrictionKind {
 
     #[serde(rename = "TIMED_OUT")]
     TimedOut,
+}
+
+/// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+/// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+/// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+/// Agent。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleAgentInput {
+    pub agent_installation_resource_id: String,
+}
+
+/// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+/// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+/// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+/// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+/// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+/// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleStartInput {
+    /// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+    /// ChannelAgentBinding 且本人有 execute 的 Installation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_installation_resource_ids: Option<Vec<String>>,
+
+    /// 原 buildHuddleChannelName 生成的临时频道名
+    pub channel_name: String,
+
+    /// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creator_pubkey: Option<String>,
+
+    /// 父私聊（ConversationBuzzBinding id）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_conversation_id: Option<String>,
+
+    /// 父 Workspace；须等于 ActionCommand.workspaceId
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
 }
 
 /// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。

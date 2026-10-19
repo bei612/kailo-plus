@@ -355,6 +355,24 @@
 //    followedPrincipalRequest, err := UnmarshalFollowedPrincipalRequest(bytes)
 //    bytes, err = followedPrincipalRequest.Marshal()
 //
+//    huddleAnnouncementView, err := UnmarshalHuddleAnnouncementView(bytes)
+//    bytes, err = huddleAnnouncementView.Marshal()
+//
+//    huddleLifecycleEvent, err := UnmarshalHuddleLifecycleEvent(bytes)
+//    bytes, err = huddleLifecycleEvent.Marshal()
+//
+//    huddleLifecyclePage, err := UnmarshalHuddleLifecyclePage(bytes)
+//    bytes, err = huddleLifecyclePage.Marshal()
+//
+//    huddlePage, err := UnmarshalHuddlePage(bytes)
+//    bytes, err = huddlePage.Marshal()
+//
+//    huddleView, err := UnmarshalHuddleView(bytes)
+//    bytes, err = huddleView.Marshal()
+//
+//    huddleVoiceView, err := UnmarshalHuddleVoiceView(bytes)
+//    bytes, err = huddleVoiceView.Marshal()
+//
 //    invitationRedemptionView, err := UnmarshalInvitationRedemptionView(bytes)
 //    bytes, err = invitationRedemptionView.Marshal()
 //
@@ -711,6 +729,12 @@
 //
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
+//
+//    huddleAgentInput, err := UnmarshalHuddleAgentInput(bytes)
+//    bytes, err = huddleAgentInput.Marshal()
+//
+//    huddleStartInput, err := UnmarshalHuddleStartInput(bytes)
+//    bytes, err = huddleStartInput.Marshal()
 //
 //    resolvedIdentity, err := UnmarshalResolvedIdentity(bytes)
 //    bytes, err = resolvedIdentity.Marshal()
@@ -2072,6 +2096,66 @@ func (r *FollowedPrincipalRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalHuddleAnnouncementView(data []byte) (HuddleAnnouncementView, error) {
+	var r HuddleAnnouncementView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleAnnouncementView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleLifecycleEvent(data []byte) (HuddleLifecycleEvent, error) {
+	var r HuddleLifecycleEvent
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleLifecycleEvent) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleLifecyclePage(data []byte) (HuddleLifecyclePage, error) {
+	var r HuddleLifecyclePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleLifecyclePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddlePage(data []byte) (HuddlePage, error) {
+	var r HuddlePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddlePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleView(data []byte) (HuddleView, error) {
+	var r HuddleView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleVoiceView(data []byte) (HuddleVoiceView, error) {
+	var r HuddleVoiceView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleVoiceView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalInvitationRedemptionView(data []byte) (InvitationRedemptionView, error) {
 	var r InvitationRedemptionView
 	err := json.Unmarshal(data, &r)
@@ -3259,6 +3343,26 @@ func UnmarshalErrorBody(data []byte) (ErrorBody, error) {
 }
 
 func (r *ErrorBody) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleAgentInput(data []byte) (HuddleAgentInput, error) {
+	var r HuddleAgentInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleAgentInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalHuddleStartInput(data []byte) (HuddleStartInput, error) {
+	var r HuddleStartInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *HuddleStartInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4529,6 +4633,11 @@ type ActionCommand struct {
 	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
 	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
 	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
+	HuddleAgent     *HuddleAgentClass        `json:"huddleAgent,omitempty"`
+	// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+	// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+	HuddleID    *string           `json:"huddleId,omitempty"`
+	HuddleStart *HuddleStartClass `json:"huddleStart,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
@@ -4876,6 +4985,34 @@ type ScopeElement struct {
 	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
 }
 
+// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+// Agent。
+type HuddleAgentClass struct {
+	AgentInstallationResourceID string `json:"agentInstallationResourceId"`
+}
+
+// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+type HuddleStartClass struct {
+	// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+	// ChannelAgentBinding 且本人有 execute 的 Installation
+	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds,omitempty"`
+	// 原 buildHuddleChannelName 生成的临时频道名
+	ChannelName string `json:"channelName"`
+	// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+	CreatorPubkey *string `json:"creatorPubkey,omitempty"`
+	// 父私聊（ConversationBuzzBinding id）
+	ParentConversationID *string `json:"parentConversationId,omitempty"`
+	// 父 Workspace；须等于 ActionCommand.workspaceId
+	ParentWorkspaceID *string `json:"parentWorkspaceId,omitempty"`
+}
+
 // 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 //
 // 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
@@ -5044,12 +5181,14 @@ type ActionSubmission struct {
 	DispatchState      ActionDispatchState    `json:"dispatchState"`
 	DocumentLaunch     *LaunchDescriptorClass `json:"documentLaunch,omitempty"`
 	GateState          ActionGateState        `json:"gateState"`
-	Invitation         *InvitationClass       `json:"invitation,omitempty"`
-	OperationID        string                 `json:"operationId"`
-	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
-	Reason             *ReasonCode            `json:"reason,omitempty"`
-	WebhookSecret      *WebhookSecretClass    `json:"webhookSecret,omitempty"`
-	WorkflowID         *string                `json:"workflowId,omitempty"`
+	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+	HuddleID          *string             `json:"huddleId,omitempty"`
+	Invitation        *InvitationClass    `json:"invitation,omitempty"`
+	OperationID       string              `json:"operationId"`
+	ProtocolSessionID *string             `json:"protocolSessionId,omitempty"`
+	Reason            *ReasonCode         `json:"reason,omitempty"`
+	WebhookSecret     *WebhookSecretClass `json:"webhookSecret,omitempty"`
+	WorkflowID        *string             `json:"workflowId,omitempty"`
 }
 
 // tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
@@ -6847,6 +6986,116 @@ type FollowedPrincipalRequest struct {
 	Version  int64  `json:"version"`
 }
 
+// POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
+// ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
+// ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
+type HuddleAnnouncementView struct {
+	// 48106 事件 ID；尽力发布
+	GuidelinesEventID *string `json:"guidelinesEventId,omitempty"`
+	// Relay 已接受或回读到 48100
+	StartedDelivered bool `json:"startedDelivered"`
+	// 48100 事件 ID
+	StartedEventID string `json:"startedEventId"`
+}
+
+// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+type HuddleLifecycleEvent struct {
+	AdmissionID *string `json:"admissionId,omitempty"`
+	// 事件 created_at（Unix 秒）
+	CreatedAt          int64   `json:"createdAt"`
+	EphemeralChannelID string  `json:"ephemeralChannelId"`
+	EventID            string  `json:"eventId"`
+	Generation         *string `json:"generation,omitempty"`
+	Kind               int64   `json:"kind"`
+	// 48101/48102 的 p 标签
+	ParticipantPubkey *string `json:"participantPubkey,omitempty"`
+	// 签名者公钥
+	Pubkey         string `json:"pubkey"`
+	RosterRevision *int64 `json:"rosterRevision,omitempty"`
+}
+
+// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
+// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
+type HuddleLifecyclePage struct {
+	Events []EventElement `json:"events"`
+	// Relay 48104 存活查询是否返回该会话
+	Live bool `json:"live"`
+}
+
+// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+type EventElement struct {
+	AdmissionID *string `json:"admissionId,omitempty"`
+	// 事件 created_at（Unix 秒）
+	CreatedAt          int64   `json:"createdAt"`
+	EphemeralChannelID string  `json:"ephemeralChannelId"`
+	EventID            string  `json:"eventId"`
+	Generation         *string `json:"generation,omitempty"`
+	Kind               int64   `json:"kind"`
+	// 48101/48102 的 p 标签
+	ParticipantPubkey *string `json:"participantPubkey,omitempty"`
+	// 签名者公钥
+	Pubkey         string `json:"pubkey"`
+	RosterRevision *int64 `json:"rosterRevision,omitempty"`
+}
+
+// GET /api/v1/huddles：一个父 Workspace 或父私聊中本人可见、尚未结束的 Huddle（PROVISIONING 或 ACTIVE），按创建时间倒序。
+type HuddlePage struct {
+	Items []HuddlePageItem `json:"items"`
+}
+
+// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+// Relay 的 48101–48104 呈现。
+type HuddlePageItem struct {
+	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds"`
+	// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+	ChannelID   string    `json:"channelId"`
+	ChannelName string    `json:"channelName"`
+	CreatedAt   time.Time `json:"createdAt"`
+	// 临时频道 created_by：本人发起会话的 HUMAN 公钥
+	CreatorPubkey        string     `json:"creatorPubkey"`
+	EndedAt              *time.Time `json:"endedAt,omitempty"`
+	HuddleID             string     `json:"huddleId"`
+	InitiatorPrincipalID string     `json:"initiatorPrincipalId"`
+	// 发起该 Huddle 的 huddle.start operation
+	OperationID          string      `json:"operationId"`
+	ParentChannelID      string      `json:"parentChannelId"`
+	ParentConversationID *string     `json:"parentConversationId,omitempty"`
+	ParentWorkspaceID    *string     `json:"parentWorkspaceId,omitempty"`
+	State                HuddleState `json:"state"`
+	Version              int64       `json:"version"`
+}
+
+// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+// Relay 的 48101–48104 呈现。
+type HuddleView struct {
+	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds"`
+	// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+	ChannelID   string    `json:"channelId"`
+	ChannelName string    `json:"channelName"`
+	CreatedAt   time.Time `json:"createdAt"`
+	// 临时频道 created_by：本人发起会话的 HUMAN 公钥
+	CreatorPubkey        string     `json:"creatorPubkey"`
+	EndedAt              *time.Time `json:"endedAt,omitempty"`
+	HuddleID             string     `json:"huddleId"`
+	InitiatorPrincipalID string     `json:"initiatorPrincipalId"`
+	// 发起该 Huddle 的 huddle.start operation
+	OperationID          string      `json:"operationId"`
+	ParentChannelID      string      `json:"parentChannelId"`
+	ParentConversationID *string     `json:"parentConversationId,omitempty"`
+	ParentWorkspaceID    *string     `json:"parentWorkspaceId,omitempty"`
+	State                HuddleState `json:"state"`
+	Version              int64       `json:"version"`
+}
+
+// GET /api/v1/huddles/voice：Web Huddle
+// 的转写与朗读是否可用（DD-125(3)、V-SCN-160）。不可用时通话、加入、发言、收听与离开不受影响。
+type HuddleVoiceView struct {
+	Speech        HuddleVoiceAvailability `json:"speech"`
+	Transcription HuddleVoiceAvailability `json:"transcription"`
+}
+
 // POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
 // 的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
 // admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
@@ -7064,6 +7313,11 @@ type CommandClass struct {
 	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
 	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
 	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
+	HuddleAgent     *HuddleAgentClass        `json:"huddleAgent,omitempty"`
+	// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+	// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+	HuddleID    *string           `json:"huddleId,omitempty"`
+	HuddleStart *HuddleStartClass `json:"huddleStart,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
@@ -7281,12 +7535,14 @@ type SubmissionClass struct {
 	DispatchState      ActionDispatchState    `json:"dispatchState"`
 	DocumentLaunch     *LaunchDescriptorClass `json:"documentLaunch,omitempty"`
 	GateState          ActionGateState        `json:"gateState"`
-	Invitation         *InvitationClass       `json:"invitation,omitempty"`
-	OperationID        string                 `json:"operationId"`
-	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
-	Reason             *ReasonCode            `json:"reason,omitempty"`
-	WebhookSecret      *WebhookSecretClass    `json:"webhookSecret,omitempty"`
-	WorkflowID         *string                `json:"workflowId,omitempty"`
+	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+	HuddleID          *string             `json:"huddleId,omitempty"`
+	Invitation        *InvitationClass    `json:"invitation,omitempty"`
+	OperationID       string              `json:"operationId"`
+	ProtocolSessionID *string             `json:"protocolSessionId,omitempty"`
+	Reason            *ReasonCode         `json:"reason,omitempty"`
+	WebhookSecret     *WebhookSecretClass `json:"webhookSecret,omitempty"`
+	WorkflowID        *string             `json:"workflowId,omitempty"`
 }
 
 // Original HUMAN synchronous application read completion, authenticated by its binding
@@ -9229,6 +9485,34 @@ type PublishRestriction struct {
 	Kind PublishRestrictionKind `json:"kind"`
 	// TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省
 	Until *string `json:"until,omitempty"`
+}
+
+// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+// Agent。
+type HuddleAgentInput struct {
+	AgentInstallationResourceID string `json:"agentInstallationResourceId"`
+}
+
+// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+type HuddleStartInput struct {
+	// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+	// ChannelAgentBinding 且本人有 execute 的 Installation
+	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds,omitempty"`
+	// 原 buildHuddleChannelName 生成的临时频道名
+	ChannelName string `json:"channelName"`
+	// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+	CreatorPubkey *string `json:"creatorPubkey,omitempty"`
+	// 父私聊（ConversationBuzzBinding id）
+	ParentConversationID *string `json:"parentConversationId,omitempty"`
+	// 父 Workspace；须等于 ActionCommand.workspaceId
+	ParentWorkspaceID *string `json:"parentWorkspaceId,omitempty"`
 }
 
 // BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
@@ -11191,6 +11475,27 @@ const (
 	Unverifiable                        EvidenceUnavailableReason = "UNVERIFIABLE"
 )
 
+// HuddleBuzzBinding 状态（03 §2、DD-125(3)）：PROVISIONING 为 CONTROL 9007/9000 投影尚未回读一致（结果不明保留并按
+// Channel UUID 对账）；ACTIVE 为投影回读一致；ENDED 为观察到 48103 或临时频道已归档，终态、不复用；ERROR 为 Relay
+// 确定拒绝投影，不再签发。
+type HuddleState string
+
+const (
+	Ended                   HuddleState = "ENDED"
+	HuddleStateACTIVE       HuddleState = "ACTIVE"
+	HuddleStateERROR        HuddleState = "ERROR"
+	HuddleStatePROVISIONING HuddleState = "PROVISIONING"
+)
+
+// Web Huddle 转写或朗读的可用性（DD-125(3)、V-SCN-160）：UNAVAILABLE 为 Huddle
+// 语音推理服务未部署、超出部署登记的并发上界或不可用，此时按原版“仅语音模式”显示不可用而通话照常。
+type HuddleVoiceAvailability string
+
+const (
+	HuddleVoiceAvailabilityAVAILABLE   HuddleVoiceAvailability = "AVAILABLE"
+	HuddleVoiceAvailabilityUNAVAILABLE HuddleVoiceAvailability = "UNAVAILABLE"
+)
+
 // TenantMembership 状态机。REVOKING 期间必须立即拒绝新动作，对账完成后才进 REVOKED（.design/10 §4）。
 type TenantMembershipState string
 
@@ -11495,8 +11800,8 @@ const (
 type UsageSectionState string
 
 const (
-	Available                       UsageSectionState = "AVAILABLE"
 	TenantScopeOnly                 UsageSectionState = "TENANT_SCOPE_ONLY"
+	UsageSectionStateAVAILABLE      UsageSectionState = "AVAILABLE"
 	UsageSectionStateNOTPROVISIONED UsageSectionState = "NOT_PROVISIONED"
 	UsageSectionStateUNAVAILABLE    UsageSectionState = "UNAVAILABLE"
 )

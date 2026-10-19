@@ -118,6 +118,12 @@
 //     final discoverableWorkspacePage = discoverableWorkspacePageFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final followedPrincipalRequest = followedPrincipalRequestFromJson(jsonString);
+//     final huddleAnnouncementView = huddleAnnouncementViewFromJson(jsonString);
+//     final huddleLifecycleEvent = huddleLifecycleEventFromJson(jsonString);
+//     final huddleLifecyclePage = huddleLifecyclePageFromJson(jsonString);
+//     final huddlePage = huddlePageFromJson(jsonString);
+//     final huddleView = huddleViewFromJson(jsonString);
+//     final huddleVoiceView = huddleVoiceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
 //     final issuedInvitation = issuedInvitationFromJson(jsonString);
@@ -237,6 +243,8 @@
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
 //     final documentLaunchDescriptor = documentLaunchDescriptorFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
+//     final huddleAgentInput = huddleAgentInputFromJson(jsonString);
+//     final huddleStartInput = huddleStartInputFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
 //     final nativeDocumentSelection = nativeDocumentSelectionFromJson(jsonString);
@@ -1037,6 +1045,40 @@ FollowedPrincipalRequest followedPrincipalRequestFromJson(String str) =>
 String followedPrincipalRequestToJson(FollowedPrincipalRequest data) =>
     json.encode(data.toJson());
 
+HuddleAnnouncementView huddleAnnouncementViewFromJson(String str) =>
+    HuddleAnnouncementView.fromJson(json.decode(str));
+
+String huddleAnnouncementViewToJson(HuddleAnnouncementView data) =>
+    json.encode(data.toJson());
+
+HuddleLifecycleEvent huddleLifecycleEventFromJson(String str) =>
+    HuddleLifecycleEvent.fromJson(json.decode(str));
+
+String huddleLifecycleEventToJson(HuddleLifecycleEvent data) =>
+    json.encode(data.toJson());
+
+HuddleLifecyclePage huddleLifecyclePageFromJson(String str) =>
+    HuddleLifecyclePage.fromJson(json.decode(str));
+
+String huddleLifecyclePageToJson(HuddleLifecyclePage data) =>
+    json.encode(data.toJson());
+
+HuddlePage huddlePageFromJson(String str) =>
+    HuddlePage.fromJson(json.decode(str));
+
+String huddlePageToJson(HuddlePage data) => json.encode(data.toJson());
+
+HuddleView huddleViewFromJson(String str) =>
+    HuddleView.fromJson(json.decode(str));
+
+String huddleViewToJson(HuddleView data) => json.encode(data.toJson());
+
+HuddleVoiceView huddleVoiceViewFromJson(String str) =>
+    HuddleVoiceView.fromJson(json.decode(str));
+
+String huddleVoiceViewToJson(HuddleVoiceView data) =>
+    json.encode(data.toJson());
+
 InvitationRedemptionView invitationRedemptionViewFromJson(String str) =>
     InvitationRedemptionView.fromJson(json.decode(str));
 
@@ -1753,6 +1795,18 @@ String documentLaunchDescriptorToJson(DocumentLaunchDescriptor data) =>
 ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
 
 String errorBodyToJson(ErrorBody data) => json.encode(data.toJson());
+
+HuddleAgentInput huddleAgentInputFromJson(String str) =>
+    HuddleAgentInput.fromJson(json.decode(str));
+
+String huddleAgentInputToJson(HuddleAgentInput data) =>
+    json.encode(data.toJson());
+
+HuddleStartInput huddleStartInputFromJson(String str) =>
+    HuddleStartInput.fromJson(json.decode(str));
+
+String huddleStartInputToJson(HuddleStartInput data) =>
+    json.encode(data.toJson());
 
 ResolvedIdentity resolvedIdentityFromJson(String str) =>
     ResolvedIdentity.fromJson(json.decode(str));
@@ -4610,6 +4664,12 @@ class ActionCommand {
   ///仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
   ///授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
   final ResourceGrantPermission? grantPermission;
+  final HuddleAgentClass? huddleAgent;
+
+  ///仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+  ///HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+  final String? huddleId;
+  final HuddleStartClass? huddleStart;
 
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
@@ -4724,6 +4784,9 @@ class ActionCommand {
     this.executorInstallationResourceId,
     this.explicitConfirmation,
     this.grantPermission,
+    this.huddleAgent,
+    this.huddleId,
+    this.huddleStart,
     required this.idempotencyKey,
     this.invitationId,
     this.llmRouteCreate,
@@ -4808,6 +4871,13 @@ class ActionCommand {
     grantPermission: json["grantPermission"] == null
         ? null
         : resourceGrantPermissionValues.map[json["grantPermission"]]!,
+    huddleAgent: json["huddleAgent"] == null
+        ? null
+        : HuddleAgentClass.fromJson(json["huddleAgent"]),
+    huddleId: json["huddleId"],
+    huddleStart: json["huddleStart"] == null
+        ? null
+        : HuddleStartClass.fromJson(json["huddleStart"]),
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     llmRouteCreate: json["llmRouteCreate"] == null
@@ -4887,6 +4957,9 @@ class ActionCommand {
     "executorInstallationResourceId": executorInstallationResourceId,
     "explicitConfirmation": explicitConfirmation,
     "grantPermission": resourceGrantPermissionValues.reverse[grantPermission],
+    "huddleAgent": huddleAgent?.toJson(),
+    "huddleId": huddleId,
+    "huddleStart": huddleStart?.toJson(),
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
@@ -6126,6 +6199,80 @@ final resourceGrantPermissionValues = EnumValues({
   "read": ResourceGrantPermission.READ,
 });
 
+///仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+///给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+///CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+///Agent。
+class HuddleAgentClass {
+  final String agentInstallationResourceId;
+
+  HuddleAgentClass({required this.agentInstallationResourceId});
+
+  factory HuddleAgentClass.fromJson(Map<String, dynamic> json) =>
+      HuddleAgentClass(
+        agentInstallationResourceId: json["agentInstallationResourceId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"agentInstallationResourceId": agentInstallationResourceId});
+}
+
+///仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+///parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+///预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+///9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+///Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+///公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+class HuddleStartClass {
+  ///原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+  ///ChannelAgentBinding 且本人有 execute 的 Installation
+  final List<String>? agentInstallationResourceIds;
+
+  ///原 buildHuddleChannelName 生成的临时频道名
+  final String channelName;
+
+  ///64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+  final String? creatorPubkey;
+
+  ///父私聊（ConversationBuzzBinding id）
+  final String? parentConversationId;
+
+  ///父 Workspace；须等于 ActionCommand.workspaceId
+  final String? parentWorkspaceId;
+
+  HuddleStartClass({
+    this.agentInstallationResourceIds,
+    required this.channelName,
+    this.creatorPubkey,
+    this.parentConversationId,
+    this.parentWorkspaceId,
+  });
+
+  factory HuddleStartClass.fromJson(Map<String, dynamic> json) =>
+      HuddleStartClass(
+        agentInstallationResourceIds:
+            json["agentInstallationResourceIds"] == null
+            ? null
+            : List<String>.from(
+                json["agentInstallationResourceIds"]!.map((x) => x),
+              ),
+        channelName: json["channelName"],
+        creatorPubkey: json["creatorPubkey"],
+        parentConversationId: json["parentConversationId"],
+        parentWorkspaceId: json["parentWorkspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentInstallationResourceIds": agentInstallationResourceIds == null
+        ? null
+        : List<dynamic>.from(agentInstallationResourceIds!.map((x) => x)),
+    "channelName": channelName,
+    "creatorPubkey": creatorPubkey,
+    "parentConversationId": parentConversationId,
+    "parentWorkspaceId": parentWorkspaceId,
+  });
+}
+
 ///仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
 ///
 ///受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
@@ -6687,6 +6834,9 @@ class ActionSubmission {
   final ActionDispatchState dispatchState;
   final LaunchDescriptorClass? documentLaunch;
   final ActionGateState gateState;
+
+  ///仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+  final String? huddleId;
   final InvitationClass? invitation;
   final String operationId;
   final String? protocolSessionId;
@@ -6701,6 +6851,7 @@ class ActionSubmission {
     required this.dispatchState,
     this.documentLaunch,
     required this.gateState,
+    this.huddleId,
     this.invitation,
     required this.operationId,
     this.protocolSessionId,
@@ -6719,6 +6870,7 @@ class ActionSubmission {
             ? null
             : LaunchDescriptorClass.fromJson(json["documentLaunch"]),
         gateState: actionGateStateValues.map[json["gateState"]]!,
+        huddleId: json["huddleId"],
         invitation: json["invitation"] == null
             ? null
             : InvitationClass.fromJson(json["invitation"]),
@@ -6740,6 +6892,7 @@ class ActionSubmission {
     "dispatchState": actionDispatchStateValues.reverse[dispatchState],
     "documentLaunch": documentLaunch?.toJson(),
     "gateState": actionGateStateValues.reverse[gateState],
+    "huddleId": huddleId,
     "invitation": invitation?.toJson(),
     "operationId": operationId,
     "protocolSessionId": protocolSessionId,
@@ -14137,6 +14290,394 @@ class FollowedPrincipalRequest {
       _stripNulls({"followed": followed, "pubkey": pubkey, "version": version});
 }
 
+///POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
+///ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
+///ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
+class HuddleAnnouncementView {
+  ///48106 事件 ID；尽力发布
+  final String? guidelinesEventId;
+
+  ///Relay 已接受或回读到 48100
+  final bool startedDelivered;
+
+  ///48100 事件 ID
+  final String startedEventId;
+
+  HuddleAnnouncementView({
+    this.guidelinesEventId,
+    required this.startedDelivered,
+    required this.startedEventId,
+  });
+
+  factory HuddleAnnouncementView.fromJson(Map<String, dynamic> json) =>
+      HuddleAnnouncementView(
+        guidelinesEventId: json["guidelinesEventId"],
+        startedDelivered: json["startedDelivered"],
+        startedEventId: json["startedEventId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "guidelinesEventId": guidelinesEventId,
+    "startedDelivered": startedDelivered,
+    "startedEventId": startedEventId,
+  });
+}
+
+///父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+///只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+class HuddleLifecycleEvent {
+  final String? admissionId;
+
+  ///事件 created_at（Unix 秒）
+  final int createdAt;
+  final String ephemeralChannelId;
+  final String eventId;
+  final String? generation;
+  final int kind;
+
+  ///48101/48102 的 p 标签
+  final String? participantPubkey;
+
+  ///签名者公钥
+  final String pubkey;
+  final int? rosterRevision;
+
+  HuddleLifecycleEvent({
+    this.admissionId,
+    required this.createdAt,
+    required this.ephemeralChannelId,
+    required this.eventId,
+    this.generation,
+    required this.kind,
+    this.participantPubkey,
+    required this.pubkey,
+    this.rosterRevision,
+  });
+
+  factory HuddleLifecycleEvent.fromJson(Map<String, dynamic> json) =>
+      HuddleLifecycleEvent(
+        admissionId: json["admissionId"],
+        createdAt: json["createdAt"],
+        ephemeralChannelId: json["ephemeralChannelId"],
+        eventId: json["eventId"],
+        generation: json["generation"],
+        kind: json["kind"],
+        participantPubkey: json["participantPubkey"],
+        pubkey: json["pubkey"],
+        rosterRevision: json["rosterRevision"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admissionId": admissionId,
+    "createdAt": createdAt,
+    "ephemeralChannelId": ephemeralChannelId,
+    "eventId": eventId,
+    "generation": generation,
+    "kind": kind,
+    "participantPubkey": participantPubkey,
+    "pubkey": pubkey,
+    "rosterRevision": rosterRevision,
+  });
+}
+
+///GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
+///合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
+class HuddleLifecyclePage {
+  final List<EventElement> events;
+
+  ///Relay 48104 存活查询是否返回该会话
+  final bool live;
+
+  HuddleLifecyclePage({required this.events, required this.live});
+
+  factory HuddleLifecyclePage.fromJson(Map<String, dynamic> json) =>
+      HuddleLifecyclePage(
+        events: List<EventElement>.from(
+          json["events"].map((x) => EventElement.fromJson(x)),
+        ),
+        live: json["live"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "events": List<dynamic>.from(events.map((x) => x.toJson())),
+    "live": live,
+  });
+}
+
+///父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
+///只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
+class EventElement {
+  final String? admissionId;
+
+  ///事件 created_at（Unix 秒）
+  final int createdAt;
+  final String ephemeralChannelId;
+  final String eventId;
+  final String? generation;
+  final int kind;
+
+  ///48101/48102 的 p 标签
+  final String? participantPubkey;
+
+  ///签名者公钥
+  final String pubkey;
+  final int? rosterRevision;
+
+  EventElement({
+    this.admissionId,
+    required this.createdAt,
+    required this.ephemeralChannelId,
+    required this.eventId,
+    this.generation,
+    required this.kind,
+    this.participantPubkey,
+    required this.pubkey,
+    this.rosterRevision,
+  });
+
+  factory EventElement.fromJson(Map<String, dynamic> json) => EventElement(
+    admissionId: json["admissionId"],
+    createdAt: json["createdAt"],
+    ephemeralChannelId: json["ephemeralChannelId"],
+    eventId: json["eventId"],
+    generation: json["generation"],
+    kind: json["kind"],
+    participantPubkey: json["participantPubkey"],
+    pubkey: json["pubkey"],
+    rosterRevision: json["rosterRevision"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admissionId": admissionId,
+    "createdAt": createdAt,
+    "ephemeralChannelId": ephemeralChannelId,
+    "eventId": eventId,
+    "generation": generation,
+    "kind": kind,
+    "participantPubkey": participantPubkey,
+    "pubkey": pubkey,
+    "rosterRevision": rosterRevision,
+  });
+}
+
+///GET /api/v1/huddles：一个父 Workspace 或父私聊中本人可见、尚未结束的 Huddle（PROVISIONING 或 ACTIVE），按创建时间倒序。
+class HuddlePage {
+  final List<HuddlePageItem> items;
+
+  HuddlePage({required this.items});
+
+  factory HuddlePage.fromJson(Map<String, dynamic> json) => HuddlePage(
+    items: List<HuddlePageItem>.from(
+      json["items"].map((x) => HuddlePageItem.fromJson(x)),
+    ),
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+///本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+///Relay 的 48101–48104 呈现。
+class HuddlePageItem {
+  final List<String> agentInstallationResourceIds;
+
+  ///Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+  final String channelId;
+  final String channelName;
+  final DateTime createdAt;
+
+  ///临时频道 created_by：本人发起会话的 HUMAN 公钥
+  final String creatorPubkey;
+  final DateTime? endedAt;
+  final String huddleId;
+  final String initiatorPrincipalId;
+
+  ///发起该 Huddle 的 huddle.start operation
+  final String operationId;
+  final String parentChannelId;
+  final String? parentConversationId;
+  final String? parentWorkspaceId;
+  final HuddleState state;
+  final int version;
+
+  HuddlePageItem({
+    required this.agentInstallationResourceIds,
+    required this.channelId,
+    required this.channelName,
+    required this.createdAt,
+    required this.creatorPubkey,
+    this.endedAt,
+    required this.huddleId,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.parentChannelId,
+    this.parentConversationId,
+    this.parentWorkspaceId,
+    required this.state,
+    required this.version,
+  });
+
+  factory HuddlePageItem.fromJson(Map<String, dynamic> json) => HuddlePageItem(
+    agentInstallationResourceIds: List<String>.from(
+      json["agentInstallationResourceIds"].map((x) => x),
+    ),
+    channelId: json["channelId"],
+    channelName: json["channelName"],
+    createdAt: DateTime.parse(json["createdAt"]),
+    creatorPubkey: json["creatorPubkey"],
+    endedAt: json["endedAt"] == null ? null : DateTime.parse(json["endedAt"]),
+    huddleId: json["huddleId"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    operationId: json["operationId"],
+    parentChannelId: json["parentChannelId"],
+    parentConversationId: json["parentConversationId"],
+    parentWorkspaceId: json["parentWorkspaceId"],
+    state: huddleStateValues.map[json["state"]]!,
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentInstallationResourceIds": List<dynamic>.from(
+      agentInstallationResourceIds.map((x) => x),
+    ),
+    "channelId": channelId,
+    "channelName": channelName,
+    "createdAt": createdAt.toIso8601String(),
+    "creatorPubkey": creatorPubkey,
+    "endedAt": endedAt?.toIso8601String(),
+    "huddleId": huddleId,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "parentChannelId": parentChannelId,
+    "parentConversationId": parentConversationId,
+    "parentWorkspaceId": parentWorkspaceId,
+    "state": huddleStateValues.reverse[state],
+    "version": version,
+  });
+}
+
+///HuddleBuzzBinding 状态（03 §2、DD-125(3)）：PROVISIONING 为 CONTROL 9007/9000 投影尚未回读一致（结果不明保留并按
+///Channel UUID 对账）；ACTIVE 为投影回读一致；ENDED 为观察到 48103 或临时频道已归档，终态、不复用；ERROR 为 Relay
+///确定拒绝投影，不再签发。
+enum HuddleState { ACTIVE, ENDED, ERROR, PROVISIONING }
+
+final huddleStateValues = EnumValues({
+  "ACTIVE": HuddleState.ACTIVE,
+  "ENDED": HuddleState.ENDED,
+  "ERROR": HuddleState.ERROR,
+  "PROVISIONING": HuddleState.PROVISIONING,
+});
+
+///本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
+///Relay 的 48101–48104 呈现。
+class HuddleView {
+  final List<String> agentInstallationResourceIds;
+
+  ///Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
+  final String channelId;
+  final String channelName;
+  final DateTime createdAt;
+
+  ///临时频道 created_by：本人发起会话的 HUMAN 公钥
+  final String creatorPubkey;
+  final DateTime? endedAt;
+  final String huddleId;
+  final String initiatorPrincipalId;
+
+  ///发起该 Huddle 的 huddle.start operation
+  final String operationId;
+  final String parentChannelId;
+  final String? parentConversationId;
+  final String? parentWorkspaceId;
+  final HuddleState state;
+  final int version;
+
+  HuddleView({
+    required this.agentInstallationResourceIds,
+    required this.channelId,
+    required this.channelName,
+    required this.createdAt,
+    required this.creatorPubkey,
+    this.endedAt,
+    required this.huddleId,
+    required this.initiatorPrincipalId,
+    required this.operationId,
+    required this.parentChannelId,
+    this.parentConversationId,
+    this.parentWorkspaceId,
+    required this.state,
+    required this.version,
+  });
+
+  factory HuddleView.fromJson(Map<String, dynamic> json) => HuddleView(
+    agentInstallationResourceIds: List<String>.from(
+      json["agentInstallationResourceIds"].map((x) => x),
+    ),
+    channelId: json["channelId"],
+    channelName: json["channelName"],
+    createdAt: DateTime.parse(json["createdAt"]),
+    creatorPubkey: json["creatorPubkey"],
+    endedAt: json["endedAt"] == null ? null : DateTime.parse(json["endedAt"]),
+    huddleId: json["huddleId"],
+    initiatorPrincipalId: json["initiatorPrincipalId"],
+    operationId: json["operationId"],
+    parentChannelId: json["parentChannelId"],
+    parentConversationId: json["parentConversationId"],
+    parentWorkspaceId: json["parentWorkspaceId"],
+    state: huddleStateValues.map[json["state"]]!,
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentInstallationResourceIds": List<dynamic>.from(
+      agentInstallationResourceIds.map((x) => x),
+    ),
+    "channelId": channelId,
+    "channelName": channelName,
+    "createdAt": createdAt.toIso8601String(),
+    "creatorPubkey": creatorPubkey,
+    "endedAt": endedAt?.toIso8601String(),
+    "huddleId": huddleId,
+    "initiatorPrincipalId": initiatorPrincipalId,
+    "operationId": operationId,
+    "parentChannelId": parentChannelId,
+    "parentConversationId": parentConversationId,
+    "parentWorkspaceId": parentWorkspaceId,
+    "state": huddleStateValues.reverse[state],
+    "version": version,
+  });
+}
+
+///GET /api/v1/huddles/voice：Web Huddle
+///的转写与朗读是否可用（DD-125(3)、V-SCN-160）。不可用时通话、加入、发言、收听与离开不受影响。
+class HuddleVoiceView {
+  final HuddleVoiceAvailability speech;
+  final HuddleVoiceAvailability transcription;
+
+  HuddleVoiceView({required this.speech, required this.transcription});
+
+  factory HuddleVoiceView.fromJson(Map<String, dynamic> json) =>
+      HuddleVoiceView(
+        speech: huddleVoiceAvailabilityValues.map[json["speech"]]!,
+        transcription:
+            huddleVoiceAvailabilityValues.map[json["transcription"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "speech": huddleVoiceAvailabilityValues.reverse[speech],
+    "transcription": huddleVoiceAvailabilityValues.reverse[transcription],
+  });
+}
+
+///Web Huddle 转写或朗读的可用性（DD-125(3)、V-SCN-160）：UNAVAILABLE 为 Huddle
+///语音推理服务未部署、超出部署登记的并发上界或不可用，此时按原版“仅语音模式”显示不可用而通话照常。
+enum HuddleVoiceAvailability { AVAILABLE, UNAVAILABLE }
+
+final huddleVoiceAvailabilityValues = EnumValues({
+  "AVAILABLE": HuddleVoiceAvailability.AVAILABLE,
+  "UNAVAILABLE": HuddleVoiceAvailability.UNAVAILABLE,
+});
+
 ///POST /api/v1/invitations/redeem 的回应与 GET /api/v1/invitations/redemptions
 ///的元素：兑换者自己看到的进度（DD-83）。membershipState=INVITED 且 admissionGateState=WAITING 表示等待 Tenant
 ///admin 确认；ACTIVE 即可登录该 Tenant；REVOKED 即本次邀请已终结，reason 给出原因。
@@ -14793,6 +15334,12 @@ class CommandClass {
   ///仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
   ///授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
   final ResourceGrantPermission? grantPermission;
+  final HuddleAgentClass? huddleAgent;
+
+  ///仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
+  ///HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
+  final String? huddleId;
+  final HuddleStartClass? huddleStart;
 
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
   final String idempotencyKey;
@@ -14907,6 +15454,9 @@ class CommandClass {
     this.executorInstallationResourceId,
     this.explicitConfirmation,
     this.grantPermission,
+    this.huddleAgent,
+    this.huddleId,
+    this.huddleStart,
     required this.idempotencyKey,
     this.invitationId,
     this.llmRouteCreate,
@@ -14991,6 +15541,13 @@ class CommandClass {
     grantPermission: json["grantPermission"] == null
         ? null
         : resourceGrantPermissionValues.map[json["grantPermission"]]!,
+    huddleAgent: json["huddleAgent"] == null
+        ? null
+        : HuddleAgentClass.fromJson(json["huddleAgent"]),
+    huddleId: json["huddleId"],
+    huddleStart: json["huddleStart"] == null
+        ? null
+        : HuddleStartClass.fromJson(json["huddleStart"]),
     idempotencyKey: json["idempotencyKey"],
     invitationId: json["invitationId"],
     llmRouteCreate: json["llmRouteCreate"] == null
@@ -15068,6 +15625,9 @@ class CommandClass {
     "executorInstallationResourceId": executorInstallationResourceId,
     "explicitConfirmation": explicitConfirmation,
     "grantPermission": resourceGrantPermissionValues.reverse[grantPermission],
+    "huddleAgent": huddleAgent?.toJson(),
+    "huddleId": huddleId,
+    "huddleStart": huddleStart?.toJson(),
     "idempotencyKey": idempotencyKey,
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
@@ -15535,6 +16095,9 @@ class SubmissionClass {
   final ActionDispatchState dispatchState;
   final LaunchDescriptorClass? documentLaunch;
   final ActionGateState gateState;
+
+  ///仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+  final String? huddleId;
   final InvitationClass? invitation;
   final String operationId;
   final String? protocolSessionId;
@@ -15549,6 +16112,7 @@ class SubmissionClass {
     required this.dispatchState,
     this.documentLaunch,
     required this.gateState,
+    this.huddleId,
     this.invitation,
     required this.operationId,
     this.protocolSessionId,
@@ -15567,6 +16131,7 @@ class SubmissionClass {
             ? null
             : LaunchDescriptorClass.fromJson(json["documentLaunch"]),
         gateState: actionGateStateValues.map[json["gateState"]]!,
+        huddleId: json["huddleId"],
         invitation: json["invitation"] == null
             ? null
             : InvitationClass.fromJson(json["invitation"]),
@@ -15588,6 +16153,7 @@ class SubmissionClass {
     "dispatchState": actionDispatchStateValues.reverse[dispatchState],
     "documentLaunch": documentLaunch?.toJson(),
     "gateState": actionGateStateValues.reverse[gateState],
+    "huddleId": huddleId,
     "invitation": invitation?.toJson(),
     "operationId": operationId,
     "protocolSessionId": protocolSessionId,
@@ -22733,6 +23299,80 @@ final publishRestrictionKindValues = EnumValues({
   "BANNED": PublishRestrictionKind.BANNED,
   "TIMED_OUT": PublishRestrictionKind.TIMED_OUT,
 });
+
+///仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+///给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+///CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+///Agent。
+class HuddleAgentInput {
+  final String agentInstallationResourceId;
+
+  HuddleAgentInput({required this.agentInstallationResourceId});
+
+  factory HuddleAgentInput.fromJson(Map<String, dynamic> json) =>
+      HuddleAgentInput(
+        agentInstallationResourceId: json["agentInstallationResourceId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"agentInstallationResourceId": agentInstallationResourceId});
+}
+
+///仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+///parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+///预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+///9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+///Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+///公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+class HuddleStartInput {
+  ///原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+  ///ChannelAgentBinding 且本人有 execute 的 Installation
+  final List<String>? agentInstallationResourceIds;
+
+  ///原 buildHuddleChannelName 生成的临时频道名
+  final String channelName;
+
+  ///64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+  final String? creatorPubkey;
+
+  ///父私聊（ConversationBuzzBinding id）
+  final String? parentConversationId;
+
+  ///父 Workspace；须等于 ActionCommand.workspaceId
+  final String? parentWorkspaceId;
+
+  HuddleStartInput({
+    this.agentInstallationResourceIds,
+    required this.channelName,
+    this.creatorPubkey,
+    this.parentConversationId,
+    this.parentWorkspaceId,
+  });
+
+  factory HuddleStartInput.fromJson(Map<String, dynamic> json) =>
+      HuddleStartInput(
+        agentInstallationResourceIds:
+            json["agentInstallationResourceIds"] == null
+            ? null
+            : List<String>.from(
+                json["agentInstallationResourceIds"]!.map((x) => x),
+              ),
+        channelName: json["channelName"],
+        creatorPubkey: json["creatorPubkey"],
+        parentConversationId: json["parentConversationId"],
+        parentWorkspaceId: json["parentWorkspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentInstallationResourceIds": agentInstallationResourceIds == null
+        ? null
+        : List<dynamic>.from(agentInstallationResourceIds!.map((x) => x)),
+    "channelName": channelName,
+    "creatorPubkey": creatorPubkey,
+    "parentConversationId": parentConversationId,
+    "parentWorkspaceId": parentWorkspaceId,
+  });
+}
 
 ///BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
 class ResolvedIdentity {
