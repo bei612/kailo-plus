@@ -20,9 +20,7 @@ import { AvatarHostProvider, type AvatarHost } from "../profile/avatar-host";
 import { EmojiBurstProvider } from "../profile/buzz/shared/ui/EmojiBurstProvider";
 import { AvatarStep } from "./AvatarStep";
 import { OnboardingCard } from "./OnboardingCard";
-import {
-  type OnboardingTransitionDirection,
-} from "./OnboardingSlideTransition";
+import type { OnboardingTransitionDirection } from "./OnboardingSlideTransition";
 import { ProfileStep } from "./ProfileStep";
 import type {
   OnboardingActions,
