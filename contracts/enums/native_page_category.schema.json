@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/native_page_category.schema.json",
+  "title": "NativePageCategory",
+  "description": "DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。",
+  "type": "string",
+  "enum": ["file_storage", "knowledge", "data_query"]
+}

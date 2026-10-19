@@ -117,7 +117,13 @@ pub(crate) fn compatible(manifest: &Value, builds: &Value) -> Result<(), Refusal
     {
         return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
     }
-    let connector = crate::application_binding::native::Connector::from_manifest(manifest)?;
+    // DD-127: a native page entry has no connector; only the three build
+    // facts are required (Core/Worker run no adapter or MCP peer for it).
+    let connector = if crate::application_binding::native::native_page_only(manifest) {
+        None
+    } else {
+        Some(crate::application_binding::native::Connector::from_manifest(manifest)?)
+    };
     for subject in ["BUZZ_WEB", "CORE", "WORKER"] {
         let mut matching = builds.iter().filter(|build| build["subject"] == subject);
         let build = matching.next().ok_or_else(unavailable)?;
@@ -125,7 +131,7 @@ pub(crate) fn compatible(manifest: &Value, builds: &Value) -> Result<(), Refusal
             return Err(unavailable());
         }
         if subject != "BUZZ_WEB"
-            && connector == crate::application_binding::native::Connector::RemoteAdapter
+            && connector == Some(crate::application_binding::native::Connector::RemoteAdapter)
             && !build["adapterProtocolVersions"]
                 .as_array()
                 .is_some_and(|versions| versions.iter().any(|version| version == "1"))
@@ -133,7 +139,7 @@ pub(crate) fn compatible(manifest: &Value, builds: &Value) -> Result<(), Refusal
             return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
         }
         if subject != "BUZZ_WEB"
-            && connector == crate::application_binding::native::Connector::ProtocolPeer
+            && connector == Some(crate::application_binding::native::Connector::ProtocolPeer)
             && (!build["connectorKinds"]
                 .as_array()
                 .is_some_and(|kinds| kinds.contains(&json!("PROTOCOL_PEER")))
@@ -178,6 +184,27 @@ mod tests {
         let mut unknown = builds;
         unknown[1]["mcpProtocolVersions"] = json!(["unknown"]);
         assert!(compatible(&manifest, &unknown).is_err());
+    }
+
+    #[test]
+    fn native_page_approval_requires_only_the_three_actual_builds() {
+        // DD-127: no adapter or MCP peer runs for a native page entry.
+        let manifest = json!({"class":"APPLICATION","frontendDelivery":{"mode":"NATIVE_PAGE"},
+            "executionConnector":{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}});
+        let builds = json!([
+            {"subject":"BUZZ_WEB","buildId":"observed-web","adapterProtocolVersions":[]},
+            {"subject":"CORE","buildId":"observed-core","adapterProtocolVersions":[]},
+            {"subject":"WORKER","buildId":"observed-worker","adapterProtocolVersions":[]}
+        ]);
+        compatible(&manifest, &builds).unwrap();
+        let mut missing = builds.clone();
+        missing.as_array_mut().unwrap().pop();
+        assert!(compatible(&manifest, &missing).is_err());
+        // A NONE mode that still names an ActionToken audience is no connector
+        // at all and is refused rather than treated as a native page entry.
+        let mut audience = manifest;
+        audience["executionConnector"]["actionTokenAudience"] = json!("kailo-adapter");
+        assert!(compatible(&audience, &builds).is_err());
     }
 
     #[test]

@@ -6,6 +6,8 @@
 // deployment's COMPONENT_CONFORMANCE_* delivery, whose artifactDigest must equal
 // this manifest's adapterBuildRef: deliver the matching conformance inputs
 // (start-core.sh --no-build) before running this for each component.
+// A DD-127 native page entry (render.mjs --material native-page) has no
+// adapter: Core freezes an empty suite and needs no conformance inputs.
 //
 // Usage: node component-register.mjs --release-dir <rendered dir> [--attempt N] [--wait-seconds 1800]
 // Idempotent: an existing release with the same componentReleaseId is only

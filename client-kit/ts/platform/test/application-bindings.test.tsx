@@ -379,6 +379,27 @@ describe("shared external service connection management", () => {
     expect(host.textContent).not.toContain("success");
   });
 
+  it("labels a native page entry binding by its presentation category, else by component type (DD-127)",async()=>{
+    const labelled={...connection,componentTypeKey:"weknora",capabilityCategories:[],hasNativePage:true,canDisable:false,nativePageCategory:"knowledge"};
+    expect(validBindingPage({bindings:[labelled],canCreate:false} as never,undefined,0)).toBe(true);
+    expect(validBindingPage({bindings:[{...labelled,nativePageCategory:"cells"}],canCreate:false} as never,undefined,0)).toBe(false);
+    const named=await render(<PlatformProvider client={createBffClient({send:async()=>({status:200,body:{bindings:[labelled],canCreate:false}})})} locale="en"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" onSelect={vi.fn()} />
+    </SidebarProvider></PlatformProvider>);
+    expect(named.querySelector('button[aria-label="Knowledge"]')).not.toBeNull();
+    expect(named.querySelector('button[aria-label="weknora"]')).toBeNull();
+    const entryOnly={...connection,componentTypeKey:"cells",capabilityCategories:[],hasNativePage:true,canDisable:false};
+    expect(validBindingPage({bindings:[entryOnly],canCreate:false} as never,undefined,0)).toBe(true);
+    expect(bindingDocument(JSON.stringify({...creation,adapterServiceRef:"NONE",capabilityCategories:[],retainOnTenantDelete:false}))).not.toBeNull();
+    const onSelect=vi.fn();
+    const client=createBffClient({send:async()=>({status:200,body:{bindings:[entryOnly],canCreate:false}})});
+    const host=await render(<PlatformProvider client={client} locale="en"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" onSelect={onSelect} />
+    </SidebarProvider></PlatformProvider>);
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="cells"]')!);
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({bindingId:connection.bindingId}));
+  });
+
   it("does not manufacture entries for inactive, non-native or empty bindings",async()=>{
     for(const bindings of [[],[{...connection,state:"DISABLED",hasNativePage:true}],[{...connection,hasNativePage:false}]]){
       const client=createBffClient({send:async()=>({status:200,body:{bindings,canCreate:false}})});

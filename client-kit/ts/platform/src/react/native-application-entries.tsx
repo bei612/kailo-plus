@@ -43,7 +43,9 @@ function NativeApplicationScope({ workspaceId, label, selectedId, onSelect }: {
       : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
         <SidebarMenu>{entries.map((binding) => {
-          const categories = binding.capabilityCategories.map((capability) => capability.category);
+          // DD-127(4): a native page entry labels itself by its release's presentation category.
+          const categories = [...binding.capabilityCategories.map((capability) => capability.category),
+            ...(binding.nativePageCategory ? [binding.nativePageCategory] : [])];
           const category = categories.includes("file_storage") ? "files" : categories.includes("knowledge") ? "knowledge" : categories.includes("data_query") ? "data" : null;
           const title = category ? t(`bindings.native.${category}`) : binding.componentTypeKey;
           const Icon = category === "files" ? Folder : category === "knowledge" ? Library : category === "data" ? Database : AppWindow;

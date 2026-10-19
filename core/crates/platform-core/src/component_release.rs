@@ -76,8 +76,23 @@ fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
     exact_fields(
         frontend,
         &["mode", "extensionSlots", "editorOrigins"],
-        &["nativePageOrigins", "launchDescriptorSchemaVersion"],
+        &[
+            "nativePageOrigins",
+            "launchDescriptorSchemaVersion",
+            "nativePageCategory",
+        ],
     )?;
+    // DD-127(4): a presentation category only labels a NATIVE_PAGE entry.
+    if let Some(category) = frontend.get("nativePageCategory") {
+        if frontend["mode"] != "NATIVE_PAGE"
+            || !matches!(
+                category.as_str(),
+                Some("file_storage" | "knowledge" | "data_query")
+            )
+        {
+            return Err(bad());
+        }
+    }
     if frontend["extensionSlots"] != json!([]) || manifest.get("hostApiRange").is_some() {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -177,6 +192,33 @@ fn source_identity(manifest: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// DD-127: a native-page-only release opens the service's own page and nothing
+/// else. It declares no capability, domain definition, secret or model route,
+/// so there is no adapter to test and no conformance fixture to freeze. Its
+/// adapterBuildRef slot carries the deployed native service artifact digest.
+fn native_page(manifest: &Value) -> Result<(), Refusal> {
+    if manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE"
+        || manifest["frontendDelivery"]
+            .get("nativePageCategory")
+            .is_none()
+        || manifest["allowedModelCallModes"] != json!(["NONE"])
+        || [
+            "implements",
+            "capabilityDeclarations",
+            "secretSchema",
+            "targetResourceTypeKeys",
+            "resourceTypeDefinitions",
+            "actionDefinitions",
+            "toolDefinitions",
+        ]
+        .iter()
+        .any(|key| manifest[*key] != json!([]))
+    {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(())
+}
+
 // Class/connector combinations are closed design values, not release-supplied
 // execution code. Unsupported delivery modes cannot enter this dispatch path.
 pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
@@ -255,7 +297,13 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         &["mode", "adapterProtocolRange", "actionTokenAudience"],
         &[],
     )?;
-    let connector_kind = crate::application_binding::native::Connector::from_manifest(&manifest)?;
+    // DD-127: a native page entry has no connector (None); see native_page().
+    let connector_kind = if crate::application_binding::native::native_page_only(&manifest) {
+        native_page(&manifest)?;
+        None
+    } else {
+        Some(crate::application_binding::native::Connector::from_manifest(&manifest)?)
+    };
     if manifest["adapterProtocolRange"] != connector["adapterProtocolRange"] {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -336,8 +384,19 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         }
         contracts.push((category.to_owned(), version));
     }
-    if contracts.is_empty() {
+    if contracts.is_empty() != connector_kind.is_none() {
         return Err(bad());
+    }
+    // DD-127(4): a capability release may label its entry only as one of the
+    // categories it implements.
+    if let Some(category) = manifest["frontendDelivery"].get("nativePageCategory") {
+        if connector_kind.is_some()
+            && !contracts
+                .iter()
+                .any(|(implemented, _)| category.as_str() == Some(implemented.as_str()))
+        {
+            return Err(bad());
+        }
     }
     let declarations = manifest["capabilityDeclarations"]
         .as_array()
@@ -393,7 +452,7 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         {
             return Err(bad());
         }
-        if connector_kind == crate::application_binding::native::Connector::ProtocolPeer
+        if connector_kind == Some(crate::application_binding::native::Connector::ProtocolPeer)
             && (declaration["cancel"] != "UNSUPPORTED"
                 || declaration["observe"] != "UNSUPPORTED"
                 || declaration["meter"] != "UNSUPPORTED"
@@ -446,12 +505,14 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         .ok_or_else(bad)?;
     if !correlation.contains(&json!("OPERATION_ID"))
         || !(match connector_kind {
-            crate::application_binding::native::Connector::RemoteAdapter => {
+            Some(crate::application_binding::native::Connector::RemoteAdapter) => {
                 states.contains(&json!("NATIVE_STATUS"))
             }
-            crate::application_binding::native::Connector::ProtocolPeer => {
+            Some(crate::application_binding::native::Connector::ProtocolPeer) => {
                 states.contains(&json!("CORE_ACTION")) && states.contains(&json!("AGENTGATEWAY"))
             }
+            // Only the Core binding lifecycle exists for a native page entry.
+            None => states.contains(&json!("CORE_ACTION")),
         })
         || correlation.iter().any(|value| {
             !matches!(
@@ -557,6 +618,10 @@ pub(crate) async fn active_contracts(
             json!({"content":content,"schemas":schemas,"vectors":vectors,
             "schemaDigest":schema_digest,"suiteDigest":suite_digest}),
         );
+    }
+    // DD-127: registration() proved every declaration list empty.
+    if crate::application_binding::native::native_page_only(&registration.manifest) {
+        return Ok(contracts);
     }
     validate_declarations(registration, &contracts)?;
     for contract in &contracts {
@@ -1193,6 +1258,15 @@ pub(crate) async fn target(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     active_contracts(conn, tenant, &registration).await?;
+    // DD-127: no adapter, so neither a protocol fixture nor an isolated
+    // conformance identity applies to a native page entry.
+    if crate::application_binding::native::native_page_only(&registration.manifest) {
+        return Ok(Target {
+            id: registration.id,
+            version: 1,
+            workspace_id: None,
+        });
+    }
     if crate::application_binding::native::Connector::from_manifest(&registration.manifest)?
         == crate::application_binding::native::Connector::ProtocolPeer
     {
@@ -1235,6 +1309,9 @@ pub(crate) async fn prewrite(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     let contracts = active_contracts(tx, ae.tenant_id, &registration).await?;
+    if crate::application_binding::native::native_page_only(&registration.manifest) {
+        return native_page_prewrite(tx, ae, &registration).await;
+    }
     if crate::application_binding::native::Connector::from_manifest(&registration.manifest)?
         == crate::application_binding::native::Connector::ProtocolPeer
     {
@@ -1475,6 +1552,42 @@ pub(crate) async fn prewrite(
     Ok(1)
 }
 
+/// DD-127: the original ComponentTask freezes an empty suite for a native page
+/// entry: no step, no contract digest. Its identity is the release's own
+/// native page origins and service artifact; record() writes REGISTERED from
+/// the same Workflow's report, and approval stays the separate action.
+async fn native_page_prewrite(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &Execution,
+    registration: &Registration,
+) -> Result<i32, Refusal> {
+    let identity = json!({"executionConnector":"NONE",
+        "nativePageOrigins":registration.manifest["frontendDelivery"]["nativePageOrigins"],
+        "artifactDigest":registration.adapter_digest});
+    let identity_digest = collab_bridge::limits::canonical_digest(&identity);
+    let workflow =
+        crate::component_task::workflow_id(KIND, ae.tenant_id, &registration.id.to_string(), 1);
+    let mut plan = json!({"actionExecutionId":ae.id,"operationId":ae.operation_id,
+        "workflowId":workflow,"runId":"","componentReleaseId":registration.id,
+        "artifactDigest":registration.adapter_digest,"contractDigests":[],
+        "suiteDigest":collab_bridge::limits::canonical_digest(
+            &json!({"steps":[],"contracts":[],"identityDigest":identity_digest})),
+        "planDigest":"","identityDigest":identity_digest,"steps":[]});
+    plan["planDigest"] = json!(collab_bridge::limits::canonical_digest(&plan));
+    let typed: contracts::ComponentConformancePlan =
+        serde_json::from_value(plan.clone()).map_err(|_| bad())?;
+    if serde_json::to_value(typed).map_err(|_| bad())? != plan {
+        return Err(bad());
+    }
+    let affected = sqlx::query("update admission.action_execution set component_conformance_plan=$2
+        where id=$1 and component_conformance_plan is null and component_conformance_observation is null")
+        .bind(ae.id).bind(plan).execute(&mut **tx).await?.rows_affected();
+    if affected != 1 {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    Ok(1)
+}
+
 /// DD-124(4): the isolated receiver deployment named by a plan runs this Core
 /// build (`build`) and the production Catalog's APPROVED release of a category
 /// that declares the source read edge, at its registered artifact and manifest.
@@ -1597,7 +1710,10 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
     }
     let steps = plan["steps"].as_array().ok_or_else(bad)?;
     let observations = report["observations"].as_array().ok_or_else(bad)?;
-    if steps.is_empty() || steps.len() != observations.len() {
+    // DD-127: only a plan frozen without any contract has no step.
+    if steps.is_empty() != (plan["contractDigests"] == json!([]))
+        || steps.len() != observations.len()
+    {
         return Err(bad());
     }
     let mut last_native: BTreeMap<String, Value> = BTreeMap::new();
@@ -3315,6 +3431,115 @@ mod report_tests {
         }
     }
 
+    fn native_page_registration(change: impl Fn(&mut Value)) -> Result<Registration, Refusal> {
+        let config = json!({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+            "additionalProperties":false,"required":["nativePageUrl"],
+            "properties":{"nativePageUrl":{"type":"string","minLength":1}}});
+        let mut manifest = json!({"id":"7d3c1e52-6a0b-5f5e-9c1d-2b7f4e8a9c10","componentTypeKey":"cells",
+            "version":"1.0.0","class":"APPLICATION","platformPortKey":"NONE","manifestSchemaVersion":1,
+            "admissionPath":"BUILTIN_REFERENCE","sourceProject":"kailo-plus/file-storage",
+            "sourceCommit":"0123456789abcdef0123456789abcdef01234567","bindingConfigSchemaVersion":1,
+            "bindingConfigSchemaDigest":collab_bridge::limits::canonical_digest(&config),
+            "adapterProtocolRange":"NONE",
+            "frontendDelivery":{"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
+                "nativePageOrigins":["http://192.168.0.193:58092"],"nativePageCategory":"file_storage"},
+            "executionConnector":{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"},
+            "adapterBuildRef":"8ddc3582521e7bb036ce2409163998739210deebdf719de86fd9e8203c0372cf",
+            "implements":[],"capabilityDeclarations":[],"allowedModelCallModes":["NONE"],
+            "dataStoreIsolation":"DEDICATED_INSTANCE","dataLocation":"dedicated native service",
+            "secretSchema":[],"targetResourceTypeKeys":[],"resourceTypeDefinitions":[],
+            "actionDefinitions":[],"toolDefinitions":[],
+            "businessObservabilityContract":{"correlationSources":["OPERATION_ID"],
+                "businessStateSources":["CORE_ACTION"],"aggregationDimensions":["tenant_id"],
+                "redactionPolicy":"PLATFORM_METADATA_ONLY"},
+            "frontendPresentationContract":{"integrationMode":"NONE","themeMapping":{},"localeMapping":{},
+                "themeChangePolicy":"NONE","localeResolutionPolicy":"NONE"}});
+        change(&mut manifest);
+        let package = json!({"componentReleaseId":manifest["id"],
+            "manifestDigest":collab_bridge::limits::canonical_digest(&manifest),
+            "webArtifacts":[],"backendDelivery":"EXTERNAL_SERVICE"});
+        registration(
+            &json!({"manifestJson":manifest.to_string(),"packageJson":package.to_string(),
+            "bindingConfigSchemaJson":config.to_string()}),
+        )
+    }
+
+    #[test]
+    fn native_page_release_needs_no_connector_or_capability() {
+        // DD-127: implements=[], NATIVE_PAGE and connector NONE register with
+        // the deployed service digest and no contract to test.
+        let release = native_page_registration(|_| {}).unwrap();
+        assert!(release.contracts.is_empty());
+        assert!(crate::application_binding::native::native_page_only(
+            &release.manifest
+        ));
+        let declared = |key: &'static str, value: Value| {
+            move |manifest: &mut Value| manifest[key] = value.clone()
+        };
+        for refused in [
+            native_page_registration(declared(
+                "implements",
+                json!([{"categoryKey":"file_storage","contractVersion":2}]),
+            )),
+            native_page_registration(declared(
+                "allowedModelCallModes",
+                json!(["NONE", "PLATFORM_LLM_ROUTE"]),
+            )),
+            native_page_registration(declared(
+                "secretSchema",
+                json!([{"secretKey":"cells_bearer","valueType":"STRING","lengthOrFormat":"{}",
+                    "rotationClass":"SERVICE_CREDENTIAL","deliveryMode":"FILE","restartRequired":false}]),
+            )),
+            native_page_registration(declared(
+                "targetResourceTypeKeys",
+                json!(["file_storage.space"]),
+            )),
+            native_page_registration(declared("adapterProtocolRange", json!("1"))),
+            native_page_registration(declared(
+                "frontendDelivery",
+                json!({"mode":"NONE","extensionSlots":[],"editorOrigins":[]}),
+            )),
+            // DD-127(4): the entry must name one of the three presentation
+            // categories.
+            native_page_registration(declared(
+                "frontendDelivery",
+                json!({"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
+                    "nativePageOrigins":["http://192.168.0.193:58092"]}),
+            )),
+            native_page_registration(declared(
+                "frontendDelivery",
+                json!({"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
+                    "nativePageOrigins":["http://192.168.0.193:58092"],"nativePageCategory":"cells"}),
+            )),
+            native_page_registration(declared(
+                "executionConnector",
+                json!({"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"kailo-adapter"}),
+            )),
+            native_page_registration(declared(
+                "businessObservabilityContract",
+                json!({"correlationSources":["OPERATION_ID"],"businessStateSources":["NATIVE_STATUS"],
+                    "aggregationDimensions":[],"redactionPolicy":"PLATFORM_METADATA_ONLY"}),
+            )),
+        ] {
+            assert!(refused.is_err());
+        }
+    }
+
+    #[test]
+    fn native_page_suite_is_empty_only_without_contracts() {
+        let plan = json!({"actionExecutionId":"a","operationId":"o","workflowId":"w",
+            "componentReleaseId":"r","artifactDigest":"d","contractDigests":[],"suiteDigest":"s",
+            "planDigest":"p","steps":[]});
+        let mut report = plan.clone();
+        report["observations"] = json!([]);
+        verify_report(&plan, &report).unwrap();
+        let mut contracted = plan;
+        contracted["contractDigests"] = json!(["c"]);
+        let mut report = contracted.clone();
+        report["observations"] = json!([]);
+        assert!(verify_report(&contracted, &report).is_err());
+    }
+
     #[test]
     fn source_bound_protocol_registration_keeps_closed_frontend_contract() {
         let valid = json!({"frontendDelivery":{"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],
@@ -3335,6 +3560,10 @@ mod report_tests {
             &json!({"frontendDelivery":{"mode":"NONE","extensionSlots":[],"editorOrigins":[]}}),
         )
         .unwrap();
+        // DD-127(4): a presentation category appears only with NATIVE_PAGE.
+        let mut labelled = valid;
+        labelled["frontendDelivery"]["nativePageCategory"] = json!("file_storage");
+        assert!(validate_frontend_delivery(&labelled).is_err());
     }
 
     #[test]

@@ -26,6 +26,13 @@
 // {"<secretKey>": "<value>", ...} with exactly the release secretSchema keys.
 // Values are read into memory only and never printed or written elsewhere.
 //
+// DD-127 native page entry (rendered with --material native-page; manifest
+// executionConnector.mode NONE): no adapter, secrets or IdP client. The
+// command carries adapterServiceRef NONE, capabilityCategories [], secretRefs
+// [], no bindingSecretValues and normalizedConfig {nativePageUrl} only; Core
+// activates it after checking the origin against NATIVE_PAGE_ORIGINS. Neither
+// --secret-values-file nor the OpenBao deploy env is needed.
+//
 // Usage:
 //   node component-bind.mjs --component file-storage|knowledge|data-query --release-dir <rendered dir>
 //     --native-page-url <url> --native-instance-ref <ref> [--native-scope-ref <ref>]
@@ -68,10 +75,14 @@ await main(async () => {
   for (const name of ['release-dir', 'native-page-url', 'native-instance-ref', 'plan-out']) {
     if (!args[name]) throw new FlowError(`--${name} is required`, 2);
   }
-  if (!args['plan-only'] && !args['secret-values-file']) throw new FlowError('--secret-values-file is required unless --plan-only', 2);
   if (args['workspace-id'] && !UUID.test(args['workspace-id'])) throw new FlowError('--workspace-id must be a UUID', 2);
   const run = attempt(args);
   const { manifest } = renderedRelease(args['release-dir']);
+  const pageOnly = manifest.executionConnector?.mode === 'NONE';
+  if (!pageOnly && !args['plan-only'] && !args['secret-values-file']) throw new FlowError('--secret-values-file is required unless --plan-only', 2);
+  if (pageOnly && (args['secret-values-file'] || args['client-id'] || args['model-route-ids'] || args['adapter-service-ref'])) {
+    throw new FlowError('a native page entry (DD-127) takes no secrets, client id, model route or adapter ref', 2);
+  }
 
   const normalizedConfig = { nativePageUrl: exactOrigin(args['native-page-url'], manifest) };
   if (args['client-id'] !== undefined && !/^[A-Za-z0-9_-]+$/.test(args['client-id'])) throw new FlowError('--client-id must be one IdP client id segment', 2);
@@ -87,14 +98,15 @@ await main(async () => {
   }
   const modelCallMode = args['model-call-mode'] ?? manifest.allowedModelCallModes?.[0] ?? 'NONE';
   if (!(manifest.allowedModelCallModes ?? ['NONE']).includes(modelCallMode)) throw new FlowError(`modelCallMode ${modelCallMode} not allowed by the release`, 2);
-  const { OPENBAO_TENANT_PARENT_NAMESPACE: parent, OPENBAO_KV_MOUNT: mount } = deployEnv('OPENBAO_TENANT_PARENT_NAMESPACE', 'OPENBAO_KV_MOUNT');
-  if (!parent || !mount) throw new FlowError('OPENBAO_TENANT_PARENT_NAMESPACE / OPENBAO_KV_MOUNT missing from the live deploy .env', 2);
+  const { OPENBAO_TENANT_PARENT_NAMESPACE: parent, OPENBAO_KV_MOUNT: mount } = manifest.secretSchema.length
+    ? deployEnv('OPENBAO_TENANT_PARENT_NAMESPACE', 'OPENBAO_KV_MOUNT') : {};
+  if (manifest.secretSchema.length && (!parent || !mount)) throw new FlowError('OPENBAO_TENANT_PARENT_NAMESPACE / OPENBAO_KV_MOUNT missing from the live deploy .env', 2);
 
   const admin = await login(args.account ?? 'admin', `bind-${args.component}`);
   const tenant = await requireSession(admin);
   const bindingId = key('application_binding', tenant.tenantId, args['workspace-id'] ?? 'tenant', manifest.id, run);
   const servicePrincipalId = key('application_binding.service', bindingId);
-  normalizedConfig.client_id = args['client-id'] ?? `${args.component}-adapter-${bindingId.slice(0, 8)}`;
+  if (!pageOnly) normalizedConfig.client_id = args['client-id'] ?? `${args.component}-adapter-${bindingId.slice(0, 8)}`;
   const audience = manifest.executionConnector.actionTokenAudience;
   const plan = {
     tenantId: tenant.tenantId,
@@ -105,14 +117,14 @@ await main(async () => {
     bindingId,
     bindingVersion: 1,
     servicePrincipalId,
-    adapterServiceRef: args['adapter-service-ref'] ?? defaults.adapterServiceRef,
+    adapterServiceRef: pageOnly ? 'NONE' : args['adapter-service-ref'] ?? defaults.adapterServiceRef,
     nativeInstanceRef: args['native-instance-ref'],
     ...(args['native-scope-ref'] ? { nativeScopeRef: args['native-scope-ref'] } : {}),
-    isolationMode: args['isolation-mode'] ?? defaults.isolationMode,
+    isolationMode: args['isolation-mode'] ?? (pageOnly ? 'DEDICATED_INSTANCE' : defaults.isolationMode),
     capabilityCategories: manifest.implements.map((item) => ({ category: item.categoryKey, version: item.contractVersion })),
     normalizedConfig,
     configDigest: digest(normalizedConfig),
-    clientId: normalizedConfig.client_id,
+    ...(pageOnly ? {} : { clientId: normalizedConfig.client_id }),
     modelCallMode,
     retainOnTenantDelete: manifest.capabilityDeclarations.some((d) => d.tenantDelete === 'RETAIN_ON_TENANT_DELETE'),
     // Exactly what Core freezes (application_binding_secret.rs references()).
@@ -137,7 +149,7 @@ await main(async () => {
     const bindable = last.bindableReleases?.find((r) => r.componentReleaseId === manifest.id);
     if (!last.canCreate || !bindable) throw new FlowError('release is not bindable here (needs APPROVED release and tenant manage)', 2);
     const declared = bindable.secretSchema.map((s) => s.secretKey).sort();
-    const values = JSON.parse(privateText(args['secret-values-file']));
+    const values = pageOnly ? {} : JSON.parse(privateText(args['secret-values-file']));
     if (!values || typeof values !== 'object' || Array.isArray(values)
       || Object.keys(values).sort().join(',') !== declared.join(',')
       || Object.values(values).some((v) => typeof v !== 'string' || !v)) {
@@ -154,7 +166,7 @@ await main(async () => {
       idempotencyKey: key('application_binding.create', bindingId, plan.configDigest),
       explicitConfirmation: true, ...(args['workspace-id'] ? { workspaceId: args['workspace-id'] } : {}),
       applicationBindingCreate: create,
-      bindingSecretValues: declared.map((secretKey) => ({ secretKey, value: values[secretKey] })) }, 'create');
+      ...(declared.length ? { bindingSecretValues: declared.map((secretKey) => ({ secretKey, value: values[secretKey] })) } : {}) }, 'create');
     await waitTask(admin, submitted.actionExecutionId, { seconds: Number(args['wait-seconds'] ?? 1800), label: 'binding-task' }).catch((error) => {
       if (error.exitCode !== 3) throw error;
     });
@@ -168,6 +180,6 @@ await main(async () => {
   log({ step: 'binding', bindingId, state: binding?.state ?? 'ABSENT', version: binding?.version, hasNativePage: binding?.hasNativePage,
     activeProjectionGeneration: binding?.activeProjectionGeneration });
   if (binding?.state !== 'ACTIVE') {
-    throw new FlowError(`binding is ${binding?.state ?? 'ABSENT'}; check adapter handshake/validate_binding, OpenBao audit delivery and the COMPONENT_BINDING task, then re-run`, binding?.state === 'PROVISIONING' ? 3 : 1);
+    throw new FlowError(`binding is ${binding?.state ?? 'ABSENT'}; check ${pageOnly ? 'NATIVE_PAGE_ORIGINS/PUBLIC_ORIGIN' : 'adapter handshake/validate_binding, OpenBao audit delivery'} and the COMPONENT_BINDING task, then re-run`, binding?.state === 'PROVISIONING' ? 3 : 1);
   }
 });

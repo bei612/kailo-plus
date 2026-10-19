@@ -12,7 +12,14 @@
 // Usage (Node >= 20, stdlib only, run from the apps repository root):
 //   node tools/component-release/render.mjs --component file-storage \
 //     --source-commit <40-hex> --native-page-origin http://192.168.0.193:58092 \
+//     [--material full|native-page] \
 //     [--adapter-digest sha256:<64-hex>|<64-hex>] [--receipt <file.json>] --out <dir>
+//
+// --material native-page (DD-127) renders manifest.native-page.json with
+// binding-config.native-page.schema.json: implements=[], NATIVE_PAGE,
+// ExecutionConnector NONE. There is no adapter; the adapterBuildRef slot is the
+// digest of the deployed native service artifact that serves the page
+// (nativeServiceArtifact below), and registration needs no conformance inputs.
 //
 // --receipt accepts either {"<artifact-name>": "sha256:..."} or
 // {"artifacts":[{"name":"<artifact-name>","artifact_digest":"sha256:..."}]}.
@@ -30,10 +37,19 @@ const RELEASE_NAMESPACE = '434ca4dc-c43a-4816-874e-f72e5a7b57b8';
 
 // The REMOTE_ADAPTER runtime artifact of each built-in reference component.
 // Wren serves Adapter Protocol v1 from its native UI (/platform-adapter/v1/*).
+// nativeServiceArtifact serves the native page origin (DD-127 entry release).
 const COMPONENTS = {
-  'file-storage': { adapterArtifact: 'file-storage-adapter' },
-  knowledge: { adapterArtifact: 'knowledge-adapter' },
-  'data-query': { adapterArtifact: 'data-query-ui' },
+  'file-storage': { adapterArtifact: 'file-storage-adapter', nativeServiceArtifact: 'file-storage-service' },
+  knowledge: { adapterArtifact: 'knowledge-adapter', nativeServiceArtifact: 'knowledge-native-ui' },
+  'data-query': { adapterArtifact: 'data-query-ui', nativeServiceArtifact: 'data-query-ui' },
+};
+
+// Checked-in material per release form: the full capability release, or the
+// DD-127 native page entry (no capability, no connector).
+const MATERIALS = {
+  full: { manifest: 'manifest.json', config: 'binding-config.schema.json', artifact: 'adapterArtifact' },
+  'native-page': { manifest: 'manifest.native-page.json', config: 'binding-config.native-page.schema.json',
+    artifact: 'nativeServiceArtifact' },
 };
 
 const PLACEHOLDER = /^\{\{[A-Za-z]+\}\}$/;
@@ -44,7 +60,7 @@ function fail(message) {
 }
 
 function args(argv) {
-  const known = new Set(['--component', '--source-commit', '--native-page-origin', '--adapter-digest', '--receipt', '--out']);
+  const known = new Set(['--component', '--source-commit', '--native-page-origin', '--material', '--adapter-digest', '--receipt', '--out']);
   const out = {};
   for (let i = 0; i < argv.length; i += 2) {
     if (!known.has(argv[i]) || argv[i + 1] === undefined || Object.hasOwn(out, argv[i])) fail(`invalid argument ${argv[i]}`);
@@ -146,28 +162,39 @@ function main() {
   const component = options['--component'];
   const fixed = COMPONENTS[component];
   if (!fixed) fail(`unknown component ${component}`);
+  const materialName = options['--material'] ?? 'full';
+  const material = Object.hasOwn(MATERIALS, materialName) ? MATERIALS[materialName] : undefined;
+  if (!material) fail(`unknown material ${materialName}`);
+  const artifact = fixed[material.artifact];
   const commit = options['--source-commit'];
   if (!/^[0-9a-f]{40}$/.test(commit)) fail('source commit must be the exact 40-hex apps commit the artifacts were built from');
   const read = (name) => JSON.parse(readFileSync(join(component, 'fork', 'release', name), 'utf8'));
-  const manifestTemplate = read('manifest.json');
+  const manifestTemplate = read(material.manifest);
   const packageTemplate = read('package.json');
-  const config = read('binding-config.schema.json');
+  const config = read(material.config);
   if (leftover(config).length) fail('binding config schema must not contain placeholders');
 
   let adapter = options['--adapter-digest'];
   let source = '--adapter-digest';
   if (adapter === undefined && options['--receipt']) {
-    adapter = receiptDigest(options['--receipt'], fixed.adapterArtifact);
-    source = `receipt ${fixed.adapterArtifact}`;
+    adapter = receiptDigest(options['--receipt'], artifact);
+    source = `receipt ${artifact}`;
   }
   if (adapter === undefined) {
-    adapter = upstreamDigest(readFileSync(join(component, 'fork', 'upstream.yaml'), 'utf8'), fixed.adapterArtifact);
-    source = `${component}/fork/upstream.yaml ${fixed.adapterArtifact}`;
+    adapter = upstreamDigest(readFileSync(join(component, 'fork', 'upstream.yaml'), 'utf8'), artifact);
+    source = `${component}/fork/upstream.yaml ${artifact}`;
   }
   const adapterBuildRef = bareDigest(adapter, source);
 
   if (manifestTemplate.admissionPath !== 'BUILTIN_REFERENCE' || 'vendor' in manifestTemplate || 'artifactVersion' in manifestTemplate) {
     fail('built-in reference material must declare BUILTIN_REFERENCE without vendor/artifactVersion');
+  }
+  const pageOnly = manifestTemplate.executionConnector?.mode === 'NONE';
+  if (pageOnly !== (materialName === 'native-page') || (pageOnly && (manifestTemplate.frontendDelivery?.mode !== 'NATIVE_PAGE'
+    || !['file_storage', 'knowledge', 'data_query'].includes(manifestTemplate.frontendDelivery?.nativePageCategory)
+    || ['implements', 'capabilityDeclarations', 'secretSchema', 'resourceTypeDefinitions', 'actionDefinitions', 'toolDefinitions']
+      .some((field) => !Array.isArray(manifestTemplate[field]) || manifestTemplate[field].length !== 0)))) {
+    fail('native-page material must be implements=[], NATIVE_PAGE with nativePageCategory, ExecutionConnector NONE and no declarations (DD-127)');
   }
   const releaseId = uuidv5(RELEASE_NAMESPACE, `${manifestTemplate.componentTypeKey}@${manifestTemplate.version}`);
   const manifest = fill(manifestTemplate, {
@@ -192,8 +219,8 @@ function main() {
   writeCreateOnly(join(out, 'registration.json'), pretty({
     manifestJson: JSON.stringify(manifest), packageJson: JSON.stringify(pkg), bindingConfigSchemaJson: JSON.stringify(config),
   }));
-  process.stdout.write(`${JSON.stringify({ component, releaseId, componentTypeKey: manifest.componentTypeKey,
-    version: manifest.version, adapterBuildRef, manifestDigest: pkg.manifestDigest, packageDigest: digest(pkg),
+  process.stdout.write(`${JSON.stringify({ component, material: materialName, artifact, releaseId,
+    componentTypeKey: manifest.componentTypeKey, version: manifest.version, adapterBuildRef, manifestDigest: pkg.manifestDigest, packageDigest: digest(pkg),
     bindingConfigSchemaDigest: manifest.bindingConfigSchemaDigest, out })}\n`);
 }
 

@@ -351,6 +351,46 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 	resumed.AssertNotCalled(t, "RecordComponentConformance", mock.Anything, mock.Anything)
 }
 
+// DD-127: a native page entry has no contract; its empty suite records the
+// original report without any probe. A contracted plan without steps stays
+// refused.
+func TestComponentReleaseEmptySuiteOnlyWithoutContracts(t *testing.T) {
+	env, in := releaseWorkflowTest(t)
+	in.Release.ContractDigests, in.Release.Steps = []string{}, []generated.PlanStep{}
+	var report generated.ComponentConformanceObservation
+	env.OnActivity("RecordComponentConformance", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, observed generated.ComponentConformanceObservation) (generated.ComponentReleaseReceipt, error) {
+			report = observed
+			return generated.ComponentReleaseReceipt{ActionExecutionID: observed.ActionExecutionID,
+				ComponentReleaseID: observed.ComponentReleaseID, PlanDigest: observed.PlanDigest,
+				Status: generated.ComponentReleaseStatus("REGISTERED")}, nil
+		})
+	env.ExecuteWorkflow(ComponentTaskKind, in)
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	env.AssertNotCalled(t, "RunComponentConformanceStep", mock.Anything, mock.Anything)
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if string(wire["observations"]) != "[]" || string(wire["contractDigests"]) != "[]" {
+		t.Fatalf("empty suite report is not the frozen empty plan: %s", encoded)
+	}
+
+	refused, contracted := releaseWorkflowTest(t)
+	contracted.Release.Steps = []generated.PlanStep{}
+	refused.ExecuteWorkflow(ComponentTaskKind, contracted)
+	if refused.GetWorkflowError() == nil {
+		t.Fatal("a contracted plan without steps registered")
+	}
+	refused.AssertNotCalled(t, "RecordComponentConformance", mock.Anything, mock.Anything)
+}
+
 func TestComponentReleaseRefusalCannotRegister(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(generated.ComponentConformanceStepObservation{},

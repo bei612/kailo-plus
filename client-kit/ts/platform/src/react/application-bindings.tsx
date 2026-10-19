@@ -2,7 +2,7 @@
 // This is not the external application's administration UI or data plane.
 import {
   ActionDispatchState, ActionGateState, ApplicationBindingState,
-  ApplicationCallIdentityMode, ApplicationIsolationMode, ApplicationModelCallMode, ReasonCode,
+  ApplicationCallIdentityMode, ApplicationIsolationMode, ApplicationModelCallMode, NativePageCategory, ReasonCode,
   type ActionCommand, type ActionSubmission, type ApplicationBindingCreate,
   type ApplicationBindingPage, type ApplicationBindingView,
 } from "@client-kit/contracts";
@@ -52,9 +52,11 @@ export function validBindingPage(page: ApplicationBindingPage, workspaceId: stri
       && Object.values(ApplicationBindingState).includes(row.state) && positive(row.version)
       && typeof row.canDisable === "boolean"
       && (row.hasReadReceiver === undefined || typeof row.hasReadReceiver === "boolean")
+      && (row.nativePageCategory === undefined || Object.values(NativePageCategory).includes(row.nativePageCategory))
       && (row.activeProjectionGeneration === undefined || positive(row.activeProjectionGeneration))
       && (row.state !== ApplicationBindingState.Active || positive(row.activeProjectionGeneration))
-      && Array.isArray(row.capabilityCategories) && row.capabilityCategories.length > 0
+      // DD-127: a native page entry binding enables no capability category.
+      && Array.isArray(row.capabilityCategories)
       && row.capabilityCategories.every((capability) => !!capability && nonempty(capability.category) && positive(capability.version)));
 }
 
@@ -81,7 +83,8 @@ export function bindingDocument(source: string): ApplicationBindingCreate | null
       || !Object.values(ApplicationCallIdentityMode).includes(value.callIdentityMode)
       || !Object.values(ApplicationModelCallMode).includes(value.modelCallMode)
       || typeof value.retainOnTenantDelete !== "boolean" || !nonempty(value.normalizedConfigJson)
-      || !Array.isArray(value.capabilityCategories) || value.capabilityCategories.length === 0
+      // Empty only for a DD-127 native page entry release; Core decides per release.
+      || !Array.isArray(value.capabilityCategories)
       || !value.capabilityCategories.every((item: ApplicationBindingCreate["capabilityCategories"][number]) => item
         && Object.keys(item).every((key) => ["category", "version"].includes(key)) && nonempty(item.category) && positive(item.version))
       || !Array.isArray(value.secretRefs) || value.secretRefs.length !== 0) return null;
