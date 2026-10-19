@@ -360,7 +360,10 @@ async fn replay(
             .and_then(|p| p["commandDigest"].as_str())
             != Some(frozen)
     {
-        return Err((Refusal::Conflict(ReasonCode::IdempotencyKeyReused), operation));
+        return Err((
+            Refusal::Conflict(ReasonCode::IdempotencyKeyReused),
+            operation,
+        ));
     }
     if ae.gate_state == "DENIED" {
         let reason = ae
@@ -405,7 +408,10 @@ async fn record_denied(
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => return Ok(None),
         Err(e) => return Err(e.into()),
     };
-    let reason = checked.reason.clone().unwrap_or(ReasonCode::PermissionDenied);
+    let reason = checked
+        .reason
+        .clone()
+        .unwrap_or(ReasonCode::PermissionDenied);
     crate::governance::record_decision(
         &mut tx,
         &ae.subject(),
@@ -675,15 +681,18 @@ async fn finish(
         || Some(intent.workspace_id) != ae.workspace_id
         || intent.outcome.is_some()
     {
-        return Err(unavailable("Canvas intent does not belong to this execution"));
+        return Err(unavailable(
+            "Canvas intent does not belong to this execution",
+        ));
     }
     // Withdraw also reads while the binding re-verifies NIP-11: settling an already signed
     // event is not a new write into the Community.
     let control = control_client(service, ae.tenant_id, ProjectionDirection::Withdraw).await;
     let observed = match control {
-        Ok((control, _)) if control.pubkey_hex() == intent.control_pubkey => {
-            control.event_exists(&service.http, &intent.event_id).await.ok()
-        }
+        Ok((control, _)) if control.pubkey_hex() == intent.control_pubkey => control
+            .event_exists(&service.http, &intent.event_id)
+            .await
+            .ok(),
         _ => None,
     };
     let evidence = vec![Evidence::new(EvidenceKind::BuzzEventId, &intent.event_id)];
@@ -1059,7 +1068,10 @@ mod tests {
         assert_eq!(ok.workspace, workspace);
         assert_eq!(ok.content, "# Canvas");
         let mut unconfirmed = base.clone();
-        unconfirmed.as_object_mut().unwrap().remove("explicitConfirmation");
+        unconfirmed
+            .as_object_mut()
+            .unwrap()
+            .remove("explicitConfirmation");
         assert!(parse(&command(unconfirmed)).is_err());
         let mut extra = base.clone();
         extra["name"] = json!("not a canvas field");
@@ -1091,6 +1103,9 @@ mod tests {
         let now = chrono::Utc::now().timestamp();
         assert!(!settled(&intent(now - 1_000), None));
         assert!(!settled(&intent(now), Some(Duration::from_secs(120))));
-        assert!(settled(&intent(now - 1_000), Some(Duration::from_secs(120))));
+        assert!(settled(
+            &intent(now - 1_000),
+            Some(Duration::from_secs(120))
+        ));
     }
 }

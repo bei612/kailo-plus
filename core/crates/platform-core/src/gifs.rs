@@ -306,7 +306,12 @@ mod tests {
             registered_origin("https://cdn.example:8443/"),
             Some("https://cdn.example:8443".to_owned())
         );
-        for refused in ["http://static.klipy.com", "https://a.example/path", "*", "https://"] {
+        for refused in [
+            "http://static.klipy.com",
+            "https://a.example/path",
+            "*",
+            "https://",
+        ] {
             assert!(registered_origin(refused).is_none(), "{refused}");
         }
     }
@@ -335,7 +340,10 @@ mod tests {
         assert_eq!(gifs[0].title, "Ship it");
         assert!(gifs[0].url.ends_with("/md.gif"));
         assert!(gifs[0].preview_url.ends_with("/sm.webp"));
-        assert!(gifs[0].poster_url.as_deref().is_some_and(|p| p.ends_with("/hd.jpg")));
+        assert!(gifs[0]
+            .poster_url
+            .as_deref()
+            .is_some_and(|p| p.ends_with("/hd.jpg")));
         assert_eq!(gifs[1].title, "GIF");
         assert!(gifs[1].preview_url.ends_with("/xs.gif"));
         assert!(gifs[1].poster_url.is_none());

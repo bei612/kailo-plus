@@ -349,6 +349,8 @@ mod tests {
         let mut unlisted = doc.clone();
         unlisted["supported_extensions"] = serde_json::json!(["nip-er"]);
         assert!(!gif_advertised(&unlisted));
-        assert!(!gif_advertised(&serde_json::json!({"supported_extensions": ["nip-er"]})));
+        assert!(!gif_advertised(
+            &serde_json::json!({"supported_extensions": ["nip-er"]})
+        ));
     }
 }

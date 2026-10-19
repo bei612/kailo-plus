@@ -721,7 +721,9 @@ fn media_pair(url: &str, sha256: &str, host: &str) -> bool {
         && parsed.username().is_empty()
         && hash == sha256
         && sha256.len() == 64
-        && sha256.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        && sha256
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         && matches!(extension, "jpg" | "png" | "gif" | "webp")
 }
 
@@ -795,7 +797,14 @@ pub async fn create_conversation_preview(
     let Ok(Json(request)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    create(&state, &ctx, &host, (CONVERSATION_ACTION, None), &request.url).await
+    create(
+        &state,
+        &ctx,
+        &host,
+        (CONVERSATION_ACTION, None),
+        &request.url,
+    )
+    .await
 }
 
 fn refusal(status: StatusCode, class: ErrorClass, reason: ReasonCode) -> Response {
@@ -1147,7 +1156,11 @@ mod tests {
         ] {
             assert!(!allowed(ip(refused), &[]), "{refused}");
         }
-        for public in ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946", "8.8.8.8"] {
+        for public in [
+            "93.184.216.34",
+            "2606:2800:220:1:248:1893:25c8:1946",
+            "8.8.8.8",
+        ] {
             assert!(allowed(ip(public), &[]), "{public}");
         }
         let registered = [Network::parse("93.184.216.0/24").unwrap()];
@@ -1177,7 +1190,11 @@ mod tests {
 
     #[tokio::test]
     async fn literal_internal_addresses_are_refused_before_connecting() {
-        for url in ["https://127.0.0.1/", "https://[::1]/", "https://169.254.169.254/"] {
+        for url in [
+            "https://127.0.0.1/",
+            "https://[::1]/",
+            "https://169.254.169.254/",
+        ] {
             let url = Url::parse(url).unwrap();
             assert_eq!(resolve(&url, &[]).await.err(), Some(Refused::Address));
         }
@@ -1199,9 +1216,18 @@ mod tests {
         let found = extract(html, &page).unwrap();
         assert_eq!(found.title, "OG title 'one'");
         assert_eq!(found.site_name.as_deref(), Some("Example"));
-        assert_eq!(found.description.as_deref(), Some("Line one\ncontinues\nLine two"));
-        assert_eq!(found.image.unwrap().as_str(), "https://example.com/cover.png");
-        assert_eq!(found.favicon.unwrap().as_str(), "https://example.com/touch.png");
+        assert_eq!(
+            found.description.as_deref(),
+            Some("Line one\ncontinues\nLine two")
+        );
+        assert_eq!(
+            found.image.unwrap().as_str(),
+            "https://example.com/cover.png"
+        );
+        assert_eq!(
+            found.favicon.unwrap().as_str(),
+            "https://example.com/touch.png"
+        );
         assert!(extract("<html><body>no title</body></html>", &page).is_none());
         let docs = "<title>Plan - Google Docs</title>";
         assert_eq!(extract(docs, &page).unwrap().title, "Plan");
@@ -1218,7 +1244,9 @@ mod tests {
             .query_pairs()
             .any(|(k, v)| k == "url" && v == "https://www.youtube.com/watch?v=abc_123"));
         assert!(youtube_video(&Url::parse("https://youtu.be/xyz").unwrap()));
-        assert!(!youtube_video(&Url::parse("https://www.youtube.com/feed").unwrap()));
+        assert!(!youtube_video(
+            &Url::parse("https://www.youtube.com/feed").unwrap()
+        ));
     }
 
     #[test]
@@ -1230,7 +1258,11 @@ mod tests {
         let url = format!("https://community.example/media/{sha}.jpg");
         assert!(media_pair(&url, &sha, "community.example"));
         assert!(!media_pair(&url, &sha, "other.example"));
-        assert!(!media_pair(&format!("{url}?x=1"), &sha, "community.example"));
+        assert!(!media_pair(
+            &format!("{url}?x=1"),
+            &sha,
+            "community.example"
+        ));
         let bad = format!("https://community.example/media/{sha}.svg");
         assert!(!media_pair(&bad, &sha, "community.example"));
     }

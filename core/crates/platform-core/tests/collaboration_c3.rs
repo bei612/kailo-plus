@@ -42,7 +42,9 @@ fn canvas_command(key: Uuid, workspace: Uuid, content: &str) -> serde_json::Valu
 async fn dd125_canvas_link_previews_and_gif_option() {
     let Some(e) = common::env() else { return };
     let http = reqwest::Client::new();
-    let pool = PgPool::connect(&e.database_url).await.expect("Core database");
+    let pool = PgPool::connect(&e.database_url)
+        .await
+        .expect("Core database");
     let token = common::worker_token(&http, &e).await;
     let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
         Ok(f) => f,
@@ -91,8 +93,12 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
         // The same key answers the same operation; another body is a reuse.
         let (_, replay) = call(reqwest::Method::POST, actions.clone(), Some(command(body))).await;
         assert_eq!(replay["operationId"], submission["operationId"]);
-        let (status, reused) =
-            call(reqwest::Method::POST, actions.clone(), Some(command("other"))).await;
+        let (status, reused) = call(
+            reqwest::Method::POST,
+            actions.clone(),
+            Some(command("other")),
+        )
+        .await;
         assert_eq!(status, reqwest::StatusCode::CONFLICT, "{reused}");
         let (_, view) = call(reqwest::Method::GET, canvas_path.clone(), None).await;
         assert_eq!(view["content"], body, "{view}");
@@ -120,9 +126,15 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
     // V-SCN-139: the fetch host refuses non-https and internal addresses before connecting.
     let previews = format!("/api/v1/workspaces/{}/link-previews", fx.workspace);
     for (url, expected) in [
-        ("http://example.com/", reqwest::StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            "http://example.com/",
+            reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+        ),
         ("https://127.0.0.1/", reqwest::StatusCode::NOT_FOUND),
-        ("https://169.254.169.254/latest/", reqwest::StatusCode::NOT_FOUND),
+        (
+            "https://169.254.169.254/latest/",
+            reqwest::StatusCode::NOT_FOUND,
+        ),
         ("https://[::1]/", reqwest::StatusCode::NOT_FOUND),
     ] {
         let request = serde_json::json!({ "url": url });
@@ -138,7 +150,10 @@ async fn run(http: &reqwest::Client, e: &Env, pool: &PgPool, fx: &common::LiveWo
     .fetch_all(pool)
     .await
     .unwrap();
-    assert!(audited.iter().all(|code| code == "ADDRESS_REFUSED"), "{audited:?}");
+    assert!(
+        audited.iter().all(|code| code == "ADDRESS_REFUSED"),
+        "{audited:?}"
+    );
     let leaked: bool = sqlx::query_scalar(
         "select exists(select 1 from audit.audit_event where tenant_id = $1
          and parameter_hash like '%169.254%')",
