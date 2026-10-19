@@ -2163,7 +2163,8 @@ mod registration_tests {
         let mut entries = Vec::new();
         for case in registered.vectors["cases"].as_array().unwrap() {
             let case_key = format!("knowledge:3:{}", case["caseKey"].as_str().unwrap());
-            for item in case["preconditions"].as_array().unwrap() {
+            // The forward search case declares no preconditions.
+            for item in case["preconditions"].as_array().into_iter().flatten() {
                 let key = item["key"].as_str().unwrap();
                 let value = if key == "receiver" {
                     receiver.clone()
