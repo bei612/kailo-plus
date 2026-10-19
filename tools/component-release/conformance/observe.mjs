@@ -47,6 +47,23 @@
 // the candidate's own SUCCEEDED responses during its run, and nothing observed
 // here is published as a vector expectation.
 //
+// data-query (Wren, DD-124(3), data_query@2): the candidate adapter is the
+// original wren-ui platform-adapter route, configured by its query and binding
+// deliveries instead of an adapter-delivery.py configuration:
+//   "adapterConfigFile":"/abs WREN_PLATFORM_QUERY_CONFIG_FILE (query.json)",
+//   "adapterBindingFile":"/abs WREN_PLATFORM_BINDING_CONFIG_FILE (binding.json)",
+//   "provider":{ "listenHost","listenPort","productionActionAudience" },
+//   "wren":{ "databaseUrlFile","nativeFixtureFile","preparationGeneration" }
+// The in-process PEP is the Wren precedent provider
+// (data-query/docker/conformance/provider.mjs openProvider), which re-reads the
+// native project, model and the fixture's SUCCESS deployment for every
+// decision and also answers the query consumers' sourceResources; it resolves
+// knex from an installed data-query/wren-ui dependency tree (conformance-run.sh
+// mounts CONFORMANCE_WREN_NODE_MODULES). The validate_binding request is the
+// delivered binding itself, which the adapter compares exactly. The vectors
+// carry no Wren-generated identity; describe's deployment ids and typed
+// reference are captured by Core during its run.
+//
 // DD-124(3)(4): steps of RECEIVER cases are not observed here at all. With "receiver",
 // facts.nativeReceivers names each of them for the isolated receiver
 // deployment (one frozen request per step; a native batch names the frozen
@@ -180,12 +197,61 @@ async function receiverFacts(run, manifest, preconditions) {
     environment: { receiverActionBaseUrl: receiver.receiverActionBaseUrl, nativeReadAuthorities: receiver.nativeReadAuthorities } };
 }
 
+// data-query: the Wren query and binding deliveries of the isolated candidate.
+async function wrenAdapter(run, manifest) {
+  const query = await ownerOnly(run.adapterConfigFile);
+  const delivery = await ownerOnly(run.adapterBindingFile);
+  const binding = delivery?.binding;
+  if (!/^[a-f0-9]{64}$/.test(manifest.adapterBuildRef ?? '') || delivery?.artifactDigest !== manifest.adapterBuildRef
+    || !object(binding) || binding.componentReleaseId !== manifest.id || delivery.componentTypeKey !== manifest.componentTypeKey
+    || query.bindingId !== run.bindingManagement.bindingId || binding.bindingId !== query.bindingId
+    || query.tenantId !== run.principals.tenantId || binding.tenantId !== query.tenantId
+    || query.workspaceId !== run.principals.workspaceId || binding.workspaceId !== query.workspaceId
+    || query.actionTokenIssuer !== run.identity.issuer || query.actionTokenAudience !== run.identity.audience
+    || query.actionTokenJwksFile !== run.adapterJwksFile) {
+    fail('Wren query/binding delivery is not the isolated candidate for this manifest, binding and identity');
+  }
+  return { delivery, binding };
+}
+
+// data-query: the observation identity also carries one allowed and one
+// denied execute context per frozen vector step, exactly the shape Core's
+// conformance-inputs identity has, because the Wren provider refuses an
+// identity without them. They are never called here.
+async function wrenVectorContexts(run, manifest, base, observationSeed) {
+  const file = new URL('../../../contracts/adapter/data_query.v2/registration.json', import.meta.url);
+  const registration = JSON.parse(await readFile(file, 'utf8'));
+  const vectors = parseVectors(registration);
+  if (vectors.formatVersion !== 'V2' || !(manifest.implements ?? []).some((item) => item.categoryKey === 'data_query'
+    && item.contractVersion === registration.contractVersion)) fail('the release does not implement data_query@2 (V2 vectors)');
+  const contexts = [];
+  for (const vectorCase of vectors.cases) {
+    const caseKey = `${registration.categoryKey}:${registration.contractVersion}:${vectorCase.caseKey}`;
+    for (const step of vectorCase.steps) {
+      const policy = { ...(run.vectorContexts.default ?? {}), ...(run.vectorContexts.byContract?.[step.contractKey] ?? {}),
+        ...(run.vectorContexts.byStep?.[`${caseKey}/${step.stepKey}`] ?? {}) };
+      const version = (manifest.actionDefinitions ?? []).find((action) => action.actionKey === step.contractKey)?.version
+        ?? fail(`manifest has no actionDefinition for ${step.contractKey}`);
+      const fields = { ...base, actionKey: step.contractKey, actionDefinitionVersion: version, targetType: 'RESOURCE',
+        targetId: step.referenceResourceId, resultExposurePolicyId: policy.resultExposurePolicyId,
+        resultExposurePolicyVersion: policy.resultExposurePolicyVersion,
+        externalExecutionId: uuidv5(observationSeed, `external:${caseKey}/${step.stepKey}`) };
+      contexts.push({ caseKey, stepKey: step.stepKey, operation: 'execute', ...fields });
+      contexts.push({ caseKey, stepKey: `permission-denied:${step.stepKey}`, operation: 'execute', ...fields,
+        actorPrincipalId: run.principals.deniedActorPrincipalId });
+    }
+  }
+  return { contexts, registration, resourceId: vectors.cases[0]?.steps?.[0]?.referenceResourceId };
+}
+
 async function main() {
   const flag = process.argv.indexOf('--run');
   if (flag < 0 || process.argv.length !== 4) fail('usage: observe.mjs --run /abs/observe.json');
   const run = await ownerOnly(process.argv[flag + 1]);
+  const wren = run.component === 'data-query';
   for (const key of ['component', 'manifestFile', 'seed', 'adapterBaseUrl', 'suiteAdapterBaseUrl', 'maxResponseBytes', 'maxSteps',
-    'adapterConfigFile', 'adapterJwksFile', 'provider', 'identity', 'principals', 'bindingManagement', 'execution', 'vectorContexts', 'out']) {
+    'adapterConfigFile', 'adapterJwksFile', 'provider', 'identity', 'principals', 'bindingManagement', 'execution', 'vectorContexts', 'out',
+    ...(wren ? ['adapterBindingFile', 'wren'] : [])]) {
     if (!Object.hasOwn(run, key)) fail(`observe.json: missing ${key}`);
   }
   if (!UUID.test(run.seed) || !isAbsolute(run.out) || !isAbsolute(run.adapterJwksFile)) fail('observe.json: seed/out/adapterJwksFile invalid');
@@ -194,15 +260,22 @@ async function main() {
   }
   const preconditions = await seededPreconditions(run.nativeFactsFile);
   const manifest = JSON.parse(await readFile(run.manifestFile, 'utf8'));
-  const adapter = JSON.parse(await readFile(run.adapterConfigFile, 'utf8'));
-  const validation = adapter.management?.validation;
-  if (!/^[a-f0-9]{64}$/.test(manifest.adapterBuildRef ?? '') || adapter.management?.artifactDigest !== manifest.adapterBuildRef
-    || adapter.management?.componentReleaseId !== manifest.id || !object(validation)
-    || adapter.bindingId !== run.bindingManagement.bindingId || adapter.tenantId !== run.principals.tenantId
-    || adapter.workspaceId !== run.principals.workspaceId
-    || adapter.actionTokenIssuer !== run.identity.issuer || adapter.actionTokenAudience !== run.identity.audience
-    || adapter.actionTokenJwksFile !== run.adapterJwksFile) {
-    fail('adapter configuration is not the isolated candidate for this manifest, binding and identity');
+  let adapter;
+  let validation;
+  let wrenBinding;
+  if (wren) {
+    ({ binding: wrenBinding } = await wrenAdapter(run, manifest));
+  } else {
+    adapter = JSON.parse(await readFile(run.adapterConfigFile, 'utf8'));
+    validation = adapter.management?.validation;
+    if (!/^[a-f0-9]{64}$/.test(manifest.adapterBuildRef ?? '') || adapter.management?.artifactDigest !== manifest.adapterBuildRef
+      || adapter.management?.componentReleaseId !== manifest.id || !object(validation)
+      || adapter.bindingId !== run.bindingManagement.bindingId || adapter.tenantId !== run.principals.tenantId
+      || adapter.workspaceId !== run.principals.workspaceId
+      || adapter.actionTokenIssuer !== run.identity.issuer || adapter.actionTokenAudience !== run.identity.audience
+      || adapter.actionTokenJwksFile !== run.adapterJwksFile) {
+      fail('adapter configuration is not the isolated candidate for this manifest, binding and identity');
+    }
   }
   const p = run.principals;
   const base = { tenantId: p.tenantId, ...(p.workspaceId === undefined ? {} : { workspaceId: p.workspaceId }),
@@ -223,6 +296,15 @@ async function main() {
     { caseKey: 'protocol_execution_idempotency', stepKey: 'observe', operation: 'observe', ...business },
     { caseKey: 'protocol_error_mapping', stepKey: 'map', operation: 'map_native_status_error', ...business },
   ];
+  let wrenVectors;
+  if (wren) {
+    wrenVectors = await wrenVectorContexts(run, manifest, base, observationSeed);
+    // The Wren provider admits business contexts only on the vector Resource.
+    if (business.targetType !== 'RESOURCE' || business.targetId !== wrenVectors.resourceId) {
+      fail(`data-query: execution.target must be the vector Resource ${wrenVectors.resourceId}`);
+    }
+    contexts.push(...wrenVectors.contexts);
+  }
 
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const kid = `observation-${randomBytes(8).toString('hex')}`;
@@ -234,8 +316,25 @@ async function main() {
     const identityFile = join(work, 'observation-identity.json');
     await writeFile(identityFile, JSON.stringify({ ...run.identity, artifactDigest: manifest.adapterBuildRef, jwksFile: run.adapterJwksFile, contexts }), { mode: 0o600 });
     const providerFile = join(work, 'provider.json');
-    await writeFile(providerFile, JSON.stringify({ mode: 'CONFORMANCE_ONLY', ...run.provider, identityFile }), { mode: 0o600 });
-    provider = await openProvider(providerFile);
+    if (wren) {
+      // Wren precedent provider: owner-only copies of the environment and the
+      // registration it pins; the deliveries and native fixture are the run's.
+      const environmentFile = join(work, 'environment.json');
+      await writeFile(environmentFile, JSON.stringify({ artifactDigest: manifest.adapterBuildRef, adapterBaseUrl: run.suiteAdapterBaseUrl,
+        maxResponseBytes: run.maxResponseBytes, maxSteps: run.maxSteps }), { mode: 0o600 });
+      const registrationFile = join(work, 'registration.json');
+      await writeFile(registrationFile, JSON.stringify(wrenVectors.registration), { mode: 0o600 });
+      const { databaseUrlFile, nativeFixtureFile, preparationGeneration } = run.wren;
+      await writeFile(providerFile, JSON.stringify({ mode: 'CONFORMANCE_ONLY', listenHost: run.provider.listenHost,
+        listenPort: run.provider.listenPort, productionActionAudience: run.provider.productionActionAudience, environmentFile,
+        identityFile, queryFile: run.adapterConfigFile, bindingFile: run.adapterBindingFile, registrationFile, databaseUrlFile,
+        nativeFixtureFile, preparationGeneration }), { mode: 0o600 });
+      const { openProvider: openWrenProvider } = await import('../../../data-query/docker/conformance/provider.mjs');
+      provider = await openWrenProvider(providerFile);
+    } else {
+      await writeFile(providerFile, JSON.stringify({ mode: 'CONFORMANCE_ONLY', ...run.provider, identityFile }), { mode: 0o600 });
+      provider = await openProvider(providerFile);
+    }
     await new Promise((resolve, reject) => { provider.server.once('error', reject); provider.server.listen(run.provider.listenPort, run.provider.listenHost, resolve); });
 
     const call = async (operation, context, request) => {
@@ -259,12 +358,14 @@ async function main() {
     const handshake = await call('handshake', contexts[0], { ...handshakeRequest, idempotencyKey: key('handshake') });
     if (handshake.protocolVersion !== '1' || handshake.artifactDigest !== manifest.adapterBuildRef) fail('handshake does not report the candidate artifact');
 
-    const references = validation.secretDeliveries.map(({ secretKey, locator, version: v, audience }) => ({ secretKey, locator, version: v, audience }));
-    const bindingRequest = { bindingId: adapter.bindingId, bindingVersion: validation.bindingVersion, tenantId: adapter.tenantId,
+    // Wren compares the request with its delivered binding exactly.
+    const bindingRequest = wren ? wrenBinding : {
+      bindingId: adapter.bindingId, bindingVersion: validation.bindingVersion, tenantId: adapter.tenantId,
       ...(adapter.workspaceId === undefined ? {} : { workspaceId: adapter.workspaceId }), componentReleaseId: manifest.id,
       servicePrincipalId: validation.servicePrincipalId, adapterServiceRef: validation.adapterServiceRef,
       nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: validation.nativeScopeRef, isolationMode: validation.isolationMode,
-      normalizedConfig: validation.normalizedConfig, configDigest: sha256(canonical(validation.normalizedConfig)), secretRefs: references };
+      normalizedConfig: validation.normalizedConfig, configDigest: sha256(canonical(validation.normalizedConfig)),
+      secretRefs: validation.secretDeliveries.map(({ secretKey, locator, version: v, audience }) => ({ secretKey, locator, version: v, audience })) };
     const observedBinding = await call('validate_binding', contexts[1], { ...bindingRequest, idempotencyKey: key('validate_binding') });
     if (!Array.isArray(observedBinding.secretReads)) fail('validate_binding returned no secret read evidence');
     // Exactly Core's binding_comparison: request ids are fresh per read.

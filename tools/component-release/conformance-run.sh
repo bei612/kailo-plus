@@ -7,7 +7,7 @@
 # production OpenBao or a production binding: the native instance, adapter and
 # PEP provider live in a dedicated Compose project on a dedicated network.
 #
-#   conformance-run.sh <file-storage|knowledge> /abs/run.env [--stage <0-6>]
+#   conformance-run.sh <file-storage|knowledge|data-query> /abs/run.env [--stage <0-6>]
 #
 # Without --stage every stage runs in order. With --stage <n> only stage n runs,
 # so operator-minted native facts can be supplied between stages without
@@ -60,18 +60,43 @@
 #   CONFORMANCE_MANIFEST      render.mjs output manifest.json for this candidate
 #   CONFORMANCE_CORE_JWKS     public JWKS of Core's isolated conformance identity
 #   CONFORMANCE_ADAPTER_JWKS  the isolated adapter's actionTokenJwksFile
+#
+# data-query (Wren on data_query@2, DD-124(3); data-query/docker/conformance/README.md).
+# Wren has no start.sh and no separate native-action delivery; its PEP provider is
+# the Wren precedent data-query/docker/conformance/provider.mjs (it re-reads the
+# native PostgreSQL and answers the query consumers' sourceResources). Stages:
+#   1 native    dedicated Compose project (WREN_COMPOSE_PROJECT_NAME=kailo-wren-conformance*)
+#               from data-query/docker/docker-compose.yaml only; the operator then does the
+#               original Wren onboarding (connect the isolated PostgreSQL source, select the
+#               table the vectors' describe/query expect as the model) and mints the native
+#               HUMAN token of the preparation file
+#   2 seed      the same project with the query-governance.yaml overlay (wren-ui joins
+#               CONFORMANCE_NETWORK as WREN_QUERY_PLATFORM_NETWORK), then `provider.mjs prepare`:
+#               the original GraphQL deploy; the deployment id/hash Wren generates are only
+#               recorded in the owner-only nativeFixtureFile, never vector values
+#   3 delivery  `provider.mjs observe`: idempotent re-observation of that same SUCCESS deployment
+#   4 observe   observe.mjs with the Wren query/binding deliveries and the Wren provider
+#   6 provider  the Wren provider for Core's identity (CONFORMANCE_PROVIDER_FILE is its
+#               WREN_CONFORMANCE_CONFIG_FILE: identityFile/environmentFile = RUN_DIR/inputs/*)
+# Additional run.env keys:
+#   CONFORMANCE_WREN_NODE_MODULES       installed data-query/wren-ui node_modules of the same
+#                                       yarn.lock (knex, pg), mounted read-only at /node_modules
+#   CONFORMANCE_WREN_IDENTITY_JSON_FILE owner-only file with the instance's WREN_NATIVE_IDENTITY_JSON
+#   CONFORMANCE_SEED_FILE               the provider config with preparationFile (stages 2-3)
+# The Wren delivery files (query.json, binding.json, environment, database URL, native
+# fixture output) live under RUN_DIR or are listed in CONFORMANCE_MOUNTS.
 set -euo pipefail
 component=${1:-}
 run_env=${2:-}
 only=
-usage='usage: conformance-run.sh <file-storage|knowledge> /abs/run.env [--stage <0-6>]'
+usage='usage: conformance-run.sh <file-storage|knowledge|data-query> /abs/run.env [--stage <0-6>]'
 case "$#:${3:-}" in
   2:) ;;
   4:--stage) only=${4:-} ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
 [[ -z $only || $only =~ ^[0-6]$ ]] || { echo "$usage" >&2; exit 2; }
-case "$component" in file-storage|knowledge) ;; *) echo "$usage" >&2; exit 2 ;; esac
+case "$component" in file-storage|knowledge|data-query) ;; *) echo "$usage" >&2; exit 2 ;; esac
 [[ $run_env == /* && -f $run_env && ! -L $run_env && $(stat -c '%a' -- "$run_env") == 600 ]] || { echo 'run.env must be an absolute 0600 regular file' >&2; exit 2; }
 set -a
 # shellcheck disable=SC1090
@@ -110,25 +135,35 @@ for file in "${CONFORMANCE_OBSERVE_FILE:-}" "${CONFORMANCE_PROVIDER_FILE:-}" "${
   [[ $file == /* ]] || { echo "input path must be absolute: $file" >&2; exit 2; }
   [[ $file == "$run"/* ]] || mounts+=(-v "$file:$file")
 done
+# Wren's provider resolves knex/pg from an installed wren-ui dependency tree.
+wren_args=()
+if [[ $component == data-query && -n ${CONFORMANCE_WREN_NODE_MODULES:-} ]]; then
+  [[ $CONFORMANCE_WREN_NODE_MODULES == /* && -d $CONFORMANCE_WREN_NODE_MODULES/knex && -d $CONFORMANCE_WREN_NODE_MODULES/pg ]] \
+    || { echo 'CONFORMANCE_WREN_NODE_MODULES must be an installed wren-ui node_modules (knex, pg)' >&2; exit 2; }
+  wren_args+=(-v "$CONFORMANCE_WREN_NODE_MODULES:/node_modules:ro")
+fi
 # Dedicated Compose project of the isolated native instance (never platform-local).
 project_of() {
-  python3 -I - "$1" <<'PY'
+  local key=CELLS_COMPOSE_PROJECT prefix=kailo-cells-conformance
+  [[ $component != data-query ]] || { key=WREN_COMPOSE_PROJECT_NAME; prefix=kailo-wren-conformance; }
+  python3 -I - "$1" "$key" "$prefix" <<'PY'
 import re, sys
 for line in open(sys.argv[1], encoding='utf-8'):
-    m = re.match(r'^CELLS_COMPOSE_PROJECT=(kailo-cells-conformance[a-z0-9_-]*)\s*$', line.strip())
+    m = re.match(r'^' + sys.argv[2] + r'=(' + sys.argv[3] + r'[a-z0-9_-]*)\s*$', line.strip())
     if m:
         print(m.group(1)); break
 else:
-    sys.exit('dedicated kailo-cells-conformance* Compose project required')
+    sys.exit(f'dedicated {sys.argv[3]}* Compose project required')
 PY
 }
 
+node_env=() # extra -e NAME=value (non-secret configuration only)
 node_step() { # node_step <network|none> <alias|-> <script> [args...]
   local network=$1 alias=$2
   shift 2
   local args=(run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --cpus 1 --memory 768m --memory-swap 768m
-    --pids-limit 256 --tmpfs /tmp:rw,nosuid,nodev,size=64m -u "$(id -u):$(id -g)" -e HOME=/tmp
-    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" -w /src --network "$network")
+    --pids-limit 256 --tmpfs /tmp:rw,nosuid,nodev,size=64m -u "$(id -u):$(id -g)" -e HOME=/tmp "${node_env[@]}"
+    -v "$src:/src:ro" -v "$run:$run" "${mounts[@]}" "${wren_args[@]}" -w /src --network "$network")
   [[ $alias == - ]] || args+=(--network-alias "$alias")
   "${docker[@]}" "${args[@]}" "$CONFORMANCE_NODE_IMAGE" node "$@"
 }
@@ -153,6 +188,100 @@ if wanted 0; then
     exit 3
   fi
   done_stage 0
+fi
+
+if [[ $component == data-query ]]; then
+  # Wren (data_query@2): see the data-query section of the header.
+  compose_files=(-f "$src/data-query/docker/docker-compose.yaml")
+  governed_files=("${compose_files[@]}" -f "$src/data-query/docker/query-governance.yaml")
+  wren_compose() { # wren_compose <env file> <compose files...> -- <compose args...>
+    local env=$1 files=()
+    shift
+    while [[ $1 != -- ]]; do files+=("$1"); shift; done
+    shift
+    "${docker[@]}" compose --project-name "$(project_of "$env")" --env-file "$env" "${files[@]}" "$@"
+  }
+  wren_native() { # the project's own network: wren-ui, the native PostgreSQL and the provider alias
+    printf '%s_wren' "$(project_of "$CONFORMANCE_NATIVE_ENV")"
+  }
+  wren_identity() {
+    need CONFORMANCE_WREN_IDENTITY_JSON_FILE CONFORMANCE_WREN_NODE_MODULES
+    local file=$CONFORMANCE_WREN_IDENTITY_JSON_FILE
+    [[ $file == /* && -f $file && ! -L $file && $(stat -c '%a' -- "$file") == 600 ]] \
+      || { echo 'CONFORMANCE_WREN_IDENTITY_JSON_FILE must be an absolute 0600 regular file' >&2; exit 2; }
+    node_env=(-e "WREN_NATIVE_IDENTITY_JSON=$(<"$file")")
+  }
+  if wanted 1; then
+    need CONFORMANCE_NETWORK CONFORMANCE_NATIVE_ENV
+    "${docker[@]}" network inspect "$CONFORMANCE_NETWORK" >/dev/null 2>&1 \
+      || "${docker[@]}" network create --internal --label kailo.conformance="$component" "$CONFORMANCE_NETWORK" >/dev/null
+    echo "[1/6] isolated native Wren instance"
+    wren_compose "$CONFORMANCE_NATIVE_ENV" "${compose_files[@]}" -- up --detach --no-build --pull never --wait
+    done_stage 1
+    if [[ -n $only ]]; then
+      cat <<NEXT
+Stage 1 done. In this isolated instance only, do the original Wren onboarding: connect the isolated PostgreSQL
+source holding the table the frozen describe/query vectors expect, select it as the model, and mint the native
+HUMAN token named by the preparation file. Then deliver the query/binding files of the governance overlay
+(serviceTokenUrl/corePepUrl at the provider alias conformance-provider, WREN_QUERY_PLATFORM_NETWORK=$CONFORMANCE_NETWORK)
+in CONFORMANCE_NATIVE_ENV, set CONFORMANCE_SEED_FILE, CONFORMANCE_WREN_IDENTITY_JSON_FILE and
+CONFORMANCE_WREN_NODE_MODULES in $run_env and run --stage 2.
+NEXT
+    fi
+  fi
+  if wanted 2; then
+    need CONFORMANCE_NETWORK CONFORMANCE_NATIVE_ENV CONFORMANCE_SEED_FILE
+    wren_identity
+    echo "[2/6] governance overlay and native seed (original GraphQL deploy)"
+    wren_compose "$CONFORMANCE_NATIVE_ENV" "${governed_files[@]}" -- up --detach --no-build --pull never --force-recreate --no-deps --wait \
+      wren-query-secret-agent wren-ui
+    node_env+=(-e "WREN_CONFORMANCE_CONFIG_FILE=$CONFORMANCE_SEED_FILE")
+    node_step "$(wren_native)" conformance-provider data-query/docker/conformance/provider.mjs prepare
+    done_stage 2
+  fi
+  if wanted 3; then
+    need CONFORMANCE_NATIVE_ENV CONFORMANCE_SEED_FILE
+    wren_identity
+    echo "[3/6] re-observe the seeded native deployment"
+    node_env+=(-e "WREN_CONFORMANCE_CONFIG_FILE=$CONFORMANCE_SEED_FILE")
+    node_step "$(wren_native)" conformance-provider data-query/docker/conformance/provider.mjs observe
+    done_stage 3
+  fi
+  if wanted 4; then
+    need CONFORMANCE_NATIVE_ENV CONFORMANCE_OBSERVE_FILE CONFORMANCE_WREN_NODE_MODULES
+    echo "[4/6] observe the candidate adapter"
+    node_step "$(wren_native)" conformance-provider tools/component-release/conformance/observe.mjs --run "$CONFORMANCE_OBSERVE_FILE"
+    done_stage 4
+  fi
+  if wanted 5; then
+    need CONFORMANCE_MANIFEST
+    echo "[5/6] assemble Core conformance inputs"
+    install -d -m 0700 "$run/inputs"
+    node_step none - tools/component-release/conformance-inputs.mjs --facts "$run/facts.json" --manifest "$CONFORMANCE_MANIFEST" --out "$run/inputs"
+    done_stage 5
+  fi
+  if wanted 6; then
+    need CONFORMANCE_NATIVE_ENV CONFORMANCE_PROVIDER_FILE CONFORMANCE_CORE_JWKS CONFORMANCE_ADAPTER_JWKS CONFORMANCE_WREN_NODE_MODULES
+    echo "[6/6] Wren suite PEP provider"
+    install -m 0600 "$CONFORMANCE_CORE_JWKS" "$CONFORMANCE_ADAPTER_JWKS.next"
+    mv -f "$CONFORMANCE_ADAPTER_JWKS.next" "$CONFORMANCE_ADAPTER_JWKS"
+    name=kailo-conformance-provider-$component
+    "${docker[@]}" rm -f "$name" >/dev/null 2>&1 || true
+    "${docker[@]}" run -d --name "$name" --restart no --read-only --cap-drop ALL --security-opt no-new-privileges --cpus 0.5 --memory 384m \
+      --memory-swap 384m -u "$(id -u):$(id -g)" -e HOME=/tmp -e WREN_CONFORMANCE_CONFIG_FILE="$CONFORMANCE_PROVIDER_FILE" \
+      -v "$src:/src:ro" -v "$run:$run:ro" "${mounts[@]}" "${wren_args[@]}" -w /src --network "$(wren_native)" \
+      --network-alias conformance-provider "$CONFORMANCE_NODE_IMAGE" node data-query/docker/conformance/provider.mjs >/dev/null
+    done_stage 6
+    cat <<NEXT
+Isolated conformance inputs ready (no production state changed):
+  COMPONENT_CONFORMANCE_FIXTURE_FILE=$run/inputs/fixture.json
+  COMPONENT_CONFORMANCE_IDENTITY_FILE=$run/inputs/identity.json
+  COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=$run/inputs/environment.json
+Deliver them read-only to core-bff/worker (deploy/local start-core.sh --no-build) and attach the Worker
+to $CONFORMANCE_NETWORK (wren-ui joins it through the query overlay) only for the registration window.
+NEXT
+  fi
+  exit 0
 fi
 [[ $component == file-storage ]] || { echo 'knowledge continues in receiver-run.sh after stage 0' >&2; exit 3; }
 

@@ -3,7 +3,8 @@
 // implementation can satisfy through its native entry, once their corrected
 // successors are ACTIVE. file_storage@1 (literal head revision and share ids)
 // is replaced by file_storage@2; knowledge@2 (literal source revision and Core
-// execution ids, never approved) by knowledge@3. Each withdrawal is the
+// execution ids, never approved) by knowledge@3; data_query@1 (literal Wren
+// deployment id/hash, schema typing them as Wren's integer/hex) by data_query@2. Each withdrawal is the
 // governed capability_contract.deprecate action (explicit confirmation, no
 // approval); it applies to an ACTIVE seed and to a never-approved DRAFT alike,
 // and a DEPRECATED version can never be approved again. Existing bindings keep
@@ -25,6 +26,7 @@ import { contract, expectedSchemaSetDigest, expectedSuiteDigest } from './capabi
 const REPLACEMENTS = [
   { retired: ['file_storage', 1], successor: ['file_storage', 2] },
   { retired: ['knowledge', 2], successor: ['knowledge', 3] },
+  { retired: ['data_query', 1], successor: ['data_query', 2] },
 ];
 
 function registrationOf(category, version) {

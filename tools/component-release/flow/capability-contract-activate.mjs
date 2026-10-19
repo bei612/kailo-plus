@@ -2,7 +2,7 @@
 // Make one checked-in capability contract version ACTIVE through the governed
 // path only (capability_contract.register -> DRAFT, then
 // capability_contract.approve decided by a second Catalog admin; DD-102/108,
-// DD-124(3), V-SCN-117/18). Used for file_storage@2 and knowledge@3, in the
+// DD-124(3), V-SCN-117/18). Used for file_storage@2, knowledge@3 and data_query@2, in the
 // production Catalog and, with KAILO_WEB/KAILO_DEPLOY_DIR pointing at it, in a
 // 07 §8A isolated receiver deployment (tools/component-release/receiver-run.sh).
 //
