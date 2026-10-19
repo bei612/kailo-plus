@@ -14,12 +14,32 @@ contacts Core, OpenBao or the native instance, or reads a secret.
 
   python3 -I isolated-plan.py --release-dir <render.mjs output>
       --native-facts /abs/native-facts.json (stage-2 seed output, owner-only)
+      (--binding-facts /abs/<CELLS_BINDING_FACTS_FILE> | --instance-service-user <uuid>)
       --native-page-url <url in the release nativePageOrigins>
       --native-instance-ref <ref> --kv-mount <isolated OpenBao KV mount segment>
       [--adapter-service-ref file-storage-adapter] [--isolation-mode DEDICATED_INSTANCE]
       [--client-id <id>] [--model-call-mode <mode>] [--binding-generation 1]
-      [--binding-action-version 1] [--actor-native-user <uuid>]
+      [--binding-action-version 1] [--actor-native-user <uuid>] [--source-root <apps tree>]
       --plan-out /abs/isolated-plan.json --context-out /abs/isolated-context.json
+
+The native action delivery (deploy/components/file-storage-native-action
+.template.json) also needs facts that are not identities of this run; they are
+derived, never defaulted:
+  instanceServiceUuid   native user behind cells_bearer: the binding facts'
+                        instanceServiceUuid (file-storage/deploy/reconcile.py,
+                        CELLS_BINDING_SERVICE_LOGIN) or --instance-service-user
+  writeNativeType       LEAF: a governed write promotes a file node's draft and
+                        resolves that node's Resource (gateway/restv2
+                        native-human-upload.go)
+  deleteNativeType      job: native task type of the release's task-declared
+                        delete (manifest nativeTaskExecutionTimeoutSeconds; the
+                        Cells jobs task the adapter observes and the suite
+                        provider's nativeTaskTypes name)
+  shareNativeType       COLLECTION: links are rooted on the binding root folder
+  cellShareNativeType   COLLECTION: Cells are rooted on folders (idm/share)
+  grant/revokeActionVersion  versions of Core's resource.grant_read /
+                        resource.revoke_read ActionDefinitions as seeded by
+                        core/migrations of the same source tree
 
 Outputs are create-only, mode 0600 (fresh identities differ on every call, so
 an existing file is never reused):
@@ -95,6 +115,32 @@ def rendered_manifest(release_dir):
     return manifest
 
 
+# Cells node type names (tree.NodeType) of the objects each section resolves.
+NATIVE_NODE_TYPES = {"writeNativeType": "LEAF", "shareNativeType": "COLLECTION", "cellShareNativeType": "COLLECTION"}
+# Cells native task type of a task-declared action (jobs service task).
+NATIVE_TASK_TYPE = "job"
+CELL_SHARE_ACTIONS = {"grantActionVersion": "resource.grant_read", "revokeActionVersion": "resource.revoke_read"}
+
+
+def core_action_version(source_root, action_key):
+    """Version of the Core ActionDefinition seeded for action_key by the
+    migrations of this source tree; refuses unless exactly one is found."""
+    literal = "'" + action_key + "'"
+    versions = set()
+    for migration in sorted((Path(source_root) / "core" / "migrations").glob("*.up.sql")):
+        for statement in migration.read_text(encoding="utf-8").split(";"):
+            if "INSERT INTO catalog.action_definition" not in statement or literal not in statement:
+                continue
+            # VALUES ('<key>',<version>, ... ) or SELECT k.action_key,<version>, ... FROM (VALUES ('<key>'),...) k(action_key)
+            direct = re.findall(re.escape(literal) + r"\s*,\s*(\d+)\s*,", statement)
+            listed = re.findall(r"SELECT\s+k\.action_key\s*,\s*(\d+)\s*,", statement) if re.search(r"\)\s*k\s*\(\s*action_key\s*\)", statement) else []
+            found = set(direct) | set(listed)
+            require(len(found) == 1, f"{migration.name}: cannot read the {action_key} ActionDefinition version")
+            versions |= found
+    require(len(versions) == 1, f"{action_key}: Core migrations must seed exactly one ActionDefinition version")
+    return int(versions.pop())
+
+
 def page_url(value, manifest):
     parts = urllib.parse.urlsplit(value)
     require(parts.scheme in ("http", "https") and parts.hostname and parts.username is None and parts.password is None,
@@ -131,6 +177,10 @@ def main():
     parser.add_argument("--binding-action-version", type=int, default=1,
                         help="ActionDefinition version of application_binding.create (observe.json bindingManagement)")
     parser.add_argument("--actor-native-user", help="UUID of the isolated native user linked to the permitted actor")
+    parser.add_argument("--binding-facts", help="owner-only facts file written by file-storage/deploy/reconcile.py (CELLS_BINDING_FACTS_FILE)")
+    parser.add_argument("--instance-service-user", help="UUID of the isolated native user behind cells_bearer (without --binding-facts)")
+    parser.add_argument("--source-root", default=str(Path(__file__).resolve().parents[3]),
+                        help="apps source tree whose core/migrations seed resource.grant_read/revoke_read (default: this tree)")
     parser.add_argument("--plan-out", required=True)
     parser.add_argument("--context-out", required=True)
     args = parser.parse_args()
@@ -145,6 +195,25 @@ def main():
         require(SEGMENT.fullmatch(args.kv_mount) is not None, "--kv-mount must be one KV mount segment")
         require(args.binding_generation > 0 and args.binding_action_version > 0, "generation and action version must be positive")
         require(args.actor_native_user is None or UUID.fullmatch(args.actor_native_user) is not None, "--actor-native-user must be a UUID")
+        require((args.binding_facts is None) != (args.instance_service_user is None),
+                "exactly one of --binding-facts or --instance-service-user names the native service user")
+        if args.binding_facts:
+            binding_facts = owner_only_json(args.binding_facts, "--binding-facts")
+            require(isinstance(binding_facts, dict) and binding_facts.get("component") == "file-storage",
+                    "--binding-facts is not a reconcile.py output")
+            require(binding_facts.get("nativeScopeRef") == scope,
+                    "seeded root is not in the declarative binding workspace (seed workspaceSlug must be CELLS_BINDING_WORKSPACE_SLUG)")
+            service_user = binding_facts.get("instanceServiceUuid")
+            require(service_user is not None, "binding facts carry no instanceServiceUuid (set CELLS_BINDING_SERVICE_LOGIN)")
+        else:
+            service_user = args.instance_service_user
+        require(isinstance(service_user, str) and UUID.fullmatch(service_user) is not None, "instanceServiceUuid must be a UUID")
+        require(service_user != args.actor_native_user, "the actor's native user cannot be the service user")
+        delete = [a for a in manifest["actionDefinitions"] if a.get("actionKey") == "file_storage.delete@v2"]
+        require(len(delete) == 1 and type(delete[0].get("nativeTaskExecutionTimeoutSeconds")) is int,
+                "release does not declare file_storage.delete@v2 as a native task")
+        derived = {"instanceServiceUuid": service_user, "deleteNativeType": NATIVE_TASK_TYPE, **NATIVE_NODE_TYPES,
+                   **{name: str(core_action_version(args.source_root, key)) for name, key in CELL_SHARE_ACTIONS.items()}}
         for out in (args.plan_out, args.context_out):
             require(os.path.isabs(out) and not os.path.lexists(out), f"{out}: new absolute output path required")
         normalized = {"nativePageUrl": page_url(args.native_page_url, manifest)}
@@ -193,7 +262,8 @@ def main():
                                 "serviceClientId": client, "artifactDigest": manifest["adapterBuildRef"]},
             "nativeActionSets": {"nativeRootRef": root, "bindingGeneration": str(args.binding_generation),
                                  **{f"{action}ResultExposurePolicyId": policy for action in ("write", "share", "delete")},
-                                 **{f"{action}ResultExposurePolicyVersion": "1" for action in ("write", "share", "delete")}},
+                                 **{f"{action}ResultExposurePolicyVersion": "1" for action in ("write", "share", "delete")},
+                                 **derived},
         }
         if args.actor_native_user:
             context["actors"] = [{"principalId": actor, "kind": "HUMAN", "userUuid": args.actor_native_user}]

@@ -27,8 +27,12 @@
 #   0 gate      vector-requirements.mjs: frozen vectors vs. native mintability
 #               (exit 3 = release blocked by the contract, nothing started)
 #   1 native    the component's own start.sh with the isolated env (Cells; the
-#               knowledge pipeline continues in receiver-run.sh after stage 0)
-#   2 seed      native-API fixture (Cells: seed-cells.mjs) -> native-facts.json;
+#               knowledge pipeline continues in receiver-run.sh after stage 0);
+#               for Cells it also applies the declarative native configuration
+#               (deploy/reconcile.py) and is retried once when only the
+#               readiness wait failed (exit 75: normal first-install restart)
+#   2 seed      Cells: start.sh --reconcile with the principals declared after
+#               stage 1, then native-API fixture (seed-cells.mjs) -> native-facts.json;
 #               for V2 vectors (DD-124) it records each case precondition as the
 #               identity the native entry returned (never a vector value)
 #   3 delivery  isolated OpenBao + Agent (CONFORMANCE_OPENBAO_ENV), then the isolated
@@ -300,20 +304,38 @@ if wanted 1; then
   "${docker[@]}" network inspect "$CONFORMANCE_NETWORK" >/dev/null 2>&1 \
     || "${docker[@]}" network create --internal --label kailo.conformance="$component" "$CONFORMANCE_NETWORK" >/dev/null
   echo "[1/6] isolated native instance"
+  # A fresh instance runs the native configure step, exits and is restarted by
+  # its restart policy; start.sh reports that readiness wait as exit 75. Retry
+  # the (idempotent) start once; any other failure, or a second one, stops.
+  set +e
   bash "$start" "$CONFORMANCE_NATIVE_ENV"
+  started=$?
+  if [[ $started == 75 ]]; then
+    echo 'native readiness wait failed once (first-install restart); waiting again'
+    bash "$start" "$CONFORMANCE_NATIVE_ENV"
+    started=$?
+  fi
+  set -e
+  [[ $started == 0 ]] || { echo "isolated native instance did not start (exit $started)" >&2; exit 1; }
   done_stage 1
   if [[ -n $only ]]; then
     cat <<EOF
-Stage 1 done. Mint, with the isolated instance's own 'cells admin user token', the native admin PAT and the
-PAT of the native user linked to the conformance actor; store them owner-only, name them in the seed file
-(adminTokenFile / actorTokenFile) and set CONFORMANCE_SEED_FILE in $run_env before --stage 2.
+Stage 1 done. In the isolated instance only, create the native service user (behind cells_bearer) and the
+native user linked to the conformance actor, and mint with its own 'cells admin user token' the admin, actor
+and service PATs; store them owner-only and name them in the seed file (adminTokenFile / actorTokenFile).
+Declare the users in CONFORMANCE_NATIVE_ENV / CONFORMANCE_DELIVERY_ENV (CELLS_BINDING_PRINCIPALS
+"<admin>:rw <service>:r <actor>:rw", CELLS_BINDING_SERVICE_LOGIN <service>); the seed file's workspaceSlug is
+CELLS_BINDING_WORKSPACE_SLUG. Set CONFORMANCE_SEED_FILE in $run_env before --stage 2 (it re-applies the
+declarative configuration with those principals first).
 EOF
   fi
 fi
 
 if wanted 2; then
   need CONFORMANCE_NATIVE_ENV CONFORMANCE_SEED_FILE
-  echo "[2/6] native seed"
+  echo "[2/6] declarative native configuration and native seed"
+  # Grants the principals declared after stage 1 (start.sh --reconcile is idempotent).
+  bash "$start" --reconcile "$CONFORMANCE_NATIVE_ENV"
   # Seeding happens before the platform delivery joins Cells to the conformance
   # network; reach it on its own project UI network.
   node_step "$(project_of "$CONFORMANCE_NATIVE_ENV")_cells-ui" - tools/component-release/conformance/seed-cells.mjs --seed "$CONFORMANCE_SEED_FILE"
@@ -323,8 +345,9 @@ if wanted 2; then
 Stage 2 done. Write the isolated bind plan from the seed output with fresh simulated identities (not
 component-bind.mjs --plan-only: its production tenant/actor make Core refuse every probe, ScopeGuardFailed):
   python3 -I $src/tools/component-release/conformance/isolated-plan.py --release-dir <render.mjs output> \\
-    --native-facts <seed out native-facts.json> --native-page-url <url> --native-instance-ref <ref> \\
-    --kv-mount <isolated KV mount> [--actor-native-user <isolated native user uuid>] \\
+    --native-facts <seed out native-facts.json> --binding-facts <CELLS_BINDING_FACTS_FILE> \\
+    --native-page-url <url> --native-instance-ref <ref> --kv-mount <isolated KV mount> \\
+    --actor-native-user <isolated actor native user uuid> \\
     --plan-out $run/isolated-plan.json --context-out $run/isolated-context.json
 Render the adapter and native action deliveries from that plan (adapter-delivery.py config --plan ...
 --core-pep-url --oidc-token-url --action-token-audience; --set from isolated-context.json nativeActionSets,
@@ -355,6 +378,9 @@ if wanted 3; then
   "${docker[@]}" compose --project-name "$project" --env-file "$CONFORMANCE_DELIVERY_ENV" \
     -f "$src/file-storage/deploy/compose.yaml" -f "$src/file-storage/deploy/compose.native-actions.yaml" \
     up --detach --no-build --pull never --force-recreate --no-deps --wait cells
+  # Cross-checks the delivered native action config against the declarative
+  # binding facts (scope, root, service and actor principals).
+  bash "$start" --reconcile "$CONFORMANCE_DELIVERY_ENV"
   bash "$start" --platform-adapter "$CONFORMANCE_DELIVERY_ENV"
   done_stage 3
 fi
