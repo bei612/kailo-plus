@@ -156,6 +156,39 @@ test("DD-125 collaboration user-state requests preserve original fields and shar
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
 
+test("DD-125 moderation commands, CONTROL-read pages and restriction preserve original fields", () => {
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/moderation.sample.json",import.meta.url),"utf8"));
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  const command = (c: Command) => ({actionKey: c.actionKey, idempotencyKey: c.idempotencyKey, explicitConfirmation: c.explicitConfirmation,
+    workspaceId: c.workspaceId, moderationEventId: c.moderationEventId,
+    moderationReport: c.moderationReport && {reportType: c.moderationReport.reportType, eventId: c.moderationReport.eventId,
+      workspaceId: c.moderationReport.workspaceId, conversationId: c.moderationReport.conversationId, note: c.moderationReport.note},
+    moderationMember: c.moderationMember && {targetPubkey: c.moderationMember.targetPubkey, timeoutDuration: c.moderationMember.timeoutDuration},
+    moderationResolution: c.moderationResolution && {reportEventIds: c.moderationResolution.reportEventIds,
+      status: c.moderationResolution.status, resolutionAction: c.moderationResolution.resolutionAction}});
+  const access: import("../src/generated/contracts.js").ModerationAccessView = value.access;
+  const reports: import("../src/generated/contracts.js").ModerationReportPage = value.reports;
+  const audit: import("../src/generated/contracts.js").ModerationAuditPage = value.audit;
+  const restrictions: import("../src/generated/contracts.js").ModerationRestrictionPage = value.restrictions;
+  const error = (e: import("../src/generated/contracts.js").ErrorBody) => ({class: e.class, reason: e.reason, operationId: e.operationId,
+    restriction: e.restriction && {kind: e.restriction.kind, until: e.restriction.until}});
+  const actual = {
+    reportCommand: command(value.reportCommand), timeoutCommand: command(value.timeoutCommand), banCommand: command(value.banCommand),
+    resolveCommand: command(value.resolveCommand), deleteCommand: command(value.deleteCommand),
+    access: {canModerate: access.canModerate},
+    reports: {items: reports.items.map((r) => ({id: r.id, reportEventId: r.reportEventId, reporterPubkey: r.reporterPubkey, targetKind: r.targetKind,
+      target: r.target, channelId: r.channelId, workspaceId: r.workspaceId, targetAuthorPubkey: r.targetAuthorPubkey, targetPrincipalId: r.targetPrincipalId,
+      reportType: r.reportType, note: r.note, status: r.status, resolvedByPubkey: r.resolvedByPubkey, resolvedAt: r.resolvedAt, createdAt: r.createdAt})),
+      truncated: reports.truncated},
+    audit: {items: audit.items.map((a) => ({id: a.id, actorPubkey: a.actorPubkey, action: a.action, targetPubkey: a.targetPubkey,
+      targetEventId: a.targetEventId, channelId: a.channelId, publicReason: a.publicReason, createdAt: a.createdAt})), truncated: audit.truncated},
+    restrictions: {items: restrictions.items.map((r) => ({pubkey: r.pubkey, principalId: r.principalId, banned: r.banned,
+      banExpiresAt: r.banExpiresAt, mutedUntil: r.mutedUntil, updatedAt: r.updatedAt}))},
+    timedOut: error(value.timedOut), banned: error(value.banned),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});
+
 test("Projects publication preserves native metadata and exact head reference", () => {
   const sample: import("../src/generated/contracts.js").ProjectsPublishRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-publication.sample.json",import.meta.url),"utf8"));
   const actual: typeof sample = sample.map(row=>({operation:row.operation,targetEventId:row.targetEventId,workspaceId:row.workspaceId,name:row.name,description:row.description,visibility:row.visibility,title:row.title,body:row.body,category:row.category,mentions:row.mentions,attachments:row.attachments,assigneeLabel:row.assigneeLabel,priorEventId:row.priorEventId,assigneePubkey:row.assigneePubkey,pullRequestStatus:row.pullRequestStatus,branchName:row.branchName,targetBranch:row.targetBranch,commit:row.commit,mergeBase:row.mergeBase,reviewers:row.reviewers,reviewDecision:row.reviewDecision,anchorPath:row.anchorPath,anchorSide:row.anchorSide,anchorLine:row.anchorLine}));

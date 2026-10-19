@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/moderation_resolution_status.schema.json",
+  "title": "ModerationResolutionStatus",
+  "description": "kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律 resolved。",
+  "type": "string",
+  "enum": ["resolved", "dismissed"]
+}

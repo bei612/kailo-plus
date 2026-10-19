@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/moderation_audit_page.schema.json",
+  "title": "ModerationAuditPage",
+  "description": "GET /api/v1/moderation/audit（DD-125(2)）：Relay moderation_actions（审核日志）是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/audit，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。单次至多 500 行，按时间倒序。CONTROL 签发的执法行其 actorPubkey 是 CONTROL；发起人与准入记录在 Core 的 ActionExecution 与 AuditEvent。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "truncated"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "ModerationAuditView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "actorPubkey", "action", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "actorPubkey": { "type": "string" },
+          "action": { "type": "string", "description": "Relay 审核日志词表（ban、unban、timeout、untimeout、resolve:<action>、dismiss_report、escalate 等），原样呈现" },
+          "targetPubkey": { "type": "string" },
+          "targetEventId": { "type": "string" },
+          "channelId": { "type": "string" },
+          "publicReason": { "type": "string" },
+          "createdAt": { "type": "string", "description": "RFC3339" }
+        }
+      }
+    },
+    "truncated": { "type": "boolean", "description": "Relay 返回已达单次读取上界（500 行）" }
+  }
+}

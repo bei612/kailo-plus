@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/moderation_restriction_page.schema.json",
+  "title": "ModerationRestrictionPage",
+  "description": "GET /api/v1/moderation/restricted（DD-125(2)、V-SCN-127）：Relay community_bans 中当前有效的封禁与禁言，是唯一权威；Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/restricted，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。成员与原版一样读不到自己的限制。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "ModerationRestrictionView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pubkey", "banned", "updatedAt"],
+        "properties": {
+          "pubkey": { "type": "string" },
+          "principalId": { "type": "string", "format": "uuid", "description": "该公钥属于本 Tenant 某 HUMAN Principal 时给出" },
+          "banned": { "type": "boolean" },
+          "banExpiresAt": { "type": "string", "description": "RFC3339；永久封禁缺省" },
+          "mutedUntil": { "type": "string", "description": "RFC3339；未禁言缺省" },
+          "updatedAt": { "type": "string", "description": "RFC3339" }
+        }
+      }
+    }
+  }
+}

@@ -1081,6 +1081,36 @@ void main() {
       expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     });
   }
+  test('DD-125 moderation commands, pages and restriction round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/moderation.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'reportCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'timeoutCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'banCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'resolveCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'deleteCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'access': (v) => ModerationAccessView.fromJson(v).toJson(),
+      'reports': (v) => ModerationReportPage.fromJson(v).toJson(),
+      'audit': (v) => ModerationAuditPage.fromJson(v).toJson(),
+      'restrictions': (v) => ModerationRestrictionPage.fromJson(v).toJson(),
+      'timedOut': (v) => ErrorBody.fromJson(v).toJson(),
+      'banned': (v) => ErrorBody.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
   test('DD-125 collaboration user-state requests round-trip', () {
     final value =
         jsonDecode(

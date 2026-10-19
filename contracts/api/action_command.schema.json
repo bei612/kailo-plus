@@ -18,6 +18,44 @@
     "componentAction": {"$ref": "../domain/component_action_input.schema.json"},
     "protocolSessionOpen":{"$ref":"../domain/protocol_session_open_input.schema.json","description":"Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN identity; no Agent or caller-selected native credentials."},
     "resourceCreate": {"$ref": "../domain/resource_create.schema.json"},
+    "moderationReport": {
+      "title": "ModerationReportSubmit",
+      "description": "仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或 conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签 kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reportType", "eventId"],
+      "properties": {
+        "reportType": { "$ref": "../enums/moderation_report_type.schema.json" },
+        "eventId": { "type": "string", "description": "被举报消息的 Relay 事件 ID（64 位小写十六进制）" },
+        "workspaceId": { "type": "string", "format": "uuid", "description": "消息所在 Workspace Channel；本人须为其当前成员" },
+        "conversationId": { "type": "string", "format": "uuid", "description": "消息所在私聊；本人须为其当前参与者" },
+        "note": { "type": "string", "description": "原“补充说明（可选）”，至多 1000 字符" }
+      }
+    },
+    "moderationMember": {
+      "title": "ModerationMemberTarget",
+      "description": "仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由 CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走 agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetPubkey"],
+      "properties": {
+        "targetPubkey": { "type": "string", "description": "64 位小写十六进制 Nostr 公钥" },
+        "timeoutDuration": { "$ref": "../enums/moderation_timeout_duration.schema.json" }
+      }
+    },
+    "moderationResolution": {
+      "title": "ModerationReportResolution",
+      "description": "仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件 ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reportEventIds", "status", "resolutionAction"],
+      "properties": {
+        "reportEventIds": { "type": "array", "items": { "type": "string" } },
+        "status": { "$ref": "../enums/moderation_resolution_status.schema.json" },
+        "resolutionAction": { "$ref": "../enums/moderation_resolution_action.schema.json" }
+      }
+    },
+    "moderationEventId": { "type": "string", "description": "仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。" },
     "actionKey": {
       "type": "string"
     },

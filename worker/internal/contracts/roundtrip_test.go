@@ -416,6 +416,48 @@ func TestCollaborationUserStateRequestsRoundtrip(t *testing.T) {
 	}
 }
 
+func TestModerationRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "moderation.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"reportCommand":  new(generated.ActionCommand),
+		"timeoutCommand": new(generated.ActionCommand),
+		"banCommand":     new(generated.ActionCommand),
+		"resolveCommand": new(generated.ActionCommand),
+		"deleteCommand":  new(generated.ActionCommand),
+		"access":         new(generated.ModerationAccessView),
+		"reports":        new(generated.ModerationReportPage),
+		"audit":          new(generated.ModerationAuditPage),
+		"restrictions":   new(generated.ModerationRestrictionPage),
+		"timedOut":       new(generated.ErrorBody),
+		"banned":         new(generated.ErrorBody),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}
+
 func TestProjectsPublicationRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "projects-publication.sample.json"))
 	if err != nil {

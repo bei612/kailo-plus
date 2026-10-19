@@ -9,6 +9,17 @@
   "properties": {
     "class": { "$ref": "../enums/error_class.schema.json" },
     "reason": { "$ref": "../enums/reason_code.schema.json" },
-    "operationId": { "type": "string", "description": "贯穿 Core、Worker、adapter 与组件的关联键" }
+    "operationId": { "type": "string", "description": "贯穿 Core、Worker、adapter 与组件的关联键" },
+    "restriction": {
+      "title": "PublishRestriction",
+      "description": "仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自 Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "../enums/publish_restriction_kind.schema.json" },
+        "until": { "type": "string", "description": "TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省" }
+      }
+    }
   }
 }

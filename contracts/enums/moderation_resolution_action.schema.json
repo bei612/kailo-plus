@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/moderation_resolution_action.schema.json",
+  "title": "ModerationResolutionAction",
+  "description": "审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。",
+  "type": "string",
+  "enum": ["delete", "kick", "ban", "escalate", "dismiss"]
+}

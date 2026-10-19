@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/moderation_access_view.schema.json",
+  "title": "ModerationAccessView",
+  "description": "GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应 Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["canModerate"],
+  "properties": {
+    "canModerate": { "type": "boolean" }
+  }
+}

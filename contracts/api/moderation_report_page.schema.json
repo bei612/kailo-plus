@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/moderation_report_page.schema.json",
+  "title": "ModerationReportPage",
+  "description": "GET /api/v1/moderation/reports[?status=open]（DD-125(2)、V-SCN-130）：Relay moderation_reports 是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/reports，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS 审计，Core 不复制。单次至多 500 行（Relay 上界），按创建时间倒序。reporterPubkey 只出现在此审核面，不得进入被举报人可见的任何视图。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "truncated"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "title": "ModerationReportView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reportEventId", "reporterPubkey", "targetKind", "target", "reportType", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "description": "Relay 举报行 ID" },
+          "reportEventId": { "type": "string", "description": "签名的 kind 1984 事件 ID；9044 以它定位举报" },
+          "reporterPubkey": { "type": "string" },
+          "targetKind": { "$ref": "../enums/moderation_report_target_kind.schema.json" },
+          "target": { "type": "string", "description": "事件 ID、公钥或附件 SHA-256（十六进制）" },
+          "channelId": { "type": "string", "description": "事件目标所在 Relay Channel；其余目标缺省" },
+          "workspaceId": { "type": "string", "format": "uuid", "description": "channelId 对应本 Tenant 的 Workspace 时给出，供 moderation.message.delete 与 workspace.member.revoke 定位" },
+          "targetAuthorPubkey": { "type": "string", "description": "事件目标由 CONTROL 回读得到的签名者；pubkey 目标即其本身；不可读时缺省" },
+          "targetPrincipalId": { "type": "string", "format": "uuid", "description": "targetAuthorPubkey 属于本 Tenant 某 HUMAN Principal 时给出；AGENT 或未知公钥缺省（不提供封禁与踢出）" },
+          "reportType": { "$ref": "../enums/moderation_report_type.schema.json" },
+          "note": { "type": "string" },
+          "status": { "$ref": "../enums/moderation_report_status.schema.json" },
+          "resolvedByPubkey": { "type": "string" },
+          "resolvedAt": { "type": "string", "description": "RFC3339" },
+          "createdAt": { "type": "string", "description": "RFC3339" }
+        }
+      }
+    },
+    "truncated": { "type": "boolean", "description": "Relay 返回已达单次读取上界（500 行），更早的行未包含" }
+  }
+}

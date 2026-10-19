@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/moderation_report_type.schema.json",
+  "title": "ModerationReportType",
+  "description": "原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。",
+  "type": "string",
+  "enum": ["illegal", "nudity", "malware", "spam", "impersonation", "profanity", "other"]
+}

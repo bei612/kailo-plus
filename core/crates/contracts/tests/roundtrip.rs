@@ -183,6 +183,35 @@ fn collaboration_user_state_requests_preserve_original_fields_and_shared_version
 }
 
 #[test]
+fn moderation_commands_views_and_restriction_preserve_original_fields() {
+    // DD-125(2): the governed moderation commands, the CONTROL-read queue, audit and
+    // restriction pages, and PUBLISH_REJECTED with its structured restriction.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("moderation.sample.json")).unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    for command in [
+        "reportCommand",
+        "timeoutCommand",
+        "banCommand",
+        "resolveCommand",
+        "deleteCommand",
+    ] {
+        roundtrip::<contracts::ActionCommand>(&value[command]);
+    }
+    roundtrip::<contracts::ModerationAccessView>(&value["access"]);
+    roundtrip::<contracts::ModerationReportPage>(&value["reports"]);
+    roundtrip::<contracts::ModerationAuditPage>(&value["audit"]);
+    roundtrip::<contracts::ModerationRestrictionPage>(&value["restrictions"]);
+    roundtrip::<contracts::ErrorBody>(&value["timedOut"]);
+    roundtrip::<contracts::ErrorBody>(&value["banned"]);
+}
+
+#[test]
 fn projects_publication_preserves_native_metadata_and_exact_head_reference() {
     let value: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("projects-publication.sample.json"))

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/moderation_report_status.schema.json",
+  "title": "ModerationReportStatus",
+  "description": "Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK 词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。",
+  "type": "string",
+  "enum": ["open", "resolved", "dismissed", "escalated"]
+}

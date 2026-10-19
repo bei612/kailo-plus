@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/moderation_report_target_kind.schema.json",
+  "title": "ModerationReportTargetKind",
+  "description": "举报目标类别（Relay report_json.target_kind）：event 为消息事件、pubkey 为成员、blob 为附件（SF-BUZ-52）。",
+  "type": "string",
+  "enum": ["event", "pubkey", "blob"]
+}

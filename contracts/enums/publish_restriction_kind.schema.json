@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/publish_restriction_kind.schema.json",
+  "title": "PublishRestrictionKind",
+  "description": "Relay 以社区限制拒绝本人内容写入的类别（DD-125(2)）：TIMED_OUT 对应 `restricted: you are timed out until <ts>`，BANNED 对应 `blocked: you are banned from this community`。",
+  "type": "string",
+  "enum": ["TIMED_OUT", "BANNED"]
+}
