@@ -192,7 +192,7 @@ export const HUDDLE_OPUS_BITRATE = 32_000;
 export type FrameHeader = { seq: number; ts48k: number; levelDbov: number; flags: number };
 
 /** Original `FrameHeader::encode` followed by the Opus payload. */
-export function encodeUplinkFrame(header: FrameHeader, opus: Uint8Array): Uint8Array {
+export function encodeUplinkFrame(header: FrameHeader, opus: Uint8Array): Uint8Array<ArrayBuffer> {
   const frame = new Uint8Array(HUDDLE_HEADER_BYTES + opus.byteLength);
   const view = new DataView(frame.buffer);
   view.setUint16(0, header.seq & 0xffff);

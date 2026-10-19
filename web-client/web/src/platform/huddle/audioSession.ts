@@ -318,8 +318,9 @@ export class HuddleAudioSession {
     let decoder = this.peers.get(frame.peerIndex);
     if (!decoder || decoder.pubkey !== peer.pubkey || decoder.epoch !== peer.epoch) {
       if (decoder) this.dropPeer(frame.peerIndex);
-      decoder = this.createDecoder(frame.peerIndex, peer);
-      if (!decoder) return;
+      const created = this.createDecoder(frame.peerIndex, peer);
+      if (!created) return;
+      decoder = created;
     }
     try {
       decoder.decoder.decode(new EncodedAudioChunk({ type: "key", timestamp: decoder.timestamp, data: frame.opus }));
@@ -366,7 +367,7 @@ export class HuddleAudioSession {
       error: (error) => console.error("[huddle] Opus encoder error:", error),
     });
     encoder.configure(OPUS_ENCODER_CONFIG as unknown as AudioEncoderConfig);
-    node.port.onmessage = (event: MessageEvent<Float32Array>) => this.encode(event.data);
+    node.port.onmessage = (event: MessageEvent<Float32Array<ArrayBuffer>>) => this.encode(event.data);
     this.capture = { source, gain, node };
     this.encoder = encoder;
     this.syncTransmission();
@@ -406,7 +407,7 @@ export class HuddleAudioSession {
     this.capture?.node.port.postMessage({ type: "ptt", active: this.manuallyUnmuted || (this.mode === "push_to_talk" && this.pttActive) });
   }
 
-  private encode(samples: Float32Array) {
+  private encode(samples: Float32Array<ArrayBuffer>) {
     const encoder = this.encoder;
     if (!encoder || encoder.state !== "configured") return;
     // dBov is computed from the pre-encode PCM; a DTX packet's payload says nothing about level.
