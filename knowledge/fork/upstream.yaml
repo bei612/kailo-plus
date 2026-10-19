@@ -24,7 +24,7 @@ artifacts:
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
     source_digest: sha256:d340f4a8f5d89111ccac7bb998154fced41163ad0b912e2f119babf4e2f0c4ef
-    artifact_digest: sha256:21e3d89a705b5bc240cd8bded69c7a8c851210bdd97133e486e3c005ca3f607d
+    artifact_digest: sha256:8cf6721b505d506956190c2a4043c697ac0714ddf10c144c657a6b2c7e1fb6ed
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
@@ -32,7 +32,7 @@ artifacts:
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/]
     source_digest: sha256:6ac832434e300e899211640a8ea20ac4d293b8e8de62e440a15bbc8ede5d27b8
-    artifact_digest: sha256:427f522078e649c239c0cc08708dee2551a8e635ec0b4c7864b3eb733202bbef
+    artifact_digest: sha256:f97e8af41485bc2e3ea2929621a5657e259e7127bd216e4483686f3d01c094f4
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image
@@ -40,7 +40,7 @@ artifacts:
     build_dockerfile: knowledge/docker/Dockerfile.docreader
     inputs: [knowledge/docker/Dockerfile.docreader, knowledge/.dockerignore, knowledge/packages/, knowledge/docreader/]
     source_digest: sha256:497ae729cd498cf4c888aebfce8301b82344f064622cecb2f2206b69fa2faa3f
-    artifact_digest: sha256:25892384023c3101f812f3fc9349c7f016069aa0d18c3bf578e3fbf2412e6af0
+    artifact_digest: sha256:b8f3beaa3b37ff8c3c7da74eb5716c526c96fbdd49a13ca9b2be1df3b815a370
     blocked: Current declared knowledge source inputs have no matching reader artifact; prior deployed reader remains historical and native document processing acceptance remains unverified.
 
 source_facts: [SF-WEK-01, SF-WEK-02, SF-WEK-03, SF-WEK-06, SF-WEK-12]
