@@ -294,7 +294,7 @@ function ProfileMessageAction({ pubkey, onClose }: { pubkey: string; onClose?: (
   const canWave = wave !== undefined && directMessage.canWave?.(pubkey) !== false;
   return (
     <div className="flex gap-2">
-      {canWave ? (
+      {wave && canWave ? (
         <Button aria-label={t("platform.profile.wave")}
           className="buzz-wave-hover-trigger shrink-0 px-3 transition-transform duration-100 ease-out motion-reduce:transition-none motion-safe:active:scale-[0.97]"
           data-testid={`user-profile-popover-wave-${pubkey}`} disabled={pendingAction !== null}
