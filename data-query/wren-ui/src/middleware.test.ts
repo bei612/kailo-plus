@@ -500,6 +500,42 @@ describe('native instance identity boundary', () => {
     },
   );
 
+  it.each(['/api/graphql', '/api/config', '/api/platform-query-reference'])(
+    'keeps an independent native instance on its original %s consumer',
+    async (path) => {
+      // DD-127(7): no query/binding delivery means no governed Node consumer.
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+      const response = await middleware(
+        request(path, `Bearer ${await token()}`, {
+          method: 'POST',
+          headers: {
+            origin: settings.publicOrigin,
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      expect(response.headers.get('content-security-policy')).toBe(
+        "frame-ancestors 'self'",
+      );
+      for (const field of ['human-token', 'identity-scope'])
+        expect(
+          response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+        ).toBeNull();
+      expect(bindingServiceCall).not.toHaveBeenCalled();
+      const unclaimed = await middleware(
+        request(
+          path,
+          `Bearer ${await token({}, [settings.accessClaim])}`,
+          { method: 'POST', headers: { origin: settings.publicOrigin } },
+        ),
+      );
+      expect(unclaimed.status).toBe(403);
+    },
+  );
+
   it('does not forward the HUMAN token to unrelated native routes', async () => {
     const response = await middleware(
       request('/', `Bearer ${await token()}`, {
