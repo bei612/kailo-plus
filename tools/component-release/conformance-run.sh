@@ -71,7 +71,10 @@
 #               table the vectors' describe/query expect as the model) and mints the native
 #               HUMAN token of the preparation file
 #   2 seed      the same project with the query-governance.yaml overlay (wren-ui joins
-#               CONFORMANCE_NETWORK as WREN_QUERY_PLATFORM_NETWORK), then `provider.mjs prepare`:
+#               CONFORMANCE_NETWORK as WREN_QUERY_PLATFORM_NETWORK; its tenants/<tenantId>
+#               binding Agent is the run's isolated OpenBao + compose.adapter-agent.yaml from
+#               CONFORMANCE_OPENBAO_ENV, the adapter config being adapter-delivery.py
+#               config --kind data-query's adapter.json), then `provider.mjs prepare`:
 #               the original GraphQL deploy; the deployment id/hash Wren generates are only
 #               recorded in the owner-only nativeFixtureFile, never vector values
 #   3 delivery  `provider.mjs observe`: idempotent re-observation of that same SUCCESS deployment
@@ -223,7 +226,8 @@ if [[ $component == data-query ]]; then
 Stage 1 done. In this isolated instance only, do the original Wren onboarding: connect the isolated PostgreSQL
 source holding the table the frozen describe/query vectors expect, select it as the model, and mint the native
 HUMAN token named by the preparation file. Then deliver the query/binding files of the governance overlay
-(serviceTokenUrl/corePepUrl at the provider alias conformance-provider, WREN_QUERY_PLATFORM_NETWORK=$CONFORMANCE_NETWORK)
+(serviceTokenUrl/corePepUrl at the provider alias conformance-provider, WREN_QUERY_PLATFORM_NETWORK=$CONFORMANCE_NETWORK,
+the binding Agent via CONFORMANCE_OPENBAO_ENV)
 in CONFORMANCE_NATIVE_ENV, set CONFORMANCE_SEED_FILE, CONFORMANCE_WREN_IDENTITY_JSON_FILE and
 CONFORMANCE_WREN_NODE_MODULES in $run_env and run --stage 2.
 NEXT
@@ -233,8 +237,14 @@ NEXT
     need CONFORMANCE_NETWORK CONFORMANCE_NATIVE_ENV CONFORMANCE_SEED_FILE
     wren_identity
     echo "[2/6] governance overlay and native seed (original GraphQL deploy)"
+    # The binding's Tenant-namespace Agent is the generic component Agent
+    # project (deploy/components/compose.adapter-agent.yaml), never part of the
+    # native project; it comes up before the UI that mounts its delivery.
+    if [[ -n ${CONFORMANCE_OPENBAO_ENV:-} ]]; then
+      bash "$src/tools/component-release/conformance/isolated-openbao.sh" up "$CONFORMANCE_OPENBAO_ENV"
+    fi
     wren_compose "$CONFORMANCE_NATIVE_ENV" "${governed_files[@]}" -- up --detach --no-build --pull never --force-recreate --no-deps --wait \
-      wren-query-secret-agent wren-ui
+      wren-ui
     node_env+=(-e "WREN_CONFORMANCE_CONFIG_FILE=$CONFORMANCE_SEED_FILE")
     node_step "$(wren_native)" conformance-provider data-query/docker/conformance/provider.mjs prepare
     done_stage 2

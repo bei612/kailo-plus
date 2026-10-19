@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest } from 'http';
 import { AddressInfo } from 'net';
 import { randomUUID } from 'crypto';
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import {
   mkdtempSync,
   mkdirSync,
@@ -24,20 +24,52 @@ import {
 
 const nativeAgent = process.env.WREN_TEST_BAO_BINARY ? describe : describe.skip;
 
+// Production delivery bytes: deploy/components/adapter-delivery.py config
+// --kind data-query and reader (apps root = WREN_QUERY_DELIVERY_SOURCE), the
+// real OpenBao Agent on the reader's HCL, then the real consumers. The two
+// platform public JWKS files stand for the platform namespace Agent output
+// (start-core.sh --prepare-action-token, Gateway service delivery) that the
+// overlay mounts read-only; the component Agent never reads them.
+const python = (args: string[]) =>
+  new Promise<string>((resolve, reject) => {
+    execFile(
+      process.env.WREN_TEST_PYTHON || 'python3',
+      ['-I', ...args],
+      { env: { PATH: process.env.PATH } },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr));
+        else resolve(stdout);
+      },
+    );
+  });
+
 nativeAgent(
-  'original OpenBao Agent delivery into the real query admission consumer',
+  'original OpenBao Agent deliveries into the real query admission consumer',
   () => {
-    it('uses exact wrapped AppRole/versioned KV files, without sharing an auto-auth token sink', async () => {
+    it('renders binding SecretRefs only in the Tenant namespace and consumes the platform public JWKS files', async () => {
       const directory = mkdtempSync(join(tmpdir(), 'wren-agent-delivery-'));
       const bootstrap = join(directory, 'bootstrap');
       const output = join(directory, 'output');
-      mkdirSync(bootstrap);
-      mkdirSync(output);
-      const role = randomUUID();
+      const platform = join(directory, 'platform');
+      for (const path of [bootstrap, output, platform])
+        mkdirSync(path, { mode: 0o700 });
+      const role = 'wren-binding-reader';
+      const admin = `/v1/auth/approle/role/${role}`;
+      const policyPath = `/v1/sys/policies/acl/${role}`;
+      const roleId = randomUUID();
+      const rootToken = randomUUID();
       const wrapped = randomUUID();
       const secretId = randomUUID();
       const autoAuth = randomUUID();
       const serviceSecret = randomUUID();
+      const connectionSecret = JSON.stringify({
+        host: 'fixture',
+        port: 5432,
+        database: 'fixture',
+        user: 'reader',
+        password: randomUUID(),
+        ssl: false,
+      });
       const serviceToken = randomUUID();
       const binding = randomUUID();
       const tenant = randomUUID();
@@ -45,6 +77,7 @@ nativeAgent(
       const execution = randomUUID();
       const operation = randomUUID();
       const namespace = `tenants/${tenant}`;
+      const kv = `kv/data/application-binding/${binding}`;
       const keys = await generateKeyPair('ES256');
       const jwks = JSON.stringify({
         keys: [
@@ -55,104 +88,113 @@ nativeAgent(
           },
         ],
       });
-      const values = { action: jwks, gateway: jwks, service: serviceSecret };
+      const values = {
+        connection: connectionSecret,
+        oidc_client_secret: serviceSecret,
+      };
+      const stored = new Map<string, unknown>();
       const reads = new Set<string>();
       const failures: string[] = [];
       const server = createServer(async (request, response) => {
         response.setHeader('content-type', 'application/json');
         let raw = '';
         for await (const chunk of request) raw += chunk;
-        const path = new URL(request.url, 'http://fixture').pathname;
+        const url = new URL(request.url, 'http://fixture');
+        const path = url.pathname;
+        const reply = (status: number, body?: unknown) => {
+          response.writeHead(status);
+          response.end(body === undefined ? '' : JSON.stringify(body));
+        };
         try {
           if (path.startsWith('/v1/'))
             expect(
               String(request.headers['x-vault-namespace']).replace(/\/$/, ''),
             ).toBe(namespace);
-          if (path === '/v1/sys/wrapping/lookup') {
+          if (request.headers['x-vault-token'] === rootToken) {
+            // adapter-delivery.py reader: Tenant mount/auth read-back, exact
+            // policy and AppRole, response-wrapped one-use SecretID.
+            if (path === '/v1/sys/mounts')
+              reply(200, {
+                data: { 'kv/': { type: 'kv', options: { version: '2' } } },
+              });
+            else if (path === '/v1/sys/auth')
+              reply(200, { data: { 'approle/': { type: 'approle' } } });
+            else if (path === policyPath || path === admin) {
+              if (request.method === 'GET') {
+                if (stored.has(path)) reply(200, { data: stored.get(path) });
+                else reply(404, { errors: [] });
+              } else {
+                stored.set(path, JSON.parse(raw));
+                reply(204);
+              }
+            } else if (path === `${admin}/role-id`)
+              reply(200, { data: { role_id: roleId } });
+            else if (path === `${admin}/secret-id`) {
+              expect(request.headers['x-vault-wrap-ttl']).toBeTruthy();
+              reply(200, { wrap_info: { token: wrapped } });
+            } else reply(404, { errors: [] });
+          } else if (path === '/v1/sys/wrapping/lookup') {
             expect(request.headers['x-vault-token']).toBe(wrapped);
-            response.end(
-              JSON.stringify({
-                data: { creation_path: `auth/approle/role/${role}/secret-id` },
-              }),
-            );
+            reply(200, {
+              data: { creation_path: `auth/approle/role/${role}/secret-id` },
+            });
           } else if (path === '/v1/sys/wrapping/unwrap') {
             expect(request.headers['x-vault-token']).toBe(wrapped);
-            response.end(JSON.stringify({ data: { secret_id: secretId } }));
+            reply(200, { data: { secret_id: secretId } });
           } else if (path === '/v1/auth/approle/login') {
             expect(JSON.parse(raw)).toEqual({
-              role_id: role,
+              role_id: roleId,
               secret_id: secretId,
             });
-            response.end(
-              JSON.stringify({
-                auth: {
-                  client_token: autoAuth,
-                  lease_duration: 3600,
-                  renewable: false,
-                },
-              }),
-            );
+            reply(200, {
+              auth: {
+                client_token: autoAuth,
+                lease_duration: 3600,
+                renewable: false,
+              },
+            });
           } else if (path.startsWith('/v1/sys/internal/ui/mounts/')) {
             expect(request.headers['x-vault-token']).toBe(autoAuth);
-            response.end(
-              JSON.stringify({
-                data: {
-                  path: 'secret/',
-                  type: 'kv',
-                  options: { version: '2' },
-                },
-              }),
-            );
-          } else if (path.startsWith('/v1/secret/data/')) {
+            reply(200, {
+              data: { path: 'kv/', type: 'kv', options: { version: '2' } },
+            });
+          } else if (path.startsWith(`/v1/${kv}/`)) {
             expect(request.headers['x-vault-token']).toBe(autoAuth);
-            expect(
-              new URL(request.url, 'http://fixture').searchParams.get(
-                'version',
-              ),
-            ).toBe('7');
+            expect(url.searchParams.get('version')).toBe('1');
             const name = path.split('/').pop();
             expect(Object.keys(values)).toContain(name);
             reads.add(name);
-            response.end(
-              JSON.stringify({
-                request_id: randomUUID(),
-                data: {
-                  data: { value: values[name] },
-                  metadata: {
-                    version: 7,
-                    deletion_time: '',
-                    destroyed: false,
-                    created_time: new Date().toISOString(),
-                  },
+            reply(200, {
+              request_id: randomUUID(),
+              data: {
+                data: { value: values[name] },
+                metadata: {
+                  version: 1,
+                  deletion_time: '',
+                  destroyed: false,
+                  created_time: new Date().toISOString(),
                 },
-              }),
-            );
-          } else if (path === '/token') {
+              },
+            });
+          } else if (path === '/protocol/openid-connect/token') {
             expect(request.headers.authorization).toBe(
               `Basic ${Buffer.from(`binding-client:${serviceSecret}`).toString('base64')}`,
             );
-            response.end(
-              JSON.stringify({
-                token_type: 'Bearer',
-                access_token: serviceToken,
-              }),
-            );
+            reply(200, { token_type: 'Bearer', access_token: serviceToken });
           } else if (path === '/service/v1/adapter/pep_check') {
             expect(request.headers.authorization).toBe(
               `Bearer ${serviceToken}`,
             );
             expect(JSON.parse(raw).bindingId).toBe(binding);
-            response.end(
-              JSON.stringify({
-                actionExecutionId: execution,
-                operationId: operation,
-                authorizationMinZedToken: 'fixture-fresh',
-              }),
-            );
-          } else response.writeHead(404).end('{}');
+            reply(200, {
+              actionExecutionId: execution,
+              operationId: operation,
+              authorizationMinZedToken: 'fixture-fresh',
+            });
+          } else reply(404, {});
         } catch {
           failures.push(path);
-          response.writeHead(500).end('{}');
+          reply(500, {});
         }
       });
       const previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -161,55 +203,133 @@ nativeAgent(
         await new Promise<void>((resolve) =>
           server.listen(0, '127.0.0.1', resolve),
         );
-        const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const port = (server.address() as AddressInfo).port;
+        const origin = `http://127.0.0.1:${port}`;
         const source =
           process.env.WREN_QUERY_DELIVERY_SOURCE ||
-          join(process.cwd(), '../docker');
-        const compose = readFileSync(
-          join(source, 'query-governance.yaml'),
-          'utf8',
+          join(process.cwd(), '../..');
+        const tool = join(source, 'deploy/components/adapter-delivery.py');
+        const actionJwks = join(platform, 'action-jwks.json');
+        const gatewayJwks = join(platform, 'gateway-jwks.json');
+        for (const file of [actionJwks, gatewayJwks])
+          writeFileSync(file, jwks, { mode: 0o444 });
+        const normalizedConfig = { client_id: 'binding-client' };
+        const actions = [
+          'data_query.query@v2',
+          'data_query.dry_run@v2',
+          'data_query.describe@v2',
+        ];
+        const plan = {
+          tenantId: tenant,
+          workspaceId: workspace,
+          componentReleaseId: randomUUID(),
+          componentTypeKey: 'wren',
+          artifactDigest: 'b'.repeat(64),
+          bindingId: binding,
+          bindingVersion: 1,
+          servicePrincipalId: randomUUID(),
+          adapterServiceRef: 'data-query-ui',
+          nativeInstanceRef: 'fixture',
+          nativeScopeRef: '1',
+          isolationMode: 'DEDICATED_INSTANCE',
+          normalizedConfig,
+          configDigest: digest(normalizedConfig),
+          clientId: 'binding-client',
+          secretRefs: Object.keys(values).map((secretKey) => ({
+            secretKey,
+            locator: `${namespace}/kv/application-binding/${binding}/${secretKey}`,
+            version: 1,
+            audience: 'kailo-adapter-data-query',
+          })),
+          actionVersions: actions.map((actionKey) => ({
+            actionKey,
+            actionVersion: 1,
+          })),
+        };
+        const planFile = join(directory, 'plan.json');
+        const signingFile = join(directory, 'signing.json');
+        const envFile = join(directory, 'platform.env');
+        const rootFile = join(directory, 'openbao-init.json');
+        const platformEnv = [
+          'BFF_SERVICE_NAME=127.0.0.1',
+          `SERVICE_CONTAINER_PORT=${port}`,
+          `OIDC_ISSUER=${origin}`,
+          `GATEWAY_SERVICE_ISSUER=${origin}/gateway`,
+          'GATEWAY_SERVICE_CALLER_ID=fixture-gateway',
+          `GATEWAY_SERVICE_JWKS_FILE=${gatewayJwks}`,
+          'GATEWAY_SERVICE_MAX_TOKEN_SECONDS=60',
+          '',
+        ];
+        writeFileSync(planFile, JSON.stringify(plan));
+        writeFileSync(
+          signingFile,
+          JSON.stringify({ issuer: `${origin}/action`, jwksFile: actionJwks }),
         );
-        const hcl = compose
-          .split('    content: |\n')[1]
-          .replace(/^      /gm, '')
-          .replace(
-            '${WREN_QUERY_APPROLE_NAME:?exact binding AppRole is required}',
-            role,
-          )
-          .replaceAll('/run/kailo-query-bootstrap', bootstrap)
-          .replaceAll('/run/kailo-query', output)
-          .replaceAll('${WREN_QUERY_AGENT_UID}', String(process.getuid()))
-          .replaceAll('${WREN_QUERY_AGENT_GID}', String(process.getgid()))
-          .replaceAll(
-            '/etc/kailo-query/templates',
-            join(source, 'query-secrets'),
-          );
-        expect(hcl).not.toMatch(/\bsink\s+"/);
-        writeFileSync(join(directory, 'agent.hcl'), hcl);
-        writeFileSync(join(bootstrap, 'role-id'), role, { mode: 0o400 });
-        writeFileSync(join(bootstrap, 'wrapped-secret-id'), wrapped, {
-          mode: 0o400,
+        writeFileSync(envFile, platformEnv.join('\n'));
+        writeFileSync(rootFile, JSON.stringify({ root_token: rootToken }), {
+          mode: 0o600,
         });
+        await python([
+          tool,
+          'config',
+          '--kind',
+          'data-query',
+          '--plan',
+          planFile,
+          '--template',
+          join(source, 'deploy/components/data-query-adapter.template.json'),
+          '--delivery-dir',
+          output,
+          '--env-file',
+          envFile,
+          '--action-token-signing-file',
+          signingFile,
+          '--set',
+          `projectConnectionDigest=${'a'.repeat(64)}`,
+          '--set',
+          `mcpAuthority=${new URL(origin).host}`,
+          '--set',
+          'gatewayAudience=binding-machine',
+          '--out',
+          join(output, 'adapter.json'),
+        ]);
+        await python([
+          tool,
+          'reader',
+          '--config',
+          join(output, 'adapter.json'),
+          '--role',
+          role,
+          '--bootstrap-dir',
+          bootstrap,
+          '--bao-url',
+          origin,
+          '--agent-bao-url',
+          origin,
+          '--root-token-file',
+          rootFile,
+        ]);
+        let readable = '';
+        for (const name of Object.keys(values))
+          readable += `path "${kv}/${name}" { capabilities = ["read"] }\n`;
+        expect(stored.get(policyPath)).toEqual({ policy: readable });
+        const hcl = readFileSync(join(bootstrap, 'adapter-agent.hcl'), 'utf8');
+        const namespaces = hcl.match(/namespace = "[^"]*"/g);
+        expect(namespaces).toEqual([`namespace = "${namespace}"`]);
+        expect(hcl).not.toMatch(/\bsink\s+"/);
+        expect(hcl).not.toMatch(/^\s*cache\s*\{/m);
         child = spawn(
           process.env.WREN_TEST_BAO_BINARY,
           [
             'agent',
             '-log-level=warn',
-            `-config=${join(directory, 'agent.hcl')}`,
+            `-config=${join(bootstrap, 'adapter-agent.hcl')}`,
           ],
           {
             env: {
               NODE_ENV: 'test',
               PATH: process.env.PATH,
               HOME: directory,
-              BAO_ADDR: origin,
-              BAO_NAMESPACE: namespace,
-              WREN_QUERY_ACTION_JWKS_PATH: 'secret/data/action',
-              WREN_QUERY_ACTION_JWKS_VERSION: '7',
-              WREN_QUERY_GATEWAY_JWKS_PATH: 'secret/data/gateway',
-              WREN_QUERY_GATEWAY_JWKS_VERSION: '7',
-              WREN_QUERY_SERVICE_SECRET_PATH: 'secret/data/service',
-              WREN_QUERY_SERVICE_SECRET_VERSION: '7',
             },
           },
         );
@@ -220,18 +340,26 @@ nativeAgent(
         child.stderr.on('data', (part) => {
           log += part;
         });
+        const secrets = [
+          wrapped,
+          secretId,
+          autoAuth,
+          rootToken,
+          serviceSecret,
+          connectionSecret,
+        ];
+        const redacted = () => {
+          let safe = log;
+          for (const value of secrets)
+            safe = safe.replaceAll(value, '[redacted]');
+          return safe;
+        };
+        const rendered = ['connection', 'oidc_client_secret', 'bao.sock'];
         let expired = false;
         await new Promise<void>((resolve, reject) => {
           const watcher = watch(output, () => ready());
           const ready = () => {
-            if (
-              [
-                'action-jwks.json',
-                'gateway-jwks.json',
-                'service-secret',
-                'bao.sock',
-              ].every((file) => existsSync(join(output, file)))
-            ) {
+            if (rendered.every((file) => existsSync(join(output, file)))) {
               clearTimeout(deadline);
               watcher.close();
               resolve();
@@ -243,30 +371,30 @@ nativeAgent(
             child.kill('SIGTERM');
             reject(
               new Error(
-                `Native Agent rendering deadline exceeded: ${[
-                  wrapped,
-                  secretId,
-                  autoAuth,
-                  serviceSecret,
-                ].reduce(
-                  (safe, value) => safe.replaceAll(value, '[redacted]'),
-                  log,
-                )}`,
+                `Native Agent rendering deadline exceeded: ${redacted()}`,
               ),
             );
           }, 20000);
           child.on('error', reject);
           ready();
         });
+        const delivery = JSON.parse(
+          readFileSync(join(output, 'binding.json'), 'utf8'),
+        );
+        expect(delivery.secretSocket).toBe(join(output, 'bao.sock'));
+        expect(delivery.secretNamespace).toBe(namespace);
+        expect(delivery.serviceSecretPath).toBe(`${kv}/oidc_client_secret`);
+        expect(delivery.connectionSecretPath).toBe(`${kv}/connection`);
+        expect(delivery.binding.secretRefs).toEqual(plan.secretRefs);
         // Real Agent proxy injects its AppRole token in memory; Wren sends no
         // token. No cache stanza exists, so this is a fresh audit-producing read.
         const fresh: any = await new Promise((resolve, reject) => {
           const pending = httpRequest(
             {
-              socketPath: join(output, 'bao.sock'),
-              path: '/v1/secret/data/service?version=7',
+              socketPath: delivery.secretSocket,
+              path: `/v1/${delivery.serviceSecretPath}?version=1`,
               method: 'GET',
-              headers: { 'X-Vault-Namespace': namespace },
+              headers: { 'X-Vault-Namespace': delivery.secretNamespace },
               timeout: 5000,
             },
             (response) => {
@@ -300,59 +428,30 @@ nativeAgent(
         const exit = await exited;
         if (expired)
           throw new Error(
-            `Native Agent did not finish rendering: ${[wrapped, secretId, autoAuth, serviceSecret].reduce((safe, value) => safe.replaceAll(value, '[redacted]'), log)}`,
+            `Native Agent did not finish rendering: ${redacted()}`,
           );
         expect(exit).toBe(0);
         expect(failures).toEqual([]);
-        expect([...reads].sort()).toEqual(['action', 'gateway', 'service']);
-        for (const value of [wrapped, secretId, autoAuth, serviceSecret])
-          expect(log).not.toContain(value);
-        for (const file of [
-          'action-jwks.json',
-          'gateway-jwks.json',
-          'service-secret',
-        ]) {
-          expect(statSync(join(output, file)).mode & 0o777).toBe(0o400);
+        expect([...reads].sort()).toEqual(['connection', 'oidc_client_secret']);
+        for (const value of secrets) expect(log).not.toContain(value);
+        for (const file of ['connection', 'oidc_client_secret']) {
+          expect(statSync(join(output, file)).mode & 0o777).toBe(0o600);
         }
-        const config = {
-          bindingId: binding,
-          tenantId: tenant,
-          workspaceId: workspace,
-          nativeInstanceRef: 'fixture',
-          nativeScopeRef: '1',
-          projectId: 1,
-          projectConnectionDigest: 'a'.repeat(64),
-          actionTokenIssuer: `${origin}/action`,
-          actionTokenAudience: 'binding-query',
-          actionTokenJwksFile: join(output, 'action-jwks.json'),
-          serviceTokenUrl: `${origin}/token`,
-          serviceClientId: 'binding-client',
-          serviceClientSecretFile: join(output, 'service-secret'),
-          corePepUrl: `${origin}/service/v1/adapter/pep_check`,
-          requestTimeoutMs: 5000,
-          responseMaxBytes: 65536,
-          requestMaxBytes: 65536,
-          gatewayIssuer: `${origin}/gateway`,
-          gatewayAudience: 'binding-machine',
-          gatewayCallerId: 'fixture-gateway',
-          gatewayJwksFile: join(output, 'gateway-jwks.json'),
-          gatewayMaxTokenSeconds: 60,
-          mcpAuthority: new URL(origin).host,
-        };
         process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = join(
-          directory,
+          output,
           'query.json',
         );
-        writeFileSync(
-          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
-          JSON.stringify(config),
-        );
         const actual = await loadQueryDelivery();
-        const machine = await new SignJWT({ azp: config.gatewayCallerId })
+        expect(actual.serviceClientSecretFile).toBe(
+          join(output, 'oidc_client_secret'),
+        );
+        expect(actual.actionTokenJwksFile).toBe(actionJwks);
+        expect(actual.gatewayJwksFile).toBe(gatewayJwks);
+        const machine = await new SignJWT({ azp: actual.gatewayCallerId })
           .setProtectedHeader({ alg: 'ES256', kid: 'fixture' })
-          .setIssuer(config.gatewayIssuer)
-          .setAudience(config.gatewayAudience)
-          .setSubject(config.gatewayCallerId)
+          .setIssuer(actual.gatewayIssuer)
+          .setAudience(actual.gatewayAudience)
+          .setSubject(actual.gatewayCallerId)
           .setJti(randomUUID())
           .setIssuedAt()
           .setExpirationTime('30s')
@@ -368,8 +467,8 @@ nativeAgent(
           normalized_parameter_hash: digest(input),
         })
           .setProtectedHeader({ alg: 'ES256', kid: 'fixture' })
-          .setIssuer(config.actionTokenIssuer)
-          .setAudience(config.actionTokenAudience)
+          .setIssuer(actual.actionTokenIssuer)
+          .setAudience(actual.actionTokenAudience)
           .setJti(randomUUID())
           .setIssuedAt()
           .setExpirationTime('1m')

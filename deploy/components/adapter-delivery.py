@@ -13,6 +13,15 @@ UUIDv5 values, so locators are known in advance):
           An isolated conformance delivery (07 §8A) passes the suite PEP
           provider's endpoints and the isolated audience explicitly
           (--core-pep-url, --oidc-token-url, --action-token-audience).
+          --kind data-query (Wren, data-query/docker/query-governance.yaml)
+          writes the same adapter record to --out and, from that record and
+          the plan, the two files the native wren-ui consumes in the delivery
+          directory: query.json (NativeQueryDelivery) and binding.json (the
+          frozen Core validation document plus the Agent socket/namespace and
+          the two SecretRef KV paths). Its ActionToken / Gateway public JWKS
+          references are the platform's own OpenBao Agent-rendered files
+          (start-core.sh --prepare-action-token, the Gateway service delivery),
+          mounted read-only into wren-ui; no copy is made (07 §2.5, DD-94).
   reader  In the Tenant namespace (<parent>/<tenantId>) create the adapter's
           read-only policy for exactly those version-pinned KV paths and its
           AppRole, then write role-id, a response-wrapped one-use secret-id and
@@ -281,6 +290,88 @@ def key_values(items, label):
     return table
 
 
+# ---- data-query (Wren) consumer projections ----------------------------------
+#
+# wren-ui reads two controlled files (data-query/wren-ui/src/apollo/server/
+# services/nativeQueryAdmission.ts::loadQueryDelivery and
+# nativeBindingService.ts::loadBindingDelivery). Both are pure projections of
+# the adapter record and the bind plan; nothing here is a second authority.
+
+QUERY_FIELDS = ("actionTokenIssuer", "actionTokenAudience", "actionTokenJwksFile", "corePepUrl", "gatewayIssuer",
+                "gatewayAudience", "gatewayCallerId", "gatewayJwksFile", "gatewayMaxTokenSeconds", "mcpAuthority",
+                "projectConnectionDigest", "requestTimeoutMs", "responseMaxBytes", "requestMaxBytes")
+# Generic adapter record names (also read by `client`) -> Wren consumer names.
+QUERY_RENAMES = {"serviceTokenUrl": "oidcTokenUrl", "serviceClientId": "oidcClientId",
+                 "serviceClientSecretFile": "oidcClientSecretFile"}
+QUERY_OPTIONAL = ("humanAction", "dryRunAction")
+
+
+def tenant_kv_path(locator, namespace):
+    """<namespace>/<mount>/<path> -> <mount>/data/<path>, the KV v2 API path
+    relative to the Tenant namespace (same transform as `reader`)."""
+    require(locator.startswith(namespace + "/"), "cross-tenant SecretRef refused")
+    parts = locator[len(namespace) + 1:].split("/")
+    require(len(parts) >= 2 and all(SEGMENT.fullmatch(p) for p in parts), "invalid KV locator")
+    return parts[0] + "/data/" + "/".join(parts[1:])
+
+
+def data_query_delivery(config, plan, socket, setjson):
+    validation = config["management"]["validation"]
+    require(isinstance(plan.get("workspaceId"), str), "data-query: a Workspace binding plan (--workspace-id) is required")
+    canonical_uuid(plan["workspaceId"], "workspaceId")
+    require(plan["isolationMode"] == "DEDICATED_INSTANCE", "data-query: isolationMode DEDICATED_INSTANCE required")
+    scope = plan["nativeScopeRef"]
+    require(re.fullmatch(r"[1-9][0-9]{0,14}", scope) is not None, "data-query: nativeScopeRef must be the native project id")
+    require(re.fullmatch(r"[0-9a-f]{64}", str(config.get("projectConnectionDigest"))) is not None,
+            "data-query: projectConnectionDigest must be a lowercase SHA-256 hex digest")
+    # Fixed consumer invariant of loadQueryDelivery; refused here rather than
+    # producing a file the native UI rejects at request time.
+    require(config["gatewayAudience"] != config["actionTokenAudience"], "data-query: gatewayAudience must differ from actionTokenAudience")
+    query = {key: config[key] for key in QUERY_FIELDS}
+    query.update({key: config[source] for key, source in QUERY_RENAMES.items()})
+    query.update({"bindingId": plan["bindingId"], "tenantId": plan["tenantId"], "workspaceId": plan["workspaceId"],
+                  "nativeInstanceRef": plan["nativeInstanceRef"], "nativeScopeRef": scope, "projectId": int(scope)})
+    for key in QUERY_OPTIONAL:
+        if key in setjson:
+            value = setjson[key]
+            require(isinstance(value, dict) and set(value) == {"resultExposurePolicyId", "resultExposurePolicyVersion"},
+                    f"--set-json {key}: exact result exposure policy reference required")
+            canonical_uuid(value["resultExposurePolicyId"], key + ".resultExposurePolicyId")
+            require(type(value["resultExposurePolicyVersion"]) is int and value["resultExposurePolicyVersion"] > 0,
+                    f"{key}.resultExposurePolicyVersion must be a positive integer")
+            query[key] = value
+    deliveries = validation["secretDeliveries"]
+    require(len(deliveries) == 2, "data-query: exactly the connection and service SecretRefs required")
+    service = [d for d in deliveries if d["secretFile"] == config["oidcClientSecretFile"]]
+    require(len(service) == 1, "data-query: oidcClientSecretFile must be one Agent-rendered binding SecretRef")
+    connection = [d for d in deliveries if d is not service[0]][0]
+    namespace = "tenants/" + plan["tenantId"]
+    references = [{"secretKey": r["secretKey"], "locator": r["locator"], "version": r["version"], "audience": r["audience"]}
+                  for r in plan["secretRefs"]]
+    require(canonical_digest(plan["normalizedConfig"]) == plan["configDigest"], "plan configDigest does not match normalizedConfig")
+    # Exactly the document Core sends to validate_binding (without its
+    # idempotencyKey); client-kit/adapter/binding-validation.mjs bindingArguments.
+    document = {"bindingId": plan["bindingId"], "bindingVersion": plan["bindingVersion"], "tenantId": plan["tenantId"],
+                "workspaceId": plan["workspaceId"], "componentReleaseId": plan["componentReleaseId"],
+                "servicePrincipalId": plan["servicePrincipalId"], "adapterServiceRef": plan["adapterServiceRef"],
+                "nativeInstanceRef": plan["nativeInstanceRef"], "nativeScopeRef": scope,
+                "isolationMode": plan["isolationMode"], "normalizedConfig": plan["normalizedConfig"],
+                "configDigest": plan["configDigest"], "secretRefs": references}
+    binding = {"binding": document, "componentTypeKey": plan["componentTypeKey"], "artifactDigest": plan["artifactDigest"],
+               "protocolRange": config["management"]["protocolRange"], "secretSocket": socket, "secretNamespace": namespace,
+               "connectionSecretPath": tenant_kv_path(connection["locator"], namespace), "connectionSecretKey": connection["secretKey"],
+               "serviceSecretPath": tenant_kv_path(service[0]["locator"], namespace), "serviceSecretKey": service[0]["secretKey"]}
+    return {"query.json": query, "binding.json": binding}
+
+
+def write_once(path, document):
+    text = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    if path.exists():
+        require(private_file(str(path)) == text, f"{path} exists with different content; write a new file")
+    else:
+        write_private(path, text)
+
+
 def command_config(args):
     plan = load_plan(args.plan)
     tools = None
@@ -334,7 +425,7 @@ def command_config(args):
     config["tenantId"] = plan["tenantId"]
     if "workspaceId" in plan:
         config["workspaceId"] = plan["workspaceId"]
-    if args.kind == "adapter":
+    if args.kind in ("adapter", "data-query"):
         config["management"] = {
             "componentTypeKey": plan["componentTypeKey"], "componentReleaseId": plan["componentReleaseId"],
             "artifactDigest": plan["artifactDigest"], "protocolRange": "1",
@@ -351,15 +442,21 @@ def command_config(args):
         # common/auth/native-action.go): no management or SecretRef metadata.
         require(tools is None, "--kind cells-native has no tools")
     require(not unresolved(config), "template still has {{...}} placeholders; supply the native facts (--set/--set-json) first")
+    projections = {}
+    if args.kind == "data-query":
+        # 07 §2.5 / DD-94: the platform public JWKS stay the platform Agent's
+        # rendered files; a copy into the component directory is not delivered.
+        require(not args.public_file, "--kind data-query mounts the platform Agent-rendered public JWKS; --public-file is refused")
+        private_dir(delivery, "--delivery-dir")
+        projections = data_query_delivery(config, plan, socket, setjson)
     for spec in args.public_file or []:
         install_public(delivery, spec)
     out = Path(args.out)
-    text = json.dumps(config, indent=2, sort_keys=True) + "\n"
-    if out.exists():
-        require(private_file(str(out)) == text, f"{out} exists with different content; write a new file")
-    else:
-        write_private(out, text)
-    print(json.dumps({"out": str(out), "kind": args.kind, "bindingId": plan["bindingId"], "secretFiles": sorted(files), "socket": socket}))
+    write_once(out, config)
+    for name, document in projections.items():
+        write_once(delivery / name, document)
+    print(json.dumps({"out": str(out), "kind": args.kind, "bindingId": plan["bindingId"], "secretFiles": sorted(files), "socket": socket,
+                      "consumerFiles": sorted(str(delivery / name) for name in projections)}))
 
 
 # ---- reader -----------------------------------------------------------------
@@ -547,8 +644,9 @@ def main():
     c.add_argument("--out", required=True)
     c.add_argument("--release-dir", help="render.mjs output; with --registration fills {{tools}}")
     c.add_argument("--registration", action="append", help="contracts/adapter/<category>.v<N>/registration.json (repeatable)")
-    c.add_argument("--kind", choices=["adapter", "cells-native"], default="adapter",
-                   help="adapter (adds management.validation) or the native Cells action delivery")
+    c.add_argument("--kind", choices=["adapter", "cells-native", "data-query"], default="adapter",
+                   help="adapter (adds management.validation), the native Cells action delivery, or data-query "
+                   "(adapter record plus Wren query.json/binding.json in --delivery-dir)")
     c.add_argument("--env-file", help="platform deploy/local/.env for {{env:*}} / {{envint:*}}")
     c.add_argument("--action-token-signing-file", help="ACTION_TOKEN_SIGNING_FILE for {{signing:*}}")
     c.add_argument("--public-file", action="append", help="NAME=SOURCE: install a public-only JWKS into the delivery directory")

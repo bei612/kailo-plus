@@ -11796,3 +11796,58 @@ the old build failure. This phase did not deploy the image, restart shared
 runtime or activate a binding. Native readonly query, complete conformance,
 SSO and embedded-page business acceptance have no new results from this
 build; the complete release gate remains separately unverified.
+
+## 2026-10-19 — Governed query delivery: two Agents, two namespaces
+
+Authority: design 07 §2.5 (last paragraph), 03 §9, DD-70/71/94, 08 §6. The adapter
+runtime receives the ActionToken verification key and the `secret_schema`
+credentials through OpenBao Agent, with no new distribution channel. The previous
+`query-governance.yaml` used one Agent with one `BAO_NAMESPACE`, so it could not
+render the `platform/` ActionToken/Gateway JWKS next to the
+`tenants/<tenantId>` binding secrets. No Wren binding could become ACTIVE.
+
+Delivery now has two parts:
+
+- Platform namespace (public). The overlay mounts the platform Agent's existing
+  rendered files read-only. These are the ActionToken JWKS
+  (`start-core.sh --prepare-action-token`, `ACTION_TOKEN_JWKS_READER_ROLE`,
+  `WREN_QUERY_ACTION_JWKS_FILE` = signing `jwksFile`) and
+  `GATEWAY_SERVICE_JWKS_FILE`. There is no copy and no platform credential in
+  the component.
+- Tenant namespace. The binding's `connection`/`oidc_client_secret` SecretRefs
+  and the api_proxy socket come from the generic
+  `deploy/components/compose.adapter-agent.yaml`, as a separate project
+  `WREN_QUERY_AGENT_PROJECT`. Its HCL/AppRole are written by the existing
+  `adapter-delivery.py reader` (read on exactly the two version-pinned paths).
+  `adapter-delivery.py config --kind data-query` derives `query.json`/`binding.json`
+  from the bind plan. `component-deploy.sh data-query <commit> --adapter
+  [--check]` validates, starts and reads back both.
+
+The Gateway public JWKS has no public-only KV record in `platform/`. It sits in the
+same record as the Gateway signing key (`kv/gateway-service-signing/...`,
+fields `signing_key_pem`/`public_jwks_json`), so a path-scoped component policy
+could not read it without the private key. For that reason the Gateway's own
+rendered public file is consumed. OpenBao source (`internal/command/agent.go`
+`templateNamespace`) confirms that the reader HCL's `auto_auth` namespace also
+scopes template reads. `api_proxy` forwards the caller's `X-Vault-Namespace`
+(`agentproxyshared/cache/api_proxy.go`).
+
+Dev-box checks (Python/shell only): `bash -n`, `py_compile`, and YAML/JSON parse.
+`config --kind data-query` plus `reader` ran against a local mock OpenBao. The
+output files have exactly the `loadQueryDelivery`/`loadBindingDelivery` key sets.
+The policy is two read paths. The HCL has one `tenants/<id>` namespace, no
+sink and no cache. Equal Gateway/ActionToken audiences and `--public-file` copies
+are refused. The deploy validator passed the positive case and refused eight
+negative cases (wrong JWKS reference, shared project, wrong owner,
+platform-namespace Agent, version drift, token sink, private JWK, JWKS copied
+into the component directory). `src/nativeQueryDelivery.test.ts`
+(`WREN_TEST_BAO_BINARY`, `WREN_QUERY_DELIVERY_SOURCE` = apps root) now drives
+these production `config`/`reader` bytes, a real Agent and the real consumers.
+It has not run yet; it needs the CI SDK with the OpenBao binary and Python.
+Nothing was built, deployed or bound.
+
+Known gap: Core's `adapter_backend_auth` signs Gateway→adapter tokens with
+`aud` = release `actionTokenAudience`. `loadQueryDelivery` requires
+`gatewayAudience` != `actionTokenAudience`. handshake/validate_binding do not
+use that audience, but Gateway MCP calls to Wren stay refused until the two are
+aligned.

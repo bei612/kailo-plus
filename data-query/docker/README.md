@@ -29,8 +29,9 @@ Path structure as following:
 The original native stack has its own Compose project and `wren` network,
 not Core's default application network. Qdrant is only on the internal
 `wren-ai-service-data` network; the AI service is its sole native client.
-Only the explicitly selected query-governance overlay connects the native UI
-and its credential agent to an existing private platform protocol network.
+Only the explicitly selected query-governance overlay connects the native UI,
+and the separate component OpenBao Agent project, to an existing private
+platform protocol network.
 
 ## How to start with OpenAI
 
@@ -216,33 +217,59 @@ UI reads `WREN_PLATFORM_QUERY_CONFIG_FILE`; absent or invalid delivery fails
 closed. Do not deploy the overlay as a substitute for the normal approved
 release/binding lifecycle or for a genuinely read-only native data-source role.
 
-The overlay uses the original OpenBao Agent, not a second secret reader. Supply
-the fixed source-built OpenBao image, exact binding namespace/AppRole, a fresh
-wrapped SecretID and its RoleID in the controlled bootstrap directory. The
-wrapping creation path must be the selected AppRole's original `secret-id` path.
-The native UI does not mount this directory. Auto-auth tokens remain in Agent
-memory: the supplied configuration has neither a token sink nor a network
-listener. The lifecycle continuation below uses an owner-only Unix socket.
+The adapter runtime receives two OpenBao Agent deliveries, each authenticated
+by its own least-privilege AppRole in the namespace that owns the material
+(design 07 §2.5 last paragraph, 03 §9, DD-70/71/94): no second secret reader,
+copy or distribution channel is added.
 
-Each of the three Agent templates reads an explicit KV v2 path and version:
-ActionToken public JWKS, independent Gateway public JWKS, and the binding's
-service client credential. The original KV `value` field renders into
-`action-jwks.json`, `gateway-jwks.json`, and `service-secret` with mode `0400`.
-Choose the delivery UID/GID so that this component's native UI can read those
-files without world-readable permissions; do not share the directory between
-unrelated bindings. Secret values never appear in Compose environment variables
-or the non-secret query configuration. Agent rendering errors are not success.
+- Platform namespace, public material. The ActionToken public JWKS is the
+  `jwksFile` of `ACTION_TOKEN_SIGNING_FILE`, rendered by the platform's
+  original Agent under the read-only `ACTION_TOKEN_JWKS_READER_ROLE`
+  (`deploy/local/start-core.sh --prepare-action-token`); set
+  `WREN_QUERY_ACTION_JWKS_FILE` to exactly that file. The Gateway service public
+  JWKS is the existing `GATEWAY_SERVICE_JWKS_FILE`, rendered by the Gateway's own
+  Agent delivery. The overlay bind-mounts both files read-only at their own
+  paths. The component holds no platform-namespace credential. These are
+  single-file mounts: after a key rotation re-renders either file, recreate
+  `wren-ui` (the design's "confirm adapters reloaded" step before switching the
+  signing key).
+- `tenants/<tenantId>`, binding secrets. The binding's `connection` and
+  `oidc_client_secret` SecretRefs are rendered, and the api_proxy Unix socket
+  served, by a component-specific Agent:
+  `deploy/components/compose.adapter-agent.yaml` as its own Compose project
+  (`WREN_QUERY_AGENT_PROJECT`), the same unit Cells uses. Its HCL, RoleID and
+  response-wrapped one-use SecretID are written by
+  `deploy/components/adapter-delivery.py reader` into
+  `WREN_QUERY_AGENT_BOOTSTRAP_DIR`. The policy only reads those two
+  version-pinned KV paths. The native UI does not mount the bootstrap directory.
+  Auto-auth tokens stay in Agent memory: there is no token sink, cache or
+  network listener, only the owner-only Unix socket used by the lifecycle
+  continuation below.
 
-The controlled delivery directory also contains `query.json`, the exact
-`NativeQueryDelivery` consumed by
+The original KV `value` field of each binding SecretRef renders as
+`<WREN_QUERY_DELIVERY_DIR>/<secretKey>` with mode `0600`. The Agent UID/GID
+(`WREN_QUERY_AGENT_UID/GID`) owns both owner-only (`0700`) directories; the native
+UI process reads them as root inside its container. Do not share the directory
+between unrelated bindings. Secret values never appear in Compose environment
+variables or the non-secret query configuration. Agent rendering errors are not
+success.
+
+The delivery directory also holds the two non-secret consumer files, written
+by `deploy/components/adapter-delivery.py config --kind data-query` from the
+bind plan and `deploy/components/data-query-adapter.template.json`.
+`query.json` is the exact `NativeQueryDelivery` consumed by
 `wren-ui/src/apollo/server/services/nativeQueryAdmission.ts::loadQueryDelivery`.
-Its three file references must name the rendered `/run/kailo-query/` files.
-Other entries pin the actual binding/Tenant/Workspace, native project and
-connection fingerprint, dedicated issuers/audiences/caller, exact Core PEP/token
-endpoints and explicit transport limits. No request may choose these values.
-The source directory is mounted read-only into the UI; the Agent alone receives
-the rendering mount. Use the existing private platform protocol network for
-Core/Gateway traffic; no additional public query listener or host port is added.
+`binding.json` is described under "Binding lifecycle validation". The same
+command writes `adapter.json`, the generic adapter record that `reader` and
+`client` consume. All three use host paths. The overlay mounts the delivery
+directory and both JWKS files at the same paths, so every file and socket
+reference resolves unchanged. Other `query.json` entries pin the actual
+binding/Tenant/Workspace, native project and connection fingerprint, dedicated
+issuers/audiences/caller, exact Core PEP/token endpoints and explicit transport
+limits. No request may choose these values. The delivery directory is mounted
+read-only into the UI; only the Agent writes it. Use the existing private
+platform protocol network for Core/Gateway/OpenBao traffic; no additional
+public query listener or host port is added.
 
 Public JWKS files must contain public keys only. The Gateway service identity,
 short-lived ActionToken and service-client credential have separate consumers;
@@ -481,7 +508,7 @@ not native deployment/write admission or production component acceptance.
 ## Binding lifecycle validation
 
 The same optional `query-governance.yaml` overlay now supplies
-`WREN_PLATFORM_BINDING_CONFIG_FILE=/run/kailo-query/binding.json`. This is
+`WREN_PLATFORM_BINDING_CONFIG_FILE=<WREN_QUERY_DELIVERY_DIR>/binding.json`. This is
 controlled, non-secret deployment metadata, not a browser upload or a second
 binding registry. It contains `binding` (the exact frozen Core validation
 document, including binding version, tenant/workspace, release, service
@@ -494,7 +521,9 @@ without an OCI `sha256:` prefix. The two distinct secret keys select the exact
 connection and binding SERVICE entries in the frozen binding's SecretRefs.
 The release type/digest/range must come from the actual approved source-built
 release. The namespace is exactly `tenants/<tenantId>` and the socket is the
-component's `/run/kailo-query/bao.sock`; neither comes from an incoming request.
+component Agent's `<WREN_QUERY_DELIVERY_DIR>/bao.sock`; neither comes from an
+incoming request. `adapter-delivery.py config --kind data-query` derives the
+whole file from the bind plan, so the frozen document equals the one Core sends.
 
 This datasource validator accepts the design's `DEDICATED_INSTANCE` binding
 with one existing PostgreSQL project and its connection plus SERVICE SecretRefs. The project
@@ -555,9 +584,18 @@ gain a fabricated terminal status or query-cancellation capability. Runtime
 reconciliation uses this original observe consumer; no separate native
 reconciliation engine or endpoint is introduced.
 
-The overlay's non-secret paths, versions and endpoint metadata are also in
-the sole `deploy/local/.env` Wren section. Use the same file for both original
-Compose inputs, never a second environment authority:
+The overlay's non-secret paths and Agent metadata are in the sole
+`deploy/local/.env` Wren section (`deploy/components/data-query.env.template`).
+Do not create a second environment authority. On the CI node,
+`deploy/components/component-deploy.sh data-query <commit> --adapter` is the
+deployment entry. With `--check`, it validates both Compose projects, digest-pinned
+images and the controlled delivery, then stops. The delivery check covers
+directory ownership, the platform JWKS references, the Agent's single
+`tenants/<tenantId>` namespace and socket, version-pinned templates, and the
+absence of a token sink. Without `--check`, it starts the Agent project and
+waits for its socket. It then starts the native stack with the overlay and
+reads back the Agent, the rendered file names and the `wren-ui` mounts and
+environment. The equivalent manual check is:
 
 ```sh
 docker compose --env-file deploy/local/.env \
@@ -565,11 +603,42 @@ docker compose --env-file deploy/local/.env \
   -f data-query/docker/query-governance.yaml config --quiet
 ```
 
-After the real release/binding/native-role prerequisites are satisfied, the
-same command with `up -d --no-build` is the existing runtime entry. Blank overlay
-inputs reject that explicit launch; they do not provision an AppRole, namespace,
-binding, service identity, grant or datasource. Successful config parsing alone
-does not establish native login, read-only query execution or governed disclosure.
+Operator order for a binding (no step creates a grant, a datasource account or
+evidence):
+
+1. Original onboarding of the single PostgreSQL project, using a read-only
+   database role. The binding's `connection` value is the JSON text of exactly
+   that project's `connectionInfo`. `projectConnectionDigest` is the canonical
+   SHA-256 of the project's `{type, connectionInfo, catalog, schema}` as stored
+   by the native UI.
+2. Activate `data_query@2` (`flow/capability-contract-activate.mjs`), then
+   register and approve the release.
+3. Run `tools/component-release/flow/component-bind.mjs --component data-query
+   --workspace-id <ws> --native-scope-ref <project id> --native-instance-ref <ref>
+   --native-page-url <WREN_PUBLIC_ORIGIN> --plan-only`.
+4. Run `adapter-delivery.py config --kind data-query` (see the template's
+   `$comment`, `--out <WREN_QUERY_DELIVERY_DIR>/adapter.json`). Then run
+   `adapter-delivery.py reader --config <that adapter.json> --role <one role per
+   binding> --bootstrap-dir <WREN_QUERY_AGENT_BOOTSTRAP_DIR>`, using the operator
+   and in-network OpenBao addresses. Also add the `data-query-ui` entry
+   (`baseUrl`/`mcpUrl` on `WREN_QUERY_PLATFORM_NETWORK`) to the adapter
+   directory.
+5. Run `component-deploy.sh data-query <commit> --adapter --check`, then the
+   same command without `--check`.
+6. Run `component-bind.mjs` with the same arguments and
+   `--secret-values-file`. Core writes version 1 of both SecretRefs and drives
+   handshake/validate_binding. Once the Agent has rendered
+   `oidc_client_secret`, `adapter-delivery.py client` registers the binding's
+   IdP client with it.
+
+The Agent's templates retry and then exit while the SecretRefs do not exist
+yet. Its wrapped SecretID is single-use and its token lives for `reader
+--token-ttl`. Start it close to step 6. If it has exited, or before any
+recreation, rerun `reader` and then `component-deploy.sh ... --adapter`. Blank
+overlay inputs reject the launch; they do not provision an AppRole, namespace,
+binding, service identity, grant or datasource. Successful config parsing or
+delivery validation does not establish native login, read-only query
+execution or governed disclosure.
 
 `/platform-adapter/v1/handshake` and `/validate_binding` require the existing
 `application_binding.create` ActionToken for this exact binding and fresh Core

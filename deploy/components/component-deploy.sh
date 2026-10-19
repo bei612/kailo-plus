@@ -9,8 +9,11 @@
 #   component-deploy.sh <file-storage|knowledge|data-query> <commit> [--check] [--adapter]
 #     --check    只做配置与镜像校验（各组件原 --check/--validate/config --quiet），不启动
 #     --adapter  另起 adapter（Cells: 组件专属 OpenBao Agent + start.sh --platform-adapter；
-#                WeKnora: start.sh --platform-adapter）。需要 binding 计划、adapter 配置与
-#                adapter-delivery.py reader 已完成；Wren 的治理 overlay 本批不启用。
+#                WeKnora: start.sh --platform-adapter；Wren: tenants/<tenantId> 组件专属
+#                OpenBao Agent（compose.adapter-agent.yaml）+ query-governance.yaml overlay，
+#                平台 namespace 的 ActionToken/Gateway 公钥取平台 Agent 已渲染的只读文件）。
+#                需要 binding 计划、adapter 配置（Wren: config --kind data-query）与
+#                adapter-delivery.py reader 已完成。
 # 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
 set -euo pipefail
 component=${1:?component}
@@ -145,8 +148,110 @@ case "$component" in
     ;;
   data-query)
     ENV=${COMPONENT_ENV_FILE:-$R/.env}
-    "$adapter" && { echo 'Wren 治理 overlay（query-governance.yaml）本批阻断，不随部署启用' >&2; exit 2; }
+    # 唯一 Wren env 权威含 ${...} 派生值：子 shell 求值单个键，不回显整份 env。
+    wren_value() { (set -a; . "$ENV" >/dev/null 2>&1; set +a; printf '%s' "${!1:-}"); }
     compose=(docker compose --env-file "$ENV" -f "$S/data-query/docker/docker-compose.yaml")
+    if "$adapter"; then
+      # 07 §2.5 / DD-94：两份 OpenBao Agent 投递、各自 namespace 与最小 AppRole。
+      # 平台 namespace 的公钥文件由平台 Agent 渲染（只读挂载）；tenants/<tenantId>
+      # 的 binding SecretRef 与 api_proxy socket 由本组件专属 Agent 渲染。
+      compose+=(-f "$S/data-query/docker/query-governance.yaml")
+      delivery=$(wren_value WREN_QUERY_DELIVERY_DIR)
+      agent=(env "ADAPTER_AGENT_PROJECT=$(wren_value WREN_QUERY_AGENT_PROJECT)"
+        "ADAPTER_AGENT_IMAGE=$(wren_value WREN_QUERY_OPENBAO_IMAGE)"
+        "ADAPTER_AGENT_UID=$(wren_value WREN_QUERY_AGENT_UID)" "ADAPTER_AGENT_GID=$(wren_value WREN_QUERY_AGENT_GID)"
+        "ADAPTER_AGENT_BOOTSTRAP_DIR=$(wren_value WREN_QUERY_AGENT_BOOTSTRAP_DIR)" "ADAPTER_AGENT_DELIVERY_DIR=$delivery"
+        "ADAPTER_AGENT_PLATFORM_NETWORK=$(wren_value WREN_QUERY_PLATFORM_NETWORK)"
+        docker compose -f "$S/deploy/components/compose.adapter-agent.yaml")
+      "${agent[@]}" config --quiet
+      ensure_image "$(wren_value WREN_QUERY_OPENBAO_IMAGE)"
+      # 只核对受控投递的路径/身份/引用一致，不读取 secret 值、不打印内容。
+      names=(WREN_QUERY_DELIVERY_DIR WREN_QUERY_AGENT_BOOTSTRAP_DIR WREN_QUERY_AGENT_UID WREN_QUERY_AGENT_GID
+        WREN_QUERY_AGENT_PROJECT WREN_COMPOSE_PROJECT_NAME WREN_QUERY_ACTION_JWKS_FILE GATEWAY_SERVICE_JWKS_FILE
+        ACTION_TOKEN_SIGNING_FILE)
+      values=()
+      for name in "${names[@]}"; do values+=("$name=$(wren_value "$name")"); done
+      env "${values[@]}" python3 -I - <<'PYWREN'
+import json, os, re, stat, sys
+from pathlib import Path
+
+def refuse(reason):
+    print("Wren 治理投递无效：" + reason + "；未启动任何服务", file=sys.stderr)
+    sys.exit(2)
+
+def need(condition, reason):
+    if not condition:
+        refuse(reason)
+
+env = os.environ
+def canonical(name):
+    raw = env.get(name, "")
+    path = Path(raw)
+    need(raw.startswith("/") and ".." not in path.parts and path.resolve() == path, name + " 必须是规范绝对路径")
+    return path
+
+def private_dir(name):
+    path = canonical(name)
+    need(path.is_dir() and not path.is_symlink(), name + " 必须是已存在目录")
+    info = path.stat()
+    need(not info.st_mode & 0o077 and str(info.st_uid) == env["WREN_QUERY_AGENT_UID"], name + " 必须为 0700 且属 WREN_QUERY_AGENT_UID")
+    return path
+
+def regular(path, label, private=True):
+    need(path.is_file() and not path.is_symlink(), label + " 必须是普通文件")
+    need(not private or not path.stat().st_mode & 0o077, label + " 必须 owner-only")
+    return path
+
+def public_jwks(path, label):
+    regular(path, label, private=False)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    need(isinstance(document, dict) and set(document) == {"keys"} and isinstance(document["keys"], list) and document["keys"]
+         and all(isinstance(k, dict) and not set(k) & {"d", "p", "q", "dp", "dq", "qi", "k", "oth"} for k in document["keys"]),
+         label + " 必须是 public-only JWKS")
+
+try:
+    need(re.fullmatch(r"[0-9]+", env.get("WREN_QUERY_AGENT_UID", "")) and re.fullmatch(r"[0-9]+", env.get("WREN_QUERY_AGENT_GID", "")),
+         "WREN_QUERY_AGENT_UID/GID 必须是数字")
+    need(env.get("WREN_QUERY_AGENT_PROJECT") and env["WREN_QUERY_AGENT_PROJECT"] != env.get("WREN_COMPOSE_PROJECT_NAME"),
+         "WREN_QUERY_AGENT_PROJECT 必须是独立 Compose 项目")
+    delivery = private_dir("WREN_QUERY_DELIVERY_DIR")
+    bootstrap = private_dir("WREN_QUERY_AGENT_BOOTSTRAP_DIR")
+    need(delivery != bootstrap and delivery not in bootstrap.parents and bootstrap not in delivery.parents,
+         "bootstrap 与 delivery 目录必须分离")
+    # 平台 namespace 公钥：平台 Agent 已渲染的原文件，不是组件目录内副本。
+    action, gateway = canonical("WREN_QUERY_ACTION_JWKS_FILE"), canonical("GATEWAY_SERVICE_JWKS_FILE")
+    signing = json.loads(canonical("ACTION_TOKEN_SIGNING_FILE").read_text(encoding="utf-8"))
+    need(signing.get("jwksFile") == str(action), "WREN_QUERY_ACTION_JWKS_FILE 必须是 ACTION_TOKEN_SIGNING_FILE 的 jwksFile")
+    for path, label in ((action, "ActionToken JWKS"), (gateway, "Gateway service JWKS")):
+        need(delivery not in path.parents and bootstrap not in path.parents, label + " 不得复制进组件目录")
+        public_jwks(path, label)
+    hcl = regular(bootstrap / "adapter-agent.hcl", "adapter-agent.hcl").read_text(encoding="utf-8")
+    for name in ("adapter-role-id", "adapter-wrapped-secret-id"):
+        regular(bootstrap / name, name)
+    query = json.loads(regular(delivery / "query.json", "query.json").read_text(encoding="utf-8"))
+    binding = json.loads(regular(delivery / "binding.json", "binding.json").read_text(encoding="utf-8"))
+    socket = str(delivery / "bao.sock")
+    namespace = "tenants/" + query["tenantId"]
+    need(query["actionTokenJwksFile"] == str(action) and query["gatewayJwksFile"] == str(gateway),
+         "query.json 的公钥引用必须是两份平台 Agent 渲染文件")
+    need(binding["secretSocket"] == socket and binding["secretNamespace"] == namespace, "binding.json socket/namespace 与投递目录不符")
+    document = binding["binding"]
+    need(all(document[k] == query[k] for k in ("bindingId", "tenantId", "workspaceId", "nativeInstanceRef", "nativeScopeRef")),
+         "binding.json 与 query.json 不是同一 binding")
+    need(not re.search(r'\bsink\s+"', hcl) and not re.search(r"^\s*cache\s*\{", hcl, re.M), "Agent 不得有 token sink 或 cache")
+    need(re.findall(r'^\s*namespace\s*=\s*"([^"]*)"', hcl, re.M) == [namespace], "Agent 必须只在 " + namespace + " 认证")
+    need(re.findall(r'^\s*address\s*=\s*"([^"]*)"', hcl, re.M) == [socket], "Agent api_proxy socket 必须是 " + socket)
+    destinations = re.findall(r'^\s*destination\s*=\s*"([^"]*)"', hcl, re.M)
+    need(destinations and all(Path(d).parent == delivery for d in destinations), "Agent 模板必须只渲染进投递目录")
+    need(query["serviceClientSecretFile"] in destinations, "serviceClientSecretFile 必须由 Tenant Agent 渲染")
+    versions = {r["secretKey"]: r["version"] for r in document["secretRefs"]}
+    for path_key, secret_key in (("connectionSecretPath", "connectionSecretKey"), ("serviceSecretPath", "serviceSecretKey")):
+        need(binding[path_key] + "?version=" + str(versions[binding[secret_key]]) in hcl, binding[secret_key] + " 未由 Tenant Agent 版本固定读取")
+except (OSError, ValueError, KeyError, TypeError, IndexError):
+    refuse("受控文件缺失或格式不符")
+print(f"Wren 治理投递校验通过：平台公钥 2 份只读文件 + {namespace} Agent（{len(destinations)} 个模板、api_proxy socket）；不声明 binding 已激活")
+PYWREN
+    fi
     "${compose[@]}" config --quiet
     while read -r image; do ensure_image "$image"; done < <("${compose[@]}" config --images | sort -u)
     "$check" && exit 0
@@ -159,10 +264,29 @@ case "$component" in
         "$(env_value "$R/.env" WREN_QDRANT_IMAGE)" -C /v -czf /b/native-ui-data.tgz . 2>/dev/null \
         || echo "注意：无法用 qdrant 镜像打包 $volume，请手工备份" >&2
     fi
-    echo "== 2. Wren 原生栈（--no-build，按 digest）"
+    if "$adapter"; then
+      echo "== 2. tenants/<tenantId> 组件专属 OpenBao Agent（binding SecretRef + api_proxy socket）"
+      # 已在运行且配置未变时不重建；重建或重启前须先重跑 adapter-delivery.py reader
+      # 取得新的一次性 wrapped secret_id。
+      "${agent[@]}" up -d --no-build --pull never adapter-agent
+      for _ in $(seq 60); do [ -S "$delivery/bao.sock" ] && break; sleep 2; done
+      [ -S "$delivery/bao.sock" ] || { echo 'Agent socket 未出现；查看 Agent 日志（不含 secret）' >&2; exit 1; }
+    fi
+    echo "== 3. Wren 原生栈（--no-build，按 digest）"
     "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 900
     origin=$(set -a; . "$ENV"; set +a; printf '%s' "${WREN_PUBLIC_ORIGIN:-}")
     [ -n "$origin" ] && frame_headers "$origin/"
+    if "$adapter"; then
+      echo "== 回读 Wren 治理投递（只列名称与挂载，不读内容）"
+      "${agent[@]}" ps -a --format '{{.Name}}\t{{.Image}}\t{{.Status}}'
+      echo "投递目录文件：$(ls -1A "$delivery" | tr '\n' ' ')"
+      ui=$("${compose[@]}" ps -q wren-ui)
+      "${D[@]}" inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Destination}} rw={{.RW}}{{"\n"}}{{end}}{{end}}' "$ui" \
+        | grep -E "^($delivery|$(wren_value WREN_QUERY_ACTION_JWKS_FILE)|$(wren_value GATEWAY_SERVICE_JWKS_FILE)) " \
+        || { echo 'wren-ui 缺少治理投递挂载' >&2; exit 1; }
+      "${D[@]}" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$ui" | grep -E '^WREN_PLATFORM_(QUERY|BINDING)_CONFIG_FILE=' \
+        || { echo 'wren-ui 缺少治理投递环境' >&2; exit 1; }
+    fi
     ;;
   *) echo "未知组件 $component" >&2; exit 2 ;;
 esac

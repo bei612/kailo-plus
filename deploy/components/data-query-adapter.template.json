@@ -1,0 +1,20 @@
+{
+  "$comment": "Wren (data_query@2) adapter record for the governed native wren-ui (data-query/docker/query-governance.yaml). Render with: adapter-delivery.py config --kind data-query --plan <bind plan, component-bind.mjs --component data-query --workspace-id <ws> --native-scope-ref <native project id> --plan-only> --template this --delivery-dir <WREN_QUERY_DELIVERY_DIR> --env-file <platform deploy/local/.env> --action-token-signing-file <ACTION_TOKEN_SIGNING_FILE> --set projectConnectionDigest=<sha256 of the native project {type,connectionInfo,catalog,schema}> --set mcpAuthority=<authority of the adapter-directory mcpUrl> --set gatewayAudience=<Gateway service audience wren-ui accepts> [--set-json humanAction=<file> --set-json dryRunAction=<file>] --out <WREN_QUERY_DELIVERY_DIR>/adapter.json. --out is the generic adapter record (management.validation with both SecretRefs) consumed by adapter-delivery.py reader/client; query.json and binding.json are written next to it as the exact wren-ui inputs. actionTokenJwksFile is the public-only file the platform OpenBao Agent renders in the platform namespace (start-core.sh --prepare-action-token, ACTION_TOKEN_SIGNING_FILE jwksFile = WREN_QUERY_ACTION_JWKS_FILE) and gatewayJwksFile the Gateway service public JWKS rendered by the Gateway's own platform Agent delivery (GATEWAY_SERVICE_JWKS_FILE); both are mounted read-only at the same path, never copied (07 §2.5, DD-94). oidc_client_secret and connection are rendered by the binding's own Tenant-namespace Agent (reader). actionTokenAudience is the release executionConnector.actionTokenAudience. Core's adapter_backend_auth signs Gateway->adapter tokens with that same audience, while wren-ui loadQueryDelivery requires a different gatewayAudience: this does not affect handshake/validate_binding, but Gateway MCP calls stay refused until the two are aligned.",
+  "actionTokenIssuer": "{{signing:issuer}}",
+  "actionTokenAudience": "kailo-adapter-data-query",
+  "actionTokenJwksFile": "{{signing:jwksFile}}",
+  "corePepUrl": "http://{{env:BFF_SERVICE_NAME}}:{{env:SERVICE_CONTAINER_PORT}}/service/v1/adapter/pep_check",
+  "oidcTokenUrl": "{{env:OIDC_ISSUER}}/protocol/openid-connect/token",
+  "oidcClientId": "{{plan:clientId}}",
+  "oidcClientSecretFile": "{{secretFile:oidc_client_secret}}",
+  "gatewayIssuer": "{{env:GATEWAY_SERVICE_ISSUER}}",
+  "gatewayAudience": "{{set:gatewayAudience}}",
+  "gatewayCallerId": "{{env:GATEWAY_SERVICE_CALLER_ID}}",
+  "gatewayJwksFile": "{{env:GATEWAY_SERVICE_JWKS_FILE}}",
+  "gatewayMaxTokenSeconds": "{{envint:GATEWAY_SERVICE_MAX_TOKEN_SECONDS}}",
+  "mcpAuthority": "{{set:mcpAuthority}}",
+  "projectConnectionDigest": "{{set:projectConnectionDigest}}",
+  "requestTimeoutMs": 10000,
+  "responseMaxBytes": 1048576,
+  "requestMaxBytes": 65536
+}
