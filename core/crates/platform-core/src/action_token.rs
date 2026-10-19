@@ -51,8 +51,8 @@ fn delivery() -> Result<Value, Refusal> {
 /// One `ActionTokenSigningDelivery` document named by `variable`: versioned
 /// OpenBao references and the Agent-rendered public JWKS path, never a key.
 fn signing_delivery(variable: &str) -> Result<Value, Refusal> {
-    let path = std::env::var(variable)
-        .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let path =
+        std::env::var(variable).map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let bytes = std::fs::read(path)
         .map_err(|_| Refusal::Unavailable("signing delivery unavailable".into()))?;
     let parsed: contracts::ActionTokenSigningDelivery =
@@ -1085,12 +1085,20 @@ mod application_intent_tests {
         for key in ["secretLocator", "issuer", "jwksFile"] {
             let mut reused = suite.clone();
             reused[key] = action[key].clone();
-            assert!(shares_action_token(&reused, public, Some(&action), other), "{key}");
+            assert!(
+                shares_action_token(&reused, public, Some(&action), other),
+                "{key}"
+            );
         }
         let private = "platform/kv/action-token";
         assert!(shares_action_token(&suite, private, Some(&action), other));
         assert!(shares_action_token(&suite, public, None, Some(public)));
-        assert!(shares_action_token(&suite, public, None, Some("platform/kv/conformance")));
+        assert!(shares_action_token(
+            &suite,
+            public,
+            None,
+            Some("platform/kv/conformance")
+        ));
     }
 
     #[test]

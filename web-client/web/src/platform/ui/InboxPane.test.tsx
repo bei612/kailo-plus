@@ -396,9 +396,13 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
       const originalPreview = () => host.querySelector(`[data-testid="home-inbox-item-${"e".repeat(64)}"]`);
       expect(originalPreview()?.querySelector("p")?.textContent).toBe("User-authored content");
       expect(originalPreview()?.querySelector("pre")).toBeNull();
+      // Let reads started by the first mount settle; only the locale switch must not refetch.
+      const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+      await settle();
       const admittedReads = api.workspaceMessages.mock.calls.length;
       expect(admittedReads).toBeGreaterThan(0);
       await render("zh-CN");
+      await settle();
       expect(row()?.textContent).toContain("此事件没有附加详情。");
       expect(row()?.querySelector("[data-inbox-type-label]")?.textContent).toBe("提及于#Channel");
       expect(originalPreview()?.querySelector("p")?.textContent).toBe("User-authored content");
