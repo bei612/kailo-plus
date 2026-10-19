@@ -371,6 +371,12 @@ try:
             # or leak it through Core's public/configuration file set.
             worker_files.add(credential)
         services["worker"] = delivery({names[0]: str(candidate)}, worker_files)
+        # The Worker consumes this delivery only through its own container env
+        # and mounts; the label lets the caller recreate it exactly when they
+        # change (start-core.sh tail), including a removed delivery.
+        import hashlib
+        fixed = json.dumps(services["worker"], sort_keys=True, separators=(",", ":")).encode()
+        services["worker"]["labels"] = {"kailo.component-conformance.delivery": hashlib.sha256(fixed).hexdigest()}
     services["core-bff"] = delivery(environment, files)
     with open(sys.argv[1], "w", encoding="utf-8") as stream:
         json.dump({"services": services}, stream)
@@ -779,7 +785,29 @@ fi
 
 compose up -d --no-deps --force-recreate --no-build core-bff
 # The conformance consumer runs in the original Worker, not in Core. Recreate
-# it with the same overlay only when an isolated environment was supplied.
-if [ -n "${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" ]; then
-  compose up -d --no-deps --force-recreate --no-build worker
+# it with the same overlay whenever its COMPONENT_CONFORMANCE_* delivery (env
+# file path and receiver credential mounts, fixed by the overlay label)
+# differs from the running container's - also when the delivery was removed,
+# so a finished registration window never leaves a stale candidate behind.
+desired_worker=
+if [ -n "${adapter_config:-}" ]; then
+  desired_worker=$(python3 -I -c 'import json,sys
+worker = json.load(open(sys.argv[1], encoding="utf-8"))["services"].get("worker")
+print(worker["labels"]["kailo.component-conformance.delivery"] if worker else "")' "$adapter_config")
+fi
+worker_id=$(compose ps -q worker | head -n 1)
+running_worker=
+running_environment=
+if [ -n "$worker_id" ]; then
+  running_worker=$(sudo -n docker inspect --format '{{index .Config.Labels "kailo.component-conformance.delivery"}}' "$worker_id")
+  running_environment=$(sudo -n docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$worker_id" \
+    | sed -n 's/^COMPONENT_CONFORMANCE_ENVIRONMENT_FILE=//p')
+fi
+# A supplied delivery always recreates (unchanged behaviour); without one the
+# Worker is recreated only to drop a delivery it still carries.
+if [ -n "$desired_worker" ] || [ -n "$running_worker" ] || [ -n "$running_environment" ]; then
+  if [ -z "$worker_id" ] || [ -n "$desired_worker" ] || [ "$desired_worker" != "$running_worker" ] \
+    || [ "${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" != "$running_environment" ]; then
+    compose up -d --no-deps --force-recreate --no-build worker
+  fi
 fi
