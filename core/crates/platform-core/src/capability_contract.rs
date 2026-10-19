@@ -381,6 +381,9 @@ fn vectors(
         if !identifier(&key) || !case_keys.insert(key) {
             return Err(bad());
         }
+        // DD-124(3)(4): a RECEIVER case compares no business result; each of
+        // its expectations is `{}`, not a sample of the output schema.
+        let receiver = vector::is_receiver(case)?;
         let steps = case["steps"].as_array_mut().ok_or_else(bad)?;
         if steps.is_empty() {
             return Err(bad());
@@ -441,7 +444,8 @@ fn vectors(
                 // it against the fixed schema when authorizing the wire call.
                 let deferred_reference =
                     field == "inputJson" && step.get("referenceFromStepKey").is_some();
-                if if deferred_reference {
+                let unobserved = field == "expectedOutputJson" && receiver;
+                if if deferred_reference || unobserved {
                     document != json!({})
                 } else {
                     !validators.get(digest).ok_or_else(bad)?.is_valid(&document)
