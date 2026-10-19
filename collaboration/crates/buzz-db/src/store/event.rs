@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use buzz_core::kind::{
     event_kind_i32, is_ephemeral, is_parameterized_replaceable, KIND_AUTH, KIND_EVENT_REMINDER,
-    KIND_HUDDLE_STARTED, SHARED_GATED_KINDS,
+    KIND_HUDDLE_ENDED, KIND_HUDDLE_STARTED, SHARED_GATED_KINDS,
 };
 use buzz_core::{CommunityId, StoredEvent};
 use buzz_datastore_tracing::datastore_span;
@@ -344,6 +344,70 @@ async fn huddle_started_link_exists_with_operation(
     Ok(candidates
         .iter()
         .any(|content| huddle_started_content_links(content, ephemeral_channel_id)))
+}
+
+/// Platform (SS-BUZ-GOVERNANCE, DD-125(3)): the parent channel a governed Huddle
+/// temp channel was announced in, and whether that parent already holds a
+/// kind:48103 for it.
+///
+/// Only the creator-signed kind:48100 counts as the link, exactly as audio
+/// admission and the 48103 ingest check read it. `None` means the huddle was
+/// never announced: nothing in any parent channel refers to it, so there is
+/// no card to end.
+pub async fn huddle_end_target(
+    pool: &PgPool,
+    community_id: CommunityId,
+    ephemeral_channel_id: Uuid,
+    creator_pubkey: &[u8],
+) -> Result<Option<(Uuid, bool)>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Maintenance,
+    )
+    .await?;
+    let row = sqlx::query(
+        r#"
+        SELECT start.channel_id AS parent_channel_id,
+               EXISTS (
+                   SELECT 1
+                   FROM events ended
+                   WHERE ended.deleted_at IS NULL
+                     AND ended.community_id = start.community_id
+                     AND ended.channel_id = start.channel_id
+                     AND ended.kind = $5
+                     AND octet_length(ended.content) <= $4
+                     AND CASE
+                         WHEN ended.content IS JSON OBJECT
+                         THEN (ended.content::json ->> 'ephemeral_channel_id')
+                         ELSE NULL
+                     END = $2
+               ) AS ended
+        FROM events start
+        WHERE start.deleted_at IS NULL
+          AND start.community_id = $1
+          AND start.kind = $3
+          AND start.pubkey = $6
+          AND start.channel_id IS NOT NULL
+          AND octet_length(start.content) <= $4
+          AND CASE
+              WHEN start.content IS JSON OBJECT
+              THEN (start.content::json ->> 'ephemeral_channel_id')
+              ELSE NULL
+          END = $2
+        ORDER BY start.created_at DESC, start.id ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(ephemeral_channel_id.to_string())
+    .bind(KIND_HUDDLE_STARTED as i32)
+    .bind(HUDDLE_LINK_CONTENT_MAX_BYTES)
+    .bind(KIND_HUDDLE_ENDED as i32)
+    .bind(creator_pubkey)
+    .fetch_optional(&mut *connection)
+    .await?;
+    row.map(|row| Ok((row.try_get("parent_channel_id")?, row.try_get("ended")?)))
+        .transpose()
 }
 
 /// Insert a Nostr event. Rejects AUTH and ephemeral kinds.
@@ -1862,6 +1926,24 @@ impl Db {
             }
             crate::RouteDecision::Writer => crate::event::count_events(&self.pool, q).await,
         }
+    }
+
+    /// Platform (DD-125(3)): the announced parent of a governed Huddle temp
+    /// channel and whether it already holds a 48103 for it.
+    #[datastore_span(name = "huddle_end_target", system = "postgresql")]
+    pub async fn huddle_end_target(
+        &self,
+        community_id: CommunityId,
+        ephemeral_channel_id: Uuid,
+        creator_pubkey: &[u8],
+    ) -> Result<Option<(Uuid, bool)>> {
+        crate::event::huddle_end_target(
+            &self.pool,
+            community_id,
+            ephemeral_channel_id,
+            creator_pubkey,
+        )
+        .await
     }
 
     /// Resolve creator-signed huddle-start links for bounded parent/session sets.

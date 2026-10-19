@@ -343,6 +343,13 @@ pub async fn validate_admin_event(
         return Err(anyhow::anyhow!("channel is archived"));
     }
 
+    // Platform (DD-125(3)): the community owner projects Huddle temp channels
+    // for their creator and stays outside the roster; it still adds/removes
+    // Agents and members and archives the channel to end the Huddle.
+    if super::governance::owner_manages_huddle(state, tenant, &channel, kind, event).await? {
+        return Ok(());
+    }
+
     match kind {
         9000 => {
             // An absent role tag means "no role change requested": for an existing
@@ -1413,6 +1420,8 @@ async fn handle_remove_user(
         .await?;
     state.invalidate_membership(tenant, channel_id, &target_pubkey);
     evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey).await;
+    // DD-125(3): a removed member's live Huddle audio closes with the roster.
+    crate::audio::governed::close_pubkey(state, tenant, channel_id, &target_pubkey);
     disable_departed_member_workflows(tenant, state, channel_id, &target_pubkey).await;
 
     let actor_hex = hex::encode(&actor_bytes);
@@ -1625,6 +1634,8 @@ async fn handle_edit_metadata(
                                 .db
                                 .archive_channel(tenant.community(), channel_id)
                                 .await?;
+                            // DD-125(3): archiving a Huddle temp channel ends its room.
+                            crate::audio::governed::end_room(state, tenant, channel_id).await;
                             emit_system_message(
                                 tenant,
                                 state,
@@ -1892,7 +1903,10 @@ async fn handle_create_group(
         ch
     };
 
-    // Creator becomes owner — evict any stale negative membership lookup.
+    // Creator becomes owner — evict any stale negative membership lookup. A
+    // governed Huddle projection (DD-125(3)) is created as its `creator`'s, so
+    // the stored `created_by` — not the signer — is the owner from here on.
+    let actor_bytes = channel.created_by.clone();
     state.invalidate_membership(tenant, channel.id, &actor_bytes);
     // Open channels appear in everyone's accessible set; private channels only
     // affect the creator (the sole initial member).

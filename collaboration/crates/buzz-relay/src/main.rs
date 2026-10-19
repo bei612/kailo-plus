@@ -805,6 +805,10 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                         channel_id,
                     )
                     .await;
+
+                    // Platform (DD-125(3)): a reaped Huddle temp channel also
+                    // ends its live room and gets its missing 48103.
+                    buzz_relay::audio::governed::end_room(&reaper_state, &tenant, channel_id).await;
                 }
             }
         });

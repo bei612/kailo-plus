@@ -31,7 +31,7 @@ Kailo 宽，且 `RelayConfig` 没有收紧它的开关（`SF-BUZ-37`）。对一
 | WebSocket 的 ephemeral 与 observer 分支 | 同一道检查。这两类事件不进 ingest，不在这里拦就是旁路 |
 | Channel 准入 | 只看 roster；`open` 不再放行非成员 |
 | kind 9007 / 9002 | Channel 必须 private：创建缺 `visibility` 或非 `private` 被拒，改元数据改成 `open` 被拒，owner 也一样 |
-| huddle 音频 WebSocket | 不提供（404） |
+| huddle 音频 WebSocket | 只服务 Core 以 CONTROL 投影的 Huddle 临时频道（DD-125(3)，见下文「Huddle 临时频道」）；其余 Channel 在升级前 404 |
 
 未设定时补丁不改变任何行为。空值合法，表示成员什么都不能发。
 
@@ -527,3 +527,34 @@ Desktop 修正后 tsc 退出 0；随后误用不存在的 Desktop Vitest 路径�
 `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`
 下 `attachments-{shared,web,desktop-final,mutation,web-restored}.log`；共享 DM
 与 pages 的启动超时后续由同批负责人沿同一 SDK 收口，不能复用旧批通过。
+
+## Huddle 临时频道（DD-125(3)，2026-10-19 源码批）
+
+设计权威 `9fbd71a`（design-authority）把原“huddle 音频不提供”改为只服务 Core 投影的临时
+频道。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的相关上游事实：
+`crates/buzz-relay/src/audio/handler.rs::ensure_membership` 只核 Channel 成员、带 TTL 时核
+创建者 48100 链接并自动加入父频道成员；最后一人离开即 `archive_channel` 并签 48103；
+`crates/buzz-db/src/store/channel.rs::reap_expired_ephemeral_channels` 的 TTL 回收、
+kind 9001 与 9002 都不关闭音频房间，也不签 48103。
+
+| 面 | 治理开启时的行为 | 位置 |
+|---|---|---|
+| kind 9007 带 `creator` | 只收 Community owner；必须是带 `h`、`visibility=private`、`channel_type=stream`、正 `ttl` 且只有一个小写十六进制 `creator` 的形状，`creator` 须为当前 relay 成员且不是 owner；Channel 以该成员为 `created_by` 与 owner 建立。其他 9007 不变 | `handlers/governance.rs::huddle_projection_tags/huddle_projection_creator`；`handlers/ingest.rs::ingest_event_inner`；`handlers/side_effects.rs::handle_create_group` 以存储的 `created_by` 作 owner |
+| 判定“临时频道” | private、stream、带 TTL、未删除，且 `created_by` 不是 Community owner（Workspace Channel 由 owner 建立，TTL 与否都不算） | `handlers/governance.rs::huddle_projection_shape/is_huddle_projection` |
+| 音频 WebSocket | 升级前读取 Channel：只有未归档的临时频道放行，其余 404；之后仍走上游认证、48100 链接与父频道成员自动加入 | `audio/handler.rs::ws_audio_handler` |
+| owner 管理临时频道 | owner 不在临时频道 roster 中，仍可发 9000/9001 与只含 `h`、`archived=true` 的 9002 | `handlers/governance.rs::owner_manages_huddle/is_huddle_archive`；`handlers/side_effects.rs::validate_admin_event` |
+| 9001 | 被移出公钥在该房间的音频连接立即关闭 | `audio/governed.rs::close_pubkey`；`handle_remove_user` |
+| 归档（owner 9002、TTL 回收） | 先置房间 ended、关闭全部连接；父频道尚无 48103 时由 Relay 以自身密钥补签 | `audio/governed.rs::end_room`；`handle_edit_metadata`；`main.rs` 回收循环；`buzz-db` `store/event.rs::huddle_end_target` |
+| 成员 48106、24810、9022 | 即使列入 `BUZZ_MEMBER_EVENT_KINDS`，也只在未归档的临时频道内接受；9022 只能是签名者本人退出 | `handlers/governance.rs::check_event_kind/check_huddle_scope`（ingest 与 ephemeral 分支共用） |
+
+48100 与 48103 沿上游 `handlers/ingest.rs::validate_huddle_lifecycle_event`：48100 只收临时频道
+`created_by`，48103 收创建者或 Relay。开关未设定时以上全部不改变上游行为。
+
+运行配置顺序（`apps/07`）：先部署读写这些 kind 的 Core，再投递并重启本 Relay，最后把
+`48100,48103,48106,24810,9022` 加入 `BUZZ_MEMBER_EVENT_KINDS` 并交付控件。
+
+验证边界：新增纯函数单元测试 `governance.rs` 的
+`only_owner_projected_private_ttl_streams_are_huddle_channels`、
+`huddle_projection_tags_require_the_exact_shape`、`only_a_bare_archive_is_the_owner_huddle_end`。
+本批只在开发机写入源码，未编译、未运行测试、未构建或部署 Relay；音频房间关闭、补签 48103
+与 9001 断开须在 CI 构建后以真实 Relay 验收，不以本记录代替。

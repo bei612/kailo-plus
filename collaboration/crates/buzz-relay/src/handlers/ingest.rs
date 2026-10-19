@@ -2241,6 +2241,10 @@ async fn ingest_event_inner(
     super::governance::check_workflow_event(state, kind_u32, &event)?;
     super::governance::check_event_kind(tenant, state, auth.pubkey(), &event).await?;
     super::governance::check_channel_visibility(state, kind_u32, &event)?;
+    // DD-125(3): an owner kind:9007 naming a `creator` projects a Huddle temp
+    // channel that is created as that member's (validated before any write).
+    let huddle_creator =
+        super::governance::huddle_projection_creator(tenant, state, kind_u32, &event).await?;
 
     const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
     let now = chrono::Utc::now().timestamp();
@@ -2885,7 +2889,7 @@ async fn ingest_event_inner(
 
             let ttl_seconds = super::resolve_ttl(&event, state.config.ephemeral_ttl_override);
 
-            let actor_bytes = event.pubkey.to_bytes().to_vec();
+            let actor_bytes = huddle_creator.unwrap_or_else(|| event.pubkey.to_bytes().to_vec());
             let (_, was_created) = state
                 .db
                 .create_channel_with_id(

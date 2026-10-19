@@ -87,10 +87,23 @@ pub async fn ws_audio_handler(
         }
     };
 
-    // Platform (SS-BUZ-GOVERNANCE): huddles are not a capability of governed
-    // communities, and leaving the last peer archives the channel it ran in.
+    // Platform (SS-BUZ-GOVERNANCE, DD-125(3)): leaving the last peer archives
+    // the channel a room ran in, so a governed community serves audio only for
+    // the owner-projected Huddle temp channels. Every other channel (Workspace
+    // channels, DMs, unknown or archived ids) is refused before the upgrade.
     if crate::handlers::governance::is_governed(&state) {
-        return (StatusCode::NOT_FOUND, "relay: huddle audio is not served").into_response();
+        let served = match state.db.get_channel(tenant.community(), channel_id).await {
+            Ok(channel) => {
+                channel.archived_at.is_none()
+                    && crate::handlers::governance::is_huddle_projection(&state, &tenant, &channel)
+                        .await
+                        .unwrap_or(false)
+            }
+            Err(_) => false,
+        };
+        if !served {
+            return (StatusCode::NOT_FOUND, "relay: huddle audio is not served").into_response();
+        }
     }
 
     let permit = match acquire_audio_connection_permit(&state.conn_semaphore) {
@@ -1358,15 +1371,15 @@ async fn ensure_membership(
 }
 
 #[derive(Clone, Copy)]
-struct ParticipantLifecycle<'a> {
-    kind: Kind,
-    participant_pubkey: &'a str,
-    roster_revision: Option<u64>,
-    admission_id: Option<Uuid>,
-    generation: &'a str,
+pub(crate) struct ParticipantLifecycle<'a> {
+    pub(crate) kind: Kind,
+    pub(crate) participant_pubkey: &'a str,
+    pub(crate) roster_revision: Option<u64>,
+    pub(crate) admission_id: Option<Uuid>,
+    pub(crate) generation: &'a str,
 }
 
-async fn emit_participant_event(
+pub(crate) async fn emit_participant_event(
     state: &AppState,
     tenant: &TenantContext,
     channel_id: Uuid,

@@ -9,7 +9,12 @@
 //! Membership-changing, channel-creating and every other kind is accepted
 //! from the owner alone, and every channel is private, so reads and writes
 //! are both decided by the channel roster. Huddle audio, which archives the
-//! channel it ran in when the last peer leaves, is not served.
+//! channel it ran in when the last peer leaves, is served only for the
+//! owner-projected Huddle temp channels of DD-125(3): a private stream with a
+//! TTL whose `created_by` is the admitted initiator named by the owner's
+//! `creator` tag. Workspace channels, DMs and every other channel never get
+//! an audio connection, so the last-leave archive can only land on a temp
+//! channel. See `crate::audio::governed` for the room side.
 //!
 //! The relay's own workflow engine is off as well (DD-106): the platform's workflows
 //! run elsewhere, and this one would otherwise run for every community with
@@ -28,9 +33,11 @@ use axum::extract::ConnectInfo;
 use axum::http::{Method, Request, StatusCode};
 use axum::Router;
 use buzz_core::kind::{
-    KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_DELETION, KIND_WORKFLOW_DEF,
+    KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_DELETION, KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_REACTION, KIND_NIP29_CREATE_GROUP, KIND_NIP29_LEAVE_REQUEST, KIND_WORKFLOW_DEF,
     KIND_WORKFLOW_TRIGGER,
 };
+use buzz_db::channel::ChannelRecord;
 use buzz_workflow::WorkflowEngine;
 use nostr::{Event, EventBuilder, Keys, Kind, PublicKey, Tag};
 use tower::ServiceExt;
@@ -222,6 +229,9 @@ pub(crate) async fn check_event_kind(
         && buzz_core::channel::topic_change(event).is_some())
         || (kind != buzz_core::kind::KIND_NIP29_EDIT_METADATA && allowed.contains(&kind))
     {
+        if HUDDLE_SCOPED_MEMBER_KINDS.contains(&kind) {
+            return check_huddle_scope(tenant, state, author, kind, event).await;
+        }
         return Ok(());
     }
     match state
@@ -237,6 +247,230 @@ pub(crate) async fn check_event_kind(
             "error: owner lookup failed: {e}"
         ))),
     }
+}
+
+/// Member kinds DD-125(3) accepts only inside a governed Huddle temp channel:
+/// the guidelines (48106), the emoji burst (24810) and the member's own leave
+/// (9022). Listing them in `member_event_kinds` never opens them elsewhere.
+pub(crate) const HUDDLE_SCOPED_MEMBER_KINDS: [u32; 3] = [
+    KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_REACTION,
+    KIND_NIP29_LEAVE_REQUEST,
+];
+
+/// Whether `owner_created` (is `created_by` the community owner?) plus the
+/// stored shape make `channel` a governed Huddle temp channel: a live private
+/// stream with a TTL that the owner projected for someone else. Workspace
+/// channels are created by the owner (with or without a TTL) and DMs are not
+/// streams, so neither ever matches.
+pub(crate) fn huddle_projection_shape(channel: &ChannelRecord, owner_created: bool) -> bool {
+    channel.ttl_seconds.is_some()
+        && channel.visibility == "private"
+        && channel.channel_type == "stream"
+        && channel.deleted_at.is_none()
+        && !owner_created
+}
+
+/// DD-125(3): whether `channel` is a governed Huddle temp channel. Always false
+/// when governance is off (upstream behaviour is untouched there).
+pub(crate) async fn is_huddle_projection(
+    state: &AppState,
+    tenant: &TenantContext,
+    channel: &ChannelRecord,
+) -> Result<bool, String> {
+    if !is_governed(state) || !huddle_projection_shape(channel, false) {
+        return Ok(false);
+    }
+    let creator = hex::encode(&channel.created_by);
+    let member = state
+        .db
+        .get_relay_member(tenant.community(), &creator)
+        .await
+        .map_err(|e| format!("owner lookup failed: {e}"))?;
+    let owner_created = member.is_some_and(|member| member.role == "owner");
+    Ok(huddle_projection_shape(channel, owner_created))
+}
+
+async fn check_huddle_scope(
+    tenant: &TenantContext,
+    state: &AppState,
+    author: &PublicKey,
+    kind: u32,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let refused = || {
+        IngestError::Rejected(format!(
+            "restricted: kind {kind} is only accepted in a Huddle channel"
+        ))
+    };
+    let Some(channel_id) = super::ingest::extract_channel_id(event) else {
+        return Err(refused());
+    };
+    let channel = match state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await
+    {
+        Ok(channel) => channel,
+        Err(_) => return Err(refused()),
+    };
+    let huddle = is_huddle_projection(state, tenant, &channel)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+    if !huddle || channel.archived_at.is_some() {
+        return Err(refused());
+    }
+    // 9022 is the member's own departure: the signer leaves, nobody else.
+    if kind == KIND_NIP29_LEAVE_REQUEST && event.pubkey != *author {
+        return Err(refused());
+    }
+    Ok(())
+}
+
+/// The single value of a two-element tag `name`, or `None` when it is absent,
+/// repeated or malformed.
+fn single_tag_value<'a>(event: &'a Event, name: &str) -> Option<&'a str> {
+    let mut values = event
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .filter(|tag| tag.first().is_some_and(|first| first == name));
+    let first = values.next()?;
+    if values.next().is_some() || first.len() != 2 {
+        return None;
+    }
+    Some(first[1].as_str())
+}
+
+fn is_lower_hex64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The pure shape check of a Huddle temp-channel projection (DD-125(3)): an
+/// h-tagged kind:9007 with a positive `ttl`, `visibility=private`,
+/// `channel_type=stream` and exactly one lowercase-hex `creator`. Returns the
+/// creator, `Ok(None)` when no `creator` tag is present at all.
+pub(crate) fn huddle_projection_tags(event: &Event) -> Result<Option<&str>, &'static str> {
+    let creators = event
+        .tags
+        .iter()
+        .filter(|tag| {
+            tag.as_slice()
+                .first()
+                .is_some_and(|first| first == "creator")
+        })
+        .count();
+    if creators == 0 {
+        return Ok(None);
+    }
+    let creator = single_tag_value(event, "creator")
+        .filter(|creator| is_lower_hex64(creator))
+        .ok_or("a Huddle projection names exactly one lowercase hex creator")?;
+    let ttl = single_tag_value(event, "ttl").and_then(|ttl| ttl.parse::<i32>().ok());
+    if single_tag_value(event, "h").is_none()
+        || single_tag_value(event, "visibility") != Some("private")
+        || single_tag_value(event, "channel_type") != Some("stream")
+        || !ttl.is_some_and(|ttl| ttl > 0)
+    {
+        return Err("a Huddle projection is an h-tagged private stream with a TTL");
+    }
+    Ok(Some(creator))
+}
+
+/// DD-125(3): the `created_by` of a governed kind:9007. A `creator` tag is the
+/// owner's Huddle temp-channel projection (same shape as the 41010 DM
+/// projection's `creator`): it is accepted only from the community owner,
+/// only on the exact projection shape, and only naming a current relay member
+/// who is not the owner. The channel is then created as that member's, so the
+/// member's own 48100 links it and the audio admission accepts it. Any other
+/// kind:9007 keeps its signer as `created_by` (`Ok(None)`).
+pub(crate) async fn huddle_projection_creator(
+    tenant: &TenantContext,
+    state: &AppState,
+    kind: u32,
+    event: &Event,
+) -> Result<Option<Vec<u8>>, IngestError> {
+    if kind != KIND_NIP29_CREATE_GROUP {
+        return Ok(None);
+    }
+    let refused = |why: &str| IngestError::Rejected(format!("invalid: {why}"));
+    let creator = match huddle_projection_tags(event) {
+        Ok(None) => return Ok(None),
+        Ok(Some(creator)) => creator.to_owned(),
+        Err(why) => return Err(refused(why)),
+    };
+    if !is_governed(state) {
+        return Err(refused("creator is a governed Huddle projection tag"));
+    }
+    let lookup = |e: buzz_db::error::DbError| {
+        IngestError::Internal(format!("error: relay member lookup failed: {e}"))
+    };
+    let signer = state
+        .db
+        .get_relay_member(tenant.community(), &event.pubkey.to_hex())
+        .await
+        .map_err(lookup)?;
+    if !signer.is_some_and(|member| member.role == "owner") {
+        return Err(IngestError::Rejected(
+            "restricted: a Huddle projection is reserved to the community owner".into(),
+        ));
+    }
+    let member = state
+        .db
+        .get_relay_member(tenant.community(), &creator)
+        .await
+        .map_err(lookup)?;
+    if !member.is_some_and(|member| member.role != "owner") {
+        return Err(refused("the Huddle creator must be a relay member"));
+    }
+    hex::decode(&creator)
+        .map(Some)
+        .map_err(|_| refused("creator is not a public key"))
+}
+
+/// DD-125(3): the community owner (Tenant CONTROL) manages a governed Huddle
+/// temp channel it projected without being its member: 9000/9001 for Agents
+/// and removals, and a bare `archived=true` 9002 to end it. Everything else
+/// keeps the upstream channel-role checks.
+pub(crate) async fn owner_manages_huddle(
+    state: &AppState,
+    tenant: &TenantContext,
+    channel: &ChannelRecord,
+    kind: u32,
+    event: &Event,
+) -> anyhow::Result<bool> {
+    if !is_governed(state) || !matches!(kind, 9000..=9002) {
+        return Ok(false);
+    }
+    if kind == 9002 && !is_huddle_archive(event) {
+        return Ok(false);
+    }
+    let signer = state
+        .db
+        .get_relay_member(tenant.community(), &event.pubkey.to_hex())
+        .await?;
+    if !signer.is_some_and(|member| member.role == "owner") {
+        return Ok(false);
+    }
+    is_huddle_projection(state, tenant, channel)
+        .await
+        .map_err(anyhow::Error::msg)
+}
+
+/// A kind:9002 that only archives: one `h` and `archived=true`, nothing else.
+pub(crate) fn is_huddle_archive(event: &Event) -> bool {
+    let mut archive = false;
+    for tag in event.tags.iter().map(Tag::as_slice) {
+        match tag.first().map(String::as_str) {
+            Some("h") if tag.len() == 2 => {}
+            Some("archived") if tag.len() == 2 && tag[1] == "true" && !archive => archive = true,
+            _ => return false,
+        }
+    }
+    archive && single_tag_value(event, "h").is_some()
 }
 
 #[cfg(test)]
@@ -303,6 +537,128 @@ mod tests {
             .await
             .expect("response")
             .status()
+    }
+
+    fn tag(parts: &[&str]) -> Tag {
+        Tag::parse(parts.iter().copied()).expect("tag")
+    }
+
+    fn channel(ttl: Option<i32>, visibility: &str, channel_type: &str) -> ChannelRecord {
+        let now = chrono::Utc::now();
+        ChannelRecord {
+            id: uuid::Uuid::nil(),
+            name: "huddle".into(),
+            channel_type: channel_type.into(),
+            visibility: visibility.into(),
+            description: None,
+            canvas: None,
+            created_by: vec![7; 32],
+            created_at: now,
+            updated_at: now,
+            archived_at: None,
+            deleted_at: None,
+            nip29_group_id: None,
+            topic_required: false,
+            max_members: None,
+            topic: None,
+            topic_set_by: None,
+            topic_set_at: None,
+            purpose: None,
+            purpose_set_by: None,
+            purpose_set_at: None,
+            ttl_seconds: ttl,
+            ttl_deadline: None,
+        }
+    }
+
+    #[test]
+    fn only_owner_projected_private_ttl_streams_are_huddle_channels() {
+        assert!(huddle_projection_shape(
+            &channel(Some(3600), "private", "stream"),
+            false
+        ));
+        // Workspace channels are the owner's own, TTL or not.
+        assert!(!huddle_projection_shape(
+            &channel(Some(3600), "private", "stream"),
+            true
+        ));
+        assert!(!huddle_projection_shape(
+            &channel(None, "private", "stream"),
+            false
+        ));
+        assert!(!huddle_projection_shape(
+            &channel(Some(3600), "private", "dm"),
+            false
+        ));
+        assert!(!huddle_projection_shape(
+            &channel(Some(3600), "open", "stream"),
+            false
+        ));
+    }
+
+    #[test]
+    fn huddle_projection_tags_require_the_exact_shape() {
+        let creator = "a".repeat(64);
+        let h = "00000000-0000-4000-8000-000000000001";
+        let full = |extra: Vec<Tag>| {
+            let mut tags = vec![
+                tag(&["h", h]),
+                tag(&["name", "huddle"]),
+                tag(&["visibility", "private"]),
+                tag(&["channel_type", "stream"]),
+                tag(&["ttl", "3600"]),
+            ];
+            tags.extend(extra);
+            event(9007, tags)
+        };
+        let projected = full(vec![tag(&["creator", &creator])]);
+        assert_eq!(
+            huddle_projection_tags(&projected),
+            Ok(Some(creator.as_str()))
+        );
+        assert_eq!(huddle_projection_tags(&full(vec![])), Ok(None));
+        let twice = full(vec![
+            tag(&["creator", &creator]),
+            tag(&["creator", &creator]),
+        ]);
+        assert!(huddle_projection_tags(&twice).is_err());
+        let upper = full(vec![tag(&["creator", &"A".repeat(64)])]);
+        assert!(huddle_projection_tags(&upper).is_err());
+        let no_ttl = event(
+            9007,
+            vec![
+                tag(&["h", h]),
+                tag(&["visibility", "private"]),
+                tag(&["channel_type", "stream"]),
+                tag(&["creator", &creator]),
+            ],
+        );
+        assert!(huddle_projection_tags(&no_ttl).is_err());
+    }
+
+    #[test]
+    fn only_a_bare_archive_is_the_owner_huddle_end() {
+        let h = "00000000-0000-4000-8000-000000000001";
+        assert!(is_huddle_archive(&event(
+            9002,
+            vec![tag(&["h", h]), tag(&["archived", "true"])]
+        )));
+        assert!(!is_huddle_archive(&event(
+            9002,
+            vec![tag(&["h", h]), tag(&["archived", "false"])]
+        )));
+        assert!(!is_huddle_archive(&event(
+            9002,
+            vec![
+                tag(&["h", h]),
+                tag(&["archived", "true"]),
+                tag(&["name", "x"])
+            ]
+        )));
+        assert!(!is_huddle_archive(&event(
+            9002,
+            vec![tag(&["archived", "true"])]
+        )));
     }
 
     #[tokio::test]
