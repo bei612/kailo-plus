@@ -16,7 +16,7 @@
 // frozen file-storage adapter artifact digest is not changed by this adapter.
 import { createHash } from 'node:crypto';
 import { Refused, exactKeys, object, nonempty, canonical, boundedBody,
-  fixedUrl, verifiedClaims } from '../../../client-kit/adapter/protocol.mjs';
+  exactIssuer, verifiedClaims } from '../../../client-kit/adapter/protocol.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const transportHeader = 'x-kailo-gateway-authorization';
@@ -37,7 +37,12 @@ export function mcpConfiguration(value, config) {
     || !Number.isSafeInteger(value.gatewayMaxTokenSeconds) || value.gatewayMaxTokenSeconds <= 0
     || !config.management?.validation
     || !Array.isArray(value.tools) || !value.tools.length) throw new Refused(503);
-  fixedUrl(value.gatewayIssuer);
+  // The transport shares the exact adapter audience (ADR-12 §7, Core
+  // adapter_backend_auth); its own issuer and key keep it from passing as an
+  // ActionToken or vice versa.
+  exactIssuer(value.gatewayIssuer);
+  if (value.gatewayIssuer === config.actionTokenIssuer
+    || value.gatewayJwksFile === config.actionTokenJwksFile) throw new Refused(503);
   const names = new Set();
   const mapped = new Set();
   for (const tool of value.tools) {

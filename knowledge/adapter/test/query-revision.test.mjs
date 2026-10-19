@@ -311,7 +311,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       secretDeliveries: [['native', nativeSecretFile], ['pep', oidcSecretFile]].map(([secretKey, secretFile]) => ({ secretKey,
         locator: `tenants/${ids[7]}/native/${secretKey}`, version: 1, audience: `fixture-${secretKey}`, secretFile,
         secretSocket: join(directory, 'agent.sock'), secretValueKey: 'value' })) } };
-    config.mcp = { path: '/mcp', gatewayIssuer: `${origin}/gateway-issuer`, gatewayAudience: config.actionTokenAudience,
+    // The live GATEWAY_SERVICE_ISSUER shape: an exact URN, not an endpoint URL.
+    config.mcp = { path: '/mcp', gatewayIssuer: 'urn:kailo:agentgateway:service', gatewayAudience: config.actionTokenAudience,
       gatewayJwksFile: gatewayJwks, gatewayCaller: 'fixture-gateway', gatewayMaxTokenSeconds: 61,
       tools: [{ name: action.slice(0, action.indexOf('@')), actionKey: action, actionVersion: 1, inputSchema, inputSchemaDigest: digest }] };
   }
@@ -1075,6 +1076,19 @@ test('Gateway MCP tools/call runs the same governed search execution as the adap
   assert.equal(JSON.stringify(called).includes('MUST NOT LEAK'), false);
   assert.deepEqual(state.methods, ['search_knowledge', 'read_document']);
   assert.equal(state.peps, 2);
+});
+
+test('Gateway MCP config takes the exact native issuer string and keeps the transport apart from the ActionToken', async t => {
+  const { config } = await fixture(t, 'ok', 'knowledge.search@v2',
+    undefined, undefined, undefined, undefined, 'HUMAN', undefined, true);
+  for (const gatewayIssuer of ['urn:kailo:agentgateway:service', 'https://gateway.invalid/issuer']) {
+    assert.doesNotThrow(() => configuration({ ...config, mcp: { ...config.mcp, gatewayIssuer } }));
+  }
+  for (const changed of [{ gatewayIssuer: config.actionTokenIssuer }, { gatewayJwksFile: config.actionTokenJwksFile },
+    { gatewayAudience: 'another-audience' }, { gatewayIssuer: '' }, { gatewayIssuer: ' urn:kailo:agentgateway:service' },
+    { gatewayIssuer: 'gateway service' }, { gatewayIssuer: ':no-scheme' }, { gatewayIssuer: 'https://gateway.invalid/issuer?x=1' }]) {
+    assert.throws(() => configuration({ ...config, mcp: { ...config.mcp, ...changed } }), error => error.status === 503);
+  }
 });
 
 test('Gateway MCP refuses a foreign Gateway identity, a missing dispatch key and an unknown tool before native access', async t => {

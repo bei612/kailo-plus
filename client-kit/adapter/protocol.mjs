@@ -76,6 +76,23 @@ export function mapNativeStatusError(value) {
   }
 }
 
+// A JWT `iss` is a case-sensitive StringOrURI compared exactly, and a value
+// containing ':' must be a URI (RFC 7519 §2, §4.1.1). Core takes
+// GATEWAY_SERVICE_ISSUER as any non-blank string and checks it exactly
+// (core service_auth.rs GatewayServiceAuth::from_env / set_issuer; its fixture
+// is urn:test:gateway), and AgentGateway jwtSign signs it verbatim as `iss`
+// (agentgateway http/auth/jwt_sign.rs claims). The live value is
+// urn:kailo:agentgateway:service. It is never fetched, so only an http(s)
+// issuer also has to be a fixed URL; whitespace or control characters refuse.
+export function exactIssuer(value) {
+  if (!nonempty(value) || /\s/.test(value)
+    || [...value].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Refused(503);
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(value)?.[1].toLowerCase();
+  if (value.includes(':') && scheme === undefined) throw new Refused(503);
+  if (scheme === 'http' || scheme === 'https') fixedUrl(value);
+  return value;
+}
+
 export function fixedUrl(value) {
   let url;
   try { url = new URL(value); } catch { throw new Refused(503); }

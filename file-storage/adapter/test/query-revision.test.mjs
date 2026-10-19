@@ -410,7 +410,8 @@ async function setup(t, changes = {}, identities = ids) {
       properties:Object.fromEntries(Object.keys(requestArguments.input).map(key => [key,{type:'string'}]))}
       : JSON.parse(await readFile(new URL(`../../../contracts/adapter/file_storage.v1/${businessAction.slice('file_storage.'.length,-3)}_input.schema.json`,
         import.meta.url),'utf8'));
-    config.mcp = {path:'/mcp',gatewayIssuer:`${origin}/gateway-issuer`,gatewayAudience:config.actionTokenAudience,
+    // The live GATEWAY_SERVICE_ISSUER shape: an exact URN, not an endpoint URL.
+    config.mcp = {path:'/mcp',gatewayIssuer:'urn:kailo:agentgateway:service',gatewayAudience:config.actionTokenAudience,
       gatewayJwksFile:join(directory,'gateway-jwks.json'),gatewayCaller:'fixture-gateway',gatewayMaxTokenSeconds:61,
       tools:[{name:changes.businessAction === undefined ? (changes.businessRead ? 'approved-file-read' : 'approved-file-list') : 'approved-file-operation',
         actionKey:businessAction,actionVersion:1,
@@ -2138,6 +2139,9 @@ test('MCP discovery is absent without controlled config and rejects schema/actio
   const tool = original.tools[0];
   for (const changed of [
     {...original,gatewayAudience:'unrelated-audience'}, {...original,gatewayMaxTokenSeconds:0},
+    {...original,gatewayIssuer:fixture.config.actionTokenIssuer}, {...original,gatewayJwksFile:fixture.config.actionTokenJwksFile},
+    {...original,gatewayIssuer:' urn:kailo:agentgateway:service'}, {...original,gatewayIssuer:'gateway service'},
+    {...original,gatewayIssuer:':no-scheme'}, {...original,gatewayIssuer:'https://gateway.invalid/issuer?x=1'},
     {...original,path:'/platform-adapter/v1/execute'}, {...original,tools:[]},
     {...original,tools:[{...tool,inputSchemaDigest:'a'.repeat(64)}]},
     {...original,tools:[{...tool,actionKey:'file_storage.delete@v2'}]},
