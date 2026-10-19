@@ -250,9 +250,12 @@ describe("original 48100 Huddle card", () => {
       event(48101, now - 9, { participantPubkey: alice }),
       event(48101, now - 8, { participantPubkey: bob }),
     ]), now - 10);
-    await vi.waitFor(() => expect(card()?.dataset.huddleState).toBe("active"));
+    // The roster query follows the binding query: wait for both, not only the first.
+    await vi.waitFor(() => {
+      expect(card()?.dataset.huddleState).toBe("active");
+      expect(card()?.textContent).toContain("2 participants");
+    });
     expect(card()?.textContent).toContain("In progress");
-    expect(card()?.textContent).toContain("2 participants");
   });
 
   it("shows ended once the binding is no longer listed", async () => {
