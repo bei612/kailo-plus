@@ -58,10 +58,24 @@ state=$OPENBAO_CONFORMANCE_STATE_DIR
 [[ $state == /volumes/data/* && -d $state && ! -L $state && $(stat -c '%a' -- "$state") == 700 ]] \
   || { echo 'OPENBAO_CONFORMANCE_STATE_DIR must be an existing 0700 directory under /volumes/data' >&2; exit 2; }
 read -r -a docker <<<"${OPENBAO_CONFORMANCE_DOCKER:-sudo -n docker}"
-agent=("${docker[@]}" compose -f "$OPENBAO_CONFORMANCE_SOURCE/deploy/components/compose.adapter-agent.yaml")
+ADAPTER_AGENT_IMAGE=$OPENBAO_CONFORMANCE_IMAGE
+ADAPTER_AGENT_PLATFORM_NETWORK=$OPENBAO_CONFORMANCE_NETWORK
+# The Agent Compose file only interpolates ADAPTER_AGENT_*. `sudo` resets the
+# environment (env_reset), so exported values never reach `sudo -n docker
+# compose`; pass them explicitly as `<wrapper...> env NAME=VALUE... <docker>
+# compose`. The last word of OPENBAO_CONFORMANCE_DOCKER is the docker binary,
+# anything before it (e.g. `sudo -n`) its wrapper, so an override such as plain
+# `docker` keeps working. Values are non-secret paths, ids and a digest.
+agent_env=()
+for variable in ADAPTER_AGENT_PROJECT ADAPTER_AGENT_IMAGE ADAPTER_AGENT_UID ADAPTER_AGENT_GID \
+  ADAPTER_AGENT_BOOTSTRAP_DIR ADAPTER_AGENT_DELIVERY_DIR ADAPTER_AGENT_PLATFORM_NETWORK ADAPTER_AGENT_EXTRA_DIR \
+  ADAPTER_AGENT_CPUS ADAPTER_AGENT_MEMORY; do
+  [[ -z ${!variable:-} ]] || agent_env+=("$variable=${!variable}")
+done
+agent=("${docker[@]:0:${#docker[@]}-1}" env "${agent_env[@]}" "${docker[-1]}"
+  compose -f "$OPENBAO_CONFORMANCE_SOURCE/deploy/components/compose.adapter-agent.yaml")
 [[ -z ${ADAPTER_AGENT_EXTRA_DIR:-} ]] \
   || agent+=(-f "$OPENBAO_CONFORMANCE_SOURCE/deploy/components/compose.adapter-agent.native.yaml")
-export ADAPTER_AGENT_IMAGE=$OPENBAO_CONFORMANCE_IMAGE ADAPTER_AGENT_PLATFORM_NETWORK=$OPENBAO_CONFORMANCE_NETWORK
 
 if [[ $action == down ]]; then
   "${agent[@]}" down --remove-orphans >/dev/null 2>&1 || true
