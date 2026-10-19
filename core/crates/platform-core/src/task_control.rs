@@ -13,6 +13,13 @@ pub(crate) fn is_agent_cancel(key: &str) -> bool {
     )
 }
 
+/// DD-125(6) widens DD-84 for the Agent turn only: the interrupt may come from
+/// the original initiator or from a holder of the Installation `manage`.
+/// Automation runs, reruns and every other control stay initiator-only.
+pub(crate) fn widens_initiator(key: &str) -> bool {
+    key == "task.cancel.agent.invoke.v1"
+}
+
 /// Register only controls of existing, active, implemented dynamic definitions.
 /// This runs after the original two registration consumers; it neither creates
 /// a business permission nor overwrites/reactivates an existing control version.
@@ -117,12 +124,14 @@ pub(super) fn same_execution_chain(reference: Option<&str>, current: &str, first
 /// The control target is an ActionExecution, never a SpiceDB Resource. Resolve
 /// the original resource and workspace through owned Core facts before the
 /// existing fully-consistent permission check and membership admission.
+/// The flag is whether the actor is the original initiator; otherwise only a
+/// widened Agent turn cancel resolves here and the caller checks `manage`.
 pub(super) async fn permission_resource(
     g: &Governance,
     actor: Actor,
     control: &Definition,
     target: &Target,
-) -> Result<Uuid, Refusal> {
+) -> Result<(Uuid, bool), Refusal> {
     let mut conn = g.pool.acquire().await?;
     let (original, _) = super::control_original(
         &mut conn,
@@ -176,12 +185,32 @@ pub(super) async fn permission_resource(
     if !valid {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    Ok(original.target_id)
+    let initiator = original.initiator_principal_id == actor.principal_id;
+    if !initiator
+        && (original.action_key != "agent.invoke" || !widens_initiator(&control.action_key))
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok((original.target_id, initiator))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_agent_turn_cancel_accepts_an_installation_manager() {
+        assert!(widens_initiator("task.cancel.agent.invoke.v1"));
+        for key in [
+            "task.cancel.automation.run.v1",
+            "task.rerun.agent.invoke.v1",
+            "task.cancel.agent.invoke.v2",
+            "task.cancel.tenant.delete.v1",
+            "task.cancel.agent.invoke.v1.extra",
+        ] {
+            assert!(!widens_initiator(key), "{key}");
+        }
+    }
 
     #[test]
     fn agent_controls_are_exact_cancel_versions_not_rerun_or_prefixes() {

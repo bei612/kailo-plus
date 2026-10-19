@@ -1661,6 +1661,7 @@ pub(crate) async fn use_view(
     .await?;
     let pending = row.projection_action_execution_id;
     let mut rows = Vec::with_capacity(members.len());
+    let mut allowlisted = false;
     for (member, name) in members {
         let mut requested = true;
         let mut effective = true;
@@ -1682,6 +1683,7 @@ pub(crate) async fn use_view(
             }
             effective &= c.allowed;
         }
+        allowlisted |= requested;
         rows.push(
             json!({"principalId":member,"displayName":name,"requested":requested,
             "effective":effective && pending.is_none(),
@@ -1689,16 +1691,40 @@ pub(crate) async fn use_view(
             "canRevoke":can_manage && enabled[1] && pending.is_none() && requested}),
         );
     }
-    let mut result = json!({"installationId":row.id,"resourceVersion":row.version,"members":rows});
+    // DD-125(6): original respondTo. An explicit member grant is the allowlist;
+    // otherwise only owner/admin use it (owner-only). "anyone" has no mapping.
+    let respond_to = respond_to(allowlisted);
+    let mut result = json!({"installationId":row.id,"resourceVersion":row.version,
+        "respondTo":respond_to,"members":rows});
     if let Some(pending) = pending {
         result["pendingActionExecutionId"] = json!(pending);
     }
     Ok(Some(result))
 }
 
+fn respond_to(allowlisted: bool) -> contracts::AgentRespondToMode {
+    if allowlisted {
+        contracts::AgentRespondToMode::Allowlist
+    } else {
+        contracts::AgentRespondToMode::OwnerOnly
+    }
+}
+
 #[cfg(test)]
 mod approval_tests {
     use super::*;
+
+    #[test]
+    fn respond_to_is_allowlist_only_with_an_explicit_member_grant() {
+        assert_eq!(
+            serde_json::to_value(respond_to(true)).unwrap(),
+            json!("ALLOWLIST")
+        );
+        assert_eq!(
+            serde_json::to_value(respond_to(false)).unwrap(),
+            json!("OWNER_ONLY")
+        );
+    }
 
     #[test]
     fn grant_permission_maps_to_relationship_only_for_agent_read_actions() {

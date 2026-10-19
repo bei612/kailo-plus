@@ -351,7 +351,12 @@ async fn agent_roster(
            and m.agent_buzz_identity_binding_id=b.pubkey
          where ($2::uuid is null or i.workspace_id=$2)
            and case when $3 then
-             i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null
+             -- DD-125(6)、17 §10：停用只以 CONTROL 9001 移出 Channel roster，Community 成员
+             -- 身份与 AGENT 公钥保留，启用时再恢复 Channel；所以 relay 范围仍应在。
+             ($2::uuid is null and i.state='DISABLED' and r.state='ACTIVE'
+               and agent.status='ACTIVE' and b.state='ACTIVE'
+               and b.private_key_secret_status='ACTIVE')
+             or (i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null
              and agent.status='ACTIVE' and b.state='ACTIVE' and b.private_key_secret_status='ACTIVE'
              and cb.status='ACTIVE' and p.state='ACTIVE' and m.state='ACTIVE'
              and m.listing_state='COMPLETE' and m.head_state='CONSISTENT'
@@ -368,7 +373,7 @@ async fn agent_roster(
                where d.resource_id=i.agent_resource_id and d.status='ACTIVE'
                  and dr.state='ACTIVE' and dr.projection_action_execution_id is null
                  and v.state in ('PUBLISHED','RETIRED') and a.state in ('PUBLISHED','RETIRED')
-                 and a.projection_action_execution_id is null)
+                 and a.projection_action_execution_id is null))
            else
              i.state in ('PROVISIONING','DRAINING')
              or b.state in ('PENDING_SECRET','RECONCILING','REVOKING')

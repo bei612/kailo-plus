@@ -625,12 +625,15 @@ pub(crate) async fn provision(
           and a.kind='AGENT' and a.status='ACTIVE'
         where i.resource_id=$1 and r.tenant_id=$5 and i.workspace_id=$6
           and r.home_workspace_id=i.workspace_id and r.state in ('PROVISIONING','ACTIVE')
-          and i.state in ('PROVISIONING','DRAINING') and ae.id=$4
+          and ae.id=$4
           and ae.tenant_id=r.tenant_id and ae.workspace_id=i.workspace_id and ae.target_id=r.id
           and ae.actor_principal_id=ae.initiator_principal_id and ae.gate_state='ALLOWED'
           and ae.dispatch_state='DISPATCHED'
-          and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
-          and ae.parameters->'params'->>'assetId'=$2::uuid::text
+          and ((i.state in ('PROVISIONING','DRAINING')
+              and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
+              and ae.parameters->'params'->>'assetId'=$2::uuid::text)
+            or (i.state='DISABLED' and r.state='ACTIVE' and i.pinned_version_asset_id=$2
+              and ae.action_key='agent.installation.enable'))
         for no key update of r",
     )
     .bind(installation)
@@ -826,6 +829,75 @@ pub(crate) async fn retire_previous_generation(
     .fetch_all(&state.pool)
     .await?;
     delete_agent_relations(&state.governance, &previous, &[agent]).await
+}
+
+/// DD-122 (7)、DD-125(6)：a drained `agent.installation.disable` withdraws the
+/// Tool projection of every generation. The AgentPrincipal loses its
+/// discoverer/consumer on all bound Tools and the memory tools' `reader` on its
+/// own Installation; both are read back absent before every ToolBinding is
+/// REVOKED. Enable re-grants through `provision` of its new generation.
+pub(crate) async fn retire_installation(
+    state: &crate::service_api::ServiceState,
+    installation: Uuid,
+    action: Uuid,
+) -> Result<(), Refusal> {
+    let gov = &state.governance;
+    let agent: Uuid = sqlx::query_scalar(
+        "select i.agent_principal_id from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution a on a.id=r.projection_action_execution_id
+        where i.resource_id=$1 and i.state='DRAINING' and a.id=$2
+          and a.action_key='agent.installation.disable' and a.gate_state='ALLOWED'
+          and catalog.agent_installation_drained(i.resource_id)",
+    )
+    .bind(installation)
+    .bind(action)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let tools: Vec<Uuid> = sqlx::query_scalar(
+        "select distinct tool_resource_id from catalog.tool_binding
+        where installation_resource_id=$1 order by tool_resource_id",
+    )
+    .bind(installation)
+    .fetch_all(&state.pool)
+    .await?;
+    delete_agent_relations(gov, &tools, &[agent]).await?;
+    let reader = (Write::Delete, relationship(installation, "reader", agent));
+    gov.spicedb
+        .write(&[reader])
+        .await
+        .map_err(|_| unknown("Agent 自身 Installation reader 撤销"))?;
+    let object = installation.to_string();
+    let readers = gov
+        .spicedb
+        .read(
+            &RelationshipFilter {
+                object_type: "resource",
+                object_id: Some(&object),
+                relation: Some("reader"),
+                subject_principal: None,
+            },
+            gov.cfg.relationship_page,
+        )
+        .await
+        .map_err(|_| unknown("Agent 自身 Installation reader 撤销复读"))?;
+    let subject = agent.to_string();
+    if readers
+        .iter()
+        .filter_map(Relationship::principal)
+        .any(|held| held == subject)
+    {
+        return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
+    }
+    sqlx::query(
+        "update catalog.tool_binding set status='REVOKED'
+        where installation_resource_id=$1 and status<>'REVOKED'",
+    )
+    .bind(installation)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
 }
 
 /// DD-122 (7): disabling an application binding deletes every AgentPrincipal

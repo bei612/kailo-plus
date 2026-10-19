@@ -47,6 +47,7 @@ struct InstallationRow {
     projection_config_hash: Option<String>,
     projection_state: Option<String>,
     version_content: serde_json::Value,
+    pinned_published: bool,
 }
 
 // 只选已固定的 Installation/Version/AGENT 关系。正文、SecretRef、Gateway key、
@@ -56,7 +57,9 @@ const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pin
     r.version as resource_version,r.state as resource_state,r.projection_action_execution_id,i.state,i.active_projection_generation,
     cb.status as channel_status,cb.triggers as channel_triggers,wb.channel_id,
     p.generation as projection_generation,p.agent_version_asset_id as projection_version,
-    p.runtime_profile_key,p.config_hash as projection_config_hash,p.state as projection_state,v.content version_content
+    p.runtime_profile_key,p.config_hash as projection_config_hash,p.state as projection_state,v.content version_content,
+    (v.state='PUBLISHED' and av.state='PUBLISHED' and av.projection_action_execution_id is null
+      and d.status='ACTIVE' and dr.state='ACTIVE' and dr.projection_action_execution_id is null) as pinned_published
   from catalog.agent_installation i
   join catalog.resource r on r.id=i.resource_id and r.type_key='agent.installation'
     and r.home_workspace_id=i.workspace_id
@@ -110,34 +113,20 @@ async fn view(
     if !matches {
         return Err(Refusal::Unavailable("Installation Resource 投影未对账".into()).respond(None));
     }
-    let can_upgrade = if row.state == "ACTIVE"
-        && row.resource_state == "ACTIVE"
-        && row.projection_action_execution_id.is_none()
-        && crate::capability_registry::action_exposed("agent.installation.upgrade")
-        && crate::governance::active_definition(&state.pool, "agent.installation.upgrade")
-            .await
-            .map_err(crate::service_api::unavailable)?
-            .is_some()
-    {
-        let proof = state
-            .governance
-            .spicedb
-            .check(
-                "resource",
-                &row.resource_id.to_string(),
-                "manage",
-                &ctx.tenant_principal_id.to_string(),
-                Consistency::FullyConsistent,
-            )
-            .await
-            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-        if proof.zed_token.is_empty() {
-            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
-        }
-        proof.allowed
-    } else {
-        false
-    };
+    // Entry hints only (17 §8, DD-125(6)): each submission is fully re-admitted.
+    let settled = row.resource_state == "ACTIVE" && row.projection_action_execution_id.is_none();
+    let running = settled && row.state == "ACTIVE";
+    let upgrade_offered = running && offered(state, "agent.installation.upgrade").await?;
+    let disable_offered =
+        running && offered(state, crate::agent_installation::lifecycle::DISABLE_ACTION).await?;
+    let enable_offered = settled
+        && row.state == "DISABLED"
+        && row.pinned_published
+        && offered(state, crate::agent_installation::lifecycle::ENABLE_ACTION).await?;
+    let manage = (upgrade_offered || disable_offered || enable_offered)
+        && fresh(state, ctx, row.resource_id, "manage").await?;
+    let can_upgrade = upgrade_offered && manage;
+    let can_audit = fresh(state, ctx, row.resource_id, "audit").await?;
     let channel = match (row.channel_status, row.channel_triggers) {
         (Some(status), Some(triggers)) => Some(json!({
             "status": status, "triggers": triggers,
@@ -214,11 +203,49 @@ async fn view(
         "readPermission": read_permission,
         "automationResultTargets": result_targets,
         "canUpgrade": can_upgrade,
+        "canDisable": disable_offered && manage,
+        "canEnable": enable_offered && manage,
+        "canRestart": can_upgrade && row.pinned_published,
+        "canAudit": can_audit,
     }))
     .map_err(|_| {
         tracing::error!("Installation 查询事实不符合共享契约");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })
+}
+
+/// The action is released (capability registry) and its catalog definition is ACTIVE.
+async fn offered(state: &BffState, key: &str) -> Result<bool, Response> {
+    Ok(crate::capability_registry::action_exposed(key)
+        && crate::governance::active_definition(&state.pool, key)
+            .await
+            .map_err(crate::service_api::unavailable)?
+            .is_some())
+}
+
+/// Fresh, fully consistent permission of the viewer on the Installation Resource.
+async fn fresh(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    resource: Uuid,
+    permission: &str,
+) -> Result<bool, Response> {
+    let proof = state
+        .governance
+        .spicedb
+        .check(
+            "resource",
+            &resource.to_string(),
+            permission,
+            &ctx.tenant_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    if proof.zed_token.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    Ok(proof.allowed)
 }
 
 pub async fn list(

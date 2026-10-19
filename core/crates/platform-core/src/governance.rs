@@ -528,6 +528,9 @@ pub enum Semantic {
     AgentVersionRetire,
     AgentInstallationCreate,
     AgentInstallationUpgrade,
+    /// DD-125(6)、05 §2.11：原版停止 / 从频道移除 / 删除与启动的受治理映射。
+    AgentInstallationDisable,
+    AgentInstallationEnable,
     AgentInstallationExecuteGrant,
     AgentInstallationExecuteRevoke,
     /// 05 §2.10：成员对 Installation 的使用权（reader/executor/delegator）。
@@ -591,6 +594,8 @@ impl Semantic {
             "agent.version.retire" => Self::AgentVersionRetire,
             "agent.installation.create" => Self::AgentInstallationCreate,
             "agent.installation.upgrade" => Self::AgentInstallationUpgrade,
+            "agent.installation.disable" => Self::AgentInstallationDisable,
+            "agent.installation.enable" => Self::AgentInstallationEnable,
             "agent.installation.execute.grant" => Self::AgentInstallationExecuteGrant,
             "agent.installation.execute.revoke" => Self::AgentInstallationExecuteRevoke,
             "agent.installation.use.grant" => Self::AgentInstallationUseGrant,
@@ -711,6 +716,8 @@ impl Semantic {
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
                     | Self::AgentInstallationUpgrade
+                    | Self::AgentInstallationDisable
+                    | Self::AgentInstallationEnable
                     | Self::AgentInstallationExecuteRevoke
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
@@ -762,6 +769,8 @@ impl Semantic {
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
                     | Self::AgentInstallationUpgrade
+                    | Self::AgentInstallationDisable
+                    | Self::AgentInstallationEnable
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
             )
@@ -1440,6 +1449,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
             | Semantic::AgentInstallationUpgrade
+            | Semantic::AgentInstallationDisable
+            | Semantic::AgentInstallationEnable
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
             | Semantic::AgentInstallationUseGrant
@@ -1497,6 +1508,20 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             p.workspace_id.is_none()
                 && p.receiver_resource.is_none()
                 && p.principal_id.is_some_and(|id| !id.is_nil())
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|v| v > 0)
+                && p.explicit_confirmation == Some(true)
+        }
+        // DD-125(6)：停用与启用只指向 Installation Resource 的读取版本；home Workspace 由
+        // Core 解析（TARGET_HOME_WORKSPACE），不接受 Workspace、Version 或其他定位字段。
+        Semantic::AgentInstallationDisable | Semantic::AgentInstallationEnable => {
+            p.workspace_id.is_none()
+                && p.receiver_resource.is_none()
+                && p.principal_id.is_none()
                 && p.slug.is_none()
                 && p.name.is_none()
                 && p.invitation_id.is_none()
@@ -1915,6 +1940,9 @@ async fn resolve_target(
         }
         Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
             crate::agent_installation::target(conn, tenant, initiator, def, p, frozen, lock).await
+        }
+        Semantic::AgentInstallationDisable | Semantic::AgentInstallationEnable => {
+            crate::agent_installation::lifecycle::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::AgentVersionCreate
         | Semantic::AgentVersionUpdate
@@ -2509,13 +2537,19 @@ async fn control_original(
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let suffix = if lock { " for update" } else { "" };
+    // DD-125(6) 扩展 DD-84：只有 Agent 回合的取消控制接受非原发起人；其 Installation
+    // manage 由 evaluate 的 fresh Check 判定（task_control::permission_resource）。
+    let widened =
+        sem == Semantic::TaskCancel && task_control::widens_initiator(&control.action_key);
     let original: Execution = sqlx::query_as(&format!(
         "select {EXECUTION_COLUMNS} from admission.action_execution
-         where id = $1 and tenant_id = $2 and initiator_principal_id = $3{suffix}"
+         where id = $1 and tenant_id = $2
+           and (initiator_principal_id = $3 or ($4 and action_key = 'agent.invoke')){suffix}"
     ))
     .bind(original_id)
     .bind(tenant)
     .bind(initiator)
+    .bind(widened)
     .fetch_optional(&mut *conn)
     .await?
     .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
@@ -2670,6 +2704,8 @@ impl Governance {
             def.action_key.as_str(),
             "agent.installation.create" | "agent.installation.upgrade"
         );
+        let is_installation_lifecycle =
+            crate::agent_installation::lifecycle::is_lifecycle(&def.action_key);
         let is_installation_permission = matches!(
             def.action_key.as_str(),
             installation_permission::GRANT
@@ -2736,15 +2772,19 @@ impl Governance {
         }
 
         if def.target_type == "ACTION_EXECUTION" {
+            // DD-125(6) 扩展 DD-84：Agent 回合的取消控制也接受非发起人，其 Installation
+            // manage 由下方 fresh Check 判定；其余控制仍只属于原发起人。
             let owned: Option<i32> = sqlx::query_scalar(
                 "select 1 from admission.action_execution
-                 where id = $1 and tenant_id = $2 and initiator_principal_id = $3
+                 where id = $1 and tenant_id = $2
+                   and (initiator_principal_id = $3 or ($5 and action_key = 'agent.invoke'))
                    and workspace_id is not distinct from $4",
             )
             .bind(target.id)
             .bind(actor.tenant_id)
             .bind(actor.principal_id)
             .bind(target.workspace_id)
+            .bind(task_control::widens_initiator(&def.action_key))
             .fetch_optional(&self.pool)
             .await?;
             if owned.is_none() {
@@ -2762,6 +2802,7 @@ impl Governance {
         // 控制等 Workspace scope 的新动作一律在 permission Check 之前拒绝
         if def.workspace_rule == "WORKSPACE_REQUIRED"
             || is_installation_permission
+            || is_installation_lifecycle
             || declared_workspace
             || is_agent_cancel
             || def.action_key.starts_with("automation.")
@@ -2788,6 +2829,9 @@ impl Governance {
             }
         }
 
+        // DD-125(6) 扩展 DD-84：非原发起人取消 Agent 回合时 fresh Check 的是该 Installation
+        // 的 manage，而不是借用原动作的 execute。
+        let mut checked_permission = def.permission.as_str();
         let object_id = match permission_object_type {
             "tenant" => actor.tenant_id,
             "workspace" => match target.workspace_id {
@@ -2805,7 +2849,28 @@ impl Governance {
             },
             "resource" => {
                 if is_agent_cancel {
-                    task_control::permission_resource(self, actor, def, target).await?
+                    let (installation, initiator) =
+                        task_control::permission_resource(self, actor, def, target).await?;
+                    if !initiator {
+                        checked_permission = "manage";
+                    }
+                    installation
+                } else if is_installation_lifecycle {
+                    if !crate::agent_installation::lifecycle::projection_current(
+                        self,
+                        actor.tenant_id,
+                        target,
+                    )
+                    .await?
+                    {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
                 } else if def.action_key.starts_with("automation.") {
                     let mut conn = self.pool.acquire().await?;
                     let row = crate::automation::management_resource(
@@ -2997,7 +3062,7 @@ impl Governance {
             .check(
                 permission_object_type,
                 &object_id.to_string(),
-                &def.permission,
+                checked_permission,
                 &actor.principal_id.to_string(),
                 Consistency::FullyConsistent,
             )
@@ -3019,6 +3084,7 @@ impl Governance {
             || is_memory
             || is_route_create
             || is_installation_create
+            || is_installation_lifecycle
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -3033,6 +3099,7 @@ impl Governance {
         if def.workspace_rule == "WORKSPACE_REQUIRED"
             || declared_workspace
             || is_agent_cancel
+            || is_installation_lifecycle
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -3054,6 +3121,7 @@ impl Governance {
                 || is_agent_cancel
                 || is_route_create
                 || is_installation_create
+                || is_installation_lifecycle
                 || def.action_key.starts_with("automation.")
                 || matches!(
                     def.action_key.as_str(),
@@ -3121,6 +3189,7 @@ impl Governance {
                         || is_agent_cancel
                         || is_route_create
                         || is_installation_create
+                        || is_installation_lifecycle
                         || def.action_key.starts_with("automation.")
                         || matches!(
                             def.action_key.as_str(),
@@ -3504,8 +3573,12 @@ impl Governance {
         let Some(original) = load_execution(&self.pool, original_id).await? else {
             return Ok(None);
         };
+        // DD-125(6)：Agent 回合的中断也提供给该 Installation 的 manage 持有人；是否真的
+        // 持有由下面同一 resolve_target + evaluate 的 fresh Check 决定。
         if original.tenant_id != actor.tenant_id
-            || original.initiator_principal_id != actor.principal_id
+            || (original.initiator_principal_id != actor.principal_id
+                && !(original.action_key == "agent.invoke"
+                    && task_control::widens_initiator(&cancel_key_for(&original))))
         {
             return Ok(None);
         }
@@ -5106,6 +5179,8 @@ impl Governance {
                 Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
                     | Semantic::LlmRouteCreate
+                    | Semantic::AgentInstallationDisable
+                    | Semantic::AgentInstallationEnable
             )
         {
             // Installation target 已锁 Workspace；已有成员行同锁覆盖 fresh check 到
@@ -5140,6 +5215,8 @@ impl Governance {
                     | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
                     | Semantic::AgentInstallationUpgrade
+                    | Semantic::AgentInstallationDisable
+                    | Semantic::AgentInstallationEnable
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
             ))
@@ -5172,6 +5249,8 @@ impl Governance {
                     | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
                     | Semantic::AgentInstallationUpgrade
+                    | Semantic::AgentInstallationDisable
+                    | Semantic::AgentInstallationEnable
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
             ) {
@@ -5502,6 +5581,9 @@ impl Governance {
             }
             Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
                 crate::agent_installation::prewrite(self, tx, ae, params).await?
+            }
+            Semantic::AgentInstallationDisable | Semantic::AgentInstallationEnable => {
+                crate::agent_installation::lifecycle::prewrite(self, tx, ae, params).await?
             }
             Semantic::WorkspaceCreate => {
                 let version = sqlx::query_scalar(
@@ -7184,7 +7266,10 @@ impl Governance {
                 Semantic::ComponentReleaseApprove => {
                     crate::component_release::approval::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
-                Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
+                Semantic::AgentInstallationCreate
+                | Semantic::AgentInstallationUpgrade
+                | Semantic::AgentInstallationDisable
+                | Semantic::AgentInstallationEnable => {
                     crate::agent_installation::start(
                         &self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id,
                     ).await

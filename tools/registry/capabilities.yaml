@@ -26,6 +26,9 @@ capabilities:
   - /api/v1/platform-tools
   - /hooks/{resource_id}
   - /api/v1/workspaces/{workspace_id}/agent-mentions/query
+  - /api/v1/agent-installations/{resource_id}/transcript
+  - /api/v1/agent-installations/{resource_id}/transcript/stream
+  - /api/v1/workspaces/{workspace_id}/agent-turns
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -51,6 +54,8 @@ capabilities:
   - agent.memory.entry.remove
   - agent.installation.create
   - agent.installation.upgrade
+  - agent.installation.disable
+  - agent.installation.enable
   - agent.delegation.grant
   - agent.delegation.revoke
   - llm_route.create

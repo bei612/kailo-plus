@@ -24,6 +24,8 @@ use crate::{
     spicedb::{Consistency, Relationship, Subject, Write},
 };
 
+pub(crate) mod lifecycle;
+
 const CREATE_ACTION: &str = "agent.installation.create";
 const UPGRADE_ACTION: &str = "agent.installation.upgrade";
 const KIND: &str = "AGENT_INSTALLATION";
@@ -270,29 +272,7 @@ pub(crate) async fn prewrite(
                 && params.asset_version == Some(v.version)
         })
         .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
-    let content: AgentVersionContent =
-        serde_json::from_value(version.content.clone()).map_err(|_| invalid())?;
-    let (requested, content_hash) = crate::agent_version::content(&content)?;
-    if version.config_hash != content_hash {
-        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
-    }
-    if !content.skill_version_asset_ids.is_empty() {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
-    let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
-    let route_scope: bool = sqlx::query_scalar(
-        "select exists(select 1 from catalog.resource
-        where id=$1 and tenant_id=$2 and type_key='llm_route'
-          and (home_workspace_id is null or home_workspace_id=$3))",
-    )
-    .bind(route)
-    .bind(ae.tenant_id)
-    .bind(workspace)
-    .fetch_one(&mut **tx)
-    .await?;
-    if !route_scope {
-        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-    }
+    let (content, requested) = version_content(tx, ae.tenant_id, workspace, &version).await?;
     let mut triggers = Vec::new();
     for trigger in &content.trigger_defaults {
         let value = serde_json::to_value(trigger).map_err(|_| invalid())?;
@@ -319,24 +299,6 @@ pub(crate) async fn prewrite(
     } else {
         1
     };
-    let mut fields = Vec::new();
-    for key in EFFECTIVE_FIELDS {
-        let value = requested.get(key).ok_or_else(invalid)?;
-        let hash = hex::encode(Sha256::digest(
-            serde_json::to_vec(value).map_err(|_| invalid())?,
-        ));
-        fields.push(serde_json::json!({"fieldKey":key,"requestedValueHash":hash,
-            "effectiveValueHash":null,"source":"AGENT_VERSION","reasonCode":"PROJECTION_FAILED"}));
-    }
-    // Only a pending requested projection. Native model/permissions/runtime and
-    // memory must still be proven by the existing readiness consumer.
-    let projection = crate::agent_version::canonical(serde_json::json!({
-        "installationResourceId":ae.target_id,"generation":generation,"agentVersionAssetId":version_id,
-        "runtimeProfileKey":content.runtime_profile_key,"modelRouteResourceId":route,
-        "gatewayResourceIds":[route],"skillRootRef":null,"effectiveFields":fields}));
-    let hash = hex::encode(Sha256::digest(
-        serde_json::to_vec(&projection).map_err(|_| invalid())?,
-    ));
     let resource_version = if upgrading {
         let changed: Option<i32> = sqlx::query_scalar(
             "update catalog.resource set version=version+1,
@@ -386,6 +348,75 @@ pub(crate) async fn prewrite(
         .bind(workspace).bind(ae.target_id).bind(triggers).execute(&mut **tx).await?;
         1
     };
+    insert_pending_generation(gov, tx, ae, &content, &requested, version_id, generation).await?;
+    Ok(resource_version)
+}
+
+/// The pinned Version's content as an Installation may project it: the frozen
+/// hash, no Skill references and a model route visible from this Workspace.
+async fn version_content(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+    workspace: Uuid,
+    version: &crate::agent_version::Version,
+) -> Result<(AgentVersionContent, serde_json::Value), Refusal> {
+    let content: AgentVersionContent =
+        serde_json::from_value(version.content.clone()).map_err(|_| invalid())?;
+    let (requested, content_hash) = crate::agent_version::content(&content)?;
+    if version.config_hash != content_hash {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    if !content.skill_version_asset_ids.is_empty() {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
+    let route_scope: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.resource
+        where id=$1 and tenant_id=$2 and type_key='llm_route'
+          and (home_workspace_id is null or home_workspace_id=$3))",
+    )
+    .bind(route)
+    .bind(tenant)
+    .bind(workspace)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !route_scope {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    Ok((content, requested))
+}
+
+/// One PENDING generation of the admitted projection action (create, upgrade or
+/// DD-125(6) enable): requested field digests, the canonical projection hash and
+/// the declared Tool bindings. Readiness still proves every effective field.
+async fn insert_pending_generation(
+    gov: &Governance,
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &Execution,
+    content: &AgentVersionContent,
+    requested: &serde_json::Value,
+    version_id: Uuid,
+    generation: i64,
+) -> Result<(), Refusal> {
+    let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
+    let mut fields = Vec::new();
+    for key in EFFECTIVE_FIELDS {
+        let value = requested.get(key).ok_or_else(invalid)?;
+        let hash = hex::encode(Sha256::digest(
+            serde_json::to_vec(value).map_err(|_| invalid())?,
+        ));
+        fields.push(serde_json::json!({"fieldKey":key,"requestedValueHash":hash,
+            "effectiveValueHash":null,"source":"AGENT_VERSION","reasonCode":"PROJECTION_FAILED"}));
+    }
+    // Only a pending requested projection. Native model/permissions/runtime and
+    // memory must still be proven by the existing readiness consumer.
+    let projection = crate::agent_version::canonical(serde_json::json!({
+        "installationResourceId":ae.target_id,"generation":generation,"agentVersionAssetId":version_id,
+        "runtimeProfileKey":content.runtime_profile_key,"modelRouteResourceId":route,
+        "gatewayResourceIds":[route],"skillRootRef":null,"effectiveFields":fields}));
+    let hash = hex::encode(Sha256::digest(
+        serde_json::to_vec(&projection).map_err(|_| invalid())?,
+    ));
     sqlx::query(
         "insert into catalog.agent_runtime_projection(installation_resource_id,generation,
         agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,
@@ -409,8 +440,7 @@ pub(crate) async fn prewrite(
         generation,
         &content.declared_tool_resource_ids,
     )
-    .await?;
-    Ok(resource_version)
+    .await
 }
 
 #[derive(Serialize)]
@@ -437,6 +467,17 @@ pub(crate) async fn start(
             or (i.state='DRAINING' and r.state='ACTIVE' and ae.action_key='agent.installation.upgrade')) and r.tenant_id=ae.tenant_id
           and ae.temporal_workflow_id=$4")
         .bind(action).bind(tenant).bind(vec![CREATE_ACTION,UPGRADE_ACTION]).bind(workflow_id).fetch_optional(pool).await.map_err(unavailable)?;
+    // DD-125(6): disable/enable reuse the same Workflow kind with their own frozen target.
+    let target = match target {
+        Some(target) => Some(target),
+        None => sqlx::query_as(lifecycle::START_TARGET)
+            .bind(action)
+            .bind(tenant)
+            .bind(workflow_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(unavailable)?,
+    };
     let Some((installation, version, generation, resource_version)) = target else {
         return Err(StatusCode::CONFLICT.into_response());
     };
@@ -517,7 +558,8 @@ pub(crate) async fn advance(
         Err(error) => return unavailable(error),
     };
     if ae.target_id != id
-        || !matches!(ae.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
+        || !(matches!(ae.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
+            || lifecycle::is_lifecycle(&ae.action_key))
         || ae.temporal_workflow_id.as_deref() != Some(input.workflow_id.as_str())
     {
         return StatusCode::CONFLICT.into_response();
@@ -566,6 +608,9 @@ pub(crate) async fn advance(
         || (ae.action_key == CREATE_ACTION && row.pinned_version_asset_id != version)
     {
         return StatusCode::CONFLICT.into_response();
+    }
+    if lifecycle::is_lifecycle(&ae.action_key) {
+        return lifecycle::advance(&state, &ae, id, version, input.projection_generation).await;
     }
     if row.state == "ACTIVE"
         && row.resource_state == "ACTIVE"
@@ -1224,7 +1269,8 @@ const READY_ROW: &str = "select r.tenant_id,i.workspace_id,r.owner_principal_id,
     and ((not $4::boolean and catalog.agent_generation_admitted(i.resource_id,v.asset_id,p.generation))
       or ($4::boolean and p.state='PENDING'
           and ((i.state='PROVISIONING' and r.state='PROVISIONING')
-            or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id)))
+            or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id))
+            or (i.state='DISABLED' and r.state='ACTIVE' and i.pinned_version_asset_id=v.asset_id))
           and exists(select 1 from admission.action_execution ae
             join catalog.action_definition d on d.action_key=ae.action_key and d.version=ae.action_version
             join projection.workflow_ref f on f.action_execution_id=ae.id and f.tenant_id=t.id
@@ -1233,8 +1279,9 @@ const READY_ROW: &str = "select r.tenant_id,i.workspace_id,r.owner_principal_id,
               and f.projection_state='RUNNING' and f.run_id is not null
             where ae.id=r.projection_action_execution_id and ae.tenant_id=t.id
               and ae.workspace_id=w.id and ae.target_id=r.id and ae.gate_state='ALLOWED'
-              and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
-              and ae.parameters->'params'->>'assetId'=v.asset_id::text
+              and ((ae.action_key in ('agent.installation.create','agent.installation.upgrade')
+                  and i.state<>'DISABLED' and ae.parameters->'params'->>'assetId'=v.asset_id::text)
+                or (ae.action_key='agent.installation.enable' and i.state='DISABLED'))
               and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
               and d.execution_mode='TEMPORAL' and d.workflow_type='ComponentTaskWorkflow'
               and d.workflow_kind='AGENT_INSTALLATION' and d.capacity_policy='NONE'
@@ -1629,6 +1676,10 @@ pub(crate) async fn reconcile(
                   and ae.action_key='agent.installation.upgrade' and ae.gate_state='ALLOWED'
                   and ae.parameters->'params'->>'assetId'=p.agent_version_asset_id::text
                   and catalog.agent_installation_drained(i.resource_id))
+           or (i.state='DISABLED' and r.state='ACTIVE' and p.state='PENDING'
+                  and ae.action_key='agent.installation.enable' and ae.gate_state='ALLOWED'
+                  and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
+                  and p.agent_version_asset_id=i.pinned_version_asset_id)
            or (catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)
                   and (i.state='ACTIVE' or not catalog.agent_installation_drained(i.resource_id))
                   and p.generation=i.active_projection_generation
@@ -1969,7 +2020,7 @@ async fn initialize_steps(
     step.enter("activation.installation");
     let changed = sqlx::query(
         "update catalog.agent_installation set state='ACTIVE',active_projection_generation=$2,pinned_version_asset_id=$3
-        where resource_id=$1 and ((state='PROVISIONING' and pinned_version_asset_id=$3)
+        where resource_id=$1 and ((state in ('PROVISIONING','DISABLED') and pinned_version_asset_id=$3)
           or (state='DRAINING' and catalog.agent_installation_drained(resource_id)))",
     )
     .bind(installation)
@@ -2097,7 +2148,8 @@ async fn initialization_authorization(
         || ae.actor_principal_id != ae.initiator_principal_id
         || ae.action_key != def.action_key
         || ae.action_version != def.version
-        || !matches!(def.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
+        || !(matches!(def.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
+            || def.action_key == lifecycle::ENABLE_ACTION)
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
@@ -2108,7 +2160,15 @@ async fn initialization_authorization(
         .and_then(|v| v.get("params"))
         .and_then(Params::from_json)
         .ok_or_else(invalid)?;
-    let version = params.asset_id.ok_or_else(invalid)?;
+    // DD-125(6): enable re-projects the Installation's own pin; its command
+    // carries no Version, so the pinned Version is the projected one.
+    let version = match params.asset_id {
+        Some(version) if def.action_key != lifecycle::ENABLE_ACTION => version,
+        None if def.action_key == lifecycle::ENABLE_ACTION => {
+            lifecycle::enabling_version(state, installation, facts.workspace_id).await?
+        }
+        _ => return Err(invalid()),
+    };
     let pinned: bool = sqlx::query_scalar(
         "select exists(select 1 from catalog.agent_installation i
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id

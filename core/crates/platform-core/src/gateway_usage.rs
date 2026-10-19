@@ -923,7 +923,8 @@ async fn untraced_agent_usage(
          join identity.principal p on p.id=b.gateway_principal_id and p.kind='SERVICE'
          join admission.action_execution a on a.id=b.action_execution_id
            and a.tenant_id=p.tenant_id and a.parent_action_execution_id is null
-           and a.action_key in ('agent.installation.create','agent.installation.upgrade')
+           and a.action_key in ('agent.installation.create','agent.installation.upgrade',
+             'agent.installation.enable')
            and a.target_id=b.installation_resource_id
          where b.gateway_principal_id=$1",
     )

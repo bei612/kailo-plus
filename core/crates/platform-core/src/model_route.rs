@@ -1211,7 +1211,7 @@ pub(crate) async fn retire_previous_generation(
     generation: i64,
     action: Uuid,
 ) -> Result<(), Refusal> {
-    let route: Option<(Uuid,Uuid,String,i32,i64,String,i64)> = sqlx::query_as("select r.tenant_id,mr.id,mr.native_id,mr.version,m.native_revision,m.native_config_hash,i.active_projection_generation
+    let route: Option<GenerationRoute> = sqlx::query_as("select r.tenant_id,mr.id,mr.native_id,mr.version,m.native_revision,m.native_config_hash,i.active_projection_generation
         from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
         join admission.action_execution a on a.id=r.projection_action_execution_id
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id and p.generation=i.active_projection_generation
@@ -1221,6 +1221,38 @@ pub(crate) async fn retire_previous_generation(
           and a.id=$3 and a.action_key='agent.installation.upgrade' and a.gate_state='ALLOWED'
           and catalog.agent_installation_drained(i.resource_id)")
         .bind(installation).bind(generation).bind(action).fetch_optional(&state.pool).await?;
+    retire_generation(state, installation, route.ok_or_else(conflict)?).await
+}
+
+/// DD-125(6)、17 §10: a drained `agent.installation.disable` retires the
+/// credential of the Installation's current generation; the model route and
+/// every other Installation keep theirs. Enable mints a new generation's.
+pub(crate) async fn retire_disabled_generation(
+    state: &ServiceState,
+    installation: Uuid,
+    action: Uuid,
+) -> Result<(), Refusal> {
+    let route: Option<GenerationRoute> = sqlx::query_as("select r.tenant_id,mr.id,mr.native_id,mr.version,m.native_revision,m.native_config_hash,i.active_projection_generation
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution a on a.id=r.projection_action_execution_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id and p.generation=i.active_projection_generation
+        join catalog.resource mr on mr.id=p.model_route_resource_id and mr.tenant_id=r.tenant_id
+        join catalog.model_route m on m.resource_id=mr.id
+        where i.resource_id=$1 and i.state='DRAINING'
+          and a.id=$2 and a.action_key='agent.installation.disable' and a.gate_state='ALLOWED'
+          and catalog.agent_installation_drained(i.resource_id)")
+        .bind(installation).bind(action).fetch_optional(&state.pool).await?;
+    retire_generation(state, installation, route.ok_or_else(conflict)?).await
+}
+
+/// Tenant, model route resource/native reference and the retired generation.
+type GenerationRoute = (Uuid, Uuid, String, i32, i64, String, i64);
+
+async fn retire_generation(
+    state: &ServiceState,
+    installation: Uuid,
+    route: GenerationRoute,
+) -> Result<(), Refusal> {
     let (
         tenant,
         resource_id,
@@ -1229,7 +1261,7 @@ pub(crate) async fn retire_previous_generation(
         native_revision,
         native_config_hash,
         old,
-    ) = route.ok_or_else(conflict)?;
+    ) = route;
     let credentials: Vec<FrozenCredential> = sqlx::query_as(&FROZEN_CREDENTIALS.replace(
         "where b.model_route_resource_id=$1", "where b.model_route_resource_id=$1 and b.installation_resource_id=$2 and b.projection_generation=$3"))
         .bind(resource_id).bind(installation).bind(old).fetch_all(&state.pool).await?;
@@ -1468,14 +1500,16 @@ async fn subject_audit(
 }
 
 /// The governed writers of a usage subject: an admitted Installation
-/// projection of either lifecycle action (create, or upgrade of the same
-/// Installation to a new generation, 17 §6 / DD-122 (3)(4)) and the
-/// application binding projection. The subject is keyed by the Installation,
-/// not the generation, so an upgrade re-verifies the same subject under its
-/// own Operation instead of borrowing the create Operation's evidence.
-const USAGE_SUBJECT_WRITERS: [&str; 3] = [
+/// projection of every generation-creating action (create, upgrade of the same
+/// Installation to a new generation, 17 §6 / DD-122 (3)(4), and the DD-125(6)
+/// enable that re-projects the pinned Version) and the application binding
+/// projection. The subject is keyed by the Installation, not the generation,
+/// so each re-verifies the same subject under its own Operation instead of
+/// borrowing the create Operation's evidence.
+const USAGE_SUBJECT_WRITERS: [&str; 4] = [
     "agent.installation.create",
     "agent.installation.upgrade",
+    "agent.installation.enable",
     "application_binding.create",
 ];
 
@@ -1738,7 +1772,8 @@ pub(crate) async fn provision(
           and ae.id=$4 and ae.tenant_id=r.tenant_id and ae.workspace_id=r.home_workspace_id
           and ae.target_id=r.id and ae.actor_principal_id=ae.initiator_principal_id
           and ae.gate_state='ALLOWED' and ae.dispatch_state='DISPATCHED'
-          and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
+          and ae.action_key in ('agent.installation.create','agent.installation.upgrade',
+            'agent.installation.enable')
         for no key update of r")
         .bind(installation).bind(tenant).bind(workspace).bind(action)
         .fetch_optional(&mut *lifecycle).await?.ok_or_else(conflict)?;
@@ -2129,13 +2164,17 @@ async fn installation_scope(
         left join catalog.action_definition definition on definition.action_key=projection.action_key
           and definition.version=projection.action_version
         where i.resource_id=$1 and r.home_workspace_id=w.id and r.type_key='agent.installation'
-          and i.state in ('PROVISIONING','ACTIVE','DRAINING') and r.state in ('PROVISIONING','ACTIVE')
+          and i.state in ('PROVISIONING','ACTIVE','DRAINING','DISABLED') and r.state in ('PROVISIONING','ACTIVE')
           and ((catalog.agent_generation_admitted(i.resource_id,v.asset_id,p.generation)
               and $4::uuid is null)
             or (p.state='PENDING' and ((i.state='PROVISIONING' and r.state='PROVISIONING')
-                or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id)))
-              and projection.action_key in ('agent.installation.create','agent.installation.upgrade')
-              and projection.parameters->'params'->>'assetId'=v.asset_id::text
+                or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id))
+                or (i.state='DISABLED' and r.state='ACTIVE' and i.pinned_version_asset_id=v.asset_id
+                  and projection.action_key='agent.installation.enable'))
+              and ((projection.action_key in ('agent.installation.create','agent.installation.upgrade')
+                  and projection.parameters->'params'->>'assetId'=v.asset_id::text)
+                or (projection.action_key='agent.installation.enable'
+                  and i.pinned_version_asset_id=v.asset_id))
               and projection.tenant_id=t.id and projection.workspace_id=w.id
               and projection.target_id=r.id and projection.gate_state='ALLOWED'
               and projection.dispatch_state='DISPATCHED'
@@ -3086,6 +3125,7 @@ mod usage_subject_writer_checks {
         for writer in [
             "agent.installation.create",
             "agent.installation.upgrade",
+            "agent.installation.enable",
             "application_binding.create",
         ] {
             assert!(usage_subject_writer(writer), "{writer}");
