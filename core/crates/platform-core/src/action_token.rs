@@ -38,11 +38,23 @@ pub(crate) fn management_operation(action: &str, state: &str, operation: &str) -
     }
 }
 
+/// The restricted purpose stored with the production ActionToken key.
+const ACTION_TOKEN_PURPOSE: &str = "ACTION_TOKEN";
+/// 07 §8A: the restricted purpose stored with Core's isolated conformance
+/// signing key; `component_conformance_identity::sign` refuses any other.
+pub(crate) const CONFORMANCE_PURPOSE: &str = "COMPONENT_CONFORMANCE";
+
 fn delivery() -> Result<Value, Refusal> {
-    let path = std::env::var("ACTION_TOKEN_SIGNING_FILE")
+    signing_delivery("ACTION_TOKEN_SIGNING_FILE")
+}
+
+/// One `ActionTokenSigningDelivery` document named by `variable`: versioned
+/// OpenBao references and the Agent-rendered public JWKS path, never a key.
+fn signing_delivery(variable: &str) -> Result<Value, Refusal> {
+    let path = std::env::var(variable)
         .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let bytes = std::fs::read(path)
-        .map_err(|_| Refusal::Unavailable("ActionToken signing delivery unavailable".into()))?;
+        .map_err(|_| Refusal::Unavailable("signing delivery unavailable".into()))?;
     let parsed: contracts::ActionTokenSigningDelivery =
         serde_json::from_slice(&bytes).map_err(|_| invalid())?;
     let value = serde_json::to_value(parsed).map_err(|_| invalid())?;
@@ -67,23 +79,82 @@ pub(crate) async fn bootstrap_signing() -> Result<Value, String> {
     let config = delivery().map_err(|_| "ActionToken signing configuration invalid")?;
     let public_locator = std::env::var("ACTION_TOKEN_PUBLIC_JWKS_LOCATOR")
         .map_err(|_| "Missing ACTION_TOKEN_PUBLIC_JWKS_LOCATOR")?;
+    if !initial_delivery(&config, &public_locator)? {
+        return Err("ActionToken initial key delivery refused; rotation is not bootstrap".into());
+    }
+    initialize(&config, &public_locator, ACTION_TOKEN_PURPOSE).await
+}
+
+/// 07 §8A, ADR-19: deployment-only first-key initialization of Core's isolated
+/// conformance signing identity, the key `component_conformance_identity::sign`
+/// uses for suite probes. Same versioned OpenBao authority, one-write CAS and
+/// public-only export as the ActionToken key, but its own private and public
+/// locators, issuer, public file and purpose `COMPONENT_CONFORMANCE`: it can
+/// neither be nor alias the production ActionToken key. No listener, identity,
+/// binding or suite result is created; the Agent renders the public JWKS.
+pub(crate) async fn bootstrap_conformance_signing() -> Result<Value, String> {
+    let config = signing_delivery("COMPONENT_CONFORMANCE_SIGNING_FILE")
+        .map_err(|_| "conformance signing configuration invalid")?;
+    let public_locator = std::env::var("COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR")
+        .map_err(|_| "Missing COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR")?;
+    // When the production ActionToken delivery is configured, nothing of it
+    // may be shared: key, public export, issuer or public file.
+    let production = std::env::var_os("ACTION_TOKEN_SIGNING_FILE")
+        .map(|_| delivery())
+        .transpose()
+        .map_err(|_| "ActionToken signing configuration invalid")?;
+    let production_public = std::env::var("ACTION_TOKEN_PUBLIC_JWKS_LOCATOR").ok();
+    let shared = shares_action_token(
+        &config,
+        &public_locator,
+        production.as_ref(),
+        production_public.as_deref(),
+    );
+    if shared || !initial_delivery(&config, &public_locator)? {
+        return Err("conformance initial key delivery refused: shared or not initial".into());
+    }
+    initialize(&config, &public_locator, CONFORMANCE_PURPOSE).await
+}
+
+/// Whether a conformance signing delivery reuses anything of the production
+/// ActionToken delivery: private key, issuer, public file or either locator.
+fn shares_action_token(
+    config: &Value,
+    public_locator: &str,
+    production: Option<&Value>,
+    production_public: Option<&str>,
+) -> bool {
+    let action = production.is_some_and(|action| {
+        ["secretLocator", "issuer", "jwksFile"]
+            .iter()
+            .any(|key| action[*key] == config[*key])
+            || action["secretLocator"] == public_locator
+    });
+    let public = production_public
+        .is_some_and(|locator| config["secretLocator"] == locator || public_locator == locator);
+    action || public
+}
+
+/// Initial-version delivery rules shared by both signing keys.
+fn initial_delivery(config: &Value, public_locator: &str) -> Result<bool, String> {
     let audience = std::env::var("OPENBAO_SERVICE_IDENTITY")
         .map_err(|_| "Missing OPENBAO_SERVICE_IDENTITY")?;
-    if config["secretAudience"] != audience
-        || config["secretVersion"] != 1
-        || config["privateKeyField"] == "purpose"
-        || !public_locator.starts_with("platform/")
-        || config["secretLocator"] == public_locator
-        || ["SERVICE_OIDC_ISSUER", "GATEWAY_SERVICE_ISSUER"]
+    let initial = config["secretAudience"] == audience.as_str()
+        && config["secretVersion"] == 1
+        && config["privateKeyField"] != "purpose"
+        && public_locator.starts_with("platform/")
+        && config["secretLocator"] != public_locator
+        && !["SERVICE_OIDC_ISSUER", "GATEWAY_SERVICE_ISSUER"]
             .iter()
             .any(|name| {
                 std::env::var(name)
                     .ok()
-                    .is_some_and(|issuer| config["issuer"] == issuer)
-            })
-    {
-        return Err("ActionToken initial key delivery refused; rotation is not bootstrap".into());
-    }
+                    .is_some_and(|issuer| config["issuer"] == issuer.as_str())
+            });
+    Ok(initial)
+}
+
+async fn initialize(config: &Value, public_locator: &str, purpose: &str) -> Result<Value, String> {
     let secrets = secret_store::SecretStore::from_env()?;
     let audit = secret_store::AuditObserver::from_env()?;
     secrets
@@ -103,7 +174,7 @@ pub(crate) async fn bootstrap_signing() -> Result<Value, String> {
         {
             return Err("ActionToken initialization requires an enabled audit device".to_owned());
         }
-        bootstrap_signing_key(&secrets, &config, &public_locator).await
+        bootstrap_signing_key(&secrets, config, public_locator, purpose).await
     }
     .await;
     // Do not leave either one-use bootstrap session alive on a partial failure.
@@ -119,6 +190,7 @@ async fn bootstrap_signing_key(
     secrets: &secret_store::SecretStore,
     config: &Value,
     public_locator: &str,
+    purpose: &str,
 ) -> Result<Value, String> {
     let field = text(config, "privateKeyField").map_err(|_| "Invalid private key field")?;
     let locator = text(config, "secretLocator").map_err(|_| "Invalid private key reference")?;
@@ -129,7 +201,7 @@ async fn bootstrap_signing_key(
     if current == 0 {
         let private = fresh_signing_key().map_err(|_| "ActionToken key generation failed")?;
         let version = secrets
-            .write_once_fields(locator, &[("purpose", "ACTION_TOKEN"), (field, &private)])
+            .write_once_fields(locator, &[("purpose", purpose), (field, &private)])
             .await
             .map_err(|_| "ActionToken initial write unconfirmed; observe the same reference")?;
         if version != 1 {
@@ -145,11 +217,11 @@ async fn bootstrap_signing_key(
             .map_err(|_| "Invalid key audience")?
             .into(),
     };
-    let purpose = secrets
+    let stored = secrets
         .read(&reference, "purpose")
         .await
         .map_err(|_| "ActionToken key purpose unavailable")?;
-    if purpose.expose() != "ACTION_TOKEN" {
+    if stored.expose() != purpose {
         return Err("ActionToken key purpose mismatch".into());
     }
     let private = secrets
@@ -170,7 +242,7 @@ async fn bootstrap_signing_key(
     Ok(
         json!({"secretLocator":locator,"secretVersion":reference.version,
         "publicJwksLocator":public_locator,"publicJwksVersion":public_version,
-        "jwksFile":config["jwksFile"],"bindingActivated":false}),
+        "jwksFile":config["jwksFile"],"purpose":purpose,"bindingActivated":false}),
     )
 }
 
@@ -999,6 +1071,27 @@ pub(crate) fn verify(token: &str, audience: &str) -> Result<Value, Refusal> {
 #[cfg(test)]
 mod application_intent_tests {
     use super::*;
+
+    #[test]
+    fn conformance_signing_never_shares_the_action_token_delivery() {
+        let action = json!({"secretLocator":"platform/kv/action-token","issuer":"https://action",
+            "jwksFile":"/delivery/action-token/jwks.json"});
+        let suite = json!({"secretLocator":"platform/kv/conformance","issuer":"https://suite",
+            "jwksFile":"/delivery/conformance/jwks.json"});
+        let public = "platform/kv/conformance-jwks";
+        let other = Some("platform/kv/action-jwks");
+        assert!(!shares_action_token(&suite, public, Some(&action), other));
+        assert!(!shares_action_token(&suite, public, None, None));
+        for key in ["secretLocator", "issuer", "jwksFile"] {
+            let mut reused = suite.clone();
+            reused[key] = action[key].clone();
+            assert!(shares_action_token(&reused, public, Some(&action), other), "{key}");
+        }
+        let private = "platform/kv/action-token";
+        assert!(shares_action_token(&suite, private, Some(&action), other));
+        assert!(shares_action_token(&suite, public, None, Some(public)));
+        assert!(shares_action_token(&suite, public, None, Some("platform/kv/conformance")));
+    }
 
     #[test]
     fn bootstrap_public_key_verifies_the_original_pem_signer_without_private_fields() {

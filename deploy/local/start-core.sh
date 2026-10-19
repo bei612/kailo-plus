@@ -7,16 +7,20 @@
 # 会拿着已被消费的旧投递启动，Core 按泄漏处理并拒绝启动。
 #
 # 用法（deploy/local 下）：./start-core.sh；仅更换部署配置时 ./start-core.sh --no-build。
+# 首次密钥部署：--prepare-action-token（生产 ActionToken）或
+# --prepare-conformance-identity（07 §8A 一致性套件的隔离签名身份）；两者都不启动服务。
 #
 # 镜像先构建、投递后取：构建可能远长于 OPENBAO_SECRET_ID_WRAP_TTL，先取投递再构建，
 # 投递在 Core 启动前就已过期。
 set -euo pipefail
 prepare_action_token=false
+prepare_conformance_identity=false
 case "$#:$*" in
   0:) build=true ;;
   1:--no-build) build=false ;;
   1:--prepare-action-token) build=false; prepare_action_token=true ;;
-  *) echo '用法：start-core.sh [--no-build|--prepare-action-token]' >&2; exit 2 ;;
+  1:--prepare-conformance-identity) build=false; prepare_conformance_identity=true ;;
+  *) echo '用法：start-core.sh [--no-build|--prepare-action-token|--prepare-conformance-identity]' >&2; exit 2 ;;
 esac
 cd "$(dirname "$0")"
 (cd ../.. && python3 tools/gen-registry.py --check)
@@ -30,6 +34,13 @@ cd "$(dirname "$0")"
 if [ "$prepare_action_token" = true ]; then
   : "${ACTION_TOKEN_SIGNING_FILE:?}" "${ACTION_TOKEN_PUBLIC_JWKS_LOCATOR:?}" \
     "${ACTION_TOKEN_JWKS_READER_ROLE:?}" "${CHECK_CPUS:?}" "${CHECK_MEMORY:?}"
+  . ../../tools/container-safety.sh
+  container_safety_init
+  container_resource_preflight
+fi
+if [ "$prepare_conformance_identity" = true ]; then
+  : "${COMPONENT_CONFORMANCE_SIGNING_FILE:?}" "${COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR:?}" \
+    "${COMPONENT_CONFORMANCE_JWKS_READER_ROLE:?}" "${CHECK_CPUS:?}" "${CHECK_MEMORY:?}"
   . ../../tools/container-safety.sh
   container_safety_init
   container_resource_preflight
@@ -49,6 +60,7 @@ runtime_config=
 gateway_config=
 adapter_config=
 action_token_config=
+conformance_signing_config=
 tmp=
 cleanup_start_core() {
   local status=$?
@@ -57,6 +69,7 @@ cleanup_start_core() {
   if [ -n "$gateway_config" ]; then rm -f -- "$gateway_config" || status=2; fi
   if [ -n "$adapter_config" ]; then rm -f -- "$adapter_config" || status=2; fi
   if [ -n "$action_token_config" ]; then rm -f -- "$action_token_config" || status=2; fi
+  if [ -n "$conformance_signing_config" ]; then rm -f -- "$conformance_signing_config" || status=2; fi
   if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
   exit "$status"
 }
@@ -230,13 +243,122 @@ except (OSError, ValueError, KeyError, TypeError):
 PYACTIONTOKEN
   action_token_compose=(-f "$action_token_config")
 fi
+# 07 §8A, ADR-19: first-key initialization of Core's isolated conformance
+# signing identity (component_conformance_identity.rs sign). Same delivery
+# shape and checks as the ActionToken prepare path, but it may not share any
+# key, public locator, issuer, public file, directory or reader role with the
+# production ActionToken delivery. Only the initial Core command consumes it.
+conformance_signing_compose=()
+if [ "$prepare_conformance_identity" = true ]; then
+  conformance_signing_config=$(mktemp)
+  COMPONENT_CONFORMANCE_SIGNING_FILE="$COMPONENT_CONFORMANCE_SIGNING_FILE" \
+  COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR="$COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR" \
+  COMPONENT_CONFORMANCE_JWKS_READER_ROLE="$COMPONENT_CONFORMANCE_JWKS_READER_ROLE" \
+  ACTION_TOKEN_SIGNING_FILE="${ACTION_TOKEN_SIGNING_FILE:-}" \
+  ACTION_TOKEN_PUBLIC_JWKS_LOCATOR="${ACTION_TOKEN_PUBLIC_JWKS_LOCATOR:-}" \
+  ACTION_TOKEN_JWKS_READER_ROLE="${ACTION_TOKEN_JWKS_READER_ROLE:-}" \
+  CHECK_CPUS="$CHECK_CPUS" CHECK_MEMORY="$CHECK_MEMORY" \
+  OPENBAO_SERVICE_IDENTITY="${OIDC_SERVICE_CLIENT_ID:?}" \
+  OIDC_ISSUER="$OIDC_ISSUER" GATEWAY_SERVICE_ISSUER="${GATEWAY_SERVICE_ISSUER:-}" \
+  python3 - "$conformance_signing_config" <<'PYCONFORMANCESIGNING'
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import sys
+
+LOCATOR = r"platform/[A-Za-z0-9_-]+/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+"
+AGENT_FILES = {"conformance-identity-role-id", "conformance-identity-wrapped-secret-id", "conformance-identity-agent.hcl"}
+
+def reject():
+    raise SystemExit("一致性签名身份投递无效：要求独立的完整版本化 SecretRef、专属公钥目录与读者角色，不与 ActionToken 共用，不挂载私钥")
+
+def unique(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            reject()
+        value[key] = item
+    return value
+
+def document(raw):
+    if not isinstance(raw, str):
+        reject()
+    path = Path(raw)
+    canonical = PurePosixPath(raw)
+    if (not canonical.is_absolute() or str(canonical) != raw or ".." in canonical.parts
+            or not path.is_file() or path.resolve(strict=True) != path):
+        reject()
+    value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+    if not isinstance(value, dict):
+        reject()
+    return path, value
+
+try:
+    source, value = document(os.environ["COMPONENT_CONFORMANCE_SIGNING_FILE"])
+    schema = json.loads(Path("../../contracts/domain/action_token_signing_delivery.schema.json").read_text(encoding="utf-8"))
+    if set(value) != set(schema["required"]):
+        reject()
+    for name, field in schema["properties"].items():
+        item = value[name]
+        if field["type"] == "string" and (not isinstance(item, str) or not item or item.strip() != item
+                or any(ord(c) < 32 or ord(c) == 127 for c in item)):
+            reject()
+        if field["type"] == "integer" and (type(item) is not int or item <= 0):
+            reject()
+    locator = os.environ["COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR"]
+    role = os.environ["COMPONENT_CONFORMANCE_JWKS_READER_ROLE"]
+    public = Path(value["jwksFile"])
+    public_name = PurePosixPath(value["jwksFile"])
+    if (value["secretVersion"] != 1 or value["privateKeyField"] == "purpose"
+            or not re.fullmatch(LOCATOR, value["secretLocator"]) or not re.fullmatch(LOCATOR, locator)
+            or locator == value["secretLocator"] or not re.fullmatch(r"[A-Za-z0-9_-]+", role)
+            or value["secretAudience"] != os.environ["OPENBAO_SERVICE_IDENTITY"]
+            or value["issuer"] in {os.environ["OIDC_ISSUER"], os.environ["GATEWAY_SERVICE_ISSUER"]}
+            or not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)?", os.environ["CHECK_CPUS"])
+            or not re.fullmatch(r"[1-9][0-9]*(?:[kKmMgG][bB]?)?", os.environ["CHECK_MEMORY"])
+            or not public_name.is_absolute() or str(public_name) != value["jwksFile"]
+            or ".." in public_name.parts or public == source
+            or not public.parent.is_dir() or public.parent.resolve(strict=True) != public.parent
+            or public.parent == source.parent or public.parent.stat().st_mode & 0o077
+            or public.parent.stat().st_uid != os.geteuid() or public.name in AGENT_FILES
+            or any(path.name not in AGENT_FILES | {public.name} or not path.is_file() or path.is_symlink()
+                   for path in public.parent.iterdir())):
+        reject()
+    # Never an alias of the production ActionToken key or its delivery.
+    if os.environ["ACTION_TOKEN_SIGNING_FILE"]:
+        production_source, production = document(os.environ["ACTION_TOKEN_SIGNING_FILE"])
+        if (production_source == source
+                or any(production.get(key) == value[key] for key in ("secretLocator", "issuer", "jwksFile"))
+                or Path(production["jwksFile"]).parent == public.parent
+                or production.get("secretLocator") == locator):
+            reject()
+    if locator in {os.environ["ACTION_TOKEN_PUBLIC_JWKS_LOCATOR"], value["secretLocator"]} \
+            or role == os.environ["ACTION_TOKEN_JWKS_READER_ROLE"]:
+        reject()
+    initial = {"environment": {"COMPONENT_CONFORMANCE_SIGNING_FILE": str(source),
+                "COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR": locator},
+        "cpus": os.environ["CHECK_CPUS"], "mem_limit": os.environ["CHECK_MEMORY"],
+        "memswap_limit": os.environ["CHECK_MEMORY"],
+        "volumes": [{"type": "bind", "source": str(source), "target": str(source),
+            "read_only": True, "bind": {"create_host_path": False}}]}
+    with open(sys.argv[1], "w", encoding="utf-8") as stream:
+        json.dump({"services": {"core-bff": initial}}, stream)
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+PYCONFORMANCESIGNING
+  conformance_signing_compose=(-f "$conformance_signing_config")
+fi
 # DD-94/98: the original Core consumer reads a controlled adapter directory.
 # No directory means no business-component delivery, not an empty credential or
 # a platform startup dependency. Core receives only supplied facts/public JWKS;
 # receiver credentials are exact private file mounts for Worker alone. Never
 # create missing paths or generate native identities here.
 adapter_compose=()
-if [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
+# Preparing the conformance identity renders the very JWKS a conformance
+# identity delivery names; that one-off command consumes no adapter delivery.
+if [ "$prepare_conformance_identity" != true ] \
+  && [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
   adapter_config=$(mktemp)
   APPLICATION_ADAPTER_DIRECTORY_FILE="${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" \
   COMPONENT_CONFORMANCE_ENVIRONMENT_FILE="${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}" \
@@ -402,7 +524,8 @@ if [ "$gateway_present" -ne 0 ] && [ "$gateway_present" -ne "${#gateway_names[@]
   exit 2
 fi
 gateway_compose=()
-if [ "${prepare_action_token:-false}" != true ] && { [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; }; then
+if [ "${prepare_action_token:-false}" != true ] && [ "$prepare_conformance_identity" != true ] \
+  && { [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; }; then
   gateway_config=$(mktemp)
   for gateway_name in "${gateway_names[@]}"; do export "$gateway_name"; done
   OIDC_ISSUER="$OIDC_ISSUER" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
@@ -571,7 +694,7 @@ app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IP
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${conformance_signing_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
@@ -607,18 +730,16 @@ tmp=$(mktemp)
 mv "$tmp" secrets/openbao-core.env
 tmp=
 
-if [ "$prepare_action_token" = true ]; then
-  # This is a deployment bootstrap invocation, not a service restart. It writes
-  # no platform business objects; a pre-bootstrap binary must fail, not fall back.
-  compose run --rm --no-deps --pull never core-bff bootstrap-action-token
-  ACTION_TOKEN_SIGNING_FILE="$ACTION_TOKEN_SIGNING_FILE" \
-  ACTION_TOKEN_PUBLIC_JWKS_LOCATOR="$ACTION_TOKEN_PUBLIC_JWKS_LOCATOR" \
-  ACTION_TOKEN_JWKS_READER_ROLE="$ACTION_TOKEN_JWKS_READER_ROLE" \
+# Versioned public-JWKS rendering shared by both deployment-only signing keys:
+# a scoped one-use reader AppRole and a one-off original OpenBao Agent render
+# the Core-exported public record to the delivery's jwksFile, then exit.
+render_public_jwks() { # <signing delivery> <public locator> <reader role> <file prefix> <label>
+  SIGNING_FILE="$1" PUBLIC_JWKS_LOCATOR="$2" JWKS_READER_ROLE="$3" AGENT_FILE_PREFIX="$4" SIGNING_LABEL="$5" \
   OPENBAO_ADDR="$OPENBAO_ADDR" OPENBAO_HTTP_TIMEOUT_SECONDS="$OPENBAO_HTTP_TIMEOUT_SECONDS" \
   OPENBAO_SECRET_ID_TTL="$OPENBAO_SECRET_ID_TTL" OPENBAO_TOKEN_PERIOD="$OPENBAO_TOKEN_PERIOD" \
   OPENBAO_SECRET_ID_WRAP_TTL="$OPENBAO_SECRET_ID_WRAP_TTL" \
-  CHECK_CPUS="$CHECK_CPUS" CHECK_MEMORY="$CHECK_MEMORY" ACTION_TOKEN_AGENT_NETWORK="${project}_app" \
-  python3 - <<'PYACTIONAGENT'
+  CHECK_CPUS="$CHECK_CPUS" CHECK_MEMORY="$CHECK_MEMORY" AGENT_NETWORK="${project}_app" \
+  python3 - <<'PYPUBLICAGENT'
 import fcntl
 import json
 import os
@@ -628,9 +749,14 @@ import stat
 import subprocess
 import tempfile
 
+label = os.environ["SIGNING_LABEL"]
+prefix = os.environ["AGENT_FILE_PREFIX"]
+if prefix not in {"action-token", "conformance-identity"}:
+    raise SystemExit("unknown public JWKS delivery")
+
 def require(condition):
     if not condition:
-        raise ValueError("ActionToken Agent delivery refused")
+        raise ValueError(label + " Agent delivery refused")
 
 def private_read(path):
     require(path.is_absolute() and path.resolve(strict=True) == path)
@@ -660,15 +786,15 @@ def seconds(value):
     return int(match[1]) * {"s":1,"m":60,"h":3600}[match[2]]
 
 try:
-    config = json.loads(Path(os.environ["ACTION_TOKEN_SIGNING_FILE"]).read_text())
+    config = json.loads(Path(os.environ["SIGNING_FILE"]).read_text())
     public = Path(config["jwksFile"])
     directory = public.parent
     require(directory.resolve(strict=True) == directory and not directory.stat().st_mode & 0o077
             and directory.stat().st_uid == os.geteuid())
-    locator = os.environ["ACTION_TOKEN_PUBLIC_JWKS_LOCATOR"]
+    locator = os.environ["PUBLIC_JWKS_LOCATOR"]
     namespace, mount, keypath = locator.split("/", 2)
     require(namespace == "platform" and locator != config["secretLocator"])
-    role = os.environ["ACTION_TOKEN_JWKS_READER_ROLE"]
+    role = os.environ["JWKS_READER_ROLE"]
     require(re.fullmatch(r"[A-Za-z0-9_-]+", role) is not None)
     timeout = int(os.environ["OPENBAO_HTTP_TIMEOUT_SECONDS"])
     require(timeout > 0)
@@ -722,9 +848,9 @@ try:
         require(all(existing["data"].get(k) == v for k,v in wanted.items()))
         role_id = bao(role_path + "/role-id")["data"]["role_id"]
         wrapped = bao(role_path + "/secret-id", {}, wrap=os.environ["OPENBAO_SECRET_ID_WRAP_TTL"])
-        role_file = directory / "action-token-role-id"
-        wrapped_file = directory / "action-token-wrapped-secret-id"
-        agent_file = directory / "action-token-agent.hcl"
+        role_file = directory / (prefix + "-role-id")
+        wrapped_file = directory / (prefix + "-wrapped-secret-id")
+        agent_file = directory / (prefix + "-agent.hcl")
         require(public not in {role_file, wrapped_file, agent_file})
         quote = json.dumps
         template = '{{ with secret "' + mount + '/data/' + keypath + '?version=1" }}{{ .Data.data.value }}{{ end }}'
@@ -745,7 +871,7 @@ try:
         command = ["sudo","-n","docker","create","--pull","never","--read-only",
             "--cpus",os.environ["CHECK_CPUS"],"--memory",os.environ["CHECK_MEMORY"],
             "--memory-swap",os.environ["CHECK_MEMORY"],"--user",f"{os.geteuid()}:{os.getegid()}",
-            "--network",os.environ["ACTION_TOKEN_AGENT_NETWORK"],"--cap-drop","ALL",
+            "--network",os.environ["AGENT_NETWORK"],"--cap-drop","ALL",
             "--security-opt","no-new-privileges", "--mount",f"type=bind,src={directory},dst={directory}",
             "--entrypoint","bao",image,"agent","-config="+str(agent_file)]
         # No root token is passed to Agent, only the scoped one-use wrapped role.
@@ -774,12 +900,28 @@ try:
             removed = subprocess.run(["sudo","-n","docker","rm",container], capture_output=True, timeout=timeout)
             require(removed.returncode == 0)
         require(json.loads(public.read_text()) == exported)
-        print("ActionToken Core export and original OpenBao Agent public JWKS readback complete; no binding activated")
+        print(label + " Core export and original OpenBao Agent public JWKS readback complete; no binding activated")
     finally:
         os.close(lock)
 except Exception:
-    raise SystemExit("ActionToken Agent preparation failed; preserve the exact references and inspect protected delivery, never regenerate a signing key") from None
-PYACTIONAGENT
+    raise SystemExit(label + " Agent preparation failed; preserve the exact references and inspect protected delivery, never regenerate a signing key") from None
+PYPUBLICAGENT
+}
+
+if [ "$prepare_action_token" = true ]; then
+  # This is a deployment bootstrap invocation, not a service restart. It writes
+  # no platform business objects; a pre-bootstrap binary must fail, not fall back.
+  compose run --rm --no-deps --pull never core-bff bootstrap-action-token
+  render_public_jwks "$ACTION_TOKEN_SIGNING_FILE" "$ACTION_TOKEN_PUBLIC_JWKS_LOCATOR" \
+    "$ACTION_TOKEN_JWKS_READER_ROLE" action-token ActionToken
+  exit 0
+fi
+if [ "$prepare_conformance_identity" = true ]; then
+  # 07 §8A: the same deployment-only path for Core's isolated conformance
+  # signing identity (purpose COMPONENT_CONFORMANCE); no service is restarted.
+  compose run --rm --no-deps --pull never core-bff bootstrap-conformance-identity
+  render_public_jwks "$COMPONENT_CONFORMANCE_SIGNING_FILE" "$COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR" \
+    "$COMPONENT_CONFORMANCE_JWKS_READER_ROLE" conformance-identity "Component conformance identity"
   exit 0
 fi
 

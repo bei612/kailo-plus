@@ -388,7 +388,7 @@ pub(crate) async fn sign(
         .read(&reference, "purpose")
         .await
         .map_err(|_| Refusal::Unavailable("isolated signing purpose unavailable".into()))?;
-    if purpose.expose() != "COMPONENT_CONFORMANCE" {
+    if purpose.expose() != crate::action_token::CONFORMANCE_PURPOSE {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     let key = state

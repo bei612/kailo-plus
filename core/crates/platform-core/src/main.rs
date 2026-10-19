@@ -138,6 +138,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", serde_json::to_string(&outcome)?);
         return Ok(());
     }
+    // 07 §8A: Core's isolated conformance signing identity, initialized the
+    // same deployment-only way; it never shares the ActionToken key.
+    if argv.get(1).map(String::as_str) == Some("bootstrap-conformance-identity") {
+        if argv.len() != 2 {
+            return Err(
+                "bootstrap-conformance-identity takes only controlled environment delivery".into(),
+            );
+        }
+        let outcome = action_token::bootstrap_conformance_signing().await?;
+        println!("{}", serde_json::to_string(&outcome)?);
+        return Ok(());
+    }
     // Tenant 引导（DD-82、ADR-11）不取 OpenBao 投递，做完即退出。
     if argv.get(1).map(String::as_str) == Some("bootstrap-tenant") {
         let outcome = tenant_bootstrap::run(tenant_bootstrap::Args::parse(&argv[2..])?).await?;
