@@ -292,8 +292,9 @@ remain the separate native identity/management release boundary.
 The `humanAction` configuration contains only the existing result-exposure policy
 id/version used by actual queries; do not configure a global Resource id/version
 to bypass per-object lookup. These metadata reads do not execute SQL or create
-an ActionExecution. Unregistered objects remain unavailable: this change does
-not complete the separate REMOTE_ADAPTER native-object registration path.
+an ActionExecution. Unregistered objects remain unavailable; registration is
+the separate existing-reference path below ("Existing native model/view
+reference delivery", DD-98(3), V-SCN-82).
 
 ### Original SQL editor preview and full-source admission
 
@@ -1629,7 +1630,21 @@ assign an owner, grant permission, or print native SQL/connection credentials.
 Capture stdout to a **new candidate file**, not the input directory path. Feed
 that candidate through the existing controlled directory deployment using
 `deploy/local/start-core.sh --no-build`; then submit the existing HUMAN
-`resource.create` with the generated five-field reference. The original Core
+`resource.create` with the generated five-field reference:
+
+```sh
+node tools/component-release/flow/resource-register.mjs \
+  --directory /abs/deployed/adapter-directory.json --binding-id <bindingId> \
+  --native-type model --native-ref <model id> [--workspace-id <home Workspace>]
+```
+
+The flow reads exactly that binding's delivered `nativeResources` entry from the
+deployed directory (it never accepts the five fields as arguments), submits
+`resource.create` as the named HUMAN account and waits for `RESOURCE_PROVISION`.
+Re-running it with the same arguments only observes the same action. Register
+each model and each saved view the vectors or users target; the conformance
+vectors themselves use the isolated deployment's simulated Resource, not these
+production Resources. The original Core
 consumer still requires an APPROVED release, ACTIVE binding, exact scope,
 current authorization and its existing workflow/projection evidence. A command
 exit 0 proves only the native observation, not completion of registration or
