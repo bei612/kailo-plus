@@ -1,0 +1,60 @@
+{
+  "categoryKey": "data_query",
+  "contractVersion": 2,
+  "resourceTypeFamily": [
+    {
+      "typeKey": "data_query.model",
+      "kind": "MODEL"
+    },
+    {
+      "typeKey": "data_query.view",
+      "kind": "VIEW"
+    }
+  ],
+  "operationContracts": [
+    {
+      "contractKey": "data_query.query@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaDigest": "907bdf28e4aedfade69691fe6f8979a21ebfd59cf80528ce85271be9fb500142",
+      "permission": "execute",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "data_query.dry_run@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaDigest": "ba0b6aba05b8c9657f75770642397ba71a03dcf1870b40a5c2a615e37255444c",
+      "permission": "execute",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "data_query.describe@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "7c68c781cb877a03a71cc21c403a22e4f21ad21cc55657adc53c6ac1e836c8d4",
+      "outputSchemaDigest": "a2c3ea3812df35d9f4289861cab3f42761f0106ec6814f6e3356c42fea86a962",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    }
+  ],
+  "contentReferenceSemantics": {
+    "nativeObjectRefRule": "Opaque native query intent supplied by the source service in a typed ContentReference; never reconstruct a reference from resultJson.",
+    "nativeRevisionRule": "Immutable digest of the source query intent, binding, native scope, connection and captured deployment. Changed source intent or revision is rejected before execution; it is not a snapshot of database rows.",
+    "authorizationTargetRule": "The Resource identifies the admitted native model or view in the same binding and scope. Query execution authorizes every actual source, including view dependencies; describe reveals only the authorized model."
+  },
+  "requiredDeclarations": [
+    "CANCEL",
+    "OBSERVE",
+    "METER",
+    "TENANT_DELETE"
+  ],
+  "protocolSessionKinds": [],
+  "schemaDocuments": [
+    "{\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"minLength\":1,\"type\":\"string\"},\"deploymentId\":{\"minLength\":1,\"type\":\"string\"},\"limit\":{\"minimum\":1,\"type\":\"integer\"},\"sql\":{\"minLength\":1,\"type\":\"string\"}},\"required\":[\"sql\",\"deploymentId\",\"deploymentHash\",\"limit\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"const\":\"application/json\"},\"nativeObjectRef\":{\"minLength\":1,\"type\":\"string\"},\"nativeRevision\":{\"minLength\":1,\"type\":\"string\"},\"resourceId\":{\"format\":\"uuid\",\"type\":\"string\"}},\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"type\":\"object\"}],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"cacheCreatedAt\":{\"type\":[\"string\",\"null\"]},\"cacheHit\":{\"type\":\"boolean\"},\"cacheOverrodeAt\":{\"type\":[\"string\",\"null\"]},\"columns\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"},\"type\":{\"type\":\"string\"}},\"required\":[\"name\",\"type\"],\"type\":\"object\"},\"type\":\"array\"},\"data\":{\"items\":{\"items\":{},\"type\":\"array\"},\"type\":\"array\"},\"deploymentHash\":{\"minLength\":1,\"type\":\"string\"},\"deploymentId\":{\"minLength\":1,\"type\":\"string\"},\"override\":{\"type\":\"boolean\"}},\"required\":[\"columns\",\"data\",\"deploymentId\",\"deploymentHash\"],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"minLength\":1,\"type\":\"string\"},\"deploymentId\":{\"minLength\":1,\"type\":\"string\"},\"valid\":{\"const\":true}},\"required\":[\"valid\",\"deploymentId\",\"deploymentHash\"],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"limit\":{\"minimum\":1,\"type\":\"integer\"}},\"required\":[],\"type\":\"object\"}",
+    "{\"additionalProperties\":false,\"properties\":{\"deploymentHash\":{\"minLength\":1,\"type\":\"string\"},\"deploymentId\":{\"minLength\":1,\"type\":\"string\"},\"models\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"columns\":{\"items\":{\"additionalProperties\":false,\"properties\":{\"name\":{\"minLength\":1,\"type\":\"string\"},\"type\":{\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"},\"type\":\"array\"},\"name\":{\"type\":\"string\"}},\"required\":[\"name\",\"columns\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"deploymentId\",\"deploymentHash\",\"models\"],\"type\":\"object\"}"
+  ],
+  "testVectorsJson": "{\"formatVersion\":\"V2\",\"generatedRefs\":[{\"contractKey\":\"data_query.describe@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"contractKey\":\"data_query.describe@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"},{\"contractKey\":\"data_query.dry_run@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"contractKey\":\"data_query.dry_run@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"},{\"contractKey\":\"data_query.query@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"contractKey\":\"data_query.query@v2\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"},{\"contractKey\":\"data_query.dry_run@v2\",\"side\":\"INPUT\",\"pointer\":\"/deploymentId\"},{\"contractKey\":\"data_query.dry_run@v2\",\"side\":\"INPUT\",\"pointer\":\"/deploymentHash\"},{\"contractKey\":\"data_query.dry_run@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"contractKey\":\"data_query.query@v2\",\"side\":\"INPUT\",\"pointer\":\"/deploymentId\"},{\"contractKey\":\"data_query.query@v2\",\"side\":\"INPUT\",\"pointer\":\"/deploymentHash\"},{\"contractKey\":\"data_query.query@v2\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"}],\"cases\":[{\"caseKey\":\"native_query\",\"steps\":[{\"stepKey\":\"describe\",\"contractKey\":\"data_query.describe@v2\",\"inputJson\":\"{\\\"limit\\\":1}\",\"expectedOutputJson\":\"{\\\"deploymentId\\\":\\\"{{CAPTURE:deployment_id}}\\\",\\\"deploymentHash\\\":\\\"{{CAPTURE:deployment_hash}}\\\",\\\"models\\\":[{\\\"name\\\":\\\"public_source\\\",\\\"columns\\\":[{\\\"name\\\":\\\"value\\\",\\\"type\\\":\\\"INTEGER\\\"}]}]}\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"bindings\":[{\"source\":\"CAPTURE\",\"key\":\"deployment_id\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"source\":\"CAPTURE\",\"key\":\"deployment_hash\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"}],\"captures\":[{\"key\":\"deployment_id\",\"slot\":\"GENERATED_REF\",\"pointer\":\"/deploymentId\"},{\"key\":\"deployment_hash\",\"slot\":\"GENERATED_REF\",\"pointer\":\"/deploymentHash\"},{\"key\":\"model_ref\",\"slot\":\"CONTENT_REFERENCE_NATIVE_OBJECT_REF\"},{\"key\":\"model_revision\",\"slot\":\"CONTENT_REFERENCE_NATIVE_REVISION\"}]},{\"stepKey\":\"dry_run\",\"contractKey\":\"data_query.dry_run@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"dcad7a32-d775-53c2-b224-5e62754342e4\\\",\\\"nativeObjectRef\\\":\\\"{{CAPTURE:model_ref}}\\\",\\\"nativeRevision\\\":\\\"{{CAPTURE:model_revision}}\\\",\\\"displayName\\\":\\\"public_source\\\",\\\"mediaType\\\":\\\"application/json\\\"}\",\"expectedOutputJson\":\"{\\\"valid\\\":true,\\\"deploymentId\\\":\\\"{{CAPTURE:deployment_id}}\\\",\\\"deploymentHash\\\":\\\"{{CAPTURE:deployment_hash}}\\\"}\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"bindings\":[{\"source\":\"CAPTURE\",\"key\":\"model_ref\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"CAPTURE\",\"key\":\"model_revision\",\"side\":\"INPUT\",\"pointer\":\"/nativeRevision\"},{\"source\":\"CAPTURE\",\"key\":\"deployment_id\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"source\":\"CAPTURE\",\"key\":\"deployment_hash\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"}]},{\"stepKey\":\"query\",\"contractKey\":\"data_query.query@v2\",\"inputJson\":\"{\\\"resourceId\\\":\\\"dcad7a32-d775-53c2-b224-5e62754342e4\\\",\\\"nativeObjectRef\\\":\\\"{{CAPTURE:model_ref}}\\\",\\\"nativeRevision\\\":\\\"{{CAPTURE:model_revision}}\\\",\\\"displayName\\\":\\\"public_source\\\",\\\"mediaType\\\":\\\"application/json\\\"}\",\"expectedOutputJson\":\"{\\\"columns\\\":[{\\\"name\\\":\\\"value\\\",\\\"type\\\":\\\"int32\\\"}],\\\"data\\\":[[1]],\\\"deploymentId\\\":\\\"{{CAPTURE:deployment_id}}\\\",\\\"deploymentHash\\\":\\\"{{CAPTURE:deployment_hash}}\\\"}\",\"referenceResourceId\":\"dcad7a32-d775-53c2-b224-5e62754342e4\",\"bindings\":[{\"source\":\"CAPTURE\",\"key\":\"model_ref\",\"side\":\"INPUT\",\"pointer\":\"/nativeObjectRef\"},{\"source\":\"CAPTURE\",\"key\":\"model_revision\",\"side\":\"INPUT\",\"pointer\":\"/nativeRevision\"},{\"source\":\"CAPTURE\",\"key\":\"deployment_id\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentId\"},{\"source\":\"CAPTURE\",\"key\":\"deployment_hash\",\"side\":\"EXPECTED\",\"pointer\":\"/deploymentHash\"}]}]}]}"
+}
