@@ -230,6 +230,11 @@ Deployment inputs (no credential values belong in source):
   --register-wren-native-clients` declares that claim on both dedicated native
   clients (DD-127(7)); a token without it stays denied.
 
+Without a query/binding delivery the instance is independent (DD-127(7)): the
+middleware forwards no governed identity to the Node consumers, and the
+original native resolvers serve the page after the same signature and
+instance-claim checks.
+
 Open the native origin normally (or `/auth/login?returnTo=/`). No JavaScript
 Bearer injection is needed. All routes, including callback, share one native
 listener policy. After login, the Gateway forwards only its verified native ID
