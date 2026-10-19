@@ -31,7 +31,9 @@ async fn get(
 async fn dd125_transcript_and_running_turns_are_audit_only() {
     let Some(e) = common::env() else { return };
     let http = reqwest::Client::new();
-    let pool = PgPool::connect(&e.database_url).await.expect("Core database");
+    let pool = PgPool::connect(&e.database_url)
+        .await
+        .expect("Core database");
     let token = common::worker_token(&http, &e).await;
     let fx = match common::provision_live_workspace(&http, &e, &pool, &token).await {
         Ok(f) => f,

@@ -1093,7 +1093,12 @@ fn agent_observability_dd125_c4_lifecycle_transcript_and_active_turns_preserve_f
         let typed: T = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(&serde_json::to_value(typed).unwrap(), value);
     }
-    for key in ["disableCommand", "enableCommand", "restartCommand", "interruptCommand"] {
+    for key in [
+        "disableCommand",
+        "enableCommand",
+        "restartCommand",
+        "interruptCommand",
+    ] {
         roundtrip::<contracts::ActionCommand>(&value[key]);
     }
     roundtrip::<contracts::AgentInstallationView>(&value["installationView"]);

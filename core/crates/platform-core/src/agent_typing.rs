@@ -207,7 +207,10 @@ mod tests {
         let target = "c".repeat(64);
         // A mention inside a thread: parent is the trigger, root is the thread root.
         let thread = typing_thread("BUZZ_EVENT", &root, &source, None).unwrap();
-        assert_eq!((thread.parent.as_str(), thread.root.as_deref()), (&*source, Some(&*root)));
+        assert_eq!(
+            (thread.parent.as_str(), thread.root.as_deref()),
+            (&*source, Some(&*root))
+        );
         // A top-level mention is its own Session root: only the reply tag.
         let thread = typing_thread("BUZZ_EVENT", &source, &source, None).unwrap();
         assert_eq!(thread.root, None);

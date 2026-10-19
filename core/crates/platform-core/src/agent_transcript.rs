@@ -177,7 +177,10 @@ async fn record(
     tokens: &[String],
 ) -> Result<(), Refusal> {
     let operation = Uuid::new_v4();
-    let mut evidence = vec![Evidence::new(EvidenceKind::PlatformSessionId, ctx.session_id)];
+    let mut evidence = vec![Evidence::new(
+        EvidenceKind::PlatformSessionId,
+        ctx.session_id,
+    )];
     for token in tokens.iter().filter(|token| !token.is_empty()) {
         evidence.push(Evidence::new(EvidenceKind::SpicedbZedtoken, token));
     }
@@ -1106,7 +1109,10 @@ mod tests {
             ..bound.clone()
         };
         let raw = issued.encode().unwrap();
-        assert_eq!(Cursor::decode(&raw, &bound).as_deref(), Some("native-cursor"));
+        assert_eq!(
+            Cursor::decode(&raw, &bound).as_deref(),
+            Some("native-cursor")
+        );
         for change in 0..6 {
             let mut other = bound.clone();
             match change {
@@ -1135,7 +1141,10 @@ mod tests {
         ] {
             assert!(ACTIVE_TURNS.contains(fact), "{fact}");
         }
-        assert_eq!(rfc3339(1_760_860_800).as_deref(), Some("2025-10-19T08:00:00Z"));
+        assert_eq!(
+            rfc3339(1_760_860_800).as_deref(),
+            Some("2025-10-19T08:00:00Z")
+        );
     }
 
     #[tokio::test]

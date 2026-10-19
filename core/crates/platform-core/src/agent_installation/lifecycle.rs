@@ -683,7 +683,9 @@ mod tests {
         let mut def = definition(ENABLE_ACTION);
         def.meters = vec!["agent.turn".into()];
         assert!(!definition_matches(&def));
-        assert!(!definition_matches(&definition("agent.installation.upgrade")));
+        assert!(!definition_matches(&definition(
+            "agent.installation.upgrade"
+        )));
     }
 
     #[tokio::test]
