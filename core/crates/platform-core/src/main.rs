@@ -56,6 +56,8 @@ mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
 mod model_route;
+mod moderation;
+mod moderation_read;
 mod native;
 mod oidc;
 mod openmeter;

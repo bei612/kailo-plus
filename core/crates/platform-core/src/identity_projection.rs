@@ -253,6 +253,16 @@ async fn admit(
         converge(state, control, Scope::Relay, &req.pubkey, Presence::Absent).await?;
         return Err(StatusCode::CONFLICT.into_response());
     }
+    // DD-125(2)：新公钥投入 roster、进入 ACTIVE 之前继承该 Principal 其他公钥的现行限制；
+    // 不能确认即 503，binding 保持 RECONCILING（V-SCN-127）
+    crate::moderation::inherit_restrictions(
+        state,
+        control,
+        tenant_id,
+        principal_id,
+        &req.pubkey,
+    )
+    .await?;
     converge(state, control, Scope::Relay, &req.pubkey, Presence::Present).await?;
     if !still_admissible(state, tenant_id, principal_id, &req.pubkey).await? {
         converge(state, control, Scope::Relay, &req.pubkey, Presence::Absent).await?;

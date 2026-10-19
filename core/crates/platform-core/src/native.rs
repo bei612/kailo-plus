@@ -32,6 +32,7 @@ pub fn require_native(headers: &HeaderMap) -> Result<(), Response> {
             class: ErrorClass::Denied,
             reason: ReasonCode::NativeSurfaceRequired,
             operation_id: None,
+            restriction: None,
         }),
     )
         .into_response())

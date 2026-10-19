@@ -962,7 +962,7 @@ fn valid_message_intent(message_type: &contracts::WebMessageType, parent: Option
 
 // Preserve the BFF's existing typed HTTP error response at this validation boundary.
 #[allow(clippy::result_large_err)]
-fn channel_message_event(
+pub(crate) fn channel_message_event(
     value: serde_json::Value,
     channel: &str,
 ) -> Result<nostr::Event, Response> {
@@ -2647,12 +2647,8 @@ async fn publish(
             {
                 tracing::warn!(error = %e, "发布结果审计未写入，留给对账");
             }
-            error_body(
-                StatusCode::FORBIDDEN,
-                ErrorClass::Denied,
-                ReasonCode::PublishRejected,
-                Some(operation_id),
-            )
+            // DD-125(2)：社区禁言/封禁的拒绝带结构化 restriction（V-SCN-129）
+            crate::moderation::publish_rejected(&why, Some(operation_id))
         }
         // Relay 在读取事件之前以 429/413 拒绝：确定未落库。结果记 NOT_DELIVERED——
         // 同一个幂等键按策略重发时允许再发（上面的幂等分支），而不是记成不可重试的
@@ -2705,6 +2701,7 @@ pub(crate) fn error_body(
             class,
             reason,
             operation_id: operation_id.map(|o| o.to_string()),
+            restriction: None,
         }),
     )
         .into_response()

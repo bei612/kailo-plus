@@ -1401,6 +1401,43 @@ impl IdentityClient {
         serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
     }
 
+    /// DD-125(2)：以本身份经 NIP-98 读取一个 GET 端点（Relay `/moderation/*`）。签名的 `u`
+    /// 是 Community host 上的完整路径（含查询串，Relay 逐字比对），请求发往网络地址并带
+    /// 同一 Host 头；GET 没有正文，因此只签 u / method / nonce。与 POST 共用 Core 预算。
+    pub async fn bridge_get(
+        &self,
+        http: &reqwest::Client,
+        path_and_query: &str,
+    ) -> Result<Value, OperatorError> {
+        self.admit()?;
+        let signed_url = format!("http://{}{}", self.community_host, path_and_query);
+        let url = self.transport.join(path_and_query)?;
+        let tag = |parts: [&str; 2]| {
+            Tag::parse(parts).map_err(|e| OperatorError::Sign(format!("NIP-98 tag: {e}")))
+        };
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let header = self.http_auth_header(vec![
+            tag(["u", signed_url.as_str()])?,
+            tag(["method", "GET"])?,
+            tag(["nonce", nonce.as_str()])?,
+        ])?;
+        let resp = http
+            .get(url)
+            .header(reqwest::header::HOST, &self.community_host)
+            .header("Authorization", header)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await?;
+        if !status.is_success() {
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: text.chars().take(200).collect(),
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
+    }
+
     /// 与 operator 面同一形状：u / method / nonce 必给，带 body 再加 payload 摘要。
     fn nip98_header(&self, method: &str, url: &str, body: &[u8]) -> Result<String, OperatorError> {
         let tag = |parts: [&str; 2]| {

@@ -130,6 +130,24 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.moderation
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  - /api/v1/moderation/access
+  - /api/v1/moderation/reports
+  - /api/v1/moderation/audit
+  - /api/v1/moderation/restricted
+  actions:
+  - moderation.report.submit
+  - moderation.ban
+  - moderation.unban
+  - moderation.timeout
+  - moderation.untimeout
+  - moderation.report.resolve
+  - moderation.message.delete
+  tools: []
+  workflow_kinds: []
 - id: collab.presence
   exposure: end_user
   routes:

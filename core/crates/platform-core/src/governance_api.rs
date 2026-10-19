@@ -91,6 +91,9 @@ pub async fn submit_action(
         crate::automation::submit_manual(&state, &ctx, &cmd).await
     } else if crate::agent_memory::write::is_action(&cmd.action_key) {
         state.governance.submit_memory(&state, &ctx, &cmd).await
+    } else if crate::moderation::is_action(&cmd.action_key) {
+        // DD-125(2)：社区审核动作有自己的 Relay 发送与对账路径
+        crate::moderation::submit(&state, &ctx, &cmd).await
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };

@@ -619,6 +619,24 @@ pub fn router(state: BffState) -> Router {
         // DD-123 (5)：平台额度只对 Tenant admin 与 auditor 可见（tenant audit，fresh Check），
         // 数值直接读 OpenMeter；设置走受治理动作 tenant.quota.set
         .exposed_route("/api/v1/tenant/quotas", get(crate::tenant_quota::quotas))
+        // DD-125(2)：社区审核的入口提示与受审计敏感读取（Tenant manage，CONTROL 经 NIP-98）；
+        // 七个审核动作经 /api/v1/actions 提交
+        .exposed_route(
+            "/api/v1/moderation/access",
+            get(crate::moderation_read::access),
+        )
+        .exposed_route(
+            "/api/v1/moderation/reports",
+            get(crate::moderation_read::reports),
+        )
+        .exposed_route(
+            "/api/v1/moderation/audit",
+            get(crate::moderation_read::audit_log),
+        )
+        .exposed_route(
+            "/api/v1/moderation/restricted",
+            get(crate::moderation_read::restricted),
+        )
         // 原生设备公钥（DD-77/79）：登记只对原生入口开放，查看与撤销两端都开放
         .exposed_route(
             crate::client_keys::REGISTER_PATH,
@@ -978,6 +996,7 @@ fn error_response(e: IdentityError) -> Response {
         class,
         reason: e.reason(),
         operation_id: None,
+        restriction: None,
     };
     (status, Json(body)).into_response()
 }

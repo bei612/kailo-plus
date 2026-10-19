@@ -69,6 +69,7 @@ fn refuse(status: StatusCode, class: ErrorClass, reason: ReasonCode) -> Response
             class,
             reason,
             operation_id: None,
+            restriction: None,
         }),
     )
         .into_response()

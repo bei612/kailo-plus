@@ -6,6 +6,7 @@ pub mod bridge;
 pub mod limits;
 pub mod memory;
 pub use memory::write as memory_write;
+pub mod moderation;
 pub mod operator;
 pub mod projects;
 pub mod stream;

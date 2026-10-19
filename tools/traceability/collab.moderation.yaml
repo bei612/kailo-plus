@@ -1,0 +1,47 @@
+capability_id: collab.moderation
+title: 原版社区审核经 Core 治理：本人签 1984 举报、Tenant CONTROL 对目标 HUMAN 全部非 REVOKED 公钥签 9040–9043 并按 Relay 限制状态先读→发送→回读、逐条 9044 只记决定、9005 删除按事件 ID 对账；队列、审核日志与限制状态是 Tenant manage 的受审计敏感读取；禁言/封禁拒绝映射为结构化 PUBLISH_REJECTED；新公钥进入 ACTIVE 前继承现行限制
+stage: S1
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-125, DD-80, DD-81, DD-119]
+  facts: [SF-BUZ-52]
+  seams: [SS-BUZ-GOVERNANCE]
+  blockers: []
+  entities: [ActionDefinition, ActionExecution, ActionDecision, AuditEvent, BuzzIdentityBinding, TenantBuzzBinding, WorkspaceBuzzBinding]
+
+validation:
+  scenarios: [V-SCN-126, V-SCN-127, V-SCN-128, V-SCN-129, V-SCN-130]
+  evidence:
+    - dimension: 领域规则
+      ref: core/crates/platform-core/src/moderation.rs
+    - dimension: 安全边界
+      ref: core/crates/platform-core/src/moderation_read.rs
+    - dimension: 端到端场景
+      ref: core/crates/platform-core/tests/moderation.rs
+    - dimension: 故障与恢复
+      ref: core/crates/collab-bridge/src/moderation.rs
+    - dimension: 上游接缝
+      ref: collaboration/fork/verify/governance.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/moderation.rs, core/crates/platform-core/src/moderation_read.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/governance_reconcile.rs, core/crates/collab-bridge/src/moderation.rs, core/crates/collab-bridge/src/bridge.rs, client-kit/ts/platform/src/react/moderation, client-kit/ts/platform/src/moderation.ts, client-kit/ts/platform/src/react/messages/MessageActionBarSurface.tsx, client-kit/ts/platform/src/react/channel-members.tsx, client-kit/ts/platform/src/react/settings-surface.tsx, web-client]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/domain/error.schema.json, contracts/api/moderation_access_view.schema.json, contracts/api/moderation_report_page.schema.json, contracts/api/moderation_audit_page.schema.json, contracts/api/moderation_restriction_page.schema.json, contracts/enums/moderation_report_type.schema.json, contracts/enums/moderation_report_status.schema.json, contracts/enums/moderation_report_target_kind.schema.json, contracts/enums/moderation_resolution_status.schema.json, contracts/enums/moderation_resolution_action.schema.json, contracts/enums/moderation_timeout_duration.schema.json, contracts/enums/publish_restriction_kind.schema.json]
+  migrations: [core/migrations/20261019113000_moderation_actions.up.sql, core/migrations/20261019113000_moderation_actions.down.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/moderation/access", "/api/v1/moderation/reports", "/api/v1/moderation/audit", "/api/v1/moderation/restricted"]
+  actions: [moderation.report.submit, moderation.ban, moderation.unban, moderation.timeout, moderation.untimeout, moderation.report.resolve, moderation.message.delete]
+
+release:
+  # 仅记录既有已构建候选；本能力的构建、full、部署及业务验收尚未通过。
+  artifacts:
+    - name: core
+      digest: sha256:a3ac2a1bbd85b09a387e0d6b07f3554210cf58f8dc7b023437fbab191bd01b31
+    - name: web-client
+      digest: sha256:0d98ec9ed45dd887d9734be13a131c389f4716b79146a8fb0ec5a716f2e1ca88
+  gate: blocked_until_seams_closed

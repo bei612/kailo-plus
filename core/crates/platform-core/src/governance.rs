@@ -220,6 +220,7 @@ impl Refusal {
                 class,
                 reason: self.reason(),
                 operation_id: operation_id.map(|o| o.to_string()),
+                restriction: None,
             }),
         )
             .into_response()

@@ -167,6 +167,11 @@ pub fn spawn(
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "Memory 原固定事件对账未完成；RB-05 保留原 operation");
             }
+            // DD-125(2)：审核动作只读查证（举报、删除）或先重新准入再按冻结目标重签
+            if let Err(error) = crate::moderation::reconcile(&memory, cfg.batch).await {
+                tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
+                    state="UNKNOWN", "审核动作对账未完成；RB-05 保留原 operation");
+            }
             if let Err(error) = crate::automation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "自动化持久触发对账未完成；原 checkpoint 保留");
@@ -236,6 +241,8 @@ async fn pass(
                 or (ae.gate_state='EVALUATING' and ae.dispatch_state='NOT_DISPATCHED'
                     and not exists(select 1 from projection.agent_memory_write mw
                                    where mw.action_execution_id=ae.id)))
+           -- DD-125(2)：已准入的审核动作由 moderation::reconcile 收敛，不走通用派发器
+           and not (ae.action_key like 'moderation.%' and ae.gate_state = 'ALLOWED')
            and not (ae.action_key = $3 and ae.gate_state = 'ALLOWED'
                     and ae.dispatch_state = 'UNKNOWN')
            and ((ae.gate_state = 'EVALUATING'

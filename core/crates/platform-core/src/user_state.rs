@@ -954,6 +954,7 @@ pub(crate) fn user_state_unavailable() -> Response {
             class: contracts::ErrorClass::Precondition,
             reason: contracts::ReasonCode::DependencyUnavailable,
             operation_id: None,
+            restriction: None,
         }),
     )
         .into_response()
