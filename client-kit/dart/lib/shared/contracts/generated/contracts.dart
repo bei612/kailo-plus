@@ -47,6 +47,8 @@
 //     final adapterSourceResource = adapterSourceResourceFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
+//     final agentActiveTurnPage = agentActiveTurnPageFromJson(jsonString);
+//     final agentActiveTurnView = agentActiveTurnViewFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
 //     final agentDefinitionView = agentDefinitionViewFromJson(jsonString);
 //     final agentDelegationPage = agentDelegationPageFromJson(jsonString);
@@ -68,6 +70,9 @@
 //     final agentMentionOutcomeQueryRequest = agentMentionOutcomeQueryRequestFromJson(jsonString);
 //     final agentSessionPage = agentSessionPageFromJson(jsonString);
 //     final agentSessionView = agentSessionViewFromJson(jsonString);
+//     final agentTranscriptEvent = agentTranscriptEventFromJson(jsonString);
+//     final agentTranscriptItem = agentTranscriptItemFromJson(jsonString);
+//     final agentTranscriptPage = agentTranscriptPageFromJson(jsonString);
 //     final agentVersionConfigurationPage = agentVersionConfigurationPageFromJson(jsonString);
 //     final agentVersionPage = agentVersionPageFromJson(jsonString);
 //     final agentVersionRouteOption = agentVersionRouteOptionFromJson(jsonString);
@@ -594,6 +599,18 @@ ActionSubmission actionSubmissionFromJson(String str) =>
 String actionSubmissionToJson(ActionSubmission data) =>
     json.encode(data.toJson());
 
+AgentActiveTurnPage agentActiveTurnPageFromJson(String str) =>
+    AgentActiveTurnPage.fromJson(json.decode(str));
+
+String agentActiveTurnPageToJson(AgentActiveTurnPage data) =>
+    json.encode(data.toJson());
+
+AgentActiveTurnView agentActiveTurnViewFromJson(String str) =>
+    AgentActiveTurnView.fromJson(json.decode(str));
+
+String agentActiveTurnViewToJson(AgentActiveTurnView data) =>
+    json.encode(data.toJson());
+
 AgentDefinitionPage agentDefinitionPageFromJson(String str) =>
     AgentDefinitionPage.fromJson(json.decode(str));
 
@@ -724,6 +741,24 @@ AgentSessionView agentSessionViewFromJson(String str) =>
     AgentSessionView.fromJson(json.decode(str));
 
 String agentSessionViewToJson(AgentSessionView data) =>
+    json.encode(data.toJson());
+
+AgentTranscriptEvent agentTranscriptEventFromJson(String str) =>
+    AgentTranscriptEvent.fromJson(json.decode(str));
+
+String agentTranscriptEventToJson(AgentTranscriptEvent data) =>
+    json.encode(data.toJson());
+
+AgentTranscriptItem agentTranscriptItemFromJson(String str) =>
+    AgentTranscriptItem.fromJson(json.decode(str));
+
+String agentTranscriptItemToJson(AgentTranscriptItem data) =>
+    json.encode(data.toJson());
+
+AgentTranscriptPage agentTranscriptPageFromJson(String str) =>
+    AgentTranscriptPage.fromJson(json.decode(str));
+
+String agentTranscriptPageToJson(AgentTranscriptPage data) =>
     json.encode(data.toJson());
 
 AgentVersionConfigurationPage agentVersionConfigurationPageFromJson(
@@ -4611,7 +4646,9 @@ class ActionCommand {
   ///workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
-  ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+  ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
+  ///回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
+  ///DD-84），其余规则不变
   final String? originalActionExecutionId;
 
   ///成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
@@ -4628,7 +4665,11 @@ class ActionCommand {
   final ActionCommandReceiverResource? receiverResource;
   final ResourceCreateClass? resourceCreate;
 
-  ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+  ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
+  ///agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
+  ///explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
+  ///解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
+  ///agent.installation.upgrade
   final String? resourceId;
 
   ///调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
@@ -6894,6 +6935,165 @@ class WebhookSecretClass {
   });
 }
 
+///GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
+///Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
+class AgentActiveTurnPage {
+  final List<TurnElement> turns;
+  final String workspaceId;
+
+  AgentActiveTurnPage({required this.turns, required this.workspaceId});
+
+  factory AgentActiveTurnPage.fromJson(Map<String, dynamic> json) =>
+      AgentActiveTurnPage(
+        turns: List<TurnElement>.from(
+          json["turns"].map((x) => TurnElement.fromJson(x)),
+        ),
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "turns": List<dynamic>.from(turns.map((x) => x.toJson())),
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+///Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
+class TurnElement {
+  ///Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+  final String? agentPubkey;
+
+  ///DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+  ///Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+  final String? cancelActionKey;
+  final String installationId;
+  final String invocationId;
+
+  ///该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+  final String originalActionExecutionId;
+  final int projectionGeneration;
+
+  ///AgentSession 根引用。
+  final String rootEventId;
+
+  ///原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+  final String? startedAt;
+
+  ///AgentSession 的原生 thread ID。
+  final String? threadId;
+
+  ///已记录的原生 turn ID；派发结果尚未记录时省略。
+  final String? turnId;
+
+  TurnElement({
+    this.agentPubkey,
+    this.cancelActionKey,
+    required this.installationId,
+    required this.invocationId,
+    required this.originalActionExecutionId,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    this.startedAt,
+    this.threadId,
+    this.turnId,
+  });
+
+  factory TurnElement.fromJson(Map<String, dynamic> json) => TurnElement(
+    agentPubkey: json["agentPubkey"],
+    cancelActionKey: json["cancelActionKey"],
+    installationId: json["installationId"],
+    invocationId: json["invocationId"],
+    originalActionExecutionId: json["originalActionExecutionId"],
+    projectionGeneration: json["projectionGeneration"],
+    rootEventId: json["rootEventId"],
+    startedAt: json["startedAt"],
+    threadId: json["threadId"],
+    turnId: json["turnId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentPubkey": agentPubkey,
+    "cancelActionKey": cancelActionKey,
+    "installationId": installationId,
+    "invocationId": invocationId,
+    "originalActionExecutionId": originalActionExecutionId,
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "startedAt": startedAt,
+    "threadId": threadId,
+    "turnId": turnId,
+  });
+}
+
+///DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+///Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
+class AgentActiveTurnView {
+  ///Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+  final String? agentPubkey;
+
+  ///DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+  ///Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+  final String? cancelActionKey;
+  final String installationId;
+  final String invocationId;
+
+  ///该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+  final String originalActionExecutionId;
+  final int projectionGeneration;
+
+  ///AgentSession 根引用。
+  final String rootEventId;
+
+  ///原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+  final String? startedAt;
+
+  ///AgentSession 的原生 thread ID。
+  final String? threadId;
+
+  ///已记录的原生 turn ID；派发结果尚未记录时省略。
+  final String? turnId;
+
+  AgentActiveTurnView({
+    this.agentPubkey,
+    this.cancelActionKey,
+    required this.installationId,
+    required this.invocationId,
+    required this.originalActionExecutionId,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    this.startedAt,
+    this.threadId,
+    this.turnId,
+  });
+
+  factory AgentActiveTurnView.fromJson(Map<String, dynamic> json) =>
+      AgentActiveTurnView(
+        agentPubkey: json["agentPubkey"],
+        cancelActionKey: json["cancelActionKey"],
+        installationId: json["installationId"],
+        invocationId: json["invocationId"],
+        originalActionExecutionId: json["originalActionExecutionId"],
+        projectionGeneration: json["projectionGeneration"],
+        rootEventId: json["rootEventId"],
+        startedAt: json["startedAt"],
+        threadId: json["threadId"],
+        turnId: json["turnId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentPubkey": agentPubkey,
+    "cancelActionKey": cancelActionKey,
+    "installationId": installationId,
+    "invocationId": invocationId,
+    "originalActionExecutionId": originalActionExecutionId,
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "startedAt": startedAt,
+    "threadId": threadId,
+    "turnId": turnId,
+  });
+}
+
 ///同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 class AgentDefinitionPage {
   final List<DefinitionElement> definitions;
@@ -7341,6 +7541,24 @@ class InstallationElement {
   ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
 
+  ///DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+  ///与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+  final bool? canAudit;
+
+  ///DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+  ///且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+  ///explicitConfirmation。不代表已准入，旧服务缺省不显示。
+  final bool? canDisable;
+
+  ///DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+  ///fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+  final bool? canEnable;
+
+  ///DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+  ///agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+  ///PUBLISHED 时为 true；仍沿升级审批与排空。
+  final bool? canRestart;
+
   ///当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
   final bool? canUpgrade;
   final InstallationChannelBinding? channelBinding;
@@ -7363,6 +7581,10 @@ class InstallationElement {
     this.agentPubkey,
     required this.agentResourceId,
     this.automationResultTargets,
+    this.canAudit,
+    this.canDisable,
+    this.canEnable,
+    this.canRestart,
     this.canUpgrade,
     this.channelBinding,
     this.executionPermission,
@@ -7393,6 +7615,10 @@ class InstallationElement {
                   (x) => automationResultTargetValues.map[x]!,
                 ),
               ),
+        canAudit: json["canAudit"],
+        canDisable: json["canDisable"],
+        canEnable: json["canEnable"],
+        canRestart: json["canRestart"],
         canUpgrade: json["canUpgrade"],
         channelBinding: json["channelBinding"] == null
             ? null
@@ -7432,6 +7658,10 @@ class InstallationElement {
               (x) => automationResultTargetValues.reverse[x],
             ),
           ),
+    "canAudit": canAudit,
+    "canDisable": canDisable,
+    "canEnable": canEnable,
+    "canRestart": canRestart,
     "canUpgrade": canUpgrade,
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
@@ -7747,11 +7977,16 @@ class AgentInstallationUsePage {
   final String? pendingActionExecutionId;
   final int resourceVersion;
 
+  ///DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
+  ///agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
+  final AgentRespondToMode? respondTo;
+
   AgentInstallationUsePage({
     required this.installationId,
     required this.members,
     this.pendingActionExecutionId,
     required this.resourceVersion,
+    this.respondTo,
   });
 
   factory AgentInstallationUsePage.fromJson(Map<String, dynamic> json) =>
@@ -7762,6 +7997,9 @@ class AgentInstallationUsePage {
         ),
         pendingActionExecutionId: json["pendingActionExecutionId"],
         resourceVersion: json["resourceVersion"],
+        respondTo: json["respondTo"] == null
+            ? null
+            : agentRespondToModeValues.map[json["respondTo"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -7769,6 +8007,7 @@ class AgentInstallationUsePage {
     "members": List<dynamic>.from(members.map((x) => x.toJson())),
     "pendingActionExecutionId": pendingActionExecutionId,
     "resourceVersion": resourceVersion,
+    "respondTo": agentRespondToModeValues.reverse[respondTo],
   });
 }
 
@@ -7808,6 +8047,19 @@ class Member {
   });
 }
 
+///DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
+///agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
+///
+///原 Buzz respondTo 在 Kailo 的映射（DD-125(6)、05 §2.10）：OWNER_ONLY ≙ 默认（只有 owner、Workspace
+///manage 与 Tenant manage 持有使用权），ALLOWLIST ≙ 至少一名成员经 agent.installation.use.grant 显式授予。原
+///anyone 不提供：频道成员关系不推导业务 Resource permission（10 §3）。
+enum AgentRespondToMode { ALLOWLIST, OWNER_ONLY }
+
+final agentRespondToModeValues = EnumValues({
+  "ALLOWLIST": AgentRespondToMode.ALLOWLIST,
+  "OWNER_ONLY": AgentRespondToMode.OWNER_ONLY,
+});
+
 ///03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
 ///正文、执行或管理权限。
 class AgentInstallationView {
@@ -7828,6 +8080,24 @@ class AgentInstallationView {
   ///则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
   ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
+
+  ///DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+  ///与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+  final bool? canAudit;
+
+  ///DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+  ///且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+  ///explicitConfirmation。不代表已准入，旧服务缺省不显示。
+  final bool? canDisable;
+
+  ///DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+  ///fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+  final bool? canEnable;
+
+  ///DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+  ///agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+  ///PUBLISHED 时为 true；仍沿升级审批与排空。
+  final bool? canRestart;
 
   ///当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
   final bool? canUpgrade;
@@ -7851,6 +8121,10 @@ class AgentInstallationView {
     this.agentPubkey,
     required this.agentResourceId,
     this.automationResultTargets,
+    this.canAudit,
+    this.canDisable,
+    this.canEnable,
+    this.canRestart,
     this.canUpgrade,
     this.channelBinding,
     this.executionPermission,
@@ -7882,6 +8156,10 @@ class AgentInstallationView {
               (x) => automationResultTargetValues.map[x]!,
             ),
           ),
+    canAudit: json["canAudit"],
+    canDisable: json["canDisable"],
+    canEnable: json["canEnable"],
+    canRestart: json["canRestart"],
     canUpgrade: json["canUpgrade"],
     channelBinding: json["channelBinding"] == null
         ? null
@@ -7921,6 +8199,10 @@ class AgentInstallationView {
               (x) => automationResultTargetValues.reverse[x],
             ),
           ),
+    "canAudit": canAudit,
+    "canDisable": canDisable,
+    "canEnable": canEnable,
+    "canRestart": canRestart,
     "canUpgrade": canUpgrade,
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
@@ -8573,6 +8855,582 @@ class AgentSessionView {
     "runtimeThreadId": runtimeThreadId,
     "status": sessionStatusValues.reverse[status],
     "workspaceId": workspaceId,
+  });
+}
+
+///GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
+///Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
+///解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
+///审计。帧不落库，断线后以分页读取补齐。
+class AgentTranscriptEvent {
+  ///原生通知时间（item 的 startedAtMs/completedAtMs 或 turn 通知的 emittedAtMs），Unix 毫秒。
+  final int? atMs;
+  final String installationId;
+
+  ///ITEM_STARTED / ITEM_COMPLETED 时给出。
+  final ItemElement? item;
+  final AgentTranscriptEventPhase phase;
+  final int projectionGeneration;
+  final String rootEventId;
+  final String threadId;
+  final String turnId;
+
+  AgentTranscriptEvent({
+    this.atMs,
+    required this.installationId,
+    this.item,
+    required this.phase,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    required this.threadId,
+    required this.turnId,
+  });
+
+  factory AgentTranscriptEvent.fromJson(Map<String, dynamic> json) =>
+      AgentTranscriptEvent(
+        atMs: json["atMs"],
+        installationId: json["installationId"],
+        item: json["item"] == null ? null : ItemElement.fromJson(json["item"]),
+        phase: agentTranscriptEventPhaseValues.map[json["phase"]]!,
+        projectionGeneration: json["projectionGeneration"],
+        rootEventId: json["rootEventId"],
+        threadId: json["threadId"],
+        turnId: json["turnId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "atMs": atMs,
+    "installationId": installationId,
+    "item": item?.toJson(),
+    "phase": agentTranscriptEventPhaseValues.reverse[phase],
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "threadId": threadId,
+    "turnId": turnId,
+  });
+}
+
+///ITEM_STARTED / ITEM_COMPLETED 时给出。
+///
+///DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
+///audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
+///item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
+///解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
+class ItemElement {
+  ///COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
+  final String? aggregatedOutput;
+
+  ///工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
+  final String? argumentsJson;
+
+  ///COMMAND_EXECUTION 的命令。
+  final String? command;
+
+  ///item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+  final int? completedAtMs;
+
+  ///COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
+  final String? cwd;
+
+  ///COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
+  final int? durationMs;
+
+  ///MCP_TOOL_CALL 的原生 error.message。
+  final String? errorText;
+  final int? exitCode;
+
+  ///FILE_CHANGE 的逐文件变更。
+  final List<ItemFileChange>? fileChanges;
+
+  ///原生 ThreadItem.id。
+  final String itemId;
+  final AgentTranscriptItemKind kind;
+
+  ///原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
+  final String nativeType;
+  final AgentTranscriptMessagePhase? phase;
+
+  ///WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
+  final String? query;
+
+  ///REASONING 的原文段（原生提供时）。
+  final List<String>? reasoningContent;
+
+  ///REASONING 的 summary 段。
+  final List<String>? reasoningSummary;
+
+  ///工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
+  final String? resultText;
+
+  ///MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
+  final String? server;
+
+  ///item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+  final int? startedAtMs;
+  final AgentTranscriptItemStatus? status;
+
+  ///USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
+  final String? text;
+
+  ///MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
+  final String? tool;
+
+  ///所属原生 turn ID。
+  final String turnId;
+
+  ItemElement({
+    this.aggregatedOutput,
+    this.argumentsJson,
+    this.command,
+    this.completedAtMs,
+    this.cwd,
+    this.durationMs,
+    this.errorText,
+    this.exitCode,
+    this.fileChanges,
+    required this.itemId,
+    required this.kind,
+    required this.nativeType,
+    this.phase,
+    this.query,
+    this.reasoningContent,
+    this.reasoningSummary,
+    this.resultText,
+    this.server,
+    this.startedAtMs,
+    this.status,
+    this.text,
+    this.tool,
+    required this.turnId,
+  });
+
+  factory ItemElement.fromJson(Map<String, dynamic> json) => ItemElement(
+    aggregatedOutput: json["aggregatedOutput"],
+    argumentsJson: json["argumentsJson"],
+    command: json["command"],
+    completedAtMs: json["completedAtMs"],
+    cwd: json["cwd"],
+    durationMs: json["durationMs"],
+    errorText: json["errorText"],
+    exitCode: json["exitCode"],
+    fileChanges: json["fileChanges"] == null
+        ? null
+        : List<ItemFileChange>.from(
+            json["fileChanges"]!.map((x) => ItemFileChange.fromJson(x)),
+          ),
+    itemId: json["itemId"],
+    kind: agentTranscriptItemKindValues.map[json["kind"]]!,
+    nativeType: json["nativeType"],
+    phase: json["phase"] == null
+        ? null
+        : agentTranscriptMessagePhaseValues.map[json["phase"]]!,
+    query: json["query"],
+    reasoningContent: json["reasoningContent"] == null
+        ? null
+        : List<String>.from(json["reasoningContent"]!.map((x) => x)),
+    reasoningSummary: json["reasoningSummary"] == null
+        ? null
+        : List<String>.from(json["reasoningSummary"]!.map((x) => x)),
+    resultText: json["resultText"],
+    server: json["server"],
+    startedAtMs: json["startedAtMs"],
+    status: json["status"] == null
+        ? null
+        : agentTranscriptItemStatusValues.map[json["status"]]!,
+    text: json["text"],
+    tool: json["tool"],
+    turnId: json["turnId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "aggregatedOutput": aggregatedOutput,
+    "argumentsJson": argumentsJson,
+    "command": command,
+    "completedAtMs": completedAtMs,
+    "cwd": cwd,
+    "durationMs": durationMs,
+    "errorText": errorText,
+    "exitCode": exitCode,
+    "fileChanges": fileChanges == null
+        ? null
+        : List<dynamic>.from(fileChanges!.map((x) => x.toJson())),
+    "itemId": itemId,
+    "kind": agentTranscriptItemKindValues.reverse[kind],
+    "nativeType": nativeType,
+    "phase": agentTranscriptMessagePhaseValues.reverse[phase],
+    "query": query,
+    "reasoningContent": reasoningContent == null
+        ? null
+        : List<dynamic>.from(reasoningContent!.map((x) => x)),
+    "reasoningSummary": reasoningSummary == null
+        ? null
+        : List<dynamic>.from(reasoningSummary!.map((x) => x)),
+    "resultText": resultText,
+    "server": server,
+    "startedAtMs": startedAtMs,
+    "status": agentTranscriptItemStatusValues.reverse[status],
+    "text": text,
+    "tool": tool,
+    "turnId": turnId,
+  });
+}
+
+class ItemFileChange {
+  final AgentTranscriptFileChangeKind changeKind;
+
+  ///原生 unified diff 文本。
+  final String diff;
+
+  ///UPDATE 改名时的目标路径。
+  final String? movePath;
+  final String path;
+
+  ItemFileChange({
+    required this.changeKind,
+    required this.diff,
+    this.movePath,
+    required this.path,
+  });
+
+  factory ItemFileChange.fromJson(Map<String, dynamic> json) => ItemFileChange(
+    changeKind: agentTranscriptFileChangeKindValues.map[json["changeKind"]]!,
+    diff: json["diff"],
+    movePath: json["movePath"],
+    path: json["path"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "changeKind": agentTranscriptFileChangeKindValues.reverse[changeKind],
+    "diff": diff,
+    "movePath": movePath,
+    "path": path,
+  });
+}
+
+///Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。
+enum AgentTranscriptFileChangeKind { ADD, DELETE, UPDATE }
+
+final agentTranscriptFileChangeKindValues = EnumValues({
+  "ADD": AgentTranscriptFileChangeKind.ADD,
+  "DELETE": AgentTranscriptFileChangeKind.DELETE,
+  "UPDATE": AgentTranscriptFileChangeKind.UPDATE,
+});
+
+///DD-125(6)、SF-COD-17：Codex app-server 持久 ThreadItem 的类型标签在转写线格式中的封闭投影。BFF 只把固定 Codex 的
+///userMessage/agentMessage/plan/reasoning/commandExecution/fileChange/mcpToolCall/dynamicToolCall/webSearch/imageView/contextCompaction
+///映射为对应值，其余原生类型一律 OTHER 并保留 nativeType；客户端按原 Buzz 转写条目（TranscriptItem）呈现。
+enum AgentTranscriptItemKind {
+  AGENT_MESSAGE,
+  COMMAND_EXECUTION,
+  CONTEXT_COMPACTION,
+  DYNAMIC_TOOL_CALL,
+  FILE_CHANGE,
+  IMAGE_VIEW,
+  MCP_TOOL_CALL,
+  OTHER,
+  PLAN,
+  REASONING,
+  USER_MESSAGE,
+  WEB_SEARCH,
+}
+
+final agentTranscriptItemKindValues = EnumValues({
+  "AGENT_MESSAGE": AgentTranscriptItemKind.AGENT_MESSAGE,
+  "COMMAND_EXECUTION": AgentTranscriptItemKind.COMMAND_EXECUTION,
+  "CONTEXT_COMPACTION": AgentTranscriptItemKind.CONTEXT_COMPACTION,
+  "DYNAMIC_TOOL_CALL": AgentTranscriptItemKind.DYNAMIC_TOOL_CALL,
+  "FILE_CHANGE": AgentTranscriptItemKind.FILE_CHANGE,
+  "IMAGE_VIEW": AgentTranscriptItemKind.IMAGE_VIEW,
+  "MCP_TOOL_CALL": AgentTranscriptItemKind.MCP_TOOL_CALL,
+  "OTHER": AgentTranscriptItemKind.OTHER,
+  "PLAN": AgentTranscriptItemKind.PLAN,
+  "REASONING": AgentTranscriptItemKind.REASONING,
+  "USER_MESSAGE": AgentTranscriptItemKind.USER_MESSAGE,
+  "WEB_SEARCH": AgentTranscriptItemKind.WEB_SEARCH,
+});
+
+///Codex agentMessage 的 phase（commentary / final_answer）；原生缺省 phase 的旧消息省略本字段。
+enum AgentTranscriptMessagePhase { COMMENTARY, FINAL_ANSWER }
+
+final agentTranscriptMessagePhaseValues = EnumValues({
+  "COMMENTARY": AgentTranscriptMessagePhase.COMMENTARY,
+  "FINAL_ANSWER": AgentTranscriptMessagePhase.FINAL_ANSWER,
+});
+
+///Codex commandExecution/fileChange/mcpToolCall/dynamicToolCall
+///的原生状态（inProgress/completed/failed/declined）在转写中的封闭投影；无状态的条目省略。
+enum AgentTranscriptItemStatus { COMPLETED, DECLINED, FAILED, IN_PROGRESS }
+
+final agentTranscriptItemStatusValues = EnumValues({
+  "COMPLETED": AgentTranscriptItemStatus.COMPLETED,
+  "DECLINED": AgentTranscriptItemStatus.DECLINED,
+  "FAILED": AgentTranscriptItemStatus.FAILED,
+  "IN_PROGRESS": AgentTranscriptItemStatus.IN_PROGRESS,
+});
+
+///实时转写帧的来源通知：item/started、item/completed、turn/started、turn/completed（SF-COD-17）。只转发 Core
+///已从同一 Installation 原生进程读到的通知，不合成。
+enum AgentTranscriptEventPhase {
+  ITEM_COMPLETED,
+  ITEM_STARTED,
+  TURN_COMPLETED,
+  TURN_STARTED,
+}
+
+final agentTranscriptEventPhaseValues = EnumValues({
+  "ITEM_COMPLETED": AgentTranscriptEventPhase.ITEM_COMPLETED,
+  "ITEM_STARTED": AgentTranscriptEventPhase.ITEM_STARTED,
+  "TURN_COMPLETED": AgentTranscriptEventPhase.TURN_COMPLETED,
+  "TURN_STARTED": AgentTranscriptEventPhase.TURN_STARTED,
+});
+
+///DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
+///audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
+///item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
+///解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
+class AgentTranscriptItem {
+  ///COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
+  final String? aggregatedOutput;
+
+  ///工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
+  final String? argumentsJson;
+
+  ///COMMAND_EXECUTION 的命令。
+  final String? command;
+
+  ///item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+  final int? completedAtMs;
+
+  ///COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
+  final String? cwd;
+
+  ///COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
+  final int? durationMs;
+
+  ///MCP_TOOL_CALL 的原生 error.message。
+  final String? errorText;
+  final int? exitCode;
+
+  ///FILE_CHANGE 的逐文件变更。
+  final List<AgentTranscriptItemFileChange>? fileChanges;
+
+  ///原生 ThreadItem.id。
+  final String itemId;
+  final AgentTranscriptItemKind kind;
+
+  ///原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
+  final String nativeType;
+  final AgentTranscriptMessagePhase? phase;
+
+  ///WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
+  final String? query;
+
+  ///REASONING 的原文段（原生提供时）。
+  final List<String>? reasoningContent;
+
+  ///REASONING 的 summary 段。
+  final List<String>? reasoningSummary;
+
+  ///工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
+  final String? resultText;
+
+  ///MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
+  final String? server;
+
+  ///item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+  final int? startedAtMs;
+  final AgentTranscriptItemStatus? status;
+
+  ///USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
+  final String? text;
+
+  ///MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
+  final String? tool;
+
+  ///所属原生 turn ID。
+  final String turnId;
+
+  AgentTranscriptItem({
+    this.aggregatedOutput,
+    this.argumentsJson,
+    this.command,
+    this.completedAtMs,
+    this.cwd,
+    this.durationMs,
+    this.errorText,
+    this.exitCode,
+    this.fileChanges,
+    required this.itemId,
+    required this.kind,
+    required this.nativeType,
+    this.phase,
+    this.query,
+    this.reasoningContent,
+    this.reasoningSummary,
+    this.resultText,
+    this.server,
+    this.startedAtMs,
+    this.status,
+    this.text,
+    this.tool,
+    required this.turnId,
+  });
+
+  factory AgentTranscriptItem.fromJson(Map<String, dynamic> json) =>
+      AgentTranscriptItem(
+        aggregatedOutput: json["aggregatedOutput"],
+        argumentsJson: json["argumentsJson"],
+        command: json["command"],
+        completedAtMs: json["completedAtMs"],
+        cwd: json["cwd"],
+        durationMs: json["durationMs"],
+        errorText: json["errorText"],
+        exitCode: json["exitCode"],
+        fileChanges: json["fileChanges"] == null
+            ? null
+            : List<AgentTranscriptItemFileChange>.from(
+                json["fileChanges"]!.map(
+                  (x) => AgentTranscriptItemFileChange.fromJson(x),
+                ),
+              ),
+        itemId: json["itemId"],
+        kind: agentTranscriptItemKindValues.map[json["kind"]]!,
+        nativeType: json["nativeType"],
+        phase: json["phase"] == null
+            ? null
+            : agentTranscriptMessagePhaseValues.map[json["phase"]]!,
+        query: json["query"],
+        reasoningContent: json["reasoningContent"] == null
+            ? null
+            : List<String>.from(json["reasoningContent"]!.map((x) => x)),
+        reasoningSummary: json["reasoningSummary"] == null
+            ? null
+            : List<String>.from(json["reasoningSummary"]!.map((x) => x)),
+        resultText: json["resultText"],
+        server: json["server"],
+        startedAtMs: json["startedAtMs"],
+        status: json["status"] == null
+            ? null
+            : agentTranscriptItemStatusValues.map[json["status"]]!,
+        text: json["text"],
+        tool: json["tool"],
+        turnId: json["turnId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "aggregatedOutput": aggregatedOutput,
+    "argumentsJson": argumentsJson,
+    "command": command,
+    "completedAtMs": completedAtMs,
+    "cwd": cwd,
+    "durationMs": durationMs,
+    "errorText": errorText,
+    "exitCode": exitCode,
+    "fileChanges": fileChanges == null
+        ? null
+        : List<dynamic>.from(fileChanges!.map((x) => x.toJson())),
+    "itemId": itemId,
+    "kind": agentTranscriptItemKindValues.reverse[kind],
+    "nativeType": nativeType,
+    "phase": agentTranscriptMessagePhaseValues.reverse[phase],
+    "query": query,
+    "reasoningContent": reasoningContent == null
+        ? null
+        : List<dynamic>.from(reasoningContent!.map((x) => x)),
+    "reasoningSummary": reasoningSummary == null
+        ? null
+        : List<dynamic>.from(reasoningSummary!.map((x) => x)),
+    "resultText": resultText,
+    "server": server,
+    "startedAtMs": startedAtMs,
+    "status": agentTranscriptItemStatusValues.reverse[status],
+    "text": text,
+    "tool": tool,
+    "turnId": turnId,
+  });
+}
+
+class AgentTranscriptItemFileChange {
+  final AgentTranscriptFileChangeKind changeKind;
+
+  ///原生 unified diff 文本。
+  final String diff;
+
+  ///UPDATE 改名时的目标路径。
+  final String? movePath;
+  final String path;
+
+  AgentTranscriptItemFileChange({
+    required this.changeKind,
+    required this.diff,
+    this.movePath,
+    required this.path,
+  });
+
+  factory AgentTranscriptItemFileChange.fromJson(Map<String, dynamic> json) =>
+      AgentTranscriptItemFileChange(
+        changeKind:
+            agentTranscriptFileChangeKindValues.map[json["changeKind"]]!,
+        diff: json["diff"],
+        movePath: json["movePath"],
+        path: json["path"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "changeKind": agentTranscriptFileChangeKindValues.reverse[changeKind],
+    "diff": diff,
+    "movePath": movePath,
+    "path": path,
+  });
+}
+
+///GET
+////api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按
+///AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core
+///不复制正文。nextCursor 绑定读者、Installation 与 Session，原生 cursor 不外露。activeTurn 只在该 Session
+///有运行中回合时给出。Session 尚无原生 thread 时 items 为空且省略 threadId。
+class AgentTranscriptPage {
+  final TurnElement? activeTurn;
+  final String installationId;
+  final List<ItemElement> items;
+  final String? nextCursor;
+  final int projectionGeneration;
+  final String rootEventId;
+  final String? threadId;
+
+  AgentTranscriptPage({
+    this.activeTurn,
+    required this.installationId,
+    required this.items,
+    this.nextCursor,
+    required this.projectionGeneration,
+    required this.rootEventId,
+    this.threadId,
+  });
+
+  factory AgentTranscriptPage.fromJson(Map<String, dynamic> json) =>
+      AgentTranscriptPage(
+        activeTurn: json["activeTurn"] == null
+            ? null
+            : TurnElement.fromJson(json["activeTurn"]),
+        installationId: json["installationId"],
+        items: List<ItemElement>.from(
+          json["items"].map((x) => ItemElement.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+        projectionGeneration: json["projectionGeneration"],
+        rootEventId: json["rootEventId"],
+        threadId: json["threadId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "activeTurn": activeTurn?.toJson(),
+    "installationId": installationId,
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+    "projectionGeneration": projectionGeneration,
+    "rootEventId": rootEventId,
+    "threadId": threadId,
   });
 }
 
@@ -12579,15 +13437,15 @@ class ConversationOpenRequest {
 }
 
 class ConversationPage {
-  final List<ItemElement> items;
+  final List<ItemClass> items;
   final String? nextCursor;
 
   ConversationPage({required this.items, this.nextCursor});
 
   factory ConversationPage.fromJson(Map<String, dynamic> json) =>
       ConversationPage(
-        items: List<ItemElement>.from(
-          json["items"].map((x) => ItemElement.fromJson(x)),
+        items: List<ItemClass>.from(
+          json["items"].map((x) => ItemClass.fromJson(x)),
         ),
         nextCursor: json["nextCursor"],
       );
@@ -12599,7 +13457,7 @@ class ConversationPage {
 }
 
 ///已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
-class ItemElement {
+class ItemClass {
   final String channelId;
   final String id;
   final String operationId;
@@ -12607,7 +13465,7 @@ class ItemElement {
   final ItemState state;
   final int version;
 
-  ItemElement({
+  ItemClass({
     required this.channelId,
     required this.id,
     required this.operationId,
@@ -12616,7 +13474,7 @@ class ItemElement {
     required this.version,
   });
 
-  factory ItemElement.fromJson(Map<String, dynamic> json) => ItemElement(
+  factory ItemClass.fromJson(Map<String, dynamic> json) => ItemClass(
     channelId: json["channelId"],
     id: json["id"],
     operationId: json["operationId"],
@@ -12675,7 +13533,7 @@ class ConversationParticipant {
 }
 
 class ConversationParticipantPage {
-  final List<ItemClass> items;
+  final List<ConversationParticipantPageItem> items;
   final int maxParticipants;
   final String? nextCursor;
 
@@ -12687,8 +13545,8 @@ class ConversationParticipantPage {
 
   factory ConversationParticipantPage.fromJson(Map<String, dynamic> json) =>
       ConversationParticipantPage(
-        items: List<ItemClass>.from(
-          json["items"].map((x) => ItemClass.fromJson(x)),
+        items: List<ConversationParticipantPageItem>.from(
+          json["items"].map((x) => ConversationParticipantPageItem.fromJson(x)),
         ),
         maxParticipants: json["maxParticipants"],
         nextCursor: json["nextCursor"],
@@ -12702,22 +13560,23 @@ class ConversationParticipantPage {
 }
 
 ///同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
-class ItemClass {
+class ConversationParticipantPageItem {
   final String displayName;
   final String principalId;
   final List<String> pubkeys;
 
-  ItemClass({
+  ConversationParticipantPageItem({
     required this.displayName,
     required this.principalId,
     required this.pubkeys,
   });
 
-  factory ItemClass.fromJson(Map<String, dynamic> json) => ItemClass(
-    displayName: json["displayName"],
-    principalId: json["principalId"],
-    pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
-  );
+  factory ConversationParticipantPageItem.fromJson(Map<String, dynamic> json) =>
+      ConversationParticipantPageItem(
+        displayName: json["displayName"],
+        principalId: json["principalId"],
+        pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+      );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "displayName": displayName,
@@ -13876,7 +14735,9 @@ class CommandClass {
   ///workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
-  ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+  ///任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
+  ///回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
+  ///DD-84），其余规则不变
   final String? originalActionExecutionId;
 
   ///成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
@@ -13893,7 +14754,11 @@ class CommandClass {
   final CommandReceiverResource? receiverResource;
   final ResourceCreateClass? resourceCreate;
 
-  ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+  ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
+  ///agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
+  ///explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
+  ///解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
+  ///agent.installation.upgrade
   final String? resourceId;
 
   ///调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT

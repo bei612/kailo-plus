@@ -1077,7 +1077,9 @@ export interface ActionCommand {
      */
     name?: string;
     /**
-     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
+     * 回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
+     * DD-84），其余规则不变
      */
     originalActionExecutionId?: string;
     /**
@@ -1098,7 +1100,11 @@ export interface ActionCommand {
     receiverResource?: ActionCommandReceiverResource;
     resourceCreate?:   ResourceCreateClass;
     /**
-     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
+     * agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
+     * explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
+     * 解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
+     * agent.installation.upgrade
      */
     resourceId?: string;
     /**
@@ -2055,6 +2061,93 @@ export interface WebhookSecretClass {
 }
 
 /**
+ * GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
+ * Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
+ */
+export interface AgentActiveTurnPage {
+    turns:       ActiveTurnElement[];
+    workspaceId: string;
+}
+
+/**
+ * DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+ * Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
+ */
+export interface ActiveTurnElement {
+    /**
+     * Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+     */
+    agentPubkey?: string;
+    /**
+     * DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+     * Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+     */
+    cancelActionKey?: string;
+    installationId:   string;
+    invocationId:     string;
+    /**
+     * 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+     */
+    originalActionExecutionId: string;
+    projectionGeneration:      number;
+    /**
+     * AgentSession 根引用。
+     */
+    rootEventId: string;
+    /**
+     * 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+     */
+    startedAt?: string;
+    /**
+     * AgentSession 的原生 thread ID。
+     */
+    threadId?: string;
+    /**
+     * 已记录的原生 turn ID；派发结果尚未记录时省略。
+     */
+    turnId?: string;
+}
+
+/**
+ * DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+ * Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
+ */
+export interface AgentActiveTurnView {
+    /**
+     * Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+     */
+    agentPubkey?: string;
+    /**
+     * DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+     * Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+     */
+    cancelActionKey?: string;
+    installationId:   string;
+    invocationId:     string;
+    /**
+     * 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+     */
+    originalActionExecutionId: string;
+    projectionGeneration:      number;
+    /**
+     * AgentSession 根引用。
+     */
+    rootEventId: string;
+    /**
+     * 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+     */
+    startedAt?: string;
+    /**
+     * AgentSession 的原生 thread ID。
+     */
+    threadId?: string;
+    /**
+     * 已记录的原生 turn ID；派发结果尚未记录时省略。
+     */
+    turnId?: string;
+}
+
+/**
  * 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
  */
 export interface AgentDefinitionPage {
@@ -2223,6 +2316,28 @@ export interface InstallationElement {
      */
     automationResultTargets?: AutomationResultTarget[];
     /**
+     * DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+     * 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+     */
+    canAudit?: boolean;
+    /**
+     * DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+     * 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+     * explicitConfirmation。不代表已准入，旧服务缺省不显示。
+     */
+    canDisable?: boolean;
+    /**
+     * DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+     * fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+     */
+    canEnable?: boolean;
+    /**
+     * DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+     * agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+     * PUBLISHED 时为 true；仍沿升级审批与排空。
+     */
+    canRestart?: boolean;
+    /**
      * 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
      */
     canUpgrade?:          boolean;
@@ -2363,6 +2478,11 @@ export interface AgentInstallationUsePage {
     members:                   Member[];
     pendingActionExecutionId?: string;
     resourceVersion:           number;
+    /**
+     * DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
+     * agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
+     */
+    respondTo?: AgentRespondToMode;
 }
 
 export interface Member {
@@ -2372,6 +2492,19 @@ export interface Member {
     effective:   boolean;
     principalId: string;
     requested:   boolean;
+}
+
+/**
+ * DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
+ * agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
+ *
+ * 原 Buzz respondTo 在 Kailo 的映射（DD-125(6)、05 §2.10）：OWNER_ONLY ≙ 默认（只有 owner、Workspace
+ * manage 与 Tenant manage 持有使用权），ALLOWLIST ≙ 至少一名成员经 agent.installation.use.grant 显式授予。原
+ * anyone 不提供：频道成员关系不推导业务 Resource permission（10 §3）。
+ */
+export enum AgentRespondToMode {
+    Allowlist = "ALLOWLIST",
+    OwnerOnly = "OWNER_ONLY",
 }
 
 /**
@@ -2399,6 +2532,28 @@ export interface AgentInstallationView {
      * 准入。缺失或空集合不支持 Schedule。
      */
     automationResultTargets?: AutomationResultTarget[];
+    /**
+     * DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+     * 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+     */
+    canAudit?: boolean;
+    /**
+     * DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+     * 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+     * explicitConfirmation。不代表已准入，旧服务缺省不显示。
+     */
+    canDisable?: boolean;
+    /**
+     * DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+     * fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+     */
+    canEnable?: boolean;
+    /**
+     * DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+     * agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+     * PUBLISHED 时为 true；仍沿升级审批与排空。
+     */
+    canRestart?: boolean;
     /**
      * 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
      */
@@ -2657,6 +2812,311 @@ export interface AgentSessionView {
     runtimeThreadId?: string;
     status:           SessionStatus;
     workspaceId:      string;
+}
+
+/**
+ * GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
+ * Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
+ * 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
+ * 审计。帧不落库，断线后以分页读取补齐。
+ */
+export interface AgentTranscriptEvent {
+    /**
+     * 原生通知时间（item 的 startedAtMs/completedAtMs 或 turn 通知的 emittedAtMs），Unix 毫秒。
+     */
+    atMs?:          number;
+    installationId: string;
+    /**
+     * ITEM_STARTED / ITEM_COMPLETED 时给出。
+     */
+    item?:                ItemElement;
+    phase:                AgentTranscriptEventPhase;
+    projectionGeneration: number;
+    rootEventId:          string;
+    threadId:             string;
+    turnId:               string;
+}
+
+/**
+ * ITEM_STARTED / ITEM_COMPLETED 时给出。
+ *
+ * DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
+ * audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
+ * item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
+ * 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
+ */
+export interface ItemElement {
+    /**
+     * COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
+     */
+    aggregatedOutput?: string;
+    /**
+     * 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
+     */
+    argumentsJson?: string;
+    /**
+     * COMMAND_EXECUTION 的命令。
+     */
+    command?: string;
+    /**
+     * item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+     */
+    completedAtMs?: number;
+    /**
+     * COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
+     */
+    cwd?: string;
+    /**
+     * COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
+     */
+    durationMs?: number;
+    /**
+     * MCP_TOOL_CALL 的原生 error.message。
+     */
+    errorText?: string;
+    exitCode?:  number;
+    /**
+     * FILE_CHANGE 的逐文件变更。
+     */
+    fileChanges?: ItemFileChange[];
+    /**
+     * 原生 ThreadItem.id。
+     */
+    itemId: string;
+    kind:   AgentTranscriptItemKind;
+    /**
+     * 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
+     */
+    nativeType: string;
+    phase?:     AgentTranscriptMessagePhase;
+    /**
+     * WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
+     */
+    query?: string;
+    /**
+     * REASONING 的原文段（原生提供时）。
+     */
+    reasoningContent?: string[];
+    /**
+     * REASONING 的 summary 段。
+     */
+    reasoningSummary?: string[];
+    /**
+     * 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
+     */
+    resultText?: string;
+    /**
+     * MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
+     */
+    server?: string;
+    /**
+     * item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+     */
+    startedAtMs?: number;
+    status?:      AgentTranscriptItemStatus;
+    /**
+     * USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
+     */
+    text?: string;
+    /**
+     * MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
+     */
+    tool?: string;
+    /**
+     * 所属原生 turn ID。
+     */
+    turnId: string;
+}
+
+export interface ItemFileChange {
+    changeKind: AgentTranscriptFileChangeKind;
+    /**
+     * 原生 unified diff 文本。
+     */
+    diff: string;
+    /**
+     * UPDATE 改名时的目标路径。
+     */
+    movePath?: string;
+    path:      string;
+}
+
+/**
+ * Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。
+ */
+export enum AgentTranscriptFileChangeKind {
+    Add = "ADD",
+    Delete = "DELETE",
+    Update = "UPDATE",
+}
+
+/**
+ * DD-125(6)、SF-COD-17：Codex app-server 持久 ThreadItem 的类型标签在转写线格式中的封闭投影。BFF 只把固定 Codex 的
+ * userMessage/agentMessage/plan/reasoning/commandExecution/fileChange/mcpToolCall/dynamicToolCall/webSearch/imageView/contextCompaction
+ * 映射为对应值，其余原生类型一律 OTHER 并保留 nativeType；客户端按原 Buzz 转写条目（TranscriptItem）呈现。
+ */
+export enum AgentTranscriptItemKind {
+    AgentMessage = "AGENT_MESSAGE",
+    CommandExecution = "COMMAND_EXECUTION",
+    ContextCompaction = "CONTEXT_COMPACTION",
+    DynamicToolCall = "DYNAMIC_TOOL_CALL",
+    FileChange = "FILE_CHANGE",
+    ImageView = "IMAGE_VIEW",
+    MCPToolCall = "MCP_TOOL_CALL",
+    Other = "OTHER",
+    Plan = "PLAN",
+    Reasoning = "REASONING",
+    UserMessage = "USER_MESSAGE",
+    WebSearch = "WEB_SEARCH",
+}
+
+/**
+ * Codex agentMessage 的 phase（commentary / final_answer）；原生缺省 phase 的旧消息省略本字段。
+ */
+export enum AgentTranscriptMessagePhase {
+    Commentary = "COMMENTARY",
+    FinalAnswer = "FINAL_ANSWER",
+}
+
+/**
+ * Codex commandExecution/fileChange/mcpToolCall/dynamicToolCall
+ * 的原生状态（inProgress/completed/failed/declined）在转写中的封闭投影；无状态的条目省略。
+ */
+export enum AgentTranscriptItemStatus {
+    Completed = "COMPLETED",
+    Declined = "DECLINED",
+    Failed = "FAILED",
+    InProgress = "IN_PROGRESS",
+}
+
+/**
+ * 实时转写帧的来源通知：item/started、item/completed、turn/started、turn/completed（SF-COD-17）。只转发 Core
+ * 已从同一 Installation 原生进程读到的通知，不合成。
+ */
+export enum AgentTranscriptEventPhase {
+    ItemCompleted = "ITEM_COMPLETED",
+    ItemStarted = "ITEM_STARTED",
+    TurnCompleted = "TURN_COMPLETED",
+    TurnStarted = "TURN_STARTED",
+}
+
+/**
+ * DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
+ * audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
+ * item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
+ * 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
+ */
+export interface AgentTranscriptItem {
+    /**
+     * COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
+     */
+    aggregatedOutput?: string;
+    /**
+     * 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
+     */
+    argumentsJson?: string;
+    /**
+     * COMMAND_EXECUTION 的命令。
+     */
+    command?: string;
+    /**
+     * item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+     */
+    completedAtMs?: number;
+    /**
+     * COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
+     */
+    cwd?: string;
+    /**
+     * COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
+     */
+    durationMs?: number;
+    /**
+     * MCP_TOOL_CALL 的原生 error.message。
+     */
+    errorText?: string;
+    exitCode?:  number;
+    /**
+     * FILE_CHANGE 的逐文件变更。
+     */
+    fileChanges?: AgentTranscriptItemFileChange[];
+    /**
+     * 原生 ThreadItem.id。
+     */
+    itemId: string;
+    kind:   AgentTranscriptItemKind;
+    /**
+     * 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
+     */
+    nativeType: string;
+    phase?:     AgentTranscriptMessagePhase;
+    /**
+     * WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
+     */
+    query?: string;
+    /**
+     * REASONING 的原文段（原生提供时）。
+     */
+    reasoningContent?: string[];
+    /**
+     * REASONING 的 summary 段。
+     */
+    reasoningSummary?: string[];
+    /**
+     * 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
+     */
+    resultText?: string;
+    /**
+     * MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
+     */
+    server?: string;
+    /**
+     * item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+     */
+    startedAtMs?: number;
+    status?:      AgentTranscriptItemStatus;
+    /**
+     * USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
+     */
+    text?: string;
+    /**
+     * MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
+     */
+    tool?: string;
+    /**
+     * 所属原生 turn ID。
+     */
+    turnId: string;
+}
+
+export interface AgentTranscriptItemFileChange {
+    changeKind: AgentTranscriptFileChangeKind;
+    /**
+     * 原生 unified diff 文本。
+     */
+    diff: string;
+    /**
+     * UPDATE 改名时的目标路径。
+     */
+    movePath?: string;
+    path:      string;
+}
+
+/**
+ * GET
+ * /api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按
+ * AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core
+ * 不复制正文。nextCursor 绑定读者、Installation 与 Session，原生 cursor 不外露。activeTurn 只在该 Session
+ * 有运行中回合时给出。Session 尚无原生 thread 时 items 为空且省略 threadId。
+ */
+export interface AgentTranscriptPage {
+    activeTurn?:          ActiveTurnElement;
+    installationId:       string;
+    items:                ItemElement[];
+    nextCursor?:          string;
+    projectionGeneration: number;
+    rootEventId:          string;
+    threadId?:            string;
 }
 
 /**
@@ -4252,14 +4712,14 @@ export interface ConversationOpenRequest {
 }
 
 export interface ConversationPage {
-    items:       ItemElement[];
+    items:       ItemClass[];
     nextCursor?: string;
 }
 
 /**
  * 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
  */
-export interface ItemElement {
+export interface ItemClass {
     channelId:               string;
     id:                      string;
     operationId:             string;
@@ -4285,7 +4745,7 @@ export interface ConversationParticipant {
 }
 
 export interface ConversationParticipantPage {
-    items:           ItemClass[];
+    items:           ConversationParticipantPageItem[];
     maxParticipants: number;
     nextCursor?:     string;
 }
@@ -4293,7 +4753,7 @@ export interface ConversationParticipantPage {
 /**
  * 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
  */
-export interface ItemClass {
+export interface ConversationParticipantPageItem {
     displayName: string;
     principalId: string;
     pubkeys:     string[];
@@ -4896,7 +5356,9 @@ export interface CommandClass {
      */
     name?: string;
     /**
-     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
+     * 回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
+     * DD-84），其余规则不变
      */
     originalActionExecutionId?: string;
     /**
@@ -4917,7 +5379,11 @@ export interface CommandClass {
     receiverResource?: CommandReceiverResource;
     resourceCreate?:   ResourceCreateClass;
     /**
-     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
+     * agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
+     * explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
+     * 解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
+     * agent.installation.upgrade
      */
     resourceId?: string;
     /**
