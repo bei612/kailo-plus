@@ -202,6 +202,7 @@
     "./react/moderation": "./src/react/moderation/index.ts",
     "./huddle": "./src/huddle.ts",
     "./react/huddle": "./src/react/huddle/index.ts",
+    "./react/onboarding": "./src/react/onboarding/index.tsx",
     "./react/agent-transcript": "./src/react/agent-transcript/index.ts",
     "./react/use-inbox-auto-selection": "./src/react/use-inbox-auto-selection.ts",
     "./react/use-inbox-selection-anchor": "./src/react/use-inbox-selection-anchor.ts",

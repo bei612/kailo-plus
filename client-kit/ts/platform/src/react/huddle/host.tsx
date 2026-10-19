@@ -117,13 +117,23 @@ export function useHasHuddleHost(): boolean {
 
 /** The channel whose timeline is on screen, for its 48100 cards. */
 const HuddleParentContext = React.createContext<HuddleParent | null>(null);
+/** The original buildHuddleChannelName for that parent, when the host knows it (wave card start). */
+const HuddleParentChannelNameContext = React.createContext<string | null>(null);
 
-export function HuddleParentProvider({ parent, children }: { parent: HuddleParent | null; children: React.ReactNode }) {
-  return <HuddleParentContext.Provider value={parent}>{children}</HuddleParentContext.Provider>;
+export function HuddleParentProvider({ parent, channelName = null, children }: {
+  parent: HuddleParent | null; channelName?: string | null; children: React.ReactNode;
+}) {
+  return <HuddleParentContext.Provider value={parent}>
+    <HuddleParentChannelNameContext.Provider value={parent ? channelName : null}>{children}</HuddleParentChannelNameContext.Provider>
+  </HuddleParentContext.Provider>;
 }
 
 export function useHuddleParent(): HuddleParent | null {
   return React.useContext(HuddleParentContext);
+}
+
+export function useHuddleParentChannelName(): string | null {
+  return React.useContext(HuddleParentChannelNameContext);
 }
 
 export function huddleParentKey(parent: HuddleParent): { workspaceId: string } | { conversationId: string } {

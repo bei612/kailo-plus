@@ -18,6 +18,8 @@ export * from "./messageGrouping";
 export * from "./messageOrder";
 export * from "./observeElementBlockSize";
 export * from "./sentFromThread";
+export * from "./waveMessage";
+export { WaveMessageAttachment } from "./WaveMessageAttachment";
 export * from "./sendToChannel";
 export * from "./removeLinkPreviews";
 export * from "./SentFromThreadLine";

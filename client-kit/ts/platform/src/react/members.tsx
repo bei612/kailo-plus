@@ -17,6 +17,7 @@ import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar"
 import { AvatarHostProvider } from "./profile/avatar-host";
 import { UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "./pulse/UserProfilePopover";
 import { ProfileSummaryView } from "./pulse/ProfileSummaryView";
+import { useProfileWave } from "./pulse/profile-direct-message";
 import { UserProfilePanelFrame } from "./pulse/UserProfilePanelFrame";
 import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock } from "./messages/thread/auxiliary";
 import { useIsThreadPanelOverlay } from "./messages/thread/use-thread-overlay";
@@ -106,6 +107,8 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
   useEffect(()=>{owner.active=true;setOpening(false);setProblem(null);return()=>{owner.active=false;};},[owner]);
   useEscapeKey(onClose,true);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
+  // DD-125(3) original Wave tile beside Message, through the host's DM publication.
+  const wave=useProfileWave(onStartDm?profile?.pubkey:undefined,onClose);
   async function openMessage() {
     if(!profile||!onStartDm||owner.busy||!owner.active||currentOwner.current!==owner)return;
     owner.busy=true;setOpening(true);setProblem(null);
@@ -133,6 +136,7 @@ export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarg
       {profile?<ProfileSummaryView profile={profile} displayName={memberProfileDisplayName(profile,target)}
         pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
         messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}
+        onWave={wave.onWave} wavePending={wave.pending}
         presencePubkeys={[...new Set([target.pubkey,...(target.alternatePubkeys??[])])]}/>
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}

@@ -1,8 +1,9 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/profile/ui/UserProfilePrimaryActions.tsx:
-// original action group/tile, Message and Follow branches. Hosts supply only admitted actions.
+// original action group/tile, Message, Wave and Follow branches. Hosts supply only admitted actions.
 // DD-125(5): Follow writes the Principal follow list in Core CollaborationUserState, not kind 3.
-import { MessageSquare, UserMinus, UserPlus, type LucideIcon } from "lucide-react";
+// DD-125(3): Wave sends the original marked DM kind:9 through the host's DM publication.
+import { Hand, MessageSquare, UserMinus, UserPlus, type LucideIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -10,16 +11,20 @@ import { Spinner } from "../profile/buzz/shared/ui/spinner";
 
 export type ProfileFollowAction = { isFollowing: boolean; pending: boolean; onToggle: () => void };
 
-export function ProfilePrimaryActions({onMessage,messagePending,follow}: {
+export function ProfilePrimaryActions({onMessage,messagePending,onWave,wavePending,follow}: {
   onMessage?:()=>void; messagePending?:boolean;
+  /** Original canWave: another person (not an agent) the host can message. */
+  onWave?:()=>void; wavePending?:boolean;
   /** Original showFollowAction branch; absent when the host or the "pulse" feature does not offer it. */
   follow?:ProfileFollowAction;
 }) {
   const t=useUiT();
-  if (!onMessage && !follow) return null;
+  if (!onMessage && !onWave && !follow) return null;
   return <ProfileActionGroup concealed={false}>
     {onMessage ? <ProfileActionTile disabled={messagePending} icon={MessageSquare} isLoading={messagePending}
       label={t("platform.profile.message")} onClick={onMessage} testId="user-profile-message"/> : null}
+    {onWave ? <ProfileActionTile disabled={wavePending} icon={Hand} isLoading={wavePending}
+      label={t("platform.profile.wave")} onClick={onWave} testId="user-profile-wave"/> : null}
     {follow ? <ProfileActionTile active={follow.isFollowing} disabled={follow.pending}
       icon={follow.isFollowing ? UserMinus : UserPlus}
       label={t(follow.isFollowing ? "platform.profile.unfollow" : "platform.profile.follow")}

@@ -6,12 +6,15 @@ import { useEscapeKey } from "../messages/thread/useEscapeKey";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { truncateNpub, usePulseHost, useUserProfileQuery } from "./host";
 import { ProfileSummaryView } from "./ProfileSummaryView";
+import { useProfileWave } from "./profile-direct-message";
 
 /** Original public profile body in the existing resizable auxiliary panel. */
 export function ProfilePanel({pubkey,onClose}:{pubkey:string;onClose:()=>void}) {
   const t=useUiT(); const host=usePulseHost(); const profile=useUserProfileQuery(pubkey);
   const width=useThreadPanelWidth();
   const [opening,setOpening]=useState(false); const [problem,setProblem]=useState<string|null>(null);
+  // DD-125(3) original Wave tile through the host's DM publication (another person only).
+  const wave=useProfileWave(pubkey!==host.pubkey&&profile.isSuccess&&profile.data?.isAgent!==true?pubkey:undefined,onClose);
   useEscapeKey(onClose,true);
   return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
@@ -23,7 +26,8 @@ export function ProfilePanel({pubkey,onClose}:{pubkey:string;onClose:()=>void}) 
       {profile.isPending?<p role="status">{t("platform.loading")}</p>:profile.isError?
         <div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void profile.refetch()}>{t("platform.retry")}</Button></div>:
         <ProfileSummaryView displayName={profile.data?.displayName??truncateNpub(pubkey)} profile={profile.data} pubkey={pubkey} copy={host.copy} mediaUrl={host.mediaUrl}
-          messagePending={opening} onMessage={pubkey!==host.pubkey?async()=>{setOpening(true);setProblem(null);try{await host.startDm(pubkey);onClose();}catch(error){setProblem(error instanceof Error?error.message:t("platform.loadFailed"));}finally{setOpening(false);}}:undefined}/>}
+          messagePending={opening} onMessage={pubkey!==host.pubkey?async()=>{setOpening(true);setProblem(null);try{await host.startDm(pubkey);onClose();}catch(error){setProblem(error instanceof Error?error.message:t("platform.loadFailed"));}finally{setOpening(false);}}:undefined}
+          onWave={wave.onWave} wavePending={wave.pending}/>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;

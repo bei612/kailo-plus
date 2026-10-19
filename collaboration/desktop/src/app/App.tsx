@@ -23,6 +23,7 @@ import {
   disconnectCommunity,
 } from "@/features/platform/connectCommunity";
 import { DeviceIdentityGate } from "@/features/platform/DeviceIdentityGate";
+import { DesktopOnboardingGate } from "@/features/onboarding/DesktopOnboardingGate";
 import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { cn } from "@/shared/lib/cn";
@@ -168,7 +169,10 @@ function CommunityApp({ devicePubkey }: { devicePubkey: string }) {
   return (
     <CommunityQueryProvider pubkey={devicePubkey} relayUrl={community.relayUrl}>
       <CommunityThemeController />
-      <ConversationVisibilityProvider value={conversationVisibility}><RouterProvider router={router} /></ConversationVisibilityProvider>
+      {/* DD-125(5) original first-run profile and avatar steps for this device key (V-SCN-142). */}
+      <DesktopOnboardingGate blocking={<AppLoadingGate />}>
+        <ConversationVisibilityProvider value={conversationVisibility}><RouterProvider router={router} /></ConversationVisibilityProvider>
+      </DesktopOnboardingGate>
       {bootSplashPhase !== "done" ? (
         <div
           aria-hidden="true"

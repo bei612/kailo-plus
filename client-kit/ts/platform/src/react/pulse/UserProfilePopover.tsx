@@ -279,27 +279,48 @@ function ProfileStatusLine({ pubkeys, actions }: { pubkeys: readonly string[]; a
   );
 }
 
-/** Original hover-card Message action (Wave needs a design decision and is not offered). */
+/**
+ * Original hover-card Wave and Message actions (useProfileInteractionActions): one action at a
+ * time; DD-125(3) Wave sends the marked DM kind:9 through the host's DM publication.
+ */
 function ProfileMessageAction({ pubkey, onClose }: { pubkey: string; onClose?: () => void }) {
   const t = useUiT();
   const directMessage = useProfileDirectMessage();
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const [pending, setPending] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<"message" | "wave" | null>(null);
   if (!directMessage) return null;
+  const wave = directMessage.wave;
+  const canWave = wave !== undefined && directMessage.canWave?.(pubkey) !== false;
   return (
     <div className="flex gap-2">
-      <Button className="min-w-0 flex-1" data-testid={`user-profile-popover-message-${pubkey}`} disabled={pending}
+      {canWave ? (
+        <Button aria-label={t("platform.profile.wave")}
+          className="buzz-wave-hover-trigger shrink-0 px-3 transition-transform duration-100 ease-out motion-reduce:transition-none motion-safe:active:scale-[0.97]"
+          data-testid={`user-profile-popover-wave-${pubkey}`} disabled={pendingAction !== null}
+          onClick={() => {
+            if (pendingAction !== null) return;
+            setPendingAction("wave");
+            void wave(pubkey, () => { if (mounted.current) onClose?.(); }).catch(
+              (error: unknown) => { toast.error(error instanceof Error && error.message ? error.message : t("platform.profile.waveFailed")); },
+            ).finally(() => { if (mounted.current) setPendingAction(null); });
+          }}
+          size="sm" type="button" variant="outline">
+          {pendingAction === "wave" ? <Spinner aria-hidden="true" className="h-3.5 w-3.5 border-2" />
+            : <span aria-hidden="true" className="buzz-wave-hand text-sm leading-none">👋</span>}
+        </Button>
+      ) : null}
+      <Button className="min-w-0 flex-1" data-testid={`user-profile-popover-message-${pubkey}`} disabled={pendingAction !== null}
         onClick={() => {
-          if (pending) return;
-          setPending(true);
+          if (pendingAction !== null) return;
+          setPendingAction("message");
           void directMessage.open(pubkey).then(
             () => { if (mounted.current) onClose?.(); },
             (error: unknown) => { toast.error(error instanceof Error ? error.message : t("platform.profile.openDmFailed")); },
-          ).finally(() => { if (mounted.current) setPending(false); });
+          ).finally(() => { if (mounted.current) setPendingAction(null); });
         }}
         size="sm" type="button" variant="outline">
-        {pending ? <Spinner aria-hidden="true" className="h-3.5 w-3.5 border-2" /> : <MessageSquare />}
+        {pendingAction === "message" ? <Spinner aria-hidden="true" className="h-3.5 w-3.5 border-2" /> : <MessageSquare />}
         {t("platform.profile.message")}
       </Button>
     </div>

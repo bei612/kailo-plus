@@ -2,7 +2,7 @@
 export {
   type AudioOutputDevice, type AudioWorkletHandle, type HuddleBackendState, type HuddleHost, type HuddleHostEvents,
   type HuddleJoinInfo, type HuddleParent, type HuddlePhase, type VoiceInputMode, HuddleHostProvider, HuddleParentProvider,
-  IDLE_HUDDLE_STATE, huddleParentKey, useHasHuddleHost, useHuddleHost, useHuddleParent,
+  IDLE_HUDDLE_STATE, huddleParentKey, useHasHuddleHost, useHuddleHost, useHuddleParent, useHuddleParentChannelName,
 } from "./host";
 export {
   type AudioInputDevice, type HuddleContextValue, type HuddleLevelsValue, HuddleProvider, useFormatHuddleError, useHuddle,

@@ -66,6 +66,8 @@ export function ProfileSummaryView({
   mediaUrl,
   onMessage,
   messagePending,
+  onWave,
+  wavePending,
   presencePubkeys,
   canFollow,
 }: {
@@ -76,6 +78,9 @@ export function ProfileSummaryView({
   mediaUrl: (url: string) => string;
   onMessage?:()=>void;
   messagePending?:boolean;
+  /** DD-125(3) original Wave tile (useProfileWave or the host's own DM publication). */
+  onWave?:()=>void;
+  wavePending?:boolean;
   /** Every admitted key of this person for DD-120 presence and status; defaults to `pubkey`. */
   presencePubkeys?: readonly string[];
   /** Another person's profile (original Follow tile). Defaults to whether the host offers Message. */
@@ -132,7 +137,7 @@ export function ProfileSummaryView({
           </div>
         </div>
       </div>
-      <ProfilePrimaryActions onMessage={onMessage} messagePending={messagePending} follow={follow}/>
+      <ProfilePrimaryActions onMessage={onMessage} messagePending={messagePending} onWave={onWave} wavePending={wavePending} follow={follow}/>
       <section className="space-y-3">
         <ProfileTabContentTransition activeTab="info" tabs={["info"]}>
           <div className="space-y-4" data-testid="user-profile-info-sections">

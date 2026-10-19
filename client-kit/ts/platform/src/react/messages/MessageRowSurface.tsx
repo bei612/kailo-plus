@@ -4,6 +4,8 @@ import * as React from "react";
 import type { TimelineMessage } from "./types";
 import { KIND_HUDDLE_STARTED, KIND_STREAM_MESSAGE_DIFF } from "./thread/kinds";
 import { HuddleAttachment } from "../huddle/HuddleAttachment";
+import { parseWaveMessageContent } from "./waveMessage";
+import { WaveMessageAttachment } from "./WaveMessageAttachment";
 import { getThreadReplyAvatarCenterRem, getThreadReplyAvatarCenterYRem, getThreadReplyDescendantRailStartYRem, getThreadReplyConnectorLayout, getThreadReplyIndentRem, threadReplyLength, THREAD_REPLY_LINE_WIDTH_REM } from "./threadTreeLayout";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useMeasuredCssVariable } from "./useMeasuredCssVariable";
@@ -188,6 +190,8 @@ export function MessageRowSurface({
     }, [collapseDepthGuideActions]);
 
     const getTag = (name: string) => message.tags?.find(tag => tag[0] === name)?.[1];
+    const waveMessage = message.kind === KIND_STREAM_MESSAGE_DIFF || message.kind === KIND_HUDDLE_STARTED
+      ? null : parseWaveMessageContent(message.body);
     const bodyNode = message.kind === KIND_STREAM_MESSAGE_DIFF ? (
       <React.Suspense fallback={<div className="p-3 text-sm text-muted-foreground">{translateUi("diff.loading")}</div>}>
         <DiffMessage commitSha={getTag("commit")} content={message.body}
@@ -198,6 +202,9 @@ export function MessageRowSurface({
     ) : message.kind === KIND_HUDDLE_STARTED ? (
       // DD-125(3): original MessageRow renders the 48100 card instead of the body.
       <HuddleAttachment className="mt-2" message={{ id: message.id, body: message.body, createdAt: message.createdAt, pubkey: message.pubkey }} />
+    ) : waveMessage ? (
+      // DD-125(3): the original MessageRow default branch renders a wave body as its card.
+      <WaveMessageAttachment fallbackText={waveMessage.fallbackText} searchQuery={searchQuery} />
     ) : renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"));
 
     const isThreadReplyLayout = layoutVariant === "thread-reply";

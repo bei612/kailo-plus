@@ -77,7 +77,7 @@ import { MessageAuthorAvatar } from "./MessageAuthorProfile";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BffError, bff, publishChannelTopic, setWorkspacePreference, signOut } from "@/platform/bff-client";
+import { BffError, bff, publishChannelTopic, publishConversationMessage, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { WebAgentTranscriptHost } from "./WebAgentTranscriptHost";
@@ -114,6 +114,9 @@ import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } f
 import { HuddleHostProvider, HuddleParentProvider, HuddleShell } from "@client-kit/platform/react/huddle";
 import { buildHuddleChannelName } from "@client-kit/platform/huddle";
 import { WebHuddleHost } from "@/platform/huddle/WebHuddleHost";
+import { WebOnboardingGate } from "./WebOnboarding";
+import { buildWaveMessageContent } from "@client-kit/platform/react/messages";
+import { newIdempotencyKey } from "@client-kit/platform/governance";
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -176,7 +179,11 @@ export function PlatformApp() {
           }}
         />
       ) : (
+        // DD-125(5) original first-run profile and avatar steps before the app (V-SCN-142).
+        <WebOnboardingGate key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} session={session}
+          blocking={<Notice text={t("platform.loadingIdentity")} />}>
         <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><WebAgentTranscriptHost session={session}><SignedIn session={session} /></WebAgentTranscriptHost></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
+        </WebOnboardingGate>
       )}
     </PlatformProvider>
   );
@@ -341,6 +348,33 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     checkCurrent();
     await navigation.openConversation(conversation.id);
   }
+  // DD-125(3) original handleWave: open (or reuse) the 1:1 DM, navigate there, then publish the
+  // marked wave kind:9 through the governed DM publication with its own intent key.
+  async function waveDirectMessage(pubkey: string, onNavigated?: () => void) {
+    const checkCurrent = () => {
+      if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
+        throw new Error(translate(getLocale(), "dm.viewInactive"));
+    };
+    checkCurrent();
+    const conversation = await directMessage.open(pubkey);
+    checkCurrent();
+    await conversations.reload();
+    checkCurrent();
+    await navigation.openConversation(conversation.id);
+    onNavigated?.();
+    const own = await bff.profile().catch(() => null);
+    checkCurrent();
+    const senderName = own?.displayName?.trim() || session.displayName.trim();
+    try {
+      const receipt = await publishConversationMessage(conversation.id, buildWaveMessageContent(senderName), [], newIdempotencyKey());
+      if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Wave has no confirmed receipt.");
+    } catch (error) {
+      // An unknown result is not a failure: the wave may still arrive (DD-81).
+      throw new Error(isOutcomeUnknown(error)
+        ? t("platform.sendUnknown", { operation: error instanceof BffError ? (error.operationId ?? "") : "" })
+        : translate(getLocale(), "platform.profile.waveFailed"));
+    }
+  }
   // Original AppShell Home feed: the Home badge on every view and background alerts for every
   // admitted channel and DM; the open scope keeps its own live alerts in ChannelPane.
   const homeFeed = useWebHomeFeed({ client: bff, visibility: conversationVisibility, principalId: session.tenantPrincipalId,
@@ -459,7 +493,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       postRoute={navigation.setForumPost ? { postId: navigation.forumPostId ?? null, replyId: navigation.forumReplyId ?? null,
         open: (postId, replyId, options) => navigation.setForumPost(postId, replyId, options), close: navigation.closeForumPost,
         clear: () => navigation.setForumPost(null, null, { replace: true }) } : undefined} /> :
-    channel.data.channelType === "stream" ? <HuddleParentProvider parent={{kind: "workspace", workspaceId: active, channelId: channel.data.channelId}}><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+    channel.data.channelType === "stream" ? <HuddleParentProvider parent={{kind: "workspace", workspaceId: active, channelId: channel.data.channelId}}
+      channelName={buildHuddleChannelName({kind: "channel", channelName: channel.data.name})}><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
       onNavigationGuardChange={navigation.registerThreadNavigationGuard}
       restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
@@ -482,7 +517,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         await navigation.openConversation(conversation.id);
       }} />
     ) : tab === "conversation" ? (
-      chosenConversation ? <HuddleParentProvider parent={{kind: "conversation", conversationId: chosenConversation.id, channelId: chosenConversation.channelId}}><ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+      chosenConversation ? <HuddleParentProvider parent={{kind: "conversation", conversationId: chosenConversation.id, channelId: chosenConversation.channelId}}
+        channelName={dmHeaderPeople ? buildHuddleChannelName({kind: "dm", selfLabel: session.displayName,
+          participantLabels: dmHeaderPeople.map((person) => person.displayName)}) : null}><ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         onHeaderActionsCompactChange={setHeaderActionsCompact} memberProfileRequest={memberProfileRequest}
         threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
         onNavigationGuardChange={navigation.registerThreadNavigationGuard}
@@ -567,7 +604,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const ownPubkeys = searchDirectory.isSuccess && !searchDirectory.isFetching
     ? new Set(searchDirectory.data.people.find((person) => person.principalId === session.tenantPrincipalId)?.pubkeys ?? []) : null;
   const profileDirectMessage = { open: openDirectMessage,
-    canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey) };
+    canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey),
+    // Original canWave: another admitted person; the people directory holds no Agent keys.
+    wave: waveDirectMessage,
+    canWave: (pubkey: string) => searchDirectory.isSuccess && !searchDirectory.isFetching
+      && searchDirectory.data.people.some((person) => person.principalId !== session.tenantPrincipalId && person.pubkeys.includes(pubkey)) };
   return (
     <CollaborationPreferencesProvider value={preferences}>
     <AgentActivityOpenerHost navigate={openAgentActivityChannel}>

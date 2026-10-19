@@ -2,6 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import type { WebProfileView } from "@client-kit/contracts";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePanelFrame, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
+import { useProfileWave } from "@client-kit/platform/react/pulse/profile-direct-message";
 import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useIsThreadPanelOverlay, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
 import { useUiT } from "@client-kit/platform/react/context";
@@ -153,6 +154,8 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
   useLayoutEffect(() => { onWidthChange?.(width.widthPx); }, [onWidthChange, width.widthPx]);
   useEscapeKey(onClose,true);
   const data=query.isSuccess&&!query.isFetching?query.data:undefined;
+  // DD-125(3) original Wave tile beside Message (the host's people directory excludes Agents).
+  const wave=useProfileWave(onStartDm?data?.pubkey:undefined,onClose);
   async function openMessage() {
     if(!data||!onStartDm||owner.busy||!owner.active||currentOwner.current!==owner)return;
     owner.busy=true;setOpening(true);setProblem(null);
@@ -176,7 +179,8 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
         profile={data} pubkey={data.pubkey} copy={writeTextToClipboard} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
-        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}/>
+        messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}
+        onWave={wave.onWave} wavePending={wave.pending}/>
         :query.isError?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
         :<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}

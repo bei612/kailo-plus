@@ -1,5 +1,9 @@
 import { useUserProfileQuery } from "@/features/profile/hooks";
-import { useNativeSession } from "@/features/platform/activeCommunity";
+import { getProfile } from "@/shared/api/tauriProfiles";
+import { useActiveCommunity, useNativeSession } from "@/features/platform/activeCommunity";
+import { buildWaveMessageContent } from "@client-kit/platform/react/messages";
+import { sendChannelMessage } from "@/shared/api/tauri";
+import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
@@ -48,6 +52,7 @@ export function UserProfilePanel({
 }: UserProfilePanelProps) {
   const locale = useDeviceLocale();
   const session = useNativeSession();
+  const community = useActiveCommunity();
   const navigate = useNavigate();
   const cache = useQueryClient();
   const platformSession = useQuery({ queryKey: ["platform", "session"], queryFn: () => session.client.session() });
@@ -71,6 +76,34 @@ export function UserProfilePanel({
   const profile = profileQuery.isSuccess && !profileQuery.isFetching && profileQuery.data.pubkey === pubkey
     ? profileQuery.data : undefined;
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
+  // DD-125(3) original handleWave: open (or reuse) the 1:1 DM through the same governed
+  // preparation, navigate there, then sign the marked wave kind:9 with this device's key.
+  const [waving, setWaving] = React.useState(false);
+  async function waveAtProfile() {
+    if (!profile || waving || opening || directMessage.busy || !platformSession.isSuccess || platformSession.isFetching
+      || !owner.active || currentOwner.current !== owner) return;
+    const relayUrl = community.relayUrl;
+    const signer = session.devicePubkey;
+    const sessionName = (platformSession.data.displayName ?? "").trim();
+    setWaving(true);
+    try {
+      // Original sender name: own profile display name, then the account name.
+      const own = await getProfile().catch(() => null);
+      const senderName = (own?.pubkey === signer ? own.displayName?.trim() : "") || sessionName;
+      const conversation = await directMessage.open(profile.pubkey);
+      if (!owner.active || currentOwner.current !== owner) return;
+      await cache.invalidateQueries({ queryKey: channelsQueryKey });
+      if (!owner.active || currentOwner.current !== owner) return;
+      await navigate({ to: "/channels/$channelId", params: { channelId: conversation.channelId } });
+      if (owner.active && currentOwner.current === owner) onClose();
+      await sendChannelMessage(conversation.channelId, buildWaveMessageContent(senderName), null,
+        undefined, undefined, undefined, undefined, undefined, undefined, relayUrl, signer);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : translate(locale, "platform.profile.waveFailed"));
+    } finally {
+      if (owner.active && currentOwner.current === owner) setWaving(false);
+    }
+  }
   async function openMessage() {
     if (!profile || opening || directMessage.busy || !platformSession.isSuccess || platformSession.isFetching || !owner.active || currentOwner.current !== owner) return;
     setOpening(true);
@@ -126,6 +159,8 @@ export function UserProfilePanel({
           mediaUrl={rewriteRelayUrl}
           messagePending={opening || directMessage.busy}
           onMessage={pubkey !== session.devicePubkey && platformSession.isSuccess && !platformSession.isFetching ? () => { void openMessage(); } : undefined}
+          wavePending={waving}
+          onWave={pubkey !== session.devicePubkey && platformSession.isSuccess && !platformSession.isFetching ? () => { void waveAtProfile(); } : undefined}
         /> : profileQuery.isError || (profileQuery.isSuccess && !profileQuery.isFetching) ?
           <div role="alert"><p>{translate(locale, "platform.loadFailed")}</p>
             <Button onClick={() => { void profileQuery.refetch(); }}>{translate(locale, "platform.retry")}</Button>
