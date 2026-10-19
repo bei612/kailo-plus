@@ -11880,3 +11880,38 @@ The same URN issue remains in Cells and WeKnora:
 `client-kit/adapter/protocol.mjs::fixedUrl(gatewayIssuer)` refuses a non-http(s)
 issuer. With the live `urn:` issuer, their MCP configuration is refused. This
 is not changed here.
+
+## 2026-10-19 — Independent native page (DD-127(7))
+
+First independent deployment of commit `4930f045` on the CI/production host
+(`http://192.168.0.193:58095`, own component env, no query/binding delivery):
+the dedicated OIDC login completed (`/` 302 → IdP → `/oauth/callback` 302 →
+`/` 200 with `Content-Security-Policy: frame-ancestors 'self'
+http://192.168.0.193:58090`, no `X-Frame-Options`), but the page stayed on
+"Loading...". GraphQL `OnboardingStatus` answered
+`QUERY_ADMISSION_UNAVAILABLE`: `middleware.ts` forwarded
+`x-kailo-native-identity-scope` and `x-kailo-native-human-token` to
+`/api/graphql`, `/api/config`, `/api/platform-query-reference` and
+`/api/ask_task/streaming_answer` even when unbound, so `nativeProjectResolver`
+and the other resolvers' independent-mode checks selected the governed path.
+
+The two private headers are now set only for a bound instance. Browser copies
+are still deleted first; signature, audience, instance claim, write origin and
+frame-ancestors handling are unchanged.
+
+`src/middleware.test.ts` adds the independent-instance case for three routes:
+no forwarded identity, no Core call, CSP kept, and a token without the signed
+instance claim stays 403. These checks ran on the CI node in
+`node:24-bookworm-slim` (`--network none`, 2 CPU / 4 GiB) against the existing
+`node_modules` of the identical `yarn.lock`
+(`f06656e8d28103b8425d05b2b85d4422738861c428ac8bbb3a1db4b3dcc4d9b1`):
+
+- the whole file passed **160/160**;
+- with the previous `middleware.ts` (`86c29c20a`), the three new cases failed
+  (**3 failed**), and with the fix restored they passed (**3 passed**);
+- Prettier passes for both files after its single reformat;
+- `tsc --noEmit` reports one error, in the unrelated
+  `src/nativeQueryDelivery.test.ts` (38,9) `ProcessEnv` typing.
+
+These are source checks, not an image: `data-query-ui` must be rebuilt from
+the merged commit before the independent page leaves "Loading...".

@@ -7,9 +7,21 @@ cd "$(dirname "$0")"
 
 [ -s .env ] || { echo '缺少 deploy/local/.env' >&2; exit 2; }
 . ./.env
+# DD-127(7): Wren keys come only from its 0600 native component env
+# (deploy/components/data-query.env.template), never from this platform .env.
+load_wren_env() {
+  local file=${1:-} name
+  [[ $file == /* && -f $file && ! -L $file && $(stat -c '%a' -- "$file") == 600 ]] \
+    || { echo 'Wren 原生组件 env 必须是绝对路径的 0600 普通文件' >&2; exit 2; }
+  for name in $(compgen -v WREN_); do unset "$name"; done
+  eval "$(set -a; . "$file" >/dev/null; set +a
+    for name in $(compgen -v WREN_); do printf '%s=%q\n' "$name" "${!name}"; done)"
+}
 # SS-WRN-GOVERNANCE: these explicit modes consume an already admitted model
-# projection. They never register a binding, choose a model or create a key.
-if [ "$#" -eq 1 ] && { [ "$1" = '--prepare-wren-model-reader' ] || [ "$1" = '--materialize-wren-model-key' ]; }; then
+# projection (Agent tool path overlay). They never register a binding, choose a
+# model or create a key.
+if [ "$#" -eq 2 ] && { [ "$1" = '--prepare-wren-model-reader' ] || [ "$1" = '--materialize-wren-model-key' ]; }; then
+  load_wren_env "$2"
   operation=prepare
   [ "$1" != '--materialize-wren-model-key' ] || operation=materialize
   WREN_MODEL_DELIVERY_DIR="${WREN_MODEL_DELIVERY_DIR:?existing frozen model delivery is required}" \
@@ -608,9 +620,11 @@ except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
 PYAUD
   exit 0
 fi
-# SS-WRN-IDENTITY: register only the two explicitly delivered native clients.
-# This does not mint an instance claim, assign a role, or activate a binding.
-if [ "${1:-}" = '--register-wren-native-clients' ] && [ "$#" -eq 1 ]; then
+# SS-WRN-IDENTITY / DD-127(7): declare the two explicitly delivered native
+# clients and their signed instance claim. It does not assign a role, add user
+# attributes, touch platform clients or activate a binding.
+if [ "${1:-}" = '--register-wren-native-clients' ] && [ "$#" -eq 2 ]; then
+  load_wren_env "$2"
   WREN_OIDC_CLIENT_ID="${WREN_OIDC_CLIENT_ID:-}" \
   WREN_NATIVE_IDENTITY_JSON="${WREN_NATIVE_IDENTITY_JSON:-}" \
   WREN_PUBLIC_ORIGIN="${WREN_PUBLIC_ORIGIN:-}" \
@@ -637,7 +651,7 @@ if timeout <= 0:
 
 
 def refuse():
-    raise SystemExit("原生组件客户端投递缺失或不匹配；未生成默认身份、实例授权或 binding")
+    raise SystemExit("原生组件客户端投递缺失或不匹配；未生成默认身份、实例声明或 binding")
 
 
 def controlled(path):
@@ -710,8 +724,23 @@ try:
             or ai_secret == browser_secrets["OIDC_COOKIE_SECRET"]):
         refuse()
 
-    # Only audience is projected. No hard-coded/user-attribute/role entitlement
-    # mapper is added: configuring a client must not grant native instance access.
+    # DD-127(7): the instance claim is declared by the IdP on both dedicated
+    # native clients, so every identity that logs in through them carries it
+    # (as with Cells/WeKnora). The browser claim is in the ID token the native
+    # Gateway forwards; the AI claim is in its client-credentials access token.
+    # No user attribute, role or platform client is touched; native ACL decides
+    # project/data access.
+    def instance_mapper(token_claim):
+        return {"name": "native-instance-claim", "protocol": "openid-connect",
+                "protocolMapper": "oidc-hardcoded-claim-mapper", "consentRequired": False,
+                "config": {"claim.name": native["accessClaim"],
+                           "claim.value": json.dumps([native["accessValue"]]),
+                           "jsonType.label": "JSON",
+                           "id.token.claim": "true" if token_claim == "id" else "false",
+                           "access.token.claim": "true" if token_claim == "access" else "false",
+                           "userinfo.token.claim": "false",
+                           "introspection.token.claim": "true" if token_claim == "access" else "false"}}
+    declared = {browser_id: instance_mapper("id"), service_id: instance_mapper("access")}
     audience_mapper = {
         "name": "native-service-audience", "protocol": "openid-connect",
         "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
@@ -786,7 +815,33 @@ try:
             matches = [m for m in mappers if m.get("name") == audience_mapper["name"]]
             if (len(matches) != 1 or any(matches[0].get(k) != v for k, v in audience_mapper.items())):
                 refuse()
-    print("原生 browser/AI 专属客户端及 audience 已回读；未授予实例权限或激活 binding")
+        wanted = declared[definition["clientId"]]
+        mappers_path = path + "/protocol-mappers/models"
+
+        def same_claim(mapper):
+            # Read-back compares every declared field; extra IdP defaults are kept.
+            return (all(mapper.get(k) == wanted[k] for k in ("name", "protocol", "protocolMapper"))
+                    and isinstance(mapper.get("config"), dict)
+                    and all(mapper["config"].get(k) == v for k, v in wanted["config"].items()))
+
+        def claim_mappers():
+            return [m for m in request(mappers_path)
+                    if m.get("name") == wanted["name"]
+                    or (m.get("config") or {}).get("claim.name") == native["accessClaim"]]
+
+        current = claim_mappers()
+        if not current:
+            try:
+                request(mappers_path, wanted)
+            except (urllib.error.URLError, OSError):
+                # A lost create ACK is read back below, never re-posted here.
+                pass
+            current = claim_mappers()
+        # A differing mapper or a second emitter of the same claim is refused,
+        # never overwritten.
+        if len(current) != 1 or not same_claim(current[0]):
+            refuse()
+    print("原生 browser/AI 专属客户端、audience 与实例声明已回读一致；未授予平台权限或激活 binding")
 except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
     raise SystemExit("原生客户端登记未完成；保留已有身份和密钥，核对真实投递后只读回查") from None
 PYWRENCLIENTS

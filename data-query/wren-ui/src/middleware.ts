@@ -318,29 +318,25 @@ export async function middleware(request: NextRequest) {
           request.nextUrl.pathname,
         ))) &&
     bound;
-  if (
+  // Only a bound instance hands the verified identity to its governed Node
+  // consumers. An independent native instance (no query/binding delivery,
+  // DD-127(7)) keeps the original native resolvers: forwarding the identity
+  // there would select the governed path and refuse every native request.
+  const governedIdentity =
     boundSql ||
-    [
-      '/api/graphql',
-      '/api/config',
-      '/api/platform-query-reference',
-      '/api/ask_task/streaming_answer',
-    ].includes(request.nextUrl.pathname)
-  ) {
+    (bound &&
+      [
+        '/api/graphql',
+        '/api/config',
+        '/api/platform-query-reference',
+        '/api/ask_task/streaming_answer',
+      ].includes(request.nextUrl.pathname));
+  if (governedIdentity) {
     headers.set('x-kailo-native-identity-scope', identityScope);
-  }
-  // Private Next hop only; Core independently verifies this original signed
-  // token. Never synthesize a trusted subject/issuer from browser headers.
-  if (
-    boundSql ||
-    [
-      '/api/graphql',
-      '/api/config',
-      '/api/platform-query-reference',
-      '/api/ask_task/streaming_answer',
-    ].includes(request.nextUrl.pathname)
-  )
+    // Private Next hop only; Core independently verifies this original signed
+    // token. Never synthesize a trusted subject/issuer from browser headers.
     headers.set('x-kailo-native-human-token', token);
+  }
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'private, no-store');
   response.headers.set('Content-Security-Policy', ancestors);

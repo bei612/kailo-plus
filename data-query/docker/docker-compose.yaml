@@ -7,11 +7,19 @@ volumes:
   native-qdrant-data:
 
 networks:
+  # Explicit nonoverlapping subnets, as for the other native stacks: the host's
+  # predefined address pools are not a deployment input.
   wren:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${WREN_NETWORK_SUBNET:?explicit nonoverlapping native subnet required}
   wren-ai-service-data:
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${WREN_AI_DATA_SUBNET:?explicit nonoverlapping native AI data subnet required}
 
 services:
   # Separate native OIDC policy/cookies and configuration ownership. Core's
@@ -102,17 +110,15 @@ services:
       PYTHONUNBUFFERED: 1
       CONFIG_PATH: /app/config.yaml
       WREN_NATIVE_SERVICE_IDENTITY_FILE: /run/wren-ai-native/identity.json
-      WREN_MODEL_DELIVERY_INPUT_FILE: /run/wren-model-delivery/input.json
-      WREN_MODEL_CREDENTIAL_FILE: /run/wren-model-delivery/credential.json
-      WREN_MODEL_ADAPTER_DIRECTORY_FILE: /run/wren-model-delivery/adapter-directory.json
-      WREN_MODEL_DELIVERY_OUTPUT_FILE: /run/wren-model-delivery/verified-directory.json
       QDRANT_HOST: qdrant
       WREN_AI_SERVICE_PORT: ${WREN_AI_SERVICE_PORT}
       WREN_UI_PORT: ${WREN_UI_PORT:?native UI port is required}
       WREN_UI_ENDPOINT: http://wren-ui:${WREN_UI_PORT:?native UI port is required}
       SHOULD_FORCE_DEPLOY: ${WREN_SHOULD_FORCE_DEPLOY:-}
     env_file:
-      - ${WREN_AI_SECRET_ENV_FILE:?component-only model credential delivery is required}
+      # Native model provider env named by config.yaml api_key_name (DD-127(7)).
+      # Component-only owner-only file; may be empty. Never the platform .env.
+      - ${WREN_AI_SECRET_ENV_FILE:?component-only native model env file is required}
     volumes:
       - type: bind
         source: ${WREN_PROJECT_DIR:?native configuration directory is required}/config.yaml
@@ -130,11 +136,6 @@ services:
         source: ${WREN_AI_IDENTITY_DIR:?dedicated native service identity delivery is required}
         target: /run/wren-ai-native
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${WREN_MODEL_DELIVERY_DIR:?owner-only frozen model delivery directory is required}
-        target: /run/wren-model-delivery
         bind:
           create_host_path: false
     networks:

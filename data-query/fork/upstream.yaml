@@ -12,15 +12,15 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs]
-    source_digest: sha256:df34e6122b5f91e6342ba3ae3a8e6c6f786754fea4ec2a5ec5f1990d2519110c
-    artifact_digest: sha256:d90cc5a6dbc4e5106f374f7ff95dc607ed3c9b2b4fe541c4faeea196beb60ee2
+    source_digest: sha256:a23b4e93b5a7a2a60986f36f385da096bf94aaff1e12cb7d415ef0fe4c041192
+    artifact_digest: sha256:1a2a24a9ae027fee2cf3f29f5d0e18708a2b3b0003e2e0d96d2aff2b403ecb5e
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service
     build_dockerfile: data-query/wren-ai-service/docker/Dockerfile
     inputs: [data-query/wren-ai-service/]
-    source_digest: sha256:512dcd824b1bace37f7f6fa5e1f9676deaaab77b0fc3d8a9bcdb1af17fac005a
-    artifact_digest: sha256:41d09fad9d211bddbdfee1f9e72f45a290041f358e8fc4d20bd97362073c3f95
+    source_digest: sha256:d587ce685d58d3ebaf402ac0451a7fe37d118b95a10e98cf7bf05cabb8bc031c
+    artifact_digest: sha256:662fc7a76c259b140355f5b66a083a6ebb1a4403464359ba115b8956431fe182
   - name: data-query-engine
     kind: image
     build_context: data-query/wren-engine/wren-core-legacy

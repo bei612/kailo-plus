@@ -1,0 +1,18 @@
+# Optional overlay of the Agent tool path (DD-127(7), DD-92, SS-WRN-GOVERNANCE).
+# Only for a capability binding whose frozen model projection, Bao Agent
+# credential read and adapter directory already exist (README "Verified model
+# credential delivery"). The native page deployment never needs it: without
+# these four paths the original AI startup is unchanged and publishes no proof.
+services:
+  wren-ai-service:
+    environment:
+      WREN_MODEL_DELIVERY_INPUT_FILE: /run/wren-model-delivery/input.json
+      WREN_MODEL_CREDENTIAL_FILE: /run/wren-model-delivery/credential.json
+      WREN_MODEL_ADAPTER_DIRECTORY_FILE: /run/wren-model-delivery/adapter-directory.json
+      WREN_MODEL_DELIVERY_OUTPUT_FILE: /run/wren-model-delivery/verified-directory.json
+    volumes:
+      - type: bind
+        source: ${WREN_MODEL_DELIVERY_DIR:?owner-only frozen model delivery directory is required}
+        target: /run/wren-model-delivery
+        bind:
+          create_host_path: false
