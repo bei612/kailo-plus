@@ -39,6 +39,39 @@ func nativeDeleteDomain(req *restful.Request) (string, error) {
 	return string(encoded), err
 }
 
+// nativeDeleteRootSelector names the binding root Resource a HUMAN delete is
+// admitted against. Its nativeType is the root node's own Cells node type (the
+// Resource the binding registered over nativeRootRef, a COLLECTION), never
+// delete.nativeType: that is the native task type of the delete
+// ExternalExecution ("job", NewNativeDeleteTask/nativeDeleteFresh and the
+// observed nativeType checked below), a different object.
+func nativeDeleteRootSelector(delivery auth.NativeDeleteDelivery, root *tree.Node) (map[string]interface{}, bool) {
+	if root == nil || root.GetUuid() != delivery.NativeRootRef || root.GetType() != tree.NodeType_COLLECTION || root.GetPath() == "" {
+		return nil, false
+	}
+	selector := map[string]interface{}{"actionKey": "file_storage.delete@v2", "actionVersion": delivery.Delete.ActionVersion,
+		"nativeType": root.GetType().String(), "nativeRef": delivery.NativeRootRef}
+	if delivery.WorkspaceID != "" {
+		selector["workspaceId"] = delivery.WorkspaceID
+	}
+	return selector, true
+}
+
+// nativeDeleteRootResource accepts only the exact Resource resolved for the
+// selector: same native type/ref as asked and this delivery's instance/scope.
+func nativeDeleteRootResource(delivery auth.NativeDeleteDelivery, selector, resolved map[string]interface{}) (string, float64, bool) {
+	resource, ok := resolved["resource"].(map[string]interface{})
+	version, versionOK := resource["resourceVersion"].(float64)
+	id, idOK := resource["resourceId"].(string)
+	nativeType, typeOK := selector["nativeType"].(string)
+	if !ok || len(resolved) != 1 || len(resource) != 6 || !idOK || !auth.NativeActorUUID(id) || !versionOK || version <= 0 || version != float64(int64(version)) ||
+		!typeOK || nativeType == "" || resource["nativeType"] != nativeType || resource["nativeRef"] != delivery.NativeRootRef ||
+		resource["nativeInstanceRef"] != delivery.NativeInstanceRef || resource["nativeScopeRef"] != delivery.NativeScopeRef {
+		return "", 0, false
+	}
+	return id, version, true
+}
+
 // The original UI route produces/observes the existing HUMAN Action. It never
 // invokes a native mutation itself when the installation has platform delivery.
 func (h *Handler) platformDeleteNodes(req *restful.Request, resp *restful.Response) (bool, error) {
@@ -87,27 +120,23 @@ func (h *Handler) platformDeleteNodes(req *restful.Request, resp *restful.Respon
 		return true, err
 	}
 	if !exists {
+		root, err := h.GetRouter().ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: delivery.NativeRootRef}})
+		if err != nil {
+			return true, refused
+		}
 		// The deployment's actual registered root is the common Resource.
 		// resolveResource must return it; no ancestor registration or fallback
 		// Resource is invented for a multi-selection.
-		selector := map[string]interface{}{"actionKey": "file_storage.delete@v2", "actionVersion": delivery.Delete.ActionVersion,
-			"nativeType": delivery.Delete.NativeType, "nativeRef": delivery.NativeRootRef}
-		if delivery.WorkspaceID != "" {
-			selector["workspaceId"] = delivery.WorkspaceID
+		selector, valid := nativeDeleteRootSelector(delivery, root.GetNode())
+		if !valid {
+			return true, refused
 		}
 		resolved, _, err := delivery.HumanAction(ctx, token, map[string]interface{}{"resolveResource": selector})
 		if err != nil {
 			return true, err
 		}
-		resource, ok := resolved["resource"].(map[string]interface{})
-		version, versionOK := resource["resourceVersion"].(float64)
-		id, idOK := resource["resourceId"].(string)
-		if !ok || len(resolved) != 1 || len(resource) != 6 || !idOK || !auth.NativeActorUUID(id) || !versionOK || version <= 0 || version != float64(int64(version)) ||
-			resource["nativeType"] != delivery.Delete.NativeType || resource["nativeRef"] != delivery.NativeRootRef || resource["nativeInstanceRef"] != delivery.NativeInstanceRef || resource["nativeScopeRef"] != delivery.NativeScopeRef {
-			return true, refused
-		}
-		root, err := h.GetRouter().ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: delivery.NativeRootRef}})
-		if err != nil || root.GetNode().GetUuid() != delivery.NativeRootRef || root.GetNode().GetType() != tree.NodeType_COLLECTION || root.GetNode().GetPath() == "" {
+		id, version, valid := nativeDeleteRootResource(delivery, selector, resolved)
+		if !valid {
 			return true, refused
 		}
 		for _, selected := range request.Nodes {
