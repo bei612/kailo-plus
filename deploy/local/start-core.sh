@@ -38,7 +38,7 @@ if [ "$prepare_action_token" = true ]; then
   container_safety_init
   container_resource_preflight
 fi
-if [ "$prepare_conformance_identity" = true ]; then
+if [ "${prepare_conformance_identity:-false}" = true ]; then
   : "${COMPONENT_CONFORMANCE_SIGNING_FILE:?}" "${COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR:?}" \
     "${COMPONENT_CONFORMANCE_JWKS_READER_ROLE:?}" "${CHECK_CPUS:?}" "${CHECK_MEMORY:?}"
   . ../../tools/container-safety.sh
@@ -249,7 +249,7 @@ fi
 # key, public locator, issuer, public file, directory or reader role with the
 # production ActionToken delivery. Only the initial Core command consumes it.
 conformance_signing_compose=()
-if [ "$prepare_conformance_identity" = true ]; then
+if [ "${prepare_conformance_identity:-false}" = true ]; then
   conformance_signing_config=$(mktemp)
   COMPONENT_CONFORMANCE_SIGNING_FILE="$COMPONENT_CONFORMANCE_SIGNING_FILE" \
   COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR="$COMPONENT_CONFORMANCE_PUBLIC_JWKS_LOCATOR" \
@@ -916,7 +916,7 @@ if [ "$prepare_action_token" = true ]; then
     "$ACTION_TOKEN_JWKS_READER_ROLE" action-token ActionToken
   exit 0
 fi
-if [ "$prepare_conformance_identity" = true ]; then
+if [ "${prepare_conformance_identity:-false}" = true ]; then
   # 07 §8A: the same deployment-only path for Core's isolated conformance
   # signing identity (purpose COMPONENT_CONFORMANCE); no service is restarted.
   compose run --rm --no-deps --pull never core-bff bootstrap-conformance-identity
