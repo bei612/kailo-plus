@@ -1,0 +1,60 @@
+{
+  "id": "{{releaseId}}",
+  "componentTypeKey": "cells",
+  "version": "1.0.0-native-page",
+  "class": "APPLICATION",
+  "platformPortKey": "NONE",
+  "manifestSchemaVersion": 1,
+  "admissionPath": "BUILTIN_REFERENCE",
+  "sourceProject": "kailo-plus/file-storage",
+  "sourceCommit": "{{sourceCommit}}",
+  "bindingConfigSchemaVersion": 1,
+  "bindingConfigSchemaDigest": "{{bindingConfigSchemaDigest}}",
+  "adapterProtocolRange": "NONE",
+  "frontendDelivery": {
+    "mode": "NATIVE_PAGE",
+    "extensionSlots": [],
+    "editorOrigins": [],
+    "nativePageOrigins": [
+      "{{nativePageOrigin}}"
+    ]
+  },
+  "executionConnector": {
+    "mode": "NONE",
+    "adapterProtocolRange": "NONE",
+    "actionTokenAudience": "NONE"
+  },
+  "adapterBuildRef": "{{adapterBuildRef}}",
+  "implements": [],
+  "capabilityDeclarations": [],
+  "allowedModelCallModes": [
+    "NONE"
+  ],
+  "dataStoreIsolation": "DEDICATED_INSTANCE",
+  "dataLocation": "Platform-operated dedicated Cells instance with its own database and object storage on the deployment's private component network.",
+  "secretSchema": [],
+  "targetResourceTypeKeys": [],
+  "resourceTypeDefinitions": [],
+  "actionDefinitions": [],
+  "toolDefinitions": [],
+  "businessObservabilityContract": {
+    "correlationSources": [
+      "OPERATION_ID"
+    ],
+    "businessStateSources": [
+      "CORE_ACTION"
+    ],
+    "aggregationDimensions": [
+      "tenant_id",
+      "workspace_id"
+    ],
+    "redactionPolicy": "PLATFORM_METADATA_ONLY"
+  },
+  "frontendPresentationContract": {
+    "integrationMode": "NONE",
+    "themeMapping": {},
+    "localeMapping": {},
+    "themeChangePolicy": "NONE",
+    "localeResolutionPolicy": "NONE"
+  }
+}

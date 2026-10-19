@@ -14,20 +14,27 @@
 // and the descriptor is refused. Re-enabling needs a NEW binding
 // (component-bind.mjs --attempt N+1); there is no undo.
 //
-// Usage: node component-entries-check.mjs --expect file_storage,knowledge[,data_query]
+// DD-127 native page entries enable no category; the sidebar labels them by
+// componentTypeKey, so expect them as type:<componentTypeKey> (e.g. type:cells).
+//
+// Usage: node component-entries-check.mjs --expect file_storage,knowledge[,data_query][,type:<componentTypeKey>]
 //          [--accounts kailo-qa-1,kailo-qa-2,kailo-qa-3] [--workspace-id <uuid>]
 //          [--revoke-binding <uuid> [--revoke-account admin] [--attempt N]]
 import { api, attempt, FlowError, key, log, login, main, parseArgs, readAll, requireSession, sleep, submit, UUID, waitTask } from './lib.mjs';
 
 const LABELS = { file_storage: '云盘', knowledge: '知识库', data_query: '问数' };
 const IFRAME = 'section[data-testid="native-application-page"] iframe[title="服务工作区"]';
+const labelOf = (key) => LABELS[key] ?? (key.startsWith('type:') && key.length > 5 ? key.slice(5) : undefined);
 
 async function entries(session, expected, workspaceId) {
   const scope = workspaceId ? `?workspaceId=${workspaceId}` : '';
   const { rows } = await readAll(session, `/api/v1/application-bindings${scope}`, 'bindings');
   const visible = rows.filter((b) => b.state === 'ACTIVE' && b.hasNativePage === true);
   const byCategory = {};
-  for (const binding of visible) for (const c of binding.capabilityCategories) byCategory[c.category] = binding;
+  for (const binding of visible) {
+    byCategory[`type:${binding.componentTypeKey}`] = binding;
+    for (const c of binding.capabilityCategories) byCategory[c.category] = binding;
+  }
   return { visible, byCategory, missing: expected.filter((c) => !byCategory[c]) };
 }
 
@@ -45,9 +52,9 @@ async function checkAccount(name, expected, workspaceId) {
   await group.waitFor({ timeout: 30000 }).catch(() => {});
   await session.shot('sidebar');
   for (const category of expected) {
-    const entry = { category, label: LABELS[category] };
+    const entry = { category, label: labelOf(category) };
     const binding = byCategory[category];
-    const button = group.getByRole('button', { name: LABELS[category], exact: true });
+    const button = group.getByRole('button', { name: entry.label, exact: true });
     entry.sidebarVisible = await button.count() > 0;
     if (binding && entry.sidebarVisible) {
       const descriptor = await api(session, 'GET', `/api/v1/application-bindings/${binding.bindingId}/native-page`);
@@ -78,7 +85,7 @@ async function checkAccount(name, expected, workspaceId) {
 await main(async () => {
   const args = parseArgs(process.argv.slice(2), ['expect', 'accounts', 'workspace-id', 'revoke-binding', 'revoke-account', 'attempt']);
   const expected = (args.expect ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (!expected.length || expected.some((c) => !LABELS[c])) throw new FlowError('--expect takes file_storage,knowledge,data_query', 2);
+  if (!expected.length || expected.some((c) => !labelOf(c))) throw new FlowError('--expect takes file_storage,knowledge,data_query or type:<componentTypeKey>', 2);
   const accounts = (args.accounts ?? 'kailo-qa-1,kailo-qa-2,kailo-qa-3').split(',').map((s) => s.trim()).filter(Boolean);
   const results = [];
   for (const name of accounts) {
@@ -100,7 +107,7 @@ await main(async () => {
         ...(args['workspace-id'] ? { workspaceId: args['workspace-id'] } : {}) }, 'disable');
       await waitTask(admin, submitted.actionExecutionId, { seconds: 900, label: 'disable-task' }).catch((e) => { if (e.exitCode !== 3) throw e; });
     }
-    const category = binding.capabilityCategories.map((c) => c.category).find((c) => LABELS[c]);
+    const category = binding.capabilityCategories.map((c) => c.category).find((c) => LABELS[c]) ?? `type:${binding.componentTypeKey}`;
     const probe = await login(accounts[0], `entries-after-revoke-${accounts[0]}`);
     await requireSession(probe);
     let gone = false;
@@ -109,7 +116,7 @@ await main(async () => {
       descriptor = await api(probe, 'GET', `/api/v1/application-bindings/${binding.bindingId}/native-page`);
       await probe.page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.193:58090'}/app/`, { waitUntil: 'domcontentloaded' });
       await probe.page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      const remaining = await probe.page.locator('[data-testid="native-application-entries"]').getByRole('button', { name: LABELS[category], exact: true }).count();
+      const remaining = await probe.page.locator('[data-testid="native-application-entries"]').getByRole('button', { name: labelOf(category), exact: true }).count();
       gone = descriptor.status !== 200 && remaining === 0;
       if (!gone) await sleep(5000);
     }

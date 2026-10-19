@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BindingConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nativePageUrl"
+  ],
+  "properties": {
+    "nativePageUrl": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact Cells native page entry URL (DD-127 native page entry); its origin must be one of the release nativePageOrigins and the deployment NATIVE_PAGE_ORIGINS."
+    }
+  }
+}
