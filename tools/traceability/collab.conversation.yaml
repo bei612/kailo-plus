@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-24]
-  decisions: [DD-39, DD-80]
+  decisions: [DD-39, DD-80, DD-125]
   facts: []
   seams: [SS-BUZ-GOVERNANCE, SS-WEB-RELAY]
   blockers: []
@@ -22,7 +22,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/conversations.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, collaboration/crates/buzz-db/src/store/dm.rs, collaboration/crates/buzz-relay/src/handlers/command_executor.rs, worker/activities/conversation.go, worker/workflows/conversation.go]
+  paths: [core/crates/platform-core/src/conversations.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, collaboration/crates/buzz-db/src/store/dm.rs, collaboration/crates/buzz-relay/src/handlers/command_executor.rs, worker/activities/conversation.go, worker/workflows/conversation.go, client-kit/ts/platform/src/react/messages/waveMessage.ts, client-kit/ts/platform/src/react/messages/WaveMessageAttachment.tsx, client-kit/ts/platform/src/react/pulse/profile-direct-message.tsx, web-client/web/src/platform/ui/PlatformApp.tsx, collaboration/desktop/src/features/profile/ui/UserProfilePanel.tsx]
   surfaces: [web, desktop, mobile]
   schemas: [contracts/api/conversation_open_request.schema.json, contracts/api/conversation_view.schema.json, contracts/api/conversation_page.schema.json, contracts/api/conversation_participant.schema.json, contracts/api/conversation_participant_page.schema.json, contracts/workflow/conversation_projection_target.schema.json, contracts/workflow/conversation_projection_request.schema.json, contracts/workflow/conversation_projection_result.schema.json]
   migrations: [core/migrations/20261006080000_conversation_buzz_binding.up.sql, core/migrations/20261006080000_conversation_buzz_binding.down.sql, collaboration/migrations/0047_governed_dm_projection.sql]

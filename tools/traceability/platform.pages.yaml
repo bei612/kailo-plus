@@ -7,14 +7,14 @@ exposure: end_user
 design:
   requirements: [V-REQ-01, V-REQ-03, V-REQ-17]
   # DD-75's S0 identity custody is consumed here, owned by identity.client_keys.
-  decisions: [DD-39, DD-53, DD-80, DD-81]
+  decisions: [DD-39, DD-53, DD-80, DD-81, DD-125]
   facts: [SF-DSK-04]
   seams: [SS-WEB-01, SS-WEB-PRESENTATION]
   blockers: []
   entities: [Workspace, WorkspaceMembership, AuditEvent]
 
 validation:
-  scenarios: []
+  scenarios: [V-SCN-142]
   evidence:
     - dimension: 上游接缝
       ref: web-client/fork/verify/web-surface.md
@@ -23,7 +23,7 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui, collaboration/desktop/src/features/profile/hooks.ts, collaboration/desktop/src-tauri/src/commands/profile.rs]
+  paths: [core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui, collaboration/desktop/src/features/profile/hooks.ts, collaboration/desktop/src/features/onboarding/DesktopOnboardingGate.tsx, collaboration/desktop/src/app/App.tsx, collaboration/desktop/src-tauri/src/commands/profile.rs]
   surfaces: [web, desktop]
   schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json, contracts/api/web_profile_view.schema.json, contracts/api/web_profile_update_request.schema.json]
   migrations: []
