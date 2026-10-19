@@ -15,7 +15,7 @@ design:
   entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
 
 validation:
-  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156]
+  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156, V-SCN-157]
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
@@ -79,6 +79,7 @@ implementation:
     - contracts/api/application_binding_page.schema.json
     - contracts/api/application_read_resource_page.schema.json
     - contracts/api/application_native_page.schema.json
+    - contracts/enums/native_page_category.schema.json
     - contracts/domain/application_binding_create.schema.json
     - contracts/api/action_command.schema.json
     - contracts/domain/component_action_input.schema.json
