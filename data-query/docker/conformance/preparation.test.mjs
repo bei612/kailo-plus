@@ -162,14 +162,14 @@ test(
     const registration = JSON.parse(
       await readFile(
         new URL(
-          '../../../contracts/adapter/data_query.v1/registration.json',
+          '../../../contracts/adapter/data_query.v2/registration.json',
           import.meta.url,
         ),
         'utf8',
       ),
     );
     const selected = JSON.parse(registration.testVectorsJson).cases.find(
-      (value) => value.steps[0].contractKey === 'data_query.describe@v1',
+      (value) => value.steps[0].contractKey === 'data_query.describe@v2',
     );
     const { generateKeyPair, exportJWK, SignJWT } = require('jose');
     const { privateKey, publicKey } = await generateKeyPair('ES256');
@@ -290,6 +290,31 @@ test(
         await unexpected.close();
       }, denied);
     }
+    // data_query@1 writes Wren's generated deployment ID/hash as literals
+    // (DD-124(3)); the provider refuses it instead of matching the fixture.
+    const literal = JSON.parse(
+      await readFile(
+        new URL(
+          '../../../contracts/adapter/data_query.v1/registration.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...isolated,
+        registrationFile: await writeJson(
+          'query-registration-v1.json',
+          literal,
+        ),
+      }),
+    );
+    await assert.rejects(async () => {
+      const unexpected = await openProvider(path);
+      await unexpected.close();
+    }, denied);
     await writeFile(path, JSON.stringify(isolated));
     const provider = await openProvider(path);
     require('ts-node').register({
@@ -649,7 +674,7 @@ test('preparation serves only fresh isolated HUMAN scope, never query admission 
     await wrongHuman.body.cancel();
     const action = await scope(token, {
       bindingId: query.bindingId,
-      command: { actionKey: 'data_query.query@v1' },
+      command: { actionKey: 'data_query.query@v2' },
     });
     assert.equal(action.status, 403);
     await action.body.cancel();

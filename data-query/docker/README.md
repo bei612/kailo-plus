@@ -263,8 +263,8 @@ because this overlay is present.
 The original model/view lists and detail pages keep their existing layout and
 GraphQL data shape. Their server-side readers now resolve each native object
 through the same Core HUMAN resource-selection endpoint, using the registered
-`data_query.describe@v1` action and its `read` permission. Instance login alone
-does not grant these object reads; `data_query.query@v1` execution permission is
+`data_query.describe@v2` action and its `read` permission. Instance login alone
+does not grant these object reads; `data_query.query@v2` execution permission is
 not substituted for read permission. The approved release/action catalog must
 actually contain that describe mapping, and the exact model/view must already
 have an active Resource reference for this binding, native instance and project.
@@ -300,8 +300,8 @@ not complete the separate REMOTE_ADAPTER native-object registration path.
 The original Adjust SQL, Fix SQL and Question/SQL Pair dialogs keep their native
 forms, SQL editor, preview and submit controls. Their existing `previewSql`
 mutation now carries an opaque retry key and the verified current preview scope.
-Query and validation use the separate existing `data_query.query@v1` and
-`data_query.dry_run@v1` actions. To enable the native validation consumer, deliver
+Query and validation use the separate existing `data_query.query@v2` and
+`data_query.dry_run@v2` actions. To enable the native validation consumer, deliver
 `dryRunAction.resultExposurePolicyId` and `dryRunAction.resultExposurePolicyVersion`
 for the actual registered dry-run action. It has the same closed id/version
 configuration shape as `humanAction`, but does not inherit the query policy:
@@ -346,7 +346,7 @@ features, a deployed Wren instance, an ACTIVE binding or original-feature parity
 The saved-view query-reference export also selects its registered Resource
 from the verified current human, binding and native view ID. Its existing
 form takes only the row limit; it no longer asks the user to type a platform
-Resource ID. The API checks the existing `data_query.query@v1` selection before
+Resource ID. The API checks the existing `data_query.query@v2` selection before
 reading the frozen reference and again before disclosing it. Missing native
 identity, unavailable/unregistered resources, denied execution selection,
 revocation or changed Resource/version return an error, not an exported
@@ -439,7 +439,7 @@ arbitrary generated SQL, AI/native task side effects, dashboard and native write
 authorization are not covered by these metadata readers. See the component
 verification receipt for the acceptance boundary before publishing a release.
 
-The original modeling diagram additionally checks `data_query.describe@v1`
+The original modeling diagram additionally checks `data_query.describe@v2`
 read permission for every captured model and saved view before loading its
 fields and again before the original MDL builder returns the complete graph.
 This is a complete-graph read: one inaccessible object refuses the request;
@@ -451,7 +451,7 @@ request as an empty successful graph. No AI/engine call or SQL execution is
 added by the diagram reader.
 
 The modeling sidebar's existing schema-change review also uses the same
-`data_query.describe@v1` read checks for its captured native models, before
+`data_query.describe@v2` read checks for its captured native models, before
 loading columns/relationships and again before returning the original impact
 calculation. Inaccessible or unregistered models refuse the complete review;
 they are not silently omitted. A failed read hides the old review dialog and
@@ -464,7 +464,7 @@ same model/view rows used by the original MDL builder. The original deployment
 transaction stores that mapping in its own `deploy_log.native_object_refs`,
 alongside the unchanged manifest/hash. The original manifest, GraphQL response
 and pages do not acquire additional fields. Historical reads resolve every
-captured object through `data_query.describe@v1`, check the persisted deployment
+captured object through `data_query.describe@v2`, check the persisted deployment
 again, then reauthorize the same Resource/version before returning its original
 encoded manifest. Missing mappings, incomplete or conflicting references,
 unregistered objects, denial, revocation and changed evidence refuse disclosure.
@@ -526,8 +526,8 @@ explicitly configured delivery ownership; mounting the directory does not grant
 new OpenBao policy permissions.
 
 Lifecycle execution mappings and the native `/execute` wire retain the catalog's
-versioned `data_query.query@v1`, `data_query.dry_run@v1` and
-`data_query.describe@v1` keys. Original MCP tool names remain unchanged and map
+versioned `data_query.query@v2`, `data_query.dry_run@v2` and
+`data_query.describe@v2` keys. Original MCP tool names remain unchanged and map
 to these fixed versioned keys inside the same native consumer. ActionToken
 comparison keeps the version; it never strips a caller's unsupported version.
 
@@ -827,7 +827,7 @@ The original question-SQL pair modal and its Home/Knowledge create/update
 callbacks retain their original controls. With a configured Kailo binding, the
 modal passes the exact SQL editor dry-run's opaque key and current scope to the
 existing GraphQL mutation. The server only observes that original
-`data_query.dry_run@v1` execution: its original native history fixes SQL, limit,
+`data_query.dry_run@v2` execution: its original native history fixes SQL, limit,
 deployment and source references, and current HUMAN/source/result checks still
 apply. Missing, changed, unknown or incomplete evidence refuses the native
 metadata write; it does not submit another SQL command. Its original question
@@ -1123,7 +1123,7 @@ the full original product and multi-user/iframe release are still unaccepted.
 
 The original Home Save as View button, modal, validation, SQL, native metadata
 and returned view shape remain. In configured mode, obtaining its column list
-is a real `data_query.query@v1` execution: the original shared SQL-preview hook
+is a real `data_query.query@v2` execution: the original shared SQL-preview hook
 admits `limit=1` under the current HUMAN and retains the same native history/key
 through UNKNOWN. Only its completed history ID is passed to `createView`.
 The native resolver checks that history's project, binding, caller scope, SQL,

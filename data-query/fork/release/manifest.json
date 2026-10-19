@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "wren",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -28,13 +28,13 @@
   "implements": [
     {
       "categoryKey": "data_query",
-      "contractVersion": 1
+      "contractVersion": 2
     }
   ],
   "capabilityDeclarations": [
     {
       "categoryKey": "data_query",
-      "contractVersion": 1,
+      "contractVersion": 2,
       "cancel": "UNSUPPORTED",
       "observe": "SUPPORTED",
       "meter": "UNSUPPORTED",
@@ -76,7 +76,7 @@
     {
       "typeKey": "data_query.model",
       "capabilityCategory": "data_query",
-      "capabilityContractVersion": 1,
+      "capabilityContractVersion": 2,
       "incrementalContracts": [],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
@@ -86,7 +86,7 @@
     {
       "typeKey": "data_query.view",
       "capabilityCategory": "data_query",
-      "capabilityContractVersion": 1,
+      "capabilityContractVersion": 2,
       "incrementalContracts": [],
       "llmGatewayContract": "NOT_USED",
       "transferFormats": [],
@@ -96,9 +96,9 @@
   ],
   "actionDefinitions": [
     {
-      "actionKey": "data_query.query@v1",
+      "actionKey": "data_query.query@v2",
       "version": 1,
-      "capabilityContractKey": "data_query.query@v1",
+      "capabilityContractKey": "data_query.query@v2",
       "componentTypeKey": "wren",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -114,7 +114,7 @@
       "meters": [],
       "resultExposurePolicy": {
         "mode": "READ",
-        "outputSchemaHash": "1fffd9fda38ecd3770c81b4760d4366d679d1f4d274fe47111b9f1eeb64f7eab",
+        "outputSchemaHash": "907bdf28e4aedfade69691fe6f8979a21ebfd59cf80528ce85271be9fb500142",
         "redactionPolicy": "PLATFORM_METADATA_ONLY"
       },
       "auditPolicy": "FULL_LIFECYCLE",
@@ -127,13 +127,13 @@
         "redactionPolicy": "PLATFORM_METADATA_ONLY"
       },
       "status": "ACTIVE",
-      "inputSchemaDigest": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
-      "outputSchemaDigest": "1fffd9fda38ecd3770c81b4760d4366d679d1f4d274fe47111b9f1eeb64f7eab"
+      "inputSchemaDigest": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaDigest": "907bdf28e4aedfade69691fe6f8979a21ebfd59cf80528ce85271be9fb500142"
     },
     {
-      "actionKey": "data_query.dry_run@v1",
+      "actionKey": "data_query.dry_run@v2",
       "version": 1,
-      "capabilityContractKey": "data_query.dry_run@v1",
+      "capabilityContractKey": "data_query.dry_run@v2",
       "componentTypeKey": "wren",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -149,7 +149,7 @@
       "meters": [],
       "resultExposurePolicy": {
         "mode": "READ",
-        "outputSchemaHash": "0ef47f1c08c5bf8752cd2be1267b6f8ba11fdfb2370929b0470b4cc0070195ea",
+        "outputSchemaHash": "ba0b6aba05b8c9657f75770642397ba71a03dcf1870b40a5c2a615e37255444c",
         "redactionPolicy": "PLATFORM_METADATA_ONLY"
       },
       "auditPolicy": "FULL_LIFECYCLE",
@@ -162,13 +162,13 @@
         "redactionPolicy": "PLATFORM_METADATA_ONLY"
       },
       "status": "ACTIVE",
-      "inputSchemaDigest": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
-      "outputSchemaDigest": "0ef47f1c08c5bf8752cd2be1267b6f8ba11fdfb2370929b0470b4cc0070195ea"
+      "inputSchemaDigest": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaDigest": "ba0b6aba05b8c9657f75770642397ba71a03dcf1870b40a5c2a615e37255444c"
     },
     {
-      "actionKey": "data_query.describe@v1",
+      "actionKey": "data_query.describe@v2",
       "version": 1,
-      "capabilityContractKey": "data_query.describe@v1",
+      "capabilityContractKey": "data_query.describe@v2",
       "componentTypeKey": "wren",
       "targetType": "RESOURCE",
       "tenantRule": "SESSION_TENANT",
@@ -184,7 +184,7 @@
       "meters": [],
       "resultExposurePolicy": {
         "mode": "READ",
-        "outputSchemaHash": "e620ba8ea4f29f185fc7c01b56098c7831d8534c5b9c5a4ceb2a31e59c56c3a1",
+        "outputSchemaHash": "a2c3ea3812df35d9f4289861cab3f42761f0106ec6814f6e3356c42fea86a962",
         "redactionPolicy": "PLATFORM_METADATA_ONLY"
       },
       "auditPolicy": "FULL_LIFECYCLE",
@@ -198,37 +198,37 @@
       },
       "status": "ACTIVE",
       "inputSchemaDigest": "7c68c781cb877a03a71cc21c403a22e4f21ad21cc55657adc53c6ac1e836c8d4",
-      "outputSchemaDigest": "e620ba8ea4f29f185fc7c01b56098c7831d8534c5b9c5a4ceb2a31e59c56c3a1"
+      "outputSchemaDigest": "a2c3ea3812df35d9f4289861cab3f42761f0106ec6814f6e3356c42fea86a962"
     }
   ],
   "toolDefinitions": [
     {
       "name": "data_query.query",
       "source": "APPLICATION",
-      "actionKey": "data_query.query@v1",
-      "capabilityContractKey": "data_query.query@v1",
-      "inputSchemaHash": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
-      "outputSchemaHash": "1fffd9fda38ecd3770c81b4760d4366d679d1f4d274fe47111b9f1eeb64f7eab",
+      "actionKey": "data_query.query@v2",
+      "capabilityContractKey": "data_query.query@v2",
+      "inputSchemaHash": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaHash": "907bdf28e4aedfade69691fe6f8979a21ebfd59cf80528ce85271be9fb500142",
       "backendRef": "adapter-mcp",
       "status": "ACTIVE"
     },
     {
       "name": "data_query.dry_run",
       "source": "APPLICATION",
-      "actionKey": "data_query.dry_run@v1",
-      "capabilityContractKey": "data_query.dry_run@v1",
-      "inputSchemaHash": "f31f47dffa4458162e9d86fd87b7ecc3cd9dbd68bfcb29d16209ca39f1a65c0b",
-      "outputSchemaHash": "0ef47f1c08c5bf8752cd2be1267b6f8ba11fdfb2370929b0470b4cc0070195ea",
+      "actionKey": "data_query.dry_run@v2",
+      "capabilityContractKey": "data_query.dry_run@v2",
+      "inputSchemaHash": "7ae1ca90cef7886ea57166fe3ee5fc04b7ee9b4e826d5fdb0c6dbcd8fce9fd42",
+      "outputSchemaHash": "ba0b6aba05b8c9657f75770642397ba71a03dcf1870b40a5c2a615e37255444c",
       "backendRef": "adapter-mcp",
       "status": "ACTIVE"
     },
     {
       "name": "data_query.describe",
       "source": "APPLICATION",
-      "actionKey": "data_query.describe@v1",
-      "capabilityContractKey": "data_query.describe@v1",
+      "actionKey": "data_query.describe@v2",
+      "capabilityContractKey": "data_query.describe@v2",
       "inputSchemaHash": "7c68c781cb877a03a71cc21c403a22e4f21ad21cc55657adc53c6ac1e836c8d4",
-      "outputSchemaHash": "e620ba8ea4f29f185fc7c01b56098c7831d8534c5b9c5a4ceb2a31e59c56c3a1",
+      "outputSchemaHash": "a2c3ea3812df35d9f4289861cab3f42761f0106ec6814f6e3356c42fea86a962",
       "backendRef": "adapter-mcp",
       "status": "ACTIVE"
     }

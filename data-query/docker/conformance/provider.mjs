@@ -684,13 +684,13 @@ export async function openProvider(path) {
   const vectors = JSON.parse(registration.testVectorsJson);
   if (
     registration.categoryKey !== 'data_query' ||
-    registration.contractVersion !== 1 ||
-    vectors.formatVersion !== 'V1' ||
+    registration.contractVersion !== 2 ||
+    vectors.formatVersion !== 'V2' ||
     !Array.isArray(vectors.cases)
   )
     refuse();
   const cases = vectors.cases.filter((value) =>
-    value.steps.some((step) => step.contractKey === 'data_query.describe@v1'),
+    value.steps.some((step) => step.contractKey === 'data_query.describe@v2'),
   );
   if (cases.length !== 1) refuse();
   const selected = cases[0];
@@ -698,39 +698,55 @@ export async function openProvider(path) {
   if (
     steps.length !== 3 ||
     steps.map((step) => step.contractKey).join(',') !==
-      'data_query.describe@v1,data_query.dry_run@v1,data_query.query@v1'
+      'data_query.describe@v2,data_query.dry_run@v2,data_query.query@v2'
   )
     refuse();
   const resourceId = steps[0].referenceResourceId;
   const described = JSON.parse(steps[0].expectedOutputJson);
+  // DD-124(1)(2): Wren generates the deployment identity and the typed model
+  // reference. The vectors may carry them only as bound CAPTURE placeholders
+  // that Core fills from the candidate's own describe response; a literal
+  // deployment ID or hash (data_query@1) is refused, never matched.
+  const captured = (step, side, pointer) =>
+    (step.bindings ?? []).some(
+      (binding) =>
+        binding.source === 'CAPTURE' &&
+        binding.side === side &&
+        binding.pointer === pointer,
+    );
   if (
     !uuid.test(resourceId) ||
-    !Number.isSafeInteger(described.deploymentId) ||
-    described.deploymentId <= 0 ||
-    !/^[a-f0-9]{40}$/.test(described.deploymentHash) ||
     described.models?.length !== 1 ||
-    steps
-      .slice(1)
-      .some(
-        (step) =>
-          step.referenceFromStepKey !== steps[0].stepKey ||
-          step.referenceResourceId !== resourceId,
-      )
-  )
-    refuse();
-  if (
-    !exactKeys(fixture, ['projectId', 'deploymentId', 'modelId', 'manifest']) ||
-    fixture.projectId !== query.projectId ||
-    fixture.deploymentId !== described.deploymentId ||
-    !Number.isSafeInteger(fixture.modelId) ||
-    fixture.modelId <= 0 ||
     steps.some((step) => {
       const output = JSON.parse(step.expectedOutputJson);
       return (
-        output.deploymentId !== fixture.deploymentId ||
-        output.deploymentHash !== described.deploymentHash
+        step.referenceResourceId !== resourceId ||
+        Object.hasOwn(step, 'referenceFromStepKey') ||
+        ['deploymentId', 'deploymentHash'].some(
+          (field) =>
+            !/^\{\{CAPTURE:[a-z][a-z0-9_]*\}\}$/.test(output[field]) ||
+            !captured(step, 'EXPECTED', `/${field}`),
+        )
       );
-    })
+    }) ||
+    steps
+      .slice(1)
+      .some((step) =>
+        ['/nativeObjectRef', '/nativeRevision'].some(
+          (pointer) => !captured(step, 'INPUT', pointer),
+        ),
+      )
+  )
+    refuse();
+  // The deployment is the one this isolated instance's original DeployService
+  // actually committed (prepare), never a value taken from the vectors.
+  if (
+    !exactKeys(fixture, ['projectId', 'deploymentId', 'modelId', 'manifest']) ||
+    fixture.projectId !== query.projectId ||
+    !Number.isSafeInteger(fixture.deploymentId) ||
+    fixture.deploymentId <= 0 ||
+    !Number.isSafeInteger(fixture.modelId) ||
+    fixture.modelId <= 0
   )
     refuse();
   // Core signs only an independently delivered context. The provider consumes
@@ -851,14 +867,14 @@ export async function openProvider(path) {
         .where({ id: query.projectId })
         .first();
       const deployment = await tx('deploy_log')
-        .where({ id: described.deploymentId, project_id: query.projectId })
+        .where({ id: fixture.deploymentId, project_id: query.projectId })
         .first();
       if (
         !project ||
         project.type !== 'POSTGRES' ||
         !deployment ||
         deployment.status !== 'SUCCESS' ||
-        deployment.hash !== described.deploymentHash
+        !/^[a-f0-9]{40}$/.test(deployment.hash)
       )
         refuse();
       const manifest = parsed(deployment.manifest);

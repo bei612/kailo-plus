@@ -3,7 +3,7 @@
 This is the missing Wren-side developer environment from `.design/07` section
 8A (REQ-22, DD-76). It is not a replacement for Core/Worker's existing suite
 runner, a production PEP, or a source of successful query/deployment results.
-It serves explicitly delivered `data_query.v1` query and protocol PEP contexts
+It serves explicitly delivered `data_query.v2` query and protocol PEP contexts
 for the original native consumers. Core still freezes and runs all required
 protocol and capability cases; this provider does not claim the full suite.
 
@@ -26,7 +26,8 @@ The operator configuration contains exactly:
   `ComponentConformanceEnvironment` and `ComponentConformanceIdentity` inputs;
 - `queryFile`, `bindingFile`: the original Wren query/binding delivery files,
   pinned to that isolated instance and the same candidate artifact;
-- `registrationFile`: the actual unpublished/final `data_query.v1` registration;
+- `registrationFile`: the actual `data_query.v2` registration (V2 vectors;
+  `data_query.v1` is refused, see the DD-124 section below);
 - `databaseUrlFile`: the isolated native PostgreSQL connection, owner-only;
 - `nativeFixtureFile`: the retained original deployment input and actual IDs,
   with exactly `projectId`, `deploymentId`, `modelId`, and `manifest`;
@@ -127,7 +128,8 @@ query delivery and registration vector. It hashes the retained input using
 the original `DeployService.createMDLHash` byte algorithm, and compares the
 stored manifest structurally because PostgreSQL JSONB can reorder keys.
 
-The v1 candidate now uses the original deployment actually observed on
+The v1 candidate (historical; superseded by data_query@2 below) used the
+original deployment actually observed on
 2026-10-11: project/model/deployment IDs are each 1, model `public_source`, and
 deployment hash `b6868695012f1cadd395755ace4189a75bcc81bc`. These are isolated
 fixture facts, not production defaults. Describe metadata retains `INTEGER`;
@@ -323,3 +325,38 @@ authorized ContentReference/result consumer, not a fabricated result. The
 original validation response contains fresh OpenBao request IDs, so its full
 response cannot be predicted as a frozen expectation. That cross-Core fixed
 metadata comparison is a separate coordinated change, not bypassed here.
+
+## data_query@2: Wren-generated identifiers are captured, not vector literals (DD-124)
+
+Authority: design 02 DD-124(1)(2)(3)(5), 08 section 6, 16 V-SCN-152/153.
+`data_query@1` wrote the deployment ID `1` and hash `b686…` that Wren's
+original DeployService generated into its vectors, and typed them as an
+integer and a 40-hex string, so no V2 placeholder could stand in their place.
+`contracts/adapter/data_query.v2/registration.json` makes `deploymentId`,
+`deploymentHash` and the ContentReference `nativeRevision` opaque non-empty
+strings and keeps every other schema and declaration of @1. Its V2 case
+`native_query` lets describe self-capture `deploymentId`/`deploymentHash`
+(GENERATED_REF) and its typed ContentReference; dry_run and query send that
+captured reference and expect the captured deployment identifiers. Core
+captures them from this candidate's own SUCCEEDED describe response; neither
+this provider nor any fixture supplies or predicts them.
+
+The provider therefore accepts only a `data_query` contract version 2 with
+`V2` vectors whose deployment fields are bound `{{CAPTURE:…}}` placeholders on
+every step and whose dry_run/query inputs bind the captured
+`nativeObjectRef`/`nativeRevision`; a V1 registration with literal deployment
+values is refused (`preparation.test.mjs` checks both). The native fixture is
+the deployment this isolated instance's DeployService actually committed:
+`nativeFixtureFile.deploymentId` must be a positive safe integer, and the
+SUCCESS row with that ID must match the retained manifest by the original
+`createMDLHash` algorithm. Only the literal describe model metadata (name and
+column types) is compared with the native model. The Wren adapter returns
+`deploymentId` as the decimal string of its native deploy row and accepts only
+that canonical form on the SQL input branch.
+
+Terminal native status (DD-124(5)): `observe`/`execute` map the governed
+`api_history` row's persisted state through the fixed release mapping
+`SUCCEEDED`/`FAILED`; only those carry `nativeStatus` (the raw value) and
+`terminalAt`. Every other state, including a missing one, is `UNKNOWN`
+without native status. Nothing here has been run on the dev box; the Node
+checks and the isolated run belong on the CI node.
