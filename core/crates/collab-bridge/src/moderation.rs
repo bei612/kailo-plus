@@ -225,7 +225,8 @@ mod tests {
         let unknown = Some(Restriction::TimedOut(None));
         assert_eq!(restriction_from_rejection(unparsed), unknown);
         let banned = "blocked: you are banned from this community";
-        assert_eq!(restriction_from_rejection(banned), Some(Restriction::Banned));
+        let ban = Some(Restriction::Banned);
+        assert_eq!(restriction_from_rejection(banned), ban);
         let reserved = "restricted: kind 9 is reserved to the community owner";
         assert_eq!(restriction_from_rejection(reserved), None);
         assert_eq!(restriction_from_rejection("invalid: bad"), None);

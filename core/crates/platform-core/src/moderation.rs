@@ -1670,7 +1670,8 @@ mod tests {
         let pending = resolution_progress(&rows, &ids, "resolved");
         assert_eq!(pending, Progress::Pending(vec![b.clone()]));
         let rows = vec![report(&a, "resolved", t), report(&b, "resolved", t)];
-        assert_eq!(resolution_progress(&rows, &ids, "resolved"), Progress::Done);
+        let done = resolution_progress(&rows, &ids, "resolved");
+        assert_eq!(done, Progress::Done);
         let rows = vec![report(&a, "dismissed", t), report(&b, "open", t)];
         let conflict = resolution_progress(&rows, &ids, "resolved");
         assert_eq!(conflict, Progress::Conflict);
