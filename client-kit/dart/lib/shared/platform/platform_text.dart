@@ -12224,7 +12224,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.agentMentionQuotaExhausted: (
     '{name} did not respond: your organization\'s Agent quota is used up. Contact an admin.',
-    '{name} 未响应：组织的 Agent 额度已用完，请联系管理员',
+    '{name} 未响应：组织额度已用完，请联系管理员',
   ),
   PlatformMessageKey.agentMentionUnknownAgent: ('Agent', 'Agent'),
   PlatformMessageKey.agentsInstallationToolsOpen: ('View tools', '查看工具'),

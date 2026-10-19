@@ -4101,7 +4101,7 @@ export const platformMessages = {
   "agentMention.renewDelegation": { en: "Renew delegation", "zh-CN": "续签委托" },
   "agentMention.useRequired": { en: "{name} did not respond: an admin needs to grant you use of it.", "zh-CN": "{name} 未响应：需要管理员授予使用权" },
   "agentMention.unavailable": { en: "{name} did not respond: temporarily unavailable. Try again later.", "zh-CN": "{name} 未响应：暂不可用，稍后重试" },
-  "agentMention.quotaExhausted": { en: "{name} did not respond: your organization's Agent quota is used up. Contact an admin.", "zh-CN": "{name} 未响应：组织的 Agent 额度已用完，请联系管理员" },
+  "agentMention.quotaExhausted": { en: "{name} did not respond: your organization's Agent quota is used up. Contact an admin.", "zh-CN": "{name} 未响应：组织额度已用完，请联系管理员" },
   "agentMention.unknownAgent": { en: "Agent", "zh-CN": "Agent" },
   "agents.installation.tools.open": { en: "View tools", "zh-CN": "查看工具" },
   "agents.installation.tools.title": { en: "Tools", "zh-CN": "工具" },

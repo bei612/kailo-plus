@@ -72,7 +72,7 @@ it("DD-123: QUOTA_EXHAUSTED says the organization quota is used up; DEPENDENCY_U
   const zh = await render(<AgentMentionStatus entries={[
     entry(AgentMentionOutcomeState.Denied, { name: "研究助理", reasonCode: ReasonCode.QuotaExhausted }),
   ]} />);
-  expect(zh.textContent).toBe("研究助理 未响应：组织的 Agent 额度已用完，请联系管理员");
+  expect(zh.textContent).toBe("研究助理 未响应：组织额度已用完，请联系管理员");
 });
 
 it("renders the Chinese copy from the shared catalog", async () => {
