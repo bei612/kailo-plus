@@ -669,17 +669,28 @@ def plan(name):
 
 def stage(name, dest):
     """构建输入 = inputs 下按仓库忽略规则可见的文件，保持相对 apps/ 的位置——本地路径依赖
-    （file:/link:/path:）在构建里与仓库里指向同一处。"""
+    （file:/link:/path:）在构建里与仓库里指向同一处。
+
+    权限按 Git 记录的语义落盘：目录 0755，可执行文件 0755，其余 0644（与 source_digest 只区分
+    x/f 一致）。检出树的权限随检出进程的 umask 变化（CI worker 为 0077），Dockerfile 的 COPY
+    会把它原样带进镜像，以非 root 运行的服务因而读不到自己的配置与静态文件。"""
     _, _, art = resolve(name)
     if os.path.exists(dest) and os.listdir(dest):
         sys.exit(f"{dest} 不是空目录")
     for rel in source_files(*_list(art, "inputs")):
         dst = os.path.join(dest, rel)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        parent = os.path.dirname(dst)
+        os.makedirs(parent, exist_ok=True)
+        while True:
+            os.chmod(parent, 0o755)
+            if os.path.normpath(parent) == os.path.normpath(dest):
+                break
+            parent = os.path.dirname(parent)
         if os.path.islink(rel):
             os.symlink(os.readlink(rel), dst)
         else:
-            shutil.copy2(rel, dst)
+            shutil.copyfile(rel, dst)
+            os.chmod(dst, 0o755 if os.access(rel, os.X_OK) else 0o644)
 
 
 def record(name, artifact):
