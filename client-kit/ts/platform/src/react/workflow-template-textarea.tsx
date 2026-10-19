@@ -34,6 +34,11 @@ export function WorkflowTemplateTextarea({
 }) {
   const t = useT();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  // The caret restore runs on the next frame; an unmounted editor must not be touched.
+  const caretFrame = React.useRef<number | null>(null);
+  React.useEffect(() => () => {
+    if (caretFrame.current !== null) cancelAnimationFrame(caretFrame.current);
+  }, []);
   const generatedId = React.useId();
   const textareaId = props.id ?? `workflow-template-${generatedId}`;
   const listboxId = `${textareaId}-variables`;
@@ -68,10 +73,13 @@ export function WorkflowTemplateTextarea({
       const next = insertTemplateVariable(value, token, variable.value);
       onValueChange(next.value);
       setToken(null);
-      requestAnimationFrame(() => {
+      if (caretFrame.current !== null) cancelAnimationFrame(caretFrame.current);
+      caretFrame.current = requestAnimationFrame(() => {
+        caretFrame.current = null;
         const textarea = textareaRef.current;
-        textarea?.focus();
-        textarea?.setSelectionRange(next.caret, next.caret);
+        if (!textarea?.isConnected) return;
+        textarea.focus();
+        textarea.setSelectionRange(next.caret, next.caret);
       });
     },
     [disabled, onValueChange, token, value],
