@@ -14,11 +14,14 @@
 # inventing them: the Cells admin/actor PATs (`cells admin user token` of the
 # isolated instance) after stage 1 for the stage-2 seed file, and the observed
 # nativeRootRef / nativeWorkspaceId (stage-2 native-facts.json) for the stage-3
-# delivery env and adapter plan. run.env is re-read by every invocation and
-# only the variables of the requested stage are required. Stage 0 needs an
-# empty RUN_DIR; stage n>0 needs RUN_DIR/stage-<n-1>.done and refuses when
-# RUN_DIR/stage-<n>.done already exists (a failed stage is investigated, not
-# silently repeated; a new run uses a fresh RUN_DIR).
+# delivery env and the isolated adapter plan (conformance/isolated-plan.py: fresh
+# simulated tenant/binding/actor/result-policy ids; never component-bind.mjs,
+# whose production identities Core's authorize_probe refuses as ScopeGuardFailed).
+# run.env is re-read by every invocation and only the variables of the
+# requested stage are required. Stage 0 needs an empty RUN_DIR; stage n>0
+# needs RUN_DIR/stage-<n-1>.done and refuses when RUN_DIR/stage-<n>.done
+# already exists (a failed stage is investigated, not silently repeated; a new
+# run uses a fresh RUN_DIR).
 #
 # Stages (each refuses to continue on failure):
 #   0 gate      vector-requirements.mjs: frozen vectors vs. native mintability
@@ -28,7 +31,8 @@
 #   2 seed      native-API fixture (Cells: seed-cells.mjs) -> native-facts.json;
 #               for V2 vectors (DD-124) it records each case precondition as the
 #               identity the native entry returned (never a vector value)
-#   3 delivery  isolated native-action delivery + adapter (start.sh --platform-adapter)
+#   3 delivery  isolated OpenBao + Agent (CONFORMANCE_OPENBAO_ENV), then the isolated
+#               native-action delivery + adapter (start.sh --check, --platform-adapter)
 #   4 observe   observe.mjs (ephemeral signer + in-process provider) -> facts.json;
 #               observe.json nativeFactsFile=<seed out> carries those precondition
 #               values unchanged (CAPTURE values exist only in Core's own run)
@@ -177,11 +181,17 @@ if wanted 2; then
   done_stage 2
   if [[ -n $only ]]; then
     cat <<EOF
-Stage 2 done. Take the observed nativeRootRef / nativeWorkspaceId from the seed output (native-facts.json)
-into the isolated bind plan (component-bind.mjs --plan-only --native-scope-ref) and render the adapter and
-native action deliveries (adapter-delivery.py config ... --core-pep-url --oidc-token-url
---action-token-audience; --set nativeRootRef=...), then set CONFORMANCE_DELIVERY_ENV in $run_env and run
---stage 3.
+Stage 2 done. Write the isolated bind plan from the seed output with fresh simulated identities (not
+component-bind.mjs --plan-only: its production tenant/actor make Core refuse every probe, ScopeGuardFailed):
+  python3 -I $src/tools/component-release/conformance/isolated-plan.py --release-dir <render.mjs output> \\
+    --native-facts <seed out native-facts.json> --native-page-url <url> --native-instance-ref <ref> \\
+    --kv-mount <isolated KV mount> [--actor-native-user <isolated native user uuid>] \\
+    --plan-out $run/isolated-plan.json --context-out $run/isolated-context.json
+Render the adapter and native action deliveries from that plan (adapter-delivery.py config --plan ...
+--core-pep-url --oidc-token-url --action-token-audience; --set from isolated-context.json nativeActionSets,
+--set-json actors), copy its principals / bindingManagement / resultExposurePolicy into observe.json and
+providerBinding into the provider bindingFile, then set CONFORMANCE_DELIVERY_ENV (and CONFORMANCE_OPENBAO_ENV)
+in $run_env and run --stage 3.
 EOF
   fi
 fi
@@ -189,14 +199,16 @@ fi
 if wanted 3; then
   need CONFORMANCE_NATIVE_ENV CONFORMANCE_DELIVERY_ENV
   echo "[3/6] isolated native-action delivery and adapter"
-  bash "$start" --check "$CONFORMANCE_DELIVERY_ENV"
   # The adapter's validate_binding reads the simulated binding SecretRefs
   # through an OpenBao Agent; they live in the run's own isolated OpenBao
   # (never platform-local-openbao). The Agent also renders the callback
-  # credential the native action delivery below consumes.
+  # credential the native action delivery consumes, so it comes up before
+  # start.sh --check verifies that delivery (a failed check leaves it for
+  # inspection; remove it with isolated-openbao.sh down).
   if [[ -n ${CONFORMANCE_OPENBAO_ENV:-} ]]; then
     bash "$src/tools/component-release/conformance/isolated-openbao.sh" up "$CONFORMANCE_OPENBAO_ENV"
   fi
+  bash "$start" --check "$CONFORMANCE_DELIVERY_ENV"
   # Same dedicated project, now with the platform native-action delivery that
   # makes Cells accept only governed native writes (seeding is over).
   project=$(project_of "$CONFORMANCE_DELIVERY_ENV")
