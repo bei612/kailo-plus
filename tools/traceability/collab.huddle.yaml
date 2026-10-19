@@ -1,0 +1,43 @@
+capability_id: collab.huddle
+title: 原版 Huddle 经 Core 治理：huddle.start/agent.add/agent.remove/end 由 Tenant CONTROL 投影带 creator 的临时频道 9007 与 Agent 9000/9001/9002 并回读，HuddleBuzzBinding 记 PROVISIONING/ACTIVE/ENDED/ERROR；Relay 只为该投影服务音频，9001 与任何归档关闭连接并补签 48103；Web 经同源 BFF 音频桥以本人 SERVER 身份认证并原样转发 v2 Opus 帧，创建者 48106/48100 各签一次重投不重签；撤员、退役公钥与 Workspace 暂停移出或归档临时频道；Web 转写与朗读在 Huddle 语音推理服务登记前按原版“仅语音模式”显示不可用
+stage: S1
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-125, DD-39, DD-75, DD-80, DD-81]
+  facts: [SF-BUZ-39, SF-BUZ-53]
+  seams: [SS-BUZ-GOVERNANCE]
+  blockers: []
+  entities: [HuddleBuzzBinding, ActionDefinition, ActionExecution, ActionDecision, AuditEvent, BuzzIdentityBinding, TenantBuzzBinding, WorkspaceBuzzBinding, ConversationBuzzBinding]
+
+validation:
+  scenarios: [V-SCN-131, V-SCN-132, V-SCN-133, V-SCN-134, V-SCN-158, V-SCN-159, V-SCN-160, V-SCN-161]
+  evidence:
+    - dimension: 领域规则
+      ref: core/crates/platform-core/src/huddle.rs
+    - dimension: 安全边界
+      ref: core/crates/platform-core/src/huddle_audio.rs
+    - dimension: 端到端场景
+      ref: core/crates/platform-core/tests/huddle.rs
+    - dimension: 故障与恢复
+      ref: core/crates/collab-bridge/src/huddle.rs
+    - dimension: 上游接缝
+      ref: collaboration/fork/verify/governance.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/huddle.rs, core/crates/platform-core/src/huddle_audio.rs, core/crates/platform-core/src/membership_projection.rs, core/crates/platform-core/src/identity_projection.rs, core/crates/platform-core/src/tenant_lifecycle.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/governance_reconcile.rs, core/crates/collab-bridge/src/huddle.rs, core/crates/collab-bridge/src/bridge.rs, collaboration/crates/buzz-relay/src/audio/governed.rs, collaboration/crates/buzz-relay/src/handlers/governance.rs, client-kit/ts/platform/src/react/huddle, client-kit/ts/platform/src/huddle, web-client]
+  surfaces: [web]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/action_submission.schema.json, contracts/domain/huddle_start_input.schema.json, contracts/domain/huddle_agent_input.schema.json, contracts/enums/huddle_state.schema.json, contracts/enums/huddle_voice_availability.schema.json, contracts/api/huddle_view.schema.json, contracts/api/huddle_page.schema.json, contracts/api/huddle_lifecycle_event.schema.json, contracts/api/huddle_lifecycle_page.schema.json, contracts/api/huddle_voice_view.schema.json, contracts/api/huddle_announcement_view.schema.json]
+  migrations: [core/migrations/20261020030000_huddle_buzz_binding.up.sql, core/migrations/20261020030000_huddle_buzz_binding.down.sql]
+
+runtime:
+  routes: ["/api/v1/actions", "/api/v1/huddles", "/api/v1/huddles/voice", "/api/v1/huddles/{huddle_id}", "/api/v1/huddles/{huddle_id}/lifecycle", "/api/v1/huddles/{huddle_id}/announcement", "/api/v1/huddles/{huddle_id}/leave", "/api/v1/huddles/{huddle_id}/audio"]
+  actions: [huddle.start, huddle.agent.add, huddle.agent.remove, huddle.end]
+
+release:
+  # 本批只有源码：Core、Relay 与 Web 均未构建、部署或做业务验收；Desktop 原生 Huddle 未恢复。
+  artifacts: []
+  gate: blocked_until_seams_closed

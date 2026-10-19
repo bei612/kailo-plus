@@ -142,6 +142,24 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.huddle
+  exposure: end_user
+  routes:
+  - /api/v1/actions
+  - /api/v1/huddles
+  - /api/v1/huddles/voice
+  - /api/v1/huddles/{huddle_id}
+  - /api/v1/huddles/{huddle_id}/lifecycle
+  - /api/v1/huddles/{huddle_id}/announcement
+  - /api/v1/huddles/{huddle_id}/leave
+  - /api/v1/huddles/{huddle_id}/audio
+  actions:
+  - huddle.start
+  - huddle.agent.add
+  - huddle.agent.remove
+  - huddle.end
+  tools: []
+  workflow_kinds: []
 - id: collab.moderation
   exposure: end_user
   routes:
