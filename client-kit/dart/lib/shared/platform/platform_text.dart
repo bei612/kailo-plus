@@ -3686,6 +3686,26 @@ enum PlatformMessageKey {
   platformShortcutsToggleHuddleDescription,
   platformShortcutsPushToTalkLabel,
   platformShortcutsPushToTalkDescription,
+  platformProfileWave,
+  platformProfileWaveFailed,
+  messagesWaveTitle,
+  messagesWaveSomeone,
+  messagesWaveDescription,
+  onboardingBack,
+  onboardingContinue,
+  onboardingNext,
+  onboardingSkipForNow,
+  onboardingContinueWithoutSaving,
+  onboardingSavingProfile,
+  onboardingProfileTitle,
+  onboardingProfileBody,
+  onboardingProfileNameLabel,
+  onboardingProfileNamePlaceholder,
+  onboardingAvatarTitle,
+  onboardingAvatarBody,
+  onboardingAvatarAdd,
+  onboardingAvatarUploading,
+  onboardingAvatarPreviewFallback,
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
@@ -12678,6 +12698,53 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Hold to unmute in a huddle',
     '在语音小会中按住以取消静音',
   ),
+  PlatformMessageKey.platformProfileWave: ('Wave', '挥手'),
+  PlatformMessageKey.platformProfileWaveFailed: (
+    'Couldn\'t send the wave.',
+    '未能发送挥手。',
+  ),
+  PlatformMessageKey.messagesWaveTitle: (
+    '{name} waved at you.',
+    '{name} 向你挥手。',
+  ),
+  PlatformMessageKey.messagesWaveSomeone: ('Someone waved at you.', '有人向你挥手。'),
+  PlatformMessageKey.messagesWaveDescription: (
+    'Start a huddle to talk to them.',
+    '发起语音小会和对方聊聊。',
+  ),
+  PlatformMessageKey.onboardingBack: ('Back', '返回'),
+  PlatformMessageKey.onboardingContinue: ('Continue', '继续'),
+  PlatformMessageKey.onboardingNext: ('Next', '下一步'),
+  PlatformMessageKey.onboardingSkipForNow: ('Skip for now', '暂时跳过'),
+  PlatformMessageKey.onboardingContinueWithoutSaving: (
+    'Continue without saving',
+    '不保存并继续',
+  ),
+  PlatformMessageKey.onboardingSavingProfile: ('Saving profile', '正在保存个人资料'),
+  PlatformMessageKey.onboardingProfileTitle: (
+    'What should we call you?',
+    '我们该怎么称呼你？',
+  ),
+  PlatformMessageKey.onboardingProfileBody: (
+    'Pick the name people and agents will see in Buzz. You can change it anytime.',
+    '设置成员和 Agent 在 Buzz 中看到的名字，之后随时可以修改。',
+  ),
+  PlatformMessageKey.onboardingProfileNameLabel: ('Name', '名字'),
+  PlatformMessageKey.onboardingProfileNamePlaceholder: (
+    'Enter your name',
+    '输入你的名字',
+  ),
+  PlatformMessageKey.onboardingAvatarTitle: (
+    'Next, add a display image',
+    '接下来，添加头像',
+  ),
+  PlatformMessageKey.onboardingAvatarBody: (
+    'Choose an image or emoji as your avatar',
+    '选择一张图片或一个表情作为头像',
+  ),
+  PlatformMessageKey.onboardingAvatarAdd: ('Add a display image', '添加头像'),
+  PlatformMessageKey.onboardingAvatarUploading: ('Uploading avatar', '正在上传头像'),
+  PlatformMessageKey.onboardingAvatarPreviewFallback: ('Your avatar', '你的头像'),
 };
 
 String platformText(
