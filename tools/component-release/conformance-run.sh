@@ -44,6 +44,9 @@
 #   CONFORMANCE_NETWORK       dedicated docker network (internal; not platform-local_*)
 #   CONFORMANCE_NATIVE_ENV    component start.sh env for the dedicated project
 #   CONFORMANCE_DELIVERY_ENV  same project + native action/adapter delivery (stage 3)
+#   CONFORMANCE_OPENBAO_ENV   (stage 3, optional) conformance/isolated-openbao.sh env: the run's
+#                             isolated OpenBao + component Agent for the adapter SecretRefs
+#                             (remove afterwards with isolated-openbao.sh down)
 #   CONFORMANCE_SEED_FILE     seed-cells.mjs input (stage 2, Cells)
 #   CONFORMANCE_OBSERVE_FILE  observe.mjs input (stage 4)
 #   CONFORMANCE_PROVIDER_FILE suite provider config (identityFile = RUN_DIR/inputs/identity.json)
@@ -184,6 +187,13 @@ if wanted 3; then
   need CONFORMANCE_NATIVE_ENV CONFORMANCE_DELIVERY_ENV
   echo "[3/6] isolated native-action delivery and adapter"
   bash "$start" --check "$CONFORMANCE_DELIVERY_ENV"
+  # The adapter's validate_binding reads the simulated binding SecretRefs
+  # through an OpenBao Agent; they live in the run's own isolated OpenBao
+  # (never platform-local-openbao). The Agent also renders the callback
+  # credential the native action delivery below consumes.
+  if [[ -n ${CONFORMANCE_OPENBAO_ENV:-} ]]; then
+    bash "$src/tools/component-release/conformance/isolated-openbao.sh" up "$CONFORMANCE_OPENBAO_ENV"
+  fi
   # Same dedicated project, now with the platform native-action delivery that
   # makes Cells accept only governed native writes (seeding is over).
   project=$(project_of "$CONFORMANCE_DELIVERY_ENV")
