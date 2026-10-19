@@ -15,7 +15,7 @@ use axum::{
     Json,
 };
 use collab_bridge::operator::OperatorError;
-use contracts::{ErrorClass, ReasonCode, GifElement};
+use contracts::{ErrorClass, GifElement, ReasonCode};
 use reqwest::Url;
 use serde_json::{json, Value};
 use uuid::Uuid;

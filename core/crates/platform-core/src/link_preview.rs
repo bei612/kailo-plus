@@ -1297,8 +1297,8 @@ mod tests {
         let ids = ("linkPreviewSnapshotIds", id.clone());
         let suppress = ("suppressLinkPreviews", serde_json::json!(true));
         let edit = ("editEventId", event.clone());
-        assert!(ok(&[ids.clone()]));
-        assert!(ok(&[suppress.clone()]));
+        assert!(ok(std::slice::from_ref(&ids)));
+        assert!(ok(std::slice::from_ref(&suppress)));
         assert!(ok(&[edit.clone(), suppress.clone()]));
         let twice = serde_json::json!([id[0], id[0]]);
         assert!(!ok(&[("linkPreviewSnapshotIds", twice)]));

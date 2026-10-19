@@ -985,7 +985,7 @@ async fn offered(
     let definition = crate::governance::active_definition(&state.pool, ACTION)
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
-    if !definition.is_some_and(|d| validate_definition(&d).is_ok()) {
+    if definition.is_none_or(|d| validate_definition(&d).is_err()) {
         return Ok(false);
     }
     let active: Option<i32> = sqlx::query_scalar(
