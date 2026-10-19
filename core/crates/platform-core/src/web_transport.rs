@@ -1814,6 +1814,15 @@ async fn publish(
         Publication::Message(req) => req.send_to_channel_source_event_id.clone(),
         _ => None,
     };
+    // DD-125(5): only the caller's own link-preview snapshot IDs or the original suppression
+    // marker; the tags themselves come from the snapshot store, never from the browser.
+    let (preview_ids, suppress_previews) = match &publication {
+        Publication::Message(req) => (
+            crate::link_preview::snapshot_ids(req),
+            req.suppress_link_previews == Some(true),
+        ),
+        _ => (Vec::new(), false),
+    };
     if edit_event_id.is_none()
         && delete_event_id.is_none()
         && !valid_message_intent(&message_type, parent_event_id.as_deref())
@@ -1859,7 +1868,10 @@ async fn publish(
         i32::from(message_kind(&message_type))
     };
     if let Publication::Message(request) = &publication {
-        if !valid_deletion_request(request) || !crate::send_to_channel::valid_request(request) {
+        if !valid_deletion_request(request)
+            || !crate::send_to_channel::valid_request(request)
+            || !crate::link_preview::valid_request(request)
+        {
             return StatusCode::BAD_REQUEST.into_response();
         }
         if edit_event_id.is_some()
@@ -1920,9 +1932,12 @@ async fn publish(
         edit_event_id: Option<String>,
         delete_event_id: Option<String>,
         send_to_channel_source_event_id: Option<String>,
+        link_preview_snapshot_ids: Vec<Uuid>,
+        suppress_link_previews: bool,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
         r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
+                  a.link_preview_snapshot_ids, a.suppress_link_previews,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1962,6 +1977,8 @@ async fn publish(
             || p.edit_event_id != edit_event_id
             || p.delete_event_id != delete_event_id
             || p.send_to_channel_source_event_id != send_source
+            || p.link_preview_snapshot_ids != preview_ids
+            || p.suppress_link_previews != suppress_previews
         {
             return StatusCode::CONFLICT.into_response();
         }
@@ -2126,6 +2143,26 @@ async fn publish(
             }
             Err(response) => return response,
         }
+    }
+
+    // DD-125(5): the original link-preview tags, built only from the caller's own unexpired
+    // snapshots of this Community (V-SCN-139), or the original suppression marker.
+    if !preview_ids.is_empty() {
+        let tags = crate::link_preview::snapshot_tags(
+            &state,
+            &ctx,
+            &community_host,
+            &preview_ids,
+            &content,
+        )
+        .await;
+        match tags {
+            Ok(tags) => media_tags.extend(tags),
+            Err(response) => return response,
+        }
+    }
+    if suppress_previews {
+        media_tags.push(crate::link_preview::suppression_tag());
     }
 
     // 主题随签名事件的标签进入 Relay，与正文按同一上界预检；它不进审计与存储
@@ -2530,8 +2567,9 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id,
+                      link_preview_snapshot_ids, suppress_link_previews)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -2544,6 +2582,8 @@ async fn publish(
             .bind(&delete_event_id)
             .bind(&human_mentions)
             .bind(&send_source)
+            .bind(&preview_ids)
+            .bind(suppress_previews)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -2559,10 +2599,13 @@ async fn publish(
                 edit_event_id: Option<String>,
                 delete_event_id: Option<String>,
                 send_to_channel_source_event_id: Option<String>,
+                link_preview_snapshot_ids: Vec<Uuid>,
+                suppress_link_previews: bool,
                 target_ids: Vec<Option<Uuid>>,
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
                 "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
+                    a.link_preview_snapshot_ids, a.suppress_link_previews,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -2579,6 +2622,8 @@ async fn publish(
                 && frozen.edit_event_id == edit_event_id
                 && frozen.delete_event_id == delete_event_id
                 && frozen.send_to_channel_source_event_id == send_source
+                && frozen.link_preview_snapshot_ids == preview_ids
+                && frozen.suppress_link_previews == suppress_previews
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(

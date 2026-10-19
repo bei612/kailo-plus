@@ -47,11 +47,13 @@ mod custom_emoji;
 mod delegation_query;
 mod external_human;
 mod gateway_usage;
+mod gifs;
 mod governance;
 mod governance_api;
 mod governance_reconcile;
 mod identity_projection;
 mod invitation;
+mod link_preview;
 mod membership_lifecycle;
 mod membership_projection;
 mod membership_state;
@@ -103,6 +105,7 @@ mod user_status;
 mod web_profile;
 mod web_transport;
 mod workflow_reconcile;
+mod workspace_canvas;
 mod workspace_update;
 
 use std::net::SocketAddr;
@@ -427,6 +430,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|_| "缺少 BFF_MEDIA_MAX_BYTES")?
                 .parse()
                 .map_err(|_| "BFF_MEDIA_MAX_BYTES 必须是字节数")?,
+            link_preview: std::sync::Arc::new(link_preview::Config::from_env()?),
+            gifs: std::sync::Arc::new(gifs::Config::from_env()?),
         };
 
         // The SAME tick/batch also observes fixed Memory write IDs. BFF state

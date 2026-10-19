@@ -1,19 +1,19 @@
 capability_id: collab.channel.management
-title: 原版频道管理入口经 Core：workspace.update 以 Tenant CONTROL 9002 回读收敛名称/描述/TTL 与 TTL 到期解档并在回读一致后提交 Core 名称，可见性只改 Core 事实；workspace.leave 复用撤员链；成员主题以本人 SERVER 身份发布
+title: 原版频道管理入口经 Core：workspace.update 以 Tenant CONTROL 9002 回读收敛名称/描述/TTL 与 TTL 到期解档并在回读一致后提交 Core 名称，可见性只改 Core 事实；workspace.leave 复用撤员链；成员主题以本人 SERVER 身份发布；频道 Canvas 经 workspace.canvas.set 由 CONTROL 签 40100（正文不进 Core、按事件 ID 对账），读取只采纳 CONTROL 作者的最新一条（DD-125(4)）
 stage: S1
 status: in_progress
 exposure: end_user
 
 design:
   requirements: [V-REQ-24]
-  decisions: [DD-119, DD-46, DD-80, DD-81]
-  facts: [SF-BUZ-50, SF-BUZ-15]
+  decisions: [DD-119, DD-46, DD-80, DD-81, DD-125]
+  facts: [SF-BUZ-50, SF-BUZ-15, SF-BUZ-54]
   seams: []
   blockers: []
   entities: [Workspace, WorkspaceMembership, WorkspaceBuzzBinding, ActionDefinition, ActionExecution, WorkflowRef, TaskProjection, AuditEvent, BuzzIdentityBinding]
 
 validation:
-  scenarios: [V-SCN-94, V-SCN-95, V-SCN-96, V-SCN-97, V-SCN-98, V-SCN-99]
+  scenarios: [V-SCN-94, V-SCN-95, V-SCN-96, V-SCN-97, V-SCN-98, V-SCN-99, V-SCN-135, V-SCN-136]
   evidence:
     - dimension: 领域规则
       ref: core/crates/platform-core/src/workspace_update.rs
@@ -23,18 +23,22 @@ validation:
       ref: core/crates/platform-core/src/governance.rs
     - dimension: 故障与恢复
       ref: worker/workflows/workspace_metadata_test.go
+    - dimension: 领域规则
+      ref: core/crates/platform-core/src/workspace_canvas.rs
+    - dimension: 端到端场景
+      ref: client-kit/ts/platform/test/channel-canvas.test.tsx
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/workspace_update.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/collab-bridge/src/bridge.rs, worker/workflows/component_task.go, worker/workflows/workspace_metadata_test.go, worker/activities/core_api.go]
+  paths: [core/crates/platform-core/src/workspace_update.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/platform-core/src/task_rerun.rs, core/crates/collab-bridge/src/bridge.rs, worker/workflows/component_task.go, worker/workflows/workspace_metadata_test.go, worker/activities/core_api.go, core/crates/platform-core/src/workspace_canvas.rs, core/crates/platform-core/src/governance_api.rs, client-kit/ts/platform/src/react/channel-canvas.tsx, client-kit/ts/platform/src/react/channel-management-sheet.tsx, client-kit/ts/platform/src/react/channel-templates/applyChannelTemplate.ts]
   # 本批只交付后端；Web/Desktop 共用的设置入口随客户端批次接入
   surfaces: [web, desktop]
-  schemas: [contracts/domain/workspace_update.schema.json, contracts/api/action_command.schema.json, contracts/api/discoverable_workspace.schema.json, contracts/api/web_channel_view.schema.json, contracts/api/web_publish_topic_request.schema.json]
-  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql]
+  schemas: [contracts/domain/workspace_update.schema.json, contracts/api/action_command.schema.json, contracts/api/discoverable_workspace.schema.json, contracts/api/web_channel_view.schema.json, contracts/api/web_publish_topic_request.schema.json, contracts/domain/workspace_canvas_set_input.schema.json, contracts/api/web_channel_canvas_view.schema.json]
+  migrations: [core/migrations/20261016130000_workspace_channel_management.up.sql, core/migrations/20261016130000_workspace_channel_management.down.sql, core/migrations/20261016131000_publish_channel_topic_kind.up.sql, core/migrations/20261016131000_publish_channel_topic_kind.down.sql, core/migrations/20261019210000_workspace_canvas.up.sql, core/migrations/20261019210000_workspace_canvas.down.sql]
 
 runtime:
-  routes: ["/api/v1/actions", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/channel/topic", "/service/v1/workspaces/channel-metadata"]
-  actions: [workspace.update, workspace.leave, workspace.channel.topic.publish]
+  routes: ["/api/v1/actions", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/channel/topic", "/api/v1/workspaces/{workspace_id}/canvas", "/service/v1/workspaces/channel-metadata"]
+  actions: [workspace.update, workspace.leave, workspace.channel.topic.publish, workspace.canvas.set]
   workflow_kinds: [WORKSPACE_LIFECYCLE, MEMBERSHIP_REVOCATION]
 
 release:

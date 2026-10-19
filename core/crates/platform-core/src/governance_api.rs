@@ -81,6 +81,10 @@ pub async fn submit_action(
     {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-125(4): the Canvas body is a transient input of workspace.canvas.set only.
+    if cmd.workspace_canvas.is_some() && cmd.action_key != crate::workspace_canvas::ACTION {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     let result = if crate::protocol_session::command::is_action(&cmd.action_key) {
         crate::protocol_session::command::submit(&state, &ctx, &headers, &cmd).await
     } else if cmd.component_action.is_some() {
@@ -94,6 +98,8 @@ pub async fn submit_action(
     } else if crate::moderation::is_action(&cmd.action_key) {
         // DD-125(2)：社区审核动作有自己的 Relay 发送与对账路径
         crate::moderation::submit(&state, &ctx, &cmd).await
+    } else if cmd.action_key == crate::workspace_canvas::ACTION {
+        crate::workspace_canvas::submit(&state, &ctx, &cmd).await
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };

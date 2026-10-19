@@ -2065,6 +2065,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.tool_definition set status='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and state='DELETED') and status<>'DELETED'",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
+        // DD-125(5): short-term link-preview snapshots are not history; nothing references them.
+        "delete from admission.link_preview_snapshot where tenant_id = $1",
         "delete from admission.git_push_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "update identity.platform_session set status = 'REVOKED' where tenant_membership_id in (select id from identity.tenant_membership where tenant_id = $1) and status = 'ACTIVE'",
         "update identity.tenant_membership set state = 'REVOKED',version = version + 1 where tenant_id = $1 and state <> 'REVOKED'",

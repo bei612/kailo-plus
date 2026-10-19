@@ -76,6 +76,22 @@ pub struct Nip11Document {
     /// `.design/03` §8 的 canonical digest，与 binding 快照比对用
     pub digest: String,
     pub limits: RelayLimits,
+    /// DD-125(5)：该文档是否按原版广告 GIF 代理（见 [`gif_advertised`]）
+    pub gif: bool,
+}
+
+/// DD-125(5), SF-BUZ-56(4): the original Relay advertises its GIF proxy in NIP-11 as the
+/// `buzz-gif` extension plus `gif {provider: "klipy", search, share}` with the fixed proxy
+/// paths. Any other shape (absent key, another provider or path) is not an advertisement.
+pub fn gif_advertised(doc: &Value) -> bool {
+    let extension = doc["supported_extensions"]
+        .as_array()
+        .is_some_and(|list| list.iter().any(|value| value == "buzz-gif"));
+    let gif = &doc["gif"];
+    extension
+        && gif["provider"] == "klipy"
+        && gif["search"] == crate::bridge::GIF_SEARCH_PATH
+        && gif["share"] == crate::bridge::GIF_SHARE_PATH
 }
 
 /// `.design/03` §8 的全局 digest 规则：结构化对象按 canonical JSON（键排序、无无意义
@@ -136,6 +152,7 @@ pub async fn fetch_nip11(
     Ok(Nip11Document {
         digest: canonical_digest(&doc),
         limits: RelayLimits::from_nip11(&doc)?,
+        gif: gif_advertised(&doc),
     })
 }
 
@@ -317,5 +334,21 @@ mod tests {
             b.try_acquire("h", "k").is_err(),
             "t1 仍在窗口内，只恢复一次"
         );
+    }
+
+    #[test]
+    fn gif_is_advertised_only_in_the_original_shape() {
+        let doc = serde_json::json!({
+            "supported_extensions": ["nip-er", "buzz-gif"],
+            "gif": {"provider": "klipy", "search": "/gifs/search", "share": "/gifs/share"}
+        });
+        assert!(gif_advertised(&doc));
+        let mut other = doc.clone();
+        other["gif"]["search"] = "/anything".into();
+        assert!(!gif_advertised(&other));
+        let mut unlisted = doc.clone();
+        unlisted["supported_extensions"] = serde_json::json!(["nip-er"]);
+        assert!(!gif_advertised(&unlisted));
+        assert!(!gif_advertised(&serde_json::json!({"supported_extensions": ["nip-er"]})));
     }
 }

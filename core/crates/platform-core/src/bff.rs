@@ -78,6 +78,10 @@ pub struct BffState {
     pub stream_retry_millis: u64,
     /// 单份媒体的上界。压力在 BFF 侧先行设界，不透传给 Relay（`07` §5）。
     pub media_max_bytes: u64,
+    /// DD-125(5)：BFF 代 Web 抓取链接预览的出站约束、按 Principal 预算与快照保留期（`09` §3）
+    pub link_preview: std::sync::Arc<crate::link_preview::Config>,
+    /// DD-125(5)：部署登记的 GIF 图片来源；为空即不提供原 GIF 选择器（`09` §3）
+    pub gifs: std::sync::Arc<crate::gifs::Config>,
 }
 
 /// 一次请求的执行身份。
@@ -758,6 +762,29 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/user-state/read",
             axum::routing::put(crate::user_state::put_read_mark),
+        )
+        // DD-125 C3：频道 Canvas 读取（写入是 workspace.canvas.set 语义命令）、BFF 代 Web
+        // 抓取的链接预览快照与经 Relay 原 /gifs/* 转发的 GIF 选择器（`09` §3）
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/canvas",
+            get(crate::workspace_canvas::read),
+        )
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/link-previews",
+            axum::routing::post(crate::link_preview::create_workspace_preview),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/link-previews",
+            axum::routing::post(crate::link_preview::create_conversation_preview),
+        )
+        .exposed_route("/api/v1/gifs", get(crate::gifs::capability))
+        .exposed_route(
+            "/api/v1/gifs/search",
+            axum::routing::post(crate::gifs::search),
+        )
+        .exposed_route(
+            "/api/v1/gifs/share",
+            axum::routing::post(crate::gifs::share),
         )
         // 治理内核：语义命令、本人任务、待我审批与审批决定（.design/06 §9）。
         // 审批状态只经 Temporal Update 推进，这里没有改投影的端点（DD-47）

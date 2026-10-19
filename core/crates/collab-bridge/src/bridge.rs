@@ -1826,6 +1826,60 @@ const KIND_BLOSSOM_AUTH: u16 = 24242;
 /// 授权有效期。短窗口：这份授权由 Core 代签，泄漏出去也只能用很短一段时间。
 const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
 
+/// DD-125(5), SF-BUZ-56(4): the original Relay GIF proxy paths (`api/gifs.rs`). They are the
+/// only Relay paths the GIF methods below can reach; the rest of the Relay HTTP surface is not
+/// proxied through them.
+pub const GIF_SEARCH_PATH: &str = "/gifs/search";
+pub const GIF_SHARE_PATH: &str = "/gifs/share";
+
+impl IdentityClient {
+    /// The original `/gifs/search` as this identity: NIP-98 over POST with the payload hash.
+    /// The Relay applies its member gate and GIF search rate limit; a 429 is a LIMIT.
+    pub async fn gif_search(
+        &self,
+        http: &reqwest::Client,
+        body: &Value,
+    ) -> Result<Value, OperatorError> {
+        let payload = serde_json::to_vec(body).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        self.bridge_post(http, GIF_SEARCH_PATH, &payload).await
+    }
+
+    /// The original `/gifs/share` report as this identity. Success is `204 No Content`.
+    pub async fn gif_share(
+        &self,
+        http: &reqwest::Client,
+        body: &Value,
+    ) -> Result<(), OperatorError> {
+        self.admit()?;
+        let payload = serde_json::to_vec(body).map_err(|e| OperatorError::Sign(e.to_string()))?;
+        let signed_url = format!("http://{}{}", self.community_host, GIF_SHARE_PATH);
+        let url = self.transport.join(GIF_SHARE_PATH)?;
+        let header = self.nip98_header("POST", &signed_url, &payload)?;
+        let resp = http
+            .post(url)
+            .header(reqwest::header::HOST, &self.community_host)
+            .header("Authorization", header)
+            .header("Content-Type", "application/json")
+            .body(payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(OperatorError::Rejected {
+                status: status.as_u16(),
+                body: resp
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .chars()
+                    .take(200)
+                    .collect(),
+            });
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod media_tests {
     use super::*;

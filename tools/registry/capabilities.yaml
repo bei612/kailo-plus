@@ -71,11 +71,13 @@ capabilities:
   - /api/v1/discoverable-workspaces
   - /api/v1/workspaces/{workspace_id}/channel
   - /api/v1/workspaces/{workspace_id}/channel/topic
+  - /api/v1/workspaces/{workspace_id}/canvas
   - /service/v1/workspaces/channel-metadata
   actions:
   - workspace.update
   - workspace.leave
   - workspace.channel.topic.publish
+  - workspace.canvas.set
   tools: []
   workflow_kinds:
   - WORKSPACE_LIFECYCLE
@@ -101,6 +103,11 @@ capabilities:
   - /api/v1/workspaces/{workspace_id}/channel
   - /api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile
   - /api/v1/workspaces/{workspace_id}/messages/author-profiles
+  - /api/v1/workspaces/{workspace_id}/link-previews
+  - /api/v1/conversations/{conversation_id}/link-previews
+  - /api/v1/gifs
+  - /api/v1/gifs/search
+  - /api/v1/gifs/share
   actions:
   - workspace.message.publish
   tools: []

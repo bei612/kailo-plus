@@ -113,6 +113,15 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             if let Err(e) = crate::agent_profile::reconcile(&state, cfg.batch, cfg.settle).await {
                 tracing::warn!(error = %e, "Agent profile projection reconciliation incomplete");
             }
+            // DD-125(4): CONTROL Canvas events settle by event ID within the same window.
+            let canvas = crate::workspace_canvas::reconcile(&state, cfg.batch, cfg.settle);
+            if let Err(e) = canvas.await {
+                tracing::warn!(error = %e, "Canvas publication reconciliation incomplete");
+            }
+            // DD-125(5): expired link-preview snapshots leave the short-term store.
+            if let Err(e) = crate::link_preview::sweep(&state.pool, cfg.batch).await {
+                tracing::warn!(error = %e, "Link-preview snapshot retention incomplete");
+            }
             if let Err(e) = pass(&state, &metrics, &cfg, &mut publish_cursor).await {
                 tracing::warn!(error = %e, "发布结果对账本轮未完成");
             }
