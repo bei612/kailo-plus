@@ -912,11 +912,11 @@ mod tests {
         });
         assert_eq!(
             workspace.message_kinds(),
-            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099, 45001, 45003]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099, 45001, 45003, 48100]
         );
         assert_eq!(
             conversation.message_kinds(),
-            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099]
+            vec![5, 7, 9, 9005, 20002, 39005, 40002, 40003, 40008, 40099, 48100]
         );
         assert!(!workspace.same_admission(&conversation));
     }
@@ -964,7 +964,7 @@ mod tests {
         });
         assert_eq!(
             scope.live_kinds(),
-            vec![5, 7, 9, 9005, 20001, 20002, 30315, 39005, 40002, 40003, 40008, 40099]
+            vec![5, 7, 9, 9005, 20001, 20002, 30315, 39005, 40002, 40003, 40008, 40099, 48100]
         );
         assert!(!scope.message_kinds().contains(&20001));
         let roster = vec!["a".repeat(64), "b".repeat(64)];

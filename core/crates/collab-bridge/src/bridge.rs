@@ -91,12 +91,15 @@ pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
 }
 
 /// The already-admitted native channel rows. Reading these does not enable
-/// Buzz's separate workflow/huddle executors or any new write kind.
-pub const CHANNEL_TIMELINE_KINDS: [u32; 4] = [
+/// Buzz's separate workflow executors or any new write kind. DD-125(3): the
+/// original 48100 Huddle card is a visible, non-conversational row; its
+/// lifecycle (48101-48103) is read through the verified Huddle lifecycle API.
+pub const CHANNEL_TIMELINE_KINDS: [u32; 5] = [
     buzz_core::kind::KIND_STREAM_MESSAGE,
     KIND_STREAM_MESSAGE_V2,
     KIND_STREAM_MESSAGE_DIFF,
     KIND_SYSTEM_MESSAGE,
+    buzz_core::kind::KIND_HUDDLE_STARTED,
 ];
 
 /// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到

@@ -5240,7 +5240,10 @@ mod tests {
             4,
             Some(&cursor),
         );
-        assert_eq!(filter["kinds"], serde_json::json!([9, 40002, 40008, 40099]));
+        assert_eq!(
+            filter["kinds"],
+            serde_json::json!([9, 40002, 40008, 40099, 48100])
+        );
         for flag in ["top_level", "include_summaries", "include_aux"] {
             assert_eq!(filter[flag], true);
         }
@@ -5252,6 +5255,59 @@ mod tests {
         let mut missing = events;
         missing.pop();
         assert!(check(missing).is_err());
+    }
+
+    #[test]
+    fn channel_window_admits_the_original_huddle_card_as_a_native_row() {
+        // DD-125(3): a member's 48100 card is a timeline row like the original's.
+        let channel = Uuid::from_u128(1).to_string();
+        let relay = nostr::Keys::generate();
+        let author = nostr::Keys::generate();
+        let sign = |kind: u16, timestamp, content: String, h: &str, keys| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), content)
+                .tags([nostr::Tag::parse(["h", h]).unwrap()])
+                .custom_created_at(nostr::Timestamp::from_secs(timestamp))
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let content = serde_json::json!({"ephemeral_channel_id": Uuid::from_u128(9).to_string()});
+        let card = sign(48100, 2, content.to_string(), &channel, &author);
+        let message = sign(
+            message_kind(&contracts::WebMessageType::Stream),
+            1,
+            "hello".into(),
+            &channel,
+            &author,
+        );
+        let last_id = message.id.to_hex();
+        let bounds = nostr::EventBuilder::new(
+            nostr::Kind::Custom(KIND_WINDOW_BOUNDS as u16),
+            serde_json::json!({"has_more":true,"next_cursor":{"created_at":1,"id":last_id}})
+                .to_string(),
+        )
+        .tags([
+            nostr::Tag::parse(["h", channel.as_str()]).unwrap(),
+            nostr::Tag::parse(["d", &format!("{channel}:head")]).unwrap(),
+        ])
+        .custom_created_at(nostr::Timestamp::from_secs(2))
+        .sign_with_keys(&relay)
+        .unwrap();
+        let check = |events| {
+            verify_message_page(
+                events,
+                &channel,
+                &contracts::WebMessageType::Stream,
+                None,
+                None,
+                Some(&relay.public_key().to_hex()),
+                2,
+            )
+        };
+        let events = vec![card.clone(), message.clone(), bounds.clone()];
+        let (verified, _) = check(events.clone()).unwrap();
+        assert!(verified.iter().any(|event| event.id == card.id));
+        let elsewhere = sign(48100, 2, content.to_string(), "other", &author);
+        assert!(check(vec![elsewhere, message, bounds]).is_err());
     }
 
     #[test]
