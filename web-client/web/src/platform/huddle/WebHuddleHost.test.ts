@@ -4,10 +4,10 @@
 // (start rollback, phase guard) and playout.rs (speaker ticks).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  ActionDispatchState, ActionGateState, HuddleState, type ActionCommand, type HuddleView,
+  ActionDispatchState, ActionGateState, HuddleState, ReasonCode, type ActionCommand, type HuddleView,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
-import type { BffReply, BffRequest } from "@client-kit/platform/transport";
+import { TransportError, type BffReply, type BffRequest } from "@client-kit/platform/transport";
 import { bridgeUrl, SpeakerActivity } from "./audioSession";
 import { WebHuddleHost } from "./WebHuddleHost";
 
@@ -26,10 +26,20 @@ const view = (state: HuddleState): HuddleView => ({
   createdAt: new Date("2026-10-19T00:00:00Z"),
 });
 
-function backend(options: { announce: () => BffReply; huddle?: HuddleView }) {
+const submission = (dispatchState: ActionDispatchState, reason?: ReasonCode): BffReply => ({
+  status: dispatchState === ActionDispatchState.Dispatched ? 200 : 202,
+  body: {
+    actionExecutionId: "execution", actionKey: "huddle.start", operationId: "operation",
+    gateState: ActionGateState.Allowed, dispatchState, huddleId: "h1", ...(reason ? { reason } : {}),
+  },
+});
+
+function backend(options: { announce: () => BffReply; huddle?: HuddleView; start?: (attempt: number) => BffReply }) {
+  let starts = 0;
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
     if (request.method === "POST" && request.path === "/api/v1/actions") {
       const command = request.body as ActionCommand;
+      if (command.actionKey === "huddle.start" && options.start) return options.start(starts++);
       return { status: 200, body: {
         actionExecutionId: "execution", actionKey: command.actionKey, operationId: "operation",
         gateState: ActionGateState.Allowed, dispatchState: ActionDispatchState.Dispatched,
@@ -54,7 +64,7 @@ beforeEach(() => {
   vi.stubGlobal("AudioEncoder", SupportedCodec);
   vi.stubGlobal("AudioDecoder", SupportedCodec);
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const parent = { kind: "workspace", workspaceId: "w", channelId: "c" } as const;
 
@@ -104,6 +114,78 @@ describe("Web Huddle host", () => {
     expect(api.actions().map((command) => command.actionKey)).toEqual(["huddle.start", "huddle.end"]);
   });
 
+  it("ends a Huddle whose huddle.start outcome stays UNKNOWN", async () => {
+    vi.useFakeTimers();
+    const api = backend({
+      announce: () => ({ status: 200, body: { startedEventId: "e", startedDelivered: true } }),
+      start: () => submission(ActionDispatchState.Unknown),
+    });
+    const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
+    const started = expect(host.startHuddle(parent, [], "release huddle")).rejects.toThrow("huddle action did not settle");
+    await vi.runAllTimersAsync();
+    await started;
+    const commands = api.actions();
+    const starts = commands.filter((command) => command.actionKey === "huddle.start");
+    // The UNKNOWN start is settled only by replaying its own key, then rolled back by huddle.end.
+    expect(starts).toHaveLength(9);
+    expect(new Set(starts.map((command) => command.idempotencyKey)).size).toBe(1);
+    expect(commands.at(-1)?.actionKey).toBe("huddle.end");
+    expect(commands.at(-1)?.huddleId).toBe("h1");
+    expect(commands.at(-1)?.workspaceId).toBe("w");
+    expect((await host.getHuddleState()).phase).toBe("idle");
+  });
+
+  it("recovers a lost huddle.start answer by its key and ends what it created", async () => {
+    const api = backend({
+      announce: () => ({ status: 500, body: {} }),
+      start: (attempt) => {
+        if (attempt === 0) throw new TransportError("connection reset");
+        return submission(ActionDispatchState.Dispatched);
+      },
+    });
+    const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
+    await expect(host.startHuddle(parent, [], "release huddle")).rejects.toBeTruthy();
+    const [first, lookup, end] = api.actions();
+    expect(first?.actionKey).toBe("huddle.start");
+    expect(lookup?.actionKey).toBe("huddle.start");
+    expect(lookup?.idempotencyKey).toBe(first?.idempotencyKey);
+    expect(end?.actionKey).toBe("huddle.end");
+    expect(end?.huddleId).toBe("h1");
+    expect(api.actions()).toHaveLength(3);
+  });
+
+  it("has nothing to end when the start answer and its lookup are both lost", async () => {
+    const api = backend({
+      announce: () => ({ status: 500, body: {} }),
+      start: () => { throw new TransportError("connection reset"); },
+    });
+    const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
+    await expect(host.startHuddle(parent, [], "release huddle")).rejects.toThrow("connection reset");
+    expect(api.actions().map((command) => command.actionKey)).toEqual(["huddle.start", "huddle.start"]);
+    expect((await host.getHuddleState()).phase).toBe("idle");
+  });
+
+  it("does not end a start that Core aborted", async () => {
+    const api = backend({
+      announce: () => ({ status: 500, body: {} }),
+      start: () => submission(ActionDispatchState.Aborted, ReasonCode.PublishRejected),
+    });
+    const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
+    await expect(host.startHuddle(parent, [], "release huddle")).rejects.toThrow(ReasonCode.PublishRejected);
+    expect(api.actions().map((command) => command.actionKey)).toEqual(["huddle.start"]);
+    expect((await host.getHuddleState()).phase).toBe("idle");
+  });
+
+  it("does not look a refused start up again", async () => {
+    const api = backend({
+      announce: () => ({ status: 500, body: {} }),
+      start: () => ({ status: 403, body: { class: "DENIED", reason: ReasonCode.PermissionDenied } }),
+    });
+    const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
+    await expect(host.startHuddle(parent, [], "release huddle")).rejects.toBeTruthy();
+    expect(api.actions().map((command) => command.actionKey)).toEqual(["huddle.start"]);
+  });
+
   it("refuses to join a Huddle that has ended", async () => {
     const api = backend({ announce: () => ({ status: 500, body: {} }), huddle: view(HuddleState.Ended) });
     const host = new WebHuddleHost(createBffClient({ send: api.send }), { secure: true, webCodecs: true });
@@ -121,7 +203,8 @@ describe("Web Huddle host", () => {
     const first = host.startHuddle(parent, [], "release huddle");
     await expect(host.startHuddle(parent, [], "release huddle")).rejects.toThrow("cannot start huddle: already in phase creating");
     await vi.waitFor(() => expect(send).toHaveBeenCalled());
-    release({ status: 500, body: {} });
+    // A definite refusal: nothing was created and there is nothing to look up again.
+    release({ status: 422, body: {} });
     await expect(first).rejects.toBeTruthy();
   });
 });

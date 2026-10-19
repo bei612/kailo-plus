@@ -8,9 +8,10 @@
 // key), the BFF signs the creator's 48106/48100 once (announcement), Agents use
 // huddle.agent.add/remove and End uses huddle.end. Join/leave are not governed actions: the
 // audio is the same-origin BFF bridge; leaving while other humans remain is the caller's own
-// 9022, the last leave only disconnects (the Relay archives and signs 48103). An announcement
-// that cannot be delivered rolls back to huddle.end, like the original start rollback.
-import type { ActionSubmission, HuddleView } from "@client-kit/contracts";
+// 9022, the last leave only disconnects (the Relay archives and signs 48103). Like the original
+// start rollback, a Huddle once created (Core answered its huddleId) is ended by huddle.end when
+// any later step fails, including a huddle.start whose outcome stays UNKNOWN.
+import type { ActionCommand, ActionSubmission, HuddleView } from "@client-kit/contracts";
 import { ActionDispatchState, HuddleState, HuddleVoiceAvailability } from "@client-kit/contracts";
 import { newIdempotencyKey } from "@client-kit/platform/governance";
 import {
@@ -25,6 +26,7 @@ import {
   type VoiceInputMode,
 } from "@client-kit/platform/react/huddle";
 import type { BffClient } from "@client-kit/platform/client";
+import { BffError, TransportError } from "@client-kit/platform/transport";
 import { HuddleAudioSession, opusSupported } from "./audioSession";
 
 /** Bounded wait for an UNKNOWN huddle.* outcome to settle by replaying the same key. */
@@ -35,6 +37,11 @@ type Listener<K extends keyof HuddleHostEvents> = (payload: HuddleHostEvents[K])
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** No answer, or a server failure: the command may have reached Core and opened its operation. */
+function answerLost(error: unknown) {
+  return error instanceof TransportError || (error instanceof BffError && error.status >= 500);
 }
 
 export class WebHuddleHost implements HuddleHost {
@@ -83,17 +90,45 @@ export class WebHuddleHost implements HuddleHost {
     if (this.state.phase !== "idle") throw new Error(`cannot ${action} huddle: already in phase ${this.state.phase}`);
   }
 
-  /** Submit one governed huddle.* command; an UNKNOWN outcome is settled by replaying its key. */
-  private async submit(command: Parameters<BffClient["submitAction"]>[0]): Promise<ActionSubmission> {
+  /** Submit one governed huddle.* command and replay its key (bounded) while the outcome is UNKNOWN. */
+  private async settle(command: ActionCommand): Promise<ActionSubmission> {
     let submission = await this.client.submitAction(command);
     for (let attempt = 0; submission.dispatchState === ActionDispatchState.Unknown && attempt < SETTLE_ATTEMPTS; attempt += 1) {
       await delay(SETTLE_DELAY_MS);
       submission = await this.client.submitAction(command);
     }
+    return submission;
+  }
+
+  private static dispatched(submission: ActionSubmission): ActionSubmission {
     if (submission.dispatchState !== ActionDispatchState.Dispatched) {
       throw new Error(submission.reason ?? "huddle action did not settle");
     }
     return submission;
+  }
+
+  /** Submit one governed huddle.* command; only a DISPATCHED outcome is success. */
+  private async submit(command: ActionCommand): Promise<ActionSubmission> {
+    return WebHuddleHost.dispatched(await this.settle(command));
+  }
+
+  /**
+   * huddle.start, settled by its key. When its answer is lost the operation may still exist, so
+   * it is looked up once more by the same idempotency key (Core answers the original operation
+   * with the same pre-allocated huddleId and reconciles it) instead of guessing; a definite
+   * refusal or a second loss rethrows the first error with nothing known to roll back.
+   */
+  private async startOperation(command: ActionCommand): Promise<ActionSubmission> {
+    try {
+      return await this.settle(command);
+    } catch (error) {
+      if (!answerLost(error)) throw error;
+      try {
+        return await this.settle(command);
+      } catch {
+        throw error;
+      }
+    }
   }
 
   private async voiceAvailability() {
@@ -149,7 +184,7 @@ export class WebHuddleHost implements HuddleHost {
     try {
       // Nothing is created for a browser that cannot carry the audio.
       if (!(await opusSupported())) throw new Error("huddle audio codec unsupported");
-      const submission = await this.submit({
+      const submission = await this.startOperation({
         actionKey: "huddle.start",
         idempotencyKey: newIdempotencyKey(),
         ...(parent.kind === "workspace" ? { workspaceId: parent.workspaceId } : {}),
@@ -159,9 +194,13 @@ export class WebHuddleHost implements HuddleHost {
           channelName,
         },
       });
-      const huddleId = submission.huddleId;
+      // An admitted start holds a pre-allocated binding, and an UNKNOWN one may already have
+      // projected the temp channel: from here every failure ends it. Only ABORTED is a definite
+      // non-creation (the binding is ERROR and huddle.end would be refused).
+      if (submission.huddleId && submission.dispatchState !== ActionDispatchState.Aborted) created = submission.huddleId;
+      WebHuddleHost.dispatched(submission);
+      const huddleId = created;
       if (!huddleId) throw new Error("huddle.start answered without a huddle");
-      created = huddleId;
       const view = await this.client.huddle(huddleId);
       if (view.state !== HuddleState.Active) throw new Error("huddle projection is not active");
       await this.announce(view);
