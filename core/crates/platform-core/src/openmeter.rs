@@ -475,6 +475,9 @@ pub(crate) struct EntitlementPeriod {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeEntitlementValue {
+    /// OpenMeter v2 serializes `hasAccess` with `omitempty`
+    /// (openmeter/entitlement/snapshot/event.go): an exhausted entitlement omits it.
+    #[serde(default)]
     pub has_access: bool,
     pub usage: Option<f64>,
 }
@@ -2254,5 +2257,23 @@ mod meter_key_tests {
             .await
             .is_err());
         server.abort();
+    }
+}
+
+#[cfg(test)]
+mod entitlement_value_tests {
+    use super::NativeEntitlementValue;
+
+    #[test]
+    fn exhausted_value_omits_has_access() {
+        let exhausted: NativeEntitlementValue = serde_json::from_str(
+            r#"{"balance":0,"overage":0,"totalAvailableGrantAmount":0,"usage":0,"grantBalances":{}}"#,
+        )
+        .unwrap();
+        assert!(!exhausted.has_access);
+        assert_eq!(exhausted.usage, Some(0.0));
+        let open: NativeEntitlementValue =
+            serde_json::from_str(r#"{"hasAccess":true,"balance":9995,"usage":5}"#).unwrap();
+        assert!(open.has_access);
     }
 }
