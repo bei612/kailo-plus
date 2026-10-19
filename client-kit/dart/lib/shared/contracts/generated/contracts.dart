@@ -162,10 +162,18 @@
 //     final threadPreferenceRequest = threadPreferenceRequestFromJson(jsonString);
 //     final usageBillingView = usageBillingViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
+//     final webChannelCanvasView = webChannelCanvasViewFromJson(jsonString);
 //     final webChannelView = webChannelViewFromJson(jsonString);
 //     final webCustomEmojiMutation = webCustomEmojiMutationFromJson(jsonString);
 //     final webCustomEmojiView = webCustomEmojiViewFromJson(jsonString);
+//     final webGifCapabilityView = webGifCapabilityViewFromJson(jsonString);
+//     final webGifItem = webGifItemFromJson(jsonString);
+//     final webGifSearchRequest = webGifSearchRequestFromJson(jsonString);
+//     final webGifSearchView = webGifSearchViewFromJson(jsonString);
+//     final webGifShareRequest = webGifShareRequestFromJson(jsonString);
 //     final webInboxQuery = webInboxQueryFromJson(jsonString);
+//     final webLinkPreviewRequest = webLinkPreviewRequestFromJson(jsonString);
+//     final webLinkPreviewSnapshotView = webLinkPreviewSnapshotViewFromJson(jsonString);
 //     final webMessageAttachment = webMessageAttachmentFromJson(jsonString);
 //     final webMessageAuthorQuery = webMessageAuthorQueryFromJson(jsonString);
 //     final webMessageAuthorView = webMessageAuthorViewFromJson(jsonString);
@@ -234,6 +242,7 @@
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final tenantQuotaSetting = tenantQuotaSettingFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
+//     final workspaceCanvasSetInput = workspaceCanvasSetInputFromJson(jsonString);
 //     final workspaceChannelCreate = workspaceChannelCreateFromJson(jsonString);
 //     final workspaceUpdate = workspaceUpdateFromJson(jsonString);
 //     final workspaceVisibility = workspaceVisibilityFromJson(jsonString);
@@ -1281,6 +1290,12 @@ UserStateVersion userStateVersionFromJson(String str) =>
 String userStateVersionToJson(UserStateVersion data) =>
     json.encode(data.toJson());
 
+WebChannelCanvasView webChannelCanvasViewFromJson(String str) =>
+    WebChannelCanvasView.fromJson(json.decode(str));
+
+String webChannelCanvasViewToJson(WebChannelCanvasView data) =>
+    json.encode(data.toJson());
+
 WebChannelView webChannelViewFromJson(String str) =>
     WebChannelView.fromJson(json.decode(str));
 
@@ -1298,10 +1313,51 @@ WebCustomEmojiView webCustomEmojiViewFromJson(String str) =>
 String webCustomEmojiViewToJson(WebCustomEmojiView data) =>
     json.encode(data.toJson());
 
+WebGifCapabilityView webGifCapabilityViewFromJson(String str) =>
+    WebGifCapabilityView.fromJson(json.decode(str));
+
+String webGifCapabilityViewToJson(WebGifCapabilityView data) =>
+    json.encode(data.toJson());
+
+WebGifItem webGifItemFromJson(String str) =>
+    WebGifItem.fromJson(json.decode(str));
+
+String webGifItemToJson(WebGifItem data) => json.encode(data.toJson());
+
+WebGifSearchRequest webGifSearchRequestFromJson(String str) =>
+    WebGifSearchRequest.fromJson(json.decode(str));
+
+String webGifSearchRequestToJson(WebGifSearchRequest data) =>
+    json.encode(data.toJson());
+
+WebGifSearchView webGifSearchViewFromJson(String str) =>
+    WebGifSearchView.fromJson(json.decode(str));
+
+String webGifSearchViewToJson(WebGifSearchView data) =>
+    json.encode(data.toJson());
+
+WebGifShareRequest webGifShareRequestFromJson(String str) =>
+    WebGifShareRequest.fromJson(json.decode(str));
+
+String webGifShareRequestToJson(WebGifShareRequest data) =>
+    json.encode(data.toJson());
+
 WebInboxQuery webInboxQueryFromJson(String str) =>
     WebInboxQuery.fromJson(json.decode(str));
 
 String webInboxQueryToJson(WebInboxQuery data) => json.encode(data.toJson());
+
+WebLinkPreviewRequest webLinkPreviewRequestFromJson(String str) =>
+    WebLinkPreviewRequest.fromJson(json.decode(str));
+
+String webLinkPreviewRequestToJson(WebLinkPreviewRequest data) =>
+    json.encode(data.toJson());
+
+WebLinkPreviewSnapshotView webLinkPreviewSnapshotViewFromJson(String str) =>
+    WebLinkPreviewSnapshotView.fromJson(json.decode(str));
+
+String webLinkPreviewSnapshotViewToJson(WebLinkPreviewSnapshotView data) =>
+    json.encode(data.toJson());
 
 WebMessageAttachment webMessageAttachmentFromJson(String str) =>
     WebMessageAttachment.fromJson(json.decode(str));
@@ -1720,6 +1776,12 @@ WorkflowRef workflowRefFromJson(String str) =>
     WorkflowRef.fromJson(json.decode(str));
 
 String workflowRefToJson(WorkflowRef data) => json.encode(data.toJson());
+
+WorkspaceCanvasSetInput workspaceCanvasSetInputFromJson(String str) =>
+    WorkspaceCanvasSetInput.fromJson(json.decode(str));
+
+String workspaceCanvasSetInputToJson(WorkspaceCanvasSetInput data) =>
+    json.encode(data.toJson());
 
 WorkspaceChannelCreate workspaceChannelCreateFromJson(String str) =>
     WorkspaceChannelCreate.fromJson(json.decode(str));
@@ -4583,6 +4645,10 @@ class ActionCommand {
 
   ///仅 tenant.quota.set（DD-123）
   final TenantQuotaSettingClass? tenantQuotaSetting;
+
+  ///仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+  ///explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+  final WorkspaceCanvasClass? workspaceCanvas;
   final WorkspaceChannelClass? workspaceChannel;
 
   ///Workspace 内动作的执行 Workspace
@@ -4637,6 +4703,7 @@ class ActionCommand {
     this.sourceEventId,
     this.tenantId,
     this.tenantQuotaSetting,
+    this.workspaceCanvas,
     this.workspaceChannel,
     this.workspaceId,
     this.workspaceUpdate,
@@ -4740,6 +4807,9 @@ class ActionCommand {
     tenantQuotaSetting: json["tenantQuotaSetting"] == null
         ? null
         : TenantQuotaSettingClass.fromJson(json["tenantQuotaSetting"]),
+    workspaceCanvas: json["workspaceCanvas"] == null
+        ? null
+        : WorkspaceCanvasClass.fromJson(json["workspaceCanvas"]),
     workspaceChannel: json["workspaceChannel"] == null
         ? null
         : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
@@ -4796,6 +4866,7 @@ class ActionCommand {
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
     "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
+    "workspaceCanvas": workspaceCanvas?.toJson(),
     "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
     "workspaceUpdate": workspaceUpdate?.toJson(),
@@ -6428,6 +6499,23 @@ final tenantQuotaFeatureValues = EnumValues({
   "agent_tokens": TenantQuotaFeature.AGENT_TOKENS,
   "automation_runs": TenantQuotaFeature.AUTOMATION_RUNS,
 });
+
+///仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+///explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+///
+///仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+///不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+///Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+class WorkspaceCanvasClass {
+  final String content;
+
+  WorkspaceCanvasClass({required this.content});
+
+  factory WorkspaceCanvasClass.fromJson(Map<String, dynamic> json) =>
+      WorkspaceCanvasClass(content: json["content"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"content": content});
+}
 
 ///workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
 class WorkspaceChannelClass {
@@ -13822,6 +13910,10 @@ class CommandClass {
 
   ///仅 tenant.quota.set（DD-123）
   final TenantQuotaSettingClass? tenantQuotaSetting;
+
+  ///仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+  ///explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+  final WorkspaceCanvasClass? workspaceCanvas;
   final WorkspaceChannelClass? workspaceChannel;
 
   ///Workspace 内动作的执行 Workspace
@@ -13876,6 +13968,7 @@ class CommandClass {
     this.sourceEventId,
     this.tenantId,
     this.tenantQuotaSetting,
+    this.workspaceCanvas,
     this.workspaceChannel,
     this.workspaceId,
     this.workspaceUpdate,
@@ -13977,6 +14070,9 @@ class CommandClass {
     tenantQuotaSetting: json["tenantQuotaSetting"] == null
         ? null
         : TenantQuotaSettingClass.fromJson(json["tenantQuotaSetting"]),
+    workspaceCanvas: json["workspaceCanvas"] == null
+        ? null
+        : WorkspaceCanvasClass.fromJson(json["workspaceCanvas"]),
     workspaceChannel: json["workspaceChannel"] == null
         ? null
         : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
@@ -14033,6 +14129,7 @@ class CommandClass {
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
     "tenantQuotaSetting": tenantQuotaSetting?.toJson(),
+    "workspaceCanvas": workspaceCanvas?.toJson(),
     "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
     "workspaceUpdate": workspaceUpdate?.toJson(),
@@ -17316,6 +17413,50 @@ class UserStateVersion {
   Map<String, dynamic> toJson() => _stripNulls({"version": version});
 }
 
+///GET /api/v1/workspaces/{workspaceId}/canvas（DD-125(4)、V-SCN-135）：BFF 以本人身份在已准入 Workspace
+///的 Channel 下按 #h 读取 kind 40100，只采纳作者为该 Tenant CONTROL 的最新一条并验签；其他作者的 40100 一律忽略。正文原样透传，不进
+///Core 存储。没有采纳的事件时 content、eventId、createdAt 都省略（原“No canvas set”）。
+class WebChannelCanvasView {
+  ///原 Markdown 正文；空串表示管理者已清空。
+  final String? content;
+
+  ///被采纳事件的 created_at，RFC3339。
+  final String? createdAt;
+
+  ///被采纳的 CONTROL 40100 事件 ID。
+  final String? eventId;
+
+  ///固定为 workspace.canvas.set：目录已开放、Workspace ACTIVE 且本人经 fresh Workspace manage 检查时给出（≙ 原
+  ///canEditNarrative）。省略即不显示编辑入口；提交仍重新准入。
+  final String? setActionKey;
+  final String workspaceId;
+
+  WebChannelCanvasView({
+    this.content,
+    this.createdAt,
+    this.eventId,
+    this.setActionKey,
+    required this.workspaceId,
+  });
+
+  factory WebChannelCanvasView.fromJson(Map<String, dynamic> json) =>
+      WebChannelCanvasView(
+        content: json["content"],
+        createdAt: json["createdAt"],
+        eventId: json["eventId"],
+        setActionKey: json["setActionKey"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "content": content,
+    "createdAt": createdAt,
+    "eventId": eventId,
+    "setActionKey": setActionKey,
+    "workspaceId": workspaceId,
+  });
+}
+
 ///Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
 class WebChannelView {
   final bool archived;
@@ -17435,6 +17576,184 @@ class WebCustomEmojiView {
   });
 }
 
+///GET /api/v1/gifs（DD-125(5)、09 §3、V-SCN-140）：原 GIF 选择器是否出现。available 仅在本 Tenant ACTIVE
+///TenantBuzzBinding 的 NIP-11 快照与运行期文档一致且广告 buzz-gif/gif（provider klipy，原 /gifs/search 与
+////gifs/share）、并且部署登记了至少一个 GIF 图片来源时为 true；否则按原版不出现。imageOrigins 是部署登记的 https 来源（与 Web 静态
+///CSP img-src 追加项同一份），Web 只对这些来源内联渲染无 imeta 的 GIF；KLIPY 密钥只在 Relay 部署环境。
+class WebGifCapabilityView {
+  final bool available;
+  final List<String> imageOrigins;
+
+  WebGifCapabilityView({required this.available, required this.imageOrigins});
+
+  factory WebGifCapabilityView.fromJson(Map<String, dynamic> json) =>
+      WebGifCapabilityView(
+        available: json["available"],
+        imageOrigins: List<String>.from(json["imageOrigins"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "available": available,
+    "imageOrigins": List<dynamic>.from(imageOrigins.map((x) => x)),
+  });
+}
+
+///原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
+///gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
+///https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
+class WebGifItem {
+  final int height;
+  final String? posterUrl;
+  final int previewHeight;
+  final String previewUrl;
+  final int previewWidth;
+  final int size;
+  final String slug;
+  final String title;
+  final String url;
+  final int width;
+
+  WebGifItem({
+    required this.height,
+    this.posterUrl,
+    required this.previewHeight,
+    required this.previewUrl,
+    required this.previewWidth,
+    required this.size,
+    required this.slug,
+    required this.title,
+    required this.url,
+    required this.width,
+  });
+
+  factory WebGifItem.fromJson(Map<String, dynamic> json) => WebGifItem(
+    height: json["height"],
+    posterUrl: json["posterUrl"],
+    previewHeight: json["previewHeight"],
+    previewUrl: json["previewUrl"],
+    previewWidth: json["previewWidth"],
+    size: json["size"],
+    slug: json["slug"],
+    title: json["title"],
+    url: json["url"],
+    width: json["width"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "height": height,
+    "posterUrl": posterUrl,
+    "previewHeight": previewHeight,
+    "previewUrl": previewUrl,
+    "previewWidth": previewWidth,
+    "size": size,
+    "slug": slug,
+    "title": title,
+    "url": url,
+    "width": width,
+  });
+}
+
+///POST /api/v1/gifs/search：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/search（成员门与 GIF 限速由 Relay
+///执行，超额以 LIMIT 类回应）。query 为空即原 trending，至多 200 字符；locale 为浏览器语言（1–32 字符）。原 KLIPY
+///customer_id 由 BFF 按 Tenant 与本人 Principal 派生为稳定匿名标识，Browser 不提供。
+class WebGifSearchRequest {
+  final String locale;
+  final String query;
+
+  WebGifSearchRequest({required this.locale, required this.query});
+
+  factory WebGifSearchRequest.fromJson(Map<String, dynamic> json) =>
+      WebGifSearchRequest(locale: json["locale"], query: json["query"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"locale": locale, "query": query});
+}
+
+///POST /api/v1/gifs/search 的回应：原 Relay 固定一页（24 项）结果，按提供方顺序。
+class WebGifSearchView {
+  final List<GifElement> gifs;
+
+  WebGifSearchView({required this.gifs});
+
+  factory WebGifSearchView.fromJson(Map<String, dynamic> json) =>
+      WebGifSearchView(
+        gifs: List<GifElement>.from(
+          json["gifs"].map((x) => GifElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"gifs": List<dynamic>.from(gifs.map((x) => x.toJson()))});
+}
+
+///原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
+///gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
+///https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
+class GifElement {
+  final int height;
+  final String? posterUrl;
+  final int previewHeight;
+  final String previewUrl;
+  final int previewWidth;
+  final int size;
+  final String slug;
+  final String title;
+  final String url;
+  final int width;
+
+  GifElement({
+    required this.height,
+    this.posterUrl,
+    required this.previewHeight,
+    required this.previewUrl,
+    required this.previewWidth,
+    required this.size,
+    required this.slug,
+    required this.title,
+    required this.url,
+    required this.width,
+  });
+
+  factory GifElement.fromJson(Map<String, dynamic> json) => GifElement(
+    height: json["height"],
+    posterUrl: json["posterUrl"],
+    previewHeight: json["previewHeight"],
+    previewUrl: json["previewUrl"],
+    previewWidth: json["previewWidth"],
+    size: json["size"],
+    slug: json["slug"],
+    title: json["title"],
+    url: json["url"],
+    width: json["width"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "height": height,
+    "posterUrl": posterUrl,
+    "previewHeight": previewHeight,
+    "previewUrl": previewUrl,
+    "previewWidth": previewWidth,
+    "size": size,
+    "slug": slug,
+    "title": title,
+    "url": url,
+    "width": width,
+  });
+}
+
+///POST /api/v1/gifs/share（原选择时的分享上报，尽力而为）：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/share，成功回
+///204。slug 为 1–200 字符。
+class WebGifShareRequest {
+  final String slug;
+
+  WebGifShareRequest({required this.slug});
+
+  factory WebGifShareRequest.fromJson(Map<String, dynamic> json) =>
+      WebGifShareRequest(slug: json["slug"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"slug": slug});
+}
+
 ///DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay
 ///filter。
 class WebInboxQuery {
@@ -17448,6 +17767,80 @@ class WebInboxQuery {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"limit": limit, "since": since});
+}
+
+///POST /api/v1/workspaces/{workspaceId}/link-previews 与
+////api/v1/conversations/{conversationId}/link-previews（DD-125(5)、09 §3、V-SCN-139）：Web 原
+///composer 的链接预览抓取由 BFF 代为执行。只接受 http/https 与默认端口；BFF 每一跳在 DNS 解析后拒绝回环、私网、链路本地、CGNAT、组播、ULA
+///与部署登记的内部网段，只连接已校验地址，至多 3 次跳转、256 KB，不带 cookie 与凭据；按 Principal 限速，超额以 LIMIT
+///类拒绝；预览图以本人身份上传为 Relay 媒体。审计只记主机与 URL 摘要。
+class WebLinkPreviewRequest {
+  ///原 extractSupportedLinkPreviews 识别出的链接（http/https）。
+  final String url;
+
+  WebLinkPreviewRequest({required this.url});
+
+  factory WebLinkPreviewRequest.fromJson(Map<String, dynamic> json) =>
+      WebLinkPreviewRequest(url: json["url"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"url": url});
+}
+
+///BFF 为本人短期持有的一份链接预览快照（DD-125(5)）。字段即原 11 元素 link-preview snapshot 标签的内容（版本 1）：canonicalUrl
+///为 https、无凭据与片段；title 不超过 300 字节、siteName 100 字节、description 1000 字节；imageUrl/faviconUrl
+///是本人上传的 Relay 媒体地址，缺省即无图。发布请求只能以 snapshotId 引用本人未过期的快照（linkPreviewSnapshotIds），Browser
+///不提交原始标签。
+class WebLinkPreviewSnapshotView {
+  final String canonicalUrl;
+  final String description;
+
+  ///快照失效时刻，RFC3339；之后发布引用它以 TARGET_NOT_FOUND 拒绝。
+  final String expiresAt;
+  final String? faviconUrl;
+  final String? imageUrl;
+  final String siteName;
+  final String snapshotId;
+  final String title;
+
+  ///请求的链接，原样回显，供 composer 与正文中的链接对应。
+  final String url;
+
+  WebLinkPreviewSnapshotView({
+    required this.canonicalUrl,
+    required this.description,
+    required this.expiresAt,
+    this.faviconUrl,
+    this.imageUrl,
+    required this.siteName,
+    required this.snapshotId,
+    required this.title,
+    required this.url,
+  });
+
+  factory WebLinkPreviewSnapshotView.fromJson(Map<String, dynamic> json) =>
+      WebLinkPreviewSnapshotView(
+        canonicalUrl: json["canonicalUrl"],
+        description: json["description"],
+        expiresAt: json["expiresAt"],
+        faviconUrl: json["faviconUrl"],
+        imageUrl: json["imageUrl"],
+        siteName: json["siteName"],
+        snapshotId: json["snapshotId"],
+        title: json["title"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canonicalUrl": canonicalUrl,
+    "description": description,
+    "expiresAt": expiresAt,
+    "faviconUrl": faviconUrl,
+    "imageUrl": imageUrl,
+    "siteName": siteName,
+    "snapshotId": snapshotId,
+    "title": title,
+    "url": url,
+  });
 }
 
 class WebMessageAttachment {
@@ -17876,6 +18269,13 @@ class WebPublishMessageRequest {
   ///编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
   final String? editEventId;
 
+  ///DD-125(5) 原 composer 链接预览：本人经 BFF 抓取得到、尚未过期的快照 ID（至多 8 个，去重保序）。只用于新的 STREAM
+  ///消息（kind:9，含线程回复）：BFF 只接受本人的快照，按原 11 元素 link-preview snapshot 标签随该消息发布并把 ID
+  ///冻结在发布幂等记录；canonicalUrl 不在正文中的快照按原接收规则不签入（正文照常发布）；引用他人或已过期的快照以 TARGET_NOT_FOUND 拒绝。与
+  ///suppressLinkPreviews、editEventId（原编辑不带快照）、deleteEventId、sendToChannelSourceEventId 互斥；不接受
+  ///Browser 提交的原始 link-preview 标签。
+  final List<String>? linkPreviewSnapshotIds;
+
   ///用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
   final List<String>? mentionInstallationIds;
 
@@ -17894,16 +18294,22 @@ class WebPublishMessageRequest {
   ///提及——正文与标签只取自回读的源事件，不接受 Browser 提交的原始标签。
   final String? sendToChannelSourceEventId;
 
+  ///DD-125(5) 原 link-preview none：为 true 时签发唯一的 ["link-preview", "none"] 标签，接收方不显示预览。与
+  ///editEventId 同用即原“对所有人移除预览”（本人消息的 40003 编辑）。省略或 false 不加该标签。
+  final bool? suppressLinkPreviews;
+
   WebPublishMessageRequest({
     this.attachments,
     required this.content,
     this.deleteEventId,
     this.editEventId,
+    this.linkPreviewSnapshotIds,
     this.mentionInstallationIds,
     this.mentionPubkeys,
     this.messageType,
     this.parentEventId,
     this.sendToChannelSourceEventId,
+    this.suppressLinkPreviews,
   });
 
   factory WebPublishMessageRequest.fromJson(Map<String, dynamic> json) =>
@@ -17916,6 +18322,9 @@ class WebPublishMessageRequest {
         content: json["content"],
         deleteEventId: json["deleteEventId"],
         editEventId: json["editEventId"],
+        linkPreviewSnapshotIds: json["linkPreviewSnapshotIds"] == null
+            ? null
+            : List<String>.from(json["linkPreviewSnapshotIds"]!.map((x) => x)),
         mentionInstallationIds: json["mentionInstallationIds"] == null
             ? null
             : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
@@ -17927,6 +18336,7 @@ class WebPublishMessageRequest {
             : webMessageTypeValues.map[json["messageType"]]!,
         parentEventId: json["parentEventId"],
         sendToChannelSourceEventId: json["sendToChannelSourceEventId"],
+        suppressLinkPreviews: json["suppressLinkPreviews"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -17936,6 +18346,9 @@ class WebPublishMessageRequest {
     "content": content,
     "deleteEventId": deleteEventId,
     "editEventId": editEventId,
+    "linkPreviewSnapshotIds": linkPreviewSnapshotIds == null
+        ? null
+        : List<dynamic>.from(linkPreviewSnapshotIds!.map((x) => x)),
     "mentionInstallationIds": mentionInstallationIds == null
         ? null
         : List<dynamic>.from(mentionInstallationIds!.map((x) => x)),
@@ -17945,6 +18358,7 @@ class WebPublishMessageRequest {
     "messageType": webMessageTypeValues.reverse[messageType],
     "parentEventId": parentEventId,
     "sendToChannelSourceEventId": sendToChannelSourceEventId,
+    "suppressLinkPreviews": suppressLinkPreviews,
   });
 }
 
@@ -21892,6 +22306,20 @@ class WorkflowRef {
     "tenantId": tenantId,
     "workflowId": workflowId,
   });
+}
+
+///仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+///不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+///Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+class WorkspaceCanvasSetInput {
+  final String content;
+
+  WorkspaceCanvasSetInput({required this.content});
+
+  factory WorkspaceCanvasSetInput.fromJson(Map<String, dynamic> json) =>
+      WorkspaceCanvasSetInput(content: json["content"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"content": content});
 }
 
 ///workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。

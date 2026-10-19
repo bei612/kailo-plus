@@ -1121,7 +1121,12 @@ export interface ActionCommand {
      * 仅 tenant.quota.set（DD-123）
      */
     tenantQuotaSetting?: TenantQuotaSettingClass;
-    workspaceChannel?:   WorkspaceChannelClass;
+    /**
+     * 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+     * explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+     */
+    workspaceCanvas?:  WorkspaceCanvasClass;
+    workspaceChannel?: WorkspaceChannelClass;
     /**
      * Workspace 内动作的执行 Workspace
      */
@@ -1830,6 +1835,18 @@ export enum TenantQuotaFeature {
     AgentMemoryWrites = "agent_memory_writes",
     AgentTokens = "agent_tokens",
     AutomationRuns = "automation_runs",
+}
+
+/**
+ * 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+ * explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+ *
+ * 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+ * 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+ * Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+ */
+export interface WorkspaceCanvasClass {
+    content: string;
 }
 
 /**
@@ -4923,7 +4940,12 @@ export interface CommandClass {
      * 仅 tenant.quota.set（DD-123）
      */
     tenantQuotaSetting?: TenantQuotaSettingClass;
-    workspaceChannel?:   WorkspaceChannelClass;
+    /**
+     * 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+     * explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+     */
+    workspaceCanvas?:  WorkspaceCanvasClass;
+    workspaceChannel?: WorkspaceChannelClass;
     /**
      * Workspace 内动作的执行 Workspace
      */
@@ -6327,6 +6349,32 @@ export interface UserStateVersion {
 }
 
 /**
+ * GET /api/v1/workspaces/{workspaceId}/canvas（DD-125(4)、V-SCN-135）：BFF 以本人身份在已准入 Workspace
+ * 的 Channel 下按 #h 读取 kind 40100，只采纳作者为该 Tenant CONTROL 的最新一条并验签；其他作者的 40100 一律忽略。正文原样透传，不进
+ * Core 存储。没有采纳的事件时 content、eventId、createdAt 都省略（原“No canvas set”）。
+ */
+export interface WebChannelCanvasView {
+    /**
+     * 原 Markdown 正文；空串表示管理者已清空。
+     */
+    content?: string;
+    /**
+     * 被采纳事件的 created_at，RFC3339。
+     */
+    createdAt?: string;
+    /**
+     * 被采纳的 CONTROL 40100 事件 ID。
+     */
+    eventId?: string;
+    /**
+     * 固定为 workspace.canvas.set：目录已开放、Workspace ACTIVE 且本人经 fresh Workspace manage 检查时给出（≙ 原
+     * canEditNarrative）。省略即不显示编辑入口；提交仍重新准入。
+     */
+    setActionKey?: string;
+    workspaceId:   string;
+}
+
+/**
  * Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
  */
 export interface WebChannelView {
@@ -6365,12 +6413,122 @@ export interface WebCustomEmojiView {
 }
 
 /**
+ * GET /api/v1/gifs（DD-125(5)、09 §3、V-SCN-140）：原 GIF 选择器是否出现。available 仅在本 Tenant ACTIVE
+ * TenantBuzzBinding 的 NIP-11 快照与运行期文档一致且广告 buzz-gif/gif（provider klipy，原 /gifs/search 与
+ * /gifs/share）、并且部署登记了至少一个 GIF 图片来源时为 true；否则按原版不出现。imageOrigins 是部署登记的 https 来源（与 Web 静态
+ * CSP img-src 追加项同一份），Web 只对这些来源内联渲染无 imeta 的 GIF；KLIPY 密钥只在 Relay 部署环境。
+ */
+export interface WebGIFCapabilityView {
+    available:    boolean;
+    imageOrigins: string[];
+}
+
+/**
+ * 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
+ * gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
+ * https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
+ */
+export interface WebGIFItem {
+    height:        number;
+    posterUrl?:    string;
+    previewHeight: number;
+    previewUrl:    string;
+    previewWidth:  number;
+    size:          number;
+    slug:          string;
+    title:         string;
+    url:           string;
+    width:         number;
+}
+
+/**
+ * POST /api/v1/gifs/search：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/search（成员门与 GIF 限速由 Relay
+ * 执行，超额以 LIMIT 类回应）。query 为空即原 trending，至多 200 字符；locale 为浏览器语言（1–32 字符）。原 KLIPY
+ * customer_id 由 BFF 按 Tenant 与本人 Principal 派生为稳定匿名标识，Browser 不提供。
+ */
+export interface WebGIFSearchRequest {
+    locale: string;
+    query:  string;
+}
+
+/**
+ * POST /api/v1/gifs/search 的回应：原 Relay 固定一页（24 项）结果，按提供方顺序。
+ */
+export interface WebGIFSearchView {
+    gifs: GIFElement[];
+}
+
+/**
+ * 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
+ * gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
+ * https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
+ */
+export interface GIFElement {
+    height:        number;
+    posterUrl?:    string;
+    previewHeight: number;
+    previewUrl:    string;
+    previewWidth:  number;
+    size:          number;
+    slug:          string;
+    title:         string;
+    url:           string;
+    width:         number;
+}
+
+/**
+ * POST /api/v1/gifs/share（原选择时的分享上报，尽力而为）：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/share，成功回
+ * 204。slug 为 1–200 字符。
+ */
+export interface WebGIFShareRequest {
+    slug: string;
+}
+
+/**
  * DD-39/72/75：本人原 Relay mentions feed。Core 逐项核验当前资源准入、签名和频道线程归属；不接受身份、scope 或任意 Relay
  * filter。
  */
 export interface WebInboxQuery {
     limit?: number;
     since?: number;
+}
+
+/**
+ * POST /api/v1/workspaces/{workspaceId}/link-previews 与
+ * /api/v1/conversations/{conversationId}/link-previews（DD-125(5)、09 §3、V-SCN-139）：Web 原
+ * composer 的链接预览抓取由 BFF 代为执行。只接受 http/https 与默认端口；BFF 每一跳在 DNS 解析后拒绝回环、私网、链路本地、CGNAT、组播、ULA
+ * 与部署登记的内部网段，只连接已校验地址，至多 3 次跳转、256 KB，不带 cookie 与凭据；按 Principal 限速，超额以 LIMIT
+ * 类拒绝；预览图以本人身份上传为 Relay 媒体。审计只记主机与 URL 摘要。
+ */
+export interface WebLinkPreviewRequest {
+    /**
+     * 原 extractSupportedLinkPreviews 识别出的链接（http/https）。
+     */
+    url: string;
+}
+
+/**
+ * BFF 为本人短期持有的一份链接预览快照（DD-125(5)）。字段即原 11 元素 link-preview snapshot 标签的内容（版本 1）：canonicalUrl
+ * 为 https、无凭据与片段；title 不超过 300 字节、siteName 100 字节、description 1000 字节；imageUrl/faviconUrl
+ * 是本人上传的 Relay 媒体地址，缺省即无图。发布请求只能以 snapshotId 引用本人未过期的快照（linkPreviewSnapshotIds），Browser
+ * 不提交原始标签。
+ */
+export interface WebLinkPreviewSnapshotView {
+    canonicalUrl: string;
+    description:  string;
+    /**
+     * 快照失效时刻，RFC3339；之后发布引用它以 TARGET_NOT_FOUND 拒绝。
+     */
+    expiresAt:   string;
+    faviconUrl?: string;
+    imageUrl?:   string;
+    siteName:    string;
+    snapshotId:  string;
+    title:       string;
+    /**
+     * 请求的链接，原样回显，供 composer 与正文中的链接对应。
+     */
+    url: string;
 }
 
 export interface WebMessageAttachment {
@@ -6579,6 +6737,14 @@ export interface WebPublishMessageRequest {
      */
     editEventId?: string;
     /**
+     * DD-125(5) 原 composer 链接预览：本人经 BFF 抓取得到、尚未过期的快照 ID（至多 8 个，去重保序）。只用于新的 STREAM
+     * 消息（kind:9，含线程回复）：BFF 只接受本人的快照，按原 11 元素 link-preview snapshot 标签随该消息发布并把 ID
+     * 冻结在发布幂等记录；canonicalUrl 不在正文中的快照按原接收规则不签入（正文照常发布）；引用他人或已过期的快照以 TARGET_NOT_FOUND 拒绝。与
+     * suppressLinkPreviews、editEventId（原编辑不带快照）、deleteEventId、sendToChannelSourceEventId 互斥；不接受
+     * Browser 提交的原始 link-preview 标签。
+     */
+    linkPreviewSnapshotIds?: string[];
+    /**
      * 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
      */
     mentionInstallationIds?: string[];
@@ -6600,6 +6766,11 @@ export interface WebPublishMessageRequest {
      * 提及——正文与标签只取自回读的源事件，不接受 Browser 提交的原始标签。
      */
     sendToChannelSourceEventId?: string;
+    /**
+     * DD-125(5) 原 link-preview none：为 true 时签发唯一的 ["link-preview", "none"] 标签，接收方不显示预览。与
+     * editEventId 同用即原“对所有人移除预览”（本人消息的 40003 编辑）。省略或 false 不加该标签。
+     */
+    suppressLinkPreviews?: boolean;
 }
 
 /**
@@ -7977,6 +8148,15 @@ export interface WorkflowRef {
      * 固定格式的业务 workflow ID
      */
     workflowId: string;
+}
+
+/**
+ * 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+ * 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+ * Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+ */
+export interface WorkspaceCanvasSetInput {
+    content: string;
 }
 
 /**
