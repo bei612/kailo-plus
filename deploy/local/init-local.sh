@@ -239,8 +239,14 @@ platform_subject=$(../../core/verify/idp-subject.sh "$PLATFORM_ADMIN_USER") || {
 compose run --rm --no-deps temporal-namespace
 compose run --rm --no-deps spicedb-schema
 
-# Core 启动之后的公共步骤：生产与隔离接收方部署共用同一份。
-finish_platform() {
+if [ -n "$isolated" ]; then
+  # 与生产同一固定 Core/Worker 构建（DD-124(4)）；隔离部署绝不另行构建。
+  ./start-core.sh --no-build
+else
+# 生产初始化顺序由 tools/check.sh 第 9 步按字面行断言，这一行保持顶格。
+./start-core.sh
+  compose build worker
+fi
 compose up -d --wait --no-build worker buzz-web agentgateway otel-collector
 curl -fsS "http://127.0.0.1:${BFF_PORT:?缺少 BFF_PORT}/healthz" >/dev/null
 
@@ -255,16 +261,5 @@ compose exec -T core-bff /usr/local/bin/platform-core bootstrap-tenant \
   --slug "$PLATFORM_CATALOG_TENANT_SLUG" --name "$PLATFORM_CATALOG_TENANT_SLUG" \
   --admin-subject "$platform_subject" --admin-display-name "$PLATFORM_ADMIN_USER" \
   --wait-seconds "$VERIFY_BOOTSTRAP_WAIT_SECONDS"
-}
-
-if [ -n "$isolated" ]; then
-  # 与生产同一固定 Core/Worker 构建（DD-124(4)）；隔离部署绝不另行构建。
-  ./start-core.sh --no-build
-  finish_platform
-  echo "$isolated 隔离接收方部署已就绪（CONFORMANCE_ONLY，不是生产环境）。"
-  exit 0
-fi
-./start-core.sh
-compose build worker
-finish_platform
+[ -z "$isolated" ] || { echo "$isolated 隔离接收方部署已就绪（CONFORMANCE_ONLY，不是生产环境）。"; exit 0; }
 echo 'platform-local 已就绪；业务 Tenant 首位管理员为 BOOTSTRAP_USER，平台管理员为 PLATFORM_ADMIN_USER，走查用户为 VERIFY_USER；三份口令分别存于 secrets/。'
