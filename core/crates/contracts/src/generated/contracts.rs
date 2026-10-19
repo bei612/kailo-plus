@@ -4635,6 +4635,11 @@ pub struct ApplicationBindingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_read_receiver: Option<bool>,
 
+    /// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+    /// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_page_category: Option<NativePageCategory>,
+
     pub state: ApplicationBindingState,
 
     pub tenant_id: String,
@@ -4650,6 +4655,22 @@ pub struct ApplicationBindingCapability {
     pub category: String,
 
     pub version: i64,
+}
+
+/// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+/// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+///
+/// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativePageCategory {
+    #[serde(rename = "data_query")]
+    DataQuery,
+
+    #[serde(rename = "file_storage")]
+    FileStorage,
+
+    Knowledge,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

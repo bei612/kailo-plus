@@ -10074,6 +10074,10 @@ class ApplicationBindingView {
   ///Active approved binding declares a SERVICE read receiver. Resource discovery and writes
   ///still freshly check the original source share and receiver update permissions.
   final bool? hasReadReceiver;
+
+  ///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+  ///labels the entry by capabilityCategories ∪ this value; it grants nothing.
+  final NativePageCategory? nativePageCategory;
   final ApplicationBindingState state;
   final String tenantId;
   final int version;
@@ -10088,6 +10092,7 @@ class ApplicationBindingView {
     required this.componentTypeKey,
     this.hasNativePage,
     this.hasReadReceiver,
+    this.nativePageCategory,
     required this.state,
     required this.tenantId,
     required this.version,
@@ -10108,6 +10113,9 @@ class ApplicationBindingView {
         componentTypeKey: json["componentTypeKey"],
         hasNativePage: json["hasNativePage"],
         hasReadReceiver: json["hasReadReceiver"],
+        nativePageCategory: json["nativePageCategory"] == null
+            ? null
+            : nativePageCategoryValues.map[json["nativePageCategory"]]!,
         state: applicationBindingStateValues.map[json["state"]]!,
         tenantId: json["tenantId"],
         version: json["version"],
@@ -10125,6 +10133,7 @@ class ApplicationBindingView {
     "componentTypeKey": componentTypeKey,
     "hasNativePage": hasNativePage,
     "hasReadReceiver": hasReadReceiver,
+    "nativePageCategory": nativePageCategoryValues.reverse[nativePageCategory],
     "state": applicationBindingStateValues.reverse[state],
     "tenantId": tenantId,
     "version": version,
@@ -10147,6 +10156,18 @@ class ApplicationBindingCapability {
   Map<String, dynamic> toJson() =>
       _stripNulls({"category": category, "version": version});
 }
+
+///DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+///labels the entry by capabilityCategories ∪ this value; it grants nothing.
+///
+///DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+enum NativePageCategory { DATA_QUERY, FILE_STORAGE, KNOWLEDGE }
+
+final nativePageCategoryValues = EnumValues({
+  "data_query": NativePageCategory.DATA_QUERY,
+  "file_storage": NativePageCategory.FILE_STORAGE,
+  "knowledge": NativePageCategory.KNOWLEDGE,
+});
 
 enum ApplicationBindingState {
   ACTIVE,

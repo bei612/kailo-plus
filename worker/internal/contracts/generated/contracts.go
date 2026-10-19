@@ -5880,11 +5880,14 @@ type ApplicationBindingView struct {
 	HasNativePage *bool `json:"hasNativePage,omitempty"`
 	// Active approved binding declares a SERVICE read receiver. Resource discovery and writes
 	// still freshly check the original source share and receiver update permissions.
-	HasReadReceiver *bool                   `json:"hasReadReceiver,omitempty"`
-	State           ApplicationBindingState `json:"state"`
-	TenantID        string                  `json:"tenantId"`
-	Version         int64                   `json:"version"`
-	WorkspaceID     *string                 `json:"workspaceId,omitempty"`
+	HasReadReceiver *bool `json:"hasReadReceiver,omitempty"`
+	// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+	// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+	NativePageCategory *NativePageCategory     `json:"nativePageCategory,omitempty"`
+	State              ApplicationBindingState `json:"state"`
+	TenantID           string                  `json:"tenantId"`
+	Version            int64                   `json:"version"`
+	WorkspaceID        *string                 `json:"workspaceId,omitempty"`
 }
 
 type ApplicationBindingCapability struct {
@@ -10774,6 +10777,18 @@ const (
 	AgentVersionStateDRAFT   AgentVersionState = "DRAFT"
 	AgentVersionStateRETIRED AgentVersionState = "RETIRED"
 	Published                AgentVersionState = "PUBLISHED"
+)
+
+// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+// labels the entry by capabilityCategories ∪ this value; it grants nothing.
+//
+// DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+type NativePageCategory string
+
+const (
+	DataQuery   NativePageCategory = "data_query"
+	FileStorage NativePageCategory = "file_storage"
+	Knowledge   NativePageCategory = "knowledge"
 )
 
 type ApplicationBindingState string

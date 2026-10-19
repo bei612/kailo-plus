@@ -3365,15 +3365,32 @@ export interface ApplicationBindingView {
      * still freshly check the original source share and receiver update permissions.
      */
     hasReadReceiver?: boolean;
-    state:            ApplicationBindingState;
-    tenantId:         string;
-    version:          number;
-    workspaceId?:     string;
+    /**
+     * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+     * labels the entry by capabilityCategories ∪ this value; it grants nothing.
+     */
+    nativePageCategory?: NativePageCategory;
+    state:               ApplicationBindingState;
+    tenantId:            string;
+    version:             number;
+    workspaceId?:        string;
 }
 
 export interface ApplicationBindingCapability {
     category: string;
     version:  number;
+}
+
+/**
+ * DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
+ * labels the entry by capabilityCategories ∪ this value; it grants nothing.
+ *
+ * DD-127(4)：NATIVE_PAGE 入口的呈现类别，决定侧边栏标签与图标；不授予能力、不参与类别解析或授权。
+ */
+export enum NativePageCategory {
+    DataQuery = "data_query",
+    FileStorage = "file_storage",
+    Knowledge = "knowledge",
 }
 
 export enum ApplicationBindingState {
