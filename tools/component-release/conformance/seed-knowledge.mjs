@@ -26,6 +26,8 @@
 // { "requirementsFile":"/abs vector-requirements output (component knowledge, satisfiable)",
 //   "registrationFile":"/abs contracts/adapter/knowledge.v3/registration.json",
 //   "cellsOrigin":"http://<isolated source Cells>", "restBasePath":"/v2/", "workspaceSlug",
+//   "cellsExternal":"<that Cells' CELLS_EXTERNAL>" (S3 uploads are signed for this host and sent
+//                   to cellsOrigin: Cells' proxy rewrites Host to it; cells-s3.mjs),
 //   "adminTokenFile":"/abs native admin PAT", "s3Secret":"gatewaysecret",
 //   "sourceFolders":{ "<category>:<version>:<caseKey>/<source Resource precondition key>":"<folder path>" },
 //                    (the native folder each source Resource precondition is registered over)
@@ -40,11 +42,12 @@
 //   "timeoutMs":<int>, "waitSeconds":<int>,
 //   "nativeOut":"/abs/native-seed.json", "out":"/abs/native-facts.json" }
 
-import { randomUUID, createHash, createHmac } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants, closeSync, openSync, writeSync } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { analyseV2, parseVectors } from './vector-v2.mjs';
+import { externalOrigin, s3Put } from './cells-s3.mjs';
 
 class Refusal extends Error {}
 const fail = (message) => { throw new Refusal(message); };
@@ -62,24 +65,6 @@ async function ownerOnly(path, json = true) {
 function createOnly(path, value) {
   const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
   try { writeSync(fd, `${JSON.stringify(value, null, 2)}\n`); } finally { closeSync(fd); }
-}
-
-// Same AWS SigV4 (UNSIGNED-PAYLOAD) as seed-cells.mjs for the Cells S3 gateway.
-function sigv4(method, url, headers, accessKey, secretKey) {
-  const amzDate = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');
-  const day = amzDate.slice(0, 8);
-  const all = { ...headers, host: url.host, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD', 'x-amz-date': amzDate };
-  const names = Object.keys(all).map((name) => name.toLowerCase()).sort();
-  const lower = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.toLowerCase(), String(v).trim()]));
-  const canonicalUri = url.pathname.split('/').map((part) => encodeURIComponent(decodeURIComponent(part))).join('/');
-  const request = [method, canonicalUri, '', ...names.map((name) => `${name}:${lower[name]}`), '', names.join(';'), 'UNSIGNED-PAYLOAD'].join('\n');
-  const scope = `${day}/us-east-1/s3/aws4_request`;
-  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, createHash('sha256').update(request).digest('hex')].join('\n');
-  let key = Buffer.from(`AWS4${secretKey}`);
-  for (const part of [day, 'us-east-1', 's3', 'aws4_request']) key = createHmac('sha256', key).update(part).digest();
-  const signature = createHmac('sha256', key).update(toSign).digest('hex');
-  const { host, ...sent } = lower;
-  return { ...sent, authorization: `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` };
 }
 
 // Every precondition of the frozen knowledge vectors with the source Resource
@@ -125,6 +110,8 @@ async function main() {
   const preconditions = plan(JSON.parse(await readFile(seed.registrationFile, 'utf8')), await ownerOnly(seed.requirementsFile));
   const signal = () => AbortSignal.timeout(seed.timeoutMs);
   const origin = new URL(seed.cellsOrigin);
+  let external;
+  try { external = externalOrigin(seed.cellsExternal); } catch { fail('seed.json invalid: cellsExternal must be the source Cells external origin (CELLS_EXTERNAL)'); }
   const rest = new URL(seed.restBasePath, origin);
   const admin = await ownerOnly(seed.adminTokenFile, false);
   const cells = async (method, path, body) => {
@@ -137,11 +124,10 @@ async function main() {
   // Cells must acknowledge, and the single published revision Cells lists.
   const createFile = async (folder, name, text, mediaType) => {
     const proposed = randomUUID();
-    const url = new URL(`/io/${seed.workspaceSlug}/${folder}/${name}`, origin);
-    const headers = sigv4('PUT', url, { 'content-type': mediaType, 'x-amz-meta-create-resource-uuid': proposed }, admin, seed.s3Secret);
-    const response = await fetch(url, { method: 'PUT', redirect: 'manual', signal: signal(), headers, body: text });
-    await response.body?.cancel();
-    if (response.status !== 200) fail(`PUT ${folder}/${name}: native HTTP ${response.status}`);
+    // Sent to the internal origin, signed for the external host the gateway verifies (cells-s3.mjs).
+    const status = await s3Put({ origin, external, path: `/io/${seed.workspaceSlug}/${folder}/${name}`, body: text,
+      headers: { 'content-type': mediaType, 'x-amz-meta-create-resource-uuid': proposed }, accessKey: admin, secretKey: seed.s3Secret, signal: signal() });
+    if (status !== 200) fail(`PUT ${folder}/${name}: native HTTP ${status}`);
     const leaf = await cells('GET', `n/node/${proposed}?Flags=WithMetaDefaults`);
     if (leaf?.Uuid !== proposed || leaf.Type !== 'LEAF') fail(`${folder}/${name}: Cells did not acknowledge the created file`);
     const versions = await cells('POST', `n/node/${proposed}/versions`, { FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] });

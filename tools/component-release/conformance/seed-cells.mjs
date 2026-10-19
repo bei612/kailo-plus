@@ -39,6 +39,8 @@
 // Usage: node tools/component-release/conformance/seed-cells.mjs --seed /abs/seed.json
 // seed.json (owner-only):
 // { "requirementsFile":"/abs/requirements.json", "cellsOrigin":"http://<isolated cells>",
+//   "cellsExternal":"<that instance's CELLS_EXTERNAL>" (S3 uploads are signed for this host and
+//                   sent to cellsOrigin: Cells' proxy rewrites Host to it; cells-s3.mjs),
 //   "restBasePath":"/v2/", "restV1BasePath":"/a/" (V2 share preconditions),
 //   "workspaceSlug":"<existing native workspace slug>",
 //   "rootName":"kailo-conformance-<run>", "adminTokenFile":"/abs PAT (native admin)",
@@ -46,10 +48,11 @@
 //   "s3Secret":"gatewaysecret", "timeoutMs":<int>, "out":"/abs/native-facts.json" }
 // PATs come from the native `cells admin user token` command of that instance.
 
-import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { lstat, readFile } from 'node:fs/promises';
 import { constants, closeSync, openSync, writeSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { externalOrigin, s3Put } from './cells-s3.mjs';
 
 class Refusal extends Error {}
 const fail = (message) => { throw new Refusal(message); };
@@ -60,24 +63,6 @@ async function ownerOnly(path, json = true) {
   if (entry.isSymbolicLink() || !entry.isFile() || (entry.mode & 0o077) !== 0) fail(`${path}: owner-only regular file required`);
   const text = await readFile(path, 'utf8');
   return json ? JSON.parse(text) : text.trim();
-}
-
-function sigv4(method, url, headers, accessKey, secretKey) {
-  const amzDate = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');
-  const day = amzDate.slice(0, 8);
-  const all = { ...headers, host: url.host, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD', 'x-amz-date': amzDate };
-  const names = Object.keys(all).map((name) => name.toLowerCase()).sort();
-  const lower = Object.fromEntries(Object.entries(all).map(([k, v]) => [k.toLowerCase(), String(v).trim()]));
-  const canonicalUri = url.pathname.split('/').map((part) => encodeURIComponent(decodeURIComponent(part))).join('/');
-  const request = [method, canonicalUri, '', ...names.map((name) => `${name}:${lower[name]}`), '', names.join(';'), 'UNSIGNED-PAYLOAD'].join('\n');
-  const scope = `${day}/us-east-1/s3/aws4_request`;
-  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, createHash('sha256').update(request).digest('hex')].join('\n');
-  let key = Buffer.from(`AWS4${secretKey}`);
-  for (const part of [day, 'us-east-1', 's3', 'aws4_request']) key = createHmac('sha256', key).update(part).digest();
-  const signature = createHmac('sha256', key).update(toSign).digest('hex');
-  // Host is signed but sent by fetch itself from the same URL.
-  const { host, ...sent } = lower;
-  return { ...sent, authorization: `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` };
 }
 
 async function main() {
@@ -91,6 +76,8 @@ async function main() {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(seed.workspaceSlug ?? '') || !/^[a-z0-9][a-z0-9-]*$/.test(seed.rootName ?? '')
     || !isAbsolute(seed.out ?? '') || !Number.isSafeInteger(seed.timeoutMs) || seed.timeoutMs <= 0) fail('seed.json invalid');
   const origin = new URL(seed.cellsOrigin);
+  let external;
+  try { external = externalOrigin(seed.cellsExternal); } catch { fail('seed.json invalid: cellsExternal must be the native external origin (CELLS_EXTERNAL)'); }
   const rest = new URL(seed.restBasePath, origin);
   const admin = await ownerOnly(seed.adminTokenFile, false);
   const actor = await ownerOnly(seed.actorTokenFile, false);
@@ -102,11 +89,10 @@ async function main() {
     return response.json();
   };
   const put = async (path, text, mediaType, meta, token) => {
-    const url = new URL(`/io/${seed.workspaceSlug}/${path}`, origin);
-    const headers = sigv4('PUT', url, { 'content-type': mediaType, ...meta }, token, seed.s3Secret);
-    const response = await fetch(url, { method: 'PUT', redirect: 'manual', signal: signal(), headers, body: text });
-    await response.body?.cancel();
-    if (response.status !== 200) fail(`PUT ${path}: native HTTP ${response.status}`);
+    // Sent to the internal origin, signed for the external host the gateway verifies (cells-s3.mjs).
+    const status = await s3Put({ origin, external, path: `/io/${seed.workspaceSlug}/${path}`, body: text,
+      headers: { 'content-type': mediaType, ...meta }, accessKey: token, secretKey: seed.s3Secret, signal: signal() });
+    if (status !== 200) fail(`PUT ${path}: native HTTP ${status}`);
   };
   const node = (uuid) => restCall('GET', `n/node/${uuid}?Flags=WithMetaDefaults`);
   const created = async (path, type) => {
