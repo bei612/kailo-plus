@@ -14,6 +14,9 @@
 #                平台 namespace 的 ActionToken/Gateway 公钥取平台 Agent 已渲染的只读文件）。
 #                需要 binding 计划、adapter 配置（Wren: config --kind data-query）与
 #                adapter-delivery.py reader 已完成。
+# 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
+# data-query/native.env（均在 /volumes/data/kailo/components 下，0600）；平台 .env 只读取
+# 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK，--adapter 另取两份公钥路径）。
 # 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
 set -euo pipefail
 component=${1:?component}
@@ -147,10 +150,20 @@ case "$component" in
     frame_headers "$(env_value "$ENV" KNOWLEDGE_NATIVE_ORIGIN)/"
     ;;
   data-query)
-    ENV=${COMPONENT_ENV_FILE:-$R/.env}
-    # 唯一 Wren env 权威含 ${...} 派生值：子 shell 求值单个键，不回显整份 env。
+    # DD-127(7)：Wren 原生组件 env 是唯一 Wren 部署输入（与 WeKnora native.env 同形）。
+    # 平台 .env 只提供 issuer 与 edge 网络两个公共键，由进程环境传入，覆盖组件 env 中的同名键。
+    ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/data-query/native.env}
+    private_env "$ENV"
+    # 子 shell 求值单个键，不回显整份 env。
     wren_value() { (set -a; . "$ENV" >/dev/null 2>&1; set +a; printf '%s' "${!1:-}"); }
-    compose=(docker compose --env-file "$ENV" -f "$S/data-query/docker/docker-compose.yaml")
+    platform_value() { (cd "$R" && set -a && . ./.env >/dev/null 2>&1 && set +a && printf '%s' "${!1:-}"); }
+    platform_keys=("OIDC_ISSUER=$(platform_value OIDC_ISSUER)" "PLATFORM_EDGE_NETWORK=$(platform_value PLATFORM_EDGE_NETWORK)")
+    if "$adapter"; then platform_keys+=("GATEWAY_SERVICE_JWKS_FILE=$(platform_value GATEWAY_SERVICE_JWKS_FILE)"); fi
+    # 原生 AI Service 经 edge 网络到达 AgentGateway 独立模型入口（只是传输，key 仍由 Core 投影）。
+    compose=(env "${platform_keys[@]}" docker compose --env-file "$ENV" -f "$S/data-query/docker/docker-compose.yaml"
+      -f "$S/data-query/docker/model-gateway.yaml")
+    # Agent 工具接入路径的已验证模型凭据投递只在组件 env 显式给出目录时叠加。
+    [ -z "$(wren_value WREN_MODEL_DELIVERY_DIR)" ] || compose+=(-f "$S/data-query/docker/model-delivery.yaml")
     if "$adapter"; then
       # 07 §2.5 / DD-94：两份 OpenBao Agent 投递、各自 namespace 与最小 AppRole。
       # 平台 namespace 的公钥文件由平台 Agent 渲染（只读挂载）；tenants/<tenantId>
@@ -170,7 +183,12 @@ case "$component" in
         WREN_QUERY_AGENT_PROJECT WREN_COMPOSE_PROJECT_NAME WREN_QUERY_ACTION_JWKS_FILE GATEWAY_SERVICE_JWKS_FILE
         ACTION_TOKEN_SIGNING_FILE)
       values=()
-      for name in "${names[@]}"; do values+=("$name=$(wren_value "$name")"); done
+      for name in "${names[@]}"; do
+        case "$name" in
+          GATEWAY_SERVICE_JWKS_FILE|ACTION_TOKEN_SIGNING_FILE) values+=("$name=$(platform_value "$name")") ;;
+          *) values+=("$name=$(wren_value "$name")") ;;
+        esac
+      done
       env "${values[@]}" python3 -I - <<'PYWREN'
 import json, os, re, stat, sys
 from pathlib import Path
@@ -261,7 +279,7 @@ PYWREN
     if "${D[@]}" volume inspect "$volume" >/dev/null 2>&1; then
       dir="$backup_root/$component/$stamp"; mkdir -p "$dir" && chmod 700 "$backup_root" "$backup_root/$component" "$dir"
       "${D[@]}" run --rm --network none -v "$volume:/v:ro" -v "$dir:/b" --entrypoint tar \
-        "$(env_value "$R/.env" WREN_QDRANT_IMAGE)" -C /v -czf /b/native-ui-data.tgz . 2>/dev/null \
+        "$(wren_value WREN_QDRANT_IMAGE)" -C /v -czf /b/native-ui-data.tgz . 2>/dev/null \
         || echo "注意：无法用 qdrant 镜像打包 $volume，请手工备份" >&2
     fi
     if "$adapter"; then
@@ -274,7 +292,7 @@ PYWREN
     fi
     echo "== 3. Wren 原生栈（--no-build，按 digest）"
     "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 900
-    origin=$(set -a; . "$ENV"; set +a; printf '%s' "${WREN_PUBLIC_ORIGIN:-}")
+    origin=$(wren_value WREN_PUBLIC_ORIGIN)
     [ -n "$origin" ] && frame_headers "$origin/"
     if "$adapter"; then
       echo "== 回读 Wren 治理投递（只列名称与挂载，不读内容）"
@@ -282,7 +300,7 @@ PYWREN
       echo "投递目录文件：$(ls -1A "$delivery" | tr '\n' ' ')"
       ui=$("${compose[@]}" ps -q wren-ui)
       "${D[@]}" inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Destination}} rw={{.RW}}{{"\n"}}{{end}}{{end}}' "$ui" \
-        | grep -E "^($delivery|$(wren_value WREN_QUERY_ACTION_JWKS_FILE)|$(wren_value GATEWAY_SERVICE_JWKS_FILE)) " \
+        | grep -E "^($delivery|$(wren_value WREN_QUERY_ACTION_JWKS_FILE)|$(platform_value GATEWAY_SERVICE_JWKS_FILE)) " \
         || { echo 'wren-ui 缺少治理投递挂载' >&2; exit 1; }
       "${D[@]}" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$ui" | grep -E '^WREN_PLATFORM_(QUERY|BINDING)_CONFIG_FILE=' \
         || { echo 'wren-ui 缺少治理投递环境' >&2; exit 1; }

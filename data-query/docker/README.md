@@ -31,22 +31,28 @@ not Core's default application network. Qdrant is only on the internal
 `wren-ai-service-data` network; the AI service is its sole native client.
 Only the explicitly selected query-governance overlay connects the native UI,
 and the separate component OpenBao Agent project, to an existing private
-platform protocol network.
+platform protocol network. The `model-gateway.yaml` overlay attaches only the
+AI Service to the existing platform edge network (`PLATFORM_EDGE_NETWORK`) so
+its native providers reach the AgentGateway independent model listener; it is
+transport only and creates no model, key or route (DD-127(7)).
 
 ## How to start with OpenAI
 
-1. From the apps root, copy the sole `deploy/local/.env.example` to
-   `deploy/local/.env` if that deployment file does not already exist. Fill its
-   `WREN_*` section; do not create a second `component.env` or overwrite an
-   existing deployment file. The native `.env.example` is only a pointer.
-   Set an independent `WREN_COMPOSE_PROJECT_NAME` and actual source-built
+1. Create the owner-only (`0700`) component directory, for example
+   `/volumes/data/kailo/components/data-query`, and install
+   `deploy/components/data-query.env.template` there as `native.env` (`0600`).
+   It is the sole Wren deployment input (DD-127(7), same shape as the WeKnora
+   `native.env`). The platform `deploy/local/.env` carries no `WREN_*` key; it
+   supplies only `OIDC_ISSUER` and `PLATFORM_EDGE_NETWORK`, which the deploy
+   entry passes as process environment. The native `.env.example` is only a
+   pointer. Set an independent `WREN_COMPOSE_PROJECT_NAME` and actual source-built
    `WREN_UI_IMAGE`, `WREN_AI_IMAGE`, `WREN_ENGINE_IMAGE` and
    `WREN_GATEWAY_IMAGE` digest references. The fixed Ibis/bootstrap/Qdrant
    dependencies preserve the original GenBI recipe, not an original UI/AI
    replacement. Bound queries additionally consume the forked Engine's
-   `/v2/analysis/sql/sources`; the sole template leaves `WREN_ENGINE_IMAGE`
-   empty so the original Compose required-input check refuses an undelivered
-   Engine instead of selecting the upstream image. Keep the release inactive
+   `/v2/analysis/sql/sources`; the template leaves `WREN_ENGINE_IMAGE`
+   as an unfilled placeholder so the deploy entry's digest check refuses an
+   undelivered Engine instead of selecting the upstream image. Keep the release inactive
    until its actual source-built Engine digest and compatible native version
    have been verified and delivered. Registered build entries
    already exist as `tools/build-upstream.sh data-query-ui` and
@@ -68,16 +74,21 @@ platform protocol network.
    Deliver the original native database encryption password/salt as owner-only
    files under `WREN_NATIVE_DATA_KEY_DIR`; no values belong in this repository.
 3. Copy `data-query/docker/config.example.yaml` to the private
-   `WREN_PROJECT_DIR/config.yaml` and
-   configure actual native model/embedding providers. This is a native service
-   configuration, not proof of a platform ModelRoute or billing integration.
-   Set `WREN_PROJECT_DIR` and `WREN_LOCAL_STORAGE` to existing absolute native
-   directories. Bind mounts reject implicit creation of missing config/data
-   paths; retain the original native files and independent data volumes.
-4. Validate without printing resolved secrets:
-   `docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml config --quiet`.
-5. After release-level checks, use the existing entry:
-   `docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml up -d --no-build`.
+   `WREN_PROJECT_DIR/config.yaml` and configure the native model/embedding
+   providers as described in "Native model configuration" below. This is a
+   native service configuration, not proof of a platform ModelRoute or billing
+   integration. Set `WREN_PROJECT_DIR` and `WREN_LOCAL_STORAGE` to existing
+   absolute native directories. Bind mounts reject implicit creation of missing
+   config/data paths; retain the original native files and independent data
+   volumes.
+4. Validate without printing resolved secrets. On the CI node the entry is
+   `deploy/components/component-deploy.sh data-query <commit> --check`; the
+   equivalent manual call from the apps root, with `OIDC_ISSUER` and
+   `PLATFORM_EDGE_NETWORK` exported from the platform `.env`, is
+   `docker compose --env-file /volumes/data/kailo/components/data-query/native.env -f data-query/docker/docker-compose.yaml -f data-query/docker/model-gateway.yaml config --quiet`.
+5. After release-level checks, deploy with
+   `deploy/components/component-deploy.sh data-query <commit>` (digest-pinned
+   images, `--no-build`, backup of the native UI volume, header read-back).
    Stop with the same files and `down`, never `down -v` for retained data.
 
 The UI image's original startup now loads the two DATA_KEY files before its
@@ -134,11 +145,38 @@ The original UI/AI/Engine pipeline remains native. This source slice neither
 invokes a model nor claims a live datasource, OIDC registration, image build or
 real question-to-SQL acceptance. Those deployment facts remain prerequisites.
 
+### Native model configuration
+
+The AI Service's providers are its own native configuration (DD-127(7)):
+`WREN_PROJECT_DIR/config.yaml` plus the component-only, owner-only
+`WREN_AI_SECRET_ENV_FILE`. The base Compose file mounts neither a platform
+model projection nor an OpenBao delivery; the original AI startup is unchanged.
+
+- Point `api_base` of the `litellm_llm` and `litellm_embedder` providers at the
+  AgentGateway independent model listener, the platform
+  `AGENTGATEWAY_MODEL_BASE_URL` (DD-70/71/110), reached through the
+  `model-gateway.yaml` overlay. Model names are the exact model names that
+  listener serves; no provider URL, provider credential or vendor default is
+  configured in Wren.
+- The listener enforces strict keys, and its keys come only from Core
+  projections (an Agent Installation, or a binding that selects
+  `PLATFORM_LLM_ROUTE`, DD-92). A native page entry binding has
+  `model_call_mode=NONE` and yields no key. When such a key is delivered, name
+  it with `api_key_name` and put it only in `WREN_AI_SECRET_ENV_FILE`; the
+  original loader then refuses startup if the named key is missing. Never
+  reuse an Agent Installation's key or switch to a direct provider. Without a
+  key, leave `api_key_name` unset: the native page, login and modeling work,
+  and every model call is refused (no key reaches the Gateway).
+- Set `embedding_model_dim` of the Qdrant document store from an actual
+  embedding response of the configured route; do not guess it or fall back to
+  a chat model.
+
 ### Optional
 
-- Select `WREN_PUBLIC_PORT` in `deploy/local/.env`; no public port is selected
-  by default. `WREN_PUBLIC_ORIGIN` derives from `PUBLIC_HOST` and that port,
-  while `WREN_PUBLIC_BIND_ADDR` derives from `PUBLIC_BIND_ADDR`.
+- Select `WREN_PUBLIC_BIND_ADDR`, `WREN_PUBLIC_PORT` and `WREN_PUBLIC_ORIGIN`
+  in the component env as literal values; bind the LAN address that serves the
+  other native pages, not every interface. `KAILO_FRAME_ANCESTORS` lists the
+  exact Kailo Web origin(s) allowed to embed the page (07 §4.6).
 - Wren is not included in the platform Compose. Its absent inputs do not
   prevent Core startup; required inputs fail closed only on explicit Wren
   Compose invocation. Do not use a disabled profile to bypass missing native
@@ -148,7 +186,7 @@ real question-to-SQL acceptance. Those deployment facts remain prerequisites.
 
 To start with a custom LLM, the process is similar to starting with OpenAI. The main difference is that you need to modify the `config.yaml` file
 that we created on the previous step. After verifying the configuration and any native deployment response, use the same original entry from the apps root:
-`docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml up -d --no-build wren-ai-service`.
+`deploy/components/component-deploy.sh data-query <commit>` (or the manual Compose call of step 4 with `up -d --no-build wren-ai-service`).
 
 For detailed information on how to modify the configuration for different LLM providers and models, please refer to the [AI Service Configuration](../wren-ai-service/docs/configuration.md).
 This guide provides comprehensive instructions on setting up various LLM providers, embedders, and other components of the AI service.
@@ -171,9 +209,9 @@ Deployment inputs (no credential values belong in source):
   public port input. `WREN_UI_PORT` configures the UI listener and
   both the Gateway upstream and AI callback endpoint; `EXPOSE` is metadata,
   not an instruction to override the configured port.
-- `OIDC_ISSUER`, `WREN_OIDC_CLIENT_ID`: the same public identity issuer,
-  with the native service's dedicated registration, not the platform browser
-  client. Compose projects the sole issuer to the existing native Gateway
+- `OIDC_ISSUER`, `WREN_OIDC_CLIENT_ID`: the same public identity issuer (read
+  from the platform `.env`, never repeated in the component env), with the
+  native service's dedicated registration, not the platform browser client. Compose projects the sole issuer to the existing native Gateway
   `WREN_OIDC_ISSUER` consumer.
 - `WREN_PUBLIC_ORIGIN`: Compose derives the native Gateway's existing
   `WREN_OIDC_REDIRECT_URI` by appending `/oauth/callback`; register that exact
@@ -186,8 +224,9 @@ Deployment inputs (no credential values belong in source):
 - `WREN_NATIVE_IDENTITY_JSON`: the existing native verifier configuration;
   issuer and audience must match the above native registration, `publicOrigin`
   must equal the external native origin, and the dedicated signed access claim
-  must identify this explicitly authorized native instance. Missing grants
-  remain denied; configuring a client does not assign users an instance grant.
+  must identify this native instance. `bootstrap.sh
+  --register-wren-native-clients` declares that claim on both dedicated native
+  clients (DD-127(7)); a token without it stays denied.
 
 Open the native origin normally (or `/auth/login?returnTo=/`). No JavaScript
 Bearer injection is needed. All routes, including callback, share one native
@@ -592,9 +631,10 @@ gain a fabricated terminal status or query-cancellation capability. Runtime
 reconciliation uses this original observe consumer; no separate native
 reconciliation engine or endpoint is introduced.
 
-The overlay's non-secret paths and Agent metadata are in the sole
-`deploy/local/.env` Wren section (`deploy/components/data-query.env.template`).
-Do not create a second environment authority. On the CI node,
+The overlay's non-secret paths and Agent metadata are in the Wren native
+component env (`deploy/components/data-query.env.template`); the two platform
+public-key paths, `GATEWAY_SERVICE_JWKS_FILE` and `ACTION_TOKEN_SIGNING_FILE`,
+stay in the platform `.env` and are read from there. On the CI node,
 `deploy/components/component-deploy.sh data-query <commit> --adapter` is the
 deployment entry. With `--check`, it validates both Compose projects, digest-pinned
 images and the controlled delivery, then stops. The delivery check covers
@@ -606,8 +646,11 @@ reads back the Agent, the rendered file names and the `wren-ui` mounts and
 environment. The equivalent manual check is:
 
 ```sh
-docker compose --env-file deploy/local/.env \
+# OIDC_ISSUER, PLATFORM_EDGE_NETWORK and GATEWAY_SERVICE_JWKS_FILE exported
+# from the platform .env
+docker compose --env-file /volumes/data/kailo/components/data-query/native.env \
   -f data-query/docker/docker-compose.yaml \
+  -f data-query/docker/model-gateway.yaml \
   -f data-query/docker/query-governance.yaml config --quiet
 ```
 
@@ -1551,34 +1594,34 @@ cases are fixtures; no real model, Qdrant or native business deployment is
 claimed. The concurrent source build remains fixed at `f25ea048`; that fixed
 image input does not contain this later entrypoint change.
 
-The actual sole local deployment file now includes the independent Compose
-project name, original non-secret dependency images, ports, versions, SQLite
-and disabled-telemetry settings, plus the component directory, UI database
-delivery file and native DATA_KEY directory. The database delivery file and
-both owner-only DATA_KEY files exist. These are not identity or permission
-facts and do not complete native deployment. Source-built UI/AI artifact
-references, the native provider configuration and its credential delivery,
-dedicated component OIDC/cookie registration, AI client identity and approved
-query/binding/JWKS/Resource evidence still require controlled delivery. The
+The Wren native component env holds the independent Compose project name,
+original non-secret dependency images, ports, versions, SQLite and
+disabled-telemetry settings, plus the component directory, UI database
+delivery file and native DATA_KEY directory. These are not identity or
+permission facts and do not complete native deployment. Source-built UI/AI
+artifact references, the native provider configuration, dedicated component
+OIDC/cookie registration, AI client identity and, for a governed binding,
+approved query/binding/JWKS/Resource evidence still require controlled
+delivery. The
 bound source-analysis producer also requires the source-built Engine rather
 than an unmodified dependency image. None of those facts is inferred from
 the project name, a configuration example or a shared platform credential.
 
 ### Dedicated native browser and AI client registration
 
-The existing local `deploy/local/bootstrap.sh` now exposes
-`--register-wren-native-clients` for the explicitly delivered native browser
-and AI clients. This branch uses the original local IdP admin API and controlled
-secret files; it does not recreate the realm, change existing registrations,
-rotate keys, mint instance claims, assign users/service accounts a role, or
-activate an ApplicationBinding. Do not run it as a substitute for approved
-instance admission. This implementation batch did **not** execute the branch
-against the live IdP.
+`deploy/local/bootstrap.sh --register-wren-native-clients <native.env>` is the
+repeatable, declarative IdP configuration of the two dedicated native clients
+(SS-WRN-IDENTITY, DD-127(7)). It reads the platform `.env` only for the local
+IdP admin endpoint, realm, issuer and platform client ids, and every `WREN_*`
+value only from the given `0600` Wren component env. It uses the original
+local IdP admin API and the controlled secret files; it does not recreate the
+realm, change platform registrations, rotate keys, add user attributes or
+roles, or activate an ApplicationBinding.
 
-The existing sole `.env` must deliver `WREN_OIDC_CLIENT_ID`,
+The component env must deliver `WREN_OIDC_CLIENT_ID`,
 `WREN_NATIVE_IDENTITY_JSON`, `WREN_PUBLIC_ORIGIN`, `WREN_UI_PORT`,
-`WREN_OIDC_SECRET_ENV_FILE` and `WREN_AI_IDENTITY_DIR`. The new registration
-branch requires the original native verifier fields plus a distinct
+`WREN_OIDC_SECRET_ENV_FILE` and `WREN_AI_IDENTITY_DIR`. The registration
+requires the original native verifier fields plus a distinct
 `serviceAudience`, matching the existing AI `identity.json` `clientId`.
 Neither native client may be a platform client. The origin/callback, issuer,
 certs/token endpoints, private UI endpoint and mounted secret filename must
@@ -1587,39 +1630,35 @@ secret files are required; symlinks, shared native secrets and mismatches fail
 closed before any client creation. No secret values belong in this guide.
 
 The browser client retains confidential authorization-code/PKCE authentication;
-the separate AI client only enables its original client-credentials flow.
-Only the AI audience mapper is added. Its native secret and audience are not
-borrowed from the browser or Core. A lost create ACK leads to native unique-ID
-readback, not a second create in that invocation. Existing incompatible client
-flags, secret or own audience mapper are refused, not overwritten. IdP redirects
-are refused rather than forwarding login/client secrets or the admin bearer.
-Readback does **not** certify other existing entitlement mappers or instance
-authorization.
+the separate AI client only enables its original client-credentials flow and
+carries the AI audience mapper. Both clients carry one hard-coded
+`native-instance-claim` mapper that emits `accessClaim` as the JSON array
+`[accessValue]` of `WREN_NATIVE_IDENTITY_JSON`: in the browser ID token that
+the native Gateway forwards, and in the AI client-credentials access token.
+Every identity of the platform IdP that logs in through the dedicated browser
+client therefore carries the instance claim, as with Cells and WeKnora; the
+native project and data permissions stay with the native ACL, and the
+`DEDICATED_INSTANCE` scope is unchanged. A lost create ACK leads to native
+unique-ID readback, not a second create in that invocation. Re-running reads
+back every declared field and changes nothing when they match. Existing
+incompatible client flags, secret, audience mapper, instance mapper or a
+second mapper emitting the same claim are refused, not overwritten. IdP
+redirects are refused rather than forwarding login/client secrets or the admin
+bearer.
 
-The original native middleware now consumes the optional separate service
+The original native middleware consumes the optional separate service
 audience, requires its signed `azp` association, rejects a mixed browser/service
-audience, and retains the existing signed instance-claim requirement. A client
-registration alone therefore still yields a denied native request without a
-real grant. Existing browser-only configuration remains compatible. This does
+audience, and requires the signed instance claim. A token issued for another
+client, or by a client without the declared mapper, is still denied. This does
 not grant SERVICE SQL admission or replace current HUMAN/AGENT Resource,
-scope, generation, approval, quota or result-disclosure checks.
+scope, generation, approval, quota or result-disclosure checks of a governed
+binding.
 
 The [actual client-registration receipt](../fork/verify/native-integration.md#dedicated-native-client-registration-and-audience-consumption)
 records Python **23/23**, original middleware/ViewMetadata **300/300**, actual
 production audience/authorized-party/redirect failures and exact restoration;
 the final original TypeScript and four-file formatting commands both exited
-**0**. The root-owned Ant Design alias check also proves its actual Chinese and
-English row-limit component export/render, not a new Next bundle or screenshot.
-
-Runtime delivery has progressed since the preceding bootstrap checkpoint:
-the independent native project/data/UI-env paths and independent DATA_KEY files
-have been delivered through the sole local `.env`. Those non-secret/storage
-steps are not client registration or integration acceptance. Dedicated client
-secret/cookie/AI identity delivery, a genuinely signed instance grant and its
-authorization producer, native model/provider credentials, and approved
-binding/SecretRef/Resource evidence remain separate prerequisites. No native
-business service, ACTIVE binding, iframe or multi-user acceptance is claimed;
-the root-owned fixed-source UI/AI build is independent of this later change.
+**0**. It predates the instance-claim declaration and the component env.
 
 ### Native SQL response and correction boundary
 
@@ -1743,7 +1782,17 @@ this is not a deployed feature or a browser acceptance result. The earlier
 six PostgreSQL migration checks remain failed and were not rerun or relabeled.
 See the [pin evidence](../fork/verify/native-integration.md#original-dashboard-pin-last-native-insert-authorization).
 
-### Native running model credential read-back
+### Verified model credential delivery (Agent tool path overlay)
+
+This delivery belongs only to the Agent tool path of a capability release and
+binding (DD-127(7), DD-92); the native page deployment never needs it.
+`data-query/docker/model-delivery.yaml` adds the four delivery paths and the
+owner-only `WREN_MODEL_DELIVERY_DIR` mount to the AI Service;
+`component-deploy.sh data-query` adds the overlay only when the component env
+sets `WREN_MODEL_DELIVERY_DIR`. For this path, `WREN_AI_SECRET_ENV_FILE` is a
+distinct file inside that directory, written by the materializer below.
+
+#### Native running model credential read-back
 
 The original AI lifespan can publish the existing `ApplicationAdapterDirectory`
 format after its real LLM/Router and embedding providers have loaded. It does
@@ -1751,7 +1800,7 @@ not create a model, route, identity, grant or HTTP management endpoint. The
 independent upstream startup remains unchanged when all four delivery paths are
 absent; that mode produces no platform delivery proof.
 
-For this governed Compose entry, `WREN_MODEL_DELIVERY_DIR` is an existing,
+With the `model-delivery.yaml` overlay, `WREN_MODEL_DELIVERY_DIR` is an existing,
 owner-only directory. It supplies `input.json` (the existing frozen Core model
 projection plus native `models` mapping), `credential.json` (the original Bao
 Agent's matching `delivery`, `requestId`, `version`, `value`), and
@@ -1799,18 +1848,20 @@ binding workflow, authorization, generation and audited-read checks remain
 mandatory. Missing approved inputs, a real embedding route or native config
 continues to block release; this read-back does not grant business access.
 
-### Materialize the existing platform model key with OpenBao Agent
+#### Materialize the existing platform model key with OpenBao Agent
 
 The existing `deploy/local/bootstrap.sh` accepts
-`--prepare-wren-model-reader` and `--materialize-wren-model-key`. Both load
-`deploy/local/.env`; neither creates a model, binding, grant or Gateway key.
+`--prepare-wren-model-reader <native.env>` and
+`--materialize-wren-model-key <native.env>`. Both load `deploy/local/.env` for
+the OpenBao settings and every `WREN_*` value only from the given Wren
+component env; neither creates a model, binding, grant or Gateway key.
 The original platform model provisioner must already have supplied the frozen
 `input.json`, `adapter-directory.json`, component `config.yaml`, and exact
 tenant-scoped KV SecretRef. A real embedding route and its native dimension
 remain required; no chat-model fallback or guessed dimension is generated.
 
-Set `WREN_MODEL_DELIVERY_DIR` to the existing owner-only directory and
-`WREN_AI_SECRET_ENV_FILE` to a distinct file within it. Preparation validates
+In the component env, set `WREN_MODEL_DELIVERY_DIR` to the existing
+owner-only directory and `WREN_AI_SECRET_ENV_FILE` to a distinct file within it. Preparation validates
 the actual native model/endpoint/key-name consumers against that projection,
 then uses the original local OpenBao CLI transport to read back or create only
 the exact reader policy and bounded one-use AppRole. A differing existing
@@ -1820,9 +1871,11 @@ From the apps root, with the existing execution profile and private Wren Agent
 image/network/UID/GID delivery configured, use the original tools:
 
 ```sh
-./deploy/local/bootstrap.sh --prepare-wren-model-reader
+WREN_ENV=/volumes/data/kailo/components/data-query/native.env
+./deploy/local/bootstrap.sh --prepare-wren-model-reader "$WREN_ENV"
 set -a
 . ./deploy/local/.env
+. "$WREN_ENV"
 set +a
 . ./tools/container-safety.sh
 container_safety_init
@@ -1834,7 +1887,7 @@ sudo -n docker run --rm --pull=never \
   --mount "type=bind,src=${WREN_MODEL_DELIVERY_DIR:?},dst=${WREN_MODEL_DELIVERY_DIR:?}" \
   "${WREN_QUERY_OPENBAO_IMAGE:?}" agent \
   -config="${WREN_MODEL_DELIVERY_DIR:?}/model-agent.hcl"
-./deploy/local/bootstrap.sh --materialize-wren-model-key
+./deploy/local/bootstrap.sh --materialize-wren-model-key "$WREN_ENV"
 ```
 
 The generated HCL uses one version-pinned Agent `secret` response for
@@ -1850,8 +1903,8 @@ different HCL/role identity is refused. Do not run an Agent while preparing
 the same directory. The Agent UID and native AI UID must match the controlled
 file ownership; host paths are preserved in its bind mount.
 
-The original Wren Compose consumes this env file and mounts the same delivery
-directory into the AI service. Only its existing startup consumer can produce
+The original Wren Compose with `model-delivery.yaml` consumes this env file and
+mounts the same delivery directory into the AI service. Only its existing startup consumer can produce
 the loaded-provider proof described above. Adoption still uses the original
 host `start-core.sh` directory validation and binding lifecycle. Local files
 are not live authorization evidence: materialization may still render an old

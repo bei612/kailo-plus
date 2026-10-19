@@ -1,0 +1,14 @@
+# Transport only (DD-127(7), DD-70/71/110): the native AI Service joins the
+# existing platform edge network to reach the AgentGateway independent model
+# listener named by api_base in its native config.yaml. No model, key, route,
+# identity or binding is created; the listener still requires a Core-projected
+# strict key. Same shape as knowledge/fork/deploy/compose.model-gateway.yaml.
+services:
+  wren-ai-service:
+    networks:
+      platform_edge: {}
+
+networks:
+  platform_edge:
+    external: true
+    name: ${PLATFORM_EDGE_NETWORK:?existing platform edge network required}
