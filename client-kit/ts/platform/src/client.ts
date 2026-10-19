@@ -98,6 +98,11 @@ import type {
   WebGIFSearchRequest,
   WebGIFSearchView,
   WebGIFShareRequest,
+  HuddleView,
+  HuddlePage,
+  HuddleLifecyclePage,
+  HuddleVoiceView,
+  HuddleAnnouncementView,
   AgentTranscriptPage,
   AgentTranscriptEvent,
 } from "@client-kit/contracts";
@@ -554,6 +559,26 @@ export function createBffClient(transport: BffTransport) {
     /** Original best-effort share report at selection time (204). */
     gifShare: (request: WebGIFShareRequest) =>
       call<unknown>({ method: "POST", path: "/api/v1/gifs/share", body: request }),
+
+    // DD-125(3) batch C5. Huddles are written by the governed huddle.* actions above; these
+    // are the caller's reads, the Web creator's 48106/48100 and the caller's own 9022 leave.
+    /** In-progress Huddles (PROVISIONING or ACTIVE) of one parent Workspace or conversation. */
+    huddles: (parent: { workspaceId: string } | { conversationId: string }) =>
+      get<HuddlePage>("workspaceId" in parent
+        ? `/api/v1/huddles?parentWorkspaceId=${encodeURIComponent(parent.workspaceId)}`
+        : `/api/v1/huddles?parentConversationId=${encodeURIComponent(parent.conversationId)}`, true),
+    huddle: (huddleId: string) => get<HuddleView>(`/api/v1/huddles/${encodeURIComponent(huddleId)}`, true),
+    /** Verified 48100-48103 of the parent channel plus the Relay's 48104 liveness bit. */
+    huddleLifecycle: (huddleId: string) =>
+      get<HuddleLifecyclePage>(`/api/v1/huddles/${encodeURIComponent(huddleId)}/lifecycle`, true),
+    /** Whether Web transcription and agent speech are available (original voice-only mode). */
+    huddleVoice: () => get<HuddleVoiceView>("/api/v1/huddles/voice", true),
+    /** The Web creator's guidelines and discovery link, signed once by the BFF and re-sent on retry. */
+    huddleAnnounce: (huddleId: string) =>
+      call<HuddleAnnouncementView>({ method: "POST", path: `/api/v1/huddles/${encodeURIComponent(huddleId)}/announcement` }),
+    /** Original leave while other humans remain: the caller's own 9022 for the temp channel. */
+    huddleLeave: (huddleId: string) =>
+      call<unknown>({ method: "POST", path: `/api/v1/huddles/${encodeURIComponent(huddleId)}/leave` }),
 
     /** 本 Tenant 的邀请；只对持有 Tenant manage 的人开放，其余 403（DD-83）。 */
     invitations: () => get<TenantInvitationView[]>("/api/v1/invitations"),

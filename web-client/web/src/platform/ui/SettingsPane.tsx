@@ -8,6 +8,7 @@ import {
   ExperimentalFeaturesCard,
   ShortcutSettings,
   shortcutText,
+  huddleShortcutText,
   type SettingsShortcut,
   type SettingsSection,
   CommunityInvitationSettings,
@@ -31,7 +32,8 @@ import { ModerationQueueCard } from "@client-kit/platform/react/moderation";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   return [...getShortcutsByCategory().values()].flat().flatMap((shortcut) => {
-    const text = shortcutText(locale, shortcut.id);
+    // DD-125(3): Web consumes the original Huddle shortcuts (page-level Ctrl+Shift+Space and Ctrl+Space).
+    const text = shortcutText(locale, shortcut.id) ?? huddleShortcutText(locale, shortcut.id);
     return text ? [{ id: shortcut.id, keys: getPlatformKeys(shortcut), category: shortcut.category, ...text }] : [];
   });
 }

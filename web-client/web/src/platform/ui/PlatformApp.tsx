@@ -111,6 +111,9 @@ import { useWebSearchDirectory } from "./search";
 import type { SearchHit } from "@client-kit/platform/react/search/types";
 import { useWebMarkAsReadShortcuts } from "./useMarkAsReadShortcuts";
 import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
+import { HuddleHostProvider, HuddleParentProvider, HuddleShell } from "@client-kit/platform/react/huddle";
+import { buildHuddleChannelName } from "@client-kit/platform/huddle";
+import { WebHuddleHost } from "@/platform/huddle/WebHuddleHost";
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -198,6 +201,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   // DD-125: thread follows, sidebar sections/sort, templates and Pulse follows share
   // this Core state and CAS queue; panes read them from the provider below.
   const preferences = useCollaborationPreferenceActions(bff, userState);
+  // DD-125(3): the Web Huddle backend (governed huddle.* actions, BFF audio bridge, in-page media).
+  const huddleHost = useMemo(() => new WebHuddleHost(bff), []);
   // The original per-device manual source is presentation state, not another
   // read-line authority. Browser partitioning uses its trusted platform scope.
   const unreadIdentity = JSON.stringify([session.tenantId, session.tenantPrincipalId]);
@@ -454,7 +459,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       postRoute={navigation.setForumPost ? { postId: navigation.forumPostId ?? null, replyId: navigation.forumReplyId ?? null,
         open: (postId, replyId, options) => navigation.setForumPost(postId, replyId, options), close: navigation.closeForumPost,
         clear: () => navigation.setForumPost(null, null, { replace: true }) } : undefined} /> :
-    channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+    channel.data.channelType === "stream" ? <HuddleParentProvider parent={{kind: "workspace", workspaceId: active, channelId: channel.data.channelId}}><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} channelId={channel.data.channelId} channelName={channel.data.name} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
       onNavigationGuardChange={navigation.registerThreadNavigationGuard}
       restoreDraftKey={navigation.draftTarget?.key} restoreEditEventId={navigation.draftTarget?.editEventId} autoSendDraftKey={navigation.draftTarget?.send ? navigation.draftTarget.key : undefined} onAutoSendConsumed={navigation.consumeDraftSend}
@@ -463,7 +468,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined}
       targetSearchMessageId={navigation.searchHighlight?.messageId} targetSearchQuery={navigation.searchHighlight?.query}
       targetSearchActivationId={navigation.searchHighlight?.activationId}
-      targetThreadRootId={messageTarget?.channelId === active ? messageTarget.threadRootId ?? undefined : undefined} /></> : <Notice text={t("platform.loadFailed")} />
+      targetThreadRootId={messageTarget?.channelId === active ? messageTarget.threadRootId ?? undefined : undefined} /></HuddleParentProvider> : <Notice text={t("platform.loadFailed")} />
   ) : (
     <MembersPane key={active} workspaceId={active} currentPrincipalId={session.tenantPrincipalId}
       onStartDm={openDirectMessage} />
@@ -477,7 +482,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         await navigation.openConversation(conversation.id);
       }} />
     ) : tab === "conversation" ? (
-      chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+      chosenConversation ? <HuddleParentProvider parent={{kind: "conversation", conversationId: chosenConversation.id, channelId: chosenConversation.channelId}}><ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         onHeaderActionsCompactChange={setHeaderActionsCompact} memberProfileRequest={memberProfileRequest}
         threadHeadId={navigation.threadHeadId} onThreadHeadIdChange={navigation.setThreadHeadId} onClearMessageRouteTarget={navigation.clearMessageRouteTarget}
         onNavigationGuardChange={navigation.registerThreadNavigationGuard}
@@ -488,7 +493,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         targetSearchActivationId={navigation.searchHighlight?.activationId}
         onStartDm={openDirectMessage}
         onOpenMessageLink={openMessageLink}
-        myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
+        myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /></HuddleParentProvider> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
     ) : tab === "settings" ? (
       null
     ) : tab === "inbox" ? (
@@ -576,8 +581,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       conversations={conversations.items}
       onOpenMessageLink={openMessageLink}
       onOpenChannel={id => {void openSearchChannel(id).catch(() => setMessageLinkProblem(t("platform.linkChannelUnavailable")));}}>
-    <div className="relative h-dvh overflow-hidden overscroll-none">
-      <div className="absolute inset-0 z-10 flex min-h-0 flex-row overflow-hidden bg-background">
+    <HuddleHostProvider host={huddleHost}>
+    {/* DD-125(3): original AppHuddleShell (lifted app surface over the Huddle drawer). */}
+    <HuddleShell activeChannelId={tab === "channel" ? channel.data?.channelId ?? null : tab === "conversation" ? chosenConversation?.channelId ?? null : null}>
         <GradientLayer />
         <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
           <div className={`${tab === "settings" ? "absolute inset-x-0 top-0" : "relative"} z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground`} data-testid="app-top-chrome">
@@ -682,7 +688,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 testId="chat-ephemeral-badge" variant="header" />}
               leadingContent={<ChannelGlyph channel={activeRow} className="h-4 w-4 translate-y-px text-muted-foreground" />}
               actions={<ChannelMembersBar roster={{kind: "workspace", workspaceId: active}} onToggleMembers={() => setMembersOpenFor(membersOpenFor === active ? null : active)}
-                onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"} />}
+                onManageChannel={() => setManageOpenFor(active)} variant={headerActionsCompact ? "compact" : "inline"}
+                huddle={{parent: {kind: "workspace", workspaceId: active, channelId: channel.data.channelId},
+                  channelName: buildHuddleChannelName({kind: "channel", channelName: channel.data.name}),
+                  startDisabled: channel.data.archived === true}} />}
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -693,7 +702,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   pubkey={dmHeaderPeople[0]?.pubkeys[0]} pubkeys={dmHeaderPeople[0]?.pubkeys} size="dm" /> : null}
                 actions={chosenConversation ? <ChannelMembersBar roster={{kind: "conversation", conversation: chosenConversation}}
                   onToggleMembers={() => setMembersOpenFor(membersOpenFor === chosenConversation.id ? null : chosenConversation.id)}
-                  onManageChannel={() => setManageOpenFor(chosenConversation.id)} variant={headerActionsCompact ? "compact" : "inline"} /> : undefined}
+                  onManageChannel={() => setManageOpenFor(chosenConversation.id)} variant={headerActionsCompact ? "compact" : "inline"}
+                  huddle={{parent: {kind: "conversation", conversationId: chosenConversation.id, channelId: chosenConversation.channelId},
+                    channelName: buildHuddleChannelName({kind: "dm", selfLabel: session.displayName,
+                      participantLabels: dmHeaderPeople?.map((person) => person.displayName) ?? []}),
+                    startDisabled: dmHeaderPeople === null}} /> : undefined}
                 onCopyTitle={async title=>{
                   try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                   catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
@@ -765,8 +778,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           </div>
           <RelayConnectionOverlay card={connectionCard} />
         </SidebarProvider>
-      </div>
-    </div>
+    </HuddleShell>
+    </HuddleHostProvider>
     </BffMessageLinkHost>
     </BffReminderHost>
     </ComposerChannelLinksProvider>

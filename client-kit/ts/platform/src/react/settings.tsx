@@ -116,6 +116,19 @@ export function shortcutText(locale: PlatformLocale, id: string) {
     : null;
 }
 
+const huddleShortcutMessages = {
+  "toggle-huddle": ["platform.shortcuts.toggle-huddle.label", "platform.shortcuts.toggle-huddle.description"],
+  "push-to-talk": ["platform.shortcuts.push-to-talk.label", "platform.shortcuts.push-to-talk.description"],
+} as const;
+
+/** DD-125(3): the original Huddle shortcuts, listed only by a host that consumes them. */
+export function huddleShortcutText(locale: PlatformLocale, id: string) {
+  const keys = huddleShortcutMessages[id as keyof typeof huddleShortcutMessages];
+  return keys
+    ? { label: translate(locale, keys[0]), description: translate(locale, keys[1]) }
+    : null;
+}
+
 export function ShortcutSettings({
   locale,
   shortcuts,

@@ -2,6 +2,12 @@
 // One original registry; hosts display only commands with actual consumers.
 import { isMacPlatform } from "./keyboard-platform";
 
+/** Original window event for Ctrl+Shift+Space: start/join in the focused channel, leave when connected (DD-125(3)). */
+export const HUDDLE_SHORTCUT_EVENT = "buzz:huddle-shortcut";
+
+export type HuddleShortcutDetail = {
+  channelId: string;
+};
 
 export type ShortcutCategory =
   | "Navigation"

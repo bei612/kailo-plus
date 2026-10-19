@@ -1,5 +1,7 @@
 // Kailo's admitted native kind sets are preserved while sharing thread presentation.
-// The huddle kind is a parsing constant from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/shared/constants/kinds.ts; it does not enable a route or subscription.
+// DD-125(3): the original 48100 Huddle card (Buzz 779af8886caae1317b4de962082429867ab61503
+// desktop/src/shared/constants/kinds.ts) is a visible, non-conversational timeline row; its
+// lifecycle (48101-48103) is read through the BFF, never a Browser Relay subscription.
 export const KIND_HUDDLE_STARTED = 48100;
 export const KIND_DELETION = 5;
 export const KIND_EVENT_REMINDER = 30300;
@@ -70,6 +72,7 @@ export const CHANNEL_TIMELINE_CONTENT_KINDS = [
   KIND_STREAM_MESSAGE_V2, // 40002
   KIND_STREAM_MESSAGE_DIFF, // 40008 — original read-only diff content
   KIND_SYSTEM_MESSAGE, // 40099 — system rows (join/leave/channel-created)
+  KIND_HUDDLE_STARTED, // 48100 — huddle session card
 ] as const;
 
 // Timeline kinds that are NOT conversational: relay-signed system rows
@@ -79,6 +82,7 @@ export const CHANNEL_TIMELINE_CONTENT_KINDS = [
 // as phantom unreads ("4 unread, 1 message").
 const NON_CONVERSATIONAL_UNREAD_KINDS: ReadonlySet<number> = new Set([
   KIND_SYSTEM_MESSAGE, // 40099
+  KIND_HUDDLE_STARTED, // 48100 — huddle cards are visible but non-conversational
 ]);
 
 // Whether a timeline message kind should count toward unread tallies. An

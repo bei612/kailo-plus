@@ -2,7 +2,8 @@ import { useUiT } from "../context";
 import { useRemindLater } from "../reminders/ui/RemindMeLaterProvider";
 import * as React from "react";
 import type { TimelineMessage } from "./types";
-import { KIND_STREAM_MESSAGE_DIFF } from "./thread/kinds";
+import { KIND_HUDDLE_STARTED, KIND_STREAM_MESSAGE_DIFF } from "./thread/kinds";
+import { HuddleAttachment } from "../huddle/HuddleAttachment";
 import { getThreadReplyAvatarCenterRem, getThreadReplyAvatarCenterYRem, getThreadReplyDescendantRailStartYRem, getThreadReplyConnectorLayout, getThreadReplyIndentRem, threadReplyLength, THREAD_REPLY_LINE_WIDTH_REM } from "./threadTreeLayout";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { useMeasuredCssVariable } from "./useMeasuredCssVariable";
@@ -194,6 +195,9 @@ export function MessageRowSurface({
           onExpand={() => setExpandedDiffId(message.id)} repoUrl={getTag("repo")}
           searchQuery={searchQuery} truncated={getTag("truncated") === "true"} />
       </React.Suspense>
+    ) : message.kind === KIND_HUDDLE_STARTED ? (
+      // DD-125(3): original MessageRow renders the 48100 card instead of the body.
+      <HuddleAttachment className="mt-2" message={{ id: message.id, body: message.body, createdAt: message.createdAt, pubkey: message.pubkey }} />
     ) : renderBody(cn("max-w-full text-message", emojiOnly && "text-4xl leading-tight [&_p]:leading-tight [&_img[data-custom-emoji]]:h-[1.45em] [&_img[data-custom-emoji]]:align-middle [&_button:has(img[data-custom-emoji])]:align-middle"));
 
     const isThreadReplyLayout = layoutVariant === "thread-reply";

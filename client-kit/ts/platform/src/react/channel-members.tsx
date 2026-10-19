@@ -7,8 +7,10 @@
 // Roster, roles and availability come from the BFF Workspace member and role projections;
 // add, remove and role changes are the existing governed workspace.member.add/revoke and
 // workspace.admin.grant/revoke actions (DD-41/46/82), re-admitted by Core on submit.
-// Huddle is not offered on governed channels (SS-BUZ-GOVERNANCE), so the bar has no
-// huddle control; Manage channel opens the shared channel-management-sheet. Channel roles are the platform admin relation only: no owner/guest.
+// DD-125(3): the original HuddleIndicator sits between Members and Manage channel (a menu item
+// in the compact layout) when the host provides a Huddle backend; Huddles run over the governed
+// huddle.* actions and the CONTROL-projected temp channel. Manage channel opens the shared
+// channel-management-sheet. Channel roles are the platform admin relation only: no owner/guest.
 // Agent rows (MembersSidebarMemberCard memberIsBot) are the Workspace's governed Agent
 // installations, not memberships: name from the installation directory, the original
 // AddChannelBotDialog is the governed agent.installation.create dialog, and a row opens the
@@ -56,6 +58,8 @@ import { useLifecycleRequest } from "./agent-activity/AgentLifecycleControls";
 import { AgentMemberMenu, MembersSidebarAgentControls, bulkTargets } from "./agent-activity/MembersSidebarAgentControls";
 import { EditRespondToDialog } from "./agent-activity/EditRespondToDialog";
 import { useOpenAgentActivity } from "./agent-transcript";
+import { HuddleIndicator } from "./huddle/HuddleIndicator";
+import { type HuddleParent, useHasHuddleHost } from "./huddle/host";
 
 // The governed installation dialogs live with the Agents page; load them on first use only.
 const WorkspaceAgentDialogs = React.lazy(() => import("./agents").then((module) => ({ default: module.WorkspaceAgentDialogs })));
@@ -119,18 +123,26 @@ export function useRosterMembers(roster: MemberRoster, enabled = true) {
   });
 }
 
-export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, variant = "inline" }: {
+export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, variant = "inline", huddle }: {
   roster: MemberRoster;
   onToggleMembers: () => void;
   onManageChannel: () => void;
   /** Original ChannelScreen compacts the actions while an auxiliary panel leaves < 760px. */
   variant?: "inline" | "compact";
+  /** DD-125(3): this channel as a Huddle parent, with the original buildHuddleChannelName. */
+  huddle?: { parent: HuddleParent; channelName: string; startDisabled?: boolean };
 }) {
   const t = useT();
   const members = useRosterMembers(roster);
   const memberCount = members.isSuccess
     ? members.data.filter((member) => member.state === WorkspaceMembershipState.Active).length
     : null;
+  const hasHuddleHost = useHasHuddleHost();
+  const huddleIndicator = huddle && hasHuddleHost ? (
+    <HuddleIndicator channelName={huddle.channelName} parent={huddle.parent}
+      renderMode={variant === "compact" ? "menu-item" : "button"}
+      startDisabled={(huddle.startDisabled ?? false) || !members.isSuccess} />
+  ) : null;
   if (variant === "compact") {
     return (
       <div className="flex items-center gap-[6px]">
@@ -146,6 +158,7 @@ export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, va
               <span>{t("channelMembers.members")}</span>
               <span className="ml-auto text-xs text-muted-foreground">{memberCount ?? ""}</span>
             </DropdownMenuItem>
+            {huddleIndicator}
             <DropdownMenuItem data-testid="channel-management-trigger" onSelect={onManageChannel}>
               <Settings2 />
               <span>{t("channelManagement.manage")}</span>
@@ -173,6 +186,7 @@ export function ChannelMembersBar({ roster, onToggleMembers, onManageChannel, va
         </TooltipTrigger>
         <TooltipContent>{t("channelMembers.title")}</TooltipContent>
       </Tooltip>
+      {huddleIndicator}
       <Tooltip disableHoverableContent>
         <TooltipTrigger asChild>
           <Button

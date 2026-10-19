@@ -200,6 +200,8 @@
     "./react/channel-templates": "./src/react/channel-templates/index.ts",
     "./moderation": "./src/moderation.ts",
     "./react/moderation": "./src/react/moderation/index.ts",
+    "./huddle": "./src/huddle.ts",
+    "./react/huddle": "./src/react/huddle/index.ts",
     "./react/agent-transcript": "./src/react/agent-transcript/index.ts",
     "./react/use-inbox-auto-selection": "./src/react/use-inbox-auto-selection.ts",
     "./react/use-inbox-selection-anchor": "./src/react/use-inbox-selection-anchor.ts",
