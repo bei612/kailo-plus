@@ -277,7 +277,10 @@ const state = vi.hoisted(() => ({
   upload: vi.fn(),
   principal: "human-a",
 }));
-vi.mock("@/platform/bff-client", () => ({
+// The shell re-exports the client-kit BffError; the double keeps that class so a structured
+// rejection reaches the same instanceof checks as in production.
+vi.mock("@/platform/bff-client", async () => ({
+  BffError: (await vi.importActual<typeof import("@client-kit/platform/transport")>("@client-kit/platform/transport")).BffError,
   bff: {
     session: async () => ({tenantPrincipalId:state.principal}),
     profile: async () => ({pubkey:"d".repeat(64)}),
@@ -290,7 +293,6 @@ vi.mock("@/platform/bff-client", () => ({
       return {...state.pages[offset],nextOffset:offset+1<state.pages.length?offset+1:null};
     },
   },
-  BffError: class extends Error {},
   publishMessage: state.publish,
   markRead: vi.fn(),
   openStream: vi.fn(),
@@ -408,11 +410,12 @@ it("records the original community timeout from a structured rejection and clear
   await click(button(host, "platform.send"));
   await settle();
   expect(getTimeoutSnapshot()).toEqual({ active: true, expiresAtMs: Date.parse(until) });
-  expect(host.textContent).not.toContain("The message was rejected");
+  expect(host.textContent).not.toContain("platform.sendRejected");
+  expect(host.textContent).not.toContain("platform.sendFailed");
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Hello");
   await click(button(host, "platform.send"));
   await settle();
-  expect(host.textContent).toContain("You're banned from this community.");
+  expect(host.textContent).toContain("moderation.banned");
   await click(button(host, "platform.send"));
   await settle();
   expect(publish).toHaveBeenCalledTimes(3);
