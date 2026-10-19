@@ -14,7 +14,7 @@ design:
   entities: [ComponentDefinition, ComponentRelease, ActionExecution, WorkflowRef]
 
 validation:
-  scenarios: [V-SCN-118, V-SCN-121]
+  scenarios: [V-SCN-118, V-SCN-121, V-SCN-150, V-SCN-151]
   evidence:
     - dimension: 安全边界
       ref: core/verify/component-release-registration.md
