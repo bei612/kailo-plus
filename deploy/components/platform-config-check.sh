@@ -120,7 +120,16 @@ max=$(value OPENBAO_AUDIT_LOG_MAX_BYTES)
   || bad "core-observed audit.log：${size}（上界 ${max:-未设置}）"
 
 echo "== 5. Web CSP frame-src（buzz-web Caddy）"
-csp=$(curl -sS -m 15 -D - -o /dev/null "${public:-http://192.168.0.193:58090}/app/" | tr -d '\r' | grep -i '^content-security-policy:' || true)
+# 未登录访问公开 /app/ 会被边缘 302 到 Keycloak，那份响应头不是 Web 页面的 CSP。
+# 在 buzz-web 容器内对其 Caddy 监听端口（WEB_CONTAINER_PORT，镜像事实）只读 GET /app/。
+web=$(container buzz-web)
+port=$(value WEB_CONTAINER_PORT)
+csp=
+if [ -n "$web" ] && [[ $port =~ ^[0-9]{2,5}$ ]]; then
+  csp=$("${D[@]}" exec "$web" curl -sS -m 15 -D - -o /dev/null "http://127.0.0.1:$port/app/" 2>/dev/null \
+    | tr -d '\r' | grep -i '^content-security-policy:' || true)
+fi
+[ -n "$csp" ] || bad "buzz-web 容器内 /app/ 未返回 Content-Security-Policy（容器未运行、WEB_CONTAINER_PORT='${port:-}' 或 Caddy 未应答）"
 for o in $origins; do grep -q "frame-src[^;]* $o" <<<"$csp" && ok "frame-src 含 $o" || bad "frame-src 不含 $o"; done
 grep -q "frame-src[^;]*\*" <<<"$csp" && bad "frame-src 含通配" || true
 
