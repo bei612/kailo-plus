@@ -62,11 +62,13 @@ beforeEach(() => {
   state.prepare.mockReset().mockImplementation(async (_target: unknown, url: string) => snapshot(url, "snap-a"));
   state.capability.mockReset().mockResolvedValue({ available: false, imageOrigins: [] });
 });
-afterEach(() => {
+afterEach(async () => {
   for (const { root, host } of mounted.splice(0)) {
     act(() => root.unmount());
     host.remove();
   }
+  // @tiptap/react destroys the unmounted editor on a timer; let it run while jsdom exists.
+  await new Promise((resolve) => setTimeout(resolve, 20));
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
