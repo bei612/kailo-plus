@@ -219,7 +219,7 @@ pub(crate) fn is_receiver(case: &Value) -> Result<bool, Refusal> {
 /// a step's own admission identifiers are not a roundtrip).
 pub(crate) fn has_roundtrip(vectors: &Value) -> bool {
     for case in list(vectors, "cases").unwrap_or_default() {
-        let mut earlier = BTreeSet::new();
+        let mut earlier: BTreeSet<String> = BTreeSet::new();
         for step in list(case, "steps").unwrap_or_default() {
             if step.get("referenceFromStepKey").is_some() {
                 return true;

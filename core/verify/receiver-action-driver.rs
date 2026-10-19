@@ -339,7 +339,13 @@ impl Driver {
 
     /// The signed actor's own isolated session submits the frozen input once;
     /// a later call for the same key only observes what Core retained.
-    async fn submit(&self, claims: &Value, input: &Value, key: Uuid) -> Result<u16, Error> {
+    async fn submit(
+        &self,
+        claims: &Value,
+        step: &Value,
+        input: &Value,
+        key: Uuid,
+    ) -> Result<u16, Error> {
         let actor = uuid_of(claims, "actor_principal_id")?;
         let session = self.config["actors"]
             .as_array()
@@ -515,7 +521,7 @@ impl Driver {
                 let Some(input) = self.admission_input(step)? else {
                     return Ok(Answer::Pending);
                 };
-                let status = self.submit(&claims, &input, key).await?;
+                let status = self.submit(&claims, step, &input, key).await?;
                 match self.submitted(actor, key).await? {
                     Some(receiver) => receiver,
                     // The isolated Core's own synchronous refusal of this actor.
