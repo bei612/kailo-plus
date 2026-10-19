@@ -289,7 +289,7 @@ pub(crate) async fn submit(
             workspace_id: command.workspace,
             channel_id: channel,
             control_pubkey: control.pubkey_hex(),
-            event_id: event_id.clone(),
+            event_id,
             event_created_at: created_at,
             relay_ack: "UNKNOWN".into(),
             outcome: None,
