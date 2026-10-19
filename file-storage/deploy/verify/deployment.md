@@ -24,6 +24,14 @@ the running project. No SQL, no config-file edit, no value printed; the admin
 PAT is minted per run (`cells admin user token -e <deadline>`), read from the
 CLI's stdout by `reconcile.py` and never echoed.
 
+Also fixed (2026-10-19): `cells admin datasource keys --verify` probed
+`127.0.0.1:<stored RunningPort>`, but the objects service serves MinIO on the
+free port it picks at start and never persists (production: `local1` served
+on 33247, `pydio.json` held 37337). Every verify therefore failed as a
+credential refusal, `start.sh` never reached `reconcile.py`, and the previous
+credential stayed in the vault. The probe now uses the endpoint the running
+service reports (`cmd/admin-datasource-keys.go` `runningObjectEndpoint`).
+
 Also fixed: `data/tree/rest/native-human-delete.go` resolved the binding root
 Resource with `delete.nativeType`, which is the delete ExternalExecution's
 native task type (`job`: `NewNativeDeleteTask`, `nativeDeleteFresh`, the
@@ -50,7 +58,15 @@ on an unchanged deployment). Expected output of the post-start verification:
 `objects service local1: delivered credential accepted, previous refused,
 backend re-encrypted; previous credential removed` (or `... previous kept for
 the next start` if MinIO has not finished; the next run removes it). A
-second `start.sh --reconcile ENV` prints `no rotation pending`. The previous
+second `start.sh --reconcile ENV` prints `no rotation pending`. `--verify`
+probes each local object service at the S3 endpoint the running service
+reports through the registry (`pydio.grpc.data.objects.<name>`
+`GetMinioConfig`, as the sync services reach it): the embedded MinIO takes a
+free port at every start (`InitMinioConfig`) and the stored `RunningPort` is
+never that port. `running S3 endpoint not found` or `S3 endpoint ... unreachable`
+is a transport failure (the credential was neither accepted nor refused);
+only `does not accept the delivered credential` is a credential refusal.
+Either failure leaves the previous credential in the vault. The previous
 values then authenticate nowhere: the object services have a single root
 credential and no IAM users, and the vault no longer holds them.
 

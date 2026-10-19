@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/proto/object"
 	"github.com/pydio/cells/v5/data/source/objects"
@@ -49,9 +50,10 @@ DESCRIPTION
   new ones.
 
   With --verify, run it against the started instance: each local object
-  service must accept the delivered credential and refuse a pending previous
-  one; once the backend is re-encrypted the pending previous credential is
-  removed from the vault.
+  service, probed at the S3 endpoint it reports through the registry (its
+  port is chosen at each start), must accept the delivered credential and
+  refuse a pending previous one; once the backend is re-encrypted the pending
+  previous credential is removed from the vault.
 
 EXAMPLES
 
@@ -241,40 +243,83 @@ func verifyDatasourceKeys(cmd *cobra.Command, access, secret string) error {
 		return errors.New("delivered datasource keys are not a valid object service credential")
 	}
 	for _, name := range local {
-		mc := minios[name]
-		endpoint := fmt.Sprintf("127.0.0.1:%d", mc.RunningPort)
-		if err := probeObjectService(ctx, endpoint, access, secret); err != nil {
-			return fmt.Errorf("objects service %s does not accept the delivered credential", name)
+		if err := verifyObjectService(cmd, name, minios[name], current); err != nil {
+			return err
 		}
-		previousKey := objects.PreviousCredentialSecret(name)
-		previous, pending, err := objects.ParsePreviousCredential(config.GetSecret(ctx, previousKey).String())
-		if err != nil {
-			return fmt.Errorf("objects service %s: %w", name, err)
-		}
-		if !pending {
-			cmd.Printf("objects service %s: delivered credential accepted; no rotation pending\n", name)
-			continue
-		}
-		if previous.Equal(current) {
-			return fmt.Errorf("objects service %s: pending previous credential equals the delivered one", name)
-		}
-		if !refusedCredential(probeObjectService(ctx, endpoint, previous.AccessKey, previous.SecretKey)) {
-			return fmt.Errorf("objects service %s does not refuse the previous credential", name)
-		}
-		if needed, err := objects.PreviousCredentialNeeded(mc.LocalFolder, current); err != nil || needed {
-			cmd.Printf("objects service %s: delivered credential accepted, previous refused; backend re-encryption not yet observed, previous kept for the next start\n", name)
-			continue
-		}
-		if err := config.DelSecret(ctx, previousKey); err != nil {
-			return fmt.Errorf("objects service %s: cannot remove the previous credential", name)
-		}
-		cmd.Printf("objects service %s: delivered credential accepted, previous refused, backend re-encrypted; previous credential removed\n", name)
 	}
 	return nil
 }
 
-func probeObjectService(ctx context.Context, endpoint, access, secret string) error {
-	client, err := minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: false})
+// verifyObjectService checks one running local object service at the S3
+// endpoint it serves and clears a completed rotation. stored is the stored
+// configuration: its RunningPort is not where MinIO listens.
+func verifyObjectService(cmd *cobra.Command, name string, stored *object.MinioConfig, current auth.Credentials) error {
+	ctx := cmd.Context()
+	endpoint, secure, err := runningObjectEndpoint(ctx, name)
+	if err != nil {
+		return err
+	}
+	if err := probeObjectService(ctx, endpoint, secure, current.AccessKey, current.SecretKey); err != nil {
+		if transportError(err) {
+			return fmt.Errorf("objects service %s: S3 endpoint %s unreachable: %v", name, endpoint, err)
+		}
+		return fmt.Errorf("objects service %s does not accept the delivered credential", name)
+	}
+	previousKey := objects.PreviousCredentialSecret(name)
+	previous, pending, err := objects.ParsePreviousCredential(config.GetSecret(ctx, previousKey).String())
+	if err != nil {
+		return fmt.Errorf("objects service %s: %w", name, err)
+	}
+	if !pending {
+		cmd.Printf("objects service %s: delivered credential accepted; no rotation pending\n", name)
+		return nil
+	}
+	if previous.Equal(current) {
+		return fmt.Errorf("objects service %s: pending previous credential equals the delivered one", name)
+	}
+	err = probeObjectService(ctx, endpoint, secure, previous.AccessKey, previous.SecretKey)
+	if transportError(err) {
+		return fmt.Errorf("objects service %s: S3 endpoint %s unreachable: %v", name, endpoint, err)
+	}
+	if !refusedCredential(err) {
+		return fmt.Errorf("objects service %s does not refuse the previous credential", name)
+	}
+	if needed, err := objects.PreviousCredentialNeeded(stored.LocalFolder, current); err != nil || needed {
+		cmd.Printf("objects service %s: delivered credential accepted, previous refused; backend re-encryption not yet observed, previous kept for the next start\n", name)
+		return nil
+	}
+	if err := config.DelSecret(ctx, previousKey); err != nil {
+		return fmt.Errorf("objects service %s: cannot remove the previous credential", name)
+	}
+	cmd.Printf("objects service %s: delivered credential accepted, previous refused, backend re-encrypted; previous credential removed\n", name)
+	return nil
+}
+
+// Bound on the registry lookup of a running object service.
+const objectLookupTimeout = 30 * time.Second
+
+// runningObjectEndpoint asks the running objects service, through the Cells
+// registry, for the S3 endpoint it serves, as the datasource sync services do
+// (data/source/sync/clients.CheckSubServices). The service picks a free port at
+// each start (data/source/objects/grpc.InitMinioConfig) and never persists it,
+// so the stored RunningPort is stale.
+func runningObjectEndpoint(ctx context.Context, name string) (string, bool, error) {
+	cli := object.NewObjectsEndpointClient(grpc.ResolveConn(ctx, common.ServiceDataObjectsGRPC_+name, grpc.WithCallTimeout(objectLookupTimeout)))
+	ctx, cancel := context.WithTimeout(ctx, objectLookupTimeout)
+	defer cancel()
+	resp, err := cli.GetMinioConfig(ctx, &object.GetMinioConfigRequest{})
+	if err != nil {
+		return "", false, fmt.Errorf("objects service %s: running S3 endpoint not found: %v", name, err)
+	}
+	running := resp.GetMinioConfig()
+	if running == nil || running.StorageType != object.StorageType_LOCAL || running.RunningPort <= 0 {
+		return "", false, fmt.Errorf("objects service %s: running S3 endpoint not found: the service reports no local S3 port", name)
+	}
+	return running.BuildUrl(), running.RunningSecure, nil
+}
+
+func probeObjectService(ctx context.Context, endpoint string, secure bool, access, secret string) error {
+	client, err := minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: secure})
 	if err != nil {
 		return err
 	}
@@ -282,6 +327,12 @@ func probeObjectService(ctx context.Context, endpoint, access, secret string) er
 	defer cancel()
 	_, err = client.ListBuckets(ctx)
 	return err
+}
+
+// transportError is true when no S3 answer was received at all (connection,
+// TLS or timeout failure): the credential was neither accepted nor refused.
+func transportError(err error) bool {
+	return err != nil && minio.ToErrorResponse(err).Code == ""
 }
 
 // refusedCredential is true only for an explicit S3 authentication refusal,
