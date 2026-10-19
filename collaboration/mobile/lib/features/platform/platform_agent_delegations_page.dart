@@ -101,7 +101,10 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
                   children: [
                     AppListRow(
                       title: text(PlatformMessageKey.platformState),
-                      subtitle: _grantState(grant.toJson()['state'], locale),
+                      subtitle: _grantState(
+                        grant.toJson()['effectiveState'],
+                        locale,
+                      ),
                     ),
                     AppListRow(
                       title: text(PlatformMessageKey.agentsDelegationVersion),
@@ -256,12 +259,17 @@ List<Widget> _scopeRows(DelegationScopeParameters scope, String locale) {
   ];
 }
 
+// DD-126 (4): Core's effective projection; only ACTIVE is a usable grant.
 String _grantState(Object? state, String locale) {
   final key = switch (state) {
     'ACTIVE' => PlatformMessageKey.agentsDelegationStateActive,
+    'NEEDS_RENEWAL' => PlatformMessageKey.agentsDelegationStateNeedsRenewal,
+    'NOT_YET_VALID' => PlatformMessageKey.agentsDelegationStateNotYetValid,
+    'USES_EXHAUSTED' => PlatformMessageKey.agentsDelegationStateUsesExhausted,
     'REVOKING' => PlatformMessageKey.agentsDelegationStateRevoking,
     'REVOKED' => PlatformMessageKey.agentsDelegationStateRevoked,
     'EXPIRED' => PlatformMessageKey.agentsDelegationStateExpired,
+    'SUPERSEDED' => PlatformMessageKey.agentsDelegationStateSuperseded,
     _ => PlatformMessageKey.nativeStatusOutcomeUnknown,
   };
   return platformText(key, locale: locale);

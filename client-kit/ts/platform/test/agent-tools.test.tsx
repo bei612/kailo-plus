@@ -184,7 +184,7 @@ describe("Delegation tool scopes (DD-122 (5))", () => {
     toolResourceId: memoryTool, resultExposureMode: "CONSUME_ONLY", outputSchemaHash: hash, redactionPolicy: "PLATFORM_METADATA_ONLY" };
   const search = { actionKey: "knowledge.search", actionVersion: 2, targetType: "RESOURCE", targetId: "knowledge-base-1",
     toolResourceId: searchTool, resultExposureMode: "READ", outputSchemaHash: "e".repeat(64), redactionPolicy: "CONTRACT_DEFINED" };
-  const grant = { delegationId: "grant-1", delegationVersion: 2, grantorPrincipalId: "human-1", state: "ACTIVE", uses: 0,
+  const grant = { delegationId: "grant-1", delegationVersion: 2, grantorPrincipalId: "human-1", state: "ACTIVE", effectiveState: "ACTIVE", uses: 0,
     parameters: { validFrom: "2026-10-01T00:00:00.000Z", expiresAt: "2027-10-01T00:00:00.000Z", scopes: [search] } };
   const routes = () => agentsPage((r) => {
     if (r.path.startsWith(`/api/v1/agent-installations/${installation.resourceId}/delegations?`)) return { status: 200,

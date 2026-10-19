@@ -106,13 +106,13 @@ it("presents a missing row as PENDING inside the window only, and an unknown Ins
     .toEqual(["installation-writer", "installation-gone"]);
 });
 
-it("polls own mentions until every Agent settled and maps PERMISSION_DENIED to delegation renewal", async () => {
+it("polls own mentions until every Agent settled and maps DELEGATION_REQUIRED to delegation renewal", async () => {
   const onRenew = vi.fn();
   state.responses = [
     [],
-    [{ eventId: MINE, installationId: "installation-research", state: AgentMentionOutcomeState.Denied, reasonCode: ReasonCode.PermissionDenied },
+    [{ eventId: MINE, installationId: "installation-research", state: AgentMentionOutcomeState.Denied, reasonCode: ReasonCode.DelegationRequired },
       { eventId: MINE, installationId: "installation-writer", state: AgentMentionOutcomeState.Running }],
-    [{ eventId: MINE, installationId: "installation-research", state: AgentMentionOutcomeState.Denied, reasonCode: ReasonCode.PermissionDenied },
+    [{ eventId: MINE, installationId: "installation-research", state: AgentMentionOutcomeState.Denied, reasonCode: ReasonCode.DelegationRequired },
       { eventId: MINE, installationId: "installation-writer", state: AgentMentionOutcomeState.Replied, replyEventId: "e".repeat(64) }],
   ];
   await mount([message(MINE, ME, [["p", RESEARCH], ["p", WRITER]], now()), message(THEIRS, OTHER, [["p", RESEARCH]], now())], onRenew);
@@ -123,7 +123,7 @@ it("polls own mentions until every Agent settled and maps PERMISSION_DENIED to d
   expect(host.querySelector('[data-testid="theirs"]')?.textContent).toBe("untracked");
 
   await advance(AGENT_MENTION_POLL_MS);
-  await vi.waitFor(() => expect(mine().textContent).toContain("研究助理 did not respond: your delegation to it has expired or was never granted."));
+  await vi.waitFor(() => expect(mine().textContent).toContain("研究助理 did not respond: you have not delegated to it, or your delegation is no longer valid."));
   expect(mine().textContent).toContain("Writer is working on it…");
   await act(async () => [...mine().querySelectorAll("button")].find((node) => node.textContent === "Renew delegation")!.click());
   expect(onRenew).toHaveBeenCalledExactlyOnceWith("installation-research");

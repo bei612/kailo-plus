@@ -2459,6 +2459,18 @@ enum PlatformMessageKey {
   agentsDelegationStateRevoking,
   agentsDelegationStateRevoked,
   agentsDelegationStateExpired,
+  agentsDelegationStateNeedsRenewal,
+  agentsDelegationStateNotYetValid,
+  agentsDelegationStateUsesExhausted,
+  agentsDelegationStateSuperseded,
+  agentsDelegationNeedsRenewal,
+  agentsDelegationSupersededBy,
+  agentsDelegationRenew,
+  agentsDelegationRenewTitle,
+  agentsDelegationRenewReplaces,
+  agentsDelegationRenewDropped,
+  agentsDelegationRenewUnavailable,
+  agentsDelegationOverlap,
   agentsInstallationNone,
   agentsInstallationNoWorkspace,
   agentsInstallationId,
@@ -3545,6 +3557,7 @@ enum PlatformMessageKey {
   agentMentionRunning,
   agentMentionFailed,
   agentMentionDelegationRequired,
+  agentMentionDelegationRenewalRequired,
   agentMentionRenewDelegation,
   agentMentionUseRequired,
   agentMentionUnavailable,
@@ -9464,13 +9477,52 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'This exact grant does not add permissions or start a turn. Core rechecks this installation, action, target, expiry and result exposure before effects. An unknown result keeps the same grant and request IDs.',
     '此精确委托不增加权限，也不启动回合。Core 在副作用前重查安装、动作、目标、有效期与结果暴露。结果不明时保留原授权与请求 ID。',
   ),
-  PlatformMessageKey.agentsDelegationStateActive: (
-    'Active grant record',
-    '授权记录为 ACTIVE',
-  ),
+  PlatformMessageKey.agentsDelegationStateActive: ('Active', '有效'),
   PlatformMessageKey.agentsDelegationStateRevoking: ('Revoking', '撤销中'),
   PlatformMessageKey.agentsDelegationStateRevoked: ('Revoked', '已撤销'),
   PlatformMessageKey.agentsDelegationStateExpired: ('Expired', '已到期'),
+  PlatformMessageKey.agentsDelegationStateNeedsRenewal: (
+    'Needs renewal',
+    '需要续签',
+  ),
+  PlatformMessageKey.agentsDelegationStateNotYetValid: ('Not yet valid', '未生效'),
+  PlatformMessageKey.agentsDelegationStateUsesExhausted: (
+    'Uses used up',
+    '次数已用尽',
+  ),
+  PlatformMessageKey.agentsDelegationStateSuperseded: (
+    'Replaced by renewal',
+    '已被续签替换',
+  ),
+  PlatformMessageKey.agentsDelegationNeedsRenewal: (
+    'The agent\'s action rules changed after you granted this delegation. It is not used until you renew it.',
+    '授予后 Agent 的动作规则已变化，续签前不会使用此委托。',
+  ),
+  PlatformMessageKey.agentsDelegationSupersededBy: (
+    'Replaced by {delegation}',
+    '已由 {delegation} 替换',
+  ),
+  PlatformMessageKey.agentsDelegationRenew: ('Renew', '续签'),
+  PlatformMessageKey.agentsDelegationRenewTitle: (
+    'Renew this delegation',
+    '续签此委托',
+  ),
+  PlatformMessageKey.agentsDelegationRenewReplaces: (
+    'Renewal replaces {delegation} (version {version}). It does not add a second active delegation.',
+    '续签将替换 {delegation}（版本 {version}），不会另增一条有效委托。',
+  ),
+  PlatformMessageKey.agentsDelegationRenewDropped: (
+    'No longer offered, not renewed:',
+    '已不再提供、不会续签的范围：',
+  ),
+  PlatformMessageKey.agentsDelegationRenewUnavailable: (
+    'None of this delegation\'s scopes is offered on this page, so it cannot be renewed here.',
+    '本页没有提供此委托的任何范围，无法在此续签。',
+  ),
+  PlatformMessageKey.agentsDelegationOverlap: (
+    'You already have an active delegation covering this scope. Renew it instead of adding another.',
+    '你已有覆盖该范围的有效委托，请续签它，而不是再增加一条。',
+  ),
   PlatformMessageKey.agentsInstallationNone: (
     'No agents to show on this page.',
     '此页暂无可显示的 Agent。',
@@ -12210,8 +12262,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '{name} 处理失败',
   ),
   PlatformMessageKey.agentMentionDelegationRequired: (
-    '{name} did not respond: your delegation to it has expired or was never granted.',
-    '{name} 未响应：你对它的委托已过期或尚未委托',
+    '{name} did not respond: you have not delegated to it, or your delegation is no longer valid.',
+    '{name} 未响应：你尚未委托或委托已失效',
+  ),
+  PlatformMessageKey.agentMentionDelegationRenewalRequired: (
+    '{name} did not respond: its action rules changed, so you need to renew your delegation.',
+    '{name} 未响应：Agent 的动作规则已变化，需重新确认委托',
   ),
   PlatformMessageKey.agentMentionRenewDelegation: ('Renew delegation', '续签委托'),
   PlatformMessageKey.agentMentionUseRequired: (

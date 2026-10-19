@@ -23,6 +23,8 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
       ReasonCode.CLIENT_KEY_LIMIT_REACHED => '你登记的设备已达上限，请先撤销一台。',
       ReasonCode.CLIENT_KEY_NOT_FOUND => '该设备未登记在你名下。',
       ReasonCode.CLIENT_KEY_PROOF_INVALID => '服务器未接受本机的密钥证明。',
+      ReasonCode.DELEGATION_RENEWAL_REQUIRED => '授予委托后此操作的规则已变化，请续签委托。',
+      ReasonCode.DELEGATION_REQUIRED => '没有覆盖此操作的有效委托，请授予或续签委托。',
       ReasonCode.DEPENDENCY_UNAVAILABLE => '所依赖的服务暂不可用。',
       ReasonCode.DISPATCH_RESULT_UNKNOWN => '是否已生效尚不明确。',
       ReasonCode.DUPLICATE_DECISION => '你已记录了不同的决定，决定不能更改。',
@@ -85,6 +87,10 @@ String platformReasonText(ReasonCode reason, {String? locale}) {
     ReasonCode.CLIENT_KEY_NOT_FOUND => 'That device is not registered to you.',
     ReasonCode.CLIENT_KEY_PROOF_INVALID =>
       'The server did not accept this device\'s key proof.',
+    ReasonCode.DELEGATION_RENEWAL_REQUIRED =>
+      'The rules of this action changed after the delegation was granted. Renew the delegation.',
+    ReasonCode.DELEGATION_REQUIRED =>
+      'No valid delegation covers this. Grant or renew the delegation.',
     ReasonCode.DEPENDENCY_UNAVAILABLE =>
       'A service this depends on is unavailable.',
     ReasonCode.DISPATCH_RESULT_UNKNOWN =>

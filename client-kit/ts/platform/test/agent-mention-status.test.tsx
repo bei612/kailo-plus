@@ -15,6 +15,10 @@ const entry = (state: AgentMentionStatusEntry["state"], extra: Partial<AgentMent
   ({ key: "installation-a", name: "Research", state, ...extra });
 
 it("maps DENIED reasons to renewal, admin grant or retry-later", () => {
+  // DD-126 (6): Core records a missing delegation and a consent change with their own codes.
+  expect(agentMentionDenial(ReasonCode.DelegationRequired, false)).toBe("delegation");
+  expect(agentMentionDenial(ReasonCode.DelegationRenewalRequired, false)).toBe("renewal");
+  // Outcomes recorded before DD-126 used PERMISSION_DENIED for a missing delegation too.
   expect(agentMentionDenial(ReasonCode.PermissionDenied, true)).toBe("delegation");
   // Core uses PERMISSION_DENIED for missing execute use as well; without use it needs an admin.
   expect(agentMentionDenial(ReasonCode.PermissionDenied, false)).toBe("use");
@@ -46,7 +50,7 @@ it("offers delegation renewal only for a delegable PERMISSION_DENIED and never r
     entry(AgentMentionOutcomeState.Denied, { key: "installation-b", name: "Writer", reasonCode: ReasonCode.PermissionDenied, delegable: false }),
     entry(AgentMentionOutcomeState.Denied, { key: "installation-c", name: "Coder", reasonCode: ReasonCode.RateLimited, delegable: true }),
   ]} />);
-  expect(host.textContent).toContain("Research did not respond: your delegation to it has expired or was never granted.");
+  expect(host.textContent).toContain("Research did not respond: you have not delegated to it, or your delegation is no longer valid.");
   expect(host.textContent).toContain("Writer did not respond: an admin needs to grant you use of it.");
   expect(host.textContent).toContain("Coder did not respond: temporarily unavailable. Try again later.");
   expect(host.querySelectorAll("button")).toHaveLength(1);
@@ -55,6 +59,25 @@ it("offers delegation renewal only for a delegable PERMISSION_DENIED and never r
   // Without a host navigation there is no dead action.
   const bare = await render(<AgentMentionStatus entries={[entry(AgentMentionOutcomeState.Denied, { reasonCode: ReasonCode.PermissionDenied, delegable: true })]} />);
   expect(bare.querySelector("button")).toBeNull();
+});
+
+it("DD-126: a consent change asks to renew; a missing delegation offers renewal regardless of use", async () => {
+  const onRenew = vi.fn();
+  const host = await render(<AgentMentionStatus onRenewDelegation={onRenew} entries={[
+    entry(AgentMentionOutcomeState.Denied, { reasonCode: ReasonCode.DelegationRenewalRequired }),
+    entry(AgentMentionOutcomeState.Denied, { key: "installation-b", name: "Writer", reasonCode: ReasonCode.DelegationRequired }),
+  ]} />);
+  expect(host.querySelector('[data-denial="renewal"]')?.textContent)
+    .toBe("Research did not respond: its action rules changed, so you need to renew your delegation.Renew delegation");
+  expect(host.querySelector('[data-denial="delegation"]')?.textContent)
+    .toBe("Writer did not respond: you have not delegated to it, or your delegation is no longer valid.Renew delegation");
+  await click(button(host.querySelector<HTMLElement>('[data-denial="renewal"]')!, "Renew delegation"));
+  expect(onRenew).toHaveBeenCalledExactlyOnceWith("installation-a");
+  await act(async () => setLocale("zh-CN"));
+  const zh = await render(<AgentMentionStatus entries={[
+    entry(AgentMentionOutcomeState.Denied, { name: "研究助理", reasonCode: ReasonCode.DelegationRenewalRequired }),
+  ]} />);
+  expect(zh.textContent).toBe("研究助理 未响应：Agent 的动作规则已变化，需重新确认委托");
 });
 
 it("DD-123: QUOTA_EXHAUSTED says the organization quota is used up; DEPENDENCY_UNAVAILABLE stays temporary", async () => {
@@ -83,7 +106,7 @@ it("renders the Chinese copy from the shared catalog", async () => {
     entry(AgentMentionOutcomeState.Denied, { key: "c", name: "写作助理", reasonCode: ReasonCode.CapabilityBlocked }),
   ]} />);
   expect(host.textContent).toContain("研究助理 正在处理…");
-  expect(host.textContent).toContain("研究助理 未响应：你对它的委托已过期或尚未委托");
+  expect(host.textContent).toContain("研究助理 未响应：你尚未委托或委托已失效");
   expect(host.textContent).toContain("续签委托");
   expect(host.textContent).toContain("写作助理 未响应：需要管理员授予使用权");
 });

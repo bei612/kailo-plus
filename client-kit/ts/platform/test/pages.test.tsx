@@ -1628,7 +1628,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       runtimeProfileKey: profile.key, configHash: "c".repeat(64), state: "ACTIVE" } };
   const scope = { actionKey: "automation.run", actionVersion: 2, targetType: "RESOURCE", targetId: "automation-1",
     resultExposureMode: "CONSUME_ONLY", outputSchemaHash: "d".repeat(64), redactionPolicy: "PLATFORM_METADATA_ONLY" };
-  const grant = { delegationId: "grant-1", delegationVersion: 8, grantorPrincipalId: "human-1", state: "ACTIVE", uses: 1,
+  const grant = { delegationId: "grant-1", delegationVersion: 8, grantorPrincipalId: "human-1", state: "ACTIVE", effectiveState: "ACTIVE", uses: 1,
     parameters: { validFrom: "2026-10-01T00:00:00.000Z", expiresAt: "2027-10-01T00:00:00.000Z", maxUses: 5, scopes: [scope] } };
   const submission = (actionKey: string, dispatchState = "DISPATCHED") => ({ actionKey,
     actionExecutionId: "exact-ae", operationId: "exact-operation", gateState: "ALLOWED", dispatchState });
@@ -2478,6 +2478,64 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(action.textContent).toContain("exact-operation");
     expect(action.textContent).not.toMatch(/Request recorded\.|foreign-ae/);
     expect(button(installed, "View installation").disabled).toBe(true);
+  });
+
+  async function openAs(t: BffTransport, principal: string) {
+    await render(<PlatformProvider client={createBffClient(t)} locale="en" currentPrincipalId={principal}>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AgentDefinitionsPage />
+      </QueryClientProvider>
+    </PlatformProvider>);
+    await settle();
+    await click(button(document.body, "View definition"));
+    return document.body;
+  }
+
+  it("DD-126: shows a consent-changed grant as needing renewal and renews it by replacing it", async () => {
+    const stale = { ...grant, effectiveState: "NEEDS_RENEWAL",
+      parameters: { ...grant.parameters, scopes: [{ ...scope, actionVersion: 1 }] } };
+    const t = routes((r) => r.path.startsWith(`/api/v1/agent-installations/${installation.resourceId}/delegations?`)
+      ? { status: 200, body: { installationResourceId: installation.resourceId, resourceVersion: installation.resourceVersion,
+        workspaceId: installation.workspaceId, canGrant: true, canRevoke: true, grants: [stale] } }
+      : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.delegation.grant") } : undefined);
+    const host = await openAs(t, "human-1");
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(host, "View delegation grants"));
+    const action = section(host, "agent-delegation-management");
+    expect(action.textContent).toContain("Needs renewal");
+    expect(action.textContent).toContain("It is not used until you renew it.");
+    await click(button(action, "Renew"));
+    const renewal = section(host, "agent-delegation-renewal");
+    expect(renewal.textContent).toContain("Renewal replaces grant-1 (version 8).");
+    await change(renewal, "Valid from", "2026-10-03T12:00:00");
+    await change(renewal, "Expires at", "2027-10-03T12:00:00");
+    await click(button(renewal, "Review request"));
+    expect(posts(t)).toHaveLength(0);
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)).toHaveLength(1);
+    // The same grant action, re-granting the offered scope at its current version; Core supersedes grant-1.
+    expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.delegation.grant", resourceId: installation.resourceId,
+      resourceVersion: installation.resourceVersion, idempotencyKey: expect.any(String), explicitConfirmation: true,
+      delegationId: expect.any(String), delegationGrant: { validFrom: new Date("2026-10-03T12:00:00"),
+        expiresAt: new Date("2027-10-03T12:00:00"), scopes: [scope],
+        renewsDelegationId: grant.delegationId, renewsDelegationVersion: grant.delegationVersion } });
+  });
+
+  it("DD-126: points to renewal instead of granting a parallel delegation for the same scope", async () => {
+    const t = routes();
+    const host = await openAs(t, "human-1");
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(host, "View delegation grants"));
+    const action = section(host, "agent-delegation-management");
+    const option = action.querySelector("select")?.querySelectorAll("option")[1];
+    expect(option).toBeTruthy();
+    await change(action, "Exact governed action and target", option!.value);
+    await change(action, "Valid from", "2026-10-03T12:00:00");
+    await change(action, "Expires at", "2027-10-03T12:00:00");
+    expect(action.textContent).toContain("You already have an active delegation covering this scope.");
+    expect(button(action, "Review request").disabled).toBe(true);
+    expect(button(action, "Renew").disabled).toBe(false);
+    expect(posts(t)).toHaveLength(0);
   });
 
   const recheckActions = [

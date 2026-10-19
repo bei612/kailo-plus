@@ -17,17 +17,19 @@ export type AgentMentionStatusEntry = {
   reasonCode?: ReasonCode;
   /**
    * The sender currently holds execute use of this Installation (it is in their admitted
-   * channel Agent directory), so a PERMISSION_DENIED refusal is about the delegation.
+   * channel Agent directory). Only outcomes recorded before DD-126 used PERMISSION_DENIED for a
+   * missing delegation; for those this still tells the delegation apart from missing use.
    */
   delegable?: boolean;
 };
 
-export type AgentMentionDenial = "delegation" | "use" | "quota" | "unavailable";
+export type AgentMentionDenial = "delegation" | "renewal" | "use" | "quota" | "unavailable";
 
 /**
  * Refusals that only an administrator can lift: the Installation's capability/scope/binding or
- * the sender's tenant standing. PERMISSION_DENIED is shared by Core for "no execute use" and
- * "no live delegation" (agent_invocation.rs `denied()`), so it is split by `delegable` below.
+ * the sender's tenant standing. Since DD-126 (6) Core records a missing delegation as
+ * DELEGATION_REQUIRED and a consent change as DELEGATION_RENEWAL_REQUIRED; PERMISSION_DENIED
+ * means missing use, except on outcomes recorded earlier (split by `delegable` below).
  */
 const ADMIN_REASONS: ReadonlySet<ReasonCode> = new Set([
   ReasonCode.CapabilityBlocked,
@@ -38,9 +40,13 @@ const ADMIN_REASONS: ReadonlySet<ReasonCode> = new Set([
 ]);
 
 /**
- * DD-121 (2) presentation of a DENIED outcome:
- * - PERMISSION_DENIED while the sender holds execute use → the delegation is missing or
- *   expired: offer renewal (opens that Installation's delegation management);
+ * DD-121 (2) / DD-126 (6) presentation of a DENIED outcome:
+ * - DELEGATION_REQUIRED (never granted, expired, revoked, replaced or uses used up) → offer
+ *   renewal (opens that Installation's delegation management);
+ * - DELEGATION_RENEWAL_REQUIRED (the Agent's action rules changed since the grant) → the same
+ *   renewal entry, saying the delegation must be confirmed again;
+ * - PERMISSION_DENIED while the sender holds execute use (outcomes recorded before DD-126) →
+ *   treated as a missing delegation;
  * - PERMISSION_DENIED without execute use, or an ADMIN_REASONS code → an admin must grant use;
  * - QUOTA_EXHAUSTED → the organization's Agent quota is used up; only an admin can raise it
  *   (DD-123 (5): members see no limit or usage figures);
@@ -49,6 +55,8 @@ const ADMIN_REASONS: ReadonlySet<ReasonCode> = new Set([
  *   DEPENDENCY_UNAVAILABLE (OpenMeter unreadable) stays here: it says nothing about the quota.
  */
 export function agentMentionDenial(reasonCode: ReasonCode | undefined, delegable: boolean): AgentMentionDenial {
+  if (reasonCode === ReasonCode.DelegationRequired) return "delegation";
+  if (reasonCode === ReasonCode.DelegationRenewalRequired) return "renewal";
   if (reasonCode === ReasonCode.PermissionDenied) return delegable ? "delegation" : "use";
   if (reasonCode !== undefined && ADMIN_REASONS.has(reasonCode)) return "use";
   if (reasonCode === ReasonCode.QuotaExhausted) return "quota";
@@ -83,9 +91,10 @@ export function AgentMentionStatus({ entries, onRenewDelegation, className }: {
           </p>;
         }
         const denial = agentMentionDenial(entry.reasonCode, entry.delegable === true);
-        if (denial === "delegation") {
+        if (denial === "delegation" || denial === "renewal") {
           return <p key={entry.key} className="flex flex-wrap items-baseline gap-x-2 text-destructive" data-state="denied" data-denial={denial}>
-            <span>{t("agentMention.delegationRequired", { name: entry.name })}</span>
+            <span>{t(denial === "renewal" ? "agentMention.delegationRenewalRequired" : "agentMention.delegationRequired",
+              { name: entry.name })}</span>
             {onRenewDelegation ? <button type="button" className="font-medium text-primary underline-offset-2 hover:underline focus-visible:underline"
               onClick={() => onRenewDelegation(entry.key)}>{t("agentMention.renewDelegation")}</button> : null}
           </p>;
