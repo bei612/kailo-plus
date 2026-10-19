@@ -55,7 +55,7 @@ import {
 import { useGifCapability } from "@/platform/gif-capability";
 import { ComposerLinkPreviewCards, ComposerLinkPreviewPreparing, useComposerLinkPreviews, type PrepareLinkPreview } from "@client-kit/platform/react/link-preview";
 import { ComposerGifAttachments, withGifLines } from "@client-kit/platform/react/gifs";
-import type { WebGifItem } from "@client-kit/contracts";
+import type { WebGIFItem } from "@client-kit/contracts";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
@@ -1113,10 +1113,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const resolvePreviewMedia = useCallback((sha256: string) => onMediaUrl ? onMediaUrl(sha256) : mediaUrl(workspaceId ?? "", sha256), [onMediaUrl, workspaceId]);
   const gifsEnabled = previewTarget !== undefined;
   const gifCapability = useGifCapability(gifsEnabled);
-  const [pendingGifs, setPendingGifs] = useState<WebGifItem[]>([]);
+  const [pendingGifs, setPendingGifs] = useState<WebGIFItem[]>([]);
   const gifOption = useMemo(() => gifsEnabled && gifCapability.data?.available === true && gifCapability.data.imageOrigins.length > 0 ? {
     search: (query: string) => bff.gifSearch({ query, locale: navigator.language || "en-US" }),
-    onSelect: (gif: WebGifItem) => {
+    onSelect: (gif: WebGIFItem) => {
       setPendingGifs((current) => [...current, gif]);
       // Original best-effort share report at selection time; its failure changes nothing.
       void bff.gifShare({ slug: gif.slug }).catch(() => {});

@@ -5,7 +5,7 @@
 // button into the original "Emoji and GIFs" picker with its two tabs.
 import * as React from "react";
 import { Images, Smile, SmilePlus } from "lucide-react";
-import type { WebGifItem } from "@client-kit/contracts";
+import type { WebGIFItem } from "@client-kit/contracts";
 import { EmojiPicker } from "../../../../custom-emoji/EmojiPicker";
 import type { CustomEmoji } from "../../../../custom-emoji/emoji";
 import { Button } from "../../../../profile/buzz/shared/ui/button";
@@ -18,7 +18,7 @@ import { useUiT } from "../../../../context";
 /** The host's verified GIF option for this composer. */
 export type ComposerGifOption = {
   search: GifSearch;
-  onSelect: (gif: WebGifItem) => void;
+  onSelect: (gif: WebGIFItem) => void;
   /** Original `gifsDisabled` (a voice note is attached). */
   disabled?: boolean;
 };
@@ -35,7 +35,7 @@ export function ComposerEmojiPicker({ disabled, customEmoji, gifs, onClose, onEm
   const [pickerTab, setPickerTab] = React.useState<ComposerPickerTab>("emoji");
   // Original: the picker always reopens on the emoji tab.
   React.useEffect(() => { if (!open) setPickerTab("emoji"); }, [open]);
-  const selectGif = React.useCallback((gif: WebGifItem) => {
+  const selectGif = React.useCallback((gif: WebGIFItem) => {
     if (!gifs || gifs.disabled) return;
     onOpenChange(false);
     gifs.onSelect(gif);

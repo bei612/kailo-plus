@@ -4,20 +4,20 @@
 // is a pending, hash-less attachment chip; on send its original URL is appended to the body
 // as `![image](url)` with no imeta (the Relay only vouches for local media).
 import { X } from "lucide-react";
-import type { WebGifItem } from "@client-kit/contracts";
+import type { WebGIFItem } from "@client-kit/contracts";
 
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { Attachment, AttachmentGroup, AttachmentMedia } from "../composer/shared/ui/attachment";
 
 /** The original outgoing body lines for the chosen GIFs, after the authored text. */
-export function withGifLines(content: string, gifs: readonly Pick<WebGifItem, "url">[]): string {
+export function withGifLines(content: string, gifs: readonly Pick<WebGIFItem, "url">[]): string {
   return [content, ...gifs.map((gif) => `![image](${gif.url})`)].filter((part) => part.length > 0).join("\n");
 }
 
 export function ComposerGifAttachments({ gifs, onRemove }: {
-  gifs: readonly WebGifItem[];
-  onRemove: (gif: WebGifItem) => void;
+  gifs: readonly WebGIFItem[];
+  onRemove: (gif: WebGIFItem) => void;
 }) {
   const t = useUiT();
   if (gifs.length === 0) return null;

@@ -93,10 +93,10 @@ import type {
   WebChannelCanvasView,
   WebLinkPreviewRequest,
   WebLinkPreviewSnapshotView,
-  WebGifCapabilityView,
-  WebGifSearchRequest,
-  WebGifSearchView,
-  WebGifShareRequest,
+  WebGIFCapabilityView,
+  WebGIFSearchRequest,
+  WebGIFSearchView,
+  WebGIFShareRequest,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -513,11 +513,11 @@ export function createBffClient(transport: BffTransport) {
         body: request,
       }),
     /** Whether the original GIF picker appears, and the registered GIF image origins. */
-    gifCapability: () => get<WebGifCapabilityView>("/api/v1/gifs"),
-    gifSearch: (request: WebGifSearchRequest) =>
-      call<WebGifSearchView>({ method: "POST", path: "/api/v1/gifs/search", body: request }),
+    gifCapability: () => get<WebGIFCapabilityView>("/api/v1/gifs"),
+    gifSearch: (request: WebGIFSearchRequest) =>
+      call<WebGIFSearchView>({ method: "POST", path: "/api/v1/gifs/search", body: request }),
     /** Original best-effort share report at selection time (204). */
-    gifShare: (request: WebGifShareRequest) =>
+    gifShare: (request: WebGIFShareRequest) =>
       call<unknown>({ method: "POST", path: "/api/v1/gifs/share", body: request }),
 
     /** 本 Tenant 的邀请；只对持有 Tenant manage 的人开放，其余 403（DD-83）。 */

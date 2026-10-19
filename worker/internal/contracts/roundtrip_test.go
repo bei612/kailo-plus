@@ -1652,10 +1652,10 @@ func TestCollaborationDD125C3Roundtrip(t *testing.T) {
 		"linkPreviewSnapshot": new(generated.WebLinkPreviewSnapshotView),
 		"publishWithPreviews": new(generated.WebPublishMessageRequest),
 		"removePreviews":      new(generated.WebPublishMessageRequest),
-		"gifCapability":       new(generated.WebGifCapabilityView),
-		"gifSearchRequest":    new(generated.WebGifSearchRequest),
-		"gifSearch":           new(generated.WebGifSearchView),
-		"gifShare":            new(generated.WebGifShareRequest),
+		"gifCapability":       new(generated.WebGIFCapabilityView),
+		"gifSearchRequest":    new(generated.WebGIFSearchRequest),
+		"gifSearch":           new(generated.WebGIFSearchView),
+		"gifShare":            new(generated.WebGIFShareRequest),
 	} {
 		if err := json.Unmarshal(samples[name], typed); err != nil {
 			t.Fatal(name, err)

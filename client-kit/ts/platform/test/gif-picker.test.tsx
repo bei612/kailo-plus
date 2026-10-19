@@ -1,7 +1,7 @@
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { WebGifItem, WebGifSearchView } from "@client-kit/contracts";
+import type { WebGIFItem, WebGIFSearchView } from "@client-kit/contracts";
 import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { KlipyGifPicker, withGifLines, type GifSearch } from "../src/react/gifs";
 import { ComposerEmojiPicker } from "../src/react/composer/features/messages/ui/ComposerEmojiPicker";
@@ -18,7 +18,7 @@ vi.mock("motion/react", async (importOriginal) => ({
 vi.mock("../src/react/profile/buzz/shared/ui/emoji-picker", () => ({ default: () => <div data-testid="emoji-mart" /> }));
 vi.mock("../src/react/custom-emoji/emojiMartPrewarm", () => ({ emojiMartData: {} }));
 
-const gif = (slug: string, patch: Partial<WebGifItem> = {}): WebGifItem => ({
+const gif = (slug: string, patch: Partial<WebGIFItem> = {}): WebGIFItem => ({
   slug, title: `GIF ${slug}`, url: `https://static.klipy.com/${slug}/md.gif`, width: 480, height: 270, size: 1000,
   previewUrl: `https://static.klipy.com/${slug}/sm.webp`, previewWidth: 220, previewHeight: 124, ...patch,
 });
@@ -38,7 +38,7 @@ async function picker(search: GifSearch, onSelect = vi.fn()) {
 
 describe("original KLIPY picker over the BFF forward", () => {
   it("asks for trending first, then the debounced query, and chooses a GIF", async () => {
-    const search = vi.fn<GifSearch>(async (query): Promise<WebGifSearchView> => ({ gifs: query ? [gif("ship")] : [gif("trend")] }));
+    const search = vi.fn<GifSearch>(async (query): Promise<WebGIFSearchView> => ({ gifs: query ? [gif("ship")] : [gif("trend")] }));
     const { host, onSelect } = await picker(search);
     expect(host.textContent).toContain("Loading GIFs");
     await vi.waitFor(() => expect(host.querySelector("[aria-label='Choose GIF trend']")).not.toBeNull());

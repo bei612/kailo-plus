@@ -994,10 +994,10 @@ test("DD-125 C3 canvas, link-preview and GIF contracts preserve fields and absen
   const snapshot: import("../src/generated/contracts.js").WebLinkPreviewSnapshotView = value.linkPreviewSnapshot;
   const publish: import("../src/generated/contracts.js").WebPublishMessageRequest = value.publishWithPreviews;
   const remove: import("../src/generated/contracts.js").WebPublishMessageRequest = value.removePreviews;
-  const capability: import("../src/generated/contracts.js").WebGifCapabilityView = value.gifCapability;
-  const searchRequest: import("../src/generated/contracts.js").WebGifSearchRequest = value.gifSearchRequest;
-  const search: import("../src/generated/contracts.js").WebGifSearchView = value.gifSearch;
-  const share: import("../src/generated/contracts.js").WebGifShareRequest = value.gifShare;
+  const capability: import("../src/generated/contracts.js").WebGIFCapabilityView = value.gifCapability;
+  const searchRequest: import("../src/generated/contracts.js").WebGIFSearchRequest = value.gifSearchRequest;
+  const search: import("../src/generated/contracts.js").WebGIFSearchView = value.gifSearch;
+  const share: import("../src/generated/contracts.js").WebGIFShareRequest = value.gifShare;
   const canvasView = (row: typeof view) => ({workspaceId: row.workspaceId, content: row.content, eventId: row.eventId,
     createdAt: row.createdAt, setActionKey: row.setActionKey});
   const actual = {
