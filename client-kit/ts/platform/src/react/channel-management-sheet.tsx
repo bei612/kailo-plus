@@ -18,7 +18,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
-  Archive, ArchiveRestore, Check, ChevronRight, Copy, DoorClosed, MessageSquare, Pencil, Plus,
+  Archive, ArchiveRestore, BookOpenText, Check, ChevronRight, Copy, DoorClosed, Info, MessageSquare, Pencil, Plus,
   Workflow as WorkflowIcon, type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +48,8 @@ import { MemberAvatar } from "./members";
 import { rosterMemberTarget, rosterQueryKey, useRosterMembers, type MemberRoster } from "./channel-members";
 import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS, formatTtlDuration } from "./channel-type-settings";
 import { ChannelPermissionsSettings } from "./channel-permissions-settings";
+import { ChannelCanvas, canEditChannelCanvas, getMarkdownPreviewText, useChannelCanvas } from "./channel-canvas";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./sidebar/tooltip";
 import { CHANNEL_FORM_FIELD_CONTROL_CLASS, CHANNEL_FORM_FIELD_SHELL_CLASS } from "./roles";
 import {
   CHANNEL_CONVERGENCE_REREAD_MS, channelActionOutcomeText, channelManagementQueryKey, useChannelManagementHints,
@@ -139,7 +141,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   const membersQuery = useRosterMembers(roster, open);
   const workspaceId = roster.kind === "workspace" ? roster.workspaceId : undefined;
   const dm = channel.channelType === "dm";
-  const [activeView, setActiveView] = React.useState<"summary" | "workflows">("summary");
+  const [activeView, setActiveView] = React.useState<"summary" | "canvas" | "workflows">("summary");
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isTopicDialogOpen, setIsTopicDialogOpen] = React.useState(false);
   const [confirmLifecycle, setConfirmLifecycle] = React.useState(false);
@@ -169,6 +171,14 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   const canReopen = hints?.canReopen === true;
   const canLeave = hints?.leaveActionKey !== undefined;
   const canEditTopic = managed && management?.publishTopic !== undefined && !archived;
+  // DD-125(4) original Canvas row: only where the host renders Markdown; the edit entry follows
+  // the BFF hint (original canEditNarrative) and Core re-admits the save.
+  const renderCanvas = managed ? management?.renderCanvas : undefined;
+  const canvasQuery = useChannelCanvas(workspaceId, open && renderCanvas !== undefined);
+  const canvasContent = canvasQuery.data?.content?.trim() ?? "";
+  const hasCanvas = canvasContent.length > 0;
+  const canEditCanvas = canEditChannelCanvas(canvasQuery.data);
+  const canOpenCanvas = renderCanvas !== undefined && workspaceId !== undefined && (hasCanvas || canEditCanvas);
 
   // A recorded change converges through its workflow: re-read the host view and the hints on a
   // bounded backoff (reads only, never a resend).
@@ -330,7 +340,8 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                 <AuxiliaryPanelHeaderGroup mode="panel" backButtonAriaLabel={t("channelManagement.back")} backButtonTestId="channel-management-back"
                   onBack={activeView !== "summary" ? () => setActiveView("summary") : undefined}>
                   <DialogPrimitive.Title asChild>
-                    <AuxiliaryPanelTitle>{t(activeView === "workflows" ? "channelManagement.workflows" : "channelManagement.title")}</AuxiliaryPanelTitle>
+                    <AuxiliaryPanelTitle>{t(activeView === "canvas" ? "channelCanvas.title"
+                      : activeView === "workflows" ? "channelManagement.workflows" : "channelManagement.title")}</AuxiliaryPanelTitle>
                   </DialogPrimitive.Title>
                 </AuxiliaryPanelHeaderGroup>
                 <DialogPrimitive.Description className="sr-only">{t("channelManagement.settings")}</DialogPrimitive.Description>
@@ -341,7 +352,11 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                 panelPadding
                 ref={scrollRef}
               >
-                {activeView === "workflows" && workflows ? (
+                {activeView === "canvas" && renderCanvas && workspaceId ? (
+                  <div className="pt-3" data-testid="channel-canvas-section">
+                    <ChannelCanvas canEdit={canEditCanvas} isArchived={archived} renderMarkdown={renderCanvas} workspaceId={workspaceId} />
+                  </div>
+                ) : activeView === "workflows" && workflows ? (
                   <ChannelWorkflowsSection query={workflowsQuery} workflows={workflows} />
                 ) : <div className="space-y-6 pt-3">
                   <ChannelHero channel={channel} description={description} dm={dm} onEdit={canEditChannel ? openEditDialog : undefined} />
@@ -377,11 +392,24 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
                     <CopyFieldRow copiedMessage={t("channelManagement.channelIdCopied")} label={t("channelManagement.channelId")} onCopy={onCopy}
                       testId="channel-management-channel-id" value={channel.channelId} />
                   </PanelSectionGroup>
+                  {canOpenCanvas ? (
+                    <IngressRow
+                      description={hasCanvas ? getMarkdownPreviewText(canvasContent) : undefined}
+                      helpText={t("channelCanvas.help")}
+                      helpLabel={t("channelCanvas.about")}
+                      icon={BookOpenText}
+                      label={t("channelCanvas.title")}
+                      onClick={() => setActiveView("canvas")}
+                      testId="channel-canvas-ingress"
+                      trailing={canvasQuery.isPending ? t("channelCanvas.loadingShort") : undefined}
+                    />
+                  ) : null}
                   {workflows && workspaceId ? (
                     <IngressRow
                       description={workflowsQuery.isSuccess
                         ? t(workflowsQuery.data.rows.length === 1 ? "channelManagement.workflowCountOne" : "channelManagement.workflowCountOther", { count: workflowsQuery.data.rows.length })
                         : undefined}
+                      icon={WorkflowIcon}
                       label={t("channelManagement.workflows")}
                       onClick={() => setActiveView("workflows")}
                       testId="channel-workflows-ingress"
@@ -877,8 +905,12 @@ function ChannelWorkflowRow({ row, onOpen }: { row: AutomationView; onOpen: (res
   );
 }
 
-function IngressRow({ description, label, onClick, testId, trailing }: {
+function IngressRow({ description, helpText, helpLabel, icon: Icon, label, onClick, testId, trailing }: {
   description?: string;
+  /** Original info tooltip next to the label. */
+  helpText?: string;
+  helpLabel?: string;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   testId: string;
@@ -895,9 +927,25 @@ function IngressRow({ description, label, onClick, testId, trailing }: {
           onClick={onClick}
           type="button"
         />
-        <WorkflowIcon className="pointer-events-none relative z-20 h-4 w-4 shrink-0 text-muted-foreground" />
+        <Icon className="pointer-events-none relative z-20 h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="pointer-events-none relative z-20 min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground"><span>{label}</span></span>
+          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <span>{label}</span>
+            {helpText ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button aria-label={helpLabel ?? label}
+                      className="pointer-events-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                      data-testid={`${testId}-info`} onClick={(event) => event.stopPropagation()} type="button">
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64 text-left" side="top">{helpText}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+          </span>
           {description ? <span className="mt-0.5 block truncate text-sm font-normal text-muted-foreground/70">{description}</span> : null}
         </span>
         {trailing ? <span className="pointer-events-none relative z-20 text-sm text-muted-foreground/70">{trailing}</span> : null}

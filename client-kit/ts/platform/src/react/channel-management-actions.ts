@@ -2,7 +2,7 @@
 // Edit, reopen, leave, archive and unarchive are ActionCommands submitted through the BFF
 // client; the entries appear only when the BFF answers the matching action hint, and every
 // submission is re-admitted by Core. The member topic is a host publication (Web BFF route).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActionDispatchState,
@@ -30,6 +30,11 @@ export type ChannelManagementHost = {
   publishTopic?: (workspaceId: string, request: WebPublishTopicRequest, idempotencyKey: string) => Promise<void>;
   /** Called after a recorded leave, once the sheet has closed. */
   onLeft?: () => void;
+  /**
+   * DD-125(4) original Canvas: the host's Markdown renderer for the adopted (CONTROL-authored)
+   * Canvas body. Omitted: the Canvas row and view are not offered on this host.
+   */
+  renderCanvas?: (content: string) => ReactNode;
 };
 
 /** BFF action hints for one Workspace channel; omitted keys mean no entry is shown. */

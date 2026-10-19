@@ -90,6 +90,13 @@ import type {
   WebCustomEmojiView,
   WebWorkspaceActivityPage,
   WebWorkspaceActivityQuery,
+  WebChannelCanvasView,
+  WebLinkPreviewRequest,
+  WebLinkPreviewSnapshotView,
+  WebGifCapabilityView,
+  WebGifSearchRequest,
+  WebGifSearchView,
+  WebGifShareRequest,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -491,6 +498,27 @@ export function createBffClient(transport: BffTransport) {
      */
     submitAction: (command: ActionCommand) =>
       call<ActionSubmission>({ method: "POST", path: "/api/v1/actions", body: command }),
+
+    // DD-125(4)(5) batch C3. The Canvas is read as the member and only the Tenant CONTROL
+    // author is adopted; it is written by the workspace.canvas.set action above.
+    channelCanvas: (workspaceId: string) =>
+      get<WebChannelCanvasView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/canvas`, true),
+    /** The BFF fetches one link preview for the caller and answers its short-term snapshot. */
+    linkPreview: (target: { workspaceId: string } | { conversationId: string }, request: WebLinkPreviewRequest) =>
+      call<WebLinkPreviewSnapshotView>({
+        method: "POST",
+        path: "workspaceId" in target
+          ? `/api/v1/workspaces/${encodeURIComponent(target.workspaceId)}/link-previews`
+          : `/api/v1/conversations/${encodeURIComponent(target.conversationId)}/link-previews`,
+        body: request,
+      }),
+    /** Whether the original GIF picker appears, and the registered GIF image origins. */
+    gifCapability: () => get<WebGifCapabilityView>("/api/v1/gifs"),
+    gifSearch: (request: WebGifSearchRequest) =>
+      call<WebGifSearchView>({ method: "POST", path: "/api/v1/gifs/search", body: request }),
+    /** Original best-effort share report at selection time (204). */
+    gifShare: (request: WebGifShareRequest) =>
+      call<unknown>({ method: "POST", path: "/api/v1/gifs/share", body: request }),
 
     /** 本 Tenant 的邀请；只对持有 Tenant manage 的人开放，其余 403（DD-83）。 */
     invitations: () => get<TenantInvitationView[]>("/api/v1/invitations"),

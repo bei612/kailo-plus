@@ -44,14 +44,30 @@ describe("original channel template apply over governed submissions", () => {
     } as unknown as TemplateApplyClient;
     const results = await applyChannelTemplate(client, { name: "Incident", canvasTemplate: "# {channel.name}", agentResourceIds: [agentA, agentB, agentA] },
       workspaceId, "ops", new Map(), () => true);
-    // Canvas is reported (its governed write has no body field in this contract) and nothing is sent for it.
-    expect(results.map((result) => [result.item.kind, result.outcome])).toEqual([["canvas", "unavailable"], ["agent", "submitted"], ["agent", "failed"]]);
-    expect(commands).toHaveLength(2);
-    expect(commands[0]).toMatchObject({ actionKey: "agent.installation.create", workspaceId, resourceId: agentA, assetId: `${agentA}-v`, assetVersion: 2 });
-    expect(commands[0]!.idempotencyKey).not.toBe(commands[1]!.idempotencyKey);
+    // Original order: the canvas (rendered placeholders) first as its own workspace.canvas.set, then each Agent.
+    expect(results.map((result) => [result.item.kind, result.outcome])).toEqual([["canvas", "submitted"], ["agent", "submitted"], ["agent", "failed"]]);
+    expect(commands).toHaveLength(3);
+    expect(commands[0]).toEqual({ actionKey: "workspace.canvas.set", idempotencyKey: commands[0]!.idempotencyKey, workspaceId,
+      explicitConfirmation: true, workspaceCanvas: { content: "# ops" } });
+    expect(commands[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(commands[1]).toMatchObject({ actionKey: "agent.installation.create", workspaceId, resourceId: agentA, assetId: `${agentA}-v`, assetVersion: 2 });
+    expect(new Set(commands.map((command) => command.idempotencyKey)).size).toBe(3);
     const refused = results[2]!;
     expect(refused.outcome === "failed" && refused.failure.kind === "rejected" && refused.failure.reason).toBe(ReasonCode.PermissionDenied);
     expect(refused.item.kind === "agent" && refused.item.name).toBe("Critic");
+  });
+
+  it("reports a canvas whose SYNC write is still unknown or was aborted instead of counting it applied", async () => {
+    const answers = [ActionDispatchState.Unknown, ActionDispatchState.Aborted];
+    const client = {
+      submitAction: async (command: ActionCommand) => ({ ...receipt(command), dispatchState: answers.shift()!,
+        ...(answers.length === 0 ? { reason: ReasonCode.PublishRejected } : {}) }),
+    } as unknown as TemplateApplyClient;
+    const template = { name: "Incident", canvasTemplate: "{template.name}", agentResourceIds: [] };
+    const [unknown] = await applyChannelTemplate(client, template, workspaceId, "ops", new Map(), () => true);
+    expect(unknown!.outcome === "failed" && unknown!.failure.kind).toBe("unknown");
+    const [aborted] = await applyChannelTemplate(client, template, workspaceId, "ops", new Map(), () => true);
+    expect(aborted!.outcome === "failed" && aborted!.failure.kind === "rejected" && aborted!.failure.reason).toBe(ReasonCode.PublishRejected);
   });
 
   it("waits for the workspace.create task to complete before applying", async () => {

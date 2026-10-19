@@ -4,7 +4,7 @@
 // DD-125(4): a template grants nothing. After the existing workspace.create submission, each
 // part is its own governed submission with its own idempotency key, admitted and audited by
 // Core; a refused part is reported on its own and never rolls back the channel or other parts.
-import { ActionGateState, AgentVersionState, CreateActionKey, ResourceState, TaskStatus,
+import { ActionDispatchState, ActionGateState, AgentVersionState, CreateActionKey, ResourceState, TaskStatus,
   type ActionCommand, type ActionSubmission, type AgentInstallationCandidate } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import type { ChannelTemplateRecord } from "../../collaboration-preferences";
@@ -85,10 +85,31 @@ async function submit(client: TemplateApplyClient, item: TemplateApplyItem, comm
   }
 }
 
+/** The Canvas write of DD-125(4), 05 §2.11 (CONTROL signs kind 40100; the body is transient). */
+export const CANVAS_SET_ACTION = "workspace.canvas.set";
+
 /**
- * Original order: canvas, then each Agent. The Canvas action (`workspace.canvas.set`) carries
- * its body in a later contract; until then this part is reported unavailable and nothing is
- * sent, so the browser never fabricates a Canvas write.
+ * The canvas part: one governed `workspace.canvas.set` with the rendered template. It is SYNC, so
+ * a receipt whose dispatch is still unknown or was aborted is reported, not counted as applied.
+ */
+async function submitCanvas(client: TemplateApplyClient, workspaceId: string, content: string): Promise<TemplateApplyResult> {
+  const item: TemplateApplyItem = { kind: "canvas" };
+  const result = await submit(client, item, {
+    actionKey: CANVAS_SET_ACTION, idempotencyKey: newIdempotencyKey(), workspaceId,
+    explicitConfirmation: true, workspaceCanvas: { content },
+  });
+  if (result.outcome !== "submitted") return result;
+  if (result.submission.dispatchState === ActionDispatchState.Unknown)
+    return { item, outcome: "failed", failure: { kind: "unknown", operationId: result.submission.operationId } };
+  if (result.submission.dispatchState === ActionDispatchState.Aborted)
+    return { item, outcome: "failed", failure: { kind: "rejected", reason: result.submission.reason, detail: result.submission.dispatchState } };
+  return result;
+}
+
+/**
+ * Original order: canvas, then each Agent. Each part is its own governed submission
+ * (`workspace.canvas.set`, then `agent.installation.create`), admitted and audited on its own;
+ * the template grants nothing and a refused part never rolls back the others.
  */
 export async function applyChannelTemplate(
   client: TemplateApplyClient,
@@ -99,7 +120,8 @@ export async function applyChannelTemplate(
   isCurrent: () => boolean,
 ): Promise<TemplateApplyResult[]> {
   const results: TemplateApplyResult[] = [];
-  if (renderCanvasTemplate(template, channelName) !== null) results.push({ item: { kind: "canvas" }, outcome: "unavailable" });
+  const canvas = renderCanvasTemplate(template, channelName);
+  if (canvas !== null && isCurrent()) results.push(await submitCanvas(client, workspaceId, canvas));
   for (const resourceId of [...new Set(template.agentResourceIds)]) {
     if (!isCurrent()) break;
     const item: TemplateApplyItem = { kind: "agent", resourceId, name: agentNames.get(resourceId) ?? resourceId };

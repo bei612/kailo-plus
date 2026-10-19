@@ -79,6 +79,7 @@ import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BffError, bff, publishChannelTopic, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
+import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { BffReminderHost } from "@/platform/ui/ReminderHost";
@@ -723,6 +724,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                   void searchDirectory.refetch();
                 },
                 publishTopic: async (workspaceId, request, idempotencyKey) => { await publishChannelTopic(workspaceId, request, idempotencyKey); },
+                // DD-125(4) original Canvas: the adopted CONTROL-authored body in the shared Markdown renderer.
+                renderCanvas: (content) => <MessageContent content={content} workspaceId={active} />,
               }}
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(active)); }}
               workflows={{
