@@ -2076,6 +2076,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update projection.workspace_buzz_binding set state = 'DISABLED',version = version + 1 where workspace_id in (select id from identity.workspace where tenant_id = $1) and state <> 'DISABLED'",
         "update projection.tenant_buzz_binding set state = 'DISABLED',version = version + 1 where tenant_id = $1 and state <> 'DISABLED'",
         "update projection.conversation_buzz_binding set state = 'DISABLED',version = version + 1 where tenant_id = $1 and state <> 'DISABLED'",
+        // DD-125(3): the Community is archived with the Tenant; no Huddle stays in progress.
+        "update projection.huddle_buzz_binding set state = 'ENDED',ended_at = now(),version = version + 1,updated_at = now() where tenant_id = $1 and state in ('PROVISIONING','ACTIVE')",
         "update identity.tenant_invitation set state = 'REVOKED',revoked_at = now(),version = version + 1 where tenant_id = $1 and state = 'ISSUED'",
     ] { sqlx::query(sql).bind(deletion.tenant_id).execute(&mut *tx).await?; }
     sqlx::query("update identity.tenant set state = 'DELETED',version = version + 1 where id = $1")

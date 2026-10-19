@@ -53,6 +53,8 @@ mod gifs;
 mod governance;
 mod governance_api;
 mod governance_reconcile;
+mod huddle;
+mod huddle_audio;
 mod identity_projection;
 mod invitation;
 mod link_preview;

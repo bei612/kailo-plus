@@ -782,6 +782,27 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/workspaces/{workspace_id}/canvas",
             get(crate::workspace_canvas::read),
         )
+        // DD-125(3)：原版 Huddle 的绑定读取、父频道生命周期与存活、Web 创建者的 48106/48100、
+        // 本人 9022 退出与同源音频桥（写入是 huddle.* 语义命令）
+        .exposed_route("/api/v1/huddles", get(crate::huddle::list))
+        .exposed_route("/api/v1/huddles/voice", get(crate::huddle::voice))
+        .exposed_route("/api/v1/huddles/{huddle_id}", get(crate::huddle::read))
+        .exposed_route(
+            "/api/v1/huddles/{huddle_id}/lifecycle",
+            get(crate::huddle::lifecycle),
+        )
+        .exposed_route(
+            "/api/v1/huddles/{huddle_id}/announcement",
+            axum::routing::post(crate::huddle::announce),
+        )
+        .exposed_route(
+            "/api/v1/huddles/{huddle_id}/leave",
+            axum::routing::post(crate::huddle::leave),
+        )
+        .exposed_route(
+            "/api/v1/huddles/{huddle_id}/audio",
+            get(crate::huddle_audio::bridge),
+        )
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/link-previews",
             axum::routing::post(crate::link_preview::create_workspace_preview),

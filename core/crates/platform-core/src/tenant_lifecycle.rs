@@ -1611,6 +1611,15 @@ pub async fn converge_workspace_channel_archive(
         Ok(c) => c,
         Err(r) => return r,
     };
+    // DD-125(3)、V-SCN-132：暂停先归档该 Workspace 全部进行中的 Huddle 临时频道
+    if req.archived {
+        if let Err(e) =
+            crate::huddle::archive_workspace(&state, &control, tenant_id, req.workspace_id).await
+        {
+            tracing::warn!(error = %e, workspace = %req.workspace_id, "暂停前归档 Huddle 临时频道未收敛");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
     match control
         .converge_channel_archived(&state.http, &channel_id.to_string(), req.archived)
         .await

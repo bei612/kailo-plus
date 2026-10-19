@@ -343,6 +343,21 @@ async fn retire(
     .await
     .map_err(unavailable)?;
     crate::conversations::project_for_principal(state, tenant_id, principal, None).await?;
+    // DD-125(3)：退役的公钥同样移出全部进行中的 Huddle 临时频道，Relay 关闭其音频连接
+    // （relay roster 的移出不关闭已建立的音频连接）。
+    let retired = std::slice::from_ref(&req.pubkey);
+    crate::huddle::withdraw(
+        state,
+        control,
+        tenant_id,
+        crate::huddle::Withdraw::Tenant,
+        retired,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(error = %e, "退役公钥移出 Huddle 临时频道未收敛");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    })?;
     // 不按 Workspace 状态筛：暂停中的 Channel 在清空之后已无该 pubkey，按缺席查证
     // 先读 roster 即成立、不发 9001，不会卡在已归档的 Channel 上（DD-97）
     let channels = sqlx::query_scalar!(

@@ -263,6 +263,17 @@ impl RelaySessions {
         }
     }
 
+    /// Relay 的 WebSocket 网络地址（`BUZZ_RELAY_WS_URL`）。DD-125(3) 的 Huddle 音频桥连向
+    /// 同一 Relay 的 `/huddle/{channel}/audio`，不另设地址。
+    pub fn ws_url(&self) -> &str {
+        &self.ws_url
+    }
+
+    /// 建连认证上界（`BFF_STREAM_AUTH_TIMEOUT_SECONDS`），音频桥的挑战认证共用它。
+    pub fn challenge_timeout(&self) -> tokio::time::Duration {
+        self.challenge_timeout
+    }
+
     /// 覆盖等待 WS 发布结论的上界。
     pub fn with_publish_timeout(mut self, timeout: tokio::time::Duration) -> Self {
         self.publish_timeout = timeout;

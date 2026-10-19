@@ -180,6 +180,28 @@ pub async fn project_buzz_roster(
             }
         }
     }
+    // DD-125(3)、V-SCN-132：撤员同链先以 CONTROL 9001 把此人的全部公钥移出范围内仍在进行的
+    // Huddle 临时频道，Relay 随之关闭其音频连接；Tenant 层撤权覆盖父私聊的 Huddle。
+    if req.presence == TargetPresence::Absent {
+        let huddles = match (req.scope, plan.workspace_id) {
+            (MembershipScope::Workspace, Some(workspace)) => {
+                crate::huddle::Withdraw::Workspace(workspace)
+            }
+            _ => crate::huddle::Withdraw::Tenant,
+        };
+        if let Err(e) = crate::huddle::withdraw(
+            &state,
+            &client,
+            plan.tenant_id,
+            huddles,
+            &plan.target_pubkeys,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "撤员移出 Huddle 临时频道未收敛");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
     for pubkey in &plan.target_pubkeys {
         outcome = client.converge(&state.http, scope, pubkey, want).await;
         if outcome.is_err() {
@@ -384,6 +406,8 @@ async fn revoke_member_keys(
 /// 一次投影所需的全部事实，解析完就不再回库。
 struct Plan {
     tenant_id: Uuid,
+    /// Workspace 层投影的 Workspace；Tenant 层为 `None`
+    workspace_id: Option<Uuid>,
     community_host: String,
     /// `None` 表示 relay 层 roster
     channel_id: Option<String>,
@@ -570,6 +594,7 @@ async fn resolve(state: &ServiceState, req: &BuzzProjectionRequest) -> Result<Pl
 
     Ok(Plan {
         tenant_id,
+        workspace_id,
         community_host: normalized_host,
         channel_id,
         target_pubkeys: targets,

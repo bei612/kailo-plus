@@ -375,6 +375,8 @@ pub async fn cleanup(e: &Env, pool: &PgPool, f: &Fixture) {
              (select workflow_id from projection.workflow_ref where tenant_id = $1)",
         "delete from projection.workflow_ref where tenant_id = $1",
         "delete from admission.server_key_provision_intent where tenant_id = $1",
+        // DD-125(3): Huddle bindings reference their huddle.start execution and creator key
+        "delete from projection.huddle_buzz_binding where tenant_id = $1",
         "delete from admission.action_execution where tenant_id = $1",
         "delete from projection.tenant_buzz_binding where tenant_id = $1",
         "delete from identity.buzz_identity_binding where tenant_id = $1",
@@ -905,6 +907,8 @@ pub async fn teardown_live_workspace(e: &Env, pool: &PgPool, fx: &LiveWorkspace)
         // 邀请行引用签发与开通的 ActionExecution（DD-83），必须先于它们删除
         "delete from identity.tenant_invitation where tenant_id = $1",
         "delete from admission.server_key_provision_intent where tenant_id = $1",
+        // DD-125(3): Huddle bindings reference their huddle.start execution and creator key
+        "delete from projection.huddle_buzz_binding where tenant_id = $1",
         "delete from admission.action_execution where tenant_id = $1",
         "delete from projection.tenant_buzz_binding where tenant_id = $1",
         "delete from identity.buzz_identity_binding where tenant_id = $1",
@@ -1662,6 +1666,8 @@ pub mod bootstrapped {
                  (select workflow_id from projection.workflow_ref where tenant_id = $1)",
             "delete from projection.workflow_ref where tenant_id = $1",
             "delete from admission.server_key_provision_intent where tenant_id = $1",
+            // DD-125(3): Huddle bindings reference their huddle.start execution and creator key
+            "delete from projection.huddle_buzz_binding where tenant_id = $1",
             "delete from admission.action_execution where tenant_id = $1",
             "delete from projection.tenant_buzz_binding where tenant_id = $1",
             "delete from identity.buzz_identity_binding where tenant_id = $1",

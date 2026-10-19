@@ -3874,6 +3874,8 @@ impl Execution {
             document_launch: None,
             // Same rule for a webhook key (DD-116): only the creating response.
             webhook_secret: None,
+            // DD-125(3): only huddle.start fills its pre-allocated binding.
+            huddle_id: None,
         }
     }
 }

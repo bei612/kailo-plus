@@ -135,6 +135,15 @@ pub enum Delivery {
     Limited(LimitKind, String),
 }
 
+/// [`IdentityClient::ensure_huddle_channel`] 的确定结论。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HuddleProjection {
+    /// 回读的 discovery 与投影意图一致
+    Ready,
+    /// Relay 明确不接受这条投影（原话只进日志）
+    Rejected(String),
+}
+
 /// 已从 Core 预算中取得一次额度的证明。
 ///
 /// 发布要在写 DISPATCH 审计**之前**取额度：取不到就既不落账也不发送。把额度证明
@@ -368,6 +377,90 @@ impl IdentityClient {
             ));
         }
         Ok(())
+    }
+
+    /// DD-125(3)：以 Tenant CONTROL 投影 `creator` 的 Huddle 临时频道（带 `creator` 的
+    /// 9007，private、stream、`ttl=3600`，SS-BUZ-GOVERNANCE）。Channel UUID 由 Core 预分配，
+    /// 同一 id 重发由 Relay 判为已存在而不另建；成功判据是回读的 39000 discovery 与创建
+    /// 意图一致。Relay 明确不接受（不是“已存在”）即 [`HuddleProjection::Rejected`]，传输
+    /// 失败与回读不一致是结果不明，由调用方按 Channel UUID 对账。
+    pub async fn ensure_huddle_channel(
+        &self,
+        http: &reqwest::Client,
+        channel_id: &str,
+        name: &str,
+        creator: &str,
+    ) -> Result<HuddleProjection, OperatorError> {
+        let tags = crate::huddle::huddle_channel_tags(channel_id, name, creator);
+        // The HTTP bridge answers an ingest rejection with 400 (`api/bridge.rs::submit_event`);
+        // 429/413 are LIMIT and were never read, so they stay retryable.
+        let accepted = match self.publish(http, KIND_CHANNEL_CREATE, "", &tags).await {
+            Ok(accepted) => accepted,
+            Err(OperatorError::Rejected { status, body })
+                if (400..500).contains(&status) && status != 429 && status != 413 =>
+            {
+                return Ok(HuddleProjection::Rejected(body));
+            }
+            Err(e) => return Err(e),
+        };
+        let refused = accepted.get("accepted").and_then(Value::as_bool) == Some(false);
+        let message = accepted
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if refused && !message.starts_with("duplicate: channel already exists") {
+            return Ok(HuddleProjection::Rejected(
+                message.chars().take(200).collect(),
+            ));
+        }
+        if !refused {
+            Self::accepted_event_id(&accepted)?;
+        }
+        let Some(event) = self.channel_metadata(http, channel_id).await? else {
+            return Err(OperatorError::NotConverged(
+                "Huddle channel metadata missing".into(),
+            ));
+        };
+        let one = |key: &str| -> Option<String> {
+            let mut values = event
+                .tags
+                .iter()
+                .filter(|t| t.as_slice().first().is_some_and(|v| v == key));
+            let value = values.next()?;
+            (values.next().is_none() && value.as_slice().len() == 2)
+                .then(|| value.as_slice()[1].clone())
+        };
+        let ttl = crate::huddle::HUDDLE_TTL_SECONDS.to_string();
+        let private = event
+            .tags
+            .iter()
+            .filter(|t| t.as_slice() == ["private"])
+            .count()
+            == 1;
+        if one("name").as_deref() != Some(buzz_core::channel::canonical_channel_name(name))
+            || one("t").as_deref() != Some("stream")
+            || one("ttl").as_deref() != Some(ttl.as_str())
+            || !private
+            || one("archived").is_some_and(|v| v != "false")
+        {
+            return Err(OperatorError::NotConverged(
+                "Huddle channel metadata does not match the projection".into(),
+            ));
+        }
+        Ok(HuddleProjection::Ready)
+    }
+
+    /// 原音频连接的 JSON 挑战认证：以本身份签 kind 22242，`relay` 为 Community host 上的
+    /// `ws://` 地址（与 NIP-42 订阅连接同一规则，Relay 按 Host 绑定 Community），
+    /// `challenge` 为 Relay 下发值（`audio/handler.rs::AuthMsg`、`buzz-auth::nip42`）。
+    pub fn sign_relay_auth(&self, challenge: &str) -> Result<Event, OperatorError> {
+        let relay_url =
+            nostr::RelayUrl::parse(&format!("ws://{}", self.community_host)).map_err(|e| {
+                OperatorError::Sign(format!("Community host 不可解析为 relay URL: {e}"))
+            })?;
+        EventBuilder::auth(challenge, relay_url)
+            .sign_with_keys(&self.keys)
+            .map_err(|e| OperatorError::Sign(format!("AUTH 签名失败: {e}")))
     }
 
     /// 以该身份发布一条频道消息，返回 Relay 接受后的 event id。
@@ -1135,6 +1228,22 @@ impl IdentityClient {
         target_pubkey: &str,
         want: Presence,
     ) -> Result<(), OperatorError> {
+        self.converge_with_role(http, scope, target_pubkey, want, None)
+            .await
+    }
+
+    /// [`converge`](Self::converge) with the original NIP-29 `role` tag on the add.
+    /// DD-125(3): Agents join a Huddle temp channel as `role=bot` (original
+    /// `events.rs::build_add_member` for `start_huddle`/`add_agent_to_huddle`). The
+    /// role is only sent on a new add; an existing member keeps its role upstream.
+    pub async fn converge_with_role(
+        &self,
+        http: &reqwest::Client,
+        scope: Scope<'_>,
+        target_pubkey: &str,
+        want: Presence,
+        role: Option<&str>,
+    ) -> Result<(), OperatorError> {
         let target = target_pubkey.to_ascii_lowercase();
         let satisfied = |roster: &[RosterEntry]| {
             let present = roster.iter().any(|e| e.pubkey == target);
@@ -1150,7 +1259,10 @@ impl IdentityClient {
         // 想靠错误文本区分这两种拒绝就成了对上游措辞的隐式依赖，措辞一改就
         // 静默失效。因此这里只把传输/签名失败当确定失败，拒绝一律并入未收敛，
         // 把理由带进详情供人排查，由调用方的重试上界决定何时放弃。
-        let rejection = match self.send_admin_event(http, scope, &target, want).await {
+        let rejection = match self
+            .send_admin_event(http, scope, &target, want, role)
+            .await
+        {
             Ok(()) => None,
             Err(e @ OperatorError::Rejected { .. }) => Some(e.to_string()),
             Err(e) => return Err(e),
@@ -1177,11 +1289,13 @@ impl IdentityClient {
         scope: Scope<'_>,
         target_pubkey: &str,
         want: Presence,
+        role: Option<&str>,
     ) -> Result<(), OperatorError> {
         let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
-        // 不带 role 标签：上游在缺该标签时按 member 处理（Channel 面则保留既有
-        // 角色）。角色语义的权威在 Core，一期不投影 admin/owner。
-        let (kind, tags) = match (scope, want) {
+        // 缺省不带 role 标签：上游在缺该标签时按 member 处理（Channel 面则保留既有
+        // 角色）。角色语义的权威在 Core，一期不投影 admin/owner；唯一的例外是 Huddle
+        // 临时频道里 Agent 的原版 `role=bot`（DD-125(3)）。
+        let (kind, mut tags) = match (scope, want) {
             (Scope::Relay, Presence::Present) => {
                 (KIND_RELAY_ADMIN_ADD, vec![tag("p", target_pubkey)])
             }
@@ -1197,6 +1311,9 @@ impl IdentityClient {
                 vec![tag("h", id), tag("p", target_pubkey)],
             ),
         };
+        if let (Scope::Channel(_), Presence::Present, Some(role)) = (scope, want, role) {
+            tags.push(tag("role", role));
+        }
         // relay-admin 事件另有 ±120 秒的 created_at 窗口作为重放守卫，
         // EventBuilder 用当前时间签名；Core 与 Relay 的时钟偏移超过该窗口
         // 会让全部 roster 投影失败，属于部署前提。

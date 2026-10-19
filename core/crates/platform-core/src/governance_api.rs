@@ -85,6 +85,12 @@ pub async fn submit_action(
     if cmd.workspace_canvas.is_some() && cmd.action_key != crate::workspace_canvas::ACTION {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-125(3): Huddle inputs belong only to the huddle.* actions.
+    if (cmd.huddle_start.is_some() || cmd.huddle_agent.is_some() || cmd.huddle_id.is_some())
+        && !crate::huddle::is_action(&cmd.action_key)
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     let result = if crate::protocol_session::command::is_action(&cmd.action_key) {
         crate::protocol_session::command::submit(&state, &ctx, &headers, &cmd).await
     } else if cmd.component_action.is_some() {
@@ -100,6 +106,9 @@ pub async fn submit_action(
         crate::moderation::submit(&state, &ctx, &cmd).await
     } else if cmd.action_key == crate::workspace_canvas::ACTION {
         crate::workspace_canvas::submit(&state, &ctx, &cmd).await
+    } else if crate::huddle::is_action(&cmd.action_key) {
+        // DD-125(3)：Huddle 临时频道投影有自己的 CONTROL 派发与对账路径
+        crate::huddle::submit(&state, &ctx, &cmd).await
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };

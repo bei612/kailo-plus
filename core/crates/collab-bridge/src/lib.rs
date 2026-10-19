@@ -3,6 +3,7 @@
 //! （`01-工程结构与模块边界.md` §6）。
 
 pub mod bridge;
+pub mod huddle;
 pub mod limits;
 pub mod memory;
 pub use memory::write as memory_write;
