@@ -2,7 +2,7 @@
 // This is not the external application's administration UI or data plane.
 import {
   ActionDispatchState, ActionGateState, ApplicationBindingState,
-  ApplicationCallIdentityMode, ApplicationIsolationMode, ApplicationModelCallMode, ReasonCode,
+  ApplicationCallIdentityMode, ApplicationIsolationMode, ApplicationModelCallMode, NativePageCategory, ReasonCode,
   type ActionCommand, type ActionSubmission, type ApplicationBindingCreate,
   type ApplicationBindingPage, type ApplicationBindingView,
 } from "@client-kit/contracts";
@@ -52,6 +52,7 @@ export function validBindingPage(page: ApplicationBindingPage, workspaceId: stri
       && Object.values(ApplicationBindingState).includes(row.state) && positive(row.version)
       && typeof row.canDisable === "boolean"
       && (row.hasReadReceiver === undefined || typeof row.hasReadReceiver === "boolean")
+      && (row.nativePageCategory === undefined || Object.values(NativePageCategory).includes(row.nativePageCategory))
       && (row.activeProjectionGeneration === undefined || positive(row.activeProjectionGeneration))
       && (row.state !== ApplicationBindingState.Active || positive(row.activeProjectionGeneration))
       // DD-127: a native page entry binding enables no capability category.

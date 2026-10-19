@@ -76,8 +76,23 @@ fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
     exact_fields(
         frontend,
         &["mode", "extensionSlots", "editorOrigins"],
-        &["nativePageOrigins", "launchDescriptorSchemaVersion"],
+        &[
+            "nativePageOrigins",
+            "launchDescriptorSchemaVersion",
+            "nativePageCategory",
+        ],
     )?;
+    // DD-127(4): a presentation category only labels a NATIVE_PAGE entry.
+    if let Some(category) = frontend.get("nativePageCategory") {
+        if frontend["mode"] != "NATIVE_PAGE"
+            || !matches!(
+                category.as_str(),
+                Some("file_storage" | "knowledge" | "data_query")
+            )
+        {
+            return Err(bad());
+        }
+    }
     if frontend["extensionSlots"] != json!([]) || manifest.get("hostApiRange").is_some() {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
@@ -183,6 +198,9 @@ fn source_identity(manifest: &Value) -> Result<(), Refusal> {
 /// adapterBuildRef slot carries the deployed native service artifact digest.
 fn native_page(manifest: &Value) -> Result<(), Refusal> {
     if manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE"
+        || manifest["frontendDelivery"]
+            .get("nativePageCategory")
+            .is_none()
         || manifest["allowedModelCallModes"] != json!(["NONE"])
         || [
             "implements",
@@ -368,6 +386,17 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
     }
     if contracts.is_empty() != connector_kind.is_none() {
         return Err(bad());
+    }
+    // DD-127(4): a capability release may label its entry only as one of the
+    // categories it implements.
+    if let Some(category) = manifest["frontendDelivery"].get("nativePageCategory") {
+        if connector_kind.is_some()
+            && !contracts
+                .iter()
+                .any(|(implemented, _)| category.as_str() == Some(implemented.as_str()))
+        {
+            return Err(bad());
+        }
     }
     let declarations = manifest["capabilityDeclarations"]
         .as_array()
@@ -3413,7 +3442,7 @@ mod report_tests {
             "bindingConfigSchemaDigest":collab_bridge::limits::canonical_digest(&config),
             "adapterProtocolRange":"NONE",
             "frontendDelivery":{"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
-                "nativePageOrigins":["http://192.168.0.193:58092"]},
+                "nativePageOrigins":["http://192.168.0.193:58092"],"nativePageCategory":"file_storage"},
             "executionConnector":{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"},
             "adapterBuildRef":"8ddc3582521e7bb036ce2409163998739210deebdf719de86fd9e8203c0372cf",
             "implements":[],"capabilityDeclarations":[],"allowedModelCallModes":["NONE"],
@@ -3470,6 +3499,18 @@ mod report_tests {
                 "frontendDelivery",
                 json!({"mode":"NONE","extensionSlots":[],"editorOrigins":[]}),
             )),
+            // DD-127(4): the entry must name one of the three presentation
+            // categories.
+            native_page_registration(declared(
+                "frontendDelivery",
+                json!({"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
+                    "nativePageOrigins":["http://192.168.0.193:58092"]}),
+            )),
+            native_page_registration(declared(
+                "frontendDelivery",
+                json!({"mode":"NATIVE_PAGE","extensionSlots":[],"editorOrigins":[],
+                    "nativePageOrigins":["http://192.168.0.193:58092"],"nativePageCategory":"cells"}),
+            )),
             native_page_registration(declared(
                 "executionConnector",
                 json!({"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"kailo-adapter"}),
@@ -3519,6 +3560,10 @@ mod report_tests {
             &json!({"frontendDelivery":{"mode":"NONE","extensionSlots":[],"editorOrigins":[]}}),
         )
         .unwrap();
+        // DD-127(4): a presentation category appears only with NATIVE_PAGE.
+        let mut labelled = valid;
+        labelled["frontendDelivery"]["nativePageCategory"] = json!("file_storage");
+        assert!(validate_frontend_delivery(&labelled).is_err());
     }
 
     #[test]

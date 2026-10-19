@@ -14,8 +14,9 @@
 // and the descriptor is refused. Re-enabling needs a NEW binding
 // (component-bind.mjs --attempt N+1); there is no undo.
 //
-// DD-127 native page entries enable no category; the sidebar labels them by
-// componentTypeKey, so expect them as type:<componentTypeKey> (e.g. type:cells).
+// DD-127 native page entries enable no category; they are expected and
+// labelled by their release nativePageCategory like capability entries. An
+// entry without any category shows its componentTypeKey: type:<componentTypeKey>.
 //
 // Usage: node component-entries-check.mjs --expect file_storage,knowledge[,data_query][,type:<componentTypeKey>]
 //          [--accounts kailo-qa-1,kailo-qa-2,kailo-qa-3] [--workspace-id <uuid>]
@@ -34,6 +35,7 @@ async function entries(session, expected, workspaceId) {
   for (const binding of visible) {
     byCategory[`type:${binding.componentTypeKey}`] = binding;
     for (const c of binding.capabilityCategories) byCategory[c.category] = binding;
+    if (binding.nativePageCategory) byCategory[binding.nativePageCategory] = binding;
   }
   return { visible, byCategory, missing: expected.filter((c) => !byCategory[c]) };
 }
@@ -107,7 +109,8 @@ await main(async () => {
         ...(args['workspace-id'] ? { workspaceId: args['workspace-id'] } : {}) }, 'disable');
       await waitTask(admin, submitted.actionExecutionId, { seconds: 900, label: 'disable-task' }).catch((e) => { if (e.exitCode !== 3) throw e; });
     }
-    const category = binding.capabilityCategories.map((c) => c.category).find((c) => LABELS[c]) ?? `type:${binding.componentTypeKey}`;
+    const category = [...binding.capabilityCategories.map((c) => c.category), binding.nativePageCategory].find((c) => LABELS[c])
+      ?? `type:${binding.componentTypeKey}`;
     const probe = await login(accounts[0], `entries-after-revoke-${accounts[0]}`);
     await requireSession(probe);
     let gone = false;

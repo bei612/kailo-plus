@@ -360,6 +360,10 @@ async fn page(
                 where d->>'readEdge' in ('RECEIVER','BOTH'))),
         'hasNativePage',exists(select 1 from catalog.component_release release
             where release.id=component_release_id and release.status='APPROVED'
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
+        'nativePageCategory',(select release.manifest->'frontendDelivery'->>'nativePageCategory'
+            from catalog.component_release release
+            where release.id=component_release_id and release.status='APPROVED'
             and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE')))
         from catalog.application_binding
         where tenant_id=$1 and workspace_id is not distinct from $2 order by id offset $3 limit $4",

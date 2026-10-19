@@ -191,9 +191,10 @@ function main() {
   }
   const pageOnly = manifestTemplate.executionConnector?.mode === 'NONE';
   if (pageOnly !== (materialName === 'native-page') || (pageOnly && (manifestTemplate.frontendDelivery?.mode !== 'NATIVE_PAGE'
+    || !['file_storage', 'knowledge', 'data_query'].includes(manifestTemplate.frontendDelivery?.nativePageCategory)
     || ['implements', 'capabilityDeclarations', 'secretSchema', 'resourceTypeDefinitions', 'actionDefinitions', 'toolDefinitions']
       .some((field) => !Array.isArray(manifestTemplate[field]) || manifestTemplate[field].length !== 0)))) {
-    fail('native-page material must be implements=[], NATIVE_PAGE, ExecutionConnector NONE with no declarations (DD-127)');
+    fail('native-page material must be implements=[], NATIVE_PAGE with nativePageCategory, ExecutionConnector NONE and no declarations (DD-127)');
   }
   const releaseId = uuidv5(RELEASE_NAMESPACE, `${manifestTemplate.componentTypeKey}@${manifestTemplate.version}`);
   const manifest = fill(manifestTemplate, {

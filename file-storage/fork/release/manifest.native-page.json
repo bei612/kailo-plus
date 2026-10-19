@@ -17,7 +17,8 @@
     "editorOrigins": [],
     "nativePageOrigins": [
       "{{nativePageOrigin}}"
-    ]
+    ],
+    "nativePageCategory": "file_storage"
   },
   "executionConnector": {
     "mode": "NONE",
