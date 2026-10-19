@@ -5389,7 +5389,8 @@ pub struct CaptureElement {
 /// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
 /// SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
 /// 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
-/// nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
+/// nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个
+/// case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeReceiverObservationClass {
@@ -5647,7 +5648,7 @@ pub struct PlanStep {
 
     pub idempotency_key: String,
 
-    /// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core
+    /// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core
     /// 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receiver_input_json: Option<String>,
@@ -5672,9 +5673,9 @@ pub struct PlanStep {
 /// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
 /// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
 /// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
-/// RECEIVER step INPUT may also bind the step's own captures: Core compares that input with
-/// the admission the isolated Core actually produced. The plan digest fixes the declaration,
-/// never the value.
+/// RECEIVER case INPUT may also bind the step's own captures: Core compares that input with
+/// the admission the isolated Core actually produced whenever the step's evidence has reads.
+/// The plan digest fixes the declaration, never the value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BindingElement {
     pub key: String,
@@ -5711,10 +5712,10 @@ pub enum CapabilityVectorBindingSource {
 /// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
 /// of the same case. key is unique in the case and must be consumed at least once. pointer
 /// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
-/// step's contract key; in a RECEIVER step it equals an INPUT entry and reads the receiver
-/// admission the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in
-/// RECEIVER steps; a RECEIVER step takes CONTENT_REFERENCE_* from the receiver's own
-/// read_receipt of that admission.
+/// step's contract key; in a RECEIVER case it equals an INPUT entry and reads the admission
+/// the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER
+/// cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
+/// the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CaptureClass {
     pub key: String,
@@ -5728,8 +5729,8 @@ pub struct CaptureClass {
 /// DD-124(1): the closed observation slots a CAPTURE may take. CONTENT_REFERENCE_* read the
 /// adapter's typed ContentReference; GENERATED_REF reads an output field listed in the
 /// vector document's generatedRefs; ACTION_EXECUTION_ID/OPERATION_ID are the SOURCE read
-/// ActionExecution and Operation the isolated Core generated for a RECEIVER step in this run
-/// (never present in the plan or fixture).
+/// ActionExecution and Operation the isolated Core generated for a step of a RECEIVER case
+/// in this run (never present in the plan or fixture).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CapabilityVectorCaptureSlot {
@@ -9641,9 +9642,9 @@ pub struct CapabilityConformanceVectors {
     /// V2 only. Contract fields whose values the implementation generates (opaque non-empty
     /// strings). nativeRevision is always implementation-generated and need not be listed. A
     /// listed position present in a step document may never be LITERAL; EXPECTED entries are the
-    /// only output fields a GENERATED_REF capture of a FORWARD step may read. A RECEIVER step is
-    /// not sent by the production Core: its input is the receiver admission the isolated Core
-    /// produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own
+    /// only output fields a GENERATED_REF capture of a FORWARD step may read. A step of a
+    /// RECEIVER case is not sent by the production Core: its input is the admission the isolated
+    /// Core produced, so a GENERATED_REF capture of that step reads an INPUT entry of its own
     /// contract key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_refs: Option<Vec<CapabilityVectorGeneratedRef>>,
@@ -9659,14 +9660,58 @@ pub struct CapabilityConformanceVectors {
 pub struct Case {
     pub case_key: String,
 
+    /// V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the
+    /// isolated deployment; the production plan observes each of its steps only through
+    /// receiver_start/receiver_observe and accepts the isolated Core's execution and operation
+    /// ids, both read_receipts, native batch or execution and native terminal evidence, never
+    /// business results: every step names the receiver Resource by referenceResourceKey and
+    /// expects {}. Every platform Resource id of the case, typed or a
+    /// resourceId/sourceResourceId/assetId member of a step document, is a PRECONDITION. A step
+    /// input is the admission the isolated Core performs: it may bind the step's own
+    /// ACTION_EXECUTION_ID, OPERATION_ID or GENERATED_REF captures and earlier steps' captures,
+    /// which the isolated deployment supplies from its own run. The case as a whole carries the
+    /// source reads; Core compares a step's input with the admission whenever its evidence has
+    /// reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<CapabilityVectorCaseDirection>,
+
     /// V2 only. Native objects the isolated fixture creates through the candidate's own native
     /// entry before the run; the fixture supplies only their actual identifiers. Every
     /// registered property of the kind is declared with its literal value and verified by a
-    /// later literal expectation of this case.
+    /// later literal expectation of this case; in a RECEIVER case, whose expectations are {}, by
+    /// a literal member of a later step input, which Core compares with the isolated admission.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preconditions: Option<Vec<CapabilityVectorPrecondition>>,
 
     pub steps: Vec<Step>,
+}
+
+/// V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the
+/// isolated deployment; the production plan observes each of its steps only through
+/// receiver_start/receiver_observe and accepts the isolated Core's execution and operation
+/// ids, both read_receipts, native batch or execution and native terminal evidence, never
+/// business results: every step names the receiver Resource by referenceResourceKey and
+/// expects {}. Every platform Resource id of the case, typed or a
+/// resourceId/sourceResourceId/assetId member of a step document, is a PRECONDITION. A step
+/// input is the admission the isolated Core performs: it may bind the step's own
+/// ACTION_EXECUTION_ID, OPERATION_ID or GENERATED_REF captures and earlier steps' captures,
+/// which the isolated deployment supplies from its own run. The case as a whole carries the
+/// source reads; Core compares a step's input with the admission whenever its evidence has
+/// reads.
+///
+/// DD-124(3)(4): the direction of a whole V2 case. FORWARD cases are driven by the
+/// production Core probe execute. RECEIVER marks a case that depends on the service read
+/// edge (an ingest consuming a source through READ_EDGE, a NATIVE_MANAGED receiver key):
+/// every step of it runs in the isolated deployment of 07 §8A and the production plan only
+/// observes each step through receiver_start/receiver_observe; steps are never split between
+/// the directions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilityVectorCaseDirection {
+    #[serde(rename = "FORWARD")]
+    Forward,
+
+    #[serde(rename = "RECEIVER")]
+    Receiver,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9701,17 +9746,6 @@ pub struct Step {
 
     pub contract_key: String,
 
-    /// V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated
-    /// deployment and is observed by the production plan only through
-    /// receiver_start/receiver_observe. It names the receiver Resource in referenceResourceId
-    /// and expects {}. Its inputJson describes the receiver admission the isolated Core
-    /// performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or
-    /// GENERATED_REF captures where that admission carries identifiers the isolated Core or the
-    /// implementation generated. Its evidence is the isolated run's native batch or execution,
-    /// both read_receipts and the native terminal status, all generated in this run.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub direction: Option<CapabilityVectorStepDirection>,
-
     pub expected_output_json: String,
 
     pub input_json: String,
@@ -9724,33 +9758,21 @@ pub struct Step {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_from_step_key: Option<String>,
 
+    /// Literal platform Resource id of the step target. DD-124(4): a RECEIVER case never names a
+    /// platform Resource by literal; it uses referenceResourceKey.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_resource_id: Option<String>,
 
+    /// V2 only. Key of a PRECONDITION of this case whose fixture value is the step's reference
+    /// Resource id; Core freezes that value into the plan step's referenceResourceId. DD-124(4):
+    /// in a receiver-direction case it is the id the isolated Core's real resource.create (DD-98
+    /// existing native reference) returned. Mutually exclusive with referenceResourceId,
+    /// referenceAssetId and referenceFromStepKey; it counts as this step sending that
+    /// precondition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_resource_key: Option<String>,
+
     pub step_key: String,
-}
-
-/// V2 only; absent means FORWARD. A RECEIVER step (DD-124(4)) runs in the isolated
-/// deployment and is observed by the production plan only through
-/// receiver_start/receiver_observe. It names the receiver Resource in referenceResourceId
-/// and expects {}. Its inputJson describes the receiver admission the isolated Core
-/// performs; there it may bind the step's own ACTION_EXECUTION_ID, OPERATION_ID or
-/// GENERATED_REF captures where that admission carries identifiers the isolated Core or the
-/// implementation generated. Its evidence is the isolated run's native batch or execution,
-/// both read_receipts and the native terminal status, all generated in this run.
-///
-/// DD-124(3)(4): FORWARD steps are driven by the production Core probe execute. RECEIVER
-/// marks a step that depends on the service read edge (an ingest consuming a source through
-/// READ_EDGE, a NATIVE_MANAGED receiver key); it runs in the isolated deployment of 07 §8A
-/// and the production plan only observes it through receiver_start/receiver_observe. A case
-/// with a RECEIVER step is a receiver-direction case.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CapabilityVectorStepDirection {
-    #[serde(rename = "FORWARD")]
-    Forward,
-
-    #[serde(rename = "RECEIVER")]
-    Receiver,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9851,9 +9873,9 @@ pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
 /// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
 /// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
 /// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
-/// RECEIVER step INPUT may also bind the step's own captures: Core compares that input with
-/// the admission the isolated Core actually produced. The plan digest fixes the declaration,
-/// never the value.
+/// RECEIVER case INPUT may also bind the step's own captures: Core compares that input with
+/// the admission the isolated Core actually produced whenever the step's evidence has reads.
+/// The plan digest fixes the declaration, never the value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapabilityVectorBinding {
     pub key: String,
@@ -9868,10 +9890,10 @@ pub struct CapabilityVectorBinding {
 /// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
 /// of the same case. key is unique in the case and must be consumed at least once. pointer
 /// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
-/// step's contract key; in a RECEIVER step it equals an INPUT entry and reads the receiver
-/// admission the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in
-/// RECEIVER steps; a RECEIVER step takes CONTENT_REFERENCE_* from the receiver's own
-/// read_receipt of that admission.
+/// step's contract key; in a RECEIVER case it equals an INPUT entry and reads the admission
+/// the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER
+/// cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
+/// the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapabilityVectorCapture {
     pub key: String,
@@ -9961,13 +9983,14 @@ pub struct ComponentNativeReadAuthority {
 pub struct ComponentConformanceFixture {
     pub artifact_digest: String,
 
-    /// 接收方向步骤（V1 NATIVE_INTERNAL/NATIVE 契约步骤，V2 direction=RECEIVER 步骤）各恰一项的冻结接收方请求；Core
+    /// 接收方向步骤（V1 NATIVE_INTERNAL/NATIVE 契约步骤，V2 direction=RECEIVER case 的每个步骤）各恰一项的冻结接收方请求；Core
     /// 以计划步骤幂等键替换 idempotencyKey。DD-124(4)：NATIVE_MANAGED 键的请求携带与已代入向量输入一致的
     /// importConfigRef；APPLICATION 接收方动作省略它。请求只是隔离部署内的启动/观察引用，不含任何执行、operation 或批次标识。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receivers: Option<Vec<ComponentNativeReceiverFixture>>,
 
-    /// DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识；Core
+    /// DD-124(1)：V2 契约 case 声明的前置原生对象取值。只能是候选实现原生入口创建时实际返回的标识（接收方向 case 的平台 Resource 前置值为隔离 Core
+    /// 经真实 resource.create 登记既有原生引用后返回的 Resource ID，DD-124(4)）；Core
     /// 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preconditions: Option<Vec<ComponentConformancePreconditionValue>>,
@@ -10094,7 +10117,8 @@ pub struct ComponentConformanceReceiverEnvironment {
 /// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
 /// SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
 /// 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
-/// nativeBatch。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
+/// nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个
+/// case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentNativeReceiverObservation {
@@ -11371,7 +11395,7 @@ pub struct ComponentConformancePlanStep {
 
     pub idempotency_key: String,
 
-    /// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 的 RECEIVER 步骤），由 Core
+    /// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core
     /// 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_receiver_input_json: Option<String>,
