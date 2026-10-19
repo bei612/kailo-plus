@@ -23,8 +23,8 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:c34c98d33e31e50d23da9d73944898a11703578c3f12fab74e4ab0cb3d13d2f5
-    artifact_digest: sha256:bfcd1dd0c6072cb77ac0faf8fcfa1a5f1d458c393ae585e5a28ae1b630a2afd4
+    source_digest: sha256:379ba64060fdd609cb190cf0a6fc30a9400fa5aa270fd11c9d08c245b206aa09
+    artifact_digest: sha256:87d6e3de9a665b7a181bc459cec5002285d09fcbb6bc37a12e26fad1c09afb5d
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
