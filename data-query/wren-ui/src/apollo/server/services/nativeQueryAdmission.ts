@@ -112,7 +112,12 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
     !value.actionTokenJwksFile.startsWith('/') ||
     !value.serviceClientSecretFile.startsWith('/') ||
     !value.gatewayJwksFile.startsWith('/') ||
-    value.gatewayAudience === value.actionTokenAudience ||
+    // ADR-12 §7 and Core adapter_backend_auth: Gateway signs the transport for
+    // this binding's exact adapter (ServicePrincipal) audience. The transport
+    // and the ActionToken stay apart by issuer, signing key and header.
+    value.gatewayAudience !== value.actionTokenAudience ||
+    value.gatewayIssuer === value.actionTokenIssuer ||
+    value.gatewayJwksFile === value.actionTokenJwksFile ||
     value.nativeScopeRef !== String(value.projectId) ||
     !/^[a-f0-9]{64}$/.test(value.projectConnectionDigest) ||
     new URL(`http://${value.mcpAuthority}`).host !== value.mcpAuthority
@@ -140,12 +145,9 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
       throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
     }
   }
-  for (const key of [
-    'serviceTokenUrl',
-    'corePepUrl',
-    'actionTokenIssuer',
-    'gatewayIssuer',
-  ]) {
+  // GATEWAY_SERVICE_ISSUER is an opaque JWT StringOrURI (Core accepts e.g.
+  // urn:kailo:agentgateway:service); it is compared exactly, not fetched.
+  for (const key of ['serviceTokenUrl', 'corePepUrl', 'actionTokenIssuer']) {
     const url = new URL(value[key]);
     if (
       !['http:', 'https:'].includes(url.protocol) ||
@@ -181,7 +183,8 @@ export async function authenticateQueryGateway(
     issuer: config.gatewayIssuer,
     audience: config.gatewayAudience,
     algorithms: ['ES256'],
-    requiredClaims: ['iss', 'aud', 'sub', 'iat', 'exp', 'jti'],
+    // Native jwtSign emits iat/exp but no jti (agentgateway jwt_sign.rs).
+    requiredClaims: ['iss', 'aud', 'sub', 'iat', 'exp'],
   });
   const now = Math.floor(Date.now() / 1000);
   if (

@@ -273,7 +273,15 @@ public query listener or host port is added.
 
 Public JWKS files must contain public keys only. The Gateway service identity,
 short-lived ActionToken and service-client credential have separate consumers;
-the platform browser's token is not forwarded. Result disclosure still asks
+the platform browser's token is not forwarded. As in ADR-12 §7 and Core's
+`adapter_backend_auth`, the Gateway transport (`X-Kailo-Gateway-Authorization`)
+is signed for this binding's exact adapter audience, the release
+`actionTokenAudience`. `query.json` therefore requires `gatewayAudience` to
+equal `actionTokenAudience`. The two credentials are separated by a different
+issuer and JWKS file and by the header, not by a second audience.
+`gatewayIssuer` is the opaque `GATEWAY_SERVICE_ISSUER` (for example
+`urn:kailo:agentgateway:service`). The native jwtSign token carries
+`iss/aud/sub/azp/iat/exp` and no `jti`. Result disclosure still asks
 the original Core PEP after query completion. A changed native project account
 is refused rather than silently followed under the old binding.
 

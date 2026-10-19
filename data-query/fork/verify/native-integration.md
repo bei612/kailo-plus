@@ -11846,8 +11846,37 @@ these production `config`/`reader` bytes, a real Agent and the real consumers.
 It has not run yet; it needs the CI SDK with the OpenBao binary and Python.
 Nothing was built, deployed or bound.
 
-Known gap: Core's `adapter_backend_auth` signs Gateway→adapter tokens with
-`aud` = release `actionTokenAudience`. `loadQueryDelivery` requires
-`gatewayAudience` != `actionTokenAudience`. handshake/validate_binding do not
-use that audience, but Gateway MCP calls to Wren stay refused until the two are
-aligned.
+Gateway transport alignment (same day). Core and wren-ui disagreed on the
+Gateway transport audience. Core (`application_binding_gateway.rs` →
+`service_auth.rs::adapter_backend_auth`) signs the Gateway→adapter transport
+with `aud` = the binding ServicePrincipal audience, which is the release
+`actionTokenAudience`. ADR-12 §7 calls this "the exact adapter audience". The
+Cells and WeKnora adapters require the same equality (`mcp.mjs`:
+`gatewayAudience === actionTokenAudience`). Design 07 §2.5/§5.2, 12 §4 and
+DD-94 fix the separate transport identity and header but no second audience.
+wren-ui was the outlier, so it was changed, not Core.
+
+- `loadQueryDelivery` now requires `gatewayAudience === actionTokenAudience`.
+  It separates the two credentials by `gatewayIssuer !== actionTokenIssuer`
+  and `gatewayJwksFile !== actionTokenJwksFile` (plus the separate header).
+- `gatewayIssuer` is no longer forced to be an http(s) URL. The live
+  `GATEWAY_SERVICE_ISSUER` is `urn:kailo:agentgateway:service`, an opaque JWT
+  StringOrURI that Core accepts and that is compared exactly.
+- `authenticateQueryGateway` no longer requires `jti`. The pinned AgentGateway
+  `jwt_sign.rs` sets only `iat`/`exp` besides the configured
+  `iss/aud/sub/azp`. Nothing consumed the transport `jti`.
+- `adapter-delivery.py` and the template now emit the equal audience and
+  refuse a shared issuer or JWKS file.
+
+New `src/nativeGatewayTransport.test.ts` (ungated): a native-shaped token
+(URN issuer, equal audience, no `jti`, backdated `iat`) is accepted. A second
+audience, a shared issuer and a shared JWKS file are refused at load. Transport
+and ActionToken are not substitutable for each other. Wrong `sub`/`azp` and an
+over-long lifetime are refused. The `nativeQuery.test.ts` and
+`nativeQueryDelivery.test.ts` fixtures now use the native shape. None of this
+has run on the dev box; it needs CI jest, tsc and lint.
+
+The same URN issue remains in Cells and WeKnora:
+`client-kit/adapter/protocol.mjs::fixedUrl(gatewayIssuer)` refuses a non-http(s)
+issuer. With the live `urn:` issuer, their MCP configuration is refused. This
+is not changed here.

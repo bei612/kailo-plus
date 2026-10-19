@@ -324,9 +324,13 @@ def data_query_delivery(config, plan, socket, setjson):
     require(re.fullmatch(r"[1-9][0-9]{0,14}", scope) is not None, "data-query: nativeScopeRef must be the native project id")
     require(re.fullmatch(r"[0-9a-f]{64}", str(config.get("projectConnectionDigest"))) is not None,
             "data-query: projectConnectionDigest must be a lowercase SHA-256 hex digest")
-    # Fixed consumer invariant of loadQueryDelivery; refused here rather than
-    # producing a file the native UI rejects at request time.
-    require(config["gatewayAudience"] != config["actionTokenAudience"], "data-query: gatewayAudience must differ from actionTokenAudience")
+    # Fixed consumer invariants of loadQueryDelivery, refused here rather than
+    # producing a file the native UI rejects at request time. Gateway signs the
+    # transport for the exact adapter audience (ADR-12 §7, Core
+    # adapter_backend_auth); issuer and key keep it apart from the ActionToken.
+    require(config["gatewayAudience"] == config["actionTokenAudience"], "data-query: gatewayAudience must equal actionTokenAudience")
+    require(config["gatewayIssuer"] != config["actionTokenIssuer"] and config["gatewayJwksFile"] != config["actionTokenJwksFile"],
+            "data-query: Gateway transport and ActionToken need distinct issuers and JWKS files")
     query = {key: config[key] for key in QUERY_FIELDS}
     query.update({key: config[source] for key, source in QUERY_RENAMES.items()})
     query.update({"bindingId": plan["bindingId"], "tenantId": plan["tenantId"], "workspaceId": plan["workspaceId"],

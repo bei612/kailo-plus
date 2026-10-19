@@ -254,7 +254,7 @@ nativeAgent(
           'BFF_SERVICE_NAME=127.0.0.1',
           `SERVICE_CONTAINER_PORT=${port}`,
           `OIDC_ISSUER=${origin}`,
-          `GATEWAY_SERVICE_ISSUER=${origin}/gateway`,
+          'GATEWAY_SERVICE_ISSUER=urn:kailo:agentgateway:service',
           'GATEWAY_SERVICE_CALLER_ID=fixture-gateway',
           `GATEWAY_SERVICE_JWKS_FILE=${gatewayJwks}`,
           'GATEWAY_SERVICE_MAX_TOKEN_SECONDS=60',
@@ -288,8 +288,6 @@ nativeAgent(
           `projectConnectionDigest=${'a'.repeat(64)}`,
           '--set',
           `mcpAuthority=${new URL(origin).host}`,
-          '--set',
-          'gatewayAudience=binding-machine',
           '--out',
           join(output, 'adapter.json'),
         ]);
@@ -452,7 +450,6 @@ nativeAgent(
           .setIssuer(actual.gatewayIssuer)
           .setAudience(actual.gatewayAudience)
           .setSubject(actual.gatewayCallerId)
-          .setJti(randomUUID())
           .setIssuedAt()
           .setExpirationTime('30s')
           .sign(keys.privateKey);

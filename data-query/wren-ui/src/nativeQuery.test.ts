@@ -1381,8 +1381,10 @@ integration('original Wren query handler, SDK and native history', () => {
       requestTimeoutMs: 5000,
       responseMaxBytes: 65536,
       requestMaxBytes: 65536,
-      gatewayIssuer: `${source}/gateway`,
-      gatewayAudience: 'wren-mcp-transport',
+      // Native Gateway jwtSign: opaque URN issuer, the binding's exact
+      // adapter audience (Core adapter_backend_auth), no jti.
+      gatewayIssuer: 'urn:kailo:agentgateway:service',
+      gatewayAudience: 'wren-binding',
       gatewayCallerId: 'controlled-gateway',
       gatewayJwksFile: join(directory, 'gateway-jwks.json'),
       gatewayMaxTokenSeconds: 60,
@@ -1608,7 +1610,6 @@ integration('original Wren query handler, SDK and native history', () => {
       .setIssuer(delivery.gatewayIssuer)
       .setAudience(delivery.gatewayAudience)
       .setSubject(delivery.gatewayCallerId)
-      .setJti(randomUUID())
       .setIssuedAt()
       .setExpirationTime('30s')
       .sign(gatewayKeys.privateKey);
