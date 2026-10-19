@@ -10,6 +10,9 @@ UUIDv5 values, so locators are known in advance):
           template (deploy/components/<component>-adapter.template.json) and
           the plan: binding identity plus management.validation with the exact
           SecretRefs Core will freeze and the Agent output file per secretKey.
+          An isolated conformance delivery (07 §8A) passes the suite PEP
+          provider's endpoints and the isolated audience explicitly
+          (--core-pep-url, --oidc-token-url, --action-token-audience).
   reader  In the Tenant namespace (<parent>/<tenantId>) create the adapter's
           read-only policy for exactly those version-pinned KV paths and its
           AppRole, then write role-id, a response-wrapped one-use secret-id and
@@ -304,6 +307,29 @@ def command_config(args):
               "signing": signing_facts(args.action_token_signing_file),
               "sets": key_values(args.set, "--set"), "setjson": setjson}
     config = fill(template, values)
+    # 07 §8A isolated conformance delivery: the adapter and the native action
+    # delivery answer to the suite PEP provider (conformance-provider.mjs
+    # /oidc/token and /service/v1/adapter/pep_check) under the isolated
+    # identity's audience, never the platform issuer/BFF/production audience.
+    # Only explicitly supplied values replace the template's; nothing defaults.
+    overrides = (("oidcTokenUrl", "--oidc-token-url", args.oidc_token_url, "/oidc/token"),
+                 ("corePepUrl", "--core-pep-url", args.core_pep_url, "/service/v1/adapter/pep_check"),
+                 ("actionTokenAudience", "--action-token-audience", args.action_token_audience, None))
+    for key, flag, value, path in overrides:
+        if value is None:
+            continue
+        require(key in config, f"{flag}: the template has no {key}")
+        if path is None:
+            # The template carries the production audience; an isolated identity
+            # must never reuse it (component_conformance_identity.rs validate).
+            require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", value) is not None and value != config[key],
+                    f"{flag}: a valid audience different from the template's production audience required")
+        else:
+            parts = urllib.parse.urlsplit(value)
+            require(parts.scheme in ("http", "https") and parts.hostname and parts.username is None
+                    and parts.password is None and not parts.query and not parts.fragment and parts.path == path,
+                    f"{flag}: absolute http(s) URL ending exactly in {path} required")
+        config[key] = value
     config["bindingId"] = plan["bindingId"]
     config["tenantId"] = plan["tenantId"]
     if "workspaceId" in plan:
@@ -528,6 +554,12 @@ def main():
     c.add_argument("--public-file", action="append", help="NAME=SOURCE: install a public-only JWKS into the delivery directory")
     c.add_argument("--set", action="append", help="NAME=VALUE non-secret native fact for {{set:*}} / {{setint:*}}")
     c.add_argument("--set-json", action="append", help="NAME=FILE JSON native fact for {{setjson:*}}")
+    c.add_argument("--oidc-token-url", help="07 §8A isolated conformance only: explicit token endpoint replacing the "
+                   "template's OIDC_ISSUER/protocol/openid-connect/token, e.g. http://conformance-provider:<port>/oidc/token")
+    c.add_argument("--core-pep-url", help="07 §8A isolated conformance only: explicit PEP replacing the template's BFF "
+                   "service URL, e.g. http://conformance-provider:<port>/service/v1/adapter/pep_check")
+    c.add_argument("--action-token-audience", help="07 §8A isolated conformance only: the isolated identity audience "
+                   "(must differ from the release's production executionConnector.actionTokenAudience)")
     r = sub.add_parser("reader")
     r.add_argument("--config", required=True)
     r.add_argument("--role", required=True)
