@@ -1244,4 +1244,34 @@ void main() {
       );
     }
   });
+  test('DD-125 C5 Huddle contracts round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/collaboration-dd125-c5.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'startCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'startCommandConversation': (v) => ActionCommand.fromJson(v).toJson(),
+      'agentAddCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'endCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'startSubmission': (v) => ActionSubmission.fromJson(v).toJson(),
+      'huddleView': (v) => HuddleView.fromJson(v).toJson(),
+      'huddleViewEnded': (v) => HuddleView.fromJson(v).toJson(),
+      'huddlePage': (v) => HuddlePage.fromJson(v).toJson(),
+      'lifecyclePage': (v) => HuddleLifecyclePage.fromJson(v).toJson(),
+      'voiceView': (v) => HuddleVoiceView.fromJson(v).toJson(),
+      'announcementView': (v) => HuddleAnnouncementView.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
 }

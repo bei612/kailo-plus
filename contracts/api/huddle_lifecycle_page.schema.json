@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/huddle_lifecycle_page.schema.json",
+  "title": "HuddleLifecyclePage",
+  "description": "GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["events", "live"],
+  "properties": {
+    "events": { "type": "array", "items": { "$ref": "huddle_lifecycle_event.schema.json" } },
+    "live": { "type": "boolean", "description": "Relay 48104 存活查询是否返回该会话" }
+  }
+}

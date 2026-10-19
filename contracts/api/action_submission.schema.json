@@ -50,6 +50,10 @@
     },
     "webhookSecret": {
       "$ref": "automation_webhook_secret.schema.json"
+    },
+    "huddleId": {
+      "type": "string", "format": "uuid",
+      "description": "仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值"
     }
   }
 }

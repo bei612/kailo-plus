@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/huddle_agent_input.schema.json",
+  "title": "HuddleAgentInput",
+  "description": "仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有 Agent。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agentInstallationResourceId"],
+  "properties": {
+    "agentInstallationResourceId": { "type": "string", "format": "uuid" }
+  }
+}

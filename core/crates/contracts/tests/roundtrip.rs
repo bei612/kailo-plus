@@ -1113,3 +1113,37 @@ fn agent_observability_dd125_c4_lifecycle_transcript_and_active_turns_preserve_f
     anyone["respondTo"] = serde_json::json!("ANYONE");
     assert!(serde_json::from_value::<contracts::AgentInstallationUsePage>(anyone).is_err());
 }
+
+#[test]
+fn collaboration_dd125_c5_huddle_preserves_fields_and_absence() {
+    // DD-125(3): huddle.start carries exactly one parent, an optional creator key (Web omits it
+    // and Core uses the SERVER key) and at most 20 Installations; the start submission carries
+    // the pre-allocated huddleId; views never carry audio or participants. Absent stays absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("collaboration-dd125-c5.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    for key in [
+        "startCommand",
+        "startCommandConversation",
+        "agentAddCommand",
+        "endCommand",
+    ] {
+        roundtrip::<contracts::ActionCommand>(&value[key]);
+    }
+    roundtrip::<contracts::ActionSubmission>(&value["startSubmission"]);
+    roundtrip::<contracts::HuddleView>(&value["huddleView"]);
+    roundtrip::<contracts::HuddleView>(&value["huddleViewEnded"]);
+    roundtrip::<contracts::HuddlePage>(&value["huddlePage"]);
+    roundtrip::<contracts::HuddleLifecyclePage>(&value["lifecyclePage"]);
+    roundtrip::<contracts::HuddleVoiceView>(&value["voiceView"]);
+    roundtrip::<contracts::HuddleAnnouncementView>(&value["announcementView"]);
+    let mut unknown = value["huddleView"].clone();
+    unknown["state"] = serde_json::json!("RECONCILING");
+    assert!(serde_json::from_value::<contracts::HuddleView>(unknown).is_err());
+}

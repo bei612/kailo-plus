@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/huddle_view.schema.json",
+  "title": "HuddleView",
+  "description": "本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由 Relay 的 48101–48104 呈现。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["huddleId", "parentChannelId", "channelId", "channelName", "initiatorPrincipalId", "creatorPubkey", "agentInstallationResourceIds", "state", "version", "operationId", "createdAt"],
+  "properties": {
+    "huddleId": { "type": "string", "format": "uuid" },
+    "parentWorkspaceId": { "type": "string", "format": "uuid" },
+    "parentConversationId": { "type": "string", "format": "uuid" },
+    "parentChannelId": { "type": "string", "format": "uuid" },
+    "channelId": { "type": "string", "format": "uuid", "description": "Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）" },
+    "channelName": { "type": "string" },
+    "initiatorPrincipalId": { "type": "string", "format": "uuid" },
+    "creatorPubkey": { "type": "string", "description": "临时频道 created_by：本人发起会话的 HUMAN 公钥" },
+    "agentInstallationResourceIds": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+    "state": { "$ref": "../enums/huddle_state.schema.json" },
+    "version": { "type": "integer" },
+    "operationId": { "type": "string", "format": "uuid", "description": "发起该 Huddle 的 huddle.start operation" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" }
+  }
+}

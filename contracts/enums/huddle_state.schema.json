@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/huddle_state.schema.json",
+  "title": "HuddleState",
+  "description": "HuddleBuzzBinding 状态（03 §2、DD-125(3)）：PROVISIONING 为 CONTROL 9007/9000 投影尚未回读一致（结果不明保留并按 Channel UUID 对账）；ACTIVE 为投影回读一致；ENDED 为观察到 48103 或临时频道已归档，终态、不复用；ERROR 为 Relay 确定拒绝投影，不再签发。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "ENDED", "ERROR"]
+}

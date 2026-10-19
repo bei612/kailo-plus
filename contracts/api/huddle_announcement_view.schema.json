@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/huddle_announcement_view.schema.json",
+  "title": "HuddleAnnouncementView",
+  "description": "POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为 ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为 ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["startedEventId", "startedDelivered"],
+  "properties": {
+    "startedEventId": { "type": "string", "description": "48100 事件 ID" },
+    "startedDelivered": { "type": "boolean", "description": "Relay 已接受或回读到 48100" },
+    "guidelinesEventId": { "type": "string", "description": "48106 事件 ID；尽力发布" }
+  }
+}

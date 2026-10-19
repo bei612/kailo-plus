@@ -1,0 +1,121 @@
+{
+  "startCommand": {
+    "actionKey": "huddle.start",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c51",
+    "workspaceId": "00000000-0000-4000-8000-000000000c50",
+    "huddleStart": {
+      "parentWorkspaceId": "00000000-0000-4000-8000-000000000c50",
+      "agentInstallationResourceIds": ["00000000-0000-4000-8000-000000000c52"],
+      "channelName": "huddle-release-room-1760860800"
+    }
+  },
+  "startCommandConversation": {
+    "actionKey": "huddle.start",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c53",
+    "huddleStart": {
+      "parentConversationId": "00000000-0000-4000-8000-000000000c54",
+      "creatorPubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "channelName": "huddle-dm-1760860800"
+    }
+  },
+  "agentAddCommand": {
+    "actionKey": "huddle.agent.add",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c55",
+    "workspaceId": "00000000-0000-4000-8000-000000000c50",
+    "huddleId": "00000000-0000-4000-8000-000000000c56",
+    "huddleAgent": {"agentInstallationResourceId": "00000000-0000-4000-8000-000000000c52"}
+  },
+  "endCommand": {
+    "actionKey": "huddle.end",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c57",
+    "workspaceId": "00000000-0000-4000-8000-000000000c50",
+    "huddleId": "00000000-0000-4000-8000-000000000c56"
+  },
+  "startSubmission": {
+    "operationId": "00000000-0000-4000-8000-000000000c58",
+    "actionExecutionId": "00000000-0000-4000-8000-000000000c59",
+    "actionKey": "huddle.start",
+    "gateState": "ALLOWED",
+    "dispatchState": "DISPATCHED",
+    "huddleId": "00000000-0000-4000-8000-000000000c56"
+  },
+  "huddleView": {
+    "huddleId": "00000000-0000-4000-8000-000000000c56",
+    "parentWorkspaceId": "00000000-0000-4000-8000-000000000c50",
+    "parentChannelId": "00000000-0000-4000-8000-000000000c5a",
+    "channelId": "00000000-0000-4000-8000-000000000c5b",
+    "channelName": "huddle-release-room-1760860800",
+    "initiatorPrincipalId": "00000000-0000-4000-8000-000000000c5c",
+    "creatorPubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "agentInstallationResourceIds": ["00000000-0000-4000-8000-000000000c52"],
+    "state": "ACTIVE",
+    "version": 2,
+    "operationId": "00000000-0000-4000-8000-000000000c58",
+    "createdAt": "2026-10-19T08:00:00Z"
+  },
+  "huddleViewEnded": {
+    "huddleId": "00000000-0000-4000-8000-000000000c5d",
+    "parentConversationId": "00000000-0000-4000-8000-000000000c54",
+    "parentChannelId": "00000000-0000-4000-8000-000000000c5e",
+    "channelId": "00000000-0000-4000-8000-000000000c5f",
+    "channelName": "huddle-dm-1760860800",
+    "initiatorPrincipalId": "00000000-0000-4000-8000-000000000c5c",
+    "creatorPubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "agentInstallationResourceIds": [],
+    "state": "ENDED",
+    "version": 3,
+    "operationId": "00000000-0000-4000-8000-000000000c60",
+    "createdAt": "2026-10-19T08:00:00Z",
+    "endedAt": "2026-10-19T08:30:00Z"
+  },
+  "huddlePage": {
+    "items": [
+      {
+        "huddleId": "00000000-0000-4000-8000-000000000c56",
+        "parentWorkspaceId": "00000000-0000-4000-8000-000000000c50",
+        "parentChannelId": "00000000-0000-4000-8000-000000000c5a",
+        "channelId": "00000000-0000-4000-8000-000000000c5b",
+        "channelName": "huddle-release-room-1760860800",
+        "initiatorPrincipalId": "00000000-0000-4000-8000-000000000c5c",
+        "creatorPubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "agentInstallationResourceIds": [],
+        "state": "PROVISIONING",
+        "version": 1,
+        "operationId": "00000000-0000-4000-8000-000000000c58",
+        "createdAt": "2026-10-19T08:00:00Z"
+      }
+    ]
+  },
+  "lifecyclePage": {
+    "events": [
+      {
+        "eventId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "kind": 48100,
+        "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "createdAt": 1760860800,
+        "ephemeralChannelId": "00000000-0000-4000-8000-000000000c5b"
+      },
+      {
+        "eventId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "kind": 48101,
+        "pubkey": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "createdAt": 1760860801,
+        "ephemeralChannelId": "00000000-0000-4000-8000-000000000c5b",
+        "participantPubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "rosterRevision": 1,
+        "admissionId": "00000000-0000-4000-8000-000000000c61",
+        "generation": "1"
+      }
+    ],
+    "live": true
+  },
+  "voiceView": {
+    "transcription": "UNAVAILABLE",
+    "speech": "UNAVAILABLE"
+  },
+  "announcementView": {
+    "startedEventId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "startedDelivered": true,
+    "guidelinesEventId": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}

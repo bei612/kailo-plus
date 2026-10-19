@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/huddle_voice_view.schema.json",
+  "title": "HuddleVoiceView",
+  "description": "GET /api/v1/huddles/voice：Web Huddle 的转写与朗读是否可用（DD-125(3)、V-SCN-160）。不可用时通话、加入、发言、收听与离开不受影响。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["transcription", "speech"],
+  "properties": {
+    "transcription": { "$ref": "../enums/huddle_voice_availability.schema.json" },
+    "speech": { "$ref": "../enums/huddle_voice_availability.schema.json" }
+  }
+}

@@ -1065,3 +1065,42 @@ test("DD-125 C4 Agent lifecycle, transcript and active-turn contracts preserve f
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-125 C5 Huddle contracts preserve fields and absence", () => {
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  type Submission = import("../src/generated/contracts.js").ActionSubmission;
+  type View = import("../src/generated/contracts.js").HuddleView;
+  type Page = import("../src/generated/contracts.js").HuddlePage;
+  type Lifecycle = import("../src/generated/contracts.js").HuddleLifecyclePage;
+  type Voice = import("../src/generated/contracts.js").HuddleVoiceView;
+  type Announcement = import("../src/generated/contracts.js").HuddleAnnouncementView;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/collaboration-dd125-c5.sample.json", import.meta.url), "utf8"));
+  const command = (row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey, workspaceId: row.workspaceId,
+    huddleId: row.huddleId,
+    huddleStart: row.huddleStart && {parentWorkspaceId: row.huddleStart.parentWorkspaceId, parentConversationId: row.huddleStart.parentConversationId,
+      creatorPubkey: row.huddleStart.creatorPubkey, agentInstallationResourceIds: row.huddleStart.agentInstallationResourceIds,
+      channelName: row.huddleStart.channelName},
+    huddleAgent: row.huddleAgent && {agentInstallationResourceId: row.huddleAgent.agentInstallationResourceId}});
+  const submission = (row: Submission) => ({operationId: row.operationId, actionExecutionId: row.actionExecutionId, actionKey: row.actionKey,
+    gateState: row.gateState, dispatchState: row.dispatchState, huddleId: row.huddleId});
+  const view = (row: View) => ({huddleId: row.huddleId, parentWorkspaceId: row.parentWorkspaceId, parentConversationId: row.parentConversationId,
+    parentChannelId: row.parentChannelId, channelId: row.channelId, channelName: row.channelName, initiatorPrincipalId: row.initiatorPrincipalId,
+    creatorPubkey: row.creatorPubkey, agentInstallationResourceIds: row.agentInstallationResourceIds, state: row.state, version: row.version,
+    operationId: row.operationId, createdAt: row.createdAt, endedAt: row.endedAt});
+  const lifecycle = (row: Lifecycle) => ({live: row.live, events: row.events.map(e => ({eventId: e.eventId, kind: e.kind, pubkey: e.pubkey,
+    createdAt: e.createdAt, ephemeralChannelId: e.ephemeralChannelId, participantPubkey: e.participantPubkey, rosterRevision: e.rosterRevision,
+    admissionId: e.admissionId, generation: e.generation}))});
+  const voice = (row: Voice) => ({transcription: row.transcription, speech: row.speech});
+  const announcement = (row: Announcement) => ({startedEventId: row.startedEventId, startedDelivered: row.startedDelivered,
+    guidelinesEventId: row.guidelinesEventId});
+  const page = (row: Page) => ({items: row.items.map(view)});
+  const actual = {
+    startCommand: command(value.startCommand), startCommandConversation: command(value.startCommandConversation),
+    agentAddCommand: command(value.agentAddCommand), endCommand: command(value.endCommand),
+    startSubmission: submission(value.startSubmission),
+    huddleView: view(value.huddleView), huddleViewEnded: view(value.huddleViewEnded), huddlePage: page(value.huddlePage),
+    lifecyclePage: lifecycle(value.lifecyclePage), voiceView: voice(value.voiceView),
+    announcementView: announcement(value.announcementView),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

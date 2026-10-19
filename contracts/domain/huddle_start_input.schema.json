@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/huddle_start_input.schema.json",
+  "title": "HuddleStartInput",
+  "description": "仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与 parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受 Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channelName"],
+  "properties": {
+    "parentWorkspaceId": { "type": "string", "format": "uuid", "description": "父 Workspace；须等于 ActionCommand.workspaceId" },
+    "parentConversationId": { "type": "string", "format": "uuid", "description": "父私聊（ConversationBuzzBinding id）" },
+    "creatorPubkey": { "type": "string", "description": "64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥" },
+    "agentInstallationResourceIds": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "description": "原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation",
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "channelName": { "type": "string", "minLength": 1, "maxLength": 100, "description": "原 buildHuddleChannelName 生成的临时频道名" }
+  }
+}

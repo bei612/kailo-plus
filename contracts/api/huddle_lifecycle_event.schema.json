@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/huddle_lifecycle_event.schema.json",
+  "title": "HuddleLifecycleEvent",
+  "description": "父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "kind", "pubkey", "createdAt", "ephemeralChannelId"],
+  "properties": {
+    "eventId": { "type": "string" },
+    "kind": { "type": "integer", "minimum": 48100, "maximum": 48103 },
+    "pubkey": { "type": "string", "description": "签名者公钥" },
+    "createdAt": { "type": "integer", "description": "事件 created_at（Unix 秒）" },
+    "ephemeralChannelId": { "type": "string", "format": "uuid" },
+    "participantPubkey": { "type": "string", "description": "48101/48102 的 p 标签" },
+    "rosterRevision": { "type": "integer" },
+    "admissionId": { "type": "string" },
+    "generation": { "type": "string" }
+  }
+}

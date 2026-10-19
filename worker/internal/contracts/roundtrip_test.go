@@ -1719,3 +1719,45 @@ func TestAgentObservabilityDD125C4Roundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCollaborationDD125C5HuddleRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "collaboration-dd125-c5.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"startCommand":             new(generated.ActionCommand),
+		"startCommandConversation": new(generated.ActionCommand),
+		"agentAddCommand":          new(generated.ActionCommand),
+		"endCommand":               new(generated.ActionCommand),
+		"startSubmission":          new(generated.ActionSubmission),
+		"huddleView":               new(generated.HuddleView),
+		"huddleViewEnded":          new(generated.HuddleView),
+		"huddlePage":               new(generated.HuddlePage),
+		"lifecyclePage":            new(generated.HuddleLifecyclePage),
+		"voiceView":                new(generated.HuddleVoiceView),
+		"announcementView":         new(generated.HuddleAnnouncementView),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}

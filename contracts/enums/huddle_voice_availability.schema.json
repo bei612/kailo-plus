@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/huddle_voice_availability.schema.json",
+  "title": "HuddleVoiceAvailability",
+  "description": "Web Huddle 转写或朗读的可用性（DD-125(3)、V-SCN-160）：UNAVAILABLE 为 Huddle 语音推理服务未部署、超出部署登记的并发上界或不可用，此时按原版“仅语音模式”显示不可用而通话照常。",
+  "type": "string",
+  "enum": ["AVAILABLE", "UNAVAILABLE"]
+}
