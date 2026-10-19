@@ -27,6 +27,36 @@ import (
 	jobstore "github.com/pydio/cells/v5/scheduler/jobs"
 )
 
+// nativeUploadRootSelector names the binding root Resource a new HUMAN upload
+// is admitted against. Its nativeType is the root node's own Cells node type
+// (the Resource registered over nativeRootRef, a COLLECTION), never
+// write.nativeType: that is the type of the file node a governed promote
+// resolves (LEAF, native-human-upload.go), a different object. Core's
+// resolveResource matches the registered native type exactly.
+func nativeUploadRootSelector(delivery nativeWriteDelivery, root *tree.Node) (map[string]interface{}, bool) {
+	if root == nil || root.GetUuid() != delivery.NativeRootRef || root.GetType() != tree.NodeType_COLLECTION || root.GetPath() == "" {
+		return nil, false
+	}
+	selector := map[string]interface{}{"actionKey": "file_storage.write@v2", "actionVersion": delivery.Write.ActionVersion,
+		"nativeType": root.GetType().String(), "nativeRef": delivery.NativeRootRef}
+	if delivery.WorkspaceID != "" {
+		selector["workspaceId"] = delivery.WorkspaceID
+	}
+	return selector, true
+}
+
+// nativeUploadRootResource accepts only the Resource resolved for the selector:
+// same native type/ref as asked and this delivery's instance/scope.
+func nativeUploadRootResource(delivery nativeWriteDelivery, selector, resolved map[string]interface{}) (map[string]interface{}, bool) {
+	resource, valid := resolved["resource"].(map[string]interface{})
+	nativeType, typeOK := selector["nativeType"].(string)
+	if !valid || !typeOK || nativeType == "" || resource["nativeType"] != nativeType || resource["nativeRef"] != delivery.NativeRootRef ||
+		resource["nativeScopeRef"] != delivery.NativeScopeRef || resource["nativeInstanceRef"] != delivery.NativeInstanceRef {
+		return nil, false
+	}
+	return resource, true
+}
+
 // The original authenticated NodeService prepares only reference metadata.
 // S3 stays closed until this same task's writer claims an actual byte step.
 func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) error {
@@ -96,14 +126,16 @@ func (h *Handler) PrepareUpload(req *restful.Request, resp *restful.Response) er
 		return err
 	}
 	if !exists {
-		selector := map[string]interface{}{"actionKey": "file_storage.write@v2", "actionVersion": delivery.Write.ActionVersion,
-			"nativeType": delivery.Write.NativeType, "nativeRef": delivery.NativeRootRef}
-		if delivery.WorkspaceID != "" {
-			selector["workspaceId"] = delivery.WorkspaceID
+		selector, valid := nativeUploadRootSelector(delivery, root.GetNode())
+		if !valid {
+			return refused
 		}
 		resolved, found, err := delivery.HumanAction(ctx, token, map[string]interface{}{"resolveResource": selector})
-		resource, valid := resolved["resource"].(map[string]interface{})
-		if err != nil || !found || !valid || resource["nativeRef"] != delivery.NativeRootRef || resource["nativeScopeRef"] != delivery.NativeScopeRef || resource["nativeInstanceRef"] != delivery.NativeInstanceRef {
+		if err != nil || !found {
+			return refused
+		}
+		resource, valid := nativeUploadRootResource(delivery, selector, resolved)
+		if !valid {
 			return refused
 		}
 		nodeID := uuid.New()
