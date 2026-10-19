@@ -100,6 +100,10 @@ export function renderSettingsSection(
       return <AgentsSettingsPanel />;
     case "experimental":
       return <ExperimentalFeaturesCard />;
+    case "moderation":
+      // DD-125(2) moderation is wired on the Web host only in this batch; Desktop
+      // does not enable the section, so it is never routed here.
+      return null;
     default: {
       const exhaustiveCheck: never = section;
       return exhaustiveCheck;
