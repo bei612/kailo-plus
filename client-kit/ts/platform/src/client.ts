@@ -57,6 +57,10 @@ import type {
   OwnAuditEntry,
   UsageBillingView,
   TenantQuotaPage,
+  ModerationAccessView,
+  ModerationReportPage,
+  ModerationAuditPage,
+  ModerationRestrictionPage,
   PlatformInfo,
   PlatformToolPage,
   PlatformSessionView,
@@ -422,6 +426,17 @@ export function createBffClient(transport: BffTransport) {
 
     /** DD-123：本 Tenant 的平台额度（OpenMeter 唯一权威）；只对 Tenant admin 与 auditor 开放，其余 403。 */
     tenantQuotas: () => get<TenantQuotaPage>("/api/v1/tenant/quotas"),
+
+    /** DD-125(2)：审核入口提示（fresh Tenant manage）；不读取任何审核事实。 */
+    moderationAccess: () => get<ModerationAccessView>("/api/v1/moderation/access"),
+    /**
+     * DD-125(2)：审核队列、审核日志与限制状态是 Tenant manage 的受审计敏感读取（Core 以
+     * CONTROL 经 NIP-98 读取 Relay，不复制）；其余 403。动作经 submitAction（moderation.*）。
+     */
+    moderationReports: (status?: "open") =>
+      get<ModerationReportPage>(`/api/v1/moderation/reports${status ? `?status=${status}` : ""}`),
+    moderationAudit: () => get<ModerationAuditPage>("/api/v1/moderation/audit"),
+    moderationRestrictions: () => get<ModerationRestrictionPage>("/api/v1/moderation/restricted"),
 
     /** 单条证据解引用：每次 fresh 授权；不可用时只有原因，没有任何 ref 内容。 */
     auditEvidence: (eventId: string, index: number) =>

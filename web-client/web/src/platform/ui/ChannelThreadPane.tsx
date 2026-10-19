@@ -1,7 +1,7 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
-import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
@@ -127,6 +127,10 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   () => typingHeadId ? publishTyping(conversation ? { conversationId: conversation.id } : { workspaceId },
     { parentEventId: typingHeadId, rootEventId: typingHeadRootId }) : Promise.resolve());
   const unavailable = denied || thread.isError || (thread.isSuccess && !data.threadHead);
+  // DD-125(2): the original Report message and moderator items on thread messages.
+  const moderation = useMemo<MessageModerationContext | undefined>(() => disabled || unavailable || interrupted ? undefined
+    : { scope: conversation ? { conversationId: conversation.id } : { workspaceId }, selfPubkey: editAuthorPubkey },
+  [disabled, unavailable, interrupted, conversation, workspaceId, editAuthorPubkey]);
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.();
   }, [unavailable, interrupted, onAuthorScopeUnavailable]);
@@ -248,7 +252,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         searchQuery={row.searchQuery}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
-        onCopyLink={onCopyLink}
+        onCopyLink={onCopyLink} moderation={moderation}
         isFollowingThread={row.message.id === rootId ? isFollowingThread : undefined}
         onFollowThread={row.message.id === rootId && threadFollowAvailable && !isFollowingThread ? followThread : undefined}
         onUnfollowThread={row.message.id === rootId && threadFollowAvailable && isFollowingThread ? unfollowThread : undefined}

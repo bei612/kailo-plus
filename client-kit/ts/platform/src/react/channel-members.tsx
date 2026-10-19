@@ -16,9 +16,12 @@
 // removal have no governed action and are not offered (core/verify/buzz-restoration-checkpoint.md).
 // Member rows restore the original presence corner dot from the DD-120 snapshot, aggregated per
 // person over all bound keys; a member without a presence fact shows no dot (never offline).
+// DD-125(2): the original member-menu moderation items (time out, lift timeout, ban, lift ban;
+// useMembersSidebarModeration) appear for Tenant manage holders on other HUMAN members who are
+// not Tenant admins; Core re-admits each governed moderation.* action.
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Ellipsis, EllipsisVertical, Settings2, Shield, Trash2, UserRoundPlus, Users, X } from "lucide-react";
+import { Ban, Bot, CircleSlash, Clock, Ellipsis, EllipsisVertical, Settings2, Shield, ShieldCheck, Trash2, UserRoundPlus, Users, X } from "lucide-react";
 import { AgentInstallationState, WorkspaceMembershipState, type AgentInstallationView, type ConversationParticipant, type ConversationView, type RoleMemberView, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
@@ -45,6 +48,8 @@ import { installationLabels, loadWorkspaceAgents } from "./agent-installation-vi
 import { usePresenceQuery } from "./presence/hooks";
 import { aggregatePresence } from "./presence/lib/presence";
 import { PresenceCornerDot } from "./presence/ui/PresenceBadge";
+import { TIMEOUT_PRESETS } from "../moderation";
+import { useMembersSidebarModeration } from "./moderation/useMembersSidebarModeration";
 
 // The governed installation dialogs live with the Agents page; load them on first use only.
 const WorkspaceAgentDialogs = React.lazy(() => import("./agents").then((module) => ({ default: module.WorkspaceAgentDialogs })));
@@ -227,6 +232,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     void queryClient.invalidateQueries({ queryKey: ["platform", "channel-member-roles", workspaceId] });
   }, [queryClient, roster, workspaceId]);
   const action = useMemberAction(refresh);
+  const moderation = useMembersSidebarModeration(open);
   const agentsQuery = useQuery({
     queryKey: ["platform", "channel-agents", workspaceId],
     queryFn: () => loadWorkspaceAgents(client, workspaceId!),
@@ -315,9 +321,13 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     const canRevoke = role?.canRevokeWorkspaceAdmin === true;
     const showChangeRole = active && !row.self && (canGrant || canRevoke);
     const canRemoveMember = role?.canRemoveFromWorkspace === true;
+    // Original canModerateMember: never self, never a Tenant admin (original owner/admin guard).
+    const canModerateMember = moderation.canModerate && active && !row.self && role?.tenantAdmin !== true;
+    const moderationState = moderation.moderationStateOf(member);
     const roleLabel = !active ? enumLabel(locale, workspaceMembershipStateMessages, member.state)
       : role?.workspaceAdmin ? t("communityMembers.admin") : null;
     const rowDisabled = disabled || action.submittedFor === member.principalId;
+    const moderationDisabled = rowDisabled || moderation.isModerationPending;
     const openProfile = active && pubkey && onOpenProfile ? () => onOpenProfile({ principalId: member.principalId, pubkey, alternatePubkeys: member.pubkeys, displayName: member.displayName }) : undefined;
     return (
       <div
@@ -356,7 +366,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
             </div>
           </div>
         </div>
-        {showChangeRole || canRemoveMember ? (
+        {showChangeRole || canRemoveMember || canModerateMember ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -396,6 +406,47 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
                     <Trash2 className="h-4 w-4" />
                     {t("channelMembers.remove")}
                   </DropdownMenuItem>
+                </>
+              ) : null}
+              {canModerateMember ? (
+                <>
+                  {canRemoveMember || showChangeRole ? <DropdownMenuSeparator /> : null}
+                  {moderationState.timedOut ? (
+                    <DropdownMenuItem data-testid={`sidebar-untimeout-${member.principalId}`} disabled={moderationDisabled}
+                      onClick={() => moderation.onUntimeout(member)}>
+                      <ShieldCheck className="h-4 w-4" />
+                      {t("moderation.liftTimeout")}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger data-testid={`sidebar-timeout-${member.principalId}`} disabled={moderationDisabled}>
+                        <Clock className="h-4 w-4" />
+                        {t("moderation.member.timeout")}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {TIMEOUT_PRESETS.map((preset) => (
+                          <DropdownMenuItem data-testid={`sidebar-timeout-${preset.seconds}-${member.principalId}`}
+                            disabled={moderationDisabled} key={preset.seconds}
+                            onClick={() => moderation.onTimeout(member, preset.duration)}>
+                            {t(preset.label)}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {moderationState.banned ? (
+                    <DropdownMenuItem data-testid={`sidebar-unban-${member.principalId}`} disabled={moderationDisabled}
+                      onClick={() => moderation.onUnban(member)}>
+                      <CircleSlash className="h-4 w-4" />
+                      {t("moderation.liftBan")}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" data-testid={`sidebar-ban-${member.principalId}`}
+                      disabled={moderationDisabled} onClick={() => moderation.onBan(member)}>
+                      <Ban className="h-4 w-4" />
+                      {t("moderation.member.ban")}
+                    </DropdownMenuItem>
+                  )}
                 </>
               ) : null}
             </DropdownMenuContent>

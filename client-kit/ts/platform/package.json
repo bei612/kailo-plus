@@ -197,6 +197,8 @@
     "./react/inbox/needs-action": "./src/react/inbox/needs-action.tsx",
     "./react/collaboration-preferences": "./src/react/collaboration-preferences.tsx",
     "./react/channel-templates": "./src/react/channel-templates/index.ts",
+    "./moderation": "./src/moderation.ts",
+    "./react/moderation": "./src/react/moderation/index.ts",
     "./react/use-inbox-auto-selection": "./src/react/use-inbox-auto-selection.ts",
     "./react/use-inbox-selection-anchor": "./src/react/use-inbox-selection-anchor.ts",
     "./react/image-lightbox": "./src/react/image-lightbox/index.ts",

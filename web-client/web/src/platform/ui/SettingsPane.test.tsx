@@ -29,7 +29,7 @@ vi.mock("@client-kit/platform/react/custom-emoji", async (original) => ({
 
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
-  useBffClient: () => ({ invitations: async () => [], profile: async () => ({ pubkey: "a".repeat(64), eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} }) }),
+  useBffClient: () => ({ invitations: async () => [], moderationAccess: async () => ({ canModerate: false }), profile: async () => ({ pubkey: "a".repeat(64), eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} }) }),
 }));
 
 vi.mock("@/platform/bff-client", () => ({ bff: { workspaces: vi.fn(), profile: vi.fn(async () => ({ pubkey: "a".repeat(64) })) }, fetchUserState: vi.fn() }));
@@ -261,6 +261,31 @@ describe("Web original settings host", () => {
       expect(mentions.getAttribute("aria-checked")).not.toBe(before);
       expect(localStorage.getItem("buzz.messages.keepMentionedAgentsPinned")).toBe(String(before !== "true"));
       await act(async () => mentions.click());
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+  // DD-125(2), V-SCN-145: the original Moderation section is visible to everyone; without
+  // Tenant manage the card says the queue is for moderators only and reads nothing else.
+  it("shows the original Moderation section and the moderators-only notice without Tenant manage", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      await act(async () => root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} locale="en">
+        <SidebarProvider><SettingsPane /></SidebarProvider></PlatformProvider></QueryClientProvider>));
+      const nav = host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-moderation"]');
+      expect(nav?.textContent).toContain("Moderation");
+      await act(async () => nav!.click());
+      await vi.waitFor(() => expect(host.querySelector('[data-testid="settings-moderation"]')?.textContent)
+        .toContain("The moderation queue is available to community moderators only."));
+      expect(host.querySelector('[data-testid="moderation-tab-queue"]')).toBeNull();
     } finally {
       await act(async () => root.unmount());
       host.remove();

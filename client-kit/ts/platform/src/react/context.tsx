@@ -69,6 +69,11 @@ export function useBffClient(): BffClient {
   return usePlatform().client;
 }
 
+/** Whether this tree has a platform session; shared surfaces omit platform-only actions without one. */
+export function useHasPlatform(): boolean {
+  return useContext(PlatformContext) !== null;
+}
+
 export function useNativeAuthenticationHost() { return usePlatform().authenticateNativePage; }
 
 export function useDocumentTheme() { return usePlatform().documentTheme; }

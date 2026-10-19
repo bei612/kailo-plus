@@ -24,7 +24,7 @@ import { stripImplicitAgentMentionPrefix } from "@client-kit/platform/react/comp
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { ReasonCode, WebMessageType, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
+import { PublishRestrictionKind, ReasonCode, WebMessageType, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
@@ -53,7 +53,8 @@ import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { toast } from "sonner";
-import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { AgentMentionStatus, MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type MessageModerationContext, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { ComposerTimeoutBanner, clearTimeoutState, recordTimeoutFromRestriction, useTimeoutState } from "@client-kit/platform/react/moderation";
 import { useAgentMentionOutcomes, type MentionableAgent } from "./useAgentMentionOutcomes";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
@@ -489,7 +490,14 @@ export function ChannelPane({
         </MessageAuthorIdentity>;
       }};
   }, [conversation, live, denied, metadataPending, members.isSuccess, members.isError, members.isFetching, members.data, myPrincipalId, workspaceId, timelineMessages, handleOpenAuthor, uiT, authorLabel]);
-  const composerPlaceholder = archived
+  // DD-125(2): the original composer timeout (learned from a send rejection, never a list read).
+  const timeoutState = useTimeoutState();
+  const moderation = useMemo<MessageModerationContext | undefined>(() => live && !denied
+    ? { scope: conversation ? { conversationId: conversation.id } : { workspaceId }, selfPubkey: ownProfile.data?.pubkey }
+    : undefined, [live, denied, conversation, workspaceId, ownProfile.data?.pubkey]);
+  const composerPlaceholder = timeoutState.active
+    ? uiT("moderation.banner.timedOut")
+    : archived
     ? uiT("composer.archivedPlaceholder")
     : conversation
       ? directMessageIntro?.displayName.trim()
@@ -843,6 +851,7 @@ export function ChannelPane({
                     accent={message.accent} className="shrink-0" displayName={message.author} shape={message.isAgent ? "squircle" : "circle"}
                     testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
+                  moderation={moderation}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
                   onDelete={canDelete && message.kind === 9 && message.signerPubkey === ownProfile.data?.pubkey ? deleteMessageDialog.requestDelete : undefined}
                   isUnread={isMessageUnread(message)}
@@ -889,9 +898,10 @@ export function ChannelPane({
           return receipt;
         }} /> : null}
       <div hidden={mainEditTarget !== null} className={`composer-dock composer-overlay-corner-masks relative pointer-events-auto${typingPubkeys.length ? " composer-dock--with-activity" : ""}`}>
+      {timeoutState.active && !denied ? <ComposerTimeoutBanner expiresAtMs={timeoutState.expiresAtMs} /> : null}
       <ComposerDockBackdrop gutterClassName="inset-x-5" />
       {denied ? null : conversation
-        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
+        ? <Composer disabled={conversation.state !== "ACTIVE" || timeoutState.active} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
             containerClassName="px-5 pb-0" layoutMode="dock"
             channelType="dm"
             onTyping={notifyTyping}
@@ -907,7 +917,7 @@ export function ChannelPane({
             placeholder={composerPlaceholder}
             mentionPeople={mentionPeople}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
-            disabled={archived || metadataPending}
+            disabled={archived || metadataPending || timeoutState.active}
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
             autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink} /></>}
@@ -1496,6 +1506,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         : Promise.reject(new Error("Message destination is unavailable."));
     await publish
       .then(() => {
+        // An accepted send proves the community write-block is lifted (original clearTimeoutState).
+        clearTimeoutState();
         if (!owner.active) return;
         if (intent.current?.key === key) intent.current = null;
         if (richText.getMarkdown().trim() === content) {
@@ -1528,7 +1540,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
           );
         } else if (e instanceof BffError && e.reason === ReasonCode.PublishRejected) {
           intent.current = null;
-          setProblem(t("platform.sendRejected"));
+          // DD-125(2): a community timeout shows the original banner instead of a generic error.
+          if (recordTimeoutFromRestriction(e.restriction)) setProblem(null);
+          else setProblem(t(e.restriction?.kind === PublishRestrictionKind.Banned ? "moderation.banned" : "platform.sendRejected"));
         } else {
           setProblem(t("platform.sendFailed"));
         }

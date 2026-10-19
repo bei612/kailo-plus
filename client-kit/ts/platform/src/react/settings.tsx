@@ -164,6 +164,7 @@ export function SettingsPage({
   active,
   appVersion,
   channelTemplates,
+  moderation,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -176,11 +177,13 @@ export function SettingsPage({
   appVersion?: string | null;
   /** DD-125(4): show the original "Channel templates" section (host provides Core preferences). */
   channelTemplates?: boolean;
+  /** DD-125(2): show the original "Moderation" section (host renders ModerationQueueCard). */
+  moderation?: boolean;
 }) {
   return (
     <SettingsViewSurface locale={locale} section={section} onSelect={onSelect} onClose={onClose}
       active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}
-      channelTemplates={channelTemplates}>
+      channelTemplates={channelTemplates} moderation={moderation}>
       {children}
     </SettingsViewSurface>
   );

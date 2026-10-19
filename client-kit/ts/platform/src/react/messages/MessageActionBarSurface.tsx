@@ -35,6 +35,20 @@ import {
   DropdownMenuTrigger,
 } from "../sidebar/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../sidebar/tooltip";
+import type { ReportScope } from "../../moderation";
+import { ReportMessageDialog, ReportMessageMenuItem } from "../moderation/ReportMessageDialog";
+import { MessageModerationMenuItems } from "../moderation/MessageModerationMenuItems";
+
+/**
+ * DD-125(2): the original "Report message" entry and moderator items (Buzz
+ * 779af8886caae1317b4de962082429867ab61503 MessageActionBar.tsx::MoreActionsMenu). Hosts pass
+ * the admitted scope of the message; without it neither appears.
+ */
+export type MessageModerationContext = {
+  scope: ReportScope;
+  /** The viewer's signing key, so moderator items never target the viewer. */
+  selfPubkey?: string;
+};
 
 const ACTION_BUTTON_CLASS = "h-8 w-8 rounded-full p-0";
 const ACTION_ICON_CLASS = "!h-4 !w-4";
@@ -71,10 +85,12 @@ function MoreActionsMenu({
   onCopyMessage,
   onEdit,
   onDelete,
+  moderation,
 }: {
   /** Channel UUID for the Copy link action. When null/undefined, the
    *  Copy link entry is hidden (e.g. inbox preview rows that don't have it). */
   onCopyLink?: (message: TimelineMessage) => void;
+  moderation?: MessageModerationContext;
   message: TimelineMessage;
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
@@ -97,12 +113,16 @@ function MoreActionsMenu({
   // Original Buzz menu-to-editor focus transfer: wait for Radix to close,
   // otherwise its exit focus restoration steals the editor's first keys.
   const pendingEditRef = React.useRef<(() => void) | null>(null);
+  const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
   // "Copy message" copies the Markdown body verbatim, so its plain flavor is
   // already readable anywhere. The HTML sidecar adds only identity, letting a
   // paste back into Buzz re-light each chip with the pubkey the author tagged.
-
+  // A report needs a delivered event and a known author (original canReport).
+  const canReport = Boolean(moderation) && !message.pending && Boolean(message.pubkey);
+  const canDelete = !message.pending && Boolean(onDelete);
 
   return (
+    <>
     <DropdownMenu modal={false} open={open} onOpenChange={onOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -220,13 +240,19 @@ function MoreActionsMenu({
             {translateUi("buzz.copyLink")}
           </DropdownMenuItem>
         ) : null}
-        {!message.pending && onDelete ? <><DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive focus:text-destructive"
-            data-testid={`delete-message-${message.id}`} onClick={() => onDelete(message)}>
-            <Trash2 className="h-4 w-4" />{translateUi("buzz.deleteMessage")}
-          </DropdownMenuItem></> : null}
+        {canReport || canDelete ? <DropdownMenuSeparator /> : null}
+        {canReport ? <ReportMessageMenuItem messageId={message.id} onSelect={() => setIsReportDialogOpen(true)} /> : null}
+        {canDelete && onDelete ? <DropdownMenuItem className="text-destructive focus:text-destructive"
+          data-testid={`delete-message-${message.id}`} onClick={() => onDelete(message)}>
+          <Trash2 className="h-4 w-4" />{translateUi("buzz.deleteMessage")}
+        </DropdownMenuItem> : null}
+        {canReport && moderation ? <MessageModerationMenuItems message={message} scope={moderation.scope}
+          selfPubkey={moderation.selfPubkey} /> : null}
       </DropdownMenuContent>
     </DropdownMenu>
+    {canReport && moderation ? <ReportMessageDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}
+      eventId={message.id} scope={moderation.scope} /> : null}
+    </>
   );
 }
 
@@ -245,6 +271,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   onCopyMessage,
   onEdit,
   onDelete,
+  moderation,
   onReactionSelect, onReactionBadgeBurstRequest, reactionErrorMessage = null,
   reactions = [], customEmoji = [], reactionScope = null, resolveMediaUrl,
 }: {
@@ -269,6 +296,8 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   onCopyMessage: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
   onDelete?: (message: TimelineMessage) => void;
+  /** DD-125(2): report and moderator items for this message's admitted scope. */
+  moderation?: MessageModerationContext;
   onReactionSelect?: (emoji: string) => Promise<void>;
   onReactionBadgeBurstRequest?: (emoji: string) => void;
   reactionErrorMessage?: string | null;
@@ -386,6 +415,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
             <MoreActionsMenu
               onEdit={onEdit}
               onDelete={onDelete}
+              moderation={moderation}
               onCopyLink={onCopyLink}
               message={message}
               onFollowThread={onFollowThread}

@@ -2,7 +2,8 @@
 import { act, type ReactNode } from "react";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
-import { TransportError } from "@client-kit/platform/transport";
+import { BffError, TransportError } from "@client-kit/platform/transport";
+import { clearTimeoutState, getTimeoutSnapshot } from "@client-kit/platform/react/moderation";
 import { setLocale } from "@client-kit/platform/i18n";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import type { Editor } from "@tiptap/core";
@@ -14,6 +15,9 @@ import {
   ResourceState,
   ChannelBindingStatus,
   AgentRuntimeProjectionState,
+  ErrorClass,
+  PublishRestrictionKind,
+  ReasonCode,
   type AgentInstallationView,
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
@@ -385,6 +389,34 @@ it("restores Pulse compact focus/blur and below-editor autocomplete while retain
   expect(form.dataset.compactCollapsed).toBe("false");
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
   expect(host.querySelector('[role="status"]')).not.toBeNull();
+});
+
+// DD-125(2), V-SCN-129: a Relay timeout arrives as PUBLISH_REJECTED with a structured
+// restriction; the original banner state is recorded instead of a generic error, a ban says
+// so, and an accepted send lifts the recorded timeout.
+it("records the original community timeout from a structured rejection and clears it on an accepted send", async () => {
+  clearTimeoutState();
+  const until = new Date(Date.now() + 3_600_000).toISOString();
+  const rejected = (restriction: { kind: PublishRestrictionKind; until?: string }) =>
+    new BffError(403, "rejected", { class: ErrorClass.Denied, reason: ReasonCode.PublishRejected, restriction });
+  const publish = vi.fn()
+    .mockRejectedValueOnce(rejected({ kind: PublishRestrictionKind.TimedOut, until }))
+    .mockRejectedValueOnce(rejected({ kind: PublishRestrictionKind.Banned }))
+    .mockResolvedValue({ eventId: "e".repeat(64), operationId: "operation" });
+  const host = await render(<Composer draftIdentity="moderation-timeout" onPublish={publish} />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Hello");
+  await click(button(host, "platform.send"));
+  await settle();
+  expect(getTimeoutSnapshot()).toEqual({ active: true, expiresAtMs: Date.parse(until) });
+  expect(host.textContent).not.toContain("The message was rejected");
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Hello");
+  await click(button(host, "platform.send"));
+  await settle();
+  expect(host.textContent).toContain("You're banned from this community.");
+  await click(button(host, "platform.send"));
+  await settle();
+  expect(publish).toHaveBeenCalledTimes(3);
+  expect(getTimeoutSnapshot().active).toBe(false);
 });
 
 it("collapses the original compact form only after confirmed publication clears the draft",async()=>{

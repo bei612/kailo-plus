@@ -27,6 +27,7 @@ import { BrowserNotificationSettings } from "./BrowserNotifications";
 import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/react/custom-emoji";
 import { AgentsSettingsPanel } from "@client-kit/platform/react/agents-settings";
 import { ChannelTemplatesSettingsCard } from "@client-kit/platform/react/channel-templates";
+import { ModerationQueueCard } from "@client-kit/platform/react/moderation";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   return [...getShortcutsByCategory().values()].flat().flatMap((shortcut) => {
@@ -51,7 +52,7 @@ export function SettingsPane({ active = true, fallbackDisplayName, onClose, sect
   const invitations=useInvitationSettingsState();
   return (
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}
-      appVersion={typeof __BUZZ_WEB_VERSION__ === "string" ? __BUZZ_WEB_VERSION__ : null} channelTemplates>
+      appVersion={typeof __BUZZ_WEB_VERSION__ === "string" ? __BUZZ_WEB_VERSION__ : null} channelTemplates moderation>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       <div hidden={section !== "profile"}><WebProfileSettings fallbackDisplayName={fallbackDisplayName} /></div>
       {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
@@ -65,6 +66,7 @@ export function SettingsPane({ active = true, fallbackDisplayName, onClose, sect
           shortcuts={webShortcuts(locale)}
         />
       ) : section === "channel-templates" ? <ChannelTemplatesSettingsCard />
+      : section === "moderation" ? <ModerationQueueCard />
       : section === "agents" ? <AgentsSettingsPanel />
       : section === "experimental" ? <ExperimentalFeaturesCard /> : null}
     </SettingsPage>

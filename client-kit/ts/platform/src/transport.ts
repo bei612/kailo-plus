@@ -35,6 +35,8 @@ export class BffError extends Error {
   readonly errorClass?: ErrorBody["class"];
   readonly reason?: ErrorBody["reason"];
   readonly operationId?: string;
+  /** DD-125(2)：PUBLISH_REJECTED 因社区禁言/封禁时的结构化限制（原禁言横幅的唯一来源）。 */
+  readonly restriction?: ErrorBody["restriction"];
   constructor(status: number, message: string, body?: Partial<ErrorBody>) {
     super(message);
     this.name = "BffError";
@@ -42,6 +44,7 @@ export class BffError extends Error {
     this.errorClass = body?.class;
     this.reason = body?.reason;
     this.operationId = body?.operationId;
+    this.restriction = body?.restriction;
   }
 }
 

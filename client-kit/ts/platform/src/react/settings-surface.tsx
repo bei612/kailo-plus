@@ -2,7 +2,7 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate } from "lucide-react";
+import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate, ShieldAlert } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
 import type { Loaded } from "./use-load";
@@ -19,12 +19,13 @@ export const settingsSectionKeys = {
   profile: "platform.settings.profile", appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications", shortcuts: "platform.settings.shortcuts",
   "community-members": "communityMembers.title",
+  moderation: "moderation.settings.title",
   "custom-emoji": "customEmoji.title",
   "channel-templates": "channelTemplates.title",
   agents: "platform.settings.agents",
   experimental: "platform.settings.experimental",
 } as const;
-const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, experimental: FlaskConical };
+const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket, moderation: ShieldAlert, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, experimental: FlaskConical };
 const personalSettingsSections: SettingsSection[] = ["profile", "appearance", "notifications", "shortcuts", "custom-emoji"];
 
 export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
@@ -40,7 +41,7 @@ export function SettingsBackButton({ locale, onClose, sidebarState = "expanded",
   </SidebarMenuItem></SidebarMenu>;
 }
 
-export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations, channelTemplates = false }: {
+export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   icons?: Partial<Record<SettingsSection, ReactNode>>;
   sidebarState?: "expanded" | "collapsed"; isMobile?: boolean;
@@ -48,11 +49,15 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
   onRetryInvitations?:()=>void;
   /** DD-125(4): the original Personal "Channel templates" section, for hosts that provide the Core preferences. */
   channelTemplates?: boolean;
+  /** DD-125(2): the original Moderation section; visible to everyone, the card states its access. */
+  moderation?: boolean;
 }) {
   // Original Personal group order ends with local-archive, then channel-templates.
   const personal = channelTemplates ? [...personalSettingsSections, "channel-templates" as const] : personalSettingsSections;
   const groups:Array<{label:string;sections:SettingsSection[]}>= [{label:translate(locale,"platform.settings.personal"),sections:personal}];
-  if(invitationAccess?.status==="ok")groups.push({label:translate(locale,"platform.settings.communities"),sections:["community-members"]});
+  // Original section order: community-members, then moderation (V-SCN-145).
+  const communities:SettingsSection[]=[...(invitationAccess?.status==="ok"?["community-members" as const]:[]),...(moderation?["moderation" as const]:[])];
+  if(communities.length>0)groups.push({label:translate(locale,"platform.settings.communities"),sections:communities});
   // Original App group order (agents, compute, experimental, …); hosts render the sections they have.
   groups.push({label:translate(locale,"platform.settings.app"),sections:["agents","experimental"]});
   return <>
@@ -91,10 +96,10 @@ export function SettingsContentSurface({ section, children }: { section: Setting
 // Original SettingsView shell, shared by both hosts. Access facts and section
 // bodies still come from the existing governed consumers, not a second query.
 export function SettingsViewSurface({ locale, section, onSelect, onClose, children, active = true,
-  appVersion, invitationAccess, onRetryInvitations, channelTemplates = false }: {
+  appVersion, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   onClose?: () => void; children: ReactNode; active?: boolean; appVersion?: string | null;
-  invitationAccess?: Loaded<boolean>; onRetryInvitations?: () => void; channelTemplates?: boolean;
+  invitationAccess?: Loaded<boolean>; onRetryInvitations?: () => void; channelTemplates?: boolean; moderation?: boolean;
 }) {
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const [isLoaded, setIsLoaded] = useState(false);
@@ -126,7 +131,8 @@ export function SettingsViewSurface({ locale, section, onSelect, onClose, childr
       <SidebarContent>
         <SettingsNavigation locale={locale} section={section} onSelect={onSelect}
           sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile}
-          invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} channelTemplates={channelTemplates} />
+          invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} channelTemplates={channelTemplates}
+          moderation={moderation} />
       </SidebarContent>
       <SidebarFooter>
         {appVersion ? <p className="px-2 pb-1 text-xs text-sidebar-foreground/45" data-buzz-sidebar-secondary data-testid="settings-version">v{appVersion}</p> : null}
