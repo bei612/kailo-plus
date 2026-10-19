@@ -210,7 +210,9 @@ fn captured_values(step: &Value, reads: &[Value]) -> Result<BTreeMap<String, Str
     if declared.is_empty() {
         return Ok(values);
     }
-    let read = reads.first().ok_or("a capturing step completed without reads")?;
+    let read = reads
+        .first()
+        .ok_or("a capturing step completed without reads")?;
     let encoded = field(&read["readRequest"], "receiverArgumentsJson")?;
     let arguments: Value = serde_json::from_str(encoded)?;
     for capture in declared {

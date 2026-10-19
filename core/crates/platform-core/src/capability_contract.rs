@@ -2229,8 +2229,7 @@ mod registration_tests {
         assert_eq!(input["nativeObjectRef"], "native-node");
         assert_eq!(input["nativeRevision"], "draft-version");
         assert!(bindings.is_empty());
-        let (input, expected, bindings, _) =
-            vector::freeze_step(&steps[2], case, &values).unwrap();
+        let (input, expected, bindings, _) = vector::freeze_step(&steps[2], case, &values).unwrap();
         let plan = json!({"bindings":bindings});
         let input: Value = serde_json::from_str(&input).unwrap();
         let mut request = json!({"arguments":{"input":input}});

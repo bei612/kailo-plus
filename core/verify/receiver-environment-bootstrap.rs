@@ -966,9 +966,8 @@ async fn bootstrap_native_receiver_environment() -> Result<(), Error> {
             "resourceId":resource,"version":version}),
         );
         for target in fixture["preconditions"].as_array().into_iter().flatten() {
-            preconditions.push(
-                json!({"caseKey":target["caseKey"],"key":target["key"],"value":resource}),
-            );
+            preconditions
+                .push(json!({"caseKey":target["caseKey"],"key":target["key"],"value":resource}));
         }
     }
     // DD-124(4): the production plan identity names this source release; its
