@@ -18,7 +18,7 @@ import {
 } from "./ComposerControls";
 import { FormattingToolbar } from "./FormattingToolbar";
 import { SelectionFormattingTray } from "./SelectionFormattingTray";
-import { ComposerEmojiPicker } from "./ComposerEmojiPicker";
+import { ComposerEmojiPicker, type ComposerGifOption } from "./ComposerEmojiPicker";
 import type { CustomEmoji } from "../../../../custom-emoji/emoji";
 import { CUSTOM_EMOJI_NODE_NAME } from "../lib/customEmojiNode";
 
@@ -55,6 +55,7 @@ export const MessageComposerToolbar = React.memo(
     editor,
     extraActions,
     formattingDisabled,
+    gifs,
     isEmojiPickerOpen,
     isFormattingOpen,
     isSending,
@@ -86,6 +87,8 @@ export const MessageComposerToolbar = React.memo(
     editor: Editor | null;
     extraActions?: React.ReactNode;
     formattingDisabled: boolean;
+    /** DD-125(5): the host-verified GIF option; absent keeps the emoji-only picker. */
+    gifs?: ComposerGifOption;
     isEmojiPickerOpen: boolean;
     isFormattingOpen: boolean;
     isSending: boolean;
@@ -105,6 +108,11 @@ export const MessageComposerToolbar = React.memo(
   }) {
     const translateUi = useUiT();
     const shouldReduceMotion = useReducedMotion();
+    // Original `gifsDisabled={hasVoiceNoteAttachment}`.
+    const gifOption = React.useMemo(
+      () => gifs ? { ...gifs, disabled: gifs.disabled === true || hasVoiceNoteAttachment } : undefined,
+      [gifs, hasVoiceNoteAttachment],
+    );
     const insertEmoji = React.useCallback(
       (emoji: string) => {
         if (!editor || composerDisabled) return;
@@ -324,6 +332,7 @@ export const MessageComposerToolbar = React.memo(
                 <ComposerEmojiPicker
                   disabled={composerDisabled || isVoiceNoteRecording}
                   customEmoji={customEmoji}
+                  {...(gifOption ? { gifs: gifOption } : {})}
                   open={isEmojiPickerOpen}
                   onOpenChange={onEmojiPickerOpenChange}
                   onEmojiSelect={insertEmoji}

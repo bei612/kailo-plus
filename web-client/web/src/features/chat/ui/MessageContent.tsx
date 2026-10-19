@@ -38,7 +38,8 @@ import remarkMentions from "@/features/chat/lib/remark-mentions";
 import { mediaUrl } from "@/platform/bff-client";
 import { t } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
-import { LinkPreviewAttachmentPresentation, parseLinkPreviewSnapshots, mergeMessageLinkPreviews, extractSupportedLinkPreviews, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
+import { LinkPreviewAttachmentPresentation, parseLinkPreviewSnapshots, mergeMessageLinkPreviews, extractSupportedLinkPreviews, useLinkPreviewStyle, hasLinkPreviewSuppression, useLinkPreviewRemoval } from "@client-kit/platform/react/link-preview";
+import { isRegisteredGifUrl, useRegisteredGifOrigins } from "@/platform/gif-capability";
 import { AttachmentGroup } from "@client-kit/platform/react/composer/shared/ui/attachment";
 import { customEmojiFromTags, remarkCustomEmoji, InlineEmojiPopover } from "@client-kit/platform/react/custom-emoji";
 import {
@@ -251,19 +252,29 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
   if (!interactive) {
     return <span>{alt?.trim() || t(src && isVideoMedia(src, media?.mime) ? "buzz.videoAttachment" : "buzz.imageAttachment")}</span>;
   }
-  // 没有 imeta 背书的图片地址不加载：退回成一条普通链接
-  if (!media) {
+  // 没有 imeta 背书的图片地址不加载：退回成一条普通链接；DD-125(5) 只有部署登记来源的
+  // 原版 GIF（正文 ![image](url)、无 imeta）按图片呈现
+  if (!media) return <UnvouchedImage src={src} alt={alt} />;
+  return <span data-block-media="" className="block min-w-0 max-w-full">
+    <BffMedia key={resolveMediaUrl(media.sha256)} media={media} alt={alt} resolveMediaUrl={resolveMediaUrl}
+      admittedSources={admittedSources} />
+  </span>;
+};
+
+/** DD-125(5), V-SCN-140: an imeta-less image loads only from a registered GIF origin. */
+function UnvouchedImage({ src, alt }: { src?: string; alt?: string }) {
+  const origins = useRegisteredGifOrigins();
+  if (!isRegisteredGifUrl(src, origins)) {
     return (
       <a href={src} target="_blank" rel="noreferrer noopener">
         {alt || src}
       </a>
     );
   }
-  return <span data-block-media="" className="block min-w-0 max-w-full">
-    <BffMedia key={resolveMediaUrl(media.sha256)} media={media} alt={alt} resolveMediaUrl={resolveMediaUrl}
-      admittedSources={admittedSources} />
+  return <span data-block-media="" data-registered-gif="" className="block min-w-0 max-w-full">
+    <img alt={alt || t("message.attachmentImage")} className="block h-auto max-h-64 max-w-full rounded-md" loading="lazy" src={src} />
   </span>;
-};
+}
 
 function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
   const { resolveMediaUrl, interactive } = useMarkdownRenderContext();
@@ -440,6 +451,7 @@ export function MessageContent({
   mediaTags,
   onOpenMessageLink,
   searchQuery,
+  onRemoveLinkPreviews,
 }: {
   content: string;
   className?: string;
@@ -453,6 +465,8 @@ export function MessageContent({
   mediaTags?: readonly (readonly string[])[];
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   searchQuery?: string;
+  /** DD-125(5) original "Remove preview" for everyone; the host signs the suppressing edit. */
+  onRemoveLinkPreviews?: () => Promise<void>;
 }) {
   const {reviewContext, videoReviewCommentRootId} = useBffVideoReview(messageId);
   const channelRuntime = useBffChannelLinkRuntime();
@@ -480,9 +494,10 @@ export function MessageContent({
   // Relay validates sender-authored snapshot URL/hash pairs at ingestion. Only
   // the hash reaches our existing BFF media route, which rechecks the current
   // actor/scope and reads this community's sidecar. Never fetch the tag's URL.
-  const previews = !interactive || mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
+  const previews = !interactive || hasLinkPreviewSuppression(mediaTags)
     ? [] : mergeMessageLinkPreviews(extractSupportedLinkPreviews(content),
       parseLinkPreviewSnapshots(mediaTags, content, workspaceId || conversationId || onMediaUrl ? resolveMediaUrl : null));
+  const removal = useLinkPreviewRemoval(previews.length, onRemoveLinkPreviews);
   const admittedSources = new Set([
     ...(interactive ? [...mediaByUrl.values()].map(entry => resolveMediaUrl(entry.sha256)) : []),
     ...previews.flatMap(preview => preview.imageDataUrl ? [preview.imageDataUrl] : []),
@@ -510,11 +525,13 @@ export function MessageContent({
           {displayContent(reviewComment.content)}
         </ReactMarkdown>
       </MessageBody>
-      {previews.length ? <AttachmentGroup data-link-preview-list=""
+      {previews.length && !removal.hidden ? <AttachmentGroup data-link-preview-list=""
         className={previewStyle === "compact" ? "max-w-full flex-row flex-wrap items-start overflow-visible pb-0" : "max-w-full flex-col items-start overflow-visible pb-0"}>
         {previews.map((preview, index) => <LinkPreviewAttachmentPresentation key={preview.href} preview={preview} style={previewStyle} showControls={index === 0}
+          onRemove={index === 0 ? removal.requestRemove : undefined}
           ImageLightbox={BffLinkPreviewImageLightbox} />)}
       </AttachmentGroup> : null}
+      {previews.length ? removal.dialog : null}
     </MarkdownRenderContext.Provider>
   );
 }

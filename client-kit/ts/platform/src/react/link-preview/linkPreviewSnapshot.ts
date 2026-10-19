@@ -20,6 +20,13 @@ export function mergeMessageLinkPreviews(
   });
 }
 
+/** Original formatTimelineMessages.ts::hasLinkPreviewSuppression: exactly `["link-preview","none"]`. */
+export function hasLinkPreviewSuppression(
+  tags: readonly (readonly string[])[] | undefined,
+): boolean {
+  return Boolean(tags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none"));
+}
+
 export const LINK_PREVIEW_SNAPSHOT_VERSION = "1";
 const MAX_SNAPSHOTS = 8;
 const SHA256_RE = /^[0-9a-f]{64}$/;

@@ -8,3 +8,5 @@ export * from "./rich-link-preview-attachment";
 export * from "./link-preview-controls";
 export * from "./host";
 export * from "./LinkPreviewStyleSetting";
+export * from "./composer-link-previews";
+export * from "./link-preview-removal";

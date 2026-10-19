@@ -356,12 +356,39 @@ export const conversationVisibility: ConversationVisibilityHost = {
 };
 
 export async function publishConversationMessage(conversationId: string, content: string,
-  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string, parentEventId?: string, mentionPubkeys?: string[]): Promise<{ eventId: string; operationId: string }> {
+  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string, parentEventId?: string, mentionPubkeys?: string[],
+  linkPreviews?: LinkPreviewPublication): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
   return unwrap({ method: "POST", path }, await transport.exchange(path, {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId, mentionPubkeys } satisfies WebPublishMessageRequest),
+    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId, mentionPubkeys, ...linkPreviews } satisfies WebPublishMessageRequest),
   }));
+}
+/**
+ * DD-125(5): what a publication names about link previews — only the caller's own snapshot
+ * IDs (new STREAM messages) or the original suppression flag; never raw `link-preview` tags.
+ */
+export type LinkPreviewPublication = Pick<WebPublishMessageRequest, "linkPreviewSnapshotIds" | "suppressLinkPreviews">;
+/** The BFF fetch host for one composer link (V-SCN-139). No preview (404/422) is null. */
+export async function prepareLinkPreview(target: { workspaceId: string } | { conversationId: string }, url: string) {
+  try {
+    return await bff.linkPreview(target, { url });
+  } catch (error) {
+    if (error instanceof BffError && (error.status === 404 || error.status === 422)) return null;
+    throw error;
+  }
+}
+/**
+ * Original "Remove preview" for everyone: the author's own message edited with the same body
+ * and media plus the suppression flag. Core re-reads the target and signs the 40003.
+ */
+export async function publishLinkPreviewRemoval(target: { workspaceId: string } | { conversationId: string },
+  eventId: string, edit: { content: string; attachments: readonly MediaDescriptor[] }, idempotencyKey: string): Promise<{ eventId: string; operationId: string }> {
+  const receipt = "conversationId" in target
+    ? await publishConversationMessage(target.conversationId, edit.content, edit.attachments, idempotencyKey, eventId, undefined, undefined, { suppressLinkPreviews: true })
+    : await publishMessage(target.workspaceId, edit.content, edit.attachments, idempotencyKey, [], { editEventId: eventId, suppressLinkPreviews: true });
+  if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Preview removal has no confirmed receipt.");
+  return receipt;
 }
 /**
  * DD-125(1) original "Send to channel": only the source thread reply is named. Core
@@ -447,7 +474,7 @@ export async function publishMessage(
   attachments: readonly MediaDescriptor[],
   idempotencyKey: string,
   mentionInstallationIds: string[] = [],
-  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId" | "mentionPubkeys">,
+  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId" | "mentionPubkeys" | "linkPreviewSnapshotIds" | "suppressLinkPreviews">,
 ): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/workspaces/${workspaceId}/messages`;
   return unwrap(

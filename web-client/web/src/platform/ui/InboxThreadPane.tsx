@@ -229,7 +229,8 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
       onSendingChange={setSending}
       replyTarget={replyTarget ?? null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
-      placeholder={!supportsInlineReply ? t("inbox.replyUnsupported") : conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
+      placeholder={!supportsInlineReply ? t("inbox.replyUnsupported") : conversation ? t("composer.dmPlaceholder",{name:directMessageSender}) : channelName ? t("inbox.replyToChannelThread",{channel:channelName}) : t("inbox.replyToThread")} linkPreviewTarget={conversation ? { conversationId: conversation.id } : { workspaceId }}
+      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys, linkPreviews) => {
         if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) throw new Error(t("inbox.replyUnavailable"));
         if (!canReply || deleteDialog.pending || deleteDialog.unresolvedMessageId || (!conversation && !parentId)) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
@@ -237,9 +238,11 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};
         onPublicationPendingChange?.(true);
         try {
-          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId ?? undefined, mentionPubkeys)
+          const receipt = await (conversation ? (linkPreviews
+            ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId ?? undefined, mentionPubkeys, linkPreviews)
+            : publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId ?? undefined, mentionPubkeys))
             : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-            { messageType: WebMessageType.Stream, parentEventId: parentId ?? undefined, mentionPubkeys }));
+            { messageType: WebMessageType.Stream, parentEventId: parentId ?? undefined, mentionPubkeys, ...linkPreviews }));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Inbox reply has no confirmed receipt.");
           if (!publicationOwner.active || publicationOwnerRef.current !== publicationOwner) return receipt;
           publication.current = null; setUnresolved(false);

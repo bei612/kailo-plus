@@ -48,7 +48,14 @@ import {
   mediaUrl,
   deleteMessage,
   publishTyping,
+  prepareLinkPreview,
+  publishLinkPreviewRemoval,
+  type LinkPreviewPublication,
 } from "@/platform/bff-client";
+import { useGifCapability } from "@/platform/gif-capability";
+import { ComposerLinkPreviewCards, ComposerLinkPreviewPreparing, useComposerLinkPreviews, type PrepareLinkPreview } from "@client-kit/platform/react/link-preview";
+import { ComposerGifAttachments, withGifLines } from "@client-kit/platform/react/gifs";
+import type { WebGifItem } from "@client-kit/contracts";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
@@ -93,7 +100,7 @@ import type { MessageTimelineProps } from "@client-kit/platform/react/messages/t
 import { useSearchHighlightProps } from "@client-kit/platform/react/search/useSearchHighlightProps";
 import { useUiT } from "@client-kit/platform/react/context";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
-import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
+import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
@@ -115,6 +122,20 @@ const WorkspaceAgentDialogs = lazy(() => import("@client-kit/platform/react/page
 
 /** A mentioned Agent is no longer in this member's fresh, authorized directory (05 §2.10). */
 class MentionAgentNotAllowedError extends Error {}
+
+/** DD-125(5): the link-preview part frozen in an unresolved send intent's signature, so a
+ * retry with the same key names exactly the same snapshots (or suppression) again. */
+function frozenLinkPreviews(signature: string | undefined): LinkPreviewPublication | undefined {
+  if (!signature) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(signature);
+    const last = Array.isArray(parsed) ? parsed[parsed.length - 1] : undefined;
+    if (last && typeof last === "object" && !Array.isArray(last) && "linkPreviews" in last) {
+      return (last as { linkPreviews: LinkPreviewPublication }).linkPreviews;
+    }
+  } catch { /* An unreadable signature names no previews. */ }
+  return undefined;
+}
 
 export function mentionPeopleFromMembers(members: readonly (WorkspaceMemberView | ConversationParticipant)[]): MentionSuggestion[] {
   return members.filter(member => !("state" in member) || member.state === "ACTIVE")
@@ -287,6 +308,12 @@ export function ChannelPane({
   );
   const canDelete = live && !denied && !archived && !metadataPending && !composerBusy &&
     ownProfile.isSuccess && !ownProfile.isFetching && Boolean(ownProfile.data?.pubkey) && (!conversation || conversation.state === "ACTIVE");
+  // DD-125(5) original "Remove preview" for everyone: the author's own 40003 with the
+  // suppression flag; one idempotency key per message while its outcome is unknown.
+  const removeLinkPreviews = useRemoveLinkPreviewsIntent(useCallback(async (message: TimelineMessage, edit: LinkPreviewRemovalEdit, key: string) => {
+    if (message.signerPubkey !== ownProfile.data?.pubkey) throw new Error("Preview removal identity is unavailable.");
+    await publishLinkPreviewRemoval(conversation ? { conversationId: conversation.id } : { workspaceId }, message.id, edit, key);
+  }, [conversation, workspaceId, ownProfile.data?.pubkey]));
   const deleteMessageDialog = useMessageDeleteDialog(
     JSON.stringify([myPrincipalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]), canDelete,
     async (message) => {
@@ -865,6 +892,8 @@ export function ChannelPane({
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 messageId={message.id}
+                onRemoveLinkPreviews={message.kind === 9 && live && !denied && !archived && !metadataPending && ownProfile.isSuccess && !ownProfile.isFetching &&
+                  message.signerPubkey === ownProfile.data.pubkey && canRemoveLinkPreviews(message) ? () => removeLinkPreviews(message) : undefined}
                 searchQuery={props.searchMatchingMessageIds?.has(message.id) ? props.searchQuery : undefined}
                 content={message.body}
                 mediaTags={message.tags}
@@ -908,7 +937,10 @@ export function ChannelPane({
             placeholder={composerPlaceholder}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink}
-            onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
+            linkPreviewTarget={{ conversationId: conversation.id }}
+            onPublish={(content, attachments, key, _installations, mentionPubkeys, linkPreviews) => linkPreviews
+              ? publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys, linkPreviews)
+              : publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file, options) => uploadConversationMedia(conversation.id, file, options)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
@@ -998,7 +1030,7 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, linkPreviewTarget, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
@@ -1017,7 +1049,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   /** Host toolbar actions after Cancel (original ForumComposer secondary submit menu). */
   toolbarExtraActions?: React.ReactNode;
   workspaceId?: string;
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[]) => Promise<unknown>;
+  /** DD-125(5): where the BFF fetches composer link previews. Only hosts whose onPublish
+   * forwards the preview intent pass it; the built-in Workspace publication needs none. */
+  linkPreviewTarget?: { workspaceId: string } | { conversationId: string };
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication) => Promise<unknown>;
   onCancel?: () => void;
   containerClassName?: string;
   layoutMode?: "standalone" | "dock";
@@ -1064,6 +1099,29 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const emojiAutocomplete = useEmojiAutocomplete();
   const [draft, setDraft] = useState("");
   const [draftRevision, setDraftRevision] = useState(0);
+  // DD-125(5) original composer link previews (BFF fetch host) and GIF chips. Only new STREAM
+  // messages carry them; an edit names neither (original edit mode turns previews off).
+  const [previewContent, setPreviewContent] = useState("");
+  const previewTarget = editTarget || surface !== "stream" ? undefined
+    : linkPreviewTarget ?? (!onPublish && workspaceId ? { workspaceId } : undefined);
+  const previewTargetKey = previewTarget ? JSON.stringify(previewTarget) : "";
+  const preparePreview = useMemo<PrepareLinkPreview | undefined>(
+    () => previewTarget ? (url) => prepareLinkPreview(previewTarget, url) : undefined,
+    // The target is compared by value; a re-created literal is the same fetch host.
+    [previewTargetKey]);
+  const linkPreviews = useComposerLinkPreviews({ content: previewContent, enabled: previewTarget !== undefined, prepare: preparePreview });
+  const resolvePreviewMedia = useCallback((sha256: string) => onMediaUrl ? onMediaUrl(sha256) : mediaUrl(workspaceId ?? "", sha256), [onMediaUrl, workspaceId]);
+  const gifsEnabled = previewTarget !== undefined;
+  const gifCapability = useGifCapability(gifsEnabled);
+  const [pendingGifs, setPendingGifs] = useState<WebGifItem[]>([]);
+  const gifOption = useMemo(() => gifsEnabled && gifCapability.data?.available === true && gifCapability.data.imageOrigins.length > 0 ? {
+    search: (query: string) => bff.gifSearch({ query, locale: navigator.language || "en-US" }),
+    onSelect: (gif: WebGifItem) => {
+      setPendingGifs((current) => [...current, gif]);
+      // Original best-effort share report at selection time; its failure changes nothing.
+      void bff.gifShare({ slug: gif.slug }).catch(() => {});
+    },
+  } : undefined, [gifsEnabled, gifCapability.data]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
   // Original useMediaUpload uploadingPreviews/cancelUpload: one preview per in-flight file with
@@ -1249,8 +1307,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     channelNames: channelLinks.knownChannelNames,
     agentMentionNames:humanNames.filter(name => knownAgentKeys.has(humanBindings.current.get(name) ?? "")),
     getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
-    onUpdate: ({ text, cursor }) => {
-      setDraft(text); setDraftRevision((value) => value + 1);
+    onUpdate: ({ text, cursor, linkPreviewContent }) => {
+      setDraft(text); setDraftRevision((value) => value + 1); setPreviewContent(linkPreviewContent);
       if (!editTarget && text.trim().length > 0) onTypingRef.current?.();
       if (!sending && !editTarget) syncAddressedAgentsFromTextRef.current(text);
       const query=detectPrefixQuery("@",text,cursor,mentionCandidates.map(person=>person.displayName.toLowerCase()));
@@ -1368,6 +1426,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     const content = saved?.content ?? (editTarget ? stripImetaMediaLines(editTarget.body, editableMedia) : "");
     richText.setContent(content);
     setDraft(content);
+    setPreviewContent(content);
+    setPendingGifs([]);
     setPending((saved?.pendingImeta ?? editableMedia).map(({ uploaded, ...descriptor }) => ({
       name: descriptor.filename ?? descriptor.sha256,
       receivedAt: uploaded,
@@ -1431,7 +1491,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     await pasteBinding.settlePendingMentionBindings();
     if (!owner.active) return;
     const content = richText.getMarkdown().trim();
-    if (!content && pending.length === 0) return;
+    const gifs = pendingGifs;
+    if (!content && pending.length === 0 && gifs.length === 0) return;
     setProblem(null);
     setProblemNeutral(false);
     const attachments = pending.map((p) => ({ ...p.descriptor, spoiler: attachmentActions.spoileredAttachmentUrls.has(p.descriptor.url) }));
@@ -1462,8 +1523,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       }
     } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName})
       :error instanceof MentionAgentNotAllowedError?t("platform.mentionAgentNotAllowed"):t("platform.loadFailed"));return;}
+    // Original buildOutgoingMessage: chosen GIFs are body lines, not imeta.
+    const published = withGifLines(content, gifs);
     const messagePayload = [
-      content,
+      published,
       attachments.map((a) => {
         const metadata = { displayLabel: a.displayLabel, dim: a.dim, blurhash: a.blurhash, thumb: a.thumb, duration: a.duration, image: a.image };
         // Keep the existing signature for legacy attachments with no extended
@@ -1472,9 +1535,24 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       }),
       selectedInstallationIds,
     ];
+    // DD-125(5): an unresolved intent for this same message keeps the previews it first named
+    // (same key, same publication); otherwise wait for this draft's previews (original 10 s
+    // budget with Skip).
+    const unresolvedSameMessage = (() => {
+      if (!intent.current) return false;
+      try {
+        const previous: unknown = JSON.parse(intent.current.signature);
+        return Array.isArray(previous) && JSON.stringify(previous.slice(0, messagePayload.length)) === JSON.stringify(messagePayload);
+      } catch { return false; }
+    })();
+    const linkPreviewIntent = unresolvedSameMessage
+      ? frozenLinkPreviews(intent.current?.signature)
+      : await linkPreviews.prepareSubmit();
+    if (!owner.active) return;
     const signature = JSON.stringify([
       ...messagePayload,
       ...(humanMentionPubkeys.length?[humanMentionPubkeys]:[]),
+      ...(linkPreviewIntent ? [{ linkPreviews: linkPreviewIntent }] : []),
     ]);
     if (intent.current && intent.current.signature !== signature) {
       let unchangedMessage = true;
@@ -1497,9 +1575,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     setMentionInstallationIds(selectedInstallationIds);
     persistDraft(content, pending, selectedInstallationIds);
     const publish = onPublish
-      ? onPublish(content, attachments, key, selectedInstallationIds, humanMentionPubkeys)
+      ? linkPreviewIntent
+        ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent)
+        : onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys)
       : workspaceId
-        ? publishMessage(workspaceId, content, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys}).then((receipt) => {
+        ? publishMessage(workspaceId, published, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys, ...linkPreviewIntent}).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
             return receipt;
           })
@@ -1513,11 +1593,13 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         if (richText.getMarkdown().trim() === content) {
           richText.setContent("");
           setDraft("");
+          setPreviewContent("");
           pasteBinding.clearMentionIntents();
           humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
           channelLinks.clearChannels(); emojiAutocomplete.clearEmojis();
         }
         setPending((current) => current.filter((p) => !pending.includes(p)));
+        setPendingGifs((current) => current.filter((gif) => !gifs.includes(gif)));
         setOriginals((current) => new Map([...current].filter(([url]) => !pending.some((entry) => entry.descriptor.url === url))));
         attachmentActions.setSpoileredAttachmentUrls((current) => new Set([...current].filter((url) => !pending.some((entry) => entry.descriptor.url === url))));
         setMentionInstallationIds((current) => current.filter((id) => !selectedInstallationIds.includes(id)));
@@ -1551,7 +1633,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis]);
+  }, [pending, pendingGifs, linkPreviews.prepareSubmit, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
@@ -1636,7 +1718,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       onOpenMentionPicker: mentionPeople || workspaceId ? openPeople : undefined,
       onPaperclip: () => { if (!voiceNote.hasAttachmentRef.current) picker.current?.click(); },
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle,
-      sendDisabled: disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0),
+      sendDisabled: disabled || sending || uploading > 0 || voiceNote.status !== "idle" || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0 && pendingGifs.length === 0),
+      gifs: gifOption,
     }}>
       {dragging ? <DropZoneOverlay /> : null}
       <div className={surface === "forum" ? undefined : "relative"}>
@@ -1666,6 +1749,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
           {problem}
         </div>
       ) : null}
+      <ComposerLinkPreviewPreparing previews={linkPreviews} />
+      <ComposerLinkPreviewCards previews={linkPreviews} resolveMedia={resolvePreviewMedia} />
+      <ComposerGifAttachments gifs={pendingGifs} onRemove={(gif) => setPendingGifs((current) => current.filter((entry) => entry !== gif))} />
       <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
         fetchMediaBytes={fetchMediaBytes} AudioAttachment={BffAudioAttachment} isUploading={uploading > 0} uploadingCount={uploading}
         uploadingPreviews={uploadingPreviews} onCancelUpload={cancelUpload}

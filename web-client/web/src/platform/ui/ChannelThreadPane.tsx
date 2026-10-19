@@ -1,14 +1,14 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
-import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
-import { publishMessage, publishConversationMessage, publishSendToChannel, publishTyping, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { publishMessage, publishConversationMessage, publishSendToChannel, publishLinkPreviewRemoval, publishTyping, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { useTypingBroadcast } from "./useTypingBroadcast";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
@@ -156,6 +156,10 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
   const sendToChannel = useSendToChannelIntent(useCallback((sourceEventId: string, key: string) =>
     publishSendToChannel(conversation ? { conversationId: conversation.id } : { workspaceId }, sourceEventId, key),
   [conversation, workspaceId]));
+  // DD-125(5) original "Remove preview" for everyone on the viewer's own replies.
+  const removeLinkPreviews = useRemoveLinkPreviewsIntent(useCallback((message: TimelineMessage, edit: LinkPreviewRemovalEdit, key: string) =>
+    publishLinkPreviewRemoval(conversation ? { conversationId: conversation.id } : { workspaceId }, message.id, edit, key),
+  [conversation, workspaceId]));
   const memberActive = conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === channelId && conversation.participantPrincipalIds.includes(principalId) && Boolean(currentMember)
     : currentMember && "state" in currentMember && currentMember.state === WorkspaceMembershipState.Active;
@@ -249,6 +253,8 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
         return onOpenAuthor ? <MessageAuthorIdentity target={target} onOpen={() => onOpenAuthor(row.message)}>{identity}</MessageAuthorIdentity> : identity;
       } : undefined}
       renderBody={(className) => <div className={className}><MessageContent messageId={row.message.id} workspaceId={workspaceId} conversationId={conversation?.id} content={row.message.body} mediaTags={row.message.tags}
+        onRemoveLinkPreviews={canEdit && !editBusy && onEdit && row.message.signerPubkey === editAuthorPubkey && canRemoveLinkPreviews(row.message)
+          ? () => removeLinkPreviews(row.message) : undefined}
         searchQuery={row.searchQuery}
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
@@ -283,12 +289,15 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       containerClassName={composer.containerClassName} layoutMode="dock"
       replyTarget={editTarget ? null : composer.replyTarget} onCancelReply={editTarget ? undefined : composer.onCancelReply}
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}
-      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
+      linkPreviewTarget={conversation ? { conversationId: conversation.id } : { workspaceId }}
+      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys, linkPreviews) => {
         if (!canReply || (editTarget && !canSaveEdit)) throw new Error("Thread admission is unavailable");
         const receipt = await (conversation
-          ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, editTarget?.id, editTarget ? undefined : replyId, mentionPubkeys)
+          ? (linkPreviews && !editTarget
+            ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, replyId, mentionPubkeys, linkPreviews)
+            : publishConversationMessage(conversation.id, content, attachments, idempotencyKey, editTarget?.id, editTarget ? undefined : replyId, mentionPubkeys))
           : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-            editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys}));
+            editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys, ...linkPreviews}));
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}
