@@ -177,7 +177,14 @@ export function useComposerLinkPreviews({ content, enabled, prepare }: {
 
   const debouncedHrefs = React.useMemo(() => active ? composerLinkPreviewHrefs(debounced) : [], [active, debounced]);
   React.useEffect(() => {
-    for (const href of debouncedHrefs) ensure(href);
+    // Entries live in a ref: a newly started preparation must re-render so its card shows the
+    // original "processing" state at once, not only after the preparation settles.
+    let started = false;
+    for (const href of debouncedHrefs) {
+      const before = entries.current.get(href);
+      if (ensure(href) !== before) started = true;
+    }
+    if (started && mounted.current) setVersion((value) => value + 1);
   }, [debouncedHrefs, ensure]);
 
   const now = Date.now();
