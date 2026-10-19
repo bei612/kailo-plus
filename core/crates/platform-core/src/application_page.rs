@@ -112,6 +112,77 @@ pub(crate) fn entry(manifest: &Value, config: &Value) -> Result<Url, Refusal> {
     Ok(url)
 }
 
+/// 07 §4.6: the binding entry admitted only inside the deployment allow-list
+/// and never on the platform origin. Returns the entry and the effective
+/// release ∩ deployment origins.
+pub(crate) fn admitted_entry(
+    manifest: &Value,
+    config: &Value,
+) -> Result<(Url, Vec<String>), Refusal> {
+    let page = entry(manifest, config)?;
+    let page_origin = page.origin().ascii_serialization();
+    let configured = std::env::var("NATIVE_PAGE_ORIGINS").unwrap_or_default();
+    let allowed = configured
+        .split_whitespace()
+        .map(origin)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| unavailable())?;
+    let platform = std::env::var("PUBLIC_ORIGIN").map_err(|_| unavailable())?;
+    if !allowed.contains(&page_origin)
+        || page_origin == origin(&platform).map_err(|_| unavailable())?
+    {
+        return Err(unavailable());
+    }
+    let effective = release_origins(&manifest["frontendDelivery"])?
+        .into_iter()
+        .filter(|candidate| allowed.contains(candidate) && candidate != &platform)
+        .collect();
+    Ok((page, effective))
+}
+
+/// DD-127: the PENDING generation of a native-page-only binding is validated by
+/// Core alone (the caller already read the APPROVED release under share lock):
+/// the entry is inside release ∩ deployment origins and the Tenant/Workspace is
+/// ACTIVE. No adapter directory, OpenBao or IdP client takes part; the
+/// observation is Core's own fact about this exact binding generation.
+pub(crate) async fn validate_binding(
+    state: &crate::service_api::ServiceState,
+    ae: &crate::governance::Execution,
+    binding: &Value,
+    manifest: &Value,
+) -> Result<Value, Refusal> {
+    let config = &binding["normalizedConfig"];
+    if binding["configDigest"] != collab_bridge::limits::canonical_digest(config) {
+        return Err(invalid());
+    }
+    let (page, _) = admitted_entry(manifest, config)?;
+    let active: bool = sqlx::query_scalar(
+        "select exists(select 1 from identity.tenant where id=$1 and state='ACTIVE')
+            and ($2::uuid is null or exists(select 1 from identity.workspace
+              where id=$2 and tenant_id=$1 and state='ACTIVE'))",
+    )
+    .bind(ae.tenant_id)
+    .bind(ae.workspace_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !active {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    let instance = binding["nativeInstanceRef"].as_str().ok_or_else(invalid)?;
+    let scope = binding
+        .get("nativeScopeRef")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(instance));
+    let mut observed = serde_json::json!({"bindingId":binding["bindingId"],
+        "tenantId":binding["tenantId"],"configDigest":binding["configDigest"],
+        "nativeInstanceRef":instance,"nativeScopeRef":scope,"isolationMode":binding["isolationMode"],
+        "nativePageOrigin":page.origin().ascii_serialization()});
+    if let Some(workspace) = binding.get("workspaceId") {
+        observed["workspaceId"] = workspace.clone();
+    }
+    Ok(observed)
+}
+
 pub(crate) async fn get(
     State(state): State<BffState>,
     headers: HeaderMap,
@@ -194,24 +265,8 @@ async fn descriptor(
     {
         return Err(unavailable());
     }
-    let page = entry(&manifest, &config)?;
+    let (page, effective) = admitted_entry(&manifest, &config)?;
     let page_origin = page.origin().ascii_serialization();
-    let configured = std::env::var("NATIVE_PAGE_ORIGINS").unwrap_or_default();
-    let allowed = configured
-        .split_whitespace()
-        .map(origin)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| unavailable())?;
-    let platform = std::env::var("PUBLIC_ORIGIN").map_err(|_| unavailable())?;
-    if !allowed.contains(&page_origin)
-        || page_origin == origin(&platform).map_err(|_| unavailable())?
-    {
-        return Err(unavailable());
-    }
-    let effective: Vec<_> = release_origins(&manifest["frontendDelivery"])?
-        .into_iter()
-        .filter(|candidate| allowed.contains(candidate) && candidate != &platform)
-        .collect();
     let value = serde_json::json!({"bindingId":id,"projectionGeneration":generation,
         "url":page.as_str(),"origin":page_origin,"allowedOrigins":effective});
     let typed: contracts::ApplicationNativePage =

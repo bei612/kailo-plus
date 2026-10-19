@@ -16,7 +16,11 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 		return componentReleaseApproval(ctx, in)
 	}
 	plan := in.Release
-	if plan == nil || len(plan.Steps) == 0 || len(in.ReleaseObservations) > len(plan.Steps) ||
+	// DD-127: Core freezes an empty suite only for a release without any
+	// contract (a native page entry has no adapter to test); the loop below
+	// then records the original report directly.
+	if plan == nil || (len(plan.Steps) == 0) != (len(plan.ContractDigests) == 0) ||
+		len(in.ReleaseObservations) > len(plan.Steps) ||
 		plan.WorkflowID != workflow.GetInfo(ctx).WorkflowExecution.ID {
 		return temporal.NewNonRetryableApplicationError("组件登记缺冻结套件输入", activities.ErrTypeRejected, nil)
 	}

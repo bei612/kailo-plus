@@ -120,9 +120,7 @@ fn requested(value: &Value) -> Result<Requested, Refusal> {
         .as_array()
         .ok_or_else(invalid)?;
     let mut names = BTreeSet::new();
-    if categories.is_empty() {
-        return Err(invalid());
-    }
+    // Emptiness is a release fact (DD-127), checked by approved_release.
     for category in categories {
         exact(category, &["category", "version"], &[])?;
         if !names.insert(text(category, "category")?)
@@ -234,7 +232,15 @@ async fn approved_release(conn: &mut PgConnection, request: &Requested) -> Resul
     .fetch_optional(&mut *conn)
     .await?;
     let (manifest, schema, digest) = row.ok_or_else(blocked)?;
-    native::Connector::from_manifest(&manifest)?;
+    // DD-127: a native page entry has no connector; it enables no category and
+    // names no adapter. Every other release keeps its connector and categories.
+    let page_only = native::native_page_only(&manifest);
+    if !page_only {
+        native::Connector::from_manifest(&manifest)?;
+    }
+    if page_only != request.categories.is_empty() || (page_only && request.adapter_ref != "NONE") {
+        return Err(invalid());
+    }
     if collab_bridge::limits::canonical_digest(&manifest) != digest
         || !matches!(
             manifest["frontendDelivery"]["mode"].as_str(),
@@ -311,7 +317,9 @@ async fn approved_release(conn: &mut PgConnection, request: &Requested) -> Resul
     if occupied {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
-    native::Adapter::resolve(&request.adapter_ref, &request.native_instance, &manifest)?;
+    if !page_only {
+        native::Adapter::resolve(&request.adapter_ref, &request.native_instance, &manifest)?;
+    }
     Ok(manifest)
 }
 
@@ -468,7 +476,9 @@ pub(crate) async fn prewrite(
         let manifest = approved_release(tx, &request).await?;
         // Exactly the references frozen before the governed OpenBao write.
         let secret_refs = secret::frozen(ae, &manifest, request.id)?;
-        if native::Connector::from_manifest(&manifest)? == native::Connector::ProtocolPeer {
+        if !native::native_page_only(&manifest)
+            && native::Connector::from_manifest(&manifest)? == native::Connector::ProtocolPeer
+        {
             let adapter = native::Adapter::resolve(
                 &request.adapter_ref,
                 &request.native_instance,
@@ -554,9 +564,12 @@ async fn create_service_identity(
     service: Uuid,
     manifest: &Value,
 ) -> Result<(), Refusal> {
-    native::Connector::from_manifest(manifest)?;
-    // PROTOCOL_PEER explicitly declares NONE (no ActionToken). This field is
-    // not the IdP JWT audience; the service verifier validates that separately.
+    if !native::native_page_only(manifest) {
+        native::Connector::from_manifest(manifest)?;
+    }
+    // PROTOCOL_PEER and a native page entry (DD-127) declare NONE (no
+    // ActionToken). This field is not the IdP JWT audience; the service
+    // verifier validates that separately.
     let audience = text(&manifest["executionConnector"], "actionTokenAudience")?;
     let created = sqlx::query(
         "insert into identity.principal(id,tenant_id,kind,status)
@@ -957,7 +970,8 @@ async fn finish_generation(
             where b.id=$1 and ((b.active_projection_generation is not null and p.generation=b.active_projection_generation)
               or (b.active_projection_generation is null and p.action_execution_id=b.created_by_action_execution_id))")
             .bind(ae.target_id).bind(ae.id).fetch_one(&mut *tx).await?;
-        if native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter
+        if !native::native_page_only(&manifest)
+            && native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter
             && !native::reconcile_complete(&reference, native_observation.ok_or_else(blocked)?)?
         {
             return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));

@@ -54,6 +54,16 @@ impl Connector {
     }
 }
 
+/// DD-127: a native-page-only release has no execution connector. It is not a
+/// `Connector`, so every adapter/peer path keeps refusing it; only release
+/// registration/approval and the binding lifecycle branch on it explicitly.
+pub(crate) fn native_page_only(manifest: &Value) -> bool {
+    let connector = &manifest["executionConnector"];
+    connector["mode"] == "NONE"
+        && connector["adapterProtocolRange"] == "NONE"
+        && connector["actionTokenAudience"] == "NONE"
+}
+
 pub(crate) struct Adapter {
     pub(super) value: Value,
     http: reqwest::Client,
@@ -79,7 +89,10 @@ pub(crate) async fn reconcile_binding(
              or (b.active_projection_generation is null and p.action_execution_id=b.created_by_action_execution_id))")
         .bind(ae.target_id).bind(ae.tenant_id).bind(ae.workspace_id).bind(ae.id)
         .fetch_one(&state.pool).await?;
-    if Connector::from_manifest(&manifest)? == Connector::ProtocolPeer {
+    // DD-127: Kailo never started native work for a native page entry.
+    if native_page_only(&manifest)
+        || Connector::from_manifest(&manifest)? == Connector::ProtocolPeer
+    {
         return Ok(None);
     }
     let typed: contracts::AdapterBindingReconcileRequest =
@@ -447,6 +460,9 @@ pub(super) async fn validate(
     manifest: &Value,
     keys: &Value,
 ) -> Result<Value, Refusal> {
+    if native_page_only(manifest) {
+        return crate::application_page::validate_binding(state, ae, binding, manifest).await;
+    }
     if Connector::from_manifest(manifest)? == Connector::ProtocolPeer {
         return peer::validate(state, ae, binding, manifest).await;
     }

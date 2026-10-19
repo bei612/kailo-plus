@@ -76,9 +76,14 @@ fn path(binding: Uuid, key: &str) -> String {
 /// template can be delivered before the binding exists; version 1 is the
 /// only version a CAS=0 first write can produce.
 fn references(locator: impl Fn(&str) -> String, manifest: &Value) -> Result<Vec<Value>, Refusal> {
+    let declarations = manifest["secretSchema"].as_array().ok_or_else(blocked)?;
+    // No declared secret has no reader (a DD-127 native page entry has none).
+    if declarations.is_empty() {
+        return Ok(Vec::new());
+    }
     let audience = audience(manifest)?;
     let mut refs = Vec::new();
-    for declared in manifest["secretSchema"].as_array().ok_or_else(blocked)? {
+    for declared in declarations {
         let key = text(declared, "secretKey").map_err(|_| blocked())?;
         refs.push(json!({"secretKey":key,"locator":locator(key),"version":1,"audience":audience}));
     }
@@ -225,11 +230,14 @@ pub(super) fn frozen(
         .and_then(|parameters| parameters.get(INTENT))
         .and_then(Value::as_array)
         .ok_or_else(conflict)?;
-    let audience = audience(manifest)?;
     let declared = manifest["secretSchema"].as_array().ok_or_else(blocked)?;
     if refs.len() != declared.len() {
         return Err(conflict());
     }
+    if declared.is_empty() {
+        return Ok(Vec::new());
+    }
+    let audience = audience(manifest)?;
     let prefix = format!("tenants/{}/", ae.tenant_id);
     for (reference, declaration) in refs.iter().zip(declared) {
         exact(

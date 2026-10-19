@@ -379,6 +379,19 @@ describe("shared external service connection management", () => {
     expect(host.textContent).not.toContain("success");
   });
 
+  it("lists a native page entry binding without capability categories by its component type (DD-127)",async()=>{
+    const entryOnly={...connection,componentTypeKey:"cells",capabilityCategories:[],hasNativePage:true,canDisable:false};
+    expect(validBindingPage({bindings:[entryOnly],canCreate:false} as never,undefined,0)).toBe(true);
+    expect(bindingDocument(JSON.stringify({...creation,adapterServiceRef:"NONE",capabilityCategories:[],retainOnTenantDelete:false}))).not.toBeNull();
+    const onSelect=vi.fn();
+    const client=createBffClient({send:async()=>({status:200,body:{bindings:[entryOnly],canCreate:false}})});
+    const host=await render(<PlatformProvider client={client} locale="en"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" onSelect={onSelect} />
+    </SidebarProvider></PlatformProvider>);
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="cells"]')!);
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({bindingId:connection.bindingId}));
+  });
+
   it("does not manufacture entries for inactive, non-native or empty bindings",async()=>{
     for(const bindings of [[],[{...connection,state:"DISABLED",hasNativePage:true}],[{...connection,hasNativePage:false}]]){
       const client=createBffClient({send:async()=>({status:200,body:{bindings,canCreate:false}})});
