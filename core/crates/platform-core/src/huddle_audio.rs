@@ -150,9 +150,11 @@ pub async fn bridge(
                 return;
             }
         };
-        let mut config = WebSocketConfig::default();
-        config.max_message_size = Some(wire::MAX_AUDIO_MESSAGE_BYTES);
-        config.max_frame_size = Some(wire::MAX_AUDIO_MESSAGE_BYTES);
+        let config = WebSocketConfig {
+            max_message_size: Some(wire::MAX_AUDIO_MESSAGE_BYTES),
+            max_frame_size: Some(wire::MAX_AUDIO_MESSAGE_BYTES),
+            ..WebSocketConfig::default()
+        };
         let browser =
             WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, Some(config))
                 .await;
