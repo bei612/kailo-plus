@@ -27,7 +27,9 @@ Path structure as following:
 - Check out [Network drivers overview](https://docs.docker.com/engine/network/drivers/) to learn more about `bridge` network driver.
 
 The original native stack has its own Compose project and `wren` network,
-not Core's default application network. Qdrant is only on the internal
+not Core's default application network. Both native networks take explicit,
+nonoverlapping subnets from the component env (`WREN_NETWORK_SUBNET`,
+`WREN_AI_DATA_SUBNET`), as the other native stacks do. Qdrant is only on the internal
 `wren-ai-service-data` network; the AI service is its sole native client.
 Only the explicitly selected query-governance overlay connects the native UI,
 and the separate component OpenBao Agent project, to an existing private

@@ -70,7 +70,9 @@
 # the Wren precedent data-query/docker/conformance/provider.mjs (it re-reads the
 # native PostgreSQL and answers the query consumers' sourceResources). Stages:
 #   1 native    dedicated Compose project (WREN_COMPOSE_PROJECT_NAME=kailo-wren-conformance*)
-#               from data-query/docker/docker-compose.yaml only; the operator then does the
+#               from data-query/docker/docker-compose.yaml only (CONFORMANCE_NATIVE_ENV has the
+#               shape of deploy/components/data-query.env.template, with its own project name
+#               and WREN_NETWORK_SUBNET/WREN_AI_DATA_SUBNET); the operator then does the
 #               original Wren onboarding (connect the isolated PostgreSQL source, select the
 #               table the vectors' describe/query expect as the model) and mints the native
 #               HUMAN token of the preparation file

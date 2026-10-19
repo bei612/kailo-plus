@@ -7,11 +7,19 @@ volumes:
   native-qdrant-data:
 
 networks:
+  # Explicit nonoverlapping subnets, as for the other native stacks: the host's
+  # predefined address pools are not a deployment input.
   wren:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${WREN_NETWORK_SUBNET:?explicit nonoverlapping native subnet required}
   wren-ai-service-data:
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${WREN_AI_DATA_SUBNET:?explicit nonoverlapping native AI data subnet required}
 
 services:
   # Separate native OIDC policy/cookies and configuration ownership. Core's
