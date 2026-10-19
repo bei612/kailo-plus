@@ -245,7 +245,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3cb30c917c2ff57795f55ac67f564c3c950dc8c7e0ab782aa40688fe29573dfa
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -264,7 +264,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3cb30c917c2ff57795f55ac67f564c3c950dc8c7e0ab782aa40688fe29573dfa
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -526,7 +526,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:c724aa694419e78c68d2b48683187fa3364a366f1abb695a52129328e2690831
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:8f3eeee8abea6c8d72aa054ec1a01dbe12d6359d724d9a2bd1704a1fe263438a
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -763,7 +763,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:6dc78d5c4580ab163736ad2cf46defb01ff45f6aef48c3ef49a7f2dc8121834b
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:b3830b2e84c7fb7034d65f8b27eb4f08f4a1a97842704ef1db0cb1e42592260e
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -814,7 +814,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:5c7a256015336e195332cc4e16bb4d82356e3b98672bf4ba041f3166be5dc7a1
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:2dfa13bbabb3eb521e8c90d6d62060ec80fedc48012ce0eed3cd980a85995c3e
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
