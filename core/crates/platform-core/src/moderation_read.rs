@@ -179,7 +179,9 @@ async fn workspaces(
     .bind(&channels)
     .fetch_all(&state.pool)
     .await?;
-    let pairs = rows.into_iter().map(|(channel, ws)| (channel.to_string(), ws));
+    let pairs = rows
+        .into_iter()
+        .map(|(channel, ws)| (channel.to_string(), ws));
     Ok(pairs.collect())
 }
 
@@ -352,7 +354,10 @@ fn restriction_view(row: &RestrictionRow, principal: Option<&Uuid>) -> Value {
     });
     let optional = [
         ("principalId", principal.map(Uuid::to_string)),
-        ("banExpiresAt", row.ban_expires_at.clone().filter(|_| row.banned)),
+        (
+            "banExpiresAt",
+            row.ban_expires_at.clone().filter(|_| row.banned),
+        ),
         ("mutedUntil", row.muted_until.clone()),
     ];
     for (name, value) in optional {

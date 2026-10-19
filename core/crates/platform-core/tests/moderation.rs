@@ -73,7 +73,10 @@ async fn get(http: &reqwest::Client, e: &Env, subject: &str, path: &str) -> (Sta
 
 fn lists(page: &Value, pubkey: &str) -> Option<Value> {
     let items = page["items"].as_array()?;
-    items.iter().find(|row| row["pubkey"] == json!(pubkey)).cloned()
+    items
+        .iter()
+        .find(|row| row["pubkey"] == json!(pubkey))
+        .cloned()
 }
 
 async fn scenarios(

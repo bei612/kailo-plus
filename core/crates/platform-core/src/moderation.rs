@@ -422,13 +422,10 @@ async fn resolve_report(
     let conversation = text(input, "conversationId").map(parse_uuid).transpose()?;
     let (channel, host, scope) = match (workspace, conversation) {
         (Some(workspace), None) => {
-            let scope = crate::web_transport::admit_collaboration_workspace_scope(
-                state,
-                ctx,
-                workspace,
-            )
-            .await
-            .map_err(admission_refusal)?;
+            let scope =
+                crate::web_transport::admit_collaboration_workspace_scope(state, ctx, workspace)
+                    .await
+                    .map_err(admission_refusal)?;
             let fact = json!({"workspaceId": workspace});
             (scope.channel_id, scope.community_host, fact)
         }
@@ -447,8 +444,8 @@ async fn resolve_report(
     let keys = crate::web_transport::actor_keys(state, ctx)
         .await
         .map_err(response_refusal)?;
-    let client = crate::web_transport::community_client(state, &keys, &host)
-        .map_err(response_refusal)?;
+    let client =
+        crate::web_transport::community_client(state, &keys, &host).map_err(response_refusal)?;
     let author = message_author(state, &client, &channel, &event_id).await?;
     let foreign: Option<(Uuid, String)> = sqlx::query_as(
         "select tenant_id, kind from identity.buzz_identity_binding where pubkey = $1",
@@ -1118,7 +1115,10 @@ async fn observe_publication(state: &BffState, ae: &Execution) -> Result<Settled
     let expired = now_secs() > created_at + wire::RELAY_TIMESTAMP_DRIFT_SECS;
     if expired && complete {
         // 同一签名事件已不可能再被 Relay 接受：确定未送达，不重签
-        return Ok(Settled::Aborted(ReasonCode::DependencyUnavailable, evidence));
+        return Ok(Settled::Aborted(
+            ReasonCode::DependencyUnavailable,
+            evidence,
+        ));
     }
     Ok(Settled::Unknown)
 }
@@ -1652,13 +1652,37 @@ mod tests {
         let until = NOW + 3_600;
         let at = rfc3339(until);
         let muted = [restriction(&pk, false, None, Some(&at))];
-        assert!(restriction_reached(&muted, &pk, Mode::Timeout, Some(until), NOW));
+        assert!(restriction_reached(
+            &muted,
+            &pk,
+            Mode::Timeout,
+            Some(until),
+            NOW
+        ));
         let later = Some(until + 60);
         assert!(!restriction_reached(&muted, &pk, Mode::Timeout, later, NOW));
         // 已过期的冻结禁言是空目标：对账不再重签
-        assert!(restriction_reached(&[], &pk, Mode::Timeout, Some(NOW - 1), NOW));
-        assert!(!restriction_reached(&muted, &pk, Mode::Untimeout, None, NOW));
-        assert!(restriction_reached(&banned, &pk, Mode::Untimeout, None, NOW));
+        assert!(restriction_reached(
+            &[],
+            &pk,
+            Mode::Timeout,
+            Some(NOW - 1),
+            NOW
+        ));
+        assert!(!restriction_reached(
+            &muted,
+            &pk,
+            Mode::Untimeout,
+            None,
+            NOW
+        ));
+        assert!(restriction_reached(
+            &banned,
+            &pk,
+            Mode::Untimeout,
+            None,
+            NOW
+        ));
     }
 
     #[test]
