@@ -909,7 +909,8 @@ func (r *run) planColumns(p *Plan, from string, ts []target) (*columnSplit, erro
 		for _, f := range sch.PrimaryFields {
 			col := r.q(f.DBName)
 			cond := col + " IS NOT NULL"
-			if f.DataType == schema.String {
+			// GORMDataType: DataType holds the column type tag (varchar(255)).
+			if f.GORMDataType == schema.String {
 				cond += " AND " + col + " <> ''"
 			}
 			conds = append(conds, cond)
