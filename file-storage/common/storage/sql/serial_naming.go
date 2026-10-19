@@ -74,6 +74,18 @@ type customNaming struct {
 	Policies string
 }
 
+// NewNamingStrategy returns the table naming of a storage opened with the
+// given DSN reserved variables (prefix, policies, singular), as OpenPool does.
+func NewNamingStrategy(prefix, policies string, singular bool) schema.Namer {
+	return &customNaming{
+		NamingStrategy: &schema.NamingStrategy{
+			TablePrefix:   prefix,
+			SingularTable: singular,
+		},
+		Policies: policies,
+	}
+}
+
 func (c *customNaming) TableName(name string) string {
 	n := c.NamingStrategy.TableName(name)
 

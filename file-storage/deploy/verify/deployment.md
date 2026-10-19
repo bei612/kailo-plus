@@ -1,5 +1,162 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-19 (b) Per-service SQL tables, binding datasource before start, seed signing host
+
+### Per-service SQL tables (production defect)
+
+Symptoms: user-meta inserts fail with `null value in column "node_id"` (every
+Draft Mode upload: HTTP 500) and node metadata writes fail with `there is no
+unique or exclusion constraint matching the ON CONFLICT specification`.
+
+Root cause: upstream builds every SQL DSN with the query
+`prefix={{.Meta.prefix}}&policies={{.Meta.policies}}&singular={{.Meta.singular}}`
+(`discovery/install/lib/database.go` `dsnFromInstallConfig`, config migration
+4.9.90, the docker `install-conf.yml` examples), so that each service storage
+gets the prefix, policies table and naming of the bootstrap
+(`assets/start.yaml`: `pydio.grpc.meta` `data_`, `pydio.grpc.user-meta`
+`idm_usr_` + `idm_usr_meta_policies`, `pydio.grpc.data.index`
+`data_index_{{ .DataSource }}_`, ...). A `manual` install DSN is used verbatim.
+Both delivered install JSONs (production and isolated) and both stored
+`pydio.json` DSNs lack the template (checked as booleans, values not read), so
+every storage got an empty prefix: `data/meta/dao/sql` `Meta` and
+`idm/meta/dao/sql` `Meta` both resolve to `meta` (merged columns, primary key
+`uuid` of user-meta plus `node_id NOT NULL`, no `(node_id, namespace)` key),
+roles, users, workspaces and user metadata share `resource_policies`, and the
+index of every datasource (`personal`, `cellsdata`, `pydiods1`, `kailobinding`,
+`versions`, `thumbnails`) shares one `idx_trees`. The shared index also means
+every datasource sees the same tree: the stock `common-files` workspace
+(`DATASOURCE:pydiods1`) lists the personal folders and the binding root, and
+uploads resolved through it were stored in another datasource's bucket
+(production `kailo-deploy-roundtrip-20261019.txt` under `kailo-binding` is
+stored in `pydiods1`; isolated `p-plain.txt`/`p-uuid.txt` in `cellsdata`, the
+three draft uploads have no object at all).
+
+Fix, upstream-consistent: the install DSN must carry the template (`start.sh`
+refuses it otherwise); an existing database is moved by the native command
+`cells admin config db prefixes` (`discovery/install/prefixes`). It derives
+every legacy and per-service table name from the GORM models of each service
+DAO with the runtime naming (`common/storage/sql` `NewNamingStrategy`, now
+also used by `OpenPool`) and the bootstrap storages, and in one PostgreSQL
+transaction:
+
+- renames every single-owner table (36 of the 39 observed, e.g. `roles` →
+  `idm_roles`, `oidcs` → `oauth2_oidc`) and, on PostgreSQL, its GORM index and
+  constraint names (each in a savepoint; a name it cannot change is reported
+  and left to the owner's AutoMigrate);
+- splits `meta` by the primary key each row carries: the owner whose primary
+  key the table has (`idm_usr_meta`) keeps the table, its rows, minus the
+  node-meta columns and indexes; node-meta rows go to a new `data_meta`;
+- splits `resource_policies` by the owner of each resource (roles, users,
+  workspaces, user metadata and namespaces); a resource owned by several
+  services (a user and its own role share one UUID) is copied to each, as each
+  service reads it today; a policy no service owns refuses the move;
+- splits `idx_trees` by datasource: every top-level entry must be assigned
+  (`--index-assign-user-folders personal` for the personal folders,
+  `--index-assign <ds>=<entry>`; `start.sh` adds both, the binding root as
+  `CELLS_BINDING_DATASOURCE=CELLS_BINDING_ROOT_FOLDER`), every leaf must have
+  its object in that datasource's LOCAL flat storage or `--index-drop-unbacked`
+  must be given (the stray objects stay where they are); folder sizes are
+  recomputed per datasource;
+- refuses unknown unprefixed tables, existing target tables, ambiguous or
+  unclassifiable rows; nothing changes when anything is refused;
+- then appends the template to the stored DSN (`databases/<id>/dsn`) and reads
+  both back.
+
+Without `--apply` it only reads (exit 0 in effect or nothing installed, 3
+pending, 2 refused). `start.sh` runs it in a one-off container of the project
+before replacing any container and refuses to deploy while a move is pending.
+
+Expected plan (read 2026-10-19, production / isolated): `meta` 0 rows;
+`resource_policies` 73 / 52 rows, all owned (43 / 26 shared by a user and its
+role); production top-level entries `kailo-bootstrap-admin`, `seam-verifier`,
+`collab-third-20261005`, `kailo-platform-admin` (personal folders) and
+`kailo-binding`; isolated `kailo-binding` only. Unbacked leaves: production 1
+(`kailo-deploy-roundtrip-20261019.txt`, object in `pydiods1`), isolated 5 (two
+objects in `cellsdata`, three drafts without object): these test artefacts
+need `--index-drop-unbacked`. The production workspace rooted on
+`pydiods1/kailo-platform-admin/kailo-upload-sync-fixture-20261012-3tqnvd`
+keeps its root node, which then lives in `personal`.
+
+### Operator procedure (production, then the isolated instance)
+
+The image must contain this batch (`CELLS_IMAGE` = its digest).
+
+1. Add the template to `dbManualDSN` in the install JSON (0600) without
+   printing it (e.g. a `python3 -I` in-place edit): the DSN ends with
+   `&prefix={{.Meta.prefix}}&policies={{.Meta.policies}}&singular={{.Meta.singular}}`.
+   The running instance does not read it; `start.sh` validates it.
+2. Create `CELLS_MIGRATION_BACKUP_DIR` (`mkdir -m 0700`, deploying user,
+   outside `CELLS_DATA_DIR`/`CELLS_DB_DATA_DIR`) and set it in the env file.
+3. Check (no downtime, nothing written):
+   `bash file-storage/deploy/start.sh --migrate-tables-plan ENV --index-drop-unbacked`
+   → exit 3 and the plan above; exit 2 lists what still needs a decision.
+4. Move: `bash file-storage/deploy/start.sh --migrate-tables ENV --index-drop-unbacked`
+   stops Cells, keeps its database, writes `cells-db-<UTC>.dump` (`pg_dump
+   -Fc`, checked with `pg_restore --list`) and `pydio-<UTC>.json` to the backup
+   directory, re-checks, then applies. Cells stays stopped.
+5. Redeploy: `bash file-storage/deploy/start.sh ENV` (or the component
+   deploy): the guard passes, the entrypoint ensures the binding datasource
+   and the keys, each service completes its own schema, `start.sh` verifies
+   the keys and reconciles.
+
+Rollback (only if step 4 or 5 fails after the commit): stop Cells,
+`pg_restore --clean --if-exists` the dump into the same database inside
+`cells-db`, put `pydio-<UTC>.json` back as `/var/cells/pydio.json`, deploy the
+previous image with the previous install JSON. A failed transaction changes
+nothing.
+
+What to verify after step 5: `start.sh --migrate-tables-plan ENV` exits 0;
+the database lists `idm_usr_meta`, `data_meta`, the four `idm_*_policies`, one
+`data_index_<ds>_idx_tree` per datasource and no unprefixed table; a Draft
+Mode upload through the binding returns 200 and its draft is listed
+(`n/node/{uuid}/versions`); setting node metadata (e.g. a tag) succeeds; the
+log has no `node_id` / `ON CONFLICT` errors; `common-files` no longer lists
+the personal folders or `kailo-binding`; the binding root keeps its UUID
+(`facts.json` `nativeRootRef` unchanged, `reconcile.py` reports no change).
+
+### Binding datasource before start (reconcile race)
+
+The running server holds `pydio.json` and the vault in memory and rewrites
+both files whole on every `config.Save` (`common/config/file/opener_file.go`:
+watcher disabled, no reload). `reconcile.py` created the binding datasource
+through `POST /a/config/datasource` after `cells admin datasource keys
+--verify` had removed `objects-previous-credential-local1` from the vault file
+in another process: the server's save put it back. The REST handler also
+resolved the object service secret, stored it under a new vault key and moved
+`local1` onto it, so the other datasources' `ApiSecret` references no longer
+matched, and the new datasource was only served after a restart.
+
+Now the image entrypoint runs `cells admin datasource ensure --name
+$CELLS_BINDING_DATASOURCE --versioning-policy $CELLS_BINDING_VERSIONING_POLICY`
+before `cells admin datasource keys` and before the server starts, as the
+install creates the default datasources: LOCAL flat, beside the existing local
+datasources, on the existing local object service with its vault reference,
+no new vault entry. An existing datasource is left as is, or refused when it
+differs (a policy is changed in the Cells console, which also versions the
+existing files). `reconcile.py` only reads it back. `--verify` no longer
+writes the vault of the running server; the pre-start `keys` step removes a
+pending previous credential once the backend is readable with the delivered
+one. One deploy converges: the datasource is served from that start, its
+references are those of `local1`, nothing is resurrected.
+
+### Seed signing host
+
+`tools/component-release/conformance/seed-cells.mjs` and `seed-knowledge.mjs`
+signed S3 requests for `cellsOrigin` (`http://cells:8080`) while Cells' proxy
+rewrites `Host` to the site `ReverseProxyURL` (`CELLS_EXTERNAL`,
+`common/config/routing/proxies.go`) before the gateway checks SigV4. They now
+sign for the new required seed field `cellsExternal` and still connect to
+`cellsOrigin` (`conformance/cells-s3.mjs`).
+
+### Verification of this batch
+
+Dev box: `python3 -I -B deploy/test_reconcile.py` (11 tests), `bash -n`,
+`sh -n`. Go and Node tests are written, not run here (workspace rule):
+`go test ./discovery/install/prefixes ./common/storage/sql ./cmd -run
+'Template|Bootstrap|Prefixes|Move|Ensure|Verify|PreStart|ReadDelivered|Refused'`,
+`node --test tools/component-release/conformance/seed-cells.test.mjs`; gofmt
+and vet run on CI before the image is built.
+
 ## 2026-10-19 Declarative native configuration and datasource key rotation
 
 Design: 18 §2/§7, 08 §4, 07 §2.6, DD-93, DD-124. Before this batch neither the
@@ -12,14 +169,14 @@ What the deployment now guarantees (each step idempotent, read back, fail closed
 | Need | Native consumer (this fork) | Applied by |
 |---|---|---|
 | Draft Mode | `idm/meta/client.go` maps `Draft-Mode` to `USERMETA_DRAFT_NAMESPACE` only when `USERMETA_DRAFT_API` is true (manifest default off); an unknown namespace is silently ignored | `reconcile.py`: boolean `usermeta-*` namespace (READ/WRITE `*`) via `PUT /a/user-meta/namespace`, merged `frontend/plugin/meta.user` params via `PUT /a/config/frontend/plugin/meta.user` |
-| Revisions | `data/versions/init.go` `PolicyForNode`: no policy, no versions | `reconcile.py`: `VersioningPolicyName` on the binding datasource via `POST /a/config/datasource/{Name}` (created LOCAL beside the existing local datasources when missing) |
+| Revisions | `data/versions/init.go` `PolicyForNode`: no policy, no versions | entrypoint `cells admin datasource ensure` (before start): the binding datasource is created LOCAL flat beside the existing local datasources with `VersioningPolicyName`; `reconcile.py` reads it back (`GET /a/config/datasource/{Name}`), see "Binding datasource before start" above |
 | Binding scope/root | node UUIDs resolve only against real workspace roots (`common/nodes/uuid/handler-uuid-workspace.go`); the adapter refuses `DATASOURCE:` roots | `reconcile.py`: `cells admin file mkdir <ds>/<folder>`, `PUT /a/workspace/{slug}` rooted on that folder with no default rights, exactly the declared `read`/`write` ACLs (`PUT /a/acl`, extras removed); refuses a datasource or folder rooted by another workspace (stock `common-files` roots `pydiods1`, whose paths would expose the binding root). Writes the owner-only facts file (`nativeScopeRef`, `nativeRootRef`, principal UUIDs, `instanceServiceUuid`) and cross-checks a delivered `CELLS_NATIVE_ACTION_CONFIG_FILE` against it |
 | Datasource keys | embedded MinIO root credential = `services/pydio.grpc.data.objects.<name>` `ApiKey` + vault `ApiSecret`, shared by every `pydio.grpc.data.sync.<ds>`; the FS backend keeps `.minio.sys/config` encrypted with it | entrypoint `cells admin datasource keys` (before start) from `CELLS_DATASOURCE_KEY_FILE`/`CELLS_DATASOURCE_SECRET_FILE`; keeps the replaced credential in the vault as MinIO `OldCred` (`data/source/objects/grpc/handler.go`) until the backend is re-encrypted; `start.sh` runs `--verify` in the running instance |
 
 `start.sh` order: validation (incl. key files and `reconcile.py --check`) →
 pull/create/up `--wait` (exit **75** when only the wait failed, e.g. the
 first-install restart; re-running is safe) → `cells admin datasource keys
---verify` → `reconcile.py`. `start.sh --reconcile ENV` repeats the last two on
+--verify` (read only) → `reconcile.py`. `start.sh --reconcile ENV` repeats the last two on
 the running project. No SQL, no config-file edit, no value printed; the admin
 PAT is minted per run (`cells admin user token -e <deadline>`), read from the
 CLI's stdout by `reconcile.py` and never echoed.
@@ -56,9 +213,12 @@ or `bash file-storage/deploy/start.sh ENV`; changing the files does not
 recreate the container by itself: `sudo -n docker restart <project>-cells-1`
 on an unchanged deployment). Expected output of the post-start verification:
 `objects service local1: delivered credential accepted, previous refused,
-backend re-encrypted; previous credential removed` (or `... previous kept for
-the next start` if MinIO has not finished; the next run removes it). A
-second `start.sh --reconcile ENV` prints `no rotation pending`. `--verify`
+backend re-encrypted; previous credential removed before the next start` (or
+`... previous kept for the next start` if MinIO has not finished). The
+pending previous credential is removed by the entrypoint's `cells admin
+datasource keys` before the next start, once the backend is readable with the
+delivered credential; `--verify` never changes the vault of the running
+server (see "Binding datasource before start" above). `--verify`
 probes each local object service at the S3 endpoint the running service
 reports through the registry (`pydio.grpc.data.objects.<name>`
 `GetMinioConfig`, as the sync services reach it): the embedded MinIO takes a

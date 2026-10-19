@@ -247,13 +247,7 @@ func OpenPool(ctx context.Context, uu string) (storage.Storage, error) {
 				// ParameterizedQueries:      true,        // Don't include params in the SQL log
 				// Colorful: false, // Disable color
 			}),
-			NamingStrategy: &customNaming{
-				NamingStrategy: &schema.NamingStrategy{
-					TablePrefix:   dsn.GetReservedVar("prefix"),             //expectedVars["prefix"],
-					SingularTable: dsn.GetReservedVar("singular") == "true", // expectedVars["singular"] == "true",
-				},
-				Policies: dsn.GetReservedVar("policies"), // expectedVars["policies"],
-			},
+			NamingStrategy: NewNamingStrategy(dsn.GetReservedVar("prefix"), dsn.GetReservedVar("policies"), dsn.GetReservedVar("singular") == "true"),
 		})
 
 		if err != nil {

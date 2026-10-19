@@ -6,6 +6,10 @@ set -euo pipefail
 check_only=false
 platform_adapter=false
 reconcile_only=false
+# Move a database installed without the upstream per-service SQL table
+# template (cells admin config db prefixes): "plan" only reads, "apply" stops
+# Cells, backs up the database and the configuration, then moves the tables.
+migrate_tables=""
 while [[ ${1:-} == --* ]]; do
   case "$1" in
     --check) check_only=true ;;
@@ -13,12 +17,24 @@ while [[ ${1:-} == --* ]]; do
     # Re-apply the declarative native configuration (reconcile.py) and verify
     # the datasource keys on the running project; nothing is pulled/created.
     --reconcile) reconcile_only=true ;;
+    --migrate-tables-plan) migrate_tables=plan ;;
+    --migrate-tables) migrate_tables=apply ;;
     *) printf 'unknown deployment option\n' >&2; exit 2 ;;
   esac
   shift
 done
-[[ $# == 1 && -f $1 ]] || { printf 'usage: bash start.sh [--check] [--platform-adapter | --reconcile] CONTROLLED_ENV_FILE\n' >&2; exit 2; }
+usage='usage: bash start.sh [--check] [--platform-adapter | --reconcile | --migrate-tables-plan | --migrate-tables] CONTROLLED_ENV_FILE [table move decisions]'
+[[ $# -ge 1 && -f $1 ]] || { printf '%s\n' "$usage" >&2; exit 2; }
 ! { "$platform_adapter" && "$reconcile_only"; } || { printf -- '--platform-adapter and --reconcile are separate steps\n' >&2; exit 2; }
+[[ -z $migrate_tables ]] || ! { "$platform_adapter" || "$reconcile_only" || "$check_only"; } || { printf -- 'the table move is a separate step\n' >&2; exit 2; }
+# Operator decisions of the index split, passed to the native command as is;
+# the binding root and the personal folders are assigned below.
+table_decisions=("${@:2}")
+[[ ${#table_decisions[@]} == 0 || -n $migrate_tables ]] || { printf '%s\n' "$usage" >&2; exit 2; }
+for decision in "${table_decisions[@]}"; do
+  [[ $decision == --index-drop-unbacked || $decision =~ ^--index-assign=[a-z0-9]{1,33}=[A-Za-z0-9][A-Za-z0-9._@\ -]*(,[A-Za-z0-9][A-Za-z0-9._@\ -]*)*$ ]] \
+    || { printf 'unknown table move decision\n' >&2; exit 2; }
+done
 config=$(realpath -e -- "$1")
 [[ $(stat -c '%a' -- "$config") == 600 ]] || { printf 'deployment env must be mode 0600\n' >&2; exit 2; }
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -29,7 +45,7 @@ source "$config"
 set +a
 python3 - <<'PY'
 import ipaddress, json, os, pathlib, re, stat, sys, uuid
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 def require(condition, reason):
     if not condition:
@@ -65,6 +81,13 @@ try:
     dsn = urlsplit(install['dbManualDSN'])
     require(dsn.scheme == 'postgres' and dsn.hostname == 'cells-db' and dsn.port == int(env['CELLS_DB_PORT']), 'native DSN must target this independent cells-db service')
     require(unquote(dsn.path.removeprefix('/')) == env['CELLS_DB_NAME'] and unquote(dsn.username or '') == env['CELLS_DB_USER'], 'native database name/user mismatch')
+    # Upstream appends this template to every SQL DSN it builds
+    # (discovery/install/lib/database.go dsnFromInstallConfig; a manual DSN is
+    # used verbatim): without it every service gets the same unprefixed table
+    # names and node/user metadata, policies and datasource indexes collide.
+    template = parse_qs(dsn.query, keep_blank_values=True)
+    require(all(template.get(key) == ['{{.Meta.%s}}' % key] for key in ('prefix', 'policies', 'singular')),
+            'native DSN must carry the upstream per-service table template prefix={{.Meta.prefix}}&policies={{.Meta.policies}}&singular={{.Meta.singular}}')
     require(unquote(dsn.password or '') == secret_file('CELLS_DB_PASSWORD_FILE').rstrip('\n') != '', 'native database password delivery mismatch')
     # Datasource keys (embedded object service root credential): same rules as
     # data/source/objects ValidDeliveredCredential, applied by the entrypoint.
@@ -300,6 +323,55 @@ fi
 "${compose[@]}" config --quiet
 if "$check_only"; then exit 0; fi
 
+# Per-service SQL tables (cells admin config db prefixes, run in a one-off
+# container of this project: same configuration, database and data mounts,
+# no published port). Exit 0: in effect or nothing installed yet; 3: a move is
+# pending; 2: refused. The binding root and the personal folders (my-files
+# template personal/<login>) are assigned to their datasources; any other
+# top-level index entry needs an explicit decision.
+table_prefixes=("${compose[@]}" run --rm -T cells cells admin config db prefixes
+  --index-assign-user-folders=personal "--index-assign=$CELLS_BINDING_DATASOURCE=$CELLS_BINDING_ROOT_FOLDER" "${table_decisions[@]}")
+if [[ $migrate_tables == plan ]]; then
+  exec "${table_prefixes[@]}"
+fi
+if [[ $migrate_tables == apply ]]; then
+  # Owner-only directory outside the native state, delivered by the operator.
+  backup=$(realpath -e -- "${CELLS_MIGRATION_BACKUP_DIR:?CELLS_MIGRATION_BACKUP_DIR required for the table move}")
+  [[ -d $backup && $(stat -c '%a' -- "$backup") == 700 && $(stat -c '%u' -- "$backup") == $(id -u) ]] \
+    || { printf 'CELLS_MIGRATION_BACKUP_DIR must be an existing owner-only (0700) directory of this user\n' >&2; exit 2; }
+  for state in "$CELLS_DATA_DIR" "$CELLS_DB_DATA_DIR"; do
+    state=$(realpath -e -- "$state")
+    [[ $backup != "$state" && $backup != "$state"/* && $state != "$backup"/* ]] \
+      || { printf 'CELLS_MIGRATION_BACKUP_DIR must be outside the native state\n' >&2; exit 2; }
+  done
+  # No writer while the tables move: stop Cells, keep (or start) its database.
+  "${compose[@]}" stop cells
+  "${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}" cells-db
+  code=0
+  "${table_prefixes[@]}" || code=$?
+  case $code in
+    0) printf 'Per-service tables already in effect; nothing moved. Start Cells with: bash start.sh CONTROLLED_ENV_FILE\n'; exit 0 ;;
+    3) ;;
+    *) printf 'Table move refused or failed (exit %s); nothing was changed and Cells stays stopped\n' "$code" >&2; exit 2 ;;
+  esac
+  mapfile -t databases < <("${compose[@]}" ps --quiet cells-db)
+  [[ ${#databases[@]} == 1 && -n ${databases[0]} ]] || { printf 'no running Cells database in this project\n' >&2; exit 2; }
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  umask 077
+  # Custom-format dump of the whole database (restore: pg_restore --clean
+  # --if-exists into the same database with Cells stopped), checked readable;
+  # the configuration whose stored DSN the move changes.
+  "${CONTAINER_DOCKER[@]}" exec "${databases[0]}" sh -c 'exec pg_dump -Fc -p "$1" -U "$POSTGRES_USER" -d "$POSTGRES_DB"' sh "$CELLS_DB_PORT" \
+    > "$backup/cells-db-$stamp.dump"
+  "${CONTAINER_DOCKER[@]}" exec -i "${databases[0]}" pg_restore --list < "$backup/cells-db-$stamp.dump" > /dev/null
+  "${compose[@]}" run --rm --no-deps -T --entrypoint cat cells /var/cells/pydio.json > "$backup/pydio-$stamp.json"
+  [[ -s $backup/cells-db-$stamp.dump && -s $backup/pydio-$stamp.json ]] || { printf 'backup is empty; nothing moved\n' >&2; exit 2; }
+  printf 'Backup written: %s/cells-db-%s.dump and %s/pydio-%s.json\n' "$backup" "$stamp" "$backup" "$stamp"
+  "${table_prefixes[@]}" --apply
+  printf 'Tables moved to their per-service names; Cells is stopped. Start it with: bash start.sh CONTROLLED_ENV_FILE\n'
+  exit 0
+fi
+
 # After the native service is healthy: the delivered datasource keys must be the
 # ones the object services accept (a pending previous credential refused), then
 # the declarative configuration of the governed actions is applied and read
@@ -331,6 +403,14 @@ if "$platform_adapter"; then
 fi
 # All images are digest-pinned. No build, initializer outside this project, or shared DB.
 "${compose[@]}" pull
+# A database installed without the per-service table template (node and user
+# metadata, policies and every datasource index in shared tables) is moved
+# first, before any container of this project is replaced; a new install
+# receives the template from its validated install DSN.
+if ! "${table_prefixes[@]}" >&2; then
+  printf 'Cells SQL tables are not the per-service tables: run start.sh --migrate-tables-plan, then --migrate-tables (verify/deployment.md); nothing replaced or started\n' >&2
+  exit 2
+fi
 "${compose[@]}" create --no-build --pull never
 mapfile -t containers < <("${compose[@]}" ps --all --quiet cells cells-db)
 [[ ${#containers[@]} == 2 ]] || { printf 'unexpected independent Cells service set\n' >&2; exit 2; }
