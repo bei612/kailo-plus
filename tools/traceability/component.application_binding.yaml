@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98, DD-124]
+  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98, DD-124, DD-127]
   # 此列表仅登记 EXT-BASE 决策；跨阶段消费者由既有核验记录关联。
   # DD-12 属 EXT-DATA，DD-70/DD-71 属 S1，不把通用接入重新归为具体组件。
   facts: []
@@ -15,7 +15,7 @@ design:
   entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
 
 validation:
-  scenarios: [V-SCN-122]
+  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156]
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
@@ -67,6 +67,7 @@ implementation:
     - worker/activities/component_action.go
     - worker/workflows/resource_provision.go
     - client-kit/ts/platform/src/react/application-bindings.tsx
+    - client-kit/ts/platform/src/react/native-application-entries.tsx
     - client-kit/ts/platform/src/react/service-read-permissions.tsx
     - client-kit/ts/platform/src/react/component-actions.tsx
     - file-storage/common/auth/native-human-read.go
@@ -116,6 +117,8 @@ implementation:
     - core/migrations/20261005020000_component_action.down.sql
     - core/migrations/20261009010000_native_human_reads.up.sql
     - core/migrations/20261009010000_native_human_reads.down.sql
+    - core/migrations/20261020020000_native_page_binding.up.sql
+    - core/migrations/20261020020000_native_page_binding.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]

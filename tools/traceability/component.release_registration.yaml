@@ -6,7 +6,7 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-58, DD-88, DD-94, DD-102, DD-124]
+  decisions: [DD-58, DD-88, DD-94, DD-102, DD-124, DD-127]
   # DD-100 的首个归属为 S3；本能力消费其动作策略，证据正文保留该依据。
   facts: []
   seams: []
@@ -14,7 +14,7 @@ design:
   entities: [ComponentDefinition, ComponentRelease, ActionExecution, WorkflowRef]
 
 validation:
-  scenarios: [V-SCN-118, V-SCN-121, V-SCN-150, V-SCN-151, V-SCN-152, V-SCN-153]
+  scenarios: [V-SCN-118, V-SCN-121, V-SCN-150, V-SCN-151, V-SCN-152, V-SCN-153, V-SCN-154]
   evidence:
     - dimension: 安全边界
       ref: core/verify/component-release-registration.md
