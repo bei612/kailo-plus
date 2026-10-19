@@ -1040,8 +1040,9 @@ async fn delegations(
           and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
           and (g.max_uses is null or g.max_uses>(select count(*) from admission.delegation_use u where u.delegation_id=g.id))
           and exists(select 1 from admission.delegation_scope scope
-            join catalog.action_definition action on action.action_key=scope.action_key and action.version=scope.action_version
-              and action.status='ACTIVE' and action.action_key='automation.run'
+            join catalog.action_definition action on action.action_key=scope.action_key
+              and action.status='ACTIVE' and action.action_key='automation.run' and action.component_release_id is null
+              and catalog.consent_covers(scope.action_definition_id,action.id)
             join catalog.result_exposure_policy exposure on exposure.id=scope.result_exposure_policy_id
               and exposure.version=scope.result_exposure_policy_version and exposure.tenant_id=g.tenant_id
               and exposure.status='ACTIVE' and exposure.mode='CONSUME_ONLY'

@@ -1224,6 +1224,25 @@ mod tenant_quota_command_tests {
         let abandoned = Some(&ReasonCode::AdmissionAbandoned);
         assert_eq!(dimensions("DENY", abandoned), [na; 4]);
     }
+
+    #[test]
+    fn missing_delegation_is_a_delegation_refusal_not_an_authorization_one() {
+        // DD-126(6), V-SCN-147/149: scope and permission were decided before Delegation.
+        use super::automation_dimensions as dimensions;
+        use contracts::ReasonCode;
+        let na = "NOT_APPLICABLE";
+        for reason in [
+            ReasonCode::DelegationRequired,
+            ReasonCode::DelegationRenewalRequired,
+        ] {
+            assert_eq!(
+                dimensions("DENY", Some(&reason)),
+                ["ALLOW", "ALLOW", "DENY", na]
+            );
+        }
+        let denied = Some(&ReasonCode::PermissionDenied);
+        assert_eq!(dimensions("DENY", denied), ["ALLOW", "DENY", na, na]);
+    }
 }
 
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
@@ -2658,10 +2677,18 @@ fn quota_reason(reason: &ReasonCode) -> bool {
     )
 }
 
+/// DD-126(6): the closed set of delegation refusals.
+fn delegation_reason(reason: &ReasonCode) -> bool {
+    matches!(
+        reason,
+        ReasonCode::DelegationRequired | ReasonCode::DelegationRenewalRequired
+    )
+}
+
 /// 非 HUMAN 路径一次判定的分维度结论 `[scope, authorization, delegation, quota]`。
-/// 判定顺序是 scope → 授权/Delegation → Quota：额度拒绝说明前三维已成立；其余拒绝
-/// 只确定它所在的那一维，之后的维度没有被判定（NOT_APPLICABLE）。依赖不可用时
-/// 各维都没有结论。
+/// 判定顺序是 scope → 授权 → Delegation → Quota（05 §1）：额度拒绝说明前三维已成立；
+/// 委托拒绝（DD-126(6)）说明 scope 与授权已成立；其余拒绝只确定它所在的那一维，之后的
+/// 维度没有被判定（NOT_APPLICABLE）。依赖不可用时各维都没有结论。
 pub(crate) fn automation_dimensions(
     outcome: &str,
     reason: Option<&ReasonCode>,
@@ -2671,6 +2698,7 @@ pub(crate) fn automation_dimensions(
         ("ALLOW", _) => ["ALLOW"; 4],
         ("DENY", Some(reason)) if quota_reason(reason) => ["ALLOW", "ALLOW", "ALLOW", "DENY"],
         ("DENY", Some(ReasonCode::PermissionDenied)) => ["ALLOW", "DENY", NA, NA],
+        ("DENY", Some(reason)) if delegation_reason(reason) => ["ALLOW", "ALLOW", "DENY", NA],
         // 判定被放弃（EVALUATING 过期）：没有任何一维得出结论。
         ("DENY", Some(ReasonCode::AdmissionAbandoned)) => [NA; 4],
         ("DENY", _) => ["DENY", NA, NA, NA],
@@ -5426,7 +5454,7 @@ impl Governance {
                     Ok(None)
                 }
                 Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
-                    delegation::prewrite(tx, ae, sem, params).await?;
+                    delegation::prewrite(tx, ae, def, sem, params).await?;
                     self.record_local_outcome(
                         tx,
                         ae,

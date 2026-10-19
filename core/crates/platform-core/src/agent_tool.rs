@@ -354,7 +354,10 @@ pub(crate) async fn tool_admission(
     }
     // Reuse the parent's actual DelegationUse; another Tool call in this same
     // Operation cannot spend a second use or borrow a different Grant.
-    let scope: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_grant g
+    // DD-126(3)(6): the Scope matches the current definition by action key and
+    // consent digest; a missing Scope or consent change is a delegation refusal.
+    let consent: Option<bool> = sqlx::query_scalar("select bool_or(catalog.platform_consent_covers(s.action_definition_id,$7,$8))
+        from admission.delegation_grant g
         join admission.delegation_scope s on s.delegation_id=g.id
         join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id
           and p.version=s.result_exposure_policy_version and p.tenant_id=g.tenant_id and p.status='ACTIVE'
@@ -362,16 +365,18 @@ pub(crate) async fn tool_admission(
         where g.id=$1 and g.tenant_id=$2 and g.workspace_id=$3 and g.installation_resource_id=$4
           and g.agent_principal_id=$5 and g.grantor_principal_id=$6 and g.state='ACTIVE'
           and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
-          and s.action_key=$7 and s.action_version=$8 and s.target_type='RESOURCE'
+          and s.action_key=$7 and s.target_type='RESOURCE'
           and s.target_id=g.installation_resource_id and s.create_workspace_id is null
           and s.tool_resource_id=$10 and p.mode='CONSUME_ONLY'
-          and p.output_schema_hash=$11 and p.redaction_policy='PLATFORM_METADATA_ONLY')")
+          and p.output_schema_hash=$11 and p.redaction_policy='PLATFORM_METADATA_ONLY'")
         .bind(context.delegation_id).bind(context.tenant_id).bind(context.workspace_id)
         .bind(context.installation_resource_id).bind(context.agent_principal_id).bind(parent.initiator_principal_id)
         .bind(&def.action_key).bind(def.version).bind(parent.operation_id).bind(tool.resource_id)
         .bind(&tool.output_schema_hash).fetch_one(&mut **tx).await?;
-    if !scope {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    match consent {
+        None => return Err(Refusal::Denied(ReasonCode::DelegationRequired)),
+        Some(false) => return Err(Refusal::Denied(ReasonCode::DelegationRenewalRequired)),
+        Some(true) => {}
     }
     // DD-122 (5): Tool rights belong to the Agent and the Installation owner;
     // the initiator only needs the target contract permission and delegate.

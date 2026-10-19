@@ -100,6 +100,9 @@ struct GrantRow {
     expires_at: DateTime<Utc>,
     max_uses: Option<i64>,
     uses: i64,
+    superseded_by_delegation_id: Option<Uuid>,
+    consent_current: bool,
+    observed_at: DateTime<Utc>,
 }
 
 pub async fn list(
@@ -125,9 +128,16 @@ pub async fn list(
         Ok(row) => row,
         Err(error) => return error,
     };
+    // DD-126(4): every Scope's granted consent must cover the definition it
+    // would be admitted against now; otherwise the Grant needs renewal.
     let rows: Vec<GrantRow> = match sqlx::query_as(
         "select g.id,g.version,g.grantor_principal_id,g.state,g.valid_from,g.expires_at,g.max_uses,
-            (select count(*) from admission.delegation_use u where u.delegation_id=g.id) uses
+            (select count(*) from admission.delegation_use u where u.delegation_id=g.id) uses,
+            g.superseded_by_delegation_id,clock_timestamp() observed_at,
+            coalesce((select bool_and(catalog.consent_covers(s.action_definition_id,
+                catalog.current_definition_for_scope(
+                  s.action_key,s.target_type,s.target_id,s.tool_resource_id)))
+              from admission.delegation_scope s where s.delegation_id=g.id),false) consent_current
         from admission.delegation_grant g
         where g.tenant_id=$1 and g.workspace_id=$2 and g.installation_resource_id=$3
           and g.agent_principal_id=$4 order by g.id offset $5 limit $6",
@@ -167,8 +177,20 @@ pub async fn list(
             return Refusal::Unavailable("DelegationGrant 缺固定 Scope/Exposure 引用".into())
                 .respond(None);
         }
+        let Some(effective) = delegation::effective_state(
+            &row.state,
+            row.observed_at,
+            row.valid_from,
+            row.expires_at,
+            row.max_uses,
+            row.uses,
+            row.consent_current,
+        ) else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
         let value = json!({"delegationId":row.id,"delegationVersion":row.version,
             "grantorPrincipalId":row.grantor_principal_id,"state":row.state,"uses":row.uses,
+            "effectiveState":effective,"supersededByDelegationId":row.superseded_by_delegation_id,
             "parameters":{"validFrom":row.valid_from,"expiresAt":row.expires_at,
                 "maxUses":row.max_uses,"scopes":scopes}});
         match serde_json::from_value::<contracts::GrantElement>(value) {

@@ -1,4 +1,5 @@
 //! DD-121、V-SCN-105/106：普通 @提及与人工指派的 `agent.invoke` 准入结论对发起 HUMAN 只读可见。
+//! DD-126(6)：缺委托与待续签以委托专属原因码原样返回，客户端据此给出续签入口。
 //!
 //! 只读本人作为 initiator 的原 ActionExecution 与其 Invocation 引用：不含消息正文、他人的执行
 //! 或 Agent 内部状态，不新增 Relay 事件，不重试、不代发。尚未被扫描的提及没有执行，
@@ -215,6 +216,20 @@ mod tests {
         assert_eq!(denied.reply_event_id, None);
         assert_eq!(denied.event_id, "a".repeat(64));
         assert_eq!(denied.installation_id, Uuid::nil().to_string());
+    }
+
+    #[test]
+    fn mention_outcome_keeps_delegation_specific_refusals() {
+        // DD-126(6), V-SCN-147/149: the sender is told to renew, not to ask an admin.
+        for reason in [
+            ReasonCode::DelegationRequired,
+            ReasonCode::DelegationRenewalRequired,
+        ] {
+            let code = governance::wire(&reason);
+            let denied = outcome("DENIED", Some(code.as_str()), None, None);
+            assert_eq!(denied.state, AgentMentionOutcomeState::Denied);
+            assert_eq!(denied.reason_code, Some(reason));
+        }
     }
 
     #[test]

@@ -1075,9 +1075,12 @@ async fn management_grant(
     .fetch_optional(&mut **tx)
     .await?;
     if grant.is_none() {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
     }
-    let allowed:bool=sqlx::query_scalar("select exists(select 1 from admission.delegation_grant g
+    // DD-126(3)(6): matched by action key and consent digest; a consent change is
+    // a renewal, not a missing permission.
+    let allowed:Option<bool>=sqlx::query_scalar("select bool_or(catalog.platform_consent_covers(scope.action_definition_id,$7,$8))
+        from admission.delegation_grant g
         join admission.delegation_scope scope on scope.delegation_id=g.id
         join catalog.agent_installation i on i.resource_id=g.installation_resource_id
         join catalog.result_exposure_policy exposure on exposure.id=scope.result_exposure_policy_id
@@ -1087,15 +1090,17 @@ async fn management_grant(
           and g.agent_principal_id=i.agent_principal_id and g.state='ACTIVE'
           and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
           and (g.max_uses is null or g.max_uses>(select count(*) from admission.delegation_use u where u.delegation_id=g.id))
-          and scope.action_key=$7 and scope.action_version=$8 and scope.target_type='RESOURCE' and scope.target_id=$9
+          and scope.action_key=$7 and scope.target_type='RESOURCE' and scope.target_id=$9
           and scope.create_workspace_id is null and scope.tool_resource_id is null
           and exposure.tenant_id=$3 and exposure.status='ACTIVE' and exposure.mode='CONSUME_ONLY'
-          and exposure.output_schema_hash=any($10) and exposure.redaction_policy=$11)")
+          and exposure.output_schema_hash=any($10) and exposure.redaction_policy=$11")
         .bind(p.delegation_id).bind(p.delegation_version).bind(row.tenant_id).bind(row.workspace_id)
         .bind(row.owner_principal_id).bind(row.executor_installation_resource_id).bind(ACTION).bind(run_def.version)
         .bind(row.id).bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run")).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
-    if !allowed {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    match allowed {
+        None => return Err(Refusal::Denied(ReasonCode::DelegationRequired)),
+        Some(false) => return Err(Refusal::Denied(ReasonCode::DelegationRenewalRequired)),
+        Some(true) => {}
     }
     // Grant 行锁覆盖 revoke；到期仍按时钟判定，管理 NONE 不读额度或占用次数。
     let agent: Uuid = sqlx::query_scalar(
@@ -1133,7 +1138,7 @@ async fn management_grant(
     .fetch_one(&mut **tx)
     .await?;
     if !valid {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
     }
     Ok(())
 }
@@ -1678,7 +1683,9 @@ struct Run {
 // 同一 scope 的真实对象，不从当前 pointer 推断已经冻结的 Invocation。
 const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version resource_version,
     r.owner_principal_id,tm.human_identity_id,i.resource_id executor_installation_resource_id,
-    i.agent_principal_id,case when $2::uuid is null then d.delegation_id else invocation.delegation_id end delegation_id,
+    i.agent_principal_id,case when $2::uuid is null
+      then coalesce(admission.current_delegation(d.delegation_id),d.delegation_id)
+      else invocation.delegation_id end delegation_id,
     v.asset_id automation_version_asset_id,a.version automation_version,p.agent_version_asset_id,
     p.generation projection_generation,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,
     v.result_target,v.name,v.description,v.config_hash,d.enabled_at,a.owner_principal_id version_owner_principal_id
@@ -1839,52 +1846,6 @@ async fn fresh_gated(
         false,
     )
     .await?;
-    let grant: Option<(Uuid,Uuid,Uuid,Uuid,Uuid,Option<i64>)> = sqlx::query_as(
-        "select tenant_id,workspace_id,grantor_principal_id,installation_resource_id,agent_principal_id,max_uses
-         from admission.delegation_grant where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp() and expires_at>clock_timestamp()
-         for update")
-        .bind(row.delegation_id).fetch_optional(&mut **tx).await?;
-    let Some((tenant, workspace, human, installation, agent, max_uses)) = grant else {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
-    };
-    if (tenant, workspace, human, installation, agent)
-        != (
-            row.tenant_id,
-            row.workspace_id,
-            row.owner_principal_id,
-            row.executor_installation_resource_id,
-            row.agent_principal_id,
-        )
-    {
-        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
-    }
-    let scope: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_scope s
-        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id and p.version=s.result_exposure_policy_version
-        where s.delegation_id=$1 and s.action_key=$2 and s.action_version=$3 and s.target_type='RESOURCE'
-          and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
-          and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
-          and p.output_schema_hash=any($6) and p.redaction_policy=$7)")
-        .bind(row.delegation_id).bind(ACTION).bind(def.version).bind(row.resource_id).bind(row.tenant_id)
-        .bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run")).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
-    if !scope {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
-    }
-    let used: bool = match operation {
-        Some(operation) => sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
-            .bind(row.delegation_id).bind(operation).fetch_one(&mut **tx).await?,
-        None => false,
-    };
-    let count: i64 =
-        sqlx::query_scalar("select count(*) from admission.delegation_use where delegation_id=$1")
-            .bind(row.delegation_id)
-            .fetch_one(&mut **tx)
-            .await?;
-    if !used && max_uses.is_some_and(|max| count >= max) {
-        return Err(Refusal::Limit(ReasonCode::QuotaExhausted));
-    }
-    if operation.is_some() && !used {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
-    }
     let projection = g
         .spicedb
         .resource_projection_matches_in_workspace(
@@ -1940,6 +1901,59 @@ async fn fresh_gated(
         }
         revision = Some(checked.zed_token);
     }
+    // 05 §1: Delegation after permission, so a missing Grant is recorded as a
+    // delegation refusal with scope and authorization decided (DD-126(6)).
+    let grant: Option<(Uuid,Uuid,Uuid,Uuid,Uuid,Option<i64>)> = sqlx::query_as(
+        "select tenant_id,workspace_id,grantor_principal_id,installation_resource_id,agent_principal_id,max_uses
+         from admission.delegation_grant where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp() and expires_at>clock_timestamp()
+         for update")
+        .bind(row.delegation_id).fetch_optional(&mut **tx).await?;
+    let Some((tenant, workspace, human, installation, agent, max_uses)) = grant else {
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
+    };
+    if (tenant, workspace, human, installation, agent)
+        != (
+            row.tenant_id,
+            row.workspace_id,
+            row.owner_principal_id,
+            row.executor_installation_resource_id,
+            row.agent_principal_id,
+        )
+    {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+    }
+    // DD-126(3): the Scope matches by action key and consent digest, not version.
+    let consent: Option<bool> = sqlx::query_scalar("select bool_or(catalog.platform_consent_covers(s.action_definition_id,$2,$3))
+        from admission.delegation_scope s
+        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id and p.version=s.result_exposure_policy_version
+        where s.delegation_id=$1 and s.action_key=$2 and s.target_type='RESOURCE'
+          and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
+          and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
+          and p.output_schema_hash=any($6) and p.redaction_policy=$7")
+        .bind(row.delegation_id).bind(ACTION).bind(def.version).bind(row.resource_id).bind(row.tenant_id)
+        .bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run")).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
+    match consent {
+        None => return Err(Refusal::Denied(ReasonCode::DelegationRequired)),
+        Some(false) => return Err(Refusal::Denied(ReasonCode::DelegationRenewalRequired)),
+        Some(true) => {}
+    }
+    let used: bool = match operation {
+        Some(operation) => sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
+            .bind(row.delegation_id).bind(operation).fetch_one(&mut **tx).await?,
+        None => false,
+    };
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from admission.delegation_use where delegation_id=$1")
+            .bind(row.delegation_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    // DD-126(6): an exhausted Grant is a missing delegation, not an OpenMeter quota.
+    if !used && max_uses.is_some_and(|max| count >= max) {
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
+    }
+    if operation.is_some() && !used {
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
+    }
     // Original WorkflowDef::requires_elevated_authority (SEC-006): a definition
     // that sends channel data to an external destination needs the owner's
     // current Workspace management authority at every run and dispatch.
@@ -1973,7 +1987,7 @@ async fn fresh_gated(
     .fetch_one(&mut **tx)
     .await?;
     if !still_valid {
-        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        return Err(Refusal::Denied(ReasonCode::DelegationRequired));
     }
     revision.ok_or_else(|| Refusal::Unavailable("Automation permission 未读取".into()))
 }

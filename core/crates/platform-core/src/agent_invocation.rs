@@ -138,6 +138,10 @@ fn conflict() -> Refusal {
 fn denied() -> Refusal {
     Refusal::Denied(ReasonCode::PermissionDenied)
 }
+/// DD-126(6): no usable Grant is a delegation refusal, not an authorization one.
+fn no_delegation() -> Refusal {
+    Refusal::Denied(ReasonCode::DelegationRequired)
+}
 
 #[derive(FromRow)]
 struct Installation {
@@ -261,6 +265,8 @@ fn matches_source(row: &Installation, event: &Event, trigger: &str) -> bool {
 }
 
 /// Grant 行锁保护撤销/用量；原 HUMAN/Agent/Installation/Action scope 均精确求交。
+/// 05 §1 的次序：scope、permission，再 Delegation（DD-126(6)）——`grant` 为 `Err` 时
+/// 前两步仍判定，之后以委托原因拒绝。Scope 按动作键与同意摘要匹配当前定义（DD-126(3)）。
 /// DD-123：`quota` 只在派发新回合之前为真；已开始的一轮（回帖、工具调用）按 CHECK
 /// 语义允许跑完，不在中途以额度拒绝。
 #[allow(clippy::too_many_arguments)]
@@ -270,49 +276,13 @@ async fn fresh(
     row: &Installation,
     human: Uuid,
     pubkey: &str,
-    grant: Uuid,
+    grant: Result<Uuid, ReasonCode>,
     def: &Definition,
     operation: Option<Uuid>,
     quota: bool,
 ) -> Result<String, Refusal> {
     let scope = row.scope();
     crate::automation::source_human(&state.governance, tx, &scope, human, pubkey).await?;
-    let max: Option<Option<i64>> = sqlx::query_scalar(
-        "select max_uses from admission.delegation_grant
-        where id=$1 and tenant_id=$2 and workspace_id=$3 and grantor_principal_id=$4
-          and installation_resource_id=$5 and agent_principal_id=$6 and state='ACTIVE'
-          and valid_from<=clock_timestamp() and expires_at>clock_timestamp() for update",
-    )
-    .bind(grant)
-    .bind(row.tenant_id)
-    .bind(row.workspace_id)
-    .bind(human)
-    .bind(row.id)
-    .bind(row.agent_principal_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let max = max.ok_or_else(denied)?;
-    let valid: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_scope s
-        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id and p.version=s.result_exposure_policy_version
-        where s.delegation_id=$1 and s.action_key=$2 and s.action_version=$3 and s.target_type='RESOURCE'
-          and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
-          and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
-          and p.output_schema_hash=any($6) and p.redaction_policy='PLATFORM_METADATA_ONLY')")
-        .bind(grant).bind(ACTION).bind(def.version).bind(row.id).bind(row.tenant_id)
-        .bind(crate::governance::delegation::metadata_output_schema_hashes(ACTION)).fetch_one(&mut **tx).await?;
-    if !valid {
-        return Err(denied());
-    }
-    let used: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
-        .bind(grant).bind(operation).fetch_one(&mut **tx).await?;
-    let count: i64 =
-        sqlx::query_scalar("select count(*) from admission.delegation_use where delegation_id=$1")
-            .bind(grant)
-            .fetch_one(&mut **tx)
-            .await?;
-    if !used && (max.is_some_and(|max| count >= max) || operation.is_some()) {
-        return Err(denied());
-    }
     crate::automation::fresh_runtime(state, tx, &scope).await?;
     let mut revision = None;
     for (principal, permission) in [
@@ -342,6 +312,46 @@ async fn fresh(
         }
         revision = Some(check.zed_token);
     }
+    let grant = grant.map_err(Refusal::Denied)?;
+    let max: Option<Option<i64>> = sqlx::query_scalar(
+        "select max_uses from admission.delegation_grant
+        where id=$1 and tenant_id=$2 and workspace_id=$3 and grantor_principal_id=$4
+          and installation_resource_id=$5 and agent_principal_id=$6 and state='ACTIVE'
+          and valid_from<=clock_timestamp() and expires_at>clock_timestamp() for update",
+    )
+    .bind(grant)
+    .bind(row.tenant_id)
+    .bind(row.workspace_id)
+    .bind(human)
+    .bind(row.id)
+    .bind(row.agent_principal_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let max = max.ok_or_else(no_delegation)?;
+    let consent: Option<bool> = sqlx::query_scalar("select bool_or(catalog.platform_consent_covers(s.action_definition_id,$2,$3))
+        from admission.delegation_scope s
+        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id and p.version=s.result_exposure_policy_version
+        where s.delegation_id=$1 and s.action_key=$2 and s.target_type='RESOURCE'
+          and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
+          and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
+          and p.output_schema_hash=any($6) and p.redaction_policy='PLATFORM_METADATA_ONLY'")
+        .bind(grant).bind(ACTION).bind(def.version).bind(row.id).bind(row.tenant_id)
+        .bind(crate::governance::delegation::metadata_output_schema_hashes(ACTION)).fetch_one(&mut **tx).await?;
+    match consent {
+        None => return Err(no_delegation()),
+        Some(false) => return Err(Refusal::Denied(ReasonCode::DelegationRenewalRequired)),
+        Some(true) => {}
+    }
+    let used: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
+        .bind(grant).bind(operation).fetch_one(&mut **tx).await?;
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from admission.delegation_use where delegation_id=$1")
+            .bind(grant)
+            .fetch_one(&mut **tx)
+            .await?;
+    if !used && (max.is_some_and(|max| count >= max) || operation.is_some()) {
+        return Err(no_delegation());
+    }
     if quota {
         state
             .governance
@@ -352,7 +362,7 @@ async fn fresh(
         where id=$1 and state='ACTIVE' and valid_from<=clock_timestamp() and expires_at>clock_timestamp())")
         .bind(grant).fetch_one(&mut **tx).await?;
     if !live {
-        return Err(denied());
+        return Err(no_delegation());
     }
     revision.ok_or_else(denied)
 }
@@ -501,7 +511,7 @@ async fn recheck(
         &row,
         ae.initiator_principal_id,
         pubkey,
-        frozen.delegation_id,
+        Ok(frozen.delegation_id),
         &def,
         Some(ae.operation_id),
         turn.is_none(),
@@ -531,10 +541,21 @@ pub(crate) async fn turn_template(
     }
 }
 
-/// 发起 HUMAN 授予该 Installation、覆盖当前 `agent.invoke` 版本与本 Installation 的 ACTIVE
-/// Grant，scope 与内容策略按 `fresh` 同一规则过滤；Grant 行锁按 id 次序取得。
+/// 发起 HUMAN 授予该 Installation、以本 Installation 为 `agent.invoke` 目标的 ACTIVE Grant，
+/// scope 与内容策略按 `fresh` 同一规则过滤；Grant 行锁按 id 次序取得。`consent_current`
+/// 表示 Scope 的同意摘要覆盖当前 `agent.invoke` 版本（DD-126(3)）：只改 meter 的新版本
+/// 不使其失效，同意字段变化的版本使其待续签。
 const GRANT_CANDIDATES: &str = "select g.id,g.valid_from,g.expires_at,g.max_uses,
-    (select count(*) from admission.delegation_use u where u.delegation_id=g.id) uses
+    (select count(*) from admission.delegation_use u where u.delegation_id=g.id) uses,
+    exists(select 1 from admission.delegation_scope s
+        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id
+          and p.version=s.result_exposure_policy_version
+        where s.delegation_id=g.id and s.action_key='agent.invoke'
+          and catalog.platform_consent_covers(s.action_definition_id,'agent.invoke',$9)
+          and s.target_type='RESOURCE' and s.target_id=$3 and s.create_workspace_id is null
+          and s.tool_resource_id is null and p.tenant_id=$1 and p.status='ACTIVE'
+          and p.mode='CONSUME_ONLY' and p.output_schema_hash=any($10)
+          and p.redaction_policy='PLATFORM_METADATA_ONLY') consent_current
     from admission.delegation_grant g
     join admission.action_execution ga on ga.id=g.action_execution_id
     where g.tenant_id=$1 and g.workspace_id=$2 and g.installation_resource_id=$3
@@ -546,7 +567,7 @@ const GRANT_CANDIDATES: &str = "select g.id,g.valid_from,g.expires_at,g.max_uses
       and exists(select 1 from admission.delegation_scope s
         join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id
           and p.version=s.result_exposure_policy_version
-        where s.delegation_id=g.id and s.action_key='agent.invoke' and s.action_version=$9
+        where s.delegation_id=g.id and s.action_key='agent.invoke'
           and s.target_type='RESOURCE' and s.target_id=$3 and s.create_workspace_id is null
           and s.tool_resource_id is null and p.tenant_id=$1 and p.status='ACTIVE'
           and p.mode='CONSUME_ONLY' and p.output_schema_hash=any($10)
@@ -560,23 +581,40 @@ struct GrantCandidate {
     expires_at: chrono::DateTime<chrono::Utc>,
     max_uses: Option<i64>,
     uses: i64,
+    consent_current: bool,
+}
+
+impl GrantCandidate {
+    fn uses_left(&self) -> bool {
+        self.max_uses.is_none_or(|max| self.uses < max)
+    }
 }
 
 /// DD-121 的续签入口与委托管理页都允许在旧 Grant 仍 ACTIVE 时再授予一条（不撤旧），
 /// 同一 grantor 对同一 Installation 因而可并存多条有效 Grant。它们是同一人对同一 scope 的
 /// 同意，任取其一都不越出授权；并存本身不是拒绝理由（否则续签反而使 @提及永久
 /// `PERMISSION_DENIED`）。取仍有剩余次数者中到期最晚、其次最新授予的一条，结果确定；
-/// 被选 Grant 仍由 `fresh` 逐项 fresh 核验。
-fn usable_grant(candidates: &[GrantCandidate]) -> Option<Uuid> {
+/// 被选 Grant 仍由 `fresh` 逐项 fresh 核验。DD-126(5) 之后新授予不再与同 Scope 的 ACTIVE
+/// Grant 并存（续签替换原 Grant），并存只来自此前的存量。
+/// 没有可用者时：只剩同意摘要已变化、次数未尽的 Grant 为待续签，其余（无 Grant、次数
+/// 用尽）为缺委托（DD-126(6)）。
+fn usable_grant(candidates: &[GrantCandidate]) -> Result<Uuid, ReasonCode> {
     candidates
         .iter()
-        .filter(|g| g.max_uses.is_none_or(|max| g.uses < max))
+        .filter(|g| g.consent_current && g.uses_left())
         .max_by(|a, b| {
             (a.expires_at, a.valid_from)
                 .cmp(&(b.expires_at, b.valid_from))
                 .then_with(|| b.id.cmp(&a.id))
         })
         .map(|g| g.id)
+        .ok_or_else(|| {
+            if candidates.iter().any(|g| !g.consent_current && g.uses_left()) {
+                ReasonCode::DelegationRenewalRequired
+            } else {
+                ReasonCode::DelegationRequired
+            }
+        })
 }
 
 /// 源事件与 Installation 的唯一键跨 mention/manual 共用；客户端重试不产生第二回合。
@@ -673,7 +711,7 @@ async fn admit(
     let root = root(event);
     let parameters = json!({"targetVersion":row.version,"agentVersionAssetId":row.agent_version_asset_id,
         "projectionGeneration":row.projection_generation,"sourceEventId":event.id.to_hex(),"rootEventId":root,
-        "sourcePrincipalId":human,"sourcePubkey":event.pubkey.to_hex(),"delegationId":grant,"trigger":trigger});
+        "sourcePrincipalId":human,"sourcePubkey":event.pubkey.to_hex(),"delegationId":grant.as_ref().ok(),"trigger":trigger});
     let ae = governance::open_automation_execution(
         &mut tx,
         Actor {
@@ -704,23 +742,22 @@ async fn admit(
     .bind(row.projection_generation)
     .fetch_optional(&mut *tx)
     .await?;
-    let decision = match (session_matches, grant) {
-        (Some(false), _) => Err(conflict()),
-        (_, Some(grant)) => {
+    let decision = match session_matches {
+        Some(false) => Err(conflict()),
+        _ => {
             fresh(
                 state,
                 &mut tx,
                 &row,
                 human,
                 &event.pubkey.to_hex(),
-                grant,
+                grant.clone(),
                 &def,
                 None,
                 true,
             )
             .await
         }
-        (_, None) => Err(denied()),
     };
     state
         .governance
@@ -736,7 +773,7 @@ async fn admit(
         tx.commit().await?;
         return Ok(ae.id);
     }
-    let grant = grant.ok_or_else(denied)?;
+    let grant = grant.map_err(Refusal::Denied)?;
     let invocation = Uuid::new_v4();
     let workflow = crate::component_task::workflow_id(
         "AGENT_TASK",
@@ -1353,39 +1390,75 @@ mod tests {
             expires_at: at(until),
             max_uses: max,
             uses,
+            consent_current: true,
+        }
+    }
+
+    fn stale(id: u128, max: Option<i64>, uses: i64) -> GrantCandidate {
+        GrantCandidate {
+            consent_current: false,
+            ..candidate(id, 10, 100, max, uses)
         }
     }
 
     #[test]
     fn invoke_renewed_grant_coexisting_with_older_one_is_still_usable() {
-        assert_eq!(usable_grant(&[]), None);
+        assert_eq!(usable_grant(&[]), Err(ReasonCode::DelegationRequired));
         let only = candidate(1, 10, 100, None, 0);
-        assert_eq!(usable_grant(&[only]), Some(Uuid::from_u128(1)));
+        assert_eq!(usable_grant(&[only]), Ok(Uuid::from_u128(1)));
         // Production 2026-10-19: one grantor, two ACTIVE agent.invoke@2 Grants (renewed 95 s
         // apart); both covered the mention, yet admission denied for "not exactly one".
         let older = candidate(2, 10, 100, None, 0);
         let renewed = candidate(1, 20, 110, None, 0);
-        assert_eq!(usable_grant(&[renewed, older]), Some(Uuid::from_u128(1)));
+        assert_eq!(usable_grant(&[renewed, older]), Ok(Uuid::from_u128(1)));
         let older = candidate(2, 10, 100, None, 0);
         let renewed = candidate(1, 20, 110, None, 0);
-        assert_eq!(usable_grant(&[older, renewed]), Some(Uuid::from_u128(1)));
+        assert_eq!(usable_grant(&[older, renewed]), Ok(Uuid::from_u128(1)));
     }
 
     #[test]
     fn invoke_grant_choice_skips_exhausted_and_is_deterministic() {
         let exhausted = candidate(1, 20, 200, Some(2), 2);
         let left = candidate(2, 10, 100, Some(2), 1);
-        assert_eq!(usable_grant(&[exhausted, left]), Some(Uuid::from_u128(2)));
-        assert_eq!(usable_grant(&[candidate(1, 20, 200, Some(1), 1)]), None);
+        assert_eq!(usable_grant(&[exhausted, left]), Ok(Uuid::from_u128(2)));
+        assert_eq!(
+            usable_grant(&[candidate(1, 20, 200, Some(1), 1)]),
+            Err(ReasonCode::DelegationRequired)
+        );
         let newer = candidate(3, 20, 100, None, 0);
         let older = candidate(4, 10, 100, None, 0);
-        assert_eq!(usable_grant(&[older, newer]), Some(Uuid::from_u128(3)));
+        assert_eq!(usable_grant(&[older, newer]), Ok(Uuid::from_u128(3)));
         let low = candidate(5, 10, 100, None, 0);
         let high = candidate(6, 10, 100, None, 0);
-        assert_eq!(usable_grant(&[high, low]), Some(Uuid::from_u128(5)));
+        assert_eq!(usable_grant(&[high, low]), Ok(Uuid::from_u128(5)));
         let low = candidate(5, 10, 100, None, 0);
         let high = candidate(6, 10, 100, None, 0);
-        assert_eq!(usable_grant(&[low, high]), Some(Uuid::from_u128(5)));
+        assert_eq!(usable_grant(&[low, high]), Ok(Uuid::from_u128(5)));
+    }
+
+    #[test]
+    fn invoke_consent_change_needs_renewal_but_metering_only_does_not() {
+        // DD-126(3): `consent_current` already folds metering-only versions in, so a
+        // Grant from agent.invoke@1 stays usable under @2 (V-SCN-146).
+        let current = candidate(1, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[current]), Ok(Uuid::from_u128(1)));
+        // A consent change with uses left is a renewal, not a missing delegation (V-SCN-147).
+        assert_eq!(
+            usable_grant(&[stale(1, None, 0)]),
+            Err(ReasonCode::DelegationRenewalRequired)
+        );
+        // An exhausted stale Grant cannot be renewed into use: delegation required.
+        assert_eq!(
+            usable_grant(&[stale(1, Some(1), 1)]),
+            Err(ReasonCode::DelegationRequired)
+        );
+        // A current Grant wins over a stale one regardless of expiry order.
+        let later = GrantCandidate {
+            expires_at: chrono::DateTime::<chrono::Utc>::from_timestamp(500, 0).unwrap(),
+            ..stale(1, None, 0)
+        };
+        let current = candidate(2, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[later, current]), Ok(Uuid::from_u128(2)));
     }
 
     #[test]

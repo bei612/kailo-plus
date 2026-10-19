@@ -1517,12 +1517,14 @@ pub(crate) async fn prepare(
             "original APPLICATION action is awaiting admission or reconciliation".into(),
         ));
     }
+    // DD-126(3): the Scope's consent covers the definition resolved for this
+    // target (same contract key and consent digest), across release upgrades.
     let policy:(Uuid,i32,i32)=sqlx::query_as("select s.result_exposure_policy_id,s.result_exposure_policy_version,g.version
         from admission.delegation_scope s join admission.delegation_grant g on g.id=s.delegation_id
-        where s.delegation_id=$1 and s.action_definition_id=$2 and s.tool_resource_id=$3
+        where s.delegation_id=$1 and catalog.consent_covers(s.action_definition_id,$2) and s.tool_resource_id=$3
           and s.target_type=$4 and s.target_id=$5 and s.create_workspace_id is null and g.state='ACTIVE'")
         .bind(context.delegation_id).bind(application.definition_id).bind(tool.resource_id).bind(kind).bind(target)
-        .fetch_optional(&mut *tx).await?.ok_or_else(denied)?;
+        .fetch_optional(&mut *tx).await?.ok_or(Refusal::Denied(ReasonCode::DelegationRequired))?;
     let parameters = json!({"toolResourceId":tool.resource_id,"toolParameterHash":hash,"invocationId":invocation,
         "runtimeTurnId":context.runtime_turn_id,"targetVersion":version,"targetType":kind,
         "delegationId":context.delegation_id,"delegationVersion":policy.2,
@@ -2281,8 +2283,10 @@ pub(crate) async fn scopes(
     parent: &Execution,
     tool: &Tool,
 ) -> Result<Vec<contracts::ScopeElement>, Refusal> {
+    // DD-126(3): a Scope granted under an earlier definition whose consent digest
+    // equals the current one is re-expressed at the current version, then checked.
     let rows:Vec<Value>=sqlx::query_scalar("select jsonb_strip_nulls(jsonb_build_object(
-        'actionKey',s.action_key,'actionVersion',s.action_version,'targetType',s.target_type,'targetId',s.target_id,
+        'actionKey',s.action_key,'actionVersion',$11::integer,'targetType',s.target_type,'targetId',s.target_id,
         'toolResourceId',s.tool_resource_id,'resultExposureMode',p.mode,'outputSchemaHash',p.output_schema_hash,
         'redactionPolicy',p.redaction_policy))
         from admission.delegation_grant g join admission.delegation_scope s on s.delegation_id=g.id
@@ -2292,7 +2296,7 @@ pub(crate) async fn scopes(
         where g.id=$1 and g.tenant_id=$2 and g.workspace_id=$3 and g.installation_resource_id=$4
           and g.agent_principal_id=$5 and g.grantor_principal_id=$6 and g.state='ACTIVE'
           and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
-          and s.tool_resource_id=$8 and s.action_definition_id=$9 and s.action_key=$10 and s.action_version=$11
+          and s.tool_resource_id=$8 and s.action_key=$10 and catalog.consent_covers(s.action_definition_id,$9)
           and s.target_id is not null and s.create_workspace_id is null")
         .bind(context.delegation_id).bind(context.tenant_id).bind(context.workspace_id)
         .bind(context.installation_resource_id).bind(context.agent_principal_id).bind(parent.initiator_principal_id)

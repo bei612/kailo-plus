@@ -33,12 +33,36 @@ mod cancellation_tests {
         assert!(!cancellation_required("ACTIVE", future, now).unwrap());
         assert!(cancellation_required("ACTIVE", now, now).unwrap());
         assert!(cancellation_required("ACTIVE", now - TimeDelta::seconds(1), now).unwrap());
-        for state in ["REVOKING", "REVOKED", "EXPIRED"] {
+        for state in ["REVOKING", "REVOKED", "EXPIRED", "SUPERSEDED"] {
             assert!(cancellation_required(state, future, now).unwrap());
         }
         for state in ["", "PAUSED", "DISABLED", "FUTURE_STATE"] {
             assert!(cancellation_required(state, future, now).is_err());
         }
+    }
+
+    #[test]
+    fn effective_state_is_active_only_when_usable() {
+        use super::effective_state;
+        let now = chrono::DateTime::<Utc>::from_timestamp(100, 0).unwrap();
+        let past = now - TimeDelta::seconds(10);
+        let future = now + TimeDelta::seconds(10);
+        let active = |max, uses, ok| effective_state("ACTIVE", now, past, future, max, uses, ok);
+        assert_eq!(active(None, 0, true), Some("ACTIVE"));
+        assert_eq!(active(Some(3), 2, true), Some("ACTIVE"));
+        // DD-126(4): a consent change is never shown as ACTIVE.
+        assert_eq!(active(None, 0, false), Some("NEEDS_RENEWAL"));
+        assert_eq!(active(Some(2), 2, false), Some("USES_EXHAUSTED"));
+        let at = |from, until| effective_state("ACTIVE", now, from, until, None, 0, true);
+        assert_eq!(at(future, future), Some("NOT_YET_VALID"));
+        // Persisted ACTIVE past expiry before reconciliation is already EXPIRED.
+        assert_eq!(at(past, now), Some("EXPIRED"));
+        for persisted in ["REVOKING", "REVOKED", "SUPERSEDED", "EXPIRED"] {
+            let state = effective_state(persisted, now, past, future, None, 0, true);
+            assert_eq!(state, Some(persisted));
+        }
+        let unknown = effective_state("FUTURE", now, past, future, None, 0, true);
+        assert_eq!(unknown, None);
     }
 
     #[test]
@@ -282,6 +306,19 @@ pub(super) fn normalize(
             *text = id.to_string();
         }
     }
+    // DD-126(5): a renewal names exactly one replaced Grant and its version (CAS).
+    let version = grant.renews_delegation_version;
+    match (grant.renews_delegation_id.as_mut(), version) {
+        (None, None) => {}
+        (Some(id), Some(version)) => {
+            let parsed = Uuid::parse_str(id).map_err(|_| bad())?;
+            if parsed.is_nil() || i32::try_from(version).ok().filter(|v| *v > 0).is_none() {
+                return Err(bad());
+            }
+            *id = parsed.to_string();
+        }
+        _ => return Err(bad()),
+    }
     grant.scopes.sort_by_key(|scope| {
         (
             scope.action_key.clone(),
@@ -379,7 +416,101 @@ pub(super) async fn target_gate(
         }
         validate_scope(g, conn, tenant, initiator, &row, scope).await?;
     }
+    // DD-126(5): renewal replaces its own Grant; a plain grant never runs in
+    // parallel with an in-period ACTIVE Grant of the same grantor and scope key.
+    let renewing = renewal(grant)?;
+    if let Some(replaced) = renewing {
+        if !replaceable(conn, tenant, &row, initiator, replaced, false).await? {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
+    }
+    let parallel = overlapping(conn, tenant, &row, initiator, grant, grant_id, false).await?;
+    if renewing.is_none() && !parallel.is_empty() {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
     Ok(())
+}
+
+fn renewal(grant: &contracts::DelegationGrantParameters) -> Result<Option<(Uuid, i32)>, Refusal> {
+    let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    let version = grant.renews_delegation_version;
+    match (grant.renews_delegation_id.as_deref(), version) {
+        (None, None) => Ok(None),
+        (Some(id), Some(version)) => {
+            let id = Uuid::parse_str(id).map_err(|_| bad())?;
+            let version = i32::try_from(version).map_err(|_| bad())?;
+            Ok(Some((id, version)))
+        }
+        _ => Err(bad()),
+    }
+}
+
+/// The replaced Grant is the grantor's own Grant on this Installation, at the
+/// submitted version, ACTIVE or EXPIRED, and not already replaced.
+async fn replaceable(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    row: &Installation,
+    grantor: Uuid,
+    (id, version): (Uuid, i32),
+    lock: bool,
+) -> Result<bool, Refusal> {
+    let found: Option<Uuid> = sqlx::query_scalar(&format!(
+        "select id from admission.delegation_grant
+        where id=$1 and version=$2 and tenant_id=$3 and workspace_id=$4
+          and installation_resource_id=$5 and agent_principal_id=$6 and grantor_principal_id=$7
+          and state in ('ACTIVE','EXPIRED') and superseded_by_delegation_id is null{}",
+        if lock { " for update" } else { "" }
+    ))
+    .bind(id)
+    .bind(version)
+    .bind(tenant)
+    .bind(row.workspace_id)
+    .bind(row.id)
+    .bind(row.agent_principal_id)
+    .bind(grantor)
+    .fetch_optional(conn)
+    .await?;
+    Ok(found.is_some())
+}
+
+/// In-period ACTIVE Grants of the same grantor on this Installation that share
+/// a scope key (action, target or create Workspace, Tool) with the new Grant.
+async fn overlapping(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    row: &Installation,
+    grantor: Uuid,
+    grant: &contracts::DelegationGrantParameters,
+    new_grant: Uuid,
+    lock: bool,
+) -> Result<Vec<Uuid>, Refusal> {
+    let keys = serde_json::to_value(&grant.scopes)
+        .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let ids: Vec<Uuid> = sqlx::query_scalar(&format!(
+        "select g.id from admission.delegation_grant g
+        where g.id in (select s.delegation_id from admission.delegation_scope s
+            join jsonb_to_recordset($7::jsonb) k(\"actionKey\" text,\"targetId\" uuid,
+              \"createWorkspaceId\" uuid,\"toolResourceId\" uuid)
+              on k.\"actionKey\"=s.action_key and k.\"targetId\" is not distinct from s.target_id
+              and k.\"createWorkspaceId\" is not distinct from s.create_workspace_id
+              and k.\"toolResourceId\" is not distinct from s.tool_resource_id)
+          and g.tenant_id=$1 and g.workspace_id=$2 and g.installation_resource_id=$3
+          and g.agent_principal_id=$4 and g.grantor_principal_id=$5 and g.id<>$6
+          and g.state='ACTIVE' and g.expires_at>clock_timestamp()
+        order by g.id{}",
+        if lock { " for update" } else { "" }
+    ))
+    .bind(tenant)
+    .bind(row.workspace_id)
+    .bind(row.id)
+    .bind(row.agent_principal_id)
+    .bind(grantor)
+    .bind(new_grant)
+    .bind(keys)
+    .fetch_all(conn)
+    .await?;
+    Ok(ids)
 }
 
 /// The management directory and the write admission consume this same scope
@@ -763,6 +894,7 @@ async fn application_permission(
 pub(super) async fn prewrite(
     tx: &mut Transaction<'_, Postgres>,
     ae: &Execution,
+    def: &Definition,
     sem: Semantic,
     params: &Params,
 ) -> Result<(), Refusal> {
@@ -807,6 +939,21 @@ pub(super) async fn prewrite(
     let until = DateTime::parse_from_rfc3339(&grant.expires_at)
         .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?
         .with_timezone(&Utc);
+    // DD-126(5): rechecked under the Installation lock taken above; the
+    // replaced and overlapping Grants are locked before the new one is written.
+    let grantor = ae.initiator_principal_id;
+    let renewing = renewal(grant)?;
+    let mut replaced = overlapping(tx, ae.tenant_id, &row, grantor, grant, id, true).await?;
+    if let Some(renewed) = renewing {
+        if !replaceable(tx, ae.tenant_id, &row, grantor, renewed, true).await? {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
+        if !replaced.contains(&renewed.0) {
+            replaced.push(renewed.0);
+        }
+    } else if !replaced.is_empty() {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
     sqlx::query(
         "insert into admission.delegation_grant
         (id,tenant_id,workspace_id,grantor_principal_id,installation_resource_id,agent_principal_id,
@@ -859,6 +1006,36 @@ pub(super) async fn prewrite(
             .bind(uuid(&scope.target_id)?).bind(uuid(&scope.create_workspace_id)?).bind(uuid(&scope.tool_resource_id)?)
             .bind(policy).execute(&mut **tx).await?;
     }
+    for old in replaced {
+        let changed = sqlx::query(
+            "update admission.delegation_grant
+            set state='SUPERSEDED',superseded_by_delegation_id=$2,version=version+1
+            where id=$1 and tenant_id=$3 and state in ('ACTIVE','EXPIRED')
+              and superseded_by_delegation_id is null",
+        )
+        .bind(old)
+        .bind(id)
+        .bind(ae.tenant_id)
+        .execute(&mut **tx)
+        .await?;
+        if changed.rows_affected() != 1 {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        }
+        // 10 §4: in-flight work under the replaced consent converges as revocation.
+        flag_invocations(tx, ae.tenant_id, old).await?;
+        super::audit(
+            tx,
+            ae,
+            def,
+            &format!("delegation:{old}:SUPERSEDED:{id}"),
+            "OUTCOME",
+            "NONE",
+            "DELEGATION_SUPERSEDED",
+            None,
+            Vec::new(),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -871,9 +1048,35 @@ pub(crate) fn cancellation_required(
 ) -> Result<bool, Refusal> {
     match state {
         "ACTIVE" => Ok(expires_at <= now),
-        "REVOKING" | "REVOKED" | "EXPIRED" => Ok(true),
+        "REVOKING" | "REVOKED" | "EXPIRED" | "SUPERSEDED" => Ok(true),
         _ => Err(Refusal::Unavailable("Delegation 状态不可核验".into())),
     }
+}
+
+/// DD-126(4): the delegation page shows a Grant as ACTIVE only when it is
+/// usable from its own facts; NEEDS_RENEWAL is a read projection, not a state.
+/// An unknown persisted state is not guessed (the caller fails closed).
+pub(crate) fn effective_state(
+    state: &str,
+    now: DateTime<Utc>,
+    valid_from: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    max_uses: Option<i64>,
+    uses: i64,
+    consent_current: bool,
+) -> Option<&'static str> {
+    Some(match state {
+        "REVOKING" => "REVOKING",
+        "REVOKED" => "REVOKED",
+        "SUPERSEDED" => "SUPERSEDED",
+        "EXPIRED" => "EXPIRED",
+        "ACTIVE" if expires_at <= now => "EXPIRED",
+        "ACTIVE" if valid_from > now => "NOT_YET_VALID",
+        "ACTIVE" if max_uses.is_some_and(|max| uses >= max) => "USES_EXHAUSTED",
+        "ACTIVE" if !consent_current => "NEEDS_RENEWAL",
+        "ACTIVE" => "ACTIVE",
+        _ => return None,
+    })
 }
 
 // Called under the existing Tenant fence. No business/native terminal is
@@ -890,7 +1093,7 @@ pub(crate) async fn flag_invocations(
           and i.tenant_id=g.tenant_id and i.workspace_id=g.workspace_id
           and i.installation_resource_id=g.installation_resource_id
           and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') and not i.cancel_pending
-          and (g.state in ('REVOKING','REVOKED','EXPIRED')
+          and (g.state in ('REVOKING','REVOKED','EXPIRED','SUPERSEDED')
                or (g.state='ACTIVE' and g.expires_at<=clock_timestamp()))",
     )
     .bind(grant)
@@ -924,7 +1127,7 @@ impl Governance {
         let rows:Vec<(Uuid,Uuid,Uuid)>=sqlx::query_as("select g.id,g.action_execution_id,g.tenant_id
             from admission.delegation_grant g where g.state='REVOKING'
               or (g.state='ACTIVE' and g.expires_at<=clock_timestamp())
-              or (g.state in ('REVOKED','EXPIRED') and exists(select 1 from catalog.agent_invocation i
+              or (g.state in ('REVOKED','EXPIRED','SUPERSEDED') and exists(select 1 from catalog.agent_invocation i
                   where i.delegation_id=g.id and i.tenant_id=g.tenant_id and i.workspace_id=g.workspace_id
                     and i.installation_resource_id=g.installation_resource_id
                     and i.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN')))
@@ -1230,5 +1433,75 @@ mod application_scope_tests {
         let (_, _, declaration) = fixture();
         scope.create_workspace_id = Some(Uuid::new_v4().to_string());
         assert!(!application_scope_matches(&scope, &def, &declaration));
+    }
+}
+
+#[cfg(test)]
+mod consent_digest_tests {
+    use uuid::Uuid;
+
+    async fn define(
+        tx: &mut sqlx::PgConnection,
+        key: &str,
+        version: i32,
+        permission: &str,
+        meter: &str,
+        status: &str,
+    ) -> (Uuid, String) {
+        sqlx::query_as(
+            "insert into catalog.action_definition
+            (action_key,version,component_type_key,target_type,tenant_rule,workspace_rule,
+             permission,permission_object_type,execution_mode,confirmation_mode,
+             capacity_policy,quota_policy,meters,result_exposure,audit_policy,
+             obs_correlation_mode,obs_progress_source,obs_terminal_source,obs_usage_source,
+             obs_cost_source,obs_redaction_policy,status)
+            values($1,$2,'core','RESOURCE','SESSION_TENANT','TARGET_HOME_WORKSPACE',
+             $3,'resource','SYNC','NONE','NONE','CHECK',array[$4],'NONE','FULL_LIFECYCLE',
+             'OPERATION_REF','NONE','SYNC_RESULT','NONE','NONE','PLATFORM_METADATA_ONLY',$5)
+            returning id,consent_digest",
+        )
+        .bind(key)
+        .bind(version)
+        .bind(permission)
+        .bind(meter)
+        .bind(status)
+        .fetch_one(tx)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn consent_digest_ignores_metering_but_not_permission() {
+        let url = std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap();
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let key = format!("verify.consent.{}", Uuid::new_v4());
+        let (v1, d1) = define(&mut tx, &key, 1, "execute", "tokens_a", "RETIRED").await;
+        let (v2, d2) = define(&mut tx, &key, 2, "execute", "tokens_b", "ACTIVE").await;
+        let (_, d3) = define(&mut tx, &key, 3, "read", "tokens_b", "RETIRED").await;
+        // DD-126(1)(2), V-SCN-146: a metering-only version keeps the consent digest.
+        assert_eq!(d1, d2);
+        assert_eq!(d1.len(), 64);
+        // V-SCN-147: a permission change is a consent change.
+        assert_ne!(d1, d3);
+        let covers = "select catalog.platform_consent_covers($1,$2,$3)";
+        for (version, expected) in [(2, true), (3, false)] {
+            let covered: bool = sqlx::query_scalar(covers)
+                .bind(v1)
+                .bind(&key)
+                .bind(version)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(covered, expected, "v1 grant against v{version}");
+        }
+        // The generated digest does not break the status-only version guard.
+        sqlx::query("update catalog.action_definition set status='RETIRED' where id=$1")
+            .bind(v2)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
     }
 }
