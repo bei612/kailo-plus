@@ -6017,12 +6017,20 @@ class ConversationOpenClass {
 class ParametersClass {
   final DateTime expiresAt;
   final int? maxUses;
+
+  ///DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+  final String? renewsDelegationId;
+
+  ///DD-126(5)：被替换 Grant 的当前 version（CAS）。
+  final int? renewsDelegationVersion;
   final List<ScopeElement> scopes;
   final DateTime validFrom;
 
   ParametersClass({
     required this.expiresAt,
     this.maxUses,
+    this.renewsDelegationId,
+    this.renewsDelegationVersion,
     required this.scopes,
     required this.validFrom,
   });
@@ -6031,6 +6039,8 @@ class ParametersClass {
       ParametersClass(
         expiresAt: DateTime.parse(json["expiresAt"]),
         maxUses: json["maxUses"],
+        renewsDelegationId: json["renewsDelegationId"],
+        renewsDelegationVersion: json["renewsDelegationVersion"],
         scopes: List<ScopeElement>.from(
           json["scopes"].map((x) => ScopeElement.fromJson(x)),
         ),
@@ -6040,6 +6050,8 @@ class ParametersClass {
   Map<String, dynamic> toJson() => _stripNulls({
     "expiresAt": expiresAt.toIso8601String(),
     "maxUses": maxUses,
+    "renewsDelegationId": renewsDelegationId,
+    "renewsDelegationVersion": renewsDelegationVersion,
     "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
     "validFrom": validFrom.toIso8601String(),
   });
@@ -6813,6 +6825,8 @@ enum ReasonCode {
   CLIENT_KEY_LIMIT_REACHED,
   CLIENT_KEY_NOT_FOUND,
   CLIENT_KEY_PROOF_INVALID,
+  DELEGATION_RENEWAL_REQUIRED,
+  DELEGATION_REQUIRED,
   DEPENDENCY_UNAVAILABLE,
   DISPATCH_RESULT_UNKNOWN,
   DUPLICATE_DECISION,
@@ -6864,6 +6878,8 @@ final reasonCodeValues = EnumValues({
   "CLIENT_KEY_LIMIT_REACHED": ReasonCode.CLIENT_KEY_LIMIT_REACHED,
   "CLIENT_KEY_NOT_FOUND": ReasonCode.CLIENT_KEY_NOT_FOUND,
   "CLIENT_KEY_PROOF_INVALID": ReasonCode.CLIENT_KEY_PROOF_INVALID,
+  "DELEGATION_RENEWAL_REQUIRED": ReasonCode.DELEGATION_RENEWAL_REQUIRED,
+  "DELEGATION_REQUIRED": ReasonCode.DELEGATION_REQUIRED,
   "DEPENDENCY_UNAVAILABLE": ReasonCode.DEPENDENCY_UNAVAILABLE,
   "DISPATCH_RESULT_UNKNOWN": ReasonCode.DISPATCH_RESULT_UNKNOWN,
   "DUPLICATE_DECISION": ReasonCode.DUPLICATE_DECISION,
@@ -7271,50 +7287,91 @@ class AgentDelegationPage {
   });
 }
 
-///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+///DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 class GrantElement {
   final String delegationId;
   final int delegationVersion;
+
+  ///DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+  ///Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+  ///按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+  final DelegationEffectiveState effectiveState;
   final String grantorPrincipalId;
   final ParametersClass parameters;
   final GrantState state;
+
+  ///DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+  final String? supersededByDelegationId;
   final int uses;
 
   GrantElement({
     required this.delegationId,
     required this.delegationVersion,
+    required this.effectiveState,
     required this.grantorPrincipalId,
     required this.parameters,
     required this.state,
+    this.supersededByDelegationId,
     required this.uses,
   });
 
   factory GrantElement.fromJson(Map<String, dynamic> json) => GrantElement(
     delegationId: json["delegationId"],
     delegationVersion: json["delegationVersion"],
+    effectiveState: delegationEffectiveStateValues.map[json["effectiveState"]]!,
     grantorPrincipalId: json["grantorPrincipalId"],
     parameters: ParametersClass.fromJson(json["parameters"]),
     state: grantStateValues.map[json["state"]]!,
+    supersededByDelegationId: json["supersededByDelegationId"],
     uses: json["uses"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
+    "effectiveState": delegationEffectiveStateValues.reverse[effectiveState],
     "grantorPrincipalId": grantorPrincipalId,
     "parameters": parameters.toJson(),
     "state": grantStateValues.reverse[state],
+    "supersededByDelegationId": supersededByDelegationId,
     "uses": uses,
   });
 }
 
-enum GrantState { ACTIVE, EXPIRED, REVOKED, REVOKING }
+///DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+///Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+///按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+enum DelegationEffectiveState {
+  ACTIVE,
+  EXPIRED,
+  NEEDS_RENEWAL,
+  NOT_YET_VALID,
+  REVOKED,
+  REVOKING,
+  SUPERSEDED,
+  USES_EXHAUSTED,
+}
+
+final delegationEffectiveStateValues = EnumValues({
+  "ACTIVE": DelegationEffectiveState.ACTIVE,
+  "EXPIRED": DelegationEffectiveState.EXPIRED,
+  "NEEDS_RENEWAL": DelegationEffectiveState.NEEDS_RENEWAL,
+  "NOT_YET_VALID": DelegationEffectiveState.NOT_YET_VALID,
+  "REVOKED": DelegationEffectiveState.REVOKED,
+  "REVOKING": DelegationEffectiveState.REVOKING,
+  "SUPERSEDED": DelegationEffectiveState.SUPERSEDED,
+  "USES_EXHAUSTED": DelegationEffectiveState.USES_EXHAUSTED,
+});
+
+enum GrantState { ACTIVE, EXPIRED, REVOKED, REVOKING, SUPERSEDED }
 
 final grantStateValues = EnumValues({
   "ACTIVE": GrantState.ACTIVE,
   "EXPIRED": GrantState.EXPIRED,
   "REVOKED": GrantState.REVOKED,
   "REVOKING": GrantState.REVOKING,
+  "SUPERSEDED": GrantState.SUPERSEDED,
 });
 
 ///原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
@@ -7353,21 +7410,32 @@ class AgentDelegationTargetPage {
   });
 }
 
-///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+///同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+///DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 class AgentDelegationView {
   final String delegationId;
   final int delegationVersion;
+
+  ///DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+  ///Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+  ///按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+  final DelegationEffectiveState effectiveState;
   final String grantorPrincipalId;
   final ParametersClass parameters;
   final GrantState state;
+
+  ///DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+  final String? supersededByDelegationId;
   final int uses;
 
   AgentDelegationView({
     required this.delegationId,
     required this.delegationVersion,
+    required this.effectiveState,
     required this.grantorPrincipalId,
     required this.parameters,
     required this.state,
+    this.supersededByDelegationId,
     required this.uses,
   });
 
@@ -7375,18 +7443,23 @@ class AgentDelegationView {
       AgentDelegationView(
         delegationId: json["delegationId"],
         delegationVersion: json["delegationVersion"],
+        effectiveState:
+            delegationEffectiveStateValues.map[json["effectiveState"]]!,
         grantorPrincipalId: json["grantorPrincipalId"],
         parameters: ParametersClass.fromJson(json["parameters"]),
         state: grantStateValues.map[json["state"]]!,
+        supersededByDelegationId: json["supersededByDelegationId"],
         uses: json["uses"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
+    "effectiveState": delegationEffectiveStateValues.reverse[effectiveState],
     "grantorPrincipalId": grantorPrincipalId,
     "parameters": parameters.toJson(),
     "state": grantStateValues.reverse[state],
+    "supersededByDelegationId": supersededByDelegationId,
     "uses": uses,
   });
 }
@@ -22443,12 +22516,20 @@ class ContentReference {
 class DelegationGrantParameters {
   final DateTime expiresAt;
   final int? maxUses;
+
+  ///DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+  final String? renewsDelegationId;
+
+  ///DD-126(5)：被替换 Grant 的当前 version（CAS）。
+  final int? renewsDelegationVersion;
   final List<ScopeElement> scopes;
   final DateTime validFrom;
 
   DelegationGrantParameters({
     required this.expiresAt,
     this.maxUses,
+    this.renewsDelegationId,
+    this.renewsDelegationVersion,
     required this.scopes,
     required this.validFrom,
   });
@@ -22457,6 +22538,8 @@ class DelegationGrantParameters {
       DelegationGrantParameters(
         expiresAt: DateTime.parse(json["expiresAt"]),
         maxUses: json["maxUses"],
+        renewsDelegationId: json["renewsDelegationId"],
+        renewsDelegationVersion: json["renewsDelegationVersion"],
         scopes: List<ScopeElement>.from(
           json["scopes"].map((x) => ScopeElement.fromJson(x)),
         ),
@@ -22466,6 +22549,8 @@ class DelegationGrantParameters {
   Map<String, dynamic> toJson() => _stripNulls({
     "expiresAt": expiresAt.toIso8601String(),
     "maxUses": maxUses,
+    "renewsDelegationId": renewsDelegationId,
+    "renewsDelegationVersion": renewsDelegationVersion,
     "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
     "validFrom": validFrom.toIso8601String(),
   });

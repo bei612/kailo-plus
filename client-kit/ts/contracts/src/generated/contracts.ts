@@ -1583,8 +1583,16 @@ export interface ConversationOpenClass {
 export interface DelegationGrantClass {
     expiresAt: Date;
     maxUses?:  number;
-    scopes:    ScopeElement[];
-    validFrom: Date;
+    /**
+     * DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+     */
+    renewsDelegationId?: string;
+    /**
+     * DD-126(5)：被替换 Grant 的当前 version（CAS）。
+     */
+    renewsDelegationVersion?: number;
+    scopes:                   ScopeElement[];
+    validFrom:                Date;
 }
 
 /**
@@ -2007,6 +2015,8 @@ export enum ReasonCode {
     ClientKeyLimitReached = "CLIENT_KEY_LIMIT_REACHED",
     ClientKeyNotFound = "CLIENT_KEY_NOT_FOUND",
     ClientKeyProofInvalid = "CLIENT_KEY_PROOF_INVALID",
+    DelegationRenewalRequired = "DELEGATION_RENEWAL_REQUIRED",
+    DelegationRequired = "DELEGATION_REQUIRED",
     DependencyUnavailable = "DEPENDENCY_UNAVAILABLE",
     DispatchResultUnknown = "DISPATCH_RESULT_UNKNOWN",
     DuplicateDecision = "DUPLICATE_DECISION",
@@ -2207,15 +2217,42 @@ export interface AgentDelegationPage {
 }
 
 /**
- * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+ * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+ * DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
  */
 export interface GrantElement {
-    delegationId:       string;
-    delegationVersion:  number;
+    delegationId:      string;
+    delegationVersion: number;
+    /**
+     * DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+     * Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+     * 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+     */
+    effectiveState:     DelegationEffectiveState;
     grantorPrincipalId: string;
     parameters:         DelegationGrantClass;
     state:              GrantState;
-    uses:               number;
+    /**
+     * DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+     */
+    supersededByDelegationId?: string;
+    uses:                      number;
+}
+
+/**
+ * DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+ * Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+ * 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+ */
+export enum DelegationEffectiveState {
+    Active = "ACTIVE",
+    Expired = "EXPIRED",
+    NeedsRenewal = "NEEDS_RENEWAL",
+    NotYetValid = "NOT_YET_VALID",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+    Superseded = "SUPERSEDED",
+    UsesExhausted = "USES_EXHAUSTED",
 }
 
 export enum GrantState {
@@ -2223,6 +2260,7 @@ export enum GrantState {
     Expired = "EXPIRED",
     Revoked = "REVOKED",
     Revoking = "REVOKING",
+    Superseded = "SUPERSEDED",
 }
 
 /**
@@ -2237,15 +2275,26 @@ export interface AgentDelegationTargetPage {
 }
 
 /**
- * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+ * 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+ * DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
  */
 export interface AgentDelegationView {
-    delegationId:       string;
-    delegationVersion:  number;
+    delegationId:      string;
+    delegationVersion: number;
+    /**
+     * DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+     * Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+     * 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+     */
+    effectiveState:     DelegationEffectiveState;
     grantorPrincipalId: string;
     parameters:         DelegationGrantClass;
     state:              GrantState;
-    uses:               number;
+    /**
+     * DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+     */
+    supersededByDelegationId?: string;
+    uses:                      number;
 }
 
 /**
@@ -8362,8 +8411,16 @@ export interface ContentReference {
 export interface DelegationGrantParameters {
     expiresAt: Date;
     maxUses?:  number;
-    scopes:    ScopeElement[];
-    validFrom: Date;
+    /**
+     * DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+     */
+    renewsDelegationId?: string;
+    /**
+     * DD-126(5)：被替换 Grant 的当前 version（CAS）。
+     */
+    renewsDelegationVersion?: number;
+    scopes:                   ScopeElement[];
+    validFrom:                Date;
 }
 
 /**

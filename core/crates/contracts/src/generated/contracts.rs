@@ -2182,6 +2182,14 @@ pub struct ParametersClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_uses: Option<i64>,
 
+    /// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renews_delegation_id: Option<String>,
+
+    /// DD-126(5)：被替换 Grant 的当前 version（CAS）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renews_delegation_version: Option<i64>,
+
     pub scopes: Vec<ScopeElement>,
 
     pub valid_from: String,
@@ -2735,6 +2743,12 @@ pub enum ReasonCode {
     #[serde(rename = "CLIENT_KEY_PROOF_INVALID")]
     ClientKeyProofInvalid,
 
+    #[serde(rename = "DELEGATION_RENEWAL_REQUIRED")]
+    DelegationRenewalRequired,
+
+    #[serde(rename = "DELEGATION_REQUIRED")]
+    DelegationRequired,
+
     #[serde(rename = "DEPENDENCY_UNAVAILABLE")]
     DependencyUnavailable,
 
@@ -3034,7 +3048,8 @@ pub struct AgentDelegationPage {
     pub workspace_id: String,
 }
 
-/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+/// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantElement {
@@ -3042,13 +3057,48 @@ pub struct GrantElement {
 
     pub delegation_version: i64,
 
+    /// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+    /// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+    /// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+    pub effective_state: DelegationEffectiveState,
+
     pub grantor_principal_id: String,
 
     pub parameters: ParametersClass,
 
     pub state: GrantState,
 
+    /// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by_delegation_id: Option<String>,
+
     pub uses: i64,
+}
+
+/// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+/// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+/// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DelegationEffectiveState {
+    Active,
+
+    Expired,
+
+    #[serde(rename = "NEEDS_RENEWAL")]
+    NeedsRenewal,
+
+    #[serde(rename = "NOT_YET_VALID")]
+    NotYetValid,
+
+    Revoked,
+
+    Revoking,
+
+    Superseded,
+
+    #[serde(rename = "USES_EXHAUSTED")]
+    UsesExhausted,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3064,6 +3114,9 @@ pub enum GrantState {
 
     #[serde(rename = "REVOKING")]
     Revoking,
+
+    #[serde(rename = "SUPERSEDED")]
+    Superseded,
 }
 
 /// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
@@ -3082,7 +3135,8 @@ pub struct AgentDelegationTargetPage {
     pub workspace_id: String,
 }
 
-/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+/// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDelegationView {
@@ -3090,11 +3144,20 @@ pub struct AgentDelegationView {
 
     pub delegation_version: i64,
 
+    /// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+    /// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+    /// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+    pub effective_state: DelegationEffectiveState,
+
     pub grantor_principal_id: String,
 
     pub parameters: ParametersClass,
 
     pub state: GrantState,
+
+    /// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by_delegation_id: Option<String>,
 
     pub uses: i64,
 }
@@ -11354,6 +11417,14 @@ pub struct DelegationGrantParameters {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_uses: Option<i64>,
+
+    /// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renews_delegation_id: Option<String>,
+
+    /// DD-126(5)：被替换 Grant 的当前 version（CAS）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renews_delegation_version: Option<i64>,
 
     pub scopes: Vec<ScopeElement>,
 

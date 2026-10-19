@@ -4853,10 +4853,14 @@ type ConversationOpenClass struct {
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 type DelegationGrantClass struct {
-	ExpiresAt time.Time      `json:"expiresAt"`
-	MaxUses   *int64         `json:"maxUses,omitempty"`
-	Scopes    []ScopeElement `json:"scopes"`
-	ValidFrom time.Time      `json:"validFrom"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	MaxUses   *int64    `json:"maxUses,omitempty"`
+	// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+	RenewsDelegationID *string `json:"renewsDelegationId,omitempty"`
+	// DD-126(5)：被替换 Grant 的当前 version（CAS）。
+	RenewsDelegationVersion *int64         `json:"renewsDelegationVersion,omitempty"`
+	Scopes                  []ScopeElement `json:"scopes"`
+	ValidFrom               time.Time      `json:"validFrom"`
 }
 
 // 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
@@ -5163,14 +5167,21 @@ type AgentDelegationPage struct {
 	WorkspaceID            string         `json:"workspaceId"`
 }
 
-// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 type GrantElement struct {
-	DelegationID       string               `json:"delegationId"`
-	DelegationVersion  int64                `json:"delegationVersion"`
-	GrantorPrincipalID string               `json:"grantorPrincipalId"`
-	Parameters         DelegationGrantClass `json:"parameters"`
-	State              GrantState           `json:"state"`
-	Uses               int64                `json:"uses"`
+	DelegationID      string `json:"delegationId"`
+	DelegationVersion int64  `json:"delegationVersion"`
+	// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+	// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+	// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+	EffectiveState     DelegationEffectiveState `json:"effectiveState"`
+	GrantorPrincipalID string                   `json:"grantorPrincipalId"`
+	Parameters         DelegationGrantClass     `json:"parameters"`
+	State              GrantState               `json:"state"`
+	// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+	SupersededByDelegationID *string `json:"supersededByDelegationId,omitempty"`
+	Uses                     int64   `json:"uses"`
 }
 
 // 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
@@ -5182,14 +5193,21 @@ type AgentDelegationTargetPage struct {
 	WorkspaceID            string         `json:"workspaceId"`
 }
 
-// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。
+// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
 type AgentDelegationView struct {
-	DelegationID       string               `json:"delegationId"`
-	DelegationVersion  int64                `json:"delegationVersion"`
-	GrantorPrincipalID string               `json:"grantorPrincipalId"`
-	Parameters         DelegationGrantClass `json:"parameters"`
-	State              GrantState           `json:"state"`
-	Uses               int64                `json:"uses"`
+	DelegationID      string `json:"delegationId"`
+	DelegationVersion int64  `json:"delegationVersion"`
+	// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+	// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+	// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+	EffectiveState     DelegationEffectiveState `json:"effectiveState"`
+	GrantorPrincipalID string                   `json:"grantorPrincipalId"`
+	Parameters         DelegationGrantClass     `json:"parameters"`
+	State              GrantState               `json:"state"`
+	// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+	SupersededByDelegationID *string `json:"supersededByDelegationId,omitempty"`
+	Uses                     int64   `json:"uses"`
 }
 
 // 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
@@ -9158,10 +9176,14 @@ type ContentReference struct {
 }
 
 type DelegationGrantParameters struct {
-	ExpiresAt time.Time      `json:"expiresAt"`
-	MaxUses   *int64         `json:"maxUses,omitempty"`
-	Scopes    []ScopeElement `json:"scopes"`
-	ValidFrom time.Time      `json:"validFrom"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	MaxUses   *int64    `json:"maxUses,omitempty"`
+	// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+	RenewsDelegationID *string `json:"renewsDelegationId,omitempty"`
+	// DD-126(5)：被替换 Grant 的当前 version（CAS）。
+	RenewsDelegationVersion *int64         `json:"renewsDelegationVersion,omitempty"`
+	Scopes                  []ScopeElement `json:"scopes"`
+	ValidFrom               time.Time      `json:"validFrom"`
 }
 
 // 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
@@ -10491,6 +10513,8 @@ const (
 	ClientKeyLimitReached        ReasonCode = "CLIENT_KEY_LIMIT_REACHED"
 	ClientKeyNotFound            ReasonCode = "CLIENT_KEY_NOT_FOUND"
 	ClientKeyProofInvalid        ReasonCode = "CLIENT_KEY_PROOF_INVALID"
+	DelegationRenewalRequired    ReasonCode = "DELEGATION_RENEWAL_REQUIRED"
+	DelegationRequired           ReasonCode = "DELEGATION_REQUIRED"
 	DependencyUnavailable        ReasonCode = "DEPENDENCY_UNAVAILABLE"
 	DispatchResultUnknown        ReasonCode = "DISPATCH_RESULT_UNKNOWN"
 	DuplicateDecision            ReasonCode = "DUPLICATE_DECISION"
@@ -10539,13 +10563,30 @@ const (
 	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
 )
 
+// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+type DelegationEffectiveState string
+
+const (
+	DelegationEffectiveStateACTIVE     DelegationEffectiveState = "ACTIVE"
+	DelegationEffectiveStateEXPIRED    DelegationEffectiveState = "EXPIRED"
+	DelegationEffectiveStateREVOKED    DelegationEffectiveState = "REVOKED"
+	DelegationEffectiveStateREVOKING   DelegationEffectiveState = "REVOKING"
+	DelegationEffectiveStateSUPERSEDED DelegationEffectiveState = "SUPERSEDED"
+	NeedsRenewal                       DelegationEffectiveState = "NEEDS_RENEWAL"
+	NotYetValid                        DelegationEffectiveState = "NOT_YET_VALID"
+	UsesExhausted                      DelegationEffectiveState = "USES_EXHAUSTED"
+)
+
 type GrantState string
 
 const (
-	PurpleACTIVE  GrantState = "ACTIVE"
-	PurpleEXPIRED GrantState = "EXPIRED"
-	PurpleREVOKED GrantState = "REVOKED"
-	StateREVOKING GrantState = "REVOKING"
+	PurpleACTIVE    GrantState = "ACTIVE"
+	PurpleEXPIRED   GrantState = "EXPIRED"
+	PurpleREVOKED   GrantState = "REVOKED"
+	StateREVOKING   GrantState = "REVOKING"
+	StateSUPERSEDED GrantState = "SUPERSEDED"
 )
 
 type AgentPrincipalState string
