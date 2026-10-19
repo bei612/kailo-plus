@@ -50,6 +50,9 @@
 #   CONFORMANCE_SEED_FILE     seed-cells.mjs input (stage 2, Cells)
 #   CONFORMANCE_OBSERVE_FILE  observe.mjs input (stage 4)
 #   CONFORMANCE_PROVIDER_FILE suite provider config (identityFile = RUN_DIR/inputs/identity.json)
+#                             plus releaseManifestFile = CONFORMANCE_MANIFEST and nativeTaskTypes
+#                             {"file_storage.delete@v2":"job"} when the release declares native
+#                             task deadlines (DD-124(7); also in observe.json "provider")
 #   CONFORMANCE_MANIFEST      render.mjs output manifest.json for this candidate
 #   CONFORMANCE_CORE_JWKS     public JWKS of Core's isolated conformance identity
 #   CONFORMANCE_ADAPTER_JWKS  the isolated adapter's actionTokenJwksFile

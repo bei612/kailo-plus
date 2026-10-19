@@ -13,18 +13,35 @@
 // surface: it answers only the delivered identity contexts for one isolated
 // candidate instance and grants nothing in any platform deployment.
 //
-// What it deliberately does NOT provide: request_read_grant, read_receipt,
-// native task admissions or Protocol Session callbacks. 07 §8A requires the
-// receiver/read-edge direction to run "与生产相同的 Core request_read_grant、
-// receiver 准入、PEP 与 read_receipt 消费者" in an isolated Core deployment
+// What it deliberately does NOT provide: request_read_grant, read_receipt
+// or Protocol Session callbacks. 07 §8A requires the receiver/read-edge
+// direction to run "与生产相同的 Core request_read_grant、receiver 准入、PEP 与
+// read_receipt 消费者" in an isolated Core deployment
 // (core/verify/receiver-environment-bootstrap.rs); simulating them here would
 // be the forbidden "预填的 SOURCE/receiver 执行引用当成真实准入". Those routes 404.
+//
+// DD-124(7): native task execution admission of the suite's OWN forward
+// execute probe. For an action the candidate release declares with
+// nativeTaskExecutionTimeoutSeconds, the first allowed execute pep_check of a
+// probe (action execution + external execution) freezes nativeTaskDeadline =
+// that moment + the declared seconds, returned with every later execute
+// pep_check of the same probe, and retains the probe ActionToken and its
+// canonical arguments exactly as production Core signed and the adapter sent
+// them (the latest unexpired one of the probe's re-authorizations). The
+// admission route answers PENDING_REFERENCE until such a pep_check was seen,
+// and then ADMITTED with that same Core-signed token, its arguments, expiresAt
+// = the token's own exp (<= deadline) and the frozen deadline. It never signs
+// (it has no private key), never mints or prefills an execution reference and
+// never extends the token or the deadline; anything not matching an execute
+// probe it already admitted is refused.
 //
 // Endpoints on one isolated listener (point the adapter's and native
 // service's oidcTokenUrl / corePepUrl here, never into production):
 //   POST /oidc/token                     client_credentials for the delivered
 //                                        binding client only; opaque bearer
 //   POST /service/v1/adapter/pep_check   the AdapterPepCheckRequest variant
+//   POST /service/v1/adapter/request_native_task_execution_admission
+//                                        only with releaseManifestFile (above)
 //
 // Each PEP decision: verify the ActionToken (signature/iss/aud/time) against
 // the identity's public JWKS; require exactly one delivered context class for
@@ -50,7 +67,11 @@
 //                                          observed by the native seed, not chosen here
 //   "nativeCheck":{"kind":"cells","restBaseUrl":"http://…/v2/","bearerFile":"/abs"}  (Cells REST v2 mount)
 //               | {"kind":"weknora","apiBaseUrl":"http://…/","apiKeyFile":"/abs"},
-//   "requestTimeoutMs":<int>, "requestMaxBytes":<int> }
+//   "requestTimeoutMs":<int>, "requestMaxBytes":<int>,
+//   "releaseManifestFile":"/abs/rendered manifest.json",  optional, together with
+//   "nativeTaskTypes":{"<actionKey>":"<native type>"} }   exactly the actions whose
+//        manifest ActionDefinition declares nativeTaskExecutionTimeoutSeconds, with the
+//        ExternalExecution native type the candidate reports for them (Cells delete: job)
 // No secret, token or native body is logged.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -65,6 +86,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const TOKEN_PATH = '/oidc/token';
 const PEP_PATH = '/service/v1/adapter/pep_check';
+const NATIVE_TASK_PATH = '/service/v1/adapter/request_native_task_execution_admission';
 const DENIED = JSON.stringify({ class: 'DENIED', reason: 'PERMISSION_DENIED' });
 const MANAGEMENT = new Set(['handshake', 'validate_binding']);
 const OPERATIONS = new Set(['handshake', 'validate_binding', 'execute', 'observe', 'cancel', 'reconcile',
@@ -170,10 +192,33 @@ async function weknoraBase(check, target, deadline) {
   if (value?.success !== true || value.data?.id !== target.nativeRef) refuse();
 }
 
+// DD-124(7): the declared native task deadline per action, from the rendered
+// candidate manifest only, and the native type of each such execution.
+async function nativeTasks(config, artifact) {
+  const declared = new Map();
+  if (!Object.hasOwn(config, 'releaseManifestFile')) return declared;
+  if (!isAbsolute(config.releaseManifestFile ?? '')) refuse();
+  const entry = await lstat(config.releaseManifestFile);
+  if (entry.isSymbolicLink() || !entry.isFile()) refuse();
+  const manifest = JSON.parse(await readFile(config.releaseManifestFile, 'utf8'));
+  if (manifest?.adapterBuildRef !== artifact
+    || !Array.isArray(manifest.actionDefinitions) || !object(config.nativeTaskTypes)) refuse();
+  for (const action of manifest.actionDefinitions) {
+    if (!Object.hasOwn(action, 'nativeTaskExecutionTimeoutSeconds')) continue;
+    const seconds = action.nativeTaskExecutionTimeoutSeconds;
+    if (!Number.isSafeInteger(seconds) || seconds <= 0 || action.executionMode !== 'TEMPORAL'
+      || !nonempty(config.nativeTaskTypes[action.actionKey]) || declared.has(action.actionKey)) refuse();
+    declared.set(action.actionKey, { seconds, nativeType: config.nativeTaskTypes[action.actionKey] });
+  }
+  if (!declared.size || Object.keys(config.nativeTaskTypes).length !== declared.size) refuse();
+  return declared;
+}
+
 export async function openProvider(path) {
   const config = await ownerOnly(path);
+  const tasked = Object.hasOwn(config, 'releaseManifestFile') ? ['releaseManifestFile', 'nativeTaskTypes'] : [];
   if (!exactKeys(config, ['mode', 'listenHost', 'listenPort', 'productionActionAudience', 'identityFile', 'bindingFile',
-    'targetsFile', 'nativeCheck', 'requestTimeoutMs', 'requestMaxBytes'])
+    'targetsFile', 'nativeCheck', 'requestTimeoutMs', 'requestMaxBytes', ...tasked])
     || config.mode !== 'CONFORMANCE_ONLY' || !isIP(config.listenHost)
     || !Number.isSafeInteger(config.listenPort) || config.listenPort <= 0 || config.listenPort > 65535
     || !nonempty(config.productionActionAudience)
@@ -184,8 +229,10 @@ export async function openProvider(path) {
       [path, config.identityFile, config.bindingFile, config.targetsFile].map((name) => ownerOnly(name)));
     const jwks = JSON.parse(await readFile(identity.jwksFile, 'utf8'));
     const secret = await ownerOnly(bindingFacts(binding).serviceClientSecretFile, false);
+    // The rendered release fixes the declared native task deadlines (DD-124(7)).
+    const release = Object.hasOwn(config, 'releaseManifestFile') ? await readFile(config.releaseManifestFile, 'utf8') : '';
     return { current, identity, binding, targets, jwks, secret,
-      digest: sha256(canonical([current, identity, binding, targets, jwks])) };
+      digest: sha256(canonical([current, identity, binding, targets, jwks, sha256(release)])) };
   };
   const loaded = await load();
   const { identity, binding, jwks } = loaded;
@@ -194,6 +241,9 @@ export async function openProvider(path) {
   if (!Array.isArray(jwks.keys) || !jwks.keys.length || jwks.keys.some((key) => key.kty !== 'EC' || key.crv !== 'P-256'
     || !nonempty(key.kid) || key.d !== undefined)) refuse();
   validateContexts(identity, binding, resources, config.productionActionAudience);
+  const tasks = await nativeTasks(config, binding.artifactDigest);
+  // One entry per admitted execute probe: <actionExecutionId>/<externalExecutionId>.
+  const probes = new Map();
   const unchanged = async () => {
     const now = await load();
     if (now.digest !== loaded.digest || !equalSecret(now.secret, loaded.secret)) refuse();
@@ -240,6 +290,19 @@ export async function openProvider(path) {
     if (denied.length) return { status: 403, text: DENIED };
     const answer = { actionExecutionId: claims.action_execution_id, operationId: claims.operation_id,
       authorizationMinZedToken: matching[0].authorizationMinZedToken };
+    const task = execute ? tasks.get(claims.action_key) : undefined;
+    let probe;
+    if (task) {
+      // The deadline is frozen at the probe's first admitted execute; a later
+      // re-authorization of the same probe keeps it and only a token that
+      // expires later replaces the retained one, never beyond the deadline.
+      const reference = `${claims.action_execution_id}/${claims.external_execution_id}`;
+      probe = probes.get(reference) ?? { deadline: new Date((Math.floor(Date.now() / 1000) + task.seconds) * 1000).toISOString(),
+        idempotencyKey: claims.idempotency_key, actionKey: claims.action_key, nativeType: task.nativeType };
+      if (probe.idempotencyKey !== claims.idempotency_key || probe.actionKey !== claims.action_key
+        || claims.exp * 1000 > Date.parse(probe.deadline)) refuse(403);
+      answer.nativeTaskDeadline = probe.deadline;
+    }
     if (NATIVE_TARGET.has(body.operation) && claims.target_type === 'RESOURCE') {
       const target = resources[claims.target_id] ?? refuse(403);
       if (check.kind === 'cells') await cellsNode(check, target, deadline);
@@ -249,7 +312,36 @@ export async function openProvider(path) {
       answer.targetResource = { resourceId: claims.target_id, nativeType: target.nativeType, nativeRef: target.nativeRef,
         nativeInstanceRef: binding.nativeInstanceRef, nativeScopeRef: binding.nativeScopeRef };
     }
+    if (probe) {
+      const reference = `${claims.action_execution_id}/${claims.external_execution_id}`;
+      if (!probe.token || claims.exp > probe.exp) Object.assign(probe, { token: body.actionToken, exp: claims.exp, argumentsJson: body.argumentsJson });
+      probes.set(reference, probe);
+    }
     return { status: 200, text: JSON.stringify(answer) };
+  }
+
+  // DD-124(7): hand back, unchanged, the Core-signed token of an execute probe
+  // this provider already admitted; PENDING_REFERENCE until it has seen one.
+  function admit(text) {
+    let body;
+    try { body = JSON.parse(text); } catch { refuse(400); }
+    const execution = body?.execution;
+    const reference = exactKeys(execution, ['externalExecutionId', 'idempotencyKey', 'nativeType', 'nativeId'])
+      || exactKeys(execution, ['externalExecutionId', 'idempotencyKey', 'nativeType']);
+    if (!tasks.size || !exactKeys(body, ['bindingId', 'actionExecutionId', 'execution', 'nativeTaskDeadline'])
+      || body.bindingId !== binding.bindingId || !UUID.test(body.actionExecutionId) || !reference
+      || !UUID.test(execution.externalExecutionId) || !UUID.test(execution.idempotencyKey) || !nonempty(execution.nativeType)
+      || typeof body.nativeTaskDeadline !== 'string' || !Number.isFinite(Date.parse(body.nativeTaskDeadline))
+      || new Date(Date.parse(body.nativeTaskDeadline)).toISOString() !== body.nativeTaskDeadline) refuse(400);
+    if (Date.parse(body.nativeTaskDeadline) <= Date.now()) refuse(403);
+    const probe = probes.get(`${body.actionExecutionId}/${execution.externalExecutionId}`);
+    if (!probe) return { state: 'PENDING_REFERENCE', nativeTaskDeadline: body.nativeTaskDeadline };
+    if (probe.deadline !== body.nativeTaskDeadline || probe.idempotencyKey !== execution.idempotencyKey
+      || probe.nativeType !== execution.nativeType) refuse(403);
+    if (!nonempty(execution.nativeId)) return { state: 'PENDING_REFERENCE', nativeTaskDeadline: probe.deadline };
+    if (probe.exp * 1000 <= Date.now() || probe.exp * 1000 > Date.parse(probe.deadline)) refuse(403);
+    return { state: 'ADMITTED', actionToken: probe.token, argumentsJson: probe.argumentsJson,
+      expiresAt: new Date(probe.exp * 1000).toISOString(), nativeTaskDeadline: probe.deadline };
   }
 
   const server = createServer(async (request, response) => {
@@ -267,8 +359,14 @@ export async function openProvider(path) {
         response.end(JSON.stringify({ token_type: 'Bearer', access_token: serviceToken, expires_in: identity.tokenSeconds }));
         return;
       }
-      if (request.url !== PEP_PATH) refuse(404);
+      if (request.url !== PEP_PATH && (request.url !== NATIVE_TASK_PATH || !tasks.size)) refuse(404);
       if (!equalSecret(request.headers.authorization, `Bearer ${serviceToken}`) || Date.now() >= serviceTokenUntil) refuse(401);
+      if (request.url === NATIVE_TASK_PATH) {
+        const admission = admit(text);
+        await unchanged();
+        response.end(JSON.stringify(admission));
+        return;
+      }
       const decision = await decide(text, deadline);
       response.writeHead(decision.status).end(decision.text);
     } catch (error) {

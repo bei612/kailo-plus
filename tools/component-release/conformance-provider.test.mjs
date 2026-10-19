@@ -65,6 +65,13 @@ async function fixture(t, change = {}) {
     targetsFile: await write('targets.json', { resources: { [id.resource]: { nativeType: 'node', nativeRef: id.node } } }),
     nativeCheck: { kind: 'cells', restBaseUrl: `${nativeOrigin}/v2/`, bearerFile: await write('bearer', 'native-fixture-bearer') },
     requestTimeoutMs: 3000, requestMaxBytes: 65536 };
+  if (change.nativeTask) {
+    // DD-124(7): the rendered candidate declares a native task deadline for the
+    // probed action (read stands in for Cells delete; only the declaration matters).
+    config.releaseManifestFile = await write('manifest.json', { adapterBuildRef: 'a'.repeat(64), actionDefinitions: [
+      { actionKey: 'file_storage.read@v2', executionMode: 'TEMPORAL', nativeTaskExecutionTimeoutSeconds: 3600 }] }, 0o644);
+    config.nativeTaskTypes = change.nativeTaskTypes ?? { 'file_storage.read@v2': 'job' };
+  }
   const configFile = await write('provider.json', config);
   const provider = await openProvider(configFile);
   const origin = await listen(provider.server);
@@ -94,7 +101,9 @@ async function fixture(t, change = {}) {
     idempotency_key: randomUUID() });
   const pep = async (body, auth) => fetch(`${origin}/service/v1/adapter/pep_check`, { method: 'POST',
     headers: { authorization: `Bearer ${auth ?? await bearer()}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  return { id, args, token, executeClaims, pep, bearer, origin, write, configFile, config };
+  const admission = async (body) => fetch(`${origin}/service/v1/adapter/request_native_task_execution_admission`, { method: 'POST',
+    headers: { authorization: `Bearer ${await bearer()}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return { id, args, token, executeClaims, pep, bearer, origin, write, configFile, config, admission };
 }
 
 test('allowed execute context receives the observed native reference after a fresh native read', async (t) => {
@@ -143,4 +152,64 @@ test('delivered facts are pinned: drift after start and production audience reus
     argumentsJson: canonical(f.args) }, 'not-yet-issued');
   assert.equal(response.status, 503);
   await assert.rejects(fixture(t, { productionAudience: 'isolated-adapter' }));
+});
+
+test('native task admission hands back the admitted probe token unchanged, pending until its pep_check (DD-124(7))', async (t) => {
+  const f = await fixture(t, { nativeTask: true });
+  const claims = f.executeClaims(f.id.actor);
+  const probe = f.token(claims);
+  const request = (deadline, execution = {}) => ({ bindingId: f.id.binding, actionExecutionId: claims.action_execution_id,
+    execution: { externalExecutionId: f.id.external, idempotencyKey: claims.idempotency_key, nativeType: 'job',
+      nativeId: claims.idempotency_key, ...execution }, nativeTaskDeadline: deadline });
+  const early = new Date(Date.now() + 60_000).toISOString();
+  let response = await f.admission(request(early));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { state: 'PENDING_REFERENCE', nativeTaskDeadline: early });
+
+  const before = Date.now();
+  response = await f.pep({ bindingId: f.id.binding, actionToken: probe, operation: 'execute', argumentsJson: canonical(f.args) });
+  assert.equal(response.status, 200);
+  const answer = await response.json();
+  const deadline = answer.nativeTaskDeadline;
+  assert.equal(new Date(Date.parse(deadline)).toISOString(), deadline);
+  assert.ok(Date.parse(deadline) >= Math.floor(before / 1000) * 1000 + 3600_000 && Date.parse(deadline) <= Date.now() + 3600_000);
+  // A later pep_check of the same probe never moves the frozen deadline.
+  response = await f.pep({ bindingId: f.id.binding, actionToken: probe, operation: 'execute', argumentsJson: canonical(f.args) });
+  assert.equal((await response.json()).nativeTaskDeadline, deadline);
+
+  response = await f.admission(request(deadline));
+  assert.equal(response.status, 200);
+  const exp = JSON.parse(Buffer.from(probe.split('.')[1], 'base64url').toString()).exp;
+  assert.deepEqual(await response.json(), { state: 'ADMITTED', actionToken: probe, argumentsJson: canonical(f.args),
+    expiresAt: new Date(exp * 1000).toISOString(), nativeTaskDeadline: deadline });
+
+  response = await f.admission(request(deadline, { nativeId: undefined }));
+  assert.deepEqual(await response.json(), { state: 'PENDING_REFERENCE', nativeTaskDeadline: deadline });
+  for (const [label, body] of [
+    ['extended deadline', request(new Date(Date.parse(deadline) + 1000).toISOString())],
+    ['other idempotency key', request(deadline, { idempotencyKey: randomUUID() })],
+    ['other native type', request(deadline, { nativeType: 'node' })],
+  ]) {
+    response = await f.admission(body);
+    assert.equal(response.status, 403, label);
+    assert.deepEqual(await response.json(), {}, label);
+  }
+  // The permission-denied replay is refused and leaves no retained probe.
+  const denied = f.executeClaims(f.id.denied);
+  response = await f.pep({ bindingId: f.id.binding, actionToken: f.token(denied), operation: 'execute', argumentsJson: canonical(f.args) });
+  assert.equal(response.status, 403);
+  response = await f.admission({ ...request(early), actionExecutionId: denied.action_execution_id,
+    execution: { externalExecutionId: f.id.external, idempotencyKey: denied.idempotency_key, nativeType: 'job', nativeId: 'x' } });
+  assert.deepEqual(await response.json(), { state: 'PENDING_REFERENCE', nativeTaskDeadline: early });
+});
+
+test('without a declared native task the admission route does not exist; undeclared types fail closed (DD-124(7))', async (t) => {
+  const f = await fixture(t);
+  const response = await f.admission({});
+  assert.equal(response.status, 404);
+  const answer = await f.pep({ bindingId: f.id.binding, actionToken: f.token(f.executeClaims(f.id.actor)), operation: 'execute',
+    argumentsJson: canonical(f.args) });
+  assert.equal(Object.hasOwn(await answer.json(), 'nativeTaskDeadline'), false);
+  await assert.rejects(fixture(t, { nativeTask: true, nativeTaskTypes: {} }));
+  await assert.rejects(fixture(t, { nativeTask: true, nativeTaskTypes: { 'file_storage.read@v2': 'job', 'file_storage.delete@v2': 'job' } }));
 });
