@@ -121,7 +121,7 @@ async function mountView(options: { view?: AgentInstallationView; reply?: (reque
     ?? (request.path === pagePath ? { status: 200, body: page } : { status: 503, body: undefined }));
   const host = await render(<PlatformProvider client={createBffClient({ send })} locale="en">
     <AgentTranscriptHostProvider value={options.host ?? {}}>
-      <AgentSessionTranscriptView agentAvatarUrl={null} agentName="Scout" agentPubkey="a".repeat(64) emptyDescription="Mention Scout"
+      <AgentSessionTranscriptView agentAvatarUrl={null} agentName="Scout" agentPubkey={"a".repeat(64)} emptyDescription="Mention Scout"
         installation={options.view ?? installation} projectionGeneration={2} rootEventId="root" />
     </AgentTranscriptHostProvider>
   </PlatformProvider>);
