@@ -340,7 +340,7 @@ class NativeIdentityTest(unittest.IsolatedAsyncioTestCase):
 
     def human_receipt(self, status="COMPLETED", gate="ALLOWED", dispatch="DISPATCHED", **changes):
         return {"data": {"previewSql": {
-            "submission": {"actionKey": "data_query.dry_run@v1", "gateState": gate, "dispatchState": dispatch},
+            "submission": {"actionKey": "data_query.dry_run@v2", "gateState": gate, "dispatchState": dispatch},
             "terminalStatus": status, "previewScope": "b" * 64,
             "data": {"valid": True, "deploymentHash": "a" * 40}, **changes,
         }}}

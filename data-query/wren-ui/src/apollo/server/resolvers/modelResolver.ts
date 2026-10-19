@@ -487,7 +487,7 @@ export class ModelResolver {
             ctx.nativeHumanToken,
             ref.nativeType,
             ref.nativeId,
-            'data_query.describe@v1',
+            'data_query.describe@v2',
           ),
         );
       return resolved;
@@ -1318,7 +1318,7 @@ export class ModelResolver {
           : undefined;
       if (
         !query ||
-        query.requestPayload?.action !== 'data_query.query@v1' ||
+        query.requestPayload?.action !== 'data_query.query@v2' ||
         query.requestPayload.limit !== 1 ||
         query.requestPayload.previewScope !==
           nativePreviewScope(config, identity) ||
@@ -1740,7 +1740,7 @@ export class ModelResolver {
             ctx.nativeHumanToken,
             ref.nativeType,
             ref.nativeId,
-            'data_query.describe@v1',
+            'data_query.describe@v2',
           ),
         );
       return resolved;

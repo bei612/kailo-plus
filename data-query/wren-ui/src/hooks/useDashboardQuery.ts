@@ -134,7 +134,7 @@ export default function useDashboardQuery(
         !scope ||
         received?.previewScope !== scope ||
         received?.itemId !== itemId ||
-        received?.submission?.actionKey !== 'data_query.query@v1' ||
+        received?.submission?.actionKey !== 'data_query.query@v2' ||
         typeof selection?.historyId !== 'string' ||
         selection?.cache?.refresh !== intent?.refresh ||
         !state.valid

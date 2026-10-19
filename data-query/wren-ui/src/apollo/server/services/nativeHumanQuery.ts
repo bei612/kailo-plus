@@ -76,9 +76,9 @@ export async function resolveNativeResource(
   kind: 'model' | 'view',
   id: number,
   actionKey:
-    | 'data_query.query@v1'
-    | 'data_query.dry_run@v1'
-    | 'data_query.describe@v1',
+    | 'data_query.query@v2'
+    | 'data_query.dry_run@v2'
+    | 'data_query.describe@v2',
   filterDenied = false,
 ) {
   if (!token || !Number.isSafeInteger(id) || id <= 0)
@@ -144,7 +144,7 @@ export async function canReadNativeMetadata(
       token,
       kind,
       id,
-      'data_query.describe@v1',
+      'data_query.describe@v2',
       true,
     )) !== null
   );
@@ -205,7 +205,7 @@ export class NativeHumanQuery {
       });
       if (
         !query ||
-        query.requestPayload?.action !== 'data_query.query@v1' ||
+        query.requestPayload?.action !== 'data_query.query@v2' ||
         query.requestPayload.sql !== selected.requestPayload.sql ||
         query.requestPayload.limit !== selected.requestPayload.sampleSize ||
         query.threadId !== selected.threadId ||
@@ -248,7 +248,7 @@ export class NativeHumanQuery {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
         selected.governanceKey,
       ) ||
-      !['data_query.query@v1', 'data_query.dry_run@v1'].includes(action)
+      !['data_query.query@v2', 'data_query.dry_run@v2'].includes(action)
     )
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
     // History is a read of the original admitted intent, never a new preview.
@@ -361,7 +361,7 @@ export class NativeHumanQuery {
         token,
         kind,
         viewId,
-        'data_query.query@v1',
+        'data_query.query@v2',
       );
       selectedResource = resource.resourceId;
       const reference =
@@ -383,7 +383,7 @@ export class NativeHumanQuery {
         {
           bindingId: this.config.bindingId,
           command: {
-            actionKey: 'data_query.query@v1',
+            actionKey: 'data_query.query@v2',
             idempotencyKey: key,
             workspaceId: this.config.workspaceId,
             resourceId: resource.resourceId,
@@ -404,7 +404,7 @@ export class NativeHumanQuery {
       if (
         !value ||
         !queryReceiptState(value).valid ||
-        value.submission?.actionKey !== 'data_query.query@v1' ||
+        value.submission?.actionKey !== 'data_query.query@v2' ||
         typeof value.submission.actionExecutionId !== 'string' ||
         typeof value.submission.operationId !== 'string' ||
         typeof value.inputReference?.resourceId !== 'string' ||
@@ -447,7 +447,7 @@ export class NativeHumanQuery {
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return frozen;
     };
-    return this.disclose(token, key, receipt, check, 'data_query.query@v1');
+    return this.disclose(token, key, receipt, check, 'data_query.query@v2');
   }
 
   async previewSql(
@@ -463,7 +463,7 @@ export class NativeHumanQuery {
     observationOnly = false,
     beforeAdmission?: () => Promise<void>,
   ) {
-    const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+    const action = dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
     if (!token || !policy)
       throw new NativeQueryRefusal(503, 'NATIVE_HUMAN_ADMISSION_UNAVAILABLE');
@@ -597,7 +597,7 @@ export class NativeHumanQuery {
     key: string,
     receipt: any,
     check: (value: any) => any,
-    action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+    action: 'data_query.query@v2' | 'data_query.dry_run@v2',
   ) {
     const frozen = check(receipt);
     if (receipt.terminalStatus !== 'COMPLETED') return receipt;
@@ -650,9 +650,9 @@ export class NativeHumanQuery {
           sql: record.requestPayload.sql,
         }) ||
       !record?.responsePayload ||
-      record.responsePayload.deploymentId !== frozen.deploymentId ||
+      record.responsePayload.deploymentId !== String(frozen.deploymentId) ||
       record.responsePayload.deploymentHash !== frozen.deploymentHash ||
-      (action === 'data_query.dry_run@v1'
+      (action === 'data_query.dry_run@v2'
         ? record.responsePayload.valid !== true
         : !Array.isArray(record.responsePayload.columns) ||
           !Array.isArray(record.responsePayload.data) ||

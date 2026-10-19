@@ -248,7 +248,7 @@ describe.each(['createRelation', 'updateRelation', 'deleteRelation'] as const)(
             };
           }
           expect(request.resolveResource?.actionKey).toBe(
-            'data_query.describe@v1',
+            'data_query.describe@v2',
           );
           if (denyBody) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
           return {

@@ -233,7 +233,7 @@ export class AskingResolver {
           prepared.governanceOperationId != null ||
           input?.previewScope !==
             nativePreviewScope(config, ctx.nativeIdentityScope) ||
-          !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
+          !['data_query.query@v2', 'data_query.dry_run@v2'].includes(
             input?.action,
           ) ||
           prepared.governanceDeploymentHash !==
@@ -260,7 +260,7 @@ export class AskingResolver {
           input.sql,
           input.limit,
           input.previewScope,
-          input.action === 'data_query.dry_run@v1',
+          input.action === 'data_query.dry_run@v2',
           queryId,
           task.detail.nativeScope.metadataReference.hash,
           input.cache,
@@ -370,7 +370,7 @@ export class AskingResolver {
         token,
         'view',
         id,
-        'data_query.describe@v1',
+        'data_query.describe@v2',
       );
       const view = await ctx.viewRepository.findOneBy({
         id,
@@ -394,7 +394,7 @@ export class AskingResolver {
         token,
         'view',
         id,
-        'data_query.describe@v1',
+        'data_query.describe@v2',
       );
       if (!current || canonical({ resource, view: current }) !== facts.get(id))
         throw new NativeQueryRefusal(409, 'QUERY_EVIDENCE_UNAVAILABLE');

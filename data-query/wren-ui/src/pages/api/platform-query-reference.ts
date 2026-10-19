@@ -68,7 +68,7 @@ export default async function handler(
         token,
         'view',
         viewId,
-        'data_query.query@v1',
+        'data_query.query@v2',
       );
     const resource = await resolve();
     const { components } = await import('../../common');

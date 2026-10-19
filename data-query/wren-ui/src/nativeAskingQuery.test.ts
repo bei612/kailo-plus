@@ -417,7 +417,7 @@ describe('original model preview and Asking receipt consumers', () => {
     requestPayload: {
       sql: 'SELECT id FROM orders',
       limit: 1,
-      action: 'data_query.query@v1',
+      action: 'data_query.query@v2',
       previewScope: nativePreviewScope(config, ctx.nativeIdentityScope),
     },
   });

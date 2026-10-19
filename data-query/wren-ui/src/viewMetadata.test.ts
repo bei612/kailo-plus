@@ -1328,7 +1328,7 @@ describe('original saved-view preview controls', () => {
         }),
       },
       submission: {
-        actionKey: 'data_query.query@v1',
+        actionKey: 'data_query.query@v2',
         gateState: 'ALLOWED',
         dispatchState: 'DISPATCHED',
       },
@@ -1385,7 +1385,7 @@ describe('original saved-view preview controls', () => {
       if (changed === 'scope') value.queryReceipt.previewScope = 'b'.repeat(64);
       if (changed === 'item') value.queryReceipt.itemId = 999;
       if (changed === 'action')
-        value.queryReceipt.submission.actionKey = 'data_query.dry_run@v1';
+        value.queryReceipt.submission.actionKey = 'data_query.dry_run@v2';
       if (changed === 'refresh')
         value.queryReceipt.inputReference.nativeObjectRef = JSON.stringify({
           historyId: 'original-history',
@@ -1563,7 +1563,7 @@ describe('original saved-view preview controls', () => {
             queryReceipt: {
               ...dashboardReceipt(mockScope, true).queryReceipt,
               submission: {
-                actionKey: 'data_query.query@v1',
+                actionKey: 'data_query.query@v2',
                 gateState: 'DENIED',
                 dispatchState: 'NOT_DISPATCHED',
               },
@@ -1605,7 +1605,7 @@ describe('original saved-view preview controls', () => {
   const sqlReceipt = (scope: string, dryRun = false, completed = false) => ({
     previewScope: scope,
     submission: {
-      actionKey: dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1',
+      actionKey: dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2',
       gateState: 'ALLOWED',
       dispatchState: 'DISPATCHED',
     },
@@ -3171,7 +3171,7 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
           previewScope: scope,
           terminalStatus: 'COMPLETED',
           submission: {
-            actionKey: 'data_query.query@v1',
+            actionKey: 'data_query.query@v2',
             gateState: 'ALLOWED',
             dispatchState: 'DISPATCHED',
           },

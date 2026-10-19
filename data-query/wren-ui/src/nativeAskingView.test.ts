@@ -155,7 +155,7 @@ describe('original Asking saved-view readers', () => {
           bindingId: config.bindingId,
           resolveResource: {
             workspaceId: config.workspaceId,
-            actionKey: 'data_query.describe@v1',
+            actionKey: 'data_query.describe@v2',
             actionVersion: 1,
             nativeType: 'view',
             nativeRef: '7',

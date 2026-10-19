@@ -244,7 +244,7 @@ export async function readNativeAskHistory(
     if (
       !query ||
       query.governanceDeploymentHash !== proof.metadataReference.hash ||
-      query.requestPayload?.action !== 'data_query.query@v1' ||
+      query.requestPayload?.action !== 'data_query.query@v2' ||
       query.requestPayload.sql !== selected.responsePayload.sql ||
       query.requestPayload.limit !== selected.requestPayload.sampleSize ||
       query.threadId !== selected.threadId ||

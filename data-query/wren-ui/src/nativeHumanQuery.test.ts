@@ -1462,7 +1462,7 @@ describe('native saved-view HUMAN query consumer', () => {
   const submission = {
     actionExecutionId: '1c52c02c-0136-4652-a8d5-2af3921edbfc',
     operationId: '5f4ccbf4-a794-48f2-8bd1-39b453e623f7',
-    actionKey: 'data_query.query@v1',
+    actionKey: 'data_query.query@v2',
     gateState: 'ALLOWED',
     dispatchState: 'DISPATCHED',
   };
@@ -1511,7 +1511,7 @@ describe('native saved-view HUMAN query consumer', () => {
       governanceDeploymentId: captured.deploymentId,
       governanceDeploymentHash: captured.deploymentHash,
       requestPayload: {
-        action: 'data_query.query@v1',
+        action: 'data_query.query@v2',
         sql,
         deploymentId: captured.deploymentId,
         deploymentHash: captured.deploymentHash,
@@ -1521,7 +1521,7 @@ describe('native saved-view HUMAN query consumer', () => {
       responsePayload: {
         columns,
         data,
-        deploymentId: captured.deploymentId,
+        deploymentId: String(captured.deploymentId),
         deploymentHash: captured.deploymentHash,
       },
     };
@@ -1546,7 +1546,7 @@ describe('native saved-view HUMAN query consumer', () => {
 
   const originalHistory = (dryRun = false) => {
     const id = '60c94d6b-9dc1-4b7c-8b55-eb17c5b0de67';
-    const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+    const action = dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2';
     const record = {
       ...nativeRecord(),
       id,
@@ -1559,7 +1559,7 @@ describe('native saved-view HUMAN query consumer', () => {
     if (dryRun)
       record.responsePayload = {
         valid: true,
-        deploymentId: selection.deploymentId,
+        deploymentId: String(selection.deploymentId),
         deploymentHash: selection.deploymentHash,
       } as any;
     const completed = {
@@ -2219,7 +2219,7 @@ describe('native saved-view HUMAN query consumer', () => {
     async (dryRun) => {
       const scope = 'c'.repeat(64),
         historyId = '872bff6e-4a5b-4301-a3df-3fb92fd78321';
-      const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+      const action = dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2';
       const frozenSelection = {
         modelId: 8,
         deploymentId: selection.deploymentId,
@@ -2385,7 +2385,7 @@ describe('native saved-view HUMAN query consumer', () => {
       statement,
       10,
       'c'.repeat(64),
-      'data_query.query@v1',
+      'data_query.query@v2',
       undefined,
       undefined,
       undefined,
@@ -2460,7 +2460,7 @@ describe('native saved-view HUMAN query consumer', () => {
       delegated = jest
         .spyOn(NativeHumanQuery.prototype, 'previewSql')
         .mockResolvedValue({
-          submission: { ...submission, actionKey: 'data_query.dry_run@v1' },
+          submission: { ...submission, actionKey: 'data_query.dry_run@v2' },
           terminalStatus: 'COMPLETED',
           data: { valid: true },
         });
@@ -2564,7 +2564,7 @@ describe('native saved-view HUMAN query consumer', () => {
       'does not write metadata from incomplete dry-run evidence %j',
       async (changes) => {
         delegated.mockResolvedValue({
-          submission: { ...submission, actionKey: 'data_query.dry_run@v1' },
+          submission: { ...submission, actionKey: 'data_query.dry_run@v2' },
           ...changes,
         });
         await expect(write('create')).rejects.toThrow(
@@ -3029,7 +3029,7 @@ describe('native saved-view HUMAN query consumer', () => {
             bindingId: binding,
             resolveResource: {
               workspaceId: config.workspaceId,
-              actionKey: 'data_query.describe@v1',
+              actionKey: 'data_query.describe@v2',
               actionVersion: 1,
               nativeType: source.nativeType,
               nativeRef: String(source.nativeId),
@@ -4465,7 +4465,7 @@ describe('native saved-view HUMAN query consumer', () => {
         governanceBindingId: scopeConfig.bindingId,
         governanceState: 'SUCCEEDED',
         requestPayload: {
-          action: 'data_query.query@v1',
+          action: 'data_query.query@v2',
           sql: statement,
           limit: 1,
           previewScope: nativePreviewScope(
@@ -4722,7 +4722,7 @@ describe('native saved-view HUMAN query consumer', () => {
       bindingId: binding,
       resolveResource: {
         workspaceId: config.workspaceId,
-        actionKey: 'data_query.query@v1',
+        actionKey: 'data_query.query@v2',
         actionVersion: 1,
         nativeType: 'view',
         nativeRef: '7',
@@ -4733,7 +4733,7 @@ describe('native saved-view HUMAN query consumer', () => {
     expect(command.resourceVersion).toBe(4);
     expect(command.componentAction.inputReference).toEqual(reference);
     expect(command.idempotencyKey).toBe(key);
-    expect(command.actionKey).toBe('data_query.query@v1');
+    expect(command.actionKey).toBe('data_query.query@v2');
     expect(history).not.toHaveBeenCalled();
   });
   it('observes the same key without re-freezing a mutable view or repeating a query', async () => {
@@ -4898,14 +4898,14 @@ describe('native saved-view HUMAN query consumer', () => {
     expect(sources).toHaveBeenCalledTimes(2);
     expect(calls.mock.calls[1][2]).toMatchObject({
       resolveResource: {
-        actionKey: 'data_query.query@v1',
+        actionKey: 'data_query.query@v2',
         nativeType: 'model',
         nativeRef: '8',
       },
     });
     expect(calls.mock.calls[2][2]).toMatchObject({
       resolveResource: {
-        actionKey: 'data_query.query@v1',
+        actionKey: 'data_query.query@v2',
         nativeType: 'view',
         nativeRef: '7',
       },
@@ -5018,7 +5018,7 @@ describe('native saved-view HUMAN query consumer', () => {
           sql: statement,
         }),
       };
-      const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
+      const action = dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2';
       const completed = {
         ...receipt,
         inputReference: frozen,
@@ -5032,7 +5032,7 @@ describe('native saved-view HUMAN query consumer', () => {
       if (dryRun)
         record.responsePayload = {
           valid: true,
-          deploymentId: selection.deploymentId,
+          deploymentId: String(selection.deploymentId),
           deploymentHash: selection.deploymentHash,
         } as any;
       history.mockResolvedValue(record);
@@ -5125,14 +5125,14 @@ describe('native saved-view HUMAN query consumer', () => {
       if (changed === 'changed SQL')
         record.requestPayload.sql = 'SELECT private';
       if (changed === 'another action')
-        record.requestPayload.action = 'data_query.dry_run@v1';
+        record.requestPayload.action = 'data_query.dry_run@v2';
       if (changed === 'request deployment ID')
         record.requestPayload.deploymentId++;
       if (changed === 'request deployment hash')
         record.requestPayload.deploymentHash = 'd'.repeat(40);
       if (changed === 'request limit') record.requestPayload.limit++;
       if (changed === 'result deployment ID')
-        record.responsePayload.deploymentId++;
+        record.responsePayload.deploymentId = 'another';
       if (changed === 'result deployment hash')
         record.responsePayload.deploymentHash = 'd'.repeat(40);
       if (changed === 'missing column type')
@@ -5470,7 +5470,7 @@ describe('native saved-view HUMAN query consumer', () => {
           limit: 10,
         });
         expect(command).toMatchObject({
-          actionKey: 'data_query.query@v1',
+          actionKey: 'data_query.query@v2',
           idempotencyKey: key,
           resourceId: resource,
           resourceVersion: 4,
@@ -5481,7 +5481,7 @@ describe('native saved-view HUMAN query consumer', () => {
           expect(result.data).toEqual({
             columns: [{ name: 'customer', type: 'VARCHAR' }],
             data: [['native']],
-            deploymentId: 12,
+            deploymentId: '12',
             deploymentHash: 'b'.repeat(40),
           });
           expect(history).toHaveBeenCalledWith({
@@ -5565,7 +5565,7 @@ describe('native saved-view HUMAN query consumer', () => {
         await expect(
           new AskingResolver().previewData(null, { where }, ctx),
         ).rejects.toThrow();
-        expect(command.actionKey).toBe('data_query.query@v1');
+        expect(command.actionKey).toBe('data_query.query@v2');
         expect(history).toHaveBeenCalledTimes(1);
         expect(ctx.queryService.preview).not.toHaveBeenCalled();
       },
@@ -5776,7 +5776,7 @@ describe('native saved-view HUMAN query consumer', () => {
             modelId: 8,
             limit: 10,
           });
-          expect(command.actionKey).toBe('data_query.query@v1');
+          expect(command.actionKey).toBe('data_query.query@v2');
           expect(JSON.stringify(command)).not.toContain(view.statement);
           expect(stored().requestPayload).toMatchObject({
             sql: view.statement,
@@ -5880,7 +5880,7 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(result.data).toEqual({
         columns: [{ name: 'customer', type: 'VARCHAR' }],
         data: [['native']],
-        deploymentId: 12,
+        deploymentId: '12',
         deploymentHash: 'b'.repeat(40),
       });
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
@@ -6106,7 +6106,7 @@ describe('native saved-view HUMAN query consumer', () => {
           bindingId: binding,
           resolveResource: {
             workspaceId: config.workspaceId,
-            actionKey: 'data_query.query@v1',
+            actionKey: 'data_query.query@v2',
             actionVersion: 1,
             nativeType: 'view',
             nativeRef: '7',
@@ -6671,13 +6671,13 @@ describe('native saved-view HUMAN query consumer', () => {
                 input: observed.inputReference,
               }),
               responsePayload: {
-                ...(command.actionKey === 'data_query.dry_run@v1'
+                ...(command.actionKey === 'data_query.dry_run@v2'
                   ? { valid: true }
                   : {
                       columns: [{ name: 'customer', type: 'VARCHAR' }],
                       data: [['native']],
                     }),
-                deploymentId: 12,
+                deploymentId: '12',
                 deploymentHash: selection.deploymentHash,
               },
             });
@@ -7339,7 +7339,7 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(direct).not.toHaveBeenCalled();
     });
 
-    it.each(['data_query.query@v1', 'data_query.dry_run@v1'] as const)(
+    it.each(['data_query.query@v2', 'data_query.dry_run@v2'] as const)(
       'REST explicit same-key POST recovers a persisted %s child with no admission ACK, never a second AI job',
       async (action) => {
         const child = randomUUID();
@@ -8121,7 +8121,7 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(pending).not.toHaveProperty('summary');
         if (first.status === 202) {
           expect(pending.queryReceipt.submission.actionKey).toBe(
-            'data_query.query@v1',
+            'data_query.query@v2',
           );
           expect(pending).not.toHaveProperty('receipt');
         }
@@ -8280,7 +8280,7 @@ describe('native saved-view HUMAN query consumer', () => {
       const pending = await sendChart();
       expect(pending.status).toBe(202);
       expect((await pending.json()).queryReceipt.submission.actionKey).toBe(
-        'data_query.query@v1',
+        'data_query.query@v2',
       );
       expect((await sendChart()).status).toBe(200);
       expect((await sendChart()).status).toBe(200);

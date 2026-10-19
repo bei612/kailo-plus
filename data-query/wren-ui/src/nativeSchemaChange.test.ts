@@ -102,7 +102,7 @@ describe('original schema-change metadata consumer', () => {
       expect(call[3]).toBe('fixture-person');
       expect(call[2]).toMatchObject({
         resolveResource: {
-          actionKey: 'data_query.describe@v1',
+          actionKey: 'data_query.describe@v2',
           nativeType: 'model',
           nativeRef: '11',
         },

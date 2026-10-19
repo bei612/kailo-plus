@@ -252,7 +252,7 @@ describe.each(['createModel', 'updateModel'] as const)(
             };
           }
           expect(request.resolveResource?.actionKey).toBe(
-            'data_query.describe@v1',
+            'data_query.describe@v2',
           );
           expect(request.resolveResource.nativeType).toBe('model');
           expect(request.resolveResource.nativeRef).toBe(String(modelId));

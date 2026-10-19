@@ -60,7 +60,7 @@ function expectCatalogQueryOutput(action: string, resultJson: string) {
     ),
   );
   const operation = registration.operationContracts.find(
-    (entry) => entry.contractKey === `${action}@v1`,
+    (entry) => entry.contractKey === `${action}@v2`,
   );
   expect(operation).toBeDefined();
   expect(operation.inputSchemaDigest).toBe(
@@ -93,7 +93,7 @@ describe('original adapter shared native error mapping HTTP consumer', () => {
       requestMaxBytes: 65536,
     } as NativeQueryDelivery);
     admission = jest.spyOn(queryAdmission, 'authorizeQuery').mockResolvedValue({
-      action_key: 'data_query.query@v1',
+      action_key: 'data_query.query@v2',
       action_definition_version: 1,
       target_type: 'RESOURCE',
       target_id: randomUUID(),
@@ -182,7 +182,7 @@ describe('original adapter shared native error mapping HTTP consumer', () => {
     admission.mockClear();
     admission
       .mockResolvedValueOnce({
-        action_key: 'data_query.query@v1',
+        action_key: 'data_query.query@v2',
         action_definition_version: 1,
         target_type: 'RESOURCE',
         target_id: randomUUID(),
@@ -1083,7 +1083,8 @@ integration('original Wren query handler, SDK and native history', () => {
   };
   const input = {
     sql: `SELECT one FROM "${rawName}"`,
-    deploymentId: 1,
+    // data_query@2 wire: the opaque string of native deploy row 1.
+    deploymentId: '1',
     deploymentHash: 'a'.repeat(40),
     limit: 5,
   };
@@ -1188,7 +1189,7 @@ integration('original Wren query handler, SDK and native history', () => {
           bindingId: delivery.bindingId,
           resolveResource: {
             workspaceId: delivery.workspaceId,
-            actionKey: 'data_query.describe@v1',
+            actionKey: 'data_query.describe@v2',
             actionVersion: 1,
             nativeType: 'model',
             nativeRef: '7',
@@ -1572,7 +1573,7 @@ integration('original Wren query handler, SDK and native history', () => {
       actor_principal_id: actor,
       agent_principal_id: actor,
       initiating_human_principal_id: randomUUID(),
-      action_key: `${action}@v1`,
+      action_key: `${action}@v2`,
       action_definition_version: 1,
       target_type: 'RESOURCE',
       target_id: resource,
@@ -1645,7 +1646,7 @@ integration('original Wren query handler, SDK and native history', () => {
         'idempotency-key': key,
       },
       body: JSON.stringify({
-        actionKey: 'data_query.describe@v1',
+        actionKey: 'data_query.describe@v2',
         idempotencyKey: key,
         arguments: { target: { resourceId: resource }, input: args },
       }),
@@ -1766,7 +1767,7 @@ integration('original Wren query handler, SDK and native history', () => {
           governanceActionExecutionId: ae,
           governanceOperationId: operation,
           governanceState: 'UNKNOWN',
-          governanceDeploymentId: input.deploymentId,
+          governanceDeploymentId: Number(input.deploymentId),
           governanceDeploymentHash: input.deploymentHash,
         });
         expect(history.responsePayload).toBeNull();
@@ -2017,9 +2018,9 @@ integration('original Wren query handler, SDK and native history', () => {
           },
         ],
         executionMappings: [
-          { actionKey: 'data_query.query@v1', cancelCapability: 'UNSUPPORTED' },
-          { actionKey: 'data_query.dry_run@v1' },
-          { actionKey: 'data_query.describe@v1' },
+          { actionKey: 'data_query.query@v2', cancelCapability: 'UNSUPPORTED' },
+          { actionKey: 'data_query.dry_run@v2' },
+          { actionKey: 'data_query.describe@v2' },
         ],
       });
       expect(
@@ -2264,7 +2265,7 @@ integration('original Wren query handler, SDK and native history', () => {
         input.sql,
         input.limit,
         scope,
-        'data_query.query@v1',
+        'data_query.query@v2',
         undefined,
         undefined,
         cache,
@@ -2325,7 +2326,7 @@ integration('original Wren query handler, SDK and native history', () => {
             input.sql,
             input.limit,
             scope,
-            'data_query.query@v1',
+            'data_query.query@v2',
             undefined,
             undefined,
             { ...cache, refresh: !refresh },
@@ -2338,7 +2339,7 @@ integration('original Wren query handler, SDK and native history', () => {
             input.sql,
             input.limit,
             scope,
-            'data_query.query@v1',
+            'data_query.query@v2',
             undefined,
             undefined,
             { ...cache, refresh: !refresh },
@@ -2389,7 +2390,7 @@ integration('original Wren query handler, SDK and native history', () => {
         input.sql,
         input.limit,
         scope,
-        `${action}@v1` as 'data_query.query@v1' | 'data_query.dry_run@v1',
+        `${action}@v2` as 'data_query.query@v2' | 'data_query.dry_run@v2',
       );
       const reference = await service.sqlReference(resource, draft, 1);
       const selection = JSON.parse(reference.nativeObjectRef);
@@ -2458,7 +2459,7 @@ integration('original Wren query handler, SDK and native history', () => {
           input.sql,
           input.limit,
           'e'.repeat(64),
-          `${action}@v1` as any,
+          `${action}@v2` as any,
         ),
       ).rejects.toMatchObject({ status: 409 });
       await expect(
@@ -2467,7 +2468,7 @@ integration('original Wren query handler, SDK and native history', () => {
           `${input.sql} `,
           input.limit,
           scope,
-          `${action}@v1` as any,
+          `${action}@v2` as any,
         ),
       ).rejects.toMatchObject({ status: 409 });
       expect(
@@ -2500,7 +2501,7 @@ integration('original Wren query handler, SDK and native history', () => {
       input.sql,
       input.limit,
       'f'.repeat(64),
-      'data_query.query@v1',
+      'data_query.query@v2',
     );
     const reference = await service.sqlReference(resource, draft, 1);
     const token = await signed('data_query.query', reference);
@@ -2546,7 +2547,7 @@ integration('original Wren query handler, SDK and native history', () => {
         input.sql,
         input.limit,
         'd'.repeat(64),
-        'data_query.query@v1',
+        'data_query.query@v2',
       ),
       1,
     );
@@ -2690,7 +2691,7 @@ integration('original Wren query handler, SDK and native history', () => {
       },
     ];
     await database('deploy_log')
-      .where({ id: input.deploymentId })
+      .where({ id: Number(input.deploymentId) })
       .update({
         manifest: JSON.stringify(manifest),
         native_object_refs: JSON.stringify(nativeSources),
@@ -2924,7 +2925,7 @@ integration('original Wren query handler, SDK and native history', () => {
       ],
     };
     await database('deploy_log')
-      .where({ id: input.deploymentId })
+      .where({ id: Number(input.deploymentId) })
       .update({
         manifest: JSON.stringify(manifest),
         native_object_refs: JSON.stringify([
@@ -3054,6 +3055,8 @@ integration('original Wren query handler, SDK and native history', () => {
     const token = await signed('data_query.query', input, ae, operation);
     const first = (await call(token, key)).structuredContent as any;
     expect(first.execution.platformStatus).toBe('UNKNOWN');
+    // DD-124(5): no native terminal fact, so no native status either.
+    expect(first.execution).not.toHaveProperty('nativeStatus');
     expect(first.resultJson).toBeUndefined();
     await call(token, key);
     expect(queries).toBe(1);
@@ -3082,6 +3085,7 @@ integration('original Wren query handler, SDK and native history', () => {
       idempotencyKey: key,
     });
     expect(observation.execution.terminalAt).toBeUndefined();
+    expect(observation.execution).not.toHaveProperty('nativeStatus');
     expect(queries).toBe(1);
   });
 
@@ -3091,8 +3095,33 @@ integration('original Wren query handler, SDK and native history', () => {
       await call(await signed('data_query.query', input), randomUUID())
     ).structuredContent as any;
     expect(result.execution.platformStatus).toBe('FAILED');
+    // The terminal carries the native row's persisted state (DD-124(5)).
+    expect(result.execution.nativeStatus).toBe('FAILED');
+    expect(result.execution.terminalAt).toBeDefined();
     expect(queries).toBe(0);
   });
+
+  it.each([1, '01', '0', '', '1.5', ' 1'])(
+    'refuses deploymentId %p, not the data_query@2 opaque native row ID',
+    async (deploymentId) => {
+      const raw = { ...input, deploymentId };
+      const ae = randomUUID();
+      await expect(
+        call(
+          await signed('data_query.query', raw, ae),
+          randomUUID(),
+          'data_query.query',
+          raw,
+        ),
+      ).rejects.toThrow('INVALID_QUERY_PARAMETERS');
+      expect(
+        await database('api_history').where({
+          governance_action_execution_id: ae,
+        }),
+      ).toHaveLength(0);
+      expect(queries).toBe(0);
+    },
+  );
 
   it('does not disclose a completed query after fresh authorization is revoked', async () => {
     onPep = async () => {
@@ -3188,7 +3217,7 @@ integration('original Wren query handler, SDK and native history', () => {
       nativeScopeRef: delivery.nativeScopeRef,
     };
     const expected = {
-      deploymentId: 1,
+      deploymentId: '1',
       deploymentHash: input.deploymentHash,
       models: [
         {
@@ -3206,7 +3235,7 @@ integration('original Wren query handler, SDK and native history', () => {
           'idempotency-key': key,
         },
         body: JSON.stringify({
-          actionKey: 'data_query.describe@v1',
+          actionKey: 'data_query.describe@v2',
           idempotencyKey: key,
           arguments: { target: { resourceId: target }, input: {} },
         }),
@@ -3232,12 +3261,12 @@ integration('original Wren query handler, SDK and native history', () => {
     return { models, manifest, captures, expected, execute, clean };
   };
 
-  it('executes the delivered typed-reference conformance sequence through original HTTP, native PG history and query consumers', async () => {
+  it('executes the delivered V2 conformance sequence through original HTTP, native PG history and query consumers', async () => {
     const registration = JSON.parse(
       readFileSync(
         join(
           __dirname,
-          '../../../contracts/adapter/data_query.v1/registration.json',
+          '../../../contracts/adapter/data_query.v2/registration.json',
         ),
         'utf8',
       ),
@@ -3245,7 +3274,7 @@ integration('original Wren query handler, SDK and native history', () => {
     const vector = JSON.parse(registration.testVectorsJson).cases[0];
     const expectedDescription = JSON.parse(vector.steps[0].expectedOutputJson);
     const expectedQuery = JSON.parse(
-      vector.steps.find((step) => step.contractKey === 'data_query.query@v1')
+      vector.steps.find((step) => step.contractKey === 'data_query.query@v2')
         .expectedOutputJson,
     );
     const fixtureModel = expectedDescription.models[0];
@@ -3268,10 +3297,11 @@ integration('original Wren query handler, SDK and native history', () => {
       reference_name: fixtureModel.name,
       ref_sql: 'SELECT 1 AS value',
     });
+    // The native deployment keeps its own generated identity; the vectors
+    // carry none of it (DD-124(1)): Core captures it from describe.
     await database('deploy_log')
       .where({ id: 1 })
       .update({
-        hash: expectedDescription.deploymentHash,
         manifest: JSON.stringify(fixtureManifest),
         native_object_refs: JSON.stringify([
           {
@@ -3297,14 +3327,38 @@ integration('original Wren query handler, SDK and native history', () => {
       columns: expectedQuery.columns,
       data: expectedQuery.data,
     });
-    const references = new Map<string, unknown>();
+    // Core capability_vector.rs apply/capture, replayed: a JSON Pointer slot
+    // holds exactly its placeholder until a captured value replaces it.
+    const slot = (document: any, pointer: string) => {
+      const parts = pointer
+        .slice(1)
+        .split('/')
+        .map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'));
+      const last = parts.pop();
+      return {
+        parent: parts.reduce((node, part) => node[part], document),
+        last,
+      };
+    };
+    const placeholder = (source: string, key: string) => `{{${source}:${key}}}`;
+    const captured = new Map<string, string>();
     try {
       for (const step of vector.steps) {
-        const action = step.contractKey.replace(/@v1$/, '');
-        const raw = step.referenceFromStepKey
-          ? references.get(step.referenceFromStepKey)
-          : JSON.parse(step.inputJson);
-        expect(raw).toBeDefined();
+        const action = step.contractKey.replace(/@v2$/, '');
+        const own = new Set(
+          (step.captures ?? []).map((capture) => capture.key),
+        );
+        const raw = JSON.parse(step.inputJson);
+        const expected = JSON.parse(step.expectedOutputJson);
+        for (const binding of step.bindings ?? []) {
+          expect(binding.source).toBe('CAPTURE');
+          if (binding.side === 'EXPECTED' && own.has(binding.key)) continue;
+          const document = binding.side === 'INPUT' ? raw : expected;
+          const { parent, last } = slot(document, binding.pointer);
+          expect(parent[last]).toBe(placeholder('CAPTURE', binding.key));
+          expect(captured.has(binding.key)).toBe(true);
+          parent[last] = captured.get(binding.key);
+        }
         const key = randomUUID();
         const argumentsValue = {
           target: { resourceId: fixtureResource },
@@ -3338,11 +3392,27 @@ integration('original Wren query handler, SDK and native history', () => {
         const response = await invoke();
         expect(response.status).toBe(200);
         const result = await response.json();
+        // DD-124(5): a capturing terminal carries the native status original.
         expect(result.execution.platformStatus).toBe('SUCCEEDED');
-        expect(JSON.parse(result.resultJson)).toEqual(
-          JSON.parse(step.expectedOutputJson),
-        );
+        expect(result.execution.nativeStatus).toBe('SUCCEEDED');
         expectCatalogQueryOutput(action, result.resultJson);
+        const actual = JSON.parse(result.resultJson);
+        for (const capture of step.captures ?? []) {
+          let value: unknown;
+          if (capture.slot === 'GENERATED_REF') {
+            const { parent, last } = slot(actual, capture.pointer);
+            value = parent[last];
+            parent[last] = placeholder('CAPTURE', capture.key);
+          } else if (capture.slot === 'CONTENT_REFERENCE_NATIVE_OBJECT_REF') {
+            value = result.contentReference.nativeObjectRef;
+          } else {
+            expect(capture.slot).toBe('CONTENT_REFERENCE_NATIVE_REVISION');
+            value = result.contentReference.nativeRevision;
+          }
+          expect(typeof value === 'string' && value.trim() !== '').toBe(true);
+          captured.set(capture.key, value as string);
+        }
+        expect(actual).toEqual(expected);
         expect(result.contentReference).toEqual({
           resourceId: fixtureResource,
           nativeObjectRef: expect.any(String),
@@ -3353,26 +3423,25 @@ integration('original Wren query handler, SDK and native history', () => {
         expect(JSON.parse(result.contentReference.nativeObjectRef)).toEqual({
           modelId: rawModel.id,
           deploymentId: 1,
-          deploymentHash: expectedDescription.deploymentHash,
+          deploymentHash: input.deploymentHash,
           limit: 1,
         });
         expect(result.contentReference.nativeObjectRef).not.toContain('sql');
-        if (step.referenceFromStepKey)
+        if (step.bindings?.some((binding) => binding.side === 'INPUT'))
           expect(result.contentReference).toEqual(raw);
-        references.set(step.stepKey, result.contentReference);
         const replay = await (await invoke()).json();
         expect(replay.execution.nativeId).toBe(result.execution.nativeId);
         expect(replay.contentReference).toEqual(result.contentReference);
       }
       expect(queries).toBe(2);
-      expect(references.size).toBe(3);
+      // Wren's own generated identity, as opaque contract strings.
+      expect(captured.get('deployment_id')).toBe('1');
+      expect(captured.get('deployment_hash')).toBe(input.deploymentHash);
+      expect(captured.size).toBe(4);
     } finally {
       await database('model')
         .where({ id: rawModel.id })
         .update({ reference_name: rawName, ref_sql: 'SELECT 1 AS one' });
-      await database('deploy_log')
-        .where({ id: 1 })
-        .update({ hash: input.deploymentHash });
     }
   });
 
@@ -3814,7 +3883,7 @@ integration('original Wren query handler, SDK and native history', () => {
           : [],
     };
     await database('deploy_log')
-      .where({ id: input.deploymentId })
+      .where({ id: Number(input.deploymentId) })
       .update({
         manifest: JSON.stringify(manifest),
         native_object_refs: JSON.stringify([
@@ -3872,7 +3941,7 @@ integration('original Wren query handler, SDK and native history', () => {
       operation_id: operation,
       actor_principal_id: actor,
       initiating_human_principal_id: actor,
-      action_key: 'data_query.query@v1',
+      action_key: 'data_query.query@v2',
       action_definition_version: 1,
       target_type: 'RESOURCE',
       target_id: resource,
@@ -3905,7 +3974,7 @@ integration('original Wren query handler, SDK and native history', () => {
           'idempotency-key': requestKey,
         },
         body: JSON.stringify({
-          actionKey: 'data_query.query@v1',
+          actionKey: 'data_query.query@v2',
           idempotencyKey: requestKey,
           arguments: { target: { resourceId: resource }, input: reference },
         }),
@@ -4125,7 +4194,7 @@ integration('original Wren query handler, SDK and native history', () => {
             .update({ connection_info: '{"changed":true}' });
         } else if (changed === 'deployment') {
           await database('deploy_log')
-            .where({ id: input.deploymentId })
+            .where({ id: Number(input.deploymentId) })
             .update({ status: 'FAILED' });
         }
         const external = randomUUID();
@@ -4162,7 +4231,7 @@ integration('original Wren query handler, SDK and native history', () => {
           .where({ id: 1 })
           .update({ connection_info: originalProject.connection_info });
         await database('deploy_log')
-          .where({ id: input.deploymentId })
+          .where({ id: Number(input.deploymentId) })
           .update({ status: 'SUCCESS' });
         await database('view').where({ id: view.id }).delete();
       }

@@ -392,9 +392,9 @@ export class NativeBindingService {
       artifactDigest: delivery.artifactDigest,
       secretReads: [secret.read, service.read],
       executionMappings: [
-        'data_query.query@v1',
-        'data_query.dry_run@v1',
-        'data_query.describe@v1',
+        'data_query.query@v2',
+        'data_query.dry_run@v2',
+        'data_query.describe@v2',
       ].map((actionKey) => ({
         actionKey,
         actionVersion: 1,

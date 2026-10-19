@@ -234,7 +234,7 @@ class WrenUI(Engine):
                 raise NativeQueryPending()
             context.query_scope = scope
             data["idempotencyScope"] = scope
-            action = "data_query.dry_run@v1" if dry_run else "data_query.query@v1"
+            action = "data_query.dry_run@v2" if dry_run else "data_query.query@v2"
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:

@@ -89,9 +89,9 @@ export default async function handler(
       const claims = await authorizeQuery(delivered, token, operation, args);
       if (
         ![
-          'data_query.query@v1',
-          'data_query.dry_run@v1',
-          'data_query.describe@v1',
+          'data_query.query@v2',
+          'data_query.dry_run@v2',
+          'data_query.describe@v2',
         ].includes(String(claims.action_key)) ||
         claims.action_definition_version !== 1 ||
         claims.target_type !== 'RESOURCE' ||
@@ -184,16 +184,16 @@ export default async function handler(
         typeof key !== 'string' ||
         raw.idempotencyKey !== key ||
         ![
-          'data_query.query@v1',
-          'data_query.dry_run@v1',
-          'data_query.describe@v1',
+          'data_query.query@v2',
+          'data_query.dry_run@v2',
+          'data_query.describe@v2',
         ].includes(raw.actionKey) ||
         !raw.arguments ||
         Object.keys(raw.arguments).sort().join(',') !== 'input,target' ||
         !raw.arguments.target ||
         Object.keys(raw.arguments.target).join(',') !== 'resourceId' ||
         typeof raw.arguments.target.resourceId !== 'string' ||
-        (raw.actionKey !== 'data_query.describe@v1' &&
+        (raw.actionKey !== 'data_query.describe@v2' &&
           raw.arguments.target.resourceId !== raw.arguments.input?.resourceId)
       ) {
         throw new NativeQueryRefusal(400, 'QUERY_INVALID_REQUEST');
@@ -261,10 +261,10 @@ export default async function handler(
         ).execute(
           bearer(request),
           key,
-          `${call.params.name}@v1` as
-            | 'data_query.query@v1'
-            | 'data_query.dry_run@v1'
-            | 'data_query.describe@v1',
+          `${call.params.name}@v2` as
+            | 'data_query.query@v2'
+            | 'data_query.dry_run@v2'
+            | 'data_query.describe@v2',
           call.params.arguments,
         );
         // Remote Adapter v1 metadata is consumed by Core's existing response PEP;

@@ -176,7 +176,7 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
         !state.valid ||
         value.previewScope !== scope ||
         value.submission.actionKey !==
-          (input.dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1') ||
+          (input.dryRun ? 'data_query.dry_run@v2' : 'data_query.query@v2') ||
         typeof selection?.historyId !== 'string' ||
         selection.limit !== input.limit
       ) {

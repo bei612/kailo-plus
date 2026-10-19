@@ -1349,7 +1349,7 @@ describe('original Save as View consumes the same HUMAN query history', () => {
         }
         expect(request.resolveResource).toMatchObject({
           workspaceId: config.workspaceId,
-          actionKey: 'data_query.describe@v1',
+          actionKey: 'data_query.describe@v2',
           actionVersion: 1,
           nativeType: 'view',
           nativeRef: '99',
@@ -1406,7 +1406,7 @@ describe('original Save as View consumes the same HUMAN query history', () => {
       governanceBindingId: config.bindingId,
       governanceState: 'SUCCEEDED',
       requestPayload: {
-        action: 'data_query.query@v1',
+        action: 'data_query.query@v2',
         sql: response.sql,
         limit: 1,
         previewScope: nativePreviewScope(config, ctx.nativeIdentityScope),
@@ -1535,7 +1535,7 @@ describe('original Save as View consumes the same HUMAN query history', () => {
       if (fault === 'sql')
         record.requestPayload.sql = 'SELECT private FROM another_model';
       if (fault === 'action')
-        record.requestPayload.action = 'data_query.dry_run@v1';
+        record.requestPayload.action = 'data_query.dry_run@v2';
       if (fault === 'limit') record.requestPayload.limit = 2;
       await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
       expect(disclose).not.toHaveBeenCalled();
@@ -2147,7 +2147,7 @@ describe('native bound-project business consumers', () => {
         ).toEqual(
           [11, 21, 11, 21].map((id) => ({
             workspaceId: config.workspaceId,
-            actionKey: 'data_query.describe@v1',
+            actionKey: 'data_query.describe@v2',
             actionVersion: 1,
             nativeType: id === 11 ? 'model' : 'view',
             nativeRef: String(id),
@@ -2373,7 +2373,7 @@ describe('native bound-project business consumers', () => {
           bindingId: config.bindingId,
           resolveResource: {
             workspaceId: config.workspaceId,
-            actionKey: 'data_query.describe@v1',
+            actionKey: 'data_query.describe@v2',
             actionVersion: 1,
             nativeType,
             nativeRef,
@@ -2505,7 +2505,7 @@ describe('native bound-project business consumers', () => {
           bindingId: config.bindingId,
           resolveResource: {
             workspaceId: config.workspaceId,
-            actionKey: 'data_query.describe@v1',
+            actionKey: 'data_query.describe@v2',
             actionVersion: 1,
             nativeType: request.resolveResource.nativeType,
             nativeRef: request.resolveResource.nativeRef,
@@ -2874,7 +2874,7 @@ describe('native bound-project business consumers', () => {
     expect(authorize.mock.calls.map((call) => call[2].resolveResource)).toEqual(
       ['111', '121', '111', '121'].map((nativeRef) => ({
         workspaceId: config.workspaceId,
-        actionKey: 'data_query.describe@v1',
+        actionKey: 'data_query.describe@v2',
         actionVersion: 1,
         nativeType: nativeRef === '111' ? 'model' : 'view',
         nativeRef,

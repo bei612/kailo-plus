@@ -51,8 +51,8 @@ export const queryInputSchema = {
       required: ['sql', 'deploymentId', 'deploymentHash', 'limit'],
       properties: {
         sql: { type: 'string', minLength: 1 },
-        deploymentId: { type: 'integer', minimum: 1 },
-        deploymentHash: { type: 'string', pattern: '^[a-f0-9]{40}$' },
+        deploymentId: { type: 'string', minLength: 1 },
+        deploymentHash: { type: 'string', minLength: 1 },
         limit: { type: 'integer', minimum: 1 },
       },
     },
@@ -69,7 +69,7 @@ export const queryInputSchema = {
       properties: {
         resourceId: { type: 'string', format: 'uuid' },
         nativeObjectRef: { type: 'string', minLength: 1 },
-        nativeRevision: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+        nativeRevision: { type: 'string', minLength: 1 },
         displayName: { type: 'string' },
         mediaType: { const: 'application/json' },
       },
@@ -94,6 +94,12 @@ const unavailable = () =>
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const nativeType = 'wren.api_history';
+// Fixed release mapping of the native governed-query row state to the
+// platform terminal status; no other native value is terminal.
+const nativeTerminalStatus: Record<string, 'SUCCEEDED' | 'FAILED'> = {
+  SUCCEEDED: 'SUCCEEDED',
+  FAILED: 'FAILED',
+};
 
 // Native cache options belong to the original frozen SQL intent, never to
 // untrusted tool input or a separate cache/permission authority.
@@ -135,7 +141,8 @@ export function nativeSourceResources(objects: NativeDeploymentObject[]) {
   }));
 }
 
-function queryInput(raw: unknown): GovernedQueryInput {
+// Internal native selection: Wren's own numeric deployment row identity.
+function governedInput(raw: unknown): GovernedQueryInput {
   const value = raw as GovernedQueryInput;
   if (
     !value ||
@@ -154,6 +161,31 @@ function queryInput(raw: unknown): GovernedQueryInput {
     throw invalid();
   }
   return value;
+}
+
+// data_query@2 wire input. Implementation-generated deployment identifiers
+// are opaque strings (DD-124(3)); Wren's is the canonical decimal of its own
+// positive native deploy row ID and is converted only at this boundary.
+function queryInput(raw: unknown): GovernedQueryInput {
+  const value = raw as Record<string, unknown>;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof value.deploymentId !== 'string' ||
+    !/^[1-9][0-9]*$/.test(value.deploymentId)
+  ) {
+    throw invalid();
+  }
+  return governedInput({ ...value, deploymentId: Number(value.deploymentId) });
+}
+
+// The contract output carries the same opaque deployment identifiers.
+function deploymentIdentity(deployment: Deploy) {
+  return {
+    deploymentId: String(deployment.id),
+    deploymentHash: deployment.hash,
+  };
 }
 
 // The original native query history supplies native identity and terminal
@@ -287,7 +319,7 @@ export class NativeQueryService {
     sql: string,
     limit: number,
     previewScope: string,
-    action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+    action: 'data_query.query@v2' | 'data_query.dry_run@v2',
     threadId?: string,
     expectedDeploymentHash?: string,
     cache?: GovernedQueryInput['cache'],
@@ -337,7 +369,7 @@ export class NativeQueryService {
         deployment.hash !== expectedDeploymentHash)
     )
       throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
-    const input = queryInput({
+    const input = governedInput({
       sql,
       limit,
       deploymentId: deployment.id,
@@ -421,7 +453,7 @@ export class NativeQueryService {
     sql: string,
     limit: number,
     previewScope: string,
-    action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+    action: 'data_query.query@v2' | 'data_query.dry_run@v2',
     threadId?: string,
     expectedDeploymentHash?: string,
     cache?: GovernedQueryInput['cache'],
@@ -611,7 +643,7 @@ export class NativeQueryService {
         record.requestPayload?.limit !== selection.limit ||
         digest(record.requestPayload.cache ?? null) !==
           digest(selection.cache ?? null) ||
-        !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
+        !['data_query.query@v2', 'data_query.dry_run@v2'].includes(
           record.requestPayload?.action,
         ) ||
         !/^[a-f0-9]{64}$/.test(record.requestPayload?.previewScope) ||
@@ -644,7 +676,7 @@ export class NativeQueryService {
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     }
     return {
-      ...queryInput({
+      ...governedInput({
         sql,
         deploymentId: selection.deploymentId,
         deploymentHash: selection.deploymentHash,
@@ -654,19 +686,25 @@ export class NativeQueryService {
     };
   }
 
+  // DD-124(5): only a terminal native state of this exact api_history row is
+  // mapped (fixed release mapping) and returned unchanged as nativeStatus.
+  // Anything else, including a missing value, stays UNKNOWN without one.
   private observation(record: ApiHistory) {
+    const raw = record.governanceState;
+    const platformStatus =
+      typeof raw === 'string' && Object.hasOwn(nativeTerminalStatus, raw)
+        ? nativeTerminalStatus[raw]
+        : 'UNKNOWN';
     return {
       idempotencyKey: record.governanceKey,
       nativeType,
       nativeId: record.id,
-      platformStatus: record.governanceState,
-      nativeStatus: record.governanceState,
+      platformStatus,
       lastObservedAt: new Date().toISOString(),
       cancelCapability: 'UNSUPPORTED',
-      ...(record.governanceState === 'SUCCEEDED' ||
-      record.governanceState === 'FAILED'
-        ? { terminalAt: record.updatedAt }
-        : {}),
+      ...(platformStatus === 'UNKNOWN'
+        ? {}
+        : { nativeStatus: raw, terminalAt: record.updatedAt }),
     };
   }
 
@@ -734,8 +772,7 @@ export class NativeQueryService {
     return {
       contentReference,
       value: {
-        deploymentId: deployment.id,
-        deploymentHash: deployment.hash,
+        ...deploymentIdentity(deployment),
         models: [
           {
             name: metadata.name,
@@ -896,13 +933,13 @@ export class NativeQueryService {
       record.governanceBindingId !== this.config.bindingId ||
       record.apiType !== ApiType.RUN_SQL ||
       record.governanceState !== 'SUCCEEDED' ||
-      !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
+      !['data_query.query@v2', 'data_query.dry_run@v2'].includes(
         payload?.action,
       ) ||
       !Array.isArray(payload.nativeSources)
     )
       throw unavailable();
-    const input = queryInput({
+    const input = governedInput({
       sql: payload.sql,
       deploymentId: payload.deploymentId,
       deploymentHash: payload.deploymentHash,
@@ -935,14 +972,14 @@ export class NativeQueryService {
     token: string,
     key: string,
     action:
-      | 'data_query.query@v1'
-      | 'data_query.dry_run@v1'
-      | 'data_query.describe@v1',
+      | 'data_query.query@v2'
+      | 'data_query.dry_run@v2'
+      | 'data_query.describe@v2',
     raw: unknown,
     submittedTarget?: unknown,
   ) {
     if (!uuid.test(key)) throw invalid();
-    const describing = action === 'data_query.describe@v1';
+    const describing = action === 'data_query.describe@v2';
     const referenceLimit = (raw as { limit?: number } | undefined)?.limit;
     if (
       describing &&
@@ -1053,7 +1090,7 @@ export class NativeQueryService {
       }
       if (described) {
         const frozen = await this.deployments.findOneBy({
-          id: described.value.deploymentId,
+          id: Number(described.value.deploymentId),
           projectId: this.config.projectId,
           hash: described.value.deploymentHash,
           status: 'SUCCESS',
@@ -1327,21 +1364,17 @@ export class NativeQueryService {
           project,
           manifest: deployment.manifest as Manifest,
           limit: input.limit,
-          dryRun: action === 'data_query.dry_run@v1',
+          dryRun: action === 'data_query.dry_run@v2',
           cacheEnabled: input.cache?.cacheEnabled ?? false,
           refresh: input.cache?.refresh,
           requestTimeoutMs: this.config.requestTimeoutMs,
           responseMaxBytes: this.config.responseMaxBytes,
         });
-        if (action === 'data_query.dry_run@v1') {
+        if (action === 'data_query.dry_run@v2') {
           // QueryService returns true (Engine) or Ibis's successful metadata.
           if (result !== true && (!result || typeof result !== 'object'))
             throw unavailable();
-          value = {
-            valid: true,
-            deploymentId: deployment.id,
-            deploymentHash: deployment.hash,
-          };
+          value = { valid: true, ...deploymentIdentity(deployment) };
         } else {
           const preview = result as PreviewDataResponse;
           if (
@@ -1370,8 +1403,7 @@ export class NativeQueryService {
                   override: preview.override || false,
                 }
               : {}),
-            deploymentId: deployment.id,
-            deploymentHash: deployment.hash,
+            ...deploymentIdentity(deployment),
           };
         }
       }

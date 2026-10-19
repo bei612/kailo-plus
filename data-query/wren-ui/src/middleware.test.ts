@@ -552,7 +552,7 @@ describe('native instance identity boundary', () => {
           };
         expect(input.resolveResource).toEqual({
           workspaceId: delivery.workspaceId,
-          actionKey: 'data_query.query@v1',
+          actionKey: 'data_query.query@v2',
           actionVersion: 1,
           nativeType: 'view',
           nativeRef: '7',
