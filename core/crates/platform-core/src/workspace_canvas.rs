@@ -587,27 +587,27 @@ async fn deliver(
     .await?;
     let stage = Stage::outcome("ack", ack);
     audit(&mut tx, &current, definition, stage, evidence.clone()).await?;
-    if matches!(ack, "REJECTED" | "NOT_DELIVERED") {
-        settle_not_written(&mut tx, &current, definition, ack, evidence).await?;
+    let refused = match ack {
+        "REJECTED" => Some(ReasonCode::PublishRejected),
+        "NOT_DELIVERED" => Some(ReasonCode::RateLimited),
+        _ => None,
+    };
+    if let Some(reason) = refused {
+        settle_not_written(&mut tx, &current, definition, reason, evidence).await?;
     }
     tx.commit().await?;
     Ok(())
 }
 
-/// Relay refused (or never read) the event: the Canvas did not change. The dispatch is
-/// aborted with the original publication reason; a new attempt needs a new key.
+/// Relay refused, limited or never stored the event: the Canvas did not change. The dispatch
+/// is aborted with that definite reason; a new attempt needs a new key.
 async fn settle_not_written(
     tx: &mut Transaction<'_, Postgres>,
     ae: &Execution,
     definition: &Definition,
-    ack: &str,
+    reason: ReasonCode,
     evidence: Vec<Evidence>,
 ) -> Result<(), Refusal> {
-    let reason = if ack == "REJECTED" {
-        ReasonCode::PublishRejected
-    } else {
-        ReasonCode::DependencyUnavailable
-    };
     sqlx::query(
         "update admission.workspace_canvas_intent
          set outcome = 'NOT_WRITTEN', settled_at = now()
@@ -658,17 +658,7 @@ async fn finish(
     validate_definition(&definition)?;
     match (ae.gate_state.as_str(), ae.dispatch_state.as_str()) {
         ("ALLOWED", "DISPATCHED") => return Ok((StatusCode::OK, ae.submission())),
-        ("ALLOWED", "ABORTED") => {
-            let reason = ae
-                .reason_code
-                .as_deref()
-                .and_then(crate::governance::parse::<ReasonCode>);
-            return Err(if reason == Some(ReasonCode::PublishRejected) {
-                Refusal::Denied(ReasonCode::PublishRejected)
-            } else {
-                unavailable("Canvas event was not delivered")
-            });
-        }
+        ("ALLOWED", "ABORTED") => return Err(not_written(&ae)),
         ("ALLOWED", "UNKNOWN") => {}
         _ => return Err(unavailable("Canvas operation is not dispatchable")),
     }
@@ -726,7 +716,8 @@ async fn finish(
                 result: "NOT_DELIVERED",
             };
             audit(&mut tx, &ae, &definition, stage, evidence.clone()).await?;
-            settle_not_written(&mut tx, &ae, &definition, "NOT_DELIVERED", evidence).await?;
+            let reason = ReasonCode::DependencyUnavailable;
+            settle_not_written(&mut tx, &ae, &definition, reason, evidence).await?;
         }
         _ => {
             tx.commit().await?;
@@ -738,9 +729,22 @@ async fn finish(
         .await?
         .ok_or_else(|| unavailable("Canvas operation not verifiable"))?;
     if current.dispatch_state == "ABORTED" {
-        return Err(unavailable("Canvas event was not delivered"));
+        return Err(not_written(&current));
     }
     Ok((StatusCode::OK, current.submission()))
+}
+
+/// A definite "the Canvas did not change": the caller may try again with a new key.
+fn not_written(ae: &Execution) -> Refusal {
+    let reason = ae
+        .reason_code
+        .as_deref()
+        .and_then(crate::governance::parse::<ReasonCode>);
+    match reason {
+        Some(ReasonCode::PublishRejected) => Refusal::Denied(ReasonCode::PublishRejected),
+        Some(ReasonCode::RateLimited) => Refusal::Limit(ReasonCode::RateLimited),
+        _ => Refusal::Precondition(ReasonCode::DependencyUnavailable),
+    }
 }
 
 /// Only the reconciler decides "never delivered", once the Relay timestamp window has passed.
