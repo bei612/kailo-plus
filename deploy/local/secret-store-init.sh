@@ -30,8 +30,16 @@ root() { printf '%s\n' "$root_token" | run_bao "" "$@"; }
 umask 077
 mkdir -p secrets
 
-status_json=$(bao status -format=json 2>/dev/null || true)
-initialized=$(printf '%s' "$status_json" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("initialized",False))' 2>/dev/null || echo False)
+# 刚重建的容器可能尚未监听：取不到状态时不能当作“未初始化”去重复 init（那会在
+# 已初始化的库上失败退出，并跳过下面的解封）。先等到 status 返回可解析的 JSON。
+initialized=
+for _ in $(seq 1 60); do
+  status_json=$(bao status -format=json 2>/dev/null || true)
+  initialized=$(printf '%s' "$status_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["initialized"])' 2>/dev/null || true)
+  [ -n "$initialized" ] && break
+  sleep 2
+done
+[ -n "$initialized" ] || { echo "OpenBao 120 秒内未返回状态，未做任何改动" >&2; exit 2; }
 
 if [ "$initialized" != "True" ]; then
   echo "初始化 OpenBao"
