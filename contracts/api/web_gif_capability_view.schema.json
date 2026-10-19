@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_gif_capability_view.schema.json",
+  "title": "WebGifCapabilityView",
+  "description": "GET /api/v1/gifs（DD-125(5)、09 §3、V-SCN-140）：原 GIF 选择器是否出现。available 仅在本 Tenant ACTIVE TenantBuzzBinding 的 NIP-11 快照与运行期文档一致且广告 buzz-gif/gif（provider klipy，原 /gifs/search 与 /gifs/share）、并且部署登记了至少一个 GIF 图片来源时为 true；否则按原版不出现。imageOrigins 是部署登记的 https 来源（与 Web 静态 CSP img-src 追加项同一份），Web 只对这些来源内联渲染无 imeta 的 GIF；KLIPY 密钥只在 Relay 部署环境。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["available", "imageOrigins"],
+  "properties": {
+    "available": {"type": "boolean"},
+    "imageOrigins": {"type": "array", "items": {"type": "string"}}
+  }
+}

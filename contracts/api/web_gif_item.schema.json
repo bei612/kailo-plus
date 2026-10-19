@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_gif_item.schema.json",
+  "title": "WebGifItem",
+  "description": "原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整 gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是 https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug", "title", "url", "width", "height", "size", "previewUrl", "previewWidth", "previewHeight"],
+  "properties": {
+    "slug": {"type": "string"},
+    "title": {"type": "string"},
+    "url": {"type": "string"},
+    "width": {"type": "integer"},
+    "height": {"type": "integer"},
+    "size": {"type": "integer"},
+    "previewUrl": {"type": "string"},
+    "previewWidth": {"type": "integer"},
+    "previewHeight": {"type": "integer"},
+    "posterUrl": {"type": "string"}
+  }
+}

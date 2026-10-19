@@ -1634,3 +1634,45 @@ func TestFileStorageWriteUsesExactNativeReferenceWithoutBody(t *testing.T) {
 		}
 	}
 }
+
+func TestCollaborationDD125C3Roundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "collaboration-dd125-c3.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"canvasSet":           new(generated.ActionCommand),
+		"canvasView":          new(generated.WebChannelCanvasView),
+		"canvasViewEmpty":     new(generated.WebChannelCanvasView),
+		"linkPreviewRequest":  new(generated.WebLinkPreviewRequest),
+		"linkPreviewSnapshot": new(generated.WebLinkPreviewSnapshotView),
+		"publishWithPreviews": new(generated.WebPublishMessageRequest),
+		"removePreviews":      new(generated.WebPublishMessageRequest),
+		"gifCapability":       new(generated.WebGifCapabilityView),
+		"gifSearchRequest":    new(generated.WebGifSearchRequest),
+		"gifSearch":           new(generated.WebGifSearchView),
+		"gifShare":            new(generated.WebGifShareRequest),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}

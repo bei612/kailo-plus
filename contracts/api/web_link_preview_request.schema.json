@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_link_preview_request.schema.json",
+  "title": "WebLinkPreviewRequest",
+  "description": "POST /api/v1/workspaces/{workspaceId}/link-previews 与 /api/v1/conversations/{conversationId}/link-previews（DD-125(5)、09 §3、V-SCN-139）：Web 原 composer 的链接预览抓取由 BFF 代为执行。只接受 http/https 与默认端口；BFF 每一跳在 DNS 解析后拒绝回环、私网、链路本地、CGNAT、组播、ULA 与部署登记的内部网段，只连接已校验地址，至多 3 次跳转、256 KB，不带 cookie 与凭据；按 Principal 限速，超额以 LIMIT 类拒绝；预览图以本人身份上传为 Relay 媒体。审计只记主机与 URL 摘要。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url"],
+  "properties": {
+    "url": {"type": "string", "description": "原 extractSupportedLinkPreviews 识别出的链接（http/https）。"}
+  }
+}

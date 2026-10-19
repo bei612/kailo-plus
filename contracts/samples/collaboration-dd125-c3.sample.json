@@ -1,0 +1,60 @@
+{
+  "canvasSet": {
+    "actionKey": "workspace.canvas.set",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c31",
+    "workspaceId": "00000000-0000-4000-8000-000000000c30",
+    "explicitConfirmation": true,
+    "workspaceCanvas": {"content": "# Release room\n\nWelcome to {channel.name}."}
+  },
+  "canvasView": {
+    "workspaceId": "00000000-0000-4000-8000-000000000c30",
+    "content": "# Release room\n\nWelcome.",
+    "eventId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "createdAt": "2026-10-19T08:00:00Z",
+    "setActionKey": "workspace.canvas.set"
+  },
+  "canvasViewEmpty": {
+    "workspaceId": "00000000-0000-4000-8000-000000000c30"
+  },
+  "linkPreviewRequest": {"url": "https://example.com/release"},
+  "linkPreviewSnapshot": {
+    "snapshotId": "00000000-0000-4000-8000-000000000c32",
+    "url": "https://example.com/release",
+    "canonicalUrl": "https://example.com/release",
+    "title": "Release notes",
+    "siteName": "Example",
+    "description": "What changed in this release.",
+    "imageUrl": "https://community.example.test/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+    "faviconUrl": "https://community.example.test/media/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png",
+    "expiresAt": "2026-10-19T09:00:00Z"
+  },
+  "publishWithPreviews": {
+    "content": "See https://example.com/release",
+    "messageType": "STREAM",
+    "linkPreviewSnapshotIds": ["00000000-0000-4000-8000-000000000c32"]
+  },
+  "removePreviews": {
+    "content": "See https://example.com/release",
+    "editEventId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "suppressLinkPreviews": true
+  },
+  "gifCapability": {"available": true, "imageOrigins": ["https://static.klipy.com"]},
+  "gifSearchRequest": {"query": "ship it", "locale": "en-US"},
+  "gifSearch": {
+    "gifs": [
+      {
+        "slug": "ship-it",
+        "title": "Ship it",
+        "url": "https://static.klipy.com/ii/ship-it/md.gif",
+        "width": 480,
+        "height": 270,
+        "size": 1048576,
+        "previewUrl": "https://static.klipy.com/ii/ship-it/sm.webp",
+        "previewWidth": 220,
+        "previewHeight": 124,
+        "posterUrl": "https://static.klipy.com/ii/ship-it/sm.jpg"
+      }
+    ]
+  },
+  "gifShare": {"slug": "ship-it"}
+}

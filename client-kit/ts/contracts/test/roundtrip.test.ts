@@ -984,3 +984,38 @@ test("file storage revision IO preserves exact versions, empty text and binary",
     deepStrictEqual(JSON.parse(JSON.stringify(actual)),row);
   }
 });
+
+test("DD-125 C3 canvas, link-preview and GIF contracts preserve fields and absence", () => {
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/collaboration-dd125-c3.sample.json", import.meta.url), "utf8"));
+  const set: import("../src/generated/contracts.js").ActionCommand = value.canvasSet;
+  const view: import("../src/generated/contracts.js").WebChannelCanvasView = value.canvasView;
+  const empty: import("../src/generated/contracts.js").WebChannelCanvasView = value.canvasViewEmpty;
+  const previewRequest: import("../src/generated/contracts.js").WebLinkPreviewRequest = value.linkPreviewRequest;
+  const snapshot: import("../src/generated/contracts.js").WebLinkPreviewSnapshotView = value.linkPreviewSnapshot;
+  const publish: import("../src/generated/contracts.js").WebPublishMessageRequest = value.publishWithPreviews;
+  const remove: import("../src/generated/contracts.js").WebPublishMessageRequest = value.removePreviews;
+  const capability: import("../src/generated/contracts.js").WebGifCapabilityView = value.gifCapability;
+  const searchRequest: import("../src/generated/contracts.js").WebGifSearchRequest = value.gifSearchRequest;
+  const search: import("../src/generated/contracts.js").WebGifSearchView = value.gifSearch;
+  const share: import("../src/generated/contracts.js").WebGifShareRequest = value.gifShare;
+  const canvasView = (row: typeof view) => ({workspaceId: row.workspaceId, content: row.content, eventId: row.eventId,
+    createdAt: row.createdAt, setActionKey: row.setActionKey});
+  const actual = {
+    canvasSet: {actionKey: set.actionKey, idempotencyKey: set.idempotencyKey, workspaceId: set.workspaceId,
+      explicitConfirmation: set.explicitConfirmation, workspaceCanvas: set.workspaceCanvas && {content: set.workspaceCanvas.content}},
+    canvasView: canvasView(view),
+    canvasViewEmpty: canvasView(empty),
+    linkPreviewRequest: {url: previewRequest.url},
+    linkPreviewSnapshot: {snapshotId: snapshot.snapshotId, url: snapshot.url, canonicalUrl: snapshot.canonicalUrl, title: snapshot.title,
+      siteName: snapshot.siteName, description: snapshot.description, imageUrl: snapshot.imageUrl, faviconUrl: snapshot.faviconUrl,
+      expiresAt: snapshot.expiresAt},
+    publishWithPreviews: {content: publish.content, messageType: publish.messageType, linkPreviewSnapshotIds: publish.linkPreviewSnapshotIds},
+    removePreviews: {content: remove.content, editEventId: remove.editEventId, suppressLinkPreviews: remove.suppressLinkPreviews},
+    gifCapability: {available: capability.available, imageOrigins: capability.imageOrigins},
+    gifSearchRequest: {query: searchRequest.query, locale: searchRequest.locale},
+    gifSearch: {gifs: search.gifs.map(gif => ({slug: gif.slug, title: gif.title, url: gif.url, width: gif.width, height: gif.height,
+      size: gif.size, previewUrl: gif.previewUrl, previewWidth: gif.previewWidth, previewHeight: gif.previewHeight, posterUrl: gif.posterUrl}))},
+    gifShare: {slug: share.slug},
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

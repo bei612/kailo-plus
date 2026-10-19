@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_gif_search_view.schema.json",
+  "title": "WebGifSearchView",
+  "description": "POST /api/v1/gifs/search 的回应：原 Relay 固定一页（24 项）结果，按提供方顺序。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gifs"],
+  "properties": {
+    "gifs": {"type": "array", "items": {"$ref": "web_gif_item.schema.json"}}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_gif_search_request.schema.json",
+  "title": "WebGifSearchRequest",
+  "description": "POST /api/v1/gifs/search：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/search（成员门与 GIF 限速由 Relay 执行，超额以 LIMIT 类回应）。query 为空即原 trending，至多 200 字符；locale 为浏览器语言（1–32 字符）。原 KLIPY customer_id 由 BFF 按 Tenant 与本人 Principal 派生为稳定匿名标识，Browser 不提供。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query", "locale"],
+  "properties": {
+    "query": {"type": "string"},
+    "locale": {"type": "string"}
+  }
+}

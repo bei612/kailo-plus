@@ -1181,4 +1181,36 @@ void main() {
       throwsA(isA<TypeError>()),
     );
   });
+  test('DD-125 C3 canvas, link-preview and GIF contracts round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/collaboration-dd125-c3.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'canvasSet': (v) => ActionCommand.fromJson(v).toJson(),
+      'canvasView': (v) => WebChannelCanvasView.fromJson(v).toJson(),
+      'canvasViewEmpty': (v) => WebChannelCanvasView.fromJson(v).toJson(),
+      'linkPreviewRequest': (v) => WebLinkPreviewRequest.fromJson(v).toJson(),
+      'linkPreviewSnapshot': (v) =>
+          WebLinkPreviewSnapshotView.fromJson(v).toJson(),
+      'publishWithPreviews': (v) =>
+          WebPublishMessageRequest.fromJson(v).toJson(),
+      'removePreviews': (v) => WebPublishMessageRequest.fromJson(v).toJson(),
+      'gifCapability': (v) => WebGifCapabilityView.fromJson(v).toJson(),
+      'gifSearchRequest': (v) => WebGifSearchRequest.fromJson(v).toJson(),
+      'gifSearch': (v) => WebGifSearchView.fromJson(v).toJson(),
+      'gifShare': (v) => WebGifShareRequest.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
 }

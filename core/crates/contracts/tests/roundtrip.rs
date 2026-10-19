@@ -1050,3 +1050,29 @@ fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
         assert_eq!(serde_json::to_value(value).unwrap(), row["exportOutput"]);
     }
 }
+
+#[test]
+fn collaboration_dd125_c3_canvas_link_preview_and_gif_preserve_fields_and_absence() {
+    // DD-125(4)(5): the canvas body is a transient command input; link previews are referenced
+    // only by snapshot ID or the suppress flag; GIF views are BFF-normalized. Absent stays absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("collaboration-dd125-c3.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["canvasSet"]);
+    roundtrip::<contracts::WebChannelCanvasView>(&value["canvasView"]);
+    roundtrip::<contracts::WebChannelCanvasView>(&value["canvasViewEmpty"]);
+    roundtrip::<contracts::WebLinkPreviewRequest>(&value["linkPreviewRequest"]);
+    roundtrip::<contracts::WebLinkPreviewSnapshotView>(&value["linkPreviewSnapshot"]);
+    roundtrip::<contracts::WebPublishMessageRequest>(&value["publishWithPreviews"]);
+    roundtrip::<contracts::WebPublishMessageRequest>(&value["removePreviews"]);
+    roundtrip::<contracts::WebGifCapabilityView>(&value["gifCapability"]);
+    roundtrip::<contracts::WebGifSearchRequest>(&value["gifSearchRequest"]);
+    roundtrip::<contracts::WebGifSearchView>(&value["gifSearch"]);
+    roundtrip::<contracts::WebGifShareRequest>(&value["gifShare"]);
+}

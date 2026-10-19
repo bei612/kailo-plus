@@ -13,6 +13,8 @@
     "editEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。"},
     "deleteEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与 editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。"},
     "sendToChannelSourceEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "DD-125(1) 原“发送到频道”：当前 Channel 中一条线程回复的 Relay 事件 ID。BFF 回读该回复，要求作者为本人或本人是其 Installation owner，按原 getSendToChannelSemantics 只复制正文与 emoji/imeta/link-preview/mention 标签、重算提及并排除源作者，由线程根按原截断规则生成 buzz:sent-from-thread，以本人身份发一条新的顶层 kind:9，沿 DD-81 幂等与对账。与 parentEventId、editEventId、deleteEventId 互斥；content 须为空且不带附件、提及或 Installation 提及——正文与标签只取自回读的源事件，不接受 Browser 提交的原始标签。"},
+    "linkPreviewSnapshotIds": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "DD-125(5) 原 composer 链接预览：本人经 BFF 抓取得到、尚未过期的快照 ID（至多 8 个，去重保序）。只用于新的 STREAM 消息（kind:9，含线程回复）：BFF 只接受本人的快照，按原 11 元素 link-preview snapshot 标签随该消息发布并把 ID 冻结在发布幂等记录；canonicalUrl 不在正文中的快照按原接收规则不签入（正文照常发布）；引用他人或已过期的快照以 TARGET_NOT_FOUND 拒绝。与 suppressLinkPreviews、editEventId（原编辑不带快照）、deleteEventId、sendToChannelSourceEventId 互斥；不接受 Browser 提交的原始 link-preview 标签。"},
+    "suppressLinkPreviews": {"type": "boolean", "description": "DD-125(5) 原 link-preview none：为 true 时签发唯一的 [\"link-preview\", \"none\"] 标签，接收方不显示预览。与 editEventId 同用即原“对所有人移除预览”（本人消息的 40003 编辑）。省略或 false 不加该标签。"},
     "attachments": {
       "type": "array",
       "items": {"$ref": "web_message_attachment.schema.json"}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_channel_canvas_view.schema.json",
+  "title": "WebChannelCanvasView",
+  "description": "GET /api/v1/workspaces/{workspaceId}/canvas（DD-125(4)、V-SCN-135）：BFF 以本人身份在已准入 Workspace 的 Channel 下按 #h 读取 kind 40100，只采纳作者为该 Tenant CONTROL 的最新一条并验签；其他作者的 40100 一律忽略。正文原样透传，不进 Core 存储。没有采纳的事件时 content、eventId、createdAt 都省略（原“No canvas set”）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceId"],
+  "properties": {
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "content": {"type": "string", "description": "原 Markdown 正文；空串表示管理者已清空。"},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "被采纳的 CONTROL 40100 事件 ID。"},
+    "createdAt": {"type": "string", "description": "被采纳事件的 created_at，RFC3339。"},
+    "setActionKey": {"type": "string", "description": "固定为 workspace.canvas.set：目录已开放、Workspace ACTIVE 且本人经 fresh Workspace manage 检查时给出（≙ 原 canEditNarrative）。省略即不显示编辑入口；提交仍重新准入。"}
+  }
+}

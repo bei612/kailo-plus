@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_link_preview_snapshot_view.schema.json",
+  "title": "WebLinkPreviewSnapshotView",
+  "description": "BFF 为本人短期持有的一份链接预览快照（DD-125(5)）。字段即原 11 元素 link-preview snapshot 标签的内容（版本 1）：canonicalUrl 为 https、无凭据与片段；title 不超过 300 字节、siteName 100 字节、description 1000 字节；imageUrl/faviconUrl 是本人上传的 Relay 媒体地址，缺省即无图。发布请求只能以 snapshotId 引用本人未过期的快照（linkPreviewSnapshotIds），Browser 不提交原始标签。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshotId", "url", "canonicalUrl", "title", "siteName", "description", "expiresAt"],
+  "properties": {
+    "snapshotId": {"type": "string", "format": "uuid"},
+    "url": {"type": "string", "description": "请求的链接，原样回显，供 composer 与正文中的链接对应。"},
+    "canonicalUrl": {"type": "string"},
+    "title": {"type": "string"},
+    "siteName": {"type": "string"},
+    "description": {"type": "string"},
+    "imageUrl": {"type": "string"},
+    "faviconUrl": {"type": "string"},
+    "expiresAt": {"type": "string", "description": "快照失效时刻，RFC3339；之后发布引用它以 TARGET_NOT_FOUND 拒绝。"}
+  }
+}
