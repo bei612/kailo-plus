@@ -531,6 +531,54 @@ pub(crate) async fn turn_template(
     }
 }
 
+/// 发起 HUMAN 授予该 Installation、覆盖当前 `agent.invoke` 版本与本 Installation 的 ACTIVE
+/// Grant，scope 与内容策略按 `fresh` 同一规则过滤；Grant 行锁按 id 次序取得。
+const GRANT_CANDIDATES: &str = "select g.id,g.valid_from,g.expires_at,g.max_uses,
+    (select count(*) from admission.delegation_use u where u.delegation_id=g.id) uses
+    from admission.delegation_grant g
+    join admission.action_execution ga on ga.id=g.action_execution_id
+    where g.tenant_id=$1 and g.workspace_id=$2 and g.installation_resource_id=$3
+      and g.agent_principal_id=$4 and g.grantor_principal_id=$5 and g.state='ACTIVE'
+      and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
+      and ($6::uuid is null or g.id=$6)
+      and ga.gate_state='ALLOWED' and ga.dispatch_state='DISPATCHED'
+      and ($7::boolean or (to_timestamp($8)>=g.valid_from and to_timestamp($8)>=ga.updated_at))
+      and exists(select 1 from admission.delegation_scope s
+        join catalog.result_exposure_policy p on p.id=s.result_exposure_policy_id
+          and p.version=s.result_exposure_policy_version
+        where s.delegation_id=g.id and s.action_key='agent.invoke' and s.action_version=$9
+          and s.target_type='RESOURCE' and s.target_id=$3 and s.create_workspace_id is null
+          and s.tool_resource_id is null and p.tenant_id=$1 and p.status='ACTIVE'
+          and p.mode='CONSUME_ONLY' and p.output_schema_hash=any($10)
+          and p.redaction_policy='PLATFORM_METADATA_ONLY')
+    order by g.id for update of g";
+
+#[derive(FromRow)]
+struct GrantCandidate {
+    id: Uuid,
+    valid_from: chrono::DateTime<chrono::Utc>,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    max_uses: Option<i64>,
+    uses: i64,
+}
+
+/// DD-121 的续签入口与委托管理页都允许在旧 Grant 仍 ACTIVE 时再授予一条（不撤旧），
+/// 同一 grantor 对同一 Installation 因而可并存多条有效 Grant。它们是同一人对同一 scope 的
+/// 同意，任取其一都不越出授权；并存本身不是拒绝理由（否则续签反而使 @提及永久
+/// `PERMISSION_DENIED`）。取仍有剩余次数者中到期最晚、其次最新授予的一条，结果确定；
+/// 被选 Grant 仍由 `fresh` 逐项 fresh 核验。
+fn usable_grant(candidates: &[GrantCandidate]) -> Option<Uuid> {
+    candidates
+        .iter()
+        .filter(|g| g.max_uses.is_none_or(|max| g.uses < max))
+        .max_by(|a, b| {
+            (a.expires_at, a.valid_from)
+                .cmp(&(b.expires_at, b.valid_from))
+                .then_with(|| b.id.cmp(&a.id))
+        })
+        .map(|g| g.id)
+}
+
 /// 源事件与 Installation 的唯一键跨 mention/manual 共用；客户端重试不产生第二回合。
 #[allow(clippy::too_many_arguments)]
 async fn admit(
@@ -608,35 +656,20 @@ async fn admit(
           and tm.state='ACTIVE' and b.kind='HUMAN' and b.state='ACTIVE' and b.pubkey=$3")
         .bind(human).bind(row.tenant_id).bind(event.pubkey.to_hex()).fetch_optional(&mut *tx).await?;
     let identity = identity.ok_or_else(denied)?;
-    let grants: Vec<Uuid> = sqlx::query_scalar(
-        "select g.id from admission.delegation_grant g
-        join admission.action_execution ga on ga.id=g.action_execution_id
-        where g.tenant_id=$1 and g.workspace_id=$2 and g.installation_resource_id=$3
-          and g.agent_principal_id=$4 and g.grantor_principal_id=$5 and g.state='ACTIVE'
-          and g.valid_from<=clock_timestamp() and g.expires_at>clock_timestamp()
-          and ($6::uuid is null or g.id=$6)
-          and ga.gate_state='ALLOWED' and ga.dispatch_state='DISPATCHED'
-          and ($7::boolean or (to_timestamp($8)>=g.valid_from and to_timestamp($8)>=ga.updated_at))
-          and exists(select 1 from admission.delegation_scope s where s.delegation_id=g.id
-            and s.action_key='agent.invoke' and s.action_version=$9 and s.target_type='RESOURCE'
-            and s.target_id=$3 and s.create_workspace_id is null and s.tool_resource_id is null)
-        order by g.id limit 2 for update of g",
-    )
-    .bind(row.tenant_id)
-    .bind(row.workspace_id)
-    .bind(row.id)
-    .bind(row.agent_principal_id)
-    .bind(human)
-    .bind(requested_grant)
-    .bind(trigger == "MANUAL_ASSIGNMENT")
-    .bind(event.created_at.as_secs() as f64)
-    .bind(def.version)
-    .fetch_all(&mut *tx)
-    .await?;
-    let grant = match grants.as_slice() {
-        [id] => Some(*id),
-        _ => None,
-    };
+    let candidates: Vec<GrantCandidate> = sqlx::query_as(GRANT_CANDIDATES)
+        .bind(row.tenant_id)
+        .bind(row.workspace_id)
+        .bind(row.id)
+        .bind(row.agent_principal_id)
+        .bind(human)
+        .bind(requested_grant)
+        .bind(trigger == "MANUAL_ASSIGNMENT")
+        .bind(event.created_at.as_secs() as f64)
+        .bind(def.version)
+        .bind(crate::governance::delegation::metadata_output_schema_hashes(ACTION))
+        .fetch_all(&mut *tx)
+        .await?;
+    let grant = usable_grant(&candidates);
     let root = root(event);
     let parameters = json!({"targetVersion":row.version,"agentVersionAssetId":row.agent_version_asset_id,
         "projectionGeneration":row.projection_generation,"sourceEventId":event.id.to_hex(),"rootEventId":root,
@@ -1310,6 +1343,49 @@ mod tests {
             &frozen,
             Uuid::new_v4()
         ));
+    }
+
+    fn candidate(id: u128, from: i64, until: i64, max: Option<i64>, uses: i64) -> GrantCandidate {
+        let at = |secs| chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0).unwrap();
+        GrantCandidate {
+            id: Uuid::from_u128(id),
+            valid_from: at(from),
+            expires_at: at(until),
+            max_uses: max,
+            uses,
+        }
+    }
+
+    #[test]
+    fn invoke_renewed_grant_coexisting_with_older_one_is_still_usable() {
+        assert_eq!(usable_grant(&[]), None);
+        let only = candidate(1, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[only]), Some(Uuid::from_u128(1)));
+        // Production 2026-10-19: one grantor, two ACTIVE agent.invoke@2 Grants (renewed 95 s
+        // apart); both covered the mention, yet admission denied for "not exactly one".
+        let older = candidate(2, 10, 100, None, 0);
+        let renewed = candidate(1, 20, 110, None, 0);
+        assert_eq!(usable_grant(&[renewed, older]), Some(Uuid::from_u128(1)));
+        let older = candidate(2, 10, 100, None, 0);
+        let renewed = candidate(1, 20, 110, None, 0);
+        assert_eq!(usable_grant(&[older, renewed]), Some(Uuid::from_u128(1)));
+    }
+
+    #[test]
+    fn invoke_grant_choice_skips_exhausted_and_is_deterministic() {
+        let exhausted = candidate(1, 20, 200, Some(2), 2);
+        let left = candidate(2, 10, 100, Some(2), 1);
+        assert_eq!(usable_grant(&[exhausted, left]), Some(Uuid::from_u128(2)));
+        assert_eq!(usable_grant(&[candidate(1, 20, 200, Some(1), 1)]), None);
+        let newer = candidate(3, 20, 100, None, 0);
+        let older = candidate(4, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[older, newer]), Some(Uuid::from_u128(3)));
+        let low = candidate(5, 10, 100, None, 0);
+        let high = candidate(6, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[high, low]), Some(Uuid::from_u128(5)));
+        let low = candidate(5, 10, 100, None, 0);
+        let high = candidate(6, 10, 100, None, 0);
+        assert_eq!(usable_grant(&[low, high]), Some(Uuid::from_u128(5)));
     }
 
     #[test]
