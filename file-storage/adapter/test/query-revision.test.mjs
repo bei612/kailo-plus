@@ -812,7 +812,7 @@ test('binding validation observes original Cells workspace and actual delivered 
       secretKey: entry.secretKey, version: entry.version, audience: entry.audience,
     })));
     assert.deepEqual(value.executionMappings, ['read', 'list'].map(action => ({
-      actionKey: `file_storage.${action}@v1`, actionVersion: 1, nativeType: 'node', cancelCapability: 'UNSUPPORTED',
+      actionKey: `file_storage.${action}@v2`, actionVersion: 1, nativeType: 'node', cancelCapability: 'UNSUPPORTED',
     })));
     assert.equal(JSON.stringify(value).includes('credentialDigest'), false);
   }
