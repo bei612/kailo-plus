@@ -15,7 +15,7 @@ use sqlx::{pool::PoolConnection, PgPool, Postgres};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
-    sync::Mutex,
+    sync::{broadcast, Mutex},
 };
 use uuid::Uuid;
 
@@ -54,6 +54,29 @@ pub(crate) struct RuntimeRef {
 
 type ProcessSlot = Arc<Mutex<Option<Process>>>;
 
+/// DD-125(6)、SF-COD-17：既有读循环读到的原生 item/turn 通知，转给已准入的实时转写读者。
+/// 只在内存中短暂停留，不写库、不进日志；读者落后即丢帧，由分页读取补齐。
+#[derive(Clone, Debug)]
+pub(crate) struct NativeNotice {
+    pub installation: Uuid,
+    pub method: &'static str,
+    pub thread: String,
+    pub turn: String,
+    /// item 通知的原生 params；turn 通知只保留 `{"status"}`，不携带 turn 内的 item。
+    pub params: Value,
+    pub emitted_at_ms: Option<i64>,
+}
+
+/// 一个 Core 进程内实时通知的缓冲帧数；超出时落后的读者丢帧。
+const NOTICE_BUFFER: usize = 256;
+/// 一页转写的原生 item 上界：小页让回应留在已投递的 max_message_bytes 之内。
+const TRANSCRIPT_PAGE_ITEMS: u32 = 25;
+/// 查回合开始时刻时读取的最近 turn 数。
+const TURN_LOOKUP_LIMIT: u32 = 5;
+/// pump 只取已缓冲的行：每次读取的等待上界与单次最多处理的消息数。
+const PUMP_READ_BOUND: Duration = Duration::from_millis(20);
+const PUMP_MAX_MESSAGES: usize = 256;
+
 // Correlation for an already sent native start, not another execution registry.
 // Its enclosing Process fixes Installation/generation/hash. Only native IDs or
 // an uncertain protocol result are retained; never request/response bodies.
@@ -84,6 +107,7 @@ pub(crate) struct Supervisor {
     max_message_bytes: usize,
     // The map lock only locates installation-local slots; no RPC/DB wait holds it.
     processes: Mutex<HashMap<Uuid, ProcessSlot>>,
+    notices: broadcast::Sender<NativeNotice>,
 }
 
 struct Process {
@@ -111,6 +135,8 @@ struct Process {
     // 最近一次请求的固定原生错误分类（只取精确匹配的封闭集合，不保留正文）。
     // 每次 RPC 开始时清空；只供同一持锁调用者读取本次请求的确定回答。
     last_native_error: Option<&'static str>,
+    // DD-125(6)：实时转写的发送端；没有读者时不复制任何通知。
+    tap: broadcast::Sender<NativeNotice>,
 }
 
 struct NativeActivity {
@@ -145,6 +171,7 @@ impl RpcDiagnostic {
             "thread/unsubscribe" => "thread/unsubscribe",
             "thread/loaded/list" => "thread/loaded/list",
             "thread/turns/list" => "thread/turns/list",
+            "thread/items/list" => "thread/items/list",
             "turn/start" => "turn/start",
             "turn/interrupt" => "turn/interrupt",
             _ => "UNRECOGNIZED_METHOD",
@@ -325,6 +352,7 @@ impl Supervisor {
             timeout: Duration::from_secs(seconds),
             max_message_bytes,
             processes: Mutex::new(HashMap::new()),
+            notices: broadcast::channel(NOTICE_BUFFER).0,
         }))
     }
 
@@ -495,6 +523,7 @@ impl Supervisor {
             start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
             last_native_error: None,
+            tap: self.notices.clone(),
         };
         let initialized = process.rpc("initialize", json!({"clientInfo":{"name":"platform-core","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}), self.timeout, self.max_message_bytes).await?;
         if initialized.get("codexHome").and_then(Value::as_str) != process.home.to_str() {
@@ -1047,6 +1076,82 @@ impl Supervisor {
         .await
     }
 
+    /// DD-125(6)、SF-COD-09：按 AgentSession 只读一页原生持久 item（升序）。正文只在本次
+    /// 回应内交给已准入读者，不写库、不进日志；超限仍只能结果不明。
+    pub(crate) async fn items(
+        &self,
+        projection: &RuntimeRef,
+        thread_id: &str,
+        cursor: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        if Uuid::parse_str(thread_id).is_err() {
+            return Err(RuntimeError::Protocol);
+        }
+        self.call(
+            projection,
+            "thread/items/list",
+            json!({"threadId":thread_id,"cursor":cursor,"limit":TRANSCRIPT_PAGE_ITEMS,
+                "sortDirection":"asc"}),
+        )
+        .await
+    }
+
+    /// 原生 turn 的 startedAt（Unix 秒）。读不到这一精确 turn 时为 None，不用本机时钟补。
+    pub(crate) async fn turn_started_at(
+        &self,
+        projection: &RuntimeRef,
+        thread_id: &str,
+        turn_id: &str,
+    ) -> Result<Option<i64>, RuntimeError> {
+        if Uuid::parse_str(thread_id).is_err() || turn_id.is_empty() {
+            return Err(RuntimeError::Protocol);
+        }
+        let page = self
+            .call(
+                projection,
+                "thread/turns/list",
+                json!({"threadId":thread_id,"limit":TURN_LOOKUP_LIMIT,"sortDirection":"desc",
+                    "itemsView":"notLoaded"}),
+            )
+            .await?;
+        Ok(turn_started(&page, turn_id))
+    }
+
+    /// 本机仍存活、未退役的运行体所持 generation 与 config hash。调用方须再以 Core 事实
+    /// 核对它属于该 Installation 的 ACTIVE/PENDING 投影；这不是第二份状态权威。
+    pub(crate) async fn live_fence(&self, installation: Uuid) -> Option<(i64, String)> {
+        let slot = self.processes.lock().await.get(&installation).cloned()?;
+        let locked = slot.lock().await;
+        let process = locked.as_ref()?;
+        if process.retiring {
+            return None;
+        }
+        Some((process.generation, process.config_hash.clone()))
+    }
+
+    /// DD-125(6)：实时转写读者的订阅。
+    pub(crate) fn subscribe_notices(&self) -> broadcast::Receiver<NativeNotice> {
+        self.notices.subscribe()
+    }
+
+    /// 只在槽空闲时取走 stdout 中已缓冲的原生消息，处理方式与 RPC 读循环相同；
+    /// 绝不等待正在进行的 RPC（它本身就在读），也不发出任何请求。
+    pub(crate) async fn pump(&self, installation: Uuid) {
+        let Some(slot) = self.processes.lock().await.get(&installation).cloned() else {
+            return;
+        };
+        let Ok(mut locked) = slot.try_lock() else {
+            return;
+        };
+        let Some(process) = locked.as_mut() else {
+            return;
+        };
+        if process.retiring {
+            return;
+        }
+        process.pump(self.max_message_bytes).await;
+    }
+
     /// 只读已经由 stdio RPC reader 消费的同一活动 turn 元事实。缺通知/恢复
     /// 不返回本机时钟；本方法不发 RPC，也不创建另一套运行体登记。
     pub(crate) async fn last_activity_at(
@@ -1213,11 +1318,21 @@ impl Supervisor {
                     where i.resource_id=$1 and ((p.config_hash=$3
                       and catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)
                       and (i.state='ACTIVE' or not catalog.agent_installation_drained(i.resource_id)))
-                    or (p.state='PENDING' and i.state in ('PROVISIONING','DRAINING')
+                    or (p.state='PENDING'
                       and exists(select 1 from admission.action_execution a where a.id=r.projection_action_execution_id
                         and a.target_id=i.resource_id and a.gate_state='ALLOWED'
-                        and a.action_key in ('agent.installation.create','agent.installation.upgrade')
-                        and a.parameters->'params'->>'assetId'=p.agent_version_asset_id::text))))")
+                        and ((i.state in ('PROVISIONING','DRAINING')
+                            and a.action_key in ('agent.installation.create','agent.installation.upgrade')
+                            and a.parameters->'params'->>'assetId'=p.agent_version_asset_id::text)
+                          or (i.state='DISABLED' and a.action_key='agent.installation.enable'
+                            and p.agent_version_asset_id=i.pinned_version_asset_id))))
+                    -- DD-125(6) disable drains like an upgrade: the live generation stays observable
+                    -- (interrupt/history) until drained; the lifecycle then stops it itself.
+                    or (p.state='ACTIVE' and p.config_hash=$3 and p.generation=i.active_projection_generation
+                      and i.state='DRAINING' and not catalog.agent_installation_drained(i.resource_id)
+                      and exists(select 1 from admission.action_execution a where a.id=r.projection_action_execution_id
+                        and a.target_id=i.resource_id and a.gate_state='ALLOWED'
+                        and a.action_key='agent.installation.disable'))))")
                     .bind(installation).bind(generation).bind(hash)
                     .fetch_one(&mut **process.ownership.lock().await).await.unwrap_or(false)
             } else {
@@ -1538,6 +1653,7 @@ impl Process {
                     self.send(&json!({"id":message["id"],"error":{"code":-32000,"message":"PLATFORM_ADMISSION_REQUIRED"}})).await?;
                     return Err(RuntimeError::AdmissionRequired);
                 }
+                self.forward_notice(&message);
                 // 不复制正文。活动只取原生 envelope 的时间与 thread/turn 引用；
                 // usage/account/RPC response 不重置 idle timer、不当 durable usage。
                 record_native_activity(
@@ -1679,6 +1795,7 @@ impl Process {
                     self.send(&json!({"id":message["id"],"error":{"code":-32000,"message":"PLATFORM_ADMISSION_REQUIRED"}})).await?;
                     return Err(RuntimeError::AdmissionRequired);
                 }
+                self.forward_notice(&message);
                 record_native_activity(
                     &mut self.native_activity,
                     &message,
@@ -1690,6 +1807,98 @@ impl Process {
             .await
             .map_err(|_| RuntimeError::Unknown)?
     }
+}
+
+impl Process {
+    fn forward_notice(&self, message: &Value) {
+        if self.tap.receiver_count() == 0 {
+            return;
+        }
+        if let Some(notice) = native_notice(self.installation_id, message) {
+            let _ = self.tap.send(notice);
+        }
+    }
+
+    /// 每条消息的处理与 RPC 读循环一致：回执、拒答原生请求、活动时间与实时转写。
+    /// 等待只到 PUMP_READ_BOUND；read_message 在取消时保留未完成的行。
+    async fn pump(&mut self, max: usize) {
+        for _ in 0..PUMP_MAX_MESSAGES {
+            let read = tokio::time::timeout(PUMP_READ_BOUND, self.read_message(max)).await;
+            let Ok(Ok(message)) = read else {
+                return;
+            };
+            self.capture_start_receipt(&message);
+            if message.get("id").is_some() && message.get("method").is_some() {
+                let refused = json!({"id":message["id"],
+                    "error":{"code":-32000,"message":"PLATFORM_ADMISSION_REQUIRED"}});
+                if self.send(&refused).await.is_err() {
+                    return;
+                }
+                continue;
+            }
+            self.forward_notice(&message);
+            if record_native_activity(
+                &mut self.native_activity,
+                &message,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .is_err()
+            {
+                return;
+            }
+        }
+    }
+}
+
+/// item/started、item/completed、turn/started、turn/completed 才进入实时转写；其余
+/// 通知、请求与回应一律不转发。turn 通知只留状态，不复制其中的 item。
+fn native_notice(installation: Uuid, message: &Value) -> Option<NativeNotice> {
+    if message.get("id").is_some() {
+        return None;
+    }
+    let method = match message.get("method").and_then(Value::as_str)? {
+        "item/started" => "item/started",
+        "item/completed" => "item/completed",
+        "turn/started" => "turn/started",
+        "turn/completed" => "turn/completed",
+        _ => return None,
+    };
+    let params = message.get("params")?;
+    let thread = params.get("threadId").and_then(Value::as_str)?;
+    let (turn, params) = if method.starts_with("turn/") {
+        let turn = params.pointer("/turn/id").and_then(Value::as_str)?;
+        let status = params
+            .pointer("/turn/status")
+            .cloned()
+            .unwrap_or(Value::Null);
+        (turn, json!({"status":status}))
+    } else {
+        let turn = params.get("turnId").and_then(Value::as_str)?;
+        if !params.get("item").is_some_and(Value::is_object) {
+            return None;
+        }
+        (turn, params.clone())
+    };
+    if thread.is_empty() || turn.is_empty() {
+        return None;
+    }
+    Some(NativeNotice {
+        installation,
+        method,
+        thread: thread.to_owned(),
+        turn: turn.to_owned(),
+        params,
+        emitted_at_ms: message.get("emittedAtMs").and_then(Value::as_i64),
+    })
+}
+
+fn turn_started(page: &Value, turn: &str) -> Option<i64> {
+    let turns = page.get("data")?.as_array()?;
+    let row = turns
+        .iter()
+        .find(|row| row.get("id").and_then(Value::as_str) == Some(turn))?;
+    let started = row.get("startedAt")?.as_i64()?;
+    (started > 0).then_some(started)
 }
 
 /// Fixed Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84:
@@ -1923,6 +2132,7 @@ mod activity_tests {
             timeout: Duration::from_secs(2),
             max_message_bytes: 4096,
             processes: Mutex::new(HashMap::from([(installation, Arc::clone(&slot))])),
+            notices: broadcast::channel(1).0,
         });
         // Consume the only non-ownership connection and hold the dispatch row.
         // Recovery must reuse ownership and let a row-owning caller enter the slot.
@@ -2276,6 +2486,7 @@ mod activity_tests {
             start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
             last_native_error: None,
+            tap: broadcast::channel(1).0,
         }
     }
 
@@ -2709,5 +2920,53 @@ mod activity_tests {
         terminal["params"]["turn"]["status"] = json!("futureStatus");
         assert!(record_native_activity(&mut activities, &terminal, 3000).is_err());
         assert!(activities.is_empty());
+    }
+
+    #[test]
+    fn live_transcript_tap_forwards_only_item_and_turn_notifications() {
+        let installation = Uuid::from_u128(9);
+        let item = json!({"method":"item/started","emittedAtMs":1000,
+            "params":{"threadId":"t","turnId":"u","startedAtMs":1000,
+                "item":{"type":"commandExecution","id":"c","command":"ls"}}});
+        let notice = native_notice(installation, &item).unwrap();
+        assert_eq!(notice.method, "item/started");
+        assert_eq!((notice.thread.as_str(), notice.turn.as_str()), ("t", "u"));
+        assert_eq!(notice.params["item"]["command"], "ls");
+        assert_eq!(notice.emitted_at_ms, Some(1000));
+        // A turn notice keeps only the native status, never the turn's items.
+        let turn = json!({"method":"turn/completed","params":{"threadId":"t",
+            "turn":{"id":"u","status":"completed","items":[{"type":"agentMessage"}]}}});
+        let notice = native_notice(installation, &turn).unwrap();
+        assert_eq!(notice.params, json!({"status":"completed"}));
+        assert_eq!(notice.emitted_at_ms, None);
+        for message in [
+            json!({"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"u"}}),
+            json!({"method":"thread/tokenUsage/updated","params":{"threadId":"t","turnId":"u"}}),
+            json!({"id":4,"method":"item/started","params":{"threadId":"t","turnId":"u",
+                "item":{"type":"plan"}}}),
+            json!({"id":4,"result":{"threadId":"t"}}),
+            json!({"method":"item/completed","params":{"threadId":"t","turnId":"u"}}),
+            json!({"method":"item/completed","params":{"turnId":"u","item":{}}}),
+            json!({"method":"turn/started","params":{"threadId":"t","turn":{}}}),
+        ] {
+            assert!(native_notice(installation, &message).is_none(), "{message}");
+        }
+    }
+
+    #[test]
+    fn transcript_item_page_is_a_fixed_rpc_method() {
+        let diagnostic = RpcDiagnostic::new(Uuid::nil(), 1, 1, "thread/items/list", &json!({}));
+        assert_eq!(diagnostic.method, "thread/items/list");
+    }
+
+    #[test]
+    fn turn_start_is_the_native_seconds_of_that_exact_turn() {
+        let page = json!({"data":[{"id":"a","startedAt":100},{"id":"b","startedAt":null},
+            {"id":"c","startedAt":0}],"nextCursor":null});
+        assert_eq!(turn_started(&page, "a"), Some(100));
+        assert_eq!(turn_started(&page, "b"), None);
+        assert_eq!(turn_started(&page, "c"), None);
+        assert_eq!(turn_started(&page, "missing"), None);
+        assert_eq!(turn_started(&json!({}), "a"), None);
     }
 }

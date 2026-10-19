@@ -554,6 +554,19 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-installations/{resource_id}/invocations",
             get(crate::agent_session_query::invocations),
         )
+        // DD-125(6): Installation audit-only transcript, live items and running turns.
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/transcript",
+            get(crate::agent_transcript::page),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/transcript/stream",
+            get(crate::agent_transcript::stream),
+        )
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/agent-turns",
+            get(crate::agent_transcript::workspace_turns),
+        )
         .exposed_route(
             "/api/v1/agent-installations/{resource_id}/delegations",
             get(crate::delegation_query::list),

@@ -372,11 +372,12 @@ pub(crate) async fn conversation_typing(
 }
 
 /// 原版 `buildThreadReferenceTags` 的线程引用：`parent` 是线程面板的 thread head，
-/// `root` 只在不同于 `parent` 时出现。
+/// `root` 只在不同于 `parent` 时出现。Agent 回合的 20002 沿用同一形状（buzz-acp
+/// `build_typing_event`，DD-125(6)）。
 #[derive(Debug, PartialEq)]
-struct TypingThread {
-    parent: String,
-    root: Option<String>,
+pub(crate) struct TypingThread {
+    pub(crate) parent: String,
+    pub(crate) root: Option<String>,
 }
 
 /// 请求体缺省即主频道输入（`Some(None)`）；有请求体时必须是类型化的
@@ -425,7 +426,7 @@ async fn typing(
     }
 }
 
-fn typing_event(
+pub(crate) fn typing_event(
     keys: &nostr::Keys,
     channel: &str,
     thread: Option<&TypingThread>,

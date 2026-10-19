@@ -418,7 +418,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
 /// 重连间隔，然后正常结束，浏览器按间隔自动重连。原因取值：
 /// `upstream-unavailable`（结果不明）、`rate-limited` 与 `subscription-limit`
 /// （`apps/06` §4 的 LIMIT）、`binding-not-active`（NIP-11 与 binding 快照不一致）。
-fn closed_in_band(retry: std::time::Duration, reason: &'static str) -> Response {
+pub(crate) fn closed_in_band(retry: std::time::Duration, reason: &'static str) -> Response {
     let frames = async_stream::stream! {
         yield Ok::<_, Infallible>(retry_frame(retry));
         yield Ok(Event::default().event("closed").retry(retry).data(reason));
@@ -558,7 +558,7 @@ fn exact_auxiliary_receipt(events: &[nostr::Event], expected: &nostr::Event) -> 
 /// 重连间隔另以一帧明文下发。`retry:` 字段只被 EventSource 内部消费，页面读不到；
 /// 而 EventSource 在重连请求得到 HTTP 错误（BFF 重启期间网关回 503）时会永久关闭、
 /// 不再自动重连，此后只能由页面按这个间隔重新打开。间隔始终来自服务端配置。
-fn retry_frame(retry: std::time::Duration) -> Event {
+pub(crate) fn retry_frame(retry: std::time::Duration) -> Event {
     Event::default()
         .event("retry")
         .data(retry.as_millis().to_string())

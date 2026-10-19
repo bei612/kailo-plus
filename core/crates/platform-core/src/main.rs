@@ -21,6 +21,8 @@ mod agent_tool_mcp;
 mod agent_tool_pep;
 mod agent_tool_runtime;
 mod agent_tool_session;
+mod agent_transcript;
+mod agent_typing;
 mod agent_version;
 mod agent_version_query;
 mod application_action;
@@ -445,6 +447,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         // DD-120(2)：只靠在线租约保留的连接不再经过请求路径，撤权由它回头关闭
         presence::spawn_lease_sweeper(bff_state.clone());
+        // DD-125(6)：Agent 回合运行期间以 AGENT 身份每 3 秒发 20002（成员可见的工作中信号）
+        agent_typing::spawn_typing_refresher(bff_state.clone());
 
         let bff = tokio::net::TcpListener::bind(listen).await?;
         let service = tokio::net::TcpListener::bind(service_listen).await?;
