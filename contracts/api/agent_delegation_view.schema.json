@@ -2,15 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/agent_delegation_view.schema.json",
   "title": "AgentDelegationView",
-  "description": "同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。",
+  "description": "同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是 DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["delegationId", "delegationVersion", "grantorPrincipalId", "state", "uses", "parameters"],
+  "required": ["delegationId", "delegationVersion", "grantorPrincipalId", "state", "effectiveState", "uses", "parameters"],
   "properties": {
     "delegationId": {"type": "string", "format": "uuid"},
     "delegationVersion": {"type": "integer", "minimum": 1},
     "grantorPrincipalId": {"type": "string", "format": "uuid"},
-    "state": {"type": "string", "enum": ["ACTIVE", "REVOKING", "REVOKED", "EXPIRED"]},
+    "state": {"type": "string", "enum": ["ACTIVE", "REVOKING", "REVOKED", "EXPIRED", "SUPERSEDED"]},
+    "effectiveState": {
+      "title": "DelegationEffectiveState",
+      "description": "DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有 Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。",
+      "type": "string",
+      "enum": ["ACTIVE", "NEEDS_RENEWAL", "NOT_YET_VALID", "EXPIRED", "USES_EXHAUSTED", "REVOKING", "REVOKED", "SUPERSEDED"]
+    },
+    "supersededByDelegationId": {"type": "string", "format": "uuid", "description": "DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。"},
     "uses": {"type": "integer", "minimum": 0},
     "parameters": {"$ref": "../domain/delegation_grant_parameters.schema.json"}
   }
