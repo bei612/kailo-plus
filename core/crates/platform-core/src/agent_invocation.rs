@@ -609,7 +609,10 @@ fn usable_grant(candidates: &[GrantCandidate]) -> Result<Uuid, ReasonCode> {
         })
         .map(|g| g.id)
         .ok_or_else(|| {
-            if candidates.iter().any(|g| !g.consent_current && g.uses_left()) {
+            if candidates
+                .iter()
+                .any(|g| !g.consent_current && g.uses_left())
+            {
                 ReasonCode::DelegationRenewalRequired
             } else {
                 ReasonCode::DelegationRequired
@@ -873,7 +876,7 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
             || !row.triggers.iter().any(|v| v == trigger) { return Err(conflict()); }
         let used: bool = sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
             .bind(frozen.delegation_id).bind(ae.operation_id).fetch_one(&mut *tx).await?;
-        let revision = fresh(state,&mut tx,&row,ae.initiator_principal_id,pubkey,frozen.delegation_id,&def,used.then_some(ae.operation_id),true).await?;
+        let revision = fresh(state,&mut tx,&row,ae.initiator_principal_id,pubkey,Ok(frozen.delegation_id),&def,used.then_some(ae.operation_id),true).await?;
         Ok::<_,Refusal>(revision)
         }.await;
         state
