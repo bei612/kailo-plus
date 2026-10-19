@@ -1,5 +1,72 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-19 Declarative native configuration and datasource key rotation
+
+Design: 18 §2/§7, 08 §4, 07 §2.6, DD-93, DD-124. Before this batch neither the
+production nor the isolated instance could run governed `file_storage.write@v2`
+(draft promote) or `list_revisions@v2`, and the production datasource keys had
+been printed into a session log.
+
+What the deployment now guarantees (each step idempotent, read back, fail closed):
+
+| Need | Native consumer (this fork) | Applied by |
+|---|---|---|
+| Draft Mode | `idm/meta/client.go` maps `Draft-Mode` to `USERMETA_DRAFT_NAMESPACE` only when `USERMETA_DRAFT_API` is true (manifest default off); an unknown namespace is silently ignored | `reconcile.py`: boolean `usermeta-*` namespace (READ/WRITE `*`) via `PUT /a/user-meta/namespace`, merged `frontend/plugin/meta.user` params via `PUT /a/config/frontend/plugin/meta.user` |
+| Revisions | `data/versions/init.go` `PolicyForNode`: no policy, no versions | `reconcile.py`: `VersioningPolicyName` on the binding datasource via `POST /a/config/datasource/{Name}` (created LOCAL beside the existing local datasources when missing) |
+| Binding scope/root | node UUIDs resolve only against real workspace roots (`common/nodes/uuid/handler-uuid-workspace.go`); the adapter refuses `DATASOURCE:` roots | `reconcile.py`: `cells admin file mkdir <ds>/<folder>`, `PUT /a/workspace/{slug}` rooted on that folder with no default rights, exactly the declared `read`/`write` ACLs (`PUT /a/acl`, extras removed); refuses a datasource or folder rooted by another workspace (stock `common-files` roots `pydiods1`, whose paths would expose the binding root). Writes the owner-only facts file (`nativeScopeRef`, `nativeRootRef`, principal UUIDs, `instanceServiceUuid`) and cross-checks a delivered `CELLS_NATIVE_ACTION_CONFIG_FILE` against it |
+| Datasource keys | embedded MinIO root credential = `services/pydio.grpc.data.objects.<name>` `ApiKey` + vault `ApiSecret`, shared by every `pydio.grpc.data.sync.<ds>`; the FS backend keeps `.minio.sys/config` encrypted with it | entrypoint `cells admin datasource keys` (before start) from `CELLS_DATASOURCE_KEY_FILE`/`CELLS_DATASOURCE_SECRET_FILE`; keeps the replaced credential in the vault as MinIO `OldCred` (`data/source/objects/grpc/handler.go`) until the backend is re-encrypted; `start.sh` runs `--verify` in the running instance |
+
+`start.sh` order: validation (incl. key files and `reconcile.py --check`) →
+pull/create/up `--wait` (exit **75** when only the wait failed, e.g. the
+first-install restart; re-running is safe) → `cells admin datasource keys
+--verify` → `reconcile.py`. `start.sh --reconcile ENV` repeats the last two on
+the running project. No SQL, no config-file edit, no value printed; the admin
+PAT is minted per run (`cells admin user token -e <deadline>`), read from the
+CLI's stdout by `reconcile.py` and never echoed.
+
+Also fixed: `data/tree/rest/native-human-delete.go` resolved the binding root
+Resource with `delete.nativeType`, which is the delete ExternalExecution's
+native task type (`job`: `NewNativeDeleteTask`, `nativeDeleteFresh`, the
+observed `nativeType` check); Core's `resolve_resource` matches
+`catalog.resource.native_type`, so every production HUMAN delete was refused.
+The selector now carries the root node's own type (`COLLECTION`).
+
+### Operator procedure: rotate the datasource keys
+
+Values never reach a terminal, argv or log:
+
+```bash
+cd /volumes/data/kailo/components/cells/secrets   # owner-only 0700
+umask 077
+python3 -I -c 'import secrets,string; a=string.ascii_letters+string.digits; print("".join(secrets.choice(a) for _ in range(32)))' > datasource_key.new
+python3 -I -c 'import secrets,string; a=string.ascii_letters+string.digits; print("".join(secrets.choice(a) for _ in range(48)))' > datasource_secret.new
+mv -f datasource_key.new datasource_key && mv -f datasource_secret.new datasource_secret
+```
+
+then redeploy (`deploy/components/component-deploy.sh file-storage <commit>`,
+or `bash file-storage/deploy/start.sh ENV`; changing the files does not
+recreate the container by itself: `sudo -n docker restart <project>-cells-1`
+on an unchanged deployment). Expected output of the post-start verification:
+`objects service local1: delivered credential accepted, previous refused,
+backend re-encrypted; previous credential removed` (or `... previous kept for
+the next start` if MinIO has not finished; the next run removes it). A
+second `start.sh --reconcile ENV` prints `no rotation pending`. The previous
+values then authenticate nowhere: the object services have a single root
+credential and no IAM users, and the vault no longer holds them.
+
+### Verification of this batch
+
+Dev box (no Go/Node per workspace rule): `bash -n start.sh conformance-run.sh`,
+`sh -n docker-entrypoint.sh`, `python3 -I -B deploy/test_reconcile.py`
+(9 tests against a stand-in of the native REST entries and CLI: fresh
+configuration and no-op second run, shared datasource refused before any
+change, existing datasource gets the policy, unknown policy, non-boolean
+namespace never rewritten, missing principal, undeclared grants removed,
+native delivery cross-check, settings refusal; token and install password
+never in output), `isolated-plan.py` against a synthetic rendered release.
+Go (`go test ./data/tree/rest ./data/source/objects ./cmd`, gofmt/vet), the
+image build and the deployment itself must run on CI; none is claimed here.
+
 ## 2026-10-08 适配器实际打包与可选启动
 
 本批解决已有 `adapter/src/main.mjs` 无镜像配方和部署消费者的问题；不恢复原版

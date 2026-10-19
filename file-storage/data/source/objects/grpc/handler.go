@@ -120,12 +120,20 @@ func (o *ObjectHandler) StartMinioServer(ctx context.Context, conf *object.Minio
 		secretKey = sec
 	}
 
-	return o.startMinioServer(ctx, minioServiceName, accessKey, secretKey, conf.LocalFolder, conf.RunningPort)
+	// A pending datasource key rotation (cells admin datasource keys) leaves
+	// the credential the encrypted backend config was written with; MinIO
+	// re-encrypts it with the active credential. It never authenticates.
+	previous, _, err := objects.ParsePreviousCredential(config.GetSecret(ctx, objects.PreviousCredentialSecret(minioServiceName)).String())
+	if err != nil {
+		return err
+	}
+
+	return o.startMinioServer(ctx, minioServiceName, accessKey, secretKey, previous, conf.LocalFolder, conf.RunningPort)
 
 }
 
 // StartMinioServer handler
-func (o *ObjectHandler) startMinioServer(ctx context.Context, minioServiceName, accessKey, secretKey, localFolder string, runningPort int32) error {
+func (o *ObjectHandler) startMinioServer(ctx context.Context, minioServiceName, accessKey, secretKey string, previous auth.Credentials, localFolder string, runningPort int32) error {
 
 	// Create a config file
 	configFolder := filepath.Join(
@@ -140,6 +148,9 @@ func (o *ObjectHandler) startMinioServer(ctx context.Context, minioServiceName, 
 	globals := minio.NewGlobals()
 	globals.ActiveCred, _ = auth.CreateCredentials(accessKey, secretKey)
 	globals.ConfigEncrypted = true
+	if previous.IsValid() && !previous.Equal(globals.ActiveCred) {
+		globals.OldCred = previous
+	}
 	globals.CliContext = &minio.CliContext{
 		Quiet:      true,
 		Addr:       fmt.Sprintf(":%d", runningPort),

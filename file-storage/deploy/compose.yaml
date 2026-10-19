@@ -46,7 +46,10 @@ services:
       CELLS_OAUTH_CONNECTORS: ${CELLS_OAUTH_CONNECTORS:?native connector configuration required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
       CELLS_OAUTH_SECRET_FILE: /run/secrets/cells_oauth_secret
-    secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret]
+      # Applied by docker-entrypoint.sh (cells admin datasource keys) before start.
+      CELLS_DATASOURCE_KEY_FILE: /run/secrets/cells_datasource_key
+      CELLS_DATASOURCE_SECRET_FILE: /run/secrets/cells_datasource_secret
+    secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret, cells_datasource_key, cells_datasource_secret]
     volumes:
       - type: bind
         source: ${CELLS_DATA_DIR:?required}
@@ -74,6 +77,10 @@ secrets:
     file: ${CELLS_OIDC_CLIENT_SECRET_FILE:?existing controlled OIDC client secret required}
   cells_oauth_secret:
     file: ${CELLS_OAUTH_SECRET_FILE:?existing controlled native OAuth JSON secret required}
+  cells_datasource_key:
+    file: ${CELLS_DATASOURCE_KEY_FILE:?existing controlled datasource access key file required}
+  cells_datasource_secret:
+    file: ${CELLS_DATASOURCE_SECRET_FILE:?existing controlled datasource secret key file required}
 
 networks:
   cells-data:

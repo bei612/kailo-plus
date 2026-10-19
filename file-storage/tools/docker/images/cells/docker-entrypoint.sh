@@ -63,6 +63,17 @@ if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_NATIVE_ACTION_C
 	cells admin config set --value-file "$CELLS_NATIVE_ACTION_CONFIG_FILE" pydio.rest.n platform
 fi
 
+# Datasource access keys (the embedded object service root credential and the
+# datasources it serves) come only from the delivered owner-only files. The
+# native command reads them itself, keeps the secret in the vault, never prints
+# values, and leaves the previous credential for the backend re-encryption of
+# this start. Applied before any listener opens; a refusal stops the start.
+if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && { [ -n "${CELLS_DATASOURCE_KEY_FILE:-}" ] || [ -n "${CELLS_DATASOURCE_SECRET_FILE:-}" ]; }; then
+	: "${CELLS_DATASOURCE_KEY_FILE:?datasource access key file required}"
+	: "${CELLS_DATASOURCE_SECRET_FILE:?datasource secret key file required}"
+	cells admin datasource keys --access-key-file "$CELLS_DATASOURCE_KEY_FILE" --secret-key-file "$CELLS_DATASOURCE_SECRET_FILE"
+fi
+
 echo "[DEBUG] About to run command: [$@]"
 
 exec "$@"

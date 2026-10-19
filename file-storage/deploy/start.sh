@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 # Independent native Cells service. Does not create Kailo resources or identities.
 set -euo pipefail
+# Exit 75: only the native readiness wait failed (e.g. the normal restart after
+# the first-install configure run); re-running the same command is safe.
 check_only=false
 platform_adapter=false
+reconcile_only=false
 while [[ ${1:-} == --* ]]; do
   case "$1" in
     --check) check_only=true ;;
     --platform-adapter) platform_adapter=true ;;
+    # Re-apply the declarative native configuration (reconcile.py) and verify
+    # the datasource keys on the running project; nothing is pulled/created.
+    --reconcile) reconcile_only=true ;;
     *) printf 'unknown deployment option\n' >&2; exit 2 ;;
   esac
   shift
 done
-[[ $# == 1 && -f $1 ]] || { printf 'usage: bash start.sh [--check] [--platform-adapter] CONTROLLED_ENV_FILE\n' >&2; exit 2; }
+[[ $# == 1 && -f $1 ]] || { printf 'usage: bash start.sh [--check] [--platform-adapter | --reconcile] CONTROLLED_ENV_FILE\n' >&2; exit 2; }
+! { "$platform_adapter" && "$reconcile_only"; } || { printf -- '--platform-adapter and --reconcile are separate steps\n' >&2; exit 2; }
 config=$(realpath -e -- "$1")
 [[ $(stat -c '%a' -- "$config") == 600 ]] || { printf 'deployment env must be mode 0600\n' >&2; exit 2; }
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -59,6 +66,15 @@ try:
     require(dsn.scheme == 'postgres' and dsn.hostname == 'cells-db' and dsn.port == int(env['CELLS_DB_PORT']), 'native DSN must target this independent cells-db service')
     require(unquote(dsn.path.removeprefix('/')) == env['CELLS_DB_NAME'] and unquote(dsn.username or '') == env['CELLS_DB_USER'], 'native database name/user mismatch')
     require(unquote(dsn.password or '') == secret_file('CELLS_DB_PASSWORD_FILE').rstrip('\n') != '', 'native database password delivery mismatch')
+    # Datasource keys (embedded object service root credential): same rules as
+    # data/source/objects ValidDeliveredCredential, applied by the entrypoint.
+    ds_key = secret_file('CELLS_DATASOURCE_KEY_FILE').removesuffix('\n')
+    ds_secret = secret_file('CELLS_DATASOURCE_SECRET_FILE').removesuffix('\n')
+    require(re.fullmatch(r'[A-Za-z0-9]{16,64}', ds_key) and re.fullmatch(r'[!#-&(-~]{24,128}', ds_secret) and ds_key != ds_secret,
+            'datasource access/secret key files must hold 16-64 alphanumerics and a 24-128 character secret')
+    require(ds_secret not in (secret_file('CELLS_DB_PASSWORD_FILE').rstrip('\n'), secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), oauth_secret, password),
+            'datasource secret must be independent of every other native credential')
+    require(len({os.path.realpath(env[k]) for k in ('CELLS_DATASOURCE_KEY_FILE', 'CELLS_DATASOURCE_SECRET_FILE')}) == 2, 'datasource key and secret need separate files')
     directories = []
     for key in ('CELLS_DATA_DIR', 'CELLS_DB_DATA_DIR'):
         path = pathlib.Path(env[key])
@@ -187,6 +203,8 @@ except (KeyError, ValueError, TypeError, AttributeError, OSError):
     sys.exit(2)
 print('Cells native delivery validated; no credential values emitted')
 PY
+# Declarative native configuration settings (applied after start by reconcile.py).
+python3 -I "$here/reconcile.py" --check
 source "$root/tools/container-safety.sh"
 container_safety_init
 compose=("${CONTAINER_DOCKER[@]}" compose --project-name "$CELLS_COMPOSE_PROJECT" --env-file "$config" -f "$here/compose.yaml")
@@ -281,6 +299,24 @@ PY
 fi
 "${compose[@]}" config --quiet
 if "$check_only"; then exit 0; fi
+
+# After the native service is healthy: the delivered datasource keys must be the
+# ones the object services accept (a pending previous credential refused), then
+# the declarative configuration of the governed actions is applied and read
+# back (reconcile.py). Both are idempotent; a refusal fails the deployment.
+native_configuration() {
+  local cells
+  mapfile -t cells < <("${compose[@]}" ps --quiet cells)
+  [[ ${#cells[@]} == 1 && -n ${cells[0]} ]] || { printf 'no running Cells service in this project\n' >&2; exit 2; }
+  "${CONTAINER_DOCKER[@]}" exec "${cells[0]}" cells admin datasource keys --verify \
+    --access-key-file /run/secrets/cells_datasource_key --secret-key-file /run/secrets/cells_datasource_secret
+  python3 -I "$here/reconcile.py" --container "${cells[0]}" -- "${CONTAINER_DOCKER[@]}"
+}
+if "$reconcile_only"; then
+  native_configuration
+  printf 'Cells declarative configuration reconciled; bindings and tools are not asserted by this command\n'
+  exit 0
+fi
 container_resource_preflight
 if "$platform_adapter"; then
   # Start only the optional consumer; never recreate Cells or its database.
@@ -299,5 +335,11 @@ fi
 mapfile -t containers < <("${compose[@]}" ps --all --quiet cells cells-db)
 [[ ${#containers[@]} == 2 ]] || { printf 'unexpected independent Cells service set\n' >&2; exit 2; }
 for container in "${containers[@]}"; do container_verify_limits "$container"; done
-"${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}"
-printf 'Independent Cells service started; Kailo SSO, bindings and tools are not asserted by this command\n'
+if ! "${compose[@]}" up --detach --no-build --no-recreate --pull never --wait --wait-timeout "${CELLS_START_TIMEOUT_SECONDS:?required}"; then
+  # A first install exits after the native configure run and is restarted by
+  # its restart policy; the wait cannot tell that from a failure.
+  printf 'Cells readiness wait failed; containers are left for native inspection (re-run is safe)\n' >&2
+  exit 75
+fi
+native_configuration
+printf 'Independent Cells service started and configured; Kailo SSO, bindings and tools are not asserted by this command\n'

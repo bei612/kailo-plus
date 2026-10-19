@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/minio/minio/pkg/auth"
+
 	"github.com/pydio/cells/v5/common/utils/net"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 
@@ -29,12 +31,12 @@ func SkipTestObjectHandler_StartMinioServer(t *testing.T) {
 		// Will block until context done
 		go func() {
 			defer wg.Done()
-			er := h.startMinioServer(ctx, "test1", "minio_test_api_key", "minio_test_api_secret", serveFolder1, int32(p1))
+			er := h.startMinioServer(ctx, "test1", "minio_test_api_key", "minio_test_api_secret", auth.Credentials{}, serveFolder1, int32(p1))
 			So(er, ShouldBeNil)
 		}()
 		go func() {
 			defer wg.Done()
-			er := h.startMinioServer(ctx, "test2", "minio_test_api_key", "minio_test_api_secret", serveFolder2, int32(p2))
+			er := h.startMinioServer(ctx, "test2", "minio_test_api_key", "minio_test_api_secret", auth.Credentials{}, serveFolder2, int32(p2))
 			So(er, ShouldBeNil)
 		}()
 		wg.Wait()
