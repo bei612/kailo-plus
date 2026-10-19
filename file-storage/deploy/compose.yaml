@@ -46,6 +46,10 @@ services:
       CELLS_OAUTH_CONNECTORS: ${CELLS_OAUTH_CONNECTORS:?native connector configuration required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
       CELLS_OAUTH_SECRET_FILE: /run/secrets/cells_oauth_secret
+      # Binding datasource created by docker-entrypoint.sh (cells admin
+      # datasource ensure) before start; reconcile.py only reads it back.
+      CELLS_BINDING_DATASOURCE: ${CELLS_BINDING_DATASOURCE:?binding datasource required}
+      CELLS_BINDING_VERSIONING_POLICY: ${CELLS_BINDING_VERSIONING_POLICY:?binding datasource versioning policy required}
       # Applied by docker-entrypoint.sh (cells admin datasource keys) before start.
       CELLS_DATASOURCE_KEY_FILE: /run/secrets/cells_datasource_key
       CELLS_DATASOURCE_SECRET_FILE: /run/secrets/cells_datasource_secret

@@ -45,15 +45,17 @@ DESCRIPTION
 
   Run it before 'cells start'. When the credential changes, the credential the
   encrypted object backend was written with is kept in the vault only until a
-  start has re-encrypted that backend with the delivered credential; the old
-  values stop authenticating as soon as the object services start with the
-  new ones.
+  start has re-encrypted that backend with the delivered credential: the next
+  run before a start removes it; the old values stop authenticating as soon
+  as the object services start with the new ones.
 
   With --verify, run it against the started instance: each local object
   service, probed at the S3 endpoint it reports through the registry (its
   port is chosen at each start), must accept the delivered credential and
-  refuse a pending previous one; once the backend is re-encrypted the pending
-  previous credential is removed from the vault.
+  refuse a pending previous one. It changes nothing: the running server holds
+  the configuration and the vault in memory and rewrites both files whole on
+  its next save, so a change made by another process while it runs would be
+  undone.
 
 EXAMPLES
 
@@ -144,6 +146,15 @@ func applyDatasourceKeys(cmd *cobra.Command, access, secret string) error {
 			return fmt.Errorf("objects service %s: %w", name, err)
 		}
 		rotated := mc.ApiKey != access || current != secret
+		if !rotated && pending {
+			// A start since the rotation re-encrypted the backend: the
+			// previous credential is no longer needed.
+			if cleared, er := clearCompletedRotation(ctx, name, mc.LocalFolder, access, secret); er != nil {
+				return er
+			} else if cleared {
+				cmd.Printf("objects service %s: backend re-encrypted with the delivered credential; previous credential removed\n", name)
+			}
+		}
 		if rotated {
 			// The backend still written with an earlier pending credential
 			// keeps that one; otherwise it is written with the current one.
@@ -208,6 +219,23 @@ func applyDatasourceKeys(cmd *cobra.Command, access, secret string) error {
 		cmd.Printf("Delivered datasource keys already in effect on %d local object service(s)\n", len(local))
 	}
 	return nil
+}
+
+// clearCompletedRotation removes the pending previous credential of a local
+// object service once its backend is readable with the current credential.
+// Only run before 'cells start' (see --verify).
+func clearCompletedRotation(ctx context.Context, name, localFolder, access, secret string) (bool, error) {
+	current, err := auth.CreateCredentials(access, secret)
+	if err != nil {
+		return false, fmt.Errorf("objects service %s: current credential is not a valid object service credential", name)
+	}
+	if needed, err := objects.PreviousCredentialNeeded(localFolder, current); err != nil || needed {
+		return false, nil
+	}
+	if err := config.DelSecret(ctx, objects.PreviousCredentialSecret(name)); err != nil {
+		return false, fmt.Errorf("objects service %s: cannot remove the previous credential", name)
+	}
+	return true, nil
 }
 
 // checkDatasourceKeys reads the stored configuration back.
@@ -288,10 +316,7 @@ func verifyObjectService(cmd *cobra.Command, name string, stored *object.MinioCo
 		cmd.Printf("objects service %s: delivered credential accepted, previous refused; backend re-encryption not yet observed, previous kept for the next start\n", name)
 		return nil
 	}
-	if err := config.DelSecret(ctx, previousKey); err != nil {
-		return fmt.Errorf("objects service %s: cannot remove the previous credential", name)
-	}
-	cmd.Printf("objects service %s: delivered credential accepted, previous refused, backend re-encrypted; previous credential removed\n", name)
+	cmd.Printf("objects service %s: delivered credential accepted, previous refused, backend re-encrypted; previous credential removed before the next start\n", name)
 	return nil
 }
 

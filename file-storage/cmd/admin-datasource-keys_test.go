@@ -253,11 +253,35 @@ func TestVerifyProbesTheRunningObjectServiceEndpoint(t *testing.T) {
 	if len(presented) == 0 || presented[0] != f.current.AccessKey || !sawCurrent || !sawPrevious {
 		t.Fatal("running endpoint did not check the delivered then the previous credential")
 	}
-	if f.previousPending() {
-		t.Fatal("previous credential kept although the backend needs no re-encryption")
+	if !f.previousPending() {
+		t.Fatal("verification changed the vault of a running server")
 	}
-	if !strings.Contains(f.out.String(), "previous refused, backend re-encrypted; previous credential removed") {
+	if !strings.Contains(f.out.String(), "previous refused, backend re-encrypted; previous credential removed before the next start") {
 		t.Fatalf("unexpected verification report: %q", f.out.String())
+	}
+}
+
+func TestPreStartClearsOnlyACompletedRotation(t *testing.T) {
+	f := newVerifyFixture(t, "clear-completed-rotation")
+	// The backend is not readable with the current credential yet: kept.
+	sys := filepath.Join(f.stored.LocalFolder, ".minio.sys")
+	if err := os.MkdirAll(sys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sys, "backend-encrypted"), []byte("encrypting"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := clearCompletedRotation(f.ctx, f.stored.Name, f.stored.LocalFolder, f.current.AccessKey, f.current.SecretKey)
+	if err != nil || cleared || !f.previousPending() {
+		t.Fatalf("previous credential removed before the backend was re-encrypted: %v", err)
+	}
+	// No encrypted backend left that needs it: removed.
+	if err := os.Remove(filepath.Join(sys, "backend-encrypted")); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err = clearCompletedRotation(f.ctx, f.stored.Name, f.stored.LocalFolder, f.current.AccessKey, f.current.SecretKey)
+	if err != nil || !cleared || f.previousPending() {
+		t.Fatalf("completed rotation not cleared before start: %v", err)
 	}
 }
 

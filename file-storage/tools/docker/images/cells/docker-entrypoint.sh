@@ -63,6 +63,17 @@ if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_NATIVE_ACTION_C
 	cells admin config set --value-file "$CELLS_NATIVE_ACTION_CONFIG_FILE" pydio.rest.n platform
 fi
 
+# Binding datasource of the declarative configuration (deploy/reconcile.py):
+# created in the configuration before the server starts, as the install does
+# for the default datasources, so that it is served from this start. The
+# running server holds the configuration and the vault in memory and rewrites
+# both files whole on its next save; it must never be created through the
+# configuration of a running server by another process.
+if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_BINDING_DATASOURCE:-}" ]; then
+	: "${CELLS_BINDING_VERSIONING_POLICY:?binding datasource versioning policy required}"
+	cells admin datasource ensure --name "$CELLS_BINDING_DATASOURCE" --versioning-policy "$CELLS_BINDING_VERSIONING_POLICY"
+fi
+
 # Datasource access keys (the embedded object service root credential and the
 # datasources it serves) come only from the delivered owner-only files. The
 # native command reads them itself, keeps the secret in the vault, never prints

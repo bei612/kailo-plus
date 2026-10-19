@@ -61,10 +61,23 @@ class Cells:
         self.workspaces = {}
         self.acls = []
         self.users = {login: fresh() for login in ("admin", "svc", "actor")}
+        # The image entrypoint creates the binding datasource before the
+        # server starts (cells admin datasource ensure); it shares the vault
+        # reference of its object service.
+        self.datasources["kailobinding"] = self.binding_datasource()
         common = fresh()
         self.workspaces["common-files"] = {"UUID": common, "Slug": "common-files", "Label": "Common Files", "RootNodes": {"DATASOURCE:pydiods1": {}}}
         self.acls.append({"ID": fresh(), "NodeID": "DATASOURCE:pydiods1", "WorkspaceID": common, "Action": {"Name": "workspace-path", "Value": "pydiods1"}})
         self.mutations = []
+
+    def writes(self):
+        """Mutations other than the original search entries (POST reads)."""
+        return [m for m in self.mutations if not (m[0] == "POST" and m[1] in ("acl", "workspace", "tree/admin/stat"))]
+
+    def binding_datasource(self, policy="keep-all"):
+        return {"Name": "kailobinding", "StorageConfiguration": {"folder": "/var/cells/data/kailobinding"},
+                "FlatStorage": True, "VersioningPolicyName": policy, "ApiKey": "fixture-key",
+                "ApiSecret": self.datasources["pydiods1"]["ApiSecret"], "ObjectsServiceName": "local1"}
 
     def mkdir(self, path):
         ds = path.split("/")[0]
@@ -90,13 +103,10 @@ class Cells:
         if path.startswith("config/datasource/"):
             name = path.rsplit("/", 1)[1]
             if method == "GET":
-                return (200, self.datasources[name]) if name in self.datasources else (404, {})
-            ds = copy.deepcopy(body)
-            ds.get("StorageConfiguration", {}).pop("create", None)
-            if ds.get("StorageType") == "LOCAL":
-                del ds["StorageType"]  # zero enum value is not emitted
-            self.datasources[name] = dict(ds, ApiKey="fixture-key", ApiSecret=fresh(), ObjectsServiceName="local1")
-            return 200, self.datasources[name]
+                return (200, copy.deepcopy(self.datasources[name])) if name in self.datasources else (404, {})
+            # The original handler would save the whole in-memory configuration
+            # and give the datasource a new vault entry: never called.
+            return 500, {}
         if path == "user-meta/namespace":
             if method == "GET":
                 return 200, {"Namespaces": list(self.namespaces.values())}
@@ -248,6 +258,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(json.loads(out)["nativeScopeRef"], workspace)
         grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read"), (self.cells.users["actor"], "read"), (self.cells.users["actor"], "write")})
+        self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
         self.cells.mutations.clear()
         code, out, err = self.run_main()
         self.assertEqual(code, 0, err)
@@ -264,20 +275,38 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(self.cells.nodes, {})
         self.assertNotIn("kailo-binding", self.cells.workspaces)
 
-    def test_existing_unshared_datasource_gets_the_policy_attached(self):
-        self.cells.datasources["kailobinding"] = {"Name": "kailobinding", "StorageConfiguration": {"folder": "/var/cells/data/kailobinding"},
-                                                  "ApiKey": "fixture-key", "ApiSecret": fresh(), "ObjectsServiceName": "local1"}
-        code, out, err = self.run_main()
-        self.assertEqual(code, 0, err)
-        self.assertEqual(self.cells.datasources["kailobinding"]["VersioningPolicyName"], "keep-all")
-        self.assertIn("datasource versioning policy attached", json.loads(out)["changes"])
+    def test_binding_datasource_is_never_created_through_the_running_server(self):
+        del self.cells.datasources["kailobinding"]
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("the image entrypoint creates it before start", err)
+        self.assertNotIn("kailobinding", self.cells.datasources)
+        self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/")])
+        self.assertEqual(self.cells.nodes, {})
+
+    def test_binding_datasource_with_another_policy_is_refused_not_rewritten(self):
+        self.cells.datasources["kailobinding"] = self.cells.binding_datasource("regular-pruning")
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("another versioning policy", err)
+        self.assertEqual(self.cells.datasources["kailobinding"]["VersioningPolicyName"], "regular-pruning")
+        self.assertFalse(self.cells.writes())
+
+    def test_binding_datasource_must_be_local_flat_and_enabled(self):
+        for change in ({"FlatStorage": False}, {"Disabled": True}, {"StorageType": "S3"}):
+            self.cells.datasources["kailobinding"] = dict(self.cells.binding_datasource(), **change)
+            code, _, err = self.run_main()
+            self.assertEqual(code, 2, change)
+            self.assertIn("enabled LOCAL flat datasource", err)
+        self.assertFalse(self.cells.writes())
 
     def test_unknown_versioning_policy_fails_closed(self):
         self.env["CELLS_BINDING_VERSIONING_POLICY"] = "no-such-policy"
         code, _, err = self.run_main()
         self.assertEqual(code, 2)
         self.assertIn("versioning policy is not defined", err)
-        self.assertNotIn("kailobinding", self.cells.datasources)
+        self.assertEqual(self.cells.datasources["kailobinding"], self.cells.binding_datasource())
+        self.assertFalse(self.cells.writes())
 
     def test_existing_non_boolean_namespace_is_never_rewritten(self):
         self.cells.namespaces["usermeta-kailo-draft"] = {"Namespace": "usermeta-kailo-draft", "JsonDefinition": json.dumps({"type": "string"}),

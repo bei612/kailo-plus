@@ -4,13 +4,25 @@ actions (design 18, 08 §4, 07 §2.6, DD-124). Run by start.sh after the
 independent Cells service is healthy; every step is idempotent, read back and
 fails closed. Only original native admin entries are used:
 
-  REST /a/config/versioning, /a/config/datasource/{Name},
+  REST /a/config/versioning, /a/config/datasource/{Name} (read only),
        /a/user-meta/namespace, /a/config/frontend/plugin/meta.user,
        /a/tree/admin/stat, /a/workspace, /a/acl, /a/user/{Login}
   CLI  cells admin user token (short-lived admin PAT, never printed)
        cells admin file mkdir (binding root folder in the admin tree)
 
 No SQL, no config-store file edit, no credential or token is printed.
+
+The binding datasource is not created here: the running server holds the
+configuration and the vault in memory and rewrites both files whole on every
+save (common/config/file/opener_file.go, no reload), so a datasource created
+through the running server was saved with a configuration predating the
+post-start key verification (resurrecting a cleared previous credential), the
+REST handler gave it a new vault entry and moved its object service onto it
+(desynchronising the other datasources), and it was only served after a
+restart. The image entrypoint creates it before the server starts
+(cells admin datasource ensure, CELLS_BINDING_DATASOURCE and
+CELLS_BINDING_VERSIONING_POLICY passed to the container), like the install
+creates the default datasources; this script reads it back.
 
 Why each item is required (verified in this fork):
   draft mode   idm/meta/client.go fromNodeMeta/fromAmzHeaders map Draft-Mode to
@@ -20,7 +32,10 @@ Why each item is required (verified in this fork):
                ignored, so it must exist, be boolean and be writable.
   versioning   data/versions/init.go PolicyForNode: a datasource without a
                versioning policy keeps no revisions; governed draft promote and
-               list_revisions need them.
+               list_revisions need them. Set when the entrypoint creates the
+               datasource; an existing datasource with another policy is
+               refused there (the Cells console changes it and versions the
+               existing files).
   workspace    the binding's nativeScopeRef/nativeRootRef. A datasource root
                (DATASOURCE:<ds>) is not a node UUID (common/nodes/uuid
                handler-uuid-workspace.go resolves node UUIDs only against real
@@ -39,8 +54,8 @@ Environment (controlled deploy env; deploy/components/file-storage.env.template)
   CELLS_START_TIMEOUT_SECONDS       overall deadline
   CELLS_DRAFT_NAMESPACE             boolean usermeta-* namespace for Draft Mode
   CELLS_BINDING_DATASOURCE          datasource holding the binding root
-                                    (created LOCAL beside the existing local
-                                    datasources when missing)
+                                    (created LOCAL flat beside the existing
+                                    local datasources by the entrypoint)
   CELLS_BINDING_VERSIONING_POLICY   existing versioning policy id (e.g. keep-all)
   CELLS_BINDING_ROOT_FOLDER         folder name directly under that datasource
   CELLS_BINDING_WORKSPACE_SLUG      binding workspace slug
@@ -57,7 +72,6 @@ Environment (controlled deploy env; deploy/components/file-storage.env.template)
 import json
 import os
 import pathlib
-import posixpath
 import re
 import stat
 import subprocess
@@ -229,30 +243,17 @@ def wait_ready(native, deadline):
             time.sleep(5)
 
 
-def ensure_datasource(native, s, changes):
+def ensure_datasource(native, s):
+    """Read back the binding datasource the entrypoint created before start."""
     policies = native.call("GET", "config/versioning").get("Policies") or []
     require(any(p.get("Uuid") == s["policy"] for p in policies), "versioning policy is not defined in this instance")
-    sources = {d.get("Name"): d for d in native.call("GET", "config/datasource").get("DataSources") or []}
-    current = sources.get(s["datasource"])
-    if current is None:
-        parents = {posixpath.dirname((d.get("StorageConfiguration") or {}).get("folder", "").rstrip("/"))
-                   for d in sources.values() if d.get("StorageType", "LOCAL") == "LOCAL" and not d.get("PeerAddress")}
-        require(len(parents) == 1 and "" not in parents, "cannot place a new LOCAL datasource: existing local datasources do not share one parent folder")
-        folder = posixpath.join(parents.pop(), s["datasource"])
-        native.call("POST", "config/datasource/" + s["datasource"], {
-            "Name": s["datasource"], "StorageType": "LOCAL", "EncryptionMode": "CLEAR", "FlatStorage": True,
-            "StorageConfiguration": {"folder": folder, "normalize": "false", "create": "true"},
-            "VersioningPolicyName": s["policy"]})
-        changes.append("datasource created with versioning policy")
-    elif current.get("VersioningPolicyName") != s["policy"]:
-        require(not current.get("Disabled"), "binding datasource is disabled")
-        # The whole native object is posted back: ApiSecret is the vault
-        # reference the original handler keeps (discovery/config/rest PutDataSource).
-        native.call("POST", "config/datasource/" + s["datasource"], dict(current, VersioningPolicyName=s["policy"]))
-        changes.append("datasource versioning policy attached")
-    observed = native.call("GET", "config/datasource/" + s["datasource"])
-    require(observed.get("Name") == s["datasource"] and observed.get("VersioningPolicyName") == s["policy"] and not observed.get("Disabled"),
-            "binding datasource read-back differs (versioning policy not attached)")
+    observed = native.call("GET", "config/datasource/" + s["datasource"], missing=True)
+    require(observed is not None and observed.get("Name") == s["datasource"],
+            "binding datasource does not exist: the image entrypoint creates it before start (cells admin datasource ensure); redeploy with CELLS_BINDING_DATASOURCE passed to the container")
+    require(observed.get("StorageType", "LOCAL") == "LOCAL" and observed.get("FlatStorage") is True and not observed.get("Disabled"),
+            "binding datasource must be an enabled LOCAL flat datasource")
+    require(observed.get("VersioningPolicyName") == s["policy"],
+            "binding datasource has another versioning policy; change it in the Cells console (it also versions the existing files)")
 
 
 def namespace_ok(ns):
@@ -414,7 +415,7 @@ def reconcile(s, native, cli, deadline):
     changes = []
     wait_ready(native, deadline)
     refuse_shared_datasource(native, s)
-    ensure_datasource(native, s, changes)
+    ensure_datasource(native, s)
     ensure_draft_mode(native, s, changes)
     path, root = ensure_root(native, cli, s, deadline, changes)
     workspace = ensure_workspace(native, s, path, root, changes)
