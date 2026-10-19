@@ -88,7 +88,7 @@
     "resourceId": {
       "type": "string",
       "format": "uuid",
-      "description": "Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影"
+      "description": "Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable / agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与 explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace 解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的 agent.installation.upgrade"
     },
     "resourceVersion": {
       "type": "integer",
@@ -170,7 +170,7 @@
     "originalActionExecutionId": {
       "type": "string",
       "format": "uuid",
-      "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析"
+      "description": "任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent 回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展 DD-84），其余规则不变"
     },
     "applicationBindingCreate": {
       "$ref": "../domain/application_binding_create.schema.json"

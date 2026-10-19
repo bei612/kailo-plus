@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_transcript_file_change_kind.schema.json",
+  "title": "AgentTranscriptFileChangeKind",
+  "description": "Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。",
+  "type": "string",
+  "enum": [
+    "ADD",
+    "DELETE",
+    "UPDATE"
+  ]
+}

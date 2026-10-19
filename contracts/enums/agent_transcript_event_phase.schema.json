@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_transcript_event_phase.schema.json",
+  "title": "AgentTranscriptEventPhase",
+  "description": "实时转写帧的来源通知：item/started、item/completed、turn/started、turn/completed（SF-COD-17）。只转发 Core 已从同一 Installation 原生进程读到的通知，不合成。",
+  "type": "string",
+  "enum": [
+    "ITEM_STARTED",
+    "ITEM_COMPLETED",
+    "TURN_STARTED",
+    "TURN_COMPLETED"
+  ]
+}

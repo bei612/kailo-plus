@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_transcript_item.schema.json",
+  "title": "AgentTranscriptItem",
+  "description": "DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或 item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "itemId",
+    "turnId",
+    "kind",
+    "nativeType"
+  ],
+  "properties": {
+    "itemId": {
+      "type": "string",
+      "description": "原生 ThreadItem.id。"
+    },
+    "turnId": {
+      "type": "string",
+      "description": "所属原生 turn ID。"
+    },
+    "kind": {
+      "$ref": "../enums/agent_transcript_item_kind.schema.json"
+    },
+    "nativeType": {
+      "type": "string",
+      "description": "原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。"
+    },
+    "status": {
+      "$ref": "../enums/agent_transcript_item_status.schema.json"
+    },
+    "startedAtMs": {
+      "type": "integer",
+      "description": "item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。"
+    },
+    "completedAtMs": {
+      "type": "integer",
+      "description": "item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。"
+    },
+    "text": {
+      "type": "string",
+      "description": "USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。"
+    },
+    "phase": {
+      "$ref": "../enums/agent_transcript_message_phase.schema.json"
+    },
+    "reasoningSummary": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "REASONING 的 summary 段。"
+    },
+    "reasoningContent": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "REASONING 的原文段（原生提供时）。"
+    },
+    "command": {
+      "type": "string",
+      "description": "COMMAND_EXECUTION 的命令。"
+    },
+    "cwd": {
+      "type": "string",
+      "description": "COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。"
+    },
+    "aggregatedOutput": {
+      "type": "string",
+      "description": "COMMAND_EXECUTION 的 stdout/stderr 聚合输出。"
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "durationMs": {
+      "type": "integer",
+      "description": "COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。"
+    },
+    "fileChanges": {
+      "type": "array",
+      "description": "FILE_CHANGE 的逐文件变更。",
+      "items": {
+        "title": "AgentTranscriptFileChange",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "changeKind",
+          "diff"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "changeKind": {
+            "$ref": "../enums/agent_transcript_file_change_kind.schema.json"
+          },
+          "movePath": {
+            "type": "string",
+            "description": "UPDATE 改名时的目标路径。"
+          },
+          "diff": {
+            "type": "string",
+            "description": "原生 unified diff 文本。"
+          }
+        }
+      }
+    },
+    "server": {
+      "type": "string",
+      "description": "MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。"
+    },
+    "tool": {
+      "type": "string",
+      "description": "MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。"
+    },
+    "argumentsJson": {
+      "type": "string",
+      "description": "工具调用参数的 JSON 文本（原生 arguments 原样序列化）。"
+    },
+    "resultText": {
+      "type": "string",
+      "description": "工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。"
+    },
+    "errorText": {
+      "type": "string",
+      "description": "MCP_TOOL_CALL 的原生 error.message。"
+    },
+    "query": {
+      "type": "string",
+      "description": "WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。"
+    }
+  }
+}

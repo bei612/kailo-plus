@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_respond_to_mode.schema.json",
+  "title": "AgentRespondToMode",
+  "description": "原 Buzz respondTo 在 Kailo 的映射（DD-125(6)、05 §2.10）：OWNER_ONLY ≙ 默认（只有 owner、Workspace manage 与 Tenant manage 持有使用权），ALLOWLIST ≙ 至少一名成员经 agent.installation.use.grant 显式授予。原 anyone 不提供：频道成员关系不推导业务 Resource permission（10 §3）。",
+  "type": "string",
+  "enum": [
+    "OWNER_ONLY",
+    "ALLOWLIST"
+  ]
+}

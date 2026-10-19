@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_transcript_message_phase.schema.json",
+  "title": "AgentTranscriptMessagePhase",
+  "description": "Codex agentMessage 的 phase（commentary / final_answer）；原生缺省 phase 的旧消息省略本字段。",
+  "type": "string",
+  "enum": [
+    "COMMENTARY",
+    "FINAL_ANSWER"
+  ]
+}

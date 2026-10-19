@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_active_turn_view.schema.json",
+  "title": "AgentActiveTurnView",
+  "description": "DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installationId",
+    "invocationId",
+    "originalActionExecutionId",
+    "rootEventId",
+    "projectionGeneration"
+  ],
+  "properties": {
+    "installationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agentPubkey": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。"
+    },
+    "invocationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "originalActionExecutionId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。"
+    },
+    "rootEventId": {
+      "type": "string",
+      "description": "AgentSession 根引用。"
+    },
+    "projectionGeneration": {
+      "type": "integer"
+    },
+    "threadId": {
+      "type": "string",
+      "description": "AgentSession 的原生 thread ID。"
+    },
+    "turnId": {
+      "type": "string",
+      "description": "已记录的原生 turn ID；派发结果尚未记录时省略。"
+    },
+    "startedAt": {
+      "type": "string",
+      "description": "原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。"
+    },
+    "cancelActionKey": {
+      "type": "string",
+      "description": "DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原 Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。"
+    }
+  }
+}

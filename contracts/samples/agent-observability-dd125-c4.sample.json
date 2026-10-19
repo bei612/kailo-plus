@@ -1,0 +1,134 @@
+{
+  "disableCommand": {
+    "actionKey": "agent.installation.disable",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c41",
+    "resourceId": "00000000-0000-4000-8000-000000000c40",
+    "resourceVersion": 4,
+    "explicitConfirmation": true
+  },
+  "enableCommand": {
+    "actionKey": "agent.installation.enable",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c42",
+    "resourceId": "00000000-0000-4000-8000-000000000c40",
+    "resourceVersion": 5,
+    "explicitConfirmation": true
+  },
+  "restartCommand": {
+    "actionKey": "agent.installation.upgrade",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c43",
+    "workspaceId": "00000000-0000-4000-8000-000000000c44",
+    "resourceId": "00000000-0000-4000-8000-000000000c40",
+    "resourceVersion": 6,
+    "assetId": "00000000-0000-4000-8000-000000000c45",
+    "assetVersion": 2
+  },
+  "interruptCommand": {
+    "actionKey": "task.cancel.agent.invoke.v1",
+    "idempotencyKey": "00000000-0000-4000-8000-000000000c46",
+    "originalActionExecutionId": "00000000-0000-4000-8000-000000000c47"
+  },
+  "installationView": {
+    "resourceId": "00000000-0000-4000-8000-000000000c40",
+    "workspaceId": "00000000-0000-4000-8000-000000000c44",
+    "agentResourceId": "00000000-0000-4000-8000-000000000c48",
+    "pinnedVersionAssetId": "00000000-0000-4000-8000-000000000c45",
+    "agentPrincipalId": "00000000-0000-4000-8000-000000000c49",
+    "ownerPrincipalId": "00000000-0000-4000-8000-000000000c4a",
+    "agentPrincipalState": "ACTIVE",
+    "resourceVersion": 6,
+    "resourceState": "ACTIVE",
+    "state": "ACTIVE",
+    "canUpgrade": true,
+    "canDisable": true,
+    "canEnable": false,
+    "canRestart": true,
+    "canAudit": true
+  },
+  "disabledView": {
+    "resourceId": "00000000-0000-4000-8000-000000000c40",
+    "workspaceId": "00000000-0000-4000-8000-000000000c44",
+    "agentResourceId": "00000000-0000-4000-8000-000000000c48",
+    "pinnedVersionAssetId": "00000000-0000-4000-8000-000000000c45",
+    "agentPrincipalId": "00000000-0000-4000-8000-000000000c49",
+    "ownerPrincipalId": "00000000-0000-4000-8000-000000000c4a",
+    "agentPrincipalState": "ACTIVE",
+    "resourceVersion": 5,
+    "resourceState": "ACTIVE",
+    "state": "DISABLED",
+    "canEnable": true
+  },
+  "usePage": {
+    "installationId": "00000000-0000-4000-8000-000000000c40",
+    "resourceVersion": 6,
+    "respondTo": "ALLOWLIST",
+    "members": [
+      {"principalId": "00000000-0000-4000-8000-000000000c4b", "displayName": "Mei", "requested": true, "effective": true, "canGrant": true, "canRevoke": true}
+    ]
+  },
+  "transcriptPage": {
+    "installationId": "00000000-0000-4000-8000-000000000c40",
+    "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "projectionGeneration": 3,
+    "threadId": "019a0000-0000-7000-8000-000000000c50",
+    "items": [
+      {"itemId": "u-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "USER_MESSAGE", "nativeType": "userMessage", "text": "@Scout summarize the release thread"},
+      {"itemId": "r-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "REASONING", "nativeType": "reasoning", "reasoningSummary": ["Reading the thread context"], "reasoningContent": ["The user wants a summary."]},
+      {"itemId": "c-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "COMMAND_EXECUTION", "nativeType": "commandExecution", "status": "FAILED", "startedAtMs": 1760860800000, "completedAtMs": 1760860801500, "command": "git log -1", "cwd": "/var/lib/platform/agent-runtime/00000000-0000-4000-8000-000000000c40", "aggregatedOutput": "fatal: not a git repository", "exitCode": 128, "durationMs": 1500},
+      {"itemId": "f-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "FILE_CHANGE", "nativeType": "fileChange", "status": "COMPLETED", "fileChanges": [{"path": "notes.md", "changeKind": "UPDATE", "movePath": "release-notes.md", "diff": "@@ -1 +1 @@\n-draft\n+final\n"}]},
+      {"itemId": "m-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "MCP_TOOL_CALL", "nativeType": "mcpToolCall", "status": "COMPLETED", "server": "platform", "tool": "memory_entry_read", "argumentsJson": "{\"slug\":\"release\"}", "resultText": "Release is on Friday.", "durationMs": 42},
+      {"itemId": "p-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "PLAN", "nativeType": "plan", "text": "1. Read\n2. Summarize"},
+      {"itemId": "a-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "AGENT_MESSAGE", "nativeType": "agentMessage", "phase": "FINAL_ANSWER", "text": "The release ships Friday."},
+      {"itemId": "o-1", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "OTHER", "nativeType": "contextCompaction"}
+    ],
+    "nextCursor": "opaque-cursor",
+    "activeTurn": {
+      "installationId": "00000000-0000-4000-8000-000000000c40",
+      "agentPubkey": "abababababababababababababababababababababababababababababababab",
+      "invocationId": "00000000-0000-4000-8000-000000000c52",
+      "originalActionExecutionId": "00000000-0000-4000-8000-000000000c47",
+      "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "projectionGeneration": 3,
+      "threadId": "019a0000-0000-7000-8000-000000000c50",
+      "turnId": "019a0000-0000-7000-8000-000000000c51",
+      "startedAt": "2026-10-19T08:00:00Z",
+      "cancelActionKey": "task.cancel.agent.invoke.v1"
+    }
+  },
+  "transcriptPageEmpty": {
+    "installationId": "00000000-0000-4000-8000-000000000c40",
+    "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "projectionGeneration": 3,
+    "items": []
+  },
+  "itemEvent": {
+    "installationId": "00000000-0000-4000-8000-000000000c40",
+    "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "projectionGeneration": 3,
+    "threadId": "019a0000-0000-7000-8000-000000000c50",
+    "turnId": "019a0000-0000-7000-8000-000000000c51",
+    "phase": "ITEM_STARTED",
+    "atMs": 1760860800000,
+    "item": {"itemId": "c-2", "turnId": "019a0000-0000-7000-8000-000000000c51", "kind": "DYNAMIC_TOOL_CALL", "nativeType": "dynamicToolCall", "status": "IN_PROGRESS", "startedAtMs": 1760860800000, "server": "buzz", "tool": "send_message", "argumentsJson": "{}"}
+  },
+  "turnEvent": {
+    "installationId": "00000000-0000-4000-8000-000000000c40",
+    "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "projectionGeneration": 3,
+    "threadId": "019a0000-0000-7000-8000-000000000c50",
+    "turnId": "019a0000-0000-7000-8000-000000000c51",
+    "phase": "TURN_COMPLETED",
+    "atMs": 1760860805000
+  },
+  "activeTurnPage": {
+    "workspaceId": "00000000-0000-4000-8000-000000000c44",
+    "turns": [
+      {
+        "installationId": "00000000-0000-4000-8000-000000000c40",
+        "invocationId": "00000000-0000-4000-8000-000000000c52",
+        "originalActionExecutionId": "00000000-0000-4000-8000-000000000c47",
+        "rootEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "projectionGeneration": 3
+      }
+    ]
+  }
+}

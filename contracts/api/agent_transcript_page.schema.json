@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_transcript_page.schema.json",
+  "title": "AgentTranscriptPage",
+  "description": "GET /api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按 AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core 不复制正文。nextCursor 绑定读者、Installation 与 Session，原生 cursor 不外露。activeTurn 只在该 Session 有运行中回合时给出。Session 尚无原生 thread 时 items 为空且省略 threadId。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installationId",
+    "rootEventId",
+    "projectionGeneration",
+    "items"
+  ],
+  "properties": {
+    "installationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rootEventId": {
+      "type": "string"
+    },
+    "projectionGeneration": {
+      "type": "integer"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "agent_transcript_item.schema.json"
+      }
+    },
+    "nextCursor": {
+      "type": "string"
+    },
+    "activeTurn": {
+      "$ref": "agent_active_turn_view.schema.json"
+    }
+  }
+}

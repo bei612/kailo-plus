@@ -1076,3 +1076,35 @@ fn collaboration_dd125_c3_canvas_link_preview_and_gif_preserve_fields_and_absenc
     roundtrip::<contracts::WebGifSearchView>(&value["gifSearch"]);
     roundtrip::<contracts::WebGifShareRequest>(&value["gifShare"]);
 }
+
+#[test]
+fn agent_observability_dd125_c4_lifecycle_transcript_and_active_turns_preserve_fields() {
+    // DD-125(6): lifecycle commands carry only resourceId/resourceVersion/explicitConfirmation,
+    // restart is a same-version upgrade, transcript items are the flat Codex item adapter shape
+    // and respondTo never has an "anyone" value. Absent optional fields stay absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            sample_path().with_file_name("agent-observability-dd125-c4.sample.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    for key in ["disableCommand", "enableCommand", "restartCommand", "interruptCommand"] {
+        roundtrip::<contracts::ActionCommand>(&value[key]);
+    }
+    roundtrip::<contracts::AgentInstallationView>(&value["installationView"]);
+    roundtrip::<contracts::AgentInstallationView>(&value["disabledView"]);
+    roundtrip::<contracts::AgentInstallationUsePage>(&value["usePage"]);
+    roundtrip::<contracts::AgentTranscriptPage>(&value["transcriptPage"]);
+    roundtrip::<contracts::AgentTranscriptPage>(&value["transcriptPageEmpty"]);
+    roundtrip::<contracts::AgentTranscriptEvent>(&value["itemEvent"]);
+    roundtrip::<contracts::AgentTranscriptEvent>(&value["turnEvent"]);
+    roundtrip::<contracts::AgentActiveTurnPage>(&value["activeTurnPage"]);
+    let mut anyone = value["usePage"].clone();
+    anyone["respondTo"] = serde_json::json!("ANYONE");
+    assert!(serde_json::from_value::<contracts::AgentInstallationUsePage>(anyone).is_err());
+}

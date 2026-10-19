@@ -10,6 +10,7 @@
     "installationId": {"type": "string", "format": "uuid"},
     "resourceVersion": {"type": "integer"},
     "pendingActionExecutionId": {"type": "string", "format": "uuid"},
+    "respondTo": {"$ref": "../enums/agent_respond_to_mode.schema.json", "description": "DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员 agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。"},
     "members": {
       "type": "array",
       "items": {

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_transcript_event.schema.json",
+  "title": "AgentTranscriptEvent",
+  "description": "GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一 Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS 审计。帧不落库，断线后以分页读取补齐。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "installationId",
+    "rootEventId",
+    "projectionGeneration",
+    "threadId",
+    "turnId",
+    "phase"
+  ],
+  "properties": {
+    "installationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rootEventId": {
+      "type": "string"
+    },
+    "projectionGeneration": {
+      "type": "integer"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    },
+    "phase": {
+      "$ref": "../enums/agent_transcript_event_phase.schema.json"
+    },
+    "atMs": {
+      "type": "integer",
+      "description": "原生通知时间（item 的 startedAtMs/completedAtMs 或 turn 通知的 emittedAtMs），Unix 毫秒。"
+    },
+    "item": {
+      "$ref": "agent_transcript_item.schema.json",
+      "description": "ITEM_STARTED / ITEM_COMPLETED 时给出。"
+    }
+  }
+}

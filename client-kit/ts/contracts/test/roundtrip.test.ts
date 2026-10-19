@@ -1019,3 +1019,49 @@ test("DD-125 C3 canvas, link-preview and GIF contracts preserve fields and absen
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-125 C4 Agent lifecycle, transcript and active-turn contracts preserve fields and absence", () => {
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  type View = import("../src/generated/contracts.js").AgentInstallationView;
+  type UsePage = import("../src/generated/contracts.js").AgentInstallationUsePage;
+  type Page = import("../src/generated/contracts.js").AgentTranscriptPage;
+  type Item = import("../src/generated/contracts.js").AgentTranscriptItem;
+  type Event = import("../src/generated/contracts.js").AgentTranscriptEvent;
+  type Turn = import("../src/generated/contracts.js").AgentActiveTurnView;
+  type TurnPage = import("../src/generated/contracts.js").AgentActiveTurnPage;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-observability-dd125-c4.sample.json", import.meta.url), "utf8"));
+  const command = (row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey, workspaceId: row.workspaceId,
+    resourceId: row.resourceId, resourceVersion: row.resourceVersion, assetId: row.assetId, assetVersion: row.assetVersion,
+    originalActionExecutionId: row.originalActionExecutionId, explicitConfirmation: row.explicitConfirmation});
+  const view = (row: View) => ({resourceId: row.resourceId, workspaceId: row.workspaceId, agentResourceId: row.agentResourceId,
+    pinnedVersionAssetId: row.pinnedVersionAssetId, agentPrincipalId: row.agentPrincipalId, ownerPrincipalId: row.ownerPrincipalId,
+    agentPrincipalState: row.agentPrincipalState, resourceVersion: row.resourceVersion, resourceState: row.resourceState, state: row.state,
+    canUpgrade: row.canUpgrade, canDisable: row.canDisable, canEnable: row.canEnable, canRestart: row.canRestart, canAudit: row.canAudit});
+  const usePage = (row: UsePage) => ({installationId: row.installationId, resourceVersion: row.resourceVersion, respondTo: row.respondTo,
+    members: row.members.map(member => ({principalId: member.principalId, displayName: member.displayName, requested: member.requested,
+      effective: member.effective, canGrant: member.canGrant, canRevoke: member.canRevoke}))});
+  const item = (row: Item) => ({itemId: row.itemId, turnId: row.turnId, kind: row.kind, nativeType: row.nativeType, status: row.status,
+    startedAtMs: row.startedAtMs, completedAtMs: row.completedAtMs, text: row.text, phase: row.phase,
+    reasoningSummary: row.reasoningSummary, reasoningContent: row.reasoningContent, command: row.command, cwd: row.cwd,
+    aggregatedOutput: row.aggregatedOutput, exitCode: row.exitCode, durationMs: row.durationMs,
+    fileChanges: row.fileChanges?.map(change => ({path: change.path, changeKind: change.changeKind, movePath: change.movePath, diff: change.diff})),
+    server: row.server, tool: row.tool, argumentsJson: row.argumentsJson, resultText: row.resultText, errorText: row.errorText, query: row.query});
+  const turn = (row: Turn) => ({installationId: row.installationId, agentPubkey: row.agentPubkey, invocationId: row.invocationId,
+    originalActionExecutionId: row.originalActionExecutionId, rootEventId: row.rootEventId, projectionGeneration: row.projectionGeneration,
+    threadId: row.threadId, turnId: row.turnId, startedAt: row.startedAt, cancelActionKey: row.cancelActionKey});
+  const page = (row: Page) => ({installationId: row.installationId, rootEventId: row.rootEventId, projectionGeneration: row.projectionGeneration,
+    threadId: row.threadId, items: row.items.map(item), nextCursor: row.nextCursor, activeTurn: row.activeTurn && turn(row.activeTurn)});
+  const event = (row: Event) => ({installationId: row.installationId, rootEventId: row.rootEventId, projectionGeneration: row.projectionGeneration,
+    threadId: row.threadId, turnId: row.turnId, phase: row.phase, atMs: row.atMs, item: row.item && item(row.item)});
+  const turnPage = (row: TurnPage) => ({workspaceId: row.workspaceId, turns: row.turns.map(turn)});
+  const actual = {
+    disableCommand: command(value.disableCommand), enableCommand: command(value.enableCommand),
+    restartCommand: command(value.restartCommand), interruptCommand: command(value.interruptCommand),
+    installationView: view(value.installationView), disabledView: view(value.disabledView),
+    usePage: usePage(value.usePage),
+    transcriptPage: page(value.transcriptPage), transcriptPageEmpty: page(value.transcriptPageEmpty),
+    itemEvent: event(value.itemEvent), turnEvent: event(value.turnEvent),
+    activeTurnPage: turnPage(value.activeTurnPage),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

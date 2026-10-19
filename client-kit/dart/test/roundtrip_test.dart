@@ -1213,4 +1213,35 @@ void main() {
       );
     }
   });
+  test('DD-125 C4 Agent lifecycle and transcript contracts round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/agent-observability-dd125-c4.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'disableCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'enableCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'restartCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'interruptCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'installationView': (v) => AgentInstallationView.fromJson(v).toJson(),
+      'disabledView': (v) => AgentInstallationView.fromJson(v).toJson(),
+      'usePage': (v) => AgentInstallationUsePage.fromJson(v).toJson(),
+      'transcriptPage': (v) => AgentTranscriptPage.fromJson(v).toJson(),
+      'transcriptPageEmpty': (v) => AgentTranscriptPage.fromJson(v).toJson(),
+      'itemEvent': (v) => AgentTranscriptEvent.fromJson(v).toJson(),
+      'turnEvent': (v) => AgentTranscriptEvent.fromJson(v).toJson(),
+      'activeTurnPage': (v) => AgentActiveTurnPage.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
 }

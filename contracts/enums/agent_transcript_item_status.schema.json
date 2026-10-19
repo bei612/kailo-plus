@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_transcript_item_status.schema.json",
+  "title": "AgentTranscriptItemStatus",
+  "description": "Codex commandExecution/fileChange/mcpToolCall/dynamicToolCall 的原生状态（inProgress/completed/failed/declined）在转写中的封闭投影；无状态的条目省略。",
+  "type": "string",
+  "enum": [
+    "IN_PROGRESS",
+    "COMPLETED",
+    "FAILED",
+    "DECLINED"
+  ]
+}

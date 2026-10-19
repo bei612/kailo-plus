@@ -1676,3 +1676,46 @@ func TestCollaborationDD125C3Roundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentObservabilityDD125C4Roundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-observability-dd125-c4.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"disableCommand":      new(generated.ActionCommand),
+		"enableCommand":       new(generated.ActionCommand),
+		"restartCommand":      new(generated.ActionCommand),
+		"interruptCommand":    new(generated.ActionCommand),
+		"installationView":    new(generated.AgentInstallationView),
+		"disabledView":        new(generated.AgentInstallationView),
+		"usePage":             new(generated.AgentInstallationUsePage),
+		"transcriptPage":      new(generated.AgentTranscriptPage),
+		"transcriptPageEmpty": new(generated.AgentTranscriptPage),
+		"itemEvent":           new(generated.AgentTranscriptEvent),
+		"turnEvent":           new(generated.AgentTranscriptEvent),
+		"activeTurnPage":      new(generated.AgentActiveTurnPage),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}

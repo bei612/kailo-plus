@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_transcript_item_kind.schema.json",
+  "title": "AgentTranscriptItemKind",
+  "description": "DD-125(6)、SF-COD-17：Codex app-server 持久 ThreadItem 的类型标签在转写线格式中的封闭投影。BFF 只把固定 Codex 的 userMessage/agentMessage/plan/reasoning/commandExecution/fileChange/mcpToolCall/dynamicToolCall/webSearch/imageView/contextCompaction 映射为对应值，其余原生类型一律 OTHER 并保留 nativeType；客户端按原 Buzz 转写条目（TranscriptItem）呈现。",
+  "type": "string",
+  "enum": [
+    "USER_MESSAGE",
+    "AGENT_MESSAGE",
+    "PLAN",
+    "REASONING",
+    "COMMAND_EXECUTION",
+    "FILE_CHANGE",
+    "MCP_TOOL_CALL",
+    "DYNAMIC_TOOL_CALL",
+    "WEB_SEARCH",
+    "IMAGE_VIEW",
+    "CONTEXT_COMPACTION",
+    "OTHER"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_active_turn_page.schema.json",
+  "title": "AgentActiveTurnPage",
+  "description": "GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有 Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "turns"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "turns": {
+      "type": "array",
+      "items": {
+        "$ref": "agent_active_turn_view.schema.json"
+      }
+    }
+  }
+}

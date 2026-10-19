@@ -20,6 +20,10 @@
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},
     "state": {"$ref": "../enums/agent_installation_state.schema.json"},
     "canUpgrade": {"type": "boolean", "description": "当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。"},
+    "canDisable": {"type": "boolean", "description": "DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。不代表已准入，旧服务缺省不显示。"},
+    "canEnable": {"type": "boolean", "description": "DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。"},
+    "canRestart": {"type": "boolean", "description": "DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本 agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍 PUBLISHED 时为 true；仍沿升级审批与排空。"},
+    "canAudit": {"type": "boolean", "description": "DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。"},
     "activeProjectionGeneration": {"type": "integer", "minimum": 1},
     "channelBinding": {
       "type": "object",
