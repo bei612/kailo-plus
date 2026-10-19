@@ -212,7 +212,7 @@ const binding = (state: HuddleState): HuddleView => ({
   state,
   version: 1,
   operationId: "operation",
-  createdAt: "2026-10-19T00:00:00Z",
+  createdAt: new Date("2026-10-19T00:00:00Z"),
 });
 
 function backend(items: HuddleView[], events: HuddleLifecycleEvent[]) {
