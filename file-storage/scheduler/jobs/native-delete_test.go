@@ -15,6 +15,8 @@ import (
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/protocol"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/errors"
+	"github.com/pydio/cells/v5/common/proto/tree"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -25,7 +27,8 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 	const key = "00000000-0000-4000-8000-000000000004"
 	const external = "00000000-0000-4000-8000-000000000005"
 	const root = "00000000-0000-4000-8000-000000000006"
-	for _, scenario := range []string{"pending-then-admitted", "permission-denied", "pending-with-ticket", "different-deadline", "generation-drift", "changed-input", "cancelled", "revoked-between-writes"} {
+	const file = "00000000-0000-4000-8000-000000000007"
+	for _, scenario := range []string{"pending-then-admitted", "permission-denied", "pending-with-ticket", "different-deadline", "generation-drift", "changed-input", "cancelled", "revoked-between-writes", "admitted-node", "admitted-drift"} {
 		t.Run(scenario, func(t *testing.T) {
 			deadline := time.Now().Add(time.Minute).UTC().Truncate(time.Second).Format("2006-01-02T15:04:05.000Z")
 			claims := map[string]interface{}{"tenant_id": binding, "actor_principal_id": actor, "initiating_human_principal_id": actor,
@@ -86,9 +89,15 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 				if scenario == "generation-drift" {
 					generation = 2
 				}
+				// A Resource admitted on a node beneath the binding root (file_storage@2
+				// native_file) is a valid fresh target, as at the execute consumer.
+				nativeType, nativeRef := "folder", root
+				if scenario == "admitted-node" {
+					nativeType, nativeRef = "node", file
+				}
 				json.NewEncoder(w).Encode(map[string]interface{}{"actionExecutionId": key, "operationId": key, "authorizationMinZedToken": "fresh",
 					"bindingGeneration": generation, "nativeTaskDeadline": deadline, "targetResource": map[string]interface{}{
-						"resourceId": root, "nativeType": "folder", "nativeRef": root, "nativeInstanceRef": "isolated", "nativeScopeRef": binding}})
+						"resourceId": root, "nativeType": nativeType, "nativeRef": nativeRef, "nativeInstanceRef": "isolated", "nativeScopeRef": binding}})
 			}))
 			defer server.Close()
 			secret := filepath.Join(t.TempDir(), "client-secret")
@@ -121,8 +130,21 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 				cancel()
 				ctx = cancelled
 			}
+			if scenario == "admitted-drift" {
+				// Dispatch proved containment for the file node; a later step whose
+				// fresh ticket admits another node cannot borrow that proof.
+				ctx = context.WithValue(ctx, nativeDeleteContextKey{}, nativeDeleteDispatch{task: task, admitted: file})
+				ctx = context.WithValue(ctx, ClaimedTaskContextKey{}, true)
+				if err := FreshNativeDeleteStep(ctx, true); err == nil {
+					t.Fatal("later native step accepted a different admitted node")
+				}
+				if admissions != 1 || peps != 1 || !proto.Equal(task, before) {
+					t.Fatal("admitted node drift retried or modified terminal evidence")
+				}
+				return
+			}
 			if scenario == "revoked-between-writes" {
-				ctx = context.WithValue(ctx, nativeDeleteContextKey{}, task)
+				ctx = context.WithValue(ctx, nativeDeleteContextKey{}, nativeDeleteDispatch{task: task, admitted: root})
 				ctx = context.WithValue(ctx, ClaimedTaskContextKey{}, true)
 				if err := FreshNativeDeleteStep(ctx, true); err != nil {
 					t.Fatal(err)
@@ -135,10 +157,14 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 				}
 				return
 			}
-			err = NativeDeleteFresh(ctx, task, true)
+			_, admitted, err := nativeDeleteFresh(ctx, task, true)
 			if scenario == "pending-then-admitted" {
-				if err != nil || admissions != 2 || peps != 1 {
+				if err != nil || admitted != root || admissions != 2 || peps != 1 {
 					t.Fatalf("same task handoff failed: %v admissions=%d peps=%d", err, admissions, peps)
+				}
+			} else if scenario == "admitted-node" {
+				if err != nil || admitted != file || admissions != 1 || peps != 1 {
+					t.Fatalf("admitted node beneath the binding root was refused: %v admitted=%s", err, admitted)
 				}
 			} else if err == nil {
 				t.Fatal("missing/changed authority reached the original mutation")
@@ -153,5 +179,64 @@ func TestNativeDeleteFreshWaitsOnlyForOriginalUnobservedReference(t *testing.T) 
 	}
 	if FreshNativeDeleteStep(context.Background(), true) == nil {
 		t.Fatal("lost task context became independent native authority")
+	}
+}
+
+func TestNativeDeleteDispatchContainmentIsTheExecuteRule(t *testing.T) {
+	const root = "00000000-0000-4000-8000-000000000006"
+	const folder = "00000000-0000-4000-8000-000000000007"
+	const file = "00000000-0000-4000-8000-000000000008"
+	const sibling = "00000000-0000-4000-8000-000000000009"
+	const outside = "00000000-0000-4000-8000-00000000000a"
+	const missing = "00000000-0000-4000-8000-00000000000b"
+	nodes := map[string]*tree.Node{
+		root:    {Uuid: root, Path: "pydiods1/kailo-root", Type: tree.NodeType_COLLECTION},
+		folder:  {Uuid: folder, Path: "pydiods1/kailo-root/folder", Type: tree.NodeType_COLLECTION},
+		file:    {Uuid: file, Path: "pydiods1/kailo-root/folder/conformance.txt", Type: tree.NodeType_LEAF},
+		sibling: {Uuid: sibling, Path: "pydiods1/kailo-root/other.txt", Type: tree.NodeType_LEAF},
+		outside: {Uuid: outside, Path: "pydiods1/kailo-root-other/file.txt", Type: tree.NodeType_LEAF},
+	}
+	reads := 0
+	read := func(id string) (*tree.Node, error) {
+		reads++
+		if node, found := nodes[id]; found {
+			return node, nil
+		}
+		return nil, errors.WithStack(errors.NodeNotFound)
+	}
+	cases := []struct {
+		name     string
+		admitted string
+		selected []string
+		allowed  bool
+	}{
+		{name: "file Resource deletes itself (file_storage@2 native_file)", admitted: file, selected: []string{file}, allowed: true},
+		{name: "binding root Resource", admitted: root, selected: []string{file, sibling}, allowed: true},
+		{name: "folder Resource subtree", admitted: folder, selected: []string{file}, allowed: true},
+		{name: "folder Resource itself", admitted: folder, selected: []string{folder}, allowed: true},
+		{name: "child dispatch re-proves only the Resource", admitted: file, allowed: true},
+		{name: "sibling outside the folder Resource", admitted: folder, selected: []string{sibling}},
+		{name: "another node than the file Resource", admitted: file, selected: []string{sibling}},
+		{name: "binding root through a node Resource", admitted: file, selected: []string{root}},
+		{name: "path prefix is not containment", admitted: root, selected: []string{outside}},
+		{name: "Resource outside the binding root", admitted: outside, selected: []string{outside}},
+		{name: "unreadable selected node", admitted: folder, selected: []string{missing}},
+		{name: "unreadable admitted node", admitted: missing},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := nativeDeleteContained(read, root, c.admitted, c.selected)
+			if (err == nil) != c.allowed {
+				t.Fatalf("containment decision %v, want allowed=%v", err, c.allowed)
+			}
+		})
+	}
+	reads = 0
+	if err := nativeDeleteContained(read, root, file, []string{file}); err != nil || reads != 2 {
+		t.Fatalf("admitted selected node was not proved from one read of root and node: %v reads=%d", err, reads)
+	}
+	nodes[root] = &tree.Node{Uuid: root, Path: "pydiods1/kailo-root", Type: tree.NodeType_LEAF}
+	if nativeDeleteContained(read, root, file, []string{file}) == nil {
+		t.Fatal("a binding root that is not a collection admitted a node")
 	}
 }

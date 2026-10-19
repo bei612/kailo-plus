@@ -15,6 +15,7 @@ import (
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/protocol"
 	"github.com/pydio/cells/v5/common/client/commons/jobsc"
+	"github.com/pydio/cells/v5/common/client/commons/treec"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/errors"
 	jobproto "github.com/pydio/cells/v5/common/proto/jobs"
@@ -43,35 +44,40 @@ func NewNativeDeleteTask(delivery auth.NativeDeleteDelivery, key, owner, nativeU
 	return newNativeWriteTask(delivery.Delete.NativeJobID, key, owner, intent)
 }
 
-// NativeDeleteFresh obtains a request-local ticket for the same persisted
+// nativeDeleteFresh obtains a request-local ticket for the same persisted
 // coordinator. Neither this callback nor Core can create or replay its steps.
-func NativeDeleteFresh(ctx context.Context, task *jobproto.Task, wait bool) error {
+// It returns the admitted Resource's native node exactly as the original
+// nativeActor consumer accepts it at execute: the binding root or a node
+// beneath it. Containment is a tree fact proved by AuthorizeNativeDeleteDispatch
+// before the first native effect, never by the ticket alone.
+func nativeDeleteFresh(ctx context.Context, task *jobproto.Task, wait bool) (auth.NativeDeleteDelivery, string, error) {
+	var delivery auth.NativeDeleteDelivery
+	refused := errors.WithStack(errors.StatusForbidden)
 	intent, err := NativeWriteTaskIntent(task)
 	if err != nil || intent.NativeTask == nil || task.TriggerOwner == "" || task.TriggerOwner == common.PydioSystemUsername || intent.Scope["action_key"] != "file_storage.delete@v2" {
-		return errors.WithStack(errors.StatusForbidden)
+		return delivery, "", refused
 	}
 	ref := intent.NativeTask
-	var delivery auth.NativeDeleteDelivery
 	if config.Get(ctx, "services", common.ServiceRestNamespace_+"n", "platform").Scan(&delivery) != nil ||
 		delivery.BindingID != intent.BindingID || delivery.Delete.NativeJobID != task.JobID || ref.NativeID != task.ID || ref.IdempotencyKey != task.ID ||
 		ref.NativeType != delivery.Delete.NativeType || ref.Generation <= 0 {
-		return errors.WithStack(errors.StatusForbidden)
+		return delivery, "", refused
 	}
 	principal, ok := intent.Scope["initiating_human_principal_id"].(string)
 	nativeUser, userErr := delivery.User(delivery.TenantID, principal, "HUMAN")
 	if !ok || userErr != nil || nativeUser != intent.NativeUserID || intent.Scope["tenant_id"] != delivery.TenantID {
-		return errors.WithStack(errors.StatusForbidden)
+		return delivery, "", refused
 	}
 	interval, err := time.ParseDuration(delivery.Delete.AdmissionPollInterval)
 	end, endErr := time.Parse(time.RFC3339Nano, ref.Deadline)
 	if err != nil || interval <= 0 || endErr != nil || !end.After(time.Now()) {
-		return errors.WithStack(errors.StatusForbidden)
+		return delivery, "", refused
 	}
 	ctx, cancel := context.WithDeadline(ctx, end)
 	defer cancel()
 	execution, ok := intent.Scope["action_execution_id"].(string)
 	if !ok {
-		return errors.WithStack(errors.StatusForbidden)
+		return delivery, "", refused
 	}
 	for {
 		token, arguments, admissionErr := delivery.NativeTaskAdmission(ctx, execution, map[string]interface{}{
@@ -80,29 +86,114 @@ func NativeDeleteFresh(ctx context.Context, task *jobproto.Task, wait bool) erro
 		if admissionErr == nil {
 			claims, target, generation, deadline, freshErr := delivery.AuthorizeNativeTask(ctx, token, arguments)
 			var envelope map[string]interface{}
+			admitted, _ := target["nativeRef"].(string)
 			if freshErr != nil || generation != ref.Generation || deadline != ref.Deadline ||
 				claims["external_execution_id"] != ref.ExternalExecutionID || claims["idempotency_key"] != task.ID ||
 				!NativeWriteTaskMatches(task, delivery.BindingID, nativeUser, claims) || json.Unmarshal([]byte(arguments), &envelope) != nil ||
-				target["nativeInstanceRef"] != delivery.NativeInstanceRef || target["nativeScopeRef"] != delivery.NativeScopeRef || target["nativeRef"] != delivery.NativeRootRef {
-				return errors.WithStack(errors.StatusForbidden)
+				target["nativeInstanceRef"] != delivery.NativeInstanceRef || target["nativeScopeRef"] != delivery.NativeScopeRef || !auth.NativeActorUUID(admitted) {
+				return delivery, "", refused
 			}
 			before, _ := json.Marshal(intent.InputReference)
 			after, _ := json.Marshal(envelope["input"])
 			if string(before) != string(after) {
-				return errors.WithStack(errors.StatusForbidden)
+				return delivery, "", refused
 			}
-			return nil
+			return delivery, admitted, nil
 		}
 		if !wait || !errors.Is(admissionErr, protocol.ErrNativeTaskReferencePending) {
-			return admissionErr
+			return delivery, "", admissionErr
 		}
 		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return delivery, "", ctx.Err()
 		case <-timer.C:
 		}
+	}
+}
+
+// NativeDeleteFresh re-admits a later native effect of the execution whose
+// dispatch admission is bound to ctx. The fresh ticket must still admit the
+// same Resource node that dispatch proved contained. It re-reads no tree: a
+// node this execution already deleted or recycled cannot refuse its own
+// remaining steps, and a different admitted node cannot borrow that proof.
+func NativeDeleteFresh(ctx context.Context, task *jobproto.Task) error {
+	bound, ok := ctx.Value(nativeDeleteContextKey{}).(nativeDeleteDispatch)
+	if !ok || task == nil || bound.task.GetJobID() != task.GetJobID() || bound.task.GetID() != task.GetID() {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	_, admitted, err := nativeDeleteFresh(ctx, task, false)
+	if err != nil {
+		return err
+	}
+	if admitted != bound.admitted {
+		return errors.WithStack(errors.StatusForbidden)
+	}
+	return nil
+}
+
+// nativeDeleteSelection is the frozen nativeObjectRefs of the original claim.
+func nativeDeleteSelection(intent *NativeWriteIntent) ([]string, error) {
+	values, ok := intent.InputReference["nativeObjectRefs"].([]interface{})
+	if !ok || len(values) == 0 {
+		return nil, errors.WithStack(errors.StatusForbidden)
+	}
+	selected := make([]string, 0, len(values))
+	for _, value := range values {
+		id, valid := value.(string)
+		if !valid || !auth.NativeActorUUID(id) {
+			return nil, errors.WithStack(errors.StatusForbidden)
+		}
+		selected = append(selected, id)
+	}
+	return selected, nil
+}
+
+// nativeDeleteContained re-proves at the worker, before the first native
+// effect, the containment the original nativeActor consumer proved at execute
+// (gateway/restv2/native-actor.go), with the same rule: the admitted Resource
+// is the binding root or beneath it, and every selected node is that Resource
+// itself or beneath it. All nodes come from one reader, so paths compare.
+func nativeDeleteContained(read func(string) (*tree.Node, error), rootRef, admittedRef string, selected []string) error {
+	refused := errors.WithStack(errors.StatusForbidden)
+	root, err := read(rootRef)
+	if err != nil {
+		return refused
+	}
+	admitted := root
+	if admittedRef != rootRef {
+		if admitted, err = read(admittedRef); err != nil {
+			return refused
+		}
+	}
+	if !auth.NativeAdmittedNode(root, admitted, admitted) {
+		return refused
+	}
+	for _, id := range selected {
+		node := admitted
+		if id != admittedRef {
+			if node, err = read(id); err != nil {
+				return refused
+			}
+		}
+		if !auth.NativeAdmittedNode(root, admitted, node) {
+			return refused
+		}
+	}
+	return nil
+}
+
+// nativeTreeReader resolves exact UUIDs in the tree index, where the original
+// scheduler router also resolves the frozen UUID selectors of this execution.
+func nativeTreeReader(ctx context.Context) func(string) (*tree.Node, error) {
+	client := treec.NodeProviderClient(ctx)
+	return func(id string) (*tree.Node, error) {
+		response, err := client.ReadNode(ctx, &tree.ReadNodeRequest{Node: &tree.Node{Uuid: id}})
+		if err != nil || response.GetNode().GetUuid() != id || response.GetNode().GetPath() == "" {
+			return nil, errors.WithStack(errors.StatusForbidden)
+		}
+		return response.GetNode(), nil
 	}
 }
 
@@ -157,6 +248,13 @@ func NativeDeleteDispatchTask(ctx context.Context, job *jobproto.Job) (*jobproto
 
 type nativeDeleteContextKey struct{}
 
+// nativeDeleteDispatch binds one worker dispatch to the Resource node its
+// admission proved contained; later steps re-admit only that same node.
+type nativeDeleteDispatch struct {
+	task     *jobproto.Task
+	admitted string
+}
+
 func AuthorizeNativeDeleteDispatch(ctx context.Context, job *jobproto.Job) (context.Context, error) {
 	task, err := NativeDeleteDispatchTask(ctx, job)
 	if err != nil || task == nil {
@@ -173,15 +271,32 @@ func AuthorizeNativeDeleteDispatch(ctx context.Context, job *jobproto.Job) (cont
 		return ctx, errors.WithStack(errors.StatusForbidden)
 	}
 	ctx = auth.WithImpersonate(ctx, user)
-	if err := NativeDeleteFresh(ctx, task, true); err != nil {
+	delivery, admitted, err := nativeDeleteFresh(ctx, task, true)
+	if err != nil {
 		return ctx, err
 	}
-	return context.WithValue(ctx, nativeDeleteContextKey{}, task), nil
+	// The coordinator freezes its children from the whole selection before
+	// any native effect, so its dispatch proves the whole selection. A child
+	// (or a later node of it) must not re-read nodes this execution already
+	// deleted or recycled; it re-proves that the same admitted Resource is
+	// still within the binding root, and the binding root needs no read.
+	var selected []string
+	if job.Metadata[NativeDeleteCoordinator] == "true" {
+		if selected, err = nativeDeleteSelection(intent); err != nil {
+			return ctx, err
+		}
+	}
+	if admitted != delivery.NativeRootRef || len(selected) > 0 {
+		if err := nativeDeleteContained(nativeTreeReader(ctx), delivery.NativeRootRef, admitted, selected); err != nil {
+			return ctx, err
+		}
+	}
+	return context.WithValue(ctx, nativeDeleteContextKey{}, nativeDeleteDispatch{task: task, admitted: admitted}), nil
 }
 
 func FreshNativeDeleteStep(ctx context.Context, required bool) error {
-	task, bound := ctx.Value(nativeDeleteContextKey{}).(*jobproto.Task)
-	if !bound {
+	bound, ok := ctx.Value(nativeDeleteContextKey{}).(nativeDeleteDispatch)
+	if !ok {
 		if required {
 			return errors.WithStack(errors.StatusForbidden)
 		}
@@ -190,7 +305,7 @@ func FreshNativeDeleteStep(ctx context.Context, required bool) error {
 	if claimed, _ := ctx.Value(ClaimedTaskContextKey{}).(bool); !claimed {
 		return errors.WithStack(errors.StatusForbidden)
 	}
-	return NativeDeleteFresh(ctx, task, false)
+	return NativeDeleteFresh(ctx, bound.task)
 }
 
 // NativeJobDefinitionDigest excludes only service-assigned timestamps and

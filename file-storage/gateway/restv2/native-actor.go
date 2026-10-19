@@ -181,14 +181,15 @@ func (h *Handler) nativeActor(req *restful.Request, resp *restful.Response, requ
 		return refused
 	}
 	admitted, err := read(target["nativeRef"].(string))
-	if err != nil || (admitted.GetUuid() != root.GetUuid() && !strings.HasPrefix(admitted.GetPath(), root.GetPath()+"/")) {
+	if err != nil || !auth.NativeAdmittedNode(root, admitted, admitted) {
 		return refused
 	}
 	node, err := read(requested)
 	if err != nil {
 		return refused
 	}
-	within := node.GetUuid() == admitted.GetUuid() || (admitted.GetType() == tree.NodeType_COLLECTION && strings.HasPrefix(node.GetPath(), admitted.GetPath()+"/"))
+	// The delete worker re-proves this same rule before its first effect.
+	within := auth.NativeAdmittedNode(root, admitted, node)
 	if operation == "node" && requested == root.GetUuid() {
 		within = true
 	}

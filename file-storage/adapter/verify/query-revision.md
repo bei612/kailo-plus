@@ -3796,3 +3796,31 @@ full/docs 使用更早输入，不覆盖本次新源码；原生组件统一构�
 Python 编译与 JSON 解析。Go 与 node 单测、gofmt/vet、adapter 与 Cells 镜像
 构建以及隔离一致性运行均须在 CI 节点执行；`file_storage@2` 契约文件由契约
 批次提交，本批 `registered file_storage@2 write vector` 用例依赖它。
+
+## 2026-10-19 file_storage@2 native_file：删除派发接受执行面同一已准入 Resource
+
+权威：`07` §8A、DD-124(3)、`18` 文件存储参考实现；契约 `file_storage@2` 不变
+（`native_file` 的 write 与 delete 都以同一节点 Resource 为目标）。
+
+1. 问题。执行面 `gateway/restv2/native-actor.go` 接受“绑定根或其下节点”作为
+   已准入 Resource，并要求每个所选节点是该 Resource 自身或其子树成员；但删除
+   worker 的派发准入 `scheduler/jobs/native-delete.go NativeDeleteFresh` 只接受
+   `targetResource.nativeRef == nativeRootRef`，因此以文件节点为 Resource 的
+   delete 在 `scheduler/tasks/runnable.go` 派发时被 403 拒绝。
+2. 单一规则。`common/auth/native-admitted.go NativeAdmittedNode(root, admitted, node)`
+   是原 nativeActor 内联规则的抽取（行为不变），执行面与删除 worker 共用。
+3. 删除 worker。`nativeDeleteFresh` 取回新鲜票据后只要求 nativeRef 是 UUID 且
+   实例/作用域引用一致，并返回该节点；`AuthorizeNativeDeleteDispatch` 在首个原生
+   副作用之前用树索引按 UUID 读取并以同一规则证明：已准入节点在绑定根内，
+   协调者派发时每个 `nativeObjectRefs` 都在该 Resource 内；子任务派发只重证
+   Resource 本身（绑定根无需读取），不再读取本次执行已删除或回收的节点。
+   该证明绑定在上下文（`nativeDeleteDispatch{task, admitted}`），之后每个步骤的
+   `NativeDeleteFresh`/`FreshNativeDeleteStep` 只接受新鲜票据仍准入同一节点，
+   不重读树。期限、幂等键、生成代次、actor 证明与输入比对均保持不变。
+4. adapter。`src/delete-execution.mjs` 本就不假定根（只核验 Resource 身份、实例与
+   作用域并比较前后两次 PEP 的 Resource），源码不变、镜像不需重建；新增测试覆盖
+   节点 Resource 删除与跨原生请求的 Resource 漂移拒绝。
+
+验证边界：开发机未运行 go/node；Go 单测（`scheduler/jobs`、`scheduler/actions/tree`、
+`scheduler/tasks`、`gateway/restv2`）、gofmt/vet、adapter `node --test` 与
+file-storage-service 镜像构建、隔离一致性 `native_file` 运行均须在 CI 节点执行。

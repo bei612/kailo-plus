@@ -23,7 +23,8 @@ import (
 )
 
 // The original coordinator retains only immutable references. Each fresh call
-// exchanges those references for a short ticket without persisting the ticket.
+// exchanges those references for a short ticket without persisting the ticket,
+// and requires the Resource node its dispatch admission proved contained.
 type nativeDeleteExecution struct {
 	task     *jobs.Task
 	children int
@@ -31,7 +32,7 @@ type nativeDeleteExecution struct {
 }
 
 func (e *nativeDeleteExecution) fresh(ctx context.Context) error {
-	return jobstore.NativeDeleteFresh(ctx, e.task, false)
+	return jobstore.NativeDeleteFresh(ctx, e.task)
 }
 
 // Only the first immutable claim dispatches the original scheduler coordinator.

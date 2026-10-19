@@ -34,6 +34,38 @@ test('governed native deletion preserves permanent/recycle and HUMAN/AGENT ident
   });
 });
 
+// file_storage@2 native_file: the step's Resource is the selected node itself,
+// not the binding root. The adapter forwards that admitted Resource unchanged;
+// Cells' nativeActor and delete worker prove the node is within the root.
+const nodeResourcePep=(drift=false)=>(state,response)=>{
+  response.writeHead(200,{'content-type':'application/json'});
+  response.end(JSON.stringify({actionExecutionId:adapterIds[7],operationId:adapterIds[6],authorizationMinZedToken:`fresh-${state.peps}`,bindingGeneration:1,
+    targetResource:{resourceId:adapterIds[10],nativeType:'node',nativeRef:drift&&state.peps===2?adapterIds[2]:adapterIds[3],
+      nativeInstanceRef:'delivered-instance',nativeScopeRef:adapterIds[1]}}));
+};
+const nodeResourceArguments=()=>({target:{resourceId:adapterIds[10]},input:{resourceId:adapterIds[10],
+  nativeObjectRefs:[adapterIds[3]],removePermanently:true}});
+
+test('delete admits a Resource whose native object is the selected node beneath the binding root',async t=>{
+  const f=await setup(t,{delete:true,validation:true,operation:'execute',businessHuman:true,businessAction:deleteKey,
+    arguments:nodeResourceArguments(),pep:nodeResourcePep()});
+  const result=await f.invoke({path:'/platform-adapter/v1/execute',key:adapterIds[7],
+    raw:canonical({actionKey:deleteKey,idempotencyKey:adapterIds[7],arguments:f.requestArguments})});
+  assert.equal(result.status,200);
+  assert.equal((await result.json()).execution.platformStatus,'UNKNOWN');
+  assert.equal(f.state.deletions,1);assert.equal(f.state.peps,2);
+  assert.deepEqual(f.state.nativeReads,['/v2/n/action/delete']);
+});
+
+test('delete refuses an admitted node that changes across the native request',async t=>{
+  const f=await setup(t,{delete:true,validation:true,operation:'execute',businessHuman:true,businessAction:deleteKey,
+    arguments:nodeResourceArguments(),pep:nodeResourcePep(true)});
+  const result=await f.invoke({path:'/platform-adapter/v1/execute',key:adapterIds[7],
+    raw:canonical({actionKey:deleteKey,idempotencyKey:adapterIds[7],arguments:f.requestArguments})});
+  assert.notEqual(result.status,200);assert.deepEqual(await result.json(),{error:'adapter request refused'});
+  assert.equal(f.state.deletions,1);assert.equal(f.state.peps,2);
+});
+
 test('delete observation and count usage consume original terminal Task, never resubmit or invent bytes',async t=>{
   for (const operation of ['observe','extract_usage']) for (const businessHuman of [true,false]) await t.test(`${operation}/${businessHuman}`,async nested=>{
     const f=await setup(nested,{delete:true,validation:true,operation,businessHuman,businessAction:deleteKey,deleteResult:completedDelete(),
