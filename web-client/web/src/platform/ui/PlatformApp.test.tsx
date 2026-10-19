@@ -96,6 +96,12 @@ vi.mock("@client-kit/platform/react/context", () => ({
   useUiT: () => (key: string) => key,
   useT: () => (key: string) => key,
   useUiLocale: () => "en",
+  useLocale: () => "en",
+  // DD-125(3) Huddle queries in the shell: no live Huddle in any parent.
+  useBffClient: () => ({
+    huddles: async () => ({ items: [] }),
+    huddleLifecycle: async () => ({ events: [], live: false }),
+  }),
   PlatformProvider: ({
     children,
     documentTheme,
