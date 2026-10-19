@@ -357,7 +357,7 @@ fi
 adapter_compose=()
 # Preparing the conformance identity renders the very JWKS a conformance
 # identity delivery names; that one-off command consumes no adapter delivery.
-if [ "$prepare_conformance_identity" != true ] \
+if [ "${prepare_conformance_identity:-false}" != true ] \
   && [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}${COMPONENT_CONFORMANCE_ENVIRONMENT_FILE:-}${COMPONENT_CONFORMANCE_FIXTURE_FILE:-}${COMPONENT_CONFORMANCE_IDENTITY_FILE:-}" ]; then
   adapter_config=$(mktemp)
   APPLICATION_ADAPTER_DIRECTORY_FILE="${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" \
@@ -524,7 +524,7 @@ if [ "$gateway_present" -ne 0 ] && [ "$gateway_present" -ne "${#gateway_names[@]
   exit 2
 fi
 gateway_compose=()
-if [ "${prepare_action_token:-false}" != true ] && [ "$prepare_conformance_identity" != true ] \
+if [ "${prepare_action_token:-false}" != true ] && [ "${prepare_conformance_identity:-false}" != true ] \
   && { [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; }; then
   gateway_config=$(mktemp)
   for gateway_name in "${gateway_names[@]}"; do export "$gateway_name"; done
