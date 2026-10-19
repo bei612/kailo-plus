@@ -526,11 +526,10 @@ describe('native instance identity boundary', () => {
         ).toBeNull();
       expect(bindingServiceCall).not.toHaveBeenCalled();
       const unclaimed = await middleware(
-        request(
-          path,
-          `Bearer ${await token({}, [settings.accessClaim])}`,
-          { method: 'POST', headers: { origin: settings.publicOrigin } },
-        ),
+        request(path, `Bearer ${await token({}, [settings.accessClaim])}`, {
+          method: 'POST',
+          headers: { origin: settings.publicOrigin },
+        }),
       );
       expect(unclaimed.status).toBe(403);
     },
