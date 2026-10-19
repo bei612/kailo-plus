@@ -66,6 +66,7 @@ fi
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
 NATIVE_PAGE_ORIGINS="${NATIVE_PAGE_ORIGINS:-}" \
 EDITOR_ORIGINS="${EDITOR_ORIGINS:-}" WEB_EDITOR_ORIGINS="${WEB_EDITOR_ORIGINS:-}" \
+GIF_IMAGE_ORIGINS="${GIF_IMAGE_ORIGINS:-}" \
 PUBLIC_HOST="$PUBLIC_HOST" PUBLIC_BIND_ADDR="$PUBLIC_BIND_ADDR" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
 BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
@@ -186,6 +187,14 @@ for name in ("NATIVE_PAGE_ORIGINS", "EDITOR_ORIGINS", "WEB_EDITOR_ORIGINS"):
     origin_sets[name] = origins
 if not origin_sets["WEB_EDITOR_ORIGINS"].issubset(origin_sets["EDITOR_ORIGINS"]):
     raise SystemExit("WEB_EDITOR_ORIGINS 不得扩大 EDITOR_ORIGINS 部署许可")
+# DD-125(5)：GIF 图片来源只追加到 img-src，必须是精确 https origin，不得通配或携带指令。
+gif_origins = set()
+for raw in os.environ["GIF_IMAGE_ORIGINS"].split():
+    if not re.fullmatch(r"https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]*)?", raw):
+        raise SystemExit("GIF_IMAGE_ORIGINS 只允许以空格分隔的精确 https origin")
+    if raw.endswith(":443") or raw == os.environ["PUBLIC_ORIGIN"] or raw in gif_origins:
+        raise SystemExit("GIF_IMAGE_ORIGINS 必须规范化、去重且不同于平台来源")
+    gif_origins.add(raw)
 host("BUZZ_RELAY_HOST")
 checked_port("BUZZ_RELAY_PORT")
 checked_port("CORE_DB_PORT")
