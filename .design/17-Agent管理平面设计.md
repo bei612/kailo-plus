@@ -204,7 +204,7 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 | Definition | identity、instructions、RuntimeProfile、版本历史、publish/retire | `read/update/manage` |
 | Installation | Workspace、exact version、AgentPrincipal、Channel trigger、runtime state；成员使用权（`05` §2.10 的授予/撤销，逐成员显示是否已授予与是否已生效） | Installation Resource `read/manage`；使用权变更需 `share` |
 | Capabilities | model、skills、tools、Resources 的 requested/effective/source/reason 矩阵 | `read`；敏感 evidence 需 `audit` |
-| Delegation & Approval | 谁可委托什么、有效期/次数、等待中的审批 | `delegate/approve` |
+| Delegation & Approval | 谁可委托什么、有效期/次数、同意是否仍现行（只有真实可用的显示为有效，需要续签、次数用尽、已到期与已被替换分别显示，续签替换原 Grant，DD-126）、等待中的审批 | `delegate/approve` |
 | Operations & Usage | Invocation/Workflow、tool/model/native refs、token/cost、Quota/Capacity | `read/audit` 与 ResultExposurePolicy |
 | Memory | core、cold-memory slug、Session 固定 core event、读写/冲突/usage；不默认暴露正文 | Installation Resource `read/update/audit` |
 | Sessions 转写与活动 | 按 AgentSession 读取 Codex thread item（消息、思考、计划、工具）与实时 item、回合开始时刻、活动标题与中断；其他成员只见 Agent 20002 的工作中信号（DD-125(6)） | Installation Resource `audit`；中断按 DD-84 扩展为发起人或 Installation `manage` |
