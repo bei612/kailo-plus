@@ -117,6 +117,10 @@
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
 //     final issuedInvitation = issuedInvitationFromJson(jsonString);
 //     final legacySecretRefPage = legacySecretRefPageFromJson(jsonString);
+//     final moderationAccessView = moderationAccessViewFromJson(jsonString);
+//     final moderationAuditPage = moderationAuditPageFromJson(jsonString);
+//     final moderationReportPage = moderationReportPageFromJson(jsonString);
+//     final moderationRestrictionPage = moderationRestrictionPageFromJson(jsonString);
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final nativeHumanActionRequest = nativeHumanActionRequestFromJson(jsonString);
 //     final nativeHumanActionResult = nativeHumanActionResultFromJson(jsonString);
@@ -1011,6 +1015,30 @@ LegacySecretRefPage legacySecretRefPageFromJson(String str) =>
     LegacySecretRefPage.fromJson(json.decode(str));
 
 String legacySecretRefPageToJson(LegacySecretRefPage data) =>
+    json.encode(data.toJson());
+
+ModerationAccessView moderationAccessViewFromJson(String str) =>
+    ModerationAccessView.fromJson(json.decode(str));
+
+String moderationAccessViewToJson(ModerationAccessView data) =>
+    json.encode(data.toJson());
+
+ModerationAuditPage moderationAuditPageFromJson(String str) =>
+    ModerationAuditPage.fromJson(json.decode(str));
+
+String moderationAuditPageToJson(ModerationAuditPage data) =>
+    json.encode(data.toJson());
+
+ModerationReportPage moderationReportPageFromJson(String str) =>
+    ModerationReportPage.fromJson(json.decode(str));
+
+String moderationReportPageToJson(ModerationReportPage data) =>
+    json.encode(data.toJson());
+
+ModerationRestrictionPage moderationRestrictionPageFromJson(String str) =>
+    ModerationRestrictionPage.fromJson(json.decode(str));
+
+String moderationRestrictionPageToJson(ModerationRestrictionPage data) =>
     json.encode(data.toJson());
 
 NativeCommunityFacts nativeCommunityFactsFromJson(String str) =>
@@ -4499,6 +4527,25 @@ class ActionCommand {
   ///输入；其他命令禁止携带。
   final MemoryWriteClass? memoryWrite;
 
+  ///仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+  ///事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+  final String? moderationEventId;
+
+  ///仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+  ///是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+  ///CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+  ///agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+  final ActionCommandModerationMember? moderationMember;
+
+  ///仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+  ///conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+  ///kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+  final ActionCommandModerationReport? moderationReport;
+
+  ///仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+  ///ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+  final ActionCommandModerationResolution? moderationResolution;
+
   ///workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
@@ -4574,6 +4621,10 @@ class ActionCommand {
     this.invitationId,
     this.llmRouteCreate,
     this.memoryWrite,
+    this.moderationEventId,
+    this.moderationMember,
+    this.moderationReport,
+    this.moderationResolution,
     this.name,
     this.originalActionExecutionId,
     this.principalId,
@@ -4657,6 +4708,18 @@ class ActionCommand {
     memoryWrite: json["memoryWrite"] == null
         ? null
         : MemoryWriteClass.fromJson(json["memoryWrite"]),
+    moderationEventId: json["moderationEventId"],
+    moderationMember: json["moderationMember"] == null
+        ? null
+        : ActionCommandModerationMember.fromJson(json["moderationMember"]),
+    moderationReport: json["moderationReport"] == null
+        ? null
+        : ActionCommandModerationReport.fromJson(json["moderationReport"]),
+    moderationResolution: json["moderationResolution"] == null
+        ? null
+        : ActionCommandModerationResolution.fromJson(
+            json["moderationResolution"],
+          ),
     name: json["name"],
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
@@ -4717,6 +4780,10 @@ class ActionCommand {
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
     "memoryWrite": memoryWrite?.toJson(),
+    "moderationEventId": moderationEventId,
+    "moderationMember": moderationMember?.toJson(),
+    "moderationReport": moderationReport?.toJson(),
+    "moderationResolution": moderationResolution?.toJson(),
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
@@ -6077,6 +6144,160 @@ enum ExpectedHeadState { ABSENT, FOUND }
 final expectedHeadStateValues = EnumValues({
   "ABSENT": ExpectedHeadState.ABSENT,
   "FOUND": ExpectedHeadState.FOUND,
+});
+
+///仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+///是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+///CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+///agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+class ActionCommandModerationMember {
+  ///64 位小写十六进制 Nostr 公钥
+  final String targetPubkey;
+  final ModerationTimeoutDuration? timeoutDuration;
+
+  ActionCommandModerationMember({
+    required this.targetPubkey,
+    this.timeoutDuration,
+  });
+
+  factory ActionCommandModerationMember.fromJson(Map<String, dynamic> json) =>
+      ActionCommandModerationMember(
+        targetPubkey: json["targetPubkey"],
+        timeoutDuration: json["timeoutDuration"] == null
+            ? null
+            : moderationTimeoutDurationValues.map[json["timeoutDuration"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "targetPubkey": targetPubkey,
+    "timeoutDuration": moderationTimeoutDurationValues.reverse[timeoutDuration],
+  });
+}
+
+///原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+///在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+enum ModerationTimeoutDuration { ONE_DAY, ONE_HOUR, SEVEN_DAYS }
+
+final moderationTimeoutDurationValues = EnumValues({
+  "ONE_DAY": ModerationTimeoutDuration.ONE_DAY,
+  "ONE_HOUR": ModerationTimeoutDuration.ONE_HOUR,
+  "SEVEN_DAYS": ModerationTimeoutDuration.SEVEN_DAYS,
+});
+
+///仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+///conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+///kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+class ActionCommandModerationReport {
+  ///消息所在私聊；本人须为其当前参与者
+  final String? conversationId;
+
+  ///被举报消息的 Relay 事件 ID（64 位小写十六进制）
+  final String eventId;
+
+  ///原“补充说明（可选）”，至多 1000 字符
+  final String? note;
+  final ModerationReportType reportType;
+
+  ///消息所在 Workspace Channel；本人须为其当前成员
+  final String? workspaceId;
+
+  ActionCommandModerationReport({
+    this.conversationId,
+    required this.eventId,
+    this.note,
+    required this.reportType,
+    this.workspaceId,
+  });
+
+  factory ActionCommandModerationReport.fromJson(Map<String, dynamic> json) =>
+      ActionCommandModerationReport(
+        conversationId: json["conversationId"],
+        eventId: json["eventId"],
+        note: json["note"],
+        reportType: moderationReportTypeValues.map[json["reportType"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "conversationId": conversationId,
+    "eventId": eventId,
+    "note": note,
+    "reportType": moderationReportTypeValues.reverse[reportType],
+    "workspaceId": workspaceId,
+  });
+}
+
+///原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+///目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+enum ModerationReportType {
+  ILLEGAL,
+  IMPERSONATION,
+  MALWARE,
+  NUDITY,
+  OTHER,
+  PROFANITY,
+  SPAM,
+}
+
+final moderationReportTypeValues = EnumValues({
+  "illegal": ModerationReportType.ILLEGAL,
+  "impersonation": ModerationReportType.IMPERSONATION,
+  "malware": ModerationReportType.MALWARE,
+  "nudity": ModerationReportType.NUDITY,
+  "other": ModerationReportType.OTHER,
+  "profanity": ModerationReportType.PROFANITY,
+  "spam": ModerationReportType.SPAM,
+});
+
+///仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+///ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+class ActionCommandModerationResolution {
+  final List<String> reportEventIds;
+  final ModerationResolutionAction resolutionAction;
+  final ModerationResolutionStatus status;
+
+  ActionCommandModerationResolution({
+    required this.reportEventIds,
+    required this.resolutionAction,
+    required this.status,
+  });
+
+  factory ActionCommandModerationResolution.fromJson(
+    Map<String, dynamic> json,
+  ) => ActionCommandModerationResolution(
+    reportEventIds: List<String>.from(json["reportEventIds"].map((x) => x)),
+    resolutionAction:
+        moderationResolutionActionValues.map[json["resolutionAction"]]!,
+    status: moderationResolutionStatusValues.map[json["status"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "reportEventIds": List<dynamic>.from(reportEventIds.map((x) => x)),
+    "resolutionAction":
+        moderationResolutionActionValues.reverse[resolutionAction],
+    "status": moderationResolutionStatusValues.reverse[status],
+  });
+}
+
+///审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+///只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+enum ModerationResolutionAction { BAN, DELETE, DISMISS, ESCALATE, KICK }
+
+final moderationResolutionActionValues = EnumValues({
+  "ban": ModerationResolutionAction.BAN,
+  "delete": ModerationResolutionAction.DELETE,
+  "dismiss": ModerationResolutionAction.DISMISS,
+  "escalate": ModerationResolutionAction.ESCALATE,
+  "kick": ModerationResolutionAction.KICK,
+});
+
+///kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+///resolved。
+enum ModerationResolutionStatus { DISMISSED, RESOLVED }
+
+final moderationResolutionStatusValues = EnumValues({
+  "dismissed": ModerationResolutionStatus.DISMISSED,
+  "resolved": ModerationResolutionStatus.RESOLVED,
 });
 
 ///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
@@ -13051,6 +13272,294 @@ final bindingKindValues = EnumValues({
   "HUMAN": BindingKind.HUMAN,
 });
 
+///GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
+///Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
+///guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
+class ModerationAccessView {
+  final bool canModerate;
+
+  ModerationAccessView({required this.canModerate});
+
+  factory ModerationAccessView.fromJson(Map<String, dynamic> json) =>
+      ModerationAccessView(canModerate: json["canModerate"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"canModerate": canModerate});
+}
+
+///GET /api/v1/moderation/audit（DD-125(2)）：Relay moderation_actions（审核日志）是唯一权威，Core 以 Tenant
+///CONTROL 经 NIP-98 读取 /moderation/audit，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS
+///审计，不复制。单次至多 500 行，按时间倒序。CONTROL 签发的执法行其 actorPubkey 是 CONTROL；发起人与准入记录在 Core 的
+///ActionExecution 与 AuditEvent。
+class ModerationAuditPage {
+  final List<ModerationAuditView> items;
+
+  ///Relay 返回已达单次读取上界（500 行）
+  final bool truncated;
+
+  ModerationAuditPage({required this.items, required this.truncated});
+
+  factory ModerationAuditPage.fromJson(Map<String, dynamic> json) =>
+      ModerationAuditPage(
+        items: List<ModerationAuditView>.from(
+          json["items"].map((x) => ModerationAuditView.fromJson(x)),
+        ),
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "truncated": truncated,
+  });
+}
+
+class ModerationAuditView {
+  ///Relay 审核日志词表（ban、unban、timeout、untimeout、resolve:<action>、dismiss_report、escalate 等），原样呈现
+  final String action;
+  final String actorPubkey;
+  final String? channelId;
+
+  ///RFC3339
+  final String createdAt;
+  final String id;
+  final String? publicReason;
+  final String? targetEventId;
+  final String? targetPubkey;
+
+  ModerationAuditView({
+    required this.action,
+    required this.actorPubkey,
+    this.channelId,
+    required this.createdAt,
+    required this.id,
+    this.publicReason,
+    this.targetEventId,
+    this.targetPubkey,
+  });
+
+  factory ModerationAuditView.fromJson(Map<String, dynamic> json) =>
+      ModerationAuditView(
+        action: json["action"],
+        actorPubkey: json["actorPubkey"],
+        channelId: json["channelId"],
+        createdAt: json["createdAt"],
+        id: json["id"],
+        publicReason: json["publicReason"],
+        targetEventId: json["targetEventId"],
+        targetPubkey: json["targetPubkey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "action": action,
+    "actorPubkey": actorPubkey,
+    "channelId": channelId,
+    "createdAt": createdAt,
+    "id": id,
+    "publicReason": publicReason,
+    "targetEventId": targetEventId,
+    "targetPubkey": targetPubkey,
+  });
+}
+
+///GET /api/v1/moderation/reports[?status=open]（DD-125(2)、V-SCN-130）：Relay
+///moderation_reports 是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/reports，只回给 fresh
+///Tenant manage 的请求者，每次读取写 ACCESS 审计，Core 不复制。单次至多 500 行（Relay 上界），按创建时间倒序。reporterPubkey
+///只出现在此审核面，不得进入被举报人可见的任何视图。
+class ModerationReportPage {
+  final List<ModerationReportView> items;
+
+  ///Relay 返回已达单次读取上界（500 行），更早的行未包含
+  final bool truncated;
+
+  ModerationReportPage({required this.items, required this.truncated});
+
+  factory ModerationReportPage.fromJson(Map<String, dynamic> json) =>
+      ModerationReportPage(
+        items: List<ModerationReportView>.from(
+          json["items"].map((x) => ModerationReportView.fromJson(x)),
+        ),
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "truncated": truncated,
+  });
+}
+
+class ModerationReportView {
+  ///事件目标所在 Relay Channel；其余目标缺省
+  final String? channelId;
+
+  ///RFC3339
+  final String createdAt;
+
+  ///Relay 举报行 ID
+  final String id;
+  final String? note;
+  final String reporterPubkey;
+
+  ///签名的 kind 1984 事件 ID；9044 以它定位举报
+  final String reportEventId;
+  final ModerationReportType reportType;
+
+  ///RFC3339
+  final String? resolvedAt;
+  final String? resolvedByPubkey;
+  final ModerationReportStatus status;
+
+  ///事件 ID、公钥或附件 SHA-256（十六进制）
+  final String target;
+
+  ///事件目标由 CONTROL 回读得到的签名者；pubkey 目标即其本身；不可读时缺省
+  final String? targetAuthorPubkey;
+  final ModerationReportTargetKind targetKind;
+
+  ///targetAuthorPubkey 属于本 Tenant 某 HUMAN Principal 时给出；AGENT 或未知公钥缺省（不提供封禁与踢出）
+  final String? targetPrincipalId;
+
+  ///channelId 对应本 Tenant 的 Workspace 时给出，供 moderation.message.delete 与
+  ///workspace.member.revoke 定位
+  final String? workspaceId;
+
+  ModerationReportView({
+    this.channelId,
+    required this.createdAt,
+    required this.id,
+    this.note,
+    required this.reporterPubkey,
+    required this.reportEventId,
+    required this.reportType,
+    this.resolvedAt,
+    this.resolvedByPubkey,
+    required this.status,
+    required this.target,
+    this.targetAuthorPubkey,
+    required this.targetKind,
+    this.targetPrincipalId,
+    this.workspaceId,
+  });
+
+  factory ModerationReportView.fromJson(Map<String, dynamic> json) =>
+      ModerationReportView(
+        channelId: json["channelId"],
+        createdAt: json["createdAt"],
+        id: json["id"],
+        note: json["note"],
+        reporterPubkey: json["reporterPubkey"],
+        reportEventId: json["reportEventId"],
+        reportType: moderationReportTypeValues.map[json["reportType"]]!,
+        resolvedAt: json["resolvedAt"],
+        resolvedByPubkey: json["resolvedByPubkey"],
+        status: moderationReportStatusValues.map[json["status"]]!,
+        target: json["target"],
+        targetAuthorPubkey: json["targetAuthorPubkey"],
+        targetKind: moderationReportTargetKindValues.map[json["targetKind"]]!,
+        targetPrincipalId: json["targetPrincipalId"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "createdAt": createdAt,
+    "id": id,
+    "note": note,
+    "reporterPubkey": reporterPubkey,
+    "reportEventId": reportEventId,
+    "reportType": moderationReportTypeValues.reverse[reportType],
+    "resolvedAt": resolvedAt,
+    "resolvedByPubkey": resolvedByPubkey,
+    "status": moderationReportStatusValues.reverse[status],
+    "target": target,
+    "targetAuthorPubkey": targetAuthorPubkey,
+    "targetKind": moderationReportTargetKindValues.reverse[targetKind],
+    "targetPrincipalId": targetPrincipalId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
+///词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。
+enum ModerationReportStatus { DISMISSED, ESCALATED, OPEN, RESOLVED }
+
+final moderationReportStatusValues = EnumValues({
+  "dismissed": ModerationReportStatus.DISMISSED,
+  "escalated": ModerationReportStatus.ESCALATED,
+  "open": ModerationReportStatus.OPEN,
+  "resolved": ModerationReportStatus.RESOLVED,
+});
+
+///举报目标类别（Relay report_json.target_kind）：event 为消息事件、pubkey 为成员、blob 为附件（SF-BUZ-52）。
+enum ModerationReportTargetKind { BLOB, EVENT, PUBKEY }
+
+final moderationReportTargetKindValues = EnumValues({
+  "blob": ModerationReportTargetKind.BLOB,
+  "event": ModerationReportTargetKind.EVENT,
+  "pubkey": ModerationReportTargetKind.PUBKEY,
+});
+
+///GET /api/v1/moderation/restricted（DD-125(2)、V-SCN-127）：Relay community_bans
+///中当前有效的封禁与禁言，是唯一权威；Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/restricted，只回给 fresh
+///Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。成员与原版一样读不到自己的限制。
+class ModerationRestrictionPage {
+  final List<ModerationRestrictionView> items;
+
+  ModerationRestrictionPage({required this.items});
+
+  factory ModerationRestrictionPage.fromJson(Map<String, dynamic> json) =>
+      ModerationRestrictionPage(
+        items: List<ModerationRestrictionView>.from(
+          json["items"].map((x) => ModerationRestrictionView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"items": List<dynamic>.from(items.map((x) => x.toJson()))});
+}
+
+class ModerationRestrictionView {
+  ///RFC3339；永久封禁缺省
+  final String? banExpiresAt;
+  final bool banned;
+
+  ///RFC3339；未禁言缺省
+  final String? mutedUntil;
+
+  ///该公钥属于本 Tenant 某 HUMAN Principal 时给出
+  final String? principalId;
+  final String pubkey;
+
+  ///RFC3339
+  final String updatedAt;
+
+  ModerationRestrictionView({
+    this.banExpiresAt,
+    required this.banned,
+    this.mutedUntil,
+    this.principalId,
+    required this.pubkey,
+    required this.updatedAt,
+  });
+
+  factory ModerationRestrictionView.fromJson(Map<String, dynamic> json) =>
+      ModerationRestrictionView(
+        banExpiresAt: json["banExpiresAt"],
+        banned: json["banned"],
+        mutedUntil: json["mutedUntil"],
+        principalId: json["principalId"],
+        pubkey: json["pubkey"],
+        updatedAt: json["updatedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "banExpiresAt": banExpiresAt,
+    "banned": banned,
+    "mutedUntil": mutedUntil,
+    "principalId": principalId,
+    "pubkey": pubkey,
+    "updatedAt": updatedAt,
+  });
+}
+
 ///GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 ///communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 class NativeCommunityFacts {
@@ -13257,6 +13766,25 @@ class CommandClass {
   ///输入；其他命令禁止携带。
   final MemoryWriteClass? memoryWrite;
 
+  ///仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+  ///事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+  final String? moderationEventId;
+
+  ///仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+  ///是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+  ///CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+  ///agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+  final CommandModerationMember? moderationMember;
+
+  ///仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+  ///conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+  ///kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+  final CommandModerationReport? moderationReport;
+
+  ///仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+  ///ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+  final CommandModerationResolution? moderationResolution;
+
   ///workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
   final String? name;
 
@@ -13332,6 +13860,10 @@ class CommandClass {
     this.invitationId,
     this.llmRouteCreate,
     this.memoryWrite,
+    this.moderationEventId,
+    this.moderationMember,
+    this.moderationReport,
+    this.moderationResolution,
     this.name,
     this.originalActionExecutionId,
     this.principalId,
@@ -13415,6 +13947,16 @@ class CommandClass {
     memoryWrite: json["memoryWrite"] == null
         ? null
         : MemoryWriteClass.fromJson(json["memoryWrite"]),
+    moderationEventId: json["moderationEventId"],
+    moderationMember: json["moderationMember"] == null
+        ? null
+        : CommandModerationMember.fromJson(json["moderationMember"]),
+    moderationReport: json["moderationReport"] == null
+        ? null
+        : CommandModerationReport.fromJson(json["moderationReport"]),
+    moderationResolution: json["moderationResolution"] == null
+        ? null
+        : CommandModerationResolution.fromJson(json["moderationResolution"]),
     name: json["name"],
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
@@ -13475,6 +14017,10 @@ class CommandClass {
     "invitationId": invitationId,
     "llmRouteCreate": llmRouteCreate?.toJson(),
     "memoryWrite": memoryWrite?.toJson(),
+    "moderationEventId": moderationEventId,
+    "moderationMember": moderationMember?.toJson(),
+    "moderationReport": moderationReport?.toJson(),
+    "moderationResolution": moderationResolution?.toJson(),
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
@@ -13509,6 +14055,103 @@ class CommandBindingSecretValue {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"secretKey": secretKey, "value": value});
+}
+
+///仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+///是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+///CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+///agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+class CommandModerationMember {
+  ///64 位小写十六进制 Nostr 公钥
+  final String targetPubkey;
+  final ModerationTimeoutDuration? timeoutDuration;
+
+  CommandModerationMember({required this.targetPubkey, this.timeoutDuration});
+
+  factory CommandModerationMember.fromJson(Map<String, dynamic> json) =>
+      CommandModerationMember(
+        targetPubkey: json["targetPubkey"],
+        timeoutDuration: json["timeoutDuration"] == null
+            ? null
+            : moderationTimeoutDurationValues.map[json["timeoutDuration"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "targetPubkey": targetPubkey,
+    "timeoutDuration": moderationTimeoutDurationValues.reverse[timeoutDuration],
+  });
+}
+
+///仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+///conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+///kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+class CommandModerationReport {
+  ///消息所在私聊；本人须为其当前参与者
+  final String? conversationId;
+
+  ///被举报消息的 Relay 事件 ID（64 位小写十六进制）
+  final String eventId;
+
+  ///原“补充说明（可选）”，至多 1000 字符
+  final String? note;
+  final ModerationReportType reportType;
+
+  ///消息所在 Workspace Channel；本人须为其当前成员
+  final String? workspaceId;
+
+  CommandModerationReport({
+    this.conversationId,
+    required this.eventId,
+    this.note,
+    required this.reportType,
+    this.workspaceId,
+  });
+
+  factory CommandModerationReport.fromJson(Map<String, dynamic> json) =>
+      CommandModerationReport(
+        conversationId: json["conversationId"],
+        eventId: json["eventId"],
+        note: json["note"],
+        reportType: moderationReportTypeValues.map[json["reportType"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "conversationId": conversationId,
+    "eventId": eventId,
+    "note": note,
+    "reportType": moderationReportTypeValues.reverse[reportType],
+    "workspaceId": workspaceId,
+  });
+}
+
+///仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+///ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+class CommandModerationResolution {
+  final List<String> reportEventIds;
+  final ModerationResolutionAction resolutionAction;
+  final ModerationResolutionStatus status;
+
+  CommandModerationResolution({
+    required this.reportEventIds,
+    required this.resolutionAction,
+    required this.status,
+  });
+
+  factory CommandModerationResolution.fromJson(Map<String, dynamic> json) =>
+      CommandModerationResolution(
+        reportEventIds: List<String>.from(json["reportEventIds"].map((x) => x)),
+        resolutionAction:
+            moderationResolutionActionValues.map[json["resolutionAction"]]!,
+        status: moderationResolutionStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "reportEventIds": List<dynamic>.from(reportEventIds.map((x) => x)),
+    "resolutionAction":
+        moderationResolutionActionValues.reverse[resolutionAction],
+    "status": moderationResolutionStatusValues.reverse[status],
+  });
 }
 
 ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -20647,24 +21290,64 @@ class ErrorBody {
   final String? operationId;
   final ReasonCode reason;
 
+  ///仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+  ///Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+  final PublishRestriction? restriction;
+
   ErrorBody({
     required this.errorBodyClass,
     this.operationId,
     required this.reason,
+    this.restriction,
   });
 
   factory ErrorBody.fromJson(Map<String, dynamic> json) => ErrorBody(
     errorBodyClass: errorClassValues.map[json["class"]]!,
     operationId: json["operationId"],
     reason: reasonCodeValues.map[json["reason"]]!,
+    restriction: json["restriction"] == null
+        ? null
+        : PublishRestriction.fromJson(json["restriction"]),
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "class": errorClassValues.reverse[errorBodyClass],
     "operationId": operationId,
     "reason": reasonCodeValues.reverse[reason],
+    "restriction": restriction?.toJson(),
   });
 }
+
+///仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+///Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+class PublishRestriction {
+  final PublishRestrictionKind kind;
+
+  ///TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省
+  final String? until;
+
+  PublishRestriction({required this.kind, this.until});
+
+  factory PublishRestriction.fromJson(Map<String, dynamic> json) =>
+      PublishRestriction(
+        kind: publishRestrictionKindValues.map[json["kind"]]!,
+        until: json["until"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "kind": publishRestrictionKindValues.reverse[kind],
+    "until": until,
+  });
+}
+
+///Relay 以社区限制拒绝本人内容写入的类别（DD-125(2)）：TIMED_OUT 对应 `restricted: you are timed out until
+///<ts>`，BANNED 对应 `blocked: you are banned from this community`。
+enum PublishRestrictionKind { BANNED, TIMED_OUT }
+
+final publishRestrictionKindValues = EnumValues({
+  "BANNED": PublishRestrictionKind.BANNED,
+  "TIMED_OUT": PublishRestrictionKind.TIMED_OUT,
+});
 
 ///BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
 class ResolvedIdentity {

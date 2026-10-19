@@ -1443,6 +1443,29 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_write: Option<MemoryWriteClass>,
 
+    /// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+    /// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_event_id: Option<String>,
+
+    /// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+    /// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+    /// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+    /// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_member: Option<ActionCommandModerationMember>,
+
+    /// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+    /// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+    /// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_report: Option<ActionCommandModerationReport>,
+
+    /// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+    /// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_resolution: Option<ActionCommandModerationResolution>,
+
     /// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -2286,6 +2309,117 @@ pub enum ExpectedHeadState {
 
     #[serde(rename = "FOUND")]
     Found,
+}
+
+/// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+/// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+/// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+/// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCommandModerationMember {
+    /// 64 位小写十六进制 Nostr 公钥
+    pub target_pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_duration: Option<ModerationTimeoutDuration>,
+}
+
+/// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+/// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ModerationTimeoutDuration {
+    #[serde(rename = "ONE_DAY")]
+    OneDay,
+
+    #[serde(rename = "ONE_HOUR")]
+    OneHour,
+
+    #[serde(rename = "SEVEN_DAYS")]
+    SevenDays,
+}
+
+/// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+/// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+/// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCommandModerationReport {
+    /// 消息所在私聊；本人须为其当前参与者
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+
+    /// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+    pub event_id: String,
+
+    /// 原“补充说明（可选）”，至多 1000 字符
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    pub report_type: ModerationReportType,
+
+    /// 消息所在 Workspace Channel；本人须为其当前成员
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+/// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationReportType {
+    Illegal,
+
+    Impersonation,
+
+    Malware,
+
+    Nudity,
+
+    Other,
+
+    Profanity,
+
+    Spam,
+}
+
+/// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+/// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCommandModerationResolution {
+    pub report_event_ids: Vec<String>,
+
+    pub resolution_action: ModerationResolutionAction,
+
+    pub status: ModerationResolutionStatus,
+}
+
+/// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+/// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationResolutionAction {
+    Ban,
+
+    Delete,
+
+    Dismiss,
+
+    Escalate,
+
+    Kick,
+}
+
+/// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+/// resolved。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationResolutionStatus {
+    Dismissed,
+
+    Resolved,
 }
 
 /// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
@@ -6353,6 +6487,172 @@ pub enum BindingKind {
     Human,
 }
 
+/// GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
+/// Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
+/// guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationAccessView {
+    pub can_moderate: bool,
+}
+
+/// GET /api/v1/moderation/audit（DD-125(2)）：Relay moderation_actions（审核日志）是唯一权威，Core 以 Tenant
+/// CONTROL 经 NIP-98 读取 /moderation/audit，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS
+/// 审计，不复制。单次至多 500 行，按时间倒序。CONTROL 签发的执法行其 actorPubkey 是 CONTROL；发起人与准入记录在 Core 的
+/// ActionExecution 与 AuditEvent。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModerationAuditPage {
+    pub items: Vec<ModerationAuditView>,
+
+    /// Relay 返回已达单次读取上界（500 行）
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationAuditView {
+    /// Relay 审核日志词表（ban、unban、timeout、untimeout、resolve:<action>、dismiss_report、escalate 等），原样呈现
+    pub action: String,
+
+    pub actor_pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    /// RFC3339
+    pub created_at: String,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_reason: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_pubkey: Option<String>,
+}
+
+/// GET /api/v1/moderation/reports[?status=open]（DD-125(2)、V-SCN-130）：Relay
+/// moderation_reports 是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/reports，只回给 fresh
+/// Tenant manage 的请求者，每次读取写 ACCESS 审计，Core 不复制。单次至多 500 行（Relay 上界），按创建时间倒序。reporterPubkey
+/// 只出现在此审核面，不得进入被举报人可见的任何视图。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModerationReportPage {
+    pub items: Vec<ModerationReportView>,
+
+    /// Relay 返回已达单次读取上界（500 行），更早的行未包含
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationReportView {
+    /// 事件目标所在 Relay Channel；其余目标缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    /// RFC3339
+    pub created_at: String,
+
+    /// Relay 举报行 ID
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    pub reporter_pubkey: String,
+
+    /// 签名的 kind 1984 事件 ID；9044 以它定位举报
+    pub report_event_id: String,
+
+    pub report_type: ModerationReportType,
+
+    /// RFC3339
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_by_pubkey: Option<String>,
+
+    pub status: ModerationReportStatus,
+
+    /// 事件 ID、公钥或附件 SHA-256（十六进制）
+    pub target: String,
+
+    /// 事件目标由 CONTROL 回读得到的签名者；pubkey 目标即其本身；不可读时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_author_pubkey: Option<String>,
+
+    pub target_kind: ModerationReportTargetKind,
+
+    /// targetAuthorPubkey 属于本 Tenant 某 HUMAN Principal 时给出；AGENT 或未知公钥缺省（不提供封禁与踢出）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_principal_id: Option<String>,
+
+    /// channelId 对应本 Tenant 的 Workspace 时给出，供 moderation.message.delete 与
+    /// workspace.member.revoke 定位
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
+/// 词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationReportStatus {
+    Dismissed,
+
+    Escalated,
+
+    Open,
+
+    Resolved,
+}
+
+/// 举报目标类别（Relay report_json.target_kind）：event 为消息事件、pubkey 为成员、blob 为附件（SF-BUZ-52）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationReportTargetKind {
+    Blob,
+
+    Event,
+
+    Pubkey,
+}
+
+/// GET /api/v1/moderation/restricted（DD-125(2)、V-SCN-127）：Relay community_bans
+/// 中当前有效的封禁与禁言，是唯一权威；Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/restricted，只回给 fresh
+/// Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。成员与原版一样读不到自己的限制。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModerationRestrictionPage {
+    pub items: Vec<ModerationRestrictionView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationRestrictionView {
+    /// RFC3339；永久封禁缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ban_expires_at: Option<String>,
+
+    pub banned: bool,
+
+    /// RFC3339；未禁言缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted_until: Option<String>,
+
+    /// 该公钥属于本 Tenant 某 HUMAN Principal 时给出
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub principal_id: Option<String>,
+
+    pub pubkey: String,
+
+    /// RFC3339
+    pub updated_at: String,
+}
+
 /// GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 /// communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6525,6 +6825,29 @@ pub struct CommandClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_write: Option<MemoryWriteClass>,
 
+    /// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+    /// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_event_id: Option<String>,
+
+    /// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+    /// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+    /// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+    /// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_member: Option<CommandModerationMember>,
+
+    /// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+    /// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+    /// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_report: Option<CommandModerationReport>,
+
+    /// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+    /// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderation_resolution: Option<CommandModerationResolution>,
+
     /// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -6599,6 +6922,56 @@ pub struct CommandBindingSecretValue {
     pub secret_key: String,
 
     pub value: String,
+}
+
+/// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+/// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+/// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+/// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandModerationMember {
+    /// 64 位小写十六进制 Nostr 公钥
+    pub target_pubkey: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_duration: Option<ModerationTimeoutDuration>,
+}
+
+/// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+/// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+/// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandModerationReport {
+    /// 消息所在私聊；本人须为其当前参与者
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+
+    /// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+    pub event_id: String,
+
+    /// 原“补充说明（可选）”，至多 1000 字符
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+
+    pub report_type: ModerationReportType,
+
+    /// 消息所在 Workspace Channel；本人须为其当前成员
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+/// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandModerationResolution {
+    pub report_event_ids: Vec<String>,
+
+    pub resolution_action: ModerationResolutionAction,
+
+    pub status: ModerationResolutionStatus,
 }
 
 /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -10318,6 +10691,33 @@ pub struct ErrorBody {
     pub operation_id: Option<String>,
 
     pub reason: ReasonCode,
+
+    /// 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+    /// Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restriction: Option<PublishRestriction>,
+}
+
+/// 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+/// Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PublishRestriction {
+    pub kind: PublishRestrictionKind,
+
+    /// TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+}
+
+/// Relay 以社区限制拒绝本人内容写入的类别（DD-125(2)）：TIMED_OUT 对应 `restricted: you are timed out until
+/// <ts>`，BANNED 对应 `blocked: you are banned from this community`。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PublishRestrictionKind {
+    Banned,
+
+    #[serde(rename = "TIMED_OUT")]
+    TimedOut,
 }
 
 /// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。

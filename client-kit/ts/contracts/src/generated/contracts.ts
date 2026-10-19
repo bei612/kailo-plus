@@ -1050,6 +1050,29 @@ export interface ActionCommand {
      */
     memoryWrite?: MemoryWriteClass;
     /**
+     * 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+     * 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+     */
+    moderationEventId?: string;
+    /**
+     * 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+     * 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+     * CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+     * agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+     */
+    moderationMember?: ActionCommandModerationMember;
+    /**
+     * 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+     * conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+     * kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+     */
+    moderationReport?: ActionCommandModerationReport;
+    /**
+     * 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+     * ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+     */
+    moderationResolution?: ActionCommandModerationResolution;
+    /**
      * workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
      */
     name?: string;
@@ -1654,6 +1677,100 @@ export interface MemoryWriteClass {
 export enum ExpectedHeadState {
     Absent = "ABSENT",
     Found = "FOUND",
+}
+
+/**
+ * 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+ * 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+ * CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+ * agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+ */
+export interface ActionCommandModerationMember {
+    /**
+     * 64 位小写十六进制 Nostr 公钥
+     */
+    targetPubkey:     string;
+    timeoutDuration?: ModerationTimeoutDuration;
+}
+
+/**
+ * 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+ * 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+ */
+export enum ModerationTimeoutDuration {
+    OneDay = "ONE_DAY",
+    OneHour = "ONE_HOUR",
+    SevenDays = "SEVEN_DAYS",
+}
+
+/**
+ * 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+ * conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+ * kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+ */
+export interface ActionCommandModerationReport {
+    /**
+     * 消息所在私聊；本人须为其当前参与者
+     */
+    conversationId?: string;
+    /**
+     * 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+     */
+    eventId: string;
+    /**
+     * 原“补充说明（可选）”，至多 1000 字符
+     */
+    note?:      string;
+    reportType: ModerationReportType;
+    /**
+     * 消息所在 Workspace Channel；本人须为其当前成员
+     */
+    workspaceId?: string;
+}
+
+/**
+ * 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+ * 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+ */
+export enum ModerationReportType {
+    Illegal = "illegal",
+    Impersonation = "impersonation",
+    Malware = "malware",
+    Nudity = "nudity",
+    Other = "other",
+    Profanity = "profanity",
+    Spam = "spam",
+}
+
+/**
+ * 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+ * ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+ */
+export interface ActionCommandModerationResolution {
+    reportEventIds:   string[];
+    resolutionAction: ModerationResolutionAction;
+    status:           ModerationResolutionStatus;
+}
+
+/**
+ * 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+ * 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+ */
+export enum ModerationResolutionAction {
+    Ban = "ban",
+    Delete = "delete",
+    Dismiss = "dismiss",
+    Escalate = "escalate",
+    Kick = "kick",
+}
+
+/**
+ * kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+ * resolved。
+ */
+export enum ModerationResolutionStatus {
+    Dismissed = "dismissed",
+    Resolved = "resolved",
 }
 
 /**
@@ -4432,6 +4549,156 @@ export enum BindingKind {
 }
 
 /**
+ * GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
+ * Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
+ * guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
+ */
+export interface ModerationAccessView {
+    canModerate: boolean;
+}
+
+/**
+ * GET /api/v1/moderation/audit（DD-125(2)）：Relay moderation_actions（审核日志）是唯一权威，Core 以 Tenant
+ * CONTROL 经 NIP-98 读取 /moderation/audit，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS
+ * 审计，不复制。单次至多 500 行，按时间倒序。CONTROL 签发的执法行其 actorPubkey 是 CONTROL；发起人与准入记录在 Core 的
+ * ActionExecution 与 AuditEvent。
+ */
+export interface ModerationAuditPage {
+    items: ModerationAuditView[];
+    /**
+     * Relay 返回已达单次读取上界（500 行）
+     */
+    truncated: boolean;
+}
+
+export interface ModerationAuditView {
+    /**
+     * Relay 审核日志词表（ban、unban、timeout、untimeout、resolve:<action>、dismiss_report、escalate 等），原样呈现
+     */
+    action:      string;
+    actorPubkey: string;
+    channelId?:  string;
+    /**
+     * RFC3339
+     */
+    createdAt:      string;
+    id:             string;
+    publicReason?:  string;
+    targetEventId?: string;
+    targetPubkey?:  string;
+}
+
+/**
+ * GET /api/v1/moderation/reports[?status=open]（DD-125(2)、V-SCN-130）：Relay
+ * moderation_reports 是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/reports，只回给 fresh
+ * Tenant manage 的请求者，每次读取写 ACCESS 审计，Core 不复制。单次至多 500 行（Relay 上界），按创建时间倒序。reporterPubkey
+ * 只出现在此审核面，不得进入被举报人可见的任何视图。
+ */
+export interface ModerationReportPage {
+    items: ModerationReportView[];
+    /**
+     * Relay 返回已达单次读取上界（500 行），更早的行未包含
+     */
+    truncated: boolean;
+}
+
+export interface ModerationReportView {
+    /**
+     * 事件目标所在 Relay Channel；其余目标缺省
+     */
+    channelId?: string;
+    /**
+     * RFC3339
+     */
+    createdAt: string;
+    /**
+     * Relay 举报行 ID
+     */
+    id:             string;
+    note?:          string;
+    reporterPubkey: string;
+    /**
+     * 签名的 kind 1984 事件 ID；9044 以它定位举报
+     */
+    reportEventId: string;
+    reportType:    ModerationReportType;
+    /**
+     * RFC3339
+     */
+    resolvedAt?:       string;
+    resolvedByPubkey?: string;
+    status:            ModerationReportStatus;
+    /**
+     * 事件 ID、公钥或附件 SHA-256（十六进制）
+     */
+    target: string;
+    /**
+     * 事件目标由 CONTROL 回读得到的签名者；pubkey 目标即其本身；不可读时缺省
+     */
+    targetAuthorPubkey?: string;
+    targetKind:          ModerationReportTargetKind;
+    /**
+     * targetAuthorPubkey 属于本 Tenant 某 HUMAN Principal 时给出；AGENT 或未知公钥缺省（不提供封禁与踢出）
+     */
+    targetPrincipalId?: string;
+    /**
+     * channelId 对应本 Tenant 的 Workspace 时给出，供 moderation.message.delete 与
+     * workspace.member.revoke 定位
+     */
+    workspaceId?: string;
+}
+
+/**
+ * Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
+ * 词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。
+ */
+export enum ModerationReportStatus {
+    Dismissed = "dismissed",
+    Escalated = "escalated",
+    Open = "open",
+    Resolved = "resolved",
+}
+
+/**
+ * 举报目标类别（Relay report_json.target_kind）：event 为消息事件、pubkey 为成员、blob 为附件（SF-BUZ-52）。
+ */
+export enum ModerationReportTargetKind {
+    Blob = "blob",
+    Event = "event",
+    Pubkey = "pubkey",
+}
+
+/**
+ * GET /api/v1/moderation/restricted（DD-125(2)、V-SCN-127）：Relay community_bans
+ * 中当前有效的封禁与禁言，是唯一权威；Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/restricted，只回给 fresh
+ * Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。成员与原版一样读不到自己的限制。
+ */
+export interface ModerationRestrictionPage {
+    items: ModerationRestrictionView[];
+}
+
+export interface ModerationRestrictionView {
+    /**
+     * RFC3339；永久封禁缺省
+     */
+    banExpiresAt?: string;
+    banned:        boolean;
+    /**
+     * RFC3339；未禁言缺省
+     */
+    mutedUntil?: string;
+    /**
+     * 该公钥属于本 Tenant 某 HUMAN Principal 时给出
+     */
+    principalId?: string;
+    pubkey:       string;
+    /**
+     * RFC3339
+     */
+    updatedAt: string;
+}
+
+/**
  * GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
  * communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
  */
@@ -4585,6 +4852,29 @@ export interface CommandClass {
      */
     memoryWrite?: MemoryWriteClass;
     /**
+     * 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+     * 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+     */
+    moderationEventId?: string;
+    /**
+     * 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+     * 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+     * CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+     * agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+     */
+    moderationMember?: CommandModerationMember;
+    /**
+     * 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+     * conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+     * kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+     */
+    moderationReport?: CommandModerationReport;
+    /**
+     * 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+     * ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+     */
+    moderationResolution?: CommandModerationResolution;
+    /**
      * workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
      */
     name?: string;
@@ -4652,6 +4942,55 @@ export interface CommandClass {
 export interface CommandBindingSecretValue {
     secretKey: string;
     value:     string;
+}
+
+/**
+ * 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+ * 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+ * CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+ * agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+ */
+export interface CommandModerationMember {
+    /**
+     * 64 位小写十六进制 Nostr 公钥
+     */
+    targetPubkey:     string;
+    timeoutDuration?: ModerationTimeoutDuration;
+}
+
+/**
+ * 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+ * conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+ * kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+ */
+export interface CommandModerationReport {
+    /**
+     * 消息所在私聊；本人须为其当前参与者
+     */
+    conversationId?: string;
+    /**
+     * 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+     */
+    eventId: string;
+    /**
+     * 原“补充说明（可选）”，至多 1000 字符
+     */
+    note?:      string;
+    reportType: ModerationReportType;
+    /**
+     * 消息所在 Workspace Channel；本人须为其当前成员
+     */
+    workspaceId?: string;
+}
+
+/**
+ * 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+ * ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+ */
+export interface CommandModerationResolution {
+    reportEventIds:   string[];
+    resolutionAction: ModerationResolutionAction;
+    status:           ModerationResolutionStatus;
 }
 
 /**
@@ -7427,6 +7766,32 @@ export interface ErrorBody {
      */
     operationId?: string;
     reason:       ReasonCode;
+    /**
+     * 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+     * Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+     */
+    restriction?: PublishRestriction;
+}
+
+/**
+ * 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+ * Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+ */
+export interface PublishRestriction {
+    kind: PublishRestrictionKind;
+    /**
+     * TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省
+     */
+    until?: string;
+}
+
+/**
+ * Relay 以社区限制拒绝本人内容写入的类别（DD-125(2)）：TIMED_OUT 对应 `restricted: you are timed out until
+ * <ts>`，BANNED 对应 `blocked: you are banned from this community`。
+ */
+export enum PublishRestrictionKind {
+    Banned = "BANNED",
+    TimedOut = "TIMED_OUT",
 }
 
 /**

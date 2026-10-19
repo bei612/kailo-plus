@@ -352,6 +352,18 @@
 //    legacySecretRefPage, err := UnmarshalLegacySecretRefPage(bytes)
 //    bytes, err = legacySecretRefPage.Marshal()
 //
+//    moderationAccessView, err := UnmarshalModerationAccessView(bytes)
+//    bytes, err = moderationAccessView.Marshal()
+//
+//    moderationAuditPage, err := UnmarshalModerationAuditPage(bytes)
+//    bytes, err = moderationAuditPage.Marshal()
+//
+//    moderationReportPage, err := UnmarshalModerationReportPage(bytes)
+//    bytes, err = moderationReportPage.Marshal()
+//
+//    moderationRestrictionPage, err := UnmarshalModerationRestrictionPage(bytes)
+//    bytes, err = moderationRestrictionPage.Marshal()
+//
 //    nativeCommunityFacts, err := UnmarshalNativeCommunityFacts(bytes)
 //    bytes, err = nativeCommunityFacts.Marshal()
 //
@@ -2005,6 +2017,46 @@ func UnmarshalLegacySecretRefPage(data []byte) (LegacySecretRefPage, error) {
 }
 
 func (r *LegacySecretRefPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalModerationAccessView(data []byte) (ModerationAccessView, error) {
+	var r ModerationAccessView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ModerationAccessView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalModerationAuditPage(data []byte) (ModerationAuditPage, error) {
+	var r ModerationAuditPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ModerationAuditPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalModerationReportPage(data []byte) (ModerationReportPage, error) {
+	var r ModerationReportPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ModerationReportPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalModerationRestrictionPage(data []byte) (ModerationRestrictionPage, error) {
+	var r ModerationRestrictionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ModerationRestrictionPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4304,6 +4356,21 @@ type ActionCommand struct {
 	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 	// 输入；其他命令禁止携带。
 	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
+	// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+	// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+	ModerationEventID *string `json:"moderationEventId,omitempty"`
+	// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+	// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+	// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+	// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+	ModerationMember *ActionCommandModerationMember `json:"moderationMember,omitempty"`
+	// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+	// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+	// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+	ModerationReport *ActionCommandModerationReport `json:"moderationReport,omitempty"`
+	// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+	// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+	ModerationResolution *ActionCommandModerationResolution `json:"moderationResolution,omitempty"`
 	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
@@ -4653,6 +4720,39 @@ type MemoryWriteClass struct {
 	Slug  string  `json:"slug"`
 	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
 	Value *string `json:"value,omitempty"`
+}
+
+// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+type ActionCommandModerationMember struct {
+	// 64 位小写十六进制 Nostr 公钥
+	TargetPubkey    string                     `json:"targetPubkey"`
+	TimeoutDuration *ModerationTimeoutDuration `json:"timeoutDuration,omitempty"`
+}
+
+// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+type ActionCommandModerationReport struct {
+	// 消息所在私聊；本人须为其当前参与者
+	ConversationID *string `json:"conversationId,omitempty"`
+	// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+	EventID string `json:"eventId"`
+	// 原“补充说明（可选）”，至多 1000 字符
+	Note       *string              `json:"note,omitempty"`
+	ReportType ModerationReportType `json:"reportType"`
+	// 消息所在 Workspace Channel；本人须为其当前成员
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+type ActionCommandModerationResolution struct {
+	ReportEventIDS   []string                   `json:"reportEventIds"`
+	ResolutionAction ModerationResolutionAction `json:"resolutionAction"`
+	Status           ModerationResolutionStatus `json:"status"`
 }
 
 // Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
@@ -6337,6 +6437,94 @@ type LegacySecretRefBinding struct {
 	Pubkey      string      `json:"pubkey"`
 }
 
+// GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
+// Tenant manage。canModerate 是与 moderation.ban 准入同一条 fresh 判定（目录开放、非 Platform Catalog、scope
+// guard 与 tenant manage）的提示，不是授权票据，提交时仍完整重新准入；它不读取任何限制或队列事实。
+type ModerationAccessView struct {
+	CanModerate bool `json:"canModerate"`
+}
+
+// GET /api/v1/moderation/audit（DD-125(2)）：Relay moderation_actions（审核日志）是唯一权威，Core 以 Tenant
+// CONTROL 经 NIP-98 读取 /moderation/audit，只回给 fresh Tenant manage 的请求者，每次读取写 ACCESS
+// 审计，不复制。单次至多 500 行，按时间倒序。CONTROL 签发的执法行其 actorPubkey 是 CONTROL；发起人与准入记录在 Core 的
+// ActionExecution 与 AuditEvent。
+type ModerationAuditPage struct {
+	Items []ModerationAuditView `json:"items"`
+	// Relay 返回已达单次读取上界（500 行）
+	Truncated bool `json:"truncated"`
+}
+
+type ModerationAuditView struct {
+	// Relay 审核日志词表（ban、unban、timeout、untimeout、resolve:<action>、dismiss_report、escalate 等），原样呈现
+	Action      string  `json:"action"`
+	ActorPubkey string  `json:"actorPubkey"`
+	ChannelID   *string `json:"channelId,omitempty"`
+	// RFC3339
+	CreatedAt     string  `json:"createdAt"`
+	ID            string  `json:"id"`
+	PublicReason  *string `json:"publicReason,omitempty"`
+	TargetEventID *string `json:"targetEventId,omitempty"`
+	TargetPubkey  *string `json:"targetPubkey,omitempty"`
+}
+
+// GET /api/v1/moderation/reports[?status=open]（DD-125(2)、V-SCN-130）：Relay
+// moderation_reports 是唯一权威，Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/reports，只回给 fresh
+// Tenant manage 的请求者，每次读取写 ACCESS 审计，Core 不复制。单次至多 500 行（Relay 上界），按创建时间倒序。reporterPubkey
+// 只出现在此审核面，不得进入被举报人可见的任何视图。
+type ModerationReportPage struct {
+	Items []ModerationReportView `json:"items"`
+	// Relay 返回已达单次读取上界（500 行），更早的行未包含
+	Truncated bool `json:"truncated"`
+}
+
+type ModerationReportView struct {
+	// 事件目标所在 Relay Channel；其余目标缺省
+	ChannelID *string `json:"channelId,omitempty"`
+	// RFC3339
+	CreatedAt string `json:"createdAt"`
+	// Relay 举报行 ID
+	ID             string  `json:"id"`
+	Note           *string `json:"note,omitempty"`
+	ReporterPubkey string  `json:"reporterPubkey"`
+	// 签名的 kind 1984 事件 ID；9044 以它定位举报
+	ReportEventID string               `json:"reportEventId"`
+	ReportType    ModerationReportType `json:"reportType"`
+	// RFC3339
+	ResolvedAt       *string                `json:"resolvedAt,omitempty"`
+	ResolvedByPubkey *string                `json:"resolvedByPubkey,omitempty"`
+	Status           ModerationReportStatus `json:"status"`
+	// 事件 ID、公钥或附件 SHA-256（十六进制）
+	Target string `json:"target"`
+	// 事件目标由 CONTROL 回读得到的签名者；pubkey 目标即其本身；不可读时缺省
+	TargetAuthorPubkey *string                    `json:"targetAuthorPubkey,omitempty"`
+	TargetKind         ModerationReportTargetKind `json:"targetKind"`
+	// targetAuthorPubkey 属于本 Tenant 某 HUMAN Principal 时给出；AGENT 或未知公钥缺省（不提供封禁与踢出）
+	TargetPrincipalID *string `json:"targetPrincipalId,omitempty"`
+	// channelId 对应本 Tenant 的 Workspace 时给出，供 moderation.message.delete 与
+	// workspace.member.revoke 定位
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// GET /api/v1/moderation/restricted（DD-125(2)、V-SCN-127）：Relay community_bans
+// 中当前有效的封禁与禁言，是唯一权威；Core 以 Tenant CONTROL 经 NIP-98 读取 /moderation/restricted，只回给 fresh
+// Tenant manage 的请求者，每次读取写 ACCESS 审计，不复制。成员与原版一样读不到自己的限制。
+type ModerationRestrictionPage struct {
+	Items []ModerationRestrictionView `json:"items"`
+}
+
+type ModerationRestrictionView struct {
+	// RFC3339；永久封禁缺省
+	BanExpiresAt *string `json:"banExpiresAt,omitempty"`
+	Banned       bool    `json:"banned"`
+	// RFC3339；未禁言缺省
+	MutedUntil *string `json:"mutedUntil,omitempty"`
+	// 该公钥属于本 Tenant 某 HUMAN Principal 时给出
+	PrincipalID *string `json:"principalId,omitempty"`
+	Pubkey      string  `json:"pubkey"`
+	// RFC3339
+	UpdatedAt string `json:"updatedAt"`
+}
+
 // GET /api/v1/native/community 的回应，只对原生入口开放（DD-75/78）。relayUrl 的 authority 就是
 // communityHost：Relay 按连接的 Host 绑定 Community，非默认端口属于 host（SF-BUZ-32、SF-BUZ-41）。
 type NativeCommunityFacts struct {
@@ -6429,6 +6617,21 @@ type CommandClass struct {
 	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 	// 输入；其他命令禁止携带。
 	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
+	// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
+	// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
+	ModerationEventID *string `json:"moderationEventId,omitempty"`
+	// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+	// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+	// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+	// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+	ModerationMember *CommandModerationMember `json:"moderationMember,omitempty"`
+	// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+	// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+	// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+	ModerationReport *CommandModerationReport `json:"moderationReport,omitempty"`
+	// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+	// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+	ModerationResolution *CommandModerationResolution `json:"moderationResolution,omitempty"`
 	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
@@ -6469,6 +6672,39 @@ type CommandClass struct {
 type CommandBindingSecretValue struct {
 	SecretKey string `json:"secretKey"`
 	Value     string `json:"value"`
+}
+
+// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
+// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
+// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
+// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
+type CommandModerationMember struct {
+	// 64 位小写十六进制 Nostr 公钥
+	TargetPubkey    string                     `json:"targetPubkey"`
+	TimeoutDuration *ModerationTimeoutDuration `json:"timeoutDuration,omitempty"`
+}
+
+// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
+// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
+// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
+type CommandModerationReport struct {
+	// 消息所在私聊；本人须为其当前参与者
+	ConversationID *string `json:"conversationId,omitempty"`
+	// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
+	EventID string `json:"eventId"`
+	// 原“补充说明（可选）”，至多 1000 字符
+	Note       *string              `json:"note,omitempty"`
+	ReportType ModerationReportType `json:"reportType"`
+	// 消息所在 Workspace Channel；本人须为其当前成员
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
+// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
+type CommandModerationResolution struct {
+	ReportEventIDS   []string                   `json:"reportEventIds"`
+	ResolutionAction ModerationResolutionAction `json:"resolutionAction"`
+	Status           ModerationResolutionStatus `json:"status"`
 }
 
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -8400,6 +8636,17 @@ type ErrorBody struct {
 	// 贯穿 Core、Worker、adapter 与组件的关联键
 	OperationID *string    `json:"operationId,omitempty"`
 	Reason      ReasonCode `json:"reason"`
+	// 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+	// Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+	Restriction *PublishRestriction `json:"restriction,omitempty"`
+}
+
+// 仅随 PUBLISH_REJECTED：Relay 以社区禁言或封禁拒绝本人内容写入时的结构化原因，供原禁言横幅倒计时（DD-125(2)、V-SCN-129）。只来自
+// Relay 对本人这次写入的拒绝文本，不是限制列表读取；其他拒绝缺省。
+type PublishRestriction struct {
+	Kind PublishRestrictionKind `json:"kind"`
+	// TIMED_OUT 的到期时刻（RFC3339，取自 Relay 拒绝文本的 unix 秒）；BANNED 或拒绝文本未给出可解析时刻时缺省
+	Until *string `json:"until,omitempty"`
 }
 
 // BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
@@ -9490,13 +9737,13 @@ const (
 	Approve                      CapabilityPermission = "approve"
 	Audit                        CapabilityPermission = "audit"
 	CapabilityPermissionConsume  CapabilityPermission = "consume"
+	CapabilityPermissionDelete   CapabilityPermission = "delete"
 	CapabilityPermissionDiscover CapabilityPermission = "discover"
 	CapabilityPermissionExecute  CapabilityPermission = "execute"
 	CapabilityPermissionManage   CapabilityPermission = "manage"
 	CapabilityPermissionRead     CapabilityPermission = "read"
 	Create                       CapabilityPermission = "create"
 	Delegate                     CapabilityPermission = "delegate"
-	Delete                       CapabilityPermission = "delete"
 	Export                       CapabilityPermission = "export"
 	Share                        CapabilityPermission = "share"
 	TransferOwner                CapabilityPermission = "transfer_owner"
@@ -9556,6 +9803,51 @@ type ExpectedHeadState string
 const (
 	ExpectedHeadStateABSENT ExpectedHeadState = "ABSENT"
 	ExpectedHeadStateFOUND  ExpectedHeadState = "FOUND"
+)
+
+// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+type ModerationTimeoutDuration string
+
+const (
+	OneDay    ModerationTimeoutDuration = "ONE_DAY"
+	OneHour   ModerationTimeoutDuration = "ONE_HOUR"
+	SevenDays ModerationTimeoutDuration = "SEVEN_DAYS"
+)
+
+// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+type ModerationReportType string
+
+const (
+	Illegal       ModerationReportType = "illegal"
+	Impersonation ModerationReportType = "impersonation"
+	Malware       ModerationReportType = "malware"
+	Nudity        ModerationReportType = "nudity"
+	Other         ModerationReportType = "other"
+	Profanity     ModerationReportType = "profanity"
+	Spam          ModerationReportType = "spam"
+)
+
+// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+type ModerationResolutionAction string
+
+const (
+	Ban                              ModerationResolutionAction = "ban"
+	Dismiss                          ModerationResolutionAction = "dismiss"
+	Escalate                         ModerationResolutionAction = "escalate"
+	Kick                             ModerationResolutionAction = "kick"
+	ModerationResolutionActionDelete ModerationResolutionAction = "delete"
+)
+
+// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+// resolved。
+type ModerationResolutionStatus string
+
+const (
+	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
+	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
 )
 
 type TenantQuotaFeature string
@@ -10226,6 +10518,26 @@ const (
 	Human   BindingKind = "HUMAN"
 )
 
+// Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
+// 词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。
+type ModerationReportStatus string
+
+const (
+	Escalated                       ModerationReportStatus = "escalated"
+	ModerationReportStatusDismissed ModerationReportStatus = "dismissed"
+	ModerationReportStatusOpen      ModerationReportStatus = "open"
+	ModerationReportStatusResolved  ModerationReportStatus = "resolved"
+)
+
+// 举报目标类别（Relay report_json.target_kind）：event 为消息事件、pubkey 为成员、blob 为附件（SF-BUZ-52）。
+type ModerationReportTargetKind string
+
+const (
+	Blob   ModerationReportTargetKind = "blob"
+	Event  ModerationReportTargetKind = "event"
+	Pubkey ModerationReportTargetKind = "pubkey"
+)
+
 type Permission string
 
 const (
@@ -10571,6 +10883,15 @@ type CapabilityVectorFormat string
 const (
 	V1 CapabilityVectorFormat = "V1"
 	V2 CapabilityVectorFormat = "V2"
+)
+
+// Relay 以社区限制拒绝本人内容写入的类别（DD-125(2)）：TIMED_OUT 对应 `restricted: you are timed out until
+// <ts>`，BANNED 对应 `blocked: you are banned from this community`。
+type PublishRestrictionKind string
+
+const (
+	Banned                         PublishRestrictionKind = "BANNED"
+	PublishRestrictionKindTIMEDOUT PublishRestrictionKind = "TIMED_OUT"
 )
 
 type NativeDocumentSelectionActionKey string
