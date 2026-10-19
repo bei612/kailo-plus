@@ -2211,6 +2211,165 @@ mod registration_tests {
         assert!(registration(&smuggled).is_err());
     }
 
+    fn data_query_v2() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/data_query.v2/registration.json"
+        ))
+        .unwrap()
+    }
+
+    /// DD-124(1)(3): the members data_query@1 typed as Wren's own formats.
+    fn opaque_generated(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::Object(properties)) = map.get_mut("properties") {
+                    for member in ["deploymentId", "deploymentHash", "nativeRevision"] {
+                        if let Some(slot) = properties.get_mut(member) {
+                            *slot = json!({"minLength":1,"type":"string"});
+                        }
+                    }
+                }
+                for child in map.values_mut() {
+                    opaque_generated(child);
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(opaque_generated),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn data_query_v2_relaxes_only_generated_members_and_captures_them() {
+        let raw = data_query_v2();
+        let registered = registration(&raw).expect("DD-124(3) data_query@2");
+        let seed = builtin_data_query().unwrap();
+        assert_eq!(registered.category, "data_query");
+        assert_eq!(registered.version, 2);
+        // Every schema is @1's with only the generated members made opaque.
+        let documents = |set: &Value, relax: bool| -> BTreeSet<String> {
+            let mut out = BTreeSet::new();
+            for entry in set.as_array().unwrap() {
+                let mut schema = entry["schema"].clone();
+                if relax {
+                    opaque_generated(&mut schema);
+                }
+                out.insert(schema.to_string());
+            }
+            out
+        };
+        assert_eq!(
+            documents(&registered.schemas, false),
+            documents(&seed.schemas, true)
+        );
+        assert_ne!(registered.schema_digest, seed.schema_digest);
+        let old = seed.content["operationContracts"].as_array().unwrap();
+        let new = registered.content["operationContracts"].as_array().unwrap();
+        assert_eq!(old.len(), new.len());
+        for (old, new) in old.iter().zip(new) {
+            let key = old["contractKey"].as_str().unwrap().replace("@v1", "@v2");
+            assert_eq!(new["contractKey"], json!(key));
+            for field in ["surface", "permission", "targetType"] {
+                assert_eq!(new[field], old[field]);
+            }
+        }
+        for field in [
+            "resourceTypeFamily",
+            "contentReferenceSemantics",
+            "requiredDeclarations",
+            "protocolSessionKinds",
+        ] {
+            assert_eq!(registered.content[field], seed.content[field]);
+        }
+        assert_eq!(registered.vectors["formatVersion"], "V2");
+        assert!(vector::has_roundtrip(&registered.vectors));
+        let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
+        let order: Vec<_> = steps.iter().map(|step| step["stepKey"].clone()).collect();
+        assert_eq!(json!(order), json!(["describe", "dry_run", "query"]));
+        // The V2 vectors cannot be carried by the @1 schemas: a placeholder
+        // fails Wren's hex/integer typing at register time.
+        let mut typed = raw.clone();
+        let seed_raw: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/data_query.v1/registration.json"
+        ))
+        .unwrap();
+        typed["schemaDocuments"] = seed_raw["schemaDocuments"].clone();
+        let pairs = seed_raw["operationContracts"].as_array().unwrap();
+        for (operation, original) in typed["operationContracts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(pairs)
+        {
+            for field in ["inputSchemaDigest", "outputSchemaDigest"] {
+                operation[field] = original[field].clone();
+            }
+        }
+        assert!(registration(&typed).is_err());
+    }
+
+    #[test]
+    fn data_query_v2_refuses_literal_deployment_identifiers() {
+        let raw = data_query_v2();
+        // V-SCN-152: the deployment id Wren's native deploy generated.
+        let literal = edit_step(&raw, 1, |step| {
+            edit_json(step, "expectedOutputJson", |expected| {
+                expected["deploymentId"] = json!("1");
+            });
+            step["bindings"].as_array_mut().unwrap().remove(2);
+        });
+        assert!(registration(&literal).is_err());
+        let hash = edit_step(&raw, 2, |step| {
+            edit_json(step, "expectedOutputJson", |expected| {
+                expected["deploymentHash"] = json!("b6868695012f1cadd395755ace4189a75bcc81bc");
+            });
+            step["bindings"].as_array_mut().unwrap().remove(3);
+        });
+        assert!(registration(&hash).is_err());
+        let revision = edit_step(&raw, 2, |step| {
+            edit_json(step, "inputJson", |input| {
+                input["nativeRevision"] = json!("a".repeat(64));
+            });
+            step["bindings"].as_array_mut().unwrap().remove(1);
+        });
+        assert!(registration(&revision).is_err());
+        // describe's own capture is normalized, then substituted downstream.
+        let registered = registration(&raw).unwrap();
+        let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
+        let response = json!({"execution":{"platformStatus":"SUCCEEDED","nativeStatus":"SUCCEEDED"},
+            "contentReference":{"nativeObjectRef":"model-intent","nativeRevision":"intent-digest"}});
+        let mut result = json!({"deploymentId":"7","deploymentHash":"wren-hash",
+            "models":[{"name":"public_source","columns":[{"name":"value","type":"INTEGER"}]}]});
+        let captured = vector::capture(&steps[0], &response, Some(&mut result))
+            .unwrap()
+            .unwrap();
+        let expected: Value =
+            serde_json::from_str(steps[0]["expectedOutputJson"].as_str().unwrap()).unwrap();
+        assert_eq!(result, expected);
+        let values: BTreeMap<String, String> = captured
+            .iter()
+            .map(|entry| {
+                let key = entry["key"].as_str().unwrap().to_owned();
+                (key, entry["value"].as_str().unwrap().to_owned())
+            })
+            .collect();
+        let input: Value = serde_json::from_str(steps[2]["inputJson"].as_str().unwrap()).unwrap();
+        let mut request = json!({"arguments":{"input":input}});
+        let mut expected: Value =
+            serde_json::from_str(steps[2]["expectedOutputJson"].as_str().unwrap()).unwrap();
+        vector::apply(&steps[2], &values, &mut request, &mut expected).unwrap();
+        assert_eq!(
+            request["arguments"]["input"]["nativeObjectRef"],
+            "model-intent"
+        );
+        assert_eq!(
+            request["arguments"]["input"]["nativeRevision"],
+            "intent-digest"
+        );
+        assert_eq!(expected["deploymentId"], "7");
+        assert_eq!(expected["deploymentHash"], "wren-hash");
+        assert_eq!(expected["data"], json!([[1]]));
+    }
+
     #[test]
     fn v2_values_are_frozen_substituted_captured_and_rechecked() {
         let registered = registration(&file_storage_v2()).unwrap();
