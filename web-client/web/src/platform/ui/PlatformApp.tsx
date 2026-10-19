@@ -80,6 +80,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BffError, bff, publishChannelTopic, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { WebAgentTranscriptHost } from "./WebAgentTranscriptHost";
+import { AgentActivityOpenerHost } from "@client-kit/platform/react/agent-transcript";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { BffReminderHost } from "@/platform/ui/ReminderHost";
@@ -171,7 +173,7 @@ export function PlatformApp() {
           }}
         />
       ) : (
-        <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><SignedIn session={session} /></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
+        <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><WebAgentTranscriptHost session={session}><SignedIn session={session} /></WebAgentTranscriptHost></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
       )}
     </PlatformProvider>
   );
@@ -227,6 +229,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   }, [directMessageOwner]);
   const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
   const navigation = usePlatformNavigation(searchScopeKey);
+  // DD-125(6): a working Agent row outside the channel view opens that channel, then its activity.
+  const openAgentActivityChannel = useCallback((workspaceId: string) => { void navigation.openChannel(workspaceId); }, [navigation]);
   const { tab, messageTarget } = navigation;
   usePreviewFeatureWarning(tab);
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
@@ -561,6 +565,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     canMessage: (pubkey: string) => ownPubkeys !== null && ownPubkeys.size > 0 && !ownPubkeys.has(pubkey) };
   return (
     <CollaborationPreferencesProvider value={preferences}>
+    <AgentActivityOpenerHost navigate={openAgentActivityChannel}>
     <ProfileDirectMessageProvider value={profileDirectMessage}>
     {/* Original `#channel` composer suggestions: the admitted directory's channel names. */}
     <ComposerChannelLinksProvider channels={searchDirectory.isError ? undefined : searchDirectory.data?.channels}>
@@ -766,6 +771,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </BffReminderHost>
     </ComposerChannelLinksProvider>
     </ProfileDirectMessageProvider>
+    </AgentActivityOpenerHost>
     </CollaborationPreferencesProvider>
   );
 }

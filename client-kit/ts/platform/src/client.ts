@@ -29,6 +29,7 @@ import type {
   AgentInstallationToolPage,
   AgentSessionPage,
   AgentInvocationPage,
+  AgentActiveTurnPage,
   AgentMemoryReadView,
   AgentMemoryEntryPage,
   AgentVersionView,
@@ -97,12 +98,30 @@ import type {
   WebGIFSearchRequest,
   WebGIFSearchView,
   WebGIFShareRequest,
+  AgentTranscriptPage,
+  AgentTranscriptEvent,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
 
 export type BffClient = ReturnType<typeof createBffClient>;
+
+/** DD-125(6): state of the host's live Agent transcript stream. */
+export type AgentTranscriptStreamState = "connecting" | "live" | "reconnecting" | "closed";
+
+/**
+ * Host seam for GET /api/v1/agent-installations/{id}/transcript/stream (SSE frames
+ * retry/live/transcript/closed). Only a host with a live transport implements it
+ * (Web: EventSource); without it the transcript is read by pages only. Returns
+ * the close function. Installation `audit` is checked by Core at open and on its
+ * periodic readmission; a `closed` frame with `scope-revoked` ends the stream.
+ */
+export type AgentTranscriptStreamOpener = (
+  installationId: string,
+  onEvent: (event: AgentTranscriptEvent) => void,
+  onState: (state: AgentTranscriptStreamState, reason?: string) => void,
+) => () => void;
 
 export function createBffClient(transport: BffTransport) {
   // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/profile/hooks.ts: the
@@ -310,6 +329,22 @@ export function createBffClient(transport: BffTransport) {
       if (rootEventId !== undefined) query.set("rootEventId", rootEventId);
       if (cursor !== undefined) query.set("cursor", cursor);
       return get<AgentSessionPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/sessions${query.size ? `?${query}` : ""}`);
+    },
+    /**
+     * DD-125(6): running Agent turns of one admitted Workspace, only for Installations the reader
+     * holds `audit` on (audited read). Members get no row and rely on the Agent's 20002.
+     */
+    agentActiveTurns: (workspaceId: string) =>
+      get<AgentActiveTurnPage>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-turns`, true),
+    /**
+     * DD-125(6), V-SCN-143: one AgentSession's Codex thread items (ascending pages, scope-bound
+     * cursor). Installation `audit` only; every read is an audited sensitive read in Core, so it
+     * is never answered from a shared settled read.
+     */
+    agentTranscript: (installationId: string, rootEventId: string, projectionGeneration: number, cursor?: string) => {
+      const query = new URLSearchParams({ rootEventId, projectionGeneration: String(projectionGeneration) });
+      if (cursor !== undefined) query.set("cursor", cursor);
+      return get<AgentTranscriptPage>(`/api/v1/agent-installations/${encodeURIComponent(installationId)}/transcript?${query}`, true);
     },
     agentInvocations: (resourceId: string, rootEventId: string, projectionGeneration: number, cursor?: string) => {
       const query = new URLSearchParams({ rootEventId, projectionGeneration: String(projectionGeneration) });

@@ -25,16 +25,18 @@ function UnreadDotBadge({
 
 
 export function ChannelRow({ channel, label, isActive, hasUnread, hasThreadUnread, isMuted, onSelectChannel,
-  glyph, ephemeralBadge, labelAdornment, Button = SidebarMenuButton,
+  glyph, ephemeralBadge, labelAdornment, workingBadge, Button = SidebarMenuButton,
 }: { channel: SidebarChannel; label?: string; isActive: boolean; hasUnread: boolean; hasThreadUnread: boolean;
   isMuted?: boolean; onSelectChannel: (id: string) => void; glyph: (className: string) => ReactNode;
   ephemeralBadge?: ReactNode;
+  /** DD-125(6): original ChannelWorkingBadge while an Agent works here; hides the TTL badge. */
+  workingBadge?: ReactNode;
   /** Original 1:1 DM UserNameIndicators after the label. */
   labelAdornment?: ReactNode;
   Button?: ComponentType<ComponentProps<typeof SidebarMenuButton>>;
 }) {
   const resolvedLabel = label ?? channel.name;
-  const showsEphemeralBadge = Boolean(ephemeralBadge) && !isMuted && !hasThreadUnread;
+  const showsEphemeralBadge = Boolean(ephemeralBadge) && !workingBadge && !isMuted && !hasThreadUnread;
   const inactiveContentOpacity = cn(
     !isActive && !hasUnread && !isMuted && "opacity-80",
     !isActive && isMuted && !hasUnread && !hasThreadUnread && "sidebar-muted-content opacity-50 dark:opacity-45",
@@ -68,6 +70,7 @@ export function ChannelRow({ channel, label, isActive, hasUnread, hasThreadUnrea
         {labelAdornment}
       </span>
       {showsEphemeralBadge ? ephemeralBadge : null}
+      {workingBadge ?? null}
       {isMuted ? (
         <BellOff
           className={cn(

@@ -70,12 +70,16 @@ import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messa
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { useChannelAgentActivityPanel } from "./ChannelAgentActivityPanel";
+import { AgentActivityOpenerProvider } from "@client-kit/platform/react/agent-transcript";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
-import { TypingIndicatorRow } from "@client-kit/platform/react/messages/TypingIndicatorRow";
-import { ComposerActivityAccessory } from "@client-kit/platform/react/messages/ComposerActivityAccessory";
+// DD-125(6): original ChannelComposerActivityAccessory (working Agents + typing) over the shared signal.
+import { ChannelComposerActivityAccessory, useChannelAgentActivity, type BotActivityAgent } from "@client-kit/platform/react/agent-activity";
+import { loadWorkspaceAgents } from "@client-kit/platform/react/agent-installation-view";
+import { truncateNpub } from "@client-kit/platform/react/conversations/pubkey";
 import { ComposerDockBackdrop } from "@client-kit/platform/react/thread/ComposerDockBackdrop";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffAudioAttachment } from "@/features/chat/ui/BffAudioAttachment";
@@ -376,10 +380,32 @@ export function ChannelPane({
   const ownedAgentPubkeys = useMemo(() => new Set(typingAgents.data?.agents
     .filter(agent => agent.installation.ownerPrincipalId === myPrincipalId).map(agent => agent.pubkey.toLowerCase())),
   [typingAgents.data, myPrincipalId]);
+  // DD-125(6): the original Agent activity panel, for Installation `audit` holders only.
+  const agentActivityPanel = useChannelAgentActivityPanel({agents: typingAgents.data?.agents, channelName,
+    channelId: conversation ? null : admittedChannelId ?? null, scopeId: conversation ? null : workspaceId,
+    enabled: !conversation && live && !denied});
   // DD-125(1): thread follow/mute live in Core CollaborationUserState (shared provider).
   const preferences = useCollaborationPreferences();
+  // DD-125(6): every Agent this person may read (not only those they may invoke) is an Agent for
+  // the working signal; its 20002 never shows as a person typing.
+  const channelAgents = useQuery({
+    queryKey: ["platform", "channel-agents", workspaceId],
+    queryFn: () => loadWorkspaceAgents(bff, workspaceId),
+    enabled: !conversation && live && !denied && !metadataPending,
+    retry: false,
+  });
+  const readableAgents = channelAgents.isSuccess && Array.isArray(channelAgents.data) ? channelAgents.data : undefined;
+  const agentActivity = useChannelAgentActivity({ client: bff, channelId: conversation ? null : workspaceId,
+    agents: readableAgents, typingEntries: window.typing, enabled: !conversation && live && !denied && !metadataPending });
+  const { openAgentActivity } = agentActivityPanel.opener;
+  const workingAgents = useMemo<BotActivityAgent[]>(() => (readableAgents ?? []).flatMap((row) => row.agentPubkey ? [{
+    pubkey: row.agentPubkey,
+    name: row.agentDisplayName?.trim() || (typingAgents.data?.agents.find((agent) => agent.installation.resourceId === row.resourceId)?.displayName ?? truncateNpub(row.agentPubkey)),
+    ...(row.canAudit === true ? { auditInstallationId: row.resourceId } : {}),
+  }] : []), [readableAgents, typingAgents.data]);
   const humanTypingEntries = window.typing.filter(entry => !mine.has(entry.pubkey)
-    && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey));
+    && entry.pubkey !== ownProfile.data?.pubkey && !agentTypingPubkeys.has(entry.pubkey)
+    && !agentActivity.agentPubkeys.has(entry.pubkey.toLowerCase()));
   const typingPubkeys = humanTypingEntries
     .filter(entry => entry.threadHeadId === null)
     .map(entry => entry.pubkey);
@@ -814,6 +840,7 @@ export function ChannelPane({
       channelName={channelName} channelType={conversation ? "dm" : "stream"}
       messages={[...routeMessageById.values()]} available={live && !denied && !archived && !metadataPending && members.isSuccess && !members.isError}
       onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl}>
+    <AgentActivityOpenerProvider value={agentActivityPanel.opener}>
     <div ref={paneRef} className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
     <div inert={channelIsCovered ? true : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
       <div className="text-xs text-muted-foreground" role="status">
@@ -926,7 +953,7 @@ export function ChannelPane({
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message edit has no confirmed receipt.");
           return receipt;
         }} /> : null}
-      <div hidden={mainEditTarget !== null} className={`composer-dock composer-overlay-corner-masks relative pointer-events-auto${typingPubkeys.length ? " composer-dock--with-activity" : ""}`}>
+      <div hidden={mainEditTarget !== null} className={`composer-dock composer-overlay-corner-masks relative pointer-events-auto${typingPubkeys.length || agentActivity.workingBotPubkeys.length ? " composer-dock--with-activity" : ""}`}>
       {timeoutState.active && !denied ? <ComposerTimeoutBanner expiresAtMs={timeoutState.expiresAtMs} /> : null}
       <ComposerDockBackdrop gutterClassName="inset-x-5" />
       {denied ? null : conversation
@@ -953,14 +980,12 @@ export function ChannelPane({
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
             autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed} onOpenMessageLink={onOpenMessageLink} /></>}
-      <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row"
-        visible={typingPubkeys.length > 0}>
-        <div className="flex w-full items-center gap-2 overflow-visible pl-2">
-          <TypingIndicatorRow resolveMediaUrl={messageReactions.resolveMediaUrl} channel={null} currentPubkey={ownProfile.data?.pubkey} profiles={profiles}
-            className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
-            typingPubkeys={typingPubkeys} />
-        </div>
-      </ComposerActivityAccessory>
+      <ChannelComposerActivityAccessory agents={workingAgents} channelId={conversation ? null : workspaceId} channel={null}
+        currentPubkey={ownProfile.data?.pubkey} profiles={profiles} resolveMediaUrl={messageReactions.resolveMediaUrl}
+        onOpenAgentSession={(pubkey, channelId) => openAgentActivity(pubkey, { channelId: channelId ?? null })}
+        openAgentSessionPubkey={null}
+        typingPubkeys={typingPubkeys} workingBotPubkeys={agentActivity.workingBotPubkeys}
+        visible={typingPubkeys.length > 0 || agentActivity.workingBotPubkeys.length > 0} />
       </div>
     </div>
     {systemProfileTarget && systemProfileTarget.workspaceId === workspaceId && selectedSystemMember?.principalId === systemProfileTarget.principalId && "state" in selectedSystemMember && selectedSystemMember.state === "ACTIVE" && live && !denied && !conversation ? <MemberProfilePanel key={`${myPrincipalId}:${systemProfileTarget.workspaceId}:${systemProfileTarget.pubkey}`}
@@ -973,6 +998,7 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
+    {agentActivityPanel.panel}
     {agentDialogsMounted && !conversation && live && !denied ? <Suspense fallback={null}>
       <WorkspaceAgentDialogs workspaceId={workspaceId} workspaceName={channelName ?? ""} createOpen={false} onCreateOpenChange={() => {}}
         selectedId={renewInstallationId} onSelectedChange={setRenewInstallationId} manageDelegation />
@@ -1009,6 +1035,7 @@ export function ChannelPane({
     {live && !denied && !metadataPending ? <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence> : null}
     {deleteMessageDialog.dialog}
     </div>
+    </AgentActivityOpenerProvider>
     </BffVideoReviewProvider>
   );
 }

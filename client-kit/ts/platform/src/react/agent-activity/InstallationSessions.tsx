@@ -11,6 +11,7 @@ import { useBffClient, useLocale, useReasonText, useT } from "../context";
 import { useLoad } from "../use-load";
 import { Badge, Button, Cell, Notice, ReadFailure, Table } from "../ui";
 import { TaskDetail } from "../governance";
+import { AgentSessionTranscriptView } from "../agent-transcript/AgentSessionPanel";
 
 const sessionLabels = {
   PENDING: "agents.sessions.state.pending", STARTING: "agents.sessions.state.starting",
@@ -76,12 +77,16 @@ export function InstallationSessions({ installation }: { installation: AgentInst
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  // DD-125(6), V-SCN-143: the Codex transcript only for Installation `audit` holders.
+  const [transcript, setTranscript] = useState<string | null>(null);
   const cursor = cursors[index];
   const [state, reload] = useLoad(`agent-sessions:${installation.workspaceId}:${installation.resourceId}:${cursor ?? ""}`,
     () => client.agentSessions(installation.resourceId, undefined, cursor));
   useForegroundRead(reload);
   const page = state.status === "ok" && validSessionPage(state.data, installation, cursors.slice(0, index + 1)) ? state.data : null;
   const selectedSession = page?.sessions.find(row => JSON.stringify([row.rootEventId, row.projectionGeneration]) === selected);
+  const transcriptSession = installation.canAudit === true
+    ? page?.sessions.find(row => JSON.stringify([row.rootEventId, row.projectionGeneration]) === transcript) : undefined;
   return <section className="mt-4 space-y-3" data-testid="agent-installation-sessions">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
@@ -93,7 +98,8 @@ export function InstallationSessions({ installation }: { installation: AgentInst
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice> : !page ?
       <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : <>
         {page.sessions.length === 0 ? <Notice>{t("agents.sessions.empty")}</Notice> :
-          <Table head={[t("agents.sessions.root"), t("agents.installation.generation"), t("agents.sessions.recordedState"), t("agents.sessions.created")]}>
+          <Table head={[t("agents.sessions.root"), t("agents.installation.generation"), t("agents.sessions.recordedState"), t("agents.sessions.created"),
+            ...(installation.canAudit === true ? [t("agentTranscript.sessions.open")] : [])]}>
             {page.sessions.map(row => {
               const identity = JSON.stringify([row.rootEventId, row.projectionGeneration]);
               return <tr key={identity}>
@@ -103,15 +109,25 @@ export function InstallationSessions({ installation }: { installation: AgentInst
                 <Cell>{row.projectionGeneration}</Cell>
                 <Cell><Badge tone="neutral">{t(sessionLabels[row.status])}</Badge></Cell>
                 <Cell><time dateTime={String(row.createdAt)}>{new Date(String(row.createdAt)).toLocaleString(locale)}</time></Cell>
+                {installation.canAudit === true ? <Cell><Button aria-expanded={transcript === identity}
+                  aria-label={t("agentTranscript.sessions.openLabel", { root: row.rootEventId, generation: row.projectionGeneration })}
+                  onClick={() => setTranscript(transcript === identity ? null : identity)}>
+                  {t(transcript === identity ? "agentTranscript.sessions.hide" : "agentTranscript.sessions.open")}</Button></Cell> : null}
               </tr>;
             })}
           </Table>}
         <div className="flex gap-2">
-          {index > 0 ? <Button onClick={() => { setSelected(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
+          {index > 0 ? <Button onClick={() => { setSelected(null); setTranscript(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
           {page.nextCursor !== undefined ? <Button onClick={() => {
-            setSelected(null); setCursors(old => [...old.slice(0, index + 1), page.nextCursor]); setIndex(index + 1);
+            setSelected(null); setTranscript(null); setCursors(old => [...old.slice(0, index + 1), page.nextCursor]); setIndex(index + 1);
           }}>{t("roles.next")}</Button> : null}
         </div>
+        {transcriptSession ? <AgentSessionTranscriptView key={transcript ?? ""}
+          agentAvatarUrl={null} agentName={installation.agentDisplayName ?? t("agentTranscript.agentFallback")}
+          agentPubkey={installation.agentPubkey ?? installation.agentPrincipalId}
+          emptyDescription={t("agentTranscript.emptyChannel", { name: installation.agentDisplayName ?? t("agentTranscript.agentFallback") })}
+          installation={installation} projectionGeneration={transcriptSession.projectionGeneration}
+          rootEventId={transcriptSession.rootEventId} /> : null}
         {selectedSession ? <SessionInvocations key={JSON.stringify([selectedSession.rootEventId, selectedSession.projectionGeneration])} session={selectedSession} /> : null}
       </>}
   </section>;

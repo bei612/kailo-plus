@@ -26,6 +26,8 @@ export function validInstallation(row: AgentInstallationView): boolean {
     || !Object.values(ResourceState).includes(row.resourceState)
     || !Object.values(AgentInstallationState).includes(row.state)
     || (row.canUpgrade !== undefined && typeof row.canUpgrade !== "boolean")
+    // DD-125(6) lifecycle and audit hints are optional booleans; anything else fails closed.
+    || [row.canDisable, row.canEnable, row.canRestart, row.canAudit].some((hint) => hint !== undefined && typeof hint !== "boolean")
     || (row.agentPrincipalState !== "ACTIVE" && row.agentPrincipalState !== "DISABLED")) return false;
   const channel = row.channelBinding;
   if (channel !== undefined && (!channel || !["ACTIVE", "DISABLED", "ERROR"].includes(channel.status)

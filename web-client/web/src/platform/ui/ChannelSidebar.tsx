@@ -10,6 +10,9 @@ import { ChannelGroupSection, type SidebarChannel } from "@client-kit/platform/r
 import { ChannelContextMenuItems } from "@client-kit/platform/react/sidebar/channel-context-menu";
 import { useChannelSidebarActionDialogs } from "@client-kit/platform/react/sidebar/channel-section-dialogs";
 import { ChannelRow } from "@client-kit/platform/react/sidebar/channel-row";
+// DD-125(6): original ChannelWorkingBadge + ChannelActivityPopover from the shared working signal.
+import { ChannelActivityPopover } from "@client-kit/platform/react/sidebar/channel-activity-popover";
+import { ChannelWorkingBadge, useWorkingChannels } from "@client-kit/platform/react/agent-activity";
 import { sortChannelsForSidebar } from "@client-kit/platform/react/sidebar/channel-sort";
 import { useChannelSortPreference } from "@client-kit/platform/react/sidebar/useChannelSortPreference";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
@@ -145,6 +148,9 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
   // can be assigned (Core re-admits each key); entries for channels that are no longer
   // visible stay in Core and are simply not rendered.
   const sectionPrefs = useCollaborationPreferences();
+  // Keyed by the Workspace ID the Web routes and reports channel activity under.
+  const workingChannels = useWorkingChannels();
+  const workingById = useMemo(() => new Map(workingChannels.map((summary) => [summary.channelId, summary])), [workingChannels]);
   const sections = sectionPrefs?.sections ?? NO_SECTIONS;
   const assignments = sectionPrefs?.assignments ?? NO_ASSIGNMENTS;
   const sectionsWritable = sectionPrefs?.writable === true;
@@ -171,13 +177,15 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
   };
   const renderChannelRow = (channel: SidebarChannel & { channelType?: ChannelType }, draggable: boolean) => {
     const ttl = directory?.find((row) => row.id === channel.id)?.channel;
-    const row = <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
+    const working = workingById.get(channel.id);
+    const row = <ChannelActivityPopover activeWorking={working} channel={{ id: channel.id, name: channel.name }}><ChannelRow channel={channel} isActive={active && selectedId === channel.id}
+      workingBadge={working ? <ChannelWorkingBadge channelName={channel.name} isActive={active && selectedId === channel.id} summary={working} /> : undefined}
       hasUnread={unread.has(channel.id)} hasThreadUnread={unread.has(channel.id)}
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
       // DD-119(3,6): the original TTL badge from the admitted directory's channel metadata.
       ephemeralBadge={ttl && isEphemeralChannel(ttl) ? <ChannelEphemeralBadge channel={{ id: channel.id, ttlSeconds: ttl.ttlSeconds, ttlDeadline: ttl.ttlDeadline }}
         testId={`channel-ephemeral-${channel.name}`} variant="sidebar" /> : undefined}
-      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />;
+      glyph={(className) => <ChannelGlyph className={className} channel={{ channelType: channel.channelType, visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} /></ChannelActivityPopover>;
     const native = draggable && sectionPrefs ? nativeChannelId(channel.id) : undefined;
     return native ? <DraggableChannelRow channelId={native}>{row}</DraggableChannelRow> : row;
   };

@@ -56,6 +56,7 @@ import { InstallationMemory } from "./memory";
 import { AgentInstallationUse } from "./agent-installation-use";
 import { installationLabels, validInstallation } from "./agent-installation-view";
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
+import { AgentLifecycleSection } from "./agent-activity/AgentLifecycleControls";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowsListSkeleton } from "./workflow-list-skeleton";
@@ -2226,6 +2227,8 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
       <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {row.projection.runtimeProfileKey}</p>
       <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {row.projection.configHash}</p>
     </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
+    {/* DD-125(6): original Stop / Start agent / Restart agent and "Manage agent access...". */}
+    <AgentLifecycleSection installation={row} name={row.agentDisplayName?.trim() ?? ""} locked={locked} onRecorded={reload} />
     {toolsOpen ? <InstallationTools installation={row} locked={locked} onRegrant={onRegrant} />
       : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setToolsOpen(true)}>{t("agents.installation.tools.open")}</Button>}
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active

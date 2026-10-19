@@ -12,8 +12,10 @@
 // Agent rows (MembersSidebarMemberCard memberIsBot) are the Workspace's governed Agent
 // installations, not memberships: name from the installation directory, the original
 // AddChannelBotDialog is the governed agent.installation.create dialog, and a row opens the
-// installation detail with its use authorization. Lifecycle start/stop, respond-to editing and
-// removal have no governed action and are not offered (core/verify/buzz-restoration-checkpoint.md).
+// installation detail with its use authorization. DD-125(6): the original agent member menu (View
+// activity for Installation audit holders, Stop/Start agent, Manage agent access..., Remove from
+// channel) and the MembersSidebarAgentControls bulk menu map onto agent.installation.disable/enable,
+// same-version agent.installation.upgrade and per-member agent.installation.use.grant/revoke.
 // Member rows restore the original presence corner dot from the DD-120 snapshot, aggregated per
 // person over all bound keys; a member without a presence fact shows no dot (never offline).
 // DD-125(2): the original member-menu moderation items (time out, lift timeout, ban, lift ban;
@@ -50,6 +52,10 @@ import { aggregatePresence } from "./presence/lib/presence";
 import { PresenceCornerDot } from "./presence/ui/PresenceBadge";
 import { TIMEOUT_PRESETS } from "../moderation";
 import { useMembersSidebarModeration } from "./moderation/useMembersSidebarModeration";
+import { useLifecycleRequest } from "./agent-activity/AgentLifecycleControls";
+import { AgentMemberMenu, MembersSidebarAgentControls, bulkTargets } from "./agent-activity/MembersSidebarAgentControls";
+import { EditRespondToDialog } from "./agent-activity/EditRespondToDialog";
+import { useOpenAgentActivity } from "./agent-transcript";
 
 // The governed installation dialogs live with the Agents page; load them on first use only.
 const WorkspaceAgentDialogs = React.lazy(() => import("./agents").then((module) => ({ default: module.WorkspaceAgentDialogs })));
@@ -240,6 +246,12 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
     retry: false,
     staleTime: 0,
   });
+  const lifecycle = useLifecycleRequest(() => {
+    void queryClient.invalidateQueries({ queryKey: ["platform", "channel-agents", workspaceId] });
+  });
+  const lifecycleDisabled = archived || lifecycle.controller.busy || lifecycle.controller.pending.length > 0;
+  const [accessTarget, setAccessTarget] = React.useState<{ installationId: string; name: string } | null>(null);
+  const { openAgentActivity } = useOpenAgentActivity();
   const [agentDialogs, setAgentDialogs] = React.useState(false);
   const [agentCreateOpen, setAgentCreateOpen] = React.useState(false);
   const [selectedAgent, setSelectedAgent] = React.useState<string | null>(null);
@@ -495,9 +507,17 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
             {owner ? <p className="truncate text-xs text-muted-foreground">{t("channelMembers.agentAddedBy", { name: owner })}</p> : null}
           </div>
         </div>
+        <AgentMemberMenu installation={row} disabled={lifecycleDisabled}
+          onManageAccess={() => setAccessTarget({ installationId: row.resourceId, name })}
+          onRequest={(kind) => lifecycle.request(kind, [row])}
+          onViewActivity={row.canAudit === true && row.agentPubkey ? () => {
+            onOpenChange(false);
+            openAgentActivity(row.agentPubkey!, { channelId: workspaceId ?? null });
+          } : undefined} />
       </div>
     );
   }
+  const bulk = bulkTargets(agents);
 
   return (
     <>
@@ -589,10 +609,25 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
             </section>
             {workspaceId !== undefined ? (
               <section className="mt-4 overflow-hidden rounded-xl border border-border/70 bg-background/70" data-testid="members-sidebar-agents">
-                <SearchResultSectionTitle action={canOfferAgentAdd ? (
-                  <Button className="h-7 px-2 text-xs" data-testid="members-sidebar-add-agent" onClick={() => openAgentDialog(null)} size="sm" type="button" variant="outline">
-                    <Bot className="h-3.5 w-3.5" />{t("channelMembers.addAgent")}
-                  </Button>
+                <SearchResultSectionTitle action={canOfferAgentAdd || bulk.stop.length + bulk.start.length + bulk.restart.length > 0 ? (
+                  <span className="flex items-center gap-1">
+                    {canOfferAgentAdd ? (
+                      <Button className="h-7 px-2 text-xs" data-testid="members-sidebar-add-agent" onClick={() => openAgentDialog(null)} size="sm" type="button" variant="outline">
+                        <Bot className="h-3.5 w-3.5" />{t("channelMembers.addAgent")}
+                      </Button>
+                    ) : null}
+                    {bulk.stop.length + bulk.start.length + bulk.restart.length > 0 ? (
+                      <MembersSidebarAgentControls canBulkRemove={bulk.stop.length > 0}
+                        canBulkRespawn={bulk.start.length + bulk.restart.length > 0} canBulkStop={bulk.stop.length > 0}
+                        disabled={lifecycleDisabled}
+                        onRemoveAll={() => lifecycle.request("remove", bulk.stop)}
+                        onRespawnAll={() => {
+                          if (bulk.start.length > 0) lifecycle.request("start", bulk.start);
+                          else lifecycle.request("restart", bulk.restart);
+                        }}
+                        onStopAll={() => lifecycle.request("stop", bulk.stop)} />
+                    ) : null}
+                  </span>
                 ) : null}>
                   {normalizedSearchQuery ? t("channelMembers.agents") : t("channelMembers.agentsCount", { count: agents.length })}
                 </SearchResultSectionTitle>
@@ -605,6 +640,7 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
                 ) : (
                   <p className="px-4 py-3 text-sm text-muted-foreground">{normalizedSearchQuery ? t("channelMembers.noMatch") : t("channelMembers.noAgents")}</p>
                 )}
+                {lifecycle.feedback ? <div className="px-4 pb-3">{lifecycle.feedback}</div> : null}
               </section>
             ) : null}
             {rolesQuery.isError && !rolesForbidden ? (
@@ -617,6 +653,10 @@ export function ChannelMembersDialog({ roster, open, onOpenChange, archived = fa
         </AvatarHostProvider>
       </DialogContent>
     </Dialog>
+    {lifecycle.dialog}
+    <EditRespondToDialog agent={accessTarget} open={accessTarget !== null}
+      onOpenChange={(next) => { if (!next) setAccessTarget(null); }}
+      onRecorded={() => void queryClient.invalidateQueries({ queryKey: ["platform", "channel-agents", workspaceId] })} />
     {agentDialogs && workspaceId !== undefined && workspaceName !== undefined ? (
       <React.Suspense fallback={null}>
         <WorkspaceAgentDialogs createOpen={agentCreateOpen} onCreateOpenChange={setAgentCreateOpen}

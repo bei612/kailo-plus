@@ -43,8 +43,19 @@ vi.mock("@client-kit/platform/react/sidebar/channel-group", () => ({
   }) => <section data-group={title}><button data-create-group={title} onClick={onCreateChannel}/>{items.map((row) => <div key={row.id}>{renderRow(row)}{renderContextMenu(row)}</div>)}</section>,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
-  ChannelRow: ({ channel, isActive, hasUnread }: { channel: { id: string }; isActive: boolean; hasUnread: boolean }) =>
-    <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
+  ChannelRow: ({ channel, isActive, hasUnread, workingBadge }: { channel: { id: string }; isActive: boolean; hasUnread: boolean; workingBadge?: ReactNode }) =>
+    <button data-id={channel.id} data-active={isActive} data-unread={hasUnread}>{workingBadge}</button>,
+}));
+// DD-125(6): the shared working signal, keyed by the Workspace ID the Web reports channel activity under.
+const working = vi.hoisted(() => ({ value: [] as { channelId: string; anchorAt: number; agentCount: number; agentPubkeys: string[]; source: string }[] }));
+vi.mock("@client-kit/platform/react/agent-activity", () => ({
+  useWorkingChannels: () => working.value,
+  ChannelWorkingBadge: ({ summary, isActive }: { summary: { channelId: string; agentCount: number }; isActive: boolean }) =>
+    <span data-working={summary.channelId} data-working-count={summary.agentCount} data-working-active={isActive} />,
+}));
+vi.mock("@client-kit/platform/react/sidebar/channel-activity-popover", () => ({
+  ChannelActivityPopover: ({ activeWorking, children }: { activeWorking?: { channelId: string }; children: ReactNode }) =>
+    <div data-activity-popover={activeWorking?.channelId ?? "none"}>{children}</div>,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
   ChannelContextMenuItems: ({ channel, copyChannelId, onMarkChannelRead, onMarkChannelUnread, onStarChannel, onMuteChannel, onUnmuteChannel, onLeaveChannel, ownerActions, sectionActions }: {
@@ -351,4 +362,15 @@ it("keeps section controls inert while the Core preferences are unconfirmed and 
   expect(html).not.toContain("data-custom-section");
   expect(html).not.toContain("data-drag");
   expect(snapshot.menus.get("one")?.section).toBeUndefined();
+});
+it("shows the original working badge and activity popover only on channels where an Agent works (DD-125(6))", () => {
+  snapshot.failed = false;
+  working.value = [{ channelId: "one", anchorAt: 1, agentCount: 2, agentPubkeys: ["a".repeat(64), "b".repeat(64)], source: "turn" }];
+  const html = markup();
+  expect(html).toContain('data-working="one" data-working-count="2" data-working-active="false"');
+  expect(html).toContain('data-activity-popover="one"');
+  expect(html).not.toContain('data-working="two"');
+  expect(html).toContain('data-activity-popover="none"');
+  working.value = [];
+  expect(markup()).not.toContain("data-working=");
 });

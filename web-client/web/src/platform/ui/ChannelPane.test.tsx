@@ -31,6 +31,9 @@ const state = vi.hoisted(() => ({
   notify: vi.fn(),
   richContent: false,
   typingAgents: {isSuccess:true,isFetching:false,data:{agents:[] as {pubkey:string;installation:{resourceId:string}}[]}},
+  // DD-125(6): the readable Installation directory behind the working signal.
+  channelAgents: {isSuccess:true,isFetching:false,data:[] as Record<string, unknown>[]},
+  openActivity: vi.fn(),
   emoji: { isSuccess: true, data: { events: [] } },
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
@@ -57,6 +60,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQueries: ({queries}: {queries: readonly unknown[]}) => queries.map(() => ({isSuccess:false,isFetching:false})),
   useQuery: (options: { queryKey: readonly unknown[] }) => {
     if (options.queryKey.includes("composer-agent-directory")) return state.typingAgents;
+    if (options.queryKey.includes("channel-agents")) return state.channelAgents;
     if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
       state.memberReads.push(options.queryKey);
       return state.members;
@@ -66,6 +70,11 @@ vi.mock("@tanstack/react-query", () => ({
   useInfiniteQuery: () => state.infinite,
   useQueryClient: () => state.queryClient,
   useMutation: () => state.mutation,
+}));
+vi.mock("@client-kit/platform/react/agent-transcript", async (original) => ({
+  ...await original<typeof import("@client-kit/platform/react/agent-transcript")>(),
+  useAgentTranscript: () => [],
+  useOpenAgentActivity: () => ({ openAgentActivity: state.openActivity }),
 }));
 vi.mock("./BrowserNotifications", () => ({ useBrowserNotifications: () => ({notify: state.notify, settings: {homeBadgeEnabled: true}}) }));
 vi.mock("@/platform/bff-client", () => ({
@@ -163,6 +172,8 @@ beforeEach(async () => {
   state.notify.mockClear();
   state.richContent = false;
   state.typingAgents.data.agents=[];
+  state.channelAgents.data=[];
+  state.openActivity.mockClear();
   state.route.messages=[];state.route.denied=false;state.route.interrupted=false;
   state.route.thread.isSuccess=true;state.route.thread.isError=false;state.route.thread.isFetching=false;
   state.routeRead.mockClear();
@@ -697,4 +708,17 @@ it("opens an off-window DM link using the admitted conversation root and the ori
   expect(pane?.dataset.selectedId).toBe(replyId);expect(pane?.dataset.routeTarget).toBe(replyId);
   await act(async()=>state.receive!({type:"closed",reason:"scope-revoked"}));
   expect(state.routeRead).toHaveBeenLastCalledWith("human-a","workspace-a",rootId,"dm",undefined,false,conversation.channelId);
+});
+
+it("shows a working Agent in the original composer activity row from its 20002, not as a person typing (DD-125(6))", async () => {
+  state.channelAgents.data=[{resourceId:"inst-scout",workspaceId:"workspace-a",agentPubkey:"agent",agentDisplayName:"Scout",canAudit:false}];
+  await act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider>));
+  const now = Math.floor(Date.now() / 1000);
+  await act(async () => state.receive!({type:"event",event:{id:"typing-agent",pubkey:"agent",created_at:now,kind:20002,
+    tags:[["h","channel-a"],["e","root-a","","reply"]],content:""}}));
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="bot-activity-composer-trigger"]')).not.toBeNull());
+  const row = host.querySelector<HTMLElement>('[data-testid="channel-composer-activity-row"]')!;
+  expect(row.textContent).toContain("Scout");
+  expect(row.querySelector('[data-testid="message-typing-indicator"]')).toBeNull();
+  expect(host.querySelector('[data-testid="bot-activity-composer-trigger"]')!.getAttribute("aria-label")).toContain("Scout");
 });
