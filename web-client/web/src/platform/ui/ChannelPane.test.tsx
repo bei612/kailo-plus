@@ -60,6 +60,8 @@ vi.mock("@tanstack/react-query", () => ({
   useQueries: ({queries}: {queries: readonly unknown[]}) => queries.map(() => ({isSuccess:false,isFetching:false})),
   useQuery: (options: { queryKey: readonly unknown[] }) => {
     if (options.queryKey.includes("composer-agent-directory")) return state.typingAgents;
+    // DD-125(8): the Tenant @ directory is read only on demand; these shell tests never open it.
+    if (options.queryKey.includes("tenant-mention-directory")) return { data: undefined };
     if (options.queryKey.includes("channel-agents")) return state.channelAgents;
     if (options.queryKey.some(key => key === "members" || key === "conversation-members")) {
       state.memberReads.push(options.queryKey);

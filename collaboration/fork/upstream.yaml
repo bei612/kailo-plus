@@ -374,7 +374,8 @@ remove_paths:
   - desktop/src/features/forum/hooks.ts
   - desktop/src/features/forum/lib
   - desktop/src/features/forum/ui
-  - desktop/src/features/gifs
+  - desktop/src/features/gifs/relay.ts
+  - desktop/src/features/gifs/ui
   - desktop/src/features/home/hiddenDmInboxAction.test.mjs
   - desktop/src/features/home/hiddenDmInboxAction.ts
   # Original HomeView pane layout and filter selection moved verbatim into the
@@ -834,6 +835,7 @@ remove_paths:
   - desktop/src/shared/ui/assets/terminal-closed-state.svg
   - desktop/src/shared/ui/assets/terminal-open-state.svg
   - desktop/src/shared/ui/assets/terminal.svg
+  - desktop/src/shared/ui/buzz-logo/buzz-logo-animation.css
   - desktop/src/shared/ui/buzz-logo/BuzzMark.tsx
   - desktop/src/shared/ui/buzz-logo/FuzzyLogo.tsx
   - desktop/src/shared/ui/calendar.tsx
