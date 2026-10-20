@@ -119,7 +119,8 @@ func NativeHumanToken(r *http.Request) (string, error) {
 		}
 		matched = true
 	}
-	user, err := ResolveNativeOIDCUser(r.Context(), issuer, subject)
+	// Resolve only: a stored access token is not a connector-verified ID token.
+	user, err := ResolveOrProvisionNativeOIDCUser(r.Context(), issuer, subject, nil)
 	if !matched || err != nil || user.GetUuid() != nativeUser {
 		return "", refused
 	}

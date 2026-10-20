@@ -1,7 +1,9 @@
 package web
 
-// Native federation only: the external identity selects an explicitly linked
-// Cells user. It does not create users, roles, workspaces or platform authority.
+// Native federation only: the verified external identity selects its native
+// Cells user through auth.ResolveOrProvisionNativeOIDCUser (explicit link,
+// provisioned account, or first-login standard account when the connector
+// enables it, DD-127(9)). It grants no roles, workspaces or platform authority.
 import (
 	"context"
 	"crypto/rand"
@@ -21,20 +23,17 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/auth/hydra"
-	"github.com/pydio/cells/v5/common/client/commons/idmc"
 	clientgrpc "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
 	"github.com/pydio/cells/v5/common/config/routing"
 	"github.com/pydio/cells/v5/common/permissions"
 	nativeauth "github.com/pydio/cells/v5/common/proto/auth"
 	"github.com/pydio/cells/v5/common/proto/idm"
-	"github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/service/frontend/sessions/utils"
 )
 
@@ -55,6 +54,16 @@ type kailoOIDCConfig struct {
 	RequestTimeout           string          `json:"requestTimeout"`
 	TransactionMaxAgeSeconds int             `json:"transactionMaxAgeSeconds"`
 	ClientSecretMaxBytes     int64           `json:"clientSecretMaxBytes"`
+
+	// First-login provisioning switch (DD-127(9)); validated by auth.NativeOIDCConnector.
+	ProvisionUsers   bool   `json:"provisionUsers"`
+	ProvisionProfile string `json:"provisionProfile"`
+}
+
+// identity is the part consumed by the shared native identity entry.
+func (c kailoOIDCConfig) identity() auth.NativeOIDCConnector {
+	return auth.NativeOIDCConnector{Issuer: c.Issuer, ClientID: c.ClientID, Users: c.Users,
+		ProvisionUsers: c.ProvisionUsers, ProvisionProfile: c.ProvisionProfile}
 }
 
 type kailoOIDCConnector struct {
@@ -138,24 +147,15 @@ func (c kailoOIDCConnector) validate(nativeOrigin string) error {
 	if err != nil || base.Path != "" || c.Config.RedirectURI != strings.TrimSuffix(nativeOrigin, "/")+KailoOIDCCallbackPath || u.Path != KailoOIDCCallbackPath {
 		return errors.New("OIDC callback must be the configured native frontend origin")
 	}
-	subjects, users := map[string]bool{}, map[string]bool{}
-	for _, link := range c.Config.Users {
-		if strings.TrimSpace(link.Subject) == "" || strings.TrimSpace(link.UserUUID) == "" || subjects[link.Subject] || users[link.UserUUID] {
-			return errors.New("ambiguous or empty native OIDC user link")
-		}
-		subjects[link.Subject], users[link.UserUUID] = true, true
-	}
-	return nil
+	// Explicit links and the provisioning switch: the same rules as the shared
+	// identity entry, so a connector it refuses never offers a login.
+	return c.Config.identity().Validate()
 }
 
 func (c kailoOIDCConnector) digest() string {
 	data, _ := json.Marshal(c)
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
-}
-
-func (c kailoOIDCConnector) nativeUserUUID(issuer, subject string) (string, error) {
-	return auth.NativeOIDCUserUUID(c.Config.Issuer, c.Config.Users, issuer, subject)
 }
 
 func nativeFrontendCallback(origin *url.URL, login *nativeauth.GetLoginResponse) (*url.URL, error) {
@@ -357,22 +357,17 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Native OIDC configuration changed", http.StatusUnauthorized)
 		return
 	}
-	uuid, err := c.nativeUserUUID(id.Issuer, id.Subject)
-	if err != nil {
+	// The shared entry resolves (explicit link, then provisioned account) or,
+	// with this verified ID token of the connector client, provisions; it reads
+	// the actual native UUID (no quick cache) and runs auth.VerifyContext. No
+	// email/login claim or IdP group selects a user.
+	user, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, id.Issuer, id.Subject, id)
+	if errors.Is(err, auth.ErrNativeOIDCNotLinked) {
 		http.Error(w, "OIDC identity is not linked", http.StatusForbidden)
 		return
 	}
-	// SearchOne on the actual native UUID bypasses the quick user cache. Do not
-	// accept an email/login claim, IdP groups, or create a fallback native user.
-	query, _ := anypb.New(&idm.UserSingleQuery{Uuid: uuid, NodeType: idm.NodeType_USER})
-	userResponse, err := idmc.UserServiceClient(ctx).SearchOne(ctx, &idm.SearchUserRequest{Query: &service.Query{SubQueries: []*anypb.Any{query}, Operation: service.OperationType_AND}})
-	if err != nil || userResponse.GetUser() == nil || userResponse.GetUser().GetUuid() != uuid || userResponse.GetUser().GetLogin() == "" || userResponse.GetUser().GetIsGroup() || userResponse.GetUser().IsHidden() {
+	if err != nil {
 		http.Error(w, "Native user is unavailable", http.StatusForbidden)
-		return
-	}
-	user := userResponse.GetUser()
-	if err := auth.VerifyContext(ctx, user); err != nil {
-		http.Error(w, "Native login is not permitted", http.StatusForbidden)
 		return
 	}
 	// Use the same native policy service as LoginSuccessWrapper before minting

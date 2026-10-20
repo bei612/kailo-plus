@@ -15,7 +15,7 @@ design:
   entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
 
 validation:
-  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156, V-SCN-157]
+  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156, V-SCN-157, V-SCN-171]
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
@@ -74,6 +74,11 @@ implementation:
     - file-storage/scheduler/jobs/native-read.go
     - file-storage/gateway/data/gw/gateway-pydio.go
     - file-storage/frontend/assets/gui.ajax/res/js/core/http/PydioApi.js
+    # DD-127(9) 首次 OIDC 登录即时开户：唯一身份入口、浏览器回调、REST 关联属性守卫与部署开关校验。
+    - file-storage/common/auth/native-oidc-user.go
+    - file-storage/frontend/web/kailo-oidc.go
+    - file-storage/idm/user/rest/handler.go
+    - file-storage/deploy/start.sh
   surfaces: [web, desktop]
   schemas:
     - contracts/api/application_binding_page.schema.json

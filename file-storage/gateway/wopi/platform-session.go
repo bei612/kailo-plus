@@ -37,7 +37,8 @@ func platformSession(r *http.Request, claims claim.Claims, nodeID string) (*http
 	if err != nil {
 		return nil, err
 	}
-	user, err := commonauth.ResolveNativeOIDCUser(r.Context(), facts.OIDCIssuer, facts.OIDCSubject)
+	// Resolve only (DD-127(9)): a WOPI request never provisions a native user.
+	user, err := commonauth.ResolveOrProvisionNativeOIDCUser(r.Context(), facts.OIDCIssuer, facts.OIDCSubject, nil)
 	if err != nil {
 		return nil, err
 	}

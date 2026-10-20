@@ -329,6 +329,9 @@ func (s *UserHandler) PutUser(req *restful.Request, rsp *restful.Response) error
 	if err := req.ReadEntity(&inputUser); err != nil {
 		return err
 	}
+	// Kailo DD-127(9): the native OIDC link is written only by first-login
+	// provisioning; an update below restores the stored pydio: values.
+	auth.WithoutNativeOIDCLink(inputUser.Attributes)
 	if inputUser.Login == "" {
 		inputUser.Login = req.PathParameter("Login")
 	}

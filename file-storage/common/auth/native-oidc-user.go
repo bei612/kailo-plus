@@ -2,15 +2,47 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"slices"
 	"strings"
+	"sync"
 
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/permissions"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/service"
+	"github.com/pydio/cells/v5/common/telemetry/log"
+)
+
+// Private (pydio:) attributes recording the external identity of an account
+// created on first native OIDC login (DD-127(9)). Only this file writes them.
+const (
+	NativeOIDCIssuerAttribute  = idm.UserAttrPrivatePrefix + "kailo_oidc_issuer"
+	NativeOIDCSubjectAttribute = idm.UserAttrPrivatePrefix + "kailo_oidc_subject"
+)
+
+// ErrNativeOIDCNotLinked: the identity has neither an explicit link nor a
+// provisioned account, and this call may not provision one.
+var ErrNativeOIDCNotLinked = errors.New("OIDC identity is not linked to a native user")
+
+var (
+	// Namespace of the UUIDs derived from issuer+subject for provisioned accounts.
+	nativeOIDCUserNamespace = uuid.MustParse("ea26a77c-2ecd-45ee-a46e-9c1f968c908c")
+	nativeOIDCLoginPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._@-]{0,63}$`)
+	// First-login provisioning is serialized in the single native Cells process.
+	nativeOIDCProvisioning sync.Mutex
 )
 
 // NativeOIDCUser is the existing native connector's explicit user link. It is
@@ -20,63 +52,238 @@ type NativeOIDCUser struct {
 	UserUUID string `json:"userUuid"`
 }
 
-// NativeOIDCUserUUID is shared by native browser login and document PAT
-// issuance. Never match an email, display name or an unconfigured subject.
-func NativeOIDCUserUUID(configuredIssuer string, links []NativeOIDCUser, issuer, subject string) (string, error) {
-	if configuredIssuer == "" || issuer != configuredIssuer || strings.TrimSpace(subject) == "" {
-		return "", errors.New("unrecognized native OIDC identity")
-	}
-	subjects, users := map[string]bool{}, map[string]bool{}
-	selected := ""
-	for _, link := range links {
-		if strings.TrimSpace(link.Subject) == "" || strings.TrimSpace(link.UserUUID) == "" || subjects[link.Subject] || users[link.UserUUID] {
-			return "", errors.New("ambiguous native OIDC user projection")
-		}
-		subjects[link.Subject], users[link.UserUUID] = true, true
-		if link.Subject == subject {
-			selected = link.UserUUID
-		}
-	}
-	if selected == "" {
-		return "", errors.New("OIDC identity is not linked to a native user")
-	}
-	return selected, nil
+// NativeOIDCConnector is the identity part of the single kailo-oidc connector
+// in the native services/pydio.web.oauth/connectors configuration.
+type NativeOIDCConnector struct {
+	Issuer           string           `json:"issuer"`
+	ClientID         string           `json:"clientId"`
+	Users            []NativeOIDCUser `json:"users"`
+	ProvisionUsers   bool             `json:"provisionUsers"`
+	ProvisionProfile string           `json:"provisionProfile"`
 }
 
-// ResolveNativeOIDCUser consumes the same controlled native connector as the
-// original frontend. The actual UUID lookup and native context verifiers remain
-// mandatory; there is no account creation, email fallback or service ACL swap.
-func ResolveNativeOIDCUser(ctx context.Context, issuer, subject string) (*idm.User, error) {
-	var connectors []struct {
-		Type   string `json:"type"`
-		Config struct {
-			Issuer string           `json:"issuer"`
-			Users  []NativeOIDCUser `json:"users"`
-		} `json:"config"`
+// Validate refuses ambiguous links and any provisioning profile other than an
+// explicitly enabled standard one; a disabled switch carries no profile.
+func (c NativeOIDCConnector) Validate() error {
+	if strings.TrimSpace(c.Issuer) == "" || strings.TrimSpace(c.ClientID) == "" {
+		return errors.New("incomplete native OIDC connector")
 	}
-	if err := config.Get(ctx, "services", "pydio.web.oauth", "connectors").Scan(&connectors); err != nil {
-		return nil, err
+	subjects, users := map[string]bool{}, map[string]bool{}
+	for _, link := range c.Users {
+		if strings.TrimSpace(link.Subject) == "" || strings.TrimSpace(link.UserUUID) == "" || subjects[link.Subject] || users[link.UserUUID] {
+			return errors.New("ambiguous or empty native OIDC user link")
+		}
+		subjects[link.Subject], users[link.UserUUID] = true, true
 	}
-	nativeUUID := ""
-	matched := false
-	for _, connector := range connectors {
-		if connector.Type != "kailo-oidc" {
+	if c.ProvisionUsers != (c.ProvisionProfile != "") || (c.ProvisionUsers && c.ProvisionProfile != common.PydioProfileStandard) {
+		return errors.New("native OIDC provisioning must be explicitly enabled with the standard profile")
+	}
+	return nil
+}
+
+func loadNativeOIDCConnector(ctx context.Context) (NativeOIDCConnector, error) {
+	var entries []struct {
+		Type   string              `json:"type"`
+		Config NativeOIDCConnector `json:"config"`
+	}
+	if err := config.Get(ctx, "services", "pydio.web.oauth", "connectors").Scan(&entries); err != nil {
+		return NativeOIDCConnector{}, err
+	}
+	var selected *NativeOIDCConnector
+	for i := range entries {
+		if entries[i].Type != "kailo-oidc" {
 			continue
 		}
-		if matched {
-			return nil, errors.New("ambiguous native OIDC connector")
+		if selected != nil {
+			return NativeOIDCConnector{}, errors.New("ambiguous native OIDC connector")
 		}
-		matched = true
-		var err error
-		nativeUUID, err = NativeOIDCUserUUID(connector.Config.Issuer, connector.Config.Users, issuer, subject)
+		selected = &entries[i].Config
+	}
+	if selected == nil {
+		return NativeOIDCConnector{}, errors.New("native OIDC connector is not configured")
+	}
+	return *selected, selected.Validate()
+}
+
+// ResolveOrProvisionNativeOIDCUser is the only path from an external OIDC
+// identity to a native user, shared by the browser callback, document PAT
+// issuance, WOPI sessions and native action credentials. Order: explicit
+// connector link, then the account provisioned for issuer+subject, then (only
+// with the connector switch on and an ID token the callback verified for the
+// connector's own client) a new standard account. Email, display name and
+// groups never select or create an account. Callers keep their own native
+// policy checks; the returned user already passed ResolveNativeUser.
+func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject string, login *oidc.IDToken) (*idm.User, error) {
+	c, err := loadNativeOIDCConnector(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if issuer != c.Issuer || strings.TrimSpace(subject) == "" {
+		return nil, errors.New("unrecognized native OIDC identity")
+	}
+	for _, link := range c.Users {
+		if link.Subject == subject {
+			return ResolveNativeUser(ctx, link.UserUUID)
+		}
+	}
+	id := nativeOIDCUserUUID(issuer, subject)
+	if user, err := provisionedNativeOIDCUser(ctx, id, issuer, subject); err != nil || user != nil {
+		return user, err
+	}
+	if !c.ProvisionUsers || login == nil {
+		return nil, ErrNativeOIDCNotLinked
+	}
+	if login.Issuer != issuer || login.Subject != subject || !slices.Contains(login.Audience, c.ClientID) {
+		return nil, errors.New("native OIDC provisioning requires an ID token of the connector client")
+	}
+	return provisionNativeOIDCUser(ctx, c, id, login)
+}
+
+func nativeOIDCUserUUID(issuer, subject string) string {
+	return uuid.NewSHA1(nativeOIDCUserNamespace, []byte(issuer+"\x00"+subject)).String()
+}
+
+// provisionedNativeOIDCUser returns nil, nil when the derived UUID is free. An
+// account there must carry exactly this identity: an attribute alone (writable
+// on another UUID) or a UUID alone never links.
+func provisionedNativeOIDCUser(ctx context.Context, id, issuer, subject string) (*idm.User, error) {
+	found, err := searchNativeUsers(ctx, &idm.UserSingleQuery{Uuid: id})
+	if err != nil || len(found) == 0 {
+		return nil, err
+	}
+	u := found[0]
+	if len(found) != 1 || u.GetIsGroup() || u.GetUuid() != id ||
+		u.GetAttributes()[NativeOIDCIssuerAttribute] != issuer || u.GetAttributes()[NativeOIDCSubjectAttribute] != subject {
+		return nil, errors.New("derived native OIDC account is held by another identity")
+	}
+	return ResolveNativeUser(ctx, id)
+}
+
+func provisionNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, id string, login *oidc.IDToken) (*idm.User, error) {
+	nativeOIDCProvisioning.Lock()
+	defer nativeOIDCProvisioning.Unlock()
+	// Query again under the lock: a concurrent first login may have finished.
+	if user, err := provisionedNativeOIDCUser(ctx, id, login.Issuer, login.Subject); err != nil || user != nil {
+		return user, err
+	}
+	var claims map[string]any
+	if err := login.Claims(&claims); err != nil {
+		return nil, err
+	}
+	text := func(key string) string {
+		value, _ := claims[key].(string)
+		return strings.TrimSpace(value)
+	}
+	name, err := availableNativeOIDCLogin(ctx, text("preferred_username"), login.Issuer, login.Subject)
+	if err != nil {
+		return nil, err
+	}
+	// Profile data only; never used to link and not refreshed on later logins.
+	attributes := map[string]string{
+		idm.UserAttrProfile:        c.ProvisionProfile,
+		NativeOIDCIssuerAttribute:  login.Issuer,
+		NativeOIDCSubjectAttribute: login.Subject,
+	}
+	if displayName := text("name"); displayName != "" {
+		attributes[idm.UserAttrDisplayName] = displayName
+	}
+	if verified, _ := claims["email_verified"].(bool); verified && text("email") != "" {
+		attributes[idm.UserAttrEmail] = text("email")
+	}
+	// The role first: a failed user write leaves no account without its role,
+	// and the next login repeats both idempotent writes.
+	if _, err = idmc.RoleServiceClient(ctx).CreateRole(ctx, &idm.CreateRoleRequest{Role: &idm.Role{
+		Uuid: id, UserRole: true, Label: "User " + name, Policies: nativeOIDCUserPolicies(id)}}); err != nil {
+		return nil, err
+	}
+	created, err := idmc.UserServiceClient(ctx).CreateUser(ctx, &idm.CreateUserRequest{User: &idm.User{
+		Uuid: id, Login: name, GroupPath: "/", Attributes: attributes, Policies: nativeOIDCUserPolicies(id)}})
+	if err != nil {
+		return nil, err
+	}
+	if created.GetUser().GetUuid() != id || created.GetUser().GetLogin() != name {
+		return nil, errors.New("native OIDC provisioning did not create the derived account")
+	}
+	log.Auditer(ctx).Info(fmt.Sprintf("Created user [/%s] on first native OIDC login", name),
+		log.GetAuditId(common.AuditUserCreate), zap.String(common.KeyUserUuid, id))
+	// Read back: only the derived account carrying this identity is accepted.
+	user, err := provisionedNativeOIDCUser(ctx, id, login.Issuer, login.Subject)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.GetLogin() != name {
+		return nil, errors.New("provisioned native OIDC account is unavailable")
+	}
+	return user, nil
+}
+
+// The resource policies of the native admin creation (idm/user/rest PutUser)
+// for both the account and its personal user role. No workspace, role or ACL
+// is granted: access comes only from the profile's native auto-applied roles.
+func nativeOIDCUserPolicies(id string) []*service.ResourcePolicy {
+	return permissions.NewResourcePoliciesBuilder().
+		WithProfileRead(common.PydioProfileStandard).
+		WithSubjectWrite(id).
+		WithProfileWrite(common.PydioProfileAdmin).
+		Policies()
+}
+
+// nativeOIDCLoginCandidates: the normalized preferred_username, then a single
+// deterministic fallback with an issuer+subject digest suffix ("oidc-<digest>"
+// when the preferred name is missing or invalid). Nothing else is tried.
+func nativeOIDCLoginCandidates(preferred, issuer, subject string) []string {
+	digest := sha256.Sum256([]byte(issuer + "\x00" + subject))
+	suffix := "-" + hex.EncodeToString(digest[:])[:12]
+	base := strings.ToLower(strings.TrimSpace(preferred))
+	if !nativeOIDCLoginPattern.MatchString(base) {
+		return []string{"oidc" + suffix}
+	}
+	return []string{base, base[:min(len(base), 64-len(suffix))] + suffix}
+}
+
+// A login is taken when any user or group node carries that name.
+func availableNativeOIDCLogin(ctx context.Context, preferred, issuer, subject string) (string, error) {
+	for _, candidate := range nativeOIDCLoginCandidates(preferred, issuer, subject) {
+		taken, err := searchNativeUsers(ctx, &idm.UserSingleQuery{Login: candidate})
+		if err != nil {
+			return "", err
+		}
+		if len(taken) == 0 {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("no native login name is available for this OIDC identity")
+}
+
+func searchNativeUsers(ctx context.Context, single *idm.UserSingleQuery) ([]*idm.User, error) {
+	query, err := anypb.New(single)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := idmc.UserServiceClient(ctx).SearchUser(ctx, &idm.SearchUserRequest{Query: &service.Query{
+		SubQueries: []*anypb.Any{query}, Operation: service.OperationType_AND}})
+	if err != nil {
+		return nil, err
+	}
+	var users []*idm.User
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return users, nil
+		}
 		if err != nil {
 			return nil, err
 		}
+		users = append(users, response.GetUser())
 	}
-	if !matched {
-		return nil, errors.New("native OIDC connector is not configured")
-	}
-	return ResolveNativeUser(ctx, nativeUUID)
+}
+
+// WithoutNativeOIDCLink drops caller-supplied link attributes from a native
+// REST user write; that handler then restores the stored values of an
+// existing user, so the link is written only by first-login provisioning.
+func WithoutNativeOIDCLink(attributes map[string]string) {
+	delete(attributes, NativeOIDCIssuerAttribute)
+	delete(attributes, NativeOIDCSubjectAttribute)
 }
 
 // ResolveNativeUser consumes an explicit existing UUID, never an email/name
