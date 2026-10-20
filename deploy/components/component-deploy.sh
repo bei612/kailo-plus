@@ -139,6 +139,15 @@ case "$component" in
     # DD-128(5): the native page entry model key lives only in its own 0600 env.
     model_env=$(env_value "$ENV" KNOWLEDGE_MODEL_SECRET_ENV_FILE)
     [ -z "$model_env" ] || private_env "$model_env"
+    # 原生内置模型声明由发布树模板 knowledge-builtin-models.template.yaml + 部署事实（native.env 的
+    # KNOWLEDGE_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，不手工维护。声明了文件才渲染；
+    # 先只读核对（含 materialize-weknora 同一核对）：缺任一事实即拒绝，此时尚未备份、启动或改写任何文件。
+    render=(python3 -I -B "$S/deploy/components/native-config.py")
+    declaration=$(env_value "$ENV" KNOWLEDGE_BUILTIN_MODELS_FILE)
+    if [ -n "$declaration" ]; then
+      echo "== 0. WeKnora 原生内置模型声明渲染核对（只列键名）"
+      "${render[@]}" check knowledge --env "$ENV" --source "$commit" >/dev/null
+    fi
     for kind in APP UI DOCREADER; do
       ensure_image "$(env_value "$ENV" "KNOWLEDGE_${kind}_REPOSITORY")@sha256:$(env_value "$ENV" "KNOWLEDGE_${kind}_DIGEST")"
     done
@@ -153,6 +162,11 @@ case "$component" in
     fi
     echo "== 1. 备份 WeKnora 数据库（命名卷原地保留）"
     backup_pg kailo-knowledge-postgres-1 "$(env_value "$ENV" KNOWLEDGE_DB_NAME)" "$(env_value "$ENV" KNOWLEDGE_DB_USER)"
+    if [ -n "$declaration" ]; then
+      echo "== 1a. 渲染原生内置模型声明（原子替换、0644 无 secret；旧文件备份到本次备份目录）"
+      dir="$backup_root/$component/$stamp"; mkdir -p "$dir" && chmod 700 "$backup_root" "$backup_root/$component" "$dir"
+      "${render[@]}" apply knowledge --env "$ENV" --source "$commit" --backup-dir "$dir" >/dev/null
+    fi
     echo "== 2. 独立原生栈（frontend/app/docreader/postgres/redis，同一 kailo-knowledge 项目原地替换）"
     bash "$here/start.sh" --native-env "$ENV"
     echo "== 3. 平台模型入口（只重建 app）"

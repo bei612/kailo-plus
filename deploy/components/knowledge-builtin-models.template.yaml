@@ -1,39 +1,41 @@
 # WeKnora native built-in model declaration for a native page entry binding that
-# selected PLATFORM_LLM_ROUTE (DD-128(5), SF-WEK-17). Install it as
-# KNOWLEDGE_BUILTIN_MODELS_FILE (owned by the operator, mode 0644: it holds no
-# secret and the non-root native process reads it). The original loader reads it
-# at every app start, expands each quoted api_key reference from the
-# component-only env written by bootstrap.sh --native-model-delivery
-# materialize-weknora, and stores the rows itself (encrypted with SYSTEM_AES_KEY),
-# visible to every native workspace and editable only by a native system admin.
+# selected PLATFORM_LLM_ROUTE (DD-128(5), SF-WEK-17). Never edited or copied by hand:
+# deploy/components/native-config.py renders KNOWLEDGE_BUILTIN_MODELS_FILE from this
+# template (component-deploy.sh knowledge: check before any change, apply before
+# compose up). Deployment facts are placeholders, read from the knowledge native.env
+# (KNOWLEDGE_MODEL_CHAT_ID, KNOWLEDGE_MODEL_EMBEDDING_ID, KNOWLEDGE_MODEL_EMBEDDING_DIM,
+# KNOWLEDGE_MODEL_API_KEY_NAME) and the platform .env (AGENTGATEWAY_MODEL_BASE_URL);
+# a missing or malformed fact refuses, nothing falls back to a default.
 #
-# Rules checked by materialize-weknora and the native entrypoint:
-# - names are exactly the binding's frozen native models (the routes' native ids);
-# - base_url is exactly the platform AGENTGATEWAY_MODEL_BASE_URL; provider openai
-#   or generic; no custom_headers, extra_config or cloud credentials;
-# - api_key is exactly the double-quoted reference below, on its own line, and a
-#   reference appears nowhere else in this file (not even in a comment);
-# - an Embedding entry states the dimension measured from a real embedding
-#   response of its route;
-# - ids stay stable across key rotations: knowledge bases reference them.
+# KNOWLEDGE_MODEL_API_KEY_NAME renders as the double-quoted reference to that name in
+# the component-only env; the original loader resolves it at every app start and
+# stores the rows itself (encrypted with SYSTEM_AES_KEY), visible to every native
+# workspace and editable only by a native system admin. The rendered file holds no
+# secret and is published 0644 so the non-root native process can read it.
+#
+# The rendered file must pass the materialize-weknora rule: names exactly the
+# binding's frozen native models, base_url the Gateway listener, provider openai or
+# generic, no headers/extra config/cloud credentials, a measured embedding dimension
+# (from a real embedding response of the route), one quoted reference per entry and
+# none elsewhere. Ids stay stable across key rotations: knowledge bases reference them.
 builtin_models:
   - id: kailo-platform-chat
-    name: <to-fill:chat route native id>
+    name: ${KNOWLEDGE_MODEL_CHAT_ID}
     type: KnowledgeQA
     source: remote
     is_default: true
     parameters:
-      base_url: <to-fill:AGENTGATEWAY_MODEL_BASE_URL>
+      base_url: ${AGENTGATEWAY_MODEL_BASE_URL}
       provider: openai
-      api_key: "${KAILO_MODEL_API_KEY}"
+      api_key: ${KNOWLEDGE_MODEL_API_KEY_NAME}
   - id: kailo-platform-embedding
-    name: <to-fill:embedding route native id>
+    name: ${KNOWLEDGE_MODEL_EMBEDDING_ID}
     type: Embedding
     source: remote
     is_default: true
     parameters:
-      base_url: <to-fill:AGENTGATEWAY_MODEL_BASE_URL>
+      base_url: ${AGENTGATEWAY_MODEL_BASE_URL}
       provider: openai
-      api_key: "${KAILO_MODEL_API_KEY}"
+      api_key: ${KNOWLEDGE_MODEL_API_KEY_NAME}
       embedding_parameters:
-        dimension: <to-fill:measured embedding dimension>
+        dimension: ${KNOWLEDGE_MODEL_EMBEDDING_DIM}

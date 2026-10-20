@@ -29,6 +29,7 @@ def load(name, path):
 
 
 delivery = load("native_model_delivery", HERE / "native-model-delivery.py")
+native_config = load("native_config", HERE / "native-config.py")
 
 ENV = {"CORE_DB_USER": "kailo", "CORE_DB_NAME": "kailo", "OPENBAO_ADDR": "http://openbao:8200",
        "OPENBAO_HTTP_TIMEOUT_SECONDS": "5", "OPENBAO_SECRET_ID_TTL": "120s",
@@ -214,13 +215,13 @@ embedding_model_dim: 2560
                 delivery.wren_consumers(config, self.value, self.env["AGENTGATEWAY_MODEL_BASE_URL"])
 
     def weknora(self, text=None, mode=0o644, file="builtin_models.yaml", **fill):
-        """The repository template, filled as an operator would (DD-128(5), SF-WEK-17)."""
-        values = {"chat route native id": "chat-route", "embedding route native id": "embedding-route",
-                  "AGENTGATEWAY_MODEL_BASE_URL": self.env["AGENTGATEWAY_MODEL_BASE_URL"],
-                  "measured embedding dimension": "2560", **fill}
+        """The declaration as the deploy entry renders it from the repository template
+        (native-config.py, DD-128(5), SF-WEK-17); ``fill`` overrides a rendered fact."""
         if text is None:
-            text = (HERE / "knowledge-builtin-models.template.yaml").read_text(encoding="utf-8")
-            text = re.sub(r"<to-fill:([^>]*)>", lambda m: values[m[1]], text)
+            values = {"KNOWLEDGE_MODEL_CHAT_ID": "chat-route", "KNOWLEDGE_MODEL_EMBEDDING_ID": "embedding-route",
+                      "KNOWLEDGE_MODEL_EMBEDDING_DIM": 2560, "KNOWLEDGE_MODEL_API_KEY_NAME": "${KAILO_MODEL_API_KEY}",
+                      "AGENTGATEWAY_MODEL_BASE_URL": self.env["AGENTGATEWAY_MODEL_BASE_URL"], **fill}
+            text, _ = native_config.render(native_config.SPECS["knowledge"], values, "")
         declaration = self.work / file
         declaration.write_text(text, encoding="utf-8")
         declaration.chmod(mode)
@@ -233,28 +234,33 @@ embedding_model_dim: 2560
         # Owner-written, readable by the non-root native process, never writable by others.
         self.assertEqual(delivery.weknora_consumers(self.weknora(mode=0o600), self.value, base), ["KAILO_MODEL_API_KEY"])
         text = valid.read_text(encoding="utf-8")
-        key = '      api_key: "${KAILO_MODEL_API_KEY}"\n'
+        self.assertEqual(len(re.findall(r'^ +api_key: "\$\{KAILO_MODEL_API_KEY\}"$', text, re.M)), 2)
+
+        def edit(pattern, replacement, count=1):
+            return lambda s: re.sub(pattern, replacement, s, count=count, flags=re.M)
+
         refused = {
             "group writable": self.weknora(mode=0o664, file="writable.yaml"),
-            "direct provider": self.weknora(file="provider.yaml", **{"AGENTGATEWAY_MODEL_BASE_URL": "https://provider.example/v1"}),
-            "another model": self.weknora(file="other.yaml", **{"embedding route native id": "other-route"}),
-            "guessed dimension": self.weknora(file="dimension.yaml", **{"measured embedding dimension": "unknown"}),
+            "direct provider": self.weknora(file="provider.yaml", AGENTGATEWAY_MODEL_BASE_URL="https://provider.example/v1"),
+            "another model": self.weknora(file="other.yaml", KNOWLEDGE_MODEL_EMBEDDING_ID="other-route"),
+            "guessed dimension": self.weknora(file="dimension.yaml", KNOWLEDGE_MODEL_EMBEDDING_DIM="unknown"),
         }
         for name, change in {
             "reference in a comment": lambda s: "# api_key: \"${KAILO_MODEL_API_KEY}\"\n" + s,
-            "reference in a description": lambda s: s.replace("    type: KnowledgeQA\n",
-                                                              '    type: KnowledgeQA\n    description: "${KAILO_MODEL_API_KEY}"\n'),
-            "unquoted reference": lambda s: s.replace(key, "      api_key: ${KAILO_MODEL_API_KEY}\n", 1),
-            "literal key": lambda s: s.replace(key, '      api_key: "' + "ab" * 32 + '"\n', 1),
-            "process setting": lambda s: s.replace("KAILO_MODEL_API_KEY", "DB_USER"),
-            "provider header": lambda s: s.replace("      provider: openai\n",
-                                                   "      provider: openai\n      custom_headers: {X-Route: other}\n", 1),
-            "vendor client": lambda s: s.replace("provider: openai", "provider: aliyun", 1),
-            "duplicate id": lambda s: s.replace("kailo-platform-embedding", "kailo-platform-chat"),
-            "local model": lambda s: s.replace("source: remote", "source: local", 1),
+            "reference in a description": edit(r"^( +)type: KnowledgeQA$",
+                                               r'\1type: KnowledgeQA\n\1description: "${KAILO_MODEL_API_KEY}"'),
+            "unquoted reference": edit(r'^( +)api_key: "(.*)"$', r"\1api_key: \2"),
+            "literal key": edit(r'^( +)api_key: ".*"$', r'\1api_key: "' + "ab" * 32 + '"'),
+            "process setting": edit("KAILO_MODEL_API_KEY", "DB_USER", 0),
+            "provider header": edit(r"^( +)provider: openai$", r"\1provider: openai\n\1custom_headers: {X-Route: other}"),
+            "vendor client": edit("provider: openai", "provider: aliyun"),
+            "duplicate id": edit("kailo-platform-embedding", "kailo-platform-chat"),
+            "local model": edit("source: remote", "source: local"),
             "second document": lambda s: s + "---\nbuiltin_models: []\n",
         }.items():
-            refused[name] = self.weknora(text=change(text), file=name.replace(" ", "-") + ".yaml")
+            changed = change(text)
+            self.assertNotEqual(changed, text, name)
+            refused[name] = self.weknora(text=changed, file=name.replace(" ", "-") + ".yaml")
         for name, declaration in refused.items():
             with self.subTest(name):
                 with self.assertRaises(delivery.Refused):

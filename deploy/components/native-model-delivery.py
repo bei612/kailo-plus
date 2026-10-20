@@ -109,12 +109,16 @@ def seconds(value):
     return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
-def write(path, text):
-    """Atomically publish a complete owner-only file; never truncate in place."""
+def write(path, text, mode=0o600):
+    """Atomically publish a complete file of this account; never truncate in place.
+    Owner-only unless ``mode`` makes a non-secret declaration readable by others;
+    never writable by others."""
+    require(mode & 0o600 == 0o600 and not mode & 0o133, "publication mode must be 0600 or 0644")
     if os.path.lexists(path):
-        private_path(str(path))
+        private_path(str(path), shared=bool(mode & 0o044))
     fd, temporary = tempfile.mkstemp(dir=path.parent)
     try:
+        os.fchmod(fd, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(text)
             stream.flush()
@@ -359,13 +363,20 @@ WEKNORA_KEY_NAME = r"KAILO_MODEL_[A-Z0-9_]+"
 
 
 def weknora_consumers(config_path, projection, model_base):
-    """Names of the keys the original WeKnora built-in model declaration references
-    (DD-128(5), SF-WEK-17). The native loader replaces ${NAME} anywhere in the raw
-    text before parsing, so a reference may only be a whole double-quoted api_key."""
+    """Names of the keys the deployed WeKnora built-in model declaration references;
+    models must be exactly the frozen set. Not a secret: the native process (a non-root
+    container user) reads it too, so it may be readable by others."""
+    return weknora_models(read(config_path, shared=True), model_base, projection["nativeModels"])
+
+
+def weknora_models(text, model_base, native_models=None):
+    """The platform-model rule for the raw text of a WeKnora builtin_models.yaml
+    (DD-128(5), SF-WEK-17), also applied by native-config.py before it publishes a
+    rendered file. The native loader replaces ${NAME} anywhere in the raw text before
+    parsing, so a reference may only be a whole double-quoted api_key; with
+    ``native_models`` the model set must equal that frozen set exactly."""
     import yaml
 
-    # Not a secret: the native process (a non-root container user) reads it too.
-    text = read(config_path, shared=True)
     quoted = re.findall(r'^[ \t]*api_key:[ \t]*"\$\{(' + WEKNORA_KEY_NAME + r')\}"[ \t]*$', text, re.M)
     require(sorted(re.findall(r"\$\{([^}]*)\}", text)) == sorted(quoted),
             "${NAME} may appear only as a whole double-quoted api_key: \"${KAILO_MODEL_...}\"")
@@ -400,7 +411,7 @@ def weknora_consumers(config_path, projection, model_base):
         models.add(entry["name"])
     # One reference per entry: none hidden in a block scalar the loader would also expand.
     require(len(quoted) == len(entries), "each built-in model references the key exactly once")
-    require(models == set(projection["nativeModels"]),
+    require(native_models is None or models == set(native_models),
             "builtin_models.yaml models must be exactly the binding's frozen native models")
     return sorted(names)
 
