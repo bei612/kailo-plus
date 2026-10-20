@@ -8,21 +8,21 @@ models:
     model: gpt-4.1-nano-2025-04-14
     context_window_size: 1000000
     kwargs:
-      max_tokens: 4096
+      max_tokens: 8192
       n: 1
       seed: 0
       temperature: 0
   - model: gpt-4.1-mini-2025-04-14
     context_window_size: 1000000
     kwargs:
-      max_tokens: 4096
+      max_tokens: 8192
       n: 1
       seed: 0
       temperature: 0
   - model: gpt-4.1-2025-04-14
     context_window_size: 1000000
     kwargs:
-      max_tokens: 4096
+      max_tokens: 8192
       n: 1
       seed: 0
       temperature: 0
@@ -71,7 +71,8 @@ provider: qdrant
 location: http://qdrant:6333
 embedding_model_dim: 3072
 timeout: 120
-recreate_index: true
+# The index is the deployed model's retrieval state: a restart must keep it; Deploy rebuilds it.
+recreate_index: false
 
 ---
 type: pipeline
