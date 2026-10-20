@@ -521,7 +521,7 @@ pub(crate) async fn validate_scope(
     tenant: Uuid,
     initiator: Uuid,
     row: &Installation,
-    scope: &contracts::ScopeElement,
+    scope: &contracts::DelegationScopeParameters,
 ) -> Result<(), Refusal> {
     let target = scope
         .target_id
@@ -661,7 +661,7 @@ async fn validate_memory_scope(
     tenant: Uuid,
     initiator: Uuid,
     row: &Installation,
-    scope: &contracts::ScopeElement,
+    scope: &contracts::DelegationScopeParameters,
     target: Option<Uuid>,
 ) -> Result<(), Refusal> {
     let tool = scope
@@ -722,7 +722,7 @@ async fn validate_application_scope(
     tenant: Uuid,
     initiator: Uuid,
     row: &Installation,
-    scope: &contracts::ScopeElement,
+    scope: &contracts::DelegationScopeParameters,
     target: Option<Uuid>,
 ) -> Result<(), Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
@@ -807,12 +807,12 @@ async fn validate_application_scope(
         )
         .await?;
         match &scope.result_exposure_mode {
-            contracts::ResultExposureMode::ConsumeOnly => {}
-            contracts::ResultExposureMode::Read => {
+            contracts::DelegationScopeParametersResultExposureMode::ConsumeOnly => {}
+            contracts::DelegationScopeParametersResultExposureMode::Read => {
                 application_permission(g, &def.permission_object_type, target, subject, "read")
                     .await?
             }
-            contracts::ResultExposureMode::Export => {
+            contracts::DelegationScopeParametersResultExposureMode::Export => {
                 application_permission(g, &def.permission_object_type, target, subject, "export")
                     .await?
             }
@@ -829,7 +829,7 @@ async fn validate_application_scope(
 }
 
 fn application_scope_matches(
-    scope: &contracts::ScopeElement,
+    scope: &contracts::DelegationScopeParameters,
     def: &Definition,
     declaration: &serde_json::Value,
 ) -> bool {
@@ -847,16 +847,21 @@ fn application_scope_matches(
 }
 
 fn application_exposure_within(
-    mode: &contracts::ResultExposureMode,
+    mode: &contracts::DelegationScopeParametersResultExposureMode,
     maximum: Option<&str>,
 ) -> bool {
     matches!(
         (mode, maximum),
         (
-            contracts::ResultExposureMode::ConsumeOnly,
+            contracts::DelegationScopeParametersResultExposureMode::ConsumeOnly,
             Some("CONSUME_ONLY" | "READ" | "EXPORT")
-        ) | (contracts::ResultExposureMode::Read, Some("READ" | "EXPORT"))
-            | (contracts::ResultExposureMode::Export, Some("EXPORT"))
+        ) | (
+            contracts::DelegationScopeParametersResultExposureMode::Read,
+            Some("READ" | "EXPORT")
+        ) | (
+            contracts::DelegationScopeParametersResultExposureMode::Export,
+            Some("EXPORT")
+        )
     )
 }
 
@@ -1347,15 +1352,20 @@ mod application_scope_tests {
     use super::*;
     use serde_json::json;
 
-    fn fixture() -> (contracts::ScopeElement, Definition, serde_json::Value) {
-        let scope = contracts::ScopeElement {
+    fn fixture() -> (
+        contracts::DelegationScopeParameters,
+        Definition,
+        serde_json::Value,
+    ) {
+        let scope = contracts::DelegationScopeParameters {
             action_key: "isolated.lookup@v1".into(),
             action_version: 1,
             target_type: "RESOURCE".into(),
             target_id: Some(Uuid::new_v4().to_string()),
             create_workspace_id: None,
             tool_resource_id: Some(Uuid::new_v4().to_string()),
-            result_exposure_mode: contracts::ResultExposureMode::ConsumeOnly,
+            result_exposure_mode:
+                contracts::DelegationScopeParametersResultExposureMode::ConsumeOnly,
             output_schema_hash: "a".repeat(64),
             redaction_policy: "PLATFORM_METADATA_ONLY".into(),
         };
@@ -1399,9 +1409,10 @@ mod application_scope_tests {
     #[test]
     fn application_scope_cannot_silently_broaden_or_change_output() {
         let (mut scope, def, declaration) = fixture();
-        scope.result_exposure_mode = contracts::ResultExposureMode::Read;
+        scope.result_exposure_mode = contracts::DelegationScopeParametersResultExposureMode::Read;
         assert!(!application_scope_matches(&scope, &def, &declaration));
-        scope.result_exposure_mode = contracts::ResultExposureMode::ConsumeOnly;
+        scope.result_exposure_mode =
+            contracts::DelegationScopeParametersResultExposureMode::ConsumeOnly;
         scope.output_schema_hash = "b".repeat(64);
         assert!(!application_scope_matches(&scope, &def, &declaration));
         scope.output_schema_hash = "a".repeat(64);
@@ -1414,9 +1425,9 @@ mod application_scope_tests {
         let (mut scope, def, mut declaration) = fixture();
         declaration["resultExposurePolicy"]["mode"] = json!("EXPORT");
         assert!(application_scope_matches(&scope, &def, &declaration));
-        scope.result_exposure_mode = contracts::ResultExposureMode::Read;
+        scope.result_exposure_mode = contracts::DelegationScopeParametersResultExposureMode::Read;
         assert!(application_scope_matches(&scope, &def, &declaration));
-        scope.result_exposure_mode = contracts::ResultExposureMode::Export;
+        scope.result_exposure_mode = contracts::DelegationScopeParametersResultExposureMode::Export;
         assert!(application_scope_matches(&scope, &def, &declaration));
         declaration["resultExposurePolicy"]["mode"] = json!("READ");
         assert!(!application_scope_matches(&scope, &def, &declaration));

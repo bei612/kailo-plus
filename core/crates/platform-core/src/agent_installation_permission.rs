@@ -1005,7 +1005,7 @@ async fn approved(
     let Some((true, decisions)) = row else {
         return Err(Refusal::Denied(ReasonCode::ApprovalConsumeWindowClosed));
     };
-    let decisions: Vec<contracts::DecisionElement> =
+    let decisions: Vec<contracts::ApprovalDecisionRecord> =
         serde_json::from_value(decisions).map_err(|_| unavailable())?;
     if !decisions.iter().any(|d| {
         d.approver_principal_id == owner.owner_principal_id

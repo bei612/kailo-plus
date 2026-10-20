@@ -3,7 +3,7 @@
 // (use-inbox-state.ts); this module holds no second copy of the authority.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import {
-  ChannelType,
+  WorkspaceChannelCreateChannelType,
   SidebarSortMode as SortModeContract,
   WorkspaceVisibility,
   type ChannelTemplateRequest,
@@ -63,7 +63,7 @@ function templateRequest(draft: ChannelTemplateDraft, version: number): ChannelT
   return {
     name: draft.name,
     ...(draft.description ? { description: draft.description } : {}),
-    channelType: draft.channelType === "forum" ? ChannelType.Forum : ChannelType.Stream,
+    channelType: draft.channelType === "forum" ? WorkspaceChannelCreateChannelType.Forum : WorkspaceChannelCreateChannelType.Stream,
     visibility: draft.visibility === "open" ? WorkspaceVisibility.Open : WorkspaceVisibility.Private,
     ...(draft.canvasTemplate ? { canvasTemplate: draft.canvasTemplate } : {}),
     agentResourceIds: draft.agentResourceIds,

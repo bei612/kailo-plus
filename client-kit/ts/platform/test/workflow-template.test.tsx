@@ -1,6 +1,6 @@
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { AutomationTriggerKind as TriggerKind, ActionEnum, type AutomationStep } from "@client-kit/contracts";
+import { AutomationTriggerKind as TriggerKind, AutomationStepAction, type AutomationStep } from "@client-kit/contracts";
 import { setLocale } from "../src/i18n";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
@@ -37,7 +37,7 @@ it("retains original complete-token replacement and surrounding source text", ()
 });
 
 it("preserves original step IDs without numeric overflow from authored suffixes", () => {
-  const steps = (ids: string[]): AutomationStep[] => ids.map((id) => ({id, action: ActionEnum.SendMessage, text: "message"}));
+  const steps = (ids: string[]): AutomationStep[] => ids.map((id) => ({id, action: AutomationStepAction.SendMessage, text: "message"}));
   expect(nextStepId([])).toBe("step_1");
   expect(nextStepId(steps(["custom", "step_2", "step_4"]))).toBe("step_5");
   expect(nextStepId(steps([`step_${"9".repeat(400)}`, "step_1"]))).toBe("step_2");
@@ -53,9 +53,9 @@ it("offers only actual source fields for schedules and never invents step output
 
 it("offers original prior message outputs without inventing unresolved action results", async () => {
   const steps: AutomationStep[] = [
-    {id: "first", action: ActionEnum.SendMessage, text: "first"},
-    {id: "pause", action: ActionEnum.Delay, duration: "1s"},
-    {id: "invalid.id", action: ActionEnum.SendMessage, text: "invalid token ID"},
+    {id: "first", action: AutomationStepAction.SendMessage, text: "first"},
+    {id: "pause", action: AutomationStepAction.Delay, duration: "1s"},
+    {id: "invalid.id", action: AutomationStepAction.SendMessage, text: "invalid token ID"},
   ];
   expect(workflowTemplateVariables(TriggerKind.Schedule, steps).map((row) => row.value)).toEqual([
     "trigger.channel_id", "trigger.timestamp", "steps.first.output.sent", "steps.first.output.event_id",

@@ -7,7 +7,7 @@ import {useNativeSession} from "./activeCommunity";
 import {createProjectsPublisher,createProjectsQuery} from "./projectsTransport";
 import {useChannelsQuery} from "@/features/channels/hooks";
 import {useAppNavigation} from "@/app/navigation/useAppNavigation";
-import {ChannelType,WorkspaceMembershipState,type WorkspaceMemberView,type DiscoverableWorkspace} from "@client-kit/contracts";
+import {WorkspaceChannelCreateChannelType,WorkspaceMembershipState,type WorkspaceMemberView,type DiscoverableWorkspace} from "@client-kit/contracts";
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import {getIdentity} from "@/shared/api/tauriIdentity";
 import {getChannels} from "@/shared/api/tauriChannels";
@@ -77,7 +77,7 @@ export function useProjectDiscussInChannel(){
     if(identity.pubkey!==session.devicePubkey||identity.locked||identity.lost)throw new Error(t("platform.loadFailed"));
     const rows=await loadChannelDirectory(session.client,()=>scope.active,workspace.channel.channelId);check();
     const current=rows.find(row=>row.id===workspace.id&&row.isMember&&row.membershipState===WorkspaceMembershipState.Active
-      &&row.channel.channelType===ChannelType.Stream&&!row.channel.archived);
+      &&row.channel.channelType===WorkspaceChannelCreateChannelType.Stream&&!row.channel.archived);
     if(!current)throw new Error(t("projects.home.channelMissing"));
     const channels=await getChannels(null);check();
     if(!channels.channels?.some(channel=>channel.id===current.channel.channelId&&channel.channelType==="stream"&&channel.isMember&&!channel.archivedAt))

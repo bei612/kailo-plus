@@ -34,7 +34,7 @@ it("counts down to the Relay deadline and reports a due cleanup", () => {
   const soon = getEphemeralChannelDisplay({ ttlSeconds: 3_600, ttlDeadline: "2026-10-18T10:05:00Z" }, "en", now)!;
   expect(soon.detailLabel).toBe("5m left");
   expect(soon.tooltipLabel).toMatch(/^Ephemeral channel\. Cleans up in 5 minutes\. Scheduled for /);
-  const later = getEphemeralChannelDisplay({ ttlDeadline: new Date("2026-10-20T10:00:00Z") }, "en", now)!;
+  const later = getEphemeralChannelDisplay({ ttlDeadline: "2026-10-20T10:00:00Z" }, "en", now)!;
   expect(later.detailLabel).toBe("2d left");
   expect(getEphemeralChannelDisplay({ ttlDeadline: "2026-10-18T09:00:00Z" }, "en", now)).toEqual({
     detailLabel: "Cleanup due", tooltipLabel: "Ephemeral channel. Cleanup is due now.",

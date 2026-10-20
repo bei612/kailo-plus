@@ -1,7 +1,7 @@
 import { act, createRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ActionEnum, AutomationTriggerKind, type AutomationStep, type WebCustomEmojiView } from "@client-kit/contracts";
+import { AutomationStepAction, AutomationTriggerKind, type AutomationStep, type WebCustomEmojiView } from "@client-kit/contracts";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
@@ -14,8 +14,8 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
 afterEach(() => vi.unstubAllGlobals());
-const first: AutomationStep = { id: "first", action: ActionEnum.SendMessage, text: "Original" };
-const second: AutomationStep = { id: "second", action: ActionEnum.SendMessage, text: "Second" };
+const first: AutomationStep = { id: "first", action: AutomationStepAction.SendMessage, text: "Original" };
+const second: AutomationStep = { id: "second", action: AutomationStepAction.SendMessage, text: "Second" };
 const policy = { id: "5d302c74-7f3f-49d5-9583-616e6c9a32a7", version: 1 };
 async function setup(initial: AutomationStep[], options: { disabled?: boolean; policies?: boolean; schedule?: boolean; locale?: "en" | "zh-CN"; emojiView?: WebCustomEmojiView } = {}) {
   const changes = vi.fn();
@@ -52,12 +52,12 @@ async function add(host: HTMLElement, position: number, action: string) {
 
 describe("original workflow sequence and actual governed draft consumer", () => {
   it("preserves the original Delay timeout control through its actual ordered draft", async () => {
-    const {host, handle}=await setup([{id:"wait",action:ActionEnum.Delay,duration:"62s"},first]);
+    const {host, handle}=await setup([{id:"wait",action:AutomationStepAction.Delay,duration:"62s"},first]);
     await node(host,1);
     await click([...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.includes("Run controls"))!);
     await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"5");
     expect(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!.value).toBe("5");
-    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:ActionEnum.Delay,duration:"62s",timeout_secs:5});
+    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:AutomationStepAction.Delay,duration:"62s",timeout_secs:5});
     expect(supportedSteps(workflowStepsContent(read(host)),3)).toBe(true);
     await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"not-finished");
     await act(async () => { handle.current!.closeInspector(); });
@@ -69,7 +69,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"0s");
     expect(supportedSteps(workflowStepsContent(read(host)),3)).toBe(false);
     await type(host.querySelector<HTMLInputElement>("#wf-step-0-timeout-secs")!,"");
-    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:ActionEnum.Delay,duration:"62s"});
+    expect(workflowStepsContent(read(host))[0]).toEqual({id:"wait",action:AutomationStepAction.Delay,duration:"62s"});
     await node(host,2);
     // Original WorkflowStepCard: an effect step also has Run controls (condition + timeout).
     await click([...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.includes("Run controls"))!);
@@ -82,23 +82,23 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     expect(handle.current!.closeInspector()).toBe(false);
     await act(async () => handle.current!.addFirstStep());
     await settledMotion();
-    expect(read(host)).toEqual([{id:"step_1",action:ActionEnum.SendMessage,text:""}]);
+    expect(read(host)).toEqual([{id:"step_1",action:AutomationStepAction.SendMessage,text:""}]);
     expect(changes).toHaveBeenCalledOnce();
     expect(host.querySelector('[data-testid="workflow-node-inspector"]')).not.toBeNull();
     await act(async () => expect(handle.current!.closeInspector()).toBe(true));
     await settledMotion();
     expect(host.querySelector('[data-testid="workflow-node-inspector"]')).toBeNull();
-    expect(read(host)).toEqual([{id:"step_1",action:ActionEnum.SendMessage,text:""}]);
+    expect(read(host)).toEqual([{id:"step_1",action:AutomationStepAction.SendMessage,text:""}]);
     expect(changes).toHaveBeenCalledOnce();
   });
 
   it.each([
-    [{id:"step", action:ActionEnum.SendMessage, name:"Release", text:"  Hello\n  world  "}, "Release · “Hello world”", "Send message"],
-    [{id:"step", action:ActionEnum.Delay, duration:"1h 2m 1s"}, "1 hour 2 minutes 1 second", "Delay"],
-    [{id:"step", action:ActionEnum.Delay, duration:"invalid draft"}, "invalid draft", "Delay"],
-    [{id:"step", action:ActionEnum.SetChannelTopic, topic:"Release <b>discussion</b>"}, "“Release <b>discussion</b>”", "Set channel topic"],
-    [{id:"step", action:ActionEnum.RequestApproval, message:"Please review", approvalPolicy:policy}, "“Please review”", "Request approval"],
-    [{id:"step", action:ActionEnum.CallWebhook, url:" https://hooks.example.com/notify "}, "POST https://hooks.example.com/notify", "Call Webhook"],
+    [{id:"step", action:AutomationStepAction.SendMessage, name:"Release", text:"  Hello\n  world  "}, "Release · “Hello world”", "Send message"],
+    [{id:"step", action:AutomationStepAction.Delay, duration:"1h 2m 1s"}, "1 hour 2 minutes 1 second", "Delay"],
+    [{id:"step", action:AutomationStepAction.Delay, duration:"invalid draft"}, "invalid draft", "Delay"],
+    [{id:"step", action:AutomationStepAction.SetChannelTopic, topic:"Release <b>discussion</b>"}, "“Release <b>discussion</b>”", "Set channel topic"],
+    [{id:"step", action:AutomationStepAction.RequestApproval, message:"Please review", approvalPolicy:policy}, "“Please review”", "Request approval"],
+    [{id:"step", action:AutomationStepAction.CallWebhook, url:" https://hooks.example.com/notify "}, "POST https://hooks.example.com/notify", "Call Webhook"],
   ] satisfies Array<[AutomationStep,string,string]>)("renders the original configured summary for %j without altering the draft", async (step, summary, subtitle) => {
     const {host,changes} = await setup([step]);
     const target = host.querySelector<HTMLElement>('ol > li:nth-child(2) button[aria-pressed]')!;
@@ -125,7 +125,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it.each(["👍", ":not_admitted:"])("uses the original reaction icon instead of a step number and no untrusted image (%s)", async emoji => {
-    const {host} = await setup([{id:"reaction", action:ActionEnum.AddReaction, emoji}]);
+    const {host} = await setup([{id:"reaction", action:AutomationStepAction.AddReaction, emoji}]);
     await settle();
     const target = host.querySelector<HTMLElement>('ol > li:nth-child(2) button[aria-pressed]')!;
     expect(target.getAttribute("aria-label")).toBe(`Step 1: ${emoji}`);
@@ -135,7 +135,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it("localizes verbose durations and configured action subtitles through the same source", async () => {
-    const {host} = await setup([{id:"wait", action:ActionEnum.Delay, duration:"1w 2d 3h 4m 5s"}], {locale:"zh-CN"});
+    const {host} = await setup([{id:"wait", action:AutomationStepAction.Delay, duration:"1w 2d 3h 4m 5s"}], {locale:"zh-CN"});
     expect(host.querySelector('ol > li:nth-child(2) button[aria-pressed]')?.textContent).toBe("1延时1 周 2 天 3 小时 4 分钟 5 秒");
   });
 
@@ -144,7 +144,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
     const original = "https://relay.example/media/party.png";
     const rewritten = "/api/v1/media/party.png";
     const event = finalizeEvent({kind:30030, created_at:1, content:"", tags:[["d","buzz:custom-emoji"],["emoji","party",original]]}, key);
-    const {host,changes} = await setup([{id:"reaction",action:ActionEnum.AddReaction,emoji:":party:"}], {
+    const {host,changes} = await setup([{id:"reaction",action:AutomationStepAction.AddReaction,emoji:":party:"}], {
       emojiView:{pubkey:getPublicKey(key),events:[event],mediaPaths:admitted ? {[original]:rewritten} : {}},
     });
     // Query notifications use a scheduled task, not only promise microtasks.
@@ -180,14 +180,14 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it.each(["en","zh-CN"] as const)("keeps the original delay text input and exact duration draft on blur (%s)",async(locale)=>{
-    const {host}=await setup([{id:"wait",action:ActionEnum.Delay,duration:"5s"},first],{locale});
+    const {host}=await setup([{id:"wait",action:AutomationStepAction.Delay,duration:"5s"},first],{locale});
     await node(host,1);
     const input=host.querySelector<HTMLInputElement>('#wf-step-0-duration')!;
     expect(input.placeholder).toBe(locale==="en"?"e.g. 5s, 1m, 1h":"例如 5s、1m、1h");
     expect(host.querySelector('input[type="range"]')).toBeNull();
     await type(input,"0s");
     await act(async()=>input.dispatchEvent(new FocusEvent("focusout",{bubbles:true})));
-    expect(read(host)).toEqual([{id:"wait",action:ActionEnum.Delay,duration:"0s"},first]);
+    expect(read(host)).toEqual([{id:"wait",action:AutomationStepAction.Delay,duration:"0s"},first]);
     expect(supportedSteps(read(host),3)).toBe(true);
     await type(input,"invalid draft");
     expect(read(host)[0]?.duration).toBe("invalid draft");
@@ -208,9 +208,9 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it.each([
-    [{id:"gate",action:ActionEnum.RequestApproval,message:"Review",approvalPolicy:policy},"message","Approval request message"],
-    [{id:"reaction",action:ActionEnum.AddReaction,emoji:"👍"},"emoji","e.g. thumbsup"],
-    [{id:"topic",action:ActionEnum.SetChannelTopic,topic:"Discussion"},"topic","New channel topic"],
+    [{id:"gate",action:AutomationStepAction.RequestApproval,message:"Review",approvalPolicy:policy},"message","Approval request message"],
+    [{id:"reaction",action:AutomationStepAction.AddReaction,emoji:"👍"},"emoji","e.g. thumbsup"],
+    [{id:"topic",action:AutomationStepAction.SetChannelTopic,topic:"Discussion"},"topic","New channel topic"],
   ] satisfies Array<[AutomationStep,string,string]>)("restores the supported original field for %j without changing its governed payload",async(step,field,placeholder)=>{
     const {host,changes}=await setup([step],{policies:true});
     await node(host,1);
@@ -222,7 +222,7 @@ describe("original workflow sequence and actual governed draft consumer", () => 
   });
 
   it("does not offer an approval after a side effect, or a side effect before approval", async () => {
-    const {host} = await setup([{id:"gate", action:ActionEnum.RequestApproval, message:"Approve", approvalPolicy:policy}, first], {policies:true});
+    const {host} = await setup([{id:"gate", action:AutomationStepAction.RequestApproval, message:"Approve", approvalPolicy:policy}, first], {policies:true});
     const popup = await menu(host.querySelectorAll<HTMLElement>('[data-testid="workflow-node-ingress"] button')[0]!);
     expect(popup.textContent).toContain("Delay");
     expect(popup.textContent).not.toContain("Send message");

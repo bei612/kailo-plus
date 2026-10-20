@@ -42,7 +42,7 @@ func TestResourceProvisionUnknownKeepsOriginalReferenceUntilReceipt(t *testing.T
 	env.OnActivity("AdvanceResourceProvision", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, request generated.ResourceProvisionAdvanceRequest) (generated.ResourceProvisionAdvanceResult, error) {
 			calls++
-			if request.Target != generated.ResourceProvisionAdvanceRequestTarget(*in.ResourceProvision) || request.RunID == "" {
+			if request.Target != generated.ResourceProvisionTarget(*in.ResourceProvision) || request.RunID == "" {
 				t.Fatal("retry substituted the frozen resource/admission")
 			}
 			if calls == 1 {

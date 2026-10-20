@@ -8,7 +8,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
-import { AgentInstallationState, ChannelBindingStatus, type AgentInstallationView } from "@client-kit/contracts";
+import { AgentInstallationState, AgentInstallationViewChannelBindingStatus, type AgentInstallationView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "../context";
 import { loadWorkspaceAgents } from "../agent-installation-view";
 import { Dialog } from "../composer/shared/ui/dialog";
@@ -42,7 +42,7 @@ export function AddAgentDialog({ open, onClose, onAdd, workspaceId, currentInsta
 
   const available = (agents.data ?? []).filter((agent: AgentInstallationView) =>
     agent.state === AgentInstallationState.Active
-    && agent.channelBinding?.status === ChannelBindingStatus.Active
+    && agent.channelBinding?.status === AgentInstallationViewChannelBindingStatus.Active
     && agent.executionPermission?.effective === true
     && Boolean(agent.agentPubkey)
     && !currentInstallationIds.includes(agent.resourceId));

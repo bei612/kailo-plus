@@ -14,8 +14,8 @@ import { cn } from "./profile/buzz/shared/lib/cn";
 export type EphemeralChannelLike = {
   id?: string;
   ttlSeconds?: number | null;
-  /** Contract dates arrive as RFC 3339 strings over JSON. */
-  ttlDeadline?: Date | string | null;
+  /** RFC 3339, as on the wire (ADR-21). */
+  ttlDeadline?: string | null;
 };
 
 export type EphemeralChannelDisplay = {
@@ -35,7 +35,7 @@ export function isEphemeralChannel(channel: EphemeralChannelLike): boolean {
 
 function deadlineMs(ttlDeadline: EphemeralChannelLike["ttlDeadline"]): number | null {
   if (ttlDeadline === undefined || ttlDeadline === null) return null;
-  const value = ttlDeadline instanceof Date ? ttlDeadline.getTime() : Date.parse(ttlDeadline);
+  const value = Date.parse(ttlDeadline);
   return Number.isNaN(value) ? null : value;
 }
 

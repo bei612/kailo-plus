@@ -4,7 +4,7 @@
 // DD-125(4): a template grants nothing. After the existing workspace.create submission, each
 // part is its own governed submission with its own idempotency key, admitted and audited by
 // Core; a refused part is reported on its own and never rolls back the channel or other parts.
-import { ActionDispatchState, ActionGateState, AgentVersionState, CreateActionKey, ResourceState, TaskStatus,
+import { ActionDispatchState, ActionGateState, AgentVersionState, RoleWorkspacePageCreateActionKey, ResourceState, TaskStatus,
   type ActionCommand, type ActionSubmission, type AgentInstallationCandidate } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import type { ChannelTemplateRecord } from "../../collaboration-preferences";
@@ -39,7 +39,7 @@ export async function waitForCreatedWorkspace(
     if (!options.isCurrent()) throw new TemplateChannelPending("Template scope changed");
     const task = await client.task(submission.actionExecutionId);
     if (task.actionExecutionId !== submission.actionExecutionId || task.operationId !== submission.operationId
-      || task.actionKey !== CreateActionKey.WorkspaceCreate) throw new TransportError("Template channel receipt mismatch");
+      || task.actionKey !== RoleWorkspacePageCreateActionKey.WorkspaceCreate) throw new TransportError("Template channel receipt mismatch");
     const phase = taskPhase(task);
     if (phase.tone === "negative") throw new TemplateChannelRejected("Template channel creation rejected");
     if (phase.tone === "positive" && task.taskStatus === TaskStatus.Completed && task.targetId) return task.targetId;

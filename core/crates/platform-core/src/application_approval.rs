@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use contracts::{
-    AffectedOwnerRef, ApprovalDecision, ApprovalSelector, DecisionElement,
+    AffectedOwnerRef, ApprovalDecision, ApprovalDecisionRecord, ApprovalSelector,
     FreshApprovalAdmissionResult, ReasonCode,
 };
 use serde_json::Value;
@@ -451,7 +451,7 @@ async fn require_approval(
     let Some((true, decisions)) = row else {
         return Err(Refusal::Denied(ReasonCode::ApprovalConsumeWindowClosed));
     };
-    let decisions: Vec<DecisionElement> =
+    let decisions: Vec<ApprovalDecisionRecord> =
         serde_json::from_value(decisions).map_err(|_| unknown())?;
     let policy = policy(conn, def).await?;
     let mut qualified = Vec::new();

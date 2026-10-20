@@ -15,7 +15,7 @@ import { render } from "./render";
 
 const JOINED_AT = "2026-10-20T08:00:00.000Z";
 const join = (principalId: string, displayName = principalId): TenantJoin =>
-  ({ principalId, displayName, joinedAt: new Date(JOINED_AT) });
+  ({ principalId, displayName, joinedAt: JOINED_AT });
 const page = (items: TenantJoin[], cursor: string, hasMore = false): TenantMemberJoinPage => ({ items, cursor, hasMore });
 
 function joinsClient(replies: Array<TenantMemberJoinPage | Error>) {

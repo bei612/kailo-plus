@@ -822,7 +822,7 @@ pub struct Params {
     pub grant_permission: Option<String>,
     pub asset_id: Option<Uuid>,
     pub asset_version: Option<i32>,
-    pub agent_version_content: Option<contracts::ContentClass>,
+    pub agent_version_content: Option<contracts::AgentVersionContent>,
     pub delegation_id: Option<Uuid>,
     pub delegation_version: Option<i32>,
     pub delegation_grant: Option<contracts::DelegationGrantParameters>,
@@ -3476,7 +3476,7 @@ impl Governance {
     pub async fn available_workspace_create_action(
         &self,
         actor: Actor,
-    ) -> Result<Option<contracts::CreateActionKey>, Refusal> {
+    ) -> Result<Option<contracts::RoleWorkspacePageCreateActionKey>, Refusal> {
         const KEY: &str = "workspace.create";
         if !crate::capability_registry::action_exposed(KEY) {
             return Ok(None);
@@ -3503,7 +3503,7 @@ impl Governance {
             .evaluate(actor, &def, &target)
             .await?
             .allowed
-            .then_some(contracts::CreateActionKey::WorkspaceCreate))
+            .then_some(contracts::RoleWorkspacePageCreateActionKey::WorkspaceCreate))
     }
 
     /// Workspace 暂停/恢复入口的一次性可用性提示；不是授权票据，提交时仍由
@@ -7782,11 +7782,11 @@ impl Governance {
         let expires = ae
             .approval_expires_at
             .ok_or_else(|| Refusal::Unavailable("WAITING 缺冻结的过期时刻".into()))?;
-        let affected_owner_refs: Vec<contracts::AffectedOwnerRefElement> =
+        let affected_owner_refs: Vec<contracts::AffectedOwnerRef> =
             if crate::automation::step_approval::is_child(ae) {
                 crate::automation::step_approval::owners(ae)?
                     .into_iter()
-                    .map(|owner| contracts::AffectedOwnerRefElement {
+                    .map(|owner| contracts::AffectedOwnerRef {
                         target_type: owner.target_type,
                         target_id: owner.target_id,
                         target_version: owner.target_version,
@@ -7805,7 +7805,7 @@ impl Governance {
                 serde_json::from_value(refs).map_err(|e| Refusal::Unavailable(e.to_string()))?
             } else if installation_permission::owner_policy(&ae.action_key, &policy) {
                 let owner = installation_permission::frozen_owner(ae)?;
-                vec![contracts::AffectedOwnerRefElement {
+                vec![contracts::AffectedOwnerRef {
                     target_type: owner.target_type,
                     target_id: owner.target_id,
                     target_version: owner.target_version,
@@ -7820,7 +7820,7 @@ impl Governance {
                     .ok_or_else(|| {
                         Refusal::Unavailable("APPLICATION target owner unavailable".into())
                     })?;
-                vec![contracts::AffectedOwnerRefElement {
+                vec![contracts::AffectedOwnerRef {
                     target_type: owner.target_type,
                     target_id: owner.target_id,
                     target_version: owner.target_version,
@@ -7844,7 +7844,7 @@ impl Governance {
             role_requirements: policy
                 .role_requirements
                 .iter()
-                .map(|r| contracts::RoleRequirementElement {
+                .map(|r| contracts::ApprovalRoleRequirement {
                     selector: r.selector.clone(),
                     min_distinct: r.min_distinct,
                 })

@@ -22,7 +22,7 @@ use axum::{
     Json,
 };
 use collab_bridge::bridge::{ChannelMetadataStep, ChannelMetadataTarget, ChannelTtl, Delivery};
-use contracts::{EvidenceKind, ReasonCode, WorkspaceUpdateClass};
+use contracts::{EvidenceKind, ReasonCode, WorkspaceUpdate};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -55,7 +55,7 @@ const STAGE: &str = "channel-metadata";
 /// `reopen=true`；空集、ttlSeconds 与 clearTtl 同时出现、reopen 与其他字段混用、两个
 /// 标志取 false 都以 INVALID_PARAMETERS 拒绝。名称按 Relay 的规则规范化（Relay 存的
 /// 正是它），规范化后为空即拒绝；描述原样冻结，空串清空。
-pub(crate) fn normalize(update: &WorkspaceUpdateClass) -> Result<Value, Refusal> {
+pub(crate) fn normalize(update: &WorkspaceUpdate) -> Result<Value, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
     let mut update = update.clone();
     if update.reopen == Some(false) || update.clear_ttl == Some(false) {
@@ -88,18 +88,18 @@ pub(crate) fn normalize(update: &WorkspaceUpdateClass) -> Result<Value, Refusal>
 }
 
 /// 冻结参数里的更新意图。
-pub(crate) fn frozen(params: &Params) -> Option<WorkspaceUpdateClass> {
+pub(crate) fn frozen(params: &Params) -> Option<WorkspaceUpdate> {
     let value = params.workspace_update.as_ref()?;
     serde_json::from_value(value.clone()).ok()
 }
 
-fn frozen_update(ae: &Execution) -> Option<WorkspaceUpdateClass> {
+fn frozen_update(ae: &Execution) -> Option<WorkspaceUpdate> {
     let params = ae.parameters.as_ref()?.get("params")?;
     frozen(&Params::from_json(params)?)
 }
 
 /// 需经 Relay 收敛的那部分目标状态。可见性只是 Core 事实，不在其中（DD-119(2)）。
-pub(crate) fn channel_target(update: &WorkspaceUpdateClass) -> ChannelMetadataTarget {
+pub(crate) fn channel_target(update: &WorkspaceUpdate) -> ChannelMetadataTarget {
     ChannelMetadataTarget {
         name: update.name.clone(),
         about: update.description.clone(),
@@ -531,7 +531,7 @@ async fn sent_before(pool: &PgPool, ae: &Execution) -> Result<bool, sqlx::Error>
 mod tests {
     use super::*;
 
-    fn update(value: Value) -> WorkspaceUpdateClass {
+    fn update(value: Value) -> WorkspaceUpdate {
         serde_json::from_value(value).unwrap()
     }
 

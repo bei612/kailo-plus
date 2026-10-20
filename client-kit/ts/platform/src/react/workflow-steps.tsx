@@ -3,7 +3,7 @@
 // The original card/detail affordances; only the actually executed actions enter its model.
 import { ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { ActionEnum, ActionKind, type AutomationStep, type AutomationVersionContent, type AutomationTriggerKind as TriggerKind } from "@client-kit/contracts";
+import { AutomationStepAction, AutomationVersionContentActionKind, type AutomationStep, type AutomationVersionContent, type AutomationTriggerKind as TriggerKind } from "@client-kit/contracts";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { Input } from "./composer/shared/ui/input";
 import { useT } from "./context";
@@ -28,7 +28,7 @@ export function validStepTimeout(value: unknown): boolean {
 }
 export function workflowStepsContent(steps: WorkflowStepDraft[]): AutomationStep[] {
   return steps.map(({timeoutSecs, headerRows, ...step}) => {
-    if (step.action === ActionEnum.CallWebhook) {
+    if (step.action === AutomationStepAction.CallWebhook) {
       // Original actionFieldsForStep: method defaults to POST, empty body/headers are omitted.
       step.method = step.method || "POST" as AutomationStep["method"];
       if (!step.body) delete step.body;
@@ -134,16 +134,16 @@ export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value 
   });
 }
 
-export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction | ActionEnum.SetChannelTopic | ActionEnum.CallWebhook;
+export type WorkflowActionKind = AutomationVersionContentActionKind | AutomationStepAction.AddReaction | AutomationStepAction.SetChannelTopic | AutomationStepAction.CallWebhook;
 export function workflowAction(content: AutomationVersionContent): {kind: WorkflowActionKind; template: string} | undefined {
   return content.formatVersion === 2 || content.formatVersion === 3
-    ? content.steps?.at(-1)?.action === ActionEnum.AddReaction
-      ? {kind: ActionEnum.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
-      : content.steps?.at(-1)?.action === ActionEnum.SetChannelTopic
-        ? {kind: ActionEnum.SetChannelTopic, template: content.steps.at(-1)?.topic ?? ""}
-      : content.steps?.at(-1)?.action === ActionEnum.CallWebhook
-        ? {kind: ActionEnum.CallWebhook, template: content.steps.at(-1)?.url ?? ""}
-      : { kind: ActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
+    ? content.steps?.at(-1)?.action === AutomationStepAction.AddReaction
+      ? {kind: AutomationStepAction.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
+      : content.steps?.at(-1)?.action === AutomationStepAction.SetChannelTopic
+        ? {kind: AutomationStepAction.SetChannelTopic, template: content.steps.at(-1)?.topic ?? ""}
+      : content.steps?.at(-1)?.action === AutomationStepAction.CallWebhook
+        ? {kind: AutomationStepAction.CallWebhook, template: content.steps.at(-1)?.url ?? ""}
+      : { kind: AutomationVersionContentActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
     : content.action;
 }
 

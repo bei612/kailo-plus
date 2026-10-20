@@ -329,7 +329,7 @@ async fn admit(
 pub(crate) async fn reveal(
     g: &Governance,
     ae: &governance::Execution,
-) -> Option<contracts::WebhookSecretClass> {
+) -> Option<contracts::AutomationWebhookSecret> {
     const KEYS: [&str; 2] = ["automation.enable", "automation.rotate_webhook_secret"];
     if !KEYS.contains(&ae.action_key.as_str()) || ae.dispatch_state != "DISPATCHED" {
         return None;
@@ -365,7 +365,7 @@ pub(crate) async fn reveal(
     }
     let value = g.secrets.read(&secret_ref, "value").await.ok()?;
     let secret = display(value.expose())?;
-    Some(contracts::WebhookSecretClass {
+    Some(contracts::AutomationWebhookSecret {
         automation_resource_id: ae.target_id.to_string(),
         hint: hint(&secret),
         secret,

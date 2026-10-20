@@ -29,7 +29,7 @@ func TestComponentActionKeepsOriginalExecutionOnLostAcknowledgment(t *testing.T)
 	env.OnActivity("AdvanceComponentAction", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, request generated.ComponentActionAdvanceRequest) (generated.ComponentActionAdvanceResult, error) {
 			calls++
-			if request.Target != generated.ComponentActionAdvanceRequestTarget(target) || request.RunID == "" || request.CancelRequested {
+			if request.Target != target || request.RunID == "" || request.CancelRequested {
 				t.Fatal("retry substituted frozen execution or cancellation")
 			}
 			if calls == 1 {
@@ -74,7 +74,7 @@ func TestComponentActionCancellationWaitsForAuthoritativeReceipt(t *testing.T) {
 	env.OnActivity("AdvanceComponentAction", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, request generated.ComponentActionAdvanceRequest) (generated.ComponentActionAdvanceResult, error) {
 			calls++
-			if !request.CancelRequested || request.Target != generated.ComponentActionAdvanceRequestTarget(target) {
+			if !request.CancelRequested || request.Target != target {
 				t.Fatal("cancel resumed as a fresh action")
 			}
 			status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"

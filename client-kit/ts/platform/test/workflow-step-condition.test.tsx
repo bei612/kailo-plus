@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ActionEnum, AutomationTriggerKind, type AutomationStep } from "@client-kit/contracts";
+import { AutomationStepAction, AutomationTriggerKind, type AutomationStep } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { buildMessageTextCondition, parseMessageTextCondition, supportsMessageTextCondition } from "../src/react/workflow-message-text-condition";
@@ -45,7 +45,7 @@ describe("original step condition (Run controls)", () => {
     .find((node) => node.textContent?.startsWith("Run controls"));
 
   it("writes the original condition for a message step and summarizes it as Conditional", async () => {
-    const message: AutomationStep = {id: "reply", action: ActionEnum.SendMessage, text: "hi"};
+    const message: AutomationStep = {id: "reply", action: AutomationStepAction.SendMessage, text: "hi"};
     const {host, updates} = await mount(AutomationTriggerKind.ChannelMessage, message);
     expect(runControls(host)!.textContent).toContain("Default");
     await click(runControls(host)!);
@@ -59,7 +59,7 @@ describe("original step condition (Run controls)", () => {
   });
 
   it("keeps an advanced expression until the original replace confirmation", async () => {
-    const message: AutomationStep = {id: "reply", action: ActionEnum.SendMessage, text: "hi", if: 'trigger_author == "x"'};
+    const message: AutomationStep = {id: "reply", action: AutomationStepAction.SendMessage, text: "hi", if: 'trigger_author == "x"'};
     const {host, updates} = await mount(AutomationTriggerKind.ChannelMessage, message);
     await click(runControls(host)!);
     expect(host.textContent).toContain("An advanced expression is active");
@@ -74,7 +74,7 @@ describe("original step condition (Run controls)", () => {
   });
 
   it("offers no message-text condition for reaction or schedule triggers", async () => {
-    const reaction: AutomationStep = {id: "react", action: ActionEnum.AddReaction, emoji: "👍"};
+    const reaction: AutomationStep = {id: "react", action: AutomationStepAction.AddReaction, emoji: "👍"};
     const {host} = await mount(AutomationTriggerKind.ReactionAdded, reaction);
     // Effect steps keep Run controls for the original timeout (ec2e4b8d); only the
     // message-text condition is absent for triggers without message text.

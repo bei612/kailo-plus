@@ -6,7 +6,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LoaderCircle, Search } from "lucide-react";
 import { useReducedMotion } from "motion/react";
-import type { WebGIFItem, WebGIFSearchView } from "@client-kit/contracts";
+import type { WebGifItem, WebGifSearchView } from "@client-kit/contracts";
 
 import { useUiT } from "../context";
 import { BffError } from "../../transport";
@@ -16,7 +16,7 @@ import { Skeleton } from "../sidebar/skeleton";
 /** Original search debounce. */
 export const GIF_SEARCH_DEBOUNCE_MS = 500;
 
-export type GifSearch = (query: string) => Promise<WebGIFSearchView>;
+export type GifSearch = (query: string) => Promise<WebGifSearchView>;
 
 const LOADING_SKELETONS = [
   "tall-a", "short-a", "short-b", "tall-b", "short-c",
@@ -24,7 +24,7 @@ const LOADING_SKELETONS = [
 ] as const;
 
 export const KlipyGifPicker = React.memo(function KlipyGifPicker({ onSelect, search }: {
-  onSelect: (gif: WebGIFItem) => void;
+  onSelect: (gif: WebGifItem) => void;
   search: GifSearch;
 }) {
   const t = useUiT();

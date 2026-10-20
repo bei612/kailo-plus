@@ -219,7 +219,7 @@ async fn configuration_page(
     .map_err(|_| Refusal::Unavailable("Version 配置目录不符合共享契约".into()).respond(None))
 }
 
-fn retain_consumable_profile(profile: &mut contracts::Profile) -> bool {
+fn retain_consumable_profile(profile: &mut contracts::RuntimeProfileDirectoryProfilesItem) -> bool {
     let capability = &profile.capability_contract;
     if !(profile.kind == contracts::RuntimeProfileKind::ServerCodex
         && profile.status == "ACTIVE"
@@ -496,7 +496,7 @@ mod configuration_profile_tests {
     #[test]
     fn mixed_policies_expose_only_the_consumable_policy_and_mapping() {
         let original = profile();
-        let mut profiles: Vec<contracts::Profile> =
+        let mut profiles: Vec<contracts::RuntimeProfileDirectoryProfilesItem> =
             serde_json::from_value(json!([original.clone()])).unwrap();
         profiles.retain_mut(retain_consumable_profile);
         assert_eq!(profiles.len(), 1);
@@ -522,7 +522,7 @@ mod configuration_profile_tests {
             .as_array_mut()
             .unwrap()
             .drain(..2);
-        let mut profiles: Vec<contracts::Profile> =
+        let mut profiles: Vec<contracts::RuntimeProfileDirectoryProfilesItem> =
             serde_json::from_value(json!([missing, unsupported])).unwrap();
         profiles.retain_mut(retain_consumable_profile);
         assert!(profiles.is_empty());
@@ -549,7 +549,8 @@ mod configuration_profile_tests {
         let mut empty = profile();
         empty["capabilityContract"]["replyPolicies"] = json!([]);
         empty["capabilityContract"]["replyPolicyMappings"] = json!([]);
-        let mut profiles: Vec<contracts::Profile> = serde_json::from_value(json!([empty])).unwrap();
+        let mut profiles: Vec<contracts::RuntimeProfileDirectoryProfilesItem> =
+            serde_json::from_value(json!([empty])).unwrap();
         profiles.retain_mut(retain_consumable_profile);
         assert!(profiles.is_empty());
     }

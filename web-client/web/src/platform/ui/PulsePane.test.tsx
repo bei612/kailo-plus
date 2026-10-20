@@ -198,7 +198,7 @@ it("the actual Web Pulse adapter propagates an unknown result and keeps the orig
 
 const originId="12345678-1234-4234-8234-123456789012";
 const origin=()=>({id:"origin-workspace",visibility:"open",isMember:false,memberCount:1,
-  createdAt:new Date("2026-10-07T00:00:00Z"),channel:{channelId:originId,channelType:"stream",name:"Visible origin",description:"",archived:false}});
+  createdAt:"2026-10-07T00:00:00Z",channel:{channelId:originId,channelType:"stream",name:"Visible origin",description:"",archived:false}});
 it("the actual Web discussion host reads governed search and fresh metadata, passes exact navigation and fences late scope results",async()=>{
   let discussions:ReturnType<typeof usePulseHost>["discussions"];
   function Consumer(){discussions=usePulseHost().discussions;return discussions!.renderPreview("Original **preview** [link](https://example.test/page)");}

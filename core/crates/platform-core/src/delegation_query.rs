@@ -9,7 +9,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
@@ -188,15 +188,39 @@ pub async fn list(
         ) else {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         };
-        let value = json!({"delegationId":row.id,"delegationVersion":row.version,
-            "grantorPrincipalId":row.grantor_principal_id,"state":row.state,"uses":row.uses,
-            "effectiveState":effective,"supersededByDelegationId":row.superseded_by_delegation_id,
-            "parameters":{"validFrom":row.valid_from,"expiresAt":row.expires_at,
-                "maxUses":row.max_uses,"scopes":scopes}});
-        match serde_json::from_value::<contracts::GrantElement>(value) {
-            Ok(grant) => grants.push(grant),
-            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        }
+        // Scope 行是库内 jsonb，按契约读回；状态列与契约枚举逐值相等（bff::db_enum）。
+        let Ok(scopes) = scopes
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<contracts::DelegationScopeParameters>, _>>()
+        else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        let state = match crate::bff::db_enum("delegation_grant.state", &row.state) {
+            Ok(state) => state,
+            Err(response) => return response,
+        };
+        let effective_state = match crate::bff::db_enum("effective_state", effective) {
+            Ok(effective) => effective,
+            Err(response) => return response,
+        };
+        grants.push(contracts::AgentDelegationView {
+            delegation_id: row.id.to_string(),
+            delegation_version: i64::from(row.version),
+            grantor_principal_id: row.grantor_principal_id.to_string(),
+            state,
+            uses: row.uses,
+            effective_state,
+            superseded_by_delegation_id: row.superseded_by_delegation_id.map(|id| id.to_string()),
+            parameters: contracts::DelegationGrantParameters {
+                valid_from: rfc3339(row.valid_from),
+                expires_at: rfc3339(row.expires_at),
+                max_uses: row.max_uses,
+                renews_delegation_id: None,
+                renews_delegation_version: None,
+                scopes,
+            },
+        });
     }
     let mut can_grant = match exposed(&mut conn, "agent.delegation.grant").await {
         Ok(value) => value,
@@ -341,13 +365,13 @@ pub async fn targets(
             (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
         for row in rows {
             let mode = match row.result_exposure_mode {
-                Some(mode) => match serde_json::from_value(serde_json::Value::String(mode)) {
+                Some(mode) => match crate::bff::db_enum("result_exposure_policy.mode", &mode) {
                     Ok(mode) => mode,
-                    Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                    Err(response) => return response,
                 },
-                None => contracts::ResultExposureMode::ConsumeOnly,
+                None => contracts::DelegationScopeParametersResultExposureMode::ConsumeOnly,
             };
-            let scope = contracts::ScopeElement {
+            let scope = contracts::DelegationScopeParameters {
                 action_key: row.action_key,
                 action_version: i64::from(row.action_version),
                 target_type: row.target_type,
@@ -384,4 +408,9 @@ pub async fn targets(
         next_offset: next,
     })
     .into_response()
+}
+
+/// 与 chrono 的 serde 输出逐字相同（AutoSi 精度、UTC 写作 `Z`）。
+fn rfc3339(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
 }

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ChannelType, ItemState, WorkspaceVisibility, type ConversationView } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, ConversationViewState, WorkspaceVisibility, type ConversationView } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { setLocale } from "@client-kit/platform/i18n";
@@ -15,10 +15,10 @@ import { loadWebSearchDirectory } from "./search";
 const native="7a533c07-3817-4c91-81f7-25f31534359a", privateNative="d051419a-0f17-40cd-a7e9-6ddedb807979";
 const alice={principalId:"alice",displayName:"Alice",pubkeys:["a".repeat(64)]};
 const bob={principalId:"bob",displayName:"Bob",pubkeys:["b".repeat(64)]};
-const conversation:ConversationView={id:"private-reference",channelId:privateNative,state:ItemState.Active,
+const conversation:ConversationView={id:"private-reference",channelId:privateNative,state:ConversationViewState.Active,
   participantPrincipalIds:["alice","bob"],operationId:"operation",version:1};
-function workspace(){return {id:"workspace-reference",createdAt:new Date(),visibility:WorkspaceVisibility.Open,isMember:true,memberCount:2,
-  channel:{channelId:native,channelType:ChannelType.Stream,name:"Original channel",description:"Original description",archived:false}};}
+function workspace(){return {id:"workspace-reference",createdAt:new Date().toISOString(),visibility:WorkspaceVisibility.Open,isMember:true,memberCount:2,
+  channel:{channelId:native,channelType:WorkspaceChannelCreateChannelType.Stream,name:"Original channel",description:"Original description",archived:false}};}
 function directoryClient(send:(request:BffRequest)=>Promise<{status:number;body:unknown}> = async request=>({status:200,
   body:request.path.startsWith("/api/v1/discoverable-workspaces")?{items:[workspace()]}:{items:[alice,bob],maxParticipants:4}})){
   return createBffClient({send});

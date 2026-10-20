@@ -32,7 +32,7 @@ type componentCandidate struct {
 	// APPLICATION receiver action; never the candidate adapter.
 	receiverActionBase string
 	http               *http.Client
-	digestResponse     func(context.Context, generated.PlanStep, []byte, int64) (generated.ComponentConformanceWireDigests, error)
+	digestResponse     func(context.Context, generated.ComponentConformanceStep, []byte, int64) (generated.ComponentConformanceWireDigests, error)
 }
 
 func decodeConformanceJSON(body []byte, target any) error {
@@ -154,7 +154,7 @@ func newComponentCandidate(configuration generated.ComponentConformanceEnvironme
 // an isolated APPLICATION receiver action (an ingest through READ_EDGE). The
 // platform-maintained isolated deployment admits and dispatches it through the
 // isolated Core; a NATIVE_MANAGED batch is started by the candidate itself.
-func receiverActionRequest(step generated.PlanStep) (bool, error) {
+func receiverActionRequest(step generated.ComponentConformanceStep) (bool, error) {
 	var request map[string]json.RawMessage
 	if err := decodeConformanceJSON([]byte(step.RequestJSON), &request); err != nil {
 		return false, err
@@ -211,7 +211,7 @@ func conformanceJSONDigest(body []byte) (string, error) {
 // redirect following, and no body/error logging. The existing Temporal Activity
 // history records this one attempt against the frozen ActionExecution. There is
 // no second step ledger; uncertain attempts can only be observed, not repeated.
-func (candidate *componentCandidate) call(ctx context.Context, step generated.PlanStep, token string) generated.ComponentConformanceStepObservation {
+func (candidate *componentCandidate) call(ctx context.Context, step generated.ComponentConformanceStep, token string) generated.ComponentConformanceStepObservation {
 	observation := generated.ComponentConformanceStepObservation{
 		CaseKey: step.CaseKey, StepKey: step.StepKey, Operation: step.Operation,
 	}
@@ -338,7 +338,7 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 		switch string(step.Operation) {
 		case "resolve_native_scope":
-			var scope generated.NativeScopeObservationClass
+			var scope generated.AdapterScopeObservation
 			var resource string
 			if json.Unmarshal(envelope["platformResourceRef"], &resource) != nil || resource == "" ||
 				decodeConformanceJSON(body, &scope) != nil || scope.PlatformResourceRef != resource {
@@ -362,7 +362,7 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 			if decodeConformanceJSON(body, &wire) != nil {
 				return uncertain()
 			}
-			native := generated.ExecutionElement(wire.Execution)
+			native := wire.Execution
 			if !validNativeObservation(native, step.IdempotencyKey) {
 				return uncertain()
 			}
@@ -393,7 +393,7 @@ func (candidate *componentCandidate) call(ctx context.Context, step generated.Pl
 // completed operation is looked up at the separately delivered isolated Core,
 // using the receiver's service identity and its explicit observe-only branch.
 // Neither endpoint nor credentials are accepted from an Adapter response.
-func (candidate *componentCandidate) receiverReadAuthority(step generated.PlanStep) (*generated.ComponentNativeReadAuthority, *oidc.Source, error) {
+func (candidate *componentCandidate) receiverReadAuthority(step generated.ComponentConformanceStep) (*generated.ComponentNativeReadAuthority, *oidc.Source, error) {
 	var request generated.ComponentNativeReceiverRequest
 	if decodeConformanceJSON([]byte(step.RequestJSON), &request) != nil {
 		return nil, nil, errors.New("invalid frozen receiver request")
@@ -427,7 +427,7 @@ func (candidate *componentCandidate) receiverReadAuthority(step generated.PlanSt
 	return found, identity, nil
 }
 
-func (candidate *componentCandidate) verifyReceiverReadAuthority(ctx context.Context, step generated.PlanStep, body []byte) error {
+func (candidate *componentCandidate) verifyReceiverReadAuthority(ctx context.Context, step generated.ComponentConformanceStep, body []byte) error {
 	found, identity, err := candidate.receiverReadAuthority(step)
 	if err != nil {
 		return err
@@ -517,7 +517,7 @@ func validContentReference(reference generated.ContentReference, resource string
 
 // These are the frozen ExternalExecution states, not a new suite state machine.
 // HTTP acceptance alone never supplies a terminal timestamp or native status.
-func validNativeObservation(native generated.ExecutionElement, key string) bool {
+func validNativeObservation(native generated.AdapterExecutionObservation, key string) bool {
 	if native.IdempotencyKey != key || strings.TrimSpace(native.NativeType) == "" ||
 		(native.NativeID != nil && strings.TrimSpace(*native.NativeID) == "") ||
 		(native.CancelCapability != generated.NativeCancelCapability("SUPPORTED") &&
@@ -556,7 +556,7 @@ func validObservationTime(value string) bool {
 // predicted by a string template. Compare the protocol's fixed fields while
 // preserving the actual reference for the Workflow's subsequent observation.
 // This is not a user-programmable matcher: no paths, expressions or callbacks.
-func verifyConformanceStep(step generated.PlanStep, observation generated.ComponentConformanceStepObservation, expectedDigest string) error {
+func verifyConformanceStep(step generated.ComponentConformanceStep, observation generated.ComponentConformanceStepObservation, expectedDigest string) error {
 	if !validConformanceDigest(expectedDigest) {
 		return errors.New("missing frozen expectation digest")
 	}
@@ -599,7 +599,7 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 		return errors.New("native success did not supply its typed content reference")
 	}
 	if actual := observation.NativeScopeObservation; actual != nil {
-		var expected generated.NativeScopeObservationClass
+		var expected generated.AdapterScopeObservation
 		if decodeConformanceJSON([]byte(step.ExpectedResponseJSON), &expected) != nil || expected.PlatformResourceRef != actual.PlatformResourceRef ||
 			expected.Result != actual.Result || (expected.NativeType != nil && (actual.NativeType == nil || *expected.NativeType != *actual.NativeType)) ||
 			(expected.NativeRef != nil && (actual.NativeRef == nil || *expected.NativeRef != *actual.NativeRef)) {
@@ -627,7 +627,7 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 		}
 		return nil
 	}
-	var expected generated.ExecutionElement
+	var expected generated.AdapterExecutionObservation
 	if decodeConformanceJSON([]byte(step.ExpectedResponseJSON), &expected) != nil {
 		return errors.New("native expectation is not an Adapter Protocol observation")
 	}
@@ -645,7 +645,7 @@ func verifyConformanceStep(step generated.PlanStep, observation generated.Compon
 // DD-124(2): exactly the declared captures, only from a SUCCEEDED native
 // terminal, and a typed-slot capture equals the typed ContentReference. A
 // missing slot is a definite mismatch, never a value Worker can supply.
-func verifyConformanceCaptures(step generated.PlanStep, observation generated.ComponentConformanceStepObservation) error {
+func verifyConformanceCaptures(step generated.ComponentConformanceStep, observation generated.ComponentConformanceStepObservation) error {
 	succeeded := observation.NativeObservation != nil && string(observation.NativeObservation.PlatformStatus) == "SUCCEEDED"
 	if len(step.Captures) == 0 || !succeeded {
 		if len(observation.Captures) != 0 {
@@ -710,7 +710,7 @@ func validProbeCaptures(input generated.ComponentConformanceProbe) error {
 	return nil
 }
 
-func (candidate *componentCandidate) validatePlan(plan generated.PlanClass) error {
+func (candidate *componentCandidate) validatePlan(plan generated.ComponentConformancePlan) error {
 	if plan.ArtifactDigest != candidate.configuration.ArtifactDigest || len(plan.Steps) == 0 ||
 		int64(len(plan.Steps)) > candidate.configuration.MaxSteps ||
 		!validConformanceDigest(plan.PlanDigest) || !validConformanceDigest(plan.SuiteDigest) ||
@@ -897,7 +897,7 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("实际套件参数未被Core绑定", ErrTypeRejected, nil)
 	}
 	step.RequestJSON = authorization.RequestJSON
-	candidate.digestResponse = func(ctx context.Context, _ generated.PlanStep, body []byte, status int64) (generated.ComponentConformanceWireDigests, error) {
+	candidate.digestResponse = func(ctx context.Context, _ generated.ComponentConformanceStep, body []byte, status int64) (generated.ComponentConformanceWireDigests, error) {
 		var digests generated.ComponentConformanceWireDigests
 		err := c.post(ctx, "/service/v1/component-releases/observe-probe", map[string]any{"probe": input, "responseJson": string(body), "httpStatus": status}, &digests)
 		return digests, err

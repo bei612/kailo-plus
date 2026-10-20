@@ -3,7 +3,7 @@
 // origins the static CSP appends to img-src. Nothing here talks to the Relay or the provider.
 import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import { useContext, useEffect, useState } from "react";
-import type { WebGIFCapabilityView } from "@client-kit/contracts";
+import type { WebGifCapabilityView } from "@client-kit/contracts";
 import { bff } from "@/platform/bff-client";
 
 export const GIF_CAPABILITY_QUERY_KEY = ["platform", "gif-capability"] as const;
@@ -11,7 +11,7 @@ const GIF_CAPABILITY_STALE_MS = 5 * 60_000;
 
 const gifCapabilityQuery = {
   queryKey: GIF_CAPABILITY_QUERY_KEY,
-  queryFn: (): Promise<WebGIFCapabilityView> => bff.gifCapability(),
+  queryFn: (): Promise<WebGifCapabilityView> => bff.gifCapability(),
   staleTime: GIF_CAPABILITY_STALE_MS,
   retry: 1,
 };
@@ -39,7 +39,7 @@ export function isRegisteredGifUrl(src: string | undefined, origins: readonly st
 export function useRegisteredGifOrigins(): readonly string[] {
   const client = useContext(QueryClientContext);
   const [origins, setOrigins] = useState<readonly string[]>(
-    () => client?.getQueryData<WebGIFCapabilityView>(GIF_CAPABILITY_QUERY_KEY)?.imageOrigins ?? [],
+    () => client?.getQueryData<WebGifCapabilityView>(GIF_CAPABILITY_QUERY_KEY)?.imageOrigins ?? [],
   );
   useEffect(() => {
     if (!client) return;

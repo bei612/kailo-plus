@@ -267,7 +267,7 @@ async fn publish_gate(http: &reqwest::Client, origin: &str, control: &Keys, host
 
     let forum_id = uuid::Uuid::new_v4().to_string();
     let metadata = contracts::WorkspaceChannelCreate {
-        channel_type: contracts::ChannelType::Forum,
+        channel_type: contracts::WorkspaceChannelCreateChannelType::Forum,
         description: Some("Architecture discussion".into()),
         ttl_seconds: Some(604800),
     };

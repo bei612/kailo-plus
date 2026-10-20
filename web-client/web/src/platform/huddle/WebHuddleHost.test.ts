@@ -23,7 +23,7 @@ const view = (state: HuddleState): HuddleView => ({
   state,
   version: 1,
   operationId: "operation",
-  createdAt: new Date("2026-10-19T00:00:00Z"),
+  createdAt: "2026-10-19T00:00:00Z",
 });
 
 const submission = (dispatchState: ActionDispatchState, reason?: ReasonCode): BffReply => ({

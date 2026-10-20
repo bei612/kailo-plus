@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActionDispatchState, ActionGateState, ReasonCode, Theme, Locale,
+import { ActionDispatchState, ActionGateState, ReasonCode, ProtocolSessionTheme, ProtocolSessionLocale,
   type ActionCommand, type ActionSubmission, type ProtocolSessionOpenInput } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, writeFailure, type WriteFailure } from "../transport";
@@ -37,7 +37,7 @@ export function ProtocolDocumentAction({ bindingId, projectionGeneration, comman
     const frozen: ActionCommand = intent ?? { ...command, idempotencyKey: newIdempotencyKey(),
       protocolSessionOpen: { ...selection, reference: { ...selection.reference },
         applicationBindingId: bindingId, projectionGeneration,
-        theme: theme === "DARK" ? Theme.Dark : Theme.Light, locale: locale === "zh-CN" ? Locale.ZhCN : Locale.En } };
+        theme: theme === "DARK" ? ProtocolSessionTheme.Dark : ProtocolSessionTheme.Light, locale: locale === "zh-CN" ? ProtocolSessionLocale.ZhCn : ProtocolSessionLocale.En } };
     if (!["file_storage.open_view@v1", "file_storage.open_edit@v1"].includes(frozen.actionKey)) return;
     sending.current = true; setBusy(true); setIntent(frozen);
     const current = generation.current;

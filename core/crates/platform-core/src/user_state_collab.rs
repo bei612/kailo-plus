@@ -24,9 +24,10 @@ use axum::{
     Json,
 };
 use contracts::{
-    ChannelTemplateRequest, ChannelType, ErrorClass, FollowedPrincipalRequest, ReasonCode,
+    ChannelTemplateRequest, ErrorClass, FollowedPrincipalRequest, ReasonCode,
     SidebarAssignmentRequest, SidebarSectionOrderRequest, SidebarSectionRequest, SidebarSortMode,
-    SidebarSortRequest, ThreadPreferenceRequest, UserStateVersion, WorkspaceVisibility,
+    SidebarSortRequest, ThreadPreferenceRequest, UserStateVersion,
+    WorkspaceChannelCreateChannelType, WorkspaceVisibility,
 };
 use nostr::EventId;
 use serde::{Deserialize, Serialize};
@@ -102,7 +103,7 @@ pub(crate) struct ChannelTemplate {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub channel_type: ChannelType,
+    pub channel_type: WorkspaceChannelCreateChannelType,
     pub visibility: WorkspaceVisibility,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canvas_template: Option<String>,
@@ -1046,7 +1047,7 @@ mod tests {
         ChannelTemplateRequest {
             name: "Incident".into(),
             description: Some(" ".into()),
-            channel_type: ChannelType::Stream,
+            channel_type: WorkspaceChannelCreateChannelType::Stream,
             visibility: WorkspaceVisibility::Private,
             canvas_template: canvas,
             agent_resource_ids: Vec::new(),

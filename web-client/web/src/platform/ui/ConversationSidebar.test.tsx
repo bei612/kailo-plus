@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { createBffClient } from "@client-kit/platform/client";
-import { ItemState, type ConversationView } from "@client-kit/contracts";
+import { ConversationViewState, type ConversationView } from "@client-kit/contracts";
 import type { BffRequest } from "@client-kit/platform/transport";
 import { loadConversationSidebarActivity } from "./ConversationSidebar";
 
 const self="a".repeat(64), peer="b".repeat(64);
-const conversation:ConversationView={id:"dm",channelId:"native-dm",state:ItemState.Active,version:1,operationId:"open",participantPrincipalIds:["self","peer"]};
+const conversation:ConversationView={id:"dm",channelId:"native-dm",state:ConversationViewState.Active,version:1,operationId:"open",participantPrincipalIds:["self","peer"]};
 const event={id:"c".repeat(64),pubkey:peer,created_at:10,kind:9,content:"incoming",tags:[["h","native-dm"]]};
 const bounds={...event,id:"d".repeat(64),kind:39006,tags:[["h","native-dm"],["d","native-dm:head"]],content:JSON.stringify({has_more:false,next_cursor:null})};
 
@@ -67,7 +67,7 @@ describe("Web DM sidebar admitted real window adapter",()=>{
     expect(requests.some(request=>request.path==="/api/v1/session")).toBe(false);
   });
   it("never reads a disabled or foreign-participant private channel",async()=>{
-    for(const candidate of [{...conversation,state:ItemState.Disabled},{...conversation,participantPrincipalIds:["peer","other"]}]){
+    for(const candidate of [{...conversation,state:ConversationViewState.Disabled},{...conversation,participantPrincipalIds:["peer","other"]}]){
       const {client,requests}=fixture();
       await expect(loadConversationSidebarActivity(client,"self",[candidate],new AbortController().signal)).rejects.toThrow();
       expect(requests.some(request=>request.path.includes("/messages"))).toBe(false);

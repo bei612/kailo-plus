@@ -469,14 +469,19 @@ final platformAgentDelegationsProvider = FutureProvider.autoDispose
       final ids = <String>{};
       for (final row in page.grants) {
         final parameters = row.parameters;
+        // RFC 3339 on the wire (ADR-21); parsed here only to check the period.
+        final validFrom = DateTime.tryParse(parameters.validFrom);
+        final expiresAt = DateTime.tryParse(parameters.expiresAt);
         if (row.delegationId.isEmpty ||
             row.grantorPrincipalId.isEmpty ||
             row.delegationVersion <= 0 ||
             row.uses < 0 ||
             !ids.add(row.delegationId) ||
-            !parameters.validFrom.isUtc ||
-            !parameters.expiresAt.isUtc ||
-            !parameters.expiresAt.isAfter(parameters.validFrom) ||
+            validFrom == null ||
+            expiresAt == null ||
+            !validFrom.isUtc ||
+            !expiresAt.isUtc ||
+            !expiresAt.isAfter(validFrom) ||
             (parameters.maxUses != null && parameters.maxUses! <= 0) ||
             parameters.scopes.isEmpty ||
             !const {

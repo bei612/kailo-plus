@@ -748,7 +748,7 @@ pub async fn list(
             .filter(|r| allowed.contains(&r.resource_id.to_string()))
             .map(|r| {
                 let v = r.view();
-                contracts::DefinitionElement {
+                contracts::AgentDefinitionView {
                     resource_id: v.resource_id,
                     owner_principal_id: v.owner_principal_id,
                     stable_slug: v.stable_slug,

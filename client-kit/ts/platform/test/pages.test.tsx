@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ChannelType, ErrorClass, ReasonCode, type ActionCommand } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, ErrorClass, ReasonCode, type ActionCommand } from "@client-kit/contracts";
 import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
 import { act, isValidElement, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -197,7 +197,7 @@ describe("shared original channel creation entry", () => {
   });
   it("preserves the original forum context and description in the governed creation intent", async () => {
     const t = routes(() => recorded);
-    await mount(t, <CreateChannelDialog open channelKind={ChannelType.Forum} onOpenChange={() => {}} />);
+    await mount(t, <CreateChannelDialog open channelKind={WorkspaceChannelCreateChannelType.Forum} onOpenChange={() => {}} />);
     const dialog = await fill();
     expect(dialog.querySelector("h2")?.textContent).toBe("Create a new forum");
     expect(dialog.querySelector<HTMLInputElement>("input")?.placeholder).toBe("design-discussions");
@@ -2530,8 +2530,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(posts(t)[0]?.body).toEqual({ actionKey, resourceId: installation.resourceId,
       resourceVersion: installation.resourceVersion, idempotencyKey: expect.any(String), explicitConfirmation: true,
       delegationId: revoke ? grant.delegationId : expect.any(String), ...(revoke ? { delegationVersion: grant.delegationVersion }
-        : { delegationGrant: { validFrom: new Date("2026-10-03T12:00:00"),
-          expiresAt: new Date("2027-10-03T12:00:00"), maxUses: 3, scopes: [scope] } }) });
+        : { delegationGrant: { validFrom: new Date("2026-10-03T12:00:00").toISOString(),
+          expiresAt: new Date("2027-10-03T12:00:00").toISOString(), maxUses: 3, scopes: [scope] } }) });
     expect(action.textContent).toContain("Outcome is not confirmed.");
     expect(action.textContent).toContain("exact-operation");
     expect(action.textContent).not.toMatch(/Request recorded\.|foreign-ae/);
@@ -2574,8 +2574,8 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     // The same grant action, re-granting the offered scope at its current version; Core supersedes grant-1.
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.delegation.grant", resourceId: installation.resourceId,
       resourceVersion: installation.resourceVersion, idempotencyKey: expect.any(String), explicitConfirmation: true,
-      delegationId: expect.any(String), delegationGrant: { validFrom: new Date("2026-10-03T12:00:00"),
-        expiresAt: new Date("2027-10-03T12:00:00"), scopes: [scope],
+      delegationId: expect.any(String), delegationGrant: { validFrom: new Date("2026-10-03T12:00:00").toISOString(),
+        expiresAt: new Date("2027-10-03T12:00:00").toISOString(), scopes: [scope],
         renewsDelegationId: grant.delegationId, renewsDelegationVersion: grant.delegationVersion } });
   });
 

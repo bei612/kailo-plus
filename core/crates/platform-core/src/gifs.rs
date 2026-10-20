@@ -15,7 +15,7 @@ use axum::{
     Json,
 };
 use collab_bridge::operator::OperatorError;
-use contracts::{ErrorClass, GifElement, ReasonCode};
+use contracts::{ErrorClass, ReasonCode, WebGifItem};
 use reqwest::Url;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -95,7 +95,7 @@ fn complete(asset: &Value) -> Option<(&str, i64, i64, i64)> {
 
 /// Original `normalizeKlipyGifs` over the Relay's `data.data[]`, keeping only items whose
 /// original and preview (and the poster, when kept) come from a registered origin.
-pub(crate) fn normalize(page: &Value, origins: &[String]) -> Vec<GifElement> {
+pub(crate) fn normalize(page: &Value, origins: &[String]) -> Vec<WebGifItem> {
     let mut gifs = Vec::new();
     for item in page["data"]["data"].as_array().into_iter().flatten() {
         let file = &item["file"];
@@ -118,7 +118,7 @@ pub(crate) fn normalize(page: &Value, origins: &[String]) -> Vec<GifElement> {
         }
         let title = item["title"].as_str().map(str::trim).unwrap_or_default();
         let title = if title.is_empty() { "GIF" } else { title };
-        gifs.push(GifElement {
+        gifs.push(WebGifItem {
             slug: slug.to_owned(),
             title: title.to_owned(),
             url: original.0.to_owned(),

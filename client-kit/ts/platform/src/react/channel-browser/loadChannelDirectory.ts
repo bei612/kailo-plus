@@ -1,4 +1,4 @@
-import { ChannelType, WorkspaceMembershipState, WorkspaceVisibility, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, WorkspaceVisibility, type DiscoverableWorkspace } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import { TransportError } from "../../transport";
 
@@ -17,7 +17,7 @@ export async function loadChannelDirectory(client: BffClient, isCurrent: () => b
     for (const item of page.items) {
       if (!item || typeof item.id !== "string" || !item.id || ids.has(item.id)
         || !Object.values(WorkspaceVisibility).includes(item.visibility)
-        || !item.channel || !Object.values(ChannelType).includes(item.channel.channelType)
+        || !item.channel || !Object.values(WorkspaceChannelCreateChannelType).includes(item.channel.channelType)
         || typeof item.channel.channelId !== "string" || !item.channel.channelId || channelIds.has(item.channel.channelId)
         || (channelId !== undefined && item.channel.channelId !== channelId)
         || typeof item.channel.name !== "string" || typeof item.channel.archived !== "boolean"

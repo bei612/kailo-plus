@@ -1,7 +1,7 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import { ActionDispatchState, ActionGateState, BindingKind, ChannelType, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberPage, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
+import { ActionDispatchState, ActionGateState, LegacySecretRefBindingKind, WorkspaceChannelCreateChannelType, RoleWorkspacePageCreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberPage, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
 import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { enumLabel, workspaceStateMessages } from "../i18n";
@@ -41,7 +41,7 @@ export function RoleManagement() {
       && Object.values(WorkspaceState).includes(w.state)
       && (w.lifecycleActionKey === undefined
         || Object.values(WorkspaceLifecycleActionKey).includes(w.lifecycleActionKey)))
-    && (data.createActionKey === undefined || data.createActionKey === CreateActionKey.WorkspaceCreate)
+    && (data.createActionKey === undefined || data.createActionKey === RoleWorkspacePageCreateActionKey.WorkspaceCreate)
     && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset))
     ? data : null;
   const selected = page?.workspaces.find((w) => w.id === chosen) ?? page?.workspaces[0];
@@ -108,7 +108,7 @@ export function RoleManagement() {
 }
 
 /** 沿用已登记的 workspace.create；受理回应不代表 Channel/权限投影已完成。 */
-export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: ChannelType, form?: {active: boolean; initialName?: string}) {
+export function useWorkspaceCreate(actionKey?: RoleWorkspacePageCreateActionKey, channelType?: WorkspaceChannelCreateChannelType, form?: {active: boolean; initialName?: string}) {
   const client = useBffClient();
   const t = useT();
   const inFlight = useRef(false);
@@ -152,7 +152,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
   // 而盲目再发一笔；同名标识的重复创建由 Core 的唯一约束以冲突拒绝。
   const [openTasks, reloadOpenTasks] = useLoad("workspace-create-in-flight", () => client.tasks());
   const pendingCreates = openTasks.status === "ok" && Array.isArray(openTasks.data)
-    ? openTasks.data.filter((task) => task.actionKey === CreateActionKey.WorkspaceCreate
+    ? openTasks.data.filter((task) => task.actionKey === RoleWorkspacePageCreateActionKey.WorkspaceCreate
       && taskPhase(task).tone === "neutral")
     : [];
 
@@ -163,7 +163,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
     // stable creation intent key; management forms may still choose a readable slug.
     const intent = command ?? { actionKey, idempotencyKey, name: name.trim(), slug: channelType === undefined ? slug.trim() : idempotencyKey,
       workspaceVisibility: visibility,
-      workspaceChannel: { channelType: channelType ?? ChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}), ...(temporary ? { ttlSeconds } : {}) } };
+      workspaceChannel: { channelType: channelType ?? WorkspaceChannelCreateChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}), ...(temporary ? { ttlSeconds } : {}) } };
     inFlight.current = true;
     setCommand(intent);
     setBusy(true);
@@ -205,7 +205,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
 /** The existing workspace.create command and UNKNOWN intent are shared by both hosts. */
 export type WorkspaceCreateState = ReturnType<typeof useWorkspaceCreate>;
 
-function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
+function CreateWorkspace({ actionKey }: { actionKey?: RoleWorkspacePageCreateActionKey }) {
   const state = useWorkspaceCreate(actionKey);
   if (!actionKey && !state.command && !state.submission && state.pendingCreates.length === 0 && state.openTasks.status !== "error")
     return null;
@@ -222,7 +222,7 @@ const CREATE_CHANNEL_FORM_ID = "create-channel-form";
 // Original CreateChannelFormFooter lives outside the scrolling form body.
 export function WorkspaceCreateFormFooter({state}: {state: WorkspaceCreateState}) {
   const t = useT();
-  const entity = t(state.channelType === ChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
+  const entity = t(state.channelType === WorkspaceChannelCreateChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
   return <div className="flex w-full items-center justify-end gap-3">
     <ChannelButton data-testid="create-channel-submit" form={CREATE_CHANNEL_FORM_ID} type="submit"
       disabled={!state.actionKey || state.busy || (!state.command && !state.name.trim())}>
@@ -237,7 +237,7 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
   const failureText = useFailureText();
   const { actionKey, name, setName, slug, setSlug, description, setDescription, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit } = state;
-  const entity = t(state.channelType === ChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
+  const entity = t(state.channelType === WorkspaceChannelCreateChannelType.Forum ? "channel.browser.forum" : "channel.browser.channel");
   return (
     <form className={channel ? "space-y-5" : "flex flex-col gap-3 rounded-md border p-3"} id={channel ? CREATE_CHANNEL_FORM_ID : undefined} data-testid={channel ? "create-channel-form" : undefined} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {!channel ? <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2> : null}
@@ -246,7 +246,7 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
         <div className={channel ? cn("flex min-h-11 items-center px-3", CHANNEL_FORM_FIELD_SHELL_CLASS) : undefined}>
           <Input required autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
             id={channel ? "create-channel-name" : "create-workspace-name"} ref={channel ? state.nameInputRef : undefined}
-            placeholder={channel ? t(state.channelType === ChannelType.Forum ? "channel.create.forumNamePlaceholder" : "channel.create.namePlaceholder") : undefined}
+            placeholder={channel ? t(state.channelType === WorkspaceChannelCreateChannelType.Forum ? "channel.create.forumNamePlaceholder" : "channel.create.namePlaceholder") : undefined}
             disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? cn("h-8 px-0 py-0 leading-6", CHANNEL_FORM_FIELD_CONTROL_CLASS) : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
         </div>
       </div>
@@ -668,7 +668,7 @@ export function LegacySecretRefManagement() {
   if (page && (!Array.isArray(page.bindings)
     || !page.bindings.every((binding) => binding && typeof binding.principalId === "string"
       && typeof binding.pubkey === "string"
-      && (binding.kind === BindingKind.Human || binding.kind === BindingKind.Control))
+      && (binding.kind === LegacySecretRefBindingKind.Human || binding.kind === LegacySecretRefBindingKind.Control))
     || (page.nextCursor !== undefined && !/^[0-9a-fA-F]{64}$/.test(page.nextCursor))))
     return <Notice role="alert">{t("platform.loadFailed")}</Notice>;
 

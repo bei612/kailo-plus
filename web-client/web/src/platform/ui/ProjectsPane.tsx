@@ -4,7 +4,7 @@ import {ProjectsView,createProjectsGitHost,mergeSelectionDiscussDraft,type Proje
 import {PulsePane} from "./PulsePane";
 import {queryProjects,publishProject,queryProjectsGit,refProjectsGit,mergeProjectsGit} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
-import {ChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
+import {WorkspaceChannelCreateChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import {initDraftStore,loadDraftEntry,saveDraftEntry} from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
@@ -71,10 +71,10 @@ export function useProjectDiscussInChannel(scopeKey:string,onOpenChannel?: (work
     const check=()=>{if(!scope.active||!principalId||!onOpenChannel)throw new Error(t("platform.loadFailed"));};check();
     const rows=await loadChannelDirectory(client,()=>scope.active,workspace.channel.channelId);check();
     const current=rows.find(row=>row.id===workspace.id&&row.isMember&&row.membershipState===WorkspaceMembershipState.Active
-      &&row.channel.channelType===ChannelType.Stream&&!row.channel.archived);
+      &&row.channel.channelType===WorkspaceChannelCreateChannelType.Stream&&!row.channel.archived);
     if(!current)throw new Error(t("projects.home.channelMissing"));
     const descriptor=await client.workspaceChannel(current.id);check();
-    if(descriptor.channelId!==current.channel.channelId||descriptor.channelType!==ChannelType.Stream||descriptor.archived!==false)
+    if(descriptor.channelId!==current.channel.channelId||descriptor.channelType!==WorkspaceChannelCreateChannelType.Stream||descriptor.archived!==false)
       throw new Error(t("projects.home.channelMissing"));
     const session=await client.session({fresh:true});check();
     if(session.accessMode!==PlatformSessionAccessMode.Full||session.tenantPrincipalId!==principalId

@@ -179,8 +179,9 @@ async fn view(
             p["state"] == "ACTIVE" && p["generation"].as_i64() == row.active_projection_generation
         })
     {
-        let content: contracts::ContentClass = serde_json::from_value(row.version_content)
-            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+        let content: contracts::AgentVersionContent =
+            serde_json::from_value(row.version_content)
+                .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
         match crate::agent_version::reply_to_channel(&content) {
             Ok(_) => result_targets.extend(["TRIGGER_THREAD", "CHANNEL"]),
             Err(Refusal::Blocked(_) | Refusal::Precondition(_)) => {}
@@ -304,12 +305,11 @@ pub async fn list(
             Err(r) => return r,
         }
     }
-    match serde_json::from_value::<contracts::AgentInstallationPage>(json!({
-        "installations": views, "nextOffset": next,
-    })) {
-        Ok(page) => Json(page).into_response(),
-        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
-    }
+    Json(contracts::AgentInstallationPage {
+        installations: views,
+        next_offset: next,
+    })
+    .into_response()
 }
 
 pub async fn get(
@@ -537,11 +537,10 @@ fn validate_owned_inbox_agent(
         || view.owner_principal_id != owner.to_string()
         || view.state != contracts::AgentInstallationState::Active
         || view.resource_state != contracts::ResourceState::Active
-        || view.agent_principal_state != contracts::AgentPrincipalState::Active
-        || !view
-            .channel_binding
-            .as_ref()
-            .is_some_and(|b| b.status == contracts::ChannelBindingStatus::Active)
+        || view.agent_principal_state != contracts::AgentInstallationViewAgentPrincipalState::Active
+        || !view.channel_binding.as_ref().is_some_and(|b| {
+            b.status == contracts::AgentInstallationViewChannelBindingStatus::Active
+        })
         || !view.projection.as_ref().is_some_and(|p| {
             p.state == contracts::AgentRuntimeProjectionState::Active
                 && Some(p.generation) == view.active_projection_generation
@@ -607,7 +606,8 @@ mod inbox_tests {
             Err(StatusCode::FORBIDDEN)
         );
         let mut revoked = view;
-        revoked.agent_principal_state = contracts::AgentPrincipalState::Disabled;
+        revoked.agent_principal_state =
+            contracts::AgentInstallationViewAgentPrincipalState::Disabled;
         assert_eq!(
             validate_owned_inbox_agent(&revoked, workspace, owner),
             Err(StatusCode::FORBIDDEN)
@@ -752,11 +752,11 @@ pub async fn candidates(
             }
             Err(error) => return crate::service_api::unavailable(error),
         };
-        let content: contracts::ContentClass = match serde_json::from_value(version.content.clone())
-        {
-            Ok(content) => content,
-            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        };
+        let content: contracts::AgentVersionContent =
+            match serde_json::from_value(version.content.clone()) {
+                Ok(content) => content,
+                Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            };
         if !crate::agent_version::content(&content)
             .is_ok_and(|(_, hash)| hash == version.config_hash)
         {
@@ -817,7 +817,7 @@ pub async fn candidates(
         if !matches!(parent, Ok(true)) || !matches!(asset, Ok(true)) {
             return Refusal::Unavailable("安装来源投影不可核验".into()).respond(None);
         }
-        match serde_json::from_value::<contracts::CandidateElement>(json!({
+        match serde_json::from_value::<contracts::AgentInstallationCandidate>(json!({
             "agentResourceId":row.resource_id,"resourceVersion":row.resource_version,
             "displayName":row.display_name,"agentVersionAssetId":version.asset_id,
             "assetVersion":version.version,"ordinal":version.ordinal,

@@ -2,7 +2,7 @@
 // desktop/src/features/projects/createProject.ts::createProject sequence.
 // DD-80 substitutes the existing workspace.create action for createChannel;
 // the two announcement writes retain native kinds and one durable intent each.
-import { ChannelType, CreateActionKey, ProjectPublicationOperation, TaskStatus, WorkspaceVisibility, type ActionCommand, type ActionSubmission, type ProjectsPublishRequest, type AgentInstallationCandidate } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, RoleWorkspacePageCreateActionKey, ProjectPublicationOperation, TaskStatus, WorkspaceVisibility, type ActionCommand, type ActionSubmission, type ProjectsPublishRequest, type AgentInstallationCandidate } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import { newIdempotencyKey, taskPhase } from "../../governance";
 import { BffError, TransportError } from "../../transport";
@@ -55,9 +55,9 @@ export async function prepareProjectCreation(host: ProjectsHost, input: CreatePr
   buildProjectBootstrapTemplates({ ...normalized, ownerPubkey: directory.viewerPubkey, projectChannelId: key });
   return {
     input: normalized, owner: directory.viewerPubkey,
-    channel: { actionKey: CreateActionKey.WorkspaceCreate, idempotencyKey: key, slug: key, name,
+    channel: { actionKey: RoleWorkspacePageCreateActionKey.WorkspaceCreate, idempotencyKey: key, slug: key, name,
       workspaceVisibility: input.channelVisibility,
-      workspaceChannel: { channelType: ChannelType.Stream, ...(normalized.description ? { description: normalized.description } : {}) } },
+      workspaceChannel: { channelType: WorkspaceChannelCreateChannelType.Stream, ...(normalized.description ? { description: normalized.description } : {}) } },
     project: { key: newIdempotencyKey() }, repository: { key: newIdempotencyKey() },
     ...(input.agent ? { agent: { key: newIdempotencyKey() } } : {}),
   };
@@ -89,14 +89,14 @@ export async function resumeProjectCreation(
       else if (previouslyAttempted) throw new ProjectCreationPending("Original channel request remains unconfirmed");
       throw error;
     }
-    if (submission.actionKey !== CreateActionKey.WorkspaceCreate || !submission.actionExecutionId || !submission.operationId)
+    if (submission.actionKey !== RoleWorkspacePageCreateActionKey.WorkspaceCreate || !submission.actionExecutionId || !submission.operationId)
       throw new TransportError("Project channel outcome unknown");
     intent.submission = submission;
     save(intent);
   }
   const task = await client.task(intent.submission.actionExecutionId);
   if (task.actionExecutionId !== intent.submission.actionExecutionId || task.operationId !== intent.submission.operationId
-    || task.actionKey !== CreateActionKey.WorkspaceCreate) throw new TransportError("Project channel receipt mismatch");
+    || task.actionKey !== RoleWorkspacePageCreateActionKey.WorkspaceCreate) throw new TransportError("Project channel receipt mismatch");
   if (taskPhase(task).tone === "negative") throw new ProjectCreationRejected("Project channel creation rejected");
   if (taskPhase(task).tone !== "positive" || task.taskStatus !== TaskStatus.Completed)
     throw new ProjectCreationPending("Project channel has not completed");

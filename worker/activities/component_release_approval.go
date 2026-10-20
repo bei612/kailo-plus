@@ -21,11 +21,11 @@ func (c *CoreAPI) ApproveComponentRelease(ctx context.Context, in generated.Comp
 	}
 	// The activity owns these facts. Workflow history and caller input cannot
 	// supply a pass bit, pretend driver registry, or substitute another build.
-	in.WorkerBuild = generated.WorkerBuildClass{
-		Subject: generated.Subject("WORKER"), BuildID: platformBuildID, HostAPIVersion: "NONE",
+	in.WorkerBuild = generated.PlatformBuildInfo{
+		Subject: generated.PlatformBuildInfoSubject("WORKER"), BuildID: platformBuildID, HostAPIVersion: "NONE",
 		AdapterProtocolVersions: []string{"1"}, DriverRegistryKeys: []string{},
 		ConnectorKinds:   []string{"REMOTE_ADAPTER", "PROTOCOL_PEER"},
-		PlatformPortKeys: []generated.PlatformPortKey{}, ReportedAt: time.Now().UTC(),
+		PlatformPortKeys: []generated.PlatformBuildInfoPlatformPortKeysItem{}, ReportedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	err = c.post(ctx, "/service/v1/component-releases/approve", in, &out)
 	return out, err

@@ -5,7 +5,7 @@ import { ArrowDown, CalendarClock, Check, ChevronDown, GitPullRequest, MessageSq
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { forwardRef, type ReactNode, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ActionEnum, ActionKind, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
+import { AutomationStepAction, AutomationVersionContentActionKind, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import { useT, type Translate } from "./context";
 import { ActionEmoji } from "./workflow-card-actions";
 import { formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
@@ -16,21 +16,21 @@ import { nextStepId, WorkflowStepCard, type WorkflowStepDraft } from "./workflow
 import { WorkflowRichTriggerDescription, type WorkflowTriggerNodePresentation } from "./workflow-trigger-presentation";
 
 type Pane = { type: "trigger" } | { type: "step"; stepId: string } | { type: "action" } | null;
-type StepAction = ActionEnum.Delay | ActionEnum.RequestApproval | ActionEnum.SendMessage | ActionEnum.AddReaction
-  | ActionEnum.SetChannelTopic | ActionEnum.CallWebhook;
+type StepAction = AutomationStepAction.Delay | AutomationStepAction.RequestApproval | AutomationStepAction.SendMessage | AutomationStepAction.AddReaction
+  | AutomationStepAction.SetChannelTopic | AutomationStepAction.CallWebhook;
 // A terminal effect other than an ordered message ends the existing single-effect projection.
-const terminalEffects: AutomationStep["action"][] = [ActionEnum.AddReaction, ActionEnum.SetChannelTopic, ActionEnum.CallWebhook];
+const terminalEffects: AutomationStep["action"][] = [AutomationStepAction.AddReaction, AutomationStepAction.SetChannelTopic, AutomationStepAction.CallWebhook];
 // Kailo's governed Agent turn is offered in the original add-step menu as the
 // sole first effect; it is the legacy single action, not an AutomationStep.
-type DraftAction = StepAction | ActionKind.AgentTurn;
+type DraftAction = StepAction | AutomationVersionContentActionKind.AgentTurn;
 const actionKeys = {
-  [ActionKind.AgentTurn]: "agents.automation.agentTurn",
-  [ActionEnum.Delay]: "workflows.steps.delay",
-  [ActionEnum.RequestApproval]: "workflows.steps.requestApproval",
-  [ActionEnum.SendMessage]: "buzz.sendMessage",
-  [ActionEnum.AddReaction]: "workflows.steps.addReaction",
-  [ActionEnum.SetChannelTopic]: "workflows.steps.setTopic",
-  [ActionEnum.CallWebhook]: "workflows.steps.callWebhook",
+  [AutomationVersionContentActionKind.AgentTurn]: "agents.automation.agentTurn",
+  [AutomationStepAction.Delay]: "workflows.steps.delay",
+  [AutomationStepAction.RequestApproval]: "workflows.steps.requestApproval",
+  [AutomationStepAction.SendMessage]: "buzz.sendMessage",
+  [AutomationStepAction.AddReaction]: "workflows.steps.addReaction",
+  [AutomationStepAction.SetChannelTopic]: "workflows.steps.setTopic",
+  [AutomationStepAction.CallWebhook]: "workflows.steps.callWebhook",
 } as const;
 const inspectorContentVariants = {
   enter: (direction: number) => ({ opacity: 0, y: direction < 0 ? 12 : -12 }),
@@ -49,7 +49,7 @@ function workflowStepDescription(step: AutomationStep, actionLabel: string, t: T
   const quoted = (value: string | undefined) => value?.trim() ? `“${compact(value)}”` : null;
   let detail: string | null = null;
   switch (step.action) {
-    case ActionEnum.Delay: {
+    case AutomationStepAction.Delay: {
       const duration = step.duration?.trim();
       if (duration) {
         const seconds = parseDurationSeconds(duration);
@@ -57,11 +57,11 @@ function workflowStepDescription(step: AutomationStep, actionLabel: string, t: T
       }
       break;
     }
-    case ActionEnum.SendMessage: detail = quoted(step.text); break;
-    case ActionEnum.RequestApproval: detail = quoted(step.message); break;
-    case ActionEnum.AddReaction: detail = step.emoji?.trim() || null; break;
-    case ActionEnum.SetChannelTopic: detail = quoted(step.topic); break;
-    case ActionEnum.CallWebhook: {
+    case AutomationStepAction.SendMessage: detail = quoted(step.text); break;
+    case AutomationStepAction.RequestApproval: detail = quoted(step.message); break;
+    case AutomationStepAction.AddReaction: detail = step.emoji?.trim() || null; break;
+    case AutomationStepAction.SetChannelTopic: detail = quoted(step.topic); break;
+    case AutomationStepAction.CallWebhook: {
       const url = step.url?.trim();
       detail = url ? `${step.method?.trim() || "POST"} ${compact(url)}` : null;
       break;
@@ -170,34 +170,34 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
     // sequence is offered or synthesized just to display the original canvas.
     if (action) return [];
     const messageSequence = !steps.some(step => terminalEffects.includes(step.action));
-    const actions: DraftAction[] = [ActionEnum.Delay];
-    if (policies?.length && !steps.some(step => step.action === ActionEnum.RequestApproval)
-      && steps.slice(0, index).every(step => step.action === ActionEnum.Delay)) actions.push(ActionEnum.RequestApproval);
-    if (messageSequence && !steps.slice(index).some(step => step.action === ActionEnum.RequestApproval)) actions.push(ActionEnum.SendMessage);
-    if (index === steps.length && steps.every(step => step.action === ActionEnum.Delay || step.action === ActionEnum.RequestApproval)) {
+    const actions: DraftAction[] = [AutomationStepAction.Delay];
+    if (policies?.length && !steps.some(step => step.action === AutomationStepAction.RequestApproval)
+      && steps.slice(0, index).every(step => step.action === AutomationStepAction.Delay)) actions.push(AutomationStepAction.RequestApproval);
+    if (messageSequence && !steps.slice(index).some(step => step.action === AutomationStepAction.RequestApproval)) actions.push(AutomationStepAction.SendMessage);
+    if (index === steps.length && steps.every(step => step.action === AutomationStepAction.Delay || step.action === AutomationStepAction.RequestApproval)) {
       // A reaction needs the triggering message; schedules and webhooks have none.
-      if (trigger !== AutomationTriggerKind.Schedule && trigger !== AutomationTriggerKind.Webhook) actions.push(ActionEnum.AddReaction);
-      actions.push(ActionEnum.SetChannelTopic, ActionEnum.CallWebhook);
+      if (trigger !== AutomationTriggerKind.Schedule && trigger !== AutomationTriggerKind.Webhook) actions.push(AutomationStepAction.AddReaction);
+      actions.push(AutomationStepAction.SetChannelTopic, AutomationStepAction.CallWebhook);
     }
-    if (onAgentTurn && steps.length === 0) actions.push(ActionKind.AgentTurn);
+    if (onAgentTurn && steps.length === 0) actions.push(AutomationVersionContentActionKind.AgentTurn);
     return actions;
   };
   const insertStep = (index: number, action: DraftAction) => {
     if (disabled || !actionsAt(index).includes(action)) return;
-    if (action === ActionKind.AgentTurn) {
+    if (action === AutomationVersionContentActionKind.AgentTurn) {
       onAgentTurn?.();
       selectNode({type: "action"});
       return;
     }
     const step: AutomationStep = { id: nextStepId(steps), action,
-      ...(action === ActionEnum.SendMessage ? {text: ""} : action === ActionEnum.Delay ? {duration: ""}
-        : action === ActionEnum.RequestApproval ? {message: ""} : action === ActionEnum.AddReaction ? {emoji: ""}
-        : action === ActionEnum.CallWebhook ? {url: ""} : {topic: ""}) };
+      ...(action === AutomationStepAction.SendMessage ? {text: ""} : action === AutomationStepAction.Delay ? {duration: ""}
+        : action === AutomationStepAction.RequestApproval ? {message: ""} : action === AutomationStepAction.AddReaction ? {emoji: ""}
+        : action === AutomationStepAction.CallWebhook ? {url: ""} : {topic: ""}) };
     const next = [...steps]; next.splice(index, 0, step);
     onStepsChange(next); selectNode({type: "step", stepId: step.id});
   };
   useImperativeHandle(ref, () => ({
-    addFirstStep: () => insertStep(0, ActionEnum.SendMessage),
+    addFirstStep: () => insertStep(0, AutomationStepAction.SendMessage),
     closeInspector: () => {
       if (!selectedNode) return false;
       setPane(null);
@@ -210,7 +210,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
     : trigger === AutomationTriggerKind.ReactionAdded ? "agents.automation.reactionAdded"
     : trigger === AutomationTriggerKind.Webhook ? "agents.automation.webhook" : "agents.automation.channelMessage");
   const actionLabel = (step: AutomationStep) => t(actionKeys[step.action as DraftAction]);
-  const legacyActionLabel = action ? t(action.kind === ActionKind.AgentTurn ? "agents.automation.agentTurn" : "agents.automation.postMessage") : "";
+  const legacyActionLabel = action ? t(action.kind === AutomationVersionContentActionKind.AgentTurn ? "agents.automation.agentTurn" : "agents.automation.postMessage") : "";
   const legacyActionDescription = action?.template.trim() ? `“${compact(action.template)}”` : legacyActionLabel;
   const updateStep = (next: WorkflowStepDraft) => {
     if (disabled || !selectedStep) return;
@@ -223,14 +223,14 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
   if (selectedStep) {
     const before = steps.slice(0, selectedIndex);
     const after = steps.slice(selectedIndex + 1);
-    replacementActions.push(ActionEnum.Delay);
-    if (policies?.length && before.every(step => step.action === ActionEnum.Delay)
-      && !after.some(step => step.action === ActionEnum.RequestApproval)) replacementActions.push(ActionEnum.RequestApproval);
+    replacementActions.push(AutomationStepAction.Delay);
+    if (policies?.length && before.every(step => step.action === AutomationStepAction.Delay)
+      && !after.some(step => step.action === AutomationStepAction.RequestApproval)) replacementActions.push(AutomationStepAction.RequestApproval);
     if (![...before, ...after].some(step => terminalEffects.includes(step.action))
-      && !after.some(step => step.action === ActionEnum.RequestApproval)) replacementActions.push(ActionEnum.SendMessage);
-    if (!after.length && before.every(step => step.action === ActionEnum.Delay || step.action === ActionEnum.RequestApproval)) {
-      if (trigger !== AutomationTriggerKind.Schedule && trigger !== AutomationTriggerKind.Webhook) replacementActions.push(ActionEnum.AddReaction);
-      replacementActions.push(ActionEnum.SetChannelTopic, ActionEnum.CallWebhook);
+      && !after.some(step => step.action === AutomationStepAction.RequestApproval)) replacementActions.push(AutomationStepAction.SendMessage);
+    if (!after.length && before.every(step => step.action === AutomationStepAction.Delay || step.action === AutomationStepAction.RequestApproval)) {
+      if (trigger !== AutomationTriggerKind.Schedule && trigger !== AutomationTriggerKind.Webhook) replacementActions.push(AutomationStepAction.AddReaction);
+      replacementActions.push(AutomationStepAction.SetChannelTopic, AutomationStepAction.CallWebhook);
     }
   }
   return <div className="flex h-full min-h-0 flex-col [container-type:inline-size]" ref={containerRef}>
@@ -258,7 +258,7 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
           {steps.map((step, index) => {
             const label = actionLabel(step);
             const description = workflowStepDescription(step, label, t);
-            const emoji = step.action === ActionEnum.AddReaction ? step.emoji?.trim() : undefined;
+            const emoji = step.action === AutomationStepAction.AddReaction ? step.emoji?.trim() : undefined;
             const title = t("workflows.steps.number", {number: index + 1});
             return <WorkflowNode key={step.id} title={title} label={`${title}: ${description}`}
             number={emoji ? undefined : index + 1} icon={emoji ? <ActionEmoji value={emoji} /> : undefined}
@@ -298,9 +298,9 @@ export const WorkflowFormCanvas = forwardRef<WorkflowFormCanvasHandle, {
                     {replacementActions.map(action => <DropdownMenuItem key={action} onSelect={() => {
                       if (action === selectedStep.action) return;
                       updateStep({id: selectedStep.id, ...(selectedStep.name ? {name: selectedStep.name} : {}), action,
-                        ...(action === ActionEnum.SendMessage ? {text: ""} : action === ActionEnum.Delay ? {duration: ""}
-                          : action === ActionEnum.AddReaction ? {emoji: ""} : action === ActionEnum.SetChannelTopic ? {topic: ""}
-                          : action === ActionEnum.CallWebhook ? {url: ""} : {message: ""})});
+                        ...(action === AutomationStepAction.SendMessage ? {text: ""} : action === AutomationStepAction.Delay ? {duration: ""}
+                          : action === AutomationStepAction.AddReaction ? {emoji: ""} : action === AutomationStepAction.SetChannelTopic ? {topic: ""}
+                          : action === AutomationStepAction.CallWebhook ? {url: ""} : {message: ""})});
                     }}><Check className={cn("h-4 w-4", selectedStep.action === action ? "opacity-100" : "opacity-0")} />{t(actionKeys[action])}</DropdownMenuItem>)}
                   </DropdownMenuContent></DropdownMenu> : null}
                   {selectedNode.type === "action" ? <p className="py-0.5 text-base font-semibold text-foreground">{legacyActionLabel}</p> : null}

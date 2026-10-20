@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChannelType, WorkspaceMembershipState, WorkspaceVisibility, type DiscoverableWorkspace, type WorkspaceMemberView } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, WorkspaceVisibility, type DiscoverableWorkspace, type WorkspaceMemberView } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { setLocale, translate } from "../src/i18n";
 import { PlatformProvider } from "../src/react/context";
@@ -20,8 +20,8 @@ const event={id:"4".repeat(64),pubkey:owner,kind:30621,created_at:10,content:"",
 ]};
 const projects=buildProjectReadModels({projectEvents:[event],repositoryEvents:[]});
 const channel=(channelId=stream,name="Development"):DiscoverableWorkspace=>({id:`workspace-${channelId}`,visibility:WorkspaceVisibility.Open,
-  channel:{channelId,channelType:ChannelType.Stream,name,description:"Original **channel** description",archived:false},
-  isMember:true,membershipState:WorkspaceMembershipState.Active,memberCount:9,createdAt:new Date("2026-10-07T00:00:00Z")});
+  channel:{channelId,channelType:WorkspaceChannelCreateChannelType.Stream,name,description:"Original **channel** description",archived:false},
+  isMember:true,membershipState:WorkspaceMembershipState.Active,memberCount:9,createdAt:"2026-10-07T00:00:00Z"});
 const member:WorkspaceMemberView={principalId:"human-principal",displayName:"Real human",pubkeys:[pubkey,deviceKey],state:WorkspaceMembershipState.Active};
 const profile={pubkey,displayName:"Real profile",avatarUrl:"original-avatar",avatarMediaPaths:{"original-avatar":"/authorized-avatar"},about:"Actual profile",nip05Handle:null};
 const cache=()=>new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});

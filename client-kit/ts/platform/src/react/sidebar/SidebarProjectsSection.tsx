@@ -7,7 +7,7 @@ import {ArrowUpDown,ChevronDown,ChevronRight,EllipsisVertical,Folder,Folders,Has
 import {toast} from "sonner";
 import {useBffClient,useClipboardWrite,useUiT} from "../context";
 import {projectShareLink} from "../projects/projectShareLinks";
-import {CreateActionKey} from "@client-kit/contracts";
+import {RoleWorkspacePageCreateActionKey} from "@client-kit/contracts";
 import {useCreateProject} from "../projects/useCreateProject";
 import {cn} from "../profile/buzz/shared/lib/cn";
 import {loadProjectDirectory,type ProjectsHost} from "../projects/projectEnumeration";
@@ -137,7 +137,7 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
       })}</SidebarMenu>:query.isPending||query.isFetching||membership.pending||query.isError||membership.problem?null:<p className="px-2 py-1 text-xs text-sidebar-foreground/50">{t("projects.empty")}</p>}
     </SidebarGroupContent>:null}
     <ProjectBrowserDialog open={browserOpen} onOpenChange={setBrowserOpen} projects={allProjects.filter(project=>!project.legacy)}
-      creation={host.publish&&(createCapability.data?.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent)?{
+      creation={host.publish&&(createCapability.data?.createActionKey===RoleWorkspacePageCreateActionKey.WorkspaceCreate||creation.intent)?{
         busy:creation.busy,frozen:creation.intent?.input,create:async input=>{
           const project=await creation.create(input);
           if(!lifetime.active)return;

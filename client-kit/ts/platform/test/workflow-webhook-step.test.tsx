@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ActionEnum, AutomationTriggerKind, type AutomationStep } from "@client-kit/contracts";
+import { AutomationStepAction, AutomationTriggerKind, type AutomationStep } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { supportedSteps, workflowStepsContent, WorkflowStepCard, type WorkflowStepDraft } from "../src/react/workflow-steps";
@@ -28,17 +28,17 @@ describe("original call_webhook step", () => {
   });
 
   it("serializes like the original form: POST default, blank header names and empty body dropped", () => {
-    const draft: WorkflowStepDraft = {id: "hook", action: ActionEnum.CallWebhook, url: "https://h.example.com/", body: "",
+    const draft: WorkflowStepDraft = {id: "hook", action: AutomationStepAction.CallWebhook, url: "https://h.example.com/", body: "",
       secretHeaders: {Authorization: secret},
       headerRows: [{id: "a", key: " X-Trace ", value: "{{trigger.message_id}}"}, {id: "b", key: " ", value: "dropped"}]};
-    expect(workflowStepsContent([draft])).toEqual([{id: "hook", action: ActionEnum.CallWebhook, url: "https://h.example.com/",
+    expect(workflowStepsContent([draft])).toEqual([{id: "hook", action: AutomationStepAction.CallWebhook, url: "https://h.example.com/",
       method: "POST", headers: {"X-Trace": "{{trigger.message_id}}"}, secretHeaders: {Authorization: secret}}]);
     expect(workflowStepsContent([{...draft, headerRows: []}])[0]).not.toHaveProperty("headers");
   });
 
   it("edits the original endpoint, method, headers and body fields without dropping SecretRefs", async () => {
     const updates: WorkflowStepDraft[] = [];
-    const initial: AutomationStep = {id: "hook", action: ActionEnum.CallWebhook, url: "", secretHeaders: {Authorization: secret}};
+    const initial: AutomationStep = {id: "hook", action: AutomationStepAction.CallWebhook, url: "", secretHeaders: {Authorization: secret}};
     function Host() {
       const [step, setStep] = useState<WorkflowStepDraft>(initial);
       return <WorkflowStepCard step={step} index={0} trigger={AutomationTriggerKind.Schedule} bare showHeader={false}
@@ -59,7 +59,7 @@ describe("original call_webhook step", () => {
     await type(host.querySelector<HTMLInputElement>('input[placeholder="Header value"]')!, "1");
     await type(host.querySelector<HTMLTextAreaElement>("#wf-step-0-body")!, "{}");
     const content = workflowStepsContent([updates.at(-1)!]);
-    expect(content).toEqual([{id: "hook", action: ActionEnum.CallWebhook, url: "https://h.example.com/hook", method: "POST",
+    expect(content).toEqual([{id: "hook", action: AutomationStepAction.CallWebhook, url: "https://h.example.com/hook", method: "POST",
       headers: {"X-Trace": "1"}, secretHeaders: {Authorization: secret}, body: "{}"}]);
   });
 });

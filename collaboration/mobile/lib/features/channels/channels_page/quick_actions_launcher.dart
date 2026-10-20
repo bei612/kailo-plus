@@ -44,7 +44,8 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
     final role = ref.watch(channelCreateRoleProvider);
     final actions = ref.watch(channelActionsProvider);
     final admitted =
-        role.asData?.value.createActionKey == CreateActionKey.WORKSPACE_CREATE;
+        role.asData?.value.createActionKey ==
+        RoleWorkspacePageCreateActionKey.WORKSPACE_CREATE;
     final recovering = actions.asData?.value.pendingCommand != null;
     final dm = ref.watch(directMessagesProvider);
     final people = ref.watch(conversationDirectoryProvider);

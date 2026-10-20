@@ -4,7 +4,7 @@
 // `![image](url)` with no imeta. Kailo adds the deployment registration: Desktop keeps only results
 // whose original and preview come from a registered https origin (the same set the Web reads from
 // the BFF GIF capability view); an unregistered poster is dropped (platform-core gifs.rs normalize).
-import type { WebGIFItem } from "@client-kit/contracts";
+import type { WebGifItem } from "@client-kit/contracts";
 import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
 
 /** The Relay-relative KLIPY endpoints the Relay advertised (native `get_relay_gif_descriptor`). */
@@ -58,10 +58,10 @@ export function isRegisteredGifOrigin(raw: string, origins: readonly string[]): 
  * Original `normalizeKlipyGifs` over the Relay's `{result, data: {data: [...]}}` page, limited to
  * registered origins: an item whose original or preview is outside the set is dropped.
  */
-export function normalizeRelayGifs(page: unknown, origins: readonly string[]): WebGIFItem[] {
+export function normalizeRelayGifs(page: unknown, origins: readonly string[]): WebGifItem[] {
   const items = record(record(page)?.data)?.data;
   if (!Array.isArray(items) || origins.length === 0) return [];
-  const gifs: WebGIFItem[] = [];
+  const gifs: WebGifItem[] = [];
   for (const raw of items) {
     const item = record(raw);
     const file = record(item?.file);
@@ -103,7 +103,7 @@ export function klipyGifFilename(slug: string): string {
  * Original `klipyGifAttachment`: externally hosted media. The empty hash keeps it out of imeta
  * (`buildImetaTags` drops hash-less entries); `buildOutgoingMessage` appends `![image](url)`.
  */
-export function gifAttachment(gif: WebGIFItem): ImetaMedia {
+export function gifAttachment(gif: WebGifItem): ImetaMedia {
   return {
     dim: `${gif.width}x${gif.height}`,
     displayLabel: gif.title,

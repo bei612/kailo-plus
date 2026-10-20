@@ -34,8 +34,7 @@ func scheduleTaskTest(t *testing.T) (*testsuite.TestWorkflowEnvironment, generat
 }
 
 func admittedTask(in generated.AgentTaskWorkflowInput) generated.AutomationScheduleAdmitResult {
-	task := generated.TaskInputClass(in)
-	return generated.AutomationScheduleAdmitResult{Admitted: true, ReasonCode: "NONE", TaskInput: &task}
+	return generated.AutomationScheduleAdmitResult{Admitted: true, ReasonCode: "NONE", TaskInput: &in}
 }
 
 func finishTaskMock(env *testsuite.TestWorkflowEnvironment, check func(generated.AgentTaskWorkflowInput)) {
@@ -65,7 +64,7 @@ func TestAgentTaskOrderedDelayUsesDurableTimerBeforeNextAdvance(t *testing.T) {
 			if advances == 1 {
 				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID,
 					Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
-					DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+					DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: 62}}, nil
 			}
 			if env.Now().Sub(started) < 62*time.Second {
 				t.Fatal("message step advanced before native Delay")
@@ -102,7 +101,7 @@ func TestAgentTaskDelayDeadlineKeepsIndependentTimersAndDrainsCancel(t *testing.
 				advances++
 				if advances == 1 {
 					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
-						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: scenario.seconds, TimeoutSeconds: &scenario.timeout}}, nil
+						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: scenario.seconds, TimeoutSeconds: &scenario.timeout}}, nil
 				}
 				if env.Now().Sub(started) != scenario.elapsed || actual.CancelPending != scenario.cancel {
 					t.Fatal("deadline changed timer or cancel outcome", env.Now().Sub(started), actual.CancelPending)
@@ -153,7 +152,7 @@ func TestAgentTaskOrderedMessageObservationsKeepOneInvocationAndStopOnFailure(t 
 					case 2:
 						delayStarted = env.Now()
 						out.WaitingReason = "WAITING_TIMER"
-						out.DelayStep = &generated.DelayStep{ID: "between-messages", Seconds: 62}
+						out.DelayStep = &generated.AgentTaskAdvanceResultDelayStep{ID: "between-messages", Seconds: 62}
 					case 3:
 						if env.Now().Sub(delayStarted) < 62*time.Second {
 							t.Fatal("next effect overtook Delay")
@@ -185,7 +184,7 @@ func TestAgentTaskCancelDuringOrderedDelayDrainsWithoutPublishing(t *testing.T) 
 			if advances == 1 {
 				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID,
 					Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
-					DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+					DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: 62}}, nil
 			}
 			if !actual.CancelPending {
 				t.Fatal("canceled Delay proceeded to a side effect")
@@ -210,7 +209,7 @@ func TestAgentTaskOrderedDelayPreservesOriginalContinuationAndCancelCheckpoint(t
 			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
 			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(generated.AgentTaskAdvanceResult{
 				InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
-				DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62},
+				DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: 62},
 			}, nil).Once()
 			env.RegisterDelayedCallback(func() {
 				env.SetContinueAsNewSuggested(true)
@@ -406,7 +405,7 @@ func TestAgentTaskNativeDelayTraceKeepsOldCommandsAndProjectsNewRunningTimer(t *
 					advances++
 					if advances == 1 {
 						return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
-							WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+							WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: 62}}, nil
 					}
 					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED,
 						WaitingReason: "NONE", FinishActivity: true}, nil
@@ -442,7 +441,7 @@ func TestAgentTaskRunningTraceFailureDoesNotTrapCompletedOrCancelledTimer(t *tes
 				func(context.Context, generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
 					advances++
 					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING,
-						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+						WaitingReason: "WAITING_TIMER", FinishActivity: true, DelayStep: &generated.AgentTaskAdvanceResultDelayStep{ID: "wait", Seconds: 62}}, nil
 				})
 			env.RegisterDelayedCallback(func() {
 				env.SetContinueAsNewSuggested(true)
@@ -475,7 +474,7 @@ func TestAgentTaskStepApprovalStartsOriginalChildOnceWithoutWaitingForItsComplet
 	startedAt := env.Now()
 	var terminalAt time.Time
 	childID := "platform:approval:step-fixture"
-	child := generated.ApprovalInputClass{ActionKey: "automation.run", ActionExecutionID: "child", PolicyID: "policy", PolicyVersion: 2}
+	child := generated.ApprovalWorkflowInput{ActionKey: "automation.run", ActionExecutionID: "child", PolicyID: "policy", PolicyVersion: 2}
 	starts, advances := 0, 0
 	env.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context, actual generated.ApprovalWorkflowInput) error {
@@ -509,7 +508,7 @@ func TestAgentTaskStepApprovalStartsOriginalChildOnceWithoutWaitingForItsComplet
 func TestAgentTaskStepApprovalCancellationRemainsOnOriginalInvocation(t *testing.T) {
 	env, in, _ := scheduleTaskTest(t)
 	childID := "platform:approval:cancel-fixture"
-	child := generated.ApprovalInputClass{ActionKey: "automation.run"}
+	child := generated.ApprovalWorkflowInput{ActionKey: "automation.run"}
 	env.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context, _ generated.ApprovalWorkflowInput) error {
 			return workflow.Sleep(ctx, time.Hour)

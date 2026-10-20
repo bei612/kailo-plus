@@ -16,7 +16,6 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, SecondsFormat, Utc};
 use contracts::{ReasonCode, TenantMemberJoinPage, TenantMemberJoinView};
 use serde::Deserialize;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState};
@@ -210,16 +209,14 @@ async fn joins(state: &BffState, headers: &HeaderMap, after: Option<&str>) -> Re
     }
 }
 
-/// 回应经生成契约编码，不另写一份跨语言形状。
+/// 回应即生成契约类型，不另写一份跨语言形状。
 fn page(items: Vec<TenantMemberJoinView>, cursor: String, more: bool) -> Response {
-    let body = json!({"items": items, "cursor": cursor, "hasMore": more});
-    match serde_json::from_value::<TenantMemberJoinPage>(body) {
-        Ok(page) => (StatusCode::OK, Json(page)).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "新成员提醒回应不符合共享契约");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-    }
+    let page = TenantMemberJoinPage {
+        items,
+        cursor,
+        has_more: more,
+    };
+    (StatusCode::OK, Json(page)).into_response()
 }
 
 #[cfg(test)]

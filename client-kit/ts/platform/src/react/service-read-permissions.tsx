@@ -1,5 +1,5 @@
 import {
-  ActionDispatchState, ActionGateState, AgentInstallationState, AgentPrincipalState, ApplicationReadResourceDirection,
+  ActionDispatchState, ActionGateState, AgentInstallationState, AgentInstallationViewAgentPrincipalState, ApplicationReadResourceDirection,
   ReasonCode, ResourceGrantPermission, ResourceState,
   type ActionCommand, type ActionSubmission, type AgentInstallationView, type ApplicationBindingView,
   type ApplicationReadResource, type ApplicationReadResourcePage,
@@ -105,7 +105,7 @@ function AgentReceiverPicker({ binding, locked, revision, onSelected }: {
   useEffect(() => { reload(); reloadDirectory(); }, [client,reload,reloadDirectory]);
   const agents = state.status === "ok" && state.data.owner === client && state.data.rows
     ? state.data.rows.filter(row => row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
-      && row.agentPrincipalState === AgentPrincipalState.Active) : null;
+      && row.agentPrincipalState === AgentInstallationViewAgentPrincipalState.Active) : null;
   useEffect(() => { setSelected(""); onSelected(null); }, [client,binding.bindingId,workspaceId,revision,onSelected]);
   return <div className="flex min-w-0 flex-col gap-2">
     {fixed ? null : <>

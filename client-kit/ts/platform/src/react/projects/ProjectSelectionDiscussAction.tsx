@@ -3,7 +3,7 @@
 import { ChevronDown, Hash, MessageSquare, Search } from "lucide-react";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { toast } from "sonner";
 import { useBffClient, useT } from "../context";
 import { ChannelBrowser } from "../channel-browser";
@@ -35,7 +35,7 @@ export function ProjectSelectionDiscussAction({ items, scopeKey, onSelectChannel
   const channels = query.isSuccess && !query.isFetching ? query.data : [];
   const channelsById = new Map(channels.filter(channel => channel.isMember
     && channel.membershipState === WorkspaceMembershipState.Active && !channel.channel.archived
-    && channel.channel.channelType === ChannelType.Stream).map(channel => [channel.channel.channelId, channel]));
+    && channel.channel.channelType === WorkspaceChannelCreateChannelType.Stream).map(channel => [channel.channel.channelId, channel]));
   const candidates = projectSelectionChannelCandidates(items);
   const select = async (workspace: DiscoverableWorkspace) => {
     if (running.current || !lifetime.active) return;
@@ -70,6 +70,6 @@ export function ProjectSelectionDiscussAction({ items, scopeKey, onSelectChannel
         <Search className="h-3.5 w-3.5 text-muted-foreground" />{t("projects.discuss.search")}
       </Button>
     </div> : null}
-    <ChannelBrowser open={browserOpen} onOpenChange={setBrowserOpen} channelType={ChannelType.Stream} onSelect={select}/>
+    <ChannelBrowser open={browserOpen} onOpenChange={setBrowserOpen} channelType={WorkspaceChannelCreateChannelType.Stream} onSelect={select}/>
   </>;
 }

@@ -116,11 +116,11 @@ class PlatformAgentDelegationsPage extends HookConsumerWidget {
                     ),
                     AppListRow(
                       title: text(PlatformMessageKey.agentsDelegationValidFrom),
-                      subtitle: grant.parameters.validFrom.toUtc().toIso8601String(),
+                      subtitle: grant.parameters.validFrom,
                     ),
                     AppListRow(
                       title: text(PlatformMessageKey.agentsDelegationExpiresAt),
-                      subtitle: grant.parameters.expiresAt.toUtc().toIso8601String(),
+                      subtitle: grant.parameters.expiresAt,
                     ),
                     AppListRow(
                       title: text(PlatformMessageKey.agentsDelegationUses),

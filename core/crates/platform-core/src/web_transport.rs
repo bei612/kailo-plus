@@ -356,7 +356,7 @@ fn attachment_media_url(raw: &str, community_host: &str) -> Option<reqwest::Url>
     Some(url)
 }
 
-impl RenderAttachment for contracts::AttachmentElement {
+impl RenderAttachment for contracts::WebMessageAttachment {
     /// 按上游客户端的同一形式输出：正文追加一行 markdown，另带一条 NIP-92
     /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
     /// （上游 `formatImetaMediaLine`/`buildImetaTags`，`SF-BUZ-36`）。
@@ -3357,7 +3357,7 @@ async fn read_message_authors(
         }
         views.insert(
             event.id.to_hex(),
-            contracts::ProfileValue {
+            contracts::WebProfileView {
                 about: view.about,
                 avatar_media_paths: view.avatar_media_paths,
                 avatar_url: view.avatar_url,
@@ -6006,7 +6006,7 @@ mod tests {
         extension: &str,
         filename: Option<&str>,
         spoiler: Option<bool>,
-    ) -> contracts::AttachmentElement {
+    ) -> contracts::WebMessageAttachment {
         let hash = "a".repeat(64);
         let mut value = serde_json::json!({
             "url": format!("https://relay.example/media/{hash}.{extension}"),

@@ -9,8 +9,8 @@ use axum::{
 };
 use collab_bridge::bridge::{Presence, Scope};
 use contracts::{
-    AgentInstallationAdvanceRequest, AgentInstallationAdvanceResult,
-    ContentClass as AgentVersionContent, ReasonCode, TaskStatus,
+    AgentInstallationAdvanceRequest, AgentInstallationAdvanceResult, AgentVersionContent,
+    ReasonCode, TaskStatus,
 };
 use secret_store::{PlatformKey, SecretRef};
 use serde::Serialize;
@@ -2360,13 +2360,13 @@ mod effective_field_tests {
             capability_requirements: Vec::new(),
             declared_tool_resource_ids: Vec::new(),
             instructions: EFFECTIVE_FIELDS[0].into(),
-            memory_policy: contracts::ContentMemoryPolicy {
+            memory_policy: contracts::AgentVersionContentMemoryPolicy {
                 core_write: contracts::AgentMemoryCoreWrite::HumanOnly,
                 cold_write: contracts::AgentMemoryColdWrite::Disabled,
             },
             model_route_resource_id: Uuid::nil().to_string(),
             parallelism: 1,
-            persona_identity: contracts::ContentPersonaIdentity {
+            persona_identity: contracts::AgentVersionContentPersonaIdentity {
                 display_name: EFFECTIVE_FIELDS[0].into(),
                 avatar_url: None,
                 description: None,
@@ -2375,7 +2375,7 @@ mod effective_field_tests {
             runtime_profile_key: EFFECTIVE_FIELDS[1].into(),
             skill_version_asset_ids: Vec::new(),
             trigger_defaults: Vec::new(),
-            turn_limits: contracts::ContentTurnLimits {
+            turn_limits: contracts::AgentVersionContentTurnLimits {
                 idle_timeout_seconds: 1,
                 max_turn_duration_seconds: 1,
             },
@@ -2391,7 +2391,7 @@ mod effective_field_tests {
                 contracts::AgentMemoryColdWrite::Disabled,
                 contracts::AgentMemoryColdWrite::InvocationScoped,
             ] {
-                content.memory_policy = contracts::ContentMemoryPolicy {
+                content.memory_policy = contracts::AgentVersionContentMemoryPolicy {
                     core_write: core_write.clone(),
                     cold_write: cold_write.clone(),
                 };
@@ -2402,7 +2402,7 @@ mod effective_field_tests {
                 );
             }
         }
-        content.memory_policy = contracts::ContentMemoryPolicy {
+        content.memory_policy = contracts::AgentVersionContentMemoryPolicy {
             core_write: contracts::AgentMemoryCoreWrite::HumanOnly,
             cold_write: contracts::AgentMemoryColdWrite::Disabled,
         };

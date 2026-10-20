@@ -10,7 +10,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use contracts::{CapabilityContractPage, ContractElement, ReasonCode};
+use contracts::{
+    CapabilityContractPage, CapabilityContractStatus, CapabilityContractView, ReasonCode,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{PgConnection, Postgres, Transaction};
@@ -838,7 +840,7 @@ async fn approved(
     let Some((true, decisions)) = row else {
         return Err(Refusal::Denied(ReasonCode::ApprovalConsumeWindowClosed));
     };
-    let decisions: Vec<contracts::DecisionElement> = serde_json::from_value(decisions)
+    let decisions: Vec<contracts::ApprovalDecisionRecord> = serde_json::from_value(decisions)
         .map_err(|_| Refusal::Unavailable("Catalog approval decisions unreadable".into()))?;
     for decision in decisions {
         if decision.decision != contracts::ApprovalDecision::Approve
@@ -984,11 +986,14 @@ pub async fn list(
         rows.truncate(page as usize);
         let mut views=Vec::new();
         for row in rows {
-            // Decode through the same generated DTO; unknown catalog enum never becomes ACTIVE.
-            let view:ContractElement=serde_json::from_value(json!({"categoryKey":row.category_key,"contractVersion":row.contract_version,"status":row.status,
-                "schemaSetDigest":row.schema_set_digest,"conformanceSuiteDigest":row.conformance_suite_digest,"registeredByActionExecutionId":row.registered_by_action_execution_id,"bootstrapActionExecutionId":row.bootstrap_action_execution_id,
-                "canApprove":row.status=="DRAFT" && capabilities[APPROVE],"canDeprecate":matches!(row.status.as_str(),"ACTIVE"|"DRAFT") && capabilities[DEPRECATE]})).map_err(|_|bad())?;
-            views.push(view);
+            // An unknown catalog status is refused, never shown as ACTIVE.
+            let status=crate::governance::parse::<CapabilityContractStatus>(&row.status).ok_or_else(bad)?;
+            views.push(CapabilityContractView { can_approve:row.status=="DRAFT" && capabilities[APPROVE],
+                can_deprecate:matches!(row.status.as_str(),"ACTIVE"|"DRAFT") && capabilities[DEPRECATE],
+                category_key:row.category_key, contract_version:i64::from(row.contract_version), status,
+                schema_set_digest:row.schema_set_digest, conformance_suite_digest:row.conformance_suite_digest,
+                registered_by_action_execution_id:row.registered_by_action_execution_id.map(|id| id.to_string()),
+                bootstrap_action_execution_id:row.bootstrap_action_execution_id.map(|id| id.to_string()) });
         }
         Ok::<_,Refusal>(CapabilityContractPage { contracts:views,can_register:capabilities[REGISTER],
             next_offset: if more { Some(offset.checked_add(page).ok_or_else(bad)?) } else { None } })

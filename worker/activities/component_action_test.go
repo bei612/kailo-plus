@@ -16,7 +16,7 @@ func TestComponentActionActivityConsumesOnlyOriginalCoreReceipt(t *testing.T) {
 	for _, mode := range []string{"completed", "wrong-action", "unknown-status", "extra-body", "unavailable"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
-			in := generated.ComponentActionAdvanceRequest{Target: generated.ComponentActionAdvanceRequestTarget{
+			in := generated.ComponentActionAdvanceRequest{Target: generated.ComponentActionTarget{
 				ActionExecutionID: "original-ae", BindingID: "original-binding", BindingVersion: 2,
 				ComponentReleaseID: "release", ProjectionGeneration: 3, WorkflowID: "workflow"}, RunID: "run", CancelRequested: true}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

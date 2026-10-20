@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' show max, min, pi;
 import 'dart:ui';
 
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:client_kit/shared/platform/reason_text.dart';
 import 'package:flutter/foundation.dart';

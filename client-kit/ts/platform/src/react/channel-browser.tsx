@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LogIn } from "lucide-react";
 import { toast } from "sonner";
 import { Button as BuzzButton } from "./profile/buzz/shared/ui/button";
-import { ActionDispatchState, ActionGateState, ChannelType, WorkspaceMembershipState, type ActionCommand, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { ActionDispatchState, ActionGateState, WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type ActionCommand, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, writeFailure, type WriteFailure } from "../transport";
 import { useBffClient, useFailureText, useT } from "./context";
@@ -17,7 +17,7 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
   onOpenChange: (open: boolean) => void;
   onSelect: (workspace: DiscoverableWorkspace) => void | Promise<void>;
   lastMessageAtByChannelId?: ReadonlyMap<string, string | null>;
-  channelType?: ChannelType;
+  channelType?: WorkspaceChannelCreateChannelType;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -26,7 +26,7 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
   const latestRows = useRef<DiscoverableWorkspace[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [createActionKey, setCreateActionKey] = useState<import("@client-kit/contracts").CreateActionKey>();
+  const [createActionKey, setCreateActionKey] = useState<import("@client-kit/contracts").RoleWorkspacePageCreateActionKey>();
   const epoch = useRef(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current += 1; }; }, []);

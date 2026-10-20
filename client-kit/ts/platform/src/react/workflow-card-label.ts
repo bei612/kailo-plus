@@ -2,7 +2,7 @@
 // desktop/src/features/workflows/ui/workflowDefinition.ts::getWorkflowCardLabel,
 // getTriggerCardClause/getActionCardClause and workflowStepDescription.ts::compact.
 // Original admitted trigger/action branches; wire data remains AutomationVersionContent.
-import { ActionEnum, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
+import { AutomationStepAction, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import type { Translate } from "./context";
 import { parseConditionExpressions, type ParsedConditionExpression } from "./workflow-condition-expression";
 import { formatDurationSeconds, formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
@@ -209,27 +209,27 @@ export function workflowTriggerCardClause(content: AutomationVersionContent, t: 
 
 function actionClause(step: AutomationStep, t: Translate): string {
   switch (step.action) {
-    case ActionEnum.Delay: {
+    case AutomationStepAction.Delay: {
       const duration = step.duration?.trim();
       const seconds = duration ? parseDurationSeconds(duration) : null;
       const detail = duration ? compact(seconds === null ? duration : formatDurationSecondsVerbose(seconds, t)) : null;
       return detail ? t("workflows.card.wait", {duration: detail}) : t("workflows.card.waitMoment");
     }
-    case ActionEnum.SendMessage: {
+    case AutomationStepAction.SendMessage: {
       const detail = quoted(step.text);
       return detail ? t("workflows.card.send", {text: detail}) : t("workflows.card.sendMessage");
     }
-    case ActionEnum.RequestApproval: {
+    case AutomationStepAction.RequestApproval: {
       const detail = quoted(step.message);
       return detail ? t("workflows.card.approvalMessage", {message: detail}) : t("workflows.card.approval");
     }
-    case ActionEnum.AddReaction: return step.emoji?.trim()
+    case AutomationStepAction.AddReaction: return step.emoji?.trim()
       ? t("workflows.card.reactionEmoji", {emoji: step.emoji.trim()}) : t("workflows.card.reaction");
-    case ActionEnum.SetChannelTopic: {
+    case AutomationStepAction.SetChannelTopic: {
       const detail = quoted(step.topic);
       return detail ? t("workflows.card.topicValue", {topic: detail}) : t("workflows.card.topic");
     }
-    case ActionEnum.CallWebhook: {
+    case AutomationStepAction.CallWebhook: {
       const url = step.url?.trim();
       return url ? t("workflows.card.call", {target: `${step.method?.trim() || "POST"} ${compact(url)}`})
         : t("workflows.card.callWebhook");

@@ -66,7 +66,7 @@ func TestProtocolSessionActualActivityRejectsUnconfirmedTerminal(t *testing.T) {
 				t.Fatal(err)
 			}
 			api := &CoreAPI{base: server.URL, tokens: tokens, http: server.Client()}
-			request := generated.ProtocolSessionReconcileRequest{Target: generated.ProtocolSessionReconcileRequestTarget{ProtocolSessionID: "original-session", SessionVersion: 8}}
+			request := generated.ProtocolSessionReconcileRequest{Target: generated.ProtocolSessionReconcileTarget{ProtocolSessionID: "original-session", SessionVersion: 8}}
 			_, err = api.AdvanceProtocolSession(context.Background(), request)
 			success := scenario == "saved-running" || scenario == "closed-confirmed"
 			if (err == nil) != success || calls != 1 {

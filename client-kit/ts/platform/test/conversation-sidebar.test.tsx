@@ -8,7 +8,7 @@ import { PlatformProvider } from "../src/react/context";
 import { ConversationList, ConversationVisibilityProvider } from "../src/react/new-message";
 import { useInboxState } from "../src/react/use-inbox-state";
 import { setLocale } from "../src/i18n";
-import { ItemState, WebPresenceStatus, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
+import { ConversationViewState, WebPresenceStatus, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
 import { TransportError, type BffRequest } from "../src/transport";
 import type { InboxEvent } from "../src/inbox";
 import { sortDmChannelsForSidebar } from "../src/react/sidebar/dmSidebarSort";
@@ -16,8 +16,8 @@ import type { ConversationUnreadEntry } from "../src/react/sidebar/useSidebarUnr
 import { click, render, settle } from "./render";
 
 const items: ConversationView[] = [
-  {id:"bob",channelId:"dm-bob",state:ItemState.Active,participantPrincipalIds:["self","bob"],version:1,operationId:"open-bob"},
-  {id:"zara",channelId:"dm-zara",state:ItemState.Active,participantPrincipalIds:["self","zara"],version:1,operationId:"open-zara"},
+  {id:"bob",channelId:"dm-bob",state:ConversationViewState.Active,participantPrincipalIds:["self","bob"],version:1,operationId:"open-bob"},
+  {id:"zara",channelId:"dm-zara",state:ConversationViewState.Active,participantPrincipalIds:["self","zara"],version:1,operationId:"open-zara"},
 ];
 const incoming: InboxEvent[] = [
   {id:"one",tags:[],createdAt:10,channelId:"dm-bob",channelType:"dm",category:"activity"},
@@ -111,7 +111,7 @@ describe("original governed DM sidebar consumers",()=>{
   });
   it("drops disabled, removed-member and hidden DM rows from overflow without changing Core read state",async()=>{
     const {host,writes,unread,replaceConversations}=await mount();
-    await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,state:ItemState.Disabled}:item)));
+    await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,state:ConversationViewState.Disabled}:item)));
     expect(unread().map(entry=>entry.channelId)).toEqual(["dm-zara"]);
     await act(async()=>replaceConversations(items.map(item=>item.id==="bob"?{...item,participantPrincipalIds:["other","bob"]}:item)));
     expect(unread().map(entry=>entry.channelId)).toEqual(["dm-zara"]);
@@ -190,7 +190,7 @@ describe("original DM row avatar, presence dot and count (DD-120)",()=>{
     {principalId:"bob",displayName:"Bob",pubkeys:["b".repeat(64),"d".repeat(64)]},
     {principalId:"zara",displayName:"Zara",pubkeys:["c".repeat(64)]},
   ];
-  const group:ConversationView={id:"group",channelId:"dm-group",state:ItemState.Active,participantPrincipalIds:["self","bob","zara"],version:1,operationId:"open-group"};
+  const group:ConversationView={id:"group",channelId:"dm-group",state:ConversationViewState.Active,participantPrincipalIds:["self","bob","zara"],version:1,operationId:"open-group"};
   async function mountRows(presence?:PresenceHost){
     const client=createBffClient({send:async request=>{
       if(request.path === "/api/v1/workspaces") return {status:200,body:[]};

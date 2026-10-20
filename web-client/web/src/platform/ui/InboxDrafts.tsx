@@ -1,4 +1,4 @@
-import { ChannelType, ItemState, WebMessageType, type ConversationView, type ConversationParticipant, type WorkspaceView } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, ConversationViewState, WebMessageType, type ConversationView, type ConversationParticipant, type WorkspaceView } from "@client-kit/contracts";
 import { useBffClient, useT } from "@client-kit/platform/react/context";
 import { useConversations, useConversationVisibilityHost } from "@client-kit/platform/react/new-message";
 import { DraftDetailSurface, DraftListSurface, type DraftListEntry, type DraftSurfaceItem } from "@client-kit/platform/react/draft-surfaces";
@@ -58,7 +58,7 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
     // ordinary Web DM composers persist the admitted Conversation binding ID.
     const matches = !conversations.error && !conversations.loading ? conversations.items.filter((item) =>
       (target.parentEventId ? item.channelId : item.id) === entry.draft.channelId &&
-      item.state === ItemState.Active && item.participantPrincipalIds.includes(principalId)) : [];
+      item.state === ConversationViewState.Active && item.participantPrincipalIds.includes(principalId)) : [];
     if (matches.length + Number(Boolean(workspace)) !== 1) return null;
     return workspace ? { kind: "workspace", workspace } : { kind: "conversation", conversation: matches[0]! };
   };
@@ -79,7 +79,7 @@ export function InboxDrafts({ principalId, workspaces, participants, entries, se
         if (!visibility || (await visibility.read(resolved.conversation)).has(resolved.conversation.channelId)) throw new Error("Conversation unavailable");
       } else {
         const channel = await client.workspaceChannel(resolved.workspace.id);
-        if (channel.archived || (channel.channelType === ChannelType.Forum ? target.messageType === WebMessageType.Stream : target.messageType !== WebMessageType.Stream)) throw new Error("Draft destination unavailable");
+        if (channel.archived || (channel.channelType === WorkspaceChannelCreateChannelType.Forum ? target.messageType === WebMessageType.Stream : target.messageType !== WebMessageType.Stream)) throw new Error("Draft destination unavailable");
       }
       const channelId = resolved.kind === "conversation" ? resolved.conversation.channelId : resolved.workspace.id;
       const message = target.parentEventId ? {channelId, messageId:target.parentEventId, threadRootId:target.threadRootId ?? target.parentEventId,

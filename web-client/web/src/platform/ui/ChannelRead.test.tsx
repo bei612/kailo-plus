@@ -6,7 +6,7 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { frameData, frameSteps, MotionGlobalConfig } from "motion/react";
-import { ItemState, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
+import { ConversationViewState, type ConversationView, type ReadMarkRequest } from "@client-kit/contracts";
 import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane as ActualChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
@@ -162,7 +162,7 @@ it.each(["channel-main", "channel-thread", "dm-main", "dm-thread"])("the actual 
   const sent = {...event(20), content: "Copied thread reply", tags: [["h", "channel-a"], ["buzz:sent-from-thread", "original-root", "🧭 Shipping plan"]]};
   threadMessages.splice(0, threadMessages.length, {...sent, createdAt: 20});
   await renderChannel({onOpenMessageLink: navigate, ...(surface.startsWith("dm") ? {
-    conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ItemState.Active, version: 1, operationId: "op"},
+    conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ConversationViewState.Active, version: 1, operationId: "op"},
   } : {})});
   await act(async () => {
     state.receive!({type: "snapshot", events: windowEvents([event(10), sent].sort(compareRelayOrder))});
@@ -284,7 +284,7 @@ it("ordinary-channel unread expires on leave and never lowers the canonical chan
 
 it("does not fabricate a DM mark-unread consumer while the original identity/read transport gap is unresolved", async () => {
   projection.readContexts["channel-a"] = new Date(100_000).toISOString();
-  await renderChannel({conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ItemState.Active, version: 1, operationId: "op"}});
+  await renderChannel({conversation: {id: "private-binding", channelId: "channel-a", participantPrincipalIds: ["human-a", "peer"], state: ConversationViewState.Active, version: 1, operationId: "op"}});
   await act(async () => {state.receive!({type: "snapshot", events: windowEvents([event(10)])}); state.receive!({type: "live"});});
   await flush();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="more-actions-event-10"]')!.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true})));
@@ -306,7 +306,7 @@ it("the original main editor consumes the channel placeholder and reacts to the 
 });
 
 it("the original DM editor consumes admitted people once, not an internal channel name or another own device", async () => {
-  const conversation: ConversationView = { id: "dm-placeholder", channelId: "channel-a", state: ItemState.Active,
+  const conversation: ConversationView = { id: "dm-placeholder", channelId: "channel-a", state: ConversationViewState.Active,
     participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
   state.recipients.mockResolvedValue({items:[
     {principalId:"human-a",displayName:"Me",pubkeys:["mine","my-other-device"]},
@@ -500,7 +500,7 @@ it.each(["main", "thread", "dm"])("restores the actual %s row deletion menu and 
   // Relay head pages are newest-first, unlike the chronological UI rows.
   state.history.mockResolvedValue({events:windowEvents([target,event(10)])});
   if(surface==="thread") threadMessages.splice(0,threadMessages.length,{...event(10),createdAt:10},{...target,createdAt:20});
-  await renderChannel(surface==="dm"?{conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ItemState.Active,version:1,operationId:"op"}}:{});
+  await renderChannel(surface==="dm"?{conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ConversationViewState.Active,version:1,operationId:"op"}}:{});
   await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([target,event(10)])});state.receive!({type:"live"});});
   await flush();
   expect(host.querySelector('[data-testid="more-actions-event-10"]'),host.textContent??"").not.toBeNull();
@@ -1308,7 +1308,7 @@ it("loads the original DM channel avatar through its own conversation instead of
   const avatarUrl="https://community.example/media/dm-channel-author.png",mediaPath="/api/v1/conversations/private-binding/media/author";
   state.dmAuthorProfile.mockResolvedValue({pubkey:"other",eventId:"profile",displayName:"Original author",about:null,avatarUrl,nip05Handle:null,avatarMediaPaths:{[avatarUrl]:mediaPath}});
   state.mark.mockResolvedValue({version:4});
-  await renderChannel({conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ItemState.Active,version:1,operationId:"op"}});
+  await renderChannel({conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ConversationViewState.Active,version:1,operationId:"op"}});
   await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([event(10)])});state.receive!({type:"live"});});await flush();
   expect(state.dmAuthorProfile).toHaveBeenCalledWith("private-binding","event-10");
   expect(state.authorProfile).not.toHaveBeenCalled();

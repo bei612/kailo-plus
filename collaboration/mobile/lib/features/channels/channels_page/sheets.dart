@@ -88,7 +88,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
         isSubmitting.value ||
         original != null ||
         actions == null ||
-        createHint != CreateActionKey.WORKSPACE_CREATE;
+        createHint != RoleWorkspacePageCreateActionKey.WORKSPACE_CREATE;
     final canSubmit = nameController.text.trim().isNotEmpty && !locked;
     final restoredMessage = original == null
         ? null

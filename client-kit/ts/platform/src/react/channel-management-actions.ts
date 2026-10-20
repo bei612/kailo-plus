@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActionDispatchState,
   ActionGateState,
-  LeaveActionKey,
-  UpdateActionKey,
+  DiscoverableWorkspaceLeaveActionKey,
+  DiscoverableWorkspaceUpdateActionKey,
   WorkspaceLifecycleActionKey,
   type ActionCommand,
   type WebPublishTopicRequest,
@@ -39,10 +39,10 @@ export type ChannelManagementHost = {
 
 /** BFF action hints for one Workspace channel; omitted keys mean no entry is shown. */
 export type ChannelManagementHints = {
-  updateActionKey?: UpdateActionKey;
+  updateActionKey?: DiscoverableWorkspaceUpdateActionKey;
   /** With updateActionKey: the Channel was archived by the TTL reaper and only reopen is offered. */
   canReopen: boolean;
-  leaveActionKey?: LeaveActionKey;
+  leaveActionKey?: DiscoverableWorkspaceLeaveActionKey;
   lifecycleActionKey?: WorkspaceLifecycleActionKey;
 };
 
@@ -86,8 +86,8 @@ export function useChannelManagementHints(workspaceId: string | undefined, chann
       ]);
       const row = rows.find((item) => item.id === workspaceId);
       if (!row) return { canReopen: false, lifecycleActionKey };
-      if ((row.updateActionKey !== undefined && row.updateActionKey !== UpdateActionKey.WorkspaceUpdate)
-        || (row.leaveActionKey !== undefined && row.leaveActionKey !== LeaveActionKey.WorkspaceLeave)
+      if ((row.updateActionKey !== undefined && row.updateActionKey !== DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate)
+        || (row.leaveActionKey !== undefined && row.leaveActionKey !== DiscoverableWorkspaceLeaveActionKey.WorkspaceLeave)
         || (row.canReopen !== undefined && typeof row.canReopen !== "boolean"))
         throw new TransportError("Invalid channel management hint");
       return {

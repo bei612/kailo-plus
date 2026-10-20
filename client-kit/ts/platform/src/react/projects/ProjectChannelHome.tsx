@@ -7,7 +7,7 @@
 import * as React from "react";
 import {Maximize2,Plus} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { useBffClient, useUiT } from "../context";
 import { loadChannelDirectory } from "../channel-browser/loadChannelDirectory";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -86,7 +86,7 @@ export function ProjectChannelHome({ project, projects, scopeKey, viewerPubkey, 
     channel => channel.isMember && channel.membershipState === WorkspaceMembershipState.Active,
   ) : [];
   const homeChannel = channels.find(channel => channel.channel.channelId === project.projectChannelId
-    && channel.channel.channelType === ChannelType.Stream);
+    && channel.channel.channelType === WorkspaceChannelCreateChannelType.Stream);
   const width = useThreadPanelWidth(undefined, {
     minWidthPx: SIDEBAR_WIDTH_MIN, sessionKey: PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY,
   });

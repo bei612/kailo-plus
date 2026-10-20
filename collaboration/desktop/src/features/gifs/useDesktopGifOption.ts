@@ -7,7 +7,7 @@
 // endpoints, never through the BFF and never with a provider key.
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { WebGIFItem, WebGIFSearchView } from "@client-kit/contracts";
+import type { WebGifItem, WebGifSearchView } from "@client-kit/contracts";
 import { useBffClient } from "@client-kit/platform/react/context";
 import { BffError } from "@client-kit/platform/transport";
 import type { MessageComposerToolbar } from "@client-kit/platform/react/composer/features/messages/ui/MessageComposerToolbar";
@@ -64,7 +64,7 @@ export function useDesktopGifOption(
     if (!pubkey || !advertised || !origins || origins.length === 0) return undefined;
     const scope = { expectedRelayUrl: relayUrl, expectedSignerPubkey: pubkey };
     return {
-      search: async (query: string): Promise<WebGIFSearchView> => {
+      search: async (query: string): Promise<WebGifSearchView> => {
         try {
           const page = await invokeTauri<unknown>("search_relay_gifs", {
             ...scope,
@@ -81,7 +81,7 @@ export function useDesktopGifOption(
           throw error;
         }
       },
-      onSelect: (gif: WebGIFItem) => {
+      onSelect: (gif: WebGifItem) => {
         setPendingImetaRef.current((current) => [...current, gifAttachment(gif)]);
         void invokeTauri<void>("share_relay_gif", {
           ...scope,

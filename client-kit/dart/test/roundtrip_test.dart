@@ -1000,12 +1000,6 @@ void main() {
               )
               as Map<String, dynamic>;
       final typed = ComponentReleaseApprovalReport.fromJson(original);
-      // The generated date-time consumer preserves the instant, not the
-      // optional fractional-second spelling of RFC 3339.
-      final workerBuild = original['workerBuild'] as Map<String, dynamic>;
-      workerBuild['reportedAt'] = DateTime.parse(
-        workerBuild['reportedAt'] as String,
-      ).toIso8601String();
       expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     },
   );
@@ -1265,25 +1259,11 @@ void main() {
       'voiceView': (v) => HuddleVoiceView.fromJson(v).toJson(),
       'announcementView': (v) => HuddleAnnouncementView.fromJson(v).toJson(),
     };
-    // The generated date-time consumer preserves the instant, not the
-    // optional fractional-second spelling of RFC 3339.
-    Object? instants(Object? node) => switch (node) {
-      Map<String, dynamic> map => {
-        for (final field in map.entries)
-          field.key:
-              (field.key == 'createdAt' || field.key == 'endedAt') &&
-                  field.value is String
-              ? DateTime.parse(field.value as String).toIso8601String()
-              : instants(field.value),
-      },
-      List<dynamic> list => [for (final item in list) instants(item)],
-      _ => node,
-    };
     for (final entry in codecs.entries) {
       final original = value[entry.key] as Map<String, dynamic>;
       expect(
         jsonDecode(jsonEncode(entry.value(original))),
-        equals(instants(original)),
+        equals(original),
         reason: entry.key,
       );
     }
@@ -1305,23 +1285,11 @@ void main() {
       'memoryPageBounded': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
       'memoryPageTool': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
     };
-    // joinedAt compares instants, not the fractional-second spelling.
-    Object? instants(Object? node) => switch (node) {
-      Map<String, dynamic> map => {
-        for (final field in map.entries)
-          field.key:
-              field.key == 'joinedAt' && field.value is String
-              ? DateTime.parse(field.value as String).toIso8601String()
-              : instants(field.value),
-      },
-      List<dynamic> list => [for (final item in list) instants(item)],
-      _ => node,
-    };
     for (final entry in codecs.entries) {
       final original = value[entry.key] as Map<String, dynamic>;
       expect(
-        instants(jsonDecode(jsonEncode(entry.value(original)))),
-        equals(instants(original)),
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
         reason: entry.key,
       );
     }

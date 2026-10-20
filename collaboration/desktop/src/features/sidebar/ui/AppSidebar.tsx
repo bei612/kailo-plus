@@ -6,7 +6,7 @@ import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { FeatureGate } from "@client-kit/platform/react/features";
-import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { useWorkingChannels } from "@client-kit/platform/react/agent-activity";
 import { useChannelSidebarActionDialogs } from "@client-kit/platform/react/sidebar/channel-section-dialogs";
 import {
@@ -370,7 +370,7 @@ export function AppSidebar({
               </SidebarMenuItem>
             </SidebarMenu></>}
       dialogs={<><CreateChannelDialog key={`create:${currentPrincipalId}`} open={isNewChannelOpen} onOpenChange={setNewChannelOpen} />
-        <CreateChannelDialog key={`forum:${currentPrincipalId}`} open={isNewForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
+        <CreateChannelDialog key={`forum:${currentPrincipalId}`} open={isNewForumOpen} onOpenChange={setNewForumOpen} channelKind={WorkspaceChannelCreateChannelType.Forum} />
         <ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
         lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
         onSelect={async (workspace) => {

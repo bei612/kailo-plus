@@ -2,11 +2,11 @@
 // desktop/src-tauri/src/commands/channels/fetch.rs::query_last_messages: the channel list reads
 // every channel's latest window in one request instead of one read per channel. The admitted
 // directory supplies each joined channel's native ID and type; Core re-admits every Workspace.
-import { ChannelType, WebMessageType, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WebMessageType, type DiscoverableWorkspace } from "@client-kit/contracts";
 import type { BffClient } from "../client";
 import { TransportError } from "../transport";
 
-export type WorkspaceActivity = { channelId: string; channelType: ChannelType; events: unknown };
+export type WorkspaceActivity = { channelId: string; channelType: WorkspaceChannelCreateChannelType; events: unknown };
 
 /** One batched first-page window per joined directory row, keyed by Workspace ID. A missing,
  * reordered or rebound item fails the whole read rather than showing a partial channel list. */
@@ -15,11 +15,11 @@ export async function loadWorkspaceActivity(client: BffClient,
   const out = new Map<string, WorkspaceActivity>();
   if (rows.length === 0) return out;
   for (const row of rows) {
-    if (row.channel.channelType !== ChannelType.Stream && row.channel.channelType !== ChannelType.Forum)
+    if (row.channel.channelType !== WorkspaceChannelCreateChannelType.Stream && row.channel.channelType !== WorkspaceChannelCreateChannelType.Forum)
       throw new TransportError("Invalid channel type");
   }
   const page = await client.workspaceActivity({ items: rows.map((row) => ({ workspaceId: row.id,
-    messageType: row.channel.channelType === ChannelType.Forum ? WebMessageType.ForumPost : WebMessageType.Stream })) });
+    messageType: row.channel.channelType === WorkspaceChannelCreateChannelType.Forum ? WebMessageType.ForumPost : WebMessageType.Stream })) });
   if (!page || !Array.isArray(page.items) || page.items.length !== rows.length) throw new TransportError("Invalid Workspace activity");
   page.items.forEach((item, index) => {
     const row = rows[index]!;

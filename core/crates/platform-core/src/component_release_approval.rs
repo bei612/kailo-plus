@@ -171,7 +171,7 @@ async fn approved(
     let Some((true, decisions)) = row else {
         return Err(Refusal::Denied(ReasonCode::ApprovalConsumeWindowClosed));
     };
-    let decisions: Vec<contracts::DecisionElement> =
+    let decisions: Vec<contracts::ApprovalDecisionRecord> =
         serde_json::from_value(decisions).map_err(|_| bad())?;
     for decision in decisions {
         if decision.decision != contracts::ApprovalDecision::Approve

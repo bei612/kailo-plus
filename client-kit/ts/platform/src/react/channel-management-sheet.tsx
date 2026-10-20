@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  AutomationState, LeaveActionKey, UpdateActionKey, WorkspaceLifecycleActionKey, WorkspaceMembershipState, WorkspaceVisibility,
+  AutomationState, DiscoverableWorkspaceLeaveActionKey, DiscoverableWorkspaceUpdateActionKey, WorkspaceLifecycleActionKey, WorkspaceMembershipState, WorkspaceVisibility,
   type AutomationView, type WorkspaceUpdate,
 } from "@client-kit/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -264,7 +264,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
       ...(ttlDirty ? nextTtlSeconds === null ? { clearTtl: true } : { ttlSeconds: nextTtlSeconds } : {}),
       ...(visibilityDirty ? { visibility: isPrivateDraft ? WorkspaceVisibility.Private : WorkspaceVisibility.Open } : {}),
     };
-    const result = await update.submit({ actionKey: UpdateActionKey.WorkspaceUpdate, workspaceId, workspaceUpdate });
+    const result = await update.submit({ actionKey: DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate, workspaceId, workspaceUpdate });
     if (result?.kind === "recorded" || result?.kind === "waiting") {
       setHasUserEditedChannelDraft(false);
       setIsEditDialogOpen(false);
@@ -296,7 +296,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
 
   async function handleLeave() {
     if (workspaceId === undefined) return;
-    const result = await leave.submit({ actionKey: LeaveActionKey.WorkspaceLeave, workspaceId });
+    const result = await leave.submit({ actionKey: DiscoverableWorkspaceLeaveActionKey.WorkspaceLeave, workspaceId });
     if (result?.kind === "recorded" || result?.kind === "waiting") {
       onOpenChange(false);
       managementRef.current?.onLeft?.();
@@ -304,7 +304,7 @@ export function ChannelManagementSheet({ open, onOpenChange, roster, channel, is
   }
   function handleReopen() {
     if (workspaceId === undefined) return;
-    void reopen.submit({ actionKey: UpdateActionKey.WorkspaceUpdate, workspaceId, workspaceUpdate: { reopen: true } });
+    void reopen.submit({ actionKey: DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate, workspaceId, workspaceUpdate: { reopen: true } });
   }
   async function handleLifecycle() {
     if (workspaceId === undefined || lifecycleAction === undefined) return;

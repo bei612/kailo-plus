@@ -112,7 +112,7 @@ type ComponentTaskInput struct {
 	Identity             *IdentityTarget                                 `json:"identity,omitempty"`
 	Rehome               *SecretRefRehomeTarget                          `json:"rehome,omitempty"`
 	Installation         *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
-	Release              *generated.PlanClass                            `json:"release,omitempty"`
+	Release              *generated.ComponentConformancePlan             `json:"release,omitempty"`
 	ReleaseApproval      *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
 	ApplicationBinding   *generated.ApplicationBindingTarget             `json:"applicationBinding,omitempty"`
 	ResourceProvision    *generated.ResourceProvisionTarget              `json:"resourceProvision,omitempty"`

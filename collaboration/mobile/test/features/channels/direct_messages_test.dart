@@ -15,8 +15,7 @@ import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/relay/relay.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/read_state/read_state_provider.dart';
-import 'package:client_kit/shared/contracts/contracts.dart'
-    hide SessionStatus, Locale;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';

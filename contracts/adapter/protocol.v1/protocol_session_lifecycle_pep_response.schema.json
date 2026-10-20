@@ -9,7 +9,7 @@
     "decision":{"type":"string","const":"ALLOW"},
     "protocolSessionId":{"type":"string","format":"uuid"},
     "nativeObjectRef":{"type":"string","minLength":1},
-    "requestedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "requestedMode":{"title":"ProtocolSessionMode","type":"string","enum":["VIEW","EDIT"]},
     "expiresAt":{"type":"string","format":"date-time"}
   }
 }

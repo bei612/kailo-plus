@@ -11,9 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentTrigger,
   AgentInstallationState,
-  AgentPrincipalState,
+  AgentInstallationViewAgentPrincipalState,
   ResourceState,
-  ChannelBindingStatus,
+  AgentInstallationViewChannelBindingStatus,
   AgentRuntimeProjectionState,
   ErrorClass,
   PublishRestrictionKind,
@@ -326,7 +326,7 @@ function installation(resourceId: string): AgentInstallationView {
     projection: {state:AgentRuntimeProjectionState.Active,generation:1,agentVersionAssetId:"version-a",configHash:"hash",runtimeProfileKey:"profile"},
     pinnedVersionAssetId: "version-a",
     agentPrincipalId: resourceId,
-    agentPrincipalState: AgentPrincipalState.Active,
+    agentPrincipalState: AgentInstallationViewAgentPrincipalState.Active,
     ownerPrincipalId: "human-a",
     resourceVersion: 1,
     resourceState: ResourceState.Active,
@@ -338,7 +338,7 @@ function installation(resourceId: string): AgentInstallationView {
       canRevoke: true,
     },
     channelBinding: {
-      status: ChannelBindingStatus.Active,
+      status: AgentInstallationViewChannelBindingStatus.Active,
       channelId: "relay-channel-a",
       triggers: [AgentTrigger.Mention],
     },
@@ -1015,7 +1015,7 @@ it.each(["pubkey","projection","generation","channel","trigger","principal"])("d
   if (fact === "generation") invalid.activeProjectionGeneration = 2;
   if (fact === "channel") invalid.channelBinding!.channelId = "other-channel";
   if (fact === "trigger") invalid.channelBinding!.triggers = [];
-  if (fact === "principal") invalid.agentPrincipalState = AgentPrincipalState.Disabled;
+  if (fact === "principal") invalid.agentPrincipalState = AgentInstallationViewAgentPrincipalState.Disabled;
   state.pages = [{installations:[invalid,installation("agent-b")]}];
   const host = await render(agentComposer());
   await click(host.querySelector<HTMLButtonElement>('[data-testid="message-insert-mention"]')!);

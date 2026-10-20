@@ -13,7 +13,9 @@ use axum::{
     Json,
 };
 use contracts::EvidenceKind;
-use contracts::{BindingKind, LegacySecretRefBinding, LegacySecretRefPage, ReasonCode};
+use contracts::{
+    LegacySecretRefBinding, LegacySecretRefBindingKind, LegacySecretRefPage, ReasonCode,
+};
 use nostr::Keys;
 use secret_store::{SecretRef, SecretStore};
 use serde::{Deserialize, Serialize};
@@ -124,8 +126,8 @@ pub async fn list_eligible(
             continue;
         }
         let kind = match kind.as_str() {
-            "HUMAN" => BindingKind::Human,
-            "CONTROL" => BindingKind::Control,
+            "HUMAN" => LegacySecretRefBindingKind::Human,
+            "CONTROL" => LegacySecretRefBindingKind::Control,
             _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         };
         bindings.push(LegacySecretRefBinding {

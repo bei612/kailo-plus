@@ -1,6 +1,6 @@
 import 'package:buzz/shared/read_state/read_state_format.dart';
 import 'dart:convert';
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/platform/platform_config.dart';
 import 'package:buzz/shared/platform/platform_views.dart';

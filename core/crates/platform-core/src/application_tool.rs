@@ -166,9 +166,9 @@ mod application_tool_tests {
 
     #[test]
     fn source_resources_require_exact_scope_and_sufficient_result_exposure() {
-        use contracts::ResultExposureMode::{ConsumeOnly, Export, Read};
+        use contracts::DelegationScopeParametersResultExposureMode::{ConsumeOnly, Export, Read};
         let resource = Uuid::new_v4();
-        let mut scope: contracts::ScopeElement = serde_json::from_value(json!({
+        let mut scope: contracts::DelegationScopeParameters = serde_json::from_value(json!({
             "actionKey":"data_query.query@v1","actionVersion":1,"targetType":"RESOURCE",
             "targetId":resource,"outputSchemaHash":"fixed-result-schema",
             "redactionPolicy":"PLATFORM_METADATA_ONLY","resultExposureMode":"READ"
@@ -916,13 +916,13 @@ fn exposure_permission(mode: &str) -> Result<Option<&'static str>, Refusal> {
 }
 
 fn source_scope(
-    scope: &contracts::ScopeElement,
+    scope: &contracts::DelegationScopeParameters,
     resource: Uuid,
     mode: &str,
     digest: &str,
     redaction: &str,
 ) -> bool {
-    use contracts::ResultExposureMode::*;
+    use contracts::DelegationScopeParametersResultExposureMode::*;
     scope.target_type == "RESOURCE"
         && scope.target_id.as_deref() == Some(resource.to_string().as_str())
         && scope.create_workspace_id.is_none()
@@ -2282,7 +2282,7 @@ pub(crate) async fn scopes(
     context: &InvocationContext,
     parent: &Execution,
     tool: &Tool,
-) -> Result<Vec<contracts::ScopeElement>, Refusal> {
+) -> Result<Vec<contracts::DelegationScopeParameters>, Refusal> {
     // DD-126(3): a Scope granted under an earlier definition whose consent digest
     // equals the current one is re-expressed at the current version, then checked.
     let rows:Vec<Value>=sqlx::query_scalar("select jsonb_strip_nulls(jsonb_build_object(
@@ -2320,7 +2320,7 @@ pub(crate) async fn scopes(
     .ok_or_else(denied)?;
     let mut allowed = Vec::new();
     for raw in rows {
-        let scope: contracts::ScopeElement =
+        let scope: contracts::DelegationScopeParameters =
             serde_json::from_value(raw).map_err(|_| unavailable())?;
         match crate::governance::delegation::validate_scope(
             gov,

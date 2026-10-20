@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CreateActionKey, WorkspaceVisibility } from "@client-kit/contracts";
+import { RoleWorkspacePageCreateActionKey, WorkspaceVisibility } from "@client-kit/contracts";
 import { TransportError } from "../../transport";
 import { useBffClient, useUiT } from "../context";
 import { prepareProjectCreation, resumeProjectCreation, ProjectCreationRejected, type CreateProjectInput, type ProjectCreationIntent } from "./createProject";
@@ -20,14 +20,14 @@ function readIntent(key: string): ProjectCreationIntent | null {
     || !["listed", "unlisted"].includes(value.input.projectVisibility)
     || (value.input.agent !== undefined && (!validProjectAgent(value.input.agent) || !value.agent || !uuid.test(value.agent.key)))
     || (value.input.agent === undefined && value.agent !== undefined)
-    || !eventId.test(value.owner) || value.channel?.actionKey !== CreateActionKey.WorkspaceCreate
+    || !eventId.test(value.owner) || value.channel?.actionKey !== RoleWorkspacePageCreateActionKey.WorkspaceCreate
     || !uuid.test(value.channel.idempotencyKey) || value.channel.slug !== value.channel.idempotencyKey
     || value.channel.name !== value.input.name || value.channel.workspaceVisibility !== value.input.channelVisibility
     || value.channel.workspaceChannel?.channelType !== "stream"
     || value.channel.workspaceChannel.description !== value.input.description
     || (value.channelAttempted !== undefined && typeof value.channelAttempted !== "boolean")
     || (value.workspaceId !== undefined && !uuid.test(value.workspaceId))
-    || (value.submission !== undefined && (value.submission.actionKey !== CreateActionKey.WorkspaceCreate
+    || (value.submission !== undefined && (value.submission.actionKey !== RoleWorkspacePageCreateActionKey.WorkspaceCreate
       || !uuid.test(value.submission.actionExecutionId) || !uuid.test(value.submission.operationId)))
     || [value.project, value.repository].some(step => !step || !uuid.test(step.key)
       || step.attempted !== undefined && typeof step.attempted !== "boolean"

@@ -16,15 +16,13 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-// 生成器把 `$ref` 的列表项命名为 `<字段>Element`（与 AgentDefinitionPage 等一致）：
-// OperationElement/OperationUsage 是时间线项与其用量行，PhaseElement/UsageStateElement
-// 是阶段与用量状态计数。
 use contracts::{
     ActionDispatchState, ActionGateState, BusinessOperationActionSummary, BusinessOperationPage,
-    BusinessOperationPhase, BusinessOperationSummary, MeterUsageState, OperationElement,
-    OperationUsage, OperationUsageState, PhaseElement, ReasonCode, TaskStatus, TaskView,
-    UsageBillingView, UsageCustomerState, UsageDeliveryCount, UsageEntitlementView,
-    UsageInvoiceView, UsageMeterView, UsageSectionState, UsageSettlementStatus, UsageStateElement,
+    BusinessOperationPhase, BusinessOperationPhaseCount, BusinessOperationSummary,
+    BusinessOperationView, MeterUsageState, OperationUsageCount, OperationUsageLine,
+    OperationUsageState, ReasonCode, TaskStatus, TaskView, UsageBillingView, UsageCustomerState,
+    UsageDeliveryCount, UsageEntitlementView, UsageInvoiceView, UsageMeterView, UsageSectionState,
+    UsageSettlementStatus,
 };
 use futures_util::TryStreamExt;
 use serde::Deserialize;
@@ -147,7 +145,7 @@ fn timed_terminal(phase: &BusinessOperationPhase) -> bool {
 fn usage_state(
     metered: bool,
     dispatch: &ActionDispatchState,
-    lines: &[OperationUsage],
+    lines: &[OperationUsageLine],
 ) -> OperationUsageState {
     use UsageSettlementStatus as S;
     if lines.is_empty() {
@@ -174,7 +172,7 @@ fn usage_state(
 }
 
 struct Operation {
-    view: OperationElement,
+    view: BusinessOperationView,
     seconds: Option<f64>,
 }
 
@@ -185,8 +183,8 @@ fn operation(row: OperationRow) -> Result<Operation, Response> {
         .map_err(|e| Refusal::Unavailable(format!("UsageEvent 聚合不合形状: {e}")).respond(None))?;
     let usage = usage
         .into_iter()
-        .map(|u| -> Result<OperationUsage, Response> {
-            Ok(OperationUsage {
+        .map(|u| -> Result<OperationUsageLine, Response> {
+            Ok(OperationUsageLine {
                 meter_key: u.meter_key,
                 quantity: u.quantity,
                 status: db_enum("usage_event.settlement_status", &u.status)?,
@@ -201,7 +199,7 @@ fn operation(row: OperationRow) -> Result<Operation, Response> {
         .map(|t| (t - created_at).num_milliseconds() as f64 / 1000.0)
         .filter(|s| *s >= 0.0);
     Ok(Operation {
-        view: OperationElement {
+        view: BusinessOperationView {
             operation_id: task.operation_id,
             action_execution_id: task.action_execution_id,
             action_key: task.action_key,
@@ -382,17 +380,19 @@ async fn aggregate(
     Ok(out)
 }
 
-fn phase_counts(phases: BTreeMap<String, (BusinessOperationPhase, i64)>) -> Vec<PhaseElement> {
+fn phase_counts(
+    phases: BTreeMap<String, (BusinessOperationPhase, i64)>,
+) -> Vec<BusinessOperationPhaseCount> {
     phases
         .into_values()
-        .map(|(phase, count)| PhaseElement { phase, count })
+        .map(|(phase, count)| BusinessOperationPhaseCount { phase, count })
         .collect()
 }
 
-fn usage_counts(usage: BTreeMap<String, (OperationUsageState, i64)>) -> Vec<UsageStateElement> {
+fn usage_counts(usage: BTreeMap<String, (OperationUsageState, i64)>) -> Vec<OperationUsageCount> {
     usage
         .into_values()
-        .map(|(state, count)| UsageStateElement { state, count })
+        .map(|(state, count)| OperationUsageCount { state, count })
         .collect()
 }
 
@@ -658,8 +658,8 @@ pub async fn usage_billing(
 mod tests {
     use super::*;
 
-    fn line(status: UsageSettlementStatus) -> OperationUsage {
-        OperationUsage {
+    fn line(status: UsageSettlementStatus) -> OperationUsageLine {
+        OperationUsageLine {
             meter_key: "m".into(),
             quantity: 1,
             status,
