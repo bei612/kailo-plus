@@ -45,5 +45,5 @@ release:
     - name: collaboration-relay
       digest: sha256:12484da76dc3d4909a6e50f98c208e3556de1b8311f80ab9bb73c9b4fc934524
     - name: web-client
-      digest: sha256:39d3ccafcc4c1133175c8b1c2c8406ce7cc3f5562e7c2fdc5b869c215066a7e0
+      digest: sha256:b8d90b63133620094ad56e8d0dafb959d06d5f5aede3b8d1ec12c7af3bbc523f
   gate: blocked_until_seams_closed

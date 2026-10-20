@@ -24,8 +24,8 @@ artifacts:
     inputs: [file-storage/]
     build_args: [CELLS_VERSION, DOCKER_ENTRYPOINT_SRC_DIR]
     build_facts: {GIT_REV: source_commit, BUILD_STAMP: build_time_utc}
-    source_digest: sha256:3411370a56fefc2d9b9da7db7cb46d4cfd50a52506a841a9626f9ec1fcfbd656
-    artifact_digest: sha256:4558de37bfa34ea1394634d0a2488cd0b204da87be804d92f62c2884d96445f5
+    source_digest: sha256:14065bc0ec7efeb07829da52a77a3b06b4210e3bf8e46696d9c2418d9bbba2a9
+    artifact_digest: sha256:3ede047591c75cefd98b63eee93f1e497ce8a8dc661a27265cb317e41b525248
     blocked: This clean-source candidate at 4f2ac2885a9a27395814e2efa5e00ea7da654f97 is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
