@@ -34,13 +34,16 @@ import { toast } from "sonner";
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: { root: Root; host: HTMLElement; queryClient: QueryClient } | undefined;
-afterEach(() => {
+afterEach(async () => {
   if (mounted) {
     act(() => mounted!.root.unmount());
     mounted.host.remove();
     mounted.queryClient.clear();
     mounted = undefined;
   }
+  // @tiptap/react destroys an unmounted editor on a timer, including editors a test unmounted
+  // itself; let every pending destroy run while jsdom still provides window.
+  await new Promise((resolve) => setTimeout(resolve, 20));
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
