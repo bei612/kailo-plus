@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/agent_memory_entry_view.schema.json",
   "title": "AgentMemoryEntryView",
-  "description": "NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。",
+  "description": "NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。",
   "type": "object",
   "additionalProperties": false,
   "required": ["slug", "eventId", "createdAt", "tombstone"],
@@ -10,6 +10,7 @@
     "slug": {"type": "string", "minLength": 1, "maxLength": 255},
     "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "createdAt": {"type": "integer", "minimum": 0},
-    "tombstone": {"type": "boolean"}
+    "tombstone": {"type": "boolean"},
+    "outgoingRefs": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 255}, "description": "仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]] 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。"}
   }
 }

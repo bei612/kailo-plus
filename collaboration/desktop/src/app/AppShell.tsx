@@ -182,6 +182,12 @@ export function AppShell() {
       notificationSettings: notificationSettings.settings,
       openSearchHit,
       pubkey: identityQuery.data?.pubkey,
+      joinAlerts: {
+        client: nativeSession.client,
+        tenantId: platformSession.data?.tenantId,
+        principalId: platformSession.data?.tenantPrincipalId,
+        tenantName: platformSession.data?.tenantName,
+      },
     });
   const {
     followedRootIds,

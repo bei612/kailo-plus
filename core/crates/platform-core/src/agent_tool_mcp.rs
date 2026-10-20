@@ -141,13 +141,24 @@ pub(crate) fn schema_tool(name: &str) -> Result<Tool, ErrorData> {
         // The MCP client cannot resolve repository-relative schema files.
         // Embed this exact, non-recursive contract instead of inventing a
         // parallel entry DTO or silently omitting its output shape.
-        let entry: Value = serde_json::from_str(include_str!(
+        let mut entry: Value = serde_json::from_str(include_str!(
             "../../../../contracts/api/agent_memory_entry_view.schema.json"
         ))
         .map_err(|_| denied())?;
-        let items = output
+        // DD-125(10): the reference view is HUMAN-management only. The tool
+        // result keeps its original shape, so its advertised schema does too.
+        entry
             .get_mut("properties")
-            .and_then(|properties| properties.get_mut("entries"))
+            .and_then(Value::as_object_mut)
+            .and_then(|properties| properties.remove("outgoingRefs"))
+            .ok_or_else(denied)?;
+        let properties = output
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+            .ok_or_else(denied)?;
+        properties.remove("references").ok_or_else(denied)?;
+        let items = properties
+            .get_mut("entries")
             .and_then(|entries| entries.get_mut("items"))
             .ok_or_else(denied)?;
         if items.get("$ref").and_then(Value::as_str) != Some("agent_memory_entry_view.schema.json")
@@ -189,14 +200,17 @@ mod tests {
         assert_eq!(list.input_schema["additionalProperties"], false);
         assert_eq!(list.input_schema["properties"], serde_json::json!({}));
         assert_eq!(read.input_schema["required"], serde_json::json!(["slug"]));
-        let entry: Value = serde_json::from_str(include_str!(
+        let mut entry: Value = serde_json::from_str(include_str!(
             "../../../../contracts/api/agent_memory_entry_view.schema.json"
         ))
         .unwrap();
-        assert_eq!(
-            list.output_schema.unwrap()["properties"]["entries"]["items"],
-            entry
-        );
+        // The HUMAN-only reference view never appears in the tool contract.
+        let properties = entry["properties"].as_object_mut().unwrap();
+        assert!(properties.remove("outgoingRefs").is_some());
+        let output = list.output_schema.unwrap();
+        assert_eq!(output["properties"]["entries"]["items"], entry);
+        assert!(output["properties"].get("references").is_none());
+        assert!(!serde_json::to_string(&*output).unwrap().contains("$ref"));
         assert!(schema_tool("agent.memory.core.replace").is_err());
         assert!(schema_tool("unknown").is_err());
     }

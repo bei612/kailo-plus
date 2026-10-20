@@ -247,19 +247,21 @@ pub async fn transition_membership(
         }
     }
     let updated = match req.scope {
-        MembershipScope::Tenant => sqlx::query!(
+        // DD-125(9)：转入 ACTIVE 的同一 UPDATE 记下进入时刻（重新加入覆盖），其余跃迁不动它。
+        // 取语句执行时刻而非事务起点：前面的行锁可能等待，提醒游标按该时刻排序。
+        MembershipScope::Tenant => sqlx::query_as::<_, (String, i32)>(
             "update identity.tenant_membership
-                 set state = $1, version = version + 1
+                 set state = $1, version = version + 1,
+                     activated_at = case when $1 = 'ACTIVE' then clock_timestamp() else activated_at end
                  where id = $2 and version = $3 and state = any($4)
                  returning state, version",
-            req.to_state,
-            req.membership_id,
-            req.from_version,
-            &froms
         )
+        .bind(&req.to_state)
+        .bind(req.membership_id)
+        .bind(req.from_version)
+        .bind(&froms)
         .fetch_optional(&mut *tx)
-        .await
-        .map(|o| o.map(|r| (r.state, r.version))),
+        .await,
         MembershipScope::Workspace => sqlx::query!(
             "update identity.workspace_membership
                  set state = $1, version = version + 1

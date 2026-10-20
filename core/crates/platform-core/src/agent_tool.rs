@@ -421,8 +421,18 @@ pub(crate) fn schema_hashes(name: &str) -> Result<(String, String), Refusal> {
     };
     let input: Value =
         serde_json::from_str(input).map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    let output: Value = serde_json::from_str(output)
+    let mut output: Value = serde_json::from_str(output)
         .map_err(|_| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    if name == MEMORY_LIST {
+        // DD-125(10): `references` is the HUMAN management view only. The tool
+        // contract, and the digest frozen when the native tool was bootstrapped,
+        // stay those of the original listing page.
+        output
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+            .and_then(|properties| properties.remove("references"))
+            .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    }
     Ok((
         collab_bridge::limits::canonical_digest(&input),
         collab_bridge::limits::canonical_digest(&output),
@@ -1117,6 +1127,17 @@ mod provision_tests {
         let error = Refusal::Conflict(ReasonCode::TargetStateConflict);
         let conflict = provision_decision(true, Err(error));
         assert!(matches!(conflict, Err(Refusal::Conflict(_))));
+    }
+
+    #[test]
+    fn listing_tool_digest_ignores_the_human_reference_view() {
+        // DD-125(10): the canonical digest of the listing page before the HUMAN
+        // `references` view existed; tools bootstrapped earlier keep matching.
+        let (_, output) = schema_hashes(MEMORY_LIST).unwrap();
+        assert_eq!(
+            output,
+            "e15f60048a55ae836a27a221651cfedacaee4c468efa4b9a9f6cc94fba877d5e"
+        );
     }
 
     #[test]

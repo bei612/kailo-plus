@@ -1,0 +1,129 @@
+{
+  "joinPageBaseline": {
+    "items": [],
+    "cursor": "MTc2MDk0NzE5OTAwMDAwMH4wMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDBkMDE",
+    "hasMore": false
+  },
+  "joinPageOrigin": {
+    "items": [],
+    "cursor": "",
+    "hasMore": false
+  },
+  "joinPage": {
+    "items": [
+      {
+        "principalId": "00000000-0000-4000-8000-000000000d02",
+        "displayName": "Ada Lovelace",
+        "joinedAt": "2026-10-20T08:00:00.123456Z"
+      },
+      {
+        "principalId": "00000000-0000-4000-8000-000000000d04",
+        "displayName": "Grace Hopper",
+        "joinedAt": "2026-10-20T08:00:01Z"
+      }
+    ],
+    "cursor": "MTc2MDk0NzIwMTAwMDAwMH4wMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDBkMDM",
+    "hasMore": true
+  },
+  "memoryPageComplete": {
+    "installationResourceId": "00000000-0000-4000-8000-000000000d10",
+    "workspaceId": "00000000-0000-4000-8000-000000000d11",
+    "operationId": "00000000-0000-4000-8000-000000000d12",
+    "state": "COMPLETE",
+    "entries": [
+      {
+        "slug": "mem/a",
+        "eventId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "createdAt": 1760947200,
+        "tombstone": false,
+        "outgoingRefs": [
+          "mem/old",
+          "mem/missing"
+        ]
+      },
+      {
+        "slug": "mem/c",
+        "eventId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "createdAt": 1760947201,
+        "tombstone": false,
+        "outgoingRefs": []
+      },
+      {
+        "slug": "mem/old",
+        "eventId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "createdAt": 1760947202,
+        "tombstone": true
+      }
+    ],
+    "references": {
+      "coreExists": true,
+      "coreRefs": [
+        "mem/a"
+      ],
+      "dangling": [
+        {
+          "slug": "mem/missing",
+          "referencedBy": [
+            "mem/a"
+          ]
+        },
+        {
+          "slug": "mem/old",
+          "referencedBy": [
+            "mem/a"
+          ]
+        }
+      ]
+    }
+  },
+  "memoryPageNoCore": {
+    "installationResourceId": "00000000-0000-4000-8000-000000000d13",
+    "workspaceId": "00000000-0000-4000-8000-000000000d11",
+    "operationId": "00000000-0000-4000-8000-000000000d14",
+    "state": "COMPLETE",
+    "entries": [
+      {
+        "slug": "mem/x",
+        "eventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "createdAt": 1760947203,
+        "tombstone": false,
+        "outgoingRefs": [
+          "core"
+        ]
+      }
+    ],
+    "references": {
+      "coreExists": false,
+      "coreRefs": [],
+      "dangling": [
+        {
+          "slug": "core",
+          "referencedBy": [
+            "mem/x"
+          ]
+        }
+      ]
+    }
+  },
+  "memoryPageBounded": {
+    "installationResourceId": "00000000-0000-4000-8000-000000000d10",
+    "workspaceId": "00000000-0000-4000-8000-000000000d11",
+    "operationId": "00000000-0000-4000-8000-000000000d15",
+    "state": "BOUND_EXCEEDED",
+    "entries": []
+  },
+  "memoryPageTool": {
+    "installationResourceId": "00000000-0000-4000-8000-000000000d10",
+    "workspaceId": "00000000-0000-4000-8000-000000000d11",
+    "operationId": "00000000-0000-4000-8000-000000000d16",
+    "state": "COMPLETE",
+    "entries": [
+      {
+        "slug": "mem/a",
+        "eventId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "createdAt": 1760947200,
+        "tombstone": false
+      }
+    ]
+  }
+}

@@ -6,6 +6,24 @@ import type { UseEmojiAutocompleteResult } from "@/features/messages/lib/useEmoj
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
 import type { UseRichTextEditorResult } from "@/features/messages/lib/useRichTextEditor";
 import type { UseDraftsResult } from "@/features/messages/lib/useDrafts";
+import type {
+  NonMemberInvitePrincipal,
+  NonMemberInviteResult,
+} from "@client-kit/platform/react/non-member-mentions/logic";
+
+/** DD-125(8): the Workspace channel's non-member mention flow (omitted elsewhere). */
+export type NonMemberMentionOptions = {
+  /** ACTIVE member keys of this Workspace; null while unresolved (never judged then). */
+  memberPubkeys: ReadonlySet<string> | null;
+  /** Agents follow their own admission chain and are never prompted for. */
+  isAgentPubkey: (pubkey: string) => boolean;
+  getDisplayName: (pubkey: string) => string | undefined;
+  /** The Principals behind the keys and whether the viewer may add every one of them. */
+  prepare: (pubkeys: readonly string[]) => Promise<{ principals: NonMemberInvitePrincipal[]; canInvite: boolean }>;
+  invite: (principals: readonly NonMemberInvitePrincipal[], signal: AbortSignal) => Promise<NonMemberInviteResult>;
+  /** Refresh the roster once the invited memberships are ACTIVE. */
+  onInvited?: () => void;
+};
 
 export type UseMentionSendFlowOptions = {
   /** Visit-bound accessor reading shared source-key intent, even after exit. */
@@ -41,4 +59,5 @@ export type UseMentionSendFlowOptions = {
   setSpoileredAttachmentUrls?: React.Dispatch<
     React.SetStateAction<Set<string>>
   >;
+  nonMemberMentions?: NonMemberMentionOptions;
 };

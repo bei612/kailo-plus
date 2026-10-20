@@ -11,15 +11,20 @@ import {
   buildOutgoingMessage,
   type ImetaMedia,
 } from "@/features/messages/lib/imetaMediaMarkdown";
+import { partitionNonMemberMentions } from "@client-kit/platform/react/non-member-mentions/logic";
+import { useNonMemberInvite } from "@client-kit/platform/react/non-member-mentions/useNonMemberInvite";
+import { truncateNpub } from "@/shared/lib/pubkey";
 import { useActivePreparedLinkPreviews } from "./useActivePreparedLinkPreviews";
 import {
   formatMessageSendError,
   relayPublishFailureText,
   getErrorMessage,
   type PendingMentionSend,
+  type PendingNonMemberMentionSend,
   resolvePreviewTags,
   type SendMessageWithMentionFlowInput,
   uniqueNormalizedPubkeys,
+  withoutInvitingRecipients,
 } from "./useMentionSendFlow.helpers";
 import type { UseMentionSendFlowOptions } from "./useMentionSendFlow.types";
 import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
@@ -42,8 +47,15 @@ export function useMentionSendFlow({
   clearQueuedAttachments,
   restoreQueuedAttachments,
   setSpoileredAttachmentUrls,
+  nonMemberMentions,
 }: UseMentionSendFlowOptions) {
   const [isMentionSendPending, setIsMentionSendPending] = React.useState(false);
+  // DD-125(8) original non-member prompt: the held send and its error.
+  const [pendingNonMemberSend, setPendingNonMemberSend] =
+    React.useState<PendingNonMemberMentionSend | null>(null);
+  const [nonMemberPromptError, setNonMemberPromptError] = React.useState<string | null>(null);
+  const nonMemberMentionsRef = React.useRef(nonMemberMentions);
+  nonMemberMentionsRef.current = nonMemberMentions;
   const [confirmedSendRevision, setConfirmedSendRevision] = React.useState(0);
   // Relay 没有接受发送时留在 composer 上的确定状态（被拒、限流、未发出、结果
   // 不明）。一闪而过的 toast 在用户离开窗口时就等于没有提示，常驻 toast 又会
@@ -376,16 +388,16 @@ export function useMentionSendFlow({
           getComposerRevision() !== composerRevision
         )
           return;
-        sendPromoted = true;
-        await completeSend({
+        const mentionPubkeys = uniqueNormalizedPubkeys(
+          [...mentions.extractMentionPubkeys(trimmed), ...addressedAgentPubkeys],
+        );
+        const draft: PendingMentionSend = {
           sourceOwner,
           composerRevision,
           capturedChannelId,
           capturedThreadContext,
           trimmed,
-          mentionPubkeys: uniqueNormalizedPubkeys(
-            [...mentions.extractMentionPubkeys(trimmed), ...addressedAgentPubkeys],
-          ),
+          mentionPubkeys,
           verifyMentionRecipients,
           outgoingTags: linkPreviewTags,
           preparedLinkPreviews,
@@ -396,7 +408,44 @@ export function useMentionSendFlow({
           sentDraftKey,
           recoveryDraftKey,
           savedMentionRefs: mentions.getDraftMentionRefs(trimmed).slice(),
-        });
+        };
+        // DD-125(8): in a Workspace channel with a resolved roster, people who are not its
+        // ACTIVE members hold the send for the original prompt. DMs and Agents never do.
+        const nonMember = nonMemberMentionsRef.current;
+        const nonMemberPubkeys = nonMember
+          ? partitionNonMemberMentions({
+              mentionPubkeys,
+              memberPubkeys: nonMember.memberPubkeys,
+              isDm: false,
+              excludedPubkeys: [
+                ...addressedAgentPubkeys,
+                ...mentionPubkeys.filter(nonMember.isAgentPubkey),
+              ],
+            }).nonMembers
+          : [];
+        if (nonMember && nonMemberPubkeys.length > 0) {
+          const { principals, canInvite } = await nonMember.prepare(nonMemberPubkeys);
+          if (
+            preparedLinkPreviews?.signal.aborted ||
+            !isMountedRef.current ||
+            sourceOwnerRef.current !== sourceOwner ||
+            getComposerRevision() !== composerRevision
+          )
+            return;
+          setNonMemberPromptError(null);
+          setPendingNonMemberSend({
+            ...draft,
+            nonMemberPubkeys,
+            principals,
+            canInvite,
+            names: nonMemberPubkeys.map(
+              (pubkey) => nonMember.getDisplayName(pubkey) ?? truncateNpub(pubkey),
+            ),
+          });
+          return;
+        }
+        sendPromoted = true;
+        await completeSend(draft);
       } catch (error) {
         toast.error(
           getErrorMessage(error, "Could not prepare mentions. Please retry."),
@@ -423,6 +472,48 @@ export function useMentionSendFlow({
       sourceOwner,
     ],
   );
+  const invitation = useNonMemberInvite<PendingNonMemberMentionSend>({
+    draft: pendingNonMemberSend,
+    canInvite: pendingNonMemberSend?.canInvite ?? false,
+    run: React.useCallback(
+      (draft: PendingNonMemberMentionSend, signal: AbortSignal) =>
+        nonMemberMentionsRef.current
+          ? nonMemberMentionsRef.current.invite(draft.principals, signal)
+          : Promise.resolve({ status: "cancelled" as const }),
+      [],
+    ),
+    // Publish with every mentioned person in `p` only once their memberships are ACTIVE.
+    onActive: React.useCallback(
+      async (draft: PendingNonMemberMentionSend, signal: AbortSignal) => {
+        if (signal.aborted || sourceOwnerRef.current !== draft.sourceOwner) return;
+        setPendingNonMemberSend(null);
+        nonMemberMentionsRef.current?.onInvited?.();
+        await completeSend(draft);
+      },
+      [completeSend],
+    ),
+    setError: setNonMemberPromptError,
+  });
+  // A different visit (destination or draft) supersedes the held send; the draft stays.
+  React.useEffect(() => {
+    if (pendingNonMemberSend && pendingNonMemberSend.sourceOwner !== sourceOwner) {
+      invitation.cancel();
+      setPendingNonMemberSend(null);
+      setNonMemberPromptError(null);
+    }
+  }, [sourceOwner, pendingNonMemberSend, invitation.cancel]);
+  const handleSendWithoutInviting = React.useCallback(() => {
+    if (!pendingNonMemberSend) return;
+    invitation.cancel();
+    setPendingNonMemberSend(null);
+    setNonMemberPromptError(null);
+    void completeSend(withoutInvitingRecipients(pendingNonMemberSend));
+  }, [completeSend, pendingNonMemberSend, invitation.cancel]);
+  const dismissNonMemberPrompt = React.useCallback(() => {
+    invitation.cancel();
+    setPendingNonMemberSend(null);
+    setNonMemberPromptError(null);
+  }, [invitation.cancel]);
   const visibleSendOutcome =
     sendOutcome && sendOutcome.draftKey === effectiveDraftKey
       ? { text: sendOutcome.text, unknown: sendOutcome.unknown, pending: sendOutcome.pending }
@@ -430,7 +521,17 @@ export function useMentionSendFlow({
   const clearSendOutcome = React.useCallback(() => setSendOutcome(null), []);
   return {
     confirmedSendRevision,
-    isPreparingMentionSend: isMentionSendPending,
+    isPreparingMentionSend: isMentionSendPending || invitation.isPending,
+    nonMemberPromptProps: {
+      canInvite: pendingNonMemberSend?.canInvite ?? false,
+      error: nonMemberPromptError,
+      isInvitePending: invitation.isPending || isMentionSendPending,
+      names: pendingNonMemberSend?.names ?? [],
+      onDismiss: dismissNonMemberPrompt,
+      onDoNothing: handleSendWithoutInviting,
+      onInvite: invitation.invite,
+      open: pendingNonMemberSend !== null,
+    },
     sendMessageWithMentionFlow,
     sendOutcome: visibleSendOutcome,
     clearSendOutcome,

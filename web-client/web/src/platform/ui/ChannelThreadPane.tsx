@@ -19,8 +19,10 @@ import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
 import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys, ownedAgentPubkeys }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, nonMemberMentionWorkspaceId, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys, ownedAgentPubkeys }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
+  /** DD-125(8): set when `members` is the resolved Workspace roster; replies may mention people outside it. */
+  nonMemberMentionWorkspaceId?: string;
   /** The channel's admitted Agent identities; their messages use the original squircle avatar. */
   agentPubkeys?: ReadonlySet<string>;
   /** Installations the viewer owns in this channel: their replies offer the original Send to channel. */
@@ -281,6 +283,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       onEditLastOwnMessage={handleEditLastOwnThreadMessage}
       onConfirmed={editTarget ? () => onEditConfirmed?.(editTarget) : undefined}
       mentionPeople={mentionPeopleFromMembers(members)}
+      nonMemberMentionWorkspaceId={conversation || editTarget ? undefined : nonMemberMentionWorkspaceId}
       draftKey={editTarget ? `edit:${workspaceId}:${editTarget.id}` : restoredDraft?.replyId === replyId ? restoredDraft.key : `thread:${workspaceId}:${rootId}:${replyId}`}
       autoSendDraftKey={autoSendDraftKey} onAutoSendConsumed={onAutoSendConsumed}
       draftChannelId={restoredDraft?.replyId === replyId ? restoredDraft.scope : workspaceId} disabled={composer.disabled || Boolean(editTarget && !canSaveEdit)}
@@ -290,14 +293,15 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
       replyTarget={editTarget ? null : composer.replyTarget} onCancelReply={editTarget ? undefined : composer.onCancelReply}
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}
       linkPreviewTarget={conversation ? { conversationId: conversation.id } : { workspaceId }}
-      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys, linkPreviews) => {
+      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys, linkPreviews, referenceMentionPubkeys) => {
         if (!canReply || (editTarget && !canSaveEdit)) throw new Error("Thread admission is unavailable");
         const receipt = await (conversation
           ? (linkPreviews && !editTarget
             ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, replyId, mentionPubkeys, linkPreviews)
             : publishConversationMessage(conversation.id, content, attachments, idempotencyKey, editTarget?.id, editTarget ? undefined : replyId, mentionPubkeys))
           : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-            editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys, ...linkPreviews}));
+            editTarget ? {editEventId: editTarget.id, mentionPubkeys} : {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys,
+              ...(referenceMentionPubkeys?.length ? {referenceMentionPubkeys} : {}), ...linkPreviews}));
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}

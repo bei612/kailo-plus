@@ -488,6 +488,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/role-workspaces",
             get(crate::platform_views::list_role_workspaces),
         )
+        // DD-125(9)：新成员加入提醒，Tenant manage 持有人本人的只读投影
+        .exposed_route(
+            "/api/v1/tenant-member-joins",
+            get(crate::tenant_member_joins::list),
+        )
         .exposed_route(
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),

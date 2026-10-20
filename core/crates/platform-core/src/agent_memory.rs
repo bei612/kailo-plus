@@ -10,7 +10,7 @@ use axum::{
 use collab_bridge::{
     bridge::{Custody, IdentityClient},
     limits::fetch_nip11,
-    memory::{CoreMemory, MemoryError, ReadLimits, Reader, Snapshot},
+    memory::{CoreMemory, EntryHead, ListingRefs, MemoryError, ReadLimits, Reader, Snapshot},
 };
 use contracts::{EvidenceKind, ReasonCode};
 use secret_store::{PlatformKey, SecretRef};
@@ -18,6 +18,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgConnection};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use crate::{governance::Refusal, service_api::ServiceState};
@@ -280,7 +281,8 @@ async fn binding(
 enum Observed {
     Snapshot(Snapshot),
     Core(CoreMemory),
-    Entries(Vec<collab_bridge::memory::EntryHead>, usize),
+    /// The listing refs exist only for the HUMAN management read (DD-125(10)).
+    Entries(Vec<EntryHead>, usize, Option<ListingRefs>),
     Entry(Option<collab_bridge::memory::MemoryEntry>),
 }
 enum ObserveError {
@@ -294,6 +296,7 @@ enum ReadRequest<'a> {
     CoreEvent(&'a str),
     CoreManagement,
     Entries,
+    EntriesWithRefs,
     Entry(&'a str),
 }
 
@@ -371,7 +374,12 @@ async fn observe(
                 ReadRequest::Entries => reader
                     .list_entries(&state.http, now)
                     .await
-                    .map(|(entries, bytes)| Observed::Entries(entries, bytes))
+                    .map(|(entries, bytes)| Observed::Entries(entries, bytes, None))
+                    .map_err(ObserveError::Native),
+                ReadRequest::EntriesWithRefs => reader
+                    .list_entries_with_refs(&state.http, now)
+                    .await
+                    .map(|l| Observed::Entries(l.entries, l.plaintext_bytes, Some(l.refs)))
                     .map_err(ObserveError::Native),
                 ReadRequest::Entry(slug) => reader
                     .read_entry(&state.http, slug, now)
@@ -485,7 +493,14 @@ pub async fn entries(
     headers: HeaderMap,
     Path(installation): Path<Uuid>,
 ) -> Response {
-    management_read(&state, &headers, installation, ReadRequest::Entries, "").await
+    management_read(
+        &state,
+        &headers,
+        installation,
+        ReadRequest::EntriesWithRefs,
+        "",
+    )
+    .await
 }
 
 pub async fn entry(
@@ -623,7 +638,8 @@ async fn management_result(
     request: ReadRequest<'_>,
     slug: &str,
 ) -> Result<Value, Refusal> {
-    let listing = matches!(request, ReadRequest::Entries);
+    // HUMAN listing always carries the reference view (DD-125(10)).
+    let listing = matches!(request, ReadRequest::EntriesWithRefs);
     let action = if listing {
         "agent.memory.entry.list"
     } else if slug == "core" {
@@ -698,6 +714,7 @@ async fn management_result(
         plaintext_bytes,
         outcome,
         evidence,
+        reference_digest,
     } = observed_result(
         installation,
         binding.workspace_id,
@@ -712,6 +729,9 @@ async fn management_result(
     )?;
     // Do not expose already decrypted data after a fresh permission failure.
     read_permission(state, ctx, &binding, &definition).await?;
+    // DD-125(10): a COMPLETE listing audits the slug digests that took part in
+    // reference extraction; the frozen admission parameters stay unchanged.
+    let audited = reference_digest.as_deref().unwrap_or(&digest);
     crate::audit::append(
         &mut tx,
         crate::audit::AuditEntry {
@@ -728,7 +748,7 @@ async fn management_result(
             component_type_key: "agent.installation",
             target_type: Some("RESOURCE"),
             target_id: Some(installation),
-            parameter_hash: &digest,
+            parameter_hash: audited,
             decision: "ALLOW",
             result_code: outcome,
             result_exposure: "NONE",
@@ -815,7 +835,7 @@ async fn management_result(
             component_type_key: "agent.installation",
             target_type: Some("RESOURCE"),
             target_id: Some(installation),
-            parameter_hash: &digest,
+            parameter_hash: audited,
             decision: "ALLOW",
             result_code: outcome,
             result_exposure: if plaintext_bytes.is_some() {
@@ -1111,6 +1131,7 @@ pub(crate) async fn execute_tool_read(
         plaintext_bytes,
         outcome,
         evidence,
+        ..
     } = observed_result(
         ae.target_id,
         context.workspace_id,
@@ -1332,8 +1353,11 @@ fn tool_result_shape(
         "agent.memory.entry.list" => {
             let page: contracts::AgentMemoryEntryPage =
                 serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+            // The reference view is HUMAN-management only (DD-125(10)); the
+            // Agent tool listing keeps its original shape.
             if serde_json::to_value(&page).map_err(|_| invalid())? != *value
                 || page.state != contracts::AgentMemoryEntryPageState::Complete
+                || page.references.is_some()
             {
                 return Err(invalid());
             }
@@ -1343,6 +1367,7 @@ fn tool_result_shape(
                 entry.slug == "core"
                     || collab_bridge::memory::validate_slug(&entry.slug).is_err()
                     || !head(&entry.event_id)
+                    || entry.outgoing_refs.is_some()
                     || entry.created_at < 0
                     || !slugs.insert(&entry.slug)
                     || !events.insert(&entry.event_id)
@@ -1482,6 +1507,64 @@ struct ReadResult {
     plaintext_bytes: Option<usize>,
     outcome: &'static str,
     evidence: Vec<crate::audit::Evidence>,
+    /// DD-125(10): audit parameter digest of the heads that took part in
+    /// reference extraction; only a COMPLETE HUMAN listing has one.
+    reference_digest: Option<String>,
+}
+
+/// DD-68: the ordered digest of the participating slug digests. Neither slug
+/// nor body is stored; no participant yields the digest of the empty slug.
+fn reference_digest(participants: &[&str]) -> String {
+    let mut digests: Vec<String> = participants
+        .iter()
+        .map(|slug| hex::encode(Sha256::digest(slug.as_bytes())))
+        .collect();
+    digests.sort_unstable();
+    hex::encode(Sha256::digest(digests.concat().as_bytes()))
+}
+
+/// DD-125(10), SF-BUZ-58(3): the original `buildMemoryGraph` inputs without
+/// bodies. A target is dangling unless it is a listed non-tombstone memory or
+/// the existing core; referrers are deduplicated and both levels sorted.
+fn reference_view(refs: &ListingRefs) -> Value {
+    let core_refs: &[String] = match &refs.core {
+        Some((_, found)) => found,
+        None => &[],
+    };
+    let core_exists = refs.core.is_some();
+    let known = |s: &str| refs.outgoing.contains_key(s) || (core_exists && s == "core");
+    let mut dangling = BTreeMap::new();
+    record_dangling(&mut dangling, known, "core", core_refs);
+    for (slug, found) in &refs.outgoing {
+        record_dangling(&mut dangling, known, slug, found);
+    }
+    let dangling: Vec<Value> = dangling
+        .into_iter()
+        .map(|(slug, by)| json!({"slug": slug, "referencedBy": by}))
+        .collect();
+    json!({"coreExists": core_exists, "coreRefs": core_refs, "dangling": dangling})
+}
+
+fn record_dangling<'a>(
+    dangling: &mut BTreeMap<&'a str, BTreeSet<&'a str>>,
+    known: impl Fn(&str) -> bool,
+    from: &'a str,
+    targets: &'a [String],
+) {
+    for target in targets.iter().filter(|target| !known(target.as_str())) {
+        dangling.entry(target.as_str()).or_default().insert(from);
+    }
+}
+
+/// The core head was decrypted and scanned in the same read, so it is
+/// evidence of this listing too (DD-125(10)).
+fn push_core_evidence(refs: &ListingRefs, evidence: &mut Vec<crate::audit::Evidence>) {
+    if let Some((head, _)) = &refs.core {
+        if !evidence.iter().any(|e| e.value == head.event_id) {
+            let core = crate::audit::Evidence::new(EvidenceKind::BuzzEventId, &head.event_id);
+            evidence.push(core);
+        }
+    }
 }
 
 fn observed_result(
@@ -1497,38 +1580,52 @@ fn observed_result(
         "operationId": operation});
     let outcome;
     let plaintext_bytes;
+    let mut extracted = None;
     if listing {
-        let (status, entries) = match observed {
-            Ok(Observed::Entries(entries, bytes)) => {
+        let (status, entries, references) = match observed {
+            Ok(Observed::Entries(entries, bytes, refs)) => {
                 plaintext_bytes = Some(bytes);
-                (
-                    "COMPLETE",
-                    entries
-                        .into_iter()
-                        .map(|entry| {
-                            evidence.push(crate::audit::Evidence::new(
-                                EvidenceKind::BuzzEventId,
-                                &entry.head.event_id,
-                            ));
-                            json!({"slug":entry.slug,"eventId":entry.head.event_id,
-                    "createdAt":entry.head.created_at,"tombstone":entry.tombstone})
-                        })
-                        .collect::<Vec<_>>(),
-                )
+                let entries = entries
+                    .into_iter()
+                    .map(|entry| {
+                        evidence.push(crate::audit::Evidence::new(
+                            EvidenceKind::BuzzEventId,
+                            &entry.head.event_id,
+                        ));
+                        let mut row = json!({"slug":entry.slug,"eventId":entry.head.event_id,
+                            "createdAt":entry.head.created_at,"tombstone":entry.tombstone});
+                        // Tombstones have no body and therefore no outgoing refs.
+                        let found = refs.as_ref().and_then(|r| r.outgoing.get(&entry.slug));
+                        if let Some(found) = found {
+                            row["outgoingRefs"] = json!(found);
+                        }
+                        row
+                    })
+                    .collect::<Vec<_>>();
+                let references = refs.map(|refs| {
+                    push_core_evidence(&refs, &mut evidence);
+                    extracted = Some(reference_digest(&refs.participants()));
+                    reference_view(&refs)
+                });
+                ("COMPLETE", entries, references)
             }
+            // BOUND_EXCEEDED/UNKNOWN never carry references (V-SCN-169).
             Err(ObserveError::Native(MemoryError::BoundExceeded)) => {
                 plaintext_bytes = None;
-                ("BOUND_EXCEEDED", Vec::new())
+                ("BOUND_EXCEEDED", Vec::new(), None)
             }
             Err(_) => {
                 plaintext_bytes = None;
-                ("UNKNOWN", Vec::new())
+                ("UNKNOWN", Vec::new(), None)
             }
             Ok(_) => return Err(unavailable("Memory listing 原生结果不符")),
         };
         outcome = status;
         result["state"] = json!(status);
         result["entries"] = json!(entries);
+        if let Some(references) = references {
+            result["references"] = references;
+        }
         // Decode the real response through the generated contract, including
         // state enums; no manually maintained cross-language response type.
         result = serde_json::to_value(
@@ -1590,6 +1687,7 @@ fn observed_result(
         plaintext_bytes,
         outcome,
         evidence,
+        reference_digest: extracted,
     })
 }
 
@@ -1762,6 +1860,151 @@ async fn record(
 
 fn unavailable(message: &str) -> Refusal {
     Refusal::Unavailable(message.into())
+}
+
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+    use collab_bridge::memory::Head;
+
+    fn head(n: u8) -> Head {
+        Head {
+            event_id: format!("{n:02x}").repeat(32),
+            created_at: u64::from(n),
+        }
+    }
+
+    fn entry(slug: &str, n: u8, tombstone: bool) -> EntryHead {
+        EntryHead {
+            slug: slug.to_owned(),
+            head: head(n),
+            tombstone,
+        }
+    }
+
+    fn strings(found: Vec<&str>) -> Vec<String> {
+        found.into_iter().map(String::from).collect()
+    }
+
+    /// The core head is always `head(1)`; listed memories use other heads.
+    fn listing(core: Option<Vec<&str>>, outgoing: Vec<(&str, Vec<&str>)>) -> ListingRefs {
+        let mut refs = ListingRefs {
+            outgoing: BTreeMap::new(),
+            core: core.map(|found| (head(1), strings(found))),
+        };
+        for (slug, found) in outgoing {
+            refs.outgoing.insert(slug.to_owned(), strings(found));
+        }
+        refs
+    }
+
+    fn sha(text: &str) -> String {
+        hex::encode(Sha256::digest(text.as_bytes()))
+    }
+
+    #[test]
+    fn dangling_targets_include_missing_and_tombstoned_slugs_with_sorted_referrers() {
+        // mem/old is a tombstone, so it has no body and is absent from `outgoing`.
+        let refs = listing(
+            Some(vec!["mem/b", "mem/a"]),
+            vec![
+                ("mem/a", vec!["mem/old", "mem/missing", "core"]),
+                ("mem/b", vec!["mem/a"]),
+                ("mem/c", vec!["mem/missing"]),
+            ],
+        );
+        let view = reference_view(&refs);
+        assert_eq!(view["coreExists"], true);
+        assert_eq!(view["coreRefs"], json!(["mem/b", "mem/a"]));
+        assert_eq!(
+            view["dangling"],
+            json!([
+                {"slug": "mem/missing", "referencedBy": ["mem/a", "mem/c"]},
+                {"slug": "mem/old", "referencedBy": ["mem/a"]}
+            ])
+        );
+    }
+
+    #[test]
+    fn without_core_a_core_reference_is_dangling() {
+        let x = ("mem/x", vec!["core", "mem/y"]);
+        let refs = listing(None, vec![x, ("mem/y", vec![])]);
+        let view = reference_view(&refs);
+        assert_eq!(view["coreExists"], false);
+        assert_eq!(view["coreRefs"], json!([]));
+        assert_eq!(
+            view["dangling"],
+            json!([{"slug": "core", "referencedBy": ["mem/x"]}])
+        );
+        let view = reference_view(&listing(None, Vec::new()));
+        assert_eq!(view["dangling"], json!([]));
+    }
+
+    #[test]
+    fn audit_digest_is_the_ordered_digest_of_participating_slug_digests() {
+        // No participant keeps the existing digest of the empty slug.
+        assert_eq!(reference_digest(&[]), sha(""));
+        let mut digests = [sha("core"), sha("mem/a")];
+        digests.sort_unstable();
+        let expected = sha(&digests.concat());
+        assert_eq!(reference_digest(&["mem/a", "core"]), expected);
+        assert_eq!(reference_digest(&["core", "mem/a"]), expected);
+        assert_ne!(reference_digest(&["core"]), expected);
+        assert!(!expected.contains("mem"));
+    }
+
+    #[test]
+    fn complete_human_listing_adds_refs_core_evidence_and_digest() {
+        let entries = vec![entry("mem/a", 2, false), entry("mem/old", 3, true)];
+        let refs = listing(Some(vec!["mem/a"]), vec![("mem/a", vec!["mem/old"])]);
+        let observed = Ok(Observed::Entries(entries, 10, Some(refs)));
+        let (id, ws, op) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let read = observed_result(id, ws, op, true, "", observed, Vec::new()).unwrap();
+        assert_eq!(read.outcome, "COMPLETE");
+        assert_eq!(read.plaintext_bytes, Some(10));
+        let rows = &read.value["entries"];
+        assert_eq!(rows[0]["outgoingRefs"], json!(["mem/old"]));
+        assert!(rows[1].get("outgoingRefs").is_none());
+        let references = &read.value["references"];
+        assert_eq!(references["coreRefs"], json!(["mem/a"]));
+        assert_eq!(
+            references["dangling"],
+            json!([{"slug": "mem/old", "referencedBy": ["mem/a"]}])
+        );
+        // Listed heads first, then the scanned core head.
+        let heads: Vec<&str> = read.evidence.iter().map(|e| e.value.as_str()).collect();
+        let expected = [head(2).event_id, head(3).event_id, head(1).event_id];
+        assert_eq!(heads, expected);
+        let digest = reference_digest(&["core", "mem/a"]);
+        assert_eq!(read.reference_digest, Some(digest));
+        // The Agent tool rejects a listing that carries the HUMAN-only view.
+        let value = &read.value;
+        assert!(tool_result_shape("agent.memory.entry.list", value, 64).is_err());
+    }
+
+    #[test]
+    fn tool_listing_and_bounded_or_unknown_listings_carry_no_references() {
+        let entries = vec![entry("mem/a", 2, false)];
+        let observed = Ok(Observed::Entries(entries, 10, None));
+        let (id, ws, op) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let read = observed_result(id, ws, op, true, "", observed, Vec::new()).unwrap();
+        assert!(read.value.get("references").is_none());
+        assert!(read.value["entries"][0].get("outgoingRefs").is_none());
+        assert!(read.reference_digest.is_none());
+        let value = &read.value;
+        assert!(tool_result_shape("agent.memory.entry.list", value, 64).is_ok());
+        for (error, state) in [
+            (MemoryError::BoundExceeded, "BOUND_EXCEEDED"),
+            (MemoryError::Unavailable, "UNKNOWN"),
+        ] {
+            let observed = Err(ObserveError::Native(error));
+            let read = observed_result(id, ws, op, true, "", observed, Vec::new()).unwrap();
+            assert_eq!(read.value["state"], state);
+            assert_eq!(read.value["entries"], json!([]));
+            assert!(read.value.get("references").is_none());
+            assert!(read.reference_digest.is_none() && read.plaintext_bytes.is_none());
+        }
+    }
 }
 
 #[cfg(test)]

@@ -18,5 +18,7 @@ export function mapMentionCandidateToSuggestion(opts: {
       profiles?.[normalizePubkey(candidate.pubkey)]?.avatarUrl ??
       null,
     role: candidate.role === "admin" ? "admin" : null,
+    // Original mapping: a person outside the channel is marked "not in channel".
+    ...(candidate.isMember === false && candidate.isAgent !== true ? { notInChannel: true } : {}),
   };
 }

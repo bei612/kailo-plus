@@ -4,15 +4,18 @@ import {
   ActionDispatchState, ActionGateState, AgentInstallationState, ErrorClass, ExpectedHeadState,
   PlatformSessionAccessMode, ReasonCode, ResourceState, TaskStatus,
   type ActionCommand, type ActionSubmission, type AgentInstallationView,
-  type AgentMemoryReadView, type AgentMemoryEntryPage, type AgentMemoryEntryView,
+  type AgentMemoryReadView, type AgentMemoryEntryPage,
   type AgentMemoryWriteInput, type TaskView,
 } from "@client-kit/contracts";
-import { useRef, useState } from "react";
+import { AlertTriangle } from "lucide-react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
+import { platformPluralForm } from "../i18n";
 import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Badge, Button, Notice } from "./ui";
 import { useLoad } from "./use-load";
+import { orderMemoryEntries, type MemoryListEntry } from "./memory-order";
 
 const eventId = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 const nonnegativeInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -38,15 +41,32 @@ export function validMemoryRead(value: AgentMemoryReadView, installation: string
   }
 }
 
+// Original `validate_slug`: a `[[slug]]` ref names `core` or a cold `mem/...` slug.
+const refSlug = (value: unknown): value is string => typeof value === "string" && (value === "core" || coldSlug(value));
+const refList = (value: unknown, unique = true): value is string[] => Array.isArray(value) && value.every(refSlug)
+  && (!unique || new Set(value).size === value.length);
+
+// DD-125(10): refs exist only for a COMPLETE listing; core's refs only when core exists.
+function validMemoryReferences(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const { coreExists, coreRefs, dangling } = value as Partial<NonNullable<AgentMemoryEntryPage["references"]>>;
+  return typeof coreExists === "boolean" && refList(coreRefs) && (coreExists || coreRefs.length === 0)
+    && Array.isArray(dangling) && new Set(dangling.map((ref) => ref?.slug)).size === dangling.length
+    && dangling.every((ref) => !!ref && refSlug(ref.slug) && refList(ref.referencedBy) && ref.referencedBy.length > 0);
+}
+
 export function validMemoryEntries(value: AgentMemoryEntryPage, installation: string, workspace: string): boolean {
   if (!value || value.installationResourceId !== installation || value.workspaceId !== workspace
     || typeof value.operationId !== "string" || !value.operationId || !Array.isArray(value.entries)) return false;
-  if (value.state === "UNKNOWN" || value.state === "BOUND_EXCEEDED") return value.entries.length === 0;
+  if (value.state === "UNKNOWN" || value.state === "BOUND_EXCEEDED") return value.entries.length === 0 && value.references === undefined;
   if (value.state !== "COMPLETE") return false;
+  if (value.references !== undefined && !validMemoryReferences(value.references)) return false;
   const slugs = new Set<string>();
   return value.entries.every((entry) => {
     if (!entry || typeof entry.slug !== "string" || !coldSlug(entry.slug) || slugs.has(entry.slug)
       || !eventId(entry.eventId) || !timestamp(entry.createdAt) || typeof entry.tombstone !== "boolean") return false;
+    // Tombstones take no part in ref extraction; a live entry's refs are a unique slug list.
+    if (entry.outgoingRefs !== undefined && (!refList(entry.outgoingRefs) || (entry.tombstone && entry.outgoingRefs.length > 0))) return false;
     slugs.add(entry.slug);
     return true;
   });
@@ -119,6 +139,11 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
   const requestBlocked = !taskRows || pending.length > 0;
   const [state, reload] = useLoad(`memory-entries:${workspaceId}:${resourceId}`, () => client.agentMemoryEntries(resourceId));
   const page = state.status === "ok" && validMemoryEntries(state.data, resourceId, workspaceId) ? state.data : null;
+  // DD-125(10): only a COMPLETE listing carries refs; BOUND_EXCEEDED/UNKNOWN keep their
+  // determinate state and slug order, with no inferred missing links or "no core".
+  const order = useMemo(() => page?.state === "COMPLETE" && page.references
+    ? orderMemoryEntries(page.entries, page.references) : null, [page]);
+  const coreMissingLinks = order?.missingLinks.get("core") ?? [];
   const onEdit = canWrite && !edit && !requestBlocked ? (read: AgentMemoryReadView, mode: MemoryEdit["mode"]) => {
     setEdit({ read, mode }); onLocked(true);
   } : undefined;
@@ -132,16 +157,21 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
     <h5 className="text-sm font-medium">{t("agents.memory.core")}</h5>
     <p className="text-sm text-muted-foreground">{t("agents.memory.newSessions")}</p>
     <MemoryBody key={`core:${round}`} resourceId={resourceId} workspaceId={workspaceId} slug="core" onEdit={onEdit} />
+    {coreMissingLinks.length ? <MemoryDanglingRefsHint slugs={coreMissingLinks} /> : null}
     <h5 className="text-sm font-medium">{t("agents.memory.cold")}</h5>
     <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !page ? <Notice role="status">{t("platform.loadFailed")}<Button onClick={reload}>{t("platform.retry")}</Button></Notice>
       : page.state !== "COMPLETE" ? <Notice role="status">{t(page.state === "BOUND_EXCEEDED" ? "agents.memory.boundExceeded" : "agents.memory.unknown")}</Notice>
       : page.entries.length === 0 ? <Notice>{t("agents.memory.none")}</Notice>
-      : <div className="space-y-2" data-testid="agent-memory-list">
-        {page.entries.map((entry) => <MemoryEntryAccordion key={`${round}:${entry.eventId}`} entry={entry}
-          resourceId={resourceId} workspaceId={workspaceId} onEdit={onEdit} />)}
-      </div>}
+      : <>
+        {order && !order.coreExists && page.entries.some((entry) => !entry.tombstone) ? <MemoryNoCoreHint /> : null}
+        <div className="space-y-2" data-testid="agent-memory-list">
+          {(order?.entries ?? page.entries).map((entry) => <MemoryEntryAccordion key={`${round}:${entry.eventId}`} entry={entry}
+            missingLinks={order?.missingLinks.get(entry.slug) ?? []}
+            resourceId={resourceId} workspaceId={workspaceId} onEdit={onEdit} />)}
+        </div>
+      </>}
     {canWrite ? <>
       <form className="flex flex-col gap-2" onSubmit={(event) => {
         event.preventDefault(); if (!edit && coldSlug(slugInput)) setNewSlug(slugInput);
@@ -168,8 +198,8 @@ function MemoryContents({ resourceId, workspaceId, installation, onLocked }: {
 // Buzz MemorySection::MemoryEntryAccordion's existing article/disclosure shape;
 // the native local-key/query-cache hook is replaced by an explicit BFF read.
 // Collapsing unmounts its decrypted body; no cross-view plaintext cache.
-function MemoryEntryAccordion({ entry, resourceId, workspaceId, onEdit }: {
-  entry: AgentMemoryEntryView; resourceId: string; workspaceId: string;
+function MemoryEntryAccordion({ entry, missingLinks, resourceId, workspaceId, onEdit }: {
+  entry: MemoryListEntry; missingLinks: string[]; resourceId: string; workspaceId: string;
   onEdit?: (read: AgentMemoryReadView, mode: MemoryEdit["mode"]) => void;
 }) {
   const t = useT();
@@ -180,15 +210,47 @@ function MemoryEntryAccordion({ entry, resourceId, workspaceId, onEdit }: {
       className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/50"
       onClick={() => setOpen(!open)}>
       <div className="flex items-start gap-3"><div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold text-foreground"><MemorySlugTitle slug={entry.slug} /></div>
+        <div className="text-sm font-semibold text-foreground">
+          {missingLinks.length ? <AlertTriangle aria-hidden="true" data-testid="agent-memory-dangling-icon"
+            className="mr-1 inline-block h-4 w-4 align-[-2px] text-warning" /> : null}
+          <MemorySlugTitle slug={entry.slug} />
+        </div>
         <div className="mt-1 text-xs leading-5 text-foreground/70">
           {new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(entry.createdAt * 1000)}
           {" · "}{t(entry.tombstone ? "agents.memory.tombstone" : "agents.memory.readEntry")}
         </div>
       </div></div>
     </button>
-    {open ? <div className="px-4 pb-3"><MemoryBody resourceId={resourceId} workspaceId={workspaceId} slug={entry.slug} onEdit={onEdit} /></div> : null}
+    {open ? <div className="px-4 pb-3">
+      {missingLinks.length ? <MemoryDanglingRefsHint slugs={missingLinks} /> : null}
+      <MemoryBody resourceId={resourceId} workspaceId={workspaceId} slug={entry.slug} onEdit={onEdit} />
+    </div> : null}
   </article>;
+}
+
+// Original MemoryGraphView "no core" line: shown only when memories exist without a core.
+function MemoryNoCoreHint() {
+  const t = useT();
+  const [before, after = ""] = t("agents.memory.noCore", { core: "\u0000" }).split("\u0000");
+  return <p className="text-xs italic text-muted-foreground" data-testid="agent-memory-no-core">
+    {before}<code className="font-mono text-2xs">core</code>{after}
+  </p>;
+}
+
+// Original MemoryDanglingRefsHint: the refs of this memory that no loaded memory answers.
+function MemoryDanglingRefsHint({ slugs }: { slugs: string[] }) {
+  const t = useT();
+  const locale = useLocale();
+  return <div className="mb-2 rounded-xl bg-warning/5 px-2.5 py-2 text-xs leading-5" data-testid="agent-memory-dangling-hint">
+    <p className="text-warning">
+      {t(`agents.memory.missingLink.${platformPluralForm(locale, slugs.length)}`)}{" "}
+      {slugs.map((slug, index) => <Fragment key={slug}>
+        {index > 0 ? ", " : null}
+        <span className="break-all text-warning" data-testid="agent-memory-dangling-ref">[[{slug}]]</span>
+      </Fragment>)}
+    </p>
+    <p className="mt-0.5 text-foreground/50">{t("agents.memory.missingLinkHint")}</p>
+  </div>;
 }
 
 function MemorySlugTitle({ slug }: { slug: string }) {

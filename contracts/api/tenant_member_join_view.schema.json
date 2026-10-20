@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/tenant_member_join_view.schema.json",
+  "title": "TenantMemberJoinView",
+  "description": "一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP 身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["principalId", "displayName", "joinedAt"],
+  "properties": {
+    "principalId": { "type": "string", "format": "uuid" },
+    "displayName": { "type": "string" },
+    "joinedAt": { "type": "string", "format": "date-time", "description": "TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。" }
+  }
+}

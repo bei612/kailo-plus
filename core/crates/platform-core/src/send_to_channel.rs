@@ -57,6 +57,10 @@ pub(crate) fn valid_request(request: &contracts::WebPublishMessageRequest) -> bo
         && request.attachments.as_ref().is_none_or(Vec::is_empty)
         && request.mention_pubkeys.as_ref().is_none_or(Vec::is_empty)
         && request
+            .reference_mention_pubkeys
+            .as_ref()
+            .is_none_or(Vec::is_empty)
+        && request
             .mention_installation_ids
             .as_ref()
             .is_none_or(Vec::is_empty)
@@ -656,6 +660,7 @@ mod tests {
             ("parentEventId", serde_json::json!(id)),
             ("editEventId", serde_json::json!(id)),
             ("mentionPubkeys", serde_json::json!([id])),
+            ("referenceMentionPubkeys", serde_json::json!([id])),
             (
                 "sendToChannelSourceEventId",
                 serde_json::json!("A".repeat(64)),

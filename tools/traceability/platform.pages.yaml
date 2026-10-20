@@ -8,13 +8,13 @@ design:
   requirements: [V-REQ-01, V-REQ-03, V-REQ-17]
   # DD-75's S0 identity custody is consumed here, owned by identity.client_keys.
   decisions: [DD-39, DD-53, DD-80, DD-81, DD-125]
-  facts: [SF-DSK-04]
+  facts: [SF-DSK-04, SF-BUZ-58]
   seams: [SS-WEB-01, SS-WEB-PRESENTATION]
   blockers: []
-  entities: [Workspace, WorkspaceMembership, AuditEvent]
+  entities: [Workspace, WorkspaceMembership, TenantMembership, AuditEvent]
 
 validation:
-  scenarios: [V-SCN-142]
+  scenarios: [V-SCN-142, V-SCN-166, V-SCN-167]
   evidence:
     - dimension: 上游接缝
       ref: web-client/fork/verify/web-surface.md
@@ -23,13 +23,13 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui, collaboration/desktop/src/features/profile/hooks.ts, collaboration/desktop/src/features/onboarding/DesktopOnboardingGate.tsx, collaboration/desktop/src/app/App.tsx, collaboration/desktop/src-tauri/src/commands/profile.rs]
+  paths: [core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/tenant_member_joins.rs, core/crates/platform-core/src/membership_state.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui, collaboration/desktop/src/features/profile/hooks.ts, collaboration/desktop/src/features/onboarding/DesktopOnboardingGate.tsx, collaboration/desktop/src/app/App.tsx, collaboration/desktop/src-tauri/src/commands/profile.rs]
   surfaces: [web, desktop]
-  schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json, contracts/api/web_profile_view.schema.json, contracts/api/web_profile_update_request.schema.json]
-  migrations: []
+  schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json, contracts/api/web_profile_view.schema.json, contracts/api/web_profile_update_request.schema.json, contracts/api/tenant_member_join_view.schema.json, contracts/api/tenant_member_join_page.schema.json]
+  migrations: [core/migrations/20261020141000_tenant_membership_activated_at.up.sql, core/migrations/20261020141000_tenant_membership_activated_at.down.sql]
 
 runtime:
-  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}", "/api/v1/custom-emoji"]
+  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}", "/api/v1/custom-emoji", "/api/v1/tenant-member-joins"]
   actions: [identity.profile.publish, identity.custom_emoji.publish]
 
 release:

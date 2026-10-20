@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_memory_reference_view.schema.json",
+  "title": "AgentMemoryReferenceView",
+  "description": "agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按 core、其引用树先序、未被引用者按 slug 排列。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["coreExists", "coreRefs", "dangling"],
+  "properties": {
+    "coreExists": { "type": "boolean", "description": "本次读取存在 core head；false 时客户端显示“没有 core”。" },
+    "coreRefs": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 255 }, "description": "core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。" },
+    "dangling": { "type": "array", "items": { "$ref": "agent_memory_dangling_ref_view.schema.json" }, "description": "按目标 slug 排序。" }
+  }
+}

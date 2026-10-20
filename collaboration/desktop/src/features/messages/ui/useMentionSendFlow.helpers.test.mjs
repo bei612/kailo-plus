@@ -146,3 +146,74 @@ test("relay publish failures read the shared text, never the relay's own words",
     null,
   );
 });
+
+test("withoutInvitingRecipients moves people outside the channel from p recipients to mention reference tags", async () => {
+  const { withoutInvitingRecipients } = await import("./useMentionSendFlow.helpers.ts");
+  const member = "a".repeat(64), outsider = "b".repeat(64);
+  const draft = {
+    mentionPubkeys: [member, outsider],
+    nonMemberPubkeys: [outsider.toUpperCase()],
+    outgoingTags: [["link-preview", "snapshot"]],
+  };
+  const sent = withoutInvitingRecipients(draft);
+  assert.deepEqual(sent.mentionPubkeys, [member]);
+  assert.deepEqual(sent.outgoingTags, [["link-preview", "snapshot"], ["mention", outsider]]);
+  assert.ok(!sent.mentionPubkeys.some((pubkey) => sent.outgoingTags.some((tag) => tag[1] === pubkey)));
+  // The held draft itself is unchanged: Cancel keeps it as written.
+  assert.deepEqual(draft.mentionPubkeys, [member, outsider]);
+});
+
+test("DD-125(8): a Workspace channel send to someone outside it waits for the original prompt", async () => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {url:"http://localhost"});
+  Object.assign(globalThis, {window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,
+    Node:dom.window.Node,IS_REACT_ACT_ENVIRONMENT:true});
+  const {act, cleanup, renderHook} = await import("@testing-library/react");
+  const {useMentionSendFlow} = await import("./useMentionSendFlow.ts");
+  const member = "a".repeat(64), outsider = "b".repeat(64);
+  for (const choice of ["send-anyway", "invite", "cancel"]) {
+    const sent = [], invited = [], refreshed = [];
+    const contentRef = {current:"@Member @Olive"};
+    const options = {channelId:"relay-channel",effectiveDraftKey:"relay-channel",getComposerRevision:()=>0,
+      runComposerUpdate:update=>update(),channelLinks:{clearChannels(){}},contentRef,
+      drafts:{loadDraft:()=>undefined,markDraftSent(){},persistDraft(){}},
+      emojiAutocomplete:{clearEmojis(){}},mentions:{clearMentions(){},restoreDraftMentionRefs(){},
+        settlePendingMentionBindings:async()=>{},extractMentionPubkeys:()=>[member,outsider],
+        getDraftMentionRefs:()=>[{displayName:"Member",pubkey:member},{displayName:"Olive",pubkey:outsider}]},
+      onSendRef:{current:async(...args)=>{sent.push(args);}},
+      richText:{clearContent(){},setContent(){}},setContent:value=>{contentRef.current=value;},
+      setPendingImeta(){},hasUnsavedMedia:()=>false,clearQueuedAttachments(){},restoreQueuedAttachments(){},
+      nonMemberMentions:{memberPubkeys:new Set([member]),isAgentPubkey:()=>false,getDisplayName:pubkey=>pubkey===outsider?"Olive":undefined,
+        prepare:async pubkeys=>{assert.deepEqual(pubkeys,[outsider]);return {principals:[{principalId:"olive",displayName:"Olive"}],canInvite:choice==="invite"};},
+        invite:async principals=>{invited.push(principals);return {status:"active"};},
+        onInvited:()=>refreshed.push(true)}};
+    const view = renderHook(()=>useMentionSendFlow(options));
+    await act(async()=>view.result.current.sendMessageWithMentionFlow({trimmed:"@Member @Olive",pendingImeta:[],
+      capturedChannelId:"relay-channel",sentDraftKey:"relay-channel",recoveryDraftKey:"relay-channel"}));
+    assert.equal(sent.length,0);
+    const prompt = view.result.current.nonMemberPromptProps;
+    assert.equal(prompt.open,true);
+    assert.deepEqual(prompt.names,["Olive"]);
+    assert.equal(prompt.canInvite,choice==="invite");
+    if (choice === "send-anyway") {
+      await act(async()=>{prompt.onDoNothing();await new Promise(resolve=>setTimeout(resolve,0));});
+      assert.equal(sent.length,1);
+      assert.deepEqual(sent[0][1],[member]);
+      assert.deepEqual(sent[0][2],[["mention",outsider]]);
+      assert.equal(invited.length,0);
+    } else if (choice === "invite") {
+      await act(async()=>{prompt.onInvite();await new Promise(resolve=>setTimeout(resolve,0));});
+      assert.deepEqual(invited,[[{principalId:"olive",displayName:"Olive"}]]);
+      assert.equal(refreshed.length,1);
+      assert.equal(sent.length,1);
+      assert.deepEqual(sent[0][1],[member,outsider]);
+      assert.ok(!(sent[0][2] ?? []).some(tag=>tag[0]==="mention"));
+    } else {
+      await act(async()=>{prompt.onDismiss();});
+      assert.equal(sent.length,0);
+      assert.equal(contentRef.current,"@Member @Olive");
+    }
+    assert.equal(view.result.current.nonMemberPromptProps.open,false);
+    view.unmount();
+  }
+  cleanup();dom.window.close();
+});

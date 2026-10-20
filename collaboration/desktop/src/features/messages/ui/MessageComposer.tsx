@@ -12,7 +12,11 @@ import { useAutoPinMentionedAgents } from "@client-kit/platform/react/composer/f
 import { useAlwaysAddressShortcut } from "@client-kit/platform/react/composer/features/messages/ui/useAlwaysAddressShortcut";
 import { useImplicitAgentMentionProvenance } from "@client-kit/platform/react/composer/features/messages/ui/useImplicitAgentMentionProvenance";
 import { focusMentionOptionsTrigger } from "@client-kit/platform/react/composer/features/messages/ui/MentionAutocomplete";
+import { NonMemberMentionDialog, inviteAndAwaitActive, nonMemberInvitePrincipals, outsideMentionPeople, resolveNonMemberInviteAdmission,
+  useTenantMentionDirectory, type NonMemberInvitePrincipal } from "@client-kit/platform/react/non-member-mentions";
+import type { NonMemberMentionOptions } from "./useMentionSendFlow.types";
 import { useCustomEmojiPalette } from "../lib/useCustomEmojiPalette";
+import { useDesktopGifOption } from "@/features/gifs/useDesktopGifOption";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
@@ -139,7 +143,20 @@ function MessageComposerImpl({
     isAgentPubkey, rootTags: audienceContext?.rootTags ?? [], scope: audienceScope,
   });
   const admittedPeople = React.useMemo(() => mentionPeople ?? (workspace ? agentDirectory.data?.members.flatMap(member => member.pubkeys.map(pubkey => ({pubkey, displayName: member.displayName}))) ?? [] : undefined), [mentionPeople, workspace?.id, agentDirectory.data]);
-  const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey);
+  // DD-125(8): a Workspace channel's new message or thread reply (original: not DMs) also offers
+  // same-Tenant people outside the channel and prompts before mentioning them.
+  const nonMemberWorkspaceId = !editTarget && mentionPeople === undefined && channelId !== null &&
+    channelType !== null && channelType !== "dm" ? workspace?.id : undefined;
+  const memberPubkeys = React.useMemo(() => nonMemberWorkspaceId && agentDirectory.data
+    ? new Set(agentDirectory.data.members.flatMap(member => member.pubkeys.map(pubkey => pubkey.toLowerCase()))) : null,
+  [nonMemberWorkspaceId, agentDirectory.data]);
+  const tenantDirectory = useTenantMentionDirectory(bff, `${session.facts.communityHost}:${session.devicePubkey}`, nonMemberWorkspaceId !== undefined);
+  const outsidePeople = React.useMemo(() => memberPubkeys && tenantDirectory.data ? outsideMentionPeople({
+    directory: tenantDirectory.data, memberPubkeys, memberPrincipalIds: agentDirectory.data?.members.map(member => member.principalId),
+  }).filter(person => !agents.some(agent => agent.pubkey === person.pubkey))
+    .map(person => ({pubkey: person.pubkey, displayName: person.displayName, notInChannel: true})) : undefined,
+  [memberPubkeys, tenantDirectory.data, agentDirectory.data, agents]);
+  const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey, outsidePeople);
   for (const ref of mentions.getDraftMentionRefs(contentRef.current)) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
   const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getDraftMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getDraftMentionRefs, knownAgentKeys]);
   const agentMentions = {...mentions, getDraftMentionRefs: getAgentDraftMentionRefs};
@@ -157,6 +174,8 @@ function MessageComposerImpl({
   const emojiAutocomplete = useEmojiAutocomplete();
   const internalMedia = useMediaUpload({ deferUploadsUntilSend: true });
   const media = mediaController ?? internalMedia;
+  // DD-125(11): a chosen GIF is original hash-less pending media (body line, no imeta).
+  const gifOption = useDesktopGifOption(media.setPendingImeta);
   const voiceNote = useComposerVoiceNote({
     draftKey: effectiveDraftKey,
     editTargetId: editTarget?.id ?? null,
@@ -317,6 +336,22 @@ function MessageComposerImpl({
   onLinkSelectionChangeRef.current = linkEditor.showFromCursor;
   onLinkShortcutRef.current = linkEditor.openFromShortcut;
   useComposerSpoilerParticles(richText.editor, composerScrollRef);
+  const nonMemberMentions: NonMemberMentionOptions | undefined = nonMemberWorkspaceId === undefined ? undefined : {
+    memberPubkeys,
+    isAgentPubkey: pubkey => knownAgentKeys.has(pubkey) || isAgentPubkey(pubkey),
+    getDisplayName: mentions.getMentionDisplayName,
+    prepare: async (pubkeys) => {
+      const directory = tenantDirectory.data ?? await tenantDirectory.refetch().then(result => result.data ?? []).catch(() => []);
+      const { principals, unresolved } = nonMemberInvitePrincipals(directory, pubkeys);
+      // "Invite" only when the BFF admits adding every one of them (canAddToWorkspace).
+      const canInvite = unresolved.length === 0 &&
+        await resolveNonMemberInviteAdmission(bff, nonMemberWorkspaceId, principals.map(principal => principal.principalId));
+      return { principals, canInvite };
+    },
+    invite: (principals: readonly NonMemberInvitePrincipal[], signal: AbortSignal) =>
+      inviteAndAwaitActive({ client: bff, workspaceId: nonMemberWorkspaceId, principals, signal }),
+    onInvited: () => { void agentDirectory.refetch(); },
+  };
   const mentionSendFlow = useMentionSendFlow({
     getComposerRevision,
     runComposerUpdate,
@@ -337,6 +372,7 @@ function MessageComposerImpl({
     clearQueuedAttachments: media.clearQueuedAttachments,
     restoreQueuedAttachments: media.restoreQueuedAttachments,
     setSpoileredAttachmentUrls,
+    nonMemberMentions,
   });
   React.useEffect(() => {
     if (!replyTarget || composerDisabled) return;
@@ -614,7 +650,8 @@ function MessageComposerImpl({
             />
           ) : null}
     </>}
-    overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
+    overlays={<>{linkEditor.card}{linkEditor.dialog}
+      <NonMemberMentionDialog {...mentionSendFlow.nonMemberPromptProps} onRestoreFocus={richText.focus} /></>}
     formProps={{
       onDragEnter: acceptsDrop ? media.handleDragEnter : undefined,
       onDragLeave: acceptsDrop ? media.handleDragLeave : undefined,
@@ -641,6 +678,7 @@ function MessageComposerImpl({
       onFormattingToggle: handleFormattingToggle, onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPicker.openMentionSettings, onPaperclip: handlePaperclipClick,
       onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle, sendDisabled,
+      gifs: gifOption,
     }}>
             {acceptsDrop && media.isDragOver && <DropZoneOverlay />}
             <MessageComposerAutocompletes

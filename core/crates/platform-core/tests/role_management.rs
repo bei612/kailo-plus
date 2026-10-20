@@ -166,6 +166,7 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
         reqwest::StatusCode::FORBIDDEN,
         "普通成员不可枚举角色管理候选人"
     );
+    member_joins(http, e, pool, w).await;
     let cursor = entries[0]["principalId"].as_str().unwrap();
     let (st, next) = bff(
         http,
@@ -712,4 +713,67 @@ async fn scenarios(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World, sl
     .await;
     assert_eq!(st, reqwest::StatusCode::FORBIDDEN, "{body}");
     assert_eq!(reason(&body), "CAPABILITY_BLOCKED");
+}
+
+/// DD-125(9)、V-SCN-166/167：新成员加入提醒只给 Tenant manage 持有人。B、C、D 经成员
+/// 生命周期 Workflow 转入 ACTIVE，进入时刻由同一跃迁写下；不带游标只给建账位置，
+/// 从起点读取按（进入时刻，membership）升序列出其他成员、不含本人，游标非法即 400。
+async fn member_joins(http: &reqwest::Client, e: &Env, pool: &PgPool, w: &World) {
+    let a = w.a.subject.as_str();
+    let path = "/api/v1/tenant-member-joins";
+    // The route only reads positions settled for 10 seconds (commit-order skew).
+    tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+    let (st, baseline) = bff(http, e, a, reqwest::Method::GET, path, None).await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{baseline}");
+    assert_eq!(baseline["items"], json!([]), "建账只给位置：{baseline}");
+    assert_eq!(baseline["hasMore"], false);
+    let position = baseline["cursor"].as_str().expect("建账游标").to_owned();
+    assert!(!position.is_empty(), "已有成员转入 ACTIVE：{baseline}");
+
+    let expected: Vec<Uuid> = sqlx::query_scalar(
+        "select tm.tenant_principal_id from identity.tenant_membership tm
+         join identity.principal p on p.id = tm.tenant_principal_id
+         join identity.human_identity hi on hi.id = tm.human_identity_id
+         where tm.tenant_id = $1 and tm.state = 'ACTIVE' and tm.activated_at is not null
+           and p.kind = 'HUMAN' and p.status = 'ACTIVE' and hi.status = 'ACTIVE' and p.id <> $2
+         order by tm.activated_at, tm.id",
+    )
+    .bind(w.tenant)
+    .bind(w.a.principal)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    for m in [&w.b, &w.c, &w.d] {
+        assert!(expected.contains(&m.principal), "跃迁应写下进入时刻");
+    }
+    let origin = format!("{path}?after=");
+    let (st, joined) = bff(http, e, a, reqwest::Method::GET, &origin, None).await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{joined}");
+    let items = joined["items"].as_array().expect("加入者数组");
+    let listed: Vec<&str> = items
+        .iter()
+        .map(|m| m["principalId"].as_str().unwrap())
+        .collect();
+    let expected: Vec<String> = expected.iter().map(Uuid::to_string).collect();
+    assert_eq!(listed, expected, "升序且不含本人：{joined}");
+    for m in items {
+        assert_eq!(m["displayName"], "verify");
+        assert!(m["joinedAt"].is_string());
+    }
+    assert_eq!(joined["hasMore"], false);
+    assert_eq!(joined["cursor"], baseline["cursor"], "读完即到建账位置");
+
+    let next = format!("{path}?after={position}");
+    let (st, none) = bff(http, e, a, reqwest::Method::GET, &next, None).await;
+    assert_eq!(st, reqwest::StatusCode::OK, "{none}");
+    assert_eq!(none["items"], json!([]));
+    assert_eq!(none["cursor"], baseline["cursor"]);
+
+    let malformed = format!("{path}?after=not-a-cursor");
+    let (st, _) = bff(http, e, a, reqwest::Method::GET, &malformed, None).await;
+    assert_eq!(st, reqwest::StatusCode::BAD_REQUEST);
+
+    let (st, denied) = bff(http, e, &w.b.subject, reqwest::Method::GET, path, None).await;
+    assert_eq!(st, reqwest::StatusCode::FORBIDDEN, "{denied}");
+    assert_eq!(reason(&denied), "PERMISSION_DENIED");
 }

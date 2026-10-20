@@ -396,7 +396,7 @@ pub async fn query_relay_at_with_keys(
 /// egress checks, URL/body construction, send, error classification, and response
 /// parsing remain outside. `body` is accepted as final bytes so this helper never
 /// reserializes, normalizes, or changes the payload that was signed.
-fn build_authenticated_relay_request(
+pub(crate) fn build_authenticated_relay_request(
     client: &reqwest::Client,
     method: Method,
     url: &str,

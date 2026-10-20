@@ -7,7 +7,7 @@ import { clearTimeoutState, getTimeoutSnapshot } from "@client-kit/platform/reac
 import { setLocale } from "@client-kit/platform/i18n";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import type { Editor } from "@tiptap/core";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentTrigger,
   AgentInstallationState,
@@ -276,6 +276,11 @@ const state = vi.hoisted(() => ({
   publish: vi.fn(),
   upload: vi.fn(),
   principal: "human-a",
+  // DD-125(8): Workspace roster, Tenant participant directory, role projection and actions.
+  members: vi.fn(),
+  participants: vi.fn(),
+  roleMembers: vi.fn(),
+  submit: vi.fn(),
 }));
 // The shell re-exports the client-kit BffError; the double keeps that class so a structured
 // rejection reaches the same instanceof checks as in production.
@@ -284,7 +289,10 @@ vi.mock("@/platform/bff-client", async () => ({
   bff: {
     session: async () => ({tenantPrincipalId:state.principal}),
     profile: async () => ({pubkey:"d".repeat(64)}),
-    members: async () => [],
+    members: (...args: unknown[]) => state.members(...args),
+    conversationParticipants: (...args: unknown[]) => state.participants(...args),
+    roleMembers: (...args: unknown[]) => state.roleMembers(...args),
+    submitAction: (...args: unknown[]) => state.submit(...args),
     customEmoji: async () => ({pubkey:"d".repeat(64),events:[],mediaPaths:{}}),
     workspaceChannel: async () => ({channelId:"relay-channel-a",channelType:"stream",archived:false}),
     agentDefinition: async (id:string) => ({resourceId:id,resourceState:"ACTIVE",displayName:id.replace("definition-","")}),
@@ -358,6 +366,10 @@ beforeEach(() => {
   state.next = false;
   state.more.mockReset();
   state.upload.mockReset();
+  state.members.mockReset().mockResolvedValue([]);
+  state.participants.mockReset().mockResolvedValue({items: [], maxParticipants: 8});
+  state.roleMembers.mockReset().mockRejectedValue(new BffError(403, "role-members → 403"));
+  state.submit.mockReset();
   state.publish
     .mockReset()
     .mockResolvedValue({ eventId: "event", operationId: "operation" });
@@ -1061,4 +1073,59 @@ it("preserves identical authored mentions and the full captured UNKNOWN intent i
   await click(button(host, "platform.send"));
   expect(state.publish.mock.calls[1][1]).toBe("@agent-a @agent-a authored body");
   expect(state.publish.mock.calls[1][3]).toBe(key);
+});
+
+describe("DD-125(8) mentioning people outside the Workspace channel", () => {
+  const member = "a".repeat(64), outsider = "b".repeat(64);
+  const outsideComposer = () => <Composer workspaceId="workspace-a" draftIdentity="human-a" draftKey="outside"
+    mentionPeople={[{pubkey: member, displayName: "Mia"}]} nonMemberMentionWorkspaceId="workspace-a"/>;
+  const dialogButtons = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')];
+  async function mentionOutsider(host: HTMLElement) {
+    state.participants.mockResolvedValue({items: [{principalId: "olive", displayName: "Olive", pubkeys: [outsider]}], maxParticipants: 8});
+    await click(host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!);
+    await act(async () => {await vi.waitFor(() => expect(host.querySelector('[aria-label="Mention Olive"]')).not.toBeNull());});
+    expect(host.textContent).toContain("not in channel");
+    await act(async () => {host.querySelector('[aria-label="Mention Olive"]')!.dispatchEvent(new MouseEvent("mousedown", {bubbles: true}));});
+    await click(button(host, "platform.send"));
+    await act(async () => {await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).not.toBeNull());});
+  }
+
+  it("without add admission keeps the draft on Cancel and sends anyway as reference-only mentions", async () => {
+    const host = await render(outsideComposer());
+    await mentionOutsider(host);
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain("Olive is not in this channel.");
+    expect(dialogButtons().map(entry => entry.textContent)).toEqual(["Cancel", "Send anyway"]);
+    await click(dialogButtons()[0]!);
+    await settle();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(state.publish).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("@Olive");
+    await click(button(host, "platform.send"));
+    await act(async () => {await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).not.toBeNull());});
+    await click(dialogButtons().find(entry => entry.textContent === "Send anyway")!);
+    await act(async () => {await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));});
+    const [workspace, content, , , installations, intent] = state.publish.mock.calls[0]!;
+    expect([workspace, content, installations]).toEqual(["workspace-a", "@Olive", []]);
+    expect(intent).toEqual({mentionPubkeys: [], referenceMentionPubkeys: [outsider]});
+    expect(state.submit).not.toHaveBeenCalled();
+  });
+
+  it("invites with admission and publishes the full mention only after the membership is ACTIVE", async () => {
+    state.roleMembers.mockResolvedValue({members: [{principalId: "olive", displayName: "Olive", tenantAdmin: false, workspaceAdmin: false,
+      lastTenantAdmin: false, canGrantTenantAdmin: false, canRevokeTenantAdmin: false, canGrantWorkspaceAdmin: false,
+      canRevokeWorkspaceAdmin: false, canAddToWorkspace: true}]});
+    // The membership becomes ACTIVE only after the governed add was submitted.
+    state.members.mockImplementation(async () => state.submit.mock.calls.length > 0
+      ? [{principalId: "olive", displayName: "Olive", pubkeys: [outsider], state: "ACTIVE"}] : []);
+    state.submit.mockImplementation(async (command: {actionKey: string; principalId: string}) => ({actionExecutionId: "execution", actionKey: command.actionKey,
+      operationId: "operation", gateState: "ALLOWED", dispatchState: "DISPATCHED"}));
+    const host = await render(outsideComposer());
+    await mentionOutsider(host);
+    expect(dialogButtons().map(entry => entry.textContent)).toEqual(["Cancel", "Do nothing", "Invite"]);
+    await click(dialogButtons().find(entry => entry.textContent === "Invite")!);
+    await act(async () => {await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));});
+    expect(state.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({actionKey: "workspace.member.add", workspaceId: "workspace-a", principalId: "olive"}));
+    expect(state.publish.mock.calls[0]![5]).toEqual({mentionPubkeys: [outsider]});
+  });
 });

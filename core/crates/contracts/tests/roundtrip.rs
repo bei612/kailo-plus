@@ -1147,3 +1147,43 @@ fn collaboration_dd125_c5_huddle_preserves_fields_and_absence() {
     unknown["state"] = serde_json::json!("RECONCILING");
     assert!(serde_json::from_value::<contracts::HuddleView>(unknown).is_err());
 }
+
+#[test]
+fn dd125_member_joins_and_memory_refs_preserve_fields_and_absence() {
+    // DD-125(9): the join page always carries items/cursor/hasMore; an empty cursor is the
+    // origin. DD-125(10): only a COMPLETE HUMAN listing carries outgoingRefs/references;
+    // tombstones, BOUND_EXCEEDED and the Agent tool listing keep them absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            sample_path().with_file_name("dd125-member-joins-memory-refs.sample.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    for key in ["joinPageBaseline", "joinPageOrigin", "joinPage"] {
+        roundtrip::<contracts::TenantMemberJoinPage>(&value[key]);
+    }
+    roundtrip::<contracts::TenantMemberJoinView>(&value["joinPage"]["items"][0]);
+    for key in [
+        "memoryPageComplete",
+        "memoryPageNoCore",
+        "memoryPageBounded",
+        "memoryPageTool",
+    ] {
+        roundtrip::<contracts::AgentMemoryEntryPage>(&value[key]);
+    }
+    roundtrip::<contracts::AgentMemoryEntryView>(&value["memoryPageComplete"]["entries"][0]);
+    roundtrip::<contracts::AgentMemoryReferenceView>(&value["memoryPageComplete"]["references"]);
+    let dangling = &value["memoryPageComplete"]["references"]["dangling"][0];
+    roundtrip::<contracts::AgentMemoryDanglingRefView>(dangling);
+    let mut missing = value["joinPage"].clone();
+    missing.as_object_mut().unwrap().remove("hasMore");
+    assert!(serde_json::from_value::<contracts::TenantMemberJoinPage>(missing).is_err());
+    let mut partial = value["memoryPageComplete"]["references"].clone();
+    partial.as_object_mut().unwrap().remove("coreExists");
+    assert!(serde_json::from_value::<contracts::AgentMemoryReferenceView>(partial).is_err());
+}
