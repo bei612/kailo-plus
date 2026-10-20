@@ -190,6 +190,9 @@
 //    agentInvocationView, err := UnmarshalAgentInvocationView(bytes)
 //    bytes, err = agentInvocationView.Marshal()
 //
+//    agentMemoryDanglingRefView, err := UnmarshalAgentMemoryDanglingRefView(bytes)
+//    bytes, err = agentMemoryDanglingRefView.Marshal()
+//
 //    agentMemoryEntryPage, err := UnmarshalAgentMemoryEntryPage(bytes)
 //    bytes, err = agentMemoryEntryPage.Marshal()
 //
@@ -198,6 +201,9 @@
 //
 //    agentMemoryReadView, err := UnmarshalAgentMemoryReadView(bytes)
 //    bytes, err = agentMemoryReadView.Marshal()
+//
+//    agentMemoryReferenceView, err := UnmarshalAgentMemoryReferenceView(bytes)
+//    bytes, err = agentMemoryReferenceView.Marshal()
 //
 //    agentMentionOutcomePage, err := UnmarshalAgentMentionOutcomePage(bytes)
 //    bytes, err = agentMentionOutcomePage.Marshal()
@@ -507,6 +513,12 @@
 //
 //    tenantInvitationView, err := UnmarshalTenantInvitationView(bytes)
 //    bytes, err = tenantInvitationView.Marshal()
+//
+//    tenantMemberJoinPage, err := UnmarshalTenantMemberJoinPage(bytes)
+//    bytes, err = tenantMemberJoinPage.Marshal()
+//
+//    tenantMemberJoinView, err := UnmarshalTenantMemberJoinView(bytes)
+//    bytes, err = tenantMemberJoinView.Marshal()
 //
 //    tenantQuotaPage, err := UnmarshalTenantQuotaPage(bytes)
 //    bytes, err = tenantQuotaPage.Marshal()
@@ -1546,6 +1558,16 @@ func (r *AgentInvocationView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAgentMemoryDanglingRefView(data []byte) (AgentMemoryDanglingRefView, error) {
+	var r AgentMemoryDanglingRefView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryDanglingRefView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAgentMemoryEntryPage(data []byte) (AgentMemoryEntryPage, error) {
 	var r AgentMemoryEntryPage
 	err := json.Unmarshal(data, &r)
@@ -1573,6 +1595,16 @@ func UnmarshalAgentMemoryReadView(data []byte) (AgentMemoryReadView, error) {
 }
 
 func (r *AgentMemoryReadView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentMemoryReferenceView(data []byte) (AgentMemoryReferenceView, error) {
+	var r AgentMemoryReferenceView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentMemoryReferenceView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2603,6 +2635,26 @@ func UnmarshalTenantInvitationView(data []byte) (TenantInvitationView, error) {
 }
 
 func (r *TenantInvitationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantMemberJoinPage(data []byte) (TenantMemberJoinPage, error) {
+	var r TenantMemberJoinPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantMemberJoinPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalTenantMemberJoinView(data []byte) (TenantMemberJoinView, error) {
+	var r TenantMemberJoinView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *TenantMemberJoinView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5620,30 +5672,72 @@ type AgentInvocationView struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
+// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
+// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
+type AgentMemoryDanglingRefView struct {
+	// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
+	ReferencedBy []string `json:"referencedBy"`
+	Slug         string   `json:"slug"`
+}
+
 // 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
 // snapshot，不是严格存量权威。
 type AgentMemoryEntryPage struct {
-	Entries                []EntryElement            `json:"entries"`
-	InstallationResourceID string                    `json:"installationResourceId"`
-	OperationID            string                    `json:"operationId"`
-	State                  AgentMemoryEntryPageState `json:"state"`
-	WorkspaceID            string                    `json:"workspaceId"`
+	Entries                []EntryElement `json:"entries"`
+	InstallationResourceID string         `json:"installationResourceId"`
+	OperationID            string         `json:"operationId"`
+	// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+	// 记忆工具结果省略，客户端保持 slug 顺序。
+	References  *ReferencesClass          `json:"references,omitempty"`
+	State       AgentMemoryEntryPageState `json:"state"`
+	WorkspaceID string                    `json:"workspaceId"`
 }
 
-// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
+// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
 type EntryElement struct {
 	CreatedAt int64  `json:"createdAt"`
 	EventID   string `json:"eventId"`
-	Slug      string `json:"slug"`
-	Tombstone bool   `json:"tombstone"`
+	// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
+	// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
+	OutgoingRefs []string `json:"outgoingRefs,omitempty"`
+	Slug         string   `json:"slug"`
+	Tombstone    bool     `json:"tombstone"`
 }
 
-// NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+// 记忆工具结果省略，客户端保持 slug 顺序。
+//
+// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
+// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
+// core、其引用树先序、未被引用者按 slug 排列。
+type ReferencesClass struct {
+	// 本次读取存在 core head；false 时客户端显示“没有 core”。
+	CoreExists bool `json:"coreExists"`
+	// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
+	CoreRefs []string `json:"coreRefs"`
+	// 按目标 slug 排序。
+	Dangling []DanglingElement `json:"dangling"`
+}
+
+// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
+// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
+type DanglingElement struct {
+	// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
+	ReferencedBy []string `json:"referencedBy"`
+	Slug         string   `json:"slug"`
+}
+
+// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
+// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
 type AgentMemoryEntryView struct {
 	CreatedAt int64  `json:"createdAt"`
 	EventID   string `json:"eventId"`
-	Slug      string `json:"slug"`
-	Tombstone bool   `json:"tombstone"`
+	// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
+	// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
+	OutgoingRefs []string `json:"outgoingRefs,omitempty"`
+	Slug         string   `json:"slug"`
+	Tombstone    bool     `json:"tombstone"`
 }
 
 // DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
@@ -5663,6 +5757,18 @@ type AgentMemoryReadView struct {
 	// not the JSON body or a stored plaintext copy.
 	ValueHash   *string `json:"valueHash,omitempty"`
 	WorkspaceID string  `json:"workspaceId"`
+}
+
+// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
+// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
+// core、其引用树先序、未被引用者按 slug 排列。
+type AgentMemoryReferenceView struct {
+	// 本次读取存在 core head；false 时客户端显示“没有 core”。
+	CoreExists bool `json:"coreExists"`
+	// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
+	CoreRefs []string `json:"coreRefs"`
+	// 按目标 slug 排序。
+	Dangling []DanglingElement `json:"dangling"`
 }
 
 // DD-121: only agent.invoke executions initiated by the caller for the requested source
@@ -8181,6 +8287,35 @@ type TenantInvitationView struct {
 	Status              TenantInvitationStatus `json:"status"`
 }
 
+// GET /api/v1/tenant-member-joins 的有界回应（DD-125(9)）。每次请求 fresh 校验 Tenant manage，否则
+// PERMISSION_DENIED；不建立 ActionExecution、不写访问审计。不带 after 时 items 为空，只给当前游标供建账；带 after
+// 时按（进入时刻，membership）升序返回其后进入 ACTIVE 的其他成员，单页有上界。
+type TenantMemberJoinPage struct {
+	// 不透明位置，下一次作为 after 原样回传；空串表示起点（本 Tenant 尚无记下进入时刻的成员）。客户端不得解析或构造；格式非法时服务端回 400。
+	Cursor string `json:"cursor"`
+	// 游标之后仍有未扫描的成员事实，应立即以新 cursor 续读；为 true 时本页 items 可能为空。
+	HasMore bool                       `json:"hasMore"`
+	Items   []TenantMemberJoinPageItem `json:"items"`
+}
+
+// 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
+// 身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
+type TenantMemberJoinPageItem struct {
+	DisplayName string `json:"displayName"`
+	// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
+	JoinedAt    time.Time `json:"joinedAt"`
+	PrincipalID string    `json:"principalId"`
+}
+
+// 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
+// 身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
+type TenantMemberJoinView struct {
+	DisplayName string `json:"displayName"`
+	// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
+	JoinedAt    time.Time `json:"joinedAt"`
+	PrincipalID string    `json:"principalId"`
+}
+
 // DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
 // Tenant admin and auditor only.
 type TenantQuotaPage struct {
@@ -8570,6 +8705,13 @@ type WebPublishMessageRequest struct {
 	MessageType    *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
+	// DD-125(8) 原“不邀请直接发送 / 仍然发送”：被提及但不是该 Workspace ACTIVE 成员、且本次不邀请的 HUMAN 公钥；缺省为空。只用于
+	// Workspace 的新消息（含线程回复），与 mentionPubkeys 不相交，与
+	// editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。BFF 校验每个公钥都是同 Tenant
+	// ACTIVE HUMAN Principal（TenantMembership ACTIVE）的 ACTIVE 公钥（不要求目的地成员资格，否则
+	// PERMISSION_DENIED），签原版 ["mention", <pubkey>] 引用标签，排序去重后冻结进同一发布意图（幂等重放逐项比较）；不发 p、不通知、不进入
+	// Inbox，也不授予读取或成员资格，接收方只用它解析 @名字 的显示。
+	ReferenceMentionPubkeys []string `json:"referenceMentionPubkeys,omitempty"`
 	// DD-125(1) 原“发送到频道”：当前 Channel 中一条线程回复的 Relay 事件 ID。BFF 回读该回复，要求作者为本人或本人是其 Installation
 	// owner，按原 getSendToChannelSemantics 只复制正文与 emoji/imeta/link-preview/mention
 	// 标签、重算提及并排除源作者，由线程根按原截断规则生成 buzz:sent-from-thread，以本人身份发一条新的顶层 kind:9，沿 DD-81 幂等与对账。与

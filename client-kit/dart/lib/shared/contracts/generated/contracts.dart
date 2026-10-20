@@ -63,9 +63,11 @@
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
 //     final agentInvocationPage = agentInvocationPageFromJson(jsonString);
 //     final agentInvocationView = agentInvocationViewFromJson(jsonString);
+//     final agentMemoryDanglingRefView = agentMemoryDanglingRefViewFromJson(jsonString);
 //     final agentMemoryEntryPage = agentMemoryEntryPageFromJson(jsonString);
 //     final agentMemoryEntryView = agentMemoryEntryViewFromJson(jsonString);
 //     final agentMemoryReadView = agentMemoryReadViewFromJson(jsonString);
+//     final agentMemoryReferenceView = agentMemoryReferenceViewFromJson(jsonString);
 //     final agentMentionOutcomePage = agentMentionOutcomePageFromJson(jsonString);
 //     final agentMentionOutcomeQueryRequest = agentMentionOutcomeQueryRequestFromJson(jsonString);
 //     final agentSessionPage = agentSessionPageFromJson(jsonString);
@@ -169,6 +171,8 @@
 //     final sidebarSortRequest = sidebarSortRequestFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
+//     final tenantMemberJoinPage = tenantMemberJoinPageFromJson(jsonString);
+//     final tenantMemberJoinView = tenantMemberJoinViewFromJson(jsonString);
 //     final tenantQuotaPage = tenantQuotaPageFromJson(jsonString);
 //     final threadPreferenceRequest = threadPreferenceRequestFromJson(jsonString);
 //     final usageBillingView = usageBillingViewFromJson(jsonString);
@@ -707,6 +711,12 @@ AgentInvocationView agentInvocationViewFromJson(String str) =>
 String agentInvocationViewToJson(AgentInvocationView data) =>
     json.encode(data.toJson());
 
+AgentMemoryDanglingRefView agentMemoryDanglingRefViewFromJson(String str) =>
+    AgentMemoryDanglingRefView.fromJson(json.decode(str));
+
+String agentMemoryDanglingRefViewToJson(AgentMemoryDanglingRefView data) =>
+    json.encode(data.toJson());
+
 AgentMemoryEntryPage agentMemoryEntryPageFromJson(String str) =>
     AgentMemoryEntryPage.fromJson(json.decode(str));
 
@@ -723,6 +733,12 @@ AgentMemoryReadView agentMemoryReadViewFromJson(String str) =>
     AgentMemoryReadView.fromJson(json.decode(str));
 
 String agentMemoryReadViewToJson(AgentMemoryReadView data) =>
+    json.encode(data.toJson());
+
+AgentMemoryReferenceView agentMemoryReferenceViewFromJson(String str) =>
+    AgentMemoryReferenceView.fromJson(json.decode(str));
+
+String agentMemoryReferenceViewToJson(AgentMemoryReferenceView data) =>
     json.encode(data.toJson());
 
 AgentMentionOutcomePage agentMentionOutcomePageFromJson(String str) =>
@@ -1341,6 +1357,18 @@ TenantInvitationView tenantInvitationViewFromJson(String str) =>
     TenantInvitationView.fromJson(json.decode(str));
 
 String tenantInvitationViewToJson(TenantInvitationView data) =>
+    json.encode(data.toJson());
+
+TenantMemberJoinPage tenantMemberJoinPageFromJson(String str) =>
+    TenantMemberJoinPage.fromJson(json.decode(str));
+
+String tenantMemberJoinPageToJson(TenantMemberJoinPage data) =>
+    json.encode(data.toJson());
+
+TenantMemberJoinView tenantMemberJoinViewFromJson(String str) =>
+    TenantMemberJoinView.fromJson(json.decode(str));
+
+String tenantMemberJoinViewToJson(TenantMemberJoinView data) =>
     json.encode(data.toJson());
 
 TenantQuotaPage tenantQuotaPageFromJson(String str) =>
@@ -8702,12 +8730,37 @@ class AgentInvocationView {
   });
 }
 
+///被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
+///link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
+class AgentMemoryDanglingRefView {
+  ///引用者 slug，core 记为 "core"；去重并按 slug 排序。
+  final List<String> referencedBy;
+  final String slug;
+
+  AgentMemoryDanglingRefView({required this.referencedBy, required this.slug});
+
+  factory AgentMemoryDanglingRefView.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryDanglingRefView(
+        referencedBy: List<String>.from(json["referencedBy"].map((x) => x)),
+        slug: json["slug"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "referencedBy": List<dynamic>.from(referencedBy.map((x) => x)),
+    "slug": slug,
+  });
+}
+
 ///19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
 ///snapshot，不是严格存量权威。
 class AgentMemoryEntryPage {
   final List<EntryElement> entries;
   final String installationResourceId;
   final String operationId;
+
+  ///仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+  ///记忆工具结果省略，客户端保持 slug 顺序。
+  final ReferencesClass? references;
   final AgentMemoryEntryPageState state;
   final String workspaceId;
 
@@ -8715,6 +8768,7 @@ class AgentMemoryEntryPage {
     required this.entries,
     required this.installationResourceId,
     required this.operationId,
+    this.references,
     required this.state,
     required this.workspaceId,
   });
@@ -8726,6 +8780,9 @@ class AgentMemoryEntryPage {
         ),
         installationResourceId: json["installationResourceId"],
         operationId: json["operationId"],
+        references: json["references"] == null
+            ? null
+            : ReferencesClass.fromJson(json["references"]),
         state: agentMemoryEntryPageStateValues.map[json["state"]]!,
         workspaceId: json["workspaceId"],
       );
@@ -8734,21 +8791,28 @@ class AgentMemoryEntryPage {
     "entries": List<dynamic>.from(entries.map((x) => x.toJson())),
     "installationResourceId": installationResourceId,
     "operationId": operationId,
+    "references": references?.toJson(),
     "state": agentMemoryEntryPageStateValues.reverse[state],
     "workspaceId": workspaceId,
   });
 }
 
-///NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+///NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
+///的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
 class EntryElement {
   final int createdAt;
   final String eventId;
+
+  ///仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
+  ///引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
+  final List<String>? outgoingRefs;
   final String slug;
   final bool tombstone;
 
   EntryElement({
     required this.createdAt,
     required this.eventId,
+    this.outgoingRefs,
     required this.slug,
     required this.tombstone,
   });
@@ -8756,6 +8820,9 @@ class EntryElement {
   factory EntryElement.fromJson(Map<String, dynamic> json) => EntryElement(
     createdAt: json["createdAt"],
     eventId: json["eventId"],
+    outgoingRefs: json["outgoingRefs"] == null
+        ? null
+        : List<String>.from(json["outgoingRefs"]!.map((x) => x)),
     slug: json["slug"],
     tombstone: json["tombstone"],
   );
@@ -8763,8 +8830,70 @@ class EntryElement {
   Map<String, dynamic> toJson() => _stripNulls({
     "createdAt": createdAt,
     "eventId": eventId,
+    "outgoingRefs": outgoingRefs == null
+        ? null
+        : List<dynamic>.from(outgoingRefs!.map((x) => x)),
     "slug": slug,
     "tombstone": tombstone,
+  });
+}
+
+///仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+///记忆工具结果省略，客户端保持 slug 顺序。
+///
+///agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
+///与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
+///core、其引用树先序、未被引用者按 slug 排列。
+class ReferencesClass {
+  ///本次读取存在 core head；false 时客户端显示“没有 core”。
+  final bool coreExists;
+
+  ///core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
+  final List<String> coreRefs;
+
+  ///按目标 slug 排序。
+  final List<DanglingElement> dangling;
+
+  ReferencesClass({
+    required this.coreExists,
+    required this.coreRefs,
+    required this.dangling,
+  });
+
+  factory ReferencesClass.fromJson(Map<String, dynamic> json) =>
+      ReferencesClass(
+        coreExists: json["coreExists"],
+        coreRefs: List<String>.from(json["coreRefs"].map((x) => x)),
+        dangling: List<DanglingElement>.from(
+          json["dangling"].map((x) => DanglingElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "coreExists": coreExists,
+    "coreRefs": List<dynamic>.from(coreRefs.map((x) => x)),
+    "dangling": List<dynamic>.from(dangling.map((x) => x.toJson())),
+  });
+}
+
+///被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
+///link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
+class DanglingElement {
+  ///引用者 slug，core 记为 "core"；去重并按 slug 排序。
+  final List<String> referencedBy;
+  final String slug;
+
+  DanglingElement({required this.referencedBy, required this.slug});
+
+  factory DanglingElement.fromJson(Map<String, dynamic> json) =>
+      DanglingElement(
+        referencedBy: List<String>.from(json["referencedBy"].map((x) => x)),
+        slug: json["slug"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "referencedBy": List<dynamic>.from(referencedBy.map((x) => x)),
+    "slug": slug,
   });
 }
 
@@ -8776,16 +8905,22 @@ final agentMemoryEntryPageStateValues = EnumValues({
   "UNKNOWN": AgentMemoryEntryPageState.UNKNOWN,
 });
 
-///NIP-AE cold head tuple，不含 value；tombstone 是当前原生 head，不回退旧 value。
+///NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
+///的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
 class AgentMemoryEntryView {
   final int createdAt;
   final String eventId;
+
+  ///仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
+  ///引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
+  final List<String>? outgoingRefs;
   final String slug;
   final bool tombstone;
 
   AgentMemoryEntryView({
     required this.createdAt,
     required this.eventId,
+    this.outgoingRefs,
     required this.slug,
     required this.tombstone,
   });
@@ -8794,6 +8929,9 @@ class AgentMemoryEntryView {
       AgentMemoryEntryView(
         createdAt: json["createdAt"],
         eventId: json["eventId"],
+        outgoingRefs: json["outgoingRefs"] == null
+            ? null
+            : List<String>.from(json["outgoingRefs"]!.map((x) => x)),
         slug: json["slug"],
         tombstone: json["tombstone"],
       );
@@ -8801,6 +8939,9 @@ class AgentMemoryEntryView {
   Map<String, dynamic> toJson() => _stripNulls({
     "createdAt": createdAt,
     "eventId": eventId,
+    "outgoingRefs": outgoingRefs == null
+        ? null
+        : List<dynamic>.from(outgoingRefs!.map((x) => x)),
     "slug": slug,
     "tombstone": tombstone,
   });
@@ -8874,6 +9015,41 @@ final agentMemoryReadViewStateValues = EnumValues({
   "FOUND": AgentMemoryReadViewState.FOUND,
   "UNREADABLE": AgentMemoryReadViewState.UNREADABLE,
 });
+
+///agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
+///与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
+///core、其引用树先序、未被引用者按 slug 排列。
+class AgentMemoryReferenceView {
+  ///本次读取存在 core head；false 时客户端显示“没有 core”。
+  final bool coreExists;
+
+  ///core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
+  final List<String> coreRefs;
+
+  ///按目标 slug 排序。
+  final List<DanglingElement> dangling;
+
+  AgentMemoryReferenceView({
+    required this.coreExists,
+    required this.coreRefs,
+    required this.dangling,
+  });
+
+  factory AgentMemoryReferenceView.fromJson(Map<String, dynamic> json) =>
+      AgentMemoryReferenceView(
+        coreExists: json["coreExists"],
+        coreRefs: List<String>.from(json["coreRefs"].map((x) => x)),
+        dangling: List<DanglingElement>.from(
+          json["dangling"].map((x) => DanglingElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "coreExists": coreExists,
+    "coreRefs": List<dynamic>.from(coreRefs.map((x) => x)),
+    "dangling": List<dynamic>.from(dangling.map((x) => x.toJson())),
+  });
+}
 
 ///DD-121: only agent.invoke executions initiated by the caller for the requested source
 ///events; no message body, no other member's executions, no Agent internals. A mentioned
@@ -18581,6 +18757,97 @@ final tenantInvitationStatusValues = EnumValues({
   "REVOKED": TenantInvitationStatus.REVOKED,
 });
 
+///GET /api/v1/tenant-member-joins 的有界回应（DD-125(9)）。每次请求 fresh 校验 Tenant manage，否则
+///PERMISSION_DENIED；不建立 ActionExecution、不写访问审计。不带 after 时 items 为空，只给当前游标供建账；带 after
+///时按（进入时刻，membership）升序返回其后进入 ACTIVE 的其他成员，单页有上界。
+class TenantMemberJoinPage {
+  ///不透明位置，下一次作为 after 原样回传；空串表示起点（本 Tenant 尚无记下进入时刻的成员）。客户端不得解析或构造；格式非法时服务端回 400。
+  final String cursor;
+
+  ///游标之后仍有未扫描的成员事实，应立即以新 cursor 续读；为 true 时本页 items 可能为空。
+  final bool hasMore;
+  final List<TenantMemberJoinPageItem> items;
+
+  TenantMemberJoinPage({
+    required this.cursor,
+    required this.hasMore,
+    required this.items,
+  });
+
+  factory TenantMemberJoinPage.fromJson(Map<String, dynamic> json) =>
+      TenantMemberJoinPage(
+        cursor: json["cursor"],
+        hasMore: json["hasMore"],
+        items: List<TenantMemberJoinPageItem>.from(
+          json["items"].map((x) => TenantMemberJoinPageItem.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cursor": cursor,
+    "hasMore": hasMore,
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+  });
+}
+
+///一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
+///身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
+class TenantMemberJoinPageItem {
+  final String displayName;
+
+  ///TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
+  final DateTime joinedAt;
+  final String principalId;
+
+  TenantMemberJoinPageItem({
+    required this.displayName,
+    required this.joinedAt,
+    required this.principalId,
+  });
+
+  factory TenantMemberJoinPageItem.fromJson(Map<String, dynamic> json) =>
+      TenantMemberJoinPageItem(
+        displayName: json["displayName"],
+        joinedAt: DateTime.parse(json["joinedAt"]),
+        principalId: json["principalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "joinedAt": joinedAt.toIso8601String(),
+    "principalId": principalId,
+  });
+}
+
+///一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
+///身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
+class TenantMemberJoinView {
+  final String displayName;
+
+  ///TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
+  final DateTime joinedAt;
+  final String principalId;
+
+  TenantMemberJoinView({
+    required this.displayName,
+    required this.joinedAt,
+    required this.principalId,
+  });
+
+  factory TenantMemberJoinView.fromJson(Map<String, dynamic> json) =>
+      TenantMemberJoinView(
+        displayName: json["displayName"],
+        joinedAt: DateTime.parse(json["joinedAt"]),
+        principalId: json["principalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "joinedAt": joinedAt.toIso8601String(),
+    "principalId": principalId,
+  });
+}
+
 ///DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
 ///Tenant admin and auditor only.
 class TenantQuotaPage {
@@ -19843,6 +20110,14 @@ class WebPublishMessageRequest {
   ///原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
   final String? parentEventId;
 
+  ///DD-125(8) 原“不邀请直接发送 / 仍然发送”：被提及但不是该 Workspace ACTIVE 成员、且本次不邀请的 HUMAN 公钥；缺省为空。只用于
+  ///Workspace 的新消息（含线程回复），与 mentionPubkeys 不相交，与
+  ///editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。BFF 校验每个公钥都是同 Tenant
+  ///ACTIVE HUMAN Principal（TenantMembership ACTIVE）的 ACTIVE 公钥（不要求目的地成员资格，否则
+  ///PERMISSION_DENIED），签原版 ["mention", <pubkey>] 引用标签，排序去重后冻结进同一发布意图（幂等重放逐项比较）；不发 p、不通知、不进入
+  ///Inbox，也不授予读取或成员资格，接收方只用它解析 @名字 的显示。
+  final List<String>? referenceMentionPubkeys;
+
   ///DD-125(1) 原“发送到频道”：当前 Channel 中一条线程回复的 Relay 事件 ID。BFF 回读该回复，要求作者为本人或本人是其 Installation
   ///owner，按原 getSendToChannelSemantics 只复制正文与 emoji/imeta/link-preview/mention
   ///标签、重算提及并排除源作者，由线程根按原截断规则生成 buzz:sent-from-thread，以本人身份发一条新的顶层 kind:9，沿 DD-81 幂等与对账。与
@@ -19864,6 +20139,7 @@ class WebPublishMessageRequest {
     this.mentionPubkeys,
     this.messageType,
     this.parentEventId,
+    this.referenceMentionPubkeys,
     this.sendToChannelSourceEventId,
     this.suppressLinkPreviews,
   });
@@ -19891,6 +20167,9 @@ class WebPublishMessageRequest {
             ? null
             : webMessageTypeValues.map[json["messageType"]]!,
         parentEventId: json["parentEventId"],
+        referenceMentionPubkeys: json["referenceMentionPubkeys"] == null
+            ? null
+            : List<String>.from(json["referenceMentionPubkeys"]!.map((x) => x)),
         sendToChannelSourceEventId: json["sendToChannelSourceEventId"],
         suppressLinkPreviews: json["suppressLinkPreviews"],
       );
@@ -19913,6 +20192,9 @@ class WebPublishMessageRequest {
         : List<dynamic>.from(mentionPubkeys!.map((x) => x)),
     "messageType": webMessageTypeValues.reverse[messageType],
     "parentEventId": parentEventId,
+    "referenceMentionPubkeys": referenceMentionPubkeys == null
+        ? null
+        : List<dynamic>.from(referenceMentionPubkeys!.map((x) => x)),
     "sendToChannelSourceEventId": sendToChannelSourceEventId,
     "suppressLinkPreviews": suppressLinkPreviews,
   });
