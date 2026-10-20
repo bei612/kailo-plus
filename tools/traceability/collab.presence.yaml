@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-24]
-  decisions: [DD-120, DD-81, DD-75]
+  decisions: [DD-120, DD-81]
   facts: [SF-BUZ-51]
   seams: []
   blockers: []
