@@ -9,7 +9,7 @@
 import * as React from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { toast } from "sonner";
-import { LeaveActionKey, WorkspaceLifecycleActionKey } from "@client-kit/contracts";
+import { DiscoverableWorkspaceLeaveActionKey, WorkspaceLifecycleActionKey } from "@client-kit/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -145,7 +145,7 @@ function ChannelActionRunner({
 
   async function confirm() {
     const result = await action.submit(kind === "leave"
-      ? { actionKey: LeaveActionKey.WorkspaceLeave, workspaceId: target.workspaceId }
+      ? { actionKey: DiscoverableWorkspaceLeaveActionKey.WorkspaceLeave, workspaceId: target.workspaceId }
       : { actionKey: WorkspaceLifecycleActionKey.WorkspaceSuspend, workspaceId: target.workspaceId });
     if (result?.kind === "recorded" || result?.kind === "waiting") {
       toast.success(channelActionOutcomeText(t, result));

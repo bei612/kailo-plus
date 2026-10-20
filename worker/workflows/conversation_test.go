@@ -25,7 +25,7 @@ func TestConversationProjectionKeepsUnknownUntilSameNativeReceipt(t *testing.T) 
 	calls, unknown := 0, 0
 	env.OnActivity("ProjectConversation", mock.Anything, mock.Anything).Return(func(_ context.Context, request generated.ConversationProjectionRequest) (generated.ConversationProjectionResult, error) {
 		calls++
-		if request.Target != generated.ConversationProjectionRequestTarget(target) || request.RunID == "" {
+		if request.Target != target || request.RunID == "" {
 			t.Fatal("frozen projection changed")
 		}
 		if calls == 1 {

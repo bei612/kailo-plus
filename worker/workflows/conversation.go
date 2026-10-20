@@ -24,7 +24,7 @@ func conversationProjection(ctx workflow.Context, in ComponentTaskInput) error {
 		}
 		var result generated.ConversationProjectionResult
 		err := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, activityOptions()), (*activities.CoreAPI).ProjectConversation,
-			generated.ConversationProjectionRequest{Target: generated.ConversationProjectionRequestTarget(*target), RunID: workflow.GetInfo(loop).WorkflowExecution.RunID}).Get(loop, &result)
+			generated.ConversationProjectionRequest{Target: generated.ConversationProjectionTarget(*target), RunID: workflow.GetInfo(loop).WorkflowExecution.RunID}).Get(loop, &result)
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.ConversationID == target.ConversationID && result.Status == generated.TaskStatusCOMPLETED && result.WaitingReason == "NONE" {
 			status, reason = generated.TaskStatusCOMPLETED, "NONE"

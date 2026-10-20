@@ -2,7 +2,7 @@
 // desktop/src/features/workflows/ui/WorkflowCard.tsx::ActionTile/ActionTileStack/StatusToggle
 // desktop/src/features/workflows/ui/workflowDefinition.ts::getWorkflowActionTiles.
 // Only admitted contract actions are mapped.
-import { ActionKind, type AutomationVersionContent } from "@client-kit/contracts";
+import { AutomationVersionContentActionKind, type AutomationVersionContent } from "@client-kit/contracts";
 import { CircleCheckBig, Hash, MessageSquare, SmilePlus, Timer, Webhook, Zap, type LucideIcon } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "./profile/buzz/shared/lib/cn";
@@ -64,7 +64,7 @@ export function WorkflowActionTileStack({ content, animationSequence }: {
   const actions = content.formatVersion === 2 || content.formatVersion === 3
     ? (content.steps ?? []).map((step) => ({ action: step.action,
       emoji: step.action === "add_reaction" ? step.emoji ?? null : null, key: step.id }))
-    : [{ action: content.action?.kind === ActionKind.PostMessage ? "send_message" : "agent_turn", emoji: null, key: "action" }];
+    : [{ action: content.action?.kind === AutomationVersionContentActionKind.PostMessage ? "send_message" : "agent_turn", emoji: null, key: "action" }];
   const visibleActions = actions.slice(0, 3);
   return <span className={cn("relative h-9", visibleActions.length === 1 && "w-9",
     visibleActions.length === 2 && "w-[2.625rem]", visibleActions.length > 2 && "w-12")}

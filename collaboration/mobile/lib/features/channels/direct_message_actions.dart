@@ -146,7 +146,7 @@ extension _DirectMessageActions on DirectMessages {
     final bindings = await conversations();
     final matches = bindings.where((row) => row.id == task.targetId).toList();
     if (matches.length != 1 ||
-        matches.single.state != ItemState.ACTIVE ||
+        matches.single.state != ConversationViewState.ACTIVE ||
         !setEquals(
           matches.single.participantPrincipalIds.toSet(),
           _command!.conversationOpen!.participantPrincipalIds.toSet(),
@@ -211,7 +211,7 @@ extension _DirectMessageActions on DirectMessages {
   /// Shared original signed 39000/39002 verification for DM consumers. A
   /// hydrated display channel contains representative keys, not the roster.
   Future<Channel> _verifiedNativeConversation(ConversationView binding) async {
-    if (binding.state != ItemState.ACTIVE ||
+    if (binding.state != ConversationViewState.ACTIVE ||
         !binding.participantPrincipalIds.contains(principalId) ||
         _ref.read(relaySessionProvider).status != SessionStatus.connected) {
       throw const PlatformUnavailable('Conversation is not admitted');
@@ -299,7 +299,7 @@ extension DirectMessageSubmission on DirectMessages {
       _command = ActionCommand(
         actionKey: 'conversation.open',
         idempotencyKey: const Uuid().v4(),
-        conversationOpen: ConversationOpenClass(participantPrincipalIds: ids),
+        conversationOpen: ConversationOpenRequest(participantPrincipalIds: ids),
       );
       await _persist();
       return await _submitOriginal(firstSubmission: true);

@@ -8,7 +8,7 @@
 // select); `onRecorded` hands the recorded workspace.create submission to that caller's next step.
 import * as React from "react";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
-import { ChannelType, CreateActionKey, type ActionSubmission } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, RoleWorkspacePageCreateActionKey, type ActionSubmission } from "@client-kit/contracts";
 import { X } from "lucide-react";
 import { useBffClient, useT } from "./context";
 import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "./roles";
@@ -17,10 +17,10 @@ import { useLoad } from "./use-load";
 import { CreateChannelTemplateField, useChannelTemplateSelection } from "./channel-templates/CreateChannelTemplateField";
 
 /** Keep mounted across closing so an unresolved command never loses its idempotency key. */
-export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelType.Stream, children, onRecorded, testId = "create-channel-dialog", title }: {
+export function CreateChannelDialog({ open, onOpenChange, channelKind = WorkspaceChannelCreateChannelType.Stream, children, onRecorded, testId = "create-channel-dialog", title }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  channelKind?: ChannelType;
+  channelKind?: WorkspaceChannelCreateChannelType;
   children?: React.ReactNode;
   onRecorded?: (submission: ActionSubmission, name: string) => void;
   testId?: string;
@@ -32,7 +32,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
   const page = capability.status === "ok" && capability.data
     && Array.isArray(capability.data.workspaces)
     && (capability.data.createActionKey === undefined
-      || capability.data.createActionKey === CreateActionKey.WorkspaceCreate)
+      || capability.data.createActionKey === RoleWorkspacePageCreateActionKey.WorkspaceCreate)
     ? capability.data : null;
   const actionKey = page?.createActionKey;
   const state = useWorkspaceCreate(actionKey, channelKind, {active: open});
@@ -62,7 +62,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
             data-testid={testId}
           >
             <DialogHeader className="shrink-0 px-6 py-5 pr-14 pb-2">
-              <DialogTitle>{title ?? t(channelKind === ChannelType.Forum ? "channel.create.forumTitle" : "channel.create.title")}</DialogTitle>
+              <DialogTitle>{title ?? t(channelKind === WorkspaceChannelCreateChannelType.Forum ? "channel.create.forumTitle" : "channel.create.title")}</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-6">
               <div className="py-5 pt-3">

@@ -20,7 +20,7 @@ import (
 func canInput(t *testing.T) (generated.ApprovalWorkflowInput, generated.ApprovalWorkflowInput) {
 	t.Helper()
 	env, rec, in := setup(t, admitted)
-	in.RoleRequirements = []generated.RoleRequirementElement{{Selector: generated.TenantAdmin, MinDistinct: 2}}
+	in.RoleRequirements = []generated.ApprovalRoleRequirement{{Selector: generated.TenantAdmin, MinDistinct: 2}}
 	env.RegisterDelayedCallback(func() {
 		rec.set(func(r *recorder) { r.projectDown = true })
 		env.SetContinueAsNewSuggested(true)

@@ -270,8 +270,7 @@ pub async fn discoverable_workspaces(
         {
             item["leaveActionKey"] = LEAVE_ACTION.into();
         }
-        let parsed = match serde_json::from_value::<contracts::DiscoverableWorkspacePageItem>(item)
-        {
+        let parsed = match serde_json::from_value::<contracts::DiscoverableWorkspace>(item) {
             Ok(v) => v,
             Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         };

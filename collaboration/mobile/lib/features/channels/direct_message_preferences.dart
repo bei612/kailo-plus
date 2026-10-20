@@ -109,7 +109,7 @@ extension _DirectMessagePreferences on DirectMessages {
     }
     final active = {
       for (final binding in bindings)
-        if (binding.state == ItemState.ACTIVE) binding.id,
+        if (binding.state == ConversationViewState.ACTIVE) binding.id,
     };
     final preferences = <String, ConversationPreferenceRequest>{};
     for (final entry in raw.entries) {
@@ -147,7 +147,9 @@ extension _DirectMessagePreferences on DirectMessages {
   Future<void> _admitConversationPreference(String id) async {
     await _checkActor();
     final binding = (await conversations())
-        .where((row) => row.id == id && row.state == ItemState.ACTIVE)
+        .where(
+          (row) => row.id == id && row.state == ConversationViewState.ACTIVE,
+        )
         .singleOrNull;
     if (binding == null) {
       throw const PlatformUnavailable('Conversation is not admitted');

@@ -146,7 +146,7 @@ func (c *CoreAPI) AdmitAutomationSchedule(ctx context.Context, source generated.
 	if !info.IsWorkflowActivity() || info.IsLocalActivity || info.WorkflowExecution.ID == "" || info.WorkflowExecution.RunID == "" {
 		return out, temporal.NewNonRetryableApplicationError("Schedule Activity 不成立", ErrTypeRejected, nil)
 	}
-	in := generated.AutomationScheduleAdmitRequest{Input: generated.InputClass(source), WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}
+	in := generated.AutomationScheduleAdmitRequest{Input: source, WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}
 	var raw json.RawMessage
 	if err := c.post(ctx, "/service/v1/automations/schedule-admit", in, &raw); err != nil {
 		return out, err

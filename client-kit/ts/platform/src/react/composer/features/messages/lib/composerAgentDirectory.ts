@@ -5,7 +5,7 @@ import type {
   AgentInstallationView,
   WorkspaceMemberView,
 } from "@client-kit/contracts";
-import { AgentTrigger, ChannelType } from "@client-kit/contracts";
+import { AgentTrigger, WorkspaceChannelCreateChannelType } from "@client-kit/contracts";
 import type { BffClient } from "../../../../../client";
 import { canonicalNpub, truncateNpub } from "../../../../conversations/pubkey";
 
@@ -95,8 +95,8 @@ export async function loadComposerAgentDirectory(
   check();
   if (
     channel.archived ||
-    (channel.channelType !== ChannelType.Stream &&
-      channel.channelType !== ChannelType.Forum) ||
+    (channel.channelType !== WorkspaceChannelCreateChannelType.Stream &&
+      channel.channelType !== WorkspaceChannelCreateChannelType.Forum) ||
     (scope.channelId && channel.channelId !== scope.channelId)
   )
     throw new Error("Composer channel admission mismatch");

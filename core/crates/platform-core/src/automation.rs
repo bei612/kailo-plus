@@ -798,7 +798,7 @@ async fn management_installation(
         .transpose()
         .map_err(|_| invalid_management())?;
     step_approval::validate_policy(tx, tenant, policy, version, true).await?;
-    let requested: contracts::ContentClass = serde_json::from_value(requested)
+    let requested: contracts::AgentVersionContent = serde_json::from_value(requested)
         .map_err(|_| Refusal::Unavailable("Installation 已发布 Version 不符合共享契约".into()))?;
     // Validate the registered AgentVersion policy, without using the ordinary
     // Agent's output location to override the frozen Automation/source contract.

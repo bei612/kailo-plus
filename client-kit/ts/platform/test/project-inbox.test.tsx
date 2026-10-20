@@ -22,7 +22,7 @@ import {toast} from "sonner";
 import {resolveExactLinkPaste} from "../src/react/composer/features/messages/lib/composerMessageLinkNode";
 import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {IdleAuxiliarySurface,type IdleAuxiliaryProps} from "../src/react/messages/thread";
-import {ChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
+import {WorkspaceChannelCreateChannelType,ErrorClass,WorkspaceMembershipState,WorkspaceVisibility} from "@client-kit/contracts";
 import type {SearchHit,SearchChannel} from "../src/react/search/types";
 import {mergeSelectionDiscussDraft} from "../src/react/projects/lib/projectSelection";
 import type {ProjectDiscussInChannel} from "../src/react/projects/useProjectDiscussInChannel";
@@ -152,8 +152,8 @@ describe("original Inbox project read closure",()=>{
     f.rows.find(row=>row.kind===(locale==="en"?30617:30621))!.tags.push(["buzz-channel",channelId]);
     if(locale==="en")f.rows.find(row=>row.kind===30621)!.tags.push(["buzz-channel","12345678-1234-4234-8234-123456789099"]);
     const data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,source)!;
-    const workspace={id:"scope-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
-      channel:{channelId,name:"Original stream",channelType:ChannelType.Stream,archived:false}};
+    const workspace={id:"scope-workspace",createdAt:"1970-01-01T00:00:00.000Z",isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
+      channel:{channelId,name:"Original stream",channelType:WorkspaceChannelCreateChannelType.Stream,archived:false}};
     let revoked=false;const transport=vi.fn(async(_request:{path:string})=>({status:200,body:{items:revoked?[]:[workspace]}}));
     const failed=vi.spyOn(toast,"error").mockImplementation(()=>"failed");
     const discuss=vi.fn<ProjectDiscussInChannel>(async()=>{});
@@ -197,8 +197,8 @@ describe("original Inbox project read closure",()=>{
   });
   it("uses the existing governed channel browser and does not draft or navigate after a rejected public-channel join",async()=>{
     const f=fixture(),data=await loadProjectWorkItems(f.host,new AbortController().signal);const item=resolveProjectInboxWorkItem(data.items,f.issue)!;
-    const workspace={id:"public-workspace",createdAt:new Date(0),isMember:false,visibility:WorkspaceVisibility.Open,memberCount:1,joinActionKey:"workspace.join",
-      channel:{channelId:"public-channel",name:"Public stream",channelType:ChannelType.Stream,archived:false}};
+    const workspace={id:"public-workspace",createdAt:"1970-01-01T00:00:00.000Z",isMember:false,visibility:WorkspaceVisibility.Open,memberCount:1,joinActionKey:"workspace.join",
+      channel:{channelId:"public-channel",name:"Public stream",channelType:WorkspaceChannelCreateChannelType.Stream,archived:false}};
     const send=vi.fn(async(request:{method?:string;path:string})=>request.method==="POST"?{status:403,body:{class:ErrorClass.Denied,message:"refused"}}:{status:200,body:{items:[workspace]}});
     const discuss=vi.fn(async()=>{});
     const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,renderComposer:()=>null,renderContent:content=><p>{content}</p>};
@@ -705,8 +705,8 @@ describe("original Inbox project read closure",()=>{
     writer?.(f);
     f.rows.find(row=>row.kind===30621)!.tags.push(["buzz-channel",channelId]);
     const initial=await loadProjectWorkItems(f.host,new AbortController().signal);
-    const workspace={id:"home-workspace",createdAt:new Date(0),isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
-      channel:{channelId,name:"Home channel",channelType:ChannelType.Stream,archived:false}};
+    const workspace={id:"home-workspace",createdAt:"1970-01-01T00:00:00.000Z",isMember:true,membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
+      channel:{channelId,name:"Home channel",channelType:WorkspaceChannelCreateChannelType.Stream,archived:false}};
     const bff=createBffClient({send:async()=>({status:200,body:{items:[workspace]}})});
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
     const pulse:PulseHost={scopeKey:f.host.scopeKey,pubkey:viewer,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,

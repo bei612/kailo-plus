@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ItemState, WorkspaceMembershipState, type ConversationView } from "@client-kit/contracts";
+import { ConversationViewState, WorkspaceMembershipState, type ConversationView } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
@@ -105,7 +105,7 @@ beforeEach(() => {
 afterEach(async () => {await act(async () => root.unmount()); query.clear(); host.remove(); MotionGlobalConfig.useManualTiming=false; vi.useRealTimers();vi.unstubAllGlobals();});
 it("restores the exact admitted native DM root/reply key without changing the transport scope", async () => {
   const nativeChannel="native-dm";
-  const conversation:ConversationView={id:"conversation-binding",channelId:nativeChannel,state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  const conversation:ConversationView={id:"conversation-binding",channelId:nativeChannel,state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
   state.conversationQuery.mockResolvedValue({events:[rootEvent,reply].map(event=>({...event,tags:event.tags.map(tag=>tag[0]==="h"?["h",nativeChannel]:tag)}))});
   const key=`thread:${nativeChannel}:${rootId}:${replyId}`;
   await mount(replyId,conversation,undefined,[],false,key);
@@ -123,7 +123,7 @@ it("restores the exact admitted native DM root/reply key without changing the tr
 });
 
 it.each(["channel", "conversation"] as const)("switches the real %s thread between the original split pane and focus drawer without publishing", async(scope) => {
-  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   await mount(undefined, conversation, undefined, [], true);
   expect(host.querySelector('[data-testid="right-auxiliary-pane-resize-handle"]')).not.toBeNull();
   let toggle = host.querySelector<HTMLButtonElement>('[data-testid="thread-view-mode-toggle"]')!;
@@ -150,7 +150,7 @@ it("does not offer the original two-column switch in the single-panel host", asy
   expect(host.querySelector('[data-testid="thread-view-mode-toggle"]')).toBeNull();
 });
 it.each(["channel","conversation"] as const)("resolves the %s message author before the original thread reply banner and clears it on interruption",async(scope)=>{
-  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   await mount(undefined,conversation);
   expect(host.querySelector('[data-testid="message-author"]')?.textContent).toBe("Verified author");
   expect(host.querySelector('[data-testid="reply-target"]')?.textContent).toContain("Replying to Verified author");
@@ -161,7 +161,7 @@ it.each(["channel","conversation"] as const)("resolves the %s message author bef
 
 it.each(["channel", "conversation"] as const)("renders only the admitted %s thread typing and clears expired or revoked state", async (scope) => {
   const peer = "d".repeat(64);
-  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   const typing = [{pubkey:peer,threadHeadId:rootId},{pubkey:"e".repeat(64),threadHeadId:null},{pubkey:"f".repeat(64),threadHeadId:replyId}];
   await mount(undefined,conversation,undefined,typing);
   const indicator = () => host.querySelector('[data-testid="message-typing-indicator"]');
@@ -178,7 +178,7 @@ it.each(["channel", "conversation"] as const)("renders only the admitted %s thre
   expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
 });
 it.each(["channel", "conversation"] as const)("publishes the original thread-head typing from the %s thread composer, throttled", async (scope) => {
-  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   state.typing.mockResolvedValue(undefined);
   await mount(undefined,conversation);
   // The nested reply is selected, but the original reply tag is the thread head (the root).
@@ -196,7 +196,7 @@ it.each([{scope:"channel",kind:9},{scope:"conversation",kind:40002}])("highlight
   state.richContent=true;
   const events=[rootEvent,reply].map(row=>({...row,kind,content:"needle **needle** `needle`"}));
   state.query.mockResolvedValue({events});state.conversationQuery.mockResolvedValue({events});
-  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
+  const conversation:ConversationView|undefined=scope==="conversation"?{id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1}:undefined;
   await mount(replyId,conversation,{searchMessageId:replyId,searchQuery:"needle"});
   await vi.waitFor(()=>expect(host.querySelectorAll(`[data-message-id="${replyId}"] [data-search-match="true"]`)).toHaveLength(2));
   expect(host.querySelector(`[data-message-id="${rootId}"] [data-search-match="true"]`)).toBeNull();
@@ -222,7 +222,7 @@ it("opens the original deep-linked reply for reading but leaves the root as the 
   expect(state.publish).toHaveBeenCalledWith("workspace","reply",[],"original-intent",[],{messageType:"STREAM",parentEventId:rootId});
 });
 it("opens DM deep links in the original reply panel using only the admitted conversation consumers",async()=>{
-  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
   await mount(replyId,conversation);
   expect(state.conversationQuery).toHaveBeenCalledWith("conversation",{messageType:"STREAM",parentEventId:rootId});
   expect(state.query).not.toHaveBeenCalled();
@@ -236,7 +236,7 @@ it("opens DM deep links in the original reply panel using only the admitted conv
   expect(host.querySelector('[data-testid="host-send"]')).toBeNull();
 });
 it("refuses DM reply publication after participant removal or disablement and requires a terminal receipt",async()=>{
-  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ItemState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
+  const conversation:ConversationView={id:"conversation",channelId:"workspace",state:ConversationViewState.Active,participantPrincipalIds:["human","peer"],operationId:"operation",version:1};
   state.conversationPublish.mockResolvedValue({operationId:"operation"});
   await mount(replyId,conversation);
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')!.click());
@@ -244,7 +244,7 @@ it("refuses DM reply publication after participant removal or disablement and re
   state.conversationPublish.mockClear();
   await mount(replyId,{...conversation,participantPrincipalIds:["peer"]});
   expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
-  await mount(replyId,{...conversation,state:ItemState.Disabled});
+  await mount(replyId,{...conversation,state:ConversationViewState.Disabled});
   expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
   expect(state.conversationPublish).not.toHaveBeenCalled();
 });

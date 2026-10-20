@@ -8,7 +8,7 @@ import { ChannelPane as ActualChannelPane } from "./ChannelPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import type { TimelineMessage } from "@client-kit/platform/react/messages";
-import { ItemState } from "@client-kit/contracts";
+import { ConversationViewState } from "@client-kit/contracts";
 import type { MessageAuthor } from "./MessageAuthorProfile";
 import { parseMentionClipboardRecords } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { SETTLE_FRAME_COUNT, SETTLE_MOTION_WINDOW_MS } from "@client-kit/platform/react/messages/timeline/useSettleGatedPrependMessages";
@@ -290,7 +290,7 @@ it("keeps the original edit guard and mounted draft during metadata refetch but 
 });
 
 it.each(["channel", "conversation"] as const)("freshly reads a reloaded %s thread reference and follows its history without storing a body", async scope => {
-  const conversation=scope === "conversation" ? {id:"workspace-a",channelId:"channel-a",state:ItemState.Active,
+  const conversation=scope === "conversation" ? {id:"workspace-a",channelId:"channel-a",state:ConversationViewState.Active,
     participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1} : undefined;
   const renderHistory = (headId: string | null) => act(async () => root.render(<TooltipProvider><ChannelPane
     workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} threadHeadId={headId}/></TooltipProvider>));
@@ -322,7 +322,7 @@ it.each(["channel", "conversation"] as const)("freshly reads a reloaded %s threa
 it.each(["channel", "conversation"] as const)("passes admitted %s thread typing from the live window and clears completed, expired and revoked indicators", async scope => {
   state.typingAgents.data={agents:[{pubkey:"agent",installation:{resourceId:"agent-installation"}}]};
   state.members.data = [{principalId:"human-a",pubkeys:["self-key"],displayName:"Me"}, {principalId:"human-b",pubkeys:["peer"],displayName:"Peer"}];
-  const conversation=scope==="conversation"?{id:"workspace-a",channelId:"channel-a",state:ItemState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1}:undefined;
+  const conversation=scope==="conversation"?{id:"workspace-a",channelId:"channel-a",state:ConversationViewState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"operation",version:1}:undefined;
   await act(async () => root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>));
   if(conversation) await act(async()=>{
     state.receive!({type:"snapshot",events:[{id:"event-a",pubkey:"author-a",kind:9,created_at:1,tags:[["h","channel-a"]],content:"existing message"},
@@ -365,7 +365,7 @@ it.each([9, 40002])("highlights only the matching searchable kind %s live body a
 });
 
 it("routes ordinary live DM messages through the DM slot while honoring self, mute and revocation", async () => {
-  const conversation = { id: "dm", channelId: "channel-a", state: ItemState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
+  const conversation = { id: "dm", channelId: "channel-a", state: ConversationViewState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
   state.members.data = [{ principalId: "human-a", pubkeys: ["own"], displayName: "Me" }, { principalId: "human-b", pubkeys: ["peer"], displayName: "Alice" }];
   const mountDm = async () => act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>); });
   await mountDm();
@@ -421,7 +421,7 @@ it("opens a DM mention against the admitted second-device author event and drops
   const ownKey = "33".repeat(32);
   const authorEventId = "44".repeat(32);
   const mentionEventId = "55".repeat(32);
-  const conversation = { id: "dm-multiple-keys", channelId: "dm-channel", state: ItemState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
+  const conversation = { id: "dm-multiple-keys", channelId: "dm-channel", state: ConversationViewState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
   state.members.data = [
     { principalId: "human-a", pubkeys: [ownKey], displayName: "Me" },
     { principalId: "human-b", pubkeys: [firstKey, secondKey], displayName: "Alice" },
@@ -456,7 +456,7 @@ it("opens a DM mention against the admitted second-device author event and drops
 
 it("restores the actual DM intro once per human, using the admitted second-device author for profile access", async () => {
   const ownKey="11".repeat(32), firstKey="22".repeat(32), secondKey="33".repeat(32);
-  const conversation={id:"dm-intro",channelId:"dm-channel",state:ItemState.Active,
+  const conversation={id:"dm-intro",channelId:"dm-channel",state:ConversationViewState.Active,
     participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
   state.members.data=[{principalId:"human-a",pubkeys:[ownKey,"44".repeat(32)],displayName:"Me"},
     {principalId:"human-b",pubkeys:[firstKey,secondKey],displayName:"Alice"}];
@@ -487,7 +487,7 @@ it("restores the actual DM intro once per human, using the admitted second-devic
 
 it.each(["missing-recipient","duplicate-principal","inactive-conversation"])("does not present a DM intro from %s directory facts",async boundary=>{
   const ownKey="11".repeat(32),peerKey="22".repeat(32);
-  const conversation={id:"dm-untrusted-intro",channelId:"dm-channel",state:boundary==="inactive-conversation"?ItemState.Disabled:ItemState.Active,
+  const conversation={id:"dm-untrusted-intro",channelId:"dm-channel",state:boundary==="inactive-conversation"?ConversationViewState.Disabled:ConversationViewState.Active,
     participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
   state.members.data=[{principalId:"human-a",pubkeys:[ownKey],displayName:"Me"}];
   if(boundary!=="missing-recipient")state.members.data.push({principalId:"human-b",pubkeys:[peerKey],displayName:"Alice"});
@@ -500,7 +500,7 @@ it.each(["missing-recipient","duplicate-principal","inactive-conversation"])("do
 
 it("partitions the actual recipient read when the same workspace switches DM or that DM's people change", async () => {
   const ownKey="11".repeat(32),aliceKey="22".repeat(32),bobKey="33".repeat(32),carolKey="44".repeat(32);
-  const first={id:"dm-first",channelId:"channel-first",state:ItemState.Active,
+  const first={id:"dm-first",channelId:"channel-first",state:ConversationViewState.Active,
     participantPrincipalIds:["human-a","alice"],operationId:"op",version:1};
   const second={...first,id:"dm-second",channelId:"channel-second",participantPrincipalIds:["human-a","bob"]};
   const changed={...second,participantPrincipalIds:["human-a","bob","carol"]};
@@ -696,7 +696,7 @@ it("does not accept denied or incomplete route ancestry as a usable thread",asyn
 
 it("opens an off-window DM link using the admitted conversation root and the original thread panel",async()=>{
   const rootId="a".repeat(64),replyId="b".repeat(64),pubkey="c".repeat(64);
-  const conversation={id:"dm",channelId:"channel-a",state:ItemState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
+  const conversation={id:"dm",channelId:"channel-a",state:ConversationViewState.Active,participantPrincipalIds:["human-a","human-b"],operationId:"op",version:1};
   const rootEvent={id:rootId,pubkey,kind:9,created_at:1,createdAt:1,channelId:"channel-a",category:"activity" as const,tags:[["h","channel-a"]],content:"Original DM root"};
   state.route.messages=[rootEvent,{...rootEvent,id:replyId,created_at:2,createdAt:2,content:"Original DM reply",tags:[["h","channel-a"],["e",rootId,"","root"],["e",rootId,"","reply"]]}];
   await act(async()=>root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} targetMessageId={replyId} targetThreadRootId={rootId}/></TooltipProvider>));

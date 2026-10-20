@@ -1482,7 +1482,7 @@ async fn prepare_dispatch(
     let Some((memory_state, memory_event, None, content)) = frozen else {
         return Err(RuntimeError::AdmissionRequired);
     };
-    let content: contracts::ContentClass =
+    let content: contracts::AgentVersionContent =
         serde_json::from_value(content).map_err(|_| RuntimeError::AdmissionRequired)?;
     let channel = crate::agent_version::reply_to_channel(&content)
         .map_err(|_| RuntimeError::AdmissionRequired)?;
@@ -2538,7 +2538,7 @@ async fn lock_reply(
         .bind(&projection.config_hash).bind(&invocation.runtime_thread_id).bind(turn_id).bind(expected_event)
         .fetch_optional(&mut **tx).await?;
     let binding = binding.ok_or(Refusal::Precondition(ReasonCode::BindingNotActive))?;
-    let content: contracts::ContentClass =
+    let content: contracts::AgentVersionContent =
         serde_json::from_value(binding.agent_version_content.clone())
             .map_err(|_| Refusal::Unavailable("Agent reply 的固定版本不符合共享契约".into()))?;
     let (_, hash) = crate::agent_version::content(&content)?;
@@ -3860,7 +3860,7 @@ fn delay_result(id: Uuid, step: String, seconds: i64, timeout_seconds: Option<i6
             finish_activity: true,
             approval_workflow_id: None,
             approval_input: None,
-            delay_step: Some(contracts::DelayStep {
+            delay_step: Some(contracts::AgentTaskAdvanceResultDelayStep {
                 id: step,
                 seconds,
                 timeout_seconds,

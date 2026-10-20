@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActionDispatchState, ActionGateState, AgentVersionState, CreateActionKey, ErrorClass, ReasonCode, ResourceState, TaskStatus,
+import { ActionDispatchState, ActionGateState, AgentVersionState, RoleWorkspacePageCreateActionKey, ErrorClass, ReasonCode, ResourceState, TaskStatus,
   type ActionCommand, type ActionSubmission } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
@@ -71,8 +71,8 @@ describe("original channel template apply over governed submissions", () => {
   });
 
   it("waits for the workspace.create task to complete before applying", async () => {
-    const submission = receipt({ actionKey: CreateActionKey.WorkspaceCreate, idempotencyKey: "x" });
-    const base = { operationId: submission.operationId, actionExecutionId: submission.actionExecutionId, actionKey: CreateActionKey.WorkspaceCreate,
+    const submission = receipt({ actionKey: RoleWorkspacePageCreateActionKey.WorkspaceCreate, idempotencyKey: "x" });
+    const base = { operationId: submission.operationId, actionExecutionId: submission.actionExecutionId, actionKey: RoleWorkspacePageCreateActionKey.WorkspaceCreate,
       actionVersion: 1, targetId: workspaceId, gateState: ActionGateState.Allowed, dispatchState: ActionDispatchState.Dispatched,
       workflowId: "wf", createdAt: "2026-10-18T00:00:00Z" };
     const task = vi.fn()

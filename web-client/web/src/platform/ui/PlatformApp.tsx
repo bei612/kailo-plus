@@ -91,7 +91,7 @@ import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
 import { ProjectsPane } from "./ProjectsPane";
 import { SidebarProjects } from "./SidebarProjects";
-import { ChannelType } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType } from "@client-kit/contracts";
 import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
@@ -675,7 +675,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 <SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu></>}
               dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
-                <CreateChannelDialog key={`forum:${session.tenantPrincipalId}`} open={newForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
+                <CreateChannelDialog key={`forum:${session.tenantPrincipalId}`} open={newForumOpen} onOpenChange={setNewForumOpen} channelKind={WorkspaceChannelCreateChannelType.Forum} />
                 <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
                 onSelect={async (workspace) => {

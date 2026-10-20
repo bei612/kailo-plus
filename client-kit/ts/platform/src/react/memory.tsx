@@ -1,7 +1,7 @@
 // DD-66/68, 19 §5/7: both TS hosts use this same governed Memory surface.
 // Decrypted bodies stay in the mounted view, never local storage or telemetry.
 import {
-  ActionDispatchState, ActionGateState, AgentInstallationState, ErrorClass, ExpectedHeadState,
+  ActionDispatchState, ActionGateState, AgentInstallationState, ErrorClass, AgentMemoryWriteInputExpectedHeadState,
   PlatformSessionAccessMode, ReasonCode, ResourceState, TaskStatus,
   type ActionCommand, type ActionSubmission, type AgentInstallationView,
   type AgentMemoryReadView, type AgentMemoryEntryPage,
@@ -320,7 +320,7 @@ function MemoryEditor({ edit, installation, canWrite, requestBlocked, onFinished
       || (edit.mode === "patch" && (!patch || !eventId(edit.read.valueHash)))) return;
     const memoryWrite: AgentMemoryWriteInput = {
       slug: edit.read.slug,
-      expectedHeadState: edit.read.state === "FOUND" ? ExpectedHeadState.Found : ExpectedHeadState.Absent,
+      expectedHeadState: edit.read.state === "FOUND" ? AgentMemoryWriteInputExpectedHeadState.Found : AgentMemoryWriteInputExpectedHeadState.Absent,
       expectedHeadEventId: edit.read.eventId ?? null,
     };
     if (edit.mode === "value") memoryWrite.value = value;

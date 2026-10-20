@@ -31,7 +31,7 @@ func applicationBinding(ctx workflow.Context, in ComponentTaskInput) error {
 		info := workflow.GetInfo(loop)
 		err := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, options),
 			(*activities.CoreAPI).AdvanceApplicationBinding, generated.ApplicationBindingAdvanceRequest{
-				Target: generated.ApplicationBindingAdvanceRequestTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending,
+				Target: generated.ApplicationBindingTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending,
 			}).Get(loop, &result)
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.BindingID == target.BindingID {

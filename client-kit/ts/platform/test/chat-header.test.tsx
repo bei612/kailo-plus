@@ -5,7 +5,7 @@ import { render, click } from "./render";
 import { DmHeaderParticipants } from "../src/react/messages/dm-header-participants";
 import { AvatarHostProvider } from "../src/react/profile/avatar-host";
 import { resolveConversationHeaderParticipants } from "../src/react/conversations/dm-participant-display";
-import { ItemState, type ConversationView } from "@client-kit/contracts";
+import { ConversationViewState, type ConversationView } from "@client-kit/contracts";
 
 it("renders the actual admitted title, description and original status surface", async () => {
   setLocale("zh-CN");
@@ -61,7 +61,7 @@ it("uses the original one-person avatar and group overlap/overflow rules in the 
   expect(group.querySelector('[role="button"]')).toBeNull();
 });
 
-const conversation: ConversationView={id:"dm",channelId:"native-dm",state:ItemState.Active,
+const conversation: ConversationView={id:"dm",channelId:"native-dm",state:ConversationViewState.Active,
   participantPrincipalIds:["me","bob"],operationId:"operation",version:1};
 const people=[{principalId:"me",displayName:"Me",pubkeys:["a".repeat(64),"c".repeat(64)]},
   {principalId:"bob",displayName:"Bob",pubkeys:["b".repeat(64),"d".repeat(64)]}];
@@ -72,7 +72,7 @@ it("counts governed people, not their device keys, in the original DM title/avat
 });
 it.each(["unadmitted","inactive","missing-person","duplicate-person"])("does not manufacture %s header identity",condition=>{
   const actual=condition==="unadmitted"?{...conversation,participantPrincipalIds:["outsider","bob"]}
-    :condition==="inactive"?{...conversation,state:ItemState.Provisioning}
+    :condition==="inactive"?{...conversation,state:ConversationViewState.Provisioning}
     :condition==="duplicate-person"?{...conversation,participantPrincipalIds:["me","bob","bob"]}:conversation;
   const directory=condition==="missing-person"?[people[0]!]:condition==="unadmitted"
     ? [...people,{principalId:"outsider",displayName:"Known outsider",pubkeys:["e".repeat(64)]}]:people;

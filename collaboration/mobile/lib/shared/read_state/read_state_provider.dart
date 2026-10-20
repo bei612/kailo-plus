@@ -9,7 +9,7 @@ import '../platform/platform_api.dart';
 import '../platform/platform_config.dart';
 import '../platform/platform_read_state.dart';
 import '../platform/platform_views.dart';
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'read_state_manager.dart';
 
 class ReadStateState {

@@ -11,7 +11,7 @@ import {
   type ActionCommand,
   type BusinessOperationPage,
   type BusinessOperationSummary,
-  type OperationElement,
+  type BusinessOperationView,
   TenantQuotaFeature,
   type TenantQuotaPage,
   type TenantQuotaView,
@@ -579,7 +579,7 @@ function seconds(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function OperationRow({ op, workspaces }: { op: OperationElement; workspaces: WorkspaceView[] }) {
+function OperationRow({ op, workspaces }: { op: BusinessOperationView; workspaces: WorkspaceView[] }) {
   const t = useT();
   const locale = useLocale();
   const phase = businessOperationPhase[op.phase];

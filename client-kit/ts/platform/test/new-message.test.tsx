@@ -7,7 +7,7 @@ import { NewMessageScreen, ConversationList, ConversationVisibilityProvider, hid
 import { conversationNotificationMutes } from "../src/inbox";
 import { useConversationState } from "../src/react/conversations/use-conversation-state";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
-import { ItemState, type ConversationParticipantPage, type ConversationView } from "@client-kit/contracts";
+import { ConversationViewState, type ConversationParticipantPage, type ConversationView } from "@client-kit/contracts";
 import { TransportError, type BffRequest } from "../src/transport";
 import { button, click, render, settle } from "./render";
 import { reopenHiddenInboxConversation, type HiddenDmInboxIntent } from "../src/react/conversations/hidden-dm-inbox-action";
@@ -21,7 +21,7 @@ beforeAll(() => {
 });
 
 describe("original hidden DM Inbox navigation", () => {
-  const conversation: ConversationView = {id:"existing-dm",channelId:"native-dm",participantPrincipalIds:["alice","bob"],state:ItemState.Active,operationId:"op",version:1};
+  const conversation: ConversationView = {id:"existing-dm",channelId:"native-dm",participantPrincipalIds:["alice","bob"],state:ConversationViewState.Active,operationId:"op",version:1};
   it("reopens the exact binding, retains the same uncertain publication, and never creates a DM",async()=>{
     const send=vi.fn(async(_request:BffRequest)=>({status:200,body:{items:[conversation]}}));
     const client=createBffClient({send}); const intent:HiddenDmInboxIntent={};
@@ -87,7 +87,7 @@ describe("original hidden DM Inbox navigation", () => {
 });
 
 describe("private conversation user state", () => {
-  const items: ConversationView[] = [{id: "conversation", channelId: "native-channel", state: ItemState.Active,
+  const items: ConversationView[] = [{id: "conversation", channelId: "native-channel", state: ConversationViewState.Active,
     participantPrincipalIds: ["alice", "bob"], operationId: "operation", version: 1}];
   function StateHarness() {
     const state = useConversationState(items);

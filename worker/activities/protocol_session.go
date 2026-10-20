@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 	"unicode"
 
 	"apps/worker/internal/contracts/generated"
@@ -38,8 +39,7 @@ func validProtocolSessionResult(in generated.ProtocolSessionReconcileRequest, ou
 	if evidence := out.Round.WriteObservation; evidence != nil {
 		text := func(value string) bool { return strings.IndexFunc(value, unicode.IsControl) < 0 }
 		if evidence.CorrelationRef == "" || !text(evidence.CorrelationRef) || !text(evidence.Editors) ||
-			evidence.BytesWritten < 0 || evidence.BaseModifiedAt.IsZero() ||
-			evidence.BaseModifiedAt.Nanosecond() != 0 || evidence.BaseModifiedAt.Format("Z07:00") != "Z" ||
+			evidence.BytesWritten < 0 || !utcSeconds(evidence.BaseModifiedAt) ||
 			(evidence.NativeEtag != nil && (*evidence.NativeEtag == "" || !text(*evidence.NativeEtag))) ||
 			(evidence.ResultRevision != nil && (*evidence.ResultRevision == "" || !text(*evidence.ResultRevision))) {
 			return false
@@ -73,4 +73,15 @@ func validProtocolSessionResult(in generated.ProtocolSessionReconcileRequest, ou
 		}
 	}
 	return false
+}
+
+// utcSeconds keeps the write observation's time to a whole-second UTC RFC3339
+// instant (.design/18), the same acceptance as Core's protocol_session_write.
+func utcSeconds(value string) bool {
+	at, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil || at.IsZero() || at.Nanosecond() != 0 {
+		return false
+	}
+	_, offset := at.Zone()
+	return offset == 0
 }

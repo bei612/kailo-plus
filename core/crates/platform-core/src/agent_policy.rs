@@ -2,7 +2,7 @@
 //! 不投影授权，不给未定义的 replyPolicy 或未接通的 memory write 造缺省行为。
 
 use chrono::{DateTime, Utc};
-use contracts::ContentClass as AgentVersionContent;
+use contracts::AgentVersionContent;
 use serde_json::Value;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;

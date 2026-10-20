@@ -2752,19 +2752,20 @@ mod activity_tests {
         std::fs::write(&malformed_contract, r#"{"profiles":[{}]}"#).unwrap();
         // 只为非法键核证构造未启用的合同值，不提供任何 ACTIVE profile 或执行权限。
         let inactive = contracts::RuntimeProfileDirectory {
-            profiles: vec![contracts::Profile {
+            profiles: vec![contracts::RuntimeProfileDirectoryProfilesItem {
                 key: "negative-contract-only".into(),
                 kind: contracts::RuntimeProfileKind::ServerCodex,
                 status: "DRAFT".into(),
                 web_availability: "DISABLED".into(),
-                capability_contract: contracts::FluffyCapabilityContract {
-                    capability_requirements: Vec::new(),
-                    reply_policies: Vec::new(),
-                    reply_policy_mappings: None,
-                    max_parallelism: 0,
-                    max_idle_timeout_seconds: 0,
-                    max_turn_duration_seconds: 0,
-                },
+                capability_contract:
+                    contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract {
+                        capability_requirements: Vec::new(),
+                        reply_policies: Vec::new(),
+                        reply_policy_mappings: None,
+                        max_parallelism: 0,
+                        max_idle_timeout_seconds: 0,
+                        max_turn_duration_seconds: 0,
+                    },
             }],
         };
         let mut extra = serde_json::to_value(&inactive).unwrap();

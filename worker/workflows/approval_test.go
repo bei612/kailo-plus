@@ -104,9 +104,9 @@ func setup(t *testing.T, admit func(generated.FreshApprovalAdmissionRequest) gen
 		TenantID: "66666666-6666-6666-6666-666666666666", ActionKey: "tenant.member.revoke",
 		ActionDefinitionVersion: 1, TargetType: "TENANT_MEMBERSHIP", TargetID: "77777777-7777-7777-7777-777777777777",
 		ParameterHash: "h", PolicyID: "88888888-8888-8888-8888-888888888888", PolicyVersion: 1,
-		RoleRequirements:     []generated.RoleRequirementElement{{Selector: generated.TenantAdmin, MinDistinct: 1}},
+		RoleRequirements:     []generated.ApprovalRoleRequirement{{Selector: generated.TenantAdmin, MinDistinct: 1}},
 		OwnerRequirement:     generated.ApprovalOwnerRequirementNONE,
-		AffectedOwnerRefs:    []generated.AffectedOwnerRefElement{},
+		AffectedOwnerRefs:    []generated.AffectedOwnerRef{},
 		SelfApproval:         generated.ApprovalSelfApprovalDENY,
 		InitiatorPrincipalID: initiator,
 		ExpiresAt:            "2026-09-24T01:00:00Z",
@@ -138,7 +138,7 @@ func TestConsumeRechecksOriginalApprovers(t *testing.T) {
 			if mode == "admission" {
 				in.ActionKey = "tenant.member.revoke"
 			}
-			in.RoleRequirements = []generated.RoleRequirementElement{{Selector: generated.WorkspaceAdmin, MinDistinct: 1}}
+			in.RoleRequirements = []generated.ApprovalRoleRequirement{{Selector: generated.WorkspaceAdmin, MinDistinct: 1}}
 			if mode == "legacy" {
 				env.OnGetVersion(changeApprovalConsumeFresh, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
 			}
@@ -190,7 +190,7 @@ func TestConsumeRecomputesDistinctSelectors(t *testing.T) {
 		return generated.FreshApprovalAdmissionResult{Admitted: true, SatisfiedSelectors: selectors}
 	})
 	in.ActionKey = "automation.run"
-	in.RoleRequirements = []generated.RoleRequirementElement{{Selector: generated.WorkspaceAdmin, MinDistinct: 2}}
+	in.RoleRequirements = []generated.ApprovalRoleRequirement{{Selector: generated.WorkspaceAdmin, MinDistinct: 2}}
 	decideAt(env, time.Minute, approverA, generated.ApprovalDecisionAPPROVE, &updateResult{})
 	decideAt(env, 2*time.Minute, approverB, generated.ApprovalDecisionAPPROVE, &updateResult{})
 	env.RegisterDelayedCallback(func() {
@@ -409,7 +409,7 @@ func TestMultiRoleRequirementsCountDistinctApprovers(t *testing.T) {
 			return admitted(r)
 		}
 	})
-	in.RoleRequirements = []generated.RoleRequirementElement{
+	in.RoleRequirements = []generated.ApprovalRoleRequirement{
 		{Selector: generated.TenantAdmin, MinDistinct: 2},
 		{Selector: generated.WorkspaceAdmin, MinDistinct: 1},
 	}

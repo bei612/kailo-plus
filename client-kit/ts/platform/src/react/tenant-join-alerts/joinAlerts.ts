@@ -122,18 +122,13 @@ export type JoinNotification = {
   principalId?: string;
 };
 
-/** RFC 3339 text of a join time (generated `Date`, JSON string at runtime). */
-export function joinedAtText(value: TenantJoin["joinedAt"] | string): string {
-  return value instanceof Date ? value.toISOString() : String(value);
-}
-
 /** Original copy: per member up to three, otherwise one "N new members joined" summary. */
 export function planJoinNotifications(alerts: readonly TenantJoin[], locale: PlatformLocale,
   communityName?: string | null): JoinNotification[] {
   if (alerts.length === 0) return [];
   const name = communityName?.trim();
   const title = name ? translate(locale, "tenantJoin.title", { community: name }) : translate(locale, "tenantJoin.titleGeneric");
-  const key = (alert: TenantJoin) => `join:${alert.principalId}:${joinedAtText(alert.joinedAt)}`;
+  const key = (alert: TenantJoin) => `join:${alert.principalId}:${alert.joinedAt}`;
   if (alerts.length > JOIN_ALERT_MAX_INDIVIDUAL) {
     return [{ title, body: translate(locale, "tenantJoin.summary", { count: alerts.length }),
       key: `${key(alerts[0]!)}:batch:${alerts.length}` }];

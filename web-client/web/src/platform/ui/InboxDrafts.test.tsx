@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ItemState, WebMessageType, type ConversationView } from "@client-kit/contracts";
+import { ConversationViewState, WebMessageType, type ConversationView } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
@@ -48,7 +48,7 @@ it("uses the existing identity-and-origin draft store and never deletes UNKNOWN 
 it.each([false,true])("restores the existing admitted DM reply draft to its native channel (explicit reply=%s)", async explicit => {
   const nativeChannel="native-dm", binding="conversation-binding", parent="a".repeat(64), reply="b".repeat(64);
   const entry={key:`thread:${nativeChannel}:${parent}${explicit ? `:${reply}` : ""}`,draft:{...draft,channelId:nativeChannel}};
-  const conversation:ConversationView={id:binding,channelId:nativeChannel,participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"operation",version:1};
+  const conversation:ConversationView={id:binding,channelId:nativeChannel,participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"operation",version:1};
   views.items=[conversation];views.error=false;views.loading=false;views.hidden=new Set();views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const client={workspaceChannel:vi.fn()} as unknown as BffClient;
@@ -72,7 +72,7 @@ it.each([false,true])("restores the existing admitted DM reply draft to its nati
 
 it("does not open a hidden DM draft or confuse a native channel draft with another binding ID", async()=>{
   const channel="native-dm", parent="a".repeat(64), entry={key:`thread:${channel}:${parent}`,draft:{...draft,channelId:channel}};
-  views.items=[{id:channel,channelId:"other-native",participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"op",version:1}];
+  views.items=[{id:channel,channelId:"other-native",participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"op",version:1}];
   views.error=false;views.loading=false;views.hidden=new Set([channel]);views.open.mockClear();views.toast.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   const render=()=>act(async()=>root.render(<PlatformProvider client={{} as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider>
@@ -89,7 +89,7 @@ it("does not open a hidden DM draft or confuse a native channel draft with anoth
 
 it("uses the original confirmation then opens the admitted DM composer with only its saved draft reference", async()=>{
   const entry={key:"conversation-binding",draft:{...draft,channelId:"conversation-binding"}};
-  const conversation:ConversationView={id:entry.key,channelId:"native-dm",participantPrincipalIds:["alice","peer"],state:ItemState.Active,operationId:"operation",version:1};
+  const conversation:ConversationView={id:entry.key,channelId:"native-dm",participantPrincipalIds:["alice","peer"],state:ConversationViewState.Active,operationId:"operation",version:1};
   views.items=[conversation]; views.error=false; views.loading=false; views.hidden=new Set(); views.open.mockClear();
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   try {
@@ -109,7 +109,7 @@ it("uses the original confirmation then opens the admitted DM composer with only
 it.each(["en", "zh-CN"] as const)("keeps the original three-participant DM source preview in the actual Web draft surfaces (%s)", async locale => {
   const entry = {key: "conversation-binding", draft: {...draft, channelId: "conversation-binding"}};
   const people = ["Alice", "First", "Second", "Third", "Fourth", "Fourth"].map((displayName, index) => ({principalId: `person-${index}`, displayName, pubkeys: [(index + 1).toString(16).repeat(64)]}));
-  views.items = [{id: entry.draft.channelId, channelId: "native-dm", participantPrincipalIds: people.map(person => person.principalId), state: ItemState.Active, operationId: "operation", version: 1}];
+  views.items = [{id: entry.draft.channelId, channelId: "native-dm", participantPrincipalIds: people.map(person => person.principalId), state: ConversationViewState.Active, operationId: "operation", version: 1}];
   views.error = false; views.loading = false;
   const cache = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
   try {

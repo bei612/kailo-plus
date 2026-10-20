@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { act, type ReactNode, type ComponentProps } from "react";
-import { ChannelType, WorkspaceVisibility } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, WorkspaceVisibility } from "@client-kit/contracts";
 import { createRoot } from "react-dom/client";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
@@ -169,9 +169,9 @@ describe("MessageContent", () => {
     const directory: NonNullable<ComponentProps<typeof BffMessageLinkHost>["directory"]> = {
       channels: [{id, name:"design room", channelType:"stream", visibility:"private",
         description:"Original channel metadata", isMember:true, lastMessageAt:null}],
-      workspaces: [{id:"workspace-binding", createdAt:new Date(0), isMember:true, memberCount:1,
+      workspaces: [{id:"workspace-binding", createdAt:"1970-01-01T00:00:00.000Z", isMember:true, memberCount:1,
         visibility:WorkspaceVisibility.Private, channel:{channelId:id, name:"design room",
-          channelType:ChannelType.Stream, archived:false}}],
+          channelType:WorkspaceChannelCreateChannelType.Stream, archived:false}}],
       labels:{}, people:[],
     };
     const content = `#design room\n\nbuzz://channel/${id}\n\n[authored label](buzz://message?channel=${id}&id=${eventId})`;

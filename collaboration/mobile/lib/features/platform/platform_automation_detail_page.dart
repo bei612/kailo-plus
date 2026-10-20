@@ -160,9 +160,9 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                     field(
                       PlatformMessageKey.agentsAutomationAction,
                       text(switch (version.content.action.kind) {
-                        ActionKind.AGENT_TURN =>
+                        AutomationVersionContentActionKind.AGENT_TURN =>
                           PlatformMessageKey.agentsAutomationAgentTurn,
-                        ActionKind.POST_MESSAGE =>
+                        AutomationVersionContentActionKind.POST_MESSAGE =>
                           PlatformMessageKey.agentsAutomationPostMessage,
                       }),
                     ),

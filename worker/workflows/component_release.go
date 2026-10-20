@@ -124,10 +124,8 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 	if in.CancelPending {
 		return task.cancel()
 	}
-	observations := make([]generated.ObservationElement, len(in.ReleaseObservations))
-	for index, observation := range in.ReleaseObservations {
-		observations[index] = generated.ObservationElement(observation)
-	}
+	// Always a JSON array: Observations is required even before the first step.
+	observations := append([]generated.ComponentConformanceStepObservation{}, in.ReleaseObservations...)
 	report := generated.ComponentConformanceObservation{
 		ActionExecutionID: plan.ActionExecutionID, OperationID: plan.OperationID,
 		WorkflowID: plan.WorkflowID, RunID: plan.RunID, ComponentReleaseID: plan.ComponentReleaseID,
@@ -151,7 +149,7 @@ func componentRelease(ctx workflow.Context, in ComponentTaskInput) error {
 // accepted observation of the same case in this Workflow's own history. An
 // EXPECTED binding to this step's own capture keeps its placeholder; Core
 // normalizes the actual result there. Plans without bindings add nothing.
-func componentReleaseCaptures(probe *generated.ComponentConformanceProbe, step generated.PlanStep, observations []generated.ComponentConformanceStepObservation) error {
+func componentReleaseCaptures(probe *generated.ComponentConformanceProbe, step generated.ComponentConformanceStep, observations []generated.ComponentConformanceStepObservation) error {
 	own := make(map[string]bool)
 	for _, capture := range step.Captures {
 		own[capture.Key] = true

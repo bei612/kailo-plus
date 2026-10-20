@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -70,12 +70,14 @@ class ChannelActions {
     final json = jsonDecode(saved) as Map<String, dynamic>;
     final command = ActionCommand.fromJson(json['command']);
     if (command.actionKey !=
-            createActionKeyValues.reverse[CreateActionKey.WORKSPACE_CREATE] ||
+            roleWorkspacePageCreateActionKeyValues
+                .reverse[RoleWorkspacePageCreateActionKey.WORKSPACE_CREATE] ||
         command.idempotencyKey.isEmpty ||
         command.slug != command.idempotencyKey ||
         command.name?.trim().isNotEmpty != true ||
         command.workspaceVisibility == null ||
-        command.workspaceChannel?.channelType != ChannelType.STREAM) {
+        command.workspaceChannel?.channelType !=
+            WorkspaceChannelCreateChannelType.STREAM) {
       throw const FormatException('Invalid original channel creation intent');
     }
     _command = command;
@@ -153,18 +155,20 @@ class ChannelActions {
       final page = RoleWorkspacePage.fromJson(
         response.body! as Map<String, dynamic>,
       );
-      if (page.createActionKey != CreateActionKey.WORKSPACE_CREATE) {
+      if (page.createActionKey !=
+          RoleWorkspacePageCreateActionKey.WORKSPACE_CREATE) {
         throw const PlatformApiError(PlatformResponse(403, null));
       }
       final key = const Uuid().v4();
       _command = ActionCommand(
-        actionKey: createActionKeyValues.reverse[page.createActionKey]!,
+        actionKey: roleWorkspacePageCreateActionKeyValues
+            .reverse[page.createActionKey]!,
         idempotencyKey: key,
         name: name.trim(),
         slug: key,
         workspaceVisibility: workspaceVisibilityValues.map[visibility]!,
-        workspaceChannel: WorkspaceChannelClass(
-          channelType: ChannelType.STREAM,
+        workspaceChannel: WorkspaceChannelCreate(
+          channelType: WorkspaceChannelCreateChannelType.STREAM,
           description: description?.trim().isNotEmpty == true
               ? description!.trim()
               : null,

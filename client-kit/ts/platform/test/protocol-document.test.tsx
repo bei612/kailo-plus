@@ -1,6 +1,6 @@
 import { StrictMode, act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { LaunchDescriptorMethod, type DocumentLaunchDescriptor } from "@client-kit/contracts";
+import { DocumentLaunchDescriptorMethod, type DocumentLaunchDescriptor } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { ProtocolDocumentAction } from "../src/react/protocol-document-action";
@@ -13,7 +13,7 @@ const operationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const reference = { resourceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   nativeObjectRef: "node-fixed", nativeRevision: "revision-fixed", displayName: "Report", mediaType: "application/pdf" };
 const editorOrigin = "https://editor.example.test";
-const launch: DocumentLaunchDescriptor = { method: LaunchDescriptorMethod.Post,
+const launch: DocumentLaunchDescriptor = { method: DocumentLaunchDescriptorMethod.Post,
   actionUrl: `${editorOrigin}/open?lang=en`, editorOrigin, expiresAt: "2099-01-01T00:00:00Z",
   formFields: { access_token: "test-transient-form-field" } };
 const session = { protocolSessionId: sessionId, actionExecutionId: sessionId,
@@ -52,7 +52,7 @@ it.each([
   ["different URL origin", session, { ...launch, actionUrl: "https://other.example.test/open" }],
   ["credential in URL", session, { ...launch, actionUrl: `${editorOrigin}/open?access_token=test` }],
   ["expired descriptor", session, { ...launch, expiresAt: "2000-01-01T00:00:00Z" }],
-  ["GET form credential", session, { ...launch, method: LaunchDescriptorMethod.Get }],
+  ["GET form credential", session, { ...launch, method: DocumentLaunchDescriptorMethod.Get }],
 ])("refuses %s before native submission", async (_name, body, descriptor) => {
   const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
   const client = createBffClient({ send: async () => ({ status: 200, body }) });
@@ -67,7 +67,7 @@ it("keeps credential-free GET query parameters and never creates a form", async 
   const client = createBffClient({ send: async () => ({ status: 200, body: session }) });
   const host = await render(<PlatformProvider client={client} documentTheme="LIGHT"><ProtocolDocumentSurface bindingId={session.applicationBindingId}
     sessionId={sessionId} actionExecutionId={sessionId} reference={reference}
-    launch={{ ...launch, method: LaunchDescriptorMethod.Get, formFields: {} }} onBack={() => {}} /></PlatformProvider>);
+    launch={{ ...launch, method: DocumentLaunchDescriptorMethod.Get, formFields: {} }} onBack={() => {}} /></PlatformProvider>);
   expect(host.querySelector("iframe")?.src).toBe(launch.actionUrl);
   expect(submit).not.toHaveBeenCalled();
 });

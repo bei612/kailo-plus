@@ -413,13 +413,11 @@ func (a *approval) report(ctx workflow.Context) generated.ApprovalStateReport {
 		RunID:      info.WorkflowExecution.RunID,
 		EventID:    a.eventBase + int64(info.GetCurrentHistoryLength()),
 		Status:     a.status,
-		Decisions:  make([]generated.DecisionElement, 0, len(a.decisions)),
+		Decisions:  make([]generated.ApprovalDecisionRecord, 0, len(a.decisions)),
 		ExpiresAt:  a.in.ExpiresAt,
 		Reason:     a.reason,
 	}
-	for _, d := range a.decisions {
-		r.Decisions = append(r.Decisions, generated.DecisionElement(d))
-	}
+	r.Decisions = append(r.Decisions, a.decisions...)
 	if !a.consumeDeadline.IsZero() {
 		s := a.consumeDeadline.UTC().Format(time.RFC3339Nano)
 		r.ConsumeDeadline = &s
@@ -574,7 +572,7 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 }
 
 // restore 把续跑带入的状态装回。首个 run 没有 resume，什么也不做。
-func (a *approval) restore(r *generated.ResumeClass) error {
+func (a *approval) restore(r *generated.ApprovalResume) error {
 	if r == nil {
 		return nil
 	}
@@ -592,9 +590,7 @@ func (a *approval) restore(r *generated.ResumeClass) error {
 		return temporal.NewNonRetryableApplicationError("resume.consumedAt 不是 RFC3339", activities.ErrTypeRejected, err)
 	}
 	a.status, a.reason, a.eventBase = r.Status, r.Reason, r.EventBase
-	for _, d := range r.Decisions {
-		a.decisions = append(a.decisions, generated.ApprovalDecisionRecord(d))
-	}
+	a.decisions = append(a.decisions, r.Decisions...)
 	for _, x := range r.Refusals {
 		a.refused[x.ApproverPrincipalID] = x.Reason
 	}
@@ -610,16 +606,14 @@ func (a *approval) continueAsNew(ctx workflow.Context) error {
 		return err
 	}
 	next := a.in
-	r := generated.ResumeClass{
+	r := generated.ApprovalResume{
 		Status:    a.status,
 		Reason:    a.reason,
-		Decisions: make([]generated.DecisionElement, 0, len(a.decisions)),
-		Refusals:  make([]generated.RefusalElement, 0, len(a.refused)),
+		Decisions: make([]generated.ApprovalDecisionRecord, 0, len(a.decisions)),
+		Refusals:  make([]generated.ApprovalRefusal, 0, len(a.refused)),
 		EventBase: a.eventBase + int64(workflow.GetInfo(ctx).GetCurrentHistoryLength()),
 	}
-	for _, d := range a.decisions {
-		r.Decisions = append(r.Decisions, generated.DecisionElement(d))
-	}
+	r.Decisions = append(r.Decisions, a.decisions...)
 	// map 的遍历序每次不同，续跑的 input 必须确定
 	approvers := make([]string, 0, len(a.refused))
 	for k := range a.refused {
@@ -627,7 +621,7 @@ func (a *approval) continueAsNew(ctx workflow.Context) error {
 	}
 	sort.Strings(approvers)
 	for _, k := range approvers {
-		r.Refusals = append(r.Refusals, generated.RefusalElement{ApproverPrincipalID: k, Reason: a.refused[k]})
+		r.Refusals = append(r.Refusals, generated.ApprovalRefusal{ApproverPrincipalID: k, Reason: a.refused[k]})
 	}
 	if !a.consumeDeadline.IsZero() {
 		s := a.consumeDeadline.UTC().Format(time.RFC3339Nano)

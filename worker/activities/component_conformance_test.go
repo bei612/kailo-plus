@@ -108,7 +108,7 @@ func TestNativeReceiverConformanceReadsIsolatedCoreAuthority(t *testing.T) {
 				configuration.NativeReadAuthorities = append(configuration.NativeReadAuthorities, authority)
 			}
 			candidate := componentCandidate{configuration: configuration, http: server.Client()}
-			err := candidate.verifyReceiverReadAuthority(context.Background(), generated.PlanStep{RequestJSON: string(rawRequest)}, body)
+			err := candidate.verifyReceiverReadAuthority(context.Background(), generated.ComponentConformanceStep{RequestJSON: string(rawRequest)}, body)
 			if (err == nil) != (scenario == "committed") {
 				t.Fatalf("scenario=%s err=%v", scenario, err)
 			}
@@ -194,9 +194,9 @@ func TestReceiverActionStepUsesTheIsolatedDeploymentEntry(t *testing.T) {
 		NativeReadAuthorities: []generated.ComponentNativeReadAuthority{{BindingID: binding, Generation: 3, CoreBaseURL: isolated.URL,
 			OidcTokenURL: isolated.URL + "/token", OidcClientID: "isolated-receiver", OidcClientSecretFile: secretFile}}}
 	rawRequest, _ := json.Marshal(request)
-	planStep := generated.PlanStep{CaseKey: "knowledge:3:knowledge_roundtrip", StepKey: "ingest", Operation: "receiver_start",
+	planStep := generated.ComponentConformanceStep{CaseKey: "knowledge:3:knowledge_roundtrip", StepKey: "ingest", Operation: "receiver_start",
 		IdempotencyKey: step, RequestJSON: string(rawRequest), ExpectedResponseJSON: "{}", ExpectedHTTPStatus: http.StatusOK}
-	digests := func(_ context.Context, step generated.PlanStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
+	digests := func(_ context.Context, step generated.ComponentConformanceStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
 		requestHash := sha256.Sum256([]byte(step.RequestJSON))
 		responseHash, err := conformanceJSONDigest(body)
 		return generated.ComponentConformanceWireDigests{RequestDigest: hex.EncodeToString(requestHash[:]), ResponseDigest: responseHash}, err
@@ -245,7 +245,7 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 			request, expected := `{"arguments":{},"name":"declared-read"}`, `"native text"`
 			requestDigest, _ := conformanceJSONDigest([]byte(request))
 			resultDigest, _ := conformanceJSONDigest([]byte(expected))
-			kind := generated.MCPResultKind("RESULT")
+			kind := generated.ComponentConformanceStepExpectedMCPResultKind("RESULT")
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/token" {
 					_, _ = io.WriteString(w, `{"access_token":"isolated-worker","expires_in":300}`)
@@ -262,7 +262,7 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 				observed := generated.ComponentConformanceStepObservation{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
 					HTTPStatus: 0, MCPResultKind: &kind, RequestDigest: requestDigest, ResponseDigest: resultDigest, ResultDigest: &resultDigest}
 				if scenario == "invented-job" {
-					observed.NativeObservation = &generated.ExecutionElement{NativeType: "invented"}
+					observed.NativeObservation = &generated.AdapterExecutionObservation{NativeType: "invented"}
 				}
 				if scenario == "missing-protocol-result" {
 					observed.MCPResultKind = nil
@@ -278,9 +278,9 @@ func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *test
 				t.Fatal(err)
 			}
 			api := &CoreAPI{base: server.URL, tokens: tokens, http: server.Client()}
-			connector := generated.ConnectorKind("PROTOCOL_PEER")
-			input := generated.ComponentConformanceProbe{Plan: generated.PlanClass{ConnectorKind: &connector,
-				Steps: []generated.PlanStep{{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
+			connector := generated.ComponentConformancePlanConnectorKind("PROTOCOL_PEER")
+			input := generated.ComponentConformanceProbe{Plan: generated.ComponentConformancePlan{ConnectorKind: &connector,
+				Steps: []generated.ComponentConformanceStep{{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
 					RequestJSON: request, ExpectedResponseJSON: expected, ExpectedMCPResultKind: &kind}}}}
 			if scenario == "reconcile" {
 				reconcile := true
@@ -328,7 +328,7 @@ func conformanceCandidateForTest(t *testing.T, handler http.HandlerFunc) (*compo
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate.digestResponse = func(_ context.Context, step generated.PlanStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
+	candidate.digestResponse = func(_ context.Context, step generated.ComponentConformanceStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
 		requestHash := sha256.Sum256([]byte(step.RequestJSON))
 		responseHash, err := conformanceJSONDigest(body)
 		out := generated.ComponentConformanceWireDigests{RequestDigest: hex.EncodeToString(requestHash[:]), ResponseDigest: responseHash}
@@ -347,7 +347,7 @@ func conformanceCandidateForTest(t *testing.T, handler http.HandlerFunc) (*compo
 	return candidate, token
 }
 
-func fixtureExpectedDigest(t *testing.T, step generated.PlanStep) string {
+func fixtureExpectedDigest(t *testing.T, step generated.ComponentConformanceStep) string {
 	t.Helper()
 	digest, err := conformanceJSONDigest([]byte(step.ExpectedResponseJSON))
 	if err != nil {
@@ -359,7 +359,7 @@ func fixtureExpectedDigest(t *testing.T, step generated.PlanStep) string {
 func TestComponentConformanceBindingComparisonKeepsWireEvidence(t *testing.T) {
 	expected := strings.Repeat("a", sha256.Size*2)
 	wire := strings.Repeat("b", sha256.Size*2)
-	step := generated.PlanStep{Operation: "validate_binding", ExpectedHTTPStatus: http.StatusOK}
+	step := generated.ComponentConformanceStep{Operation: "validate_binding", ExpectedHTTPStatus: http.StatusOK}
 	observation := generated.ComponentConformanceStepObservation{
 		Operation: "validate_binding", HTTPStatus: http.StatusOK, ResponseDigest: wire, BindingDigest: &expected,
 	}
@@ -408,14 +408,14 @@ func TestComponentConformanceCoreCanonicalBytes(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, sample.ResponseJSON)
 	})
-	candidate.digestResponse = func(_ context.Context, _ generated.PlanStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
+	candidate.digestResponse = func(_ context.Context, _ generated.ComponentConformanceStep, body []byte, _ int64) (generated.ComponentConformanceWireDigests, error) {
 		if string(body) != sample.ResponseJSON {
 			t.Error("observed response differs from Core-normalized actual bytes")
 		}
 		return sample.Digests, nil
 	}
 	contract := "fixture.read"
-	step := generated.PlanStep{CaseKey: "core_canonical", StepKey: "wire", Operation: generated.ComponentConformanceOperation("execute"),
+	step := generated.ComponentConformanceStep{CaseKey: "core_canonical", StepKey: "wire", Operation: generated.ComponentConformanceOperation("execute"),
 		IdempotencyKey: sample.IdempotencyKey, RequestJSON: sample.RequestJSON, ExpectedResponseJSON: sample.ExpectedResponseJSON, ExpectedHTTPStatus: http.StatusOK, ContractKey: &contract}
 	observation := candidate.call(context.Background(), step, token)
 	if sample.Digests.ResultDigest == nil {
@@ -429,9 +429,9 @@ func TestComponentConformanceCoreCanonicalBytes(t *testing.T) {
 	}
 }
 
-func conformanceStepForTest() generated.PlanStep {
+func conformanceStepForTest() generated.ComponentConformanceStep {
 	key := uuid.NewString()
-	return generated.PlanStep{
+	return generated.ComponentConformanceStep{
 		CaseKey: "creation", StepKey: "create", Operation: generated.ComponentConformanceOperation("execute"),
 		IdempotencyKey: key, RequestJSON: `{"idempotencyKey":"` + key + `","value":"fixture"}`,
 		ExpectedResponseJSON: `{"created":1}`, ExpectedHTTPStatus: http.StatusOK,
@@ -460,7 +460,7 @@ func TestComponentConformanceActualWireAndNativeIdempotency(t *testing.T) {
 			effects.Add(1)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		response := generated.ExecutionElement{
+		response := generated.AdapterExecutionObservation{
 			IdempotencyKey: body["idempotencyKey"], NativeType: "fixture_task", NativeID: &nativeID,
 			NativeStatus: &nativeStatus, PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 			CancelCapability: generated.NativeCancelCapability("SUPPORTED"),
@@ -525,19 +525,19 @@ func TestComponentConformanceWirePersistenceEvidence(t *testing.T) {
 			t.Error("unexpected adapter operation")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"execution": generated.ExecutionElement{
+		_ = json.NewEncoder(w).Encode(map[string]any{"execution": generated.AdapterExecutionObservation{
 			IdempotencyKey: key, NativeType: "fixture_task", NativeID: &nativeID, NativeStatus: &nativeStatus,
 			PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"), CancelCapability: generated.NativeCancelCapability("SUPPORTED"),
 			LastObservedAt: &observed, TerminalAt: &observed,
 		}})
 	})
 	expectedToken = token
-	steps := make([]generated.PlanStep, 0)
+	steps := make([]generated.ComponentConformanceStep, 0)
 	observations := make([]generated.ComponentConformanceStepObservation, 0)
 	for index, operation := range []string{"execute", "execute", "observe"} {
 		request, _ := json.Marshal(map[string]string{"idempotencyKey": key})
 		expected, _ := json.Marshal(map[string]string{"idempotencyKey": key, "nativeType": "fixture_task", "platformStatus": "SUCCEEDED", "cancelCapability": "SUPPORTED"})
-		step := generated.PlanStep{CaseKey: "protocol_execution_idempotency", StepKey: []string{"first", "duplicate", "observe"}[index],
+		step := generated.ComponentConformanceStep{CaseKey: "protocol_execution_idempotency", StepKey: []string{"first", "duplicate", "observe"}[index],
 			Operation: generated.ComponentConformanceOperation(operation), IdempotencyKey: key, RequestJSON: string(request), ExpectedResponseJSON: string(expected), ExpectedHTTPStatus: http.StatusOK}
 		observation := candidate.call(context.Background(), step, token)
 		if err := verifyConformanceStep(step, observation, fixtureExpectedDigest(t, step)); err != nil {
@@ -576,7 +576,7 @@ func TestComponentConformanceNativeTerminalRequiresEvidence(t *testing.T) {
 	key, nativeID, nativeStatus := uuid.NewString(), uuid.NewString(), "done"
 	now := time.Now().UTC()
 	observedAt := now.Format(time.RFC3339Nano)
-	native := generated.ExecutionElement{
+	native := generated.AdapterExecutionObservation{
 		IdempotencyKey: key, NativeType: "fixture_task", NativeID: &nativeID, NativeStatus: &nativeStatus,
 		PlatformStatus:   generated.ExternalExecutionStatus("SUCCEEDED"),
 		CancelCapability: generated.NativeCancelCapability("SUPPORTED"), LastObservedAt: &observedAt, TerminalAt: &observedAt,
@@ -586,22 +586,22 @@ func TestComponentConformanceNativeTerminalRequiresEvidence(t *testing.T) {
 	}
 	for _, change := range []struct {
 		name   string
-		mutate func(*generated.ExecutionElement)
+		mutate func(*generated.AdapterExecutionObservation)
 	}{
-		{"wrong_reference", func(n *generated.ExecutionElement) { n.IdempotencyKey = uuid.NewString() }},
-		{"unknown_state", func(n *generated.ExecutionElement) {
+		{"wrong_reference", func(n *generated.AdapterExecutionObservation) { n.IdempotencyKey = uuid.NewString() }},
+		{"unknown_state", func(n *generated.AdapterExecutionObservation) {
 			n.PlatformStatus = generated.ExternalExecutionStatus("NEW_STATE")
 		}},
-		{"unknown_cancel", func(n *generated.ExecutionElement) {
+		{"unknown_cancel", func(n *generated.AdapterExecutionObservation) {
 			n.CancelCapability = generated.NativeCancelCapability("MAYBE")
 		}},
-		{"no_native_status", func(n *generated.ExecutionElement) { n.NativeStatus = nil }},
-		{"no_terminal_time", func(n *generated.ExecutionElement) { n.TerminalAt = nil }},
-		{"no_observation_time", func(n *generated.ExecutionElement) { n.LastObservedAt = nil }},
-		{"running_marked_terminal", func(n *generated.ExecutionElement) {
+		{"no_native_status", func(n *generated.AdapterExecutionObservation) { n.NativeStatus = nil }},
+		{"no_terminal_time", func(n *generated.AdapterExecutionObservation) { n.TerminalAt = nil }},
+		{"no_observation_time", func(n *generated.AdapterExecutionObservation) { n.LastObservedAt = nil }},
+		{"running_marked_terminal", func(n *generated.AdapterExecutionObservation) {
 			n.PlatformStatus = generated.ExternalExecutionStatus("RUNNING")
 		}},
-		{"future_terminal", func(n *generated.ExecutionElement) {
+		{"future_terminal", func(n *generated.AdapterExecutionObservation) {
 			future := now.Add(time.Second).Format(time.RFC3339Nano)
 			n.TerminalAt = &future
 		}},
@@ -655,7 +655,7 @@ func TestComponentConformanceMatchesNativeEvidenceWithoutPredictingTime(t *testi
 	step := conformanceStepForTest()
 	nativeID, nativeStatus := uuid.NewString(), "native_done"
 	observedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	native := generated.ExecutionElement{
+	native := generated.AdapterExecutionObservation{
 		IdempotencyKey: step.IdempotencyKey, NativeType: "fixture_task", NativeID: &nativeID,
 		NativeStatus: &nativeStatus, PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 		CancelCapability: generated.NativeCancelCapability("SUPPORTED"), LastObservedAt: &observedAt, TerminalAt: &observedAt,
@@ -740,11 +740,11 @@ func TestComponentConformanceBodyLimitAndInvalidJSONRemainUnknown(t *testing.T) 
 
 func TestComponentConformancePlanDigestCoversWireArguments(t *testing.T) {
 	candidate, _ := conformanceCandidateForTest(t, func(w http.ResponseWriter, r *http.Request) { t.Error("validation made an external request") })
-	plan := generated.PlanClass{
+	plan := generated.ComponentConformancePlan{
 		ActionExecutionID: uuid.NewString(), OperationID: uuid.NewString(), ComponentReleaseID: uuid.NewString(),
 		WorkflowID: uuid.NewString(), ArtifactDigest: candidate.configuration.ArtifactDigest,
 		ContractDigests: []string{candidate.configuration.ArtifactDigest}, SuiteDigest: candidate.configuration.ArtifactDigest,
-		Steps: []generated.PlanStep{conformanceStepForTest()},
+		Steps: []generated.ComponentConformanceStep{conformanceStepForTest()},
 	}
 	encoded, _ := json.Marshal(plan)
 	plan.PlanDigest, _ = conformanceJSONDigest(encoded)
@@ -759,13 +759,13 @@ func TestComponentConformancePlanDigestCoversWireArguments(t *testing.T) {
 }
 
 func TestComponentConformanceCapturesMirrorCoreBindings(t *testing.T) {
-	var read generated.PlanStep
+	var read generated.ComponentConformanceStep
 	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"read","operation":"execute",
 		"contractKey":"file_storage.read@v2","idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
 		"bindings":[{"source":"CAPTURE","key":"published_revision","side":"INPUT","pointer":"/nativeRevision"}]}`), &read); err != nil {
 		t.Fatal(err)
 	}
-	probe := generated.ComponentConformanceProbe{Plan: generated.PlanClass{Steps: []generated.PlanStep{read}}}
+	probe := generated.ComponentConformanceProbe{Plan: generated.ComponentConformancePlan{Steps: []generated.ComponentConformanceStep{read}}}
 	if validProbeCaptures(probe) == nil {
 		t.Fatal("missing capture value accepted")
 	}
@@ -787,7 +787,7 @@ func TestComponentConformanceCapturesMirrorCoreBindings(t *testing.T) {
 			t.Fatalf("capture values %s", scenario.raw)
 		}
 	}
-	var write generated.PlanStep
+	var write generated.ComponentConformanceStep
 	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"write","operation":"execute",
 		"contractKey":"file_storage.write@v2","idempotencyKey":"write","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
 		"captures":[{"key":"published_revision","slot":"CONTENT_REFERENCE_NATIVE_REVISION"}]}`), &write); err != nil {

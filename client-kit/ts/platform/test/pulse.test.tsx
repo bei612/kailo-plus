@@ -9,7 +9,7 @@ import { PulseView } from "../src/react/pulse/ui/PulseView";
 import { NoteCard } from "../src/react/pulse/ui/NoteCard";
 import { AgentActivityCard } from "../src/react/pulse/ui/AgentActivityCard";
 import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
-import { Operation } from "@client-kit/contracts";
+import { PulsePublishRequestOperation } from "@client-kit/contracts";
 import { BffError, isOutcomeUnknown, TransportError } from "../src/transport";
 import { usePulseNoteActions } from "../src/react/pulse/lib/useNoteActions";
 import { pulseQueryKeys } from "../src/react/pulse/hooks";
@@ -199,7 +199,7 @@ describe("original Pulse governed consumers",()=>{
 
   it("retains the same original publish key after UNKNOWN instead of replaying a fresh write",async()=>{
     const publish=vi.fn<PulseHost["publish"]>(async()=>{throw new TransportError("Unknown");});
-    function Retry(){const post=usePulsePublisher();return <button onClick={()=>void post({operation:Operation.Note,content:"one intent"}).catch(()=>{})}>Retry intent</button>;}
+    function Retry(){const post=usePulsePublisher();return <button onClick={()=>void post({operation:PulsePublishRequestOperation.Note,content:"one intent"}).catch(()=>{})}>Retry intent</button>;}
     const ui=await render(wrap(host({publish}),<Retry/>));
     await click(button(ui,"Retry intent"));await click(button(ui,"Retry intent"));
     expect(publish).toHaveBeenCalledTimes(2);
@@ -212,7 +212,7 @@ describe("original Pulse governed consumers",()=>{
       .mockRejectedValueOnce(new TransportError("Unknown"))
       .mockRejectedValueOnce(new BffError(403,"refused observation"))
       .mockResolvedValue({eventId});
-    function Retry(){const post=usePulsePublisher();return <button onClick={()=>void post({operation:Operation.Note,content:"one intent"}).catch(error=>{failures.push(error);})}>Retry intent</button>;}
+    function Retry(){const post=usePulsePublisher();return <button onClick={()=>void post({operation:PulsePublishRequestOperation.Note,content:"one intent"}).catch(error=>{failures.push(error);})}>Retry intent</button>;}
     const ui=await render(wrap(host({publish}),<Retry/>));
     for(let attempt=0;attempt<4;attempt++)await click(button(ui,"Retry intent"));
     expect(publish.mock.calls[1]?.[1]).toEqual(publish.mock.calls[0]?.[1]);

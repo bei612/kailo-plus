@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:client_kit/shared/contracts/contracts.dart' hide SessionStatus;
+import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -209,7 +209,9 @@ class DirectMessages {
         continue;
       }
       final binding = byChannel[channel.id];
-      if (binding == null || binding.state != ItemState.ACTIVE) continue;
+      if (binding == null || binding.state != ConversationViewState.ACTIVE) {
+        continue;
+      }
       final people = <ConversationParticipant>[];
       for (final id in binding.participantPrincipalIds) {
         final person = byPrincipal[id];

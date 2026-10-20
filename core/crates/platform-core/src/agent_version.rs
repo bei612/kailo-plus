@@ -2,7 +2,7 @@
 //! 创建与更新只经已有 Governance/ActionExecution；不安装、启动或复制 Agent 权威。
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use contracts::{ContentClass as AgentVersionContent, ReasonCode};
+use contracts::{AgentVersionContent, ReasonCode};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, Postgres, Transaction};
@@ -156,7 +156,7 @@ pub(crate) fn runtime_profile_directory() -> Result<contracts::RuntimeProfileDir
 
 /// 同一发布合同的纯映射裁决；旧目录可以没有映射，但不能据此执行策略。
 pub(crate) fn reply_policy_contract(
-    contract: &contracts::FluffyCapabilityContract,
+    contract: &contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract,
     selected: Option<&str>,
 ) -> Result<(), Refusal> {
     let mut policy_keys = std::collections::HashSet::new();
@@ -758,7 +758,7 @@ mod reply_policy_tests {
             "maxIdleTimeoutSeconds": 1,
             "maxTurnDurationSeconds": 1
         });
-        let contract: contracts::FluffyCapabilityContract =
+        let contract: contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract =
             serde_json::from_value(original.clone()).expect("old capability contract parses");
         assert!(contract.reply_policy_mappings.is_none());
         assert_eq!(serde_json::to_value(&contract).unwrap(), original);
@@ -774,19 +774,20 @@ mod reply_policy_tests {
             (true, false, true),
             (true, true, false),
         ] {
-            let contract: contracts::FluffyCapabilityContract = serde_json::from_value(json!({
-                "capabilityRequirements": [],
-                "replyPolicies": ["registered"],
-                "replyPolicyMappings": [{
-                    "key": "registered",
-                    "threadReplies": thread,
-                    "broadcastReplies": broadcast
-                }],
-                "maxParallelism": 1,
-                "maxIdleTimeoutSeconds": 1,
-                "maxTurnDurationSeconds": 1
-            }))
-            .unwrap();
+            let contract: contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract =
+                serde_json::from_value(json!({
+                    "capabilityRequirements": [],
+                    "replyPolicies": ["registered"],
+                    "replyPolicyMappings": [{
+                        "key": "registered",
+                        "threadReplies": thread,
+                        "broadcastReplies": broadcast
+                    }],
+                    "maxParallelism": 1,
+                    "maxIdleTimeoutSeconds": 1,
+                    "maxTurnDurationSeconds": 1
+                }))
+                .unwrap();
             assert_eq!(
                 reply_policy_contract(&contract, Some("registered")).is_ok(),
                 supported,
@@ -829,7 +830,7 @@ mod reply_policy_tests {
             blank_policy,
             empty_mapping,
         ] {
-            let contract: contracts::FluffyCapabilityContract =
+            let contract: contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract =
                 serde_json::from_value(value).unwrap();
             assert!(reply_policy_contract(&contract, Some("registered")).is_err());
         }
@@ -853,13 +854,14 @@ mod reply_policy_tests {
                 .as_object_mut()
                 .unwrap()
                 .remove(field);
-            assert!(
-                serde_json::from_value::<contracts::FluffyCapabilityContract>(missing).is_err()
-            );
+            assert!(serde_json::from_value::<
+                contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract,
+            >(missing)
+            .is_err());
         }
         let mut null_mapping = original;
         null_mapping["replyPolicyMappings"] = Value::Null;
-        let parsed: contracts::FluffyCapabilityContract =
+        let parsed: contracts::RuntimeProfileDirectoryProfilesItemCapabilityContract =
             serde_json::from_value(null_mapping.clone()).unwrap();
         // Optional None serializes as absence; the production strict roundtrip
         // therefore rejects explicit null instead of treating it as old syntax.

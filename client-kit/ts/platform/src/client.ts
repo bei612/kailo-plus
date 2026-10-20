@@ -95,10 +95,10 @@ import type {
   WebChannelCanvasView,
   WebLinkPreviewRequest,
   WebLinkPreviewSnapshotView,
-  WebGIFCapabilityView,
-  WebGIFSearchRequest,
-  WebGIFSearchView,
-  WebGIFShareRequest,
+  WebGifCapabilityView,
+  WebGifSearchRequest,
+  WebGifSearchView,
+  WebGifShareRequest,
   HuddleView,
   HuddlePage,
   HuddleLifecyclePage,
@@ -565,11 +565,11 @@ export function createBffClient(transport: BffTransport) {
         body: request,
       }),
     /** Whether the original GIF picker appears, and the registered GIF image origins. */
-    gifCapability: () => get<WebGIFCapabilityView>("/api/v1/gifs"),
-    gifSearch: (request: WebGIFSearchRequest) =>
-      call<WebGIFSearchView>({ method: "POST", path: "/api/v1/gifs/search", body: request }),
+    gifCapability: () => get<WebGifCapabilityView>("/api/v1/gifs"),
+    gifSearch: (request: WebGifSearchRequest) =>
+      call<WebGifSearchView>({ method: "POST", path: "/api/v1/gifs/search", body: request }),
     /** Original best-effort share report at selection time (204). */
-    gifShare: (request: WebGIFShareRequest) =>
+    gifShare: (request: WebGifShareRequest) =>
       call<unknown>({ method: "POST", path: "/api/v1/gifs/share", body: request }),
 
     // DD-125(3) batch C5. Huddles are written by the governed huddle.* actions above; these

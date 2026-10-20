@@ -2,7 +2,7 @@
 // Business preferences/read positions remain the existing Core user-state CAS authority.
 // DD-125(5): original custom sections (CustomChannelSection, SidebarDnd, "Move to section")
 // and group sort persist in the same Core CollaborationUserState, keyed by native channel ID.
-import { ChannelType, type DiscoverableWorkspace, type WorkspaceView } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, type DiscoverableWorkspace, type WorkspaceView } from "@client-kit/contracts";
 import { loadWorkspaceActivity } from "@client-kit/platform/react/workspace-activity";
 import { TransportError } from "@client-kit/platform/transport";
 import { useT } from "@client-kit/platform/react/context";
@@ -82,9 +82,9 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
     queryFn: async () => {
       if (!joinedRows || joinedRows.some((row) => row === undefined)) throw new TransportError("Channel directory changed");
       const activity = await loadWorkspaceActivity(bff, joinedRows as DiscoverableWorkspace[]);
-      const pages = new Map<string, { channelId: string; channelType: ChannelType; events: ReturnType<typeof inboxWindowEvents> }>();
+      const pages = new Map<string, { channelId: string; channelType: WorkspaceChannelCreateChannelType; events: ReturnType<typeof inboxWindowEvents> }>();
       for (const [id, { channelId, channelType, events }] of activity)
-        pages.set(id, { channelId, channelType, events: inboxWindowEvents(events, channelId, channelType === ChannelType.Forum) });
+        pages.set(id, { channelId, channelType, events: inboxWindowEvents(events, channelId, channelType === WorkspaceChannelCreateChannelType.Forum) });
       return pages;
     },
   });
@@ -175,7 +175,7 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       onCreateSection: () => setCreateSection({ pendingChannelId: native }),
     };
   };
-  const renderChannelRow = (channel: SidebarChannel & { channelType?: ChannelType }, draggable: boolean) => {
+  const renderChannelRow = (channel: SidebarChannel & { channelType?: WorkspaceChannelCreateChannelType }, draggable: boolean) => {
     const ttl = directory?.find((row) => row.id === channel.id)?.channel;
     const working = workingById.get(channel.id);
     const row = <ChannelActivityPopover activeWorking={working} channel={{ id: channel.id, name: channel.name }}><ChannelRow channel={channel} isActive={active && selectedId === channel.id}
@@ -212,7 +212,7 @@ export function ChannelSidebar({ principalId, workspaces, directory, selectedId,
       ownerActions={observedChannelId ? { workspaceId: channel.id, channelId: observedChannelId,
         onArchiveChannel: (row) => requestArchiveChannel({ workspaceId: row.id, name: row.name }) } : undefined} />;
   };
-  const group = (key: Group, items: (SidebarChannel & { channelType?: ChannelType })[]) => <ChannelGroupSection
+  const group = (key: Group, items: (SidebarChannel & { channelType?: WorkspaceChannelCreateChannelType })[]) => <ChannelGroupSection
     key={key} title={t(key === "starred" ? "sidebar.starred" : key === "forums" ? "sidebar.forums" : "sidebar.channels")}
     items={sortChannelsForSidebar(items, sortModeFor(key))}
     hasUnread={items.some((row) => unread.has(row.id))}

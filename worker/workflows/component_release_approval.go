@@ -23,7 +23,7 @@ func componentReleaseApproval(ctx workflow.Context, in ComponentTaskInput) error
 	var receipt generated.ComponentReleaseReceipt
 	if err := task.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.CoreAPI).ApproveComponentRelease,
-			generated.ComponentReleaseApprovalReport{Target: generated.TargetClass(*target), RunID: workflow.GetInfo(ctx).WorkflowExecution.RunID})
+			generated.ComponentReleaseApprovalReport{Target: generated.ComponentReleaseApprovalTarget(*target), RunID: workflow.GetInfo(ctx).WorkflowExecution.RunID})
 	}, &receipt); err != nil {
 		return task.fail(err)
 	}

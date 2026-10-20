@@ -7,7 +7,7 @@
 // governed consumer.
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { CreateActionKey, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { RoleWorkspacePageCreateActionKey, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { FolderGit2, Folders, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -577,7 +577,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     void Promise.resolve(onSelectedProjectChange(project.id,{repositoryId:repository.id,tab:"issues"})).catch(()=>{if(lifetime.active)setNavigationFailed("open");});
   };
   const canCreate=Boolean(host.publish&&query.isSuccess&&!query.isFetching&&(
-    createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent));
+    createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===RoleWorkspacePageCreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
   const changeView=(next:ProjectsViewMode)=>{setView(next);writeStoredViewMode(next);};
   const changeFilter=(next:ProjectsFilter)=>{setFilter(next);writeStoredFilter(next);};

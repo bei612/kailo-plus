@@ -21,7 +21,8 @@ use axum::{
 };
 use chrono::{DateTime, Datelike, SecondsFormat, TimeZone, Utc};
 use contracts::{
-    EvidenceKind, ReasonCode, SetActionKey, TenantQuotaFeature, TenantQuotaPage, TenantQuotaView,
+    EvidenceKind, ReasonCode, TenantQuotaFeature, TenantQuotaPage, TenantQuotaPageSetActionKey,
+    TenantQuotaView,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -200,7 +201,7 @@ fn invalid() -> Refusal {
 // ---------------------------------------------------------------------------
 
 /// 规范化 `tenantQuotaSetting`：额度项属一期封闭集合，上限是 0..=MAX_LIMIT 的整数。
-pub(crate) fn normalize(setting: &contracts::TenantQuotaSettingClass) -> Result<Value, Refusal> {
+pub(crate) fn normalize(setting: &contracts::TenantQuotaSetting) -> Result<Value, Refusal> {
     if !(0..=MAX_LIMIT).contains(&setting.limit_per_period) {
         return Err(invalid());
     }
@@ -213,7 +214,7 @@ pub(crate) fn normalize(setting: &contracts::TenantQuotaSettingClass) -> Result<
 /// 冻结参数的读回：只接受 `normalize` 的规范形状。
 pub(crate) fn setting(p: &Params) -> Result<(&'static str, i64), Refusal> {
     let value = p.tenant_quota_setting.as_ref().ok_or_else(invalid)?;
-    let parsed: contracts::TenantQuotaSettingClass =
+    let parsed: contracts::TenantQuotaSetting =
         serde_json::from_value(value.clone()).map_err(|_| invalid())?;
     if normalize(&parsed)? != *value {
         return Err(invalid());
@@ -906,13 +907,16 @@ async fn read_quota(
 
 /// 页面给出设置入口的唯一判据：与提交同一准入的 fresh tenant manage 结论。只读的
 /// auditor（有 audit 而无 manage）不得到入口；它不是授权票据，提交时仍完整重新准入。
-pub(crate) fn set_action_key(manage_allowed: bool) -> Option<SetActionKey> {
-    manage_allowed.then_some(SetActionKey::TenantQuotaSet)
+pub(crate) fn set_action_key(manage_allowed: bool) -> Option<TenantQuotaPageSetActionKey> {
+    manage_allowed.then_some(TenantQuotaPageSetActionKey::TenantQuotaSet)
 }
 
 /// 一次性可用性提示：目录开放、定义形状、非 Catalog、scope guard 与 fresh tenant
 /// manage，与 `tenant.quota.set` 的准入同一条判定。
-async fn set_offer(g: &Governance, actor: Actor) -> Result<Option<SetActionKey>, Refusal> {
+async fn set_offer(
+    g: &Governance,
+    actor: Actor,
+) -> Result<Option<TenantQuotaPageSetActionKey>, Refusal> {
     if !crate::capability_registry::action_exposed(ACTION) {
         return Ok(None);
     }
@@ -1528,7 +1532,7 @@ mod tests {
             assert_ne!(feature.key, COMPONENT_MODEL_TOKENS_METER);
         }
         let setting = json!({"feature":COMPONENT_MODEL_TOKENS_METER,"limitPerPeriod":1});
-        let parsed = serde_json::from_value::<contracts::TenantQuotaSettingClass>(setting);
+        let parsed = serde_json::from_value::<contracts::TenantQuotaSetting>(setting);
         assert!(parsed.is_err(), "tenant.quota.set has no such quota item");
     }
 
@@ -1607,7 +1611,7 @@ mod tests {
     #[test]
     fn setting_is_closed_and_bounded() {
         let parse = |limit: i64| {
-            normalize(&contracts::TenantQuotaSettingClass {
+            normalize(&contracts::TenantQuotaSetting {
                 feature: TenantQuotaFeature::AutomationRuns,
                 limit_per_period: limit,
             })

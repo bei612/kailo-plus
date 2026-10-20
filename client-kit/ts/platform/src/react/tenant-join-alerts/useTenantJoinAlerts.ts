@@ -14,8 +14,8 @@ import {
 /** Bound on immediate `hasMore` continuations within one read. */
 const JOIN_ALERT_MAX_PAGES_PER_READ = 20;
 
-const validJoinedAt = (value: unknown): boolean => value instanceof Date
-  ? Number.isFinite(value.getTime()) : typeof value === "string" && Number.isFinite(Date.parse(value));
+const validJoinedAt = (value: unknown): boolean =>
+  typeof value === "string" && Number.isFinite(Date.parse(value));
 
 function validJoinPage(page: TenantMemberJoinPage): boolean {
   // An empty cursor is the start position (no recorded entry yet), still a cursor to echo back.

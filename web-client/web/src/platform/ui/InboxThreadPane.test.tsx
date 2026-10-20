@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WorkspaceMembershipState, ItemState } from "@client-kit/contracts";
+import { WorkspaceMembershipState, ConversationViewState } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale, translate } from "@client-kit/platform/i18n";
 import { ComposerReplyBanner, type TimelineMessage } from "@client-kit/platform/react/messages";
@@ -60,7 +60,7 @@ async function editMessage(id:string) {
   await act(async()=>action!.click());await settle();
   expect(host.querySelector(`[data-edit-id="${id}"]`)).not.toBeNull();
 }
-const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
+const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ConversationViewState.Active,version:1,operationId:"op"};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
 async function mount(replyTargetEventId?: string, selected = replyId, selectedRoot = rootId, explicitSelection = false, forum = false) {

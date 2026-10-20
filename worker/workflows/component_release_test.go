@@ -34,9 +34,9 @@ func releaseWorkflowTest(t *testing.T, project ...func(context.Context, generate
 	} else {
 		env.OnActivity("ProjectTaskState", mock.Anything, mock.Anything).Return(project[0])
 	}
-	plan := &generated.PlanClass{WorkflowID: t.Name(), ActionExecutionID: "original-action", OperationID: "original-operation",
+	plan := &generated.ComponentConformancePlan{WorkflowID: t.Name(), ActionExecutionID: "original-action", OperationID: "original-operation",
 		ComponentReleaseID: "candidate", ArtifactDigest: "artifact", PlanDigest: "frozen-plan", SuiteDigest: "frozen-suite", ContractDigests: []string{"contract"},
-		Steps: []generated.PlanStep{{CaseKey: "capability", StepKey: "execute", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("execute")}}}
+		Steps: []generated.ComponentConformanceStep{{CaseKey: "capability", StepKey: "execute", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("execute")}}}
 	return env, ComponentTaskInput{Kind: generated.WorkflowKind("COMPONENT_RELEASE"), Release: plan}
 }
 
@@ -114,7 +114,7 @@ func TestComponentReleaseNativeReceiverPendingOnlyObservesOriginalBatch(t *testi
 			if (probe.Reconcile != nil && *probe.Reconcile) != (attempts > 1) {
 				t.Fatal("pending receiver batch was dispatched again instead of observed")
 			}
-			return generated.ComponentConformanceStepObservation{NativeReceiverObservation: &generated.NativeReceiverObservationClass{
+			return generated.ComponentConformanceStepObservation{NativeReceiverObservation: &generated.ComponentNativeReceiverObservation{
 				NativeBatchID: "original-native-batch", Completed: attempts > 1,
 			}}, nil
 		})
@@ -137,7 +137,7 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 	for _, rejection := range []string{activities.ErrTypeAdmissionDenied, activities.ErrTypeRejected} {
 		t.Run(rejection, func(t *testing.T) {
 			env, in := releaseWorkflowTest(t)
-			in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "capability", StepKey: "cancel",
+			in.Release.Steps = append(in.Release.Steps, generated.ComponentConformanceStep{CaseKey: "capability", StepKey: "cancel",
 				IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("cancel")})
 			attempts, unsafe := 0, false
 			env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
@@ -145,7 +145,7 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 					attempts++
 					if attempts == 1 {
 						return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute",
-							NativeObservation: &generated.ExecutionElement{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
+							NativeObservation: &generated.AdapterExecutionObservation{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
 					}
 					unsafe = unsafe || probe.StepIndex != 1 || probe.Plan.Steps[probe.StepIndex].IdempotencyKey != "original-key" ||
 						(attempts > 2 && (probe.Reconcile == nil || !*probe.Reconcile))
@@ -172,16 +172,16 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 
 func TestComponentReleaseCheckedSameKeyTerminalCanFinishFailedSuite(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{StepKey: "cancel", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("cancel")})
+	in.Release.Steps = append(in.Release.Steps, generated.ComponentConformanceStep{StepKey: "cancel", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("cancel")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, _ generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
 			attempts++
 			if attempts == 1 {
-				return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
+				return generated.ComponentConformanceStepObservation{NativeObservation: &generated.AdapterExecutionObservation{IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("RUNNING")}}, nil
 			}
 			now, status := "2026-10-04T00:00:00Z", "completed"
-			actual := generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{
+			actual := generated.ComponentConformanceStepObservation{NativeObservation: &generated.AdapterExecutionObservation{
 				IdempotencyKey: "original-key", PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED"),
 				NativeStatus: &status, TerminalAt: &now, LastObservedAt: &now}}
 			return actual, temporal.NewNonRetryableApplicationError("cancel expectation failed but native is terminal", activities.ErrTypeRejected, nil, actual)
@@ -195,7 +195,7 @@ func TestComponentReleaseCheckedSameKeyTerminalCanFinishFailedSuite(t *testing.T
 
 func TestComponentReleaseCancellationDrainsUnknownWithoutAnotherProbe(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
+	in.Release.Steps = append(in.Release.Steps, generated.ComponentConformanceStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
@@ -213,7 +213,7 @@ func TestComponentReleaseCancellationDrainsUnknownWithoutAnotherProbe(t *testing
 			if attempts >= 3 {
 				status = generated.ExternalExecutionStatus("SUCCEEDED")
 			}
-			return generated.ComponentConformanceStepObservation{NativeObservation: &generated.ExecutionElement{PlatformStatus: status}}, nil
+			return generated.ComponentConformanceStepObservation{NativeObservation: &generated.AdapterExecutionObservation{PlatformStatus: status}}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, retry.RoundInterval/2)
 	env.ExecuteWorkflow(ComponentTaskKind, in)
@@ -234,7 +234,7 @@ func TestComponentReleaseCommittedReportLostACKContinuesWithoutProbes(t *testing
 			t.Fatal(err)
 		}
 		var evidence struct {
-			Plan   generated.PlanClass `json:"plan"`
+			Plan   generated.ComponentConformancePlan `json:"plan"`
 			Report struct {
 				Observations []generated.ComponentConformanceStepObservation `json:"observations"`
 			} `json:"report"`
@@ -314,7 +314,7 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 		}
 		return nil
 	})
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
+	in.Release.Steps = append(in.Release.Steps, generated.ComponentConformanceStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
@@ -326,7 +326,7 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 				return generated.ComponentConformanceStepObservation{}, errors.New("native ACK lost")
 			}
 			return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute",
-				NativeObservation: &generated.ExecutionElement{PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED")}}, nil
+				NativeObservation: &generated.AdapterExecutionObservation{PlatformStatus: generated.ExternalExecutionStatus("SUCCEEDED")}}, nil
 		})
 	env.RegisterDelayedCallback(env.CancelWorkflow, retry.RoundInterval/2)
 	env.RegisterDelayedCallback(func() { env.SetContinueAsNewSuggested(true) }, retry.RoundInterval+retry.RoundInterval/2)
@@ -356,7 +356,7 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 // refused.
 func TestComponentReleaseEmptySuiteOnlyWithoutContracts(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	in.Release.ContractDigests, in.Release.Steps = []string{}, []generated.PlanStep{}
+	in.Release.ContractDigests, in.Release.Steps = []string{}, []generated.ComponentConformanceStep{}
 	var report generated.ComponentConformanceObservation
 	env.OnActivity("RecordComponentConformance", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, observed generated.ComponentConformanceObservation) (generated.ComponentReleaseReceipt, error) {
@@ -383,7 +383,7 @@ func TestComponentReleaseEmptySuiteOnlyWithoutContracts(t *testing.T) {
 	}
 
 	refused, contracted := releaseWorkflowTest(t)
-	contracted.Release.Steps = []generated.PlanStep{}
+	contracted.Release.Steps = []generated.ComponentConformanceStep{}
 	refused.ExecuteWorkflow(ComponentTaskKind, contracted)
 	if refused.GetWorkflowError() == nil {
 		t.Fatal("a contracted plan without steps registered")
@@ -403,7 +403,7 @@ func TestComponentReleaseRefusalCannotRegister(t *testing.T) {
 }
 
 func TestComponentReleaseCapturesComeOnlyFromEarlierSameCaseObservations(t *testing.T) {
-	var step generated.PlanStep
+	var step generated.ComponentConformanceStep
 	if err := json.Unmarshal([]byte(`{"caseKey":"file_storage:2:native_file","stepKey":"read","operation":"execute",
 		"contractKey":"file_storage.read@v2","idempotencyKey":"read","requestJson":"{}","expectedResponseJson":"{}","expectedHttpStatus":200,
 		"captures":[{"key":"receipt","slot":"GENERATED_REF","pointer":"/receiptRef"}],
@@ -432,7 +432,7 @@ func TestComponentReleaseCapturesComeOnlyFromEarlierSameCaseObservations(t *test
 		t.Fatal("another case's capture was supplied")
 	}
 	probe = generated.ComponentConformanceProbe{}
-	if err := componentReleaseCaptures(&probe, generated.PlanStep{CaseKey: step.CaseKey}, observations); err != nil || len(probe.Captures) != 0 {
+	if err := componentReleaseCaptures(&probe, generated.ComponentConformanceStep{CaseKey: step.CaseKey}, observations); err != nil || len(probe.Captures) != 0 {
 		t.Fatal("a step without bindings must not carry captures")
 	}
 }

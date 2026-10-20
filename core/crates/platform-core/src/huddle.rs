@@ -135,26 +135,6 @@ fn view(binding: &Binding) -> Result<contracts::HuddleView, Refusal> {
     })
 }
 
-/// HuddlePage 的元素是生成器为 `$ref` 数组另行命名的同形类型（同 `GrantElement`）。
-fn page_item(view: contracts::HuddleView) -> contracts::HuddlePageItem {
-    contracts::HuddlePageItem {
-        agent_installation_resource_ids: view.agent_installation_resource_ids,
-        channel_id: view.channel_id,
-        channel_name: view.channel_name,
-        created_at: view.created_at,
-        creator_pubkey: view.creator_pubkey,
-        ended_at: view.ended_at,
-        huddle_id: view.huddle_id,
-        initiator_principal_id: view.initiator_principal_id,
-        operation_id: view.operation_id,
-        parent_channel_id: view.parent_channel_id,
-        parent_conversation_id: view.parent_conversation_id,
-        parent_workspace_id: view.parent_workspace_id,
-        state: view.state,
-        version: view.version,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 命令解析
 // ---------------------------------------------------------------------------
@@ -1759,11 +1739,7 @@ pub async fn list(
         Ok(rows) => rows,
         Err(e) => return Refusal::from(e).respond(None),
     };
-    match rows
-        .iter()
-        .map(|binding| view(binding).map(page_item))
-        .collect::<Result<Vec<_>, _>>()
-    {
+    match rows.iter().map(view).collect::<Result<Vec<_>, _>>() {
         Ok(items) => Json(contracts::HuddlePage { items }).into_response(),
         Err(refusal) => refusal.respond(None),
     }
@@ -1880,7 +1856,7 @@ pub async fn lifecycle(
         .await;
     let events = events
         .into_iter()
-        .map(|event| contracts::EventElement {
+        .map(|event| contracts::HuddleLifecycleEvent {
             event_id: event.event_id,
             kind: i64::from(event.kind),
             pubkey: event.pubkey,

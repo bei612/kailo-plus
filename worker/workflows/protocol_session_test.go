@@ -38,7 +38,7 @@ func protocolSessionTest(t *testing.T) (*testsuite.TestWorkflowEnvironment, Comp
 
 func protocolResult(in ComponentTaskInput, version int64, state string, status generated.TaskStatus, write string) generated.ProtocolSessionReconcileResult {
 	out := generated.ProtocolSessionReconcileResult{ProtocolSessionID: in.ProtocolSession.ProtocolSessionID,
-		Round:  generated.RoundClass{SessionVersion: version, State: generated.ProtocolSessionViewState(state)},
+		Round:  generated.ProtocolSessionReconcileRound{SessionVersion: version, State: generated.ProtocolSessionReconcileRoundState(state)},
 		Status: status, WaitingReason: "NONE"}
 	if status == generated.TaskStatusRUNNING {
 		out.WaitingReason = "PROTOCOL_SESSION_OPEN"
@@ -48,16 +48,16 @@ func protocolResult(in ComponentTaskInput, version int64, state string, status g
 	}
 	if write != "" {
 		revision, etag := "revision-"+write, "etag-"+write
-		out.Round.WriteObservation = &generated.WriteObservationClass{Phase: generated.Phase("ACCEPTED"),
+		out.Round.WriteObservation = &generated.ProtocolWriteObservation{Phase: generated.ProtocolWriteObservationPhase("ACCEPTED"),
 			CorrelationRef: write, ResultRevision: &revision, NativeEtag: &etag, BytesWritten: 10,
-			BaseModifiedAt: time.Unix(10, 0).UTC(), Editors: "native-human"}
+			BaseModifiedAt: "1970-01-01T00:00:10Z", Editors: "native-human"}
 	}
 	return out
 }
 
 func assertProtocolTarget(t *testing.T, in ComponentTaskInput, request generated.ProtocolSessionReconcileRequest) {
 	t.Helper()
-	if request.Target != generated.ProtocolSessionReconcileRequestTarget(*in.ProtocolSession) || request.RunID == "" {
+	if request.Target != generated.ProtocolSessionReconcileTarget(*in.ProtocolSession) || request.RunID == "" {
 		t.Fatal("round replaced the frozen initial Session, base, binding or identity")
 	}
 }
@@ -109,7 +109,7 @@ func TestProtocolSessionSavedKeepsOneWorkflowForLaterSave(t *testing.T) {
 func TestProtocolSessionLostQueryAcknowledgmentRetainsExactRound(t *testing.T) {
 	env, in := protocolSessionTest(t)
 	calls := 0
-	var lost *generated.RoundClass
+	var lost *generated.ProtocolSessionReconcileRound
 	env.OnActivity("AdvanceProtocolSession", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, request generated.ProtocolSessionReconcileRequest) (generated.ProtocolSessionReconcileResult, error) {
 			calls++
@@ -146,8 +146,8 @@ func TestProtocolSessionLateZeroWriteOutcomeFreezesSameRound(t *testing.T) {
 					assertProtocolTarget(t, in, request)
 					if calls == 1 {
 						out := protocolResult(in, 8, "UNKNOWN", generated.TaskStatusRUNNING, "")
-						out.Round.WriteObservation = &generated.WriteObservationClass{Phase: generated.Phase(phase),
-							CorrelationRef: "first-write", BytesWritten: 0, BaseModifiedAt: time.Unix(10, 0).UTC(), Editors: "native-human"}
+						out.Round.WriteObservation = &generated.ProtocolWriteObservation{Phase: generated.ProtocolWriteObservationPhase(phase),
+							CorrelationRef: "first-write", BytesWritten: 0, BaseModifiedAt: "1970-01-01T00:00:10Z", Editors: "native-human"}
 						return out, nil
 					}
 					if request.Round == nil || request.Round.SessionVersion != 8 ||

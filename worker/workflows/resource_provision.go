@@ -28,7 +28,7 @@ func resourceProvision(ctx workflow.Context, in ComponentTaskInput) error {
 		var result generated.ResourceProvisionAdvanceResult
 		info := workflow.GetInfo(loop)
 		err := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, options), (*activities.CoreAPI).AdvanceResourceProvision,
-			generated.ResourceProvisionAdvanceRequest{Target: generated.ResourceProvisionAdvanceRequestTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending}).Get(loop, &result)
+			generated.ResourceProvisionAdvanceRequest{Target: generated.ResourceProvisionTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending}).Get(loop, &result)
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.ResourceID == target.ResourceID {
 			switch result.Status {

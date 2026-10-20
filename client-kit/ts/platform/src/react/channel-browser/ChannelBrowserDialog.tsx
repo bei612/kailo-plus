@@ -11,12 +11,12 @@ import {
 } from "lucide-react";
 
 import type { DiscoverableWorkspace } from "@client-kit/contracts";
-import { ChannelType, CreateActionKey } from "@client-kit/contracts";
+import { WorkspaceChannelCreateChannelType, RoleWorkspacePageCreateActionKey } from "@client-kit/contracts";
 import { useT, useLocale } from "../context";
 import { enumLabel, workspaceMembershipStateMessages } from "../../i18n";
 import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "../roles";
 import { CreateChannelTemplateField, useChannelTemplateSelection } from "../channel-templates/CreateChannelTemplateField";
-export type BrowserChannel = DiscoverableWorkspace & { name: string; description: string; channelType: ChannelType; archivedAt: boolean; lastMessageAt?: string | null };
+export type BrowserChannel = DiscoverableWorkspace & { name: string; description: string; channelType: WorkspaceChannelCreateChannelType; archivedAt: boolean; lastMessageAt?: string | null };
 type Channel = BrowserChannel;
 import {
   canonicalChannelName,
@@ -90,7 +90,7 @@ type ChannelBrowserDialogProps = {
    * dialog surfaces a "Create …" affordance (Are.na style) so search and
    * create live behind a single entry point.
    */
-  createActionKey?: CreateActionKey;
+  createActionKey?: RoleWorkspacePageCreateActionKey;
   busy?: boolean;
   status?: React.ReactNode;
 };
@@ -144,7 +144,7 @@ export function ChannelBrowserDialog({
 
   const isForumMode = channelTypeFilter === "forum";
   const canCreate = Boolean(createActionKey);
-  const createKind = isForumMode ? ChannelType.Forum : ChannelType.Stream;
+  const createKind = isForumMode ? WorkspaceChannelCreateChannelType.Forum : WorkspaceChannelCreateChannelType.Stream;
   const browseTitle = t(isForumMode ? "channel.browser.forumTitle" : "channel.browser.title");
   const searchPlaceholder = canCreate
     ? isForumMode

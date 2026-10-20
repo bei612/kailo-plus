@@ -11,16 +11,16 @@ import {
   AgentMemoryCoreWrite,
   AgentMemoryColdWrite,
   RuntimeProfileKind,
-  ActionKind,
-  ActionEnum,
+  AutomationVersionContentActionKind,
+  AutomationStepAction,
   AutomationState,
   DelegationEffectiveState,
-  ScheduleSpecKind,
+  AutomationScheduleSpecKind,
   AutomationResultTarget as ResultTarget,
   AutomationTriggerKind as TriggerKind,
   ReasonCode,
   ResourceState,
-  ResultExposureMode,
+  DelegationScopeParametersResultExposureMode,
   TaskStatus,
   WorkflowKind,
   type ActionCommand,
@@ -330,7 +330,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
     || !objectFields(value.trigger, ["kind", "textPrefix", "filter", "mentionPrincipalId", "scheduleSpec"])) return false;
   if (value.formatVersion === 2 || value.formatVersion === 3 ? value.action !== undefined || !supportedSteps(value.steps, value.formatVersion)
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
-      || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
+      || (value.action.kind !== AutomationVersionContentActionKind.AgentTurn && value.action.kind !== AutomationVersionContentActionKind.PostMessage)
       || typeof value.action.template !== "string" || !value.action.template.trim()) return false;
   if (Array.isArray(value.steps) && value.steps.some((step) => step.action === "request_approval") && value.approvalPolicy !== undefined) return false;
   if (Array.isArray(value.steps) && value.steps.some((step) => step.action === "add_reaction") && value.trigger.kind === TriggerKind.Schedule) return false;
@@ -879,7 +879,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, on
               <p>{t("agents.automation.offsetSeconds")}: {version.content.trigger.scheduleSpec.offsetSeconds}</p>
               <p>{t("agents.automation.catchupWindowSeconds")}: {version.content.trigger.scheduleSpec.catchupWindowSeconds}</p>
             </> : null}
-            <p>{t("agents.automation.resultTarget")}: {t(workflowAction(version.content)?.kind === ActionEnum.SetChannelTopic || version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+            <p>{t("agents.automation.resultTarget")}: {t(workflowAction(version.content)?.kind === AutomationStepAction.SetChannelTopic || version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
             <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(version.content)
               ? `${workflowApprovalPolicy(version.content)?.id} · ${workflowApprovalPolicy(version.content)?.version}`
               : t("agents.automation.noApproval")}</p>
@@ -985,7 +985,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const [template, setTemplate] = useState("");
   const [steps, setSteps] = useState<WorkflowStepDraft[]>([]);
   const [stepsFormat, setStepsFormat] = useState<2 | 3>(2);
-  const [actionKind, setActionKind] = useState<WorkflowActionKind>(ActionKind.AgentTurn);
+  const [actionKind, setActionKind] = useState<WorkflowActionKind>(AutomationVersionContentActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
   const [yamlText, setYamlText] = useState("");
@@ -1047,9 +1047,9 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
   const grant = grants.find((row) => row.delegationId === grantId);
   const contentAction = creating || edit.action === "publish_version";
   const addingFirstStep = creating && editorMode === "form"
-    && actionKind !== ActionKind.AgentTurn && steps.length === 0 && !template;
-  const scheduleSpec = { ...(scheduleMode === "cron" ? { cron, kind: ScheduleSpecKind.Cron } : {
-    ...(intervalTagged ? { kind: ScheduleSpecKind.Interval } : {}),
+    && actionKind !== AutomationVersionContentActionKind.AgentTurn && steps.length === 0 && !template;
+  const scheduleSpec = { ...(scheduleMode === "cron" ? { cron, kind: AutomationScheduleSpecKind.Cron } : {
+    ...(intervalTagged ? { kind: AutomationScheduleSpecKind.Interval } : {}),
     everySeconds: parseDurationSeconds(interval) ?? 0, offsetSeconds: Number(offsetSeconds) }), catchupWindowSeconds: Number(catchupWindowSeconds) };
   const scheduleValid = (scheduleMode === "cron" ? [catchupWindowSeconds] : [offsetSeconds, catchupWindowSeconds]).every((value) => /^\d+$/.test(value))
     && validSchedule(scheduleSpec) && (scheduleMode !== "cron" || !cronExpressionError(cron));
@@ -1061,8 +1061,8 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
       ...(trigger === TriggerKind.ReactionAdded && triggerEmoji.trim() ? { emoji: triggerEmoji.trim() } : {}),
       ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
-      || actionKind === ActionEnum.CallWebhook ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
+    ...(steps.length ? {formatVersion: stepsFormat, steps: workflowStepsContent(steps)} : actionKind === AutomationStepAction.AddReaction || actionKind === AutomationStepAction.SetChannelTopic
+      || actionKind === AutomationStepAction.CallWebhook ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule || trigger === TriggerKind.Webhook ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
@@ -1100,7 +1100,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     setFilter(content?.trigger.filter ?? ""); setTriggerEmoji(content?.trigger.emoji ?? "");
     setConditionDrafts(null);
     setScheduleMode(content?.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
-    setIntervalTagged(content?.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
+    setIntervalTagged(content?.trigger.scheduleSpec?.kind === AutomationScheduleSpecKind.Interval);
     setCron(content?.trigger.scheduleSpec?.cron ?? "");
     setInterval(content?.trigger.scheduleSpec?.everySeconds === undefined ? "" : formatDurationSeconds(content.trigger.scheduleSpec.everySeconds));
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
@@ -1110,7 +1110,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     setTemplate(content ? workflowAction(content)?.template ?? "" : "");
     // Original WorkflowDialog starts with an empty sequence and its primary
     // "Add step"; the governed Agent turn is chosen from the canvas menu.
-    setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.PostMessage : ActionKind.PostMessage);
+    setActionKind(content ? workflowAction(content)?.kind ?? AutomationVersionContentActionKind.PostMessage : AutomationVersionContentActionKind.PostMessage);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId(""); setDraftScope(null);
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
@@ -1184,14 +1184,14 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
     setFilter(yamlContent.trigger.filter ?? "");
     setConditionDrafts(null);
     setScheduleMode(yamlContent.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
-    setIntervalTagged(yamlContent.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
+    setIntervalTagged(yamlContent.trigger.scheduleSpec?.kind === AutomationScheduleSpecKind.Interval);
     setCron(yamlContent.trigger.scheduleSpec?.cron ?? "");
     setInterval(yamlContent.trigger.scheduleSpec?.everySeconds === undefined ? "" : formatDurationSeconds(yamlContent.trigger.scheduleSpec.everySeconds));
     setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setSteps(yamlContent.steps ?? []);
     setStepsFormat(yamlContent.formatVersion === 3 ? 3 : 2);
-    setTemplate(workflowAction(yamlContent)?.template ?? ""); setActionKind(workflowAction(yamlContent)?.kind ?? ActionKind.AgentTurn);
+    setTemplate(workflowAction(yamlContent)?.template ?? ""); setActionKind(workflowAction(yamlContent)?.kind ?? AutomationVersionContentActionKind.AgentTurn);
     setPolicyKey(yamlContent.approvalPolicy ? `${yamlContent.approvalPolicy.id}:${yamlContent.approvalPolicy.version}` : "");
     setEditorMode(mode); setEditorError(false);
   };
@@ -1389,30 +1389,30 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
           onChange={(value) => { setYamlText(value); setEditorError(false); }} /></> : <>
         <WorkflowFormCanvas key={draftEpoch} ref={formBuilderRef} trigger={trigger} triggerFields={triggerFields} scopeField={scopeField}
           triggerPresentation={triggerPresentation}
-          onAgentTurn={trigger === TriggerKind.Webhook ? undefined : () => { setActionKind(ActionKind.AgentTurn); setTemplate(""); }}
-          onRemoveAction={() => { setActionKind(ActionKind.PostMessage); setTemplate(""); }}
-          action={actionKind === ActionKind.AgentTurn ? {kind: ActionKind.AgentTurn, template} : undefined}
-          actionFields={actionKind === ActionKind.AgentTurn ? <div className="space-y-1.5">
+          onAgentTurn={trigger === TriggerKind.Webhook ? undefined : () => { setActionKind(AutomationVersionContentActionKind.AgentTurn); setTemplate(""); }}
+          onRemoveAction={() => { setActionKind(AutomationVersionContentActionKind.PostMessage); setTemplate(""); }}
+          action={actionKind === AutomationVersionContentActionKind.AgentTurn ? {kind: AutomationVersionContentActionKind.AgentTurn, template} : undefined}
+          actionFields={actionKind === AutomationVersionContentActionKind.AgentTurn ? <div className="space-y-1.5">
             <label className="block text-xs font-medium text-muted-foreground" htmlFor={`${formId}-agent-template`}>{t("agents.automation.template")}</label>
             <AgentTextarea id={`${formId}-agent-template`} required value={template} disabled={busy || !!intent || unknown}
               onChange={(event) => setTemplate(event.target.value)} className="min-h-[60px] resize-y text-xs" />
           </div> : undefined}
           disabled={busy || !!intent || unknown} policies={policies}
-          steps={steps.length ? steps : template && actionKind === ActionKind.PostMessage
-            ? [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}] : []}
+          steps={steps.length ? steps : template && actionKind === AutomationVersionContentActionKind.PostMessage
+            ? [{id: nextStepId([]), action: AutomationStepAction.SendMessage, text: template}] : []}
           onStepsChange={(next) => {
             setSteps(next);
             const terminal = next.at(-1);
             setTemplate(terminal?.text ?? terminal?.emoji ?? terminal?.topic ?? terminal?.url ?? "");
             if (terminal) {
-              setActionKind(terminal.action === ActionEnum.AddReaction ? ActionEnum.AddReaction
-                : terminal.action === ActionEnum.SetChannelTopic ? ActionEnum.SetChannelTopic
-                : terminal.action === ActionEnum.CallWebhook ? ActionEnum.CallWebhook : ActionKind.PostMessage);
-              setStepsFormat(terminal.action === ActionEnum.SendMessage ? 3 : 2);
+              setActionKind(terminal.action === AutomationStepAction.AddReaction ? AutomationStepAction.AddReaction
+                : terminal.action === AutomationStepAction.SetChannelTopic ? AutomationStepAction.SetChannelTopic
+                : terminal.action === AutomationStepAction.CallWebhook ? AutomationStepAction.CallWebhook : AutomationVersionContentActionKind.PostMessage);
+              setStepsFormat(terminal.action === AutomationStepAction.SendMessage ? 3 : 2);
             }
-            if (next.some(step => step.action === ActionEnum.RequestApproval)) setPolicyKey("");
+            if (next.some(step => step.action === AutomationStepAction.RequestApproval)) setPolicyKey("");
           }} />
-        {!steps.some((step) => step.action === ActionEnum.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
+        {!steps.some((step) => step.action === AutomationStepAction.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
           <select value={policyKey} disabled={!policies} onChange={(event) => {
             if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))
               setPolicyKey(event.target.value);
@@ -1424,7 +1424,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         </label> : null}
         {!policyAvailable ? <Notice role="status">{t("agents.automation.approvalUnavailable")}
           <Button onClick={reloadAdmission}>{t("platform.retry")}</Button></Notice> : null}
-        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(actionKind === ActionEnum.SetChannelTopic || trigger === TriggerKind.Schedule || trigger === TriggerKind.Webhook ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(actionKind === AutomationStepAction.SetChannelTopic || trigger === TriggerKind.Schedule || trigger === TriggerKind.Webhook ? "agents.automation.channel" : "agents.automation.thread")}</p>
         </>}
       </> : null}
       {edit?.action === "enable" ? <>
@@ -1476,7 +1476,7 @@ function AutomationAction({ workspaceId: hostWorkspaceId, workspaces, edit, open
         <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(intent.automationVersionContent)
           ? `${workflowApprovalPolicy(intent.automationVersionContent)?.id} · ${workflowApprovalPolicy(intent.automationVersionContent)?.version}`
           : t("agents.automation.noApproval")}</p>
-        <p>{t("agents.automation.resultTarget")}: {t(workflowAction(intent.automationVersionContent)?.kind === ActionEnum.SetChannelTopic || intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        <p>{t("agents.automation.resultTarget")}: {t(workflowAction(intent.automationVersionContent)?.kind === AutomationStepAction.SetChannelTopic || intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {intent.assetId ? <p className="break-words">{intent.assetId} · {intent.assetVersion} · {intent.delegationId} · {intent.delegationVersion}</p> : null}
       <p className="text-muted-foreground">{t("agents.admission")}</p>
@@ -1873,7 +1873,7 @@ function validDelegationScope(scope: DelegationScopeParameters): boolean {
     && ((typeof scope.targetId === "string" && !!scope.targetId && scope.createWorkspaceId === undefined)
       || (typeof scope.createWorkspaceId === "string" && !!scope.createWorkspaceId && scope.targetId === undefined))
     && (scope.toolResourceId === undefined || (typeof scope.toolResourceId === "string" && !!scope.toolResourceId))
-    && Object.values(ResultExposureMode).includes(scope.resultExposureMode)
+    && Object.values(DelegationScopeParametersResultExposureMode).includes(scope.resultExposureMode)
     && typeof scope.outputSchemaHash === "string" && /^[0-9a-f]{64}$/.test(scope.outputSchemaHash)
     && typeof scope.redactionPolicy === "string" && !!scope.redactionPolicy;
 }
@@ -2028,13 +2028,13 @@ function InstallationDelegation({ installation, locked, onLocked, onReset, onRec
       if (!page.canGrant || !page.grants.includes(renew) || !renewable(renew, currentPrincipalId)
         || !mapped?.scopes.length || !periodValid || !usesValid) return;
       command.delegationId = newIdempotencyKey();
-      command.delegationGrant = { validFrom: from, expiresAt: until,
+      command.delegationGrant = { validFrom: from.toISOString(), expiresAt: until.toISOString(),
         ...(uses === undefined ? {} : { maxUses: uses }), scopes: mapped.scopes,
         renewsDelegationId: renew.delegationId, renewsDelegationVersion: renew.delegationVersion };
     } else {
       if (!page.canGrant || !scope || overlapping || !periodValid || !usesValid) return;
       command.delegationId = newIdempotencyKey();
-      command.delegationGrant = { validFrom: from, expiresAt: until,
+      command.delegationGrant = { validFrom: from.toISOString(), expiresAt: until.toISOString(),
         ...(uses === undefined ? {} : { maxUses: uses }), scopes: [{ ...scope }] };
     }
     setIntent({ command, installation, ...(revoke ? { revokedGrant: revoke } : {}) }); setFailure(null); setSubmission(null); onLocked(true);

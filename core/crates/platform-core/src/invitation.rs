@@ -27,7 +27,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use contracts::EvidenceKind;
 use contracts::{
-    ActionGateState, InvitationClass, InvitationRedemptionRequest, InvitationRedemptionView,
+    ActionGateState, InvitationRedemptionRequest, InvitationRedemptionView, IssuedInvitation,
     ReasonCode, TenantInvitationStatus, TenantInvitationView, TenantMembershipState,
 };
 use sha2::{Digest, Sha256};
@@ -68,8 +68,8 @@ pub struct Issued {
 }
 
 impl Issued {
-    pub fn into_contract(self, link_base: &str) -> InvitationClass {
-        InvitationClass {
+    pub fn into_contract(self, link_base: &str) -> IssuedInvitation {
+        IssuedInvitation {
             invitation_id: self.invitation_id.to_string(),
             link: format!("{link_base}#{}", self.credential),
             expires_at: rfc3339(self.expires_at),

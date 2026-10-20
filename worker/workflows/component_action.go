@@ -29,7 +29,7 @@ func componentAction(ctx workflow.Context, in ComponentTaskInput) error {
 		info := workflow.GetInfo(loop)
 		var result generated.ComponentActionAdvanceResult
 		err := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, options), (*activities.CoreAPI).AdvanceComponentAction,
-			generated.ComponentActionAdvanceRequest{Target: generated.ComponentActionAdvanceRequestTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending}).Get(loop, &result)
+			generated.ComponentActionAdvanceRequest{Target: generated.ComponentActionTarget(*target), RunID: info.WorkflowExecution.RunID, CancelRequested: in.CancelPending}).Get(loop, &result)
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.ActionExecutionID == target.ActionExecutionID {
 			switch result.Status {

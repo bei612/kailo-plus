@@ -15,7 +15,7 @@ import {listSidebarProjects,writeSidebarProjectsFilter} from "../src/react/sideb
 import {act,useState} from "react";
 import {PlatformProvider} from "../src/react/context";
 import {createBffClient} from "../src/client";
-import {CreateActionKey, ErrorClass, WorkspaceVisibility, ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace} from "@client-kit/contracts";
+import {RoleWorkspacePageCreateActionKey, ErrorClass, WorkspaceVisibility, WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type DiscoverableWorkspace} from "@client-kit/contracts";
 import {TooltipProvider} from "../src/react/sidebar/tooltip";
 import {ProjectChannelHome} from "../src/react/projects/ProjectChannelHome";
 import {getEventHash} from "nostr-tools/pure";
@@ -35,9 +35,9 @@ const signal=()=>new AbortController().signal;
 const pulseHost:PulseHost={scopeKey:"tenant:owner",pubkey:owner,query:async()=>[],publish:vi.fn(),copy:vi.fn(),startDm:vi.fn(),mediaUrl:url=>url,
   renderComposer:()=>null,renderContent:content=><p>{content}</p>};
 const homeId="12345678-1234-4234-8234-123456789001",relatedId="12345678-1234-4234-8234-123456789002";
-function homeWorkspace(channelId=homeId):DiscoverableWorkspace{return {id:`workspace-${channelId}`,createdAt:new Date(0),isMember:true,
+function homeWorkspace(channelId=homeId):DiscoverableWorkspace{return {id:`workspace-${channelId}`,createdAt:"1970-01-01T00:00:00.000Z",isMember:true,
   membershipState:WorkspaceMembershipState.Active,visibility:WorkspaceVisibility.Open,memberCount:1,
-  channel:{channelId,name:channelId===homeId?"Home stream":"Related stream",channelType:ChannelType.Stream,archived:false}};}
+  channel:{channelId,name:channelId===homeId?"Home stream":"Related stream",channelType:WorkspaceChannelCreateChannelType.Stream,archived:false}};}
 const bff=createBffClient({send:async()=>({status:200,body:{workspaces:[]}})});
 const creationInput={name:"Real creation",description:"Original description",channelVisibility:WorkspaceVisibility.Open,projectVisibility:"listed" as const};
 async function creationFixture(){
@@ -45,9 +45,9 @@ async function creationFixture(){
   const h:ProjectsHost={scopeKey:"creation-scope",query:async request=>({pubkey:owner,limit:20,events:rows.filter(event=>event.kind===(request.view==="PROJECTS"?30621:request.view==="REPOSITORIES"?30617:5))})};
   const intent=await prepareProjectCreation(h,creationInput);
   const workspaceId="12345678-1234-4234-8234-123456789012",executionId="22345678-1234-4234-8234-123456789012",operationId="32345678-1234-4234-8234-123456789012";
-  const task={actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate,targetId:workspaceId,taskStatus:"COMPLETED",gateState:"ALLOWED",dispatchState:"DISPATCHED",workflowId:"workflow"};
+  const task={actionExecutionId:executionId,operationId,actionKey:RoleWorkspacePageCreateActionKey.WorkspaceCreate,targetId:workspaceId,taskStatus:"COMPLETED",gateState:"ALLOWED",dispatchState:"DISPATCHED",workflowId:"workflow"};
   let member=true;
-  const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:request.method==="POST"?{actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate}
+  const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:request.method==="POST"?{actionExecutionId:executionId,operationId,actionKey:RoleWorkspacePageCreateActionKey.WorkspaceCreate}
     :request.path==="/api/v1/workspaces"?[{id:workspaceId,slug:intent.channel.slug,name:intent.input.name,isMember:member}]:task}));
   const client=createBffClient({send});
   const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
@@ -293,7 +293,7 @@ describe("governed original project creation",()=>{
     function Host(){const [visible,setVisible]=useState(true);return <><button onClick={()=>setVisible(false)}>Leave creation</button>{visible?<Form/>:null}</>;}
     // Keep the channel slug fixture tied to the hook's newly prepared intent.
     f.send.mockImplementation(async request=>{
-      if(request.method==="POST"){const body=request.body as {slug:string};f.intent.channel.slug=body.slug;return {status:200,body:{actionExecutionId:f.task.actionExecutionId,operationId:f.task.operationId,actionKey:CreateActionKey.WorkspaceCreate}};}
+      if(request.method==="POST"){const body=request.body as {slug:string};f.intent.channel.slug=body.slug;return {status:200,body:{actionExecutionId:f.task.actionExecutionId,operationId:f.task.operationId,actionKey:RoleWorkspacePageCreateActionKey.WorkspaceCreate}};}
       return {status:200,body:request.path==="/api/v1/workspaces"?[{id:f.task.targetId,slug:f.intent.channel.slug,name:creationInput.name,isMember:true}]:f.task};
     });
     const ui=await render(<PlatformProvider client={f.client}><Host/></PlatformProvider>);
@@ -379,7 +379,7 @@ describe("original Projects directory management consumers",()=>{
   it("opens the original empty-state form and completes the existing governed creation chain",async()=>{
     const f=await creationFixture();const original=f.send.getMockImplementation()!;
     f.send.mockImplementation(async request=>{
-      if(request.path==="/api/v1/role-workspaces")return {status:200,body:{workspaces:[],createActionKey:CreateActionKey.WorkspaceCreate}};
+      if(request.path==="/api/v1/role-workspaces")return {status:200,body:{workspaces:[],createActionKey:RoleWorkspacePageCreateActionKey.WorkspaceCreate}};
       if(request.path.startsWith("/api/v1/agent-definitions"))return {status:200,body:{definitions:[]}};
       if(request.method==="POST")f.intent.channel.slug=(request.body as {slug:string}).slug;
       return original(request);
