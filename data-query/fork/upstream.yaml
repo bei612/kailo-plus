@@ -12,8 +12,8 @@ artifacts:
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
     inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs]
-    source_digest: sha256:8522dc8565919db357bbcb419a7157ccf59eb6ef94a8fcd4943c62dda91beda3
-    artifact_digest: sha256:c6a84b944251e14f0be5b2b01e5ff5787cb06228cb24144886f52c67a536e27b
+    source_digest: sha256:5b3a94c5f365fb08bf6c939639e407460eaef193bc27cc11d0d9b37813f686f5
+    artifact_digest: sha256:b576e7ffdead152149ca6cd660d29ad21a7be133628e194e7a3a8b5e76bd332b
   - name: data-query-ai-service
     kind: image
     build_context: data-query/wren-ai-service
