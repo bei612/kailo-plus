@@ -227,6 +227,7 @@ pub fn run() {
             get_feed,
             get_identity,
             get_nsec,
+            get_presence,
             generate_backup_passphrase,
             create_ncryptsec_backup,
             verify_ncryptsec_backup,

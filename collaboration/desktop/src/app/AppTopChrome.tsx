@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+// Original global Back/Forward buttons, shared with the Web top chrome (localized labels).
+import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 
 import { isMacPlatform } from "@/shared/lib/platform";
 import { useIsFullscreen } from "@/shared/lib/useIsFullscreen";
@@ -22,8 +23,6 @@ type AppTopChromeProps = {
 // to the rem-first rule.
 const TOP_CHROME_ICON_BUTTON_CLASS =
   "h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
-const HISTORY_ICON_BUTTON_CLASS =
-  "h-[28px] w-[24px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-[16px]";
 
 function preventTopChromeWheel(event: WheelEvent) {
   event.preventDefault();
@@ -124,28 +123,12 @@ export function AppTopChrome({
     >
       <div className={cn("flex items-center gap-0.5", navRowAlignmentClass)}>
         <TopChromeSidebarTrigger />
-        <Button
-          aria-label="Go back"
-          className={HISTORY_ICON_BUTTON_CLASS}
-          data-testid="global-back"
-          disabled={!canGoBack}
-          onClick={onGoBack}
-          size="icon"
-          variant="ghost"
-        >
-          <ChevronLeft />
-        </Button>
-        <Button
-          aria-label="Go forward"
-          className={HISTORY_ICON_BUTTON_CLASS}
-          data-testid="global-forward"
-          disabled={!canGoForward}
-          onClick={onGoForward}
-          size="icon"
-          variant="ghost"
-        >
-          <ChevronRight />
-        </Button>
+        <TopChromeHistoryButtons
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          onGoBack={onGoBack}
+          onGoForward={onGoForward}
+        />
       </div>
       <div
         className={cn("flex min-w-0 flex-1 items-center", navRowAlignmentClass)}

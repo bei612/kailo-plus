@@ -55,6 +55,9 @@ import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { useT } from "@client-kit/platform/react/context";
 import { ReadFailure } from "@client-kit/platform/react/ui";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { CollaborationPreferencesProvider, useCollaborationPreferenceActions } from "@client-kit/platform/react/collaboration-preferences";
+import { DesktopAgentActivityOpenerHost } from "@/features/channels/ui/useDesktopChannelAgentActivity";
+import { NativePresenceHost } from "@/features/platform/NativePresenceHost";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 import { NativeReminderHost } from "@/features/platform/ReminderHost";
 
@@ -66,6 +69,10 @@ export function AppShell() {
   const activeCommunity = useActiveCommunity();
   const nativeSession = useNativeSession();
   const coreReads = useInboxState(nativeSession.client);
+  // DD-125: the same Core CollaborationUserState preference actions as the Web host (custom
+  // sidebar sections and sort, channel templates, Pulse follows), read and written over the BFF
+  // through the same CAS queue as the read marks above (05 collab.user_state: Desktop via BFF).
+  const collaborationPreferences = useCollaborationPreferenceActions(nativeSession.client, coreReads);
   const platformSession = useQuery({ queryKey: ["platform", "session"], queryFn: () => nativeSession.client.session() });
   const [searchFocusRequest, setSearchFocusRequest] = React.useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] =
@@ -384,6 +391,9 @@ export function AppShell() {
     <EncryptedBackupProvider key={`${nativeSession.devicePubkey}:${activeCommunity.relayUrl}:${platformSession.data?.platformSessionId ?? ""}`}
       onOpenSettings={() => handleOpenSettings("profile")}>
     <ChannelNavigationProvider channels={channels}>
+    <CollaborationPreferencesProvider value={collaborationPreferences}>
+    <NativePresenceHost>
+    <DesktopAgentActivityOpenerHost>
       <AppShellProvider
         value={{
           coreReads,
@@ -542,6 +552,9 @@ export function AppShell() {
           </div>
         </div>
       </AppShellProvider>
+    </DesktopAgentActivityOpenerHost>
+    </NativePresenceHost>
+    </CollaborationPreferencesProvider>
     </ChannelNavigationProvider>
     </EncryptedBackupProvider>
     </NativeReminderHost>

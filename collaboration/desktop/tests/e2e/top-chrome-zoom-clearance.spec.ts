@@ -70,8 +70,9 @@ async function expectNavButtonsFixedSize(
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i += 1) {
     const button = buttons.nth(i);
-    const label = await button.getAttribute("aria-label");
-    const isHistoryButton = label === "Go back" || label === "Go forward";
+    // The shared Back/Forward buttons carry localized labels; identify them by test id.
+    const testId = await button.getAttribute("data-testid");
+    const isHistoryButton = testId === "global-back" || testId === "global-forward";
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
     expect(box?.width ?? 0).toBe(

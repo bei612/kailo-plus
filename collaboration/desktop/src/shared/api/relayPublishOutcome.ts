@@ -8,6 +8,9 @@
 // `ON CONFLICT DO NOTHING`，主键含 id；buzz-relay `handlers/ingest.rs` 的
 // `!was_inserted` 分支）；两条发送路径都按「内容 + 标签」指纹复用未确认的事件。
 
+import { PublishRestrictionKind } from "@client-kit/contracts";
+import type { PublishRestriction } from "@client-kit/platform/moderation";
+
 /** Relay 以 OK false 明确拒绝：确定未存储。 */
 export class RelayPublishRejectedError extends Error {
   readonly eventId: string;
@@ -111,6 +114,42 @@ export function classifyRelayPublishFailure(
     return { kind: "outcomeUnknown" };
   }
   return null;
+}
+
+// Relay 社区限制拒绝原文（buzz-relay `handlers/ingest.rs` 写入闸）。BFF 对 Web 把同一原文映射为
+// PUBLISH_REJECTED 的结构化 restriction（DD-125(2)、PublishRestriction 合同，
+// core/crates/collab-bridge/src/moderation.rs::restriction_from_rejection）；原生端本机直连 Relay，
+// 由这里按同一规则映射，供共享禁言横幅（client-kit react/moderation/timeoutStore）消费。
+const TIMEOUT_PREFIX = "restricted: you are timed out until";
+const BANNED_PREFIX = "blocked: you are banned";
+
+/**
+ * 本人这次写入被 Relay 以社区限制确定拒绝时的结构化限制；其他失败（含结果不明）返回
+ * undefined。前缀决定类别，时刻只尽力解析：解析不出也仍是禁言（不带 until）。
+ */
+export function publishRestrictionFromRelayFailure(
+  error: unknown,
+): PublishRestriction | undefined {
+  if (classifyRelayPublishFailure(error)?.kind !== "rejected") return undefined;
+  const text =
+    error instanceof RelayPublishRejectedError
+      ? error.relayMessage
+      : (errorText(error) ?? "");
+  const at = text.indexOf(TIMEOUT_PREFIX);
+  if (at !== -1) {
+    const digits = /^\s*(\d+)/.exec(text.slice(at + TIMEOUT_PREFIX.length))?.[1];
+    const seconds = digits === undefined ? Number.NaN : Number(digits);
+    // 8.64e12 s is the last instant a JS Date can represent.
+    return Number.isSafeInteger(seconds) && seconds > 0 && seconds <= 8_640_000_000_000
+      ? {
+          kind: PublishRestrictionKind.TimedOut,
+          until: new Date(seconds * 1000).toISOString(),
+        }
+      : { kind: PublishRestrictionKind.TimedOut };
+  }
+  return text.includes(BANNED_PREFIX)
+    ? { kind: PublishRestrictionKind.Banned }
+    : undefined;
 }
 
 /** 同一作者对同一内容的「未确认」事件的索引键。 */

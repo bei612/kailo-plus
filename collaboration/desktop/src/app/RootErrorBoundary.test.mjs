@@ -68,7 +68,11 @@ test("root boundary shows recovery UI without exposing error details", async () 
 
   const { createElement } = await import("react");
   const { render, screen } = await import("@testing-library/react");
-  const { RootErrorBoundary } = await import("./RootErrorBoundary.tsx");
+  // The Desktop host mounts the shared boundary (same body as the Web host).
+  const { RootErrorBoundary } = await import(
+    "@client-kit/platform/react/root-error-boundary"
+  );
+  const { translateCurrent } = await import("@client-kit/platform/i18n");
   function ThrowingProvider() {
     throw new Error(diagnostic);
   }
@@ -77,8 +81,29 @@ test("root boundary shows recovery UI without exposing error details", async () 
     createElement(RootErrorBoundary, null, createElement(ThrowingProvider)),
   );
 
-  assert.ok(screen.getByText("Buzz failed to start"));
-  assert.ok(screen.getByRole("button", { name: "Reload" }));
+  // Storage is denied above, so the copy falls back to the default locale.
+  assert.ok(screen.getByTestId("root-error-boundary"));
+  assert.ok(screen.getByText(translateCurrent("platform.rootError.title")));
+  assert.ok(
+    screen.getByText(translateCurrent("platform.rootError.description")),
+  );
+  assert.ok(
+    screen.getByRole("button", {
+      name: translateCurrent("platform.rootError.reload"),
+    }),
+  );
   assert.equal(document.body.textContent.includes(diagnostic), false);
-  assert.match(document.body.textContent, /contact support/i);
+});
+
+test("Desktop entry mounts the shared root boundary, not a host copy", async () => {
+  const { existsSync, readFileSync } = await import("node:fs");
+  const main = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
+  assert.match(
+    main,
+    /import \{ RootErrorBoundary \} from "@client-kit\/platform\/react\/root-error-boundary";/,
+  );
+  assert.equal(
+    existsSync(new URL("./RootErrorBoundary.tsx", import.meta.url)),
+    false,
+  );
 });

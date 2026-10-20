@@ -1,6 +1,11 @@
 import * as React from "react";
 import { MailOpen } from "lucide-react";
 import { useUiLocale, useUiT } from "@client-kit/platform/react/context";
+// DD-125(6): the original WorkingAgentRows over the shared working signal (Buzz 779af8886caae1317b4de962082429867ab61503
+// desktop/src/features/sidebar/ui/ChannelActivityPopover.tsx); "View activity" only for Installation `audit`.
+import { WorkingAgentRows } from "@client-kit/platform/react/sidebar/channel-activity-popover";
+import { useOpenAgentActivity } from "@client-kit/platform/react/agent-transcript";
+import type { DesktopWorkingChannel } from "./ChannelMenuButton";
 
 import { useAppShell } from "@/app/AppShellContext";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -125,15 +130,18 @@ function ThreadPreviewRow({
 }
 
 export function ChannelActivityPopover({
+  activeWorking,
   channel,
   children,
 }: {
+  activeWorking?: DesktopWorkingChannel;
   channel: Channel;
   children: React.ReactNode;
 }) {
   const t = useUiT();
   const locale = useUiLocale();
   const [open, setOpen] = React.useState(false);
+  const { openAgentActivity } = useOpenAgentActivity();
   const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -193,7 +201,9 @@ export function ChannelActivityPopover({
     unreadChannelFeedItems,
     locale,
   ]);
-  const hasContent = unreadChannelFeedItems.length > 0;
+  const hasContent =
+    unreadChannelFeedItems.length > 0 ||
+    (activeWorking?.summary.agentPubkeys.length ?? 0) > 0;
 
   const clearHoverTimer = React.useCallback(() => {
     if (hoverTimerRef.current !== null) {
@@ -302,6 +312,16 @@ export function ChannelActivityPopover({
             className="buzz-channel-activity-scrollbar min-h-0 overflow-y-auto overscroll-contain"
             data-testid="channel-activity-scroll"
           >
+            {activeWorking?.summary.agentPubkeys.length ? (
+              <WorkingAgentRows
+                activeWorking={activeWorking.summary}
+                channelId={activeWorking.scopeId}
+                onOpen={(pubkey, scopeId) => {
+                  setOpen(false);
+                  openAgentActivity(pubkey, { channelId: scopeId });
+                }}
+              />
+            ) : null}
             {activityItems.length > 0
               ? activityItems.map((item) => (
                   <ThreadPreviewRow

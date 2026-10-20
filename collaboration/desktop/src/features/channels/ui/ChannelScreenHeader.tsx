@@ -9,7 +9,7 @@ import { ChannelManagementSheet } from "@client-kit/platform/react/channel-manag
 import { toast } from "sonner";
 
 import { getChannelDescription } from "@/features/channels/lib/channelDescription";
-import type { EphemeralChannelDisplay } from "@/features/channels/lib/ephemeralChannel";
+import type { EphemeralChannelDisplay } from "@client-kit/platform/react/ephemeral-channel";
 import { ChannelHeaderStatusBadge } from "@/features/channels/ui/ChannelHeaderStatusBadge";
 import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
@@ -39,7 +39,7 @@ export function ChannelScreenHeader({
 }: ChannelScreenHeaderProps) {
   const { activeChannelTitle: title, activeDmHeaderParticipants } = useActiveChannelHeader(activeChannel, currentPubkey);
   const locale = useDeviceLocale();
-  const trimmedDescription = getChannelDescription(activeChannel)?.trim() ?? "";
+  const trimmedDescription = getChannelDescription(activeChannel, locale).trim();
   // The member roster and its governed changes are Workspace management: resolve the
   // admitted Workspace for this signed Relay channel through the same BFF directory.
   const directory = useWorkspaceChannelDirectory({ enabled: activeChannel.channelType !== "dm" });

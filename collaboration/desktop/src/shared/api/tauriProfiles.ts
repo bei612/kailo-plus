@@ -119,6 +119,24 @@ export async function getUsersBatch(
   };
 }
 
+/**
+ * Original get_presence (DD-120 on the native host): the Relay's own kind:20001 snapshot for
+ * these pubkeys, read with this device's key. Absent pubkeys have no presence fact.
+ */
+export async function getPresence(
+  pubkeys: string[],
+): Promise<Record<string, string>> {
+  const response = await invokeTauri<Record<string, string>>("get_presence", {
+    pubkeys,
+  });
+  return Object.fromEntries(
+    Object.entries(response).map(([pubkey, status]) => [
+      pubkey.toLowerCase(),
+      status,
+    ]),
+  );
+}
+
 export async function searchUsers(
   query: string,
   limit = 8,

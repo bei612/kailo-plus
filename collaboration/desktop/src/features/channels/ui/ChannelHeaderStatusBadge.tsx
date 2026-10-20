@@ -1,4 +1,4 @@
-import type { EphemeralChannelDisplay } from "@/features/channels/lib/ephemeralChannel";
+import type { EphemeralChannelDisplay } from "@client-kit/platform/react/ephemeral-channel";
 import { EphemeralChannelBadge } from "@/features/channels/ui/EphemeralChannelBadge";
 
 type ChannelHeaderStatusBadgeProps = {

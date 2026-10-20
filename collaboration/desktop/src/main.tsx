@@ -1,7 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "@/app/App";
-import { RootErrorBoundary } from "@/app/RootErrorBoundary";
+// Original desktop/src/app/RootErrorBoundary.tsx, now the same localized body as the Web host.
+import { RootErrorBoundary } from "@client-kit/platform/react/root-error-boundary";
 import "@fontsource-variable/inter/opsz.css";
 import "@fontsource-variable/inter/opsz-italic.css";
 import "@fontsource/jetbrains-mono/400.css";

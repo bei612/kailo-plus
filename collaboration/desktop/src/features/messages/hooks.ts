@@ -43,8 +43,15 @@ import { channelsQueryKey } from "@/features/channels/hooks";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import { addReaction, removeReaction } from "@/shared/api/tauriMessages";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
-import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
+import {
+  classifyRelayPublishFailure,
+  publishRestrictionFromRelayFailure,
+} from "@/shared/api/relayPublishOutcome";
 import { TransportError } from "@client-kit/platform/transport";
+import {
+  clearTimeoutState,
+  recordTimeoutFromRestriction,
+} from "@client-kit/platform/react/moderation";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 import {
@@ -744,7 +751,11 @@ export function useSendMessageMutation(
         queryKey,
       };
     },
-    onError: (_error, _variables, context) => {
+    onError: (error, _variables, context) => {
+      // Original timeoutStore: a community timeout surfaces as the Relay's refusal of this
+      // send. Record it so the shared composer banner blocks further sends until it expires;
+      // other errors fall through to the caller unchanged (DD-125(2)).
+      recordTimeoutFromRestriction(publishRestrictionFromRelayFailure(error));
       if (!context) {
         return;
       }
@@ -756,6 +767,8 @@ export function useSendMessageMutation(
       );
     },
     onSuccess: (message, _variables, context) => {
+      // An accepted send proves the community write-block is lifted.
+      clearTimeoutState();
       if (!context) {
         return;
       }

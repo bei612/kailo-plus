@@ -53,8 +53,12 @@ import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMes
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
-import { ComposerActivityAccessory } from "@client-kit/platform/react/messages/ComposerActivityAccessory";
-import { TypingIndicatorRow } from "@client-kit/platform/react/messages/TypingIndicatorRow";
+// DD-125(6): original ChannelComposerActivityAccessory (working Agents + typing) over the shared signal.
+import { ChannelComposerActivityAccessory } from "@client-kit/platform/react/agent-activity";
+import { AgentActivityOpenerProvider } from "@client-kit/platform/react/agent-transcript";
+// DD-125(2): the original composer timeout banner, learned from this device's Relay refusal.
+import { ComposerTimeoutBanner, useTimeoutState } from "@client-kit/platform/react/moderation";
+import { useDesktopChannelAgentActivity } from "@/features/channels/ui/useDesktopChannelAgentActivity";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 export const ChannelPane = React.memo(function ChannelPane({
   activeChannel,
@@ -145,7 +149,10 @@ export const ChannelPane = React.memo(function ChannelPane({
       }};
     return intro;
   }, [activeChannel.channelType, activeDmHeaderParticipants, t]);
-  const composerPlaceholder = activeChannel.archivedAt
+  const timeoutState = useTimeoutState();
+  const composerPlaceholder = timeoutState.active
+    ? t("moderation.banner.timedOut")
+    : activeChannel.archivedAt
     ? t("composer.archivedPlaceholder")
     : activeChannel.channelType === "dm"
       ? directMessageIntro?.displayName.trim()
@@ -242,11 +249,22 @@ export const ChannelPane = React.memo(function ChannelPane({
     () => messageTimelineRef.current?.settleAtBottom() ?? false,
   );
   const isComposerDisabled =
-    !activeChannel.isMember || activeChannel.archivedAt !== null || isSending || editing;
+    !activeChannel.isMember || activeChannel.archivedAt !== null || timeoutState.active || isSending || editing;
+  // DD-125(6): the channel's admitted Agents feed the shared working signal; their 20002 never
+  // shows as a person typing.
+  const agentActivity = useDesktopChannelAgentActivity({
+    activeChannel,
+    enabled: activeChannel.isMember && activeChannel.archivedAt === null,
+    typingEntries,
+  });
+  const isAgentTyping = (pubkey: string) =>
+    profiles?.[pubkey]?.isAgent === true || agentActivity.agentPubkeys.has(pubkey.toLowerCase());
   const humanTypingPubkeys = isComposerDisabled ? [] : typingEntries
-    .filter(entry => entry.threadHeadId === null && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey);
+    .filter(entry => entry.threadHeadId === null && !isAgentTyping(entry.pubkey)).map(entry => entry.pubkey);
   const threadTypingPubkeys = isComposerDisabled ? [] : typingEntries
-    .filter(entry => entry.threadHeadId === threadHeadMessage?.id && !profiles?.[entry.pubkey]?.isAgent).map(entry => entry.pubkey);
+    .filter(entry => entry.threadHeadId === threadHeadMessage?.id && !isAgentTyping(entry.pubkey)).map(entry => entry.pubkey);
+  const hasComposerBottomActivity =
+    humanTypingPubkeys.length > 0 || agentActivity.workingBotPubkeys.length > 0;
   const deleteMessageDialog = useMessageDeleteDialog(
     JSON.stringify([activeChannel.id, community.relayUrl, currentPubkey]),
     Boolean(currentPubkey && !isComposerDisabled),
@@ -432,6 +450,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     onResetWidth={onResetThreadPanelWidth} onResizeStart={onThreadPanelResizeStart} widthPx={threadPanelWidthPx}
     restoreFocusTarget={threadSurface.restoreFocusTarget}/>:null;
   return (
+    <AgentActivityOpenerProvider value={agentActivity.opener}>
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
       {!isSinglePanelView ? (
         <div
@@ -521,7 +540,10 @@ export const ChannelPane = React.memo(function ChannelPane({
               ref={composerWrapperRef}
             >
               <ComposerUploadProgressOverlay />
-              <div className={cn("composer-dock composer-overlay-corner-masks relative pointer-events-auto", humanTypingPubkeys.length > 0 && "composer-dock--with-activity")}>
+              <div className={cn("composer-dock composer-overlay-corner-masks relative pointer-events-auto", hasComposerBottomActivity && "composer-dock--with-activity")}>
+                {timeoutState.active ? (
+                  <ComposerTimeoutBanner expiresAtMs={timeoutState.expiresAtMs} />
+                ) : null}
                 <ComposerDockBackdrop gutterClassName="inset-x-5" />
                 {mainEditTarget ? (
                   <MessageComposer
@@ -561,16 +583,20 @@ export const ChannelPane = React.memo(function ChannelPane({
                   placeholder={composerPlaceholder}
                   showTopBorder={false}
                 /></div>
-                <ComposerActivityAccessory className="px-5" testId="channel-composer-activity-row" visible={humanTypingPubkeys.length > 0}>
-                  <div className="flex w-full items-center gap-2 overflow-visible pl-2">
-                    {humanTypingPubkeys.length > 0 ? <TypingIndicatorRow
-                      resolveMediaUrl={rewriteRelayUrl}
-                      channel={activeChannel}
-                      className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
-                      currentPubkey={currentPubkey} profiles={profiles} typingPubkeys={humanTypingPubkeys}
-                    /> : null}
-                  </div>
-                </ComposerActivityAccessory>
+                <ChannelComposerActivityAccessory
+                  agents={agentActivity.workingAgents}
+                  channelId={agentActivity.scopeId}
+                  channel={activeChannel}
+                  currentPubkey={currentPubkey}
+                  onOpenAgentSession={(pubkey, scopeId) =>
+                    agentActivity.opener.openAgentActivity(pubkey, { channelId: scopeId ?? null })}
+                  openAgentSessionPubkey={null}
+                  profiles={profiles}
+                  resolveMediaUrl={rewriteRelayUrl}
+                  typingPubkeys={humanTypingPubkeys}
+                  visible={hasComposerBottomActivity}
+                  workingBotPubkeys={agentActivity.workingBotPubkeys}
+                />
               </div>
             </div>
             {canDropInMainColumn && mainComposerMedia.isDragOver ? (
@@ -579,6 +605,8 @@ export const ChannelPane = React.memo(function ChannelPane({
           </div>
         </section>
       ) : null}
+      {/* DD-125(6): the original Agent activity panel slot (Installation `audit` holders only). */}
+      {agentActivity.panel}
       {/* Serialize replacements so focus drawers keep one travel direction. */}
       <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
         {replaceThreadWithIdleAuxiliary ? idleAuxiliarySurface : threadHeadMessage
@@ -666,5 +694,6 @@ export const ChannelPane = React.memo(function ChannelPane({
       <AnimatePresence onExitComplete={threadSurface.markExitComplete}>{showIdleAuxiliaryOverThread ? idleAuxiliarySurface : null}</AnimatePresence>
       {deleteMessageDialog.dialog}
     </div>
+    </AgentActivityOpenerProvider>
   );
 });

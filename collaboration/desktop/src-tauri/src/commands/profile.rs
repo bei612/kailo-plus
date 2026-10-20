@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use buzz_core_pkg::PresenceStatus;
 use sha2::{Digest, Sha256};
 use tauri::State;
 
@@ -280,6 +281,68 @@ pub async fn search_users(
         response.next_cursor = Some((page + 1).to_string());
     }
     Ok(response)
+}
+
+/// Original Buzz 779af8886caae1317b4de962082429867ab61503 `get_presence` (DD-120, 05
+/// `collab.presence`: Desktop reads the Relay's own presence snapshot with this device's
+/// key over the HTTP bridge). The Relay answers kind:20001 author queries from its live
+/// presence store with events it signs itself, `p`-tagged with the subject.
+#[tauri::command]
+pub async fn get_presence(
+    pubkeys: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<HashMap<String, PresenceStatus>, String> {
+    if pubkeys.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Presence is published as kind:20001 ephemeral events. Query the most
+    // recent per author. Only a successful empty snapshot establishes absence;
+    // transport/auth/storage failures must reject so consumers remain unknown.
+    let events = query_relay(
+        &state,
+        &[serde_json::json!({
+            "kinds": [20001],
+            "authors": pubkeys,
+        })],
+    )
+    .await?;
+
+    let mut latest: HashMap<String, (u64, PresenceStatus)> = HashMap::new();
+    for ev in &events {
+        // Relay-synthesized presence events use a p-tag to identify the subject.
+        // Self-signed presence events (live WS) use the event author directly.
+        let pk = ev
+            .tags
+            .iter()
+            .find_map(|t| {
+                let s = t.as_slice();
+                if s.len() >= 2 && s[0] == "p" {
+                    Some(s[1].clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| ev.pubkey.to_hex());
+        let ts = ev.created_at.as_secs();
+        let status = match ev.content.trim() {
+            "online" => PresenceStatus::Online,
+            "away" => PresenceStatus::Away,
+            "offline" => PresenceStatus::Offline,
+            _ => continue,
+        };
+        match latest.get(&pk) {
+            Some((prev_ts, _)) if *prev_ts >= ts => {}
+            _ => {
+                latest.insert(pk, (ts, status));
+            }
+        }
+    }
+
+    Ok(latest
+        .into_iter()
+        .map(|(pk, (_, status))| (pk, status))
+        .collect())
 }
 
 fn current_pubkey_hex(state: &AppState) -> Result<String, String> {

@@ -1,30 +1,3 @@
-import { ClockFading } from "lucide-react";
-
-import type { EphemeralChannelDisplay } from "@/features/channels/lib/ephemeralChannel";
-import { cn } from "@/shared/lib/cn";
-
-type EphemeralChannelBadgeProps = {
-  display: EphemeralChannelDisplay;
-  testId?: string;
-  variant: "header" | "sidebar";
-};
-
-export function EphemeralChannelBadge({
-  display,
-  testId,
-  variant,
-}: EphemeralChannelBadgeProps) {
-  const isHeader = variant === "header";
-
-  return (
-    <ClockFading
-      aria-label={display.tooltipLabel}
-      className={cn(
-        "h-4 w-4 shrink-0",
-        isHeader ? "text-muted-foreground" : "text-sidebar-foreground/45",
-      )}
-      data-testid={testId}
-      role="img"
-    />
-  );
-}
+// Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/channels/ui/EphemeralChannelBadge.tsx,
+// now the same client-kit badge the Web host renders.
+export { EphemeralChannelBadge } from "@client-kit/platform/react/ephemeral-channel";

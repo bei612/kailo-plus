@@ -4914,6 +4914,10 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleSearchUsers>[0],
           activeConfig,
         );
+      // DD-120 native presence snapshot: the mock Relay holds no presence facts,
+      // so every requested pubkey stays absent (never drawn as offline).
+      case "get_presence":
+        return {};
       case "get_relay_ws_url":
         return getRelayWsUrl(activeConfig);
       case "clear_pending_navigation_deep_links":

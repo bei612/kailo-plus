@@ -234,6 +234,9 @@ remove_paths:
   - desktop/src/app/AppShellOverlays.tsx
   - desktop/src/app/AppTopChromePortal.tsx
   - desktop/src/app/AppWorkflowEditorOverlayProvider.tsx
+  # Top 30 #3（2026-10-20，源码候选，未验收）：原根错误边界已迁入
+  # client-kit/ts/platform/src/react/root-error-boundary.tsx，Desktop main.tsx 与 Web 共用同一主体（文案本地化）。
+  - desktop/src/app/RootErrorBoundary.tsx
   - desktop/src/app/TerminalContextOverrideContext.tsx
   - desktop/src/app/communityViewTransition.test.mjs
   - desktop/src/app/communityViewTransition.ts
@@ -722,6 +725,9 @@ remove_paths:
   - desktop/src/features/sidebar/ui/SidebarSection.test.mjs
   - desktop/src/features/sidebar/ui/SidebarSection.tsx
   - desktop/src/features/sidebar/ui/listSidebarProjects.ts
+  # Top 30 #3（2026-10-20，源码候选，未验收）：原侧栏加载骨架（含私聊行形状）已迁入
+  # client-kit/ts/platform/src/react/sidebar/sidebar-loading-skeleton.tsx，Desktop AppSidebar 与 Web 共用。
+  - desktop/src/features/sidebar/ui/sidebarLoadingSkeleton.tsx
   - desktop/src/features/sidebar/useDmSidebarMetadata.ts
   - desktop/src/features/terminal
   # DD-120（2026-10-16，源码候选，未验收）：types、hooks（到期计时、120 s 兜底、DD-81 发布意图）、

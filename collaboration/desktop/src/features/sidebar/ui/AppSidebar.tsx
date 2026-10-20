@@ -6,7 +6,14 @@ import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { FeatureGate } from "@client-kit/platform/react/features";
-import { ChannelType } from "@client-kit/contracts";
+import { ChannelType, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { useWorkingChannels } from "@client-kit/platform/react/agent-activity";
+import { useChannelSidebarActionDialogs } from "@client-kit/platform/react/sidebar/channel-section-dialogs";
+import {
+  SidebarLoadingContent,
+  useSidebarLoadingShape,
+  type SidebarLoadingSourceRow,
+} from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
@@ -37,17 +44,19 @@ import {
 } from "@/features/sidebar/ui/AppSidebarPinnedHeader";
 import { MoreUnreadButton, preferredUnreadTarget } from "@/features/sidebar/ui/MoreUnreadButton";
 import { useConversationUnreadProjection, type ConversationUnreadEntry } from "@client-kit/platform/react/sidebar/useSidebarUnreadOverflow";
-import { ChannelGroupSection } from "@/features/sidebar/ui/ChannelGroupSection";
+import {
+  ChannelGroupSection,
+  type DesktopChannelMenuExtras,
+  type DesktopChannelRowOptions,
+} from "@/features/sidebar/ui/ChannelGroupSection";
+import type { DesktopWorkingChannel } from "@/features/sidebar/ui/ChannelMenuButton";
+import { DesktopStreamChannelGroups } from "@/features/sidebar/ui/DesktopChannelSections";
 import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import type {
   AppSidebarProps,
   CollapsibleSidebarGroup,
 } from "@/features/sidebar/ui/AppSidebar.types";
 import { SidebarRelayConnectionCard } from "@/features/sidebar/ui/SidebarRelayConnectionCard";
-import {
-  SidebarLoadingContent,
-  useSidebarLoadingShape,
-} from "@/features/sidebar/ui/sidebarLoadingSkeleton";
 import {
   SidebarMenu,
   SidebarMenuItem,
@@ -200,13 +209,10 @@ export function AppSidebar({
     [channels, sortModeFor],
   );
 
+  // Custom sections bucket and sort these themselves (DesktopStreamChannelGroups).
   const unstarredChannels = React.useMemo(
-    () =>
-      sortChannelsForSidebar(
-        streamChannels.filter((channel) => !starredChannelIds?.has(channel.id)),
-        sortModeFor("channels"),
-      ),
-    [streamChannels, starredChannelIds, sortModeFor],
+    () => streamChannels.filter((channel) => !starredChannelIds?.has(channel.id)),
+    [streamChannels, starredChannelIds],
   );
 
   const starredChannels = React.useMemo(() => {
@@ -217,11 +223,78 @@ export function AppSidebar({
     );
   }, [streamChannels, starredChannelIds, sortModeFor]);
 
+  // Original sidebarLoadingSkeleton (shared with the Web host): channel and DM row shapes.
+  const loadingChannelRows = React.useMemo<SidebarLoadingSourceRow[]>(
+    () => streamChannels.map((channel) => ({ id: channel.id, label: channel.name })),
+    [streamChannels],
+  );
+  const loadingDirectMessageRows = React.useMemo<SidebarLoadingSourceRow[]>(
+    () => channels.filter((channel) => channel.channelType === "dm")
+      .map((channel) => ({ id: channel.id, label: channel.name })),
+    [channels],
+  );
   const sidebarLoadingShape = useSidebarLoadingShape({
-    activeCommunityId: activeCommunity.id,
-    currentPubkey,
+    scopeKey: `${activeCommunity.id}:${currentPubkey ?? "anonymous"}`,
+    channels: loadingChannelRows,
+    directMessages: loadingDirectMessageRows,
     isLoading,
-    streamChannels,
+  });
+
+  // The admitted Workspace of each joined native channel: the management identity for the
+  // DD-119 Leave/Archive entries and the key of the shared Agent working signal (DD-125(6)).
+  const admittedWorkspaceByChannelId = React.useMemo(
+    () => new Map<string, DiscoverableWorkspace>((workspaceDirectory.data ?? [])
+      .filter((row) => row.isMember && row.membershipState === WorkspaceMembershipState.Active)
+      .map((row) => [row.channel.channelId, row])),
+    [workspaceDirectory.data],
+  );
+  const workingChannels = useWorkingChannels();
+  const workingByChannelId = React.useMemo(() => {
+    const byScope = new Map(workingChannels.map((summary) => [summary.channelId, summary]));
+    const working = new Map<string, DesktopWorkingChannel>();
+    for (const [channelId, workspace] of admittedWorkspaceByChannelId) {
+      const summary = byScope.get(workspace.id);
+      if (summary) working.set(channelId, { scopeId: workspace.id, summary });
+    }
+    return working;
+  }, [workingChannels, admittedWorkspaceByChannelId]);
+  const { requestLeaveChannel, requestArchiveChannel, dialog: channelActionDialog } =
+    useChannelSidebarActionDialogs(() => {
+      // Same readback as the channel management sheet: native channels and the admitted directory.
+      void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey });
+    });
+  const managementMenuFor = (group: CollapsibleSidebarGroup | "section") =>
+    (channel: Channel): DesktopChannelMenuExtras | undefined => {
+      const workspace = admittedWorkspaceByChannelId.get(channel.id);
+      if (!workspace) return undefined;
+      return {
+        // Original Leave in Starred/Channels/sections, shown on the BFF leaveActionKey (DD-119(8)).
+        onLeaveChannel: group !== "forums" && workspace.leaveActionKey !== undefined
+          ? (row) => requestLeaveChannel({ workspaceId: workspace.id, name: row.name }) : undefined,
+        // Archive reads the lifecycle hint while the menu is open (DD-119(5)).
+        ownerActions: { workspaceId: workspace.id, channelId: channel.id,
+          onArchiveChannel: (row) => requestArchiveChannel({ workspaceId: workspace.id, name: row.name }) },
+      };
+    };
+  // Original section quick action: browse channels, then assign the chosen one.
+  const sectionBrowseAssign = React.useRef<((channelId: string) => void) | null>(null);
+  React.useEffect(() => {
+    if (!isCreateChannelOpen) sectionBrowseAssign.current = null;
+  }, [isCreateChannelOpen]);
+  const rowOptions = (group: CollapsibleSidebarGroup): DesktopChannelRowOptions => ({
+    isActiveChannel: selectedView === "channel",
+    selectedChannelId,
+    unreadChannelIds,
+    mutedChannelIds,
+    onSelectChannel,
+    onMarkChannelRead,
+    onMarkChannelUnread,
+    onMuteChannel,
+    onUnmuteChannel,
+    ...(group === "forums" ? {} : { starredChannelIds, onStarChannel, onUnstarChannel }),
+    menuExtrasFor: managementMenuFor(group),
+    workingFor: (channel) => workingByChannelId.get(channel.id),
   });
   const resolvedDisplayName =
     profile?.displayName?.trim() ||
@@ -300,7 +373,13 @@ export function AppSidebar({
         <CreateChannelDialog key={`forum:${currentPrincipalId}`} open={isNewForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
         <ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
         lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
-        onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} /></>}>
+        onSelect={async (workspace) => {
+          const assignToSection = sectionBrowseAssign.current;
+          sectionBrowseAssign.current = null;
+          await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]);
+          onSelectChannel(workspace.channel.channelId);
+          assignToSection?.(workspace.channel.channelId);
+        }} /></>}>
               <AppSidebarPrimaryMenu
                 homeBadgeCount={homeBadgeCount}
                 homeBadgeEnabled={homeBadgeEnabled}
@@ -326,11 +405,11 @@ export function AppSidebar({
                 <>
                   {starredChannels.length > 0 ? (
                     <ChannelGroupSection
+                      {...rowOptions("starred")}
                       hasUnread={starredChannels.some((c) =>
                         unreadChannelIds.has(c.id),
                       )}
                       isCollapsed={collapsedGroups.starred}
-                      isActiveChannel={selectedView === "channel"}
                       items={starredChannels}
                       sortMode={sortModeFor("starred")}
                       onSortModeChange={(mode) =>
@@ -343,54 +422,37 @@ export function AppSidebar({
                           onMarkChannelRead(channel.id, channel.lastMessageAt);
                         }
                       }}
-                      onMarkChannelRead={onMarkChannelRead}
-                      onMarkChannelUnread={onMarkChannelUnread}
-                      onSelectChannel={onSelectChannel}
                       onToggleCollapsed={() => toggleCollapsedGroup("starred")}
-                      selectedChannelId={selectedChannelId}
                       title="Starred"
-                      unreadChannelIds={unreadChannelIds}
-                      mutedChannelIds={mutedChannelIds}
-                      onMuteChannel={onMuteChannel}
-                      onUnmuteChannel={onUnmuteChannel}
-                      starredChannelIds={starredChannelIds}
-                      onStarChannel={onStarChannel}
-                      onUnstarChannel={onUnstarChannel}
                     />
                   ) : null}
-                  <ChannelGroupSection
-                    hasUnread={unreadChannelIds.size > 0}
-                    isCollapsed={collapsedGroups.channels}
-                    isActiveChannel={selectedView === "channel"}
-                    items={unstarredChannels}
-                    sortMode={sortModeFor("channels")}
-                    onSortModeChange={(mode) =>
-                      setSortModeFor("channels", mode)
-                    }
-                    actionsTestId="section-actions-channels"
-                    listTestId="stream-list"
+                  {/* DD-125(5): original custom sections, drag and drop, then the Channels group. */}
+                  <DesktopStreamChannelGroups
+                    channels={unstarredChannels}
+                    rowOptions={rowOptions("channels")}
+                    hasUnreadIn={(items) => items.some((channel) => unreadChannelIds.has(channel.id))}
+                    channelsHasUnread={unreadChannelIds.size > 0}
+                    channelsTitle="Channels"
+                    channelsCollapsed={collapsedGroups.channels}
+                    onToggleChannelsCollapsed={() => toggleCollapsedGroup("channels")}
+                    channelsSortMode={sortModeFor("channels")}
+                    onChannelsSortModeChange={(mode) => setSortModeFor("channels", mode)}
                     onMarkAllRead={onMarkAllChannelsRead}
-                    onMarkChannelRead={onMarkChannelRead}
-                    onMarkChannelUnread={onMarkChannelUnread}
-                    onSelectChannel={onSelectChannel}
-                    onToggleCollapsed={() => toggleCollapsedGroup("channels")}
-                    selectedChannelId={selectedChannelId}
-                    title="Channels"
+                    onMarkChannelsRead={(items) => {
+                      for (const channel of items) onMarkChannelRead(channel.id, channel.lastMessageAt);
+                    }}
                     onCreateChannel={() => setCreateChannelOpen(true)}
                     createChannelLabel={translateUi("channel.browser.title")}
-                    unreadChannelIds={unreadChannelIds}
-                    mutedChannelIds={mutedChannelIds}
-                    onMuteChannel={onMuteChannel}
-                    onUnmuteChannel={onUnmuteChannel}
-                    starredChannelIds={starredChannelIds}
-                    onStarChannel={onStarChannel}
-                    onUnstarChannel={onUnstarChannel}
+                    onBrowseChannelsForSection={(assign) => {
+                      sectionBrowseAssign.current = assign;
+                      setCreateChannelOpen(true);
+                    }}
                   />
                   <FeatureGate feature="forum">
                     <ChannelGroupSection
+                      {...rowOptions("forums")}
                       hasUnread={forumChannels.some((channel) => unreadChannelIds.has(channel.id))}
                       isCollapsed={collapsedGroups.forums}
-                      isActiveChannel={selectedView === "channel"}
                       items={forumChannels}
                       sortMode={sortModeFor("forums")}
                       onSortModeChange={(mode) => setSortModeFor("forums", mode)}
@@ -399,22 +461,15 @@ export function AppSidebar({
                       onMarkAllRead={() => {
                         for (const channel of forumChannels) onMarkChannelRead(channel.id, channel.lastMessageAt);
                       }}
-                      onMarkChannelRead={onMarkChannelRead}
-                      onMarkChannelUnread={onMarkChannelUnread}
-                      onSelectChannel={onSelectChannel}
                       onToggleCollapsed={() => toggleCollapsedGroup("forums")}
-                      selectedChannelId={selectedChannelId}
                       title={translateUi("sidebar.forums")}
                       onCreateChannel={() => setNewForumOpen(true)}
                       createChannelLabel={translateUi("sidebar.newForum")}
-                      unreadChannelIds={unreadChannelIds}
-                      mutedChannelIds={mutedChannelIds}
-                      onMuteChannel={onMuteChannel}
-                      onUnmuteChannel={onUnmuteChannel}
                     />
                   </FeatureGate>
                 </>
               )}
+              {channelActionDialog}
 
               {errorMessage && !relayConnectionCard.hasRelayUnreachableError ? (
                 <div className="px-3 py-2 text-sm text-destructive">

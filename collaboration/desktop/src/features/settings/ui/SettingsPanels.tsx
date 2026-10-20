@@ -16,6 +16,10 @@ import { useTheme } from "@/shared/theme/ThemeProvider";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { AgentsSettingsPanel } from "@client-kit/platform/react/agents-settings";
+// DD-125(4): original ChannelTemplatesSettingsCard over Core CollaborationUserState (BFF).
+import { ChannelTemplatesSettingsCard } from "@client-kit/platform/react/channel-templates";
+// DD-125(2): original ModerationQueueCard; queue, audit and restrictions are Tenant `manage` BFF reads.
+import { ModerationQueueCard } from "@client-kit/platform/react/moderation";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 
@@ -23,13 +27,16 @@ export type { SettingsSection } from "@client-kit/platform/react/settings";
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
 
+// Original section order (client-kit settings-sections.ts), the same set the Web host routes.
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
   "appearance",
   "notifications",
   "shortcuts",
   "community-members",
+  "moderation",
   "custom-emoji",
+  "channel-templates",
   "agents",
   "experimental",
 ];
@@ -74,7 +81,7 @@ export function renderSettingsSection(
     case "custom-emoji":
       return null; // SettingsView keeps the scoped UNKNOWN publication intent mounted.
     case "channel-templates":
-      return null; // DD-125(4): not offered in this host's navigation (no Core preference provider here).
+      return <ChannelTemplatesSettingsCard />;
     case "notifications":
       return (
         <NotificationSettingsCard
@@ -101,9 +108,7 @@ export function renderSettingsSection(
     case "experimental":
       return <ExperimentalFeaturesCard />;
     case "moderation":
-      // DD-125(2) moderation is wired on the Web host only in this batch; Desktop
-      // does not enable the section, so it is never routed here.
-      return null;
+      return <ModerationQueueCard />;
     default: {
       const exhaustiveCheck: never = section;
       return exhaustiveCheck;
