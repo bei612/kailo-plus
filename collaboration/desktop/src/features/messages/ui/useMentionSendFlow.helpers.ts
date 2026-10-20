@@ -9,6 +9,11 @@ import { resolveLocale, translate } from "@client-kit/platform/i18n";
 
 import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import {
+  mergeReferenceMentionTags,
+  withoutInvitingRecipients as withoutInvitingRecipientKeys,
+  type NonMemberInvitePrincipal,
+} from "@client-kit/platform/react/non-member-mentions/logic";
 
 /** A single visit to a source draft; returning to the same key is a new owner. */
 export type ComposerDraftOwner = {
@@ -39,6 +44,30 @@ export type PendingMentionSend = {
   recoveryDraftKey: string | null | undefined;
   savedMentionRefs: DraftMentionRef[];
 };
+
+/** DD-125(8): a send held by the original "Mention people outside this channel?" prompt. */
+export type PendingNonMemberMentionSend = PendingMentionSend & {
+  nonMemberPubkeys: string[];
+  principals: NonMemberInvitePrincipal[];
+  names: string[];
+  canInvite: boolean;
+};
+
+/**
+ * Original withoutInvitingRecipients: the people outside the channel leave the `p`
+ * recipients and stay only as `["mention", <pubkey>]` reference tags, which the native
+ * send routes to its mention-tag argument (signed by this device, never as `p`).
+ */
+export function withoutInvitingRecipients<T extends Pick<PendingMentionSend, "mentionPubkeys" | "outgoingTags">>(
+  draft: T & { nonMemberPubkeys: readonly string[] },
+): T {
+  const { mentionPubkeys, referenceMentionPubkeys } = withoutInvitingRecipientKeys(draft);
+  return {
+    ...draft,
+    mentionPubkeys,
+    outgoingTags: mergeReferenceMentionTags(draft.outgoingTags, referenceMentionPubkeys),
+  };
+}
 
 export type SendMessageWithMentionFlowInput = {
   addressedAgentPubkeys?: readonly string[];

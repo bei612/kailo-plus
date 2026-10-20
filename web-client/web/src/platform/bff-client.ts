@@ -474,7 +474,7 @@ export async function publishMessage(
   attachments: readonly MediaDescriptor[],
   idempotencyKey: string,
   mentionInstallationIds: string[] = [],
-  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId" | "mentionPubkeys" | "linkPreviewSnapshotIds" | "suppressLinkPreviews">,
+  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId" | "mentionPubkeys" | "referenceMentionPubkeys" | "linkPreviewSnapshotIds" | "suppressLinkPreviews">,
 ): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/workspaces/${workspaceId}/messages`;
   return unwrap(

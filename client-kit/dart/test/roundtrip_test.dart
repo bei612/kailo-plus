@@ -1288,4 +1288,42 @@ void main() {
       );
     }
   });
+  test('DD-125 member joins and memory references round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/dd125-member-joins-memory-refs.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'joinPageBaseline': (v) => TenantMemberJoinPage.fromJson(v).toJson(),
+      'joinPageOrigin': (v) => TenantMemberJoinPage.fromJson(v).toJson(),
+      'joinPage': (v) => TenantMemberJoinPage.fromJson(v).toJson(),
+      'memoryPageComplete': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
+      'memoryPageNoCore': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
+      'memoryPageBounded': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
+      'memoryPageTool': (v) => AgentMemoryEntryPage.fromJson(v).toJson(),
+    };
+    // joinedAt compares instants, not the fractional-second spelling.
+    Object? instants(Object? node) => switch (node) {
+      Map<String, dynamic> map => {
+        for (final field in map.entries)
+          field.key:
+              field.key == 'joinedAt' && field.value is String
+              ? DateTime.parse(field.value as String).toIso8601String()
+              : instants(field.value),
+      },
+      List<dynamic> list => [for (final item in list) instants(item)],
+      _ => node,
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        instants(jsonDecode(jsonEncode(entry.value(original)))),
+        equals(instants(original)),
+        reason: entry.key,
+      );
+    }
+  });
 }

@@ -1104,3 +1104,29 @@ test("DD-125 C5 Huddle contracts preserve fields and absence", () => {
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-125 member joins and memory references preserve fields and absence", () => {
+  type JoinPage = import("../src/generated/contracts.js").TenantMemberJoinPage;
+  type JoinView = import("../src/generated/contracts.js").TenantMemberJoinView;
+  type MemoryPage = import("../src/generated/contracts.js").AgentMemoryEntryPage;
+  type MemoryEntry = import("../src/generated/contracts.js").AgentMemoryEntryView;
+  type References = import("../src/generated/contracts.js").AgentMemoryReferenceView;
+  type Dangling = import("../src/generated/contracts.js").AgentMemoryDanglingRefView;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/dd125-member-joins-memory-refs.sample.json", import.meta.url), "utf8"));
+  const join = (row: JoinView): JoinView => ({principalId: row.principalId, displayName: row.displayName, joinedAt: row.joinedAt});
+  const joins = (row: JoinPage): JoinPage => ({items: row.items.map(join), cursor: row.cursor, hasMore: row.hasMore});
+  const entry = (row: MemoryEntry): MemoryEntry => ({slug: row.slug, eventId: row.eventId, createdAt: row.createdAt,
+    tombstone: row.tombstone, outgoingRefs: row.outgoingRefs});
+  const dangling = (row: Dangling): Dangling => ({slug: row.slug, referencedBy: row.referencedBy});
+  const references = (row: References): References => ({coreExists: row.coreExists, coreRefs: row.coreRefs,
+    dangling: row.dangling.map(dangling)});
+  const memory = (row: MemoryPage): MemoryPage => ({installationResourceId: row.installationResourceId, workspaceId: row.workspaceId,
+    operationId: row.operationId, state: row.state, entries: row.entries.map(entry),
+    references: row.references && references(row.references)});
+  const actual = {
+    joinPageBaseline: joins(value.joinPageBaseline), joinPageOrigin: joins(value.joinPageOrigin), joinPage: joins(value.joinPage),
+    memoryPageComplete: memory(value.memoryPageComplete), memoryPageNoCore: memory(value.memoryPageNoCore),
+    memoryPageBounded: memory(value.memoryPageBounded), memoryPageTool: memory(value.memoryPageTool),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

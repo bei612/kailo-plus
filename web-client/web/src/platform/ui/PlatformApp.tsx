@@ -105,6 +105,7 @@ import { AvatarHostProvider } from "@client-kit/platform/react/profile/avatar-ho
 import { formatDmParticipantDisplayName, resolveConversationHeaderParticipants } from "@client-kit/platform/react/conversations/dm-participant-display";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
+import { useTenantJoinAlerts } from "@client-kit/platform/react/tenant-join-alerts";
 import { BffMessageLinkHost } from "@/features/chat/ui/BffMessageLinkHost";
 import { TopbarSearch } from "./TopbarSearch";
 import { useWebSearchDirectory } from "./search";
@@ -199,6 +200,16 @@ function Notice({ text }: { text: string }) {
 
 function SignedIn({ session }: { session: PlatformSessionView }) {
   const notificationSettings = useBrowserNotifications();
+  // DD-125(9): first-join alerts for Tenant `manage` holders, as browser notifications under the
+  // same desktop switch and browser permission. Non-managers are refused once and it stops.
+  useTenantJoinAlerts({
+    client: bff,
+    tenantId: session.tenantId,
+    viewerPrincipalId: session.tenantPrincipalId,
+    communityName: session.tenantName,
+    enabled: !!notificationSettings?.settings.desktopEnabled && notificationSettings.permission === "granted",
+    notify: ({ key, title, body }) => notificationSettings?.notifyMemberJoin({ eventId: key, title, body }),
+  });
   const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
   // Original relay connection card and collapsed-sidebar overlay, over the BFF streams.
   const connectionCard = useStreamConnectionCard();

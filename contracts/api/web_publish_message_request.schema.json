@@ -24,6 +24,11 @@
       "items": {"type": "string"},
       "description": "原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent 公钥绕过 Installation 准入。"
     },
+    "referenceMentionPubkeys": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+      "description": "DD-125(8) 原“不邀请直接发送 / 仍然发送”：被提及但不是该 Workspace ACTIVE 成员、且本次不邀请的 HUMAN 公钥；缺省为空。只用于 Workspace 的新消息（含线程回复），与 mentionPubkeys 不相交，与 editEventId、deleteEventId、sendToChannelSourceEventId 互斥，私聊目标拒绝。BFF 校验每个公钥都是同 Tenant ACTIVE HUMAN Principal（TenantMembership ACTIVE）的 ACTIVE 公钥（不要求目的地成员资格，否则 PERMISSION_DENIED），签原版 [\"mention\", <pubkey>] 引用标签，排序去重后冻结进同一发布意图（幂等重放逐项比较）；不发 p、不通知、不进入 Inbox，也不授予读取或成员资格，接收方只用它解析 @名字 的显示。"
+    },
     "mentionInstallationIds": {
       "type": "array",
       "items": {"type": "string", "format": "uuid"},

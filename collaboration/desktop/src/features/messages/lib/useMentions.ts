@@ -34,6 +34,8 @@ export function useMentions(
   people?: readonly MentionSuggestion[],
   agents?: readonly MentionSuggestion[],
   ownerPubkey?: string,
+  /** DD-125(8): same-Tenant people outside this Workspace channel ("not in channel"). */
+  outsidePeople?: readonly MentionSuggestion[],
 ) {
   const t=useUiT();
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null);
@@ -51,9 +53,14 @@ export function useMentions(
     () => {
       const admittedAgents = new Map((agents ?? []).map(agent => [agent.pubkey, agent]));
       const humans = people?.map(person=>({...person,avatarUrl:person.avatarUrl??null,role:null,secondaryLabel:null,isMember:true,isAgent:false})) ?? buildMentionCandidates({ members, profiles });
-      return [...humans.filter(person=>!admittedAgents.has(person.pubkey)), ...[...admittedAgents.values()].map(agent=>({...agent,avatarUrl:agent.avatarUrl??null,role:null,secondaryLabel:null,isMember:true,isAgent:true}))];
+      // Original buildMentionCandidates: search results outside the roster are `isMember: false`,
+      // so a typed label never binds them; only an explicit selection does.
+      const known = new Set([...humans.map(person=>person.pubkey), ...admittedAgents.keys()]);
+      const outside = (outsidePeople ?? []).filter(person=>!known.has(person.pubkey))
+        .map(person=>({...person,avatarUrl:person.avatarUrl??profiles?.[person.pubkey]?.avatarUrl??null,role:null,secondaryLabel:null,isMember:false,isAgent:false}));
+      return [...humans.filter(person=>!admittedAgents.has(person.pubkey)), ...[...admittedAgents.values()].map(agent=>({...agent,avatarUrl:agent.avatarUrl??null,role:null,secondaryLabel:null,isMember:true,isAgent:true})), ...outside];
     },
-    [members, profiles, people, agents],
+    [members, profiles, people, agents, outsidePeople],
   );
   const searchableNames = React.useMemo(
     () => [

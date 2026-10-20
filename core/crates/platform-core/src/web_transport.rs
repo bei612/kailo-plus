@@ -290,6 +290,10 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
             && request.attachments.as_ref().is_none_or(Vec::is_empty)
             && request.mention_pubkeys.as_ref().is_none_or(Vec::is_empty)
             && request
+                .reference_mention_pubkeys
+                .as_ref()
+                .is_none_or(Vec::is_empty)
+            && request
                 .mention_installation_ids
                 .as_ref()
                 .is_none_or(Vec::is_empty)
@@ -564,6 +568,61 @@ async fn resolve_human_mentions<'e>(
          order by b.pubkey",
     ).bind(tenant).bind(keys).bind(workspace).bind(conversation)
         .fetch_all(executor).await.map_err(crate::service_api::unavailable)?;
+    if found != keys {
+        return Err(AdmissionFailure::Denied.into_response());
+    }
+    Ok(())
+}
+
+/// DD-125(8) original "Do nothing / Send anyway": display-only `["mention", pubkey]`
+/// references to people outside the channel. Only a new Workspace message (thread
+/// replies included) carries them, never beside the same key's notifying `p`, an
+/// edit, a deletion, a send-to-channel copy or a private conversation.
+fn reference_mention_targets(
+    request: &PublishRequest,
+    target: MessageTarget,
+    human_mentions: &[String],
+) -> Option<Vec<String>> {
+    let keys = human_mention_targets(request.reference_mention_pubkeys.as_deref())?;
+    if keys.is_empty() {
+        return Some(keys);
+    }
+    let new_workspace_message = matches!(target, MessageTarget::Workspace(_))
+        && request.edit_event_id.is_none()
+        && request.delete_event_id.is_none()
+        && request.send_to_channel_source_event_id.is_none();
+    let disjoint = keys
+        .iter()
+        .all(|key| human_mentions.binary_search(key).is_err());
+    (new_workspace_message && disjoint).then_some(keys)
+}
+
+/// A reference names a person of the same Tenant, not a destination member: every
+/// key must be the ACTIVE HUMAN binding of an ACTIVE HUMAN Principal whose
+/// TenantMembership and human identity are ACTIVE. It grants no read or membership.
+async fn resolve_reference_mentions<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    tenant: Uuid,
+    keys: &[String],
+) -> Result<(), Response> {
+    if keys.is_empty() {
+        return Ok(());
+    }
+    let found: Vec<String> = sqlx::query_scalar(
+        "select b.pubkey from identity.buzz_identity_binding b
+         join identity.principal p on p.id=b.principal_id and p.tenant_id=b.tenant_id
+           and p.kind='HUMAN' and p.status='ACTIVE'
+         join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=p.tenant_id
+           and tm.state='ACTIVE'
+         join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+         where b.tenant_id=$1 and b.kind='HUMAN' and b.state='ACTIVE' and b.pubkey=any($2)
+         order by b.pubkey",
+    )
+    .bind(tenant)
+    .bind(keys)
+    .fetch_all(executor)
+    .await
+    .map_err(crate::service_api::unavailable)?;
     if found != keys {
         return Err(AdmissionFailure::Denied.into_response());
     }
@@ -1924,6 +1983,17 @@ async fn publish(
         Some(keys) => keys,
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
+    // DD-125(8): frozen with the rest of the intent, so a replay naming other
+    // references is a conflict rather than an answer about the first message.
+    let reference_mentions = match &publication {
+        Publication::Message(request) => {
+            match reference_mention_targets(request, target, &human_mentions) {
+                Some(keys) => keys,
+                None => return StatusCode::BAD_REQUEST.into_response(),
+            }
+        }
+        _ => Vec::new(),
+    };
     #[derive(sqlx::FromRow)]
     struct PreviousPublish {
         operation_id: Uuid,
@@ -1931,6 +2001,7 @@ async fn publish(
         result: Option<String>,
         mention_installation_ids: Vec<Uuid>,
         mention_pubkeys: Vec<String>,
+        reference_mention_pubkeys: Vec<String>,
         target_ids: Vec<Option<Uuid>>,
         message_kind: i32,
         parent_event_id: Option<String>,
@@ -1942,7 +2013,7 @@ async fn publish(
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
         r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
-                  a.link_preview_snapshot_ids, a.suppress_link_previews,
+                  a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1977,6 +2048,7 @@ async fn publish(
         if !publish_scope_matches(&p.target_ids, target.id())
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
             || p.mention_pubkeys != human_mentions
+            || p.reference_mention_pubkeys != reference_mentions
             || p.message_kind != requested_kind
             || p.parent_event_id != parent_event_id
             || p.edit_event_id != edit_event_id
@@ -2429,6 +2501,11 @@ async fn publish(
     {
         return response;
     }
+    if let Err(response) =
+        resolve_reference_mentions(&state.pool, ctx.tenant_id, &reference_mentions).await
+    {
+        return response;
+    }
     let admitted = match client.admit() {
         Ok(a) => a,
         Err(e) => return relay_error_response(&e, None),
@@ -2462,11 +2539,12 @@ async fn publish(
             &media_tags,
             &mentions,
         ),
-        Publication::Message(_) => client.sign_channel_message_kind(
+        Publication::Message(_) => client.sign_channel_message_references(
             &channel_id,
             &content,
             &media_tags,
             &mentions,
+            &reference_mentions,
             &message_type,
             ancestry
                 .as_ref()
@@ -2573,8 +2651,8 @@ async fn publish(
             None => sqlx::query(
                 "insert into admission.publish_attempt
                      (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys, send_to_channel_source_event_id,
-                      link_preview_snapshot_ids, suppress_link_previews)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) on conflict do nothing"
+                      link_preview_snapshot_ids, suppress_link_previews, reference_mention_pubkeys)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -2589,6 +2667,7 @@ async fn publish(
             .bind(&send_source)
             .bind(&preview_ids)
             .bind(suppress_previews)
+            .bind(&reference_mentions)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -2599,6 +2678,7 @@ async fn publish(
             struct ConcurrentPublish {
                 mention_installation_ids: Vec<Uuid>,
                 mention_pubkeys: Vec<String>,
+                reference_mention_pubkeys: Vec<String>,
                 message_kind: i32,
                 parent_event_id: Option<String>,
                 edit_event_id: Option<String>,
@@ -2610,7 +2690,7 @@ async fn publish(
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
                 "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id, a.send_to_channel_source_event_id,
-                    a.link_preview_snapshot_ids, a.suppress_link_previews,
+                    a.link_preview_snapshot_ids, a.suppress_link_previews, a.reference_mention_pubkeys,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -2623,6 +2703,7 @@ async fn publish(
             return Ok(if publish_scope_matches(&frozen.target_ids, target.id())
                 && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
                 && frozen.mention_pubkeys == human_mentions
+                && frozen.reference_mention_pubkeys == reference_mentions
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
                 && frozen.edit_event_id == edit_event_id
                 && frozen.delete_event_id == delete_event_id
@@ -4515,6 +4596,27 @@ mod tests {
         crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
             .await
             .unwrap();
+        // DD-125(8): a display-only reference names a person of the same Tenant,
+        // not a member of the destination.
+        resolve_reference_mentions(&mut *tx, tenant, std::slice::from_ref(&pubkey))
+            .await
+            .unwrap();
+        let stranger = nostr::Keys::generate().public_key().to_hex();
+        let mut partly_known = vec![pubkey.clone(), stranger.clone()];
+        partly_known.sort();
+        for (requested_tenant, keys) in [
+            (Uuid::new_v4(), vec![pubkey.clone()]),
+            (tenant, vec![stranger]),
+            (tenant, partly_known),
+        ] {
+            assert_eq!(
+                resolve_reference_mentions(&mut *tx, requested_tenant, &keys)
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
         sqlx::query(
             "update identity.workspace_membership set state='ACTIVE' where tenant_principal_id=$1",
         )
@@ -4535,6 +4637,13 @@ mod tests {
             sqlx::query(revoke).bind(principal).execute(&mut *tx).await.unwrap();
             assert_eq!(crate::projects::resolve_human_assignee(&mut *tx, tenant, &pubkey)
                 .await.unwrap_err().status(), StatusCode::FORBIDDEN);
+            assert_eq!(
+                resolve_reference_mentions(&mut *tx, tenant, std::slice::from_ref(&pubkey))
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
             sqlx::query(restore).bind(principal).execute(&mut *tx).await.unwrap();
         }
         resolve_human_mentions(
@@ -4705,6 +4814,13 @@ mod tests {
             .await
             .unwrap_err()
             .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            resolve_reference_mentions(&mut *tx, tenant, std::slice::from_ref(&pubkey))
+                .await
+                .unwrap_err()
+                .status(),
             StatusCode::FORBIDDEN
         );
         tx.rollback().await.unwrap();
@@ -5647,6 +5763,82 @@ mod tests {
     }
 
     #[test]
+    fn reference_mentions_are_canonical_new_workspace_messages_without_p() {
+        let notified = nostr::Keys::generate().public_key().to_hex();
+        let first = nostr::Keys::generate().public_key().to_hex();
+        let second = nostr::Keys::generate().public_key().to_hex();
+        let mut expected = vec![first.clone(), second.clone()];
+        expected.sort();
+        let workspace = MessageTarget::Workspace(Uuid::new_v4());
+        let human_mentions = vec![notified.clone()];
+        let request =
+            |value: serde_json::Value| -> PublishRequest { serde_json::from_value(value).unwrap() };
+        let base = serde_json::json!({
+            "content": "hello",
+            "mentionPubkeys": [notified],
+            "referenceMentionPubkeys": [second, first, first],
+        });
+        assert_eq!(
+            reference_mention_targets(&request(base.clone()), workspace, &human_mentions),
+            Some(expected)
+        );
+        // Thread replies are new messages too.
+        let mut reply = base.clone();
+        reply["parentEventId"] = serde_json::json!("b".repeat(64));
+        assert!(reference_mention_targets(&request(reply), workspace, &human_mentions).is_some());
+        // Absent or empty stays the original message without references anywhere.
+        for (target, value) in [
+            (
+                MessageTarget::Conversation(Uuid::new_v4()),
+                serde_json::json!({"content": "hi"}),
+            ),
+            (
+                MessageTarget::Conversation(Uuid::new_v4()),
+                serde_json::json!({"content": "", "deleteEventId": "a".repeat(64),
+                    "referenceMentionPubkeys": []}),
+            ),
+        ] {
+            assert_eq!(
+                reference_mention_targets(&request(value), target, &[]),
+                Some(vec![])
+            );
+        }
+        // Private conversations, mutations and send-to-channel copies are refused.
+        assert!(reference_mention_targets(
+            &request(base.clone()),
+            MessageTarget::Conversation(Uuid::new_v4()),
+            &human_mentions
+        )
+        .is_none());
+        for (field, value) in [
+            ("editEventId", serde_json::json!("a".repeat(64))),
+            ("deleteEventId", serde_json::json!("a".repeat(64))),
+            (
+                "sendToChannelSourceEventId",
+                serde_json::json!("a".repeat(64)),
+            ),
+            ("referenceMentionPubkeys", serde_json::json!(["not-a-key"])),
+            (
+                "referenceMentionPubkeys",
+                serde_json::json!([first.to_uppercase()]),
+            ),
+        ] {
+            let mut invalid = base.clone();
+            invalid[field] = value;
+            assert!(
+                reference_mention_targets(&request(invalid), workspace, &human_mentions).is_none(),
+                "must reject {field}"
+            );
+        }
+        // A notified key is never also a display-only reference.
+        let mut overlapping = base;
+        overlapping["referenceMentionPubkeys"] = serde_json::json!([notified]);
+        assert!(
+            reference_mention_targets(&request(overlapping), workspace, &human_mentions).is_none()
+        );
+    }
+
+    #[test]
     fn publish_replay_requires_exact_original_dispatch_workspace() {
         let original = Uuid::from_u128(1);
         let other = Uuid::from_u128(2);
@@ -6090,6 +6282,10 @@ mod tests {
             (
                 "mentionInstallationIds",
                 serde_json::json!([uuid::Uuid::new_v4()]),
+            ),
+            (
+                "referenceMentionPubkeys",
+                serde_json::json!(["c".repeat(64)]),
             ),
         ] {
             let mut invalid = valid.clone();

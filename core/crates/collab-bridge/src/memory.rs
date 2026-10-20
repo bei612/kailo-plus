@@ -4,7 +4,7 @@
 //! buzz/crates/buzz-core/src/engram.rs::{validate_and_decrypt,select_head};
 //! buzz/crates/buzz-acp/src/relay.rs::RestClient::query_raw_all (composite cursor).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use buzz_core::engram::{self, Body};
 use buzz_core::kind::{
@@ -113,6 +113,37 @@ pub struct EntryHead {
     pub slug: String,
     pub head: Head,
     pub tombstone: bool,
+}
+
+/// DD-125(10), SF-BUZ-58(3): `[[slug]]` relations of one exhausted listing,
+/// extracted with the original `extract_refs` from the same decrypted heads.
+/// Only slugs leave this module; no value or profile is retained.
+pub struct ListingRefs {
+    /// Refs of each non-tombstone memory head, keyed by its slug.
+    pub outgoing: BTreeMap<String, Vec<String>>,
+    /// The core head and its profile's refs, when a core head exists.
+    pub core: Option<(Head, Vec<String>)>,
+}
+
+impl ListingRefs {
+    /// Slugs whose decrypted body took part in extraction (`core` included
+    /// when present), sorted. Tombstones have no body and never take part.
+    pub fn participants(&self) -> Vec<&str> {
+        let mut slugs: Vec<&str> = self.outgoing.keys().map(String::as_str).collect();
+        if self.core.is_some() {
+            slugs.push(engram::CORE_SLUG);
+        }
+        slugs.sort_unstable();
+        slugs
+    }
+}
+
+/// One exhausted listing read: the head tuples, the decrypted byte total and
+/// the reference relations of those same heads.
+pub struct EntryListing {
+    pub entries: Vec<EntryHead>,
+    pub plaintext_bytes: usize,
+    pub refs: ListingRefs,
 }
 
 /// Plaintext belongs only to the authenticated read response.
@@ -508,25 +539,36 @@ impl<'a> Reader<'a> {
         http: &reqwest::Client,
         now: u64,
     ) -> Result<(Vec<EntryHead>, usize), MemoryError> {
+        let listing = self.list_entries_with_refs(http, now).await?;
+        Ok((listing.entries, listing.plaintext_bytes))
+    }
+
+    /// DD-125(10): the same single exhausted read as [`Self::list_entries`],
+    /// plus the `[[slug]]` relations of its decrypted core and non-tombstone
+    /// heads for the HUMAN management view. No body is returned.
+    pub async fn list_entries_with_refs(
+        &self,
+        http: &reqwest::Client,
+        now: u64,
+    ) -> Result<EntryListing, MemoryError> {
         let (heads, plaintext_bytes) = self.heads(http, None).await?;
-        let mut entries = Vec::new();
+        let mut selected = Vec::with_capacity(heads.len());
         for (event, body) in heads.into_values() {
             if self.head_is_ahead(&event, now) {
                 return Err(MemoryError::InvalidEvidence);
             }
-            if let Body::Memory { slug, value } = body {
-                entries.push(EntryHead {
-                    slug,
-                    head: Head {
-                        event_id: event.id.to_hex(),
-                        created_at: event.created_at.as_secs(),
-                    },
-                    tombstone: value.is_none(),
-                });
-            }
+            let head = Head {
+                event_id: event.id.to_hex(),
+                created_at: event.created_at.as_secs(),
+            };
+            selected.push((head, body));
         }
-        entries.sort_by(|a, b| a.slug.cmp(&b.slug));
-        Ok((entries, plaintext_bytes))
+        let (entries, refs) = split_listing(selected);
+        Ok(EntryListing {
+            entries,
+            plaintext_bytes,
+            refs,
+        })
     }
 
     /// Same native core-slot query; the additional scalar is the actually
@@ -688,6 +730,91 @@ impl<'a> Reader<'a> {
             }
         }
         Ok((heads, plaintext_bytes))
+    }
+}
+
+/// Selected heads → slug-ordered head tuples and their reference relations.
+/// Core is never a listed entry; a tombstone is listed but has no body to scan.
+fn split_listing(heads: Vec<(Head, Body)>) -> (Vec<EntryHead>, ListingRefs) {
+    let mut entries = Vec::new();
+    let mut refs = ListingRefs {
+        outgoing: BTreeMap::new(),
+        core: None,
+    };
+    for (head, body) in heads {
+        match body {
+            Body::Core { profile } => refs.core = Some((head, engram::extract_refs(&profile))),
+            Body::Memory { slug, value } => {
+                if let Some(value) = value.as_deref() {
+                    let found = engram::extract_refs(value);
+                    refs.outgoing.insert(slug.clone(), found);
+                }
+                entries.push(EntryHead {
+                    slug,
+                    head,
+                    tombstone: value.is_none(),
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.slug.cmp(&b.slug));
+    (entries, refs)
+}
+
+#[cfg(test)]
+mod listing_refs_tests {
+    use super::{split_listing, Head};
+    use buzz_core::engram::Body;
+
+    fn head(n: u8) -> Head {
+        Head {
+            event_id: format!("{n:02x}").repeat(32),
+            created_at: u64::from(n),
+        }
+    }
+
+    fn memory(slug: &str, value: Option<&str>) -> Body {
+        Body::Memory {
+            slug: slug.to_owned(),
+            value: value.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn refs_come_from_core_and_live_heads_in_first_occurrence_order() {
+        let core = Body::Core {
+            profile: "I keep [[mem/z]] then [[mem/a]]".to_owned(),
+        };
+        let z = memory("mem/z", Some("[[mem/a]] [[Bad]] [[mem/gone]] [[mem/a]]"));
+        let a = memory("mem/a", Some("no refs, just mem/z"));
+        let old = memory("mem/old", None);
+        let mut heads = vec![(head(3), z), (head(1), core)];
+        heads.extend([(head(2), a), (head(4), old)]);
+        let (entries, refs) = split_listing(heads);
+        let slugs: Vec<&str> = entries.iter().map(|e| e.slug.as_str()).collect();
+        assert_eq!(slugs, ["mem/a", "mem/old", "mem/z"]);
+        assert!(entries[1].tombstone && !entries[0].tombstone);
+        let (core_head, core_refs) = refs.core.as_ref().unwrap();
+        assert_eq!(core_head, &head(1));
+        assert_eq!(core_refs, &["mem/z", "mem/a"]);
+        assert_eq!(refs.outgoing["mem/z"], ["mem/a", "mem/gone"]);
+        assert!(refs.outgoing["mem/a"].is_empty());
+        // A tombstone has no body: it neither scans nor takes part.
+        assert!(!refs.outgoing.contains_key("mem/old"));
+        assert_eq!(refs.participants(), ["core", "mem/a", "mem/z"]);
+    }
+
+    #[test]
+    fn listing_without_core_has_no_core_participant() {
+        let b = memory("mem/b", Some("[[core]]"));
+        let (entries, refs) = split_listing(vec![(head(5), b)]);
+        assert_eq!(entries.len(), 1);
+        assert!(refs.core.is_none());
+        assert_eq!(refs.outgoing["mem/b"], ["core"]);
+        assert_eq!(refs.participants(), ["mem/b"]);
+        let (entries, refs) = split_listing(Vec::new());
+        assert!(entries.is_empty() && refs.core.is_none());
+        assert!(refs.participants().is_empty());
     }
 }
 

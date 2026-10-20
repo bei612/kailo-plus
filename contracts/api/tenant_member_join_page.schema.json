@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/tenant_member_join_page.schema.json",
+  "title": "TenantMemberJoinPage",
+  "description": "GET /api/v1/tenant-member-joins 的有界回应（DD-125(9)）。每次请求 fresh 校验 Tenant manage，否则 PERMISSION_DENIED；不建立 ActionExecution、不写访问审计。不带 after 时 items 为空，只给当前游标供建账；带 after 时按（进入时刻，membership）升序返回其后进入 ACTIVE 的其他成员，单页有上界。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "cursor", "hasMore"],
+  "properties": {
+    "items": { "type": "array", "items": { "$ref": "tenant_member_join_view.schema.json" } },
+    "cursor": { "type": "string", "description": "不透明位置，下一次作为 after 原样回传；空串表示起点（本 Tenant 尚无记下进入时刻的成员）。客户端不得解析或构造；格式非法时服务端回 400。" },
+    "hasMore": { "type": "boolean", "description": "游标之后仍有未扫描的成员事实，应立即以新 cursor 续读；为 true 时本页 items 可能为空。" }
+  }
+}

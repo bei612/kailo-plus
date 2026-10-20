@@ -1584,6 +1584,64 @@ describe("InstallationMemory BFF read boundaries", () => {
     expect(host.textContent).not.toContain("记忆");
   });
 
+  // DD-125(10): refs exist only for a COMPLETE listing; they never carry bodies.
+  const referenced: AgentMemoryEntryPage = {
+    ...entries,
+    entries: [
+      { slug: "mem/b", eventId: "c".repeat(64), createdAt: 3, tombstone: false, outgoingRefs: ["mem/missing"] },
+      { slug: "mem/old", eventId: "d".repeat(64), createdAt: 4, tombstone: true },
+      { slug: "mem/orphan", eventId: "e".repeat(64), createdAt: 5, tombstone: false, outgoingRefs: [] },
+      { slug: "mem/a", eventId: "f".repeat(64), createdAt: 6, tombstone: false, outgoingRefs: ["mem/b", "core"] },
+    ],
+    references: { coreExists: true, coreRefs: ["mem/a"], dangling: [{ slug: "mem/missing", referencedBy: ["mem/b"] }] },
+  };
+  const listedSlugs = (host: HTMLElement) => [...host.querySelectorAll("[data-testid=agent-memory-list] article")]
+    .map((article) => article.querySelector("button .font-semibold")?.textContent);
+
+  it("accepts reference facts only on a COMPLETE listing with well-formed slugs", () => {
+    expect(validMemoryEntries(referenced, resource, workspace)).toBe(true);
+    expect(validMemoryEntries({ ...referenced, entries: [], state: AgentMemoryEntryPageState.BoundExceeded }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...referenced, references: { ...referenced.references!, coreExists: false } }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...referenced, references: { ...referenced.references!, dangling: [{ slug: "mem/../x", referencedBy: ["mem/b"] }] } }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...referenced, entries: [{ ...referenced.entries[0]!, outgoingRefs: ["mem/a", "mem/a"] }] }, resource, workspace)).toBe(false);
+    expect(validMemoryEntries({ ...referenced, entries: [{ ...referenced.entries[1]!, outgoingRefs: ["mem/a"] }] }, resource, workspace)).toBe(false);
+  });
+
+  it("orders a COMPLETE listing by core's ref tree and marks missing links on the citing entry", async () => {
+    const t = transport((r) => ({ status: 200, body: r.path.endsWith("/entries") ? referenced : read }));
+    const host = await mount(t, <InstallationMemory resourceId={resource} workspaceId={workspace} />);
+    await click(button(host, "Read memory"));
+    expect(listedSlugs(host)).toEqual(["mem/a", "mem/b", "mem/orphan", "mem/old"]);
+    expect(host.querySelector("[data-testid=agent-memory-no-core]")).toBeNull();
+    const icons = [...host.querySelectorAll("[data-testid=agent-memory-list] article")]
+      .map((article) => !!article.querySelector("[data-testid=agent-memory-dangling-icon]"));
+    expect(icons).toEqual([false, true, false, false]);
+    expect(host.querySelector("[data-testid=agent-memory-dangling-hint]")).toBeNull();
+    const cited = host.querySelectorAll<HTMLElement>("[data-testid=agent-memory-list] article button")[1]!;
+    await click(cited);
+    const hint = host.querySelector("[data-testid=agent-memory-dangling-hint]");
+    expect(hint?.textContent).toBe("Missing link: [[mem/missing]]This memory links to a slug that wasn't found in the loaded memory list.");
+  });
+
+  it("shows the no-core line for memories without core, and keeps the listing order without refs", async () => {
+    const noCore: AgentMemoryEntryPage = { ...referenced,
+      entries: referenced.entries.map((entry) => entry.slug === "mem/a" ? { ...entry, outgoingRefs: ["mem/b"] } : entry),
+      references: { coreExists: false, coreRefs: [], dangling: [{ slug: "mem/missing", referencedBy: ["mem/b"] }] } };
+    const t = transport((r) => ({ status: 200, body: r.path.endsWith("/entries") ? noCore : read }));
+    const host = await mount(t, <InstallationMemory resourceId={resource} workspaceId={workspace} />, "zh-CN");
+    await click(button(host, "读取记忆"));
+    expect(listedSlugs(host)).toEqual(["mem/a", "mem/b", "mem/orphan", "mem/old"]);
+    expect(host.querySelector("[data-testid=agent-memory-no-core]")?.textContent).toBe("还没有 core 记忆——Agent 身份尚无根基。");
+
+    const unordered: AgentMemoryEntryPage = { ...referenced, references: undefined };
+    const plain = await mount(transport((r) => ({ status: 200, body: r.path.endsWith("/entries") ? unordered : read })),
+      <InstallationMemory resourceId={resource} workspaceId={workspace} />);
+    await click(button(plain, "Read memory"));
+    expect(listedSlugs(plain)).toEqual(["mem/b", "mem/old", "mem/orphan", "mem/a"]);
+    expect(plain.querySelector("[data-testid=agent-memory-no-core]")).toBeNull();
+    expect(plain.querySelector("[data-testid=agent-memory-dangling-icon]")).toBeNull();
+  });
+
   it("rejects a wrong-scope body and does not report a failed inventory as empty", async () => {
     const t = transport((r) => r.path.endsWith("/entries")
       ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable } }

@@ -102,6 +102,7 @@ mod temporal;
 mod tenant_bootstrap;
 mod tenant_delete;
 mod tenant_lifecycle;
+mod tenant_member_joins;
 mod tenant_quota;
 mod user_state;
 mod user_state_collab;

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_memory_dangling_ref_view.schema.json",
+  "title": "AgentMemoryDanglingRefView",
+  "description": "被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug", "referencedBy"],
+  "properties": {
+    "slug": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "referencedBy": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 255 }, "description": "引用者 slug，core 记为 \"core\"；去重并按 slug 排序。" }
+  }
+}

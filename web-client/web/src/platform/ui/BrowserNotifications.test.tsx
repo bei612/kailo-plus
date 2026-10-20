@@ -96,3 +96,22 @@ it("does not alert while visible by default or when permission is no longer gran
   expect(deliveries).toHaveLength(1);
   expect(state.sound).toHaveBeenCalledTimes(1);
 });
+it("presents DD-125(9) join alerts while visible under the desktop switch and permission only, once per key, without slot sound", async () => {
+  await mount();
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  const message = { eventId: "join:alice:2026-10-20T08:00:00.000Z", title: "New member in Acme", body: "Alice joined" };
+  await act(async () => { current!.setAllSlotAlertsEnabled(false); });
+  current!.notifyMemberJoin(message);
+  current!.notifyMemberJoin(message);
+  expect(deliveries).toHaveLength(1);
+  expect(deliveries[0]?.title).toBe("New member in Acme");
+  expect(deliveries[0]?.options).toEqual({ body: "Alice joined", silent: true, tag: message.eventId });
+  expect(state.sound).not.toHaveBeenCalled();
+  FakeNotification.permission = "denied";
+  current!.notifyMemberJoin({ ...message, eventId: "join:bob:2026-10-20T08:00:00.000Z" });
+  expect(deliveries).toHaveLength(1);
+  FakeNotification.permission = "granted";
+  await act(async () => { current!.setDesktopEnabled(false); });
+  current!.notifyMemberJoin({ ...message, eventId: "join:carol:2026-10-20T08:00:00.000Z" });
+  expect(deliveries).toHaveLength(1);
+});

@@ -11,6 +11,7 @@
     "workspaceId": {"type": "string", "format": "uuid"},
     "operationId": {"type": "string", "format": "uuid"},
     "state": {"type": "string", "enum": ["COMPLETE", "BOUND_EXCEEDED", "UNKNOWN"]},
-    "entries": {"type": "array", "items": {"$ref": "agent_memory_entry_view.schema.json"}}
+    "entries": {"type": "array", "items": {"$ref": "agent_memory_entry_view.schema.json"}},
+    "references": {"$ref": "agent_memory_reference_view.schema.json", "description": "仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent 记忆工具结果省略，客户端保持 slug 顺序。"}
   }
 }

@@ -1,4 +1,6 @@
 import * as React from "react";
+import type { BffClient } from "@client-kit/platform/client";
+import { useTenantJoinAlerts } from "@client-kit/platform/react/tenant-join-alerts";
 
 import {
   activateDesktopNotificationTarget,
@@ -29,6 +31,7 @@ export function useAppShellDesktopNotifications({
   notificationSettings,
   openSearchHit,
   pubkey,
+  joinAlerts,
 }: {
   channels: Channel[];
   goChannel: (
@@ -42,8 +45,33 @@ export function useAppShellDesktopNotifications({
     behavior?: { force?: boolean },
   ) => Promise<unknown>;
   pubkey?: string;
+  /** DD-125(9): Tenant scope of the first-join alerts (Core route over the BFF). */
+  joinAlerts: {
+    client: BffClient;
+    tenantId?: string;
+    principalId?: string;
+    tenantName?: string;
+  };
 }) {
   const resolveSenderName = useNotificationSenderName();
+
+  // Original mount point of useCommunityJoinAlerts, gated by the desktop switch. Non-managers
+  // are refused by Core once (PERMISSION_DENIED) and the hook stops for the session.
+  useTenantJoinAlerts({
+    client: joinAlerts.client,
+    tenantId: joinAlerts.tenantId,
+    viewerPrincipalId: joinAlerts.principalId,
+    communityName: joinAlerts.tenantName,
+    enabled: notificationSettings.desktopEnabled,
+    notify: ({ title, body }) => {
+      // Original target: no channel, so activation returns Home.
+      void sendDesktopNotification({
+        title,
+        body,
+        target: { channelId: null, eventId: null, kind: null },
+      });
+    },
+  });
 
   const handleDmNotification = React.useEffectEvent(
     (event: RelayEvent, channel: Channel) => {

@@ -531,6 +531,33 @@ impl IdentityClient {
         message_type: &contracts::WebMessageType,
         ancestry: Option<(&str, &str)>,
     ) -> Result<Event, OperatorError> {
+        self.sign_channel_message_references(
+            channel_id,
+            content,
+            media_tags,
+            mention_pubkeys,
+            &[],
+            message_type,
+            ancestry,
+        )
+    }
+
+    /// DD-125(8), original "Do nothing / Send anyway" for people outside the channel:
+    /// each `reference_pubkeys` entry becomes one original `["mention", <pubkey>]`
+    /// display reference after the notifying `p` tags. It never also appears as `p`,
+    /// so it does not notify, enter an Inbox or grant anything; the governed caller
+    /// has already resolved every key to an ACTIVE HUMAN of the same Tenant.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sign_channel_message_references(
+        &self,
+        channel_id: &str,
+        content: &str,
+        media_tags: &[Vec<String>],
+        mention_pubkeys: &[String],
+        reference_pubkeys: &[String],
+        message_type: &contracts::WebMessageType,
+        ancestry: Option<(&str, &str)>,
+    ) -> Result<Event, OperatorError> {
         if matches!(message_type, contracts::WebMessageType::ForumPost) && ancestry.is_some()
             || matches!(message_type, contracts::WebMessageType::ForumComment) && ancestry.is_none()
         {
@@ -556,6 +583,20 @@ impl IdentityClient {
             let key = nostr::PublicKey::from_hex(pubkey)
                 .map_err(|_| OperatorError::Sign("Mention public key is invalid".into()))?;
             tags.push(vec!["p".to_owned(), key.to_hex()]);
+        }
+        for pubkey in reference_pubkeys {
+            let key = nostr::PublicKey::from_hex(pubkey)
+                .map_err(|_| OperatorError::Sign("Reference mention public key is invalid".into()))?
+                .to_hex();
+            if tags
+                .iter()
+                .any(|tag| matches!(tag.as_slice(), [name, value] if name == "p" && *value == key))
+            {
+                return Err(OperatorError::Sign(
+                    "Reference mention also notifies the same key".into(),
+                ));
+            }
+            tags.push(vec!["mention".to_owned(), key]);
         }
         self.sign(message_kind(message_type), content, &tags)
     }
@@ -2659,6 +2700,64 @@ mod mention_tests {
                     &[],
                     &contracts::WebMessageType::ForumComment,
                     Some(ancestry)
+                )
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn reference_mentions_sign_display_tags_without_notifying() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let notified = Keys::generate().public_key().to_hex();
+        let outside = Keys::generate().public_key().to_hex();
+        let root = "a".repeat(64);
+        let reply = client
+            .sign_channel_message_references(
+                "channel",
+                "hello",
+                &[],
+                std::slice::from_ref(&notified),
+                std::slice::from_ref(&outside),
+                &contracts::WebMessageType::Stream,
+                Some((&root, &root)),
+            )
+            .unwrap();
+        reply.verify().unwrap();
+        let tags: Vec<_> = reply
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags,
+            vec![
+                vec!["h".to_owned(), "channel".into()],
+                vec!["e".into(), root, String::new(), "reply".into()],
+                vec!["p".into(), notified],
+                vec!["mention".into(), outside.clone()],
+            ]
+        );
+        assert!(!tags.iter().any(|tag| tag[0] == "p" && tag[1] == outside));
+        for (mentions, references) in [
+            (vec![outside.clone()], vec![outside.clone()]),
+            (vec![], vec!["invalid".to_owned()]),
+        ] {
+            assert!(client
+                .sign_channel_message_references(
+                    "channel",
+                    "hello",
+                    &[],
+                    &mentions,
+                    &references,
+                    &contracts::WebMessageType::Stream,
+                    None,
                 )
                 .is_err());
         }

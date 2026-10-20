@@ -89,6 +89,8 @@ import { isBroadcastReply, isThreadReply } from "@client-kit/platform/react/mess
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
 import { loadConversationParticipants, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
+import { NonMemberMentionDialog, inviteAndAwaitActive, nonMemberInvitePrincipals, outsideMentionPeople, resolveNonMemberInviteAdmission,
+  tenantMentionDirectoryQuery, useNonMemberInvite, useTenantMentionDirectory, withoutInvitingRecipients, type NonMemberInvitePrincipal } from "@client-kit/platform/react/non-member-mentions";
 import { useElementWidth } from "@client-kit/platform/react/sidebar/use-mobile";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
@@ -140,6 +142,27 @@ function frozenLinkPreviews(signature: string | undefined): LinkPreviewPublicati
   } catch { /* An unreadable signature names no previews. */ }
   return undefined;
 }
+
+/** DD-125(8): the reference-only mentions ("send without inviting") frozen in an unresolved
+ * send intent, so a retry with the same key repeats the same choice instead of prompting anew. */
+function frozenReferenceMentions(signature: string | undefined): string[] | undefined {
+  if (!signature) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(signature);
+    if (!Array.isArray(parsed)) return undefined;
+    for (const entry of parsed) {
+      if (entry && typeof entry === "object" && !Array.isArray(entry) && "referenceMentionPubkeys" in entry) {
+        const keys = (entry as { referenceMentionPubkeys: unknown }).referenceMentionPubkeys;
+        return Array.isArray(keys) && keys.every((key) => typeof key === "string") ? keys as string[] : undefined;
+      }
+    }
+  } catch { /* An unreadable signature names no references. */ }
+  return undefined;
+}
+
+/** DD-125(8): the person's choice in the non-member prompt for the people it named. */
+type NonMemberDecision = { kind: "invited" | "reference"; pubkeys: readonly string[] };
+type NonMemberPrompt = { owner: object; workspaceId: string; pubkeys: string[]; principals: NonMemberInvitePrincipal[]; names: string[]; canInvite: boolean };
 
 export function mentionPeopleFromMembers(members: readonly (WorkspaceMemberView | ConversationParticipant)[]): MentionSuggestion[] {
   return members.filter(member => !("state" in member) || member.state === "ACTIVE")
@@ -360,6 +383,8 @@ export function ChannelPane({
   const userState = useQuery(platformQueries.userState);
   const mentionPeople = useMemo(() => mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : []),
     [members.data, members.isSuccess, members.isError]);
+  // DD-125(8): a Workspace channel judges "outside this channel" only against a resolved roster.
+  const nonMemberMentionWorkspaceId = !conversation && members.isSuccess && !members.isError ? workspaceId : undefined;
   const conversationInvalidation = useConversationInvalidation();
   useEffect(() => {
     if (conversation) void queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
@@ -975,6 +1000,7 @@ export function ChannelPane({
             onTyping={notifyTyping}
             placeholder={composerPlaceholder}
             mentionPeople={mentionPeople}
+            nonMemberMentionWorkspaceId={nonMemberMentionWorkspaceId}
             onEditLastOwnMessage={handleEditLastOwnMainMessage}
             disabled={archived || metadataPending || timeoutState.active}
             onSendingChange={onMessageSendingChange}
@@ -1026,7 +1052,7 @@ export function ChannelPane({
       onDelete={canDelete ? deleteMessageDialog.requestDelete : undefined} onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
       editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}
       editBusy={composerBusy || deleteMessageDialog.pending} onEditSendingChange={setComposerBusy}
-      members={members.data ?? []} disabled={archived || metadataPending || denied || !live}
+      members={members.data ?? []} nonMemberMentionWorkspaceId={nonMemberMentionWorkspaceId} disabled={archived || metadataPending || denied || !live}
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink}
       isMessageUnread={isMessageUnread}
       onMarkRead={canMarkMessage ? (message, messages) => markMessageSubtree(message, messages, true) : undefined}
@@ -1057,10 +1083,14 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ audienceContext = null, channelType, mentionPeople, workspaceId, linkPreviewTarget, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
+export function Composer({ audienceContext = null, channelType, mentionPeople, nonMemberMentionWorkspaceId, workspaceId, linkPreviewTarget, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, toolbarExtraActions, autoSendDraftKey, onAutoSendConsumed, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete, onTyping }: {
   audienceContext?: {type: "thread"; rootTags: readonly string[][]} | null;
   channelType?: "stream" | "forum" | "dm" | null;
   mentionPeople?: readonly MentionSuggestion[];
+  /** DD-125(8): set once this Workspace channel's ACTIVE members (`mentionPeople`) are resolved,
+   * for new messages and thread replies only. The @ picker then also lists same-Tenant people
+   * outside the channel, and sending to them asks to invite, send without inviting, or cancel. */
+  nonMemberMentionWorkspaceId?: string;
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
   onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
@@ -1079,7 +1109,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   /** DD-125(5): where the BFF fetches composer link previews. Only hosts whose onPublish
    * forwards the preview intent pass it; the built-in Workspace publication needs none. */
   linkPreviewTarget?: { workspaceId: string } | { conversationId: string };
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication) => Promise<unknown>;
+  /** `referenceMentionPubkeys` (DD-125(8)) is passed only when the person chose to send without inviting. */
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[], linkPreviews?: LinkPreviewPublication, referenceMentionPubkeys?: string[]) => Promise<unknown>;
   onCancel?: () => void;
   containerClassName?: string;
   layoutMode?: "standalone" | "dock";
@@ -1107,7 +1138,16 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const [humanNames,setHumanNames] = useState<string[]>([]);
   const agentDirectory = useComposerAgentDirectory(bff, {workspaceId, principalId: draftIdentity}, workspaceId !== undefined && channelType !== "dm" && !editTarget);
   const agentPeople = useMemo(() => agentDirectory.data?.agents.map(agent => ({pubkey: agent.pubkey, displayName: agent.displayName, avatarUrl: agent.avatarUrl, isAgent: true})) ?? [], [agentDirectory.data]);
-  const mentionCandidates = useMemo(() => [...(mentionPeople ?? []).filter(person => !agentPeople.some(agent => agent.pubkey === person.pubkey)), ...agentPeople], [mentionPeople, agentPeople]);
+  // DD-125(8): only a Workspace channel's new message or thread reply looks outside the channel.
+  const nonMemberFlow = nonMemberMentionWorkspaceId !== undefined && channelType !== "dm" && !editTarget;
+  // The Tenant directory is read once this composer's @ picker is first used (or at send time).
+  const [outsideDirectoryWanted, setOutsideDirectoryWanted] = useState(false);
+  const tenantDirectory = useTenantMentionDirectory(bff, draftIdentity ?? "", nonMemberFlow && outsideDirectoryWanted);
+  const outsidePeople = useMemo<MentionSuggestion[]>(() => !nonMemberFlow || !tenantDirectory.data ? [] : outsideMentionPeople({
+    directory: tenantDirectory.data, memberPubkeys: (mentionPeople ?? []).map(person => person.pubkey),
+  }).filter(person => !agentPeople.some(agent => agent.pubkey === person.pubkey))
+    .map(person => ({pubkey: person.pubkey, displayName: person.displayName, notInChannel: true})), [nonMemberFlow, tenantDirectory.data, mentionPeople, agentPeople]);
+  const mentionCandidates = useMemo<MentionSuggestion[]>(() => [...(mentionPeople ?? []).filter(person => !agentPeople.some(agent => agent.pubkey === person.pubkey)), ...agentPeople, ...outsidePeople], [mentionPeople, agentPeople, outsidePeople]);
   const knownAgentKeys = useMemo(() => new Set<string>(), [workspaceId, draftIdentity, draftKey]);
   const knownAgentInstallations = useMemo(() => new Map<string,string>(), [workspaceId, draftIdentity, draftKey]);
   for (const agent of agentPeople) knownAgentKeys.add(agent.pubkey);
@@ -1121,6 +1161,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const humanSuggestions = useMemo(()=>humanQuery===null ? [] : rankMentionCandidates(mentionCandidates, humanQuery.query)
     .slice(0, MENTION_SUGGESTION_LIMIT).map(({candidate})=>candidate),[mentionCandidates,humanQuery]);
   const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
+  useEffect(() => { if (nonMemberFlow && humanQuery !== null) setOutsideDirectoryWanted(true); }, [nonMemberFlow, humanQuery]);
   // Original MessageComposer `#channel` and `:shortcode` autocompletes (shared with Desktop).
   const channelLinks = useChannelLinks(useComposerChannelLinkSources());
   const emojiAutocomplete = useEmojiAutocomplete();
@@ -1299,7 +1340,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   const attachFilesWhenIdle = useCallback(async (files: FileList | readonly File[] | null) => {
     for (const file of Array.from(files ?? [])) await voiceNote.uploadFileWhenIdle(file);
   }, [voiceNote.uploadFileWhenIdle]);
-  const sendRef = useRef<() => void>(() => {});
+  const sendRef = useRef<(decision?: NonMemberDecision) => void>(() => {});
   const onEditLastOwnMessageRef = useRef(onEditLastOwnMessage);
   onEditLastOwnMessageRef.current = onEditLastOwnMessage;
   const editTargetRef = useRef(editTarget);
@@ -1389,7 +1430,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     setHumanIndex(Math.max(0, mentionCandidates.findIndex(person => person.isAgent)));
     richText.editor?.commands.focus();
   }, [humanQuery, richText.getPlainTextAndCursor, richText.editor, openMentionPicker, mentionCandidates, setHumanIndex]);
-  const getDraftMentionRefs = useCallback((content: string) => mentionOccurrences(content, mentionMatchCandidates({selectedMentions: humanBindings.current, memberCandidates: mentionCandidates.map(person => ({...person, isMember: true}))})).flatMap(({candidates}) => candidates.flatMap(candidate => candidate.pubkey ? [{pubkey:candidate.pubkey, displayName:candidate.displayName, isAgent:knownAgentKeys.has(candidate.pubkey)}] : [])), [mentionCandidates, knownAgentKeys]);
+  const getDraftMentionRefs = useCallback((content: string) => mentionOccurrences(content, mentionMatchCandidates({selectedMentions: humanBindings.current, memberCandidates: mentionCandidates.map(person => ({...person, isMember: person.notInChannel !== true}))})).flatMap(({candidates}) => candidates.flatMap(candidate => candidate.pubkey ? [{pubkey:candidate.pubkey, displayName:candidate.displayName, isAgent:knownAgentKeys.has(candidate.pubkey)}] : [])), [mentionCandidates, knownAgentKeys]);
   const getMentionDisplayName = useCallback((pubkey: string) => mentionCandidates.find(person => person.pubkey === pubkey)?.displayName, [mentionCandidates]);
   const isInlineMentionSelection = useCallback(() => mentionPickerOriginRef.current === "inline", []);
   const applyAutocompleteEdit = useCallback((edit: import("@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor").AutocompleteEdit) => richText.replacePlainTextRange(edit.replaceFromOffset, edit.replaceToOffset, edit.insertText, edit.preserveSelection, edit.reassertMentionCaret), [richText.replacePlainTextRange]);
@@ -1505,7 +1546,53 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
   }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls, knownAgentKeys, implicitAgentMentionProvenance.getPrefix]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
-  const send = useCallback(async () => {
+  // DD-125(8) original non-member prompt. The draft is never cleared by it: Cancel keeps it,
+  // "Invite" publishes only after every invited membership is ACTIVE, and "send without
+  // inviting" moves these people to reference-only mentions.
+  const queryClient = useQueryClient();
+  const [nonMemberPrompt, setNonMemberPrompt] = useState<NonMemberPrompt | null>(null);
+  const [nonMemberError, setNonMemberError] = useState<string | null>(null);
+  useEffect(() => { setNonMemberPrompt(null); setNonMemberError(null); }, [owner]);
+  const promptNonMembers = useCallback(async (pubkeys: string[]) => {
+    if (!nonMemberMentionWorkspaceId) return;
+    const directory: ConversationParticipant[] = await queryClient.ensureQueryData(tenantMentionDirectoryQuery(bff, draftIdentity ?? "")).catch(() => []);
+    if (!owner.active) return;
+    const {principals, unresolved} = nonMemberInvitePrincipals(directory, pubkeys);
+    // "Invite" only when the BFF admits adding every one of them (canAddToWorkspace).
+    const canInvite = unresolved.length === 0 &&
+      await resolveNonMemberInviteAdmission(bff, nonMemberMentionWorkspaceId, principals.map(principal => principal.principalId));
+    if (!owner.active) return;
+    const names = pubkeys.map(pubkey => getMentionDisplayName(pubkey)
+      ?? directory.find(person => person.pubkeys.some(key => key.toLowerCase() === pubkey))?.displayName ?? truncateNpub(pubkey));
+    setNonMemberError(null);
+    setNonMemberPrompt({owner, workspaceId: nonMemberMentionWorkspaceId, pubkeys, principals, names, canInvite});
+  }, [nonMemberMentionWorkspaceId, queryClient, draftIdentity, owner, getMentionDisplayName]);
+  const runNonMemberInvite = useCallback((prompt: NonMemberPrompt, signal: AbortSignal) =>
+    inviteAndAwaitActive({client: bff, workspaceId: prompt.workspaceId, principals: prompt.principals, signal}), []);
+  const completeInvitedSend = useCallback(async (prompt: NonMemberPrompt, signal: AbortSignal) => {
+    // The roster read after convergence admits them; the choice covers them until it renders.
+    await queryClient.invalidateQueries({queryKey: ["platform", "members", prompt.workspaceId]}).catch(() => {});
+    void queryClient.invalidateQueries({queryKey: ["platform", "channel-members", prompt.workspaceId]});
+    if (signal.aborted || prompt.owner !== owner || !owner.active) return;
+    setNonMemberPrompt(null);
+    sendRef.current({kind: "invited", pubkeys: prompt.pubkeys});
+  }, [queryClient, owner]);
+  const invitation = useNonMemberInvite({draft: nonMemberPrompt, canInvite: nonMemberPrompt?.canInvite ?? false,
+    run: runNonMemberInvite, onActive: completeInvitedSend, setError: setNonMemberError});
+  const sendWithoutInviting = useCallback(() => {
+    if (!nonMemberPrompt) return;
+    invitation.cancel();
+    setNonMemberPrompt(null);
+    setNonMemberError(null);
+    sendRef.current({kind: "reference", pubkeys: nonMemberPrompt.pubkeys});
+  }, [nonMemberPrompt, invitation.cancel]);
+  const dismissNonMemberPrompt = useCallback(() => {
+    invitation.cancel();
+    setNonMemberPrompt(null);
+    setNonMemberError(null);
+  }, [invitation.cancel]);
+
+  const send = useCallback(async (decision?: NonMemberDecision) => {
     if (sending || owner.sending || disabled || uploading > 0 || voiceNote.statusRef.current !== "idle" || !mentionVerified) return;
     if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
       if (!intent.current) onRequestEmptyEditDelete(editTarget);
@@ -1527,9 +1614,11 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
     let humanMentionPubkeys:string[]=[];
+    let nonMemberPubkeys: string[] = [];
     let selectedInstallationIds: string[] = [];
     try {
-      const memberCandidates=mentionCandidates.map(person=>({...person,isMember:true}));
+      // A typed label binds only channel members; people outside are mentioned by explicit selection.
+      const memberCandidates=mentionCandidates.map(person=>({...person,isMember:person.notInChannel!==true}));
       const recipients=[...new Set([...extractMentionPubkeys({text:content,selectedMentions:humanBindings.current, memberCandidates}), ...audience.pubkeys])];
       const agentRecipients = recipients.filter(pubkey => knownAgentKeys.has(pubkey) || audience.pubkeys.includes(pubkey));
       if (agentRecipients.length || mentionInstallationIds.length) {
@@ -1540,7 +1629,10 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         selectedInstallationIds = [...new Set([...mentionInstallationIds, ...agentRecipients.map(pubkey => fresh.agents.find(agent => agent.pubkey === pubkey)!.installation.resourceId)])].sort();
       }
       humanMentionPubkeys=recipients.filter(pubkey => !agentRecipients.includes(pubkey));
-      if(humanMentionPubkeys.some(pubkey=>!mentionPeopleRef.current?.some(person=>person.pubkey.toLowerCase()===pubkey)))throw new Error(t("platform.loadFailed"));
+      // DD-125(8): people who are not ACTIVE members of this channel's Workspace. Outside the
+      // Workspace channel flow they are never published (the directory no longer admits them).
+      nonMemberPubkeys=humanMentionPubkeys.filter(pubkey=>!mentionPeopleRef.current?.some(person=>person.pubkey.toLowerCase()===pubkey));
+      if(nonMemberPubkeys.length&&!nonMemberFlow)throw new Error(t("platform.loadFailed"));
       // Freeze typed labels as well as picker selections into the original draft
       // references before publication. Renaming a member must not retarget an
       // UNKNOWN retry; keep the original recipient order in its signature.
@@ -1572,13 +1664,37 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
         return Array.isArray(previous) && JSON.stringify(previous.slice(0, messagePayload.length)) === JSON.stringify(messagePayload);
       } catch { return false; }
     })();
+    // DD-125(8) original non-member prompt, before link previews are awaited. A choice made in
+    // the prompt (or frozen in this message's unresolved intent) covers exactly these people.
+    let referenceMentionPubkeys: string[] = [];
+    if (nonMemberPubkeys.length) {
+      const covers = (keys: readonly string[] | undefined) => keys !== undefined && nonMemberPubkeys.every(pubkey => keys.includes(pubkey));
+      // An unresolved intent that froze no reference mentions published these people as `p`,
+      // which only an earlier "Invite" admits: replay that same choice under the same key.
+      const frozenReferences = unresolvedSameMessage ? frozenReferenceMentions(intent.current?.signature) : undefined;
+      const choice = decision && covers(decision.pubkeys) ? decision.kind
+        : !unresolvedSameMessage ? undefined
+          : frozenReferences === undefined ? "invited"
+            : covers(frozenReferences) ? "reference" : undefined;
+      if (!choice) {
+        // An unresolved intent cannot gain a new recipient decision; nor is it silently replayed.
+        if (unresolvedSameMessage) { setProblem(t("platform.loadFailed")); return; }
+        await promptNonMembers(nonMemberPubkeys);
+        return;
+      }
+      if (choice === "reference") {
+        ({mentionPubkeys: humanMentionPubkeys, referenceMentionPubkeys} = withoutInvitingRecipients({mentionPubkeys: humanMentionPubkeys, nonMemberPubkeys}));
+      }
+    }
     const linkPreviewIntent = unresolvedSameMessage
       ? frozenLinkPreviews(intent.current?.signature)
       : await linkPreviews.prepareSubmit();
     if (!owner.active) return;
+    // The reference choice is part of the intent: "invite" and "send without inviting" never share a key.
     const signature = JSON.stringify([
       ...messagePayload,
       ...(humanMentionPubkeys.length?[humanMentionPubkeys]:[]),
+      ...(referenceMentionPubkeys.length ? [{ referenceMentionPubkeys }] : []),
       ...(linkPreviewIntent ? [{ linkPreviews: linkPreviewIntent }] : []),
     ]);
     if (intent.current && intent.current.signature !== signature) {
@@ -1602,11 +1718,14 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
     setMentionInstallationIds(selectedInstallationIds);
     persistDraft(content, pending, selectedInstallationIds);
     const publish = onPublish
-      ? linkPreviewIntent
-        ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent)
-        : onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys)
+      ? referenceMentionPubkeys.length
+        ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent, referenceMentionPubkeys)
+        : linkPreviewIntent
+          ? onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys, linkPreviewIntent)
+          : onPublish(published, attachments, key, selectedInstallationIds, humanMentionPubkeys)
       : workspaceId
-        ? publishMessage(workspaceId, published, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys, ...linkPreviewIntent}).then((receipt) => {
+        ? publishMessage(workspaceId, published, attachments, key, selectedInstallationIds, {mentionPubkeys: humanMentionPubkeys,
+            ...(referenceMentionPubkeys.length ? {referenceMentionPubkeys} : {}), ...linkPreviewIntent}).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
             return receipt;
           })
@@ -1660,7 +1779,7 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [pending, pendingGifs, linkPreviews.prepareSubmit, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis]);
+  }, [pending, pendingGifs, linkPreviews.prepareSubmit, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete, mentionCandidates, knownAgentKeys, audience.pubkeys, agentDirectory.verify, voiceNote.statusRef, channelLinks.clearChannels, emojiAutocomplete.clearEmojis, nonMemberFlow, promptNonMembers]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
@@ -1798,5 +1917,9 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, w
             e.target.value = "";
           }}
         />
+      {nonMemberMentionWorkspaceId !== undefined ? <NonMemberMentionDialog canInvite={nonMemberPrompt?.canInvite ?? false} error={nonMemberError}
+        isInvitePending={invitation.isPending || sending} names={nonMemberPrompt?.names ?? []}
+        onDismiss={dismissNonMemberPrompt} onDoNothing={sendWithoutInviting} onInvite={invitation.invite}
+        open={nonMemberPrompt !== null && nonMemberPrompt.owner === owner} onRestoreFocus={focusComposerEnd} /> : null}
   </ComposerSurface>;
 }

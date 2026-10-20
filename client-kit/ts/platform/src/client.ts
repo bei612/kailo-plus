@@ -69,6 +69,7 @@ import type {
   ProtocolSessionView,
   RoleMemberPage,
   RoleWorkspacePage,
+  TenantMemberJoinPage,
   TaskView,
   TenantInvitationView,
   WorkspaceMemberView,
@@ -412,6 +413,17 @@ export function createBffClient(transport: BffTransport) {
       const suffix = query.size > 0 ? `?${query}` : "";
       return get<RoleMemberPage>(`/api/v1/role-members${suffix}`);
     },
+
+    /**
+     * DD-125(9)：新成员加入提醒。只给 Tenant manage 持有人，失去即 403 PERMISSION_DENIED。
+     * 不带 after 只返回当前游标供建账；带 after（不透明游标，空串为起点）返回其后加入的其他成员，
+     * hasMore 为 true 时以新 cursor 续读。每次都是 fresh 请求：撤权须在下一次读取生效。
+     */
+    tenantMemberJoins: (after?: string) =>
+      get<TenantMemberJoinPage>(
+        `/api/v1/tenant-member-joins${after === undefined ? "" : `?after=${encodeURIComponent(after)}`}`,
+        true,
+      ),
 
     /** 有界的角色管理 Workspace 选择；它不等于可进入频道的 Workspace 列表。 */
     roleWorkspaces: (offset?: number) =>

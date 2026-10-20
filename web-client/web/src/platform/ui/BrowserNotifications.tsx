@@ -16,6 +16,12 @@ type BrowserNotificationsState = ReturnType<typeof useNotificationSettings> & {
   pubkey: string | undefined;
   sendReminder: (message: { title: string; body: string }) => Promise<boolean>;
   notify: (message: { eventId: string; title: string; body: string; slot: SoundSlot; onOpen: () => void }) => void;
+  /**
+   * DD-125(9) first-join alert. Original sendDesktopNotification for a community join: gated by
+   * the desktop switch and browser permission only — it is no message slot, carries no slot
+   * sound, and is not a viewed conversation (reads run only while the page is in front).
+   */
+  notifyMemberJoin: (message: { eventId: string; title: string; body: string }) => void;
 };
 const BrowserNotifications = createContext<BrowserNotificationsState | null>(null);
 export function useBrowserNotifications() { return useContext(BrowserNotifications); }
@@ -63,6 +69,19 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
         if (delivered.current.size > DELIVERED_EVENT_LIMIT) delivered.current.delete(delivered.current.values().next().value!);
         playNotificationSound(controller.settings.sounds[message.slot]);
       } catch { /* Original delivery miss: no success receipt and no sound. */ }
+    },
+    notifyMemberJoin(message) {
+      if (!active.current || !profile.isSuccess || !controller.settings.desktopEnabled ||
+        typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      if (displayed.current.has(message.eventId) || delivered.current.has(message.eventId)) return;
+      try {
+        const notification = new Notification(message.title, { body: message.body, silent: true, tag: message.eventId });
+        displayed.current.set(message.eventId, notification);
+        notification.onclick = () => { if (active.current) window.focus(); notification.close(); };
+        notification.onclose = () => displayed.current.delete(message.eventId);
+        delivered.current.add(message.eventId);
+        if (delivered.current.size > DELIVERED_EVENT_LIMIT) delivered.current.delete(delivered.current.values().next().value!);
+      } catch { /* Original delivery miss. */ }
     },
   }), [controller, profile.isSuccess, profile.data?.pubkey]);
   return <BrowserNotifications.Provider value={value}>{children}</BrowserNotifications.Provider>;
