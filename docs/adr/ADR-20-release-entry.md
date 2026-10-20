@@ -88,10 +88,29 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 
 - `deploy/local/compose.yaml` 中运行投递与数据的引用写作 `${KAILO_RUNTIME_DIR:-.}/secrets/…`、`${KAILO_RUNTIME_DIR:-.}/data/…`；
   未设置时等于原 `./`，开发机与 `init-local.sh` 的本地拓扑不变。
-- `deploy/local/runtime-dir.sh` 解析并导出 `KAILO_RUNTIME_DIR`（缺省为本目录）；`start-core.sh`、`secret-store-audit-dir.sh`
-  以它读取 `.env`、写入 `secrets/` 派生文件，Compose 以 `--env-file "$KAILO_RUNTIME_DIR/.env"` 调用。
 - 入口在节点以 `-f <发布树>/deploy/local/compose.yaml`（项目目录即发布树，配置文件取自固定 commit）和
   `KAILO_RUNTIME_DIR=<运行目录>` 调用 Compose；容器的 bind source 因此是运行目录的绝对路径，与发布树的存废无关。
+
+运行目录的定位只有一条规则，所有部署入口共用：
+
+- **值的来源**：本地拓扑不设置，缺省即 `deploy/local` 本目录。CI 节点上唯一来源是 CI 配置的 `runtime`：发布入口
+  `tools/release/node.py` 与组件入口 `deploy/components/component-deploy.sh`（及只读的 `platform-config-check.sh`）
+  自行从该配置读取并导出（组件入口经 `node.py runtime --commit <commit>`，与发布入口同一实现）；调用方已设置
+  `KAILO_RUNTIME_DIR` 而与配置不同时拒绝，不允许第二个来源。在节点上手工调用 `deploy/local` 的脚本（如续跑
+  `bootstrap.sh --native-model-delivery`）时由调用方显式给出 `KAILO_RUNTIME_DIR=<runtime>`；固定发布树里没有 `.env`，
+  漏给时当场拒绝，而不是误用发布树。仓库外的 `~/kailo-deploy/core-release.sh` 已被本入口取代，不再使用。
+- **解析与校验**：shell 侧唯一解析器是 `deploy/local/runtime-dir.sh`——`realpath -e` 规范化，`.env` 必须是文件，
+  `.env`、`secrets`、`data` 不得是软链接（软链接正是发布树冒充运行目录的方式），然后导出，并提供
+  `runtime_compose`（`sudo -n --preserve-env=KAILO_RUNTIME_DIR docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml`）。
+  `deploy/local` 下每个脚本（`bootstrap.sh`、`start-core.sh`、`secret-store-init.sh`、`secret-store-audit-dir.sh`、`dr-*.sh`、
+  `token.sh`、`automation-egress-firewall.sh`、`init-local.sh`）都先 `. ./runtime-dir.sh`，再以 `$KAILO_RUNTIME_DIR/…`
+  读写运行投递；`init-local.sh` 会清空 `secrets/` 与 `data/`，另要求运行目录就是本目录。
+- **Python 侧同一规则**：`native-model-delivery.py`、`model-reader.py` 不另设缺省，只接受上述解析器导出的规范绝对路径
+  （并重复链接与 `.env` 校验），平台 secret（如 `secrets/openbao_init.json`）在运行目录中定位；既有的属主、0600、
+  canonical 校验作用于运行目录里的真实文件。`node.py` 对 CI 配置值做同样的规范化与校验。经 sudo 调用 Compose 时一律
+  `--preserve-env=KAILO_RUNTIME_DIR`，否则 `${KAILO_RUNTIME_DIR:-.}` 会退回发布树。
+- 任何部署脚本都不在发布树里建 `.env`、`secrets`、`data` 软链接，也不按当前目录定位它们
+  （`deploy/components/test_native_model_delivery.py` 的 `RuntimeDirectorySeparation` 覆盖解析器、Python 消费者与该约束）。
 - 部署前把发布树已跟踪文件的权限规范为 Git 语义（目录与可执行文件 0755、其余 0644），`sources/` 与
   `sources/<commit>/` 只开放遍历（0711）；`.git` 不动。这与 `upstream_manifest.py stage` 对构建输入的处理同一规则，
   `git status` 前后均须为空。入口从不写入发布树。
@@ -129,7 +148,8 @@ CI worker 的 Web 部署在 `up` 之后用 `docker ps -q`（12 位截断 ID）�
 旧 buzz-web 永远减不掉，重建后它的短 ID 不在新列表里，于是必然抛出「an unrelated preexisting container is no longer running」；
 此时状态已是 DEPLOYING，结果记为 UNKNOWN。修正是三处都使用完整 ID（`docker ps -q --no-trunc`），并在异常路径同样清理本任务创建的
 运行投递软链接（其 Compose 已以 `--project-directory <runtime>` 解析相对路径，软链接并不被使用）。该修正属于 CI 运维文件
-`ci/worker.py`，单独提交审批；入口自身的部署以完整 ID 比较，不依赖该任务。
+`ci/worker.py`，单独提交审批；入口自身的部署以完整 ID 比较，不依赖该任务。按 §3 的同一规则，worker 的 Web 部署应改为
+以 `KAILO_RUNTIME_DIR=<runtime>` 调用 Compose（项目目录仍是发布树），并删去建链接与清理链接两段，同属该运维文件。
 
 ## 后果
 

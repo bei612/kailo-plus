@@ -11,15 +11,17 @@
 # 用法：deploy/local/dr-backup.sh <备份目录>
 set -euo pipefail
 cd "$(dirname "$0")"
-. ./.env
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
+. "$KAILO_RUNTIME_DIR/.env"
 out="${1:?用法: dr-backup.sh <备份目录>}"
 mkdir -p "$out"; chmod 700 "$out"
 umask 077
-DC() { sudo -n docker compose --env-file .env -f compose.yaml "$@"; }
+DC() { runtime_compose "$@"; }
 step() { printf '== %s\n' "$1"; }
 
 step "OpenBao：raft 快照（root token 经 stdin）"
-root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
+root_token=$(python3 -c 'import json,os;print(json.load(open(os.environ["KAILO_RUNTIME_DIR"] + "/secrets/openbao_init.json"))["root_token"])')
 printf '%s\n' "$root_token" | DC exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao \
   sh -c 'IFS= read -r BAO_TOKEN; export BAO_TOKEN; bao operator raft snapshot save /tmp/dr.snap >/dev/null && cat /tmp/dr.snap && rm -f /tmp/dr.snap' \
   > "$out/openbao.snap"
@@ -41,13 +43,13 @@ print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')
 config=$(DC config --format json)
 spicedb_endpoint=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["worker"]["environment"]["SPICEDB_ENDPOINT"])')
 component_net=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["networks"]["component"]["name"])')
-sudo -n docker run --rm --network "$component_net" --env-file secrets/zed.env \
+sudo -n docker run --rm --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
   -e "ZED_ENDPOINT=$spicedb_endpoint" -e ZED_INSECURE=true "$zed_image" backup create - > "$out/spicedb.zedbackup"
 [ -s "$out/spicedb.zedbackup" ] || { echo "SpiceDB 备份为空" >&2; exit 2; }
 
 step "MinIO（Relay 媒体）：停写后复制数据目录"
 DC stop buzz-objects >/dev/null 2>&1
-sudo -n tar -C data -cf - collab-objects > "$out/buzz-objects.tar"
+sudo -n tar -C "$KAILO_RUNTIME_DIR/data" -cf - collab-objects > "$out/buzz-objects.tar"
 DC start buzz-objects >/dev/null 2>&1
 
 step "IdP：停写后复制数据目录"

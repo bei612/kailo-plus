@@ -1,6 +1,8 @@
 """DD-128(5) / V-SCN-173: operator delivery of a native page entry model key.
+ADR-20 §3: platform .env and secrets/ come from the runtime directory, separated
+from the fixed release tree (RuntimeDirectorySeparation).
 
-Run: python3 -I -m unittest deploy/components/test_native_model_delivery.py
+Run: python3 -I -m unittest discover -s deploy/components -p test_native_model_delivery.py
 (from the apps root). No OpenBao, Docker or Core database is contacted.
 """
 
@@ -8,15 +10,25 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from uuid import uuid4
 
 HERE = Path(__file__).resolve().parent
-SPEC = importlib.util.spec_from_file_location("native_model_delivery", HERE / "native-model-delivery.py")
-delivery = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(delivery)
+ROOT = HERE.parents[1]
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+delivery = load("native_model_delivery", HERE / "native-model-delivery.py")
 
 ENV = {"CORE_DB_USER": "kailo", "CORE_DB_NAME": "kailo", "OPENBAO_ADDR": "http://openbao:8200",
        "OPENBAO_HTTP_TIMEOUT_SECONDS": "5", "OPENBAO_SECRET_ID_TTL": "120s",
@@ -73,11 +85,22 @@ class FakeBao:
         return objects[path]
 
 
+def runtime_fixture(root):
+    """A runtime directory as on the CI node: real .env, secrets/ and data/."""
+    runtime = root / "runtime"
+    (runtime / "secrets").mkdir(parents=True, mode=0o700)
+    (runtime / "data").mkdir(mode=0o700)
+    private(runtime / ".env", "CORE_DB_USER=kailo\n")
+    private(runtime / "secrets" / "openbao_init.json", json.dumps({"root_token": "fixture-root-token"}))
+    return runtime
+
+
 class Delivery(unittest.TestCase):
     def setUp(self):
         self.work = Path(tempfile.mkdtemp())
         self.dir = self.work / "delivery"
         self.dir.mkdir(mode=0o700)
+        self.env = {**ENV, "KAILO_RUNTIME_DIR": str(runtime_fixture(self.work))}
         self.value = projection()
         self.bao = {}
         self.factory = lambda env, namespace: FakeBao(self.bao, namespace)
@@ -106,34 +129,39 @@ class Delivery(unittest.TestCase):
             delivery.validate_projection(self.value, str(uuid4()))
 
     def test_export_reads_only_an_active_native_page_projection(self):
-        calls = []
+        calls, environments = [], []
 
         def runner(row):
             def run(command, **kwargs):
                 calls.append(command)
+                environments.append(kwargs["env"])
                 return subprocess.CompletedProcess(command, 0, json.dumps(row) + "\n", "")
             return run
 
         row = {"state": "ACTIVE", "modelCallMode": "PLATFORM_LLM_ROUTE", "nativePage": True,
                "componentTypeKey": "wren", "modelState": "ACTIVE", "projection": self.value}
-        result = delivery.export(ENV, str(self.dir), self.value["bindingId"], runner(row))
+        result = delivery.export(self.env, str(self.dir), self.value["bindingId"], runner(row))
         self.assertEqual(result["generation"], 1)
         self.assertIn("PGOPTIONS=-c default_transaction_read_only=on", calls[0])
+        runtime = self.env["KAILO_RUNTIME_DIR"]
+        self.assertEqual(calls[0][:5], ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose"])
+        self.assertEqual(calls[0][5:7], ["--env-file", runtime + "/.env"])
+        self.assertEqual(environments[0]["KAILO_RUNTIME_DIR"], runtime)
         self.assertEqual(json.loads((self.dir / "projection.json").read_text()), self.value)
         self.assertEqual(os.stat(self.dir / "projection.json").st_mode & 0o777, 0o600)
         # Re-export of the same generation is idempotent; another one is refused.
-        delivery.export(ENV, str(self.dir), self.value["bindingId"], runner(row))
+        delivery.export(self.env, str(self.dir), self.value["bindingId"], runner(row))
         for refused in ({**row, "state": "DISABLING"}, {**row, "nativePage": False},
                         {**row, "modelState": "PENDING"},
                         {**row, "projection": {**self.value, "generation": 2}}):
             with self.assertRaises(delivery.Refused):
-                delivery.export(ENV, str(self.dir), self.value["bindingId"], runner(refused))
+                delivery.export(self.env, str(self.dir), self.value["bindingId"], runner(refused))
         with self.assertRaises(delivery.Refused):
-            delivery.export(ENV, str(self.dir), "not-a-uuid", runner(row))
+            delivery.export(self.env, str(self.dir), "not-a-uuid", runner(row))
 
     def test_prepare_creates_only_the_exact_read_policy_and_one_use_role(self):
         self.write_projection()
-        result = delivery.prepare(ENV, str(self.dir), self.factory)
+        result = delivery.prepare(self.env, str(self.dir), self.factory)
         role = self.value["secretReader"]["roleName"]
         self.assertEqual(result["role"], role)
         objects = self.bao["objects"]
@@ -151,7 +179,7 @@ class Delivery(unittest.TestCase):
         # A same-named policy with other rights is never replaced.
         self.bao["objects"]["sys/policies/acl/" + role] = {"data": {"policy": 'path "kv/*" {}'}}
         with self.assertRaises(delivery.Refused):
-            delivery.prepare(ENV, str(self.dir), self.factory)
+            delivery.prepare(self.env, str(self.dir), self.factory)
 
     def config(self, base="http://agentgateway:18081/v1", models=("chat-route", "embedding-route")):
         config = self.work / "config.yaml"
@@ -178,12 +206,12 @@ embedding_model_dim: 2560
         return config
 
     def test_wren_consumers_must_name_exactly_the_frozen_models_at_the_gateway(self):
-        names = delivery.wren_consumers(self.config(), self.value, ENV["AGENTGATEWAY_MODEL_BASE_URL"])
+        names = delivery.wren_consumers(self.config(), self.value, self.env["AGENTGATEWAY_MODEL_BASE_URL"])
         self.assertEqual(names, ["KAILO_MODEL_API_KEY"])
         for config in (self.config(base="https://provider.example/v1"),
                        self.config(models=("chat-route", "other-route"))):
             with self.assertRaises(delivery.Refused):
-                delivery.wren_consumers(config, self.value, ENV["AGENTGATEWAY_MODEL_BASE_URL"])
+                delivery.wren_consumers(config, self.value, self.env["AGENTGATEWAY_MODEL_BASE_URL"])
 
     def credential(self, **change):
         material = {"bindingId": self.value["bindingId"], "generation": 1,
@@ -195,7 +223,7 @@ embedding_model_dim: 2560
         destination = self.work / "ai.env"
         private(destination, "")
         self.credential()
-        result = delivery.materialize(ENV, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
+        result = delivery.materialize(self.env, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
         self.assertEqual(result["keyNames"], ["KAILO_MODEL_API_KEY"])
         self.assertNotIn("value", json.dumps(result))
         self.assertEqual(destination.read_text(), 'KAILO_MODEL_API_KEY="' + "ab" * 32 + '"\n')
@@ -204,21 +232,165 @@ embedding_model_dim: 2560
         # Another generation's render and unrelated env content are refused.
         self.credential(generation=2)
         with self.assertRaises(delivery.Refused):
-            delivery.materialize(ENV, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
+            delivery.materialize(self.env, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
         self.credential()
         private(destination, "OPENAI_API_KEY=sk-provider\n")
         with self.assertRaises(delivery.Refused):
-            delivery.materialize(ENV, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
+            delivery.materialize(self.env, str(self.dir), str(destination), ["KAILO_MODEL_API_KEY"])
         self.assertEqual(destination.read_text(), "OPENAI_API_KEY=sk-provider\n")
 
     def test_retire_removes_the_reader_and_local_handoff(self):
         self.write_projection()
-        delivery.prepare(ENV, str(self.dir), self.factory)
-        delivery.retire(ENV, str(self.dir), self.factory)
+        delivery.prepare(self.env, str(self.dir), self.factory)
+        delivery.retire(self.env, str(self.dir), self.factory)
         role = self.value["secretReader"]["roleName"]
         self.assertNotIn("auth/approle/role/" + role, self.bao["objects"])
         self.assertNotIn("sys/policies/acl/" + role, self.bao["objects"])
         self.assertEqual(sorted(os.listdir(self.dir)), ["projection.json"])
+
+
+class RuntimeDirectorySeparation(unittest.TestCase):
+    """ADR-20 §3: deploy entries locate .env, secrets/ and data/ through KAILO_RUNTIME_DIR.
+
+    The fixed release tree never carries links to them; a tree that still does is
+    refused instead of being followed (it made prepare exit 78: "controlled path
+    must be absolute, canonical and existing")."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+        self.runtime = runtime_fixture(self.work)
+        # The fixed release tree: code only, no runtime delivery.
+        self.release = self.work / "sources" / ("a" * 40) / "apps" / "deploy" / "local"
+        self.release.mkdir(parents=True)
+        # The same tree as the retired component-deploy.sh / core-release.sh left it.
+        self.linked = self.work / "linked" / "deploy" / "local"
+        self.linked.mkdir(parents=True)
+        for name in (".env", "secrets", "data"):
+            (self.linked / name).symlink_to(self.runtime / name)
+        self.alias = self.work / "runtime-alias"
+        self.alias.symlink_to(self.runtime)
+        self.reader = load("wren_model_reader", ROOT / "data-query/docker/query-secrets/model-reader.py")
+        self.node = load("release_node", ROOT / "tools/release/node.py")
+
+    def tearDown(self):
+        subprocess.run(["rm", "-rf", "--", str(self.work)], check=True)
+
+    def resolve(self, cwd, given=None):
+        """Source the shell resolver exactly as the deploy/local entries do."""
+        env = {k: v for k, v in os.environ.items() if k != "KAILO_RUNTIME_DIR"}
+        if given is not None:
+            env["KAILO_RUNTIME_DIR"] = str(given)
+        script = '. "$1" && printf %s "$KAILO_RUNTIME_DIR"'
+        return subprocess.run(["bash", "-c", script, "bash", str(ROOT / "deploy/local/runtime-dir.sh")],
+                              cwd=cwd, env=env, capture_output=True, text=True)
+
+    def python_rules(self, value):
+        """Every Python consumer of the exported value, in the same order of truth."""
+        verdicts = []
+        for check, refused in ((lambda: delivery.runtime_dir({"KAILO_RUNTIME_DIR": value}), delivery.Refused),
+                               (lambda: self.reader.runtime_dir({"KAILO_RUNTIME_DIR": value}), self.reader.Refused),
+                               (lambda: self.node.runtime_dir({"runtime": value}), self.node.NodeError)):
+            try:
+                with mock.patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("KAILO_RUNTIME_DIR", None)
+                    verdicts.append(str(check()))
+            except refused:
+                verdicts.append(None)
+        return verdicts
+
+    def test_shell_resolver_defaults_to_this_directory_and_refuses_a_release_tree(self):
+        local = self.resolve(self.runtime)
+        self.assertEqual((local.returncode, local.stdout), (0, str(self.runtime)), local.stderr)
+        # A fixed release tree has no .env: without an explicit runtime it is refused, not used.
+        bare = self.resolve(self.release)
+        self.assertEqual(bare.returncode, 2)
+        self.assertIn("缺少 .env", bare.stderr)
+        # A tree carrying links is refused too, by default or when named explicitly.
+        for given in (None, self.linked):
+            linked = self.resolve(self.linked, given)
+            self.assertEqual(linked.returncode, 2)
+            self.assertIn("软链接", linked.stderr)
+        # From the release tree with the explicit runtime: the canonical runtime, never the tree.
+        explicit = self.resolve(self.release, self.alias)
+        self.assertEqual((explicit.returncode, explicit.stdout), (0, str(self.runtime)), explicit.stderr)
+        missing = self.resolve(self.release, self.work / "absent")
+        self.assertEqual(missing.returncode, 2)
+
+    def test_python_consumers_accept_exactly_what_the_shell_resolver_exports(self):
+        exported = self.resolve(self.release, self.alias).stdout
+        self.assertEqual(self.python_rules(exported), [exported] * 3)
+        # Delivery code only takes the already resolved value; aliases, relative paths,
+        # release trees and linked trees are refused by the delivery scripts.
+        for value in (str(self.alias), "runtime", str(self.release), str(self.linked), ""):
+            self.assertEqual(self.python_rules(value)[:2], [None, None], value)
+        # node.py canonicalises the CI configuration value itself, like the shell resolver.
+        self.assertEqual(self.python_rules(str(self.alias))[2], str(self.runtime))
+        self.assertEqual(self.python_rules(str(self.linked))[2], None)
+        self.assertEqual(self.python_rules(str(self.release))[2], None)
+
+    def test_node_refuses_a_second_runtime_source(self):
+        config = {"runtime": str(self.alias)}
+        with mock.patch.dict(os.environ, {"KAILO_RUNTIME_DIR": str(self.runtime)}):
+            self.assertEqual(self.node.runtime_dir(config), str(self.runtime))
+        with mock.patch.dict(os.environ, {"KAILO_RUNTIME_DIR": str(self.release)}):
+            with self.assertRaises(self.node.NodeError):
+                self.node.runtime_dir(config)
+
+    def test_openbao_token_is_read_from_the_runtime_not_the_working_directory(self):
+        env = {**ENV, "KAILO_RUNTIME_DIR": str(self.runtime)}
+        previous = os.getcwd()
+        try:
+            # The operator runs from the release tree (bootstrap.sh cds to deploy/local).
+            os.chdir(self.release)
+            self.assertEqual(delivery.Bao(env, "tenants/x").token, "fixture-root-token")
+            self.assertEqual(self.reader.Bao(env, "tenants/x").token, "fixture-root-token")
+            # Linked trees, relative and aliased values never reach the token.
+            for value in (str(self.linked), str(self.alias), "."):
+                with self.assertRaises(delivery.Refused):
+                    delivery.Bao({**ENV, "KAILO_RUNTIME_DIR": value}, "tenants/x")
+                with self.assertRaises(self.reader.Refused):
+                    self.reader.Bao({**ENV, "KAILO_RUNTIME_DIR": value}, "tenants/x")
+        finally:
+            os.chdir(previous)
+        # Owner-only and regular-file checks still apply, now to the real runtime file.
+        token = self.runtime / "secrets" / "openbao_init.json"
+        token.chmod(0o644)
+        with self.assertRaises(delivery.Refused):
+            delivery.Bao(env, "tenants/x")
+        token.chmod(0o600)
+        token.rename(self.work / "elsewhere.json")
+        token.symlink_to(self.work / "elsewhere.json")
+        with self.assertRaises(delivery.Refused):
+            delivery.Bao(env, "tenants/x")
+
+    def test_compose_reads_the_runtime_env_and_keeps_the_variable_through_sudo(self):
+        env = {**ENV, "KAILO_RUNTIME_DIR": str(self.runtime)}
+        command = delivery.compose(env, "ps")
+        self.assertEqual(command, ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose",
+                                   "--env-file", str(self.runtime / ".env"), "-f", "compose.yaml", "ps"])
+        self.assertEqual(delivery.compose_env(env)["KAILO_RUNTIME_DIR"], str(self.runtime))
+        with self.assertRaises(delivery.Refused):
+            delivery.compose({**ENV, "KAILO_RUNTIME_DIR": str(self.linked)}, "ps")
+
+    def test_deploy_entries_never_link_or_locate_runtime_by_working_directory(self):
+        entries = sorted({*ROOT.glob("deploy/local/*.sh"), *ROOT.glob("deploy/components/*.sh"),
+                          *ROOT.glob("deploy/components/*.py"), *ROOT.glob("data-query/docker/query-secrets/*.py"),
+                          ROOT / "tools/release/node.py"} - {Path(__file__).resolve()})
+        forbidden = {
+            "links into a tree": r"\bln\s+-s|symlink_to\(",
+            "current-directory runtime": r"Path\.cwd\(\)",
+            "relative .env": r"(^|[;&|(]\s*)\.\s+\./\.env\b|--env-file\s+\.env\b|\"--env-file\",\s*\"\.env\"",
+            "sudo drops KAILO_RUNTIME_DIR": r"sudo -n (-H )?docker compose|\"sudo\", \"-n\", (\"-H\", )?\"docker\", \"compose\"",
+        }
+        found = [f"{path.relative_to(ROOT)}:{number}: {reason}"
+                 for path in entries
+                 for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+                 if not line.lstrip().startswith("#")
+                 for reason, pattern in forbidden.items() if re.search(pattern, line)]
+        self.assertEqual(found, [])
+        for path in ROOT.glob("deploy/local/*.sh"):
+            if path.name not in ("runtime-dir.sh", "database-url.sh"):
+                self.assertIn("\n. ./runtime-dir.sh\n", path.read_text(encoding="utf-8"), path.name)
 
 
 if __name__ == "__main__":

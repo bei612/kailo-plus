@@ -9,11 +9,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-[ -f .env ] || { echo "缺少 deploy/local/.env" >&2; exit 2; }
-. ./.env
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
+. "$KAILO_RUNTIME_DIR/.env"
 : "${KEYCLOAK_PORT:?}" "${OIDC_REALM:?}" "${OIDC_SERVICE_CLIENT_ID:?}"
 
-secret_file=secrets/core_client_secret
+secret_file=$KAILO_RUNTIME_DIR/secrets/core_client_secret
 [ -s "$secret_file" ] || { echo "缺少 $secret_file，先跑 ./bootstrap.sh" >&2; exit 2; }
 
 curl -sSf -X POST \

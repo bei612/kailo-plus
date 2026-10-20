@@ -806,7 +806,8 @@ def locale_sync_probe(current, fault=None, expected_error=False):
     def read_file(path, *args, **kwargs):
         if str(path) == "identity-provider/realm.json":
             return json.dumps(locale_template)
-        assert str(path) == "secrets/keycloak_admin_password"
+        # 凭据只从运行目录读取（ADR-20 §3）；realm 模板仍取自本目录。
+        assert str(path) == "/fixture-runtime/secrets/keycloak_admin_password"
         return "fixture-password"
 
     def http(request, data=None, **kwargs):
@@ -832,6 +833,7 @@ def locale_sync_probe(current, fault=None, expected_error=False):
     with patch.object(pathlib.Path, "read_text", read_file), \
          patch("urllib.request.urlopen", http), \
          patch.object(sys, "argv", ["bootstrap", "https://idp.invalid/realms/fixture", "fixture", "admin", "1"]), \
+         patch.dict(os.environ, {"KAILO_RUNTIME_DIR": "/fixture-runtime"}), \
          contextlib.redirect_stdout(output):
         try:
             exec(compile(locale_source, "bootstrap:PYLOCALE", "exec"), {})
@@ -1124,7 +1126,7 @@ with tempfile.TemporaryDirectory() as temporary:
 gateway_env = d["services"]["agentgateway"].get("environment") or {}
 if any(name.startswith("GATEWAY_SERVICE_") for name in gateway_env):
     bad.append("Gateway 不得把可选 SERVICE 完整组变为 Compose 全局必填或第二直接输入")
-if "gateway_delivery=(-f secrets/agentgateway-service.compose.json)" not in initializer:
+if 'gateway_delivery=(-f "$KAILO_RUNTIME_DIR/secrets/agentgateway-service.compose.json")' not in initializer:
     bad.append("Gateway 初始化缺少原派生 Compose 配置消费者")
 # 同一部署事实只维护一次；这里校验消费者投影，不读取真实 .env 或任何 secret。
 # 去掉必填提示文案后比较表达式，提示文字变化不影响语义。

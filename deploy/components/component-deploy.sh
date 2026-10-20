@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 按固定发布树部署一个业务能力参考实现（Cells / WeKnora / Wren），与
-# ~/kailo-deploy/core-release.sh 同构：固定 GitHub 发布树 + 运行投递 → 备份 →
+# 按固定发布树部署一个业务能力参考实现（Cells / WeKnora / Wren），与平台发布入口
+# （tools/release/node.py，ADR-20）同构：固定 GitHub 发布树 + 运行目录 → 备份 →
 # 组件自带入口（只取 digest 固定镜像，--no-build）→ 回读镜像/健康/嵌入头 →
 # 确认无关容器未变。不创建 release/binding、不写 OpenBao 业务 secret、不改平台 .env。
 #
@@ -18,6 +18,9 @@
 # data-query/native.env（均在 /volumes/data/kailo/components 下，0600）；平台 .env 只读取
 # 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK，--adapter 另取两份公钥路径）。
 # 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
+# 平台运行目录（.env、secrets/、data/，ADR-20 §3）只取 CI 配置的 runtime，经固定发布树内的
+# node.py 读取并导出为 KAILO_RUNTIME_DIR；发布树保持只读，不在其中建任何软链接。在节点上续跑
+# deploy/local 的手工步骤（如 bootstrap.sh --native-model-delivery）时同样显式给出该变量。
 set -euo pipefail
 component=${1:?component}
 commit=${2:?commit}
@@ -33,13 +36,17 @@ for option in "$@"; do
 done
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo '必须是 40 位完整 commit' >&2; exit 2; }
 S=/volumes/kailo/ci/sources/$commit/apps
-R=/volumes/kailo/apps/deploy/local
 [ -d "$S/deploy/local" ] || { echo "缺少固定发布树 $S（先 kailo-ci submit $commit fetch）" >&2; exit 2; }
 # Same tree-mode rule as the platform release (tools/release/node.py, ADR-20): the CI fetch runs
 # under umask 0077, and component containers that run as non-root bind-mount files from this tree.
 python3 -I -B "$S/tools/release/node.py" normalize --commit "$commit" >/dev/null
-for n in .env secrets data; do [ -e "$S/deploy/local/$n" ] || ln -s "$R/$n" "$S/deploy/local/$n"; done
-D=(sudo -n docker)
+# 运行目录：CI 配置的 runtime（node.py 与发布入口同一规则；调用方给出的不同值被拒绝），再经
+# runtime-dir.sh 规范化、要求 .env、拒绝软链接并导出。
+KAILO_RUNTIME_DIR=$(python3 -I -B "$S/tools/release/node.py" runtime --commit "$commit" \
+  | python3 -I -c 'import json, sys; value = json.load(sys.stdin); print(value.get("runtime") or sys.exit(value.get("error", "运行目录未知")))')
+. "$S/deploy/local/runtime-dir.sh"
+R=$KAILO_RUNTIME_DIR
+D=(sudo -n --preserve-env=KAILO_RUNTIME_DIR docker)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_root=${COMPONENT_BACKUP_ROOT:-/volumes/data/kailo/backups/components}
 before=$("${D[@]}" ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort -k2)
@@ -159,7 +166,7 @@ case "$component" in
     private_env "$ENV"
     # 子 shell 求值单个键，不回显整份 env。
     wren_value() { (set -a; . "$ENV" >/dev/null 2>&1; set +a; printf '%s' "${!1:-}"); }
-    platform_value() { (cd "$R" && set -a && . ./.env >/dev/null 2>&1 && set +a && printf '%s' "${!1:-}"); }
+    platform_value() { (set -a && . "$R/.env" >/dev/null 2>&1 && set +a && printf '%s' "${!1:-}"); }
     platform_keys=("OIDC_ISSUER=$(platform_value OIDC_ISSUER)" "PLATFORM_EDGE_NETWORK=$(platform_value PLATFORM_EDGE_NETWORK)")
     if "$adapter"; then platform_keys+=("GATEWAY_SERVICE_JWKS_FILE=$(platform_value GATEWAY_SERVICE_JWKS_FILE)"); fi
     # 原生 AI Service 经 edge 网络到达 AgentGateway 独立模型入口（只是传输，key 仍由 Core 投影）。

@@ -6,6 +6,8 @@
   node.py backup --commit <pin commit>   从固定发布树执行：备份受影响 Postgres 与 .env 快照
   node.py deploy --commit <pin commit>   从固定发布树执行：权限规范、声明式 .env、迁移、按序替换服务、回读
   node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务
+  node.py runtime --commit <commit>      从固定发布树执行：输出 CI 配置的运行目录（组件入口据此导出
+                                         KAILO_RUNTIME_DIR，ADR-20 §3）
 
 backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运行，先核对发布树 HEAD、
 干净与 full 回执；发布树只读，运行投递与数据只在运行目录。进度写 stderr，结果 JSON 写 stdout；
@@ -67,6 +69,24 @@ def ci_config(path):
     if missing:
         raise NodeError(f"CI 配置缺少 {missing}")
     return cfg
+
+
+def runtime_dir(cfg):
+    """CI 节点运行目录（ADR-20 §3）：唯一来源是 CI 配置的 runtime，与 deploy/local/runtime-dir.sh 同一规则——
+    规范化为真实路径，.env 必须存在，.env、secrets、data 不得是软链接。调用方已设置 KAILO_RUNTIME_DIR 时
+    必须指向同一目录，否则拒绝（不允许第二个来源）。"""
+    path = os.path.realpath(cfg["runtime"])
+    if not os.path.isdir(path):
+        raise NodeError(f"运行目录不存在：{cfg['runtime']}")
+    linked = [n for n in (".env", "secrets", "data") if os.path.islink(os.path.join(path, n))]
+    if linked:
+        raise NodeError(f"运行目录中的 {linked} 是软链接：{path}")
+    if not os.path.isfile(os.path.join(path, ".env")):
+        raise NodeError(f"运行目录缺少 .env：{path}")
+    given = os.environ.get("KAILO_RUNTIME_DIR")
+    if given and os.path.realpath(given) != path:
+        raise NodeError("KAILO_RUNTIME_DIR 与 CI 配置 runtime 不一致")
+    return path
 
 
 def read_env_file(path):
@@ -245,7 +265,7 @@ class Release:
         self.tree = os.path.realpath(os.path.join(self.cfg["sources"], commit, "apps"))
         if os.path.realpath(model.ROOT) != self.tree:
             raise NodeError(f"node.py 不在 {commit[:12]} 的固定发布树内")
-        self.runtime = os.path.realpath(self.cfg["runtime"])
+        self.runtime = runtime_dir(self.cfg)
         self.deploy_dir = os.path.join(self.tree, "deploy", "local")
         self.journal = os.path.join(self.decl["node"]["journal"], commit)
         self.backups = os.path.join(self.decl["node"]["backups"], commit)
@@ -703,7 +723,7 @@ def main():
     sub = parser.add_subparsers(dest="stage", required=True)
     probe = sub.add_parser("inspect")
     probe.add_argument("request")
-    for stage in ("backup", "deploy", "verify", "normalize"):
+    for stage in ("backup", "deploy", "verify", "normalize", "runtime"):
         sub.add_parser(stage).add_argument("--commit", required=True)
     args = parser.parse_args()
     try:
@@ -714,8 +734,13 @@ def main():
                 raise NodeError("从标准输入执行时只允许只读 inspect")
             # normalize: every deploy from this fixed tree (platform or component) first gives
             # tracked files their Git modes, so non-root containers can read bind-mounted config.
-            release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize"))
-            value = {"normalized": release.normalize_tree()} if args.stage == "normalize" else getattr(release, args.stage)()
+            release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize", "runtime"))
+            if args.stage == "normalize":
+                value = {"normalized": release.normalize_tree()}
+            elif args.stage == "runtime":
+                value = {"runtime": release.runtime}
+            else:
+                value = getattr(release, args.stage)()
     except (NodeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         print(json.dumps(dict(error=f"{type(error).__name__}: {error}"), ensure_ascii=False))
         sys.exit(1)

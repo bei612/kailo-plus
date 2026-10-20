@@ -2,7 +2,8 @@
 # authority 区分容器入口与宿主迁移入口，不接受另一份口令或数据库配置。
 core_database_url() {
   local secret_dir
-  secret_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/secrets" || return 2
+  # 口令在运行目录（ADR-20 §3，runtime-dir.sh 已导出）；未设置时与其缺省相同，即本目录。
+  secret_dir="${KAILO_RUNTIME_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/secrets" || return 2
   python3 - "${1:?需要数据库 authority}" "${CORE_DB_USER:?}" "${CORE_DB_NAME:?}" \
     "$secret_dir/core_db_password" <<'PY'
 import pathlib

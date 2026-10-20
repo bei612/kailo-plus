@@ -9,9 +9,11 @@
 # 部署拓扑用外部密钥源做 auto-unseal，本脚本只服务本地开发拓扑。
 set -euo pipefail
 cd "$(dirname "$0")"
-. ./.env
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
+. "$KAILO_RUNTIME_DIR/.env"
 
-compose() { sudo -n docker compose --env-file .env -f compose.yaml "$@"; }
+compose() { runtime_compose "$@"; }
 bao() { compose exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao "$@"; }
 
 # root token 与解封分片只经 stdin 进入容器。放进 docker 的 -e 或命令参数，
@@ -28,7 +30,7 @@ run_bao() {
 root() { printf '%s\n' "$root_token" | run_bao "" "$@"; }
 
 umask 077
-mkdir -p secrets
+mkdir -p "$KAILO_RUNTIME_DIR/secrets"
 
 # 刚重建的容器可能尚未监听：取不到状态时不能当作“未初始化”去重复 init（那会在
 # 已初始化的库上失败退出，并跳过下面的解封）。先等到 status 返回可解析的 JSON。
@@ -47,8 +49,8 @@ if [ "$initialized" != "True" ]; then
   # 留下 0 字节产物冒充有效结果——这里丢的是解封分片，raft 数据会永久不可解。
   tmp=$(mktemp)
   if bao operator init -key-shares=1 -key-threshold=1 -format=json > "$tmp" && [ -s "$tmp" ]; then
-    mv "$tmp" secrets/openbao_init.json
-    chmod 600 secrets/openbao_init.json
+    mv "$tmp" "$KAILO_RUNTIME_DIR/secrets/openbao_init.json"
+    chmod 600 "$KAILO_RUNTIME_DIR/secrets/openbao_init.json"
   else
     rm -f "$tmp"
     echo "初始化失败，未写入分片文件" >&2
@@ -56,10 +58,10 @@ if [ "$initialized" != "True" ]; then
   fi
 fi
 
-[ -s secrets/openbao_init.json ] || { echo "缺少 secrets/openbao_init.json，无法解封" >&2; exit 2; }
+[ -s "$KAILO_RUNTIME_DIR/secrets/openbao_init.json" ] || { echo "缺少 secrets/openbao_init.json，无法解封" >&2; exit 2; }
 
-unseal_key=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["unseal_keys_b64"][0])')
-root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
+unseal_key=$(python3 -c 'import json,os;print(json.load(open(os.environ["KAILO_RUNTIME_DIR"] + "/secrets/openbao_init.json"))["unseal_keys_b64"][0])')
+root_token=$(python3 -c 'import json,os;print(json.load(open(os.environ["KAILO_RUNTIME_DIR"] + "/secrets/openbao_init.json"))["root_token"])')
 
 # bao status 在封存时以非零码退出，管道加 pipefail 会让判定结果依赖退出码
 # 而不是实际状态。这里只看 JSON 内容，取不到就当作封存——宁可多解封一次

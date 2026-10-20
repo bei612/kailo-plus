@@ -651,7 +651,8 @@ def main():
     c.add_argument("--kind", choices=["adapter", "cells-native", "data-query"], default="adapter",
                    help="adapter (adds management.validation), the native Cells action delivery, or data-query "
                    "(adapter record plus Wren query.json/binding.json in --delivery-dir)")
-    c.add_argument("--env-file", help="platform deploy/local/.env for {{env:*}} / {{envint:*}}")
+    c.add_argument("--env-file", help="platform $KAILO_RUNTIME_DIR/.env (the runtime directory, ADR-20 §3; "
+                   "not a release tree) for {{env:*}} / {{envint:*}}")
     c.add_argument("--action-token-signing-file", help="ACTION_TOKEN_SIGNING_FILE for {{signing:*}}")
     c.add_argument("--public-file", action="append", help="NAME=SOURCE: install a public-only JWKS into the delivery directory")
     c.add_argument("--set", action="append", help="NAME=VALUE non-secret native fact for {{set:*}} / {{setint:*}}")
@@ -668,7 +669,7 @@ def main():
     r.add_argument("--bootstrap-dir", required=True)
     r.add_argument("--bao-url", required=True, help="operator address, e.g. http://127.0.0.1:58200")
     r.add_argument("--agent-bao-url", required=True, help="address the Agent container uses, e.g. http://openbao:8200")
-    r.add_argument("--root-token-file", required=True)
+    r.add_argument("--root-token-file", required=True, help="$KAILO_RUNTIME_DIR/secrets/openbao_init.json")
     r.add_argument("--tenant-parent", default="tenants")
     r.add_argument("--token-ttl", default="1h")
     r.add_argument("--wrap-ttl", default="30m")
@@ -680,7 +681,7 @@ def main():
     k.add_argument("--config", required=True)
     k.add_argument("--issuer", required=True)
     k.add_argument("--admin-user", required=True)
-    k.add_argument("--admin-password-file", required=True)
+    k.add_argument("--admin-password-file", required=True, help="$KAILO_RUNTIME_DIR/secrets/keycloak_admin_password")
     k.add_argument("--service-audience", required=True, help="OIDC_SERVICE_CLIENT_ID")
     k.add_argument("--refuse-client-ids", default="", help="platform client ids the adapter must not reuse")
     k.add_argument("--timeout", type=int, default=15)

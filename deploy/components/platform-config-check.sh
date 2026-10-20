@@ -5,8 +5,15 @@
 # 用法：platform-config-check.sh <commit>
 set -uo pipefail
 commit=${1:?commit}
+[[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo '必须是 40 位完整 commit' >&2; exit 2; }
 S=/volumes/kailo/ci/sources/$commit/apps/deploy/local
-R=/volumes/kailo/apps/deploy/local
+# 平台运行目录（ADR-20 §3）：与 component-deploy.sh 同一来源——CI 配置的 runtime，经固定发布树内的
+# node.py 读取，再由 runtime-dir.sh 规范化并拒绝软链接；不在脚本里另写一份路径。
+KAILO_RUNTIME_DIR=$(python3 -I -B "$S/../../tools/release/node.py" runtime --commit "$commit" \
+  | python3 -I -c 'import json, sys; value = json.load(sys.stdin); print(value.get("runtime") or sys.exit(value.get("error", "运行目录未知")))') \
+  || exit 2
+. "$S/runtime-dir.sh"
+R=$KAILO_RUNTIME_DIR
 D=(sudo -n docker)
 fail=0
 bad() { echo "  FAIL: $*"; fail=1; }
@@ -37,7 +44,7 @@ done
 
 echo "== 2. .env 键（非 secret 值）"
 origins=$(value NATIVE_PAGE_ORIGINS)
-public=$(cd "$R" && set -a && . ./.env >/dev/null 2>&1 && printf '%s' "${PUBLIC_ORIGIN:-}")
+public=$(set -a && . "$R/.env" >/dev/null 2>&1 && printf '%s' "${PUBLIC_ORIGIN:-}")
 [ -n "$origins" ] && ok "NATIVE_PAGE_ORIGINS=$origins" || bad "NATIVE_PAGE_ORIGINS 为空"
 for o in $origins; do
   [[ $o =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || bad "非精确 origin：$o"

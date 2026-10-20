@@ -29,9 +29,16 @@ esac
 no_build=()
 if [ -n "$isolated" ]; then no_build=(--no-build --pull never); fi
 
-[ -s .env ] || { echo '缺少 deploy/local/.env；先复制 .env.example 并填写' >&2; exit 2; }
+# 运行投递（.env、secrets/、data/）经 runtime-dir.sh 解析（ADR-20 §3）。本入口会清空 secrets/ 与
+# data/，只服务本地拓扑与隔离接收方副本：运行目录必须就是本目录，不接受指向别处（例如生产
+# 运行目录）的 KAILO_RUNTIME_DIR。
+. ./runtime-dir.sh
+[ "$KAILO_RUNTIME_DIR" = "$(pwd -P)" ] || {
+  echo "init-local.sh 只初始化本目录的本地拓扑；KAILO_RUNTIME_DIR 指向 $KAILO_RUNTIME_DIR，拒绝" >&2; exit 2;
+}
+[ -s "$KAILO_RUNTIME_DIR/.env" ] || { echo '缺少 deploy/local/.env；先复制 .env.example 并填写' >&2; exit 2; }
 set -a
-. ./.env
+. "$KAILO_RUNTIME_DIR/.env"
 set +a
 : "${VERIFY_USER:?缺少 VERIFY_USER}"
 : "${BOOTSTRAP_USER:?缺少 BOOTSTRAP_USER}"
@@ -79,7 +86,7 @@ fi
 . ../../tools/container-safety.sh
 container_safety_init
 # 初始化的其他现有入口同样使用 sudo Docker；共享检查必须核验同一 daemon。
-CONTAINER_DOCKER=(sudo -n --preserve-env=BUILDX_BUILDER docker)
+CONTAINER_DOCKER=(sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR docker)
 CONTAINER_PRIVILEGE=(sudo -n)
 container_resource_preflight
 if [ -z "$isolated" ]; then
@@ -111,15 +118,15 @@ migration_image=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' \
 }
 compose() {
   local gateway_delivery=()
-  if [ -s secrets/agentgateway-service.compose.json ]; then
-    gateway_delivery=(-f secrets/agentgateway-service.compose.json)
+  if [ -s "$KAILO_RUNTIME_DIR/secrets/agentgateway-service.compose.json" ]; then
+    gateway_delivery=(-f "$KAILO_RUNTIME_DIR/secrets/agentgateway-service.compose.json")
   fi
   # 隔离接收方部署只用生产已发布的固定镜像（DD-124(4)）：所有 up 一律不构建、不拉取。
   if [ "${1:-}" = up ] && [ ${#no_build[@]} -gt 0 ]; then
     shift
     set -- up "${no_build[@]}" "$@"
   fi
-  "${CONTAINER_DOCKER[@]}" compose --env-file .env -f compose.yaml "${gateway_delivery[@]}" "$@"
+  "${CONTAINER_DOCKER[@]}" compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "${gateway_delivery[@]}" "$@"
 }
 
 migrate_core_database() (
@@ -132,7 +139,7 @@ migrate_core_database() (
     echo 'Core 数据库没有唯一的实际私有网络，拒绝迁移' >&2; exit 2;
   }
   # 复用 bootstrap 的同一受控投递，不在宿主或 Docker 参数中另建连接串。
-  IFS= read -r database_environment < secrets/core-db-url.env
+  IFS= read -r database_environment < "$KAILO_RUNTIME_DIR/secrets/core-db-url.env"
   [[ "$database_environment" == DATABASE_URL=?* ]] || {
     echo 'Core 数据库连接投递缺失或为空，拒绝迁移' >&2; exit 2;
   }
@@ -198,10 +205,10 @@ if "$fresh"; then
   echo '清空 platform-local 容器和本项目数据库卷，并清空本地 OpenBao、Buzz 对象和凭据。'
   echo '此操作不可恢复；保留 .env 和 data/registry 中的固定版本镜像。'
   for path in data secrets data/secret-store data/collab-objects; do
-    [ ! -L "$path" ] || { echo "拒绝删除符号链接：$path" >&2; exit 2; }
+    [ ! -L "$KAILO_RUNTIME_DIR/$path" ] || { echo "拒绝删除符号链接：$path" >&2; exit 2; }
   done
   compose down --volumes
-  sudo -n rm -rf -- "$PWD/secrets" "$PWD/data/secret-store" "$PWD/data/collab-objects"
+  sudo -n rm -rf -- "$KAILO_RUNTIME_DIR/secrets" "$KAILO_RUNTIME_DIR/data/secret-store" "$KAILO_RUNTIME_DIR/data/collab-objects"
 fi
 
 ./bootstrap.sh
@@ -226,7 +233,7 @@ compose up -d --wait --no-build openmeter openmeter-sink-worker
 ./bootstrap.sh --sync-realm-locales
 ./bootstrap.sh --ensure-platform-admin
 ./bootstrap.sh --ensure-service-audience
-export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"
+export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$KAILO_RUNTIME_DIR/secrets/keycloak_admin_password"
 subject=$(../../core/verify/idp-subject.sh "$BOOTSTRAP_USER") || {
   echo '找不到首位管理员 IdP 用户；已有旧 realm 的本地环境须显式 --fresh 重建' >&2; exit 2;
 }

@@ -1,6 +1,9 @@
 """Deliver a native page entry's Core-projected model key (DD-128(5)).
 
-Run from deploy/local through ``bootstrap.sh --native-model-delivery``. It never
+Run from deploy/local through ``bootstrap.sh --native-model-delivery``; the
+platform .env and secrets/ are read from the runtime directory that
+deploy/local/runtime-dir.sh resolved and exported as KAILO_RUNTIME_DIR (ADR-20
+§3), never from the current directory or the fixed release tree. It never
 creates a binding, route, Gateway key or KV version: Core owns those inside the
 original COMPONENT_BINDING workflow. This program only
 
@@ -59,6 +62,21 @@ def private_path(raw, directory=False):
     return path
 
 
+def runtime_dir(env):
+    """The platform runtime directory (ADR-20 §3): only the canonical absolute value
+    deploy/local/runtime-dir.sh exported. .env, secrets/ and data/ there must be the
+    real entries, so every controlled path below it is canonical too; a release tree
+    carrying symbolic links to them is refused instead of being followed."""
+    raw = env.get("KAILO_RUNTIME_DIR", "")
+    path = Path(raw)
+    require(path.is_absolute() and str(path) == raw and os.path.realpath(raw) == raw and path.is_dir(),
+            "KAILO_RUNTIME_DIR must be the canonical runtime directory resolved by deploy/local/runtime-dir.sh")
+    require(not any((path / name).is_symlink() for name in (".env", "secrets", "data"))
+            and (path / ".env").is_file(),
+            "runtime directory .env, secrets/ and data/ must be real entries, not symbolic links")
+    return path
+
+
 def read(path):
     private_path(str(path))
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as stream:
@@ -101,7 +119,16 @@ def write(path, text):
 
 
 def compose(env, *args):
-    return ["sudo", "-n", "docker", "compose", "--env-file", ".env", "-f", "compose.yaml", *args]
+    """deploy/local/runtime-dir.sh runtime_compose: configuration from this tree's
+    compose.yaml, .env and ${KAILO_RUNTIME_DIR} interpolation from the runtime directory."""
+    runtime = runtime_dir(env)
+    return ["sudo", "-n", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose",
+            "--env-file", str(runtime / ".env"), "-f", "compose.yaml", *args]
+
+
+def compose_env(env):
+    """The process environment for compose(): KAILO_RUNTIME_DIR travels through sudo."""
+    return {**os.environ, "KAILO_RUNTIME_DIR": str(runtime_dir(env))}
 
 
 def validate_projection(value, binding=None):
@@ -161,7 +188,8 @@ def export(env, directory, binding, runner=subprocess.run):
                       "core-db", "psql", "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1",
                       "-U", env["CORE_DB_USER"], "-d", env["CORE_DB_NAME"],
                       "-c", EXPORT_SQL.format(binding=binding))
-    result = runner(command, text=True, capture_output=True, timeout=int(env["OPENBAO_HTTP_TIMEOUT_SECONDS"]))
+    result = runner(command, text=True, capture_output=True, timeout=int(env["OPENBAO_HTTP_TIMEOUT_SECONDS"]),
+                    env=compose_env(env))
     require(result.returncode == 0 and result.stdout.strip(), "binding not found or Core database unavailable")
     row = json.loads(result.stdout.strip(), object_pairs_hook=unique)
     require(row["nativePage"] is True, "binding release is not a native page entry")
@@ -183,7 +211,8 @@ class Bao:
 
     def __init__(self, env, namespace):
         self.env, self.namespace = env, namespace
-        self.token = document(Path.cwd() / "secrets/openbao_init.json")["root_token"]
+        # Owner, 0600 and canonical checks apply to the real file in the runtime directory.
+        self.token = document(runtime_dir(env) / "secrets/openbao_init.json")["root_token"]
         self.timeout = int(env["OPENBAO_HTTP_TIMEOUT_SECONDS"])
         require(self.timeout > 0)
 
@@ -200,7 +229,8 @@ class Bao:
         command = compose(self.env, "exec", "-T", "-e", "BAO_ADDR=" + self.env["OPENBAO_ADDR"],
                           "-e", "BAO_NAMESPACE=" + self.namespace, "openbao", "sh", "-c",
                           'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"', "bao", *args)
-        result = subprocess.run(command, input=self.token + "\n", text=True, capture_output=True, timeout=self.timeout)
+        result = subprocess.run(command, input=self.token + "\n", text=True, capture_output=True, timeout=self.timeout,
+                                env=compose_env(self.env))
         if missing and result.returncode and "No value found at " + path in result.stderr:
             return None
         require(result.returncode == 0, "OpenBao request failed; inspect OpenBao audit, not this output")

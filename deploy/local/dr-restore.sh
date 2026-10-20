@@ -9,11 +9,13 @@
 # 用法：deploy/local/dr-restore.sh <备份目录>
 set -euo pipefail
 cd "$(dirname "$0")"
-. ./.env
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
+. "$KAILO_RUNTIME_DIR/.env"
 in="${1:?用法: dr-restore.sh <备份目录>}"
 (cd "$in" && sha256sum -c --quiet SHA256SUMS) || { echo "备份校验和不符，拒绝恢复" >&2; exit 2; }
 umask 077
-DC() { sudo -n docker compose --env-file .env -f compose.yaml "$@"; }
+DC() { runtime_compose "$@"; }
 step() { printf '== %s（%s）\n' "$1" "$(date -u +%T)"; }
 bao_status() {
   # bao status 在封存或未初始化时以非零码退出：先取输出、再解析，不让退出码
@@ -35,8 +37,8 @@ wait_healthy() {
 }
 
 step "1. OpenBao：新节点初始化 → 强制恢复快照 → 以原分片解封"
-mkdir -p data/secret-store
-sudo -n chown 100:1000 data/secret-store
+mkdir -p "$KAILO_RUNTIME_DIR/data/secret-store"
+sudo -n chown 100:1000 "$KAILO_RUNTIME_DIR/data/secret-store"
 # 第二个 audit device 的目录不在快照里；解封前必须就位（secret-store-config.hcl）
 ./secret-store-audit-dir.sh --prepare >/dev/null
 DC up -d openbao >/dev/null 2>&1
@@ -83,14 +85,14 @@ print(re.search(r"image: (authzed/zed@sha256:[0-9a-f]+)", t).group(1))')
 config=$(DC config --format json)
 spicedb_endpoint=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["worker"]["environment"]["SPICEDB_ENDPOINT"])')
 component_net=$(printf '%s' "$config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["networks"]["component"]["name"])')
-sudo -n docker run --rm -u "$(id -u)" --network "$component_net" --env-file secrets/zed.env \
+sudo -n docker run --rm -u "$(id -u)" --network "$component_net" --env-file "$KAILO_RUNTIME_DIR/secrets/zed.env" \
   -e "ZED_ENDPOINT=$spicedb_endpoint" -e ZED_INSECURE=true \
   -v "$(realpath "$in/spicedb.zedbackup"):/backup/spicedb.zedbackup:ro" \
   "$zed_image" backup restore /backup/spicedb.zedbackup
 step "MinIO（Relay 媒体）"
-mkdir -p data
+mkdir -p "$KAILO_RUNTIME_DIR/data"
 # 归档内的目录名随版本不同（旧备份为 buzz-objects/），恢复一律落到 data/collab-objects
-sudo -n tar -C data --transform 's#^buzz-objects#collab-objects#' -xf "$in/buzz-objects.tar"
+sudo -n tar -C "$KAILO_RUNTIME_DIR/data" --transform 's#^buzz-objects#collab-objects#' -xf "$in/buzz-objects.tar"
 step "IdP"
 DC create keycloak >/dev/null 2>&1
 kc=$(DC ps -a -q keycloak)
@@ -106,4 +108,4 @@ for s in buzz-relay keycloak temporal spicedb; do wait_healthy "$s"; done
 ./start-core.sh >/dev/null 2>&1
 services="$services core-bff"
 echo "  已启动：$services"
-echo "  入口仍关闭。投影对账核验通过后执行：docker compose --env-file .env -f compose.yaml up -d agentgateway"
+echo "  入口仍关闭。投影对账核验通过后执行（deploy/local 下）：KAILO_RUNTIME_DIR=$KAILO_RUNTIME_DIR docker compose --env-file $KAILO_RUNTIME_DIR/.env -f compose.yaml up -d agentgateway"

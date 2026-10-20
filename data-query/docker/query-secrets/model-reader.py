@@ -3,6 +3,10 @@
 No model, binding, secret value or audit receipt is created here. The reader
 uses the same scoped AppRole/template procedure as Knowledge's model_reader;
 the actual key and read request ID come from one Agent Secret response.
+
+Run from deploy/local through ``bootstrap.sh``; the platform .env and secrets/
+come from the runtime directory deploy/local/runtime-dir.sh exported as
+KAILO_RUNTIME_DIR (ADR-20 §3), never from the current directory.
 """
 
 import fcntl
@@ -42,6 +46,17 @@ def private_path(raw, directory=False):
     info = path.stat()
     require((stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
             and not info.st_mode & 0o077 and info.st_uid == os.geteuid())
+    return path
+
+
+def runtime_dir(env):
+    """The canonical runtime directory resolved by deploy/local/runtime-dir.sh; its
+    .env, secrets/ and data/ are real entries, never symbolic links into it."""
+    raw = env.get("KAILO_RUNTIME_DIR", "")
+    path = Path(raw)
+    require(path.is_absolute() and str(path) == raw and os.path.realpath(raw) == raw and path.is_dir()
+            and not any((path / name).is_symlink() for name in (".env", "secrets", "data"))
+            and (path / ".env").is_file())
     return path
 
 
@@ -164,7 +179,8 @@ class Bao:
 
     def __init__(self, env, namespace):
         self.env, self.namespace = env, namespace
-        self.token = document(Path.cwd() / "secrets/openbao_init.json")["root_token"]
+        self.runtime = runtime_dir(env)
+        self.token = document(self.runtime / "secrets/openbao_init.json")["root_token"]
         self.timeout = int(env["OPENBAO_HTTP_TIMEOUT_SECONDS"])
         require(self.timeout > 0)
 
@@ -178,11 +194,13 @@ class Bao:
         for key, value in (fields or {}).items():
             encoded = ",".join(value) if isinstance(value, list) else json.dumps(value) if isinstance(value, (bool, dict)) else str(value)
             args.append(key + "=" + encoded)
-        command = ["sudo", "-n", "-H", "docker", "compose", "--env-file", ".env", "-f", "compose.yaml",
+        command = ["sudo", "-n", "-H", "--preserve-env=KAILO_RUNTIME_DIR", "docker", "compose",
+                   "--env-file", str(self.runtime / ".env"), "-f", "compose.yaml",
                    "exec", "-T", "-e", "BAO_ADDR=" + self.env["OPENBAO_ADDR"],
                    "-e", "BAO_NAMESPACE=" + self.namespace, "openbao", "sh", "-c",
                    'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"', "bao", *args]
-        result = subprocess.run(command, input=self.token + "\n", text=True, capture_output=True, timeout=self.timeout)
+        result = subprocess.run(command, input=self.token + "\n", text=True, capture_output=True, timeout=self.timeout,
+                                env={**os.environ, "KAILO_RUNTIME_DIR": str(self.runtime)})
         if missing and result.returncode and "No value found at " + path in result.stderr:
             return None
         require(result.returncode == 0)

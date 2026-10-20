@@ -88,6 +88,10 @@ done
 src=$RECEIVER_SOURCE
 run=$RECEIVER_RUN_DIR
 platform=$run/apps/deploy/local
+# The staged deploy/local is this run's own runtime directory (ADR-20 §3): every nested
+# deploy/local entry (init-local.sh, start-core.sh, bootstrap.sh) resolves .env, secrets/ and
+# data/ there, never an inherited KAILO_RUNTIME_DIR such as the production one.
+export KAILO_RUNTIME_DIR=$platform
 read -r -a docker <<<"${RECEIVER_DOCKER:-sudo -n docker}"
 need() { for name in "$@"; do [[ -n ${!name:-} ]] || { echo "receiver.env: $name required for $stage" >&2; exit 2; }; done; }
 record() { [[ -s $run/$1 ]] || { echo "missing $run/$1: run the earlier stage first" >&2; exit 2; }; }

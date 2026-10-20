@@ -6,9 +6,11 @@
 # iptables 规则不跨重启保留：宿主重启后、出站网关启动前须重跑本脚本。
 set -euo pipefail
 cd "$(dirname "$0")"
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
 set -a
 # shellcheck disable=SC1091
-. ./.env
+. "$KAILO_RUNTIME_DIR/.env"
 set +a
 ip=${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}
 oidc_host=${OIDC_HOST:?必须显式提供 OIDC 主机}
