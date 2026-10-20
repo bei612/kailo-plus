@@ -54,7 +54,40 @@ policy 只读精确路径且同名不同内容拒绝覆盖、Wren `config.yaml` 
 TRUNCATE 均为 `permission denied`；读写事务内建表与临时表另行实测为 `permission denied for
 schema public` 与 `permission denied to create temporary tables`；角色无超级用户等属性。
 
+## WeKnora 消费面（DD-128(5)、SF-WEK-17，design-authority `c1e3f28b67c7c9b6ebe0ec96e27ec1aaa7286f7b`）
+
+- 决定：WeKnora 的模型是其数据库行，但原生模型管理 API 只写调用者工作空间的非内置行、只认用户
+  会话或工作空间 API key，而每个首次 OIDC 登录者默认各得个人工作空间；实例级的原生路径是上游
+  `builtin_models.yaml` 加载器（启动时以进程环境展开 `${NAME}`，自身写入并以 `SYSTEM_AES_KEY`
+  加密内置行，对全部工作空间可见）。因此与 Wren 同一投递：key 写入组件专属 0600 env，原生声明按
+  变量名引用；不调用原生模型 API，不写 WeKnora 数据库。
+- `native-model-delivery.py`：`CONSUMERS` 为每个组件登记投递目录、组件 env 与原生声明三个 env 名，
+  `deliver` 是唯一物化；`materialize-weknora` 的声明核对：恰为冻结模型集合、`base_url` 为 Gateway
+  入口、provider `openai`/`generic`、无 header/extra config/云凭据、Embedding 有实测维度、每条恰一个
+  独占一行的 `api_key: "${KAILO_MODEL_...}"`，文件其他位置（含注释、描述）不得出现引用；声明可
+  0644（非 secret，容器内非 root 进程读取），不得被他人写。
+- `bootstrap.sh --native-model-delivery materialize-weknora <native.env>`：只取三个键，不 source
+  Compose env 文件。`knowledge/fork/deploy/compose.native-model.yaml` 由 `start.sh` 在 Gateway 传输
+  叠加之后加入（两个文件须同时给出）；`native_entrypoint.py` 在无 Gateway 传输、声明缺失或非普通
+  文件、引用非 `KAILO_MODEL_*`、值缺失或为空时拒绝启动（上游加载器会把字面量当 key、缺文件则跳过）。
+- 模板 `deploy/components/knowledge-builtin-models.template.yaml`；`knowledge.env.template` 新增三键。
+- 影响：`knowledge-service` 的输入含 `knowledge/fork/deploy`，source_digest 随之变化，发布须重建；
+  上游源码树未改（`upstream_manifest.py diff` 不变）；无 schema/API/Workflow 变化，Wren 物化不变。
+
+验证（2026-10-20，CI 节点，分支提交 `ac7061b993dd219562542d94eaa08baa37709cbe` 的 GitHub 取码，
+日志 `/volumes/data/kailo/ci/tmp/weknora-model-*.log`）：
+
+- `python3 -I -m unittest discover -s deploy/components -p test_native_model_delivery.py`：16 passed，
+  新增 WeKnora 声明正反例（注释/描述中的引用、未加引号、字面量 key、进程变量名、provider header、
+  厂商 client、重复 id、本地模型、多文档、组可写、直连提供方、非冻结模型、猜测维度均拒绝）、
+  Wren/WeKnora 共用 `main` 物化、`bootstrap.sh` 端到端物化（Compose env 不被 source）与入口
+  变量名规则一致；
+- `knowledge/fork/deploy` 下 `python3 -m unittest test_native_entrypoint`：36 passed（新增入口拒绝
+  未解析引用、`start.sh` 叠加条件与 overlay 形态）；
+- 检查镜像内 `tools/check.sh lint`、`docs` 退出 0；`trace` 在接入发布证明目录后退出 0。`supply`
+  在浅克隆中取不到上游基准与历史 release.sh 而失败，属取码形态，不作结论。
+
 ## 未覆盖
 
 生产 Core 的 Gateway key 登记、ExtAuthz 回调、OpenBao 写入与审计、真实 usage 入账、
-Wren 原生向导连接与真实问数、WeKnora 原生模型凭据接口的投递，均未在本记录中执行。
+Wren 原生向导连接与真实问数、WeKnora 以内置模型声明的生产投递与真实知识库问答，均未在本记录中执行。
