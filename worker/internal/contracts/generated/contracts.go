@@ -7817,7 +7817,15 @@ type ProjectsGitRefResponse struct {
 // original labeled kind-1 review comments (desktop
 // pullRequestReviews.ts::submitProjectPullRequestReview,
 // hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
-// no new Nostr kind (DD-118(5)).
+// no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
+// useAddProjectRepository) republishes the signer's current 30621 head named by
+// targetEventId with one more member `a` coordinate; every other tag and the content are
+// kept. BIND_REPOSITORY_CHANNEL (original useBindProjectRepositoryChannel) republishes the
+// signer's current 30617 head with `buzz-channel` replaced by the admitted Workspace's
+// Channel. ADD_PROJECT_CHANNEL (original useAddProjectChannel) appends that Channel as a
+// `buzz-related-channel` tag to the signer's current 30621 head; the Channel itself is
+// created by the existing workspace.create action, never by this request. None of them
+// grants Git, Channel or project authority (REQ-24, DD-80, DD-118).
 type ProjectsPublishRequest struct {
 	// Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
 	AnchorLine *int64 `json:"anchorLine,omitempty"`
@@ -7843,6 +7851,10 @@ type ProjectsPublishRequest struct {
 	// Original 1618 `branch-name`: the compare branch, already present on the Relay repository.
 	BranchName *string               `json:"branchName,omitempty"`
 	Category   *ProjectIssueCategory `json:"category,omitempty"`
+	// CREATE_REPOSITORY only: the original optional `clone` tag of a new repository
+	// announcement (AddProjectRepositoryDialog Clone URL). Only metadata: Kailo reads
+	// repository content through the 30617 coordinate (DD-118) and never fetches this URL.
+	CloneURL *string `json:"cloneUrl,omitempty"`
 	// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
 	// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
 	// anchor: the review head the reviewer looked at; the consumer refuses with
@@ -7862,6 +7874,10 @@ type ProjectsPublishRequest struct {
 	// 1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
 	// review author or repository owner signs it.
 	PullRequestStatus *ProjectPullRequestLifecycleStatus `json:"pullRequestStatus,omitempty"`
+	// ATTACH_REPOSITORY only: the original NIP-34 repository coordinate added as a member `a`
+	// tag. A coordinate, never a clone URL or an access grant; the repository head may not
+	// exist yet when it is the first step of the original add-repository sequence.
+	RepositoryAddress *string `json:"repositoryAddress,omitempty"`
 	// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
 	// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
 	// never the review author, may request changes on an open or draft review; readers trust
@@ -11623,8 +11639,11 @@ const (
 type ProjectPublicationOperation string
 
 const (
+	AddProjectChannel                 ProjectPublicationOperation = "ADD_PROJECT_CHANNEL"
 	ApprovePullRequest                ProjectPublicationOperation = "APPROVE_PULL_REQUEST"
 	AssignIssue                       ProjectPublicationOperation = "ASSIGN_ISSUE"
+	AttachRepository                  ProjectPublicationOperation = "ATTACH_REPOSITORY"
+	BindRepositoryChannel             ProjectPublicationOperation = "BIND_REPOSITORY_CHANNEL"
 	CreateIssue                       ProjectPublicationOperation = "CREATE_ISSUE"
 	CreateIssueComment                ProjectPublicationOperation = "CREATE_ISSUE_COMMENT"
 	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"

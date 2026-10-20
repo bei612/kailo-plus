@@ -8613,7 +8613,15 @@ pub struct ProjectsGitRefResponse {
 /// original labeled kind-1 review comments (desktop
 /// pullRequestReviews.ts::submitProjectPullRequestReview,
 /// hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
-/// no new Nostr kind (DD-118(5)).
+/// no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
+/// useAddProjectRepository) republishes the signer's current 30621 head named by
+/// targetEventId with one more member `a` coordinate; every other tag and the content are
+/// kept. BIND_REPOSITORY_CHANNEL (original useBindProjectRepositoryChannel) republishes the
+/// signer's current 30617 head with `buzz-channel` replaced by the admitted Workspace's
+/// Channel. ADD_PROJECT_CHANNEL (original useAddProjectChannel) appends that Channel as a
+/// `buzz-related-channel` tag to the signer's current 30621 head; the Channel itself is
+/// created by the existing workspace.create action, never by this request. None of them
+/// grants Git, Channel or project authority (REQ-24, DD-80, DD-118).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
@@ -8659,6 +8667,12 @@ pub struct ProjectsPublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<ProjectIssueCategory>,
 
+    /// CREATE_REPOSITORY only: the original optional `clone` tag of a new repository
+    /// announcement (AddProjectRepositoryDialog Clone URL). Only metadata: Kailo reads
+    /// repository content through the 30617 coordinate (DD-118) and never fetches this URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clone_url: Option<String>,
+
     /// Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
     /// state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
     /// anchor: the review head the reviewer looked at; the consumer refuses with
@@ -8692,6 +8706,12 @@ pub struct ProjectsPublishRequest {
     /// review author or repository owner signs it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_request_status: Option<ProjectPullRequestLifecycleStatus>,
+
+    /// ATTACH_REPOSITORY only: the original NIP-34 repository coordinate added as a member `a`
+    /// tag. A coordinate, never a clone URL or an access grant; the repository head may not
+    /// exist yet when it is the first step of the original add-repository sequence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_address: Option<String>,
 
     /// Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
     /// adds the `changes-requested` label. Only a requested reviewer or the repository owner,
@@ -8792,11 +8812,20 @@ pub enum ProjectIssueCategory {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectPublicationOperation {
+    #[serde(rename = "ADD_PROJECT_CHANNEL")]
+    AddProjectChannel,
+
     #[serde(rename = "APPROVE_PULL_REQUEST")]
     ApprovePullRequest,
 
     #[serde(rename = "ASSIGN_ISSUE")]
     AssignIssue,
+
+    #[serde(rename = "ATTACH_REPOSITORY")]
+    AttachRepository,
+
+    #[serde(rename = "BIND_REPOSITORY_CHANNEL")]
+    BindRepositoryChannel,
 
     #[serde(rename = "CREATE_ISSUE")]
     CreateIssue,

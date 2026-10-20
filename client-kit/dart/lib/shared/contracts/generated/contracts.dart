@@ -17143,7 +17143,15 @@ class ProjectsGitRefResponse {
 ///original labeled kind-1 review comments (desktop
 ///pullRequestReviews.ts::submitProjectPullRequestReview,
 ///hooks.ts::createProjectPullRequestComment) against the named review head; they introduce
-///no new Nostr kind (DD-118(5)).
+///no new Nostr kind (DD-118(5)). ATTACH_REPOSITORY (original useAttachProjectRepository /
+///useAddProjectRepository) republishes the signer's current 30621 head named by
+///targetEventId with one more member `a` coordinate; every other tag and the content are
+///kept. BIND_REPOSITORY_CHANNEL (original useBindProjectRepositoryChannel) republishes the
+///signer's current 30617 head with `buzz-channel` replaced by the admitted Workspace's
+///Channel. ADD_PROJECT_CHANNEL (original useAddProjectChannel) appends that Channel as a
+///`buzz-related-channel` tag to the signer's current 30621 head; the Channel itself is
+///created by the existing workspace.create action, never by this request. None of them
+///grants Git, Channel or project authority (REQ-24, DD-80, DD-118).
 class ProjectsPublishRequest {
   ///Original inline diff anchor `line`: a 1-based line on the given side of the review diff.
   final int? anchorLine;
@@ -17176,6 +17184,11 @@ class ProjectsPublishRequest {
   final String? branchName;
   final ProjectIssueCategory? category;
 
+  ///CREATE_REPOSITORY only: the original optional `clone` tag of a new repository
+  ///announcement (AddProjectRepositoryDialog Clone URL). Only metadata: Kailo reads
+  ///repository content through the 30617 coordinate (DD-118) and never fetches this URL.
+  final String? cloneUrl;
+
   ///Original `c`. CREATE_PULL_REQUEST: compare branch head read from the trusted repository
   ///state. APPROVE_PULL_REQUEST and CREATE_PULL_REQUEST_COMMENT with reviewDecision or an
   ///anchor: the review head the reviewer looked at; the consumer refuses with
@@ -17198,6 +17211,11 @@ class ProjectsPublishRequest {
   ///1630/1633/1632). Merged (1631) happens through git and is never accepted here. Only the
   ///review author or repository owner signs it.
   final ProjectPullRequestLifecycleStatus? pullRequestStatus;
+
+  ///ATTACH_REPOSITORY only: the original NIP-34 repository coordinate added as a member `a`
+  ///tag. A coordinate, never a clone URL or an access grant; the repository head may not
+  ///exist yet when it is the first step of the original add-repository sequence.
+  final String? repositoryAddress;
 
   ///Original hooks.ts ProjectPullRequestCommentDecision on CREATE_PULL_REQUEST_COMMENT only:
   ///adds the `changes-requested` label. Only a requested reviewer or the repository owner,
@@ -17229,6 +17247,7 @@ class ProjectsPublishRequest {
     this.body,
     this.branchName,
     this.category,
+    this.cloneUrl,
     this.commit,
     this.description,
     this.mentions,
@@ -17237,6 +17256,7 @@ class ProjectsPublishRequest {
     required this.operation,
     this.priorEventId,
     this.pullRequestStatus,
+    this.repositoryAddress,
     this.reviewDecision,
     this.reviewers,
     this.targetBranch,
@@ -17266,6 +17286,7 @@ class ProjectsPublishRequest {
     category: json["category"] == null
         ? null
         : projectIssueCategoryValues.map[json["category"]]!,
+    cloneUrl: json["cloneUrl"],
     commit: json["commit"],
     description: json["description"],
     mentions: json["mentions"] == null
@@ -17279,6 +17300,7 @@ class ProjectsPublishRequest {
         ? null
         : projectPullRequestLifecycleStatusValues
               .map[json["pullRequestStatus"]]!,
+    repositoryAddress: json["repositoryAddress"],
     reviewDecision: json["reviewDecision"] == null
         ? null
         : projectPullRequestCommentDecisionValues.map[json["reviewDecision"]]!,
@@ -17306,6 +17328,7 @@ class ProjectsPublishRequest {
     "body": body,
     "branchName": branchName,
     "category": projectIssueCategoryValues.reverse[category],
+    "cloneUrl": cloneUrl,
     "commit": commit,
     "description": description,
     "mentions": mentions == null
@@ -17317,6 +17340,7 @@ class ProjectsPublishRequest {
     "priorEventId": priorEventId,
     "pullRequestStatus":
         projectPullRequestLifecycleStatusValues.reverse[pullRequestStatus],
+    "repositoryAddress": repositoryAddress,
     "reviewDecision":
         projectPullRequestCommentDecisionValues.reverse[reviewDecision],
     "reviewers": reviewers == null
@@ -17423,8 +17447,11 @@ final projectIssueCategoryValues = EnumValues({
 });
 
 enum ProjectPublicationOperation {
+  ADD_PROJECT_CHANNEL,
   APPROVE_PULL_REQUEST,
   ASSIGN_ISSUE,
+  ATTACH_REPOSITORY,
+  BIND_REPOSITORY_CHANNEL,
   CREATE_ISSUE,
   CREATE_ISSUE_COMMENT,
   CREATE_PROJECT,
@@ -17439,8 +17466,12 @@ enum ProjectPublicationOperation {
 }
 
 final projectPublicationOperationValues = EnumValues({
+  "ADD_PROJECT_CHANNEL": ProjectPublicationOperation.ADD_PROJECT_CHANNEL,
   "APPROVE_PULL_REQUEST": ProjectPublicationOperation.APPROVE_PULL_REQUEST,
   "ASSIGN_ISSUE": ProjectPublicationOperation.ASSIGN_ISSUE,
+  "ATTACH_REPOSITORY": ProjectPublicationOperation.ATTACH_REPOSITORY,
+  "BIND_REPOSITORY_CHANNEL":
+      ProjectPublicationOperation.BIND_REPOSITORY_CHANNEL,
   "CREATE_ISSUE": ProjectPublicationOperation.CREATE_ISSUE,
   "CREATE_ISSUE_COMMENT": ProjectPublicationOperation.CREATE_ISSUE_COMMENT,
   "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
