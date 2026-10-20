@@ -8,7 +8,7 @@
 //   (≙ managed instance) of an AgentDefinition (≙ persona); its channel is the Workspace channel
 //   of its ACTIVE ChannelAgentBinding.
 import {
-  ChannelBindingStatus,
+  AgentInstallationViewChannelBindingStatus,
   type AgentInstallationView,
 } from "@client-kit/contracts";
 
@@ -101,7 +101,7 @@ export function deriveProfileChannels(
   const binding = installation.channelBinding;
   if (
     !binding ||
-    binding.status !== ChannelBindingStatus.Active ||
+    binding.status !== AgentInstallationViewChannelBindingStatus.Active ||
     !binding.channelId
   ) {
     return [];
