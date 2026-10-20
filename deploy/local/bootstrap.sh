@@ -34,6 +34,32 @@ if [ "$#" -eq 2 ] && { [ "$1" = '--prepare-wren-model-reader' ] || [ "$1" = '--m
   OPENBAO_TOKEN_PERIOD="${OPENBAO_TOKEN_PERIOD:?}" \
     exec python3 ../../data-query/docker/query-secrets/model-reader.py "$operation"
 fi
+# DD-128(5): deliver the key Core projected for a native page entry binding that
+# selected PLATFORM_LLM_ROUTE. Reads only that binding's frozen projection and
+# its one KV version; never creates a binding, route, Gateway key or KV value.
+#   --native-model-delivery export <dir> <binding-id>   (frozen non-secret projection)
+#   --native-model-delivery prepare <dir>               (per-binding policy + one-use AppRole)
+#   --native-model-delivery materialize-wren <native.env> (after the OpenBao Agent render)
+#   --native-model-delivery retire <dir>                (after the binding is DISABLED)
+if [ "$#" -ge 2 ] && [ "$1" = '--native-model-delivery' ]; then
+  shift
+  if [ "$1" = materialize-wren ]; then
+    [ "$#" -eq 2 ] || { echo '用法：--native-model-delivery materialize-wren <Wren native.env>' >&2; exit 2; }
+    load_wren_env "$2"
+    set -- materialize-wren
+    export WREN_NATIVE_MODEL_DELIVERY_DIR="${WREN_NATIVE_MODEL_DELIVERY_DIR:?native page model delivery directory is required}" \
+      WREN_AI_SECRET_ENV_FILE="${WREN_AI_SECRET_ENV_FILE:?component-only env destination is required}" \
+      WREN_PROJECT_DIR="${WREN_PROJECT_DIR:?existing native configuration is required}"
+  fi
+  CORE_DB_USER="${CORE_DB_USER:?}" CORE_DB_NAME="${CORE_DB_NAME:?}" \
+  AGENTGATEWAY_MODEL_BASE_URL="${AGENTGATEWAY_MODEL_BASE_URL:?}" \
+  OPENBAO_ADDR="${OPENBAO_ADDR:?}" \
+  OPENBAO_HTTP_TIMEOUT_SECONDS="${OPENBAO_HTTP_TIMEOUT_SECONDS:?}" \
+  OPENBAO_SECRET_ID_TTL="${OPENBAO_SECRET_ID_TTL:?}" \
+  OPENBAO_SECRET_ID_WRAP_TTL="${OPENBAO_SECRET_ID_WRAP_TTL:?}" \
+  OPENBAO_TOKEN_PERIOD="${OPENBAO_TOKEN_PERIOD:?}" \
+    exec python3 ../components/native-model-delivery.py "$@"
+fi
 : "${OIDC_ISSUER:?缺少 OIDC_ISSUER}" "${OIDC_REALM:?缺少 OIDC_REALM}" \
   "${PUBLIC_ORIGIN:?缺少 PUBLIC_ORIGIN}" "${PUBLIC_HOST:?缺少 PUBLIC_HOST}" \
   "${PUBLIC_BIND_ADDR:?缺少 PUBLIC_BIND_ADDR}" \

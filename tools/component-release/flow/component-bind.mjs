@@ -32,6 +32,11 @@
 // [], no bindingSecretValues and normalizedConfig {nativePageUrl} only; Core
 // activates it after checking the origin against NATIVE_PAGE_ORIGINS. Neither
 // --secret-values-file nor the OpenBao deploy env is needed.
+// DD-128: when that release allows PLATFORM_LLM_ROUTE, --model-route-ids and
+// --meter-keys component_model_tokens select it (normalizedConfig.modelGateway);
+// Core then projects the binding's own Gateway key into OpenBao and activates
+// after model discovery with that key. Delivery into the component is the
+// separate operator step (bootstrap.sh --prepare-native-model-reader).
 //
 // Usage:
 //   node component-bind.mjs --component file-storage|knowledge|data-query --release-dir <rendered dir>
@@ -80,8 +85,10 @@ await main(async () => {
   const { manifest } = renderedRelease(args['release-dir']);
   const pageOnly = manifest.executionConnector?.mode === 'NONE';
   if (!pageOnly && !args['plan-only'] && !args['secret-values-file']) throw new FlowError('--secret-values-file is required unless --plan-only', 2);
-  if (pageOnly && (args['secret-values-file'] || args['client-id'] || args['model-route-ids'] || args['adapter-service-ref'])) {
-    throw new FlowError('a native page entry (DD-127) takes no secrets, client id, model route or adapter ref', 2);
+  const pageRoutes = (manifest.allowedModelCallModes ?? []).includes('PLATFORM_LLM_ROUTE');
+  if (pageOnly && (args['secret-values-file'] || args['client-id'] || args['adapter-service-ref']
+    || (args['model-route-ids'] && !pageRoutes))) {
+    throw new FlowError('a native page entry (DD-127) takes no secrets, client id or adapter ref, and a model route only when its release allows PLATFORM_LLM_ROUTE (DD-128)', 2);
   }
 
   const normalizedConfig = { nativePageUrl: exactOrigin(args['native-page-url'], manifest) };
@@ -96,8 +103,13 @@ await main(async () => {
     if (meters.length !== 1 || meters[0] !== 'component_model_tokens') throw new FlowError('--meter-keys must be exactly component_model_tokens (DD-124(6))', 2);
     normalizedConfig.modelGateway = { routeResourceIds: routes, meterKeys: meters };
   }
-  const modelCallMode = args['model-call-mode'] ?? manifest.allowedModelCallModes?.[0] ?? 'NONE';
+  const modelCallMode = args['model-call-mode'] ?? (pageOnly && routes.length ? 'PLATFORM_LLM_ROUTE'
+    : manifest.allowedModelCallModes?.[0] ?? 'NONE');
   if (!(manifest.allowedModelCallModes ?? ['NONE']).includes(modelCallMode)) throw new FlowError(`modelCallMode ${modelCallMode} not allowed by the release`, 2);
+  // DD-128(2): a native page entry routes models exactly when it names routes.
+  if (pageOnly && (modelCallMode === 'PLATFORM_LLM_ROUTE') !== (routes.length > 0)) {
+    throw new FlowError('a native page entry selects PLATFORM_LLM_ROUTE exactly when --model-route-ids is given', 2);
+  }
   const { OPENBAO_TENANT_PARENT_NAMESPACE: parent, OPENBAO_KV_MOUNT: mount } = manifest.secretSchema.length
     ? deployEnv('OPENBAO_TENANT_PARENT_NAMESPACE', 'OPENBAO_KV_MOUNT') : {};
   if (manifest.secretSchema.length && (!parent || !mount)) throw new FlowError('OPENBAO_TENANT_PARENT_NAMESPACE / OPENBAO_KV_MOUNT missing from the live deploy .env', 2);
@@ -180,6 +192,8 @@ await main(async () => {
   log({ step: 'binding', bindingId, state: binding?.state ?? 'ABSENT', version: binding?.version, hasNativePage: binding?.hasNativePage,
     activeProjectionGeneration: binding?.activeProjectionGeneration });
   if (binding?.state !== 'ACTIVE') {
-    throw new FlowError(`binding is ${binding?.state ?? 'ABSENT'}; check ${pageOnly ? 'NATIVE_PAGE_ORIGINS/PUBLIC_ORIGIN' : 'adapter handshake/validate_binding, OpenBao audit delivery'} and the COMPONENT_BINDING task, then re-run`, binding?.state === 'PROVISIONING' ? 3 : 1);
+    const hint = !pageOnly ? 'adapter handshake/validate_binding, OpenBao audit delivery'
+      : routes.length ? 'NATIVE_PAGE_ORIGINS/PUBLIC_ORIGIN, route grants, OpenBao and Gateway model discovery' : 'NATIVE_PAGE_ORIGINS/PUBLIC_ORIGIN';
+    throw new FlowError(`binding is ${binding?.state ?? 'ABSENT'}; check ${hint} and the COMPONENT_BINDING task, then re-run`, binding?.state === 'PROVISIONING' ? 3 : 1);
   }
 });

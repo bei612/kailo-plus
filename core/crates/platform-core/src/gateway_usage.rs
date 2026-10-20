@@ -702,7 +702,16 @@ async fn application_correlation(
     if rows.next().is_some() {
         return Err("Application native identity has ambiguous generations");
     }
-    if let Some(trace) = entry.trace_id.as_deref().filter(|s| !s.is_empty()) {
+    // DD-128(2)(3): a native page entry has no Kailo operation. Its service's
+    // own trace stays binding attribution and never blocks this usage entry.
+    let manifest: Value =
+        sqlx::query_scalar("select manifest from catalog.component_release where id=$1")
+            .bind(origin.component_release_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|_| "Application model release unavailable")?;
+    let page = crate::application_binding::native::native_page_only(&manifest);
+    if let Some(trace) = entry.trace_id.as_deref().filter(|s| !page && !s.is_empty()) {
         let parents:Vec<(Uuid,Option<Uuid>)>=sqlx::query_as("select distinct a.operation_id,a.workspace_id
             from admission.action_execution a join admission.external_execution e on e.action_execution_id=a.id
             join identity.principal actor on actor.id=a.actor_principal_id and actor.tenant_id=a.tenant_id

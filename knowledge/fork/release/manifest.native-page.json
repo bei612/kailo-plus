@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "weknora",
-  "version": "1.0.0-native-page",
+  "version": "1.1.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -29,7 +29,8 @@
   "implements": [],
   "capabilityDeclarations": [],
   "allowedModelCallModes": [
-    "NONE"
+    "NONE",
+    "PLATFORM_LLM_ROUTE"
   ],
   "dataStoreIsolation": "DEDICATED_INSTANCE",
   "dataLocation": "Platform-operated dedicated WeKnora instance with its own database, vector store and object storage on the deployment's private component network.",

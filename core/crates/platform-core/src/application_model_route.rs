@@ -59,7 +59,11 @@ pub(crate) fn configuration(
         return Err(invalid());
     }
     let categories = categories.as_array().ok_or_else(invalid)?;
-    if categories.is_empty() {
+    // DD-128(1): a native page entry enables no category; its usage source is
+    // the Gateway, so there is no category meter declaration to check. Every
+    // other binding still enables categories whose meter is SUPPORTED.
+    let page = native_page(manifest);
+    if categories.is_empty() != page {
         return Err(invalid());
     }
     let declarations = manifest["capabilityDeclarations"]
@@ -102,6 +106,28 @@ pub(crate) fn configuration(
         return Err(invalid());
     }
     Ok(Some(Configuration { routes, meters }))
+}
+
+fn native_page(manifest: &Value) -> bool {
+    crate::application_binding::native::native_page_only(manifest)
+}
+
+/// DD-128(5): the reader of a native page entry key is the deployment's own
+/// per-binding OpenBao role, derived from the binding identity. The entry has
+/// no adapter directory, so neither Core nor the operator chooses this name.
+fn native_page_reader(principal: Uuid, binding: Uuid) -> Value {
+    let role = format!("application-model-{}", binding.simple());
+    json!({"roleName":role,"audience":role,"servicePrincipalId":principal})
+}
+
+/// DD-128(4): the activation evidence of a native page entry is Core's own
+/// discovery with the projected key (frozen model set) plus the native key
+/// identity. It is not a claim that the native service has loaded the key.
+fn native_page_receipt(projection: &Value, key: &str, revision: i64) -> Value {
+    json!({"deliveryMode":"NATIVE_PAGE","verification":"GATEWAY_MODEL_DISCOVERY",
+        "bindingId":projection["bindingId"],"generation":projection["generation"],
+        "gatewayPrincipalId":projection["gatewayPrincipalId"],
+        "nativeModels":projection["nativeModels"],"nativeKeyId":key,"nativeKeyRevision":revision})
 }
 
 /// The existing binding management caller checks both execution and sharing
@@ -309,16 +335,27 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         ae.tenant_id,
         &format!("application-model/{}/{}", ae.target_id, current.generation),
     );
-    let adapter = crate::application_binding::native::Adapter::resolve(
-        &current.adapter_service_ref,
-        &current.native_instance_ref,
-        &current.manifest,
-    )?;
-    let (reader, deliveries) =
-        adapter.model_reader_delivery(current.service_principal_id, ae.target_id)?;
-    if reader["audience"] != current.service_audience
-        || current.service_audience == state.secret_audience
-    {
+    let page = native_page(&current.manifest);
+    let (reader, deliveries) = if page {
+        (
+            native_page_reader(current.service_principal_id, ae.target_id),
+            Vec::new(),
+        )
+    } else {
+        let adapter = crate::application_binding::native::Adapter::resolve(
+            &current.adapter_service_ref,
+            &current.native_instance_ref,
+            &current.manifest,
+        )?;
+        let (reader, deliveries) =
+            adapter.model_reader_delivery(current.service_principal_id, ae.target_id)?;
+        if reader["audience"] != current.service_audience {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        }
+        (reader, deliveries)
+    };
+    let service_audience = reader["audience"].as_str().ok_or_else(unavailable)?;
+    if service_audience == state.secret_audience {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     let native_scope = current
@@ -328,6 +365,8 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         .ok_or(Refusal::Precondition(ReasonCode::ProjectionDelayed))?;
     let challenges = match current.model_projection.as_ref() {
         Some(existing) => existing["deliveryChallenges"].clone(),
+        // DD-128(4): no native proof is requested from a native page entry.
+        None if page => json!([]),
         None => {
             let mut challenges = Vec::new();
             for route in &config.routes {
@@ -344,7 +383,7 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         .as_object_mut()
         .ok_or_else(unavailable)?
         .remove("condition");
-    let projection = json!({"tenantId":ae.tenant_id,"workspaceId":ae.workspace_id,
+    let mut projection = json!({"tenantId":ae.tenant_id,"workspaceId":ae.workspace_id,
         "bindingId":ae.target_id,"componentReleaseId":current.component_release_id,
         "generation":current.generation,"gatewayPrincipalId":current.service_principal_id,
         "operationId":current.operation_id,"configDigest":current.config_digest,
@@ -352,8 +391,11 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         "meterKeys":config.meters,"meters":meters,"customerId":customer,"subject":subject,
         "namespace":state.openmeter.namespace(),"modelAdmissionPolicy":admission_policy,
         "nativeScopeRef":native_scope,"secretReader":reader,"deliveryChallenges":challenges,
-        "serviceSecretRef":{"locator":locator,"version":1,"audience":current.service_audience},
+        "serviceSecretRef":{"locator":locator,"version":1,"audience":service_audience},
         "secretRef":{"locator":locator,"version":1,"audience":state.secret_audience}});
+    if page {
+        projection["deliveryMode"] = json!("NATIVE_PAGE");
+    }
     let mut tx = state.pool.begin().await?;
     let frozen: Option<Option<Value>> = sqlx::query_scalar(
         "select p.model_projection from projection.application_runtime p
@@ -485,6 +527,7 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
     // does not require rereading a rotated audit file or rewriting native keys.
     let receipt = match current.model_delivery_receipt.as_ref() {
         Some(receipt) => receipt.clone(),
+        None if page => native_page_receipt(&projection, &id, revision),
         None => verify_model_delivery(state, &current, &projection, &deliveries, &secret).await?,
     };
     authorize_routes(state, ae, &config).await?;
@@ -882,14 +925,21 @@ async fn admit(
     let mut caller_attribution = None;
     let mut caller_evidence = Vec::new();
     let mut caller_audits = Vec::new();
+    // DD-128(2): a native page entry has no Kailo-initiated operation. The
+    // service's own W3C trace is neither attribution nor a reason to refuse.
+    let traceparent = if native_page(&current.manifest) {
+        ""
+    } else {
+        input.traceparent.as_str()
+    };
     if !discovery {
         if input.method != "POST" {
             return Err(denied());
         }
         // Correlation is optional. When present it must resolve to a real live
         // action in this exact binding, never to caller-supplied scope/identity.
-        if !input.traceparent.is_empty() {
-            let trace = trace_id(&input.traceparent).ok_or_else(denied)?;
+        if !traceparent.is_empty() {
+            let trace = trace_id(traceparent).ok_or_else(denied)?;
             let actions: Vec<Uuid> = sqlx::query_scalar(
                 "select distinct a.id from admission.action_execution a
                 join admission.external_execution e on e.action_execution_id=a.id
@@ -963,7 +1013,7 @@ async fn admit(
             crate::governance::exact_definition_for_execution(&state.pool, &origin).await?;
         caller_audits.push((origin, definition));
     }
-    if let Some(trace) = trace_id(&input.traceparent) {
+    if let Some(trace) = trace_id(traceparent) {
         evidence.push(crate::audit::Evidence::new(
             contracts::EvidenceKind::TraceId,
             trace,
@@ -1065,6 +1115,58 @@ mod tests {
             ]);
             assert!(configuration("PLATFORM_LLM_ROUTE", &duplicate, &category, &manifest).is_err());
         }
+    }
+
+    #[test]
+    fn native_page_entry_routes_models_without_category_adapter_or_native_proof() {
+        // DD-128(1): no category, no meter declaration; the release's own mode
+        // set still bounds the binding choice.
+        let manifest = json!({"allowedModelCallModes":["NONE","PLATFORM_LLM_ROUTE"],
+            "implements":[],"capabilityDeclarations":[],"frontendDelivery":{"mode":"NATIVE_PAGE"},
+            "executionConnector":{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}});
+        let route = Uuid::new_v4();
+        let config = json!({"nativePageUrl":"http://192.0.2.10:58095/","modelGateway":{
+            "routeResourceIds":[route],"meterKeys":["component_model_tokens"]}});
+        let selected = configuration("PLATFORM_LLM_ROUTE", &config, &json!([]), &manifest)
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.routes, vec![route]);
+        assert_eq!(selected.meters, vec!["component_model_tokens".to_owned()]);
+        let entry = json!({"nativePageUrl":"http://192.0.2.10:58095/"});
+        assert!(configuration("NONE", &entry, &json!([]), &manifest)
+            .unwrap()
+            .is_none());
+        let category = json!([{"category":"data_query","version":2}]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &config, &category, &manifest).is_err());
+        let mut page_only = manifest.clone();
+        page_only["allowedModelCallModes"] = json!(["NONE"]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &config, &json!([]), &page_only).is_err());
+        let mut other = config.clone();
+        other["modelGateway"]["meterKeys"] = json!(["model_input_tokens"]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &other, &json!([]), &manifest).is_err());
+
+        // DD-128(4)(5): the reader is the binding's own deployment role and the
+        // receipt names Core's discovery evidence, not a native load proof.
+        let binding = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        let reader = native_page_reader(principal, binding);
+        assert_eq!(
+            reader["roleName"],
+            json!(format!("application-model-{}", binding.simple()))
+        );
+        assert_eq!(reader["audience"], reader["roleName"]);
+        assert_eq!(reader["servicePrincipalId"], json!(principal));
+        let projection = json!({"bindingId":binding,"generation":1,"gatewayPrincipalId":principal,
+            "nativeModels":["chat-route","embedding-route"]});
+        let receipt = native_page_receipt(&projection, "native-key", 3);
+        assert_eq!(
+            receipt,
+            json!({"deliveryMode":"NATIVE_PAGE","verification":"GATEWAY_MODEL_DISCOVERY",
+                "bindingId":binding,"generation":1,"gatewayPrincipalId":principal,
+                "nativeModels":["chat-route","embedding-route"],"nativeKeyId":"native-key",
+                "nativeKeyRevision":3})
+        );
+        assert!(receipt.get("nativeProof").is_none());
     }
 
     #[test]
@@ -1199,6 +1301,140 @@ END $$;
         .execute(&mut *down)
         .await
         .expect_err("rollback must retain native model facts");
+        assert_eq!(
+            refused
+                .as_database_error()
+                .and_then(|e| e.code())
+                .as_deref(),
+            Some("23514")
+        );
+        down.rollback().await.unwrap();
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated migrated APPLICATION_MODEL_TEST_DATABASE_URL with original base fixture"]
+    async fn native_page_projection_activates_only_with_its_own_discovery_receipt() {
+        use sqlx::{Acquire, Connection};
+        let mut conn = sqlx::PgConnection::connect(
+            &std::env::var("APPLICATION_MODEL_TEST_DATABASE_URL").expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = Connection::begin(&mut conn).await.unwrap();
+        // DD-128: a native page release registered and approved through the
+        // original guards (empty suite plan), then the exact runtime facts.
+        sqlx::raw_sql(r#"
+DO $$
+DECLARE release uuid:=gen_random_uuid(); register_ae uuid:=gen_random_uuid(); approve_ae uuid:=gen_random_uuid();
+ binding uuid:=gen_random_uuid(); service uuid:=gen_random_uuid(); ae uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
+ tenant constant uuid:='00000000-0000-0000-0000-000000000001';
+ human constant uuid:='00000000-0000-0000-0000-000000000011';
+ role text; model jsonb; receipt jsonb;
+BEGIN
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,
+   component_conformance_plan,component_conformance_observation)
+ VALUES(register_ae,register_ae,tenant,'component_release.register',1,human,human,release,repeat('c',64),
+   'ALLOWED','DISPATCHED',register_ae,'{"planDigest":"page","suiteDigest":"page","contractDigests":[]}',
+   jsonb_build_object('actionExecutionId',register_ae,'operationId',register_ae,'workflowId','page-register-'||register_ae,
+     'runId','page-run','componentReleaseId',release,'artifactDigest',repeat('d',64),'planDigest','page',
+     'suiteDigest','page','contractDigests','[]'::jsonb,'observations','[]'::jsonb));
+ INSERT INTO projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,kind,tenant_id,operation_id,action_execution_id,projection_state)
+ VALUES('page-register-'||register_ae,'page-run','ComponentTaskWorkflow',1,'COMPONENT_RELEASE',tenant,register_ae,register_ae,'RUNNING');
+ INSERT INTO projection.task_projection(workflow_id,run_id,last_event_id,status) VALUES('page-register-'||register_ae,'page-run',1,'RUNNING');
+ INSERT INTO catalog.component_definition(type_key,catalog_tenant_id,class,platform_port_key,status)
+ VALUES('page_fixture',tenant,'APPLICATION','NONE','ACTIVE');
+ INSERT INTO catalog.component_release(id,component_type_key,catalog_tenant_id,version,manifest,component_package,binding_config_schema,
+   manifest_digest,component_package_digest,adapter_build_ref,registered_by_action_execution_id,status)
+ VALUES(release,'page_fixture',tenant,'page-v1',jsonb_build_object('componentTypeKey','page_fixture','implements','[]'::jsonb,
+   'allowedModelCallModes','["NONE","PLATFORM_LLM_ROUTE"]'::jsonb,'frontendDelivery','{"mode":"NATIVE_PAGE"}'::jsonb,
+   'executionConnector','{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}'::jsonb),
+   '{}','{}',repeat('d',64),repeat('d',64),repeat('d',64),register_ae,'REGISTERED');
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,
+   temporal_workflow_id,approval_workflow_id,component_compatibility_observation)
+ VALUES(approve_ae,approve_ae,tenant,'component_release.approve',1,'00000000-0000-0000-0000-000000000021',
+   '00000000-0000-0000-0000-000000000021',release,repeat('e',64),'ALLOWED','DISPATCHED',approve_ae,
+   'page-approve-'||approve_ae,'page-approval-'||approve_ae,
+   jsonb_build_object('actionExecutionId',approve_ae,'componentReleaseId',release,'workflowId','page-approve-'||approve_ae,
+     'runId','page-run','approvalWorkflowId','page-approval-'||approve_ae,'registrationPlanDigest','page','builds','[{},{},{}]'::jsonb));
+ INSERT INTO projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,kind,tenant_id,operation_id,action_execution_id,projection_state)
+ VALUES('page-approve-'||approve_ae,'page-run','ComponentTaskWorkflow',1,'COMPONENT_RELEASE',tenant,approve_ae,approve_ae,'RUNNING'),
+   ('page-approval-'||approve_ae,'page-run','ApprovalWorkflow',1,NULL,tenant,approve_ae,approve_ae,'RUNNING');
+ INSERT INTO projection.task_projection(workflow_id,run_id,last_event_id,status) VALUES('page-approve-'||approve_ae,'page-run',1,'RUNNING');
+ INSERT INTO projection.approval_projection(workflow_id,action_execution_id,tenant_id,run_id,last_event_id,status,decisions,expires_at,consume_deadline)
+ VALUES('page-approval-'||approve_ae,approve_ae,tenant,'page-run',1,'APPROVED','[]',now()+interval '1 hour',now()+interval '1 hour');
+ UPDATE catalog.component_release SET status='APPROVED',approved_by_action_execution_id=approve_ae WHERE id=release;
+
+ INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(service,tenant,'SERVICE','ACTIVE');
+ INSERT INTO identity.service_principal(principal_id,audience) VALUES(service,'NONE');
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+ VALUES(ae,ae,tenant,'application_binding.create',1,human,human,binding,repeat('a',64),'ALLOWED','DISPATCHED',ae);
+ INSERT INTO catalog.application_binding(id,tenant_id,component_type_key,component_release_id,service_principal_id,
+   adapter_service_ref,native_instance_ref,isolation_mode,call_identity_mode,capability_categories,normalized_config,
+   config_digest,secret_refs,model_call_mode,retain_on_tenant_delete,state,version,created_by_action_execution_id,projection_action_execution_id)
+ VALUES(binding,tenant,'page_fixture',release,service,'NONE','page-instance','DEDICATED_INSTANCE','INSTANCE_SERVICE',
+   '[]','{}',repeat('7',64),'[]','PLATFORM_LLM_ROUTE',false,'PROVISIONING',1,ae,ae);
+ UPDATE identity.service_principal SET component_binding_kind='APPLICATION',component_binding_id=binding WHERE principal_id=service;
+ INSERT INTO projection.application_runtime(binding_id,generation,component_release_id,normalized_manifest_digest,
+   adapter_contract_digest,state,action_execution_id)
+ VALUES(binding,1,release,repeat('d',64),repeat('d',64),'PENDING',ae);
+
+ role:='application-model-'||replace(binding::text,'-','');
+ model:=jsonb_build_object('tenantId',tenant,'workspaceId',NULL,'bindingId',binding,'generation',1,
+   'gatewayPrincipalId',service,'operationId',ae,'configDigest',repeat('7',64),'deliveryMode','NATIVE_PAGE',
+   'meters',jsonb_build_array(jsonb_build_object('key','component_model_tokens')),
+   'routeResourceIds',jsonb_build_array(route),'nativeModels',jsonb_build_array(route::text),'deliveryChallenges','[]'::jsonb,
+   'secretReader',jsonb_build_object('roleName',role,'audience',role,'servicePrincipalId',service),
+   'serviceSecretRef',jsonb_build_object('locator','tenants/x/kv/model','version',1,'audience',role),
+   'secretRef',jsonb_build_object('locator','tenants/x/kv/model','version',1,'audience','core'));
+ receipt:=jsonb_build_object('deliveryMode','NATIVE_PAGE','verification','GATEWAY_MODEL_DISCOVERY','bindingId',binding,
+   'generation',1,'gatewayPrincipalId',service,'nativeModels',jsonb_build_array(route::text),
+   'nativeKeyId','page-native-key','nativeKeyRevision',3);
+ -- A reader that is not this binding's own role never activates.
+ BEGIN
+   UPDATE projection.application_runtime SET model_projection=jsonb_set(model,'{secretReader,roleName}',
+     to_jsonb('application-model-'||repeat('0',32))),model_state='PENDING' WHERE binding_id=binding;
+   UPDATE projection.application_runtime SET model_dispatch_started=true,model_native_key_id='page-native-key',
+     model_native_key_revision=3 WHERE binding_id=binding;
+   UPDATE projection.application_runtime SET model_delivery_receipt=receipt,model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'foreign reader activated a native page key';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ UPDATE projection.application_runtime SET model_projection=model,model_state='PENDING' WHERE binding_id=binding;
+ UPDATE projection.application_runtime SET model_dispatch_started=true,model_native_key_id='page-native-key',
+   model_native_key_revision=3 WHERE binding_id=binding;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=receipt||'{"nativeProof":"x"}'::jsonb,
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'native page receipt carried a foreign field';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_set(receipt,'{nativeKeyRevision}','4'),
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'receipt of another native key revision activated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_build_array(receipt),
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'adapter-shaped receipt activated a native page key';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ UPDATE projection.application_runtime SET model_delivery_receipt=receipt,model_state='ACTIVE' WHERE binding_id=binding;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_set(receipt,'{generation}','2')
+   WHERE binding_id=binding;
+   RAISE EXCEPTION 'native page receipt mutated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END $$;
+"#).execute(&mut *tx).await.unwrap();
+        let mut down = tx.begin().await.unwrap();
+        let refused = sqlx::raw_sql(include_str!(
+            "../../../migrations/20261021010000_native_page_model_route.down.sql"
+        ))
+        .execute(&mut *down)
+        .await
+        .expect_err("rollback must retain native page model facts");
         assert_eq!(
             refused
                 .as_database_error()
