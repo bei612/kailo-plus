@@ -117,8 +117,10 @@ it("passes only a freshly admitted matching channel descriptor to the Project ho
   const channelId="12345678-1234-4234-8234-123456789001",workspaceId="22345678-1234-4234-8234-123456789001";
   const channel={channelId,channelType:"stream",name:"Project home",archived:false};
   const row={id:workspaceId,channel,isMember:true,membershipState:"ACTIVE",visibility:"open",memberCount:1};
+  // Original projectHomeSelection: the home is authoritative only when the owner's repository binds the same channel.
   api.queryProjects.mockImplementation(async(request:{view:string})=>({pubkey:own,limit:20,events:request.view==="PROJECTS"?
-    [{id:eventId,pubkey:own,kind:30621,created_at:1,content:"",tags:[["d","project"],["name","Actual project"],["buzz-channel",channelId]]}]:[]}));
+    [{id:eventId,pubkey:own,kind:30621,created_at:1,content:"",tags:[["d","project"],["name","Actual project"],["buzz-channel",channelId],["a",`30617:${own}:project`]]}]
+    :request.view==="REPOSITORIES"?[{id:"d".repeat(64),pubkey:own,kind:30617,created_at:1,content:"",tags:[["d","project"],["name","Actual project"],["buzz-channel",channelId]]}]:[]}));
   const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:request.path.includes("discoverable-workspaces")?{items:[row]}:channel}));
   const client=createBffClient({send});const renderChannel=vi.fn(workspace=><div data-testid="project-native-channel">{workspace.channel.name}</div>);
   await act(async()=>root.render(<QueryClientProvider client={cache}><PlatformProvider client={client} currentPrincipalId="principal" locale="en"><TooltipProvider>
