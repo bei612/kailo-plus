@@ -27,6 +27,8 @@ validation:
       ref: core/verify/component-action.md
     - dimension: 安全边界
       ref: file-storage/fork/verify/native-identity.md
+    - dimension: 安全边界
+      ref: core/verify/native-page-model-route.md
 
 implementation:
   owners: [team-platform]
