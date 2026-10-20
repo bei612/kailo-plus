@@ -184,7 +184,6 @@ function chatHost(overrides: Partial<ProjectAgentChatHost> = {}) {
   const thread: ProjectAgentConversationEvent[] = [];
   const host: ProjectAgentChatHost = {
     identityScope: "t:me",
-    viewerPubkey: viewer,
     readConversation: vi.fn<ProjectAgentChatHost["readConversation"]>(async () => thread),
     send: vi.fn<ProjectAgentChatHost["send"]>(async (request) => {
       const id = request.parentEventId ? hex(thread.length + 10) : opener;

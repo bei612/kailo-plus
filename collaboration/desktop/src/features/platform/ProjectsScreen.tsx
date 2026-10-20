@@ -117,7 +117,7 @@ function useDesktopProjectAgentChat():ProjectAgentChatHost|undefined{
     const relayUrl=community.relayUrl;const signer=session.devicePubkey;
     if(!relayUrl||!signer)return undefined;
     const check=()=>{if(!scope.active)throw new Error("Project Agent scope changed");};
-    return {identityScope:`${session.facts.communityHost}:${signer}`,viewerPubkey:signer,
+    return {identityScope:`${session.facts.communityHost}:${signer}`,
       readConversation:async({channelId},openerEventId,signal)=>{
         const current=()=>{check();signal.throwIfAborted();};current();
         const root=await getEventById(openerEventId);current();

@@ -115,17 +115,16 @@ function conversationEvents(value:unknown):ProjectAgentConversationEvent[]{
  * start, enable or install path exists here.
  */
 export function useWebProjectAgentChat(scopeKey:string):ProjectAgentChatHost|undefined{
+  // No own-profile read here: the panel's own messages are those of the work-item host identity.
   const client=useBffClient();const principalId=useCurrentPrincipalId();
-  const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>client.profile(),retry:false});
-  const viewerPubkey=profile.isSuccess&&HEX64.test(profile.data.pubkey)?profile.data.pubkey:undefined;
   const scope=useMemo(()=>({active:true}),[scopeKey,client,principalId]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
   return useMemo<ProjectAgentChatHost|undefined>(()=>{
     // Tenant and principal of the session scope; the stored pointer outlives a session.
     const [tenantId,scopePrincipal]=scopeKey.split(":");
-    if(!viewerPubkey||!principalId||!tenantId||scopePrincipal!==principalId)return undefined;
+    if(!principalId||!tenantId||scopePrincipal!==principalId)return undefined;
     const check=()=>{if(!scope.active)throw new Error("Project Agent scope changed");};
-    return {identityScope:`${tenantId}:${principalId}`,viewerPubkey,
+    return {identityScope:`${tenantId}:${principalId}`,
       readConversation:async({workspaceId},openerEventId,signal)=>{
         const current=()=>{check();signal.throwIfAborted();};current();
         const root=await client.workspaceMessages(workspaceId,{anchorEventId:openerEventId});current();
@@ -154,7 +153,7 @@ export function useWebProjectAgentChat(scopeKey:string):ProjectAgentChatHost|und
       },
       mentionOutcomes:async(workspaceId,eventIds)=>{check();const page=await queryAgentMentionOutcomes(workspaceId,eventIds);check();return page;},
     };
-  },[client,principalId,scope,scopeKey,viewerPubkey]);
+  },[client,principalId,scope,scopeKey]);
 }
 
 export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm,renderChannel}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;renderChannel:ProjectChannelRenderer;

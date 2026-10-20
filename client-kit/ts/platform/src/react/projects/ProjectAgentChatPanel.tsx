@@ -337,7 +337,8 @@ function ConversationThread({ agent, agentAvatarUrl, host, opener }: {
   const t = useUiT();
   const pulse = usePulseHost();
   const bottomRef = React.useRef<HTMLDivElement>(null);
-  const viewer = normalizePubkey(host.viewerPubkey);
+  // The work-item host's signing identity (Web SERVER key, Desktop device key) authors own messages.
+  const viewer = normalizePubkey(pulse.pubkey);
   const query = useQuery({
     queryKey: ["projects", "agent-chat-conversation", host.identityScope, agent.workspaceId, agent.channelId, opener.eventId],
     retry: false,
@@ -387,7 +388,7 @@ function ConversationThread({ agent, agentAvatarUrl, host, opener }: {
         const own = author === viewer;
         const isAgent = author === normalizePubkey(agent.pubkey);
         const split = own ? splitProjectDetailAgentContext(event.content) : { context: null, message: event.content };
-        const name = isAgent ? agent.name : resolveUserLabel({ pubkey: event.pubkey, currentPubkey: host.viewerPubkey, profiles, t });
+        const name = isAgent ? agent.name : resolveUserLabel({ pubkey: event.pubkey, currentPubkey: pulse.pubkey, profiles, t });
         const avatarUrl = isAgent ? agentAvatarUrl : profiles?.[author]?.avatarUrl ?? null;
         const status = own ? statusFor(event.id, event.created_at) : undefined;
         return (

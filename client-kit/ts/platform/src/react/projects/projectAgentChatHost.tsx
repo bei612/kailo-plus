@@ -10,7 +10,7 @@ import { WorkspaceChannelCreateChannelType, WorkspaceMembershipState, type Agent
 import type { BffClient } from "../../client";
 import { useBffClient } from "../context";
 import { loadChannelDirectory } from "../channel-browser/loadChannelDirectory";
-import { loadComposerAgentDirectory } from "../composer/features/messages/lib/composerAgentDirectory";
+import { admittedComposerInstallations, loadComposerAgentDirectory } from "../composer/features/messages/lib/composerAgentDirectory";
 import {
   sortProjectAgentCandidates,
   type ProjectAgentCandidate,
@@ -24,8 +24,6 @@ export type ProjectAgentChatHost = {
    * device key). Scopes the device-local conversation pointer; never a session id.
    */
   identityScope: string;
-  /** The viewer's own signing pubkey on this host; its messages carry the context payload. */
-  viewerPubkey: string;
   /** The opener event and its thread replies, through the host's admitted channel read. */
   readConversation: (
     scope: { workspaceId: string; channelId: string },
@@ -80,11 +78,13 @@ export async function loadProjectAgentDirectory(
     for (;;) {
       const row = rows[next++];
       if (!row) return;
-      // Cheap first page: Workspaces without Installations need no admitted directory read.
+      // Cheap first page: a Workspace without any mention-bound ACTIVE Installation on its
+      // channel needs no admitted directory read; the full read re-checks everything.
       const first = await client.agentInstallations(row.id, 0);
       check();
       if (!first || !Array.isArray(first.installations)) throw new Error("Agent directory unavailable");
-      if (first.installations.length === 0 && first.nextOffset == null) continue;
+      if (first.nextOffset == null
+        && admittedComposerInstallations(first.installations, row.id, row.channel.channelId).length === 0) continue;
       const directory = await loadComposerAgentDirectory(client, { workspaceId: row.id, channelId: row.channel.channelId }, current);
       check();
       if (directory.channelId !== row.channel.channelId) throw new Error("Agent directory channel mismatch");
