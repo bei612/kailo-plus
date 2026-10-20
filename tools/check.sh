@@ -869,8 +869,10 @@ def unique_mapping(loader, node, deep=False):
     return loader.construct_mapping(node, deep=deep)
 
 UniqueKeysLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
-d = yaml.load(open("deploy/local/compose.yaml", encoding="utf-8"), Loader=UniqueKeysLoader)
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
+# 运行投递与数据经 ${KAILO_RUNTIME_DIR:-.} 引用（ADR-20 §3）；按其缺省（本目录）展开后核对，
+# 下列不变式对本地拓扑与发布入口指定的运行目录同样成立。
+d = yaml.load(raw.replace("${KAILO_RUNTIME_DIR:-.}/", "./"), Loader=UniqueKeysLoader)
 bad = []
 # Exercise the actual existing deployment producer, not a second renderer.
 starter = pathlib.Path("deploy/local/start-core.sh").read_text(encoding="utf-8")
