@@ -19,6 +19,18 @@
 
 ## 确定状态，不补零
 
+- `stored_at` 查证（`openmeter::same_stored_event`）把冻结 CloudEvent 与原生读回逐字段比较，
+  只按原生读时投影规范化两项：`time` 按 ClickHouse 秒精度比较；`datacontenttype` 按有效内容类型
+  比较——固定 OpenMeter 的 `api/v3/handlers/events/convert.go::toAPIMeteringIngestedEvent`
+  不保存该属性、凡有 data 即读出 `application/json`，CloudEvents JSON 格式中缺省即同义。
+  Memory 读写与 Application 用量的冻结事件不带该属性，曾因此被判 `Conflict` 而停在 `UNKNOWN`
+  （2026-10-20 生产 12 条 `BUZZ_AGENT_MEMORY`，原生读回与冻结事件仅此一键不同）；
+  显式非 JSON 类型、`data` 或其余属性任何差异仍是 `Conflict`。
+- 同步 Memory 读写（`agent_memory::confirm_memory_usage`）披露前需要本次两条 UsageEvent 的原生
+  `stored_at`。原生 202 只入 Kafka producer，sink 异步落库（生产实测 ingested→stored 约 1 s），
+  所以首轮 `settle_events` 最多到 `ACCEPTED`；此后在已配置的 `AGENT_MEMORY_READ_TIMEOUT_SECONDS`
+  内只按 ID/source/subject/type 轮询原生 `stored_at`、不重复投递，再由同一 `settle_events` 记
+  `COMMITTED`。超时仍是 `BILLING_UNAVAILABLE`，行由治理对账继续收敛。
 - 阶段（`BusinessOperationPhase`）与共用任务页同序：投影不明/落后优先为 `UNKNOWN`/
   `PROJECTION_DELAYED`，其次准入、派发、Workflow 终态；无 Workflow 的同步动作派发后为
   `APPLIED`，取消控制只算 `CANCEL_REQUESTED`。

@@ -166,6 +166,56 @@ pub(crate) struct StoredEvidence {
     pub configuration_warning: bool,
 }
 
+/// The only `datacontenttype` the CloudEvents JSON format assumes when the
+/// attribute is absent, and the only one fixed OpenMeter v3 reads back.
+const JSON_DATA_CONTENT_TYPE: &str = "application/json";
+
+/// Compares the frozen outbox CloudEvent with the event OpenMeter reads back.
+///
+/// Two read-time projections of the fixed native version are not stored facts:
+/// - `time`: createEventsTable::toSQL keeps a ClickHouse DateTime (seconds) and
+///   the query encoder spells RFC3339 UTC differently. Compare at the native
+///   precision; the outbox occurred_at/body keep the first native completion
+///   time and retries never rewrite it.
+/// - `datacontenttype`: toAPIMeteringIngestedEvent does not persist it and
+///   derives `application/json` for every event that carries data. The
+///   CloudEvents JSON format reads an absent attribute as that same type, so
+///   both sides are compared on their effective content type; an explicit
+///   non-JSON type still conflicts.
+///
+/// Every other attribute and the whole `data` object must match exactly.
+fn same_stored_event(expected: &Value, actual: Value) -> Result<(), Error> {
+    let expected_time = expected
+        .get("time")
+        .and_then(Value::as_str)
+        .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+        .ok_or(Error::Precondition)?;
+    let stored_time = actual
+        .get("time")
+        .and_then(Value::as_str)
+        .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+        .ok_or(Error::Conflict)?;
+    let Value::Object(mut actual) = actual else {
+        return Err(Error::Conflict);
+    };
+    let mut frozen = expected.as_object().ok_or(Error::Precondition)?.clone();
+    for event in [&mut actual, &mut frozen] {
+        event.remove("time");
+        if event.get("data").is_some_and(|data| !data.is_null()) {
+            event
+                .entry("datacontenttype")
+                .or_insert_with(|| Value::from(JSON_DATA_CONTENT_TYPE));
+        }
+    }
+    if stored_time.timestamp() != expected_time.timestamp()
+        || stored_time.timestamp_subsec_nanos() != 0
+        || actual != frozen
+    {
+        return Err(Error::Conflict);
+    }
+    Ok(())
+}
+
 /// 仅本次 HTTP 调用期间持有原生可写字段，不序列化或持久化 Customer 正文。
 /// digest 绑定 namespace/Customer/完整期望字段，供已有 AE 派发阶段对账。
 pub(crate) struct SubjectProjection {
@@ -1411,36 +1461,7 @@ impl OpenMeter {
         let Some(stored) = page.data.into_iter().next() else {
             return Ok(None);
         };
-        // 固定版本 createEventsTable::toSQL 的 time 是 ClickHouse DateTime（秒）；
-        // 查询 encoder 也会使用不同的 RFC3339 UTC 拼写。按原生保存精度比较，
-        // 原 outbox 的 occurred_at/body 仍保持第一次原生完成时间，重试不改写。
-        let expected_time = expected
-            .get("time")
-            .and_then(Value::as_str)
-            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
-            .ok_or(Error::Precondition)?;
-        let stored_time = stored
-            .event
-            .get("time")
-            .and_then(Value::as_str)
-            .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
-            .ok_or(Error::Conflict)?;
-        let mut actual = stored.event;
-        let mut frozen = expected.clone();
-        actual
-            .as_object_mut()
-            .ok_or(Error::Conflict)?
-            .remove("time");
-        frozen
-            .as_object_mut()
-            .ok_or(Error::Precondition)?
-            .remove("time");
-        if stored_time.timestamp() != expected_time.timestamp()
-            || stored_time.timestamp_subsec_nanos() != 0
-            || actual != frozen
-        {
-            return Err(Error::Conflict);
-        }
+        same_stored_event(expected, stored.event)?;
         Ok(Some(StoredEvidence {
             stored_at: stored.stored_at,
             configuration_warning: stored.validation_errors.is_some_and(|v| !v.is_empty()),
@@ -2275,5 +2296,119 @@ mod entitlement_value_tests {
         let open: NativeEntitlementValue =
             serde_json::from_str(r#"{"hasAccess":true,"balance":9995,"usage":5}"#).unwrap();
         assert!(open.has_access);
+    }
+}
+
+#[cfg(test)]
+mod stored_event_tests {
+    use super::{same_stored_event, Error, OpenMeter};
+    use axum::{http::Uri, Json, Router};
+    use serde_json::{json, Value};
+
+    /// Frozen exactly as the Memory read outbox writes it: no datacontenttype.
+    fn frozen_memory_read() -> Value {
+        json!({"specversion":"1.0","source":"urn:platform:core:usage",
+            "id":"366f736c-f1b7-5994-a027-908152195452","type":"kailo.agent.memory.read",
+            "subject":"tenant:installation","time":"2026-10-20T06:35:04+00:00",
+            "data":{"action_key":"agent.memory.entry.list","native_event_ids":[],
+                "plaintext_bytes":0,"read_outcome":"COMPLETE"}})
+    }
+
+    /// The fixed OpenMeter v3 read form of the same event: seconds-precision
+    /// `Z` time and a derived `application/json` content type.
+    fn native_read_form(frozen: &Value) -> Value {
+        let mut native = frozen.clone();
+        native["time"] = json!("2026-10-20T06:35:04Z");
+        native["datacontenttype"] = json!("application/json");
+        native
+    }
+
+    #[test]
+    fn absent_content_type_matches_the_native_derived_json_type() {
+        let frozen = frozen_memory_read();
+        same_stored_event(&frozen, native_read_form(&frozen)).unwrap();
+    }
+
+    #[test]
+    fn explicit_json_content_type_still_matches() {
+        let mut frozen = frozen_memory_read();
+        frozen["datacontenttype"] = json!("application/json");
+        same_stored_event(&frozen, native_read_form(&frozen)).unwrap();
+    }
+
+    #[test]
+    fn content_type_data_and_time_differences_conflict() {
+        let frozen = frozen_memory_read();
+        let mut text = frozen.clone();
+        text["datacontenttype"] = json!("text/plain");
+        assert!(matches!(
+            same_stored_event(&text, native_read_form(&frozen)),
+            Err(Error::Conflict)
+        ));
+        let mut data = native_read_form(&frozen);
+        data["data"]["plaintext_bytes"] = json!(1);
+        assert!(matches!(
+            same_stored_event(&frozen, data),
+            Err(Error::Conflict)
+        ));
+        let mut extra = native_read_form(&frozen);
+        extra["dataschema"] = json!("urn:other");
+        assert!(matches!(
+            same_stored_event(&frozen, extra),
+            Err(Error::Conflict)
+        ));
+        let mut fraction = native_read_form(&frozen);
+        fraction["time"] = json!("2026-10-20T06:35:04.5Z");
+        assert!(matches!(
+            same_stored_event(&frozen, fraction),
+            Err(Error::Conflict)
+        ));
+        let mut untimed = frozen.clone();
+        untimed.as_object_mut().unwrap().remove("time");
+        assert!(matches!(
+            same_stored_event(&untimed, native_read_form(&frozen)),
+            Err(Error::Precondition)
+        ));
+    }
+
+    #[tokio::test]
+    async fn stored_usage_reads_back_a_memory_event_without_content_type() {
+        let frozen = frozen_memory_read();
+        let native = native_read_form(&frozen);
+        let expected_filters = frozen.clone();
+        let app = Router::new().fallback(move |uri: Uri| {
+            let native = native.clone();
+            let frozen = expected_filters.clone();
+            async move {
+                let url = reqwest::Url::parse(&format!("http://localhost{uri}")).unwrap();
+                assert!(url.path().ends_with("/api/v3/openmeter/events"));
+                for key in ["id", "source", "subject", "type"] {
+                    let filter = format!("filter[{key}][eq]");
+                    assert!(url
+                        .query_pairs()
+                        .any(|(k, v)| k == filter.as_str() && v == frozen[key].as_str().unwrap()));
+                }
+                Json(
+                    json!({"data":[{"customer":{"id":"00000000000000000000000001"},
+                    "event":native,"ingested_at":"2026-10-20T06:35:04Z",
+                    "stored_at":"2026-10-20T06:35:05Z"}],
+                    "meta":{"page":{"next":null,"previous":null,"size":20}}}),
+                )
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = OpenMeter {
+            http: reqwest::Client::new(),
+            customers: reqwest::Url::parse(&format!("http://{address}/api/v3/openmeter/customers"))
+                .unwrap(),
+            namespace: "test".into(),
+            automation_native_meter_key: None,
+        };
+        let evidence = client.stored_usage(&frozen).await.unwrap().unwrap();
+        assert_eq!(evidence.stored_at.to_rfc3339(), "2026-10-20T06:35:05+00:00");
+        assert!(!evidence.configuration_warning);
+        server.abort();
     }
 }

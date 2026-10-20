@@ -1790,13 +1790,31 @@ async fn record_memory_usage(
     Ok(ids)
 }
 
+/// Poll cadence while OpenMeter's sink stores events it has already accepted.
+/// The caller's configured `read_timeout` bounds the whole wait.
+const NATIVE_STORE_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
 async fn confirm_memory_usage(
     state: &ServiceState,
     ae: &crate::governance::Execution,
     ids: &[Uuid],
 ) -> Result<bool, &'static str> {
-    if !crate::gateway_usage::settle_events(&state.pool, ids, &state.openmeter).await? {
+    if ids.len() != 2 {
         return Ok(false);
+    }
+    // The first pass publishes the frozen CloudEvents, but a native 202 only
+    // enqueues into OpenMeter's Kafka producer: the sink worker writes
+    // stored_at asynchronously, so one pass can at most reach ACCEPTED. Wait
+    // for the native stored_at of exactly these events without publishing
+    // again, then let the same settlement record COMMITTED. A timeout leaves
+    // BILLING_UNAVAILABLE and the governance reconciler settles the rows.
+    while !crate::gateway_usage::settle_events(&state.pool, ids, &state.openmeter).await? {
+        loop {
+            tokio::time::sleep(NATIVE_STORE_POLL).await;
+            if natively_stored(state, ae, ids).await? {
+                break;
+            }
+        }
     }
     let events: Vec<(Uuid, Value, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
         "select id,event,stored_at from outbox.usage_event where id=any($1)
@@ -1820,6 +1838,42 @@ async fn confirm_memory_usage(
             .await
             .map_err(|_| "MEMORY_USAGE_NATIVE_UNKNOWN")?;
         if !evidence.is_some_and(|e| e.stored_at == stored_at && !e.configuration_warning) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Reads native stored_at for this action's own unsettled Memory events
+/// without publishing them again; state transitions stay in `settle_events`.
+async fn natively_stored(
+    state: &ServiceState,
+    ae: &crate::governance::Execution,
+    ids: &[Uuid],
+) -> Result<bool, &'static str> {
+    let rows: Vec<(Value, String)> = sqlx::query_as(
+        "select event,settlement_status from outbox.usage_event where id=any($1)
+         and tenant_id=$2 and operation_id=$3 and source_type='BUZZ_AGENT_MEMORY' and source_id=$4",
+    )
+    .bind(ids)
+    .bind(ae.tenant_id)
+    .bind(ae.operation_id)
+    .bind(ae.id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|_| "MEMORY_USAGE_READ_FAILED")?;
+    if rows.len() != ids.len() {
+        return Err("MEMORY_USAGE_READ_FAILED");
+    }
+    for (event, status) in rows {
+        if status != "COMMITTED"
+            && state
+                .openmeter
+                .stored_usage(&event)
+                .await
+                .map_err(|_| "MEMORY_USAGE_NATIVE_UNKNOWN")?
+                .is_none()
+        {
             return Ok(false);
         }
     }
