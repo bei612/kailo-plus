@@ -141,6 +141,10 @@ plan 同时列出目标 commit 的 compose 以 `${NAME:?…}` 要求、而运行
 `替换前镜像 → 目标镜像 → 回读镜像 ID/健康`，失败时保留已完成服务的回读与未开始服务清单；不自动回滚
 （回滚条件与做法按 `03` §8，由操作者依据日志与备份 manifest 决定），也不把结果不明写成成功或失败。
 业务验收不属于入口的判定范围，verify 只做运行层回读。
+回读判定对两种镜像存储都成立（`node.py judge_image`）：容器 `Config.Image` 的 digest 必须等于 pin；本节点对该引用的解析
+（名称记录缺失时按同一 digest 拉取恢复）必须得到容器正在运行的镜像——containerd 存储下 image ID 即 manifest digest，
+graph driver 下是 config digest，所以不拿 image ID 直接比 pin；pin 的 manifest 必须由其 registry 以同一 digest 提供
+（`HEAD /v2/<repo>/manifests/<digest>`），404 判“产物不在 registry，不可复现”，无法确认同样判失败。
 
 ### 7. Web 部署结果为 UNKNOWN 的根因
 

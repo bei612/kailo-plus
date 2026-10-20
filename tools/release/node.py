@@ -26,6 +26,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 
 # 发布树只读：不写 __pycache__
 sys.dont_write_bytecode = True
@@ -124,6 +126,64 @@ def containers(project):
 def ref_digest(ref):
     m = re.search(r"@(sha256:[0-9a-f]{64})$", ref or "")
     return m.group(1) if m else None
+
+
+MANIFEST_ACCEPT = ", ".join((
+    "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.docker.distribution.manifest.v2+json"))
+
+
+def registry_has(ref, timeout=15):
+    """The pinned manifest in its own registry: True when served under that exact digest,
+    False on 404 (not reproducible), None when it cannot be established."""
+    m = re.fullmatch(r"([^/@]+)/([^@]+)@(sha256:[0-9a-f]{64})", ref or "")
+    if not m or "." not in m.group(1) and ":" not in m.group(1) and m.group(1) != "localhost":
+        return None
+    host, repo, digest = m.groups()
+    scheme = "http" if host.split(":")[0] in ("127.0.0.1", "localhost") else "https"
+    request = urllib.request.Request(f"{scheme}://{host}/v2/{repo}/manifests/{digest}", method="HEAD",
+                                     headers={"Accept": MANIFEST_ACCEPT})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
+            return reply.headers.get("Docker-Content-Digest") == digest
+    except urllib.error.HTTPError as error:
+        return False if error.code == 404 else None
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def judge_image(want, ref, container_image_id, local_id, in_registry):
+    """Readback verdict for one running service, valid for both image stores: with the
+    containerd store an image ID is the manifest digest, with a graph driver it is the
+    config digest, so the pin is compared as the container's reference and the local
+    resolution of that reference must yield the image the container runs. The registry
+    must serve the pinned manifest, otherwise the deployment is not reproducible."""
+    problems = []
+    if ref_digest(ref) != want:
+        problems.append("运行镜像引用与 pin 不一致")
+    if local_id is None:
+        problems.append("本节点无法解析 pin 引用")
+    elif local_id != container_image_id:
+        problems.append("pin 引用解析出的镜像与容器运行镜像不同")
+    if in_registry is False:
+        problems.append("产物不在 registry，不可复现")
+    elif in_registry is None:
+        problems.append("无法确认产物在 registry 中")
+    return problems
+
+
+def resolve_local(ref):
+    """Image ID of a pinned reference on this node; a missing name record (the content is
+    still present, e.g. after a local re-tag) is restored by pulling the same digest."""
+    for attempt in (False, True):
+        try:
+            if attempt:
+                run(DOCKER + ["pull", "-q", ref])
+            return out(DOCKER + ["image", "inspect", "--format", "{{.Id}}", ref])
+        except NodeError:
+            continue
+    return None
 
 
 def running_containers():
@@ -612,11 +672,12 @@ class Release:
         if not ctr:
             raise NodeError(f"{service} 未运行")
         want = self.services[service]["digest"]
-        expected_id = out(DOCKER + ["image", "inspect", "--format", "{{.Id}}", ctr["image_ref"]])
         state = dict(service=service, digest=ref_digest(ctr["image_ref"]), image_id=ctr["image_id"],
                      health=ctr["health"], running=ctr["running"], container=ctr["name"])
-        if state["digest"] != want or ctr["image_id"] != expected_id:
-            raise NodeError(f"{service} 运行镜像与 pin 不一致")
+        problems = judge_image(want, ctr["image_ref"], ctr["image_id"], resolve_local(ctr["image_ref"]),
+                               registry_has(ctr["image_ref"]))
+        if problems:
+            raise NodeError(f"{service}：" + "；".join(problems))
         if ctr["health"] not in (None, "healthy"):
             raise NodeError(f"{service} 健康状态 {ctr['health']}")
         build_info = (self.decl["services"].get(service) or {}).get("build_info")
