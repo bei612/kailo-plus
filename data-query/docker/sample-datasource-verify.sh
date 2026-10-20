@@ -33,6 +33,8 @@ refused 'CREATE TEMP TABLE' "create temp table probe(id int);"
 refused '关闭会话只读后 INSERT' "set default_transaction_read_only=off; begin read write; insert into regions values (98,'测试'); commit;" strict
 refused '关闭会话只读后 UPDATE' "begin read write; update orders set total_amount=0 where order_id=1; commit;" strict
 refused 'TRUNCATE' "begin read write; truncate order_items; commit;" strict
+refused '读写事务内 CREATE TABLE' "begin read write; create table probe(id int); commit;" strict
+refused '读写事务内 CREATE TEMP TABLE' "begin read write; create temp table probe(id int); commit;" strict
 settings=$(reader <<<"select setting from pg_settings where name in ('default_transaction_read_only','statement_timeout') order by name;" | tr '\n' ' ')
 echo "会话默认：default_transaction_read_only/statement_timeout = $settings"
 privileges=$(reader <<<"select rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls from pg_roles where rolname=current_user;")
