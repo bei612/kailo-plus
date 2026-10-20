@@ -164,6 +164,12 @@ case "$component" in
       -f "$S/data-query/docker/model-gateway.yaml")
     # Agent 工具接入路径的已验证模型凭据投递只在组件 env 显式给出目录时叠加。
     [ -z "$(wren_value WREN_MODEL_DELIVERY_DIR)" ] || compose+=(-f "$S/data-query/docker/model-delivery.yaml")
+    # DD-129：组件 env 给出示例库镜像时叠加问数验收用的专用示例业务库（只在 wren 私网，
+    # 无宿主端口）；两角色口令只在组件专属 0600 secret env。
+    if [ -n "$(wren_value WREN_SAMPLE_DB_IMAGE)" ]; then
+      private_env "$(wren_value WREN_SAMPLE_DB_SECRET_ENV_FILE)"
+      compose+=(-f "$S/data-query/docker/sample-datasource.yaml")
+    fi
     if "$adapter"; then
       # 07 §2.5 / DD-94：两份 OpenBao Agent 投递、各自 namespace 与最小 AppRole。
       # 平台 namespace 的公钥文件由平台 Agent 渲染（只读挂载）；tenants/<tenantId>

@@ -162,9 +162,11 @@ model projection nor an OpenBao delivery; the original AI startup is unchanged.
   configured in Wren.
 - The listener enforces strict keys, and its keys come only from Core
   projections (an Agent Installation, or a binding that selects
-  `PLATFORM_LLM_ROUTE`, DD-92). A native page entry binding has
-  `model_call_mode=NONE` and yields no key. When such a key is delivered, name
-  it with `api_key_name` and put it only in `WREN_AI_SECRET_ENV_FILE`; the
+  `PLATFORM_LLM_ROUTE`, DD-92). A native page entry binding with
+  `model_call_mode=NONE` yields no key; the `1.1.0-native-page` entry release
+  also allows `PLATFORM_LLM_ROUTE`, and a binding that selects it gets its own
+  Core-projected key (DD-128, "Native page entry model key" below). Name that
+  key with `api_key_name` and put it only in `WREN_AI_SECRET_ENV_FILE`; the
   original loader then refuses startup if the named key is missing. Never
   reuse an Agent Installation's key or switch to a direct provider. Without a
   key, leave `api_key_name` unset: the native page, login and modeling work,
@@ -172,6 +174,69 @@ model projection nor an OpenBao delivery; the original AI startup is unchanged.
 - Set `embedding_model_dim` of the Qdrant document store from an actual
   embedding response of the configured route; do not guess it or fall back to
   a chat model.
+
+### Native page entry model key (DD-128)
+
+The native page entry release `1.1.0-native-page` declares
+`allowedModelCallModes=[NONE, PLATFORM_LLM_ROUTE]`. A Tenant admin binds it with
+`tools/component-release/flow/component-bind.mjs --model-route-ids <chat>,<embedding>
+--meter-keys component_model_tokens`; the routes must be Tenant-scoped for a
+Tenant binding. Inside the original COMPONENT_BINDING workflow Core freezes the
+model projection, writes one random key as KV version 1 of
+`tenants/<tenant>/kv/application-model/<binding>/<generation>`, registers its
+SHA-256 at the Gateway (allowed models = the routes' native ids) and activates
+the binding after model discovery with that key. Usage is metered per binding
+on `component_model_tokens` (subject `<tenant>:<binding>`); a trace header sent
+by Wren is not Kailo attribution. No adapter, tool or native proof is involved.
+
+Delivery is an operator step on the deployment host, from `deploy/local`
+(`WREN_ENV` is the component env, `DIR` an owner-only directory dedicated to
+this binding and set as `WREN_NATIVE_MODEL_DELIVERY_DIR`):
+
+```sh
+./bootstrap.sh --native-model-delivery export "$DIR" <binding-id>
+./bootstrap.sh --native-model-delivery prepare "$DIR"
+# within OPENBAO_SECRET_ID_WRAP_TTL: one-shot OpenBao Agent, same image/network/UID as the query Agent
+sudo -n docker run --rm --pull=never --network "$WREN_QUERY_PLATFORM_NETWORK" \
+  --user "$WREN_QUERY_AGENT_UID:$WREN_QUERY_AGENT_GID" --mount "type=bind,src=$DIR,dst=$DIR" \
+  "$WREN_QUERY_OPENBAO_IMAGE" agent -config="$DIR/model-agent.hcl"
+./bootstrap.sh --native-model-delivery materialize-wren "$WREN_ENV"
+```
+
+`export` reads only the frozen non-secret projection of an ACTIVE native page
+binding (read-only transaction). `prepare` reads back or creates the policy
+`application-model-<binding hex>` that can only read that KV path, and a
+one-use AppRole of the same name; a differing existing policy/role is refused.
+The Agent renders `credential.json` (0600) from that exact version.
+`materialize-wren` requires every `litellm_llm`/`litellm_embedder` model in
+`config.yaml` to be `openai/<native id>` of exactly the frozen model set with
+`api_base` equal to the platform `AGENTGATEWAY_MODEL_BASE_URL`, writes
+`<api_key_name>="<key>"` into `WREN_AI_SECRET_ENV_FILE` (an empty file or an
+earlier delivery of the same names only) and removes `credential.json`. Then
+recreate the AI service with the deploy entry; nothing is printed.
+
+Rotation is a new binding (`--attempt N+1`), its own delivery directory and
+restart, then `application_binding.disable` of the old binding; disable deletes
+the old Gateway key, confirms it is refused and settles its usage. Afterwards
+run `--native-model-delivery retire "$OLD_DIR"` to remove the old reader.
+
+### Acceptance sample datasource (DD-129)
+
+`data-query/docker/sample-datasource.yaml` (added by `component-deploy.sh` when
+`WREN_SAMPLE_DB_IMAGE` is set) runs a dedicated PostgreSQL `wren-sample-db` on
+the private `wren` network only, without a host port. On first initialization
+the owner role loads fixed retail data (`regions`, `stores`, `products`,
+`customers`, `orders`, `order_items`; Chinese comments) and creates
+`wren_reader`: `CONNECT`, `USAGE` on `public` and `SELECT` on the tables only,
+`default_transaction_read_only=on`, `statement_timeout=30s`. Both passwords
+live only in the 0600 `WREN_SAMPLE_DB_SECRET_ENV_FILE` (`POSTGRES_PASSWORD`,
+`WREN_SAMPLE_READER_PASSWORD`). In the native connection wizard choose
+PostgreSQL with host `wren-sample-db`, port `5432`, database `retail`, user
+`wren_reader`; Wren stores the password encrypted in its own database.
+`data-query/docker/sample-datasource-verify.sh <container>` proves the role can
+read every table and that writes, DDL, temporary tables and writes after turning
+session read-only off are refused by privilege. Never connect Wren to the Core,
+OpenMeter or audit databases.
 
 ### Optional
 

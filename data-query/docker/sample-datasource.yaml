@@ -1,0 +1,40 @@
+# DD-129: the dedicated sample business database for Wren's native connection
+# wizard. It belongs to this Wren deployment unit only: private `wren` network,
+# no host port, its own volume. The owner role loads the fixed data on first
+# initialization; Wren is given only the SELECT-only `wren_reader` role, whose
+# password the native administrator enters in the wizard (Wren encrypts it in
+# its own database). No platform database or credential is reachable from here.
+services:
+  wren-sample-db:
+    image: ${WREN_SAMPLE_DB_IMAGE:?digest-pinned PostgreSQL image required}
+    restart: on-failure
+    # Release trees are owner-only and the original entrypoint switches to the
+    # postgres user before running init scripts: copy them in as root first.
+    entrypoint:
+      - sh
+      - -c
+      - install -o postgres -g postgres -m 0400 /sample-init/* /docker-entrypoint-initdb.d/ && exec docker-entrypoint.sh postgres
+    env_file:
+      - ${WREN_SAMPLE_DB_SECRET_ENV_FILE:?component-only sample database secret env required}
+    environment:
+      POSTGRES_USER: sample_owner
+      POSTGRES_DB: retail
+    volumes:
+      - sample-db-data:/var/lib/postgresql/data
+      - type: bind
+        source: ./sample-datasource
+        target: /sample-init
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - wren
+    healthcheck:
+      # TCP only: the initialization server listens on the socket alone.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U sample_owner -d retail"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+volumes:
+  sample-db-data:

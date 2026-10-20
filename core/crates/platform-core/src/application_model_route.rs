@@ -59,7 +59,11 @@ pub(crate) fn configuration(
         return Err(invalid());
     }
     let categories = categories.as_array().ok_or_else(invalid)?;
-    if categories.is_empty() {
+    // DD-128(1): a native page entry enables no category; its usage source is
+    // the Gateway, so there is no category meter declaration to check. Every
+    // other binding still enables categories whose meter is SUPPORTED.
+    let page = native_page(manifest);
+    if categories.is_empty() != page {
         return Err(invalid());
     }
     let declarations = manifest["capabilityDeclarations"]
@@ -102,6 +106,28 @@ pub(crate) fn configuration(
         return Err(invalid());
     }
     Ok(Some(Configuration { routes, meters }))
+}
+
+fn native_page(manifest: &Value) -> bool {
+    crate::application_binding::native::native_page_only(manifest)
+}
+
+/// DD-128(5): the reader of a native page entry key is the deployment's own
+/// per-binding OpenBao role, derived from the binding identity. The entry has
+/// no adapter directory, so neither Core nor the operator chooses this name.
+fn native_page_reader(principal: Uuid, binding: Uuid) -> Value {
+    let role = format!("application-model-{}", binding.simple());
+    json!({"roleName":role,"audience":role,"servicePrincipalId":principal})
+}
+
+/// DD-128(4): the activation evidence of a native page entry is Core's own
+/// discovery with the projected key (frozen model set) plus the native key
+/// identity. It is not a claim that the native service has loaded the key.
+fn native_page_receipt(projection: &Value, key: &str, revision: i64) -> Value {
+    json!({"deliveryMode":"NATIVE_PAGE","verification":"GATEWAY_MODEL_DISCOVERY",
+        "bindingId":projection["bindingId"],"generation":projection["generation"],
+        "gatewayPrincipalId":projection["gatewayPrincipalId"],
+        "nativeModels":projection["nativeModels"],"nativeKeyId":key,"nativeKeyRevision":revision})
 }
 
 /// The existing binding management caller checks both execution and sharing
@@ -309,16 +335,27 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         ae.tenant_id,
         &format!("application-model/{}/{}", ae.target_id, current.generation),
     );
-    let adapter = crate::application_binding::native::Adapter::resolve(
-        &current.adapter_service_ref,
-        &current.native_instance_ref,
-        &current.manifest,
-    )?;
-    let (reader, deliveries) =
-        adapter.model_reader_delivery(current.service_principal_id, ae.target_id)?;
-    if reader["audience"] != current.service_audience
-        || current.service_audience == state.secret_audience
-    {
+    let page = native_page(&current.manifest);
+    let (reader, deliveries) = if page {
+        (
+            native_page_reader(current.service_principal_id, ae.target_id),
+            Vec::new(),
+        )
+    } else {
+        let adapter = crate::application_binding::native::Adapter::resolve(
+            &current.adapter_service_ref,
+            &current.native_instance_ref,
+            &current.manifest,
+        )?;
+        let (reader, deliveries) =
+            adapter.model_reader_delivery(current.service_principal_id, ae.target_id)?;
+        if reader["audience"] != current.service_audience {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        }
+        (reader, deliveries)
+    };
+    let service_audience = reader["audience"].as_str().ok_or_else(unavailable)?;
+    if service_audience == state.secret_audience {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     let native_scope = current
@@ -328,6 +365,8 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         .ok_or(Refusal::Precondition(ReasonCode::ProjectionDelayed))?;
     let challenges = match current.model_projection.as_ref() {
         Some(existing) => existing["deliveryChallenges"].clone(),
+        // DD-128(4): no native proof is requested from a native page entry.
+        None if page => json!([]),
         None => {
             let mut challenges = Vec::new();
             for route in &config.routes {
@@ -344,7 +383,7 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         .as_object_mut()
         .ok_or_else(unavailable)?
         .remove("condition");
-    let projection = json!({"tenantId":ae.tenant_id,"workspaceId":ae.workspace_id,
+    let mut projection = json!({"tenantId":ae.tenant_id,"workspaceId":ae.workspace_id,
         "bindingId":ae.target_id,"componentReleaseId":current.component_release_id,
         "generation":current.generation,"gatewayPrincipalId":current.service_principal_id,
         "operationId":current.operation_id,"configDigest":current.config_digest,
@@ -352,8 +391,11 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
         "meterKeys":config.meters,"meters":meters,"customerId":customer,"subject":subject,
         "namespace":state.openmeter.namespace(),"modelAdmissionPolicy":admission_policy,
         "nativeScopeRef":native_scope,"secretReader":reader,"deliveryChallenges":challenges,
-        "serviceSecretRef":{"locator":locator,"version":1,"audience":current.service_audience},
+        "serviceSecretRef":{"locator":locator,"version":1,"audience":service_audience},
         "secretRef":{"locator":locator,"version":1,"audience":state.secret_audience}});
+    if page {
+        projection["deliveryMode"] = json!("NATIVE_PAGE");
+    }
     let mut tx = state.pool.begin().await?;
     let frozen: Option<Option<Value>> = sqlx::query_scalar(
         "select p.model_projection from projection.application_runtime p
@@ -485,6 +527,7 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
     // does not require rereading a rotated audit file or rewriting native keys.
     let receipt = match current.model_delivery_receipt.as_ref() {
         Some(receipt) => receipt.clone(),
+        None if page => native_page_receipt(&projection, &id, revision),
         None => verify_model_delivery(state, &current, &projection, &deliveries, &secret).await?,
     };
     authorize_routes(state, ae, &config).await?;
@@ -882,14 +925,21 @@ async fn admit(
     let mut caller_attribution = None;
     let mut caller_evidence = Vec::new();
     let mut caller_audits = Vec::new();
+    // DD-128(2): a native page entry has no Kailo-initiated operation. The
+    // service's own W3C trace is neither attribution nor a reason to refuse.
+    let traceparent = if native_page(&current.manifest) {
+        ""
+    } else {
+        input.traceparent.as_str()
+    };
     if !discovery {
         if input.method != "POST" {
             return Err(denied());
         }
         // Correlation is optional. When present it must resolve to a real live
         // action in this exact binding, never to caller-supplied scope/identity.
-        if !input.traceparent.is_empty() {
-            let trace = trace_id(&input.traceparent).ok_or_else(denied)?;
+        if !traceparent.is_empty() {
+            let trace = trace_id(traceparent).ok_or_else(denied)?;
             let actions: Vec<Uuid> = sqlx::query_scalar(
                 "select distinct a.id from admission.action_execution a
                 join admission.external_execution e on e.action_execution_id=a.id
@@ -963,7 +1013,7 @@ async fn admit(
             crate::governance::exact_definition_for_execution(&state.pool, &origin).await?;
         caller_audits.push((origin, definition));
     }
-    if let Some(trace) = trace_id(&input.traceparent) {
+    if let Some(trace) = trace_id(traceparent) {
         evidence.push(crate::audit::Evidence::new(
             contracts::EvidenceKind::TraceId,
             trace,
@@ -1065,6 +1115,58 @@ mod tests {
             ]);
             assert!(configuration("PLATFORM_LLM_ROUTE", &duplicate, &category, &manifest).is_err());
         }
+    }
+
+    #[test]
+    fn native_page_entry_routes_models_without_category_adapter_or_native_proof() {
+        // DD-128(1): no category, no meter declaration; the release's own mode
+        // set still bounds the binding choice.
+        let manifest = json!({"allowedModelCallModes":["NONE","PLATFORM_LLM_ROUTE"],
+            "implements":[],"capabilityDeclarations":[],"frontendDelivery":{"mode":"NATIVE_PAGE"},
+            "executionConnector":{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}});
+        let route = Uuid::new_v4();
+        let config = json!({"nativePageUrl":"http://192.0.2.10:58095/","modelGateway":{
+            "routeResourceIds":[route],"meterKeys":["component_model_tokens"]}});
+        let selected = configuration("PLATFORM_LLM_ROUTE", &config, &json!([]), &manifest)
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.routes, vec![route]);
+        assert_eq!(selected.meters, vec!["component_model_tokens".to_owned()]);
+        let entry = json!({"nativePageUrl":"http://192.0.2.10:58095/"});
+        assert!(configuration("NONE", &entry, &json!([]), &manifest)
+            .unwrap()
+            .is_none());
+        let category = json!([{"category":"data_query","version":2}]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &config, &category, &manifest).is_err());
+        let mut page_only = manifest.clone();
+        page_only["allowedModelCallModes"] = json!(["NONE"]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &config, &json!([]), &page_only).is_err());
+        let mut other = config.clone();
+        other["modelGateway"]["meterKeys"] = json!(["model_input_tokens"]);
+        assert!(configuration("PLATFORM_LLM_ROUTE", &other, &json!([]), &manifest).is_err());
+
+        // DD-128(4)(5): the reader is the binding's own deployment role and the
+        // receipt names Core's discovery evidence, not a native load proof.
+        let binding = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        let reader = native_page_reader(principal, binding);
+        assert_eq!(
+            reader["roleName"],
+            json!(format!("application-model-{}", binding.simple()))
+        );
+        assert_eq!(reader["audience"], reader["roleName"]);
+        assert_eq!(reader["servicePrincipalId"], json!(principal));
+        let projection = json!({"bindingId":binding,"generation":1,"gatewayPrincipalId":principal,
+            "nativeModels":["chat-route","embedding-route"]});
+        let receipt = native_page_receipt(&projection, "native-key", 3);
+        assert_eq!(
+            receipt,
+            json!({"deliveryMode":"NATIVE_PAGE","verification":"GATEWAY_MODEL_DISCOVERY",
+                "bindingId":binding,"generation":1,"gatewayPrincipalId":principal,
+                "nativeModels":["chat-route","embedding-route"],"nativeKeyId":"native-key",
+                "nativeKeyRevision":3})
+        );
+        assert!(receipt.get("nativeProof").is_none());
     }
 
     #[test]

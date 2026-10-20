@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98, DD-124, DD-127]
+  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98, DD-124, DD-127, DD-128]
   # 此列表仅登记 EXT-BASE 决策；跨阶段消费者由既有核验记录关联。
   # DD-12 属 EXT-DATA，DD-70/DD-71 属 S1，不把通用接入重新归为具体组件。
   facts: []
@@ -15,7 +15,7 @@ design:
   entities: [ApplicationBinding, ComponentRuntimeProjection, ExternalExecution, ActionTokenClaims]
 
 validation:
-  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156, V-SCN-157, V-SCN-171]
+  scenarios: [V-SCN-122, V-SCN-155, V-SCN-156, V-SCN-157, V-SCN-171, V-SCN-172, V-SCN-173, V-SCN-174]
   evidence:
     - dimension: 安全边界
       ref: core/verify/application-binding.md
@@ -79,6 +79,13 @@ implementation:
     - file-storage/frontend/web/kailo-oidc.go
     - file-storage/idm/user/rest/handler.go
     - file-storage/deploy/start.sh
+    # DD-128 原生页面入口的组件专属模型 key：运维侧按 binding 投递（只读冻结 projection 与一条 KV 版本）。
+    - deploy/components/native-model-delivery.py
+    - deploy/components/test_native_model_delivery.py
+    # DD-129 问数验收数据源：部署单元内的专用示例业务库与只读角色核验。
+    - data-query/docker/sample-datasource.yaml
+    - data-query/docker/sample-datasource/
+    - data-query/docker/sample-datasource-verify.sh
   surfaces: [web, desktop]
   schemas:
     - contracts/api/application_binding_page.schema.json
@@ -125,6 +132,8 @@ implementation:
     - core/migrations/20261009010000_native_human_reads.down.sql
     - core/migrations/20261020020000_native_page_binding.up.sql
     - core/migrations/20261020020000_native_page_binding.down.sql
+    - core/migrations/20261021010000_native_page_model_route.up.sql
+    - core/migrations/20261021010000_native_page_model_route.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]

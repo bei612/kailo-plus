@@ -193,15 +193,24 @@ fn source_identity(manifest: &Value) -> Result<(), Refusal> {
 }
 
 /// DD-127: a native-page-only release opens the service's own page and nothing
-/// else. It declares no capability, domain definition, secret or model route,
-/// so there is no adapter to test and no conformance fixture to freeze. Its
-/// adapterBuildRef slot carries the deployed native service artifact digest.
+/// else. It declares no capability, domain definition or secret, so there is
+/// no adapter to test and no conformance fixture to freeze. Its adapterBuildRef
+/// slot carries the deployed native service artifact digest. DD-128: its model
+/// call modes are a non-empty subset of {NONE, PLATFORM_LLM_ROUTE} (checked with
+/// every release below); SELF_MANAGED_MODEL needs an adapter usage report.
 fn native_page(manifest: &Value) -> Result<(), Refusal> {
     if manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE"
         || manifest["frontendDelivery"]
             .get("nativePageCategory")
             .is_none()
-        || manifest["allowedModelCallModes"] != json!(["NONE"])
+        || !manifest["allowedModelCallModes"]
+            .as_array()
+            .is_some_and(|modes| {
+                !modes.is_empty()
+                    && modes
+                        .iter()
+                        .all(|mode| matches!(mode.as_str(), Some("NONE" | "PLATFORM_LLM_ROUTE")))
+            })
         || [
             "implements",
             "capabilityDeclarations",
@@ -3476,6 +3485,14 @@ mod report_tests {
         let declared = |key: &'static str, value: Value| {
             move |manifest: &mut Value| manifest[key] = value.clone()
         };
+        // DD-128: an entry may route its native model calls through the
+        // platform; it can never self-report usage without an adapter.
+        for modes in [
+            json!(["NONE", "PLATFORM_LLM_ROUTE"]),
+            json!(["PLATFORM_LLM_ROUTE"]),
+        ] {
+            assert!(native_page_registration(declared("allowedModelCallModes", modes)).is_ok());
+        }
         for refused in [
             native_page_registration(declared(
                 "implements",
@@ -3483,7 +3500,12 @@ mod report_tests {
             )),
             native_page_registration(declared(
                 "allowedModelCallModes",
-                json!(["NONE", "PLATFORM_LLM_ROUTE"]),
+                json!(["NONE", "SELF_MANAGED_MODEL"]),
+            )),
+            native_page_registration(declared("allowedModelCallModes", json!([]))),
+            native_page_registration(declared(
+                "allowedModelCallModes",
+                json!(["PLATFORM_LLM_ROUTE", "PLATFORM_LLM_ROUTE"]),
             )),
             native_page_registration(declared(
                 "secretSchema",
