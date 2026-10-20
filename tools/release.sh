@@ -37,28 +37,12 @@ container_require_limited_builder
 BUILD_CONTEXT=$(mktemp -d)
 trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 本独立仓库的根就是构建根，不向父目录查找历史外层仓库。
-# 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期协议与契约均来自原文件。
-git archive --format=tar "$COMMIT" .dockerignore core worker \
-  collaboration/Cargo.toml collaboration/crates/buzz-core collaboration/crates/buzz-sdk \
-  collaboration/crates/buzz-project-git \
-  contracts/domain/automation_step.schema.json \
-  model-gateway/crates/protos/proto/ext_mcp.proto \
-  contracts/api/action_submission.schema.json \
-  contracts/api/projects_publish_request.schema.json \
-  contracts/api/delegated_action_metadata_v1.schema.json \
-  contracts/compatibility/action-submission-v1.json \
-  contracts/compatibility/action-submission-v2.json \
-  contracts/api/conversation_open_request.schema.json \
-  contracts/adapter/knowledge.v1/registration.json \
-  contracts/adapter/data_query.v1/registration.json \
-  contracts/adapter/file_storage.v1/registration.json \
-  contracts/api/agent_memory_entry_page.schema.json \
-  contracts/api/agent_memory_entry_view.schema.json \
-  contracts/api/agent_memory_read_view.schema.json \
-  contracts/domain/agent_memory_entry_list_input.schema.json \
-  contracts/domain/agent_memory_entry_read_input.schema.json \
-  contracts/domain/application_model_gateway_config.schema.json \
-  tools/registry/capabilities.yaml agent-runtime/fork/upstream.yaml | tar -xf - -C "$BUILD_CONTEXT" \
+# 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期协议与契约均来自原文件。集合只登记在
+# tools/release/release.yaml 的 units.core-worker.inputs：发布入口据同一份判断已固定产物之后输入是否变化。
+inputs_text=$(python3 tools/release/model.py unit-inputs core-worker) || die "读不到 core-worker 的构建输入声明"
+mapfile -t inputs <<<"$inputs_text"
+[ "${#inputs[@]}" -gt 0 ] && [ -n "${inputs[0]}" ] || die "core-worker 的构建输入声明为空"
+git archive --format=tar "$COMMIT" "${inputs[@]}" | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 
 mkdir -p "$OUT"

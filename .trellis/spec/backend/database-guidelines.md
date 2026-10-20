@@ -36,8 +36,9 @@ Questions to answer:
   `quality-guidelines.md`. Fix a shipped guard/constraint with a **new** migration that
   `CREATE OR REPLACE`s it; the down restores the previous definition verbatim.
 - SQL-only migrations can be applied on the CI node without rebuilding Core
-  (Core does not embed migrations): `~/kailo-deploy/core-release.sh <commit>` runs
-  `sqlx migrate run` from the release tree first. Back up the DB before.
+  (Core does not embed migrations): `tools/release/kailo-release.sh run` (ADR-20) detects
+  pending versions against `_sqlx_migrations`, backs up `core-db` in its backup stage, then
+  runs `sqlx migrate run` from the fixed release tree before replacing any service.
 - Queries that change shape need `cargo sqlx prepare --workspace` in `core/` and the
   `.sqlx` files committed in the same push, or verify fails with
   "sqlx 离线数据过期".

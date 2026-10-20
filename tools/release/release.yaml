@@ -1,0 +1,88 @@
+# 发布入口（tools/release/kailo-release.sh，ADR-20）的声明。
+#
+# 这里只登记现有登记数据推不出的事实。产物清单、产物→服务映射、需要改写的 pin、部署对象、
+# 一次性前置、备份对象都由入口从下列登记推导，不在此另列：
+#   */fork/upstream.yaml                 二开产物、输入范围、source_digest / artifact_digest
+#   deploy/local/compose.yaml            image: ${REGISTRY_HOST}/<产物>@sha256:… → 服务；depends_on
+#   tools/traceability/*.yaml            release.artifacts[].digest
+#   CI 持久证明库 <镜像>.<digest>.provenance.json   自建单元产物 → 源码 commit
+#   CI 节点 ci/config.json               运行目录、发布树根、证明库、Compose 项目名、Web build-info 位置
+
+# 自建发布单元：不在 */fork/upstream.yaml 中，由各自构建入口产出按 digest 命名的 provenance。
+units:
+  core-worker:
+    builder: tools/release.sh        # CI 构建目标同名：kailo-ci submit <commit> build core-worker
+    images: [core, worker]
+    # tools/release.sh 从固定 commit 导出的构建输入，与 .dockerignore 的 allowlist 同步。
+    # release.sh 与规划阶段都只读这一份：规划据此判断已固定产物的源 commit 之后输入是否变化。
+    inputs:
+      - .dockerignore
+      - core
+      - worker
+      - collaboration/Cargo.toml
+      - collaboration/crates/buzz-core
+      - collaboration/crates/buzz-sdk
+      - collaboration/crates/buzz-project-git
+      - contracts/domain/automation_step.schema.json
+      - model-gateway/crates/protos/proto/ext_mcp.proto
+      - contracts/api/action_submission.schema.json
+      - contracts/api/projects_publish_request.schema.json
+      - contracts/api/delegated_action_metadata_v1.schema.json
+      - contracts/compatibility/action-submission-v1.json
+      - contracts/compatibility/action-submission-v2.json
+      - contracts/api/conversation_open_request.schema.json
+      - contracts/adapter/knowledge.v1/registration.json
+      - contracts/adapter/data_query.v1/registration.json
+      - contracts/adapter/file_storage.v1/registration.json
+      - contracts/api/agent_memory_entry_page.schema.json
+      - contracts/api/agent_memory_entry_view.schema.json
+      - contracts/api/agent_memory_read_view.schema.json
+      - contracts/domain/agent_memory_entry_list_input.schema.json
+      - contracts/domain/agent_memory_entry_read_input.schema.json
+      - contracts/domain/application_model_gateway_config.schema.json
+      - tools/registry/capabilities.yaml
+      - agent-runtime/fork/upstream.yaml
+
+# 默认部署方式（compose up -d --no-deps --force-recreate --no-build --wait <服务>）不适用的服务。
+services:
+  core-bff:
+    # 每次启动都要新的一次性 OpenBao 投递（DD-70），不能以 compose up 重用已消费的投递。
+    command: [./start-core.sh, --no-build]
+    migrations: core
+  buzz-web:
+    # 回读容器内 build-info：buildId 必须等于 web-client 记录的 source_digest。
+    # 文件位置取 CI 配置的同名键（与 worker 的 Web 部署回读同一来源）。
+    build_info: web_build_info_path
+
+# 迁移：目录相对仓库根；数据库连接串经运行目录中的受控 env 文件投递，只经 stdin 进入迁移容器。
+migrations:
+  core:
+    database: core-db
+    source: core/migrations
+    url_env_file: secrets/core-db-url.env
+
+# 03 §7 的兼容顺序：迁移 → Core/Worker → 其余产物 → Web。同组内按 compose 的服务定义顺序。
+order:
+  first: [core, worker]
+  last: [web-client]
+
+# 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
+# 否则重建 agentgateway 会丢掉其派生配置。
+overlays:
+  - secrets/agentgateway-service.compose.json
+
+# 由发布保证的生产 .env 非密键（ADR-20 §4）。键必须登记在 deploy/local/.env.example；值单行、
+# 无空白与引号，只允许 ${NAME} 引用。入口只报告键与动作，不输出值。
+env:
+  set: {}
+  unset: []
+
+# CI 节点：SSH 名与 CI 执行配置位置。运行目录、发布树根、证明库、Compose 项目名与 Web
+# build-info 位置从该配置读取，不在仓库复制。
+node:
+  ssh: kailo-ci-ssh
+  ci_config: /volumes/kailo/ci/config.json
+  # ci/config.json environment 中供 start-core.sh 与迁移容器使用的受限资源参数
+  ci_environment: [CHECK_CPUS, CHECK_MEMORY, BUILDX_BUILDER]
+  backups: /volumes/data/kailo/backups/release
+  journal: /volumes/data/kailo/releases
