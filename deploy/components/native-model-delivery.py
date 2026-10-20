@@ -314,7 +314,14 @@ def wren_consumers(config_path, projection, model_base):
     """Names of the keys the original Wren config.yaml reads; models must be exactly the frozen set."""
     import yaml
 
-    documents = list(yaml.safe_load_all(read(config_path)))
+    return wren_models(list(yaml.safe_load_all(read(config_path))), model_base, projection["nativeModels"])
+
+
+def wren_models(documents, model_base, native_models=None):
+    """The platform-model rule for parsed Wren config.yaml documents, also applied by
+    native-config.py before it publishes a rendered file: every litellm model calls the
+    AgentGateway listener with a named key; with ``native_models`` the model set must
+    equal that frozen set exactly."""
     names, models = set(), set()
     for entry in documents:
         if not isinstance(entry, dict) or entry.get("type") not in ("llm", "embedder"):
@@ -333,7 +340,7 @@ def wren_consumers(config_path, projection, model_base):
             require(isinstance(effective.get("model"), str) and effective["model"].startswith("openai/"))
             names.add(name)
             models.add(effective["model"][len("openai/"):])
-    require(models == set(projection["nativeModels"]),
+    require(native_models is None or models == set(native_models),
             "config.yaml models must be exactly the binding's frozen native models")
     return sorted(names)
 

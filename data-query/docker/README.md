@@ -75,14 +75,14 @@ transport only and creates no model, key or route (DD-127(7)).
    Database passwords do not belong in the sole non-secret deployment file.
    Deliver the original native database encryption password/salt as owner-only
    files under `WREN_NATIVE_DATA_KEY_DIR`; no values belong in this repository.
-3. Copy `data-query/docker/config.example.yaml` to the private
-   `WREN_PROJECT_DIR/config.yaml` and configure the native model/embedding
-   providers as described in "Native model configuration" below. This is a
-   native service configuration, not proof of a platform ModelRoute or billing
-   integration. Set `WREN_PROJECT_DIR` and `WREN_LOCAL_STORAGE` to existing
-   absolute native directories. Bind mounts reject implicit creation of missing
-   config/data paths; retain the original native files and independent data
-   volumes.
+3. Fill the `WREN_MODEL_*` deployment facts in `native.env`. The deploy entry
+   renders `WREN_PROJECT_DIR/config.yaml` from `data-query/docker/config.template.yaml`
+   and those facts on every run ("Native model configuration" below); never copy
+   or edit that file by hand. This is a native service configuration, not proof
+   of a platform ModelRoute or billing integration. Set `WREN_PROJECT_DIR` and
+   `WREN_LOCAL_STORAGE` to existing absolute owner-only native directories. Bind
+   mounts reject implicit creation of missing config/data paths; retain the
+   original native files and independent data volumes.
 4. Validate without printing resolved secrets. On the CI node the entry is
    `deploy/components/component-deploy.sh data-query <commit> --check`; the
    equivalent manual call from the apps root, with `OIDC_ISSUER` and
@@ -154,26 +154,56 @@ The AI Service's providers are its own native configuration (DD-127(7)):
 `WREN_AI_SECRET_ENV_FILE`. The base Compose file mounts neither a platform
 model projection nor an OpenBao delivery; the original AI startup is unchanged.
 
-- Point `api_base` of the `litellm_llm` and `litellm_embedder` providers at the
+`config.yaml` is generated, never maintained by hand: hand copies drift from the
+repository on every tuning change and differ from it in deployment values nobody
+can review. It has exactly two inputs.
+
+| Input | Where | Content |
+|---|---|---|
+| Template | `data-query/docker/config.template.yaml` in the fixed release tree | Everything equal for every deployment: pipelines, settings, LLM `timeout`, `kwargs`, `recreate_index`, `langfuse_enable: false`. Deployment facts appear only as `${NAME}` in string scalars. |
+| Deployment facts | `native.env` (`WREN_MODEL_*`) and the platform `.env` of the runtime directory (ADR-20 §3) | `WREN_MODEL_CHAT_ID`, `WREN_MODEL_CHAT_CONTEXT_WINDOW`, `WREN_MODEL_EMBEDDING_ID`, `WREN_MODEL_EMBEDDING_DIM`, `WREN_MODEL_API_KEY_NAME`; `api_base` is the platform `AGENTGATEWAY_MODEL_BASE_URL` (its `${NAME}` references resolved within the same `.env`). |
+
+`config.example.yaml` is the unchanged upstream example and is not deployed.
+
+`deploy/components/native-config.py` renders both in memory (parsed YAML, never
+text splicing) and `component-deploy.sh data-query` calls it twice:
+
+1. `check`, before any backup, Agent or Compose step (also under `--check`):
+   every fact must be present, literal and well-formed (ids as native model ids,
+   integers positive, key name an env name, base an `http(s)` URL). A missing
+   or malformed fact, an undeclared or unused placeholder, or a rendered model
+   rule violation refuses the deploy; nothing falls back to a template or
+   upstream default. With `WREN_NATIVE_MODEL_DELIVERY_DIR` set, the rendered
+   models must also be exactly the binding's frozen `nativeModels` (the same
+   rule `materialize-wren` applies).
+2. `apply`, just before `compose up`: when the text differs, the previous file
+   is copied (0600) into this run's backup directory and the rendered text is
+   published by write-fsync-rename (owner-only `0600`). The difference against
+   the deployed file is printed as YAML key paths only (`+`/`-`/`~`), never
+   values. Same inputs produce the same text and no write. A semantic change
+   recreates only `wren-ai-service` (a single-file bind mount is bound at start).
+
+To change tuning, edit the template and deploy that commit; to move to other
+routes or a different embedding model, change the facts in `native.env` and
+deploy. This entry always deploys a platform model route: a deployment without
+one (`model_call_mode=NONE`, no key) has no facts to render and is refused.
+
+- `api_base` of the `litellm_llm` and `litellm_embedder` providers is the
   AgentGateway independent model listener, the platform
   `AGENTGATEWAY_MODEL_BASE_URL` (DD-70/71/110), reached through the
-  `model-gateway.yaml` overlay. Model names are the exact model names that
-  listener serves; no provider URL, provider credential or vendor default is
-  configured in Wren.
+  `model-gateway.yaml` overlay. Model names are `openai/<native id>` of the
+  exact routes that listener serves; no provider URL, provider credential or
+  vendor default is configured in Wren.
 - The listener enforces strict keys, and its keys come only from Core
   projections (an Agent Installation, or a binding that selects
-  `PLATFORM_LLM_ROUTE`, DD-92). A native page entry binding with
-  `model_call_mode=NONE` yields no key; the `1.1.0-native-page` entry release
-  also allows `PLATFORM_LLM_ROUTE`, and a binding that selects it gets its own
-  Core-projected key (DD-128, "Native page entry model key" below). Name that
-  key with `api_key_name` and put it only in `WREN_AI_SECRET_ENV_FILE`; the
-  original loader then refuses startup if the named key is missing. Never
-  reuse an Agent Installation's key or switch to a direct provider. Without a
-  key, leave `api_key_name` unset: the native page, login and modeling work,
-  and every model call is refused (no key reaches the Gateway).
-- Set `embedding_model_dim` of the Qdrant document store from an actual
-  embedding response of the configured route; do not guess it or fall back to
-  a chat model.
+  `PLATFORM_LLM_ROUTE`, DD-92). The `1.1.0-native-page` entry release allows
+  `PLATFORM_LLM_ROUTE`, and a binding that selects it gets its own
+  Core-projected key (DD-128, "Native page entry model key" below), named by
+  `WREN_MODEL_API_KEY_NAME` and put only in `WREN_AI_SECRET_ENV_FILE`; the
+  original loader refuses startup if the named key is missing. Never reuse an
+  Agent Installation's key or switch to a direct provider.
+- Set `WREN_MODEL_EMBEDDING_DIM` from an actual embedding response of the
+  configured route; do not guess it or fall back to a chat model.
 
 ### Native page entry model key (DD-128)
 
@@ -251,9 +281,9 @@ OpenMeter or audit databases.
 
 ## How to start with custom LLM
 
-To start with a custom LLM, the process is similar to starting with OpenAI. The main difference is that you need to modify the `config.yaml` file
-that we created on the previous step. After verifying the configuration and any native deployment response, use the same original entry from the apps root:
-`deploy/components/component-deploy.sh data-query <commit>` (or the manual Compose call of step 4 with `up -d --no-build wren-ai-service`).
+To start with a custom LLM, the process is similar to starting with OpenAI. In this deployment the providers are not edited in `config.yaml`: change
+`config.template.yaml` or the `WREN_MODEL_*` facts ("Native model configuration"). After verifying the configuration and any native deployment response, use the same original entry from the apps root:
+`deploy/components/component-deploy.sh data-query <commit>`. A manual Compose call does not render `config.yaml`.
 
 For detailed information on how to modify the configuration for different LLM providers and models, please refer to the [AI Service Configuration](../wren-ai-service/docs/configuration.md).
 This guide provides comprehensive instructions on setting up various LLM providers, embedders, and other components of the AI service.

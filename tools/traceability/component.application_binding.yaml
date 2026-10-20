@@ -84,6 +84,10 @@ implementation:
     # DD-128 原生页面入口的组件专属模型 key：运维侧按 binding 投递（只读冻结 projection 与一条 KV 版本）。
     - deploy/components/native-model-delivery.py
     - deploy/components/test_native_model_delivery.py
+    # DD-127(7)/DD-128 原生 config.yaml 由仓库模板 + 声明式部署事实在部署入口渲染，不手工维护生产副本。
+    - deploy/components/native-config.py
+    - deploy/components/test_native_config.py
+    - data-query/docker/config.template.yaml
     # DD-129 问数验收数据源：部署单元内的专用示例业务库与只读角色核验。
     - data-query/docker/sample-datasource.yaml
     - data-query/docker/sample-datasource/
