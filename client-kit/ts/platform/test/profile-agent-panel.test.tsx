@@ -21,7 +21,7 @@ import { click, render, settle } from "./render";
 const AGENT = "a".repeat(64);
 const OWNER = "b".repeat(64);
 const OTHER_AGENT = "c".repeat(64);
-const directoryPath = "/api/v1/agent-installations?workspaceId=workspace";
+const directoryPath = "/api/v1/agent-installations?workspaceId=workspace&offset=0";
 const membersPath = "/api/v1/workspaces/workspace/members";
 const usersPath = "/api/v1/agent-installations/installation/users";
 const versionPath = "/api/v1/agent-versions/version";
