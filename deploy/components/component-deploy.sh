@@ -17,6 +17,8 @@
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
 # data-query/native.env（均在 /volumes/data/kailo/components 下，0600）；平台 .env 只读取
 # 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK，--adapter 另取两份公钥路径）。
+# Wren 原生 config.yaml 每次由 native-config.py 以 data-query/docker/config.template.yaml + 部署事实
+# （组件 env 的 WREN_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，缺事实即拒绝。
 # 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
 # 平台运行目录（.env、secrets/、data/，ADR-20 §3）只取 CI 配置的 runtime，经固定发布树内的
 # node.py 读取并导出为 KAILO_RUNTIME_DIR；发布树保持只读，不在其中建任何软链接。在节点上续跑
@@ -170,6 +172,12 @@ case "$component" in
     # 子 shell 求值单个键，不回显整份 env。
     wren_value() { (set -a; . "$ENV" >/dev/null 2>&1; set +a; printf '%s' "${!1:-}"); }
     platform_value() { (set -a && . "$R/.env" >/dev/null 2>&1 && set +a && printf '%s' "${!1:-}"); }
+    # 原生 config.yaml 由发布树模板 config.template.yaml + 部署事实（组件 env 的 WREN_MODEL_*、
+    # 平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，不手工维护。先只读渲染核对：缺任一事实即拒绝，
+    # 此时尚未备份、启动或改写任何文件；差异摘要只列键名。
+    render=(python3 -I -B "$S/deploy/components/native-config.py")
+    echo "== 0. 原生 config.yaml 渲染核对（只列键名）"
+    "${render[@]}" check data-query --env "$ENV" --source "$commit" >/dev/null
     platform_keys=("OIDC_ISSUER=$(platform_value OIDC_ISSUER)" "PLATFORM_EDGE_NETWORK=$(platform_value PLATFORM_EDGE_NETWORK)")
     if "$adapter"; then platform_keys+=("GATEWAY_SERVICE_JWKS_FILE=$(platform_value GATEWAY_SERVICE_JWKS_FILE)"); fi
     # 原生 AI Service 经 edge 网络到达 AgentGateway 独立模型入口（只是传输，key 仍由 Core 投影）。
@@ -309,8 +317,16 @@ PYWREN
       for _ in $(seq 60); do [ -S "$delivery/bao.sock" ] && break; sleep 2; done
       [ -S "$delivery/bao.sock" ] || { echo 'Agent socket 未出现；查看 Agent 日志（不含 secret）' >&2; exit 1; }
     fi
-    echo "== 3. Wren 原生栈（--no-build，按 digest）"
+    echo "== 3. 渲染原生 config.yaml（原子替换、0600；旧文件备份到本次备份目录）"
+    dir="$backup_root/$component/$stamp"; mkdir -p "$dir" && chmod 700 "$backup_root" "$backup_root/$component" "$dir"
+    rendered=$("${render[@]}" apply data-query --env "$ENV" --source "$commit" --backup-dir "$dir")
+    echo "== 4. Wren 原生栈（--no-build，按 digest）"
     "${compose[@]}" up -d --no-build --pull never --wait --wait-timeout 900
+    # 单文件 bind mount 在容器启动时绑定；原子替换后的新文件只有重建 AI Service 才会读到。
+    if python3 -I -c 'import json, sys; sys.exit(0 if json.loads(sys.argv[1])["changed"] else 1)' "$rendered"; then
+      echo "== 4a. config.yaml 有语义变化：只重建 wren-ai-service"
+      "${compose[@]}" up -d --no-build --pull never --no-deps --force-recreate --wait --wait-timeout 900 wren-ai-service
+    fi
     origin=$(wren_value WREN_PUBLIC_ORIGIN)
     [ -n "$origin" ] && frame_headers "$origin/"
     if "$adapter"; then
