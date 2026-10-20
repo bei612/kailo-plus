@@ -5,7 +5,7 @@ import {relayClient} from "@/shared/api/relayClient";
 import {signRelayEvent} from "@/shared/api/tauri";
 import {classifyRelayPublishFailure,RelayPublishNotSentError} from "@/shared/api/relayPublishOutcome";
 import type {BffClient} from "@client-kit/platform/client";
-import {buildProjectBootstrapTemplates,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestApproval,buildProjectPullRequestStatus,canReviewProjectPullRequest,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestReviewCreatedAt,nextProjectPullRequestStatusCreatedAt,normalizeProjectPullRequestCommentAnchor,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
+import {buildProjectBootstrapTemplates,buildProjectPatchTemplate,buildProjectRelatedChannelPatchTemplate,buildRepositoryChannelBindingTemplate,eventToRepository,buildGitIssueTags,buildProjectCommentTags,buildProjectIssueAssignment,buildProjectPullRequestApproval,buildProjectPullRequestStatus,canReviewProjectPullRequest,loadProjectAssignmentHumans,eventToProjectIssue,eventToProjectPullRequest,nextProjectIssueCommentCreatedAt,nextProjectPullRequestReviewCreatedAt,nextProjectPullRequestStatusCreatedAt,normalizeProjectPullRequestCommentAnchor,enumerateProjectEvents,type ProjectsHost} from "@client-kit/platform/react/projects";
 import {ProjectsQueryRequestView} from "@client-kit/contracts";
 
 // The existing Native typed query, next to its publication consumer. Generic
@@ -297,14 +297,85 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
           throw new TransportError("Task publication receipt mismatch");
         return {eventId:event.id};
       }
+      if(request.operation==="ATTACH_REPOSITORY"||request.operation==="BIND_REPOSITORY_CHANNEL"||request.operation==="ADD_PROJECT_CHANNEL"){
+        // Original useAttachProjectRepository / useBindProjectRepositoryChannel / useAddProjectChannel:
+        // CLIENT republishes its own verified current head as the original template.
+        const operation=request.operation;
+        const attach=operation==="ATTACH_REPOSITORY";
+        if(!request.targetEventId||!/^[0-9a-f]{64}$/.test(request.targetEventId)
+          ||attach&&(!request.repositoryAddress||!/^30617:[0-9a-f]{64}:.+$/.test(request.repositoryAddress)||request.workspaceId!==undefined)
+          ||!attach&&(!request.workspaceId||request.repositoryAddress!==undefined)
+          ||request.name!==undefined||request.description!==undefined||request.visibility!==undefined||request.title!==undefined
+          ||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
+          ||request.assigneeLabel!==undefined||request.assigneePubkey!==undefined||request.priorEventId!==undefined
+          ||request.pullRequestStatus!==undefined||request.branchName!==undefined||request.targetBranch!==undefined
+          ||request.commit!==undefined||request.mergeBase!==undefined||request.reviewers!==undefined||request.cloneUrl!==undefined)
+          throw new Error("Invalid project announcement change");
+        const expectedKind=operation==="BIND_REPOSITORY_CHANNEL"?30617:30621;
+        // DD-80: WorkspaceView.id is the original Channel id.
+        const admitChannel=async()=>{
+          if(attach)return null;
+          const workspace=(await client.workspaces()).find(row=>row.id===request.workspaceId&&row.isMember===true);check();
+          if(!workspace)throw new Error("Project channel unavailable");
+          return workspace.id;
+        };
+        const readHead=async()=>{
+          const [target]=await relayClient.fetchEvents({ids:[request.targetEventId!],kinds:[expectedKind],limit:1});check();
+          if(!target||target.id!==request.targetEventId||target.kind!==expectedKind||target.pubkey!==viewer||!verifyEvent(target))
+            throw new Error("Only the owner can change this announcement.");
+          const slug=target.tags.find(tag=>tag[0]==="d")?.[1];
+          if(!slug)throw new Error("Announcement coordinate unavailable");
+          const [head]=await relayClient.fetchEvents({kinds:[expectedKind],authors:[viewer],"#d":[slug],limit:1});check();
+          if(head?.id!==target.id)throw new Error("Announcement changed; refresh its current head");
+          return target;
+        };
+        const templateFor=(head:Awaited<ReturnType<typeof readHead>>,channelId:string|null)=>{
+          if(operation==="ATTACH_REPOSITORY"){
+            const live=head.tags.filter(tag=>tag[0]==="a"&&tag[1]).map(tag=>tag[1] as string);
+            if(live.includes(request.repositoryAddress!))throw new Error("This repository is already part of the project.");
+            return buildProjectPatchTemplate({liveHead:head,ownerPubkey:viewer,repositoryAddresses:[...live,request.repositoryAddress!]});
+          }
+          if(!channelId)throw new Error("Project channel unavailable");
+          if(operation==="BIND_REPOSITORY_CHANNEL"){
+            if(head.tags.find(tag=>tag[0]==="buzz-channel")?.[1]===channelId)throw new Error("Repository access already uses this channel.");
+            const repository=eventToRepository(head);
+            if(!repository)throw new Error("Repository metadata is unavailable. Refresh and try again.");
+            return buildRepositoryChannelBindingTemplate({channelId,ownerPubkey:viewer,repository:{...repository,eventContent:head.content,eventTags:head.tags}});
+          }
+          const patch=buildProjectRelatedChannelPatchTemplate({channelId,liveHead:head,ownerPubkey:viewer});
+          if(patch.alreadyBound)throw new Error("That channel is already part of this project.");
+          return patch.project;
+        };
+        const channelId=await admitChannel();
+        const head=await readHead();
+        const template=templateFor(head,channelId);
+        enteredPublication=true;
+        const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
+          try{
+            if(await admitChannel()!==channelId)throw new Error("Project channel changed");
+            const fresh=await readHead();
+            if(fresh.id!==head.id)throw new Error("Announcement changed; refresh its current head");
+            const signed=await signRelayEvent({kind:template.kind,content:template.content,tags:template.tags,
+              createdAt:Math.max(Math.floor(Date.now()/1_000),head.created_at+1)});check();
+            if(signed.pubkey!==viewer||!verifyEvent(signed))throw new TransportError("Project signing identity changed");
+            return signed;
+          }catch(error){throw new RelayPublishNotSentError(error instanceof Error?error.message:String(error));}
+        },observeOnly,observation);
+        check();
+        if(event.kind!==template.kind||event.pubkey!==viewer||!verifyEvent(event)||event.content!==template.content
+          ||JSON.stringify(event.tags)!==JSON.stringify(template.tags))throw new TransportError("Project announcement receipt mismatch");
+        return {eventId:event.id};
+      }
       const creating=request.operation!=="DELETE";
       if(creating){
         if((request.operation!=="CREATE_PROJECT"&&request.operation!=="CREATE_REPOSITORY")||!request.workspaceId||!request.name||request.targetEventId
           ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
           ||request.operation==="CREATE_PROJECT"&&!['listed','unlisted'].includes(request.visibility??'')
-          ||request.operation==="CREATE_REPOSITORY"&&request.visibility!==undefined)throw new Error("Invalid project creation");
+          ||request.operation==="CREATE_REPOSITORY"&&request.visibility!==undefined||request.repositoryAddress!==undefined
+          ||request.cloneUrl!==undefined&&(request.operation!=="CREATE_REPOSITORY"||!/^https:\/\/\S+$/.test(request.cloneUrl)))throw new Error("Invalid project creation");
       }else if(!request.targetEventId||request.workspaceId||request.name!==undefined||request.description!==undefined||request.visibility!==undefined
-        ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined)throw new Error("Invalid project deletion");
+        ||request.title!==undefined||request.body!==undefined||request.category!==undefined||request.mentions!==undefined||request.attachments!==undefined
+        ||request.repositoryAddress!==undefined||request.cloneUrl!==undefined)throw new Error("Invalid project deletion");
       const admitHome=async()=>{
         const workspace=(await client.workspaces()).find(row=>row.id===request.workspaceId&&row.isMember===true);check();
         if(!workspace)throw new Error("Project home channel unavailable");
@@ -314,7 +385,9 @@ export function createProjectsPublisher(scopeKey:string,relayUrl:string,viewer:s
       // DD-80: WorkspaceView.id is the original Channel id, including recovery.
       const templates=workspace?buildProjectBootstrapTemplates({name:request.name!,description:request.description,ownerPubkey:viewer,
         projectChannelId:workspace.id,projectVisibility:request.visibility??"listed"}):null;
-      const template=templates?(request.operation==="CREATE_PROJECT"?templates.project:templates.repository):null;
+      // Original buildAddedRepositoryEventTemplatesFromHead: the optional `clone` follows the description.
+      const template=templates?(request.operation==="CREATE_PROJECT"?templates.project
+        :request.cloneUrl?{...templates.repository,tags:[...templates.repository.tags,["clone",request.cloneUrl]]}:templates.repository):null;
       enteredPublication=true;
       const event=await relayClient.publishProjectIntent(`${scopeKey}:${key}`,relayUrl,async()=>{
         try {

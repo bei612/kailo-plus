@@ -32,6 +32,198 @@ pub fn is_assignment(request: &ProjectsPublishRequest) -> bool {
     is_self_assignment(request) || is_other_assignment(request)
 }
 
+/// Original repository/channel management (useAttachProjectRepository,
+/// useBindProjectRepositoryChannel, useAddProjectChannel): each republishes
+/// the signer's verified current announcement head, never creates one.
+fn announcement_patch(request: &ProjectsPublishRequest) -> Option<&'static str> {
+    match serde_json::to_value(&request.operation).ok()?.as_str()? {
+        "ATTACH_REPOSITORY" => Some("ATTACH_REPOSITORY"),
+        "BIND_REPOSITORY_CHANNEL" => Some("BIND_REPOSITORY_CHANNEL"),
+        "ADD_PROJECT_CHANNEL" => Some("ADD_PROJECT_CHANNEL"),
+        _ => None,
+    }
+}
+
+pub fn is_announcement_patch(request: &ProjectsPublishRequest) -> bool {
+    announcement_patch(request).is_some()
+}
+
+/// The member patch of a 30621 names no Channel: like a deletion it is a
+/// Community-global announcement write.
+pub fn is_repository_attachment(request: &ProjectsPublishRequest) -> bool {
+    announcement_patch(request) == Some("ATTACH_REPOSITORY")
+}
+
+/// NIP-MP rule `member-cap` and the original related-stream cap.
+const MAX_PROJECT_MEMBERS: usize = 64;
+const MAX_PROJECT_RELATED_CHANNELS: usize = 64;
+const PROJECT_RELATED_CHANNEL_TAG: &str = "buzz-related-channel";
+
+/// Original buildProjectPatchTemplate member check: `30617:<lowercase owner>:<d>`.
+fn repository_coordinate(value: &str) -> bool {
+    let mut parts = value.splitn(3, ':');
+    parts.next() == Some("30617")
+        && parts.next().is_some_and(canonical_pubkey)
+        && parts
+            .next()
+            .is_some_and(|d| !d.is_empty() && d.len() <= 1_024)
+}
+
+fn canonical_channel(value: &str) -> bool {
+    uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
+}
+
+/// Fixed projectRepositoryCreation.ts::buildProjectPatchTemplate /
+/// buildRepositoryChannelBindingTemplate and
+/// projectChannelCreation.ts::buildProjectRelatedChannelPatchTemplate over the
+/// verified current head: every other tag and the content stay verbatim.
+fn announcement_patch_builder(
+    operation: &str,
+    request: &ProjectsPublishRequest,
+    head: Option<&Event>,
+    channel_id: Option<&str>,
+    owner: &str,
+) -> Result<EventBuilder, OperatorError> {
+    let head = head.ok_or_else(|| invalid("announcement head missing"))?;
+    let expected_kind: u16 = if operation == "BIND_REPOSITORY_CHANNEL" {
+        30617
+    } else {
+        30621
+    };
+    if !canonical_pubkey(owner)
+        || head.pubkey.to_hex() != owner
+        || head.kind.as_u16() != expected_kind
+        || request.target_event_id.as_deref() != Some(head.id.to_hex().as_str())
+        || head.verify().is_err()
+    {
+        return Err(invalid("Only the owner can change this announcement."));
+    }
+    let tags: Vec<Vec<String>> = head
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().to_vec())
+        .collect();
+    let named = |tag: &Vec<String>, name: &str| tag.first().is_some_and(|key| key == name);
+    let patched = match operation {
+        "ATTACH_REPOSITORY" => {
+            if channel_id.is_some() {
+                return Err(invalid("repository attachment names no channel"));
+            }
+            let address = request
+                .repository_address
+                .as_deref()
+                .filter(|value| repository_coordinate(value))
+                .ok_or_else(|| invalid("Repository address is invalid."))?;
+            let mut hints = std::collections::HashMap::new();
+            let mut addresses = Vec::new();
+            for tag in tags.iter().filter(|tag| named(tag, "a")) {
+                let Some(value) = tag.get(1).filter(|value| !value.is_empty()) else {
+                    continue;
+                };
+                addresses.push(value.clone());
+                if let Some(hint) = tag.get(2).filter(|hint| !hint.is_empty()) {
+                    hints.insert(value.clone(), hint.clone());
+                }
+            }
+            if addresses.iter().any(|value| value == address) {
+                return Err(invalid("This repository is already part of the project."));
+            }
+            addresses.push(address.to_owned());
+            let unique: std::collections::HashSet<&String> = addresses.iter().collect();
+            if addresses.len() > MAX_PROJECT_MEMBERS {
+                return Err(invalid(
+                    "A project cannot contain more than 64 repositories.",
+                ));
+            }
+            if unique.len() != addresses.len() {
+                return Err(invalid("A project cannot contain duplicate repositories."));
+            }
+            if addresses.iter().any(|value| !repository_coordinate(value)) {
+                return Err(invalid("Repository address is invalid."));
+            }
+            // JavaScript's default sort compares UTF-16 code units.
+            addresses.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
+            let mut patched: Vec<Vec<String>> = tags
+                .iter()
+                .filter(|tag| !named(tag, "a"))
+                .cloned()
+                .collect();
+            patched.extend(addresses.into_iter().map(|value| match hints.get(&value) {
+                Some(hint) => vec!["a".to_owned(), value, hint.clone()],
+                None => vec!["a".to_owned(), value],
+            }));
+            patched
+        }
+        "BIND_REPOSITORY_CHANNEL" => {
+            let channel = channel_id
+                .filter(|value| canonical_channel(value))
+                .ok_or_else(|| invalid("Repository access channel is invalid."))?;
+            if first_tag(head, "buzz-channel") == Some(channel) {
+                return Err(invalid("Repository access already uses this channel."));
+            }
+            let mut patched: Vec<Vec<String>> = tags
+                .iter()
+                .filter(|tag| !named(tag, "buzz-channel"))
+                .cloned()
+                .collect();
+            patched.push(vec!["buzz-channel".to_owned(), channel.to_owned()]);
+            patched
+        }
+        "ADD_PROJECT_CHANNEL" => {
+            let channel = channel_id
+                .filter(|value| canonical_channel(value))
+                .ok_or_else(|| invalid("Project channel is invalid."))?;
+            if first_tag(head, "buzz-channel") == Some(channel) {
+                return Err(invalid("That channel is already this project's home."));
+            }
+            let related = tags
+                .iter()
+                .filter(|tag| named(tag, PROJECT_RELATED_CHANNEL_TAG))
+                .filter_map(|tag| tag.get(1))
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>();
+            if related.iter().any(|value| value.as_str() == channel) {
+                return Err(invalid("That channel is already part of this project."));
+            }
+            if related.len() >= MAX_PROJECT_RELATED_CHANNELS {
+                return Err(invalid(
+                    "A project cannot contain more than 64 extra channels.",
+                ));
+            }
+            let mut patched = tags;
+            patched.push(vec![
+                PROJECT_RELATED_CHANNEL_TAG.to_owned(),
+                channel.to_owned(),
+            ]);
+            patched
+        }
+        _ => return Err(invalid("unsupported announcement change")),
+    };
+    let patched = patched
+        .into_iter()
+        .map(Tag::parse)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| invalid("invalid announcement tags"))?;
+    let timestamp = head
+        .created_at
+        .as_secs()
+        .checked_add(1)
+        .ok_or_else(|| invalid("announcement timestamp overflow"))?
+        .max(Timestamp::now().as_secs());
+    let builder = if expected_kind == 30621 {
+        // Layer A validation of the full patched envelope, as the original
+        // validateProjectEventEnvelope runs before signing.
+        buzz_sdk::build_project_with_tags(head.content.as_str(), patched)
+            .map_err(|error| invalid(&error.to_string()))?
+    } else {
+        EventBuilder::new(nostr::Kind::from(expected_kind), head.content.as_str()).tags(patched)
+    };
+    // Keep every original tag verbatim, including a signer's own `p`.
+    Ok(builder
+        .custom_created_at(Timestamp::from_secs(timestamp))
+        .allow_self_tagging())
+}
+
 /// Fixed pullRequestReviews.ts::updateProjectPullRequestStatus lifecycle kinds.
 /// Merged (1631) is reached through git, never through this UI operation: the
 /// DD-118 merge signs it with [`merged_status_publication_builder`].
@@ -751,6 +943,13 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
         return Err(invalid("review status on another project operation"));
     }
     let op = operation.as_str().unwrap_or_default();
+    if op != "ATTACH_REPOSITORY" && request.repository_address.is_some()
+        || op != "CREATE_REPOSITORY" && request.clone_url.is_some()
+    {
+        return Err(invalid(
+            "repository management fields on another project operation",
+        ));
+    }
     let comment = matches!(op, "CREATE_ISSUE_COMMENT" | "CREATE_PULL_REQUEST_COMMENT");
     let titled = matches!(op, "CREATE_ISSUE" | "CREATE_PULL_REQUEST");
     let approval = op == "APPROVE_PULL_REQUEST";
@@ -977,7 +1176,7 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
             Ok(5)
         }
         Some("CREATE_PROJECT" | "CREATE_REPOSITORY") => {
-            static LIMITS: std::sync::LazyLock<Option<(u64, u64)>> =
+            static LIMITS: std::sync::LazyLock<Option<(u64, u64, u64)>> =
                 std::sync::LazyLock::new(|| {
                     let schema: serde_json::Value = serde_json::from_str(include_str!(
                         "../../../../contracts/api/projects_publish_request.schema.json"
@@ -986,11 +1185,22 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
                     Some((
                         schema["properties"]["name"]["maxLength"].as_u64()?,
                         schema["properties"]["description"]["maxLength"].as_u64()?,
+                        schema["properties"]["cloneUrl"]["maxLength"].as_u64()?,
                     ))
                 });
-            let (name_limit, description_limit) = LIMITS
+            let (name_limit, description_limit, clone_url_limit) = LIMITS
                 .as_ref()
                 .ok_or_else(|| invalid("project limits unavailable"))?;
+            // Original AddProjectRepositoryDialog Clone URL: announcement
+            // metadata only, never fetched by Kailo (DD-118 reads by coordinate).
+            if request.clone_url.as_deref().is_some_and(|url| {
+                url.len() as u64 > *clone_url_limit
+                    || url.len() <= "https://".len()
+                    || !url.starts_with("https://")
+                    || url.chars().any(|c| c.is_whitespace() || c.is_control())
+            }) {
+                return Err(invalid("invalid repository clone URL"));
+            }
             let name = request
                 .name
                 .as_deref()
@@ -1029,6 +1239,45 @@ pub fn publication_kind(request: &ProjectsPublishRequest) -> Result<u16, Operato
                 Err(invalid("repository visibility is not supported"))
             }
         }
+        Some("ATTACH_REPOSITORY") => {
+            if !request
+                .target_event_id
+                .as_deref()
+                .is_some_and(canonical_event_id)
+                || !request
+                    .repository_address
+                    .as_deref()
+                    .is_some_and(repository_coordinate)
+                || request.workspace_id.is_some()
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+            {
+                return Err(invalid("invalid repository attachment"));
+            }
+            Ok(30621)
+        }
+        Some(op @ ("BIND_REPOSITORY_CHANNEL" | "ADD_PROJECT_CHANNEL")) => {
+            if !request
+                .target_event_id
+                .as_deref()
+                .is_some_and(canonical_event_id)
+                || !request
+                    .workspace_id
+                    .as_deref()
+                    .is_some_and(canonical_channel)
+                || request.name.is_some()
+                || request.description.is_some()
+                || request.visibility.is_some()
+            {
+                return Err(invalid("invalid announcement channel"));
+            }
+            Ok(if op == "BIND_REPOSITORY_CHANNEL" {
+                30617
+            } else {
+                30621
+            })
+        }
         _ => Err(invalid("unsupported project operation")),
     }
 }
@@ -1040,6 +1289,9 @@ pub fn publication_builder(
     owner: &str,
 ) -> Result<EventBuilder, OperatorError> {
     let kind = publication_kind(request)?;
+    if let Some(operation) = announcement_patch(request) {
+        return announcement_patch_builder(operation, request, target, channel_id, owner);
+    }
     if kind == 1 {
         return Err(invalid("issue comment requires signed activity evidence"));
     }
@@ -1132,6 +1384,10 @@ pub fn publication_builder(
                 tags.push(vec!["buzz-visibility".to_owned(), "unlisted".to_owned()]);
             }
             tags.push(vec!["a".to_owned(), format!("30617:{owner}:{slug}")]);
+        } else if let Some(url) = request.clone_url.as_deref() {
+            // Original buildAddedRepositoryEventTemplatesFromHead: `clone`
+            // after the description, announcement metadata only.
+            tags.push(vec!["clone".to_owned(), url.to_owned()]);
         }
         let tags = tags
             .into_iter()
@@ -2477,6 +2733,180 @@ mod tests {
         wrong.target_event_id = Some("a".repeat(64));
         assert!(
             publication_builder(&wrong, Some(&event), None, &keys.public_key().to_hex()).is_err()
+        );
+    }
+
+    #[test]
+    fn repository_and_channel_management_patch_only_the_owned_current_head() {
+        let keys = Keys::generate();
+        let owner = keys.public_key().to_hex();
+        let other = Keys::generate().public_key().to_hex();
+        let home = "11111111-1111-4111-8111-111111111111";
+        let channel = "22222222-2222-4222-8222-222222222222";
+        let first = format!("30617:{owner}:zeta");
+        let hinted = format!("30617:{other}:alpha");
+        let added = format!("30617:{owner}:mobile-app");
+        let project = buzz_sdk::build_project_with_tags(
+            "project body",
+            [
+                vec!["d", "garden"],
+                vec!["name", "Garden"],
+                vec!["a", first.as_str()],
+                vec!["buzz-channel", home],
+                vec!["x-unknown", "kept"],
+                vec!["a", hinted.as_str(), "wss://relay.example"],
+            ]
+            .into_iter()
+            .map(|tag| Tag::parse(tag).unwrap())
+            .collect(),
+        )
+        .unwrap()
+        .sign_with_keys(&keys)
+        .unwrap();
+        let tags = |event: &Event| -> Vec<Vec<String>> {
+            event
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice().to_vec())
+                .collect()
+        };
+        let strings = |rows: &[Vec<&str>]| -> Vec<Vec<String>> {
+            rows.iter()
+                .map(|row| row.iter().map(|value| (*value).to_owned()).collect())
+                .collect()
+        };
+
+        // Original buildProjectPatchTemplate: other tags in place, members sorted, hints kept.
+        let attach: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"ATTACH_REPOSITORY","targetEventId":project.id.to_hex(),"repositoryAddress":added
+        }))
+        .unwrap();
+        assert_eq!(publication_kind(&attach).unwrap(), 30621);
+        assert!(is_repository_attachment(&attach) && is_announcement_patch(&attach));
+        let patched = publication_builder(&attach, Some(&project), None, &owner)
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(patched.kind.as_u16(), 30621);
+        assert_eq!(patched.content, "project body");
+        assert!(patched.created_at > project.created_at);
+        let mut members = vec![
+            vec!["a".to_owned(), first.clone()],
+            vec![
+                "a".to_owned(),
+                hinted.clone(),
+                "wss://relay.example".to_owned(),
+            ],
+            vec!["a".to_owned(), added.clone()],
+        ];
+        members.sort_by(|left, right| left[1].cmp(&right[1]));
+        let mut expected = strings(&[
+            vec!["d", "garden"],
+            vec!["name", "Garden"],
+            vec!["buzz-channel", home],
+            vec!["x-unknown", "kept"],
+        ]);
+        expected.extend(members);
+        assert_eq!(tags(&patched), expected);
+        // A member already present, a channel, a non-owner and a stale head all refuse.
+        let mut again = attach.clone();
+        again.repository_address = Some(first.clone());
+        assert!(publication_builder(&again, Some(&project), None, &owner).is_err());
+        assert!(publication_builder(&attach, Some(&project), Some(channel), &owner).is_err());
+        assert!(publication_builder(&attach, Some(&project), None, &other).is_err());
+        let mut stale = attach;
+        stale.target_event_id = Some("a".repeat(64));
+        assert!(publication_builder(&stale, Some(&project), None, &owner).is_err());
+        for bad in [
+            json!({"operation":"ATTACH_REPOSITORY","targetEventId":project.id.to_hex(),"repositoryAddress":format!("30617:{}:repo", "A".repeat(64))}),
+            json!({"operation":"ATTACH_REPOSITORY","targetEventId":project.id.to_hex(),"repositoryAddress":added,"workspaceId":channel}),
+            json!({"operation":"CREATE_PROJECT","workspaceId":home,"name":"Garden","visibility":"listed","repositoryAddress":added}),
+            json!({"operation":"CREATE_PROJECT","workspaceId":home,"name":"Garden","visibility":"listed","cloneUrl":"https://relay.example/repo.git"}),
+            json!({"operation":"CREATE_REPOSITORY","workspaceId":home,"name":"Garden","cloneUrl":"http://relay.example/repo.git"}),
+            json!({"operation":"ADD_PROJECT_CHANNEL","targetEventId":project.id.to_hex()}),
+        ] {
+            assert!(publication_kind(&serde_json::from_value(bad).unwrap()).is_err());
+        }
+
+        // Original buildProjectRelatedChannelPatchTemplate: append, never the home or a duplicate.
+        let related: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"ADD_PROJECT_CHANNEL","targetEventId":project.id.to_hex(),"workspaceId":channel
+        }))
+        .unwrap();
+        assert_eq!(publication_kind(&related).unwrap(), 30621);
+        assert!(!is_repository_attachment(&related));
+        let linked = publication_builder(&related, Some(&project), Some(channel), &owner)
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        let mut expected = tags(&project);
+        expected.push(vec!["buzz-related-channel".to_owned(), channel.to_owned()]);
+        assert_eq!(tags(&linked), expected);
+        assert!(publication_builder(&related, Some(&project), Some(home), &owner).is_err());
+        let mut relinked = related;
+        relinked.target_event_id = Some(linked.id.to_hex());
+        assert!(publication_builder(&relinked, Some(&linked), Some(channel), &owner).is_err());
+
+        // Original buildRepositoryChannelBindingTemplate: replace only `buzz-channel`.
+        let repository = buzz_sdk::build_repo_announcement_with_tags(
+            "mobile-app",
+            "Mobile",
+            [
+                vec!["name", "Mobile app"],
+                vec!["buzz-channel", home],
+                vec!["description", "Mobile"],
+                vec!["clone", "https://relay.example/mobile.git"],
+            ]
+            .into_iter()
+            .map(|tag| Tag::parse(tag).unwrap())
+            .collect(),
+        )
+        .unwrap()
+        .sign_with_keys(&keys)
+        .unwrap();
+        let bind: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"BIND_REPOSITORY_CHANNEL","targetEventId":repository.id.to_hex(),"workspaceId":channel
+        }))
+        .unwrap();
+        assert_eq!(publication_kind(&bind).unwrap(), 30617);
+        let bound = publication_builder(&bind, Some(&repository), Some(channel), &owner)
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(bound.kind.as_u16(), 30617);
+        assert_eq!(bound.content, "Mobile");
+        assert_eq!(
+            tags(&bound),
+            strings(&[
+                vec!["d", "mobile-app"],
+                vec!["name", "Mobile app"],
+                vec!["description", "Mobile"],
+                vec!["clone", "https://relay.example/mobile.git"],
+                vec!["buzz-channel", channel],
+            ])
+        );
+        assert!(publication_builder(&bind, Some(&repository), Some(home), &owner).is_err());
+        assert!(publication_builder(&bind, Some(&project), Some(channel), &owner).is_err());
+
+        // Original optional Clone URL rides only on a new repository, after its description.
+        let created: ProjectsPublishRequest = serde_json::from_value(json!({
+            "operation":"CREATE_REPOSITORY","workspaceId":home,"name":"Mobile app","description":"Mobile",
+            "cloneUrl":"https://relay.example/mobile.git"
+        }))
+        .unwrap();
+        let created = publication_builder(&created, None, Some(home), &owner)
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(
+            tags(&created),
+            strings(&[
+                vec!["d", "mobile-app"],
+                vec!["name", "Mobile app"],
+                vec!["buzz-channel", home],
+                vec!["description", "Mobile"],
+                vec!["clone", "https://relay.example/mobile.git"],
+            ])
         );
     }
 

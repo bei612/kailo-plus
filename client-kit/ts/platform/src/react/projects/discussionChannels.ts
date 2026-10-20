@@ -31,6 +31,17 @@ export type DiscussionChannel = {
 };
 
 /**
+ * Search text matching messages that link a repository: every repo/PR/issue
+ * link carries the coordinate owner and `d`-tag tokens.
+ */
+export function repositoryDiscussionQuery(repository: {
+  owner: string;
+  dtag: string;
+}): string {
+  return `${repository.owner} ${repository.dtag}`;
+}
+
+/**
  * Search text matching messages that link a specific PR or issue: the event
  * id is a single 64-hex token unique to the entity, present in every
  * `buzz://pr|issue?id=…` link.

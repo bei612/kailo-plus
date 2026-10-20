@@ -150,6 +150,41 @@ function profileMatchesContributor(contributor: ProjectRepoContributor, profile:
   return (name.length > 0 && candidates.includes(name)) || (email.length > 0 && candidates.includes(email));
 }
 
+export function contributorKey(contributor: ProjectRepoContributor) {
+  return (contributor.email || contributor.name).trim().toLowerCase();
+}
+
+export function profileForContributor(contributor: ProjectRepoContributor, profiles: UserProfileLookup | undefined) {
+  if (!profiles) return null;
+  for (const [pubkey, profile] of Object.entries(profiles)) {
+    if (profileMatchesContributor(contributor, profile, pubkey)) return { pubkey, profile };
+  }
+  return null;
+}
+
+/**
+ * Links aggregate Git author rows to Buzz identities through commit hashes
+ * published in signed review events. Ambiguous author strings fail closed.
+ */
+export function gitContributorPubkeysFromCommits(
+  commits: readonly ProjectRepoCommit[],
+  pullRequests: Parameters<typeof commitAuthorPubkeysFromPullRequests>[0],
+): Map<string, string> {
+  const pubkeysByHash = commitAuthorPubkeysFromPullRequests(pullRequests);
+  const candidatesByContributor = new Map<string, Set<string>>();
+  for (const commit of commits) {
+    const pubkey = pubkeysByHash.get(commit.hash.toLowerCase()) ?? pubkeysByHash.get(commit.shortHash.toLowerCase());
+    if (!pubkey) continue;
+    const key = contributorKey({ commitCount: 0, email: commit.authorEmail, lastCommitAt: commit.timestamp, name: commit.authorName });
+    const candidates = candidatesByContributor.get(key) ?? new Set<string>();
+    candidates.add(pubkey.toLowerCase());
+    candidatesByContributor.set(key, candidates);
+  }
+  return new Map([...candidatesByContributor.entries()]
+    .filter(([, pubkeys]) => pubkeys.size === 1)
+    .map(([key, pubkeys]) => [key, [...pubkeys][0]!] as const));
+}
+
 export function profileForCommitAuthor(commit: ProjectRepoCommit, profiles: UserProfileLookup | undefined) {
   if (!profiles) return null;
   // A Git author may use their Nostr key as the name/email. This is still an

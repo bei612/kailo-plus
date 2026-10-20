@@ -94,7 +94,8 @@ describe("restored repository workspace Git tabs",()=>{
     const f=fixture();
     const {ui}=await mount(f,{repositoryId:f.repositoryId,tab:"overview"});
     await vi.waitFor(()=>expect(ui.querySelector('[data-testid="project-readme"]')?.textContent).toContain("Readme body text"));
-    expect([...ui.querySelectorAll('[role="tab"]')].map(tab=>tab.textContent)).toEqual(["Overview","Files","Commits","Tasks","Review"]);
+    // Original tab order; Channels needs the discussion search this work-item host does not offer.
+    expect([...ui.querySelectorAll('[role="tab"]')].map(tab=>tab.textContent)).toEqual(["Overview","Files","Commits","Tasks","Review","Contributors"]);
     expect(requests(f,ProjectsGitQueryRequestView.Snapshot)).toEqual([{view:ProjectsGitQueryRequestView.Snapshot,repository,defaultBranch:"main",baseBranch:"main"}]);
     expect(requests(f,ProjectsGitQueryRequestView.FileContent)).toEqual([]);
   });

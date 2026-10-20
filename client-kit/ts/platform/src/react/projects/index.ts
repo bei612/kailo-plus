@@ -18,6 +18,9 @@ export { ProjectRichContent } from "./ProjectRichContent";
 export { loadProjectWorkItems, projectInboxMentions, resolveProjectInboxWorkItem, type ProjectInboxWorkItem } from "./projectWorkItems";
 export {projectWorkItemTarget,resolveProjectWorkItemTarget,type ProjectWorkItemTarget} from "./projectWorkItems";
 export { buildProjectBootstrapTemplates, projectDtagFromName, conflictingListedProject } from "./projectCreation";
+export { buildProjectPatchTemplate, buildRepositoryChannelBindingTemplate } from "./projectRepositoryCreation";
+export { buildProjectRelatedChannelPatchTemplate } from "./projectChannelCreation";
+export { eventToRepository } from "./projectModels";
 export {useProjectSidebarMembership} from "./useProjectSidebarMembership";
 export { loadProjects, enumerateProjectEvents, type ProjectsHost, type ProjectsPage } from "./projectEnumeration";
 export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, type ProjectRepoDiff,

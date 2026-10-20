@@ -745,6 +745,11 @@ pub(crate) async fn publish_project(
         // (is_global_only_kind). A repository's buzz-channel metadata must not
         // silently become a Workspace grant.
         Ok(1 | 5 | 1618 | 1621 | 1630 | 1632 | 1633) => MessageTarget::Pulse(ctx.tenant_id),
+        // The original project member patch names no Channel; binding a
+        // repository or adding a project channel admits that Workspace below.
+        Ok(30621) if collab_bridge::projects::is_repository_attachment(&request) => {
+            MessageTarget::Pulse(ctx.tenant_id)
+        }
         Ok(_) => match request
             .workspace_id
             .as_deref()

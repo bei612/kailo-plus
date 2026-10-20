@@ -354,7 +354,8 @@ describe("original Projects directory management consumers",()=>{
     expect(onSelectedProjectChange).toHaveBeenCalledOnce();
     expect(onSelectedProjectChange).toHaveBeenCalledWith(`30621:${owner}:original`);
     expect(ui.querySelector("aside")).toBeNull();
-    expect(ui.textContent).toContain(locale==="en"?"This project's channel could not be found.":"找不到此项目的频道。");
+    // Original ProjectDetailScreen: no home binding and no readable repository is the unavailable state.
+    expect(ui.textContent).toContain(locale==="en"?"This project does not have any available repositories yet.":"此项目尚无可用的仓库。");
     expect(ui.querySelectorAll("button button")).toHaveLength(0);
     expect(ui.querySelector('[data-testid="project-activity-bar"]')).toBeNull();
   });
@@ -558,7 +559,11 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     expect(ui.textContent).not.toContain("Project created");expect(ui.textContent).not.toContain("Creation is not confirmed");
   });
   it("uses the actual controlled project route and clears it on the original Projects breadcrumb",async()=>{
-    const h=host();const cache=new QueryClient();const changed=vi.fn();
+    // An authoritative home binding: the project's home channel also binds its owner's repository.
+    const source=project();source.tags=source.tags.filter(tag=>tag[0]!=="a");source.tags.push(["buzz-channel",homeId],["a",`30617:${owner}:p`]);
+    const repository:PulseEvent={id:"r",pubkey:owner,kind:30617,created_at:10,content:"",tags:[["d","p"],["name","Home repo"],["buzz-channel",homeId]]};
+    const h:ProjectsHost={scopeKey:"tenant:owner",query:async req=>({events:req.view==="PROJECTS"?[source]:req.view==="REPOSITORIES"?[repository]:[],pubkey:owner,limit:3})};
+    const cache=new QueryClient();const changed=vi.fn();
     function Host(){const [selected,setSelected]=useState<string|null>(`30621:${owner}:p`);return <ProjectsView host={h} selectedProjectId={selected} renderChannel={vi.fn()} onOpenChannel={vi.fn()} onSelectedProjectChange={id=>{changed(id);setSelected(id);}}/>;}
     const client=createBffClient({send:async()=>({status:200,body:{items:[]}})});
     const ui=await render(<><div id="app-top-chrome-content"/><TooltipProvider><PlatformProvider client={client}><QueryClientProvider client={cache}><PulseHostProvider host={pulseHost}><Host/></PulseHostProvider></QueryClientProvider></PlatformProvider></TooltipProvider></>);
@@ -639,9 +644,10 @@ describe("original Projects announcements",()=>{
     await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="List layout"]')!);expect(ui.querySelectorAll("[data-projects-grid-card]")).toHaveLength(0);
     await click(ui.querySelector<HTMLButtonElement>('[data-testid="project-row-p"]')!);
-    expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).toContain("This project's channel could not be found.");
+    expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).toContain("This project does not have any available repositories yet.");
     h.query=async()=>{throw new Error("revoked");};await act(async()=>{await cache.invalidateQueries({queryKey:["projects",h.scopeKey]});});
-    await vi.waitFor(()=>expect(ui.textContent).toContain("Couldn't load this — the result is unknown."));
+    // Original ProjectDetailUnavailableState load-error with Retry and Back to Projects.
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Failed to load project"));
     expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).not.toContain("Real project");
   });
   it("uses the same Chinese catalog without fabricating create or Git actions",async()=>{

@@ -27,7 +27,7 @@ import { AgentDefinitionsPane } from "@/features/platform/AgentDefinitionsPane";
 import { desktopWorkflowMessageHost } from "@/features/platform/workflowMessageHost";
 
 export const Route = createFileRoute("/platform/$section")({
-  validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string;repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string } => ({
+  validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string;repositoryId?:string;issueId?:string;pullRequestId?:string;tab?:string;commitHash?:string;filePath?:string } => ({
     workspaceId: typeof search.workspaceId === "string" && search.workspaceId.trim()
       ? search.workspaceId : undefined,
     projectId: typeof search.projectId === "string" && search.projectId.trim() ? search.projectId : undefined,
@@ -35,6 +35,9 @@ export const Route = createFileRoute("/platform/$section")({
     issueId: typeof search.issueId === "string" && search.issueId.trim() ? search.issueId : undefined,
     pullRequestId: typeof search.pullRequestId === "string" && search.pullRequestId.trim() ? search.pullRequestId : undefined,
     tab: typeof search.tab === "string" && search.tab.trim() ? search.tab : undefined,
+    // Original parseProjectDetailSearch: a commit or file selection of the repository surface.
+    commitHash: typeof search.commitHash === "string" && search.commitHash.trim() ? search.commitHash : undefined,
+    filePath: typeof search.filePath === "string" && search.filePath.trim() ? search.filePath : undefined,
   }),
   params: {
     parse: ({ section }) => {
@@ -53,7 +56,7 @@ export const Route = createFileRoute("/platform/$section")({
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
   usePreviewFeatureWarning(section);
-  const { workspaceId, projectId,repositoryId,issueId,pullRequestId,tab } = Route.useSearch();
+  const { workspaceId, projectId,repositoryId,issueId,pullRequestId,tab,commitHash,filePath } = Route.useSearch();
   const navigate = Route.useNavigate();
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
   const workflowBlocker = useBlocker({
@@ -62,7 +65,7 @@ function PlatformRouteComponent() {
     enableBeforeUnload: false,
   });
   return <PlatformScreen section={section} workspaceId={workspaceId} projectId={projectId}
-    workItemTarget={{repositoryId,issueId,pullRequestId,tab}}
+    workItemTarget={{repositoryId,issueId,pullRequestId,tab,commitHash,filePath}}
     workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
     onProjectChange={(id,target)=>navigate({search:{projectId:id??undefined,...target}})}
     onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }}

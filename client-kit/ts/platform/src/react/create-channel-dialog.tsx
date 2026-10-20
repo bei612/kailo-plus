@@ -4,8 +4,11 @@
 // The original chooser layout/focus semantics are shared by Web and Desktop.
 // DD-80 changes the write transport to the existing BFF workspace.create action.
 // DD-125(4): the original Template row; applying is separate governed submissions.
+// Original optional title/testId/children (Projects "Create a project channel" with its project
+// select); `onRecorded` hands the recorded workspace.create submission to that caller's next step.
+import * as React from "react";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
-import { ChannelType, CreateActionKey } from "@client-kit/contracts";
+import { ChannelType, CreateActionKey, type ActionSubmission } from "@client-kit/contracts";
 import { X } from "lucide-react";
 import { useBffClient, useT } from "./context";
 import { useWorkspaceCreate, WorkspaceCreateForm, WorkspaceCreateFormFooter } from "./roles";
@@ -14,10 +17,14 @@ import { useLoad } from "./use-load";
 import { CreateChannelTemplateField, useChannelTemplateSelection } from "./channel-templates/CreateChannelTemplateField";
 
 /** Keep mounted across closing so an unresolved command never loses its idempotency key. */
-export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelType.Stream }: {
+export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelType.Stream, children, onRecorded, testId = "create-channel-dialog", title }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   channelKind?: ChannelType;
+  children?: React.ReactNode;
+  onRecorded?: (submission: ActionSubmission, name: string) => void;
+  testId?: string;
+  title?: string;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -31,6 +38,18 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
   const state = useWorkspaceCreate(actionKey, channelKind, {active: open});
   const templates = useChannelTemplateSelection(state, open);
   const pendingIntent = state.busy || state.command !== null;
+  // The frozen name of the command whose submission is reported once to `onRecorded`.
+  const recordedName = React.useRef<string | null>(null);
+  const recorded = React.useRef<ActionSubmission | null>(null);
+  React.useEffect(() => {
+    if (state.command && typeof state.command.name === "string") recordedName.current = state.command.name;
+  }, [state.command]);
+  React.useEffect(() => {
+    const submission = state.submission;
+    if (!submission || recorded.current === submission || recordedName.current === null) return;
+    recorded.current = submission;
+    onRecorded?.(submission, recordedName.current);
+  }, [onRecorded, state.submission]);
   return (
     <Dialog open={open} onOpenChange={(next) => {
       if (!next && pendingIntent) return;
@@ -40,10 +59,10 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
             showCloseButton={false}
             aria-describedby={undefined}
             className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0"
-            data-testid="create-channel-dialog"
+            data-testid={testId}
           >
             <DialogHeader className="shrink-0 px-6 py-5 pr-14 pb-2">
-              <DialogTitle>{t(channelKind === ChannelType.Forum ? "channel.create.forumTitle" : "channel.create.title")}</DialogTitle>
+              <DialogTitle>{title ?? t(channelKind === ChannelType.Forum ? "channel.create.forumTitle" : "channel.create.title")}</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-6">
               <div className="py-5 pt-3">
@@ -51,6 +70,7 @@ export function CreateChannelDialog({ open, onOpenChange, channelKind = ChannelT
                   : capability.status === "error" ? <ReadFailure error={capability.error} onRetry={reload} />
                   : !page ? <p role="alert">{t("platform.loadFailed")}</p>
                   : !actionKey ? <p role="status">{t("channel.create.unavailable")}</p> : null}
+                {children ? <div className="mb-5">{children}</div> : null}
                 <WorkspaceCreateForm state={state} channel />
                 <div className="mt-5 space-y-5"><CreateChannelTemplateField selection={templates} visibility={state.visibility} /></div>
               </div>

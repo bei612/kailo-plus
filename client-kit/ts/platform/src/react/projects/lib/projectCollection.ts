@@ -50,6 +50,36 @@ function hostForStandaloneRepository(
   );
 }
 
+function repositoryBelongsOnProjectHome(
+  project: Project,
+  repository: Repository,
+): boolean {
+  return Boolean(
+    (repository.channelId &&
+      repository.channelId === project.projectChannelId &&
+      repositoryAuthorizesProjectOwner(project, repository)) ||
+      (repository.owner.toLowerCase() === project.owner.toLowerCase() &&
+        repository.dtag === project.dtag),
+  );
+}
+
+/**
+ * Repositories already shown on the project (after absorb) that are not yet
+ * on the signed `kind:30621` `a` tag set. The owner should bind them so
+ * other clients see the same grouping.
+ */
+export function homeRepositoriesToBind(
+  project: Project,
+  signedAddresses: ReadonlyArray<string> | ReadonlySet<string>,
+): Repository[] {
+  const signed = new Set(signedAddresses);
+  return project.repositories.filter(
+    (repository) =>
+      !signed.has(repository.repoAddress) &&
+      repositoryBelongsOnProjectHome(project, repository),
+  );
+}
+
 /**
  * After the NIP-MP fold, keep a repository off the standalone-project list
  * when it already belongs to a listing-eligible project's home channel, or

@@ -1,10 +1,13 @@
 // REQ-24. Original Buzz 779af8886caae1317b4de962082429867ab61503
-// ProjectsView / ProjectCards / ProjectEntityListRow presentation. This host
-// reads announcements/work-item targets and uses the governed publication hosts;
-// Git, terminal and unsupported work-item operations retain missing consumers.
+// ProjectsView / ProjectCards / ProjectEntityListRow presentation and ProjectDetailScreen. This host
+// reads announcements/work-item targets and uses the governed publication hosts. The repository
+// surface is the original detail screen: WorkspaceTabs (Overview/Files/Commits/Tasks/Review/
+// Channels/Contributors) beside the repository context rail; a project with an authoritative home
+// binding opens its channel home. Terminal, local checkout and project Agent chat remain without a
+// governed consumer.
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { CreateActionKey, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { FolderGit2, Folders, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -18,7 +21,7 @@ import { readStoredViewMode, writeStoredViewMode, readStoredFilter,writeStoredFi
 import { ProjectChannelHome, type ProjectChannelRenderer } from "./ProjectChannelHome";
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
-import type { Project } from "./projectModels";
+import { selectProjectRepository, type Project } from "./projectModels";
 import { ProjectsChannelsList } from "./ProjectsChannelsList";
 import type { ProjectsFilter } from "./ProjectsToolbar";
 import { ProjectsSectionSearch } from "./ProjectsSectionSearch";
@@ -28,7 +31,7 @@ import {loadProjectWorkItems,resolveProjectWorkItemTarget,type ProjectWorkItemTa
 import {ProjectsIssuesList} from "./ProjectsIssuesList";
 import {ProjectsPullRequestsList} from "./ProjectsPullRequestsList";
 import {matchesProjectsSearch} from "./lib/projectsSearch";
-import {useUsersBatchQuery} from "../pulse/host";
+import {usePulseHost,useUsersBatchQuery} from "../pulse/host";
 import {ProjectIssueDetail} from "./ProjectIssueDetail";
 import {ProjectPullRequestDetail} from "./ProjectPullRequestDetail";
 import {ProjectPanelState} from "./ProjectPanelState";
@@ -37,8 +40,8 @@ import {CreateProjectIssueDialog} from "./CreateProjectIssueDialog";
 import {CreatePullRequestDialog} from "./CreatePullRequestDialog";
 import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
 import {ProjectDetailChrome} from "./ProjectDetailChrome";
-import {WorkspaceTabs,isProjectGitWorkspaceTab,type ProjectWorkspaceTab} from "./ProjectWorkspaceTabs";
-import {RepositoryGitWorkspace,useReviewFilesChanged} from "./ProjectRepositoryGitTabs";
+import {WorkspaceTabs,isProjectGitWorkspaceTab,projectWorkspaceTabNeedsGit,type ProjectWorkspaceTab} from "./ProjectWorkspaceTabs";
+import {RepositoryGitContent,repositoryGitSectionHeader,useRepositoryGitState,useReviewFilesChanged} from "./ProjectRepositoryGitTabs";
 import {ProjectIssuesPanel} from "./ProjectIssuesPanel";
 import {PullRequestsPanel} from "./ProjectPullRequestsPanel";
 import {CreateIssueDialog} from "./CreateIssueDialog";
@@ -68,86 +71,125 @@ import {ProjectsOverviewChromeActions,ProjectsOverviewContextSheet,ProjectsOverv
 import {ProjectsOverviewContextPanel,type ProjectsOverviewSection} from "./ProjectsOverviewPanel";
 import {projectsOverviewContext} from "./projectsOverviewContext";
 import {useProjectsScrollIndicator} from "./useProjectsScrollIndicator";
+import {ProjectDetailUnavailableState} from "./ProjectDetailUnavailableState";
+import {hasAuthoritativeHomeBinding} from "./lib/projectHomeSelection";
+import {ProjectDetailPanelLayout,ProjectRightPanelControls,useProjectRepositoryPanel,type ProjectRepositoryPanelState} from "./ProjectDetailRightPanel";
+import {ProjectRepositoryContextPanel} from "./ProjectRepositoryActionsPanel";
+import {ProjectBranchActionDialogs} from "./ProjectBranchActionDialogs";
+import {DiscussionChannelsPanel} from "./DiscussionChannels";
+import {repositoryDiscussionQuery} from "./discussionChannels";
+import {useProjectDetailPeople} from "./ProjectContributorsPanel";
+import {ProjectsCategoryCreateDialogs} from "./ProjectsCategoryCreateDialogs";
+import {loadChannelDirectory} from "../channel-browser/loadChannelDirectory";
+import type {ProjectIssue} from "./projectIssues.mjs";
+import type {ProjectPullRequest} from "./projectPullRequests.mjs";
 
 type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;
   onDiscussInChannel?:ProjectDiscussInChannel;
   renderChannel?:ProjectChannelRenderer;
   renderWorkItems?:(children:ReactNode,viewerPubkey:string)=>ReactNode;
   workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
+
+/** Original wantsProjectRepositorySurface for a route target: a repository (not a work item) is requested. */
+function repositorySurfaceTarget(target:ProjectWorkItemTarget|undefined) {
+  return Boolean(target&&(target.tab||target.repositoryId&&!target.issueId&&!target.pullRequestId));
+}
+
 export function ProjectsView(props:ProjectsViewProps) {
-  if(props.workItemTarget?.tab)return <ProjectRepositoryPage key={props.host.scopeKey} {...props}/>;
+  if(repositorySurfaceTarget(props.workItemTarget))return <ProjectRepositoryPage key={props.host.scopeKey} {...props}/>;
   if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget} renderWorkItems={props.renderWorkItems} onOpen={props.onSelectedProjectChange} onDiscussInChannel={props.onDiscussInChannel}/>;
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
 }
 
 // Original workspace vocabulary; share/entity tabs say "commits" for the Commits tab (projectShareLinks.ts::workspaceTabForShareTab).
-function workspaceTabFor(tab:string|undefined,git:boolean):ProjectWorkspaceTab|null {
-  if(tab==="issues"||tab==="prs")return tab;
+// Without a tab the original detail screen opens Overview, or the tab a commit/file selection implies.
+function workspaceTabFor(target:ProjectWorkItemTarget,git:boolean):ProjectWorkspaceTab|null {
+  const tab=target.tab;
+  if(tab===undefined){
+    if(target.commitHash)return git?"activity":null;
+    if(target.filePath)return git?"files":null;
+    return git?"overview":"issues";
+  }
+  if(tab==="issues"||tab==="prs"||tab==="channels")return tab;
   if(!git)return null;
-  if(tab==="overview"||tab==="files")return tab;
+  if(tab==="overview"||tab==="files"||tab==="contributors")return tab;
   return tab==="commits"||tab==="activity"?"activity":null;
 }
 const urlTab=(tab:ProjectWorkspaceTab)=>tab==="activity"?"commits":tab;
-const workspaceTabTitle={overview:"projects.home.overview",files:"projects.git.files",activity:"projects.workItem.commits",issues:"projects.list.tasks",prs:"projects.list.reviews"} as const;
+// Original PROJECT_TAB_CRUMB_LABELS: Overview is the repository itself and has no tab crumb.
+const workspaceTabTitle={files:"projects.git.files",activity:"projects.workItem.commits",issues:"projects.list.tasks",prs:"projects.list.reviews",
+  channels:"projects.workspace.channelsTab",contributors:"projects.workspace.contributorsTab"} as const;
 
 function ProjectRepositoryPage(props:ProjectsViewProps) {
   const {host,selectedProjectId}=props;
   const target=props.workItemTarget!;
   const onOpen=props.onSelectedProjectChange;
   const t=useUiT();const cache=useQueryClient();
+  const panel=useProjectRepositoryPanel();
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
   const key=useMemo(()=>["project-work-item-target",host.scopeKey,selectedProjectId,{repositoryId:target.repositoryId,tab:target.tab,issueId:target.issueId,pullRequestId:target.pullRequestId}],
     [host.scopeKey,selectedProjectId,target.repositoryId,target.tab,target.issueId,target.pullRequestId]);
-  const workspaceTab=workspaceTabFor(target.tab,Boolean(host.git));
-  const valid=Boolean(onOpen&&selectedProjectId&&target.repositoryId&&workspaceTab
+  const workspaceTab=workspaceTabFor(target,Boolean(host.git));
+  const valid=Boolean(onOpen&&selectedProjectId&&workspaceTab
     &&!(target.issueId&&target.pullRequestId)&&!(workspaceTab==="issues"&&target.pullRequestId)&&!(workspaceTab==="prs"&&target.issueId)
-    &&!(workspaceTab&&isProjectGitWorkspaceTab(workspaceTab)&&(target.issueId||target.pullRequestId))
+    &&!(workspaceTab&&workspaceTab!=="issues"&&workspaceTab!=="prs"&&(target.issueId||target.pullRequestId))
     &&!(target.commitHash&&workspaceTab!=="activity")&&!(target.filePath&&workspaceTab!=="files"));
   const query=useQuery({queryKey:key,enabled:valid,queryFn:({signal})=>loadProjectWorkItems(host,signal,selectedProjectId!),retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:key});cache.removeQueries({queryKey:key});},[cache,key]);
   const snapshot=query.isSuccess&&!query.isFetching?query.data:undefined;
   const project=snapshot?.projects.find(value=>value.id===selectedProjectId);
-  const repository=project?.repositories.find(value=>value.id===target.repositoryId);
-  const items=snapshot?.items.filter(item=>item.project.id===selectedProjectId&&item.repository.id===target.repositoryId)??[];
-  const selected=target.issueId||target.pullRequestId?resolveProjectWorkItemTarget(items,selectedProjectId,target):undefined;
+  // Original selectProjectRepository: an unknown repository falls back to the project's primary one.
+  const repository=selectProjectRepository(project,target.repositoryId);
+  const items=snapshot&&repository?snapshot.items.filter(item=>item.project.id===selectedProjectId&&item.repository.id===repository.id):[];
+  const selected=target.issueId||target.pullRequestId?resolveProjectWorkItemTarget(items,selectedProjectId,{...target,repositoryId:repository?.id}):undefined;
   const [navigationFailed,setNavigationFailed]=useState(false);
   const navigate=(id:string|null,next?:ProjectWorkItemTarget)=>{
     if(lifetime.controller.signal.aborted||!onOpen)return;
     void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(id,next);})
       .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});
   };
-  if(!valid||query.isError||snapshot&&(!project||!repository||(target.issueId||target.pullRequestId)&&!selected))return <ProjectPanelState error title={t("projects.unavailable")}/>;
+  if(!valid)return <ProjectPanelState error title={t("projects.unavailable")}/>;
+  if(query.isError&&!query.isFetching)return <ProjectDetailUnavailableState kind="load-error" onBack={()=>navigate(null)} onRetry={()=>{void query.refetch();}}/>;
+  if(snapshot&&!project)return <ProjectDetailUnavailableState kind="not-found" onBack={()=>navigate(null)}/>;
+  if(snapshot&&project&&!repository)return <ProjectDetailUnavailableState kind="repositories-unavailable" project={project}/>;
+  if(snapshot&&(target.issueId||target.pullRequestId)&&!selected)return <ProjectPanelState error title={t("projects.unavailable")}/>;
   if(!snapshot||!project||!repository||!workspaceTab)return <BuzzLoadingState label={t(workspaceTab==="prs"?"projects.sheet.loadingReviews":workspaceTab==="issues"?"projects.sheet.loadingTasks":"projects.git.loadingRepository")}/>;
   const tab=workspaceTab;
   const commitHash=tab==="activity"?target.commitHash??null:null;
   const clear=()=>navigate(project.id,{repositoryId:repository.id,tab:urlTab(tab)});
   const detail=selected?<ProjectWorkItemDetail workItem={selected} host={host} onOpen={(id,next)=>onOpen?.(id,{...next,tab:"issues"})} onDiscussInChannel={props.onDiscussInChannel}/>:null;
-  const content=selected?detail:<RepositoryWorkspace host={host} snapshot={snapshot} project={project} repository={repository}
-    tab={tab} onBack={()=>navigate(project.id)} onTabChange={next=>navigate(project.id,{repositoryId:repository.id,tab:urlTab(next)})}
-    commitHash={commitHash} filePath={tab==="files"?target.filePath:undefined}
-    onSelectCommit={hash=>navigate(project.id,{repositoryId:repository.id,tab:"commits",...(hash?{commitHash:hash}:{})})}
-    onOpen={next=>onOpen?.(project.id,{repositoryId:repository.id,tab:urlTab(tab),...next})}/>;
+  const tabCrumb=tab==="overview"?null:t(workspaceTabTitle[tab]);
   return <>
-    <ProjectDetailChrome project={project} repository={repository} actions={undefined}
-      activeTabCrumb={selected||commitHash?null:t(workspaceTabTitle[tab])}
-      activeWorkItemCrumb={selected?{category:t(workspaceTabTitle[tab]),title:selected.type==="issue"?selected.issue.title:selected.pullRequest.title,clear}
-        :commitHash?{category:t(workspaceTabTitle[tab]),title:commitHash.slice(0,7),clear}:null}
+    <ProjectDetailChrome project={project} repository={repository}
+      actions={selected?undefined:<ProjectRightPanelControls collapsed={panel.collapsed} onCollapse={panel.collapse} onExpand={panel.expand}/>}
+      activeTabCrumb={selected||commitHash?null:tabCrumb}
+      activeWorkItemCrumb={selected?{category:t(tab==="overview"?"projects.list.tasks":workspaceTabTitle[tab]),title:selected.type==="issue"?selected.issue.title:selected.pullRequest.title,clear}
+        :commitHash?{category:t(workspaceTabTitle.activity),title:commitHash.slice(0,7),clear}:null}
       onGoProjects={()=>navigate(null)} onGoProjectHome={()=>navigate(project.id)}/>
     {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
-    {selected?(props.renderWorkItems?props.renderWorkItems(content,snapshot.viewerPubkey):content):
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-none px-4 pb-4" data-testid="project-detail-scroll">
-          <div className="flex min-h-full w-full flex-col space-y-3">{props.renderWorkItems?props.renderWorkItems(content,snapshot.viewerPubkey):content}</div>
-        </div>
-      </div>}
+    {selected?(props.renderWorkItems?props.renderWorkItems(detail,snapshot.viewerPubkey):detail):
+      <RepositoryWorkspace host={host} snapshot={snapshot} project={project} repository={repository} panel={panel} renderWorkItems={props.renderWorkItems}
+        tab={tab} onBack={()=>navigate(project.id)} onTabChange={next=>navigate(project.id,{repositoryId:repository.id,tab:urlTab(next)})}
+        commitHash={commitHash} filePath={tab==="files"?target.filePath:undefined}
+        onSelectCommit={hash=>navigate(project.id,{repositoryId:repository.id,tab:"commits",...(hash?{commitHash:hash}:{})})}
+        onRepositoryChange={repositoryId=>navigate(project.id,{repositoryId,tab:urlTab(tab)})}
+        onOpen={next=>onOpen?.(project.id,{repositoryId:repository.id,tab:urlTab(tab),...next})}/>}
   </>;
 }
 
-function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit}:{
-  host:ProjectsHost;snapshot:Awaited<ReturnType<typeof loadProjectWorkItems>>;project:Project;repository:Project["repositories"][number];tab:ProjectWorkspaceTab;
+type WorkItemsSnapshot=Awaited<ReturnType<typeof loadProjectWorkItems>>;
+
+/**
+ * Original ProjectDetailScreen repository surface: the shared git state, the repository context rail
+ * and the WorkspaceTabs content. Profiles and discussion reads come from the work-item host, so the
+ * tab content renders inside `renderWorkItems`; the rail and its management actions do not need it.
+ */
+function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkItems,tab,onBack,onTabChange,onOpen,commitHash,filePath,onSelectCommit,onRepositoryChange}:{
+  host:ProjectsHost;snapshot:WorkItemsSnapshot;project:Project;repository:Project["repositories"][number];panel:ProjectRepositoryPanelState;
+  renderWorkItems:ProjectsViewProps["renderWorkItems"];tab:ProjectWorkspaceTab;
   onBack:()=>void;onTabChange:(tab:ProjectWorkspaceTab)=>void;onOpen:(target:ProjectWorkItemTarget)=>void|Promise<void>;
-  commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;
+  commitHash:string|null;filePath?:string;onSelectCommit:(hash:string|null)=>void;onRepositoryChange:(repositoryId:string)=>void;
 }) {
   const t=useUiT();const cache=useQueryClient();const [createOpen,setCreateOpen]=useState(false);const [creating,setCreating]=useState(false);
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
@@ -156,25 +198,28 @@ function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabC
   const [navigationFailed,setNavigationFailed]=useState(false);const sending=useRef(false);
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host,repository.id]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
-  const items=snapshot.items.filter(item=>item.repository.id===repository.id);
-  const profiles=useUsersBatchQuery(items.map(item=>item.type==="issue"?item.issue.author:item.pullRequest.author)).data?.profiles;
+  const items=useMemo(()=>snapshot.items.filter(item=>item.repository.id===repository.id),[snapshot,repository.id]);
+  const issues=useMemo(()=>items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[items]);
+  const pullRequests=useMemo(()=>items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[items]);
+  const git=useRepositoryGitState({host,repository,pullRequests,commitHash});
   const open=(next:ProjectWorkItemTarget)=>{void Promise.resolve().then(()=>{if(!lifetime.controller.signal.aborted)return onOpen(next);})
     .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
-  if(isProjectGitWorkspaceTab(tab))return <>
-    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
-    <RepositoryGitWorkspace host={host} repository={repository} projectId={project.id} tab={tab} commitHash={commitHash} filePath={filePath}
-      pullRequests={items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[])} onSelectedCommitHashChange={onSelectCommit}
-      onTabChange={onTabChange} onBack={onBack}/>
-  </>;
+  const onCreateTask=host.publish?()=>setCreateOpen(true):undefined;
+  const onCreatePullRequest=canCreateReview?()=>setCreateReviewOpen(true):undefined;
+  const tabs=<RepositoryWorkspaceTabs host={host} project={project} repository={repository} items={items} issues={issues} pullRequests={pullRequests}
+    tab={tab} git={git} commitHash={commitHash} filePath={filePath} onBack={onBack} onTabChange={onTabChange} open={open} onSelectCommit={onSelectCommit}
+    onCreateTask={onCreateTask} onCreatePullRequest={onCreatePullRequest}/>;
   return <>
-    {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
-    <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} onCreateTask={host.publish?()=>setCreateOpen(true):undefined} git={Boolean(host.git)}
-      onCreatePullRequest={canCreateReview?()=>setCreateReviewOpen(true):undefined}>
-      {tab==="issues"?<ProjectIssuesPanel issueItems={items.filter(item=>item.type==="issue").map(item=>({issue:item.issue,project:item.repository}))}
-        selectedIssueId={null} onSelectedIssueIdChange={id=>{if(id)open({issueId:id});}} profiles={profiles}/>:
-        <PullRequestsPanel project={repository} pullRequests={items.filter(item=>item.type==="pull-request").map(item=>item.pullRequest)}
-          selectedPullRequest={null} onSelectedPullRequestIdChange={id=>{if(id)open({pullRequestId:id});}} profiles={profiles}/>}
-    </WorkspaceTabs>
+    {host.git&&git.branchActions.available?<ProjectBranchActionDialogs actions={git.branchActions} activeBranch={git.activeBranch}
+      activeBranchCommit={git.activeBranchCommit} existingBranches={git.branchOptions}/>:null}
+    <ProjectDetailPanelLayout state={panel} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
+      identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
+      onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
+      snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}
+      widthPx={panel.width.widthPx} onResizeStart={panel.width.onResizeStart} canResetWidth={panel.width.canReset} onResetWidth={panel.width.onResetWidth}/>}>
+      {navigationFailed?<p role="alert">{t("platform.loadFailed")}</p>:null}
+      {renderWorkItems?renderWorkItems(tabs,snapshot.viewerPubkey):tabs}
+    </ProjectDetailPanelLayout>
     {canCreateReview&&createReviewOpen?<CreatePullRequestDialog host={host} initialProjectId={project.id} initialRepositoryId={repository.id}
       projects={snapshot.projects} workItems={snapshot.items} open onOpenChange={setCreateReviewOpen}
       onCreated={(_project,_repository,pullRequestId)=>open({pullRequestId})}/>:null}
@@ -193,6 +238,34 @@ function RepositoryWorkspace({host,snapshot,project,repository,tab,onBack,onTabC
         finally{sending.current=false;if(!lifetime.controller.signal.aborted)setCreating(false);}
       }}/>
   </>;
+}
+
+/** The original WorkspaceTabs bodies over the work-item read and the shared git state. */
+function RepositoryWorkspaceTabs({host,project,repository,items,issues,pullRequests,tab,git,commitHash,filePath,onBack,onTabChange,open,onSelectCommit,onCreateTask,onCreatePullRequest}:{
+  host:ProjectsHost;project:Project;repository:Project["repositories"][number];items:ProjectInboxWorkItem[];issues:ProjectIssue[];pullRequests:ProjectPullRequest[];
+  tab:ProjectWorkspaceTab;git:ReturnType<typeof useRepositoryGitState>;commitHash:string|null;filePath?:string;
+  onBack:()=>void;onTabChange:(tab:ProjectWorkspaceTab)=>void;open:(target:ProjectWorkItemTarget)=>void;onSelectCommit:(hash:string|null)=>void;
+  onCreateTask?:()=>void;onCreatePullRequest?:()=>void;
+}) {
+  const t=useUiT();
+  const discussions=Boolean(usePulseHost().discussions);
+  const people=useProjectDetailPeople({issues,pullRequests,repository});
+  const profiles=people.profiles;
+  const content=tab==="issues"?<ProjectIssuesPanel issueItems={items.flatMap(item=>item.type==="issue"?[{issue:item.issue,project:item.repository}]:[])}
+      selectedIssueId={null} onSelectedIssueIdChange={id=>{if(id)open({issueId:id});}} profiles={profiles}/>
+    :tab==="prs"?<PullRequestsPanel project={repository} pullRequests={pullRequests}
+      selectedPullRequest={null} onSelectedPullRequestIdChange={id=>{if(id)open({pullRequestId:id});}} profiles={profiles}/>
+    :tab==="channels"?(discussions?<DiscussionChannelsPanel query={repositoryDiscussionQuery(repository)} repositoryName={repository.name}/>
+      :<ProjectPanelState error title={t("projects.unavailable")}/>)
+    :<RepositoryGitContent state={git} repository={repository} projectId={project.id} pullRequests={pullRequests} tab={tab}
+      commitHash={commitHash} filePath={filePath} onSelectedCommitHashChange={onSelectCommit} profiles={profiles}
+      contributorActivityCounts={people.contributorActivityCounts} contributorPubkeys={people.contributorPubkeys}/>;
+  return <WorkspaceTabs tab={tab} onTabChange={onTabChange} onBack={onBack} git={Boolean(host.git)} channels={discussions}
+    onCreateTask={tab==="issues"?onCreateTask:undefined} onCreatePullRequest={tab==="prs"?onCreatePullRequest:undefined}
+    detailSelected={tab==="activity"&&Boolean(commitHash)}
+    sectionHeader={isProjectGitWorkspaceTab(tab)?repositoryGitSectionHeader(tab,git,commitHash,t):undefined}>
+    {projectWorkspaceTabNeedsGit(tab)&&!host.git?<ProjectPanelState error title={t("projects.unavailable")}/>:content}
+  </WorkspaceTabs>;
 }
 
 function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDiscussInChannel}:{host:ProjectsHost;projectId?:string|null;target:ProjectWorkItemTarget;renderWorkItems:ProjectsViewProps["renderWorkItems"];onOpen:ProjectsViewProps["onSelectedProjectChange"];onDiscussInChannel?:ProjectDiscussInChannel}) {
@@ -376,6 +449,7 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
 }
 
 type RepositoryRow={project:Project;repository:Project["repositories"][number]};
+const NO_PROJECTS:Project[]=[];
 // Unique repositories of the directory read models (original visibleRepositories).
 function directoryRepositories(projects:Project[]):RepositoryRow[] {
   return [...new Map(projects.flatMap(project=>project.repositories.map(repository=>({project,repository})))
@@ -422,8 +496,9 @@ function ProjectsOverviewRepositoryItemsWithActivity(props:Omit<ComponentProps<t
 
 // Original ProjectsView context rail: the section-following ProjectsOverviewContextPanel
 // over the same directory and work-item reads; profiles come from the work-item host.
-function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreatePullRequest,onCreateProject}:{snapshot:ProjectWorkItemsSnapshot;
-  projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreatePullRequest?:()=>void;onCreateProject?:()=>void}) {
+function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,onSelectSection,onCreateIssue,onCreatePullRequest,onCreateProject,onAddChannel,onAddRepository,canCreateTarget}:{snapshot:ProjectWorkItemsSnapshot;
+  projectReadModels:Project[];filter:ProjectsFilter;onSelectSection:(section:ProjectsOverviewSection)=>void;onCreateIssue?:()=>void;onCreatePullRequest?:()=>void;onCreateProject?:()=>void;
+  onAddChannel?:()=>void;onAddRepository?:()=>void;canCreateTarget:boolean}) {
   const projects=useMemo(()=>snapshot.projects.filter(project=>!project.legacy),[snapshot]);
   const issues=useMemo(()=>snapshot.items.flatMap(item=>item.type==="issue"?[item.issue]:[]),[snapshot]);
   const pullRequests=useMemo(()=>snapshot.items.flatMap(item=>item.type==="pull-request"?[item.pullRequest]:[]),[snapshot]);
@@ -432,7 +507,8 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   const people=useMemo(()=>projectsOverviewContext({filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries}).people,[filter,issues,projectReadModels,projects,pullRequests,repositorySummaries,summaries]);
   const profiles=useUsersBatchQuery(people,{enabled:people.length>0}).data?.profiles;
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
-    repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}/></div>;
+    repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}
+    onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}/></div>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
@@ -447,6 +523,8 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   const [createOpen,setCreateOpen]=useState(false);
   const [createIssueOpen,setCreateIssueOpen]=useState(false);
   const [createReviewOpen,setCreateReviewOpen]=useState(false);
+  const [createChannelOpen,setCreateChannelOpen]=useState(false);
+  const [createRepositoryOpen,setCreateRepositoryOpen]=useState(false);
   const [navigationFailed,setNavigationFailed]=useState<"created"|"open"|null>(null);
   const creation=useCreateProject(host);
   const sidebar=useOptionalSidebar();
@@ -470,7 +548,7 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     enabled:Boolean(host.publish)&&query.isSuccess&&!query.isFetching,retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects",host.scopeKey]});cache.removeQueries({queryKey:["projects",host.scopeKey]});},[cache,host.scopeKey]);
   // A failed fresh read must not keep a previously accessible announcement open.
-  const projects=query.isSuccess&&!query.isFetching?query.data.projects:[];
+  const projects=query.isSuccess&&!query.isFetching?query.data.projects:NO_PROJECTS;
   const workSnapshot=workItems.isSuccess&&!workItems.isFetching?workItems.data:undefined;
   // Original per-project activity summaries over the completed work-item read;
   // absent while loading or failed, never a zero-activity stand-in.
@@ -479,6 +557,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   // falls back to the creation date without rewriting the stored preference.
   const effectiveSort=sort==="updated"&&filter!=="issues"&&filter!=="prs"&&!directorySummaries?"created":sort;
   const active=projects.find(project=>project.id===selected);
+  // Original editableProjects: the viewer's own explicit projects (no Agent signs for a Human).
+  const viewerPubkey=query.isSuccess&&!query.isFetching?query.data.viewerPubkey:undefined;
+  const editableProjects=useMemo(()=>projects.filter(project=>!project.legacy&&project.owner===viewerPubkey),[projects,viewerPubkey]);
   // Original Projects section lists explicit projects; standalone repositories
   // belong to the Repositories section.
   const visible=projects.filter(project=>!project.legacy).filter(project=>matchesProjectsSearch(search,[
@@ -532,11 +613,23 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
       :<Fragment key={project.id}>{row(link?menu(<DropdownMenuItem className="text-destructive focus:text-destructive" disabled>
         <Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>):undefined)}</Fragment>;
   };
-  if (selected) return active && renderChannel && onOpenChannel
-    ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} scopeKey={host.scopeKey}
-        renderChannel={renderChannel} onOpenChannel={onOpenChannel} onOpenProject={onSelectedProjectChange} onGoProjects={()=>setSelected(null)} host={host} renderWorkItems={renderWorkItems}/>
-    : <ProjectPanelState error={!query.isPending&&!query.isFetching}
-        title={t(query.isPending||query.isFetching?"platform.loading":query.isError?"platform.loadFailed":"projects.home.channelMissing")}/>;
+  // Original ProjectDetailScreen: a project with an authoritative home binding opens its channel
+  // home; otherwise its primary repository surface, or the original unavailable states.
+  if (selected) {
+    const back=()=>{void setSelected(null).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
+    if (!active) return query.isPending||query.isFetching ? <ProjectPanelState title={t("platform.loading")}/>
+      : query.isError ? <ProjectDetailUnavailableState kind="load-error" onBack={back} onRetry={()=>{void query.refetch();}}/>
+      : <ProjectDetailUnavailableState kind="not-found" onBack={back}/>;
+    if (hasAuthoritativeHomeBinding(active)) return renderChannel && onOpenChannel
+      ? <ProjectChannelHome key={`${host.scopeKey}:${active.id}`} project={active} projects={projects} scopeKey={host.scopeKey} viewerPubkey={query.data?.viewerPubkey}
+          renderChannel={renderChannel} onOpenChannel={onOpenChannel} onOpenProject={onSelectedProjectChange} onGoProjects={back} host={host} renderWorkItems={renderWorkItems}/>
+      : <ProjectPanelState error title={t("projects.home.channelMissing")}/>;
+    const repository=selectProjectRepository(active,null);
+    if (!repository) return <ProjectDetailUnavailableState kind="repositories-unavailable" project={active}/>;
+    return onSelectedProjectChange ? <ProjectRepositoryPage key={`${host.scopeKey}:${active.id}`} host={host} selectedProjectId={active.id}
+        onSelectedProjectChange={onSelectedProjectChange} workItemTarget={{repositoryId:repository.id}} renderWorkItems={renderWorkItems}/>
+      : <ProjectPanelState error title={t("projects.unavailable")}/>;
+  }
   const createDialog=<CreateProjectDialog open={createOpen&&(canCreate||creation.busy)} onOpenChange={setCreateOpen} isCreating={creation.busy} frozen={creation.intent?.input}
       onCreate={async input=>{
         const project=await creation.create(input);
@@ -561,12 +654,25 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
   </>;
   const contextAvailable=Boolean(onSelectedProjectChange);
   const explicitProjects=workSnapshot?workSnapshot.projects.filter(project=>!project.legacy):[];
+  const categoryCreateAvailable=Boolean(host.publish&&onSelectedProjectChange);
+  // Original goChannel after a project channel is created: re-read its admitted directory row.
+  const openChannelById=(channelId:string)=>{
+    if(!onOpenChannel)return;
+    void loadChannelDirectory(client,()=>lifetime.active,channelId).then(rows=>{
+      const row=rows.find(candidate=>candidate.isMember&&candidate.membershipState===WorkspaceMembershipState.Active);
+      if(!row)throw new Error("Project channel membership changed");
+      if(lifetime.active)return onOpenChannel(row);
+    }).catch(()=>{if(lifetime.active)setNavigationFailed("open");});
+  };
   const selectSection=(section:ProjectsOverviewSection)=>changeFilter(section);
   const railContent=workSnapshot&&query.isSuccess&&!query.isFetching?<ProjectsOverviewContextRailContent snapshot={workSnapshot} projectReadModels={projects} filter={filter}
     onSelectSection={section=>{selectSection(section);if(isNarrowProjectsLayout)setNarrowContextOpen(false);}}
     onCreateIssue={host.publish&&explicitProjects.length>0?()=>setCreateIssueOpen(true):undefined}
     onCreatePullRequest={host.publish&&host.git&&explicitProjects.length>0?()=>setCreateReviewOpen(true):undefined}
-    onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:null;
+    onCreateProject={canCreate?()=>setCreateOpen(true):undefined}
+    onAddChannel={categoryCreateAvailable?()=>setCreateChannelOpen(true):undefined}
+    onAddRepository={categoryCreateAvailable?()=>setCreateRepositoryOpen(true):undefined}
+    canCreateTarget={editableProjects.length>0}/>:null;
   const rail=railContent&&workSnapshot?renderWorkItems?renderWorkItems(railContent,workSnapshot.viewerPubkey):railContent:null;
   const overviewContextOpen=contextAvailable&&overviewPanelOpen&&!isNarrowProjectsLayout;
   const overviewDetached=overviewContextOpen;
@@ -581,6 +687,9 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",!isNarrowProjectsLayout?"ml-px rounded-2xl bg-background":cn("rounded-tl-xl",topChromeInset.divider))}
       data-testid={overviewDetached?"projects-overview-content-pod":undefined}>
       {createDialog}
+      {categoryCreateAvailable&&onSelectedProjectChange?<ProjectsCategoryCreateDialogs channelOpen={createChannelOpen} editableProjects={editableProjects} host={host}
+        onChannelOpenChange={setCreateChannelOpen} onOpenChannel={onOpenChannel?openChannelById:undefined} onOpenProject={onSelectedProjectChange}
+        onRepositoryOpenChange={setCreateRepositoryOpen} repositoryOpen={createRepositoryOpen}/>:null}
       {host.publish&&onSelectedProjectChange&&explicitProjects.length>0?<CreateProjectIssueDialog host={host} projects={explicitProjects} open={createIssueOpen} onOpenChange={setCreateIssueOpen}
         onCreated={(project,repository,issueId)=>onSelectedProjectChange(project.id,{repositoryId:repository.id,issueId})}/>:null}
       {host.publish&&host.git&&onSelectedProjectChange&&workSnapshot&&explicitProjects.length>0&&createReviewOpen?<CreatePullRequestDialog host={host}

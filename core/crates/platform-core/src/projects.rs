@@ -61,7 +61,9 @@ pub(crate) async fn publication_target(
     request: &contracts::ProjectsPublishRequest,
 ) -> Result<Option<nostr::Event>, Response> {
     let kind = publication_kind(request)?;
-    if matches!(kind, 30617 | 30621) {
+    // Repository/channel management republishes a current head selected below;
+    // only creation starts from a free coordinate.
+    if matches!(kind, 30617 | 30621) && !collab_bridge::projects::is_announcement_patch(request) {
         let slug = collab_bridge::projects::project_dtag(
             request.name.as_deref().unwrap_or_default().trim(),
         );

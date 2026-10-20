@@ -1,8 +1,9 @@
 // Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/projects/ui/ProjectChannelHome.tsx.
 // The original channel host, overview rail, toggle and chrome are shared.
-// Commits/Files sheets use the host's DD-118 Git reads; repository healing/management and write
-// sheets still need their original governed consumers.
+// Commits/Files sheets use the host's DD-118 Git reads. The owner's home-repository healing
+// (useHealProjectHomeRepositories) and the overview's repository/channel management publish the
+// owner's own announcements through the Projects publication host (REQ-24, DD-80, DD-118).
 import * as React from "react";
 import {Maximize2,Plus} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +22,8 @@ import { ProjectDetailChrome } from "./ProjectDetailChrome";
 import { ProjectHomeColumn } from "./ProjectHomeColumn";
 import { ProjectHomeContextPanel } from "./ProjectHomeContextPanel";
 import type { Project } from "./projectModels";
+import { ProjectRepositoryManagement, invalidateProjectAnnouncements } from "./ProjectRepositoryManagement";
+import { canHealProjectHomeRepositories, healProjectHomeRepositories } from "./projectRepositoryManagement";
 import type { IdleAuxiliaryProps } from "../messages/thread/IdleAuxiliarySurface";
 import type { ProjectsHost } from "./projectEnumeration";
 import type { ProjectWorkItemTarget } from "./projectWorkItems";
@@ -30,9 +33,13 @@ const PROJECT_HOME_SUMMARY_WIDTH_SESSION_KEY = "buzz.desktop.project-home-summar
 
 export type ProjectChannelRenderer = (workspace: DiscoverableWorkspace, auxiliary?: IdleAuxiliaryProps) => React.ReactNode;
 
-export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProjects, onOpenChannel, onOpenProject, host, renderWorkItems }: {
+export function ProjectChannelHome({ project, projects, scopeKey, viewerPubkey, renderChannel, onGoProjects, onOpenChannel, onOpenProject, host, renderWorkItems }: {
   project: Project;
+  /** The directory's projects, for the original Add existing repository chooser. */
+  projects?: Project[];
   scopeKey: string;
+  /** The signing identity of this Projects host; owner-only management keys on it. */
+  viewerPubkey?: string;
   renderChannel: ProjectChannelRenderer;
   onGoProjects: () => void | Promise<void>;
   onOpenChannel: (workspace: DiscoverableWorkspace) => void | Promise<void>;
@@ -49,6 +56,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   const [repositoryId, setRepositoryId] = React.useState<string | null>(null);
   const [workspaceDetail, setWorkspaceDetail] = React.useState<ProjectHomeWorkspaceDetail | null>(null);
   const [workspaceCreateAction,setWorkspaceCreateAction]=React.useState<ProjectHomeWorkspaceCreateAction|null>(null);
+  const [addRepositoryOpen,setAddRepositoryOpen]=React.useState(false);
   const repository = project.repositories.find(item => item.id === repositoryId) ?? project.repositories[0];
   const workspaceOpen = Boolean(workspaceTab && repository && host && renderWorkItems);
   const previousWorkspaceOpenRef = React.useRef(workspaceOpen);
@@ -92,6 +100,25 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
       throw new Error("Project channel membership changed");
     if (lifetime.active) await onOpenChannel(current);
   });
+  // Original useHealProjectHomeRepositories: Kailo project data is always a fresh Relay read.
+  const healingEnabled = Boolean(host?.publish) && canHealProjectHomeRepositories({ identityPubkey: viewerPubkey, project, projectDataIsAuthoritative: true });
+  const healingAttempted = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (!healingEnabled || !host) return;
+    const controller = new AbortController();
+    void healProjectHomeRepositories(host, project, healingAttempted.current, controller.signal)
+      .then(attached => { if (attached > 0 && !controller.signal.aborted) void invalidateProjectAnnouncements(cache, host.scopeKey); })
+      .catch(() => { /* Already bound, raced, or not owner-writable this session. */ });
+    return () => controller.abort();
+  }, [cache, healingEnabled, host, project]);
+  const openRepository = (repositoryId: string, tab?: string) => {
+    if (!onOpenProject) return;
+    navigate(() => onOpenProject(project.id, { repositoryId, ...(tab ? { tab } : {}) }));
+  };
+  const refreshProjectHome = () => {
+    if (!onOpenProject) return;
+    navigate(() => onOpenProject(project.id));
+  };
   const toggleLabel = t(summaryVisible ? "projects.home.hideOverview" : "projects.home.showOverview");
   const sheetTitle = t(workspaceTab === "prs" ? "projects.list.reviews" : workspaceTab === "commits" ? "projects.workItem.commits"
     : workspaceTab === "files" ? "projects.git.files" : "projects.list.tasks");
@@ -115,7 +142,7 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
   return <div className={cn("relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
     summaryVisible && "bg-sidebar", summaryVisible && sidebar?.open === false && "pl-2")}
     data-project-context-detached={summaryVisible ? "true" : undefined}
-    data-project-detail-screen data-repository-healing-enabled={false} data-testid="project-channel-home">
+    data-project-detail-screen data-repository-healing-enabled={healingEnabled} data-testid="project-channel-home">
     <div className={cn("relative flex min-h-0 min-w-60 flex-1 flex-col overflow-hidden",
       summaryVisible ? "mb-2 ml-px mt-px rounded-2xl bg-background" : "bg-muted/20")}>
       <ProjectDetailChrome actions={<Tooltip disableHoverableContent><TooltipTrigger asChild>
@@ -152,6 +179,8 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
           <p className="text-sm text-muted-foreground">{t("projects.home.channelMissing")}</p>
         </div>}
     </div>
+    {host ? <ProjectRepositoryManagement createOpen={addRepositoryOpen} hideTriggers host={host} identityPubkey={viewerPubkey}
+      onChange={repositoryId => openWorkspace("files", repositoryId)} onCreateOpenChange={setAddRepositoryOpen} project={project} projects={projects ?? [project]}/> : null}
     <ProjectContextRail open={summaryVisible} panelWidthPx={width.widthPx} resizing={width.isResizing}
       animateWidth={!workspaceVisibilityChanged}
       rounded={false} testId="project-home-summary-rail">
@@ -161,7 +190,12 @@ export function ProjectChannelHome({ project, scopeKey, renderChannel, onGoProje
         <ProjectHomeContextPanel project={project}
           channels={channels.map(channel => ({ id: channel.channel.channelId, name: channel.channel.name }))}
           onOpenChannel={openChannel} activeWorkspaceTab={workspaceTab}
-          onOpenWorkspace={host && renderWorkItems ? openWorkspace : undefined} host={host}/>
+          onOpenWorkspace={host && renderWorkItems ? openWorkspace : undefined} host={host}
+          identityPubkey={viewerPubkey} projects={projects ?? [project]}
+          onAddRepository={host?.publish ? () => setAddRepositoryOpen(true) : undefined}
+          onOpenRepository={onOpenProject ? repositoryId => openRepository(repositoryId) : undefined}
+          onOpenRepositoryTab={onOpenProject ? openRepository : undefined}
+          onRepositoryChange={refreshProjectHome}/>
       </ProjectHomeColumn> : null}
     </ProjectContextRail>
   </div>;

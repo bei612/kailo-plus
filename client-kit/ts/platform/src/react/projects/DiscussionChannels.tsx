@@ -1,6 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/projects/ui/DiscussionChannels.tsx::DiscussedInChannels.
 // The original optional conversation panel is not mounted here: existing host
-// search navigation is the original fallback. No Git/Channels workspace added.
+// search navigation is the original fallback. DiscussionChannelsPanel is the original repository
+// Channels tab over the same host search read.
 import * as React from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +13,10 @@ import type { SearchHit, SearchChannel, SearchMessagesResponse } from "../search
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { ProjectEntityFacepile } from "./ProjectEntityFacepile";
 import { useUiT } from "../context";
+import { Hash } from "lucide-react";
+import { BuzzLoadingState } from "./BuzzLoadingState";
+import { ProjectEntityListRow } from "./ProjectEntityListRow";
+import { ProjectPanelState } from "./ProjectPanelState";
 
 export type ProjectDiscussionHost = {
   read: (
@@ -299,5 +304,133 @@ function DiscussionNameList({
         </span>
       ) : null}
     </>
+  );
+}
+
+/** The original "Showing the latest … mentions" cap of the discussion search. */
+const DISCUSSION_SEARCH_LIMIT = 500;
+
+/** Buzz 779af8886caae1317b4de962082429867ab61503 DiscussionChannels.tsx::DiscussionChannelsPanel. */
+export function DiscussionChannelsPanel({
+  query,
+  repositoryName,
+}: {
+  query: string;
+  repositoryName: string;
+}) {
+  const host = usePulseHost();
+  const cache = useQueryClient();
+  const t = useUiT();
+  const lifetime = React.useMemo(() => ({ active: true }), [host.scopeKey]);
+  React.useEffect(() => {
+    lifetime.active = true;
+    return () => { lifetime.active = false; };
+  }, [lifetime]);
+  const key = React.useMemo(() => ["project-discussions", host.scopeKey, query, null], [host.scopeKey, query]);
+  const search = useQuery({
+    queryKey: key,
+    enabled: Boolean(host.discussions),
+    retry: false,
+    refetchOnWindowFocus: "always",
+    queryFn: ({ signal }) => {
+      if (!host.discussions) throw new Error("Discussion host unavailable");
+      return host.discussions.read(query, null, signal);
+    },
+  });
+  React.useEffect(() => () => {
+    void cache.cancelQueries({ queryKey: key });
+    cache.removeQueries({ queryKey: key });
+  }, [cache, key]);
+  const ready = search.isSuccess && !search.isFetching;
+  const snapshot = ready ? search.data : undefined;
+  const hits = React.useMemo(
+    () => [...(snapshot?.hits ?? [])].sort((a, b) => b.createdAt - a.createdAt),
+    [snapshot],
+  );
+  const channels = React.useMemo(() => groupDiscussionChannels(hits), [hits]);
+  const isTruncated = hits.length >= DISCUSSION_SEARCH_LIMIT;
+  const profilesQuery = useUsersBatchQuery(
+    channels.flatMap((channel) => channel.participants),
+    { enabled: channels.length > 0 },
+  );
+  const profiles = profilesQuery.data?.profiles;
+  const latestHitByChannel = new Map<string, SearchHit>();
+  for (const hit of hits) {
+    if (hit.channelId && !latestHitByChannel.has(hit.channelId)) latestHitByChannel.set(hit.channelId, hit);
+  }
+  const channelName = (id: string, name: string | null) => name ?? snapshot?.channels.find(channel => channel.id === id)?.name ?? id.slice(0, 8);
+  const open = (channelId: string, hit?: SearchHit) => {
+    void (async () => {
+      // Reauthorize at click time; a listed row is not permission to read the channel.
+      const fresh = await search.refetch();
+      if (!lifetime.active) return;
+      if (fresh.isError || !fresh.data) throw new Error("Discussion unavailable");
+      if (hit) {
+        const current = fresh.data.hits.find(item => item.eventId === hit.eventId && item.channelId === channelId);
+        if (!current) throw new Error("Discussion unavailable");
+        await host.discussions!.openHit(current);
+      } else {
+        const channel = fresh.data.channels.find(item => item.id === channelId);
+        if (!channel || !(channel.isMember || channel.visibility === "open")) throw new Error("Discussion unavailable");
+        await host.discussions!.openChannel(channelId);
+      }
+    })().catch(() => {
+      if (lifetime.active) toast.error(t("platform.linkChannelUnavailable"));
+    });
+  };
+
+  if (!host.discussions || search.isError) {
+    return <ProjectPanelState className="px-4" error testId="project-discussion-channels-panel" title={t("platform.loadFailed")} />;
+  }
+  if (!ready) {
+    return <BuzzLoadingState label={t("projects.discussion.loadingChannels")} />;
+  }
+  if (channels.length === 0) {
+    return (
+      <ProjectPanelState
+        className="px-4"
+        description={t("projects.discussion.noChannelsHint")}
+        testId="project-discussion-channels-panel"
+        title={t("projects.discussion.noChannels")}
+      />
+    );
+  }
+
+  return (
+    <div className="px-4" data-testid="project-discussion-channels-panel">
+      <ul data-testid="discussion-channels">
+        {channels.map((channel) => {
+          const name = channelName(channel.id, channel.name);
+          const latestHit = latestHitByChannel.get(channel.id);
+          const count = `${channel.messageCount}${isTruncated ? "+" : ""}`;
+          return (
+            <li className="relative" key={channel.id}>
+              <ProjectEntityListRow
+                affiliation={repositoryName}
+                affiliationTestId="project-channel-repository"
+                count={channel.messageCount}
+                countSuffix={isTruncated ? "+" : undefined}
+                countTestId="project-channel-message-count"
+                countTitle={t(channel.messageCount === 1 ? "projects.discussion.messageOne" : "projects.discussion.messageMany", { count })}
+                dateSeconds={channel.lastActivityAt}
+                dateTestId="project-channel-row-date"
+                icon={<Hash className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                onClick={() => open(channel.id, latestHit)}
+                peopleSlot={<ProjectEntityFacepile participants={channel.participants} profiles={profiles} />}
+                peopleTestId="project-channel-participants"
+                testId="project-channel-row"
+                title={`#${name}`}
+                titleAttr={latestHit ? t("projects.discussion.openLatest", { name }) : t("projects.discussion.openNamed", { name })}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      {isTruncated ? (
+        <p className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
+          {t("projects.discussion.showingLatest", { count: DISCUSSION_SEARCH_LIMIT })}
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -282,3 +282,51 @@ test("Native task scope loss after head read prevents signing and absent recover
   await assert.rejects(publisher()(request(),"absent",true,observation()),/unknown/i);
   assert.equal(signed,0);assert.equal(published,0);
 });
+
+// Original useAttachProjectRepository / useBindProjectRepositoryChannel / useAddProjectChannel
+// (REQ-24, DD-80, DD-118): the CLIENT republishes only its own verified current head as the
+// original template; every other tag and the content stay verbatim.
+const channelId="12345678-1234-4234-8234-123456789001",otherChannel="12345678-1234-4234-8234-123456789002";
+const projectHead=finalizeEvent({kind:30621,created_at:5,content:"",tags:[["d","garden"],["name","Garden"],["buzz-channel",channelId],
+  ["x-unknown","kept"],["a",`30617:${viewer}:zeta`]]},key);
+const repositoryHead=finalizeEvent({kind:30617,created_at:5,content:"Mobile",tags:[["d","mobile"],["name","Mobile"],["buzz-channel",channelId],["description","Mobile"]]},key);
+function announcementReads(head){
+  relayClient.fetchEvents=async filter=>{reads++;
+    if(filter.ids&&delivered&&filter.ids.includes(delivered.id))return [delivered];
+    if(filter.ids)return filter.ids.includes(head.id)&&filter.kinds.includes(head.kind)?[head]:[];
+    return filter.kinds.includes(head.kind)?[head]:[];};
+}
+const announcementPublisher=(workspaces=[{id:otherChannel,isMember:true}])=>createProjectsPublisher("tenant:viewer",relay,viewer,()=>active,
+  {conversationParticipants:people,workspaces:async()=>{admissions++;return workspaces;}},2);
+test("Native repository attachment republishes the owned project head with one more sorted member",async()=>{
+  announcementReads(projectHead);
+  const added=`30617:${viewer}:alpha`;
+  const result=await announcementPublisher()({operation:"ATTACH_REPOSITORY",targetEventId:projectHead.id,repositoryAddress:added},"attach",false,observation());
+  assert.equal(result.eventId,delivered.id);assert.equal(delivered.kind,30621);assert.equal(delivered.pubkey,viewer);
+  assert.deepEqual(delivered.tags,[["d","garden"],["name","Garden"],["buzz-channel",channelId],["x-unknown","kept"],["a",added],["a",`30617:${viewer}:zeta`]]);
+  assert.ok(delivered.created_at>projectHead.created_at);assert.equal(admissions,0);
+  await assert.rejects(announcementPublisher()({operation:"ATTACH_REPOSITORY",targetEventId:projectHead.id,repositoryAddress:`30617:${viewer}:zeta`},"attach-again",false,observation()));
+  assert.equal(signed,1);assert.equal(published,1);
+});
+test("Native repository channel binding and project channel link admit the Workspace and patch only their tag",async()=>{
+  announcementReads(repositoryHead);
+  await announcementPublisher()({operation:"BIND_REPOSITORY_CHANNEL",targetEventId:repositoryHead.id,workspaceId:otherChannel},"bind",false,observation());
+  assert.equal(delivered.kind,30617);assert.equal(delivered.content,"Mobile");
+  assert.deepEqual(delivered.tags,[["d","mobile"],["name","Mobile"],["description","Mobile"],["buzz-channel",otherChannel]]);
+  delivered=undefined;prepared=undefined;announcementReads(projectHead);
+  await announcementPublisher()({operation:"ADD_PROJECT_CHANNEL",targetEventId:projectHead.id,workspaceId:otherChannel},"link",false,observation());
+  assert.equal(delivered.kind,30621);
+  assert.deepEqual(delivered.tags,[...projectHead.tags,["buzz-related-channel",otherChannel]]);
+  // A Workspace the signer is not a member of is never linked or bound.
+  await assert.rejects(announcementPublisher([])({operation:"ADD_PROJECT_CHANNEL",targetEventId:projectHead.id,workspaceId:otherChannel},"not-member",false,observation()));
+  assert.equal(signed,2);assert.equal(published,2);
+});
+test("Native announcement changes refuse another owner's head, mixed fields and a non-https clone URL before signing",async()=>{
+  const foreign=finalizeEvent({kind:30621,created_at:5,content:"",tags:[["d","garden"],["name","Garden"]]},ownerKey);
+  announcementReads(foreign);
+  await assert.rejects(announcementPublisher()({operation:"ATTACH_REPOSITORY",targetEventId:foreign.id,repositoryAddress:`30617:${viewer}:alpha`},"foreign",false,observation()));
+  await assert.rejects(announcementPublisher()({operation:"ATTACH_REPOSITORY",targetEventId:projectHead.id,repositoryAddress:`30617:${viewer}:alpha`,workspaceId:otherChannel},"mixed",false,observation()));
+  await assert.rejects(announcementPublisher()({operation:"BIND_REPOSITORY_CHANNEL",targetEventId:repositoryHead.id,workspaceId:otherChannel,name:"x"},"mixed-bind",false,observation()));
+  await assert.rejects(announcementPublisher()({operation:"CREATE_REPOSITORY",workspaceId:otherChannel,name:"Mobile",cloneUrl:"http://relay.example/mobile.git"},"http-clone",false,observation()));
+  assert.equal(signed,0);assert.equal(published,0);
+});

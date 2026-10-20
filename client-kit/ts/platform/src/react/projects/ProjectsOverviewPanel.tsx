@@ -108,6 +108,11 @@ type ProjectsOverviewContextPanelProps = {
   onCreateIssue?: () => void;
   onCreatePullRequest?: () => void;
   onCreateProject?: () => void;
+  /** Original Add channel / Add repository of the Channels and Repositories sections. */
+  onAddChannel?: () => void;
+  onAddRepository?: () => void;
+  /** The viewer owns at least one explicit project to add to. */
+  canCreateTarget?: boolean;
   onSelectSection: (section: ProjectsOverviewSection) => void;
   profiles?: UserProfileLookup;
   projectReadModels: Project[];
@@ -119,17 +124,25 @@ type ProjectsOverviewContextPanelProps = {
 
 function OverviewCreateButton({
   action,
+  canCreateTarget = false,
+  onAddChannel,
+  onAddRepository,
   onCreateIssue,
   onCreatePullRequest,
   onCreateProject,
 }: {
   action: Exclude<OverviewContextAction, null>;
+  canCreateTarget?: boolean;
+  onAddChannel?: () => void;
+  onAddRepository?: () => void;
   onCreateIssue?: () => void;
   onCreatePullRequest?: () => void;
   onCreateProject?: () => void;
 }) {
   const t = useUiT();
-  const actionHandler = action.kind === "issue" ? onCreateIssue : action.kind === "pullRequest" ? onCreatePullRequest : onCreateProject;
+  const actionHandler = action.kind === "issue" ? onCreateIssue : action.kind === "pullRequest" ? onCreatePullRequest
+    : action.kind === "project" ? onCreateProject : action.kind === "channel" ? onAddChannel : onAddRepository;
+  const requiresProject = action.kind === "channel" || action.kind === "repository";
   // A section's create action exists only while its governed writer is available.
   if (!actionHandler) return null;
   return (
@@ -137,6 +150,7 @@ function OverviewCreateButton({
       aria-label={t(action.label)}
       className="h-6 w-6 shrink-0 rounded-md text-muted-foreground hover:bg-muted/70 hover:text-foreground"
       data-testid={action.testId}
+      disabled={requiresProject && !canCreateTarget}
       onClick={actionHandler}
       size="icon"
       title={t(action.label)}
@@ -183,6 +197,9 @@ export function ProjectsOverviewContextPanel({
   onCreateIssue,
   onCreatePullRequest,
   onCreateProject,
+  onAddChannel,
+  onAddRepository,
+  canCreateTarget,
   onSelectSection,
   profiles,
   projectReadModels,
@@ -226,6 +243,9 @@ export function ProjectsOverviewContextPanel({
               onCreateIssue={onCreateIssue}
               onCreatePullRequest={onCreatePullRequest}
               onCreateProject={onCreateProject}
+              onAddChannel={onAddChannel}
+              onAddRepository={onAddRepository}
+              canCreateTarget={canCreateTarget}
             />
           ) : null}
         </div>

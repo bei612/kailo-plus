@@ -1,8 +1,24 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/features/projects/ui/projectRightPanelContext.ts::projectTaskActivity and
-// projectReviewActivity, unchanged. Git ref scope has no shared consumer yet.
+// desktop/src/features/projects/ui/projectRightPanelContext.ts, unchanged: the Git ref scope of the
+// repository context card, projectTaskActivity and projectReviewActivity.
 import type { ProjectIssue } from "./projectIssues.mjs";
 import type { ProjectPullRequest } from "./projectPullRequests.mjs";
+
+export type ProjectRightPanelScope = "branch" | "repository";
+
+const BRANCH_SCOPED_TABS = new Set([
+  "activity",
+  "contributors",
+  "files",
+  "overview",
+]);
+
+/** Identifies whether a project tab follows the selected Git ref. */
+export function projectRightPanelScope(
+  activeTab: string,
+): ProjectRightPanelScope {
+  return BRANCH_SCOPED_TABS.has(activeTab) ? "branch" : "repository";
+}
 
 export function projectTaskActivity(issues: ProjectIssue[]) {
   const completed = issues.filter(

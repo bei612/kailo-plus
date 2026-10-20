@@ -1,9 +1,8 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/projectsOverviewContext.ts. Same title,
-// people and stat derivation per section; labels are catalog keys. Create
-// actions are only returned for sections whose governed writer exists (no
-// add-channel or add-repository writer is available); the panel hides an action
-// whose handler the caller does not pass (Create review needs DD-118 Git).
+// people and stat derivation per section; labels are catalog keys. The panel
+// hides an action whose handler the caller does not pass (Create review needs
+// DD-118 Git; Add channel / Add repository need the Projects publication host).
 import type { PlatformMessageKey } from "../../i18n";
 import { projectContributorActivityCounts } from "./lib/projectContributorMatching";
 import type { ProjectActivitySummary } from "./lib/projectActivitySummaries";
@@ -31,7 +30,7 @@ export type OverviewContextStatIcon =
   | "merged";
 
 export type OverviewContextAction = {
-  kind: "issue" | "project" | "pullRequest";
+  kind: "channel" | "issue" | "project" | "pullRequest" | "repository";
   label: PlatformMessageKey;
   testId: string;
 } | null;
@@ -228,7 +227,11 @@ export function projectsOverviewContext(
 
   if (filter === "repositories") {
     return {
-      action: null,
+      action: {
+        kind: "repository",
+        label: "projects.repository.add",
+        testId: "projects-overview-add-repository",
+      },
       people,
       stats: [
         {
@@ -256,7 +259,11 @@ export function projectsOverviewContext(
 
   if (filter === "channels") {
     return {
-      action: null,
+      action: {
+        kind: "channel",
+        label: "projects.channel.add",
+        testId: "projects-overview-add-channel",
+      },
       people,
       stats: [
         {
