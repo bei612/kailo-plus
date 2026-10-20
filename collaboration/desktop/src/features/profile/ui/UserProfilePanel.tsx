@@ -10,7 +10,15 @@ import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey } from "@/features/channels/hooks";
-import { ProfileSummaryView, UserProfilePanelFrame } from "@client-kit/platform/react/pulse";
+import {
+  ProfileSummaryView,
+  UserProfileAgentPanel,
+  UserProfilePanelFrame,
+  useProfileAgentLookup,
+  type ProfilePanelTab,
+  type ProfilePanelView,
+  type UserProfileAgentScope,
+} from "@client-kit/platform/react/pulse";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
@@ -25,6 +33,12 @@ import * as React from "react";
 import { Button } from "@/shared/ui/button";
 
 export type UserProfilePanelProps = {
+  /**
+   * DD-125(6), 17 §8: the admitted Workspace this profile was opened from. When the pubkey is
+   * one of its Agents, the shared Agent panel (tabs, sections, focused views, activity) renders;
+   * without it every profile is public only.
+   */
+  agentScope?: UserProfileAgentScope;
   canResetWidth?: boolean;
   isSinglePanelView?: boolean;
   layout?: "standalone" | "split";
@@ -33,12 +47,18 @@ export type UserProfilePanelProps = {
   onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   pubkey: string;
   splitPaneClamp?: boolean;
+  /** Original controlled summary tab / focused view (route search state); internal when absent. */
+  tab?: ProfilePanelTab;
+  view?: ProfilePanelView;
+  onTabChange?: (tab: ProfilePanelTab, options?: { replace?: boolean }) => void;
+  onViewChange?: (view: ProfilePanelView, options?: { replace?: boolean }) => void;
   widthPx: number;
   transparentChrome?: boolean;
 };
 
 /** Original public fields and direct Message action through governed DM preparation. */
 export function UserProfilePanel({
+  agentScope,
   canResetWidth,
   isSinglePanelView = false,
   layout = "standalone",
@@ -47,6 +67,10 @@ export function UserProfilePanel({
   onResizeStart,
   pubkey,
   splitPaneClamp = false,
+  tab,
+  view,
+  onTabChange,
+  onViewChange,
   widthPx,
   transparentChrome = false,
 }: UserProfilePanelProps) {
@@ -76,6 +100,7 @@ export function UserProfilePanel({
   const profile = profileQuery.isSuccess && !profileQuery.isFetching && profileQuery.data.pubkey === pubkey
     ? profileQuery.data : undefined;
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
+  const agent = useProfileAgentLookup(agentScope, pubkey);
   // DD-125(3) original handleWave: open (or reuse) the 1:1 DM through the same governed
   // preparation, navigate there, then sign the marked wave kind:9 with this device's key.
   const [waving, setWaving] = React.useState(false);
@@ -122,6 +147,35 @@ export function UserProfilePanel({
     }
   }
 
+  if (agent.status === "agent" && agentScope) {
+    return (
+      <UserProfileAgentPanel
+        canResetWidth={canResetWidth}
+        displayName={profile?.displayName ?? (agent.installation.agentDisplayName?.trim() || truncateNpub(pubkey))}
+        installation={agent.installation}
+        isOverlay={isOverlay}
+        isSinglePanelView={isSinglePanelView}
+        isSplitLayout={isSplitLayout}
+        mediaUrl={rewriteRelayUrl}
+        onClose={onClose}
+        onResetWidth={onResetWidth}
+        onResizeStart={onResizeStart}
+        onTabChange={onTabChange}
+        onViewChange={onViewChange}
+        profile={profile}
+        pubkey={pubkey}
+        reload={agent.reload}
+        rows={agent.rows}
+        scope={agentScope}
+        splitPaneClamp={splitPaneClamp}
+        tab={tab}
+        transparentChrome={transparentChrome}
+        view={view}
+        widthPx={widthPx}
+      />
+    );
+  }
+
   return (
     <UserProfilePanelFrame
       canResetWidth={canResetWidth}
@@ -151,7 +205,7 @@ export function UserProfilePanel({
         className="overflow-y-auto px-4 pb-6"
         data-testid="user-profile-scroll-body"
       >
-        {profile ? <ProfileSummaryView
+        {profile && agent.status !== "pending" ? <ProfileSummaryView
           displayName={displayName}
           profile={profile}
           pubkey={pubkey}
@@ -161,7 +215,7 @@ export function UserProfilePanel({
           onMessage={pubkey !== session.devicePubkey && platformSession.isSuccess && !platformSession.isFetching ? () => { void openMessage(); } : undefined}
           wavePending={waving}
           onWave={pubkey !== session.devicePubkey && platformSession.isSuccess && !platformSession.isFetching ? () => { void waveAtProfile(); } : undefined}
-        /> : profileQuery.isError || (profileQuery.isSuccess && !profileQuery.isFetching) ?
+        /> : agent.status !== "pending" && (profileQuery.isError || (profileQuery.isSuccess && !profileQuery.isFetching)) ?
           <div role="alert"><p>{translate(locale, "platform.loadFailed")}</p>
             <Button onClick={() => { void profileQuery.refetch(); }}>{translate(locale, "platform.retry")}</Button>
           </div> : <p role="status">{translate(locale, "platform.loading")}</p>}

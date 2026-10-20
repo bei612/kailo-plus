@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { WebProfileView } from "@client-kit/contracts";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ProfileSummaryView, UserProfilePanelFrame, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
+import { ProfileSummaryView, UserProfileAgentPanel, UserProfilePanelFrame, UserProfilePopoverSurface, UserProfilePopoverBody, useProfileAgentLookup, type ProfilePopoverBodyProps, type UserProfileAgentScope } from "@client-kit/platform/react/pulse";
 import { useProfileWave } from "@client-kit/platform/react/pulse/profile-direct-message";
 import { AuxiliaryPanelBody, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, RightAuxiliaryPane, useIsThreadPanelOverlay, useThreadPanelWidth, type AuxiliaryPanelLayout } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
@@ -136,10 +136,15 @@ function MessageAuthorHover({target,...props}: ProfilePopoverBodyProps & {target
     status={!data?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false,layout="standalone",transparentChrome=false}: {
+export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false,layout="standalone",transparentChrome=false,agentScope}: {
   target:MessageAuthor;onClose:()=>void;onStartDm?: (pubkey:string)=>void|Promise<void>;
   onWidthChange?: (width: number) => void; isSinglePanelView?: boolean;
   layout?:AuxiliaryPanelLayout;transparentChrome?:boolean;
+  /**
+   * DD-125(6), 17 §8: the admitted Workspace of this message. An author that is one of its Agents
+   * opens the shared Agent panel (tabs, sections, focused views, activity); otherwise public only.
+   */
+  agentScope?:UserProfileAgentScope;
 }) {
   const t=useUiT();
   const query=useMessageAuthor(target);
@@ -154,6 +159,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
   useLayoutEffect(() => { onWidthChange?.(width.widthPx); }, [onWidthChange, width.widthPx]);
   useEscapeKey(onClose,true);
   const data=query.isSuccess&&!query.isFetching?query.data:undefined;
+  const agent=useProfileAgentLookup(agentScope,target.pubkey);
   // DD-125(3) original Wave tile beside Message (the host's people directory excludes Agents).
   const wave=useProfileWave(onStartDm?data?.pubkey:undefined,onClose);
   async function openMessage() {
@@ -170,18 +176,24 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       if(owner.active&&currentOwner.current===owner)setOpening(false);
     }
   }
-  const panel = <UserProfilePanelFrame isSplitLayout={layout === "split"} isOverlay={isOverlay} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
+  const panel = agent.status==="agent"&&agentScope ? <UserProfileAgentPanel key={target.pubkey} isSplitLayout={layout === "split"} isOverlay={isOverlay}
+    transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
+    isSinglePanelView={isSinglePanelView} splitPaneClamp={false} onResetWidth={width.onResetWidth} canResetWidth={width.canReset}
+    displayName={data?.displayName??(agent.installation.agentDisplayName?.trim()||truncatePubkey(target.pubkey))}
+    installation={agent.installation} rows={agent.rows} reload={agent.reload} scope={agentScope}
+    profile={data} pubkey={target.pubkey} mediaUrl={(url)=>data?.avatarMediaPaths[url]??url}/>
+  : <UserProfilePanelFrame isSplitLayout={layout === "split"} isOverlay={isOverlay} transparentChrome={transparentChrome} onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset}
     addAgentToChannelDialog={null} editAgentDialog={null} personaDialogs={null} headerActions={null}
     stickyChromeActive={false} stickyChromeEnabled={false} stickyChromeHeight={0}
     headerLeftContent={<AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>}
     profileBody={
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
-      {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
+      {data&&agent.status!=="pending"?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
         profile={data} pubkey={data.pubkey} copy={writeTextToClipboard} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
         messagePending={opening} onMessage={onStartDm?()=>{void openMessage();}:undefined}
         onWave={wave.onWave} wavePending={wave.pending}/>
-        :query.isError?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
+        :query.isError&&agent.status!=="pending"?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
         :<p role="status">{t("platform.loading")}</p>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>

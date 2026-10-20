@@ -69,6 +69,11 @@ export function useBffClient(): BffClient {
   return usePlatform().client;
 }
 
+/** The platform client when this tree has one; shared surfaces that also render without a session use it. */
+export function useOptionalBffClient(): BffClient | null {
+  return useContext(PlatformContext)?.client ?? null;
+}
+
 /** Whether this tree has a platform session; shared surfaces omit platform-only actions without one. */
 export function useHasPlatform(): boolean {
   return useContext(PlatformContext) !== null;

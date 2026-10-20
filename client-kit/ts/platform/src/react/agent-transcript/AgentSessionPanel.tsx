@@ -16,6 +16,7 @@ import { useNow } from "../useNow";
 import type { UserProfileLookup } from "../messages/system/identity";
 import { UserAvatar } from "../messages/UserAvatar";
 import { Button } from "../profile/buzz/shared/ui/button";
+import { cn } from "../profile/buzz/shared/lib/cn";
 import {
   AuxiliaryPanel,
   AuxiliaryPanelBody,
@@ -607,6 +608,122 @@ function TranscriptBody({
           <p className="mt-3 text-xs text-muted-foreground" role="status">{t("agentTranscript.revoked")}</p>
         ) : null}
       </section>
+    </TranscriptWorkspaceProvider>
+  );
+}
+
+/**
+ * Original ManagedAgentSessionPanel in its profile embed form (`transcriptVariant="compactPreview"`,
+ * `autoTail`, no header or raw toggle): the Installation's latest Session, tail-aligned so the
+ * newest work stays in view. Installation `audit` only (DD-125(6)); nothing renders otherwise.
+ */
+export function AgentSessionPreview({
+  agentAvatarUrl,
+  agentName,
+  channelId = null,
+  className,
+  contentContainerClassName,
+  emptyDescription,
+  emptyState = "idle",
+  installation,
+}: {
+  agentAvatarUrl: string | null;
+  agentName: string;
+  channelId?: string | null;
+  className?: string;
+  contentContainerClassName?: string;
+  emptyDescription: string;
+  emptyState?: "idle" | "loading";
+  installation: AgentInstallationView;
+}) {
+  const session = useSelectedSession(installation, undefined, undefined);
+  if (installation.canAudit !== true) {
+    return null;
+  }
+  const frameClassName = cn("flex min-h-0 flex-col justify-end overflow-hidden", className);
+  if (session.status === "ok" && session.target) {
+    return (
+      <div className={frameClassName} data-testid="agent-session-preview">
+        <SessionPreviewTranscript
+          agentAvatarUrl={agentAvatarUrl}
+          agentName={agentName}
+          channelId={channelId}
+          contentContainerClassName={contentContainerClassName}
+          emptyDescription={emptyDescription}
+          emptyState={emptyState}
+          installation={installation}
+          target={session.target}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={frameClassName} data-testid="agent-session-preview">
+      <LivePreviewTranscript
+        agentAvatarUrl={agentAvatarUrl}
+        agentName={agentName}
+        channelId={channelId}
+        contentContainerClassName={contentContainerClassName}
+        emptyDescription={emptyDescription}
+        emptyState={session.status === "pending" ? "loading" : emptyState}
+        installation={installation}
+      />
+    </div>
+  );
+}
+
+type PreviewProps = {
+  agentAvatarUrl: string | null;
+  agentName: string;
+  channelId: string | null;
+  contentContainerClassName?: string;
+  emptyDescription: string;
+  emptyState: "idle" | "loading";
+  installation: AgentInstallationView;
+};
+
+function SessionPreviewTranscript({ target, ...props }: PreviewProps & { target: SessionTarget }) {
+  const { installation } = props;
+  const transcript = useAgentSessionTranscript({
+    agentName: props.agentName, channelId: props.channelId,
+    enabled: installation.canAudit === true, installationId: installation.resourceId, ...target,
+  });
+  const liveTurn = transcript.live.turns.find((turn) => !turn.completed);
+  return (
+    <TranscriptWorkspaceProvider value={installation.workspaceId}>
+      <AgentSessionTranscriptList
+        agentAvatarUrl={props.agentAvatarUrl}
+        agentName={props.agentName}
+        agentPubkey={installation.agentPubkey ?? installation.agentPrincipalId}
+        contentContainerClassName={props.contentContainerClassName}
+        emptyDescription={props.emptyDescription}
+        emptyState={transcript.status === "pending" ? "loading" : props.emptyState}
+        isTurnLive={transcript.activeTurn !== undefined || transcript.liveTurnRunning}
+        items={transcript.items}
+        latestLiveSessionId={liveTurn ? agentSessionKey(liveTurn.rootEventId, liveTurn.projectionGeneration) : null}
+        variant="compactPreview"
+      />
+    </TranscriptWorkspaceProvider>
+  );
+}
+
+function LivePreviewTranscript(props: PreviewProps) {
+  const { installation } = props;
+  const items = useAgentTranscript(installation.resourceId, installation.canAudit === true, {
+    agentName: props.agentName, channelId: props.channelId,
+  });
+  return (
+    <TranscriptWorkspaceProvider value={installation.workspaceId}>
+      <AgentSessionTranscriptList
+        agentAvatarUrl={props.agentAvatarUrl}
+        agentName={props.agentName}
+        agentPubkey={installation.agentPubkey ?? installation.agentPrincipalId}
+        contentContainerClassName={props.contentContainerClassName}
+        emptyDescription={props.emptyDescription}
+        emptyState={props.emptyState}
+        items={items}
+        variant="compactPreview"
+      />
     </TranscriptWorkspaceProvider>
   );
 }

@@ -149,7 +149,8 @@ export function ProfileSummaryView({
   );
 }
 
-function ProfileHeroDescription({ about }: { about: string }) {
+/** Original ProfileHero description clamp, shared by the Agent hero. */
+export function ProfileHeroDescription({ about }: { about: string }) {
   const locale = useUiLocale();
   const [expanded, setExpanded] = React.useState(false);
   const [isTruncated, setIsTruncated] = React.useState(false);

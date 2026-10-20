@@ -3,7 +3,9 @@
 // original action group/tile, Message, Wave and Follow branches. Hosts supply only admitted actions.
 // DD-125(5): Follow writes the Principal follow list in Core CollaborationUserState, not kind 3.
 // DD-125(3): Wave sends the original marked DM kind:9 through the host's DM publication.
-import { Hand, MessageSquare, UserMinus, UserPlus, type LucideIcon } from "lucide-react";
+// DD-125(6): the Agent primary tile ("Stop" / "Start agent") and "Restart agent" are the
+// Installation owner's governed lifecycle (disable / enable / same-version upgrade).
+import { Hand, MessageSquare, Play, RefreshCw, Square, UserMinus, UserPlus, type LucideIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -11,7 +13,12 @@ import { Spinner } from "../profile/buzz/shared/ui/spinner";
 
 export type ProfileFollowAction = { isFollowing: boolean; pending: boolean; onToggle: () => void };
 
-export function ProfilePrimaryActions({onMessage,messagePending,onWave,wavePending,follow}: {
+export function ProfilePrimaryActions({actionGroupRef,agentActionDisabled,agentActionLabel,agentActionLive,className,concealed=false,
+  onAgentPrimaryAction,onAgentRestart,onMessage,messagePending,onWave,wavePending,follow}: {
+  actionGroupRef?:Ref<HTMLDivElement>; className?:string; concealed?:boolean;
+  /** Original Agent primary tile: shown with its label when the owner may stop/start it. */
+  agentActionDisabled?:boolean; agentActionLabel?:string; agentActionLive?:boolean;
+  onAgentPrimaryAction?:()=>void; onAgentRestart?:()=>void;
   onMessage?:()=>void; messagePending?:boolean;
   /** Original canWave: another person (not an agent) the host can message. */
   onWave?:()=>void; wavePending?:boolean;
@@ -19,8 +26,14 @@ export function ProfilePrimaryActions({onMessage,messagePending,onWave,wavePendi
   follow?:ProfileFollowAction;
 }) {
   const t=useUiT();
-  if (!onMessage && !onWave && !follow) return null;
-  return <ProfileActionGroup concealed={false}>
+  const agentPrimary = onAgentPrimaryAction !== undefined && agentActionLabel !== undefined;
+  if (!agentPrimary && !onAgentRestart && !onMessage && !onWave && !follow) return null;
+  return <ProfileActionGroup className={className} concealed={concealed} ref={actionGroupRef}>
+    {onAgentPrimaryAction && agentActionLabel ? <ProfileActionTile active disabled={agentActionDisabled}
+      icon={agentActionLive ? Square : Play} label={agentActionLabel}
+      onClick={onAgentPrimaryAction} testId="user-profile-agent-primary-action"/> : null}
+    {onAgentRestart ? <ProfileActionTile disabled={agentActionDisabled} icon={RefreshCw}
+      label={t("agentLifecycle.restart")} onClick={onAgentRestart} testId="user-profile-agent-restart"/> : null}
     {onMessage ? <ProfileActionTile disabled={messagePending} icon={MessageSquare} isLoading={messagePending}
       label={t("platform.profile.message")} onClick={onMessage} testId="user-profile-message"/> : null}
     {onWave ? <ProfileActionTile disabled={wavePending} icon={Hand} isLoading={wavePending}

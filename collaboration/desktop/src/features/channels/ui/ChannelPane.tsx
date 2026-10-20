@@ -60,6 +60,8 @@ import { AgentActivityOpenerProvider } from "@client-kit/platform/react/agent-tr
 import { ComposerTimeoutBanner, useTimeoutState } from "@client-kit/platform/react/moderation";
 import { useDesktopChannelAgentActivity } from "@/features/channels/ui/useDesktopChannelAgentActivity";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
+import type { UserProfileAgentScope } from "@client-kit/platform/react/pulse";
 export const ChannelPane = React.memo(function ChannelPane({
   activeChannel,
   autoSendDraftKey = null,
@@ -257,6 +259,16 @@ export const ChannelPane = React.memo(function ChannelPane({
     enabled: activeChannel.isMember && activeChannel.archivedAt === null,
     typingEntries,
   });
+  // DD-125(6), 17 §8: profiles opened from this channel resolve Agents through the same admitted
+  // Workspace directory; the shared Agent panel opens channels and other profiles in place.
+  const { openProfilePanel } = useProfilePanel();
+  const profileAgentScope = React.useMemo<UserProfileAgentScope | undefined>(() =>
+    agentActivity.scopeId ? {
+      workspaceId: agentActivity.scopeId,
+      channelName: activeChannel.name,
+      onOpenChannel: (channelId: string) => { void goChannel(channelId); },
+      onOpenProfile: openProfilePanel ?? undefined,
+    } : undefined, [agentActivity.scopeId, activeChannel.name, goChannel, openProfilePanel]);
   const isAgentTyping = (pubkey: string) =>
     profiles?.[pubkey]?.isAgent === true || agentActivity.agentPubkeys.has(pubkey.toLowerCase());
   const humanTypingPubkeys = isComposerDisabled ? [] : typingEntries
@@ -677,6 +689,7 @@ export const ChannelPane = React.memo(function ChannelPane({
             : profilePanelPubkey
               ? wrapAux(
                   <UserProfilePanel
+                    agentScope={profileAgentScope}
                     isSinglePanelView={
                       useSplitAuxiliaryPane ? false : isSinglePanelView
                     }

@@ -1023,7 +1023,8 @@ export function ChannelPane({
         onStartDm={mine.has(participantProfileTarget.pubkey)?undefined:onStartDm}/> : null}
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
-      onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
+      onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}
+      agentScope={conversation ? undefined : {workspaceId, channelName}}/> : null}
     {agentActivityPanel.panel}
     {agentDialogsMounted && !conversation && live && !denied ? <Suspense fallback={null}>
       <WorkspaceAgentDialogs workspaceId={workspaceId} workspaceName={channelName ?? ""} createOpen={false} onCreateOpenChange={() => {}}

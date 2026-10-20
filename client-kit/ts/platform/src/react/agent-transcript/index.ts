@@ -26,6 +26,7 @@ export {
 } from "./AgentSessionTranscriptList";
 export {
   AgentSessionPanel,
+  AgentSessionPreview,
   AgentSessionTranscriptView,
   type AgentSessionPanelProps,
 } from "./AgentSessionPanel";
