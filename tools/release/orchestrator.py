@@ -41,6 +41,24 @@ def say(message=""):
 
 # ---- 外部边界：Git、kailo-ci、节点 ---------------------------------------------
 
+
+def changed_paths(porcelain_z: str) -> set:
+    """Paths from `git status --porcelain -z`: each entry is `XY path`, NUL-terminated,
+    and a rename/copy is followed by its source path as a separate entry. The status
+    columns are fixed width, so no whitespace stripping may touch the output."""
+    entries = porcelain_z.split("\0")
+    paths, skip = set(), False
+    for entry in entries:
+        if skip:
+            skip = False
+            continue
+        if len(entry) < 4:
+            continue
+        paths.add(entry[3:])
+        skip = entry[0] in "RC"
+    return paths
+
+
 class Git:
     """以工作树属主身份执行 Git（root 运行时切换，与 kailo-ci 包装同一做法）。"""
 
@@ -579,7 +597,7 @@ class Release:
             raise ReleaseError("pin 自检失败：\n" + "\n".join("    " + b for b in bad))
         records = {plan["units"][n]["record"] for n in plan["rebuild"] if plan["units"][n]["type"] == "upstream"}
         files = sorted(changed | records)
-        dirty = {line[3:] for line in self.git("status", "--porcelain", "--untracked-files=all", root=self.root).splitlines()}
+        dirty = changed_paths(self.git.run("status", "--porcelain", "-z", "--untracked-files=all", root=self.root).stdout)
         if dirty - set(files):
             raise ReleaseError(f"发布 worktree 出现 pin 之外的改动：{sorted(dirty - set(files))[:10]}")
         self.git("add", "--", *files, root=self.root)
