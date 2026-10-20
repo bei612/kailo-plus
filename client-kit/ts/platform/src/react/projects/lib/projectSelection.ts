@@ -1,13 +1,39 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
-// desktop/src/features/projects/lib/projectSelection.ts. Only the consumed Task/Review
-// discussion projection; Agent/chat and other selection actions remain absent.
+// desktop/src/features/projects/lib/projectSelection.ts. The consumed Task/Review
+// discussion projection plus the original kind nouns and Task/Review selection-item
+// builders that the project Agent chat context serializes (DD-130). The overview
+// multi-select state and its count menu remain with the multi-select restoration.
+export type ProjectSelectionKind =
+  | "channel"
+  | "commit"
+  | "project"
+  | "repository"
+  | "review"
+  | "task";
+
 export type ProjectSelectionItem = {
   channelId?: string | null;
   id: string;
-  kind: "task" | "review";
+  kind: ProjectSelectionKind;
+  people?: string[];
   shareLink?: string | null;
   title: string;
 };
+
+// Original KIND_NOUNS: Agent-facing payload wording, identical in every UI locale.
+const KIND_NOUNS: Record<ProjectSelectionKind, [string, string]> = {
+  channel: ["channel", "channels"],
+  commit: ["commit", "commits"],
+  project: ["project", "projects"],
+  repository: ["repository", "repositories"],
+  review: ["review", "reviews"],
+  task: ["task", "tasks"],
+};
+
+export function projectSelectionNoun(kind: ProjectSelectionKind, count: number) {
+  const [singular, plural] = KIND_NOUNS[kind];
+  return count === 1 ? singular : plural;
+}
 
 export function projectSelectionChannelCandidates(items: ProjectSelectionItem[]) {
   const counts = new Map<string, number>();
@@ -33,4 +59,38 @@ export function mergeSelectionDiscussDraft(existing: string | undefined, next: s
   if (!current) return next;
   if (current.includes(next.trim())) return existing ?? next;
   return `${current}\n\n${next}`;
+}
+
+export function selectionItemFromTask(input: {
+  author?: string | null;
+  channelId?: string | null;
+  id: string;
+  shareLink?: string | null;
+  title: string;
+}): ProjectSelectionItem {
+  return {
+    channelId: input.channelId ?? null,
+    id: `task:${input.id}`,
+    kind: "task",
+    people: input.author ? [input.author] : [],
+    shareLink: input.shareLink ?? null,
+    title: input.title,
+  };
+}
+
+export function selectionItemFromReview(input: {
+  author?: string | null;
+  channelId?: string | null;
+  id: string;
+  shareLink?: string | null;
+  title: string;
+}): ProjectSelectionItem {
+  return {
+    channelId: input.channelId ?? null,
+    id: `review:${input.id}`,
+    kind: "review",
+    people: input.author ? [input.author] : [],
+    shareLink: input.shareLink ?? null,
+    title: input.title,
+  };
 }

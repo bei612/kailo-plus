@@ -3,8 +3,9 @@
 // reads announcements/work-item targets and uses the governed publication hosts. The repository
 // surface is the original detail screen: WorkspaceTabs (Overview/Files/Commits/Tasks/Review/
 // Channels/Contributors) beside the repository context rail; a project with an authoritative home
-// binding opens its channel home. Terminal, local checkout and project Agent chat remain without a
-// governed consumer.
+// binding opens its channel home. The project Agent chat (overview, repository and work-item
+// right panels) posts to the selected Installation's bound channel through the host's governed chat
+// transport (DD-130). Terminal and local checkout remain without a governed consumer.
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { RoleWorkspacePageCreateActionKey, WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
@@ -48,7 +49,12 @@ import {CreateIssueDialog} from "./CreateIssueDialog";
 import {publishProjectIssue} from "./issueMutations";
 import {isOutcomeUnknown,TransportError} from "../../transport";
 import {toast} from "sonner";
-import {ProjectsActivityFeed,projectsActivityPubkeys} from "./ProjectsActivityFeed";
+import {ProjectsActivityFeed,buildProjectsActivityAgentContextItems,projectsActivityPubkeys} from "./ProjectsActivityFeed";
+import {ProjectAgentChatPanel} from "./ProjectAgentChatPanel";
+import {ProjectAgentChatHostProvider,useProjectAgentChatHost,type ProjectAgentChatHost} from "./projectAgentChatHost";
+import {buildProjectDetailAgentContext,type ProjectDetailAgentContext} from "./lib/projectDetailAgentContext";
+import {useProjectsOverviewAgentContext} from "./useProjectsOverviewAgentContext";
+import {useThreadPanelWidth} from "../messages/thread/useThreadPanelWidth";
 import {ProjectsActivityIntro,ProjectsOverviewPanel} from "./ProjectsOverviewPanel";
 import {ProjectsWorkItemsLoadNotice} from "./ProjectsWorkItemsLoadNotice";
 import {buildProjectsActivityDigest} from "./lib/projectsActivityDigest";
@@ -73,7 +79,7 @@ import {projectsOverviewContext} from "./projectsOverviewContext";
 import {useProjectsScrollIndicator} from "./useProjectsScrollIndicator";
 import {ProjectDetailUnavailableState} from "./ProjectDetailUnavailableState";
 import {hasAuthoritativeHomeBinding} from "./lib/projectHomeSelection";
-import {ProjectDetailPanelLayout,ProjectRightPanelControls,useProjectRepositoryPanel,type ProjectRepositoryPanelState} from "./ProjectDetailRightPanel";
+import {ProjectDetailPanelLayout,ProjectRightPanelControls,useProjectRepositoryPanel,type ProjectChatPanelWidth,type ProjectRepositoryPanelState} from "./ProjectDetailRightPanel";
 import {ProjectRepositoryContextPanel} from "./ProjectRepositoryActionsPanel";
 import {ProjectBranchActionDialogs} from "./ProjectBranchActionDialogs";
 import {DiscussionChannelsPanel} from "./DiscussionChannels";
@@ -88,7 +94,9 @@ type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelec
   onDiscussInChannel?:ProjectDiscussInChannel;
   renderChannel?:ProjectChannelRenderer;
   renderWorkItems?:(children:ReactNode,viewerPubkey:string)=>ReactNode;
-  workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
+  workItemTarget?:ProjectWorkItemTarget;onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer;
+  /** DD-130 governed transport for the project Agent chat; absent → no chat entry is rendered. */
+  agentChat?:ProjectAgentChatHost};
 
 /** Original wantsProjectRepositorySurface for a route target: a repository (not a work item) is requested. */
 function repositorySurfaceTarget(target:ProjectWorkItemTarget|undefined) {
@@ -96,6 +104,10 @@ function repositorySurfaceTarget(target:ProjectWorkItemTarget|undefined) {
 }
 
 export function ProjectsView(props:ProjectsViewProps) {
+  return <ProjectAgentChatHostProvider host={props.agentChat}><ProjectsViewContent {...props}/></ProjectAgentChatHostProvider>;
+}
+
+function ProjectsViewContent(props:ProjectsViewProps) {
   if(repositorySurfaceTarget(props.workItemTarget))return <ProjectRepositoryPage key={props.host.scopeKey} {...props}/>;
   if(props.workItemTarget&&(props.workItemTarget.repositoryId||props.workItemTarget.issueId||props.workItemTarget.pullRequestId))return <ProjectWorkItemPage key={props.host.scopeKey} host={props.host} projectId={props.selectedProjectId} target={props.workItemTarget} renderWorkItems={props.renderWorkItems} onOpen={props.onSelectedProjectChange} onDiscussInChannel={props.onDiscussInChannel}/>;
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
@@ -125,7 +137,8 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
   const target=props.workItemTarget!;
   const onOpen=props.onSelectedProjectChange;
   const t=useUiT();const cache=useQueryClient();
-  const panel=useProjectRepositoryPanel();
+  const panel=useProjectRepositoryPanel(target.repositoryId??"");
+  const chatAvailable=Boolean(useProjectAgentChatHost()&&props.renderWorkItems);
   const lifetime=useMemo(()=>({controller:new AbortController()}),[host]);
   useEffect(()=>{if(lifetime.controller.signal.aborted)lifetime.controller=new AbortController();return()=>lifetime.controller.abort();},[lifetime]);
   const key=useMemo(()=>["project-work-item-target",host.scopeKey,selectedProjectId,{repositoryId:target.repositoryId,tab:target.tab,issueId:target.issueId,pullRequestId:target.pullRequestId}],
@@ -162,7 +175,8 @@ function ProjectRepositoryPage(props:ProjectsViewProps) {
   const tabCrumb=tab==="overview"?null:t(workspaceTabTitle[tab]);
   return <>
     <ProjectDetailChrome project={project} repository={repository}
-      actions={selected?undefined:<ProjectRightPanelControls collapsed={panel.collapsed} onCollapse={panel.collapse} onExpand={panel.expand}/>}
+      actions={selected?undefined:<ProjectRightPanelControls chatAvailable={chatAvailable} collapsed={panel.collapsed} mode={panel.mode}
+        onCollapse={panel.collapse} onExpand={panel.expand} onModeChange={panel.setMode}/>}
       activeTabCrumb={selected||commitHash?null:tabCrumb}
       activeWorkItemCrumb={selected?{category:t(tab==="overview"?"projects.list.tasks":workspaceTabTitle[tab]),title:selected.type==="issue"?selected.issue.title:selected.pullRequest.title,clear}
         :commitHash?{category:t(workspaceTabTitle.activity),title:commitHash.slice(0,7),clear}:null}
@@ -206,13 +220,22 @@ function RepositoryWorkspace({host,snapshot,project,repository,panel,renderWorkI
     .catch(()=>{if(!lifetime.controller.signal.aborted)setNavigationFailed(true);});};
   const onCreateTask=host.publish?()=>setCreateOpen(true):undefined;
   const onCreatePullRequest=canCreateReview?()=>setCreateReviewOpen(true):undefined;
+  // DD-130: the original Project chat mode, with the repository page context.
+  const chatHost=useProjectAgentChatHost();
+  const agentPageContext=useMemo(()=>buildProjectDetailAgentContext({activeTab:tab,branch:host.git?git.activeBranch:null,
+    file:tab==="files"&&filePath?{kind:"file",path:filePath}:null,project,repository,source:"remote",
+    viewLabels:{overview:t("projects.home.overview"),...Object.fromEntries(Object.entries(workspaceTabTitle).map(([key,value])=>[key,t(value)]))},
+    workItems:[commitHash?{hash:commitHash}:null,null,null]}),[commitHash,filePath,git.activeBranch,host.git,project,repository,t,tab]);
+  const chatPanel=chatHost&&renderWorkItems?(width:ProjectChatPanelWidth)=>renderWorkItems(<ProjectAgentChatPanel canResetWidth={width.canReset}
+    constrainToAvailableSpace={false} context={panel.agentContext(agentPageContext)} onClose={panel.collapse} onResetWidth={width.onResetWidth}
+    onResizeStart={width.onResizeStart} widthPx={width.widthPx}/>,snapshot.viewerPubkey):undefined;
   const tabs=<RepositoryWorkspaceTabs host={host} project={project} repository={repository} items={items} issues={issues} pullRequests={pullRequests}
     tab={tab} git={git} commitHash={commitHash} filePath={filePath} onBack={onBack} onTabChange={onTabChange} open={open} onSelectCommit={onSelectCommit}
     onCreateTask={onCreateTask} onCreatePullRequest={onCreatePullRequest}/>;
   return <>
     {host.git&&git.branchActions.available?<ProjectBranchActionDialogs actions={git.branchActions} activeBranch={git.activeBranch}
       activeBranchCommit={git.activeBranchCommit} existingBranches={git.branchOptions}/>:null}
-    <ProjectDetailPanelLayout state={panel} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
+    <ProjectDetailPanelLayout state={panel} chatPanel={chatPanel} panel={<ProjectRepositoryContextPanel activeTab={tab} fetch={host.git?git.fetch:undefined} host={host}
       identityPubkey={snapshot.viewerPubkey} issues={issues} onCreatePullRequest={onCreatePullRequest} onCreateTask={onCreateTask}
       onRepositoryChange={onRepositoryChange} project={project} projects={snapshot.projects} pullRequests={pullRequests} repository={repository}
       snapshot={host.git?git.snapshot:undefined} sourceControls={host.git?git.sourceControls:undefined}
@@ -273,9 +296,10 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDis
   const query=useQuery({queryKey:["project-work-item-target",host.scopeKey,projectId,target],
     queryFn:({signal})=>loadProjectWorkItems(host,signal),retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["project-work-item-target",host.scopeKey]});cache.removeQueries({queryKey:["project-work-item-target",host.scopeKey]});},[cache,host.scopeKey]);
+  const chatHost=useProjectAgentChatHost();
   const workItem=query.isSuccess&&!query.isFetching?resolveProjectWorkItemTarget(query.data.items,projectId,target):undefined;
   const detail=workItem?<ProjectWorkItemDetail key={workItem.type==="issue"?workItem.issue.id:workItem.pullRequest.id} workItem={workItem} host={host} onOpen={onOpen} onDiscussInChannel={onDiscussInChannel}/>:null;
-  if(workItem&&(workItem.type==="issue"||onDiscussInChannel))return <>{renderWorkItems?renderWorkItems(detail,query.data!.viewerPubkey):detail}</>;
+  if(workItem&&(workItem.type==="issue"||onDiscussInChannel||chatHost))return <>{renderWorkItems?renderWorkItems(detail,query.data!.viewerPubkey):detail}</>;
   // Original ProjectDetailScreen scroll chain and selected WorkspaceTabs detail
   // branch. Git, other tabs, and writes remain separately un-restored.
   return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [container-type:inline-size]">
@@ -291,15 +315,22 @@ function ProjectWorkItemPage({host,projectId,target,renderWorkItems,onOpen,onDis
 
 function ProjectWorkItemDetail({workItem,host,onOpen,onDiscussInChannel}:{workItem:ProjectInboxWorkItem;host:ProjectsHost;onOpen:ProjectsViewProps["onSelectedProjectChange"];onDiscussInChannel?:ProjectDiscussInChannel}) {
   const [createOpen,setCreateOpen]=useState(false);
+  const t=useUiT();
   const item=workItem.type==="issue"?workItem.issue:workItem.pullRequest;
+  // DD-130: the selected Task/Review page context for the right-panel Agent chat.
+  const chatHost=useProjectAgentChatHost();
+  const agentContext=useMemo(()=>chatHost?buildProjectDetailAgentContext({activeTab:workItem.type==="issue"?"issues":"prs",
+    project:workItem.project,repository:workItem.repository,source:"remote",
+    viewLabels:{issues:t("projects.list.tasks"),prs:t("projects.list.reviews")},
+    workItems:[null,workItem.type==="issue"?workItem.issue:null,workItem.type==="pull-request"?workItem.pullRequest:null]}):undefined,[chatHost,t,workItem]);
   const channelId=workItem.repository.channelId??workItem.project.projectChannelId;
   const profiles=useUsersBatchQuery([item.author,...item.comments.map(comment=>comment.author),...(workItem.type==="issue"?workItem.issue.assignees:[...workItem.pullRequest.reviewers,...workItem.pullRequest.updates.map(update=>update.author)])]).data?.profiles;
   return workItem.type==="issue"?<>
     <ProjectIssueDetail issue={workItem.issue} profiles={profiles} publication={{host,projectId:workItem.project.id,repository:workItem.repository}}
-      contextPanel={{channelId,onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel}}/>
+      contextPanel={{channelId,onCreateTask:host.publish&&onOpen?()=>setCreateOpen(true):undefined,onDiscussInChannel,agentContext}}/>
     {host.publish&&onOpen?<CreateProjectIssueDialog host={host} initialProjectId={workItem.project.id} initialRepositoryId={workItem.repository.id} projects={[workItem.project]}
       open={createOpen} onOpenChange={setCreateOpen} onCreated={(project,repo,issueId)=>onOpen(project.id,{repositoryId:repo.id,issueId})}/>:null}
-  </>:<PullRequestWorkItemDetail workItem={workItem} host={host} profiles={profiles} contextPanel={onDiscussInChannel?{channelId,onDiscussInChannel}:undefined}/>;
+  </>:<PullRequestWorkItemDetail workItem={workItem} host={host} profiles={profiles} contextPanel={onDiscussInChannel||agentContext?{channelId,onDiscussInChannel,agentContext}:undefined}/>;
 }
 
 // Original WorkspaceTabs selected-review branch: Files changed from the review diff (DD-118).
@@ -310,14 +341,9 @@ function PullRequestWorkItemDetail({workItem,host,profiles,contextPanel}:{workIt
     contextPanel={contextPanel} filesChanged={files?.filesChanged} filesCount={files?.filesCount} diffStats={files?.diffStats}/>;
 }
 
-function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;query:ProjectWorkItemsQuery;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
-  const t=useUiT();
-  const [navigationFailed,setNavigationFailed]=useState(false);
-  const lifetime=useMemo(()=>({active:true}),[host]);
-  useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
-  // A stale cache or failed section never becomes an accessible/empty list.
-  const items=query.isSuccess&&!query.isFetching?query.data.items:[];
-  const visible=items.filter(item=>{
+/** The Tasks/Reviews section rows: the section's items matching the search, in the chosen order. */
+function visibleProjectWorkItems(items:ProjectInboxWorkItem[],filter:"issues"|"prs",search:string,sort:ProjectsSort) {
+  return items.filter(item=>{
     const value=item.type==="issue"?item.issue:item.pullRequest;
     return (filter==="issues"?item.type==="issue":item.type==="pull-request")&&matchesProjectsSearch(search,[value.title,value.content,value.status,item.project.name,item.repository.name]);
   }).sort((a,b)=>{
@@ -326,6 +352,16 @@ function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderW
     if(sort==="created")return right.createdAt-left.createdAt;
     return right.updatedAt-left.updatedAt;
   });
+}
+
+function ProjectWorkItemsList({host,query,filter,search,sort,view,onOpen,renderWorkItems}:{host:ProjectsHost;query:ProjectWorkItemsQuery;filter:"issues"|"prs";search:string;sort:ProjectsSort;view:ProjectsViewMode;onOpen:NonNullable<ProjectsViewProps["onSelectedProjectChange"]>;renderWorkItems:ProjectsViewProps["renderWorkItems"]}) {
+  const t=useUiT();
+  const [navigationFailed,setNavigationFailed]=useState(false);
+  const lifetime=useMemo(()=>({active:true}),[host]);
+  useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
+  // A stale cache or failed section never becomes an accessible/empty list.
+  const items=query.isSuccess&&!query.isFetching?query.data.items:[];
+  const visible=visibleProjectWorkItems(items,filter,search,sort);
   const open=(project:Project,repository:Project["repositories"][number],target:{id:string})=>{
     void Promise.resolve().then(()=>{if(lifetime.active)return onOpen(project.id,{repositoryId:repository.id,...(filter==="issues"?{issueId:target.id}:{pullRequestId:target.id})});})
       .catch(()=>{if(lifetime.active)setNavigationFailed(true);});
@@ -450,6 +486,8 @@ function ProjectsOverviewProjectItemsWithActivity({visible,viewerPubkey,view,sum
 
 type RepositoryRow={project:Project;repository:Project["repositories"][number]};
 const NO_PROJECTS:Project[]=[];
+const NO_WORK_ITEMS:ProjectInboxWorkItem[]=[];
+const NO_REPOSITORY_ROWS:RepositoryRow[]=[];
 // Unique repositories of the directory read models (original visibleRepositories).
 function directoryRepositories(projects:Project[]):RepositoryRow[] {
   return [...new Map(projects.flatMap(project=>project.repositories.map(repository=>({project,repository})))
@@ -509,6 +547,16 @@ function ProjectsOverviewContextRailContent({snapshot,projectReadModels,filter,o
   return <div className="min-w-0 flex-1"><ProjectsOverviewContextPanel filter={filter} issues={issues} projectReadModels={projectReadModels} projects={projects} pullRequests={pullRequests}
     repositorySummaries={repositorySummaries} summaries={summaries} profiles={profiles} onSelectSection={onSelectSection} onCreateIssue={onCreateIssue} onCreatePullRequest={onCreatePullRequest} onCreateProject={onCreateProject}
     onAddChannel={onAddChannel} onAddRepository={onAddRepository} canCreateTarget={canCreateTarget}/></div>;
+}
+
+/** Original ProjectsView agent rail: the overview chat at the thread panel width (useProjectPanelWidths("chat")). */
+function ProjectsOverviewAgentRail({context,open,onClose,render}:{context:ProjectDetailAgentContext|null;open:boolean;onClose:()=>void;
+  render:(panel:ReactNode)=>ReactNode}) {
+  const width=useThreadPanelWidth();
+  return <ProjectContextRail open={open} panelWidthPx={width.widthPx} resizing={width.isResizing} testId="projects-overview-agent-rail">
+    {context?render(<ProjectAgentChatPanel canResetWidth={width.canReset} constrainToAvailableSpace={false} context={context} detached onClose={onClose}
+      onResetWidth={width.onResetWidth} onResizeStart={width.onResizeStart} widthPx={width.widthPx}/>):null}
+  </ProjectContextRail>;
 }
 
 function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember,renderWorkItems,renderChannel}:ProjectsViewProps) {
@@ -580,7 +628,8 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     createCapability.isSuccess&&!createCapability.isFetching&&createCapability.data.createActionKey===RoleWorkspacePageCreateActionKey.WorkspaceCreate||creation.intent));
   const onOpen=(project:Project)=>{void setSelected(project.id).catch(()=>{if(lifetime.active)setNavigationFailed("open");});};
   const changeView=(next:ProjectsViewMode)=>{setView(next);writeStoredViewMode(next);};
-  const changeFilter=(next:ProjectsFilter)=>{setFilter(next);writeStoredFilter(next);};
+  // Original handleFilterChange: a section change closes the overview Agent chat.
+  const changeFilter=(next:ProjectsFilter)=>{overviewAgent.setAgentContext(null);setFilter(next);writeStoredFilter(next);};
   const changeSort=(next:ProjectsSort)=>{setSort(next);writeStoredSort(next);};
   const invalidateProjects=()=>Promise.all([
     cache.invalidateQueries({queryKey:["projects",host.scopeKey]}),
@@ -613,6 +662,23 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
       :<Fragment key={project.id}>{row(link?menu(<DropdownMenuItem className="text-destructive focus:text-destructive" disabled>
         <Trash2 className="h-4 w-4"/>{t("projects.delete")}</DropdownMenuItem>):undefined)}</Fragment>;
   };
+  // DD-130: the original overview Agent chat over the visible section, through the host's governed
+  // chat transport; the panel renders inside the work-item host (profiles, composer, content).
+  const chatHost=useProjectAgentChatHost();
+  const overviewChatAvailable=Boolean(chatHost&&renderWorkItems&&onSelectedProjectChange&&viewerPubkey);
+  const chatChannels=useQuery({queryKey:["projects-channels",host.scopeKey],queryFn:({signal})=>loadChannelDirectory(client,()=>lifetime.active&&!signal.aborted),
+    enabled:overviewChatAvailable&&filter==="channels"&&projects.length>0,retry:false,refetchOnWindowFocus:"always"});
+  const chatWorkItems=overviewChatAvailable&&workSnapshot?workSnapshot.items:NO_WORK_ITEMS;
+  const overviewAgent=useProjectsOverviewAgentContext(t(projectsSectionTitleKey(filter)),{
+    activityItems:overviewChatAvailable&&filter==="all"&&workSnapshot?buildProjectsActivityAgentContextItems({
+      issues:workSnapshot.items.filter((item):item is Extract<ProjectInboxWorkItem,{type:"issue"}>=>item.type==="issue"),
+      projects:workSnapshot.projects.filter(project=>!project.legacy),
+      pullRequests:workSnapshot.items.filter((item):item is Extract<ProjectInboxWorkItem,{type:"pull-request"}>=>item.type==="pull-request")},t):[],
+    channels:chatChannels.isSuccess&&!chatChannels.isFetching?chatChannels.data.filter(row=>row.isMember&&row.membershipState===WorkspaceMembershipState.Active):[],
+    filter,projects:overviewChatAvailable?projects:NO_PROJECTS,
+    visibleIssues:visibleProjectWorkItems(chatWorkItems,"issues",search,sort).filter((item):item is Extract<ProjectInboxWorkItem,{type:"issue"}>=>item.type==="issue"),
+    visiblePullRequests:visibleProjectWorkItems(chatWorkItems,"prs",search,sort).filter((item):item is Extract<ProjectInboxWorkItem,{type:"pull-request"}>=>item.type==="pull-request"),
+    visibleProjects:overviewChatAvailable?visible:NO_PROJECTS,visibleRepositories:overviewChatAvailable?visibleRepositories:NO_REPOSITORY_ROWS});
   // Original ProjectDetailScreen: a project with an authoritative home binding opens its channel
   // home; otherwise its primary repository surface, or the original unavailable states.
   if (selected) {
@@ -675,10 +741,13 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
     canCreateTarget={editableProjects.length>0}/>:null;
   const rail=railContent&&workSnapshot?renderWorkItems?renderWorkItems(railContent,workSnapshot.viewerPubkey):railContent:null;
   const overviewContextOpen=contextAvailable&&overviewPanelOpen&&!isNarrowProjectsLayout;
-  const overviewDetached=overviewContextOpen;
+  const overviewChatOpen=overviewChatAvailable&&overviewAgent.agentContext!==null&&!isNarrowProjectsLayout;
+  const overviewDetached=overviewContextOpen||overviewChatOpen;
   const chromeActions=!contextAvailable?null:isNarrowProjectsLayout?
     <ProjectsOverviewNarrowContextToggle onToggle={()=>setNarrowContextOpen(open=>!open)} open={narrowContextOpen} ref={contextToggleRef}/>:
-    <ProjectsOverviewChromeActions contextOpen={overviewPanelOpen} onToggleContext={()=>setOverviewPanelOpen(open=>!open)}/>;
+    <ProjectsOverviewChromeActions contextOpen={overviewPanelOpen} onToggleContext={()=>setOverviewPanelOpen(open=>!open)}
+      chatOpen={overviewChatOpen} sectionTitle={t(projectsSectionTitleKey(filter))}
+      onToggleChat={overviewChatAvailable?()=>overviewAgent.setAgentContext(context=>context?null:overviewAgent.overviewContext):undefined}/>;
   return <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden",!isNarrowProjectsLayout&&"bg-sidebar pb-2 pr-2 pt-px",
       !isNarrowProjectsLayout&&sidebar?.open===false&&"pl-2")}
     data-project-context-detached={isNarrowProjectsLayout?undefined:"true"} data-testid="projects-overview-layout">
@@ -740,6 +809,8 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpen
         </div>
       </div>
     </div>
+    {overviewChatAvailable&&renderWorkItems&&viewerPubkey?<ProjectsOverviewAgentRail context={overviewAgent.agentContext} open={overviewChatOpen}
+      onClose={()=>overviewAgent.setAgentContext(null)} render={panel=>renderWorkItems(panel,viewerPubkey)}/>:null}
     {contextAvailable?<ProjectContextRail open={overviewContextOpen} panelWidthPx={PROJECT_CONTEXT_PANEL_DEFAULT_WIDTH_PX} rounded={false} testId="projects-overview-context-rail">
       <aside aria-label={t("projects.context.title")} className="relative z-30 flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
         <div className="min-h-0 flex-1 overflow-y-auto">{overviewContextOpen?rail:null}</div>

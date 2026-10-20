@@ -1,8 +1,9 @@
 import {useCallback,useEffect,useMemo} from "react";
 import {ChannelLoadingFallback} from "@client-kit/platform/react/messages/ChannelLoadingFallback";
-import {ProjectsView,createProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer} from "@client-kit/platform/react/projects";
+import {ProjectsView,createProjectsGitHost,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectChannelRenderer,
+  type ProjectAgentChatHost,type ProjectAgentConversationEvent} from "@client-kit/platform/react/projects";
 import {PulsePane} from "./PulsePane";
-import {queryProjects,publishProject,queryProjectsGit,refProjectsGit,mergeProjectsGit} from "../bff-client";
+import {queryProjects,publishProject,queryProjectsGit,refProjectsGit,mergeProjectsGit,publishMessage,queryAgentMentionOutcomes} from "../bff-client";
 import {TransportError} from "@client-kit/platform/transport";
 import {WorkspaceChannelCreateChannelType,WorkspaceMembershipState,PlatformSessionAccessMode,type DiscoverableWorkspace} from "@client-kit/contracts";
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
@@ -90,12 +91,80 @@ export function useProjectDiscussInChannel(scopeKey:string,onOpenChannel?: (work
   },[client,principalId,scope,scopeKey,onOpenChannel,t]);
 }
 
+const HEX64=/^[0-9a-f]{64}$/;
+const CONVERSATION_PAGE_LIMIT=50;
+
+/** Admitted thread page events reduced to the shape the shared conversation consumes. */
+function conversationEvents(value:unknown):ProjectAgentConversationEvent[]{
+  if(!Array.isArray(value))throw new TransportError("Invalid conversation page");
+  return value.flatMap(raw=>{
+    if(!raw||typeof raw!=="object")return [];
+    const event=raw as Record<string,unknown>;
+    const tags=event.tags;
+    if(typeof event.id!=="string"||!HEX64.test(event.id)||typeof event.pubkey!=="string"||!HEX64.test(event.pubkey)
+      ||typeof event.created_at!=="number"||!Number.isSafeInteger(event.created_at)||typeof event.kind!=="number"||!Number.isSafeInteger(event.kind)
+      ||typeof event.content!=="string"||!Array.isArray(tags)||!tags.every(tag=>Array.isArray(tag)&&tag.every(value=>typeof value==="string")))return [];
+    return [{id:event.id,pubkey:event.pubkey,created_at:event.created_at,kind:event.kind,content:event.content,tags:tags as string[][]}];
+  });
+}
+
+/**
+ * DD-130 Web transport for the shared project Agent chat: the opener and its thread through the
+ * admitted BFF Workspace message reads, and the viewer's message through the ordinary BFF publish
+ * with the selected Installation as an explicit mention (agent.invoke admits it). No Agent DM,
+ * start, enable or install path exists here.
+ */
+export function useWebProjectAgentChat(scopeKey:string):ProjectAgentChatHost|undefined{
+  const client=useBffClient();const principalId=useCurrentPrincipalId();
+  const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>client.profile(),retry:false});
+  const viewerPubkey=profile.isSuccess&&HEX64.test(profile.data.pubkey)?profile.data.pubkey:undefined;
+  const scope=useMemo(()=>({active:true}),[scopeKey,client,principalId]);
+  useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
+  return useMemo<ProjectAgentChatHost|undefined>(()=>{
+    // Tenant and principal of the session scope; the stored pointer outlives a session.
+    const [tenantId,scopePrincipal]=scopeKey.split(":");
+    if(!viewerPubkey||!principalId||!tenantId||scopePrincipal!==principalId)return undefined;
+    const check=()=>{if(!scope.active)throw new Error("Project Agent scope changed");};
+    return {identityScope:`${tenantId}:${principalId}`,viewerPubkey,
+      readConversation:async({workspaceId},openerEventId,signal)=>{
+        const current=()=>{check();signal.throwIfAborted();};current();
+        const root=await client.workspaceMessages(workspaceId,{anchorEventId:openerEventId});current();
+        const events=conversationEvents(root.events).filter(event=>event.id===openerEventId);
+        let cursor:{createdAt:number;eventId:string}|undefined;
+        for(let page=0;page<CONVERSATION_PAGE_LIMIT;page++){
+          const replies=await client.workspaceMessages(workspaceId,{parentEventId:openerEventId,
+            ...(cursor?{before:cursor.createdAt,beforeId:cursor.eventId}:{})});current();
+          events.push(...conversationEvents(replies.events));
+          const next=replies.nextCursor;
+          if(!next)return events;
+          if(cursor&&(next.createdAt<cursor.createdAt||next.createdAt===cursor.createdAt&&next.eventId<=cursor.eventId))
+            throw new TransportError("Conversation cursor did not advance");
+          cursor=next;
+        }
+        throw new TransportError("Conversation exceeds the thread read bound");
+      },
+      send:async(request,key)=>{
+        check();
+        // An unknown outcome after the request may have been sent stays UNKNOWN (DD-81).
+        const receipt=await publishMessage(request.workspaceId,request.content,[],key,[request.installationId],{
+          ...(request.parentEventId?{parentEventId:request.parentEventId}:{}),
+          ...(request.mentionPubkeys.length?{mentionPubkeys:request.mentionPubkeys}:{})});
+        if(!scope.active)throw new TransportError("Project Agent scope changed");
+        return receipt;
+      },
+      mentionOutcomes:async(workspaceId,eventIds)=>{check();const page=await queryAgentMentionOutcomes(workspaceId,eventIds);check();return page;},
+    };
+  },[client,principalId,scope,scopeKey,viewerPubkey]);
+}
+
 export function ProjectsPane({scopeKey,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,workItemTarget,onStartDm,renderChannel}:{scopeKey:string;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget;onStartDm:(pubkey:string)=>void;renderChannel:ProjectChannelRenderer;
   onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>}){
   const discuss=useProjectDiscussInChannel(scopeKey,onOpenChannel);
+  const agentChat=useWebProjectAgentChat(scopeKey);
   const view=<ProjectsView host={useProjectsHost(scopeKey)} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange} workItemTarget={workItemTarget}
     renderWorkItems={(children,viewerPubkey)=><PulsePane scopeKey={scopeKey} onStartDm={onStartDm} viewerPubkey={viewerPubkey}>{children}</PulsePane>}
     renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${scopeKey}:${workspace.id}`} scopeKey={scopeKey} workspace={workspace} renderChannel={renderChannel} auxiliary={auxiliary}/>}
-    onOpenChannel={onOpenChannel} onDiscussInChannel={onOpenChannel?discuss:undefined} lastMessageAtByChannelId={lastMessageAtByChannelId}/>;
+    onOpenChannel={onOpenChannel} onDiscussInChannel={onOpenChannel?discuss:undefined} lastMessageAtByChannelId={lastMessageAtByChannelId}
+    agentChat={agentChat}/>;
   return view;
 }

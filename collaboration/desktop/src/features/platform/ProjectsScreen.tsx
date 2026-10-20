@@ -1,9 +1,9 @@
 import {lazy,Suspense,useCallback,useEffect,useMemo} from "react";
-import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget} from "@client-kit/platform/react/projects";
+import {ProjectsView,mergeSelectionDiscussDraft,type ProjectsHost,type ProjectWorkItemTarget,type ProjectAgentChatHost,type ProjectAgentConversationEvent} from "@client-kit/platform/react/projects";
 import {PulseScreen} from "./PulseScreen";
 import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
-import {useNativeSession} from "./activeCommunity";
+import {useActiveCommunity,useNativeSession} from "./activeCommunity";
 import {createProjectsPublisher,createProjectsQuery} from "./projectsTransport";
 import {useChannelsQuery} from "@/features/channels/hooks";
 import {useAppNavigation} from "@/app/navigation/useAppNavigation";
@@ -11,6 +11,10 @@ import {WorkspaceChannelCreateChannelType,WorkspaceMembershipState,type Workspac
 import {loadChannelDirectory} from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
 import {getIdentity} from "@/shared/api/tauriIdentity";
 import {getChannels} from "@/shared/api/tauriChannels";
+import {getThreadReplies} from "@/shared/api/tauri";
+import {getEventById} from "@/shared/api/tauriEvents";
+import {sendChannelMessage} from "@/shared/api/tauriMessages";
+import type {RelayEvent,ThreadCursor} from "@/shared/api/types";
 import {initDraftStore,loadDraftEntry,saveDraftEntry} from "@/features/messages/lib/useDrafts";
 import {UserAvatar} from "@client-kit/platform/react/messages";
 import {useUserProfileQuery} from "@/features/profile/hooks";
@@ -95,8 +99,52 @@ export function useProjectDiscussInChannel(){
   },[session,scope,goChannel,t]);
 }
 
+const THREAD_PAGE_LIMIT=200;
+const THREAD_MAX_PAGES=50;
+const conversationEvent=(event:RelayEvent):ProjectAgentConversationEvent=>
+  ({id:event.id,pubkey:event.pubkey,created_at:event.created_at,kind:event.kind,content:event.content,tags:event.tags});
+
+/**
+ * DD-130 Desktop transport for the shared project Agent chat: the original local-key thread read
+ * and channel send (`p` names the Agent; agent.invoke admits it), every Relay call bound to the
+ * relay and signer captured with this session. No Agent DM, start, enable or install path exists.
+ */
+function useDesktopProjectAgentChat():ProjectAgentChatHost|undefined{
+  const session=useNativeSession();const community=useActiveCommunity();
+  const scope=useMemo(()=>({active:true}),[session,community.relayUrl]);
+  useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
+  return useMemo<ProjectAgentChatHost|undefined>(()=>{
+    const relayUrl=community.relayUrl;const signer=session.devicePubkey;
+    if(!relayUrl||!signer)return undefined;
+    const check=()=>{if(!scope.active)throw new Error("Project Agent scope changed");};
+    return {identityScope:`${session.facts.communityHost}:${signer}`,viewerPubkey:signer,
+      readConversation:async({channelId},openerEventId,signal)=>{
+        const current=()=>{check();signal.throwIfAborted();};current();
+        const root=await getEventById(openerEventId);current();
+        const events=root.id===openerEventId?[conversationEvent(root)]:[];
+        let cursor:ThreadCursor|null=null;
+        for(let page=0;page<THREAD_MAX_PAGES;page++){
+          const replies=await getThreadReplies(openerEventId,channelId,{limit:THREAD_PAGE_LIMIT,cursor,relayUrl,signerPubkey:signer});current();
+          events.push(...replies.events.map(conversationEvent));
+          if(!replies.nextCursor)return events;
+          cursor=replies.nextCursor;
+        }
+        throw new Error("Conversation exceeds the thread read bound");
+      },
+      send:async request=>{
+        check();
+        const identity=await getIdentity();check();
+        if(identity.pubkey!==signer||identity.locked||identity.lost)throw new Error("Project Agent identity changed");
+        const sent=await sendChannelMessage(request.channelId,request.content,request.parentEventId??null,undefined,
+          [request.agentPubkey,...request.mentionPubkeys],undefined,undefined,undefined,undefined,relayUrl,signer);
+        return {eventId:sent.eventId};
+      },
+    };
+  },[community.relayUrl,scope,session]);
+}
+
 export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workItemTarget}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null,target?:ProjectWorkItemTarget)=>void|Promise<void>;workItemTarget?:ProjectWorkItemTarget}={}){
-  const host=useProjectsHost();const t=useUiT();
+  const host=useProjectsHost();const t=useUiT();const agentChat=useDesktopProjectAgentChat();
   const channels=useChannelsQuery();const {goChannel}=useAppNavigation();const discuss=useProjectDiscussInChannel();
   const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
     .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
@@ -104,6 +152,6 @@ export function ProjectsScreen({selectedProjectId,onSelectedProjectChange,workIt
     renderChannel={(workspace,auxiliary)=><ProjectHomeChannel key={`${host.scopeKey}:${workspace.id}`} workspace={workspace} auxiliary={auxiliary}/>}
     renderWorkItems={children=><PulseScreen>{children}</PulseScreen>}
     lastMessageAtByChannelId={lastMessageAtByChannelId} onDiscussInChannel={discuss} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
-    renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;
+    renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>} agentChat={agentChat}/>:<p role="alert">{t("platform.loadFailed")}</p>;
   return view;
 }

@@ -1,25 +1,50 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/ProjectsOverviewChromeActions.tsx and
 // ProjectsOverviewContextSheet.tsx. The "Chat with an agent" toggle opens the
-// original ProjectAgentChatPanel, which has no governed shared consumer yet, so
-// only the project-context toggle is rendered.
+// original ProjectAgentChatPanel over the governed chat transport (DD-130); it is
+// rendered only when the host supplies that transport.
 import * as React from "react";
+import { MessageCircle } from "lucide-react";
 
 import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
+import { cn } from "../profile/buzz/shared/lib/cn";
 import { DrawerPanelIcon } from "../sidebar/DrawerPanelIcon";
 import { Sheet, SheetContent, SheetTitle } from "../sidebar/sheet";
 
 export function ProjectsOverviewChromeActions({
+  chatOpen = false,
   contextOpen,
+  onToggleChat,
   onToggleContext,
+  sectionTitle = "",
 }: {
+  chatOpen?: boolean;
   contextOpen: boolean;
+  onToggleChat?: () => void;
   onToggleContext: () => void;
+  sectionTitle?: string;
 }) {
   const t = useUiT();
   const label = t(contextOpen ? "projects.context.hide" : "projects.context.show");
+  const chatLabel = t("projects.agentChat.chatAbout", { section: sectionTitle });
   return (
+    <>
+    {onToggleChat ? (
+      <Button
+        aria-label={chatLabel}
+        aria-pressed={chatOpen}
+        className="h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent"
+        data-testid="projects-overview-chat-toggle"
+        onClick={onToggleChat}
+        size="icon"
+        title={chatLabel}
+        type="button"
+        variant="ghost"
+      >
+        <MessageCircle className={cn("h-4 w-4 transition-opacity duration-200 ease-linear", chatOpen ? "opacity-100" : "opacity-60")} />
+      </Button>
+    ) : null}
     <Button
       aria-label={label}
       aria-pressed={contextOpen}
@@ -37,6 +62,7 @@ export function ProjectsOverviewChromeActions({
         testId="projects-overview-context-icon"
       />
     </Button>
+    </>
   );
 }
 

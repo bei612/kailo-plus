@@ -6,7 +6,7 @@
 // The caller renders the original loading state before the read completes.
 import * as React from "react";
 
-import { useUiT } from "../context";
+import { useUiT, type Translate } from "../context";
 import type { PlatformMessageKey } from "../../i18n";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
 import { UserAvatar } from "../messages/UserAvatar";
@@ -29,6 +29,7 @@ import {
   type ProjectPullRequest,
 } from "./projectPullRequests.mjs";
 import type { ProjectInboxWorkItem } from "./projectWorkItems";
+import type { ProjectsOverviewAgentContextItem } from "./lib/projectDetailAgentContext";
 import {
   PROJECT_EVENT_VISUALS,
   type ProjectEventKind,
@@ -271,6 +272,36 @@ function buildActivityItems({
       // used to be flattened just to be sorted and discarded.
       .map((item) => ({ ...item, body: contentPreview(item.body) }))
   );
+}
+
+/**
+ * Original buildProjectsActivityAgentContextItems: the Activity overview items the project Agent
+ * chat serializes (DD-130(4)), over the same item builder; the action text is the shown label.
+ */
+export function buildProjectsActivityAgentContextItems(
+  input: Pick<ProjectsActivityFeedProps, "issues" | "projects" | "pullRequests">,
+  t: Translate,
+): ProjectsOverviewAgentContextItem[] {
+  return buildActivityItems(input).map((item) => {
+    const project = item.target.project;
+    const repository =
+      item.target.type === "issue" || item.target.type === "pull-request"
+        ? item.target.repository.name
+        : null;
+    return {
+      detail: [
+        t(ACTION_KEYS[item.action]),
+        repository ? `${project.name} / ${repository}` : project.name,
+        item.detail,
+        item.body,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      kind: item.kind,
+      reference: item.id,
+      title: item.title,
+    };
+  });
 }
 
 /** Pubkeys whose profiles label the rendered activity cards. */
