@@ -39,7 +39,7 @@ trap 'rm -r -- "$BUILD_CONTEXT"' EXIT
 # 本独立仓库的根就是构建根，不向父目录查找历史外层仓库。
 # 导出集合与 .dockerignore 的 allowlist 同步：Core 编译期协议与契约均来自原文件。集合只登记在
 # tools/release/release.yaml 的 units.core-worker.inputs：发布入口据同一份判断已固定产物之后输入是否变化。
-inputs_text=$(python3 tools/release/model.py unit-inputs core-worker) || die "读不到 core-worker 的构建输入声明"
+inputs_text=$(python3 -B tools/release/model.py unit-inputs core-worker) || die "读不到 core-worker 的构建输入声明"
 mapfile -t inputs <<<"$inputs_text"
 [ "${#inputs[@]}" -gt 0 ] && [ -n "${inputs[0]}" ] || die "core-worker 的构建输入声明为空"
 git archive --format=tar "$COMMIT" "${inputs[@]}" | tar -xf - -C "$BUILD_CONTEXT" \

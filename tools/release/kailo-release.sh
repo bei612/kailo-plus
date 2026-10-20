@@ -9,4 +9,4 @@
 #   tools/release/kailo-release.sh run  [--commit SHA] [--until STAGE] [--dry-run] [--retry-failed] [--trailer T]
 #   tools/release/kailo-release.sh status [--commit SHA]
 set -euo pipefail
-exec python3 -I "$(dirname "$(realpath "$0")")/orchestrator.py" "$@"
+exec python3 -I -B "$(dirname "$(realpath "$0")")/orchestrator.py" "$@"

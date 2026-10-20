@@ -24,6 +24,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
+# 不在被分析的检出（发布 worktree）中写 __pycache__：入口以 root 运行，写入会妨碍属主清理
+sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
 import model  # noqa: E402
 from model import ReleaseError  # noqa: E402
@@ -116,7 +118,7 @@ class Node:
     def inspect(self, request):
         payload = base64.b64encode(json.dumps(dict(request, ci_config=self.ci_config)).encode()).decode()
         with open(NODE_PROGRAM, "rb") as program:
-            r = subprocess.run(self.ssh + ["python3", "-I", "-", "inspect", payload], stdin=program,
+            r = subprocess.run(self.ssh + ["python3", "-I", "-B", "-", "inspect", payload], stdin=program,
                                capture_output=True, text=True)
         return self._result(r, "inspect", r.stderr)
 
@@ -124,7 +126,7 @@ class Node:
         program = f"{sources}/{commit}/apps/tools/release/node.py"
         say(f"   节点执行 {program} {stage}")
         # stderr 直通终端（进度、Compose 输出）；stdout 只有结果 JSON
-        r = subprocess.run(self.ssh + ["python3", "-I", program, stage, "--commit", commit],
+        r = subprocess.run(self.ssh + ["python3", "-I", "-B", program, stage, "--commit", commit],
                            stdout=subprocess.PIPE, text=True)
         return self._result(r, stage, "")
 
@@ -391,14 +393,14 @@ def rehearse(plan):
                                      f"{u['record']}，核对 source_digest = {u['key'][:19]}"))
     for n, pin in plan["pins"].items():
         files = [os.path.basename(t) for t in pin["traceability"]]
-        say(f"  pin   : {n} → compose {pin['services'] or '[]'}；追溯记录 {', '.join(files[:5])}"
+        say(f"  pin   : {n} → compose 服务 {', '.join(pin['services']) or '无'}；追溯记录 {', '.join(files[:5]) or '无'}"
             + (f" 等 {len(files)} 份" if len(files) > 5 else ""))
     if plan["rebuild"]:
         say("  pin   : 断言 deploy/、tools/ 无旧 digest；pin 自检；提交 release: pin …；快进 push origin main")
     target = "<pin commit>" if plan["rebuild"] else plan["head"]
     say(f"  check : kailo-ci submit {target} check；kailo-ci wait")
     program = f"{plan['sources']}/{target}/apps/tools/release/node.py"
-    say(f"  backup: ssh 节点 python3 -I {program} backup --commit {target}")
+    say(f"  backup: ssh 节点 python3 -I -B {program} backup --commit {target}")
     say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 迁移 → {' → '.join(plan['deploy']['order']) or '（无服务）'}")
     say("  verify: ssh 节点 … verify")
 

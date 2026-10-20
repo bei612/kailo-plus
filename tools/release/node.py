@@ -25,6 +25,8 @@ import sys
 import tempfile
 import time
 
+# 发布树只读：不写 __pycache__
+sys.dont_write_bytecode = True
 FROM_STDIN = sys.argv[0] in ("-", "")
 HERE = None if FROM_STDIN else os.path.dirname(os.path.realpath(__file__))
 DOCKER = ["sudo", "-n", "docker"]
