@@ -111,7 +111,7 @@ Relay 线程上下文和 Codex Session 历史不重复全量注入：Relay 只�
 |---|---|
 | Overview | Installation、HUMAN owner、Workspace、Agent identity 指纹、Memory Counterparty 指纹、binding 状态和最新 core event ref |
 | Core | core 正文的受权查看/编辑、当前 head 时间、Session 生效边界；明确提示“仅新 Session 生效” |
-| Cold memory | slug 列表、head 时间、单条查看/编辑/tombstone；枚举截断时显示确定状态 |
+| Cold memory | slug 列表、head 时间、单条查看/编辑/tombstone；枚举截断时显示确定状态；listing `COMPLETE` 时按原版 core 引用树排序并标出缺失链接与“没有 core”（DD-125(10)），其余状态保持 slug 顺序 |
 | Sessions | Buzz root event、Codex thread ID、固定 core event、AgentVersion/projection generation 和 resume 状态 |
 | Operations | 受权的 Approval、Quota、read/write/conflict 和 usage 时间线；默认不显示正文 |
 

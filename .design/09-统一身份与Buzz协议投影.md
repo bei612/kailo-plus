@@ -162,14 +162,15 @@ Agent 在频道、线程与工作流结果中的作者名和头像来自其自�
 
 ### 原版审核、Huddle、Canvas 与偏好的协议边界
 
-DERIVED_DESIGN（REQ-24、DD-125，承接 SF-BUZ-52 至 SF-BUZ-57）：
+DERIVED_DESIGN（REQ-24、DD-125，承接 SF-BUZ-52 至 SF-BUZ-58）：
 
 - 成员白名单按交付顺序新增 1984（举报）与 48100、48103、48106、24810、9022（Huddle；48100/48103 只收临时频道创建者，后三者只在临时频道内接受）；9040–9044、9005、40100 与 Huddle 临时频道的 9007/9000/9001/9002 仍只收 CONTROL；kind 3 不加入，Pulse 关注由 Core 保存。先部署读写这些 kind 的 Core，再投递并重启 Relay，最后交付控件。
 - 审核命令、Canvas 与 Huddle 临时频道投影由 Core 以 Tenant CONTROL 签名，CONTROL 只是签名者；审核读取以 CONTROL 经 NIP-98 调用 Relay `/moderation/*`，结果只回给持有 Tenant `manage` 的请求者。Relay 自签的审核通知私聊以本人身份只读呈现。
 - Huddle 音频：Desktop 以本人 CLIENT 身份直连 Relay 音频连接（DD-75）；Web 经同源 BFF 音频桥，一条桥对应一个 (PlatformSession, HuddleBuzzBinding)，Core 以本人 SERVER 身份在 Relay 的 JSON 挑战帧后签 22242（`relay` 为 `ws(s)://<Community host>`，协议版本 2），此后原样转发 Opus 帧与 `joined`/`left`/`roster`/`error` 控制消息；浏览器上行只接受带 v2 头、不超过 4096 字节的帧与 `leave`，登出、撤权、会话重验失败或绑定结束时关闭。它是专用于临时频道的音频连接，不并入在线状态租约。BFF 只为本人上行做转写、只为本人合成朗读，不以 Agent 身份接入房间。
 - Agent 回合运行期间，Core 以该 Installation 的 AGENT 身份沿 DD-120(1) 的瞬时路径发 20002，作为成员可见的“工作中”信号。
 - 链接预览抓取由 BFF 代 Web 执行：只允许 http/https 与默认端口；每一跳在 DNS 解析后拒绝回环、私网、链路本地、CGNAT、组播、ULA 与部署登记的内部网段，并只连接已校验地址；至多 3 次跳转、256 KB，不带 cookie 与凭据；按 Principal 限速，超额以 `LIMIT` 类拒绝；审计只记主机与 URL 摘要。预览图以本人身份上传为 Relay 媒体。
-- GIF 搜索与分享上报由 BFF 以本人身份经 NIP-98 调用 Relay `/gifs/*`，只在 TenantBuzzBinding 的 NIP-11 快照广告 `gif` 时提供。
+- GIF 搜索与分享上报由 BFF 以本人身份经 NIP-98 调用 Relay `/gifs/*`，只在 TenantBuzzBinding 的 NIP-11 快照广告 `gif` 时提供。Desktop 在 Relay NIP-11 广告 `buzz-gif` 与 `gif{provider:klipy}` 时以本设备 CLIENT 身份经 NIP-98 直接调用同一路由，只接受部署登记的 https 来源（与 Web 同一集合），不持有 provider 密钥（DD-125(11)）。
+- 提及频道外成员而不邀请时，消息带原版 `["mention", <pubkey>]` 引用标签而不带该公钥的 `p`；Web 由 BFF 按 `referenceMentionPubkeys` 校验后代签，原生端本机签同形标签（DD-125(8)）。
 
 ### BFF Relay 连接模型
 
