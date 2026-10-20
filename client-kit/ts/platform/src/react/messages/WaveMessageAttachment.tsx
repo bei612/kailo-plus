@@ -21,7 +21,7 @@ import {
 } from "../composer/shared/ui/attachment";
 import { huddleActionErrorKey } from "../../huddle";
 import { useOptionalHuddle } from "../huddle/HuddleContext";
-import { useHasHuddleHost, useHuddleParent, useHuddleParentChannelName } from "../huddle/host";
+import { useHasHuddleHost, useHuddleParent, useHuddleParentChannelName, useHuddleUnavailableReason } from "../huddle/host";
 import { huddleParentQueryKey } from "../huddle/queries";
 import { waveFallbackName } from "./waveMessage";
 
@@ -40,9 +40,13 @@ export function WaveMessageAttachment({
   const huddle = useOptionalHuddle();
   const parent = useHuddleParent();
   const channelName = useHuddleParentChannelName();
+  const unavailableReason = useHuddleUnavailableReason();
   const canStart = hosted && huddle !== null && parent !== null;
-  const startHuddleDisabled =
-    !huddle || !parent || !channelName || huddle.isStarting || Boolean(huddle.activeEphemeralChannelId);
+  // Same availability as the channel header HuddleIndicator: say why instead of failing on click.
+  const unavailableLabel = unavailableReason === "insecure-context" ? t("huddle.unavailable.insecure")
+    : unavailableReason === "codec-unsupported" ? t("huddle.unavailable.codec") : null;
+  const startHuddleDisabled = unavailableLabel !== null
+    || !huddle || !parent || !channelName || huddle.isStarting || Boolean(huddle.activeEphemeralChannelId);
   const senderName = waveFallbackName(fallbackText);
   const title = fallbackText === "Someone waved at you." ? t("messages.wave.someone")
     : senderName ? t("messages.wave.title", { name: senderName }) : fallbackText;
@@ -86,7 +90,7 @@ export function WaveMessageAttachment({
         </AttachmentTitle>
         {canStart ? (
           <AttachmentDescription>
-            {t("messages.wave.description")}
+            {unavailableLabel ?? t("messages.wave.description")}
           </AttachmentDescription>
         ) : null}
       </AttachmentContent>

@@ -47,10 +47,10 @@ describe("original wave message content", () => {
 
 const parent: HuddleParent = { kind: "conversation", conversationId: "dm", channelId: "native-dm" };
 
-function fakeHost(): HuddleHost {
+function fakeHost(unavailableReason: HuddleHost["unavailableReason"] = null): HuddleHost {
   const rejected = () => Promise.reject(new Error("not used"));
   return {
-    unavailableReason: null, startHuddle: rejected, joinHuddle: rejected, leaveHuddle: () => Promise.resolve(),
+    unavailableReason, startHuddle: rejected, joinHuddle: rejected, leaveHuddle: () => Promise.resolve(),
     endHuddle: () => Promise.resolve(), confirmHuddleActive: () => Promise.resolve(), getHuddleState: () => Promise.resolve(IDLE_HUDDLE_STATE),
     setupAudioWorklet: rejected, setManualMicUnmuted: () => Promise.resolve(), getVoiceInputMode: () => Promise.resolve("voice_activity"),
     setVoiceInputMode: () => Promise.resolve(), listAudioOutputDevices: () => Promise.resolve([]), getAudioOutputDevice: () => Promise.resolve(""),
@@ -107,6 +107,15 @@ describe("original wave card in the message row", () => {
       <HuddleParentProvider parent={parent}><MessageRowSurface message={wave} renderBody={() => null} /></HuddleParentProvider>
     </HuddleHostProvider>));
     expect([...unnamed.querySelectorAll("button")].find((button) => button.textContent === "Start huddle")?.disabled).toBe(true);
+  });
+
+  it("explains an unavailable host instead of failing on click", async () => {
+    huddle.value = { isStarting: false, activeEphemeralChannelId: null, startHuddle: vi.fn() };
+    const insecure = await render(row(<HuddleHostProvider host={fakeHost("insecure-context")}>
+      <HuddleParentProvider parent={parent} channelName="Bea <> Ada huddle"><MessageRowSurface message={wave} renderBody={() => null} /></HuddleParentProvider>
+    </HuddleHostProvider>));
+    expect([...insecure.querySelectorAll("button")].find((button) => button.textContent === "Start huddle")?.disabled).toBe(true);
+    expect(insecure.textContent).toContain("Huddles need a secure (HTTPS) connection in this browser.");
   });
 });
 

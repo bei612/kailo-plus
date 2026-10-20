@@ -115,6 +115,11 @@ export function useHasHuddleHost(): boolean {
   return React.useContext(HuddleHostContext) !== null;
 }
 
+/** Why this host cannot run huddles (secure context, Opus), or null; null without a host. */
+export function useHuddleUnavailableReason(): HuddleHost["unavailableReason"] {
+  return React.useContext(HuddleHostContext)?.unavailableReason ?? null;
+}
+
 /** The channel whose timeline is on screen, for its 48100 cards. */
 const HuddleParentContext = React.createContext<HuddleParent | null>(null);
 /** The original buildHuddleChannelName for that parent, when the host knows it (wave card start). */
