@@ -36,7 +36,7 @@
 // --meter-keys component_model_tokens select it (normalizedConfig.modelGateway);
 // Core then projects the binding's own Gateway key into OpenBao and activates
 // after model discovery with that key. Delivery into the component is the
-// separate operator step (bootstrap.sh --prepare-native-model-reader).
+// separate operator step (bootstrap.sh --native-model-delivery).
 //
 // Usage:
 //   node component-bind.mjs --component file-storage|knowledge|data-query --release-dir <rendered dir>

@@ -703,7 +703,7 @@ def main():
     sub = parser.add_subparsers(dest="stage", required=True)
     probe = sub.add_parser("inspect")
     probe.add_argument("request")
-    for stage in ("backup", "deploy", "verify"):
+    for stage in ("backup", "deploy", "verify", "normalize"):
         sub.add_parser(stage).add_argument("--commit", required=True)
     args = parser.parse_args()
     try:
@@ -712,8 +712,10 @@ def main():
         else:
             if FROM_STDIN:
                 raise NodeError("从标准输入执行时只允许只读 inspect")
-            release = Release(args.commit, need_receipt=args.stage != "verify")
-            value = getattr(release, args.stage)()
+            # normalize: every deploy from this fixed tree (platform or component) first gives
+            # tracked files their Git modes, so non-root containers can read bind-mounted config.
+            release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize"))
+            value = {"normalized": release.normalize_tree()} if args.stage == "normalize" else getattr(release, args.stage)()
     except (NodeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         print(json.dumps(dict(error=f"{type(error).__name__}: {error}"), ensure_ascii=False))
         sys.exit(1)

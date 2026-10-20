@@ -109,8 +109,6 @@ await main(async () => {
         ...(args['workspace-id'] ? { workspaceId: args['workspace-id'] } : {}) }, 'disable');
       await waitTask(admin, submitted.actionExecutionId, { seconds: 900, label: 'disable-task' }).catch((e) => { if (e.exitCode !== 3) throw e; });
     }
-    const category = [...binding.capabilityCategories.map((c) => c.category), binding.nativePageCategory].find((c) => LABELS[c])
-      ?? `type:${binding.componentTypeKey}`;
     const probe = await login(accounts[0], `entries-after-revoke-${accounts[0]}`);
     await requireSession(probe);
     let gone = false;
@@ -119,7 +117,9 @@ await main(async () => {
       descriptor = await api(probe, 'GET', `/api/v1/application-bindings/${binding.bindingId}/native-page`);
       await probe.page.goto(`${process.env.KAILO_WEB ?? 'http://192.168.0.193:58090'}/app/`, { waitUntil: 'domcontentloaded' });
       await probe.page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
-      const remaining = await probe.page.locator('[data-testid="native-application-entries"]').getByRole('button', { name: labelOf(category), exact: true }).count();
+      // The revoked binding's own entry, not its category: a replacement binding of the same
+      // category (e.g. a model-route binding superseding a page-only one) keeps that label.
+      const remaining = await probe.page.locator(`[data-testid="native-application-entries"] [data-binding-id="${binding.bindingId}"]`).count();
       gone = descriptor.status !== 200 && remaining === 0;
       if (!gone) await sleep(5000);
     }

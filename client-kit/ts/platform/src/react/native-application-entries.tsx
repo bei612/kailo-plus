@@ -54,7 +54,7 @@ function NativeApplicationScope({ workspaceId, label, selectedId, onSelect }: {
           const title = category ? t(`bindings.native.${category}`) : binding.componentTypeKey;
           const Icon = category === "files" ? Folder : category === "knowledge" ? Library : category === "data" ? Database : AppWindow;
           return <SidebarMenuItem key={binding.bindingId}>
-          <SidebarMenuButton type="button" aria-label={title} tooltip={binding.componentTypeKey} isActive={binding.bindingId === selectedId} onClick={() => onSelect(binding)}>
+          <SidebarMenuButton type="button" aria-label={title} tooltip={binding.componentTypeKey} isActive={binding.bindingId === selectedId} data-binding-id={binding.bindingId} onClick={() => onSelect(binding)}>
             <Icon className="h-4 w-4" aria-hidden="true" />
             <SidebarMenuLabel>{title}</SidebarMenuLabel>
           </SidebarMenuButton>

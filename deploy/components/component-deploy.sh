@@ -35,6 +35,9 @@ done
 S=/volumes/kailo/ci/sources/$commit/apps
 R=/volumes/kailo/apps/deploy/local
 [ -d "$S/deploy/local" ] || { echo "缺少固定发布树 $S（先 kailo-ci submit $commit fetch）" >&2; exit 2; }
+# Same tree-mode rule as the platform release (tools/release/node.py, ADR-20): the CI fetch runs
+# under umask 0077, and component containers that run as non-root bind-mount files from this tree.
+python3 -I -B "$S/tools/release/node.py" normalize --commit "$commit" >/dev/null
 for n in .env secrets data; do [ -e "$S/deploy/local/$n" ] || ln -s "$R/$n" "$S/deploy/local/$n"; done
 D=(sudo -n docker)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)

@@ -557,6 +557,11 @@ def write_backend_auth(value, gateways):
         ("gateways: {} # GATEWAY_SERVICE_DELIVERY_GATEWAYS", "gateways: " + json.dumps(gateways)),
         ("backendAuth: null # GATEWAY_SERVICE_DELIVERY_AUTH", "backendAuth: " + json.dumps(value)),
         ("timeout: null # GATEWAY_STREAMING_USAGE_DRAIN_POLICY", "timeout: " + json.dumps(usage_timeout)),
+        # The native admin API returns the configured text unexpanded, and Core compares the
+        # effective extAuthz with its own (application_model_route::policy): render the host
+        # from the same validated BFF service name and port as a literal.
+        ("host: http://${BFF_SERVICE_NAME}:${SERVICE_CONTAINER_PORT}/",
+         "host: " + json.dumps("http://%s:%s/" % (os.environ["BFF_SERVICE_NAME"], os.environ["SERVICE_CONTAINER_PORT"]))),
     ):
         if source.count(marker) != 1:
             raise SystemExit("Gateway 原配置缺少唯一投递位置")
