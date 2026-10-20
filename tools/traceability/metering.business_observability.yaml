@@ -6,14 +6,14 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-10]
-  decisions: [DD-07, DD-38, DD-51, DD-123]
+  decisions: [DD-07, DD-08, DD-38, DD-51, DD-123]
   facts: []
   seams: [SS-OMT-AUTH]
   blockers: []
   entities: [OpenMeterBinding, UsageEvent, ActionExecution, AuditEvent]
 
 validation:
-  scenarios: [V-SCN-27, V-SCN-44, V-SCN-113, V-SCN-114, V-SCN-115, V-SCN-116]
+  scenarios: [V-SCN-27, V-SCN-44, V-SCN-113, V-SCN-114, V-SCN-115, V-SCN-116, V-SCN-175]
   evidence:
     - dimension: 上游接缝
       ref: metering/fork/verify/core-authentication.md

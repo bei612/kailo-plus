@@ -740,17 +740,67 @@ async fn application_correlation(
     Ok(Some(origin))
 }
 
+/// DD-21：一条已提交的 durable Gateway 请求在 Core 的入账终态。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Terminal {
+    /// 全部冻结 meter 的 UsageEvent 已与审计同事务持久。
+    Metered,
+    /// 原生没有冻结 meter 的数量（超时、上游失败等）：只记同 log ID 的
+    /// `BILLING_UNAVAILABLE` 审计，不建 UsageEvent、不记零用量。
+    BillingUnavailable(UnavailableScope),
+}
+
+/// 无数量请求的归因来源；只用于度量标签，审计 scope 仍取各自的 operation。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnavailableScope {
+    Agent,
+    ComponentBinding,
+}
+
+impl UnavailableScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Agent => "AGENT",
+            Self::ComponentBinding => "COMPONENT_BINDING",
+        }
+    }
+}
+
+/// 按冻结 meter 取原生数量。`None`：任一 meter 没有原生数量，整条请求没有
+/// 可计的量；不按部分 meter 入账，也不补零。meter 集合本身不可核验时报错。
+fn native_quantities(
+    meters: &[GatewayMeter],
+    usage: &Usage,
+) -> Result<Option<Vec<i64>>, &'static str> {
+    let mut seen = HashSet::new();
+    let mut quantities = Vec::with_capacity(meters.len());
+    for meter in meters {
+        if !seen.insert(meter.key.as_str()) {
+            return Err("Gateway usage 冻结 meter 重复");
+        }
+        quantities.push(match meter.value_property.as_str() {
+            "$.inputTokens" => usage.input_tokens,
+            "$.outputTokens" => usage.output_tokens,
+            "$.totalTokens" => usage.total_tokens,
+            _ => return Err("Gateway usage 未知原生计量字段"),
+        });
+    }
+    Ok(quantities.into_iter().collect())
+}
+
 /// 来源、scope、meter 和数量在 checkpoint 前一起持久。所有重读只接受同一事件。
 ///
-/// 返回 `false` 表示平台自有 Agent 链的这条已完成请求没有冻结 meter 的原生数量：
-/// 按 03 §8 记为 `BILLING_UNAVAILABLE + NONE` 的审计事实，不创建无法计量的
-/// UsageEvent、不推测零用量，也不让这一条阻塞全局游标。业务能力 binding 的模型
-/// 调用不适用该处理（不免于计量），缺数量仍按不可核验返回错误。
+/// 已完成请求没有冻结 meter 的原生数量时返回 `BillingUnavailable`：按 DD-21
+/// 记同 log ID 的 `BILLING_UNAVAILABLE` 审计，不创建无法计量的 UsageEvent、
+/// 不推测零用量，也不让这一条阻塞全局游标。平台自有 Agent 与业务能力 binding
+/// 一致适用；binding 的审计记在已解析的归因 operation（binding 用量归集
+/// operation 或 trace 关联的原 operation）下——这不是免于计量，而是原生来源
+/// 没有可计的量。身份、归因或冻结 meter 不可核验仍返回错误并保留游标。
 async fn correlate(
     tx: &mut Transaction<'_, Postgres>,
     entry: &Entry,
     namespace: &str,
-) -> Result<bool, &'static str> {
+) -> Result<Terminal, &'static str> {
     let trace = entry.trace_id.as_deref().filter(|trace| !trace.is_empty());
     let origin = if let Some(origin) = application_correlation(tx, entry).await? {
         origin
@@ -826,23 +876,12 @@ async fn correlate(
     }
     // 先核对全部冻结 meter 的原生数量，再写任何事件：一条请求要么完整入账，
     // 要么整体记为不可计量，不出现只写了部分 meter 的半条用量。
-    let mut seen = HashSet::new();
-    let mut quantities = Vec::with_capacity(meters.len());
-    for meter in &meters {
-        if !seen.insert(meter.key.clone()) {
-            return Err("Gateway usage 冻结 meter 重复");
-        }
-        quantities.push(match meter.value_property.as_str() {
-            "$.inputTokens" => entry.usage.input_tokens,
-            "$.outputTokens" => entry.usage.output_tokens,
-            "$.totalTokens" => entry.usage.total_tokens,
-            _ => return Err("Gateway usage 未知原生计量字段"),
-        });
-    }
-    if quantities.iter().any(Option::is_none) {
-        if origin.component_binding_id.is_some() {
-            return Err("Gateway durable usage 没有该 meter 的实际数量");
-        }
+    let Some(quantities) = native_quantities(&meters, &entry.usage)? else {
+        let scope = if origin.component_binding_id.is_some() {
+            UnavailableScope::ComponentBinding
+        } else {
+            UnavailableScope::Agent
+        };
         let mut evidence = vec![Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id)];
         if let Some(trace) = trace {
             evidence.push(Evidence::new(EvidenceKind::TraceId, trace));
@@ -856,9 +895,9 @@ async fn correlate(
             evidence,
         )
         .await?;
-        return Ok(false);
-    }
-    for (meter, quantity) in meters.into_iter().zip(quantities.into_iter().flatten()) {
+        return Ok(Terminal::BillingUnavailable(scope));
+    };
+    for (meter, quantity) in meters.into_iter().zip(quantities) {
         let id = Uuid::new_v5(
             &Uuid::NAMESPACE_URL,
             format!(
@@ -909,7 +948,7 @@ async fn correlate(
         )
         .await?;
     }
-    Ok(true)
+    Ok(Terminal::Metered)
 }
 
 /// 03 §8、11 §4/§5、DD-21：平台自有 Agent（Codex）在 SS-COD-TRACE 闭合前发出的
@@ -921,7 +960,7 @@ async fn correlate(
 async fn untraced_agent_usage(
     tx: &mut Transaction<'_, Postgres>,
     entry: &Entry,
-) -> Result<bool, &'static str> {
+) -> Result<Terminal, &'static str> {
     let user = entry
         .agentgateway_user
         .as_deref()
@@ -953,7 +992,7 @@ async fn untraced_agent_usage(
         vec![Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id)],
     )
     .await?;
-    Ok(false)
+    Ok(Terminal::BillingUnavailable(UnavailableScope::Agent))
 }
 
 /// 同一权威 AuditEvent，与引用和状态写同事务；不建立计量审计的第二份表。
@@ -1168,6 +1207,7 @@ pub(crate) struct Ingress {
     pending_observed: Gauge<u64>,
     oldest_observed_age: Gauge<u64>,
     checkpoint_cursor: Gauge<u64>,
+    billing_unavailable: Counter<u64>,
 }
 
 impl Ingress {
@@ -1227,6 +1267,12 @@ impl Ingress {
             checkpoint_cursor: meter
                 .u64_gauge("platform.gateway_usage_ingress.checkpoint_cursor")
                 .with_description("Core 已持久的 native seq 游标；不是已结算用量")
+                .build(),
+            billing_unavailable: meter
+                .u64_counter("platform.gateway_usage_ingress.billing_unavailable")
+                .with_description(
+                    "已提交但没有原生数量、以 BILLING_UNAVAILABLE 审计终结并随游标前移的 Gateway 请求数；不是零用量",
+                )
                 .build(),
         })
     }
@@ -1512,18 +1558,23 @@ impl Ingress {
             .await
             .map_err(|_| "Gateway usage 读取超时，原游标保留")??;
         self.pending_observed.record(page.entries.len() as u64, &[]);
+        let mut unavailable = Vec::new();
         for entry in &page.entries {
-            if let Err(reason) = correlate(&mut tx, entry, namespace).await {
-                self.oldest_observed_age.record(
-                    Utc::now()
-                        .signed_duration_since(entry.completed_at)
-                        .num_seconds()
-                        .max(0) as u64,
-                    &[],
-                );
-                tracing::warn!(source_id=%entry.id,cursor=after,state="UNKNOWN",
-                    reason_code="BILLING_UNAVAILABLE",%reason,"Gateway usage 原游标保留；没有推测归因");
-                return Err(reason);
+            match correlate(&mut tx, entry, namespace).await {
+                Ok(Terminal::Metered) => {}
+                Ok(Terminal::BillingUnavailable(scope)) => unavailable.push((entry.id, scope)),
+                Err(reason) => {
+                    self.oldest_observed_age.record(
+                        Utc::now()
+                            .signed_duration_since(entry.completed_at)
+                            .num_seconds()
+                            .max(0) as u64,
+                        &[],
+                    );
+                    tracing::warn!(source_id=%entry.id,cursor=after,state="UNKNOWN",
+                        reason_code="BILLING_UNAVAILABLE",%reason,"Gateway usage 原游标保留；没有推测归因");
+                    return Err(reason);
+                }
             }
         }
         sqlx::query("update projection.ingress_checkpoint set cursor=$2 where source_key=$1")
@@ -1538,6 +1589,14 @@ impl Ingress {
             .map_err(|_| "Gateway usage/checkpoint 提交结果不明")?;
         self.checkpoint_cursor.record(page.next_cursor as u64, &[]);
         self.oldest_observed_age.record(0, &[]);
+        // DD-21：没有原生数量的请求已以同 log ID 的审计终结，与游标同事务；
+        // 这里只给出度量与可检索的运行记录，不是零用量。
+        for (source_id, scope) in unavailable {
+            self.billing_unavailable
+                .add(1, &[KeyValue::new("scope", scope.label())]);
+            tracing::info!(%source_id,scope=scope.label(),cursor=page.next_cursor,
+                reason_code="BILLING_UNAVAILABLE","Gateway 请求没有原生数量；已审计终结并前移游标");
+        }
         if page.entries.is_empty() {
             tracing::debug!("Gateway usage outbox 无适用对象；不形成计费用量结论");
         }
@@ -1630,9 +1689,12 @@ pub(crate) async fn committed_application(
         .await
         .map_err(|_| "Application usage transaction unavailable")?;
     let mut expected = HashSet::new();
+    let mut billing_unavailable = 0_usize;
     for entry in &entries {
-        if !correlate(&mut tx, entry, &namespace).await? {
-            return Err("Application model usage lacks a native quantity");
+        // DD-21：没有原生数量的请求以 BILLING_UNAVAILABLE 审计终结，没有应有的事件。
+        if correlate(&mut tx, entry, &namespace).await? != Terminal::Metered {
+            billing_unavailable += 1;
+            continue;
         }
         for meter in &meters {
             expected.insert((entry.id, meter.key.clone()));
@@ -1655,6 +1717,7 @@ pub(crate) async fn committed_application(
     Ok(Some(
         json!({"gatewayPrincipalId":principal,"generation":generation,
         "credentialRevoked":true,"submittedRequests":ids.len(),
+        "billingUnavailableRequests":billing_unavailable,
         "requestSetDigest":collab_bridge::limits::canonical_digest(&json!(ids))}),
     ))
 }
@@ -1718,8 +1781,9 @@ pub(crate) async fn committed_application_action(
         .map_err(|_| "HUMAN model usage transaction unavailable")?;
     let mut expected = HashSet::new();
     for entry in &entries {
-        if !correlate(&mut tx, entry, &namespace).await? {
-            return Err("Application model usage lacks a native quantity");
+        // DD-21：没有原生数量的请求已审计终结，不期待它的 UsageEvent。
+        if correlate(&mut tx, entry, &namespace).await? != Terminal::Metered {
+            continue;
         }
         for meter in &meters {
             expected.insert((entry.id, meter.key.clone()));
@@ -1789,8 +1853,9 @@ async fn application_model_children(
             .await
             .map_err(|_| "Application model child transaction unavailable")?;
         for entry in &entries {
-            if !correlate(&mut tx, entry, &facts.namespace).await? {
-                return Err("Application model usage lacks a native quantity");
+            // DD-21：没有原生数量的子请求已审计终结，没有应有的事件。
+            if correlate(&mut tx, entry, &facts.namespace).await? != Terminal::Metered {
+                continue;
             }
             let rows: Vec<(Uuid, String)> = sqlx::query_as(
                 "select id,meter_key from outbox.usage_event
@@ -1891,7 +1956,7 @@ pub(crate) async fn committed_turn(
         // A completed request without native quantities is BILLING_UNAVAILABLE
         // (03 §8): it stays in the evidence but has no UsageEvent to expect.
         evidence.push(Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id));
-        if !correlate(&mut tx, entry, &facts.namespace).await? {
+        if correlate(&mut tx, entry, &facts.namespace).await? != Terminal::Metered {
             billing_unavailable = true;
             continue;
         }
@@ -2142,7 +2207,11 @@ fn delivery_committed(status: &str, stored_at: Option<DateTime<Utc>>) -> bool {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::{delivery_committed, frozen_turn_meters, memory_child_meters, Page, RequestSet};
+    use super::{
+        delivery_committed, frozen_turn_meters, memory_child_meters, native_quantities, Page,
+        RequestSet, UnavailableScope, Usage,
+    };
+    use crate::openmeter::GatewayMeter;
     use chrono::Utc;
     use serde_json::{json, Value};
     use uuid::Uuid;
@@ -2379,6 +2448,63 @@ mod usage_tests {
                 1
             )
             .is_err());
+    }
+
+    fn usage(input: Option<i64>, output: Option<i64>, total: Option<i64>) -> Usage {
+        serde_json::from_value(
+            json!({"inputTokens":input,"outputTokens":output,"totalTokens":total}),
+        )
+        .expect("native usage field types")
+    }
+
+    fn component_meters() -> Vec<GatewayMeter> {
+        serde_json::from_value(json!([{"key":"component_model_tokens","id":"native-meter",
+            "event_type":"kailo.component.model.tokens","value_property":"$.totalTokens"}]))
+        .expect("frozen binding meter projection")
+    }
+
+    /// Seq 78 in production: a client-timeout request whose durable entry has no
+    /// usage at all. It has no quantity to meter (BILLING_UNAVAILABLE terminal),
+    /// which is neither an error that holds the global cursor nor zero usage.
+    #[test]
+    fn request_without_native_quantity_is_a_terminal_not_a_cursor_error() {
+        let meters = component_meters();
+        assert!(native_quantities(&meters, &usage(None, None, None))
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            native_quantities(&meters, &usage(None, None, Some(42))).unwrap(),
+            Some(vec![42])
+        );
+        // A partially counted request is not split into half an entry.
+        let both: Vec<GatewayMeter> = serde_json::from_value(json!([
+            {"key":"input","id":"a","event_type":"t.in","value_property":"$.inputTokens"},
+            {"key":"total","id":"b","event_type":"t.total","value_property":"$.totalTokens"}
+        ]))
+        .unwrap();
+        assert!(native_quantities(&both, &usage(None, Some(1), Some(1)))
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            native_quantities(&both, &usage(Some(0), None, Some(7))).unwrap(),
+            Some(vec![0, 7])
+        );
+        // An unverifiable frozen meter set still holds the cursor.
+        let total = json!({"key":"total","id":"b","event_type":"t.total",
+            "value_property":"$.totalTokens"});
+        let duplicate: Vec<GatewayMeter> =
+            serde_json::from_value(json!([total.clone(), total])).unwrap();
+        assert!(native_quantities(&duplicate, &usage(None, None, None)).is_err());
+        let unknown: Vec<GatewayMeter> = serde_json::from_value(json!([
+            {"key":"pages","id":"c","event_type":"t.pages","value_property":"$.pages"}
+        ]))
+        .unwrap();
+        assert!(native_quantities(&unknown, &usage(None, None, Some(1))).is_err());
+        assert_eq!(UnavailableScope::Agent.label(), "AGENT");
+        assert_eq!(
+            UnavailableScope::ComponentBinding.label(),
+            "COMPONENT_BINDING"
+        );
     }
 
     #[test]

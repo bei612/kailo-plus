@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::Write as _;
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -170,6 +171,92 @@ pub(crate) struct StoredEvidence {
 /// attribute is absent, and the only one fixed OpenMeter v3 reads back.
 const JSON_DATA_CONTENT_TYPE: &str = "application/json";
 
+/// DD-08：投递 OpenMeter 的线上形态是冻结 CloudEvent 的确定投影。`data` 中值为
+/// null 的成员表示该维度不适用（如 Tenant 级 binding 没有 Workspace）；原生 v3
+/// `MeteringEvent.data` 的成员不可为 null，ingest 请求校验会以 400 确定拒绝整条
+/// 事件，因此不上送，meter 对缺省维度原生取空值。冻结体不改写：每次重试都是
+/// 同一 source/id 与同一投影体，stored 查证也按同一投影比对。
+fn wire_event(frozen: &Value) -> Value {
+    let mut wire = frozen.clone();
+    if let Some(data) = wire.get_mut("data").and_then(Value::as_object_mut) {
+        data.retain(|_, value| !value.is_null());
+    }
+    wire
+}
+
+/// 投递被拒时最多读取的原生问题响应字节数，以及摘要中每项文本与参数的上限。
+const PROBLEM_BODY_LIMIT: usize = 16 * 1024;
+const PROBLEM_TEXT_LIMIT: usize = 160;
+const PROBLEM_PARAMETER_LIMIT: usize = 4;
+
+/// 原生问题响应（v3 apierrors）的可记录摘要：只取 `title` 与 invalid parameter 的
+/// field/rule/原因首行并逐项截断；不取 `detail`、`instance`，也不复述请求或响应
+/// 中的值（原生原因的后续行会带出被拒的值）。
+fn problem_summary(body: &[u8]) -> String {
+    #[derive(Deserialize)]
+    struct Parameter {
+        #[serde(default)]
+        field: String,
+        #[serde(default)]
+        rule: Option<String>,
+        #[serde(default)]
+        reason: String,
+    }
+    #[derive(Deserialize)]
+    struct Problem {
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        invalid_parameters: Vec<Parameter>,
+    }
+    fn clip(text: &str) -> String {
+        text.lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(PROBLEM_TEXT_LIMIT)
+            .collect()
+    }
+    let Ok(problem) = serde_json::from_slice::<Problem>(body) else {
+        return format!("non-problem body ({} bytes)", body.len());
+    };
+    let mut summary = format!("title={}", clip(&problem.title));
+    for parameter in problem
+        .invalid_parameters
+        .iter()
+        .take(PROBLEM_PARAMETER_LIMIT)
+    {
+        let _ = write!(
+            summary,
+            "; field={} rule={} reason={}",
+            clip(&parameter.field),
+            clip(parameter.rule.as_deref().unwrap_or_default()),
+            clip(&parameter.reason)
+        );
+    }
+    let omitted = problem
+        .invalid_parameters
+        .len()
+        .saturating_sub(PROBLEM_PARAMETER_LIMIT);
+    if omitted > 0 {
+        let _ = write!(summary, "; +{omitted} more");
+    }
+    summary
+}
+
+/// 只读取问题响应的前 `PROBLEM_BODY_LIMIT` 字节；读取失败时只用已读部分。
+async fn bounded_body(response: &mut reqwest::Response) -> Vec<u8> {
+    let mut body = Vec::new();
+    while body.len() < PROBLEM_BODY_LIMIT {
+        match response.chunk().await {
+            Ok(Some(chunk)) => body.extend_from_slice(&chunk),
+            _ => break,
+        }
+    }
+    body.truncate(PROBLEM_BODY_LIMIT);
+    body
+}
+
 /// Compares the frozen outbox CloudEvent with the event OpenMeter reads back.
 ///
 /// Two read-time projections of the fixed native version are not stored facts:
@@ -182,6 +269,8 @@ const JSON_DATA_CONTENT_TYPE: &str = "application/json";
 ///   CloudEvents JSON format reads an absent attribute as that same type, so
 ///   both sides are compared on their effective content type; an explicit
 ///   non-JSON type still conflicts.
+/// - null `data` members: never sent (`wire_event`, DD-08), so the frozen side
+///   is compared in the same wire projection.
 ///
 /// Every other attribute and the whole `data` object must match exactly.
 fn same_stored_event(expected: &Value, actual: Value) -> Result<(), Error> {
@@ -198,7 +287,9 @@ fn same_stored_event(expected: &Value, actual: Value) -> Result<(), Error> {
     let Value::Object(mut actual) = actual else {
         return Err(Error::Conflict);
     };
-    let mut frozen = expected.as_object().ok_or(Error::Precondition)?.clone();
+    let Value::Object(mut frozen) = wire_event(expected) else {
+        return Err(Error::Precondition);
+    };
     for event in [&mut actual, &mut frozen] {
         event.remove("time");
         if event.get("data").is_some_and(|data| !data.is_null()) {
@@ -1423,17 +1514,32 @@ impl OpenMeter {
     }
 
     /// 调用前已持久同一 CloudEvent。202 仅 ACCEPTED；网络/未知状态只 UNKNOWN。
+    /// 上送冻结体的线上投影（`wire_event`）；未被受理时记录状态码与原生问题
+    /// 摘要，冻结事件留待同一对账重试。
     pub(crate) async fn publish_usage(&self, event: &Value) -> Result<(), Error> {
-        let response = self
+        let id = event.get("id").and_then(Value::as_str).unwrap_or_default();
+        let mut response = self
             .http
             .post(self.collection_url("events")?)
             .header(header::CONTENT_TYPE, "application/cloudevents+json")
-            .json(event)
+            .json(&wire_event(event))
             .send()
             .await
-            .map_err(|_| Error::Unknown)?;
-        if response.status() != StatusCode::ACCEPTED {
-            return Err(status_error(response.status()));
+            .map_err(|error| {
+                tracing::warn!(
+                    usage_event_id = id,
+                    timeout = error.is_timeout(),
+                    connect = error.is_connect(),
+                    "OpenMeter usage publish transport failed"
+                );
+                Error::Unknown
+            })?;
+        let status = response.status();
+        if status != StatusCode::ACCEPTED {
+            let problem = problem_summary(&bounded_body(&mut response).await);
+            tracing::warn!(usage_event_id = id, status = status.as_u16(), problem = %problem,
+                "OpenMeter usage publish was not accepted; frozen event kept for reconciliation");
+            return Err(status_error(status));
         }
         Ok(())
     }
@@ -2301,9 +2407,147 @@ mod entitlement_value_tests {
 
 #[cfg(test)]
 mod stored_event_tests {
-    use super::{same_stored_event, Error, OpenMeter};
-    use axum::{http::Uri, Json, Router};
+    use super::{problem_summary, same_stored_event, wire_event, Error, OpenMeter};
+    use axum::{
+        body::Bytes,
+        http::{StatusCode, Uri},
+        response::IntoResponse,
+        Json, Router,
+    };
     use serde_json::{json, Value};
+    use std::sync::{Arc, Mutex};
+
+    /// Frozen exactly as the Gateway ingress writes a Tenant-level binding's
+    /// `component_model_tokens` event: the binding has no Workspace.
+    fn frozen_tenant_binding_tokens() -> Value {
+        json!({"specversion":"1.0","source":"urn:platform:core:usage",
+            "id":"8f0e7d5c-4b1a-5a2e-9c3d-2e1f0a9b8c7d","type":"kailo.component.model.tokens",
+            "subject":"tenant:binding","time":"2026-10-20T17:30:00+00:00",
+            "datacontenttype":"application/json",
+            "data":{"tenant_id":"tenant","workspace_id":null,"operation_id":"operation",
+                "component_binding_id":"binding","component_release_id":"release",
+                "component_projection_generation":1,"model_call_mode":"PLATFORM_LLM_ROUTE",
+                "attribution":"BINDING","provider":"openai","model":"m","totalTokens":42}})
+    }
+
+    /// The fixed native v3 problem shape for a request-body schema rejection;
+    /// the reason's later lines echo the rejected value.
+    fn native_null_rejection() -> Value {
+        json!({"type":"about:blank","status":400,"title":"Bad Request",
+            "instance":"/api/v3/openmeter/events","detail":"detail-marker",
+            "invalid_parameters":[{"field":"/data/workspace_id","source":"body",
+                "reason":"Value is not nullable\nValue:\n  \"value-marker\""}]})
+    }
+
+    #[test]
+    fn wire_form_omits_only_null_data_members() {
+        let frozen = frozen_tenant_binding_tokens();
+        let wire = wire_event(&frozen);
+        assert!(wire["data"].get("workspace_id").is_none());
+        let mut expected = frozen.clone();
+        expected["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("workspace_id");
+        assert_eq!(wire, expected);
+        // The frozen outbox body itself is untouched.
+        assert!(frozen["data"]["workspace_id"].is_null());
+        let agent = frozen_memory_read();
+        assert_eq!(wire_event(&agent), agent);
+    }
+
+    #[test]
+    fn stored_read_back_matches_the_wire_form_of_a_frozen_null_dimension() {
+        let frozen = frozen_tenant_binding_tokens();
+        let mut native = wire_event(&frozen);
+        native["time"] = json!("2026-10-20T17:30:00Z");
+        same_stored_event(&frozen, native.clone()).unwrap();
+        let mut filled = native.clone();
+        filled["data"]["workspace_id"] = json!("workspace");
+        assert!(matches!(
+            same_stored_event(&frozen, filled),
+            Err(Error::Conflict)
+        ));
+        let mut changed = native;
+        changed["data"]["totalTokens"] = json!(43);
+        assert!(matches!(
+            same_stored_event(&frozen, changed),
+            Err(Error::Conflict)
+        ));
+    }
+
+    #[test]
+    fn problem_summary_keeps_status_reason_and_drops_values() {
+        let body = serde_json::to_vec(&native_null_rejection()).unwrap();
+        let summary = problem_summary(&body);
+        assert!(summary.contains("title=Bad Request"));
+        assert!(summary.contains("field=/data/workspace_id"));
+        assert!(summary.contains("reason=Value is not nullable"));
+        assert!(!summary.contains("detail-marker"));
+        assert!(!summary.contains("value-marker"));
+        assert_eq!(
+            problem_summary(b"<html>secret</html>"),
+            "non-problem body (19 bytes)"
+        );
+        let many = json!({"title":"t".repeat(400),"invalid_parameters":
+            (0..6).map(|n| json!({"field":format!("/f{n}"),"reason":"r"})).collect::<Vec<_>>()});
+        let summary = problem_summary(&serde_json::to_vec(&many).unwrap());
+        assert!(summary.starts_with(&format!("title={}", "t".repeat(160))));
+        assert!(!summary.contains(&"t".repeat(161)));
+        assert!(summary.contains("field=/f3") && !summary.contains("field=/f4"));
+        assert!(summary.ends_with("; +2 more"));
+    }
+
+    /// A local stand-in for the fixed native ingest: it rejects any null `data`
+    /// member exactly as the v3 request validator does, and records each body.
+    #[tokio::test]
+    async fn publish_sends_the_wire_form_and_surfaces_a_native_rejection() {
+        let posted = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let seen = Arc::clone(&posted);
+        let app = Router::new().fallback(move |uri: Uri, body: Bytes| {
+            let seen = Arc::clone(&seen);
+            async move {
+                assert!(uri.path().ends_with("/api/v3/openmeter/events"));
+                let event: Value = serde_json::from_slice(&body).unwrap();
+                let rejected = event["type"] == "reject"
+                    || event["data"]
+                        .as_object()
+                        .is_some_and(|data| data.values().any(Value::is_null));
+                seen.lock().unwrap().push(event);
+                if rejected {
+                    (StatusCode::BAD_REQUEST, Json(native_null_rejection())).into_response()
+                } else {
+                    StatusCode::ACCEPTED.into_response()
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = OpenMeter {
+            http: reqwest::Client::new(),
+            customers: reqwest::Url::parse(&format!("http://{address}/api/v3/openmeter/customers"))
+                .unwrap(),
+            namespace: "test".into(),
+            automation_native_meter_key: None,
+        };
+        let frozen = frozen_tenant_binding_tokens();
+        client.publish_usage(&frozen).await.unwrap();
+        // Retries send the identical projected body under the same event ID.
+        client.publish_usage(&frozen).await.unwrap();
+        let mut rejected = frozen.clone();
+        rejected["type"] = json!("reject");
+        assert!(matches!(
+            client.publish_usage(&rejected).await,
+            Err(Error::Precondition)
+        ));
+        let posted = posted.lock().unwrap();
+        assert_eq!(posted.len(), 3);
+        assert_eq!(posted[0], wire_event(&frozen));
+        assert_eq!(posted[0], posted[1]);
+        assert!(posted[0]["data"].get("workspace_id").is_none());
+        server.abort();
+    }
 
     /// Frozen exactly as the Memory read outbox writes it: no datacontenttype.
     fn frozen_memory_read() -> Value {

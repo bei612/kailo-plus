@@ -101,3 +101,34 @@ call_webhook 与步骤超时：截至本次核对，库中没有任何带 `webho
 每次 call_webhook 运行写一条 `automation.run` count 用量事件，维度带 `webhook_request_id`；
 时间线显示为该 `automation.run` 操作及其用量行与投递状态。`httpStatus`、`requestId` 记在运行轨迹
 （Workflows 运行历史），业务操作视图不展示原生结果。
+
+### 2026-10-20 Gateway 用量入账：无数量条目终态与 Tenant 级 binding 投递形态
+
+生产只读核查（Core R19 `81a7bded`，只按键名与计数取数，未写库、未向生产 OpenMeter 写事件）：
+
+- 全局游标 `projection.ingress_checkpoint(source_key=agentgateway-durable-usage-tail)` 只有一行、
+  `tenant_id` 为空，停在 `76`。Gateway outbox 共 250 条，`seq>76` 的 175 条全部来自问数 binding
+  `3d282c0d…` 的 SERVICE 主体：130 条没有任何 usage（其中 129 条 `httpStatus` 为空，客户端 120 秒超时），
+  45 条有 `totalTokens`。core-bff 每 15 秒报 `seq 78` 的“没有该 meter 的实际数量”并保留游标。
+  这段时间没有 Agent 请求进入 Gateway，因此尚无 Agent 用量被实际卡住；但游标全平台共用，
+  此后任何 Agent 请求的尾部入账都会排在它之后。
+- `outbox.usage_event` 中仅有的 17 条 `UNKNOWN`（`component_model_tokens`，native seq 60–76）
+  也是仅有的 `data` 含 null 成员（`workspace_id`）的事件；全部 `COMMITTED` 事件的 `data` 都没有 null。
+  固定 metering 版本的 v3 `MeteringEvent.data` 为 `additionalProperties: {}`（不可为 null），
+  请求校验器 kin-openapi `v0.149.0` 对 null 返回 `Error at "/data/workspace_id": Value is not nullable`；
+  以同一 spec 与同一版本在 CI 节点本地离线复核：null 拒绝，省略或非空通过。meter 的
+  `$.workspace_id` 维度对缺省成员原生取空值（`parseGroupBy`）。
+
+修复（DD-08、DD-21、V-SCN-175）：
+
+- `correlate` 返回入账终态：全部冻结 meter 有原生数量写 UsageEvent；否则 Agent 与 binding
+  一致写同 log ID 的 `BILLING_UNAVAILABLE` 审计（binding 记在归因 operation 下）并与游标同事务前移，
+  计入 `platform.gateway_usage_ingress.billing_unavailable{scope}`。binding drain 回执新增
+  `billingUnavailableRequests`；HUMAN 动作与 Agent 回合的子 binding 集合不再因无数量请求失败。
+- OpenMeter 投递体为冻结体的确定投影（省略 `data` 中 null 成员），stored 查证按同一投影比对；
+  冻结 outbox 行不改写。投递未被受理时记录状态码与问题摘要（title、invalid parameter 的
+  field/rule/原因首行，截断），不记录 detail 或任何值。
+
+生产收敛预期：新版 Core 上线后，下一轮治理对账即从 `seq 77` 起前移游标，130 条无数量条目各得一条
+`BILLING_UNAVAILABLE` 审计，45 条有数量条目写入 `component_model_tokens` UsageEvent；17 条 `UNKNOWN`
+与新事件经原 settle 先 `ACCEPTED`、再查得 `stored_at` 转 `COMMITTED`。验收按上述计数逐项读回。
