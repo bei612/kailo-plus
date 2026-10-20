@@ -33,9 +33,11 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
   const epoch = useRef(0);
   const scope = useRef(0);
   const authenticating = useRef(false);
-  const reload = useCallback(async (refreshFrame: boolean) => {
+  // `background` is the focus revalidation: it must not disable the controls, because the
+  // click that moves focus out of the native iframe would land on a just-disabled button.
+  const reload = useCallback(async (refreshFrame: boolean, background = false) => {
     const request = ++epoch.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     try {
       const actual = await client.applicationNativePage(bindingId);
       if (request !== epoch.current) return;
@@ -63,7 +65,7 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
     const recheck = () => {
       const refreshFrame = authenticating.current;
       authenticating.current = false;
-      void reload(refreshFrame);
+      void reload(refreshFrame, true);
     };
     window.addEventListener("focus", recheck);
     return () => { ++scope.current; ++epoch.current; window.removeEventListener("focus", recheck); };

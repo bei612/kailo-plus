@@ -6,7 +6,7 @@ import { NativeApplicationEntries } from "../src/react/native-application-entrie
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { act, useState } from "react";
 import { PlatformProvider } from "../src/react/context";
-import { type BffReply, type BffRequest, TransportError } from "../src/transport";
+import { type BffReply, type BffRequest, type BffTransport, TransportError } from "../src/transport";
 import { button, click, render, type } from "./render";
 
 const connection = {
@@ -303,6 +303,25 @@ describe("shared external service connection management", () => {
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(host.querySelector("iframe")).toBe(frame);
     expect(host.querySelector("a")).toBeNull();
+    await click(button(host, "Refresh"));
+    expect(host.querySelector("iframe")).not.toBe(frame);
+  });
+
+  it("keeps Refresh usable while a focus check is pending, so the focusing click refreshes", async () => {
+    let pending = false;
+    const client = createBffClient({ send: (() => pending
+      ? new Promise<BffReply>(() => {})
+      : Promise.resolve({ status: 200, body: nativePage } as BffReply)) as BffTransport["send"] });
+    const host = await render(<PlatformProvider client={client} locale="en">
+      <NativeApplicationPage bindingId={connection.bindingId} onBack={() => {}} />
+    </PlatformProvider>);
+    const frame = host.querySelector("iframe")!;
+    pending = true;
+    // Leaving the native iframe focuses the window first; the click follows on Refresh.
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(button(host, "Refresh").disabled).toBe(false);
+    expect(host.querySelector("iframe")).toBe(frame);
+    pending = false;
     await click(button(host, "Refresh"));
     expect(host.querySelector("iframe")).not.toBe(frame);
   });
