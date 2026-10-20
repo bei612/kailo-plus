@@ -70,8 +70,11 @@ def document(path):
 
 
 def identifier(value):
-    require(isinstance(value, str) and str(UUID(value)) == value and UUID(value).int != 0,
-            "canonical identifier required")
+    try:
+        parsed = UUID(value) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    require(parsed is not None and str(parsed) == value and parsed.int != 0, "canonical identifier required")
     return value
 
 
