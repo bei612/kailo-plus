@@ -21,6 +21,7 @@ import (
 	storagesql "github.com/pydio/cells/v5/common/storage/sql"
 	"github.com/pydio/cells/v5/common/utils/uuid"
 	datametasql "github.com/pydio/cells/v5/data/meta/dao/sql"
+	indexsql "github.com/pydio/cells/v5/data/source/index/dao/sql"
 	usermetasql "github.com/pydio/cells/v5/idm/meta/dao/sql"
 	usermodel "github.com/pydio/cells/v5/idm/user/dao/sql/model"
 )
@@ -406,4 +407,115 @@ func TestMoveSplitsALegacyDatabaseIntoTheOwnersTables(t *testing.T) {
 	if rowCount(t, db, "idm_usr_meta", "uuid = ?", "um-1") != 1 {
 		t.Error("existing user meta row was not kept")
 	}
+}
+
+// hasIndexRoot checks a datasource index table holds exactly the root its
+// service creates (data/source/index/dao/sql Migrate) and that the index DAO
+// resolves "/" to it.
+func hasIndexRoot(t *testing.T, conn *sql.DB, st Storage, table string, nodes int64) {
+	t.Helper()
+	db := named(t, conn, st)
+	if !db.Migrator().HasTable(table) {
+		t.Fatalf("%s was not created", table)
+	}
+	if got := rowCount(t, db, table, "1 = 1"); got != nodes {
+		t.Fatalf("%s has %d row(s), want %d", table, got, nodes)
+	}
+	if rowCount(t, db, table, "uuid = ? AND level = 1 AND mpath1 = ?", "ROOT", "1") != 1 {
+		t.Fatalf("%s has no ROOT at mpath 1", table)
+	}
+	root, err := indexsql.NewDAO(db).GetNodeByPath(context.Background(), "/")
+	if err != nil || root.GetNode().GetUuid() != "ROOT" {
+		t.Fatalf("%s: the index DAO does not resolve its root: %v", table, err)
+	}
+}
+
+// A datasource without any top-level entry in the shared index (production
+// pydiods1, cellsdata, thumbnails, versions) gets its table and root from the
+// move: its index service, whose migration is already recorded, never
+// creates them.
+func TestMoveCreatesTheIndexOfADatasourceWithoutEntries(t *testing.T) {
+	ctx := context.Background()
+	conn := openSQLite(t)
+	legacyFixture(t, conn)
+	storages := bootstrapStorages(t, "cellsdata", "kailobinding", "personal", "pydiods1")
+	db, err := Open(storagesql.SqliteDriver, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		IndexAssign:       map[string][]string{"kailobinding": {"bind"}, "pydiods1": {"zed"}},
+		IndexUserFolders:  "personal",
+		IndexDropUnbacked: true,
+		Sources: objects(t, map[string][]string{
+			"personal":     {"11111111-1111-1111-1111-111111111111"},
+			"kailobinding": {"22222222-2222-2222-2222-222222222222"},
+			"pydiods1":     {"44444444-4444-4444-4444-444444444444"},
+		}),
+	}
+	opts.Sources["cellsdata"] = Source{Local: true, Flat: true, Folder: t.TempDir()}
+
+	plan, err := Inspect(ctx, db, storagesql.SqliteDriver, storages, opts)
+	if err != nil || len(plan.Problems) > 0 {
+		t.Fatalf("plan: %v %v", err, plan)
+	}
+	if got := plan.IndexRoots(); !sameStrings(got, []string{"data_index_cellsdata_idx_tree"}) {
+		t.Fatalf("index roots to create: %v", got)
+	}
+	if _, err := Apply(ctx, db, storagesql.SqliteDriver, storages, opts); err != nil {
+		t.Fatalf("move failed: %v", err)
+	}
+	hasIndexRoot(t, conn, storageOf(t, storages, "pydio.grpc.data.index.cellsdata"), "data_index_cellsdata_idx_tree", 1)
+	if rowCount(t, db, "data_index_pydiods1_idx_tree", "1 = 1") != 3 {
+		t.Error("the split index of pydiods1 changed")
+	}
+
+	after, err := Inspect(ctx, db, storagesql.SqliteDriver, storages, opts)
+	if err != nil || after.Changes() {
+		t.Fatalf("move not complete: %v %v", err, after)
+	}
+}
+
+// A database already moved by a release that left the indexes without entries
+// uncreated: the indexes whose migration is recorded are completed (additive,
+// the existing index untouched); an index whose migration is not recorded is
+// left to its service's first start.
+func TestCompletesTheIndexesAMoveLeftWithoutTable(t *testing.T) {
+	ctx := context.Background()
+	conn := openSQLite(t)
+	storages := bootstrapStorages(t, "cellsdata", "kailobinding", "pydiods1")
+	binding := storageOf(t, storages, "pydio.grpc.data.index.kailobinding")
+	migrate(t, indexsql.NewDAO(named(t, conn, binding)))
+	if _, _, err := indexsql.NewDAO(named(t, conn, binding)).GetOrCreateNodeByPath(ctx, "/kailo-binding", &tree.Node{Uuid: "f-bind", Type: tree.NodeType_COLLECTION}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(storagesql.SqliteDriver, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{IndexMigrated: map[string]bool{"kailobinding": true, "pydiods1": true}}
+
+	plan, err := Inspect(ctx, db, storagesql.SqliteDriver, storages, opts)
+	if err != nil || plan.Pending || len(plan.Problems) > 0 {
+		t.Fatalf("plan: %v %v", err, plan)
+	}
+	if got := plan.IndexRoots(); !sameStrings(got, []string{"data_index_pydiods1_idx_tree"}) {
+		t.Fatalf("index roots to create: %v", got)
+	}
+	if _, err := Apply(ctx, db, storagesql.SqliteDriver, storages, opts); err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+	hasIndexRoot(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"), "data_index_pydiods1_idx_tree", 1)
+	hasIndexRoot(t, conn, binding, "data_index_kailobinding_idx_tree", 2)
+	if db.Migrator().HasTable("data_index_cellsdata_idx_tree") {
+		t.Error("index without a recorded migration created ahead of its service")
+	}
+
+	after, err := Inspect(ctx, db, storagesql.SqliteDriver, storages, opts)
+	if err != nil || after.Changes() {
+		t.Fatalf("completion not idempotent: %v %v", err, after)
+	}
+	// The service's own migration on the completed table changes nothing.
+	migrate(t, indexsql.NewDAO(named(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"))))
+	hasIndexRoot(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"), "data_index_pydiods1_idx_tree", 1)
 }

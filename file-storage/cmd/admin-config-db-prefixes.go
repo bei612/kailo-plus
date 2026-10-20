@@ -16,10 +16,12 @@ import (
 )
 
 // Exit codes of the check: 0 the per-service tables are in effect (or nothing
-// is installed yet), 3 a move is pending and can be applied, 2 refused.
+// is installed yet), 3 a move is pending and can be applied, 2 refused, 4 only
+// datasource indexes lack their table and root (created by --apply, additive).
 const (
-	dbPrefixesExitPending = 3
-	dbPrefixesExitRefused = 2
+	dbPrefixesExitPending    = 3
+	dbPrefixesExitRefused    = 2
+	dbPrefixesExitIndexRoots = 4
 )
 
 var (
@@ -45,9 +47,18 @@ DESCRIPTION
   users, workspaces and user metadata share "resource_policies" and every
   datasource index shares "idx_trees".
 
+  A datasource index creates its table and root only in the storage
+  migration of its service, on the first start of that datasource index or on
+  a version change (versions/pydio.grpc.data.index.<datasource>); nothing
+  creates them on access. The move therefore creates, with the index DAO's own
+  migration, the table and root of every datasource index the split leaves
+  without entries, and of every datasource index whose table is missing while
+  its migration is recorded.
+
   Without --apply the command only reads: it prints the move and exits 0 when
   the per-service tables and the stored DSN template are already in effect,
-  3 when a move is pending and applicable, 2 when it is refused.
+  3 when a move is pending and applicable, 2 when it is refused, 4 when only
+  datasource indexes lack their table and root.
 
   With --apply, Cells must be stopped (the database running). In one
   transaction every legacy table becomes its owner's table (renamed, or
@@ -101,8 +112,13 @@ EXAMPLES
 			return err
 		}
 		var datasources []string
+		opts.IndexMigrated = map[string]bool{}
 		for name, ds := range config.ListSourcesFromConfig(ctx) {
 			datasources = append(datasources, name)
+			// The key and value UpdateServiceVersion records for the index of this datasource.
+			if v := strings.TrimSpace(config.Get(ctx, "versions", "pydio.grpc.data.index."+name).String()); v != "" && v != "0.0.0" {
+				opts.IndexMigrated[name] = true
+			}
 			if ds == nil {
 				continue
 			}
@@ -143,7 +159,7 @@ EXAMPLES
 		if err != nil {
 			return err
 		}
-		if !plan.Pending && templated {
+		if !plan.Changes() && templated {
 			cmd.Println("Per-service tables and the upstream DSN template are in effect; nothing to move")
 			return nil
 		}
@@ -158,11 +174,15 @@ EXAMPLES
 			os.Exit(dbPrefixesExitRefused)
 		}
 		if !dbPrefixesApply {
+			if !plan.Pending && templated {
+				cmd.Println("Check only: nothing was changed (stop Cells, then re-run with --apply to create the missing datasource index tables and roots)")
+				os.Exit(dbPrefixesExitIndexRoots)
+			}
 			cmd.Println("Check only: nothing was changed (stop Cells, back up the database and the configuration, then re-run with --apply)")
 			os.Exit(dbPrefixesExitPending)
 		}
 
-		if plan.Pending {
+		if plan.Changes() {
 			applied, err := prefixes.Apply(ctx, db, driver, storages, opts)
 			if errors.Is(err, prefixes.ErrRefused) {
 				applied.Report(cmd.OutOrStdout())
@@ -174,7 +194,12 @@ EXAMPLES
 			for _, note := range applied.Notes {
 				cmd.Printf("note: %s\n", note)
 			}
-			cmd.Println("Tables moved to their per-service names")
+			if applied.Pending {
+				cmd.Println("Tables moved to their per-service names")
+			}
+			if roots := applied.IndexRoots(); len(roots) > 0 {
+				cmd.Printf("Datasource index tables created with their root: %s\n", strings.Join(roots, ", "))
+			}
 		}
 		if !templated {
 			if err := config.Set(ctx, prefixes.WithTemplate(dsn), "databases", id, "dsn"); err != nil {
@@ -201,7 +226,10 @@ EXAMPLES
 		if after.Pending {
 			return errors.New("legacy tables remain after the move")
 		}
-		cmd.Println("Per-service tables in effect; start Cells so that each service completes its own schema")
+		if after.Changes() {
+			return errors.New("datasource index tables are still missing after the move")
+		}
+		cmd.Println("Per-service tables in effect and every datasource index has its table and root; start Cells")
 		return nil
 	},
 }
