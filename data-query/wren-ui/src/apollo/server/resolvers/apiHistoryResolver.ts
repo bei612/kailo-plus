@@ -4,6 +4,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import {
   NativeHumanQuery,
   authorizeNativeScope,
@@ -78,12 +79,7 @@ export class ApiHistoryResolver {
   }
 
   private async nativeHistory(ctx: IContext) {
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      !ctx?.nativeIdentityScope &&
-      !ctx?.nativeHumanToken
-    )
-      return undefined;
+    if (!isGovernedQueryMode()) return undefined;
     const config = await loadQueryDelivery();
     const queryScope = nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)

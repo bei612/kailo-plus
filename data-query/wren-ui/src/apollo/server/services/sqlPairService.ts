@@ -28,6 +28,7 @@ import {
   NativeQueryDelivery,
   NativeQueryRefusal,
 } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 import { authorizeNativeScope, nativePreviewScope } from './nativeHumanQuery';
 
 export type NativeSqlPairContext = {
@@ -367,9 +368,7 @@ export class SqlPairService implements ISqlPairService {
     sqls: string[],
     native?: NativeSqlPairContext,
   ): Promise<string[]> {
-    const configured = () =>
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    const configured = () => isGovernedQueryMode();
     if (configured() && !native)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     if (native && project.id !== native.config.projectId)
@@ -434,7 +433,7 @@ export class SqlPairService implements ISqlPairService {
     projectId: number,
     native?: NativeSqlPairContext,
   ): Promise<SqlPair[]> {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined && !native)
+    if (isGovernedQueryMode() && !native)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     if (!native) return this.sqlPairRepository.findAllBy({ projectId });
     if (!this.history || projectId !== native.config.projectId)
@@ -493,7 +492,7 @@ export class SqlPairService implements ISqlPairService {
   ): Promise<SqlPair> {
     if (native)
       return this.nativeWrite(projectId, 'create', sqlPair, native, key);
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     const tx = await this.sqlPairRepository.transaction();
     try {
@@ -587,7 +586,7 @@ export class SqlPairService implements ISqlPairService {
         key,
         sqlPairId,
       );
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     // First verify the SQL pair exists and belongs to the project
     const existingPair = await this.sqlPairRepository.findOneBy({
@@ -650,7 +649,7 @@ export class SqlPairService implements ISqlPairService {
   ): Promise<boolean> {
     if (native)
       return this.nativeWrite(projectId, 'delete', {}, native, key, sqlPairId);
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     // First verify the SQL pair exists and belongs to the project
     const existingPair = await this.sqlPairRepository.findOneBy({

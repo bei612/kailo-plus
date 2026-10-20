@@ -19,15 +19,13 @@ import {
 import { ColumnMDL, Manifest } from '@server/mdl/type';
 import { getLogger } from '@server/utils';
 import { MDLBuilder } from '../mdl/mdlBuilder';
+import { canReadNativeMetadata } from '../services/nativeHumanQuery';
 import {
-  canReadNativeMetadata,
-  nativePreviewScope,
-} from '../services/nativeHumanQuery';
-import {
-  loadQueryDelivery,
   NativeQueryDelivery,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { governedMetadataDelivery } from '../services/nativeGovernedMetadata';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
 const logger = getLogger('DiagramResolver');
 logger.level = 'debug';
@@ -37,12 +35,19 @@ export class DiagramResolver {
     this.getDiagram = this.getDiagram.bind(this);
   }
 
+  // STANDALONE (no delivery): the original diagram has no Resource check; a
+  // binding configured meanwhile cannot adopt this in-flight independent read.
   private async authorizeDiagram(
     ctx: IContext,
-    config: NativeQueryDelivery,
+    config: NativeQueryDelivery | undefined,
     models: Model[],
     views: View[],
   ) {
+    if (!config) {
+      if (isGovernedQueryMode())
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return;
+    }
     for (const [kind, rows] of [
       ['model', models],
       ['view', views],
@@ -68,12 +73,7 @@ export class DiagramResolver {
     ctx: IContext,
   ): Promise<Diagram> {
     const project = await ctx.projectRepository.getCurrentProject();
-    const config = await loadQueryDelivery();
-    nativePreviewScope(config, ctx.nativeIdentityScope);
-    if (!ctx.nativeHumanToken)
-      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
-    if (project.id !== config.projectId)
-      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const config = await governedMetadataDelivery(ctx, project.id);
     const models = await ctx.modelRepository.findAllBy({
       projectId: project.id,
     });

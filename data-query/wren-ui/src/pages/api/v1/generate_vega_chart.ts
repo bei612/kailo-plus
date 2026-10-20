@@ -21,6 +21,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import { NativeQueryService } from '@server/services/nativeQueryService';
 import {
   NativeHumanQuery,
@@ -292,7 +293,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+  if (isGovernedQueryMode()) {
     await governedChart(req, res);
     return;
   }

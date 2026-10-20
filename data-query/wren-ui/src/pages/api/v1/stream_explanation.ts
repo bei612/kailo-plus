@@ -6,6 +6,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import {
   NativeHumanQuery,
   nativePreviewScope,
@@ -19,10 +20,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-    process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined
-  ) {
+  if (isGovernedQueryMode()) {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       if (

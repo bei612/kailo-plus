@@ -4,6 +4,7 @@ import { Instruction } from '@server/repositories/instructionRepository';
 import { getLogger } from '@server/utils';
 import { TelemetryEvent, TrackTelemetry } from '@server/telemetry/telemetry';
 import { NativeQueryRefusal } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 
 const logger = getLogger('InstructionResolver');
 logger.level = 'debug';
@@ -27,19 +28,10 @@ export class InstructionResolver {
   }
 
   private async currentProject(ctx: InstructionContext) {
-    const token = ctx.nativeHumanToken;
-    const identityScope = ctx.nativeIdentityScope;
-    const configured =
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      token !== undefined ||
-      identityScope !== undefined;
+    const configured = isGovernedQueryMode();
     const project = await ctx.projectService.getCurrentProject();
     if (!configured) {
-      if (
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-        ctx.nativeHumanToken !== undefined ||
-        ctx.nativeIdentityScope !== undefined
-      )
+      if (isGovernedQueryMode())
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return project;
     }

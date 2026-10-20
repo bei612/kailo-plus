@@ -12,6 +12,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { nativeWriteUnknown } from '../utils/error';
 
 const config = getConfig();
@@ -21,13 +22,7 @@ logger.level = 'debug';
 
 export class LearningResolver {
   private async nativeUser(ctx: IContext) {
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE === undefined &&
-      ctx.nativeIdentityScope === undefined &&
-      ctx.nativeHumanToken === undefined
-    )
-      return undefined;
+    if (!isGovernedQueryMode()) return undefined;
     const delivery = await loadQueryDelivery();
     const identity = ctx.nativeIdentityScope;
     const token = ctx.nativeHumanToken;
@@ -51,13 +46,8 @@ export class LearningResolver {
     return { userId, projectId: project.id, check };
   }
 
-  private standalone(ctx: IContext) {
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined ||
-      ctx.nativeIdentityScope !== undefined ||
-      ctx.nativeHumanToken !== undefined
-    )
+  private standalone() {
+    if (isGovernedQueryMode())
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
   }
 
@@ -80,7 +70,7 @@ export class LearningResolver {
       return { paths: uniq(records.flatMap((record) => record.paths)) };
     }
     const result = await ctx.learningRepository.findAll();
-    this.standalone(ctx);
+    this.standalone();
     return { paths: result[0]?.paths || [] };
   }
 
@@ -111,7 +101,7 @@ export class LearningResolver {
       }
     }
     const result = await ctx.learningRepository.findAll();
-    this.standalone(ctx);
+    this.standalone();
 
     if (!result.length) {
       return await ctx.learningRepository.createOne({

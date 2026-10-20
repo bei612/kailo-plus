@@ -26,6 +26,7 @@ import {
   getSqlGenerationState,
   endStream,
 } from '@/apollo/server/utils';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 
 const logger = getLogger('API_STREAM_GENERATE_SQL');
 logger.level = 'debug';
@@ -34,7 +35,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+  if (isGovernedQueryMode()) {
     await governedRestAsk(req, res, true, true);
     return;
   }

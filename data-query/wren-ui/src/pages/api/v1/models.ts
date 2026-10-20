@@ -15,6 +15,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import {
   authorizeNativeScope,
   nativePreviewScope,
@@ -28,7 +29,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const startTime = Date.now();
-  const configured = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+  const configured = isGovernedQueryMode();
   const { projectService, deployService } = components;
   res.setHeader('Cache-Control', 'private, no-store');
   let project;

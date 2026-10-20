@@ -5,6 +5,7 @@ import { TelemetryEvent } from '@/apollo/server/telemetry/telemetry';
 import { AskingResolver } from '@/apollo/server/resolvers/askingResolver';
 import { IContext } from '@/apollo/server/types';
 import { NativeQueryRefusal } from '@/apollo/server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { createInterface } from 'readline';
 
 const { wrenAIAdaptor, askingService, telemetry } = components;
@@ -27,7 +28,7 @@ export default async function handler(
     res.status(400).json({ error: 'responseId is required' });
     return;
   }
-  const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+  const bound = isGovernedQueryMode();
   try {
     const response = await askingService.getResponse(Number(responseId));
     if (!response) {

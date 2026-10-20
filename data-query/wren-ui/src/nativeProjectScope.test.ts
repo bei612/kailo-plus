@@ -1171,25 +1171,33 @@ describe('original independent Model/View preview business consumers', () => {
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
     },
   );
-  it.each(['empty', 'invalid', 'identity-only', 'token-only', 'mixed'])(
-    'refuses %s configuration/context rather than falling back to independent SQL',
+  it.each(['empty', 'invalid'])(
+    'refuses %s configuration rather than falling back to independent SQL',
     async (fault) => {
-      if (fault === 'empty' || fault === 'invalid') {
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
-          fault === 'empty' ? '' : 'invalid-fixture';
-        jest
-          .mocked(loadQueryDelivery)
-          .mockRejectedValue(
-            new NativeQueryRefusal(503, 'QUERY_CONFIG_UNAVAILABLE'),
-          );
-      }
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        fault === 'empty' ? '' : 'invalid-fixture';
+      jest
+        .mocked(loadQueryDelivery)
+        .mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_CONFIG_UNAVAILABLE'),
+        );
+      for (const kind of ['model', 'view'] as const)
+        await expect(invoke(kind)).rejects.toThrow();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(governed).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['identity-only', 'token-only', 'mixed'])(
+    'keeps the independent preview for an %s request: the mode is the deployment, not the request',
+    async (fault) => {
       if (fault === 'identity-only' || fault === 'mixed')
         ctx.nativeIdentityScope = 'a'.repeat(64);
       if (fault === 'token-only' || fault === 'mixed')
         ctx.nativeHumanToken = 'trusted-person';
       for (const kind of ['model', 'view'] as const)
-        await expect(invoke(kind)).rejects.toThrow();
-      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        await expect(invoke(kind)).resolves.toBe(rows);
+      expect(ctx.queryService.preview).toHaveBeenCalledTimes(2);
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
       expect(governed).not.toHaveBeenCalled();
     },
   );
@@ -1221,14 +1229,12 @@ describe('original independent Model/View preview business consumers', () => {
       expect(ctx.mdlService.makeCurrentModelMDL).not.toHaveBeenCalled();
     },
   );
-  it.each(['binding', 'identity', 'token', 'project'])(
+  it.each(['binding', 'project'])(
     'refuses an independent preview when %s changes while the original MDL is prepared',
     async (fault) => {
       ctx.mdlService.makeCurrentModelMDL.mockImplementation(async () => {
         if (fault === 'binding')
           process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-fixture';
-        if (fault === 'identity') ctx.nativeIdentityScope = 'a'.repeat(64);
-        if (fault === 'token') ctx.nativeHumanToken = 'trusted-person';
         if (fault === 'project')
           ctx.projectService.getCurrentProject.mockResolvedValue({ id: 8 });
         return { manifest };
@@ -1603,6 +1609,16 @@ describe('original Save as View consumes the same HUMAN query history', () => {
 });
 
 describe('native bound-project business consumers', () => {
+  // GOVERNED deployment (DD-127(7)): the delivery, not the token, selects it.
+  const deployedQueryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  beforeEach(() => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+  });
+  afterAll(() => {
+    if (deployedQueryConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = deployedQueryConfig;
+  });
   const resolver = new ModelResolver();
   const projectId = 7;
   let ctx: any;
@@ -1936,7 +1952,7 @@ describe('native bound-project business consumers', () => {
       'empty-scope',
       'empty-token',
     ])(
-      'refuses %s without a configured binding instead of borrowing the standalone current project',
+      'keeps %s without a configured binding on the original standalone list (the mode is the deployment, not the request)',
       async (mode) => {
         if (mode === 'empty-scope') ctx.nativeIdentityScope = '';
         else if (mode === 'empty-token') ctx.nativeHumanToken = '';
@@ -1951,12 +1967,9 @@ describe('native bound-project business consumers', () => {
             new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
           );
         const result = await read('listModels');
-        expect(result.errors).toBeDefined();
-        expect(result.data).toBeNull();
-        expect(loadQueryDelivery).toHaveBeenCalledTimes(1);
-        expect(
-          ctx.modelColumnRepository.findColumnsByModelIds,
-        ).not.toHaveBeenCalled();
+        expect(result.errors).toBeUndefined();
+        expect(result.data.listModels).toHaveLength(1);
+        expect(loadQueryDelivery).not.toHaveBeenCalled();
         expect(authorize).not.toHaveBeenCalled();
       },
     );
@@ -3070,6 +3083,7 @@ describe('native bound-project business consumers', () => {
     },
   );
   it('foreign thread updates, response creation and follow-up history cannot enter native writes or dispatch', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE; // original STANDALONE service
     const service = asking();
     await expect(
       service.updateThread(82, { summary: 'foreign' }),
@@ -3101,6 +3115,7 @@ describe('native bound-project business consumers', () => {
   ])(
     '%s resolves answer ownership before native execution',
     async (method, payload) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE; // original STANDALONE service
       const service = asking();
       await expect(service[method as string](72, payload)).rejects.toThrow(
         'Thread response 72 not found',
@@ -3110,6 +3125,7 @@ describe('native bound-project business consumers', () => {
     },
   );
   it('preserves the original in-project thread list/read/edit and answer SQL clone', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE; // original STANDALONE service
     const service = asking();
     expect(await service.listThreads()).toEqual([{ id: 81, projectId }]);
     expect(await service.getResponsesWithThread(81)).toEqual([
@@ -3655,6 +3671,7 @@ describe('native bound-project business consumers', () => {
     );
   });
   it('project recommendations retain the exact selected MDL/project and native regeneration input', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE; // original STANDALONE service
     const service = Object.assign(Object.create(ProjectService.prototype), {
       getCurrentProject: ctx.projectService.getCurrentProject,
       mdlService: {
@@ -3812,6 +3829,7 @@ describe('native bound-project business consumers', () => {
     expect(ctx.queryService.preview).not.toHaveBeenCalled();
   });
   it('preserves original in-project dashboard item edits, layouts, schedule and deletion', async () => {
+    delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE; // original STANDALONE service
     const { service, dashboardRepository, dashboardItemRepository } =
       dashboard();
     expect(await service.getDashboardItem(91)).toMatchObject({
@@ -3936,7 +3954,7 @@ describe('original project resolver native delivery and identity boundary', () =
       ].map((fault) => ({ kind, fault })),
     ),
   )(
-    'refuses missing delivery for original $kind with $fault instead of entering standalone native code',
+    'keeps never-configured original $kind for a request with $fault: the deployment, not the request identity, selects the mode',
     async ({ kind, fault }) => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       if (fault === 'identity-only' || fault === 'empty-identity')
@@ -3953,19 +3971,17 @@ describe('original project resolver native delivery and identity boundary', () =
           jest.requireActual('./apollo/server/services/nativeQueryAdmission')
             .loadQueryDelivery,
         );
-      await expect(invoke(kind)).rejects.toMatchObject({
-        message: 'QUERY_ADMISSION_UNAVAILABLE',
-        ...(kind === 'write' && {
-          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
-        }),
-      });
-      expect(loadQueryDelivery).toHaveBeenCalledTimes(1);
+      const result = await invoke(kind);
+      if (kind === 'read')
+        expect(result).toMatchObject({ language: project.language });
+      else {
+        expect(result).toBe(true);
+        expect(ctx.projectRepository.updateOne).toHaveBeenCalledWith(7, {
+          language: 'zh-TW',
+        });
+      }
+      expect(loadQueryDelivery).not.toHaveBeenCalled();
       expect(calls).not.toHaveBeenCalled();
-      expect(ctx.projectService.getCurrentProject).not.toHaveBeenCalled();
-      expect(
-        ctx.projectService.getGeneralConnectionInfo,
-      ).not.toHaveBeenCalled();
-      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
     },
   );
   it.each(

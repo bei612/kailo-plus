@@ -4,6 +4,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import {
   nativePreviewScope,
   authorizeNativeScope,
@@ -22,8 +23,7 @@ export default async function handler(
   let nativeBindingGeneration: number | undefined;
   const queryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
   const bindingConfig = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
-  const nativeBindingConfigured =
-    queryConfig !== undefined || bindingConfig !== undefined;
+  const nativeBindingConfigured = isGovernedQueryMode();
   if (nativeBindingConfigured) {
     if (request.method !== 'GET') {
       res.setHeader('Allow', 'GET');

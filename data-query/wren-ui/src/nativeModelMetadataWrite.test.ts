@@ -335,7 +335,7 @@ describe.each([
     expect(bindingServiceCall).not.toHaveBeenCalled();
   });
 
-  it.each(['delivery', 'identity', 'scope'])(
+  it.each(['delivery'])(
     'refuses %s arriving during the final independent native read',
     async (change) => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -352,6 +352,24 @@ describe.each([
       };
       await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
       writeMocks().forEach((mock) => expect(mock).not.toHaveBeenCalled());
+    },
+  );
+
+  it.each(['identity', 'scope'])(
+    'keeps the independent write when a request %s appears: the deployment, not the request, selects the mode',
+    async (change) => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete context.nativeHumanToken;
+      delete context.nativeIdentityScope;
+      afterRead = (stage) => {
+        if (stage !== kind) return;
+        if (change === 'identity') context.nativeHumanToken = 'new-test-person';
+        else context.nativeIdentityScope = 'b'.repeat(64);
+      };
+      await invoke();
+      expect(writeMocks().some((mock) => mock.mock.calls.length > 0)).toBe(
+        true,
+      );
     },
   );
 

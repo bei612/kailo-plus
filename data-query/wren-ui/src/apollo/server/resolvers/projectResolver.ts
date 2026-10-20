@@ -38,14 +38,10 @@ import { encryptConnectionInfo } from '../dataSource';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import { DeployStatusEnum } from '../repositories/deployLogRepository';
 import { nativeWriteUnknown } from '../utils/error';
-import {
-  canReadNativeMetadata,
-  nativePreviewScope,
-} from '../services/nativeHumanQuery';
-import {
-  loadQueryDelivery,
-  NativeQueryRefusal,
-} from '../services/nativeQueryAdmission';
+import { canReadNativeMetadata } from '../services/nativeHumanQuery';
+import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
+import { governedMetadataDelivery } from '../services/nativeGovernedMetadata';
 
 const logger = getLogger('DataSourceResolver');
 logger.level = 'debug';
@@ -137,11 +133,7 @@ export class ProjectResolver {
   }
 
   private async checkedProject(ctx: IContext) {
-    const bound = () =>
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined ||
-      ctx.nativeIdentityScope !== undefined ||
-      ctx.nativeHumanToken !== undefined;
+    const bound = () => isGovernedQueryMode();
     const configured = bound();
     const project = await ctx.projectService.getCurrentProject();
     if (!configured) {
@@ -578,12 +570,7 @@ export class ProjectResolver {
 
   public async getSchemaChange(_root: any, _arg: any, ctx: IContext) {
     const project = await ctx.projectService.getCurrentProject();
-    const config = await loadQueryDelivery();
-    nativePreviewScope(config, ctx.nativeIdentityScope);
-    if (!ctx.nativeHumanToken)
-      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
-    if (project.id !== config.projectId)
-      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const config = await governedMetadataDelivery(ctx, project.id);
     const lastSchemaChange =
       await ctx.schemaChangeRepository.findLastSchemaChange(project.id);
 
@@ -602,6 +589,13 @@ export class ProjectResolver {
     if (lastSchemaChange.projectId !== project.id)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const authorizeModels = async () => {
+      // STANDALONE: the original schema change has no Resource check; a
+      // binding configured meanwhile cannot adopt this in-flight read.
+      if (!config) {
+        if (isGovernedQueryMode())
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        return;
+      }
       for (const model of models) {
         if (
           model.projectId !== project.id ||

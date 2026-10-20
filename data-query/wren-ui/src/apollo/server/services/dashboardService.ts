@@ -20,6 +20,7 @@ import {
 } from '@server/models/dashboard';
 import { CronExpressionParser } from 'cron-parser';
 import { NativeQueryRefusal } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 const logger = getLogger('DashboardService');
 logger.level = 'debug';
 
@@ -285,11 +286,7 @@ export class DashboardService implements IDashboardService {
     await this.getDashboardItem(dashboardItemId, currentProject);
     // The row/project lookup yields. Consume the captured native request's
     // fresh authorization after it, immediately before the original DB write.
-    if (
-      !beforeWrite &&
-      (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-        process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined)
-    )
+    if (!beforeWrite && isGovernedQueryMode())
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await beforeWrite?.(currentProject.id);
   }

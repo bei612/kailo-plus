@@ -50,6 +50,7 @@ import {
   bindingServiceCall,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
 const logger = getLogger('AskingResolver');
 logger.level = 'debug';
@@ -106,8 +107,7 @@ export interface RecommendedQuestionsTask {
 
 export class AskingResolver {
   private async nativeAskingScope(ctx: IContext) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
-      return undefined;
+    if (!isGovernedQueryMode()) return undefined;
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
@@ -142,8 +142,7 @@ export class AskingResolver {
     ctx: IContext,
     adjustment = false,
   ) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
-      return undefined;
+    if (!isGovernedQueryMode()) return undefined;
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
@@ -301,7 +300,7 @@ export class AskingResolver {
     responseId: number,
     ctx: IContext,
   ) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return;
+    if (!isGovernedQueryMode()) return;
     const project = await ctx.projectService.getCurrentProject();
     const visited = new Set<number>();
     const references: ThreadResponse[] = [];
@@ -351,6 +350,22 @@ export class AskingResolver {
     expectedProjectId?: number,
   ): Promise<Map<number, View>> {
     const project = await ctx.projectService.getCurrentProject();
+    if (!isGovernedQueryMode()) {
+      // STANDALONE (DD-127(7)): the original saved-view read of the current
+      // project; no delivery, platform identity or Resource permission. As
+      // upstream, a removed view is simply absent (candidate view null).
+      if (expectedProjectId !== undefined && expectedProjectId !== project.id)
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const views = new Map<number, View>();
+      for (const id of new Set(viewIds)) {
+        const view = await ctx.viewRepository.findOneBy({
+          id,
+          projectId: project.id,
+        });
+        if (view) views.set(id, view);
+      }
+      return views;
+    }
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     const token = ctx.nativeHumanToken;
@@ -1124,7 +1139,7 @@ export class AskingResolver {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId } = args;
     const askingService = ctx.askingService;
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    if (isGovernedQueryMode()) {
       const expected = await askingService.getResponse(responseId);
       if (!expected?.sql)
         throw new NativeQueryRefusal(404, 'NATIVE_OBJECT_UNAVAILABLE');
@@ -1193,8 +1208,7 @@ export class AskingResolver {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId } = args;
     const askingService = ctx.askingService;
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
-      return this.generateNativeChart(args, ctx);
+    if (isGovernedQueryMode()) return this.generateNativeChart(args, ctx);
     return askingService.generateThreadResponseChart(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
@@ -1213,8 +1227,7 @@ export class AskingResolver {
     const project = await ctx.projectService.getCurrentProject();
     const { responseId, data } = args;
     const askingService = ctx.askingService;
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
-      return this.generateNativeChart(args, ctx);
+    if (isGovernedQueryMode()) return this.generateNativeChart(args, ctx);
     return askingService.adjustThreadResponseChart(responseId, data, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
     });
@@ -1353,10 +1366,7 @@ export class AskingResolver {
     ctx: IContext,
     breakdown: boolean,
   ) {
-    const independent = () =>
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      ctx.nativeIdentityScope === undefined &&
-      ctx.nativeHumanToken === undefined;
+    const independent = () => !isGovernedQueryMode();
     if (independent()) {
       const assertIndependent = () => {
         if (!independent())
@@ -1501,7 +1511,7 @@ export class AskingResolver {
   public getThreadResponseNestedResolver = () => ({
     chartDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent.chartDetail) return null;
-      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      if (isGovernedQueryMode()) {
         const detail = parent.chartDetail;
         if (Object.keys(detail).length === 0) return null;
         if (!detail.queryHistoryId)
@@ -1547,7 +1557,7 @@ export class AskingResolver {
     },
     answerDetail: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       if (!parent?.answerDetail) return null;
-      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      if (isGovernedQueryMode()) {
         if (!parent.answerDetail.queryHistoryId) {
           if (parent.answerDetail.queryId || parent.answerDetail.content)
             throw new NativeQueryRefusal(
@@ -1672,7 +1682,7 @@ export class AskingResolver {
     const responses = askingTask.response || [];
     let nativeSqlPairs;
     if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      isGovernedQueryMode() &&
       responses.some((response) => response.sqlpairId)
     ) {
       const config = await loadQueryDelivery();

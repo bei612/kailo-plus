@@ -52,6 +52,7 @@ import {
   CreateAskingTaskInput,
 } from './askingTaskTracker';
 import { canonical, NativeQueryRefusal } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 import type { NativeAskingScope } from '../repositories/askingTaskRepository';
 
 const config = getConfig();
@@ -673,10 +674,7 @@ export class AskingService implements IAskingService {
   ): Promise<Task> {
     const { threadId, language } = payload;
     const project = await this.projectService.getCurrentProject();
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !payload.nativeScope
-    )
+    if (isGovernedQueryMode() && !payload.nativeScope)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     const deployId =
       payload.nativeScope?.metadataReference.hash ??
@@ -746,10 +744,7 @@ export class AskingService implements IAskingService {
       throw new Error('Asking task not found');
     const eventName = TelemetryEvent.HOME_CANCEL_ASK;
     try {
-      if (
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-        !authorizeNative
-      )
+      if (isGovernedQueryMode() && !authorizeNative)
         throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
       await authorizeNative?.();
       await this.askingTaskTracker.cancelAskingTask(taskId);
@@ -850,10 +845,7 @@ export class AskingService implements IAskingService {
     }
 
     const thread = await this.currentThread(threadId);
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !beforeWrite
-    )
+    if (isGovernedQueryMode() && !beforeWrite)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await beforeWrite?.(thread.projectId);
 
@@ -867,10 +859,7 @@ export class AskingService implements IAskingService {
     beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<void> {
     const thread = await this.currentThread(threadId);
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !beforeWrite
-    )
+    if (isGovernedQueryMode() && !beforeWrite)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await beforeWrite?.(thread.projectId);
     await this.threadRepository.deleteOne(threadId);
@@ -942,10 +931,7 @@ export class AskingService implements IAskingService {
       throw new Error(`Thread response ${responseId} not found`);
     }
 
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !beforeWrite
-    )
+    if (isGovernedQueryMode() && !beforeWrite)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await beforeWrite?.(project.id);
     return await this.threadResponseRepository.updateOne(responseId, {
@@ -1006,7 +992,7 @@ export class AskingService implements IAskingService {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
 
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    if (isGovernedQueryMode()) {
       const native = configurations?.nativeQuery;
       if (!native)
         throw new NativeQueryRefusal(503, 'QUERY_TERMINAL_EVIDENCE_REQUIRED');
@@ -1083,7 +1069,7 @@ export class AskingService implements IAskingService {
     threadResponseId: number,
     configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse> {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       return this.createNativeChart(threadResponseId, configurations);
     const threadResponse = await this.getResponse(threadResponseId);
 
@@ -1120,7 +1106,7 @@ export class AskingService implements IAskingService {
     input: ChartAdjustmentOption,
     configurations: NativeChartConfigurations,
   ): Promise<ThreadResponse> {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       return this.createNativeChart(threadResponseId, configurations, input);
     const threadResponse = await this.getResponse(threadResponseId);
 
@@ -1481,10 +1467,7 @@ export class AskingService implements IAskingService {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
 
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !authorizeSource
-    )
+    if (isGovernedQueryMode() && !authorizeSource)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await authorizeSource?.();
     if (
@@ -1555,10 +1538,7 @@ export class AskingService implements IAskingService {
   ): Promise<void> {
     if (!(await this.currentTask({ queryId: taskId }, undefined, true)))
       throw new Error('Adjustment task not found');
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !authorizeNative
-    )
+    if (isGovernedQueryMode() && !authorizeNative)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await authorizeNative?.();
     // call cancelAskFeedback on AI service

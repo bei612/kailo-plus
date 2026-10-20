@@ -6,6 +6,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@/apollo/server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@/apollo/server/services/nativeQueryMode';
 import { MAX_WAIT_TIME } from '@/apollo/server/utils/apiUtils';
 import { createInterface } from 'readline';
 
@@ -79,10 +80,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-    process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined
-  ) {
+  if (isGovernedQueryMode()) {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       if (

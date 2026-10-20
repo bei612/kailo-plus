@@ -13,6 +13,7 @@ import {
 import { CronExpressionParser } from 'cron-parser';
 import { v4 as uuidv4 } from 'uuid';
 import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
 const logger = getLogger('DashboardCacheBackgroundTracker');
 logger.level = 'debug';
@@ -56,7 +57,7 @@ export class DashboardCacheBackgroundTracker {
     // A binding's SERVICE credential is not SQL admission. Scheduled native
     // refresh has no HUMAN/AGENT Action; do not start its standalone timer in
     // a configured instance. Original schedules/data and HUMAN refresh remain.
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) return;
+    if (isGovernedQueryMode()) return;
     logger.info('Dashboard cache background tracker started');
     setInterval(() => {
       this.checkAndRefreshCaches();
@@ -64,7 +65,7 @@ export class DashboardCacheBackgroundTracker {
   }
 
   private async checkAndRefreshCaches(): Promise<void> {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) return;
+    if (isGovernedQueryMode()) return;
     try {
       // Get all dashboards with cache enabled
       const dashboards = await this.dashboardRepository.findAllBy({
@@ -199,7 +200,7 @@ export class DashboardCacheBackgroundTracker {
   }
 
   private assertIndependentQuery(): void {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    if (isGovernedQueryMode())
       throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
   }
 

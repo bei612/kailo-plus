@@ -274,9 +274,18 @@ describe('native task ownership consumers', () => {
       },
       viewRepository: { findOneBy: jest.fn(async () => null) },
     };
-    await expect(view({ id: 21, viewId: 88 } as any, {}, ctx)).rejects.toThrow(
-      'View not found',
-    );
+    // GOVERNED deployment (DD-127(7)): the delivery, not the token, selects it.
+    const deployed = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+    try {
+      await expect(
+        view({ id: 21, viewId: 88 } as any, {}, ctx),
+      ).rejects.toThrow('View not found');
+    } finally {
+      if (deployed === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = deployed;
+    }
     expect(ctx.viewRepository.findOneBy).toHaveBeenCalledWith({
       id: 88,
       projectId: 7,

@@ -9,6 +9,7 @@ import {
   handleNativeSqlPairRequest,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 
 const logger = getLogger('API_SQL_PAIR_BY_ID');
 logger.level = 'debug';
@@ -130,11 +131,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-    req.headers['x-kailo-native-human-token'] !== undefined ||
-    req.headers['x-kailo-native-identity-scope'] !== undefined
-  )
+  if (isGovernedQueryMode())
     return handleNativeSqlPairRequest(req, res, req.query.id);
   const startTime = Date.now();
   let project;

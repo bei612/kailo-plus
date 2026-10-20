@@ -10,6 +10,7 @@ import { IInstructionRepository, Instruction } from '@server/repositories';
 import * as Errors from '@server/utils/error';
 import { GeneralErrorCodes } from '@server/utils/error';
 import { NativeQueryRefusal } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 export interface IInstructionService {
   getInstructions(projectId: number): Promise<Instruction[]>;
   getInstruction(id: number): Promise<Instruction>;
@@ -202,10 +203,7 @@ export class InstructionService implements IInstructionService {
     // A transaction/read may have awaited while standalone became bound.
     // Reuse the request wrapper's captured generation before each native
     // dispatch; an uncommitted local write is rolled back if this refuses.
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
-      !beforeWrite
-    )
+    if (isGovernedQueryMode() && !beforeWrite)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     await beforeWrite?.(projectId);
   }

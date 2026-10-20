@@ -15,6 +15,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import { NativeQueryService } from '@server/services/nativeQueryService';
 import {
   NativeHumanQuery,
@@ -53,7 +54,7 @@ export default async function handler(
   // The original REST route is also a native query consumer. A bound instance
   // must not bypass the same HUMAN admission/history/disclosure used by the
   // original SQL preview, nor mint another key after a lost acknowledgement.
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+  if (isGovernedQueryMode()) {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       if (req.method !== 'POST')

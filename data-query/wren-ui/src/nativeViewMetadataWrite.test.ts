@@ -205,7 +205,7 @@ describe.each(['view', 'name-validation'])(
       expect(bindingServiceCall).not.toHaveBeenCalled();
     });
 
-    it.each(['delivery', 'identity', 'scope'])(
+    it.each(['delivery'])(
       'refuses %s appearing at the last independent read instead of adopting the independent write',
       async (change) => {
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -222,6 +222,23 @@ describe.each(['view', 'name-validation'])(
         };
         await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
         expect(viewRepository.updateOne).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['identity', 'scope'])(
+      'keeps the independent write when a request %s appears: the deployment, not the request, selects the mode',
+      async (change) => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete context.nativeHumanToken;
+        delete context.nativeIdentityScope;
+        afterRead = (stage) => {
+          if (stage !== lastRead) return;
+          if (change === 'identity')
+            context.nativeHumanToken = 'new-test-person';
+          else context.nativeIdentityScope = 'b'.repeat(64);
+        };
+        await invoke();
+        expect(viewRepository.updateOne).toHaveBeenCalledTimes(1);
       },
     );
 

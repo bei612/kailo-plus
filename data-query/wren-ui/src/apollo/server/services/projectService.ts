@@ -25,6 +25,7 @@ import { ProjectRecommendQuestionBackgroundTracker } from '../backgrounds';
 import { ITelemetry } from '../telemetry/telemetry';
 import { getConfig } from '../config';
 import { NativeQueryRefusal } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 
 const config = getConfig();
 
@@ -143,9 +144,7 @@ export class ProjectService implements IProjectService {
     selectedProject?: Project,
     beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<void> {
-    const configured = () =>
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    const configured = () => isGovernedQueryMode();
     const bound = configured() || beforeWrite !== undefined;
     if (bound && (!selectedProject || !beforeWrite))
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
@@ -181,9 +180,7 @@ export class ProjectService implements IProjectService {
     selectedProject?: Project,
     beforeRead?: (projectId: number) => Promise<void>,
   ) {
-    const configured = () =>
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined;
+    const configured = () => isGovernedQueryMode();
     const bound = configured() || beforeRead !== undefined;
     if (bound && (!selectedProject || !beforeRead))
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');

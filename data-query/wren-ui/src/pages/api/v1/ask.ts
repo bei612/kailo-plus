@@ -23,6 +23,7 @@ import {
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
 import { governedRestAsk } from '@server/services/nativeRestAsk';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 
 const logger = getLogger('API_ASK');
 logger.level = 'debug';
@@ -46,7 +47,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+  if (isGovernedQueryMode()) {
     await governedRestAsk(req, res, false);
     return;
   }

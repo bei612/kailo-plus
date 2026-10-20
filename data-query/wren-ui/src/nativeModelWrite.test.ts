@@ -398,7 +398,7 @@ describe.each(['createModel', 'updateModel'] as const)(
       expect(bindingServiceCall).not.toHaveBeenCalled();
     });
 
-    it.each(['delivery', 'identity', 'scope'])(
+    it.each(['delivery'])(
       'refuses %s arriving during the last standalone read without falling back',
       async (change) => {
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -414,6 +414,24 @@ describe.each(['createModel', 'updateModel'] as const)(
         };
         await expect(invoke()).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
         writes().forEach((write) => expect(write).not.toHaveBeenCalled());
+      },
+    );
+
+    it.each(['identity', 'scope'])(
+      'keeps the independent write when a request %s appears: the deployment, not the request, selects the mode',
+      async (change) => {
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+        delete context.nativeHumanToken;
+        delete context.nativeIdentityScope;
+        afterLastRead = () => {
+          if (change === 'identity')
+            context.nativeHumanToken = 'new-test-person';
+          else context.nativeIdentityScope = 'b'.repeat(64);
+        };
+        await invoke();
+        expect(writes().some((write) => write.mock.calls.length > 0)).toBe(
+          true,
+        );
       },
     );
 

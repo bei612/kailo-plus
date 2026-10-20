@@ -6,6 +6,7 @@ import {
 } from '@server/repositories';
 import { getLogger } from '@server/utils/logger';
 import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import {
   PostHogTelemetry,
   TelemetryEvent,
@@ -65,8 +66,7 @@ export class ChartBackgroundTracker {
             const chartDetail = threadResponse.chartDetail;
 
             // get the latest result from AI service
-            const bound =
-              process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+            const bound = isGovernedQueryMode();
             if (bound && (!chartDetail?.queryHistoryId || !chartDetail.queryId))
               throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
             const result = await (this.adjustment

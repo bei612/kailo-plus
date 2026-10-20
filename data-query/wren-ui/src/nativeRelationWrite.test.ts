@@ -344,7 +344,7 @@ describe.each(['createRelation', 'updateRelation', 'deleteRelation'] as const)(
       expect(bindingServiceCall).not.toHaveBeenCalled();
     });
 
-    it.each(['delivery', 'identity'])(
+    it.each(['delivery'])(
       'refuses %s arriving during the last independent native read',
       async (change) => {
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -360,6 +360,17 @@ describe.each(['createRelation', 'updateRelation', 'deleteRelation'] as const)(
         writes().forEach((write) => expect(write).not.toHaveBeenCalled());
       },
     );
+
+    it('keeps the independent write when a request identity appears: the deployment, not the request, selects the mode', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      delete context.nativeHumanToken;
+      delete context.nativeIdentityScope;
+      afterLastRead = () => {
+        context.nativeHumanToken = 'new-test-person';
+      };
+      await invoke();
+      expect(writes().some((write) => write.mock.calls.length > 0)).toBe(true);
+    });
 
     it.each(['lost-response', 'forged-not-started'])(
       'retains UNKNOWN for %s after native dispatch without retrying',

@@ -4,6 +4,7 @@ import { getLogger } from 'log4js';
 import { SchemaChange } from '@server/repositories/schemaChangeRepository';
 import { Model, ModelColumn, RelationInfo } from '../repositories';
 import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { nativeWriteUnknown } from '../utils/error';
 
 const logger = getLogger('DataSourceSchemaDetector');
@@ -88,12 +89,7 @@ export default class DataSourceSchemaDetector
   }
 
   private isBound() {
-    return (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE !== undefined ||
-      this.ctx.nativeIdentityScope !== undefined ||
-      this.ctx.nativeHumanToken !== undefined
-    );
+    return isGovernedQueryMode();
   }
 
   private async authorize() {

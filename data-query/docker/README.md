@@ -295,7 +295,8 @@ Deployment inputs (no credential values belong in source):
   --register-wren-native-clients` declares that claim on both dedicated native
   clients (DD-127(7)); a token without it stays denied.
 
-Without a query/binding delivery the instance is independent (DD-127(7)): the
+Without a query/binding delivery the instance is `STANDALONE` (DD-127(7),
+[Deployment query mode](#deployment-query-mode-standalone--governed)): the
 middleware forwards no governed identity to the Node consumers, and the
 original native resolvers serve the page after the same signature and
 instance-claim checks.
@@ -319,6 +320,33 @@ No other Wren backend gains a public host port through this change.
 token in its URL. Browser/IdP frame policy and third-party-cookie restrictions
 still apply; if they block embedded login, open the independent native address.
 Do not relax CSP, cookie security or instance admission to make an iframe work.
+
+## Deployment query mode (STANDALONE | GOVERNED)
+
+The query mode is one deployment fact, decided in one place
+(`wren-ui/src/apollo/server/services/nativeQueryMode.ts::nativeQueryMode`) and
+consumed by the middleware, `/api/config`, every GraphQL resolver, REST
+handler, service and background tracker:
+
+| Mode | Deployment fact | Native consumers |
+| --- | --- | --- |
+| `GOVERNED` | `WREN_PLATFORM_QUERY_CONFIG_FILE` or `WREN_PLATFORM_BINDING_CONFIG_FILE` is present (the `query-governance.yaml` overlay sets both) | The existing DD-124 chain: controlled delivery, verified native person, fresh Core admission and per-Resource read. A present but empty, relative or unreadable delivery is still `GOVERNED` and refuses (`QUERY_ADMISSION_UNAVAILABLE`/`NATIVE_INSTANCE_UNAVAILABLE`); it never falls back. |
+| `STANDALONE` | Neither is present: an independently deployed native page (DD-127(7)) | The original upstream paths. No consumer calls `loadQueryDelivery`, Core or a platform Resource check. |
+
+Whether a request carries the native OIDC token or identity partition does not
+select the mode. Every native OIDC login carries a token, so inferring
+`GOVERNED` from it refused every independent request (asking task polling,
+models, diagram, schema change); inferring `STANDALONE` from its absence would
+open a governed instance. Only a `GOVERNED` middleware forwards the verified
+identity to the Node consumers, and those consumers still refuse its absence.
+Original metadata readers enter the governed chain through the single
+`services/nativeGovernedMetadata.ts::governedMetadataDelivery`, which returns
+no delivery in `STANDALONE`. A delivery that appears while a `STANDALONE` read
+or write is in flight still withholds that result (`QUERY_REFERENCE_CHANGED`).
+The platform-only endpoints (`/api/platform-adapter/*`,
+`/api/platform-query-reference`) have no standalone meaning and refuse in
+`STANDALONE`; the native View page offers the platform reference export only
+when `/api/config` reports `nativeBindingConfigured`, which is this same mode.
 
 ## Governed query credential delivery
 
@@ -1202,13 +1230,13 @@ not proof of failure and cannot authorize a replacement POST.
 
 ### Original independent model, view and MDL readers
 
-When `WREN_PLATFORM_QUERY_CONFIG_FILE` has never been configured and neither
-trusted native identity header exists, the original GraphQL model/view lists,
+In `STANDALONE` mode ([Deployment query mode](#deployment-query-mode-standalone--governed)),
+the original GraphQL model/view lists,
 complete model/view details and current-project MDL body remain usable without
 fabricated platform identity or Resource records. The original native fields,
 relationships and response shapes are retained. Present empty/invalid
-configuration, even an empty native identity header, or platform-correlated MDL
-input cannot select independent mode. A binding configured while the original
+configuration or platform-correlated MDL input cannot select independent mode;
+a request identity neither selects nor refuses it. A binding configured while the original
 columns/views load withholds that in-flight independent response.
 
 Configured consumers retain current HUMAN/project and per-Resource read
@@ -1260,10 +1288,10 @@ a live Wren business instance and ACTIVE binding remain unestablished.
 ### Original project boundary: explicit independent mode and one trusted identity
 
 Original native project reads and metadata writes select independent mode only
-when delivery configuration and both trusted identity fields have never been
-set. A missing delivery file with either native identity field, even an empty
-field, now refuses rather than entering the original ungoverned current-project
-path. Configured calls retain the existing public discover/manage authorization,
+in `STANDALONE` ([Deployment query mode](#deployment-query-mode-standalone--governed)).
+Since 2026-10-20 a request identity field without any delivery no longer
+refuses: it stays on the original current-project path, as every native OIDC
+request does. Configured calls retain the existing public discover/manage authorization,
 fixed native project and separate per-Resource body checks.
 
 The original request boundary retains the verified initial identity/token.
@@ -1300,7 +1328,7 @@ consumer recognizes the same response and native history receipt, retains its
 key for UNKNOWN, and never renders an unverified receipt as completed rows. A
 genuinely never-configured independent instance retains the fixed upstream
 AskingService previews and raw response, without inventing a platform receipt or
-scope. Missing/empty/mixed trusted delivery does not select that branch; a binding
+scope. A present but empty/invalid delivery does not select that branch; a binding
 appearing before SQL dispatch or before return withholds the independent result.
 
 The [saved-answer preview receipt](../fork/verify/native-integration.md#original-saved-answer-and-partial-step-previews)
@@ -1366,8 +1394,7 @@ SERVICE SQL still remain closed release gaps.
 
 ### Original independent Model/View previews
 
-An instance that has never configured `WREN_PLATFORM_QUERY_CONFIG_FILE` and has
-neither trusted HUMAN token nor identity scope retains the original modeling
+An instance in `STANDALONE` mode retains the original modeling
 preview: the model uses its native column/reference names and original default
 limit; the view uses its original SQL and requested limit. Both use the same
 selected project's native manifest and return the original columns/rows. The
@@ -1399,8 +1426,7 @@ original asynchronous History write and before disclosing JSON. Missing or
 mixed identity, empty/invalid delivery, revocation and changed generation do
 not fall back to the independent instance. Bound dependency errors are sanitized.
 
-An instance that has never configured the binding and has neither trusted
-private identity header still uses the original native reader and response,
+An instance in `STANDALONE` mode still uses the original native reader and response,
 without a synthetic platform receipt. A binding arriving while the original
 project or History read is pending prevents disclosure. Exact index POST and
 positive-integer-ID PUT/DELETE also consume the verified private hop and the

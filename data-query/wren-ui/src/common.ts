@@ -44,6 +44,7 @@ import {
 } from './apollo/server/backgrounds';
 import { SqlPairService } from './apollo/server/services/sqlPairService';
 import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
 
 export const serverConfig = getConfig();
 
@@ -62,7 +63,7 @@ export const initComponents = () => {
   // Independent native instances without a binding retain their original setup.
   const projectRepository = new ProjectRepository(
     knex,
-    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined
+    !isGovernedQueryMode()
       ? undefined
       : async () => (await loadQueryDelivery()).projectId,
   );

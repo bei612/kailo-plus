@@ -14,6 +14,16 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 
 describe('original Asking saved-view readers', () => {
+  // GOVERNED deployment (DD-127(7)): the delivery, not the token, selects it.
+  const deployedQueryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  beforeEach(() => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+  });
+  afterAll(() => {
+    if (deployedQueryConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = deployedQueryConfig;
+  });
   const config = {
     bindingId: '8b066261-f827-462e-95c1-1d596fce1849',
     projectId: 3,
@@ -72,6 +82,11 @@ describe('original Asking saved-view readers', () => {
     jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
     calls.mockReset().mockResolvedValue(resolution);
     resolver = new AskingResolver();
+    // Task ownership has its own consumer tests (nativeTaskOwnership); these
+    // cases cover only the governed saved-view reader of an owned task.
+    jest
+      .spyOn(resolver, 'authorizeNativeAskingTask')
+      .mockResolvedValue(undefined);
     ctx = {
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'human-a',

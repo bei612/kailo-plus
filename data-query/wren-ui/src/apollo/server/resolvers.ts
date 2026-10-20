@@ -21,6 +21,7 @@ import {
   NativeQueryRefusal,
   NativeQueryDelivery,
 } from './services/nativeQueryAdmission';
+import { isGovernedQueryMode } from './services/nativeQueryMode';
 import {
   nativeWriteUnknown,
   nativeWriteNotStarted,
@@ -39,12 +40,7 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
   return (async (root: any, args: any, ctx: IContext, info: any) => {
     const identityScope = ctx.nativeIdentityScope;
     const token = ctx.nativeHumanToken;
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      identityScope === undefined &&
-      token === undefined
-    )
-      return resolver(root, args, ctx, info);
+    if (!isGovernedQueryMode()) return resolver(root, args, ctx, info);
     let config: NativeQueryDelivery;
     let scope: string;
     let generation: number;

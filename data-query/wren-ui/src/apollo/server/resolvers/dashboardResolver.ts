@@ -28,6 +28,7 @@ import {
   NativeQueryRefusal,
   digest,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import { nativeWriteUnknown } from '../utils/error';
 
@@ -35,19 +36,10 @@ const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
 
 export class DashboardResolver {
-  private standalonePin(ctx: IContext) {
-    return (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      process.env.WREN_PLATFORM_BINDING_CONFIG_FILE === undefined &&
-      ctx.nativeIdentityScope === undefined &&
-      ctx.nativeHumanToken === undefined
-    );
-  }
-
   private async verifyMetadataWrite(ctx: IContext, projectId: number) {
     if (ctx.nativeProjectCheck) {
       await ctx.nativeProjectCheck(projectId);
-    } else if (!this.standalonePin(ctx)) {
+    } else if (isGovernedQueryMode()) {
       throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
     }
   }
@@ -89,7 +81,7 @@ export class DashboardResolver {
   }
 
   private async readableSql(ctx: IContext, project: Project, sql: string) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return;
+    if (!isGovernedQueryMode()) return;
     const { native, permitted } = await this.metadataAccess(ctx, project);
     const before = await native.metadataSources(sql);
     if (!(await permitted(before.objects)))
@@ -107,7 +99,7 @@ export class DashboardResolver {
     project: Project,
     items: DashboardItem[],
   ) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return items;
+    if (!isGovernedQueryMode()) return items;
     if (dashboard.projectId !== project.id)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const { native, permitted } = await this.metadataAccess(ctx, project);
@@ -283,9 +275,9 @@ export class DashboardResolver {
     // Bound dashboards already warm/refresh this cache via the original chart
     // hook and governed previewItemSQL. Metadata manage is not SQL execution
     // permission, so pin must not issue a second unadmitted query here.
-    if (this.standalonePin(ctx)) {
+    if (!isGovernedQueryMode()) {
       const deployment = await ctx.deployService.getLastDeployment(project.id);
-      if (!this.standalonePin(ctx))
+      if (isGovernedQueryMode())
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       await ctx.queryService.preview(response.sql, {
         project,
@@ -404,7 +396,7 @@ export class DashboardResolver {
         await ctx.dashboardService.getCurrentDashboard(project);
       let receipt: any;
       let data: PreviewDataResponse;
-      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+      if (isGovernedQueryMode()) {
         receipt = await this.governedPreview(
           ctx,
           item.detail.sql,

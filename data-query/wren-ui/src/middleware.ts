@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
 import { NextRequest, NextResponse } from 'next/server';
+import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
 
 // SS-WRN-IDENTITY: login is owned by the OIDC gateway. The native backend
 // verifies its own audience, including direct access. Bound HUMAN business
@@ -151,7 +152,8 @@ export async function middleware(request: NextRequest) {
 
   const queryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
   const bindingConfig = process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
-  const bound = queryConfig !== undefined || bindingConfig !== undefined;
+  // The single deployment-mode source (DD-127(7)); never the request token.
+  const bound = isGovernedQueryMode();
   if (
     bound &&
     (!queryConfig?.startsWith('/') || !bindingConfig?.startsWith('/'))

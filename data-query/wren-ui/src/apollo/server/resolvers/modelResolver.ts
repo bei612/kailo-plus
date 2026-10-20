@@ -48,6 +48,8 @@ import {
   canonical,
   digest,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
+import { governedMetadataDelivery } from '../services/nativeGovernedMetadata';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 import { nativeWriteUnknown } from '../utils/error';
@@ -62,23 +64,12 @@ export enum SyncStatusEnum {
 }
 
 export class ModelResolver {
-  private async metadataConfig(
+  // STANDALONE: undefined, original reads. GOVERNED: delivery + person.
+  private metadataConfig(
     ctx: Pick<IContext, 'nativeIdentityScope' | 'nativeHumanToken'>,
     projectId: number,
   ) {
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      ctx.nativeIdentityScope === undefined &&
-      ctx.nativeHumanToken === undefined
-    )
-      return undefined;
-    const config = await loadQueryDelivery();
-    nativePreviewScope(config, ctx.nativeIdentityScope);
-    if (!ctx.nativeHumanToken)
-      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
-    if (config.projectId !== projectId)
-      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-    return config;
+    return governedMetadataDelivery(ctx, projectId);
   }
 
   private async readableMetadata<T extends { id: number }>(
@@ -89,11 +80,7 @@ export class ModelResolver {
   ): Promise<T[]> {
     if (!config) {
       // A newly configured binding cannot adopt an in-flight standalone read.
-      if (
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-        ctx.nativeIdentityScope !== undefined ||
-        ctx.nativeHumanToken !== undefined
-      )
+      if (isGovernedQueryMode())
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       return rows;
     }
@@ -132,11 +119,7 @@ export class ModelResolver {
       if (ctx.nativeProjectCheck) {
         // Consume the captured current permission immediately before writing.
         await ctx.nativeProjectCheck(projectId);
-      } else if (
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-        ctx.nativeIdentityScope !== undefined ||
-        ctx.nativeHumanToken !== undefined
-      ) {
+      } else if (isGovernedQueryMode()) {
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       }
     } catch (error) {
@@ -433,11 +416,7 @@ export class ModelResolver {
     if (!deploy) throw new Error('Deployment not found');
     const config = await this.metadataConfig(ctx, projectId);
     if (!config) {
-      if (
-        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-        ctx.nativeIdentityScope !== undefined ||
-        ctx.nativeHumanToken !== undefined
-      )
+      if (isGovernedQueryMode())
         throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
       if (args.queryScope !== undefined || args.generation !== undefined)
         throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
@@ -1556,7 +1535,7 @@ export class ModelResolver {
       idempotencyScope,
       nativeTaskId,
     } = args.data;
-    const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    const bound = isGovernedQueryMode();
     if (nativeTaskId !== undefined && !bound)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     if (

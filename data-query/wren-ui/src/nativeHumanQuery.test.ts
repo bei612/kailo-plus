@@ -446,16 +446,16 @@ describe('original instructions REST project read consumer', () => {
     );
   });
 
-  it('does not turn a mixed trusted identity into an independent read when configuration is absent', async () => {
+  it('keeps the independent read for a request identity when configuration is absent: the deployment selects the mode', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     const response = await read({
       'x-kailo-native-identity-scope':
         nativeHeaders['x-kailo-native-identity-scope'],
     });
-    expect(response.status).toBe(401);
-    expect(
-      components.instructionService.getInstructions,
-    ).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(result);
+    expect(loadQueryDelivery).not.toHaveBeenCalled();
+    expect(bindingServiceCall).not.toHaveBeenCalled();
   });
 
   it('does not disclose a former independent read when a binding arrives during History', async () => {
@@ -1364,11 +1364,11 @@ describe('original SQL-pair durable native write consumer', () => {
             new NativeQueryRefusal(503, 'QUERY_DELIVERY_UNAVAILABLE'),
           );
         const preparedCount = repository.prepareNativeWrite.mock.calls.length;
+        // Without a delivery the instance is STANDALONE (DD-127(7)): the same
+        // request headers cannot resume the governed native write. The
+        // original handler answers; this fixture has no original project.
         const unconfigured = await send();
-        expect(unconfigured.status).toBe(503);
-        expect(await unconfigured.json()).toEqual({
-          error: 'QUERY_DELIVERY_UNAVAILABLE',
-        });
+        expect(unconfigured.status).toBeGreaterThanOrEqual(500);
         expect(repository.prepareNativeWrite).toHaveBeenCalledTimes(
           preparedCount,
         );
@@ -1419,6 +1419,14 @@ describe('original SQL-pair durable native write consumer', () => {
 });
 
 describe('native saved-view HUMAN query consumer', () => {
+  // Tests that select the GOVERNED deployment set its delivery env; never
+  // leak it into the next test.
+  const deployedQueryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  afterEach(() => {
+    if (deployedQueryConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = deployedQueryConfig;
+  });
   const key = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
   const binding = '8b066261-f827-462e-95c1-1d596fce1849';
   const resource = 'f0d7d739-666c-4cdb-927b-4bad718c94e2';
@@ -3491,7 +3499,7 @@ describe('native saved-view HUMAN query consumer', () => {
         });
       });
 
-      it.each(['query-config', 'binding-config', 'token', 'partition'])(
+      it.each(['query-config', 'binding-config'])(
         'refuses %s arriving during the last independent deployment read before naked SQL or INSERT',
         async (change) => {
           delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -3517,7 +3525,7 @@ describe('native saved-view HUMAN query consumer', () => {
         },
       );
 
-      it.each(['query-config', 'binding-config', 'token', 'partition'])(
+      it.each(['query-config', 'binding-config'])(
         'refuses %s arriving during independent layout lookup without an INSERT',
         async (change) => {
           delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -3537,6 +3545,26 @@ describe('native saved-view HUMAN query consumer', () => {
           };
           await expect(invoke()).rejects.toBeInstanceOf(NativeQueryRefusal);
           expect(itemRepository.createOne).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['token', 'partition'])(
+        'keeps the independent pin when a request %s appears: the deployment, not the request, selects the mode',
+        async (change) => {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
+          delete ctx.nativeHumanToken;
+          delete ctx.nativeIdentityScope;
+          ctx.deployService.getLastDeployment.mockImplementation(async () => {
+            if (change === 'token')
+              ctx.nativeHumanToken = 'verified-native-token';
+            else ctx.nativeIdentityScope = 'a'.repeat(64);
+            return deployment;
+          });
+          expect(await invoke()).toEqual(item);
+          expect(itemRepository.createOne).toHaveBeenCalledTimes(1);
+          expect(ctx.queryService.preview).toHaveBeenCalledTimes(1);
+          expect(calls).not.toHaveBeenCalled();
         },
       );
     });
@@ -4069,7 +4097,9 @@ describe('native saved-view HUMAN query consumer', () => {
         delete ctx.nativeIdentityScope;
         delete ctx.nativeHumanToken;
         ctx.projectService.getCurrentProject.mockImplementation(async () => {
-          ctx.nativeIdentityScope = 'a'.repeat(64);
+          // The deployment gains a delivery; a request identity alone does not.
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+            'new-controlled-binding';
           return { id: 3, sampleDataset: 'fixture' };
         });
         await expect(
@@ -5269,6 +5299,7 @@ describe('native saved-view HUMAN query consumer', () => {
   });
 
   it('routes the actual model resolver through HUMAN admission rather than direct engine preview', async () => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
       nativeIdentityScope: 'a'.repeat(64),
@@ -5328,6 +5359,10 @@ describe('native saved-view HUMAN query consumer', () => {
   });
 
   describe('original Asking saved-view preview consumer', () => {
+    // GOVERNED deployment (DD-127(7)): the delivery, not the token, selects it.
+    beforeEach(() => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+    });
     const view = {
       id: 7,
       projectId: 3,
@@ -5949,26 +5984,26 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(calls).not.toHaveBeenCalled();
       },
     );
-    it.each([
-      'identity',
-      'token',
-      'empty-identity',
-      'empty-token',
-      'delivery',
-      'empty-delivery',
-    ])(
-      'does not select independent native SQL for %s mixed/configured mode',
+    it.each(['delivery', 'empty-delivery'])(
+      'does not select independent native SQL for %s configured mode',
+      async (change) => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+          change === 'delivery' ? 'configured' : '';
+        await expect(preview()).rejects.toThrow('QUERY_DELIVERY_UNAVAILABLE');
+        expect(service.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['identity', 'token', 'empty-identity', 'empty-token'])(
+      'keeps independent native SQL for a request %s: the deployment, not the request, selects the mode',
       async (change) => {
         if (change === 'identity') ctx.nativeIdentityScope = 'a'.repeat(64);
         if (change === 'token') ctx.nativeHumanToken = 'human';
         if (change === 'empty-identity') ctx.nativeIdentityScope = '';
         if (change === 'empty-token') ctx.nativeHumanToken = '';
-        if (change === 'delivery')
-          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'configured';
-        if (change === 'empty-delivery')
-          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
-        await expect(preview()).rejects.toThrow('QUERY_DELIVERY_UNAVAILABLE');
-        expect(service.queryService.preview).not.toHaveBeenCalled();
+        jest.mocked(loadQueryDelivery).mockClear();
+        expect(await preview()).toEqual(rows);
+        expect(service.queryService.preview).toHaveBeenCalledTimes(1);
+        expect(loadQueryDelivery).not.toHaveBeenCalled();
       },
     );
     it.each([false, true])(
@@ -6010,6 +6045,7 @@ describe('native saved-view HUMAN query consumer', () => {
   });
 
   it('refuses forged or previous-person scope at the actual preview resolver before any Core or native call', async () => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
       nativeIdentityScope: 'b'.repeat(64),

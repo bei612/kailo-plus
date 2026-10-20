@@ -14,6 +14,7 @@ import {
 } from '../services';
 import { getLogger } from '@server/utils';
 import { NativeQueryRefusal } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
 const logger = getLogger('TextBasedAnswerBackgroundTracker');
 logger.level = 'debug';
@@ -63,7 +64,7 @@ export class TextBasedAnswerBackgroundTracker {
           }
           this.runningJobs.add(threadResponse.id);
           try {
-            if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+            if (isGovernedQueryMode()) {
               const detail = threadResponse.answerDetail;
               if (!detail.queryHistoryId || !detail.queryId)
                 throw new NativeQueryRefusal(

@@ -12,6 +12,16 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
 }));
 
 describe('original schema-change metadata consumer', () => {
+  // GOVERNED deployment (DD-127(7)): the delivery, not the token, selects it.
+  const deployedQueryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  beforeEach(() => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
+  });
+  afterAll(() => {
+    if (deployedQueryConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = deployedQueryConfig;
+  });
   const resolver = new ProjectResolver();
   const config: any = {
     projectId: 7,

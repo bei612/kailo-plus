@@ -19,6 +19,7 @@ import { isEqual } from 'lodash';
 import type { NativeAskingScope } from '../repositories/askingTaskRepository';
 import { lockNativeBinding } from '../repositories/projectRepository';
 import { NativeQueryRefusal } from './nativeQueryAdmission';
+import { isGovernedQueryMode } from './nativeQueryMode';
 
 const logger = getLogger('AskingTaskTracker');
 logger.level = 'debug';
@@ -129,7 +130,7 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         throw new Error('Asking task not found');
       const previousQueryId = previous?.queryId;
 
-      const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+      const bound = isGovernedQueryMode();
       if (
         bound &&
         (!input.nativeScope ||

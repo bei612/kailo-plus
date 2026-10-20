@@ -15,6 +15,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '@server/services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
 import {
   authorizeNativeScope,
   nativePreviewScope,
@@ -170,11 +171,7 @@ export default async function handler(
     const token = req.headers['x-kailo-native-human-token'];
     const identityScope = req.headers['x-kailo-native-identity-scope'];
     const permission = req.method === 'GET' ? 'discover' : 'manage';
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      token !== undefined ||
-      identityScope !== undefined
-    ) {
+    if (isGovernedQueryMode()) {
       if (
         typeof token !== 'string' ||
         !token ||
@@ -203,12 +200,7 @@ export default async function handler(
     const verify = async () => {
       const current = await components.projectService.getCurrentProject();
       if (!native) {
-        if (
-          current.id !== project.id ||
-          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-          req.headers['x-kailo-native-human-token'] !== undefined ||
-          req.headers['x-kailo-native-identity-scope'] !== undefined
-        )
+        if (current.id !== project.id || isGovernedQueryMode())
           throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
         return;
       }
@@ -295,9 +287,7 @@ export default async function handler(
     if (
       native ||
       error instanceof NativeQueryRefusal ||
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      req.headers['x-kailo-native-human-token'] !== undefined ||
-      req.headers['x-kailo-native-identity-scope'] !== undefined
+      isGovernedQueryMode()
     ) {
       const proof = error?.extensions?.other?.nativeWrite;
       if (

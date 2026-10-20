@@ -23,6 +23,7 @@ import {
   canonical,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 
 const logger = getLogger('AdjustmentTaskTracker');
 logger.level = 'debug';
@@ -127,7 +128,7 @@ export class AdjustmentBackgroundTaskTracker
     input: CreateAdjustmentTaskInput,
   ): Promise<{ queryId: string; createdThreadResponse: ThreadResponse }> {
     try {
-      const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+      const bound = isGovernedQueryMode();
       if (
         bound &&
         (!input.nativeScope ||
@@ -278,7 +279,7 @@ export class AdjustmentBackgroundTaskTracker
     });
     if (!previous || currentThreadResponse.threadId !== input.threadId)
       throw new Error('Adjustment task not found');
-    const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+    const bound = isGovernedQueryMode();
     if (
       bound &&
       (!input.nativeScope ||

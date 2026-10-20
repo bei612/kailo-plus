@@ -13,6 +13,7 @@ import {
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
+import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import { NativeSqlPairContext } from '../services/sqlPairService';
 
@@ -53,12 +54,7 @@ export class SqlPairResolver {
     writing = false,
     projectId?: number,
   ): Promise<NativeSqlPairContext | undefined> {
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined &&
-      ctx.nativeIdentityScope === undefined &&
-      ctx.nativeHumanToken === undefined
-    )
-      return undefined;
+    if (!isGovernedQueryMode()) return undefined;
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
@@ -208,11 +204,7 @@ export class SqlPairResolver {
     validation: SqlValidation,
   ) {
     const project = await ctx.projectService.getCurrentProject();
-    if (
-      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined ||
-      ctx.nativeIdentityScope !== undefined ||
-      ctx.nativeHumanToken !== undefined
-    ) {
+    if (isGovernedQueryMode()) {
       const config = await loadQueryDelivery();
       const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
       if (

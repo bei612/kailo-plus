@@ -11915,3 +11915,106 @@ instance claim stays 403. These checks ran on the CI node in
 
 These are source checks, not an image: `data-query-ui` must be rebuilt from
 the merged commit before the independent page leaves "Loading...".
+
+## 2026-10-20 — One deployment query mode (STANDALONE | GOVERNED, DD-127(7)③)
+
+Production acceptance of the independent native page (问数 58095, DD-127
+native page + DD-128 component model route): qa-1 logged in through the
+dedicated OIDC client, connected the read-only sample database and asked a
+question. The AI service generated correct SQL, but the page stayed on
+"Understanding question": `AskingTask` was polled 298 times and every poll
+answered `QUERY_ADMISSION_UNAVAILABLE`. Modeling showed Models(0) with the same
+error. Two defects of one kind:
+
+- readers that load the platform delivery unconditionally:
+  `askingResolver.ts::readNativeViews` (called by `transformAskingTask` on every
+  `getAskingTask`, even with no view), `diagramResolver.ts::getDiagram`,
+  `projectResolver.ts::getSchemaChange`;
+- readers that inferred governance from the request:
+  `modelResolver.ts::metadataConfig` (and the resolver wrapper, learning,
+  SQL-pair, instructions, API history, dashboard, schema detector, Asking
+  preview, REST knowledge handlers) treated a present token or identity
+  partition as "bound". Every native OIDC request carries a token, so the
+  independent branch was unreachable.
+
+Without `WREN_PLATFORM_QUERY_CONFIG_FILE`, `loadQueryDelivery` refuses 503.
+
+### Design
+
+`wren-ui/src/apollo/server/services/nativeQueryMode.ts::nativeQueryMode()`
+returns `GOVERNED` exactly when `WREN_PLATFORM_QUERY_CONFIG_FILE` or
+`WREN_PLATFORM_BINDING_CONFIG_FILE` is present (any value; an empty or relative
+value is GOVERNED and fails closed), else `STANDALONE`. It reads only the
+environment, so the Edge middleware, `/api/config` and every Node consumer use
+the same predicate (`isGovernedQueryMode()`). Request token/identity never
+select the mode. `services/nativeGovernedMetadata.ts::governedMetadataDelivery`
+is the single entry of the original metadata readers into the governed chain:
+`undefined` in STANDALONE; in GOVERNED the delivery, verified person, token and
+delivered project are required as before. The design statement is
+DD-127(7)③ with V-SCN-176 (design branch `design/dd127-native-query-mode`,
+`4d122e9a`); the operator view is
+[Deployment query mode](../../docker/README.md#deployment-query-mode-standalone--governed).
+
+### Change
+
+- all `process.env.WREN_PLATFORM_{QUERY,BINDING}_CONFIG_FILE` presence checks in
+  `wren-ui/src` (resolvers, services, backgrounds, schema detector, REST
+  handlers, `common.ts`, middleware, `/api/config`) now call
+  `isGovernedQueryMode()`; the only remaining direct reads are the path
+  validators (`loadQueryDelivery`, binding delivery, middleware/config/stream
+  `startsWith('/')` checks);
+- every request-identity mode inference (`ctx.nativeIdentityScope`,
+  `ctx.nativeHumanToken`, `x-kailo-native-*` header presence) is removed;
+  GOVERNED consumers still refuse a missing identity;
+- `readNativeViews` STANDALONE: the current project's views read through
+  `viewRepository`; as upstream, a removed view is absent (candidate view
+  `null`); no delivery or Resource call;
+- `getDiagram`, `getSchemaChange`, `metadataConfig` go through
+  `governedMetadataDelivery`; their per-Resource checks run only with a
+  delivery; a delivery appearing during a STANDALONE read still refuses 412;
+- platform-only endpoints (`/api/platform-adapter/*`,
+  `/api/platform-query-reference`) keep loading the delivery and refuse in
+  STANDALONE; the View page offers the reference export only when
+  `/api/config.nativeBindingConfigured` (the same mode) is true.
+
+Tests: new `src/nativeQueryMode.test.ts` (25) covers the predicate table and,
+in both modes, `getAskingTask`, `getDiagram`, `getSchemaChange` and
+`metadataConfig` (via `listModels`). STANDALONE: the request carries the native
+OIDC token and identity, `loadQueryDelivery` is mocked to refuse 503 as in
+production, and each reader returns the original data with
+`loadQueryDelivery` and Core never called. GOVERNED: missing person → 401,
+unavailable delivery → 503, other delivered project → 403, Asking task
+ownership proof required, diagram/schema change authorize before and after
+reads, model list filtered by Resource read. Existing tests that asserted the
+old request-identity rule were rewritten to the new rule (identity without a
+delivery keeps the original path; a delivery arriving mid-request still
+refuses); governed tests that had relied on the token now set the delivery env.
+
+### Evidence
+
+CI node, `node:18-bookworm-slim` (the image's base), sources only from GitHub
+(`git archive` of `data-query/wren-ui` and `client-kit/adapter`), dependencies
+by `yarn install --immutable` through the proxy, checks with `--network none`,
+8 CPU / 8 GiB (`~/kailo-acceptance/ops/wren/ui-run.sh`):
+
+- Prettier `--write` over every touched source/test: no diff; ESLint on the
+  same files: 0 problems; `tsc --noEmit`: only the pre-existing
+  `src/nativeQueryDelivery.test.ts(38,9)` `ProcessEnv` error (also on `main`).
+- `nativeQueryMode.test.ts`: **25 passed**. With the two STANDALONE guards
+  removed in the container (`governedMetadataDelivery` always loading,
+  `readNativeViews` never standalone) the same file gives **6 failed / 19
+  passed**: exactly the token-irrelevance case and the five STANDALONE reader
+  cases, i.e. the production failure.
+- Whole jest suite, `-w 3`: `main` `d4d4725b4` **124 failed / 1801 passed /
+  2071**; this branch **125 failed / 1821 passed / 2092**. The failing-name set
+  is identical except one load-sensitive SQLite case
+  (`nativeRestAskOwnership` "rolls back the history when the original query_id
+  already belongs to another task"), which passed in the previous full run of
+  the same commit and **3/3** isolated runs. The 124 baseline failures (10
+  suites: middleware bound-HUMAN fetch, askingStream, mdlBuilder,
+  nativeQueryDelivery type error, …) predate this change and are not addressed
+  here.
+
+These are source checks, not an image or business acceptance: `data-query-ui`
+must be rebuilt from the merged commit and the independent instance re-accepted
+(ask → result, Models(n), diagram) before the 58095 page is fixed.
