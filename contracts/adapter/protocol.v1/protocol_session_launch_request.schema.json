@@ -9,9 +9,9 @@
     "protocolSessionId":{"type":"string","format":"uuid"},
     "reference":{"$ref":"../../domain/content_reference.schema.json"},
     "authorizationTargetNativeRef":{"type":"string"},
-    "admittedMode":{"type":"string","enum":["VIEW","EDIT"]},
-    "theme":{"type":"string","enum":["LIGHT","DARK"]},
-    "locale":{"type":"string","enum":["en","zh-CN"]},
+    "admittedMode":{"title":"ProtocolSessionMode","type":"string","enum":["VIEW","EDIT"]},
+    "theme":{"title":"ProtocolSessionTheme","type":"string","enum":["LIGHT","DARK"]},
+    "locale":{"title":"ProtocolSessionLocale","type":"string","enum":["en","zh-CN"]},
     "expiresAt":{"type":"string"},
     "idempotencyKey":{"type":"string","format":"uuid"}
   }

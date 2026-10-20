@@ -10,7 +10,7 @@
     "projectionGeneration":{"type":"integer","minimum":1,"description":"Exact approved projection selected by the native menu; never latest."},
     "reference":{"$ref":"content_reference.schema.json"},
     "actionVersion":{"type":"integer","minimum":1},
-    "theme":{"type":"string","enum":["LIGHT","DARK"]},
-    "locale":{"type":"string","enum":["en","zh-CN"]}
+    "theme":{"title":"ProtocolSessionTheme","type":"string","enum":["LIGHT","DARK"]},
+    "locale":{"title":"ProtocolSessionLocale","type":"string","enum":["en","zh-CN"]}
   }
 }

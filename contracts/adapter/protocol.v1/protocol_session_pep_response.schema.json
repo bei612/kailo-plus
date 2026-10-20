@@ -11,7 +11,7 @@
     "oidcIssuer":{"type":"string","minLength":1,"description":"Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied claim."},
     "oidcSubject":{"type":"string","minLength":1,"description":"Original active subject paired with oidcIssuer. Cells resolves its existing explicit native user link; no email or display-name fallback."},
     "displayName":{"type":"string","minLength":1},
-    "admittedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "admittedMode":{"title":"ProtocolSessionMode","type":"string","enum":["VIEW","EDIT"]},
     "minZedToken":{"type":"string","minLength":1},
     "baseRevision":{"type":"string","minLength":1},
     "expiresAt":{"type":"string","format":"date-time"},
