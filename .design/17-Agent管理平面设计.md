@@ -204,6 +204,8 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 | Definition | identity、instructions、RuntimeProfile、版本历史、publish/retire | `read/update/manage` |
 | Installation | Workspace、exact version、AgentPrincipal、Channel trigger、runtime state；成员使用权（`05` §2.10 的授予/撤销，逐成员显示是否已授予与是否已生效） | Installation Resource `read/manage`；使用权变更需 `share` |
 | Capabilities | model、skills、tools、Resources 的 requested/effective/source/reason 矩阵 | `read`；敏感 evidence 需 `audit` |
+| 团队 | Tenant 级 `agent_team`：名称、说明、有序成员定义；新建、编辑、删除、分享到目录，部署到频道为逐个 `agent.installation.create`，@ 团队展开为成员普通提及（DD-131(1)） | Team `read/update/manage/share`；成员只显示本人可 `discover` 者 |
+| 目录、快照与分享 | 本人可发现的定义与团队目录（安装或复制为本人 DRAFT）；Agent/团队快照导出为 ExportPackage、导入为新 Definition 与 DRAFT Version，发送导出包即分享；不提供卡片铸造、锁定卡与记忆导出（DD-131(2)–(7)） | 目录 `discover/read`；分享 `share`；导出 `export` 并经 owner 审批；导入 Tenant `create` |
 | Delegation & Approval | 谁可委托什么、有效期/次数、同意是否仍现行（只有真实可用的显示为有效，需要续签、次数用尽、已到期与已被替换分别显示，续签替换原 Grant，DD-126）、等待中的审批 | `delegate/approve` |
 | Operations & Usage | Invocation/Workflow、tool/model/native refs、token/cost、Quota/Capacity | `read/audit` 与 ResultExposurePolicy |
 | Memory | core、cold-memory slug、Session 固定 core event、读写/冲突/usage；不默认暴露正文 | Installation Resource `read/update/audit` |
@@ -242,7 +244,7 @@ Core AgentRuntimeProjection
 
 ## 11. 明确排除
 
-- AgentRegistry、AgentTeams 与任何业务能力服务自带的 Agent、skill、sandbox 或 memory 都不承担一期 Agent 管理、runtime 或记忆权威（DD-92）。
+- AgentRegistry、AgentTeams 与任何业务能力服务自带的 Agent、skill、sandbox 或 memory 都不承担一期 Agent 管理、runtime 或记忆权威（DD-92）。此处 AgentTeams 指 `.references` 中的第三方项目，与 Buzz 原版 Agents 页的 Teams 无关；后者按 DD-131 恢复为 Core 治理的 `agent_team` Resource。
 - AgentGateway 不保存 Agent Definition、owner、Delegation、Approval、Quota 或 Audit 权威。
 - Buzz Persona pack 不是平台授权包；其 MCP、skill、env 字段不能绕过 Catalog/RuntimeProfile。
 - 一期 Web 不提供 local ACP、browser shell、computer-use、Desktop credential 或 arbitrary runtime/plugin upload。
