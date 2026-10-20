@@ -39,7 +39,7 @@ pub struct Canary {
     pub name: String,
 
     /// 内联对象，同样显式关闭 additionalProperties
-    pub nested: Nested,
+    pub nested: CanaryNested,
 
     /// RFC3339 时间戳，按普通 string 传输。format: date-time 不在可用子集内——Dart 的 toIso8601String()
     /// 强制补毫秒，四侧线格式不等价。取值合法性由 Core 在 Admission 校验，不由 schema 承担。
@@ -54,7 +54,7 @@ pub struct Canary {
 
     /// 变体类型的平坦表达：封闭枚举 tag 加各变体字段全部可选，替代被禁用的 oneOf
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub variants: Option<Vec<Variant>>,
+    pub variants: Option<Vec<CanaryVariantsItem>>,
 }
 
 /// 可选的枚举引用
@@ -104,7 +104,7 @@ pub enum ErrorClass {
 
 /// 内联对象，同样显式关闭 additionalProperties
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Nested {
+pub struct CanaryNested {
     pub label: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,11 +113,11 @@ pub struct Nested {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Variant {
+pub struct CanaryVariantsItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_digest: Option<String>,
 
-    pub kind: VariantKind,
+    pub kind: CanaryVariantsItemKind,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_body: Option<String>,
@@ -127,7 +127,7 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum VariantKind {
+pub enum CanaryVariantsItemKind {
     #[serde(rename = "FILE")]
     File,
 
@@ -215,7 +215,7 @@ pub struct FileStorageListInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStorageListOutput {
-    pub items: Vec<ReferenceElement>,
+    pub items: Vec<ContentReference>,
 
     pub listing_digest: String,
 
@@ -231,7 +231,7 @@ pub struct FileStorageListOutput {
 /// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferenceElement {
+pub struct ContentReference {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_id: Option<String>,
 
@@ -261,7 +261,7 @@ pub struct FileStorageListRevisionsInput {
 /// receipt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FileStorageListRevisionsOutput {
-    pub citations: Vec<ReferenceElement>,
+    pub citations: Vec<ContentReference>,
 }
 
 /// Read the exact typed native file revision in the admitted Resource; never substitute the
@@ -449,39 +449,22 @@ pub struct AdapterSecretRead {
     pub version: i64,
 }
 
-/// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AdapterBindingReconcileRequest {
-    pub binding_id: String,
-
-    pub config_digest: String,
-
-    pub generation: i64,
-
-    pub idempotency_key: String,
-
-    pub native_instance_ref: String,
-
-    pub native_scope_ref: String,
-}
-
 /// 完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
 /// 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdapterBindingReconcileResponse {
     pub complete: bool,
 
-    pub observations: Vec<ExecutionElement>,
+    pub observations: Vec<AdapterExecutionObservation>,
 
-    pub reference: ReferenceClass,
+    pub reference: AdapterBindingReconcileRequest,
 }
 
 /// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
 /// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionElement {
+pub struct AdapterExecutionObservation {
     pub cancel_capability: NativeCancelCapability,
 
     pub idempotency_key: String,
@@ -524,7 +507,7 @@ pub enum ExternalExecutionStatus {
 /// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferenceClass {
+pub struct AdapterBindingReconcileRequest {
     pub binding_id: String,
 
     pub config_digest: String,
@@ -538,66 +521,25 @@ pub struct ReferenceClass {
     pub native_scope_ref: String,
 }
 
-/// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
-/// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AdapterExecutionObservation {
-    pub cancel_capability: NativeCancelCapability,
-
-    pub idempotency_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_observed_at: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_status: Option<String>,
-
-    pub native_type: String,
-
-    pub platform_status: ExternalExecutionStatus,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminal_at: Option<String>,
-}
-
-/// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
-/// 未取得时只用冻结幂等键查证。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AdapterExecutionReference {
-    pub external_execution_id: String,
-
-    pub idempotency_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_id: Option<String>,
-
-    pub native_type: String,
-}
-
 /// ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
 /// Core 的套件报告。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterExecutionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
+    pub content_reference: Option<ContentReference>,
 
     /// 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_references: Option<Vec<ReferenceElement>>,
+    pub content_references: Option<Vec<ContentReference>>,
 
-    pub execution: ExecutionElement,
+    pub execution: AdapterExecutionObservation,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_json: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_resources: Option<Vec<SourceResourceElement>>,
+    pub source_resources: Option<Vec<AdapterSourceResource>>,
 }
 
 /// Actual native planner source within the existing execution binding. Metadata only:
@@ -605,7 +547,7 @@ pub struct AdapterExecutionResponse {
 /// authorize every resolved Resource.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SourceResourceElement {
+pub struct AdapterSourceResource {
     pub native_ref: String,
 
     pub native_type: String,
@@ -620,7 +562,7 @@ pub struct AdapterExecutionUsage {
 
     pub idempotency_key: String,
 
-    pub measurements: Vec<AdapterExecutionUsageMeasurement>,
+    pub measurements: Vec<AdapterExecutionUsageMeasurementsItem>,
 
     pub native_id: String,
 
@@ -629,7 +571,7 @@ pub struct AdapterExecutionUsage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterExecutionUsageMeasurement {
+pub struct AdapterExecutionUsageMeasurementsItem {
     pub meter_key: String,
 
     pub occurred_at: String,
@@ -645,7 +587,7 @@ pub struct NativeTaskExecutionAdmissionRequest {
 
     pub binding_id: String,
 
-    pub execution: ExecutionClass,
+    pub execution: AdapterExecutionReference,
 
     /// 首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
     pub native_task_deadline: String,
@@ -655,7 +597,7 @@ pub struct NativeTaskExecutionAdmissionRequest {
 /// 未取得时只用冻结幂等键查证。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionClass {
+pub struct AdapterExecutionReference {
     pub external_execution_id: String,
 
     pub idempotency_key: String,
@@ -706,12 +648,12 @@ pub struct AdapterPepCheckRequest {
     pub binding_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
+    pub content_reference: Option<ContentReference>,
 
     pub operation: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_resources: Option<Vec<SourceResourceElement>>,
+    pub source_resources: Option<Vec<AdapterSourceResource>>,
 }
 
 /// 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
@@ -754,65 +696,13 @@ pub struct AdapterAuthorizedResource {
     pub resource_id: String,
 }
 
-/// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
-/// VersionId，不提供文件字节或当前权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolRevisionQuery {
-    pub base_revision: String,
-
-    pub protocol_session_id: String,
-
-    pub write_observation: WriteObservationClass,
-}
-
-/// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
-/// file bytes or an authorization grant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WriteObservationClass {
-    pub base_modified_at: String,
-
-    pub bytes_written: i64,
-
-    pub correlation_ref: String,
-
-    pub editors: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_etag: Option<String>,
-
-    pub phase: Phase,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_revision: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Phase {
-    #[serde(rename = "ACCEPTED")]
-    Accepted,
-
-    #[serde(rename = "CONFLICT")]
-    Conflict,
-
-    #[serde(rename = "FAILED")]
-    Failed,
-
-    #[serde(rename = "STARTED")]
-    Started,
-
-    #[serde(rename = "UNKNOWN")]
-    Unknown,
-}
-
 /// 18: execute the original admitted file protocol Session, not an arbitrary editor URL or
 /// native object create. All fields are frozen Core facts and the whole body is covered by
 /// ActionToken.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterProtocolSessionLaunchRequest {
-    pub admitted_mode: TedMode,
+    pub admitted_mode: ProtocolSessionMode,
 
     pub authorization_target_native_ref: String,
 
@@ -820,17 +710,17 @@ pub struct AdapterProtocolSessionLaunchRequest {
 
     pub idempotency_key: String,
 
-    pub locale: Locale,
+    pub locale: ProtocolSessionLocale,
 
     pub protocol_session_id: String,
 
-    pub reference: ReferenceElement,
+    pub reference: ContentReference,
 
-    pub theme: Theme,
+    pub theme: ProtocolSessionTheme,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum TedMode {
+pub enum ProtocolSessionMode {
     #[serde(rename = "EDIT")]
     Edit,
 
@@ -840,7 +730,7 @@ pub enum TedMode {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Locale {
+pub enum ProtocolSessionLocale {
     En,
 
     #[serde(rename = "zh-CN")]
@@ -848,7 +738,7 @@ pub enum Locale {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Theme {
+pub enum ProtocolSessionTheme {
     #[serde(rename = "DARK")]
     Dark,
 
@@ -862,7 +752,7 @@ pub enum Theme {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterProtocolSessionLaunchResponse {
-    pub launch_descriptor: LaunchDescriptorClass,
+    pub launch_descriptor: DocumentLaunchDescriptor,
 
     pub native_session_ref: String,
 }
@@ -871,7 +761,7 @@ pub struct AdapterProtocolSessionLaunchResponse {
 /// credentials are only string form fields, never a persisted Task, chat or ContentReference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LaunchDescriptorClass {
+pub struct DocumentLaunchDescriptor {
     pub action_url: String,
 
     pub editor_origin: String,
@@ -880,11 +770,11 @@ pub struct LaunchDescriptorClass {
 
     pub form_fields: HashMap<String, String>,
 
-    pub method: LaunchDescriptorMethod,
+    pub method: DocumentLaunchDescriptorMethod,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum LaunchDescriptorMethod {
+pub enum DocumentLaunchDescriptorMethod {
     #[serde(rename = "GET")]
     Get,
 
@@ -897,7 +787,7 @@ pub enum LaunchDescriptorMethod {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolSessionLifecyclePepResponse {
-    pub decision: Decision,
+    pub decision: ProtocolSessionLifecyclePepResponseDecision,
 
     pub expires_at: String,
 
@@ -905,11 +795,11 @@ pub struct ProtocolSessionLifecyclePepResponse {
 
     pub protocol_session_id: String,
 
-    pub requested_mode: TedMode,
+    pub requested_mode: ProtocolSessionMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Decision {
+pub enum ProtocolSessionLifecyclePepResponseDecision {
     #[serde(rename = "ALLOW")]
     Allow,
 }
@@ -939,13 +829,13 @@ pub struct AdapterProtocolSessionLifecycleResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_session_ref: Option<String>,
 
-    pub native_state: NativeState,
+    pub native_state: AdapterProtocolSessionLifecycleResponseNativeState,
 
     pub protocol_session_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum NativeState {
+pub enum AdapterProtocolSessionLifecycleResponseNativeState {
     #[serde(rename = "ABSENT")]
     Absent,
 
@@ -965,17 +855,17 @@ pub struct ProtocolSessionPepRequest {
 
     pub native_object_ref: String,
 
-    pub native_operation: NativeOperation,
+    pub native_operation: ProtocolSessionPepRequestNativeOperation,
 
     pub protocol_session_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub write_observation: Option<WriteObservationClass>,
+    pub write_observation: Option<ProtocolWriteObservation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum NativeOperation {
+pub enum ProtocolSessionPepRequestNativeOperation {
     Observe,
 
     Open,
@@ -991,16 +881,56 @@ pub enum NativeOperation {
     Write,
 }
 
+/// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+/// file bytes or an authorization grant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolWriteObservation {
+    pub base_modified_at: String,
+
+    pub bytes_written: i64,
+
+    pub correlation_ref: String,
+
+    pub editors: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_etag: Option<String>,
+
+    pub phase: ProtocolWriteObservationPhase,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProtocolWriteObservationPhase {
+    #[serde(rename = "ACCEPTED")]
+    Accepted,
+
+    #[serde(rename = "CONFLICT")]
+    Conflict,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "STARTED")]
+    Started,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
 /// Original Session facts, not native revision existence or write success. Cells must still
 /// query its exact VersionId and ACLs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolSessionPepResponse {
-    pub admitted_mode: TedMode,
+    pub admitted_mode: ProtocolSessionMode,
 
     pub base_revision: String,
 
-    pub decision: Decision,
+    pub decision: ProtocolSessionLifecyclePepResponseDecision,
 
     pub display_name: String,
 
@@ -1030,28 +960,6 @@ pub struct ProtocolSessionPepResponse {
     /// origin refuses its editor projection.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_message_origin: Option<String>,
-}
-
-/// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
-/// file bytes or an authorization grant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolWriteObservation {
-    pub base_modified_at: String,
-
-    pub bytes_written: i64,
-
-    pub correlation_ref: String,
-
-    pub editors: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_etag: Option<String>,
-
-    pub phase: Phase,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_revision: Option<String>,
 }
 
 /// Receipt of native write evidence. It grants no read or write permission.
@@ -1095,19 +1003,19 @@ pub struct AdapterQueryRevisionRequest {
     pub native_object_ref: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_reconcile: Option<ProtocolReconcileClass>,
+    pub protocol_reconcile: Option<ProtocolRevisionQuery>,
 }
 
 /// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
 /// VersionId，不提供文件字节或当前权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProtocolReconcileClass {
+pub struct ProtocolRevisionQuery {
     pub base_revision: String,
 
     pub protocol_session_id: String,
 
-    pub write_observation: WriteObservationClass,
+    pub write_observation: ProtocolWriteObservation,
 }
 
 ///
@@ -1124,59 +1032,6 @@ pub struct AdapterQueryRevisionResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_session_id: Option<String>,
-}
-
-/// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
-/// read batch. Input is checked against the approved source action schema; Core retains its
-/// digest, not the returned business content.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AdapterReadGrantRequest {
-    pub action_key: String,
-
-    pub action_version: i64,
-
-    pub idempotency_key: String,
-
-    pub input_json: String,
-
-    /// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
-    /// exactly one mode, freezes these references, and resolves the receiver from its
-    /// authenticated binding.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_batch: Option<NativeBatch>,
-
-    /// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
-    /// receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observe_action_execution_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_action_execution_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_arguments_json: Option<String>,
-
-    pub receiver_binding_id: String,
-
-    pub source_resource_id: String,
-}
-
-/// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
-/// exactly one mode, freezes these references, and resolves the receiver from its
-/// authenticated binding.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeBatch {
-    pub action_key: String,
-
-    pub action_version: i64,
-
-    pub batch_id: String,
-
-    pub import_config_ref: String,
-
-    pub receiver_resource_id: String,
 }
 
 /// DD-89: short-lived source Adapter authorization, not native credentials or proof that the
@@ -1203,7 +1058,7 @@ pub struct AdapterReadGrantResponse {
     /// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
     /// UNKNOWN/PENDING carry no renewed authorization.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub outcome: Option<Outcome>,
+    pub outcome: Option<AdapterReadGrantResponseOutcome>,
 
     /// 仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1220,7 +1075,7 @@ pub struct AdapterReadGrantResponse {
     /// perform the existing authenticated PEP check with this token immediately before its
     /// write; issuance is not completion.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_write: Option<ReceiverWrite>,
+    pub receiver_write: Option<AdapterReadGrantResponseReceiverWrite>,
 
     pub source_binding_id: String,
 
@@ -1232,7 +1087,7 @@ pub struct AdapterReadGrantResponse {
 /// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
 /// UNKNOWN/PENDING carry no renewed authorization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Outcome {
+pub enum AdapterReadGrantResponseOutcome {
     #[serde(rename = "COMPLETED")]
     Completed,
 
@@ -1262,7 +1117,7 @@ pub struct AdapterReadReceipt {
 
     pub idempotency_key: String,
 
-    pub measurements: Vec<AdapterReadReceiptMeasurement>,
+    pub measurements: Vec<AdapterReadReceiptMeasurementsItem>,
 
     pub native_object_ref: String,
 
@@ -1275,7 +1130,7 @@ pub struct AdapterReadReceipt {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterReadReceiptMeasurement {
+pub struct AdapterReadReceiptMeasurementsItem {
     pub meter_key: String,
 
     pub quantity: i64,
@@ -1295,7 +1150,7 @@ pub enum ApplicationReadResourceDirection {
 /// write; issuance is not completion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReceiverWrite {
+pub struct AdapterReadGrantResponseReceiverWrite {
     pub action_execution_id: String,
 
     pub action_token: String,
@@ -1305,889 +1160,183 @@ pub struct ReceiverWrite {
     pub expires_at: i64,
 }
 
-/// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+/// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
+/// Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterScopeObservation {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_ref: Option<String>,
+pub struct AgentActiveTurnPage {
+    pub turns: Vec<AgentActiveTurnView>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_type: Option<String>,
-
-    pub platform_resource_ref: String,
-
-    pub result: NativeScopeResult,
+    pub workspace_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum NativeScopeResult {
-    #[serde(rename = "ABSENT_FENCED")]
-    AbsentFenced,
-
-    Found,
-
-    Refused,
-}
-
-/// Actual native planner source within the existing execution binding. Metadata only:
-/// neither SQL/content nor a grant. The original action and result-exposure authority must
-/// authorize every resolved Resource.
+/// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+/// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterSourceResource {
-    pub native_ref: String,
+pub struct AgentActiveTurnView {
+    /// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_pubkey: Option<String>,
 
-    pub native_type: String,
+    /// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+    /// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_action_key: Option<String>,
+
+    pub installation_id: String,
+
+    pub invocation_id: String,
+
+    /// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+    pub original_action_execution_id: String,
+
+    pub projection_generation: i64,
+
+    /// AgentSession 根引用。
+    pub root_event_id: String,
+
+    /// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+
+    /// AgentSession 的原生 thread ID。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+
+    /// 已记录的原生 turn ID；派发结果尚未记录时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
 }
 
-/// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
-/// actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
+/// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ActionCommand {
-    pub action_key: String,
-
-    /// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_version_content: Option<ContentClass>,
+pub struct AgentDefinitionPage {
+    pub definitions: Vec<AgentDefinitionView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_binding_create: Option<ApplicationBindingCreateClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_binding_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_binding_version: Option<i64>,
-
-    /// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asset_id: Option<String>,
-
-    /// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asset_version: Option<i64>,
-
-    /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_version_content: Option<AutomationVersionContentClass>,
-
-    /// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
-    /// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
-    /// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding_secret_values: Option<Vec<ActionCommandBindingSecretValue>>,
-
-    /// 仅 capability_contract.approve/deprecate：固定已登记版本。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_contract_ref: Option<CapabilityContractRefClass>,
-
-    /// 仅 capability_contract.register：真实 schema 与测试向量内容。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_contract_registration: Option<CapabilityContractRegistrationClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_action: Option<ComponentActionClass>,
-
-    /// 仅组件批准：已登记的不可变ComponentRelease标识。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_release_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_release_registration: Option<ComponentReleaseRegistrationClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conversation_open: Option<ConversationOpenClass>,
-
-    /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_grant: Option<ParametersClass>,
-
-    /// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_id: Option<String>,
-
-    /// 仅 revoke：调用方实际读取的 Grant 版本。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_version: Option<i64>,
-
-    /// 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub executor_installation_resource_id: Option<String>,
-
-    /// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
-    /// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub explicit_confirmation: Option<bool>,
-
-    /// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
-    /// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub grant_permission: Option<ResourceGrantPermission>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_agent: Option<HuddleAgentClass>,
-
-    /// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
-    /// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_start: Option<HuddleStartClass>,
-
-    /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
-    pub idempotency_key: String,
-
-    /// tenant.member.invite.revoke 的目标邀请
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub invitation_id: Option<String>,
-
-    /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub llm_route_create: Option<LlmRouteCreateClass>,
-
-    /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
-    /// 输入；其他命令禁止携带。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory_write: Option<MemoryWriteClass>,
-
-    /// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
-    /// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_event_id: Option<String>,
-
-    /// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
-    /// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
-    /// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
-    /// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_member: Option<ActionCommandModerationMember>,
-
-    /// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
-    /// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
-    /// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_report: Option<ActionCommandModerationReport>,
-
-    /// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
-    /// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_resolution: Option<ActionCommandModerationResolution>,
-
-    /// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
-    /// 回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
-    /// DD-84），其余规则不变
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub original_action_execution_id: Option<String>,
-
-    /// 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
-    /// Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub principal_id: Option<String>,
-
-    /// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
-    /// identity; no Agent or caller-selected native credentials.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_session_open: Option<ProtocolSessionOpenClass>,
-
-    /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-    /// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
-    /// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_resource: Option<ActionCommandReceiverResource>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ResourceCreateClass>,
-
-    /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
-    /// agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
-    /// explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
-    /// 解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
-    /// agent.installation.upgrade
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_id: Option<String>,
-
-    /// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_version: Option<i64>,
-
-    /// workspace.create 或 agent.definition.create 的稳定 slug
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<String>,
-
-    /// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_event_id: Option<String>,
-
-    /// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_id: Option<String>,
-
-    /// 仅 tenant.quota.set（DD-123）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_quota_setting: Option<TenantQuotaSettingClass>,
-
-    /// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
-    /// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_canvas: Option<WorkspaceCanvasClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_channel: Option<WorkspaceChannelClass>,
-
-    /// Workspace 内动作的执行 Workspace
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-
-    /// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
-    /// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_update: Option<WorkspaceUpdateClass>,
-
-    /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_visibility: Option<WorkspaceVisibility>,
+    pub next_offset: Option<i64>,
 }
 
-/// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
-///
-/// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
-/// environment。发布不等于安装或运行授权。
+/// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContentClass {
-    /// 精确 contract_key@version，不引用业务能力实现名。
-    pub capability_requirements: Vec<String>,
-
-    pub declared_tool_resource_ids: Vec<String>,
-
-    pub instructions: String,
-
-    pub memory_policy: ContentMemoryPolicy,
-
-    pub model_route_resource_id: String,
-
-    pub parallelism: i64,
-
-    pub persona_identity: ContentPersonaIdentity,
-
-    /// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
-    pub reply_policy: String,
-
-    pub runtime_profile_key: String,
-
-    pub skill_version_asset_ids: Vec<String>,
-
-    pub trigger_defaults: Vec<AgentTrigger>,
-
-    pub turn_limits: ContentTurnLimits,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentMemoryPolicy {
-    pub cold_write: AgentMemoryColdWrite,
-
-    pub core_write: AgentMemoryCoreWrite,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AgentMemoryColdWrite {
-    Disabled,
-
-    #[serde(rename = "INVOCATION_SCOPED")]
-    InvocationScoped,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AgentMemoryCoreWrite {
-    #[serde(rename = "AGENT_WITH_APPROVAL")]
-    AgentWithApproval,
-
-    #[serde(rename = "HUMAN_ONLY")]
-    HumanOnly,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentPersonaIdentity {
+pub struct AgentDefinitionView {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar_url: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub current_published_version_asset_id: Option<String>,
 
     pub display_name: String,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub stable_slug: String,
+
+    pub status: String,
 }
 
+/// 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AgentTrigger {
-    #[serde(rename = "MANUAL_ASSIGNMENT")]
-    ManualAssignment,
+pub enum ResourceState {
+    Active,
 
-    Mention,
+    Deleted,
+
+    Deleting,
+
+    Failed,
+
+    Provisioning,
+
+    #[serde(rename = "RETAINED_READ_ONLY")]
+    RetainedReadOnly,
+
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContentTurnLimits {
-    pub idle_timeout_seconds: i64,
+pub struct AgentDelegationPage {
+    pub can_grant: bool,
 
-    pub max_turn_duration_seconds: i64,
-}
+    pub can_revoke: bool,
 
-/// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
-/// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingCreateClass {
-    pub adapter_service_ref: String,
+    pub grants: Vec<AgentDelegationView>,
 
-    pub binding_id: String,
-
-    pub call_identity_mode: ApplicationCallIdentityMode,
-
-    pub capability_categories: Vec<ApplicationBindingCreateCapabilityCategory>,
-
-    pub component_release_id: String,
-
-    pub isolation_mode: ApplicationIsolationMode,
-
-    pub model_call_mode: ApplicationModelCallMode,
-
-    pub native_instance_ref: String,
+    pub installation_resource_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_scope_ref: Option<String>,
+    pub next_offset: Option<i64>,
 
-    pub normalized_config_json: String,
+    pub resource_version: i64,
 
-    pub retain_on_tenant_delete: bool,
-
-    /// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
-    /// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
-    /// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
-    pub secret_refs: Vec<ApplicationBindingCreateSecretRef>,
-
-    pub service_principal_id: String,
+    pub workspace_id: String,
 }
 
+/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+/// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDelegationView {
+    pub delegation_id: String,
+
+    pub delegation_version: i64,
+
+    /// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+    /// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+    /// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+    pub effective_state: DelegationEffectiveState,
+
+    pub grantor_principal_id: String,
+
+    pub parameters: DelegationGrantParameters,
+
+    pub state: AgentDelegationViewState,
+
+    /// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by_delegation_id: Option<String>,
+
+    pub uses: i64,
+}
+
+/// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+/// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+/// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ApplicationCallIdentityMode {
-    #[serde(rename = "END_USER_TOKEN")]
-    EndUserToken,
+pub enum DelegationEffectiveState {
+    Active,
 
-    #[serde(rename = "INSTANCE_SERVICE")]
-    InstanceService,
+    Expired,
 
-    #[serde(rename = "TENANT_SERVICE")]
-    TenantService,
-}
+    #[serde(rename = "NEEDS_RENEWAL")]
+    NeedsRenewal,
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ApplicationBindingCreateCapabilityCategory {
-    pub category: String,
+    #[serde(rename = "NOT_YET_VALID")]
+    NotYetValid,
 
-    pub version: i64,
-}
+    Revoked,
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ApplicationModelCallMode {
-    None,
+    Revoking,
 
-    #[serde(rename = "PLATFORM_LLM_ROUTE")]
-    PlatformLlmRoute,
+    Superseded,
 
-    #[serde(rename = "SELF_MANAGED_MODEL")]
-    SelfManagedModel,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingCreateSecretRef {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub secret_key: String,
-
-    pub version: i64,
-}
-
-/// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
-///
-/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
-/// 配置或凭据。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationVersionContentClass {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<ContentAction>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<ApprovalPolicyElement>,
-
-    /// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub format_version: Option<i64>,
-
-    /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    pub result_target: AutomationResultTarget,
-
-    ///
-    /// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub steps: Option<Vec<StepElement>>,
-
-    pub trigger: ContentTrigger,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ContentAction {
-    pub kind: ActionKind,
-
-    pub template: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ActionKind {
-    #[serde(rename = "AGENT_TURN")]
-    AgentTurn,
-
-    #[serde(rename = "POST_MESSAGE")]
-    PostMessage,
-}
-
-/// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
-///
-/// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ApprovalPolicyElement {
-    pub id: String,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AutomationResultTarget {
-    Channel,
-
-    #[serde(rename = "TRIGGER_THREAD")]
-    TriggerThread,
-}
-
-/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
-/// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StepElement {
-    pub action: ActionEnum,
-
-    /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<ApprovalPolicyElement>,
-
-    /// 原请求体模板；不保存响应正文。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<String>,
-
-    /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub emoji: Option<String>,
-
-    /// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
-    /// 者）不得明文保存，必须改用 secretHeaders。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<HashMap<String, String>>,
-
-    pub id: String,
-
-    /// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
-    /// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
-    /// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
-    /// ActionExecution；求值错误使该运行在任何副作用前失败。
-    #[serde(rename = "if")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_step_if: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-
-    /// 原 HTTP 方法，缺省 POST。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub method: Option<StepMethod>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
-    /// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret_headers: Option<HashMap<String, SecretHeaderValue>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-
-    /// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
-    /// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
-    /// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
-    /// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
-    #[serde(rename = "timeout_secs")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_secs: Option<i64>,
-
-    /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
-
-    /// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
-    /// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
-    /// AgentGateway 出站，不跟随重定向。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActionEnum {
-    #[serde(rename = "add_reaction")]
-    AddReaction,
-
-    #[serde(rename = "call_webhook")]
-    CallWebhook,
-
-    Delay,
-
-    #[serde(rename = "request_approval")]
-    RequestApproval,
-
-    #[serde(rename = "send_message")]
-    SendMessage,
-
-    #[serde(rename = "set_channel_topic")]
-    SetChannelTopic,
-}
-
-/// 原 HTTP 方法，缺省 POST。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum StepMethod {
-    #[serde(rename = "DELETE")]
-    Delete,
-
-    #[serde(rename = "GET")]
-    Get,
-
-    #[serde(rename = "PATCH")]
-    Patch,
-
-    #[serde(rename = "POST")]
-    Post,
-
-    #[serde(rename = "PUT")]
-    Put,
-}
-
-/// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SecretHeaderValue {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentTrigger {
-    /// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub emoji: Option<String>,
-
-    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
-    /// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
-    /// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-
-    pub kind: AutomationTriggerKind,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mention_principal_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schedule_spec: Option<ScheduleSpecClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text_prefix: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AutomationTriggerKind {
-    #[serde(rename = "CHANNEL_MESSAGE")]
-    ChannelMessage,
-
-    #[serde(rename = "DIFF_POSTED")]
-    DiffPosted,
-
-    Mention,
-
-    #[serde(rename = "REACTION_ADDED")]
-    ReactionAdded,
-
-    Schedule,
-
-    Webhook,
-}
-
-/// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
-/// 固定 SKIP。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScheduleSpecClass {
-    pub catchup_window_seconds: i64,
-
-    /// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cron: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub every_seconds: Option<i64>,
-
-    /// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ScheduleSpecKind>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset_seconds: Option<i64>,
-}
-
-/// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ScheduleSpecKind {
-    #[serde(rename = "CRON")]
-    Cron,
-
-    #[serde(rename = "INTERVAL")]
-    Interval,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionCommandBindingSecretValue {
-    pub secret_key: String,
-
-    pub value: String,
-}
-
-/// 仅 capability_contract.approve/deprecate：固定已登记版本。
-///
-/// 固定 Catalog 自然键，不授予业务能力 consume 权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRefClass {
-    pub category_key: String,
-
-    pub contract_version: i64,
-}
-
-/// 仅 capability_contract.register：真实 schema 与测试向量内容。
-///
-/// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationClass {
-    pub category_key: String,
-
-    pub content_reference_semantics: CapabilityContractRegistrationContentReferenceSemantics,
-
-    pub contract_version: i64,
-
-    pub operation_contracts: Vec<CapabilityContractRegistrationOperationContract>,
-
-    pub protocol_session_kinds: Vec<String>,
-
-    pub required_declarations: Vec<CapabilityRequiredDeclaration>,
-
-    pub resource_type_family: Vec<CapabilityContractRegistrationResourceTypeFamily>,
-
-    pub schema_documents: Vec<String>,
-
-    /// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
-    /// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
-    pub test_vectors_json: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationContentReferenceSemantics {
-    pub authorization_target_rule: String,
-
-    pub native_object_ref_rule: String,
-
-    pub native_revision_rule: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationOperationContract {
-    pub contract_key: String,
-
-    pub input_schema_digest: String,
-
-    pub output_schema_digest: String,
-
-    pub permission: CapabilityPermission,
-
-    pub surface: CapabilitySurface,
-
-    pub target_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CapabilityPermission {
-    Approve,
-
-    Audit,
-
-    Consume,
-
-    Create,
-
-    Delegate,
-
-    Delete,
-
-    Discover,
-
-    Execute,
-
-    Export,
-
-    Manage,
-
-    Read,
-
-    Share,
-
-    #[serde(rename = "transfer_owner")]
-    TransferOwner,
-
-    Update,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CapabilitySurface {
-    #[serde(rename = "ACTION")]
-    Action,
-
-    #[serde(rename = "TOOL")]
-    Tool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CapabilityRequiredDeclaration {
-    Cancel,
-
-    Meter,
-
-    Observe,
-
-    #[serde(rename = "ONLINE_EDITING")]
-    OnlineEditing,
-
-    #[serde(rename = "READ_EDGE")]
-    ReadEdge,
-
-    #[serde(rename = "REVISION_QUERY")]
-    RevisionQuery,
-
-    #[serde(rename = "TENANT_DELETE")]
-    TenantDelete,
-
-    #[serde(rename = "VERSIONED_MODEL")]
-    VersionedModel,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationResourceTypeFamily {
-    pub kind: String,
-
-    pub type_key: String,
-}
-
-/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
-/// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
-/// 仍校验原目标、能力 schema、审批和用量。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentActionClass {
-    pub action_version: i64,
-
-    /// Canonical JSON for the existing registered capability input schema; mutually exclusive
-    /// with inputReference, validated before AE admission.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_json: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_reference: Option<ReferenceElement>,
-
-    pub result_exposure_policy_id: String,
-
-    pub result_exposure_policy_version: i64,
-}
-
-/// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
-/// Worker 独立执行隔离套件。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentReleaseRegistrationClass {
-    pub binding_config_schema_json: String,
-
-    pub manifest_json: String,
-
-    pub package_json: String,
-}
-
-/// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationOpenClass {
-    pub participant_principal_ids: Vec<String>,
+    #[serde(rename = "USES_EXHAUSTED")]
+    UsesExhausted,
 }
 
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ParametersClass {
+pub struct DelegationGrantParameters {
     pub expires_at: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2201,7 +1350,7 @@ pub struct ParametersClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renews_delegation_version: Option<i64>,
 
-    pub scopes: Vec<ScopeElement>,
+    pub scopes: Vec<DelegationScopeParameters>,
 
     pub valid_from: String,
 }
@@ -2209,7 +1358,7 @@ pub struct ParametersClass {
 /// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScopeElement {
+pub struct DelegationScopeParameters {
     pub action_key: String,
 
     pub action_version: i64,
@@ -2221,7 +1370,7 @@ pub struct ScopeElement {
 
     pub redaction_policy: String,
 
-    pub result_exposure_mode: ResultExposureMode,
+    pub result_exposure_mode: DelegationScopeParametersResultExposureMode,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_id: Option<String>,
@@ -2234,7 +1383,7 @@ pub struct ScopeElement {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ResultExposureMode {
+pub enum DelegationScopeParametersResultExposureMode {
     #[serde(rename = "CONSUME_ONLY")]
     ConsumeOnly,
 
@@ -2243,482 +1392,10 @@ pub enum ResultExposureMode {
     Read,
 }
 
-/// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
-/// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResourceGrantPermission {
-    Consume,
-
-    Discover,
-
-    Execute,
-
-    Read,
-}
-
-/// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
-/// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
-/// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
-/// Agent。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HuddleAgentClass {
-    pub agent_installation_resource_id: String,
-}
-
-/// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
-/// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
-/// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
-/// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
-/// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
-/// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HuddleStartClass {
-    /// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
-    /// ChannelAgentBinding 且本人有 execute 的 Installation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_installation_resource_ids: Option<Vec<String>>,
-
-    /// 原 buildHuddleChannelName 生成的临时频道名
-    pub channel_name: String,
-
-    /// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub creator_pubkey: Option<String>,
-
-    /// 父私聊（ConversationBuzzBinding id）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_conversation_id: Option<String>,
-
-    /// 父 Workspace；须等于 ActionCommand.workspaceId
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_workspace_id: Option<String>,
-}
-
-/// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
-///
-/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
-/// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LlmRouteCreateClass {
-    pub model: Model,
-
-    pub provider: Model,
-
-    pub provider_credential_mode: LlmProviderCredentialMode,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_secret_ref: Option<LlmRouteCreateProviderSecretRef>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Model {
-    pub id: String,
-
-    pub revision: i64,
-
-    pub sha256: String,
-}
-
-/// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum LlmProviderCredentialMode {
-    None,
-
-    #[serde(rename = "SECRET_REF")]
-    SecretRef,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LlmRouteCreateProviderSecretRef {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub version: i64,
-}
-
-/// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
-/// 输入；其他命令禁止携带。
-///
-/// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryWriteClass {
-    /// entry.patch 当前原生 value 的 SHA-256。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_hash: Option<String>,
-
-    /// 调用方实际读取的 head；null 只表示原生确认不存在。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_head_event_id: Option<String>,
-
-    /// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-    pub expected_head_state: ExpectedHeadState,
-
-    /// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub patch: Option<String>,
-
-    pub slug: String,
-
-    /// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
-}
-
-/// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ExpectedHeadState {
-    #[serde(rename = "ABSENT")]
-    Absent,
-
-    #[serde(rename = "FOUND")]
-    Found,
-}
-
-/// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
-/// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
-/// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
-/// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionCommandModerationMember {
-    /// 64 位小写十六进制 Nostr 公钥
-    pub target_pubkey: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_duration: Option<ModerationTimeoutDuration>,
-}
-
-/// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
-/// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ModerationTimeoutDuration {
-    #[serde(rename = "ONE_DAY")]
-    OneDay,
-
-    #[serde(rename = "ONE_HOUR")]
-    OneHour,
-
-    #[serde(rename = "SEVEN_DAYS")]
-    SevenDays,
-}
-
-/// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
-/// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
-/// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionCommandModerationReport {
-    /// 消息所在私聊；本人须为其当前参与者
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conversation_id: Option<String>,
-
-    /// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
-    pub event_id: String,
-
-    /// 原“补充说明（可选）”，至多 1000 字符
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-
-    pub report_type: ModerationReportType,
-
-    /// 消息所在 Workspace Channel；本人须为其当前成员
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-}
-
-/// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
-/// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModerationReportType {
-    Illegal,
-
-    Impersonation,
-
-    Malware,
-
-    Nudity,
-
-    Other,
-
-    Profanity,
-
-    Spam,
-}
-
-/// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
-/// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionCommandModerationResolution {
-    pub report_event_ids: Vec<String>,
-
-    pub resolution_action: ModerationResolutionAction,
-
-    pub status: ModerationResolutionStatus,
-}
-
-/// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
-/// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModerationResolutionAction {
-    Ban,
-
-    Delete,
-
-    Dismiss,
-
-    Escalate,
-
-    Kick,
-}
-
-/// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
-/// resolved。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModerationResolutionStatus {
-    Dismissed,
-
-    Resolved,
-}
-
-/// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
-/// identity; no Agent or caller-selected native credentials.
-///
-/// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
-/// Revision and presentation are frozen once; session expiry comes from controlled Core
-/// delivery.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolSessionOpenClass {
-    pub action_version: i64,
-
-    /// The selected native source binding; must equal the target's real binding, not an
-    /// authorization claim.
-    pub application_binding_id: String,
-
-    pub locale: Locale,
-
-    /// Exact approved projection selected by the native menu; never latest.
-    pub projection_generation: i64,
-
-    pub reference: ReferenceElement,
-
-    pub theme: Theme,
-}
-
-/// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-/// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
-/// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ActionCommandReceiverResource {
-    pub id: String,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResourceCreateClass {
-    pub evidence_digest: String,
-
-    pub evidence_ref: String,
-
-    pub native_ref: String,
-
-    pub native_type: String,
-
-    pub type_key: String,
-}
-
-/// 仅 tenant.quota.set（DD-123）
-///
-/// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-/// OpenMeter entitlement for the platform feature, resetting monthly.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TenantQuotaSettingClass {
-    pub feature: TenantQuotaFeature,
-
-    pub limit_per_period: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TenantQuotaFeature {
-    #[serde(rename = "agent_memory_writes")]
-    AgentMemoryWrites,
-
-    #[serde(rename = "agent_tokens")]
-    AgentTokens,
-
-    #[serde(rename = "automation_runs")]
-    AutomationRuns,
-}
-
-/// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
-/// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
-///
-/// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
-/// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
-/// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WorkspaceCanvasClass {
-    pub content: String,
-}
-
-/// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceChannelClass {
-    pub channel_type: ChannelType,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<i64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChannelType {
-    Forum,
-
-    Stream,
-}
-
-/// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
-/// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
-///
-/// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
-/// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
-/// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceUpdateClass {
-    /// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub clear_ttl: Option<bool>,
-
-    /// 原 9002 about；空字符串清空描述。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
-    /// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reopen: Option<bool>,
-
-    /// 设置原 Buzz 临时频道的不活跃期限（秒）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<i64>,
-
-    /// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visibility: Option<WorkspaceVisibility>,
-}
-
-/// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-///
-/// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
-///
-/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-///
-/// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkspaceVisibility {
-    Open,
-
-    Private,
-}
-
-/// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
-/// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
-/// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionSubmission {
-    pub action_execution_id: String,
-
-    pub action_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_workflow_id: Option<String>,
-
-    pub dispatch_state: ActionDispatchState,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub document_launch: Option<LaunchDescriptorClass>,
-
-    pub gate_state: ActionGateState,
-
-    /// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub invitation: Option<InvitationClass>,
-
-    pub operation_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_session_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<ReasonCode>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_secret: Option<WebhookSecretClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
-}
-
-/// ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
-/// seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ActionDispatchState {
-    Aborted,
-
-    Dispatched,
-
-    #[serde(rename = "NOT_DISPATCHED")]
-    NotDispatched,
-
-    Unknown,
-}
-
-/// ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
-/// 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ActionGateState {
-    #[serde(rename = "ALLOWED")]
-    Allowed,
-
-    #[serde(rename = "DENIED")]
-    Denied,
-
-    #[serde(rename = "EVALUATING")]
-    Evaluating,
+pub enum AgentDelegationViewState {
+    #[serde(rename = "ACTIVE")]
+    Active,
 
     #[serde(rename = "EXPIRED")]
     Expired,
@@ -2726,22 +1403,331 @@ pub enum ActionGateState {
     #[serde(rename = "REVOKED")]
     Revoked,
 
-    #[serde(rename = "WAITING")]
-    Waiting,
+    #[serde(rename = "REVOKING")]
+    Revoking,
+
+    #[serde(rename = "SUPERSEDED")]
+    Superseded,
 }
 
-/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+/// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InvitationClass {
-    /// RFC3339，UTC
-    pub expires_at: String,
+pub struct AgentDelegationTargetPage {
+    pub installation_resource_id: String,
 
-    pub invitation_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
 
-    /// 部署登记的链接基址 + '#' + 一次性凭据
-    pub link: String,
+    pub resource_version: i64,
+
+    pub scopes: Vec<DelegationScopeParameters>,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationCandidatePage {
+    /// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+    pub can_create: bool,
+
+    pub candidates: Vec<AgentInstallationCandidate>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub workspace_id: String,
+}
+
+/// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationCandidate {
+    pub agent_resource_id: String,
+
+    pub agent_version_asset_id: String,
+
+    pub asset_version: i64,
+
+    pub display_name: String,
+
+    pub ordinal: i64,
+
+    pub resource_version: i64,
+}
+
+/// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationPage {
+    pub installations: Vec<AgentInstallationView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+/// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+/// 正文、执行或管理权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_projection_generation: Option<i64>,
+
+    /// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+    /// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_display_name: Option<String>,
+
+    pub agent_principal_id: String,
+
+    pub agent_principal_state: AgentInstallationViewAgentPrincipalState,
+
+    /// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+    /// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_pubkey: Option<String>,
+
+    pub agent_resource_id: String,
+
+    /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+    /// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+    /// 准入。缺失或空集合不支持 Schedule。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
+
+    /// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+    /// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_audit: Option<bool>,
+
+    /// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+    /// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+    /// explicitConfirmation。不代表已准入，旧服务缺省不显示。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_disable: Option<bool>,
+
+    /// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+    /// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_enable: Option<bool>,
+
+    /// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+    /// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+    /// PUBLISHED 时为 true；仍沿升级审批与排空。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_restart: Option<bool>,
+
+    /// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_upgrade: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_binding: Option<AgentInstallationViewChannelBinding>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_permission: Option<AgentInstallationViewExecutionPermission>,
+
+    pub owner_principal_id: String,
+
+    pub pinned_version_asset_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<AgentInstallationProjectionView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_permission: Option<AgentInstallationViewReadPermission>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub state: AgentInstallationState,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentInstallationViewAgentPrincipalState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AutomationResultTarget {
+    Channel,
+
+    #[serde(rename = "TRIGGER_THREAD")]
+    TriggerThread,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewChannelBinding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    pub status: AgentInstallationViewChannelBindingStatus,
+
+    pub triggers: Vec<AgentTrigger>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentInstallationViewChannelBindingStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "ERROR")]
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentTrigger {
+    #[serde(rename = "MANUAL_ASSIGNMENT")]
+    ManualAssignment,
+
+    Mention,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewExecutionPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
+}
+
+/// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationProjectionView {
+    pub agent_version_asset_id: String,
+
+    pub config_hash: String,
+
+    pub generation: i64,
+
+    pub runtime_profile_key: String,
+
+    pub state: AgentRuntimeProjectionState,
+}
+
+/// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentRuntimeProjectionState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationViewReadPermission {
+    pub can_grant: bool,
+
+    pub can_revoke: bool,
+
+    pub effective: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_action_execution_id: Option<String>,
+
+    pub requested: bool,
+}
+
+/// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentInstallationState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "DRAINING")]
+    Draining,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+}
+
+/// DD-122: the tools an Agent Installation's current generation requests and their effective
+/// state. Read-only; grants happen only through installation create/upgrade.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationToolPage {
+    pub generation: i64,
+
+    pub installation_resource_id: String,
+
+    pub tools: Vec<AgentInstallationToolView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationToolView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_id: Option<String>,
+
+    pub binding_status: AgentToolBindingStatus,
+
+    /// APPLICATION only: the requested capability contract key@version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_requirement: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<ReasonCode>,
+
+    pub source: AgentInstallationToolSource,
+
+    /// Absent when an application capability requirement has no resolved provider yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_resource_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentToolBindingStatus {
+    Active,
+
+    #[serde(rename = "NO_PERMISSION")]
+    NoPermission,
+
+    Pending,
+
+    Revoked,
 }
 
 /// 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
@@ -2904,637 +1890,6 @@ pub enum ReasonCode {
     WaitingApproval,
 }
 
-/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebhookSecretClass {
-    pub automation_resource_id: String,
-
-    pub hint: String,
-
-    /// 32 字节随机密钥的 base64 展示形式。
-    pub secret: String,
-
-    /// 公开投递地址；部署未配置公开基址时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-
-/// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
-/// Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentActiveTurnPage {
-    pub turns: Vec<TurnElement>,
-
-    pub workspace_id: String,
-}
-
-/// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
-/// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TurnElement {
-    /// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_pubkey: Option<String>,
-
-    /// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
-    /// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_action_key: Option<String>,
-
-    pub installation_id: String,
-
-    pub invocation_id: String,
-
-    /// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
-    pub original_action_execution_id: String,
-
-    pub projection_generation: i64,
-
-    /// AgentSession 根引用。
-    pub root_event_id: String,
-
-    /// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<String>,
-
-    /// AgentSession 的原生 thread ID。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-
-    /// 已记录的原生 turn ID；派发结果尚未记录时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-}
-
-/// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
-/// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentActiveTurnView {
-    /// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_pubkey: Option<String>,
-
-    /// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
-    /// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_action_key: Option<String>,
-
-    pub installation_id: String,
-
-    pub invocation_id: String,
-
-    /// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
-    pub original_action_execution_id: String,
-
-    pub projection_generation: i64,
-
-    /// AgentSession 根引用。
-    pub root_event_id: String,
-
-    /// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<String>,
-
-    /// AgentSession 的原生 thread ID。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-
-    /// 已记录的原生 turn ID；派发结果尚未记录时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-}
-
-/// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDefinitionPage {
-    pub definitions: Vec<DefinitionElement>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_offset: Option<i64>,
-}
-
-/// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DefinitionElement {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_published_version_asset_id: Option<String>,
-
-    pub display_name: String,
-
-    pub owner_principal_id: String,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub stable_slug: String,
-
-    pub status: String,
-}
-
-/// 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ResourceState {
-    Active,
-
-    Deleted,
-
-    Deleting,
-
-    Failed,
-
-    Provisioning,
-
-    #[serde(rename = "RETAINED_READ_ONLY")]
-    RetainedReadOnly,
-
-    Unknown,
-}
-
-/// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDefinitionView {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_published_version_asset_id: Option<String>,
-
-    pub display_name: String,
-
-    pub owner_principal_id: String,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub stable_slug: String,
-
-    pub status: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDelegationPage {
-    pub can_grant: bool,
-
-    pub can_revoke: bool,
-
-    pub grants: Vec<GrantElement>,
-
-    pub installation_resource_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_offset: Option<i64>,
-
-    pub resource_version: i64,
-
-    pub workspace_id: String,
-}
-
-/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
-/// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GrantElement {
-    pub delegation_id: String,
-
-    pub delegation_version: i64,
-
-    /// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-    /// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-    /// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-    pub effective_state: DelegationEffectiveState,
-
-    pub grantor_principal_id: String,
-
-    pub parameters: ParametersClass,
-
-    pub state: GrantState,
-
-    /// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub superseded_by_delegation_id: Option<String>,
-
-    pub uses: i64,
-}
-
-/// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-/// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-/// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DelegationEffectiveState {
-    Active,
-
-    Expired,
-
-    #[serde(rename = "NEEDS_RENEWAL")]
-    NeedsRenewal,
-
-    #[serde(rename = "NOT_YET_VALID")]
-    NotYetValid,
-
-    Revoked,
-
-    Revoking,
-
-    Superseded,
-
-    #[serde(rename = "USES_EXHAUSTED")]
-    UsesExhausted,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum GrantState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "EXPIRED")]
-    Expired,
-
-    #[serde(rename = "REVOKED")]
-    Revoked,
-
-    #[serde(rename = "REVOKING")]
-    Revoking,
-
-    #[serde(rename = "SUPERSEDED")]
-    Superseded,
-}
-
-/// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDelegationTargetPage {
-    pub installation_resource_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_offset: Option<i64>,
-
-    pub resource_version: i64,
-
-    pub scopes: Vec<ScopeElement>,
-
-    pub workspace_id: String,
-}
-
-/// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
-/// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDelegationView {
-    pub delegation_id: String,
-
-    pub delegation_version: i64,
-
-    /// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-    /// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-    /// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-    pub effective_state: DelegationEffectiveState,
-
-    pub grantor_principal_id: String,
-
-    pub parameters: ParametersClass,
-
-    pub state: GrantState,
-
-    /// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub superseded_by_delegation_id: Option<String>,
-
-    pub uses: i64,
-}
-
-/// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationCandidate {
-    pub agent_resource_id: String,
-
-    pub agent_version_asset_id: String,
-
-    pub asset_version: i64,
-
-    pub display_name: String,
-
-    pub ordinal: i64,
-
-    pub resource_version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationCandidatePage {
-    /// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
-    pub can_create: bool,
-
-    pub candidates: Vec<CandidateElement>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_offset: Option<i64>,
-
-    pub workspace_id: String,
-}
-
-/// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CandidateElement {
-    pub agent_resource_id: String,
-
-    pub agent_version_asset_id: String,
-
-    pub asset_version: i64,
-
-    pub display_name: String,
-
-    pub ordinal: i64,
-
-    pub resource_version: i64,
-}
-
-/// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationPage {
-    pub installations: Vec<InstallationElement>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_offset: Option<i64>,
-}
-
-/// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
-/// 正文、执行或管理权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallationElement {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_projection_generation: Option<i64>,
-
-    /// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
-    /// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_display_name: Option<String>,
-
-    pub agent_principal_id: String,
-
-    pub agent_principal_state: AgentPrincipalState,
-
-    /// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
-    /// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_pubkey: Option<String>,
-
-    pub agent_resource_id: String,
-
-    /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
-    /// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
-    /// 准入。缺失或空集合不支持 Schedule。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
-
-    /// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
-    /// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_audit: Option<bool>,
-
-    /// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
-    /// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
-    /// explicitConfirmation。不代表已准入，旧服务缺省不显示。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_disable: Option<bool>,
-
-    /// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
-    /// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_enable: Option<bool>,
-
-    /// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
-    /// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
-    /// PUBLISHED 时为 true；仍沿升级审批与排空。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_restart: Option<bool>,
-
-    /// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_upgrade: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel_binding: Option<InstallationChannelBinding>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_permission: Option<InstallationExecutionPermission>,
-
-    pub owner_principal_id: String,
-
-    pub pinned_version_asset_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub projection: Option<ProjectionClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_permission: Option<InstallationReadPermission>,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub state: AgentInstallationState,
-
-    pub workspace_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum AgentPrincipalState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "DISABLED")]
-    Disabled,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallationChannelBinding {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel_id: Option<String>,
-
-    pub status: ChannelBindingStatus,
-
-    pub triggers: Vec<AgentTrigger>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ChannelBindingStatus {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "DISABLED")]
-    Disabled,
-
-    #[serde(rename = "ERROR")]
-    Error,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallationExecutionPermission {
-    pub can_grant: bool,
-
-    pub can_revoke: bool,
-
-    pub effective: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pending_action_execution_id: Option<String>,
-
-    pub requested: bool,
-}
-
-/// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectionClass {
-    pub agent_version_asset_id: String,
-
-    pub config_hash: String,
-
-    pub generation: i64,
-
-    pub runtime_profile_key: String,
-
-    pub state: AgentRuntimeProjectionState,
-}
-
-/// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum AgentRuntimeProjectionState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "ERROR")]
-    Error,
-
-    #[serde(rename = "PENDING")]
-    Pending,
-
-    #[serde(rename = "REVOKED")]
-    Revoked,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallationReadPermission {
-    pub can_grant: bool,
-
-    pub can_revoke: bool,
-
-    pub effective: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pending_action_execution_id: Option<String>,
-
-    pub requested: bool,
-}
-
-/// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum AgentInstallationState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "DISABLED")]
-    Disabled,
-
-    #[serde(rename = "DRAINING")]
-    Draining,
-
-    #[serde(rename = "ERROR")]
-    Error,
-
-    #[serde(rename = "PROVISIONING")]
-    Provisioning,
-}
-
-/// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationProjectionView {
-    pub agent_version_asset_id: String,
-
-    pub config_hash: String,
-
-    pub generation: i64,
-
-    pub runtime_profile_key: String,
-
-    pub state: AgentRuntimeProjectionState,
-}
-
-/// DD-122: the tools an Agent Installation's current generation requests and their effective
-/// state. Read-only; grants happen only through installation create/upgrade.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationToolPage {
-    pub generation: i64,
-
-    pub installation_resource_id: String,
-
-    pub tools: Vec<AgentInstallationToolView>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationToolView {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_binding_id: Option<String>,
-
-    pub binding_status: AgentToolBindingStatus,
-
-    /// APPLICATION only: the requested capability contract key@version.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_requirement: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason_code: Option<ReasonCode>,
-
-    pub source: AgentInstallationToolSource,
-
-    /// Absent when an application capability requirement has no resolved provider yet.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_resource_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum AgentToolBindingStatus {
-    Active,
-
-    #[serde(rename = "NO_PERMISSION")]
-    NoPermission,
-
-    Pending,
-
-    Revoked,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AgentInstallationToolSource {
@@ -3552,7 +1907,7 @@ pub enum AgentInstallationToolSource {
 pub struct AgentInstallationUsePage {
     pub installation_id: String,
 
-    pub members: Vec<Member>,
+    pub members: Vec<AgentInstallationUsePageMembersItem>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_action_execution_id: Option<String>,
@@ -3567,7 +1922,7 @@ pub struct AgentInstallationUsePage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Member {
+pub struct AgentInstallationUsePageMembersItem {
     pub can_grant: bool,
 
     pub can_revoke: bool,
@@ -3596,192 +1951,15 @@ pub enum AgentRespondToMode {
     OwnerOnly,
 }
 
-/// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
-/// 正文、执行或管理权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationView {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_projection_generation: Option<i64>,
-
-    /// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
-    /// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_display_name: Option<String>,
-
-    pub agent_principal_id: String,
-
-    pub agent_principal_state: AgentPrincipalState,
-
-    /// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
-    /// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_pubkey: Option<String>,
-
-    pub agent_resource_id: String,
-
-    /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
-    /// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
-    /// 准入。缺失或空集合不支持 Schedule。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
-
-    /// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
-    /// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_audit: Option<bool>,
-
-    /// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
-    /// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
-    /// explicitConfirmation。不代表已准入，旧服务缺省不显示。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_disable: Option<bool>,
-
-    /// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
-    /// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_enable: Option<bool>,
-
-    /// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
-    /// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
-    /// PUBLISHED 时为 true；仍沿升级审批与排空。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_restart: Option<bool>,
-
-    /// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_upgrade: Option<bool>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel_binding: Option<AgentInstallationViewChannelBinding>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_permission: Option<AgentInstallationViewExecutionPermission>,
-
-    pub owner_principal_id: String,
-
-    pub pinned_version_asset_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub projection: Option<ProjectionClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_permission: Option<AgentInstallationViewReadPermission>,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub state: AgentInstallationState,
-
-    pub workspace_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationViewChannelBinding {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel_id: Option<String>,
-
-    pub status: ChannelBindingStatus,
-
-    pub triggers: Vec<AgentTrigger>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationViewExecutionPermission {
-    pub can_grant: bool,
-
-    pub can_revoke: bool,
-
-    pub effective: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pending_action_execution_id: Option<String>,
-
-    pub requested: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentInstallationViewReadPermission {
-    pub can_grant: bool,
-
-    pub can_revoke: bool,
-
-    pub effective: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pending_action_execution_id: Option<String>,
-
-    pub requested: bool,
-}
-
 /// 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
 /// prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInvocationPage {
-    pub invocations: Vec<InvocationElement>,
+    pub invocations: Vec<AgentInvocationView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
-}
-
-/// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
-/// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InvocationElement {
-    pub action_execution_id: String,
-
-    pub cancel_pending: bool,
-
-    /// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
-    pub can_read_task: bool,
-
-    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-    pub created_at: String,
-
-    pub invocation_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observation: Option<ReasonCode>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub runtime_turn_id: Option<String>,
-
-    pub status: InvocationStatus,
-
-    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum InvocationStatus {
-    #[serde(rename = "CANCELED")]
-    Canceled,
-
-    #[serde(rename = "COMPLETED")]
-    Completed,
-
-    #[serde(rename = "CREATED")]
-    Created,
-
-    #[serde(rename = "DISPATCHING")]
-    Dispatching,
-
-    #[serde(rename = "FAILED")]
-    Failed,
-
-    #[serde(rename = "RUNNING")]
-    Running,
-
-    #[serde(rename = "UNKNOWN")]
-    Unknown,
 }
 
 /// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
@@ -3807,21 +1985,34 @@ pub struct AgentInvocationView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_turn_id: Option<String>,
 
-    pub status: InvocationStatus,
+    pub status: AgentInvocationViewStatus,
 
     /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
     pub updated_at: String,
 }
 
-/// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
-/// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentMemoryDanglingRefView {
-    /// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
-    pub referenced_by: Vec<String>,
+pub enum AgentInvocationViewStatus {
+    #[serde(rename = "CANCELED")]
+    Canceled,
 
-    pub slug: String,
+    #[serde(rename = "COMPLETED")]
+    Completed,
+
+    #[serde(rename = "CREATED")]
+    Created,
+
+    #[serde(rename = "DISPATCHING")]
+    Dispatching,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "RUNNING")]
+    Running,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 
 /// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
@@ -3829,7 +2020,7 @@ pub struct AgentMemoryDanglingRefView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentMemoryEntryPage {
-    pub entries: Vec<EntryElement>,
+    pub entries: Vec<AgentMemoryEntryView>,
 
     pub installation_resource_id: String,
 
@@ -3838,7 +2029,7 @@ pub struct AgentMemoryEntryPage {
     /// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
     /// 记忆工具结果省略，客户端保持 slug 顺序。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub references: Option<ReferencesClass>,
+    pub references: Option<AgentMemoryReferenceView>,
 
     pub state: AgentMemoryEntryPageState,
 
@@ -3849,7 +2040,7 @@ pub struct AgentMemoryEntryPage {
 /// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EntryElement {
+pub struct AgentMemoryEntryView {
     pub created_at: i64,
 
     pub event_id: String,
@@ -3872,7 +2063,7 @@ pub struct EntryElement {
 /// core、其引用树先序、未被引用者按 slug 排列。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferencesClass {
+pub struct AgentMemoryReferenceView {
     /// 本次读取存在 core head；false 时客户端显示“没有 core”。
     pub core_exists: bool,
 
@@ -3880,14 +2071,14 @@ pub struct ReferencesClass {
     pub core_refs: Vec<String>,
 
     /// 按目标 slug 排序。
-    pub dangling: Vec<DanglingElement>,
+    pub dangling: Vec<AgentMemoryDanglingRefView>,
 }
 
 /// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
 /// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DanglingElement {
+pub struct AgentMemoryDanglingRefView {
     /// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
     pub referenced_by: Vec<String>,
 
@@ -3903,25 +2094,6 @@ pub enum AgentMemoryEntryPageState {
     Complete,
 
     Unknown,
-}
-
-/// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
-/// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentMemoryEntryView {
-    pub created_at: i64,
-
-    pub event_id: String,
-
-    /// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
-    /// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub outgoing_refs: Option<Vec<String>>,
-
-    pub slug: String,
-
-    pub tombstone: bool,
 }
 
 /// DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
@@ -3969,22 +2141,6 @@ pub enum AgentMemoryReadViewState {
 
     #[serde(rename = "UNREADABLE")]
     Unreadable,
-}
-
-/// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
-/// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
-/// core、其引用树先序、未被引用者按 slug 排列。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentMemoryReferenceView {
-    /// 本次读取存在 core head；false 时客户端显示“没有 core”。
-    pub core_exists: bool,
-
-    /// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
-    pub core_refs: Vec<String>,
-
-    /// 按目标 slug 排序。
-    pub dangling: Vec<DanglingElement>,
 }
 
 /// DD-121: only agent.invoke executions initiated by the caller for the requested source
@@ -4042,48 +2198,7 @@ pub struct AgentSessionPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 
-    pub sessions: Vec<SessionElement>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionElement {
-    pub agent_version_asset_id: String,
-
-    /// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-    pub created_at: String,
-
-    pub installation_resource_id: String,
-
-    pub projection_generation: i64,
-
-    /// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
-    pub root_event_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub runtime_thread_id: Option<String>,
-
-    pub status: SessionStatus,
-
-    pub workspace_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum SessionStatus {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "CLOSED")]
-    Closed,
-
-    #[serde(rename = "PENDING")]
-    Pending,
-
-    #[serde(rename = "STARTING")]
-    Starting,
-
-    #[serde(rename = "UNKNOWN")]
-    Unknown,
+    pub sessions: Vec<AgentSessionView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4104,9 +2219,27 @@ pub struct AgentSessionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_thread_id: Option<String>,
 
-    pub status: SessionStatus,
+    pub status: AgentSessionViewStatus,
 
     pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentSessionViewStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "CLOSED")]
+    Closed,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+
+    #[serde(rename = "STARTING")]
+    Starting,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 
 /// GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
@@ -4124,7 +2257,7 @@ pub struct AgentTranscriptEvent {
 
     /// ITEM_STARTED / ITEM_COMPLETED 时给出。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<ItemElement>,
+    pub item: Option<AgentTranscriptItem>,
 
     pub phase: AgentTranscriptEventPhase,
 
@@ -4145,7 +2278,7 @@ pub struct AgentTranscriptEvent {
 /// 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ItemElement {
+pub struct AgentTranscriptItem {
     /// COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregated_output: Option<String>,
@@ -4179,7 +2312,7 @@ pub struct ItemElement {
 
     /// FILE_CHANGE 的逐文件变更。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_changes: Option<Vec<ItemFileChange>>,
+    pub file_changes: Option<Vec<AgentTranscriptFileChange>>,
 
     /// 原生 ThreadItem.id。
     pub item_id: String,
@@ -4233,7 +2366,7 @@ pub struct ItemElement {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ItemFileChange {
+pub struct AgentTranscriptFileChange {
     pub change_kind: AgentTranscriptFileChangeKind,
 
     /// 原生 unified diff 文本。
@@ -4342,113 +2475,6 @@ pub enum AgentTranscriptEventPhase {
     TurnStarted,
 }
 
-/// DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
-/// audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
-/// item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
-/// 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentTranscriptItem {
-    /// COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aggregated_output: Option<String>,
-
-    /// 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arguments_json: Option<String>,
-
-    /// COMMAND_EXECUTION 的命令。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
-
-    /// item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at_ms: Option<i64>,
-
-    /// COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-
-    /// COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration_ms: Option<i64>,
-
-    /// MCP_TOOL_CALL 的原生 error.message。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_text: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exit_code: Option<i64>,
-
-    /// FILE_CHANGE 的逐文件变更。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_changes: Option<Vec<AgentTranscriptItemFileChange>>,
-
-    /// 原生 ThreadItem.id。
-    pub item_id: String,
-
-    pub kind: AgentTranscriptItemKind,
-
-    /// 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
-    pub native_type: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub phase: Option<AgentTranscriptMessagePhase>,
-
-    /// WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-
-    /// REASONING 的原文段（原生提供时）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_content: Option<Vec<String>>,
-
-    /// REASONING 的 summary 段。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_summary: Option<Vec<String>>,
-
-    /// 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_text: Option<String>,
-
-    /// MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub server: Option<String>,
-
-    /// item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at_ms: Option<i64>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<AgentTranscriptItemStatus>,
-
-    /// USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-
-    /// MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool: Option<String>,
-
-    /// 所属原生 turn ID。
-    pub turn_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentTranscriptItemFileChange {
-    pub change_kind: AgentTranscriptFileChangeKind,
-
-    /// 原生 unified diff 文本。
-    pub diff: String,
-
-    /// UPDATE 改名时的目标路径。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub move_path: Option<String>,
-
-    pub path: String,
-}
-
 /// GET
 /// /api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按
 /// AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core
@@ -4458,11 +2484,11 @@ pub struct AgentTranscriptItemFileChange {
 #[serde(rename_all = "camelCase")]
 pub struct AgentTranscriptPage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_turn: Option<TurnElement>,
+    pub active_turn: Option<AgentActiveTurnView>,
 
     pub installation_id: String,
 
-    pub items: Vec<ItemElement>,
+    pub items: Vec<AgentTranscriptItem>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
@@ -4487,17 +2513,17 @@ pub struct AgentVersionConfigurationPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_offset: Option<i64>,
 
-    pub profiles: Vec<RuntimeProfileDirectorySchema>,
+    pub profiles: Vec<RuntimeProfileDirectoryProfilesItem>,
 
     pub resource_version: i64,
 
-    pub routes: Vec<RouteElement>,
+    pub routes: Vec<AgentVersionRouteOption>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeProfileDirectorySchema {
-    pub capability_contract: PurpleCapabilityContract,
+pub struct RuntimeProfileDirectoryProfilesItem {
+    pub capability_contract: RuntimeProfileDirectoryProfilesItemCapabilityContract,
 
     pub key: String,
 
@@ -4510,7 +2536,7 @@ pub struct RuntimeProfileDirectorySchema {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurpleCapabilityContract {
+pub struct RuntimeProfileDirectoryProfilesItemCapabilityContract {
     pub capability_requirements: Vec<String>,
 
     pub max_idle_timeout_seconds: i64,
@@ -4523,12 +2549,12 @@ pub struct PurpleCapabilityContract {
 
     /// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reply_policy_mappings: Option<Vec<PurpleRuntimeReplyPolicyMapping>>,
+    pub reply_policy_mappings: Option<Vec<RuntimeReplyPolicyMapping>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurpleRuntimeReplyPolicyMapping {
+pub struct RuntimeReplyPolicyMapping {
     pub broadcast_replies: bool,
 
     pub key: String,
@@ -4553,7 +2579,7 @@ pub enum RuntimeProfileKind {
 /// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RouteElement {
+pub struct AgentVersionRouteOption {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_workspace_id: Option<String>,
 
@@ -4582,80 +2608,7 @@ pub struct AgentVersionPage {
 
     pub resource_version: i64,
 
-    pub versions: Vec<VersionElement>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VersionElement {
-    pub agent_resource_id: String,
-
-    pub asset_id: String,
-
-    pub asset_version: i64,
-
-    /// Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
-    /// to the existing same-origin profile media reader. Read projection only; not content, a
-    /// credential, or an arbitrary remote proxy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar_media_paths: Option<HashMap<String, String>>,
-
-    /// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
-    /// 资格；缺字段不允许发布，不证明已安装或可运行。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_publish: Option<bool>,
-
-    /// 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
-    /// 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_retire: Option<bool>,
-
-    /// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_update: Option<bool>,
-
-    pub config_hash: String,
-
-    pub content: ContentClass,
-
-    pub ordinal: i64,
-
-    pub owner_principal_id: String,
-
-    pub state: AgentVersionState,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum AgentVersionState {
-    #[serde(rename = "DRAFT")]
-    Draft,
-
-    #[serde(rename = "PUBLISHED")]
-    Published,
-
-    #[serde(rename = "RETIRED")]
-    Retired,
-}
-
-/// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
-/// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentVersionRouteOption {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub home_workspace_id: Option<String>,
-
-    pub native_config_hash: String,
-
-    pub native_config_resource_id: String,
-
-    pub native_revision: i64,
-
-    pub owner_principal_id: String,
-
-    pub resource_id: String,
-
-    pub resource_version: i64,
+    pub versions: Vec<AgentVersionView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4689,13 +2642,106 @@ pub struct AgentVersionView {
 
     pub config_hash: String,
 
-    pub content: ContentClass,
+    pub content: AgentVersionContent,
 
     pub ordinal: i64,
 
     pub owner_principal_id: String,
 
     pub state: AgentVersionState,
+}
+
+/// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+///
+/// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
+/// environment。发布不等于安装或运行授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionContent {
+    /// 精确 contract_key@version，不引用业务能力实现名。
+    pub capability_requirements: Vec<String>,
+
+    pub declared_tool_resource_ids: Vec<String>,
+
+    pub instructions: String,
+
+    pub memory_policy: AgentVersionContentMemoryPolicy,
+
+    pub model_route_resource_id: String,
+
+    pub parallelism: i64,
+
+    pub persona_identity: AgentVersionContentPersonaIdentity,
+
+    /// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+    pub reply_policy: String,
+
+    pub runtime_profile_key: String,
+
+    pub skill_version_asset_ids: Vec<String>,
+
+    pub trigger_defaults: Vec<AgentTrigger>,
+
+    pub turn_limits: AgentVersionContentTurnLimits,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionContentMemoryPolicy {
+    pub cold_write: AgentMemoryColdWrite,
+
+    pub core_write: AgentMemoryCoreWrite,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentMemoryColdWrite {
+    Disabled,
+
+    #[serde(rename = "INVOCATION_SCOPED")]
+    InvocationScoped,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentMemoryCoreWrite {
+    #[serde(rename = "AGENT_WITH_APPROVAL")]
+    AgentWithApproval,
+
+    #[serde(rename = "HUMAN_ONLY")]
+    HumanOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionContentPersonaIdentity {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionContentTurnLimits {
+    pub idle_timeout_seconds: i64,
+
+    pub max_turn_duration_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentVersionState {
+    #[serde(rename = "DRAFT")]
+    Draft,
+
+    #[serde(rename = "PUBLISHED")]
+    Published,
+
+    #[serde(rename = "RETIRED")]
+    Retired,
 }
 
 /// 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
@@ -4909,13 +2955,13 @@ pub struct ApprovalView {
     pub action_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_step: Option<AutomationStepClass>,
+    pub automation_step: Option<AutomationApprovalStepView>,
 
     /// RFC3339，UTC
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consume_deadline: Option<String>,
 
-    pub decisions: Vec<DecisionElement>,
+    pub decisions: Vec<ApprovalDecisionRecord>,
 
     /// RFC3339，UTC
     pub expires_at: String,
@@ -4928,7 +2974,7 @@ pub struct ApprovalView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
 
-    pub role_requirements: Vec<RoleRequirementElement>,
+    pub role_requirements: Vec<ApprovalRoleRequirement>,
 
     pub status: ApprovalStatus,
 
@@ -4945,7 +2991,7 @@ pub struct ApprovalView {
 /// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AutomationStepClass {
+pub struct AutomationApprovalStepView {
     pub id: String,
 
     pub message: String,
@@ -4959,7 +3005,7 @@ pub struct AutomationStepClass {
 /// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DecisionElement {
+pub struct ApprovalDecisionRecord {
     pub approver_principal_id: String,
 
     /// RFC3339，UTC
@@ -4991,7 +3037,7 @@ pub enum ApprovalSelector {
 /// §4）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RoleRequirementElement {
+pub struct ApprovalRoleRequirement {
     pub min_distinct: i64,
 
     pub selector: ApprovalSelector,
@@ -5239,40 +3285,10 @@ pub enum EvidenceSensitivity {
     Summary,
 }
 
-/// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationApprovalStepView {
-    pub id: String,
-
-    pub message: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    pub version_asset_id: String,
-}
-
-/// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationDelegationView {
-    pub delegation_id: String,
-
-    pub delegation_version: i64,
-
-    pub executor_installation_resource_id: String,
-
-    /// RFC3339，UTC；与现有管理查询时间字段一致。
-    pub expires_at: String,
-
-    pub owner_principal_id: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationDetailView {
-    pub automation: AutomationElement,
+    pub automation: AutomationView,
 
     /// 当前 Resource manage；不是运行准入、额度允许或业务成功。
     pub can_manage: bool,
@@ -5282,7 +3298,7 @@ pub struct AutomationDetailView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub can_run: Option<bool>,
 
-    pub delegations: Vec<DelegationElement>,
+    pub delegations: Vec<AutomationDelegationView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_delegation_offset: Option<i64>,
@@ -5290,12 +3306,12 @@ pub struct AutomationDetailView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_version_offset: Option<i64>,
 
-    pub versions: Vec<VersionClass>,
+    pub versions: Vec<AutomationVersionView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AutomationElement {
+pub struct AutomationView {
     /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
@@ -5356,7 +3372,7 @@ pub enum AutomationState {
 /// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DelegationElement {
+pub struct AutomationDelegationView {
     pub delegation_id: String,
 
     pub delegation_version: i64,
@@ -5372,7 +3388,7 @@ pub struct DelegationElement {
 /// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VersionClass {
+pub struct AutomationVersionView {
     pub asset_id: String,
 
     pub asset_version: i64,
@@ -5381,7 +3397,7 @@ pub struct VersionClass {
 
     pub config_hash: String,
 
-    pub content: AutomationVersionContentClass,
+    pub content: AutomationVersionContent,
 
     pub ordinal: i64,
 
@@ -5390,13 +3406,275 @@ pub struct VersionClass {
     pub state: AgentVersionState,
 }
 
+/// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+///
+/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+/// 配置或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionContent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<AutomationVersionContentAction>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<AutomationApprovalPolicyRef>,
+
+    /// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<i64>,
+
+    /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    pub result_target: AutomationResultTarget,
+
+    ///
+    /// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<AutomationStep>>,
+
+    pub trigger: AutomationVersionContentTrigger,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationVersionContentAction {
+    pub kind: AutomationVersionContentActionKind,
+
+    pub template: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AutomationVersionContentActionKind {
+    #[serde(rename = "AGENT_TURN")]
+    AgentTurn,
+
+    #[serde(rename = "POST_MESSAGE")]
+    PostMessage,
+}
+
+/// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+///
+/// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationApprovalPolicyRef {
+    pub id: String,
+
+    pub version: i64,
+}
+
+/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+/// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationStep {
+    pub action: AutomationStepAction,
+
+    /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<AutomationApprovalPolicyRef>,
+
+    /// 原请求体模板；不保存响应正文。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+
+    /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    /// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+    /// 者）不得明文保存，必须改用 secretHeaders。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+
+    pub id: String,
+
+    /// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+    /// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+    /// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+    /// ActionExecution；求值错误使该运行在任何副作用前失败。
+    #[serde(rename = "if")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_step_if: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
+    /// 原 HTTP 方法，缺省 POST。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<AutomationStepMethod>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+    /// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_headers: Option<HashMap<String, AutomationSecretRef>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+
+    /// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+    /// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+    /// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+    /// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
+    #[serde(rename = "timeout_secs")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<i64>,
+
+    /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+
+    /// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+    /// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+    /// AgentGateway 出站，不跟随重定向。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationStepAction {
+    #[serde(rename = "add_reaction")]
+    AddReaction,
+
+    #[serde(rename = "call_webhook")]
+    CallWebhook,
+
+    Delay,
+
+    #[serde(rename = "request_approval")]
+    RequestApproval,
+
+    #[serde(rename = "send_message")]
+    SendMessage,
+
+    #[serde(rename = "set_channel_topic")]
+    SetChannelTopic,
+}
+
+/// 原 HTTP 方法，缺省 POST。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationStepMethod {
+    #[serde(rename = "DELETE")]
+    Delete,
+
+    #[serde(rename = "GET")]
+    Get,
+
+    #[serde(rename = "PATCH")]
+    Patch,
+
+    #[serde(rename = "POST")]
+    Post,
+
+    #[serde(rename = "PUT")]
+    Put,
+}
+
+/// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationVersionContentTrigger {
+    /// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
+    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+    /// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+    /// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+
+    pub kind: AutomationTriggerKind,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention_principal_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_spec: Option<AutomationScheduleSpec>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AutomationTriggerKind {
+    #[serde(rename = "CHANNEL_MESSAGE")]
+    ChannelMessage,
+
+    #[serde(rename = "DIFF_POSTED")]
+    DiffPosted,
+
+    Mention,
+
+    #[serde(rename = "REACTION_ADDED")]
+    ReactionAdded,
+
+    Schedule,
+
+    Webhook,
+}
+
+/// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+/// 固定 SKIP。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationScheduleSpec {
+    pub catchup_window_seconds: i64,
+
+    /// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub every_seconds: Option<i64>,
+
+    /// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AutomationScheduleSpecKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_seconds: Option<i64>,
+}
+
+/// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationScheduleSpecKind {
+    #[serde(rename = "CRON")]
+    Cron,
+
+    #[serde(rename = "INTERVAL")]
+    Interval,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationPage {
-    pub automations: Vec<AutomationElement>,
+    pub automations: Vec<AutomationView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub available_approval_policies: Option<Vec<ApprovalPolicyElement>>,
+    pub available_approval_policies: Option<Vec<AutomationApprovalPolicyRef>>,
 
     /// 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
     pub can_create: bool,
@@ -5415,16 +3693,16 @@ pub struct AutomationRunPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 
-    pub runs: Vec<RunElement>,
+    pub runs: Vec<AutomationRunView>,
 }
 
 /// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunElement {
+pub struct AutomationRunView {
     /// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_trace: Option<Vec<ExecutionTraceElement>>,
+    pub execution_trace: Option<Vec<AutomationStepTrace>>,
 
     /// 原 TaskProjection 进度；缺省不推测百分比或成功。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5432,9 +3710,9 @@ pub struct RunElement {
 
     /// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub step_approval_task: Option<TaskClass>,
+    pub step_approval_task: Option<TaskView>,
 
-    pub task: TaskClass,
+    pub task: TaskView,
 
     /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
     pub usage_event_ids: Vec<String>,
@@ -5444,7 +3722,7 @@ pub struct RunElement {
 /// history。时间仅来自原生事实，未知时省略。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionTraceElement {
+pub struct AutomationStepTrace {
     /// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
@@ -5452,7 +3730,7 @@ pub struct ExecutionTraceElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ReasonCode>,
 
-    pub output: ExecutionTraceOutput,
+    pub output: AutomationStepTraceOutput,
 
     /// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5465,7 +3743,7 @@ pub struct ExecutionTraceElement {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionTraceOutput {
+pub struct AutomationStepTraceOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_execution_id: Option<String>,
 
@@ -5520,7 +3798,7 @@ pub enum AutomationStepStatus {
 /// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskClass {
+pub struct TaskView {
     pub action_execution_id: String,
 
     pub action_key: String,
@@ -5572,6 +3850,44 @@ pub struct TaskClass {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+/// ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
+/// seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActionDispatchState {
+    Aborted,
+
+    Dispatched,
+
+    #[serde(rename = "NOT_DISPATCHED")]
+    NotDispatched,
+
+    Unknown,
+}
+
+/// ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
+/// 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ActionGateState {
+    #[serde(rename = "ALLOWED")]
+    Allowed,
+
+    #[serde(rename = "DENIED")]
+    Denied,
+
+    #[serde(rename = "EVALUATING")]
+    Evaluating,
+
+    #[serde(rename = "EXPIRED")]
+    Expired,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+
+    #[serde(rename = "WAITING")]
+    Waiting,
 }
 
 /// TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
@@ -5642,108 +3958,6 @@ pub enum WorkflowKind {
     WorkspaceLifecycle,
 }
 
-/// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationRunView {
-    /// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_trace: Option<Vec<ExecutionTraceElement>>,
-
-    /// 原 TaskProjection 进度；缺省不推测百分比或成功。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub progress: Option<String>,
-
-    /// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub step_approval_task: Option<TaskClass>,
-
-    pub task: TaskClass,
-
-    /// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
-    pub usage_event_ids: Vec<String>,
-}
-
-/// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationVersionView {
-    pub asset_id: String,
-
-    pub asset_version: i64,
-
-    pub automation_resource_id: String,
-
-    pub config_hash: String,
-
-    pub content: AutomationVersionContentClass,
-
-    pub ordinal: i64,
-
-    pub owner_principal_id: String,
-
-    pub state: AgentVersionState,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationView {
-    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_id: Option<String>,
-
-    pub executor_installation_resource_id: String,
-
-    pub owner_principal_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pinned_version_asset_id: Option<String>,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub state: AutomationState,
-
-    /// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
-    /// UUID、审计投递时间或浏览器时钟推测。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-
-    /// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_secret_hint: Option<String>,
-
-    /// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_url: Option<String>,
-
-    pub workspace_id: String,
-}
-
-/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationWebhookSecret {
-    pub automation_resource_id: String,
-
-    pub hint: String,
-
-    /// 32 字节随机密钥的 base64 展示形式。
-    pub secret: String,
-
-    /// 公开投递地址；部署未配置公开基址时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-
 /// GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
 /// Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5753,14 +3967,14 @@ pub struct BusinessOperationPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 
-    pub operations: Vec<OperationElement>,
+    pub operations: Vec<BusinessOperationView>,
 }
 
 /// 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
 /// 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OperationElement {
+pub struct BusinessOperationView {
     pub action_execution_id: String,
 
     pub action_key: String,
@@ -5790,7 +4004,7 @@ pub struct OperationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_at: Option<String>,
 
-    pub usage: Vec<OperationUsage>,
+    pub usage: Vec<OperationUsageLine>,
 
     pub usage_state: OperationUsageState,
 
@@ -5850,7 +4064,7 @@ pub enum BusinessOperationPhase {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OperationUsage {
+pub struct OperationUsageLine {
     pub meter_key: String,
 
     /// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
@@ -5903,14 +4117,6 @@ pub enum OperationUsageState {
     Unknown,
 }
 
-/// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BusinessOperationPhaseCount {
-    pub count: i64,
-
-    pub phase: BusinessOperationPhase,
-}
-
 /// GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
 /// audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5921,7 +4127,7 @@ pub struct BusinessOperationSummary {
     /// RFC3339，含
     pub from: String,
 
-    pub phases: Vec<PhaseElement>,
+    pub phases: Vec<BusinessOperationPhaseCount>,
 
     pub tenant_id: String,
 
@@ -5930,7 +4136,7 @@ pub struct BusinessOperationSummary {
 
     pub total: i64,
 
-    pub usage_states: Vec<UsageStateElement>,
+    pub usage_states: Vec<OperationUsageCount>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
@@ -5945,7 +4151,7 @@ pub struct BusinessOperationActionSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub average_terminal_seconds: Option<f64>,
 
-    pub phases: Vec<PhaseElement>,
+    pub phases: Vec<BusinessOperationPhaseCount>,
 
     /// 有确定终态时间、计入平均耗时的操作数
     pub timed_terminal_count: i64,
@@ -5955,7 +4161,7 @@ pub struct BusinessOperationActionSummary {
 
 /// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PhaseElement {
+pub struct BusinessOperationPhaseCount {
     pub count: i64,
 
     pub phase: BusinessOperationPhase,
@@ -5963,67 +4169,10 @@ pub struct PhaseElement {
 
 /// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UsageStateElement {
+pub struct OperationUsageCount {
     pub count: i64,
 
     pub state: OperationUsageState,
-}
-
-/// 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
-/// 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BusinessOperationView {
-    pub action_execution_id: String,
-
-    pub action_key: String,
-
-    pub action_version: i64,
-
-    pub actor_principal_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_status: Option<ApprovalStatus>,
-
-    /// RFC3339，UTC
-    pub created_at: String,
-
-    pub initiator_principal_id: String,
-
-    pub operation_id: String,
-
-    pub phase: BusinessOperationPhase,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<ReasonCode>,
-
-    pub target_id: String,
-
-    /// RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub terminal_at: Option<String>,
-
-    pub usage: Vec<BusinessOperationViewUsage>,
-
-    pub usage_state: OperationUsageState,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_kind: Option<WorkflowKind>,
-
-    /// 缺省即 Tenant 级动作
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BusinessOperationViewUsage {
-    pub meter_key: String,
-
-    /// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
-    pub quantity: i64,
-
-    pub status: UsageSettlementStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6031,7 +4180,7 @@ pub struct BusinessOperationViewUsage {
 pub struct CapabilityContractPage {
     pub can_register: bool,
 
-    pub contracts: Vec<ContractElement>,
+    pub contracts: Vec<CapabilityContractView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_offset: Option<i64>,
@@ -6040,7 +4189,7 @@ pub struct CapabilityContractPage {
 /// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContractElement {
+pub struct CapabilityContractView {
     /// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bootstrap_action_execution_id: Option<String>,
@@ -6078,32 +4227,6 @@ pub enum CapabilityContractStatus {
     Retired,
 }
 
-/// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractView {
-    /// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bootstrap_action_execution_id: Option<String>,
-
-    pub can_approve: bool,
-
-    pub can_deprecate: bool,
-
-    pub category_key: String,
-
-    pub conformance_suite_digest: String,
-
-    pub contract_version: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub registered_by_action_execution_id: Option<String>,
-
-    pub schema_set_digest: String,
-
-    pub status: CapabilityContractStatus,
-}
-
 /// PUT /api/v1/user-state/channel-templates/{templateId} 的请求体（DD-125(4)、03
 /// CollaborationUserState.channel_templates）：新建或替换本人的原频道模板；templateId 由客户端以 UUID 生成。字段沿原
 /// ChannelTemplateRecord；agentResourceIds 只引用同 Tenant 的 AgentDefinition Resource（≙ 原
@@ -6118,7 +4241,7 @@ pub struct ChannelTemplateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub canvas_template: Option<String>,
 
-    pub channel_type: ChannelType,
+    pub channel_type: WorkspaceChannelCreateChannelType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -6128,6 +4251,29 @@ pub struct ChannelTemplateRequest {
     pub version: i64,
 
     pub visibility: WorkspaceVisibility,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceChannelCreateChannelType {
+    Forum,
+
+    Stream,
+}
+
+/// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+///
+/// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+///
+/// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceVisibility {
+    Open,
+
+    Private,
 }
 
 /// GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -6249,10 +4395,10 @@ pub struct ComponentConformanceWireDigests {
     /// DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
     /// generatedRefs 输出字段取出的值。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureElement>>,
+    pub captures: Option<Vec<ComponentConformanceCaptureValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
+    pub native_receiver_observation: Option<ComponentNativeReceiverObservation>,
 
     pub request_digest: String,
 
@@ -6267,7 +4413,7 @@ pub struct ComponentConformanceWireDigests {
 /// step's observation evidence and re-checked when the report is recorded. Never a fixture,
 /// seed or administrator value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CaptureElement {
+pub struct ComponentConformanceCaptureValue {
     pub key: String,
 
     pub value: String,
@@ -6280,7 +4426,7 @@ pub struct CaptureElement {
 /// case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeReceiverObservationClass {
+pub struct ComponentNativeReceiverObservation {
     pub completed: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6290,26 +4436,26 @@ pub struct NativeReceiverObservationClass {
 
     pub native_status: String,
 
-    pub read_operations: Vec<NativeReceiverObservationReadOperation>,
+    pub read_operations: Vec<ComponentNativeReadObservation>,
 
-    pub request: RequestClass,
+    pub request: ComponentNativeReceiverRequest,
 
     pub started_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeReceiverObservationReadOperation {
+pub struct ComponentNativeReadObservation {
     pub action_execution_id: String,
 
     /// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
     /// receiverActionExecutionId）。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_batch: Option<ReadOperationNativeBatch>,
+    pub native_batch: Option<AdapterReadGrantRequestNativeBatch>,
 
     pub operation_id: String,
 
-    pub read_request: ReadRequestClass,
+    pub read_request: AdapterReadGrantRequest,
 
     pub receiver_action_execution_id: String,
 
@@ -6324,15 +4470,15 @@ pub struct NativeReceiverObservationReadOperation {
     pub source_resource_id: String,
 }
 
-/// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
-/// receiverActionExecutionId）。
-///
 /// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
 /// exactly one mode, freezes these references, and resolves the receiver from its
 /// authenticated binding.
+///
+/// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
+/// receiverActionExecutionId）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadOperationNativeBatch {
+pub struct AdapterReadGrantRequestNativeBatch {
     pub action_key: String,
 
     pub action_version: i64,
@@ -6349,7 +4495,7 @@ pub struct ReadOperationNativeBatch {
 /// digest, not the returned business content.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadRequestClass {
+pub struct AdapterReadGrantRequest {
     pub action_key: String,
 
     pub action_version: i64,
@@ -6362,7 +4508,7 @@ pub struct ReadRequestClass {
     /// exactly one mode, freezes these references, and resolves the receiver from its
     /// authenticated binding.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_batch: Option<ReadOperationNativeBatch>,
+    pub native_batch: Option<AdapterReadGrantRequestNativeBatch>,
 
     /// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
     /// receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
@@ -6386,7 +4532,7 @@ pub struct ReadRequestClass {
 /// 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RequestClass {
+pub struct ComponentNativeReceiverRequest {
     pub binding_id: String,
 
     /// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
@@ -6406,7 +4552,7 @@ pub struct RequestClass {
 pub struct ComponentConformanceWireObservation {
     pub http_status: i64,
 
-    pub probe: ProbeClass,
+    pub probe: ComponentConformanceProbe,
 
     pub response_json: String,
 }
@@ -6415,16 +4561,16 @@ pub struct ComponentConformanceWireObservation {
 /// history 承接，不建立另一执行账本。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProbeClass {
+pub struct ComponentConformanceProbe {
     /// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
     /// 或管理员值替代。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureElement>>,
+    pub captures: Option<Vec<ComponentConformanceCaptureValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
+    pub content_reference: Option<ContentReference>,
 
-    pub plan: PlanClass,
+    pub plan: ComponentConformancePlan,
 
     /// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6436,7 +4582,7 @@ pub struct ProbeClass {
 /// 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanClass {
+pub struct ComponentConformancePlan {
     pub action_execution_id: String,
 
     pub artifact_digest: String,
@@ -6444,7 +4590,7 @@ pub struct PlanClass {
     pub component_release_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub connector_kind: Option<ConnectorKind>,
+    pub connector_kind: Option<ComponentConformancePlanConnectorKind>,
 
     pub contract_digests: Vec<String>,
 
@@ -6457,13 +4603,13 @@ pub struct PlanClass {
 
     /// DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_environment: Option<ReceiverEnvironmentClass>,
+    pub receiver_environment: Option<ComponentConformanceReceiverEnvironment>,
 
     /// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
     /// Describe 与同 workflow 的当前 TaskProjection 核对。
     pub run_id: String,
 
-    pub steps: Vec<PlanStep>,
+    pub steps: Vec<ComponentConformanceStep>,
 
     pub suite_digest: String,
 
@@ -6472,7 +4618,7 @@ pub struct PlanClass {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ConnectorKind {
+pub enum ComponentConformancePlanConnectorKind {
     #[serde(rename = "PROTOCOL_PEER")]
     ProtocolPeer,
 
@@ -6495,7 +4641,7 @@ pub enum ConnectorKind {
 /// release，随身份摘要进入原计划。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReceiverEnvironmentClass {
+pub struct ComponentConformanceReceiverEnvironment {
     pub isolated_core_build_id: String,
 
     pub source_artifact_digest: String,
@@ -6507,16 +4653,16 @@ pub struct ReceiverEnvironmentClass {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanStep {
+pub struct ComponentConformanceStep {
     /// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
     /// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
     /// 以它们比对隔离 Core 实际产生的接收方准入。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bindings: Option<Vec<BindingElement>>,
+    pub bindings: Option<Vec<CapabilityVectorBinding>>,
 
     /// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureClass>>,
+    pub captures: Option<Vec<CapabilityVectorCapture>>,
 
     pub case_key: String,
 
@@ -6529,7 +4675,7 @@ pub struct PlanStep {
     pub expected_http_status: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_mcp_result_kind: Option<McpResultKind>,
+    pub expected_mcp_result_kind: Option<ComponentConformanceStepExpectedMcpResultKind>,
 
     pub expected_response_json: String,
 
@@ -6564,7 +4710,7 @@ pub struct PlanStep {
 /// the admission the isolated Core actually produced whenever the step's evidence has reads.
 /// The plan digest fixes the declaration, never the value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BindingElement {
+pub struct CapabilityVectorBinding {
     pub key: String,
 
     pub pointer: String,
@@ -6604,7 +4750,7 @@ pub enum CapabilityVectorBindingSource {
 /// cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
 /// the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CaptureClass {
+pub struct CapabilityVectorCapture {
     pub key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6638,7 +4784,7 @@ pub enum CapabilityVectorCaptureSlot {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum McpResultKind {
+pub enum ComponentConformanceStepExpectedMcpResultKind {
     #[serde(rename = "ERROR")]
     Error,
 
@@ -6652,15 +4798,15 @@ pub enum McpResultKind {
 pub struct ComponentReleaseApprovalReport {
     pub run_id: String,
 
-    pub target: TargetClass,
+    pub target: ComponentReleaseApprovalTarget,
 
-    pub worker_build: WorkerBuildClass,
+    pub worker_build: PlatformBuildInfo,
 }
 
 /// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TargetClass {
+pub struct ComponentReleaseApprovalTarget {
     pub action_execution_id: String,
 
     pub component_release_id: String,
@@ -6671,7 +4817,7 @@ pub struct TargetClass {
 /// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkerBuildClass {
+pub struct PlatformBuildInfo {
     pub adapter_protocol_versions: Vec<String>,
 
     pub build_id: String,
@@ -6686,16 +4832,16 @@ pub struct WorkerBuildClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_protocol_versions: Option<Vec<String>>,
 
-    pub platform_port_keys: Vec<PlatformPortKey>,
+    pub platform_port_keys: Vec<PlatformBuildInfoPlatformPortKeysItem>,
 
     pub reported_at: String,
 
-    pub subject: Subject,
+    pub subject: PlatformBuildInfoSubject,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum PlatformPortKey {
+pub enum PlatformBuildInfoPlatformPortKeysItem {
     #[serde(rename = "AI_GATEWAY")]
     AiGateway,
 
@@ -6722,7 +4868,7 @@ pub enum PlatformPortKey {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Subject {
+pub enum PlatformBuildInfoSubject {
     #[serde(rename = "BUZZ_WEB")]
     BuzzWeb,
 
@@ -6801,96 +4947,13 @@ pub struct ComponentReleaseReceipt {
     pub status: ComponentReleaseStatus,
 }
 
-/// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationOpenRequest {
-    pub participant_principal_ids: Vec<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversationPage {
-    pub items: Vec<ItemClass>,
+    pub items: Vec<ConversationView>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
-}
-
-/// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemClass {
-    pub channel_id: String,
-
-    pub id: String,
-
-    pub operation_id: String,
-
-    pub participant_principal_ids: Vec<String>,
-
-    pub state: ItemState,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ItemState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "DISABLED")]
-    Disabled,
-
-    #[serde(rename = "PROVISIONING")]
-    Provisioning,
-
-    #[serde(rename = "RECONCILING")]
-    Reconciling,
-}
-
-/// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationParticipant {
-    pub display_name: String,
-
-    pub principal_id: String,
-
-    pub pubkeys: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationParticipantPage {
-    pub items: Vec<ConversationParticipantPageItem>,
-
-    pub max_participants: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-/// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationParticipantPageItem {
-    pub display_name: String,
-
-    pub principal_id: String,
-
-    pub pubkeys: Vec<String>,
-}
-
-/// PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
-/// CollaborationUserState version CAS。隐藏状态不在此权威。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ConversationPreferenceRequest {
-    pub muted: bool,
-
-    pub starred: bool,
-
-    pub version: i64,
 }
 
 /// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
@@ -6905,7 +4968,55 @@ pub struct ConversationView {
 
     pub participant_principal_ids: Vec<String>,
 
-    pub state: ItemState,
+    pub state: ConversationViewState,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ConversationViewState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "RECONCILING")]
+    Reconciling,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipantPage {
+    pub items: Vec<ConversationParticipant>,
+
+    pub max_participants: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipant {
+    pub display_name: String,
+
+    pub principal_id: String,
+
+    pub pubkeys: Vec<String>,
+}
+
+/// PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
+/// CollaborationUserState version CAS。隐藏状态不在此权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationPreferenceRequest {
+    pub muted: bool,
+
+    pub starred: bool,
 
     pub version: i64,
 }
@@ -6937,13 +5048,22 @@ pub struct DelegatedActionMetadataV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DiscoverableWorkspacePage {
+    pub items: Vec<DiscoverableWorkspace>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiscoverableWorkspace {
     /// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
     /// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub can_reopen: Option<bool>,
 
-    pub channel: ChannelClass,
+    pub channel: WebChannelView,
 
     pub created_at: String,
 
@@ -6953,12 +5073,12 @@ pub struct DiscoverableWorkspace {
     pub is_member: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub join_action_key: Option<JoinActionKey>,
+    pub join_action_key: Option<DiscoverableWorkspaceJoinActionKey>,
 
     /// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
     /// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub leave_action_key: Option<LeaveActionKey>,
+    pub leave_action_key: Option<DiscoverableWorkspaceLeaveActionKey>,
 
     pub member_count: i64,
 
@@ -6968,7 +5088,7 @@ pub struct DiscoverableWorkspace {
     /// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
     /// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub update_action_key: Option<UpdateActionKey>,
+    pub update_action_key: Option<DiscoverableWorkspaceUpdateActionKey>,
 
     pub visibility: WorkspaceVisibility,
 }
@@ -6976,12 +5096,12 @@ pub struct DiscoverableWorkspace {
 /// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChannelClass {
+pub struct WebChannelView {
     pub archived: bool,
 
     pub channel_id: String,
 
-    pub channel_type: ChannelType,
+    pub channel_type: WorkspaceChannelCreateChannelType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -7000,13 +5120,13 @@ pub struct ChannelClass {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum JoinActionKey {
+pub enum DiscoverableWorkspaceJoinActionKey {
     #[serde(rename = "workspace.join")]
     WorkspaceJoin,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum LeaveActionKey {
+pub enum DiscoverableWorkspaceLeaveActionKey {
     #[serde(rename = "workspace.leave")]
     WorkspaceLeave,
 }
@@ -7031,56 +5151,9 @@ pub enum WorkspaceMembershipState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum UpdateActionKey {
+pub enum DiscoverableWorkspaceUpdateActionKey {
     #[serde(rename = "workspace.update")]
     WorkspaceUpdate,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoverableWorkspacePage {
-    pub items: Vec<DiscoverableWorkspacePageItem>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoverableWorkspacePageItem {
-    /// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
-    /// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub can_reopen: Option<bool>,
-
-    pub channel: ChannelClass,
-
-    pub created_at: String,
-
-    pub id: String,
-
-    /// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
-    pub is_member: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub join_action_key: Option<JoinActionKey>,
-
-    /// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
-    /// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub leave_action_key: Option<LeaveActionKey>,
-
-    pub member_count: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub membership_state: Option<WorkspaceMembershipState>,
-
-    /// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
-    /// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub update_action_key: Option<UpdateActionKey>,
-
-    pub visibility: WorkspaceVisibility,
 }
 
 /// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
@@ -7156,6 +5229,16 @@ pub struct HuddleAnnouncementView {
     pub started_event_id: String,
 }
 
+/// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
+/// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HuddleLifecyclePage {
+    pub events: Vec<HuddleLifecycleEvent>,
+
+    /// Relay 48104 存活查询是否返回该会话
+    pub live: bool,
+}
+
 /// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
 /// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7187,58 +5270,17 @@ pub struct HuddleLifecycleEvent {
     pub roster_revision: Option<i64>,
 }
 
-/// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
-/// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HuddleLifecyclePage {
-    pub events: Vec<EventElement>,
-
-    /// Relay 48104 存活查询是否返回该会话
-    pub live: bool,
-}
-
-/// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
-/// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventElement {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub admission_id: Option<String>,
-
-    /// 事件 created_at（Unix 秒）
-    pub created_at: i64,
-
-    pub ephemeral_channel_id: String,
-
-    pub event_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub generation: Option<String>,
-
-    pub kind: i64,
-
-    /// 48101/48102 的 p 标签
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub participant_pubkey: Option<String>,
-
-    /// 签名者公钥
-    pub pubkey: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub roster_revision: Option<i64>,
-}
-
 /// GET /api/v1/huddles：一个父 Workspace 或父私聊中本人可见、尚未结束的 Huddle（PROVISIONING 或 ACTIVE），按创建时间倒序。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HuddlePage {
-    pub items: Vec<HuddlePageItem>,
+    pub items: Vec<HuddleView>,
 }
 
 /// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
 /// Relay 的 48101–48104 呈现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HuddlePageItem {
+pub struct HuddleView {
     pub agent_installation_resource_ids: Vec<String>,
 
     /// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
@@ -7290,46 +5332,6 @@ pub enum HuddleState {
 
     #[serde(rename = "PROVISIONING")]
     Provisioning,
-}
-
-/// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
-/// Relay 的 48101–48104 呈现。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HuddleView {
-    pub agent_installation_resource_ids: Vec<String>,
-
-    /// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
-    pub channel_id: String,
-
-    pub channel_name: String,
-
-    pub created_at: String,
-
-    /// 临时频道 created_by：本人发起会话的 HUMAN 公钥
-    pub creator_pubkey: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ended_at: Option<String>,
-
-    pub huddle_id: String,
-
-    pub initiator_principal_id: String,
-
-    /// 发起该 Huddle 的 huddle.start operation
-    pub operation_id: String,
-
-    pub parent_channel_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_conversation_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_workspace_id: Option<String>,
-
-    pub state: HuddleState,
-
-    pub version: i64,
 }
 
 /// GET /api/v1/huddles/voice：Web Huddle
@@ -7408,20 +5410,6 @@ pub struct InvitationRedemptionRequest {
     pub display_name: String,
 }
 
-/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssuedInvitation {
-    /// RFC3339，UTC
-    pub expires_at: String,
-
-    pub invitation_id: String,
-
-    /// 部署登记的链接基址 + '#' + 一次性凭据
-    pub link: String,
-}
-
 /// GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
 /// binding，不暴露 locator、版本或私钥。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7437,7 +5425,7 @@ pub struct LegacySecretRefPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LegacySecretRefBinding {
-    pub kind: BindingKind,
+    pub kind: LegacySecretRefBindingKind,
 
     pub principal_id: String,
 
@@ -7445,7 +5433,7 @@ pub struct LegacySecretRefBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum BindingKind {
+pub enum LegacySecretRefBindingKind {
     #[serde(rename = "CONTROL")]
     Control,
 
@@ -7563,6 +5551,26 @@ pub struct ModerationReportView {
     pub workspace_id: Option<String>,
 }
 
+/// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+/// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationReportType {
+    Illegal,
+
+    Impersonation,
+
+    Malware,
+
+    Nudity,
+
+    Other,
+
+    Profanity,
+
+    Spam,
+}
+
 /// Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
 /// 词表，SF-BUZ-52）。open 是唯一可处理状态；Relay 举报表是唯一权威，Core 不复制（DD-125(2)）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7651,7 +5659,7 @@ pub struct NativeHumanActionRequest {
     pub binding_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub command: Option<CommandClass>,
+    pub command: Option<ActionCommand>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
@@ -7663,7 +5671,7 @@ pub struct NativeHumanActionRequest {
     pub native_execution_admission: Option<NativeHumanActionRequestNativeExecutionAdmission>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_receipt: Option<ReadReceiptClass>,
+    pub read_receipt: Option<NativeHumanReadReceipt>,
 
     /// Read the already-registered exact native object for the verified HUMAN and action. This
     /// never creates a Resource or native object.
@@ -7671,7 +5679,7 @@ pub struct NativeHumanActionRequest {
     pub resolve_resource: Option<NativeHumanResourceQuery>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_resources: Option<Vec<SourceResourceElement>>,
+    pub source_resources: Option<Vec<AdapterSourceResource>>,
 }
 
 /// Native metadata access uses existing tenant/workspace permissions. Scope and identity
@@ -7679,12 +5687,12 @@ pub struct NativeHumanActionRequest {
 /// client-selected IDs. This is not Action admission or a reusable ticket.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NativeHumanScopeQuery {
-    pub permission: Permission,
+    pub permission: NativeHumanScopeQueryPermission,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Permission {
+pub enum NativeHumanScopeQueryPermission {
     Discover,
 
     Manage,
@@ -7694,15 +5702,15 @@ pub enum Permission {
 /// actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandClass {
+pub struct ActionCommand {
     pub action_key: String,
 
     /// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_version_content: Option<ContentClass>,
+    pub agent_version_content: Option<AgentVersionContent>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_binding_create: Option<ApplicationBindingCreateClass>,
+    pub application_binding_create: Option<ApplicationBindingCreate>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub application_binding_id: Option<String>,
@@ -7720,38 +5728,38 @@ pub struct CommandClass {
 
     /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_version_content: Option<AutomationVersionContentClass>,
+    pub automation_version_content: Option<AutomationVersionContent>,
 
     /// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
     /// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
     /// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding_secret_values: Option<Vec<CommandBindingSecretValue>>,
+    pub binding_secret_values: Option<Vec<ApplicationBindingSecretValue>>,
 
     /// 仅 capability_contract.approve/deprecate：固定已登记版本。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_contract_ref: Option<CapabilityContractRefClass>,
+    pub capability_contract_ref: Option<CapabilityContractRef>,
 
     /// 仅 capability_contract.register：真实 schema 与测试向量内容。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_contract_registration: Option<CapabilityContractRegistrationClass>,
+    pub capability_contract_registration: Option<CapabilityContractRegistration>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_action: Option<ComponentActionClass>,
+    pub component_action: Option<ComponentActionInput>,
 
     /// 仅组件批准：已登记的不可变ComponentRelease标识。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_release_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub component_release_registration: Option<ComponentReleaseRegistrationClass>,
+    pub component_release_registration: Option<ComponentReleaseRegistration>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub conversation_open: Option<ConversationOpenClass>,
+    pub conversation_open: Option<ConversationOpenRequest>,
 
     /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegation_grant: Option<ParametersClass>,
+    pub delegation_grant: Option<DelegationGrantParameters>,
 
     /// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7776,7 +5784,7 @@ pub struct CommandClass {
     pub grant_permission: Option<ResourceGrantPermission>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_agent: Option<HuddleAgentClass>,
+    pub huddle_agent: Option<HuddleAgentInput>,
 
     /// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
     /// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
@@ -7784,7 +5792,7 @@ pub struct CommandClass {
     pub huddle_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_start: Option<HuddleStartClass>,
+    pub huddle_start: Option<HuddleStartInput>,
 
     /// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
     pub idempotency_key: String,
@@ -7795,12 +5803,12 @@ pub struct CommandClass {
 
     /// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub llm_route_create: Option<LlmRouteCreateClass>,
+    pub llm_route_create: Option<LlmRouteCreateInput>,
 
     /// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
     /// 输入；其他命令禁止携带。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory_write: Option<MemoryWriteClass>,
+    pub memory_write: Option<AgentMemoryWriteInput>,
 
     /// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
     /// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
@@ -7812,18 +5820,18 @@ pub struct CommandClass {
     /// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
     /// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_member: Option<CommandModerationMember>,
+    pub moderation_member: Option<ModerationMemberTarget>,
 
     /// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
     /// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
     /// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_report: Option<CommandModerationReport>,
+    pub moderation_report: Option<ModerationReportSubmit>,
 
     /// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
     /// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub moderation_resolution: Option<CommandModerationResolution>,
+    pub moderation_resolution: Option<ModerationReportResolution>,
 
     /// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7843,16 +5851,16 @@ pub struct CommandClass {
     /// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
     /// identity; no Agent or caller-selected native credentials.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_session_open: Option<ProtocolSessionOpenClass>,
+    pub protocol_session_open: Option<ProtocolSessionOpenInput>,
 
     /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
     /// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
     /// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_resource: Option<CommandReceiverResource>,
+    pub receiver_resource: Option<ActionCommandReceiverResource>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ResourceCreateClass>,
+    pub resource_create: Option<ResourceCreate>,
 
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
     /// agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
@@ -7880,15 +5888,15 @@ pub struct CommandClass {
 
     /// 仅 tenant.quota.set（DD-123）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tenant_quota_setting: Option<TenantQuotaSettingClass>,
+    pub tenant_quota_setting: Option<TenantQuotaSetting>,
 
     /// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
     /// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_canvas: Option<WorkspaceCanvasClass>,
+    pub workspace_canvas: Option<WorkspaceCanvasSetInput>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_channel: Option<WorkspaceChannelClass>,
+    pub workspace_channel: Option<WorkspaceChannelCreate>,
 
     /// Workspace 内动作的执行 Workspace
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -7897,19 +5905,416 @@ pub struct CommandClass {
     /// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
     /// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_update: Option<WorkspaceUpdateClass>,
+    pub workspace_update: Option<WorkspaceUpdate>,
 
     /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_visibility: Option<WorkspaceVisibility>,
 }
 
+/// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+/// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandBindingSecretValue {
+pub struct ApplicationBindingCreate {
+    pub adapter_service_ref: String,
+
+    pub binding_id: String,
+
+    pub call_identity_mode: ApplicationCallIdentityMode,
+
+    pub capability_categories: Vec<ApplicationCapabilitySelection>,
+
+    pub component_release_id: String,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub model_call_mode: ApplicationModelCallMode,
+
+    pub native_instance_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_scope_ref: Option<String>,
+
+    pub normalized_config_json: String,
+
+    pub retain_on_tenant_delete: bool,
+
+    /// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+    /// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+    /// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+    pub secret_refs: Vec<ApplicationBindingSecretRef>,
+
+    pub service_principal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationCallIdentityMode {
+    #[serde(rename = "END_USER_TOKEN")]
+    EndUserToken,
+
+    #[serde(rename = "INSTANCE_SERVICE")]
+    InstanceService,
+
+    #[serde(rename = "TENANT_SERVICE")]
+    TenantService,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationCapabilitySelection {
+    pub category: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationModelCallMode {
+    None,
+
+    #[serde(rename = "PLATFORM_LLM_ROUTE")]
+    PlatformLlmRoute,
+
+    #[serde(rename = "SELF_MANAGED_MODEL")]
+    SelfManagedModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationBindingSecretValue {
     pub secret_key: String,
 
     pub value: String,
+}
+
+/// 仅 capability_contract.approve/deprecate：固定已登记版本。
+///
+/// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRef {
+    pub category_key: String,
+
+    pub contract_version: i64,
+}
+
+/// 仅 capability_contract.register：真实 schema 与测试向量内容。
+///
+/// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistration {
+    pub category_key: String,
+
+    pub content_reference_semantics: CapabilityContractRegistrationContentReferenceSemantics,
+
+    pub contract_version: i64,
+
+    pub operation_contracts: Vec<CapabilityContractRegistrationOperationContractsItem>,
+
+    pub protocol_session_kinds: Vec<String>,
+
+    pub required_declarations: Vec<CapabilityRequiredDeclaration>,
+
+    pub resource_type_family: Vec<CapabilityContractRegistrationResourceTypeFamilyItem>,
+
+    pub schema_documents: Vec<String>,
+
+    /// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+    /// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+    pub test_vectors_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationContentReferenceSemantics {
+    pub authorization_target_rule: String,
+
+    pub native_object_ref_rule: String,
+
+    pub native_revision_rule: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationOperationContractsItem {
+    pub contract_key: String,
+
+    pub input_schema_digest: String,
+
+    pub output_schema_digest: String,
+
+    pub permission: CapabilityPermission,
+
+    pub surface: CapabilitySurface,
+
+    pub target_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityPermission {
+    Approve,
+
+    Audit,
+
+    Consume,
+
+    Create,
+
+    Delegate,
+
+    Delete,
+
+    Discover,
+
+    Execute,
+
+    Export,
+
+    Manage,
+
+    Read,
+
+    Share,
+
+    #[serde(rename = "transfer_owner")]
+    TransferOwner,
+
+    Update,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CapabilitySurface {
+    #[serde(rename = "ACTION")]
+    Action,
+
+    #[serde(rename = "TOOL")]
+    Tool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CapabilityRequiredDeclaration {
+    Cancel,
+
+    Meter,
+
+    Observe,
+
+    #[serde(rename = "ONLINE_EDITING")]
+    OnlineEditing,
+
+    #[serde(rename = "READ_EDGE")]
+    ReadEdge,
+
+    #[serde(rename = "REVISION_QUERY")]
+    RevisionQuery,
+
+    #[serde(rename = "TENANT_DELETE")]
+    TenantDelete,
+
+    #[serde(rename = "VERSIONED_MODEL")]
+    VersionedModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityContractRegistrationResourceTypeFamilyItem {
+    pub kind: String,
+
+    pub type_key: String,
+}
+
+/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+/// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+/// 仍校验原目标、能力 schema、审批和用量。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionInput {
+    pub action_version: i64,
+
+    /// Canonical JSON for the existing registered capability input schema; mutually exclusive
+    /// with inputReference, validated before AE admission.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_reference: Option<ContentReference>,
+
+    pub result_exposure_policy_id: String,
+
+    pub result_exposure_policy_version: i64,
+}
+
+/// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+/// Worker 独立执行隔离套件。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReleaseRegistration {
+    pub binding_config_schema_json: String,
+
+    pub manifest_json: String,
+
+    pub package_json: String,
+}
+
+/// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationOpenRequest {
+    pub participant_principal_ids: Vec<String>,
+}
+
+/// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+/// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceGrantPermission {
+    Consume,
+
+    Discover,
+
+    Execute,
+
+    Read,
+}
+
+/// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+/// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+/// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+/// Agent。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleAgentInput {
+    pub agent_installation_resource_id: String,
+}
+
+/// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+/// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+/// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+/// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+/// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+/// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HuddleStartInput {
+    /// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+    /// ChannelAgentBinding 且本人有 execute 的 Installation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_installation_resource_ids: Option<Vec<String>>,
+
+    /// 原 buildHuddleChannelName 生成的临时频道名
+    pub channel_name: String,
+
+    /// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creator_pubkey: Option<String>,
+
+    /// 父私聊（ConversationBuzzBinding id）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_conversation_id: Option<String>,
+
+    /// 父 Workspace；须等于 ActionCommand.workspaceId
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+}
+
+/// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+///
+/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+/// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmRouteCreateInput {
+    pub model: LlmRouteCreateInputNativeSource,
+
+    pub provider: LlmRouteCreateInputNativeSource,
+
+    pub provider_credential_mode: LlmProviderCredentialMode,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_secret_ref: Option<LlmRouteCreateInputProviderSecretRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmRouteCreateInputNativeSource {
+    pub id: String,
+
+    pub revision: i64,
+
+    pub sha256: String,
+}
+
+/// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum LlmProviderCredentialMode {
+    None,
+
+    #[serde(rename = "SECRET_REF")]
+    SecretRef,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmRouteCreateInputProviderSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
+}
+
+/// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+/// 输入；其他命令禁止携带。
+///
+/// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMemoryWriteInput {
+    /// entry.patch 当前原生 value 的 SHA-256。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_hash: Option<String>,
+
+    /// 调用方实际读取的 head；null 只表示原生确认不存在。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_head_event_id: Option<String>,
+
+    /// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+    pub expected_head_state: AgentMemoryWriteInputExpectedHeadState,
+
+    /// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+
+    pub slug: String,
+
+    /// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AgentMemoryWriteInputExpectedHeadState {
+    #[serde(rename = "ABSENT")]
+    Absent,
+
+    #[serde(rename = "FOUND")]
+    Found,
 }
 
 /// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
@@ -7918,7 +6323,7 @@ pub struct CommandBindingSecretValue {
 /// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandModerationMember {
+pub struct ModerationMemberTarget {
     /// 64 位小写十六进制 Nostr 公钥
     pub target_pubkey: String,
 
@@ -7926,12 +6331,27 @@ pub struct CommandModerationMember {
     pub timeout_duration: Option<ModerationTimeoutDuration>,
 }
 
+/// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+/// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ModerationTimeoutDuration {
+    #[serde(rename = "ONE_DAY")]
+    OneDay,
+
+    #[serde(rename = "ONE_HOUR")]
+    OneHour,
+
+    #[serde(rename = "SEVEN_DAYS")]
+    SevenDays,
+}
+
 /// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
 /// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
 /// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandModerationReport {
+pub struct ModerationReportSubmit {
     /// 消息所在私聊；本人须为其当前参与者
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
@@ -7954,7 +6374,7 @@ pub struct CommandModerationReport {
 /// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandModerationResolution {
+pub struct ModerationReportResolution {
     pub report_event_ids: Vec<String>,
 
     pub resolution_action: ModerationResolutionAction,
@@ -7962,14 +6382,164 @@ pub struct CommandModerationResolution {
     pub status: ModerationResolutionStatus,
 }
 
+/// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+/// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationResolutionAction {
+    Ban,
+
+    Delete,
+
+    Dismiss,
+
+    Escalate,
+
+    Kick,
+}
+
+/// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+/// resolved。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModerationResolutionStatus {
+    Dismissed,
+
+    Resolved,
+}
+
+/// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+/// identity; no Agent or caller-selected native credentials.
+///
+/// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+/// Revision and presentation are frozen once; session expiry comes from controlled Core
+/// delivery.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionOpenInput {
+    pub action_version: i64,
+
+    /// The selected native source binding; must equal the target's real binding, not an
+    /// authorization claim.
+    pub application_binding_id: String,
+
+    pub locale: ProtocolSessionLocale,
+
+    /// Exact approved projection selected by the native menu; never latest.
+    pub projection_generation: i64,
+
+    pub reference: ContentReference,
+
+    pub theme: ProtocolSessionTheme,
+}
+
 /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
 /// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
 /// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CommandReceiverResource {
+pub struct ActionCommandReceiverResource {
     pub id: String,
 
     pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceCreate {
+    pub evidence_digest: String,
+
+    pub evidence_ref: String,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    pub type_key: String,
+}
+
+/// 仅 tenant.quota.set（DD-123）
+///
+/// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+/// OpenMeter entitlement for the platform feature, resetting monthly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantQuotaSetting {
+    pub feature: TenantQuotaFeature,
+
+    pub limit_per_period: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TenantQuotaFeature {
+    #[serde(rename = "agent_memory_writes")]
+    AgentMemoryWrites,
+
+    #[serde(rename = "agent_tokens")]
+    AgentTokens,
+
+    #[serde(rename = "automation_runs")]
+    AutomationRuns,
+}
+
+/// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+/// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+///
+/// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+/// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+/// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceCanvasSetInput {
+    pub content: String,
+}
+
+/// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceChannelCreate {
+    pub channel_type: WorkspaceChannelCreateChannelType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+}
+
+/// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+/// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+///
+/// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+/// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+/// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceUpdate {
+    /// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_ttl: Option<bool>,
+
+    /// 原 9002 about；空字符串清空描述。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+    /// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopen: Option<bool>,
+
+    /// 设置原 Buzz 临时频道的不活跃期限（秒）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+
+    /// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkspaceVisibility>,
 }
 
 /// Same-request writer admission for the original dispatched AE/EE and native intent, never
@@ -7989,7 +6559,7 @@ pub struct NativeHumanActionRequestNativeExecutionAdmission {
 /// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadReceiptClass {
+pub struct NativeHumanReadReceipt {
     pub completed_at: String,
 
     pub content_bytes: i64,
@@ -7998,7 +6568,7 @@ pub struct ReadReceiptClass {
 
     pub idempotency_key: String,
 
-    pub measurements: Vec<ReadReceiptMeasurement>,
+    pub measurements: Vec<NativeHumanReadReceiptMeasurementsItem>,
 
     pub native_object_ref: String,
 
@@ -8011,7 +6581,7 @@ pub struct ReadReceiptClass {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadReceiptMeasurement {
+pub struct NativeHumanReadReceiptMeasurementsItem {
     pub meter_key: String,
 
     pub quantity: i64,
@@ -8048,12 +6618,12 @@ pub struct NativeHumanActionResult {
     pub input_json: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_reference: Option<ReferenceElement>,
+    pub input_reference: Option<ContentReference>,
 
     /// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
     /// byte completion; no bearer is exposed by observation.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_execution: Option<NativeExecution>,
+    pub native_execution: Option<NativeHumanActionResultNativeExecution>,
 
     /// Transient same-request writer bearer for the exact original AE/EE. The native task must
     /// atomically claim the byte step before using it; never persisted or exposed to the browser.
@@ -8069,9 +6639,9 @@ pub struct NativeHumanActionResult {
     /// First native same-request read only. Never returned by idempotency observation or retried
     /// admission; the bearer is not persisted.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_admission: Option<ReadAdmission>,
+    pub read_admission: Option<NativeHumanActionResultReadAdmission>,
 
-    pub submission: SubmissionClass,
+    pub submission: ActionSubmission,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_status: Option<TaskStatus>,
@@ -8081,7 +6651,7 @@ pub struct NativeHumanActionResult {
 /// byte completion; no bearer is exposed by observation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeExecution {
+pub struct NativeHumanActionResultNativeExecution {
     pub binding_generation: i64,
 
     pub external_execution_id: String,
@@ -8109,7 +6679,7 @@ pub struct NativeHumanActionResultNativeExecutionAdmission {
 /// admission; the bearer is not persisted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadAdmission {
+pub struct NativeHumanActionResultReadAdmission {
     pub action_token: String,
 
     pub arguments_json: String,
@@ -8123,7 +6693,7 @@ pub struct ReadAdmission {
 /// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SubmissionClass {
+pub struct ActionSubmission {
     pub action_execution_id: String,
 
     pub action_key: String,
@@ -8134,7 +6704,7 @@ pub struct SubmissionClass {
     pub dispatch_state: ActionDispatchState,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub document_launch: Option<LaunchDescriptorClass>,
+    pub document_launch: Option<DocumentLaunchDescriptor>,
 
     pub gate_state: ActionGateState,
 
@@ -8143,7 +6713,7 @@ pub struct SubmissionClass {
     pub huddle_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub invitation: Option<InvitationClass>,
+    pub invitation: Option<IssuedInvitation>,
 
     pub operation_id: String,
 
@@ -8154,42 +6724,42 @@ pub struct SubmissionClass {
     pub reason: Option<ReasonCode>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_secret: Option<WebhookSecretClass>,
+    pub webhook_secret: Option<AutomationWebhookSecret>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
 }
 
-/// Original HUMAN synchronous application read completion, authenticated by its binding
-/// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
+/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeHumanReadReceipt {
-    pub completed_at: String,
+pub struct IssuedInvitation {
+    /// RFC3339，UTC
+    pub expires_at: String,
 
-    pub content_bytes: i64,
+    pub invitation_id: String,
 
-    pub content_sha256: String,
-
-    pub idempotency_key: String,
-
-    pub measurements: Vec<NativeHumanReadReceiptMeasurement>,
-
-    pub native_object_ref: String,
-
-    pub native_revision: String,
-
-    pub operation_id: String,
-
-    pub started_at: String,
+    /// 部署登记的链接基址 + '#' + 一次性凭据
+    pub link: String,
 }
 
+/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeHumanReadReceiptMeasurement {
-    pub meter_key: String,
+pub struct AutomationWebhookSecret {
+    pub automation_resource_id: String,
 
-    pub quantity: i64,
+    pub hint: String,
+
+    /// 32 字节随机密钥的 base64 展示形式。
+    pub secret: String,
+
+    /// 公开投递地址；部署未配置公开基址时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// Current already-registered native Resource selected under the original HUMAN action
@@ -8237,20 +6807,12 @@ pub struct NativeHumanScopeSelection {
 
     pub native_scope_ref: String,
 
-    pub permission: Permission,
+    pub permission: NativeHumanScopeQueryPermission,
 
     pub tenant_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-}
-
-/// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OperationUsageCount {
-    pub count: i64,
-
-    pub state: OperationUsageState,
 }
 
 /// GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
@@ -8360,19 +6922,19 @@ pub struct PlatformToolPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_offset: Option<i64>,
 
-    pub tools: Vec<ToolElement>,
+    pub tools: Vec<PlatformToolView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ToolElement {
-    pub action_key: ActionKey,
+pub struct PlatformToolView {
+    pub action_key: PlatformToolViewActionKey,
 
     pub can_consume: bool,
 
     pub input_schema_hash: String,
 
-    pub name: ActionKey,
+    pub name: PlatformToolViewActionKey,
 
     pub output_schema_hash: String,
 
@@ -8384,13 +6946,13 @@ pub struct ToolElement {
 
     pub resource_version: i64,
 
-    pub source: Source,
+    pub source: PlatformToolViewSource,
 
-    pub status: ToolStatus,
+    pub status: PlatformToolViewStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ActionKey {
+pub enum PlatformToolViewActionKey {
     #[serde(rename = "agent.memory.entry.list")]
     AgentMemoryEntryList,
 
@@ -8400,44 +6962,18 @@ pub enum ActionKey {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Source {
+pub enum PlatformToolViewSource {
     #[serde(rename = "PLATFORM_NATIVE")]
     PlatformNative,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ToolStatus {
+pub enum PlatformToolViewStatus {
     #[serde(rename = "ACTIVE")]
     Active,
 
     #[serde(rename = "PROVISIONING")]
     Provisioning,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlatformToolView {
-    pub action_key: ActionKey,
-
-    pub can_consume: bool,
-
-    pub input_schema_hash: String,
-
-    pub name: ActionKey,
-
-    pub output_schema_hash: String,
-
-    pub owner_principal_id: String,
-
-    pub resource_id: String,
-
-    pub resource_state: ResourceState,
-
-    pub resource_version: i64,
-
-    pub source: Source,
-
-    pub status: ToolStatus,
 }
 
 /// DD-40 original Projects Added/remove preference. Native coordinate only, not membership
@@ -8726,7 +7262,7 @@ pub struct ProjectsPublishRequest {
     pub assignee_pubkey: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentElement>>,
+    pub attachments: Option<Vec<WebMessageAttachment>>,
 
     /// Original complete markdown including attachment markdown. Issues may be empty; comments
     /// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
@@ -8829,7 +7365,7 @@ pub enum ProjectPullRequestCommentSide {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AttachmentElement {
+pub struct WebMessageAttachment {
     /// 原 Buzz imeta 模糊预览编码。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blurhash: Option<String>,
@@ -9010,7 +7546,7 @@ pub enum ProjectsQueryRequestView {
 pub struct ProtocolSessionView {
     pub action_execution_id: String,
 
-    pub admitted_mode: TedMode,
+    pub admitted_mode: ProtocolSessionMode,
 
     pub application_binding_id: String,
 
@@ -9020,18 +7556,18 @@ pub struct ProtocolSessionView {
 
     pub expires_at: String,
 
-    pub launch_locale: Locale,
+    pub launch_locale: ProtocolSessionLocale,
 
-    pub launch_theme: Theme,
+    pub launch_theme: ProtocolSessionTheme,
 
     pub protocol_session_id: String,
 
-    pub reference: ReferenceElement,
+    pub reference: ContentReference,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_revision: Option<String>,
 
-    pub state: ProtocolSessionViewState,
+    pub state: ProtocolSessionReconcileRoundState,
 
     pub tenant_id: String,
 
@@ -9043,7 +7579,7 @@ pub struct ProtocolSessionView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ProtocolSessionViewState {
+pub enum ProtocolSessionReconcileRoundState {
     Admitted,
 
     Closed,
@@ -9074,21 +7610,21 @@ pub enum ProtocolSessionViewState {
 #[serde(rename_all = "camelCase")]
 pub struct PulsePublishRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentElement>>,
+    pub attachments: Option<Vec<WebMessageAttachment>>,
 
     pub content: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mentions: Option<Vec<String>>,
 
-    pub operation: Operation,
+    pub operation: PulsePublishRequestOperation,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_event_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Operation {
+pub enum PulsePublishRequestOperation {
     #[serde(rename = "LIKE")]
     Like,
 
@@ -9318,7 +7854,7 @@ pub struct RoleMemberView {
 pub struct RoleWorkspacePage {
     /// 当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub create_action_key: Option<CreateActionKey>,
+    pub create_action_key: Option<RoleWorkspacePageCreateActionKey>,
 
     /// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -9328,7 +7864,7 @@ pub struct RoleWorkspacePage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CreateActionKey {
+pub enum RoleWorkspacePageCreateActionKey {
     #[serde(rename = "workspace.create")]
     WorkspaceCreate,
 }
@@ -9489,64 +8025,6 @@ pub enum SidebarSortMode {
     Recent,
 }
 
-/// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
-/// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskView {
-    pub action_execution_id: String,
-
-    pub action_key: String,
-
-    pub action_version: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_status: Option<ApprovalStatus>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_workflow_id: Option<String>,
-
-    /// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_action_key: Option<String>,
-
-    /// RFC3339，UTC
-    pub created_at: String,
-
-    pub dispatch_state: ActionDispatchState,
-
-    pub gate_state: ActionGateState,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observation: Option<ReasonCode>,
-
-    pub operation_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<ReasonCode>,
-
-    /// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rerun_action_key: Option<String>,
-
-    pub target_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_status: Option<TaskStatus>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub waiting_reason: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_kind: Option<WorkflowKind>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-}
-
 /// GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
 /// 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9620,20 +8098,7 @@ pub struct TenantMemberJoinPage {
     /// 游标之后仍有未扫描的成员事实，应立即以新 cursor 续读；为 true 时本页 items 可能为空。
     pub has_more: bool,
 
-    pub items: Vec<TenantMemberJoinPageItem>,
-}
-
-/// 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
-/// 身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TenantMemberJoinPageItem {
-    pub display_name: String,
-
-    /// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
-    pub joined_at: String,
-
-    pub principal_id: String,
+    pub items: Vec<TenantMemberJoinView>,
 }
 
 /// 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
@@ -9658,7 +8123,7 @@ pub struct TenantQuotaPage {
 
     /// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub set_action_key: Option<SetActionKey>,
+    pub set_action_key: Option<TenantQuotaPageSetActionKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9681,7 +8146,7 @@ pub struct TenantQuotaView {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum SetActionKey {
+pub enum TenantQuotaPageSetActionKey {
     #[serde(rename = "tenant.quota.set")]
     TenantQuotaSet,
 }
@@ -9724,7 +8189,7 @@ pub struct UsageBillingView {
 
     pub meters: Vec<UsageMeterView>,
 
-    pub operation_usage: Vec<UsageStateElement>,
+    pub operation_usage: Vec<OperationUsageCount>,
 
     pub tenant_id: String,
 
@@ -9898,32 +8363,6 @@ pub struct WebChannelCanvasView {
     pub workspace_id: String,
 }
 
-/// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebChannelView {
-    pub archived: bool,
-
-    pub channel_id: String,
-
-    pub channel_type: ChannelType,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    pub name: String,
-
-    /// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_deadline: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<i64>,
-}
-
 /// Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
 /// imageUrl removes only the caller's entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9963,34 +8402,6 @@ pub struct WebGifCapabilityView {
     pub image_origins: Vec<String>,
 }
 
-/// 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
-/// gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
-/// https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebGifItem {
-    pub height: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub poster_url: Option<String>,
-
-    pub preview_height: i64,
-
-    pub preview_url: String,
-
-    pub preview_width: i64,
-
-    pub size: i64,
-
-    pub slug: String,
-
-    pub title: String,
-
-    pub url: String,
-
-    pub width: i64,
-}
-
 /// POST /api/v1/gifs/search：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/search（成员门与 GIF 限速由 Relay
 /// 执行，超额以 LIMIT 类回应）。query 为空即原 trending，至多 200 字符；locale 为浏览器语言（1–32 字符）。原 KLIPY
 /// customer_id 由 BFF 按 Tenant 与本人 Principal 派生为稳定匿名标识，Browser 不提供。
@@ -10004,7 +8415,7 @@ pub struct WebGifSearchRequest {
 /// POST /api/v1/gifs/search 的回应：原 Relay 固定一页（24 项）结果，按提供方顺序。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WebGifSearchView {
-    pub gifs: Vec<GifElement>,
+    pub gifs: Vec<WebGifItem>,
 }
 
 /// 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
@@ -10012,7 +8423,7 @@ pub struct WebGifSearchView {
 /// https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GifElement {
+pub struct WebGifItem {
     pub height: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -10094,51 +8505,6 @@ pub struct WebLinkPreviewSnapshotView {
     pub url: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebMessageAttachment {
-    /// 原 Buzz imeta 模糊预览编码。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blurhash: Option<String>,
-
-    /// 原 Buzz imeta 媒体尺寸显示元数据。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dim: Option<String>,
-
-    /// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_label: Option<String>,
-
-    /// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<f64>,
-
-    /// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-
-    /// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-
-    pub sha256: String,
-
-    pub size: i64,
-
-    /// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spoiler: Option<bool>,
-
-    /// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thumb: Option<String>,
-
-    #[serde(rename = "type")]
-    pub web_message_attachment_type: String,
-
-    pub url: String,
-}
-
 /// Typed read of authors proven by signed events in one currently admitted channel or
 /// private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
 /// reads by its existing page/NIP-11 limits.
@@ -10153,7 +8519,7 @@ pub struct WebMessageAuthorQuery {
 /// whole read. No profile body is persisted by Core.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WebMessageAuthorView {
-    pub profiles: HashMap<String, ProfileValue>,
+    pub profiles: HashMap<String, WebProfileView>,
 }
 
 /// Profile read from Buzz for the current identity or an author proven by a currently
@@ -10161,7 +8527,7 @@ pub struct WebMessageAuthorView {
 /// kind:0 is an empty profile, not a fabricated event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProfileValue {
+pub struct WebProfileView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub about: Option<String>,
 
@@ -10303,41 +8669,13 @@ pub struct WebProfileUpdateRequest {
     pub nip05_handle: Option<String>,
 }
 
-/// Profile read from Buzz for the current identity or an author proven by a currently
-/// admitted channel/private-conversation message, never a Core profile copy. An absent
-/// kind:0 is an empty profile, not a fabricated event.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebProfileView {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub about: Option<String>,
-
-    /// Same-origin BFF paths for exact media URLs on the current community. A read projection,
-    /// never an upload or remote proxy authority.
-    pub avatar_media_paths: HashMap<String, String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar_url: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nip05_handle: Option<String>,
-
-    pub pubkey: String,
-}
-
 /// Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 /// signed event。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebPublishMessageRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentElement>>,
+    pub attachments: Option<Vec<WebMessageAttachment>>,
 
     pub content: String,
 
@@ -10598,92 +8936,6 @@ pub struct AgentMemoryEntryReadInput {
     pub slug: String,
 }
 
-/// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentMemoryWriteInput {
-    /// entry.patch 当前原生 value 的 SHA-256。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_hash: Option<String>,
-
-    /// 调用方实际读取的 head；null 只表示原生确认不存在。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_head_event_id: Option<String>,
-
-    /// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-    pub expected_head_state: ExpectedHeadState,
-
-    /// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub patch: Option<String>,
-
-    pub slug: String,
-
-    /// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
-}
-
-/// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
-/// environment。发布不等于安装或运行授权。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentVersionContent {
-    /// 精确 contract_key@version，不引用业务能力实现名。
-    pub capability_requirements: Vec<String>,
-
-    pub declared_tool_resource_ids: Vec<String>,
-
-    pub instructions: String,
-
-    pub memory_policy: AgentVersionContentMemoryPolicy,
-
-    pub model_route_resource_id: String,
-
-    pub parallelism: i64,
-
-    pub persona_identity: AgentVersionContentPersonaIdentity,
-
-    /// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
-    pub reply_policy: String,
-
-    pub runtime_profile_key: String,
-
-    pub skill_version_asset_ids: Vec<String>,
-
-    pub trigger_defaults: Vec<AgentTrigger>,
-
-    pub turn_limits: AgentVersionContentTurnLimits,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentVersionContentMemoryPolicy {
-    pub cold_write: AgentMemoryColdWrite,
-
-    pub core_write: AgentMemoryCoreWrite,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentVersionContentPersonaIdentity {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar_url: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    pub display_name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentVersionContentTurnLimits {
-    pub idle_timeout_seconds: i64,
-
-    pub max_turn_duration_seconds: i64,
-}
-
 /// DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -10708,7 +8960,7 @@ pub struct ApplicationAdapterDelivery {
 
     /// 可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bindings: Option<Vec<AdapterBinding>>,
+    pub bindings: Option<Vec<ApplicationProtocolPeerBindingDelivery>>,
 
     pub max_response_bytes: i64,
 
@@ -10725,14 +8977,14 @@ pub struct ApplicationAdapterDelivery {
 
     pub native_instance_ref: String,
 
-    pub secret_readers: Vec<AdapterSecretReader>,
+    pub secret_readers: Vec<ApplicationSecretReader>,
 
     pub timeout_seconds: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterBinding {
+pub struct ApplicationProtocolPeerBindingDelivery {
     pub binding_id: String,
 
     pub config_digest: String,
@@ -10744,11 +8996,11 @@ pub struct AdapterBinding {
 
     /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_credentials: Option<Vec<ComponentProtocolPeerEnvironmentNativeCredential>>,
+    pub native_credentials: Option<Vec<ApplicationPeerCredentialDelivery>>,
 
     /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_resources: Option<Vec<PurpleApplicationNativeResourceDelivery>>,
+    pub native_resources: Option<Vec<ApplicationNativeResourceDelivery>>,
 
     pub native_scope_ref: String,
 
@@ -10762,7 +9014,7 @@ pub struct AdapterBinding {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComponentProtocolPeerEnvironmentNativeCredential {
+pub struct ApplicationPeerCredentialDelivery {
     pub audience: String,
 
     pub header: String,
@@ -10778,7 +9030,7 @@ pub struct ComponentProtocolPeerEnvironmentNativeCredential {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PurpleApplicationNativeResourceDelivery {
+pub struct ApplicationNativeResourceDelivery {
     pub evidence_digest: String,
 
     pub evidence_ref: String,
@@ -10844,7 +9096,7 @@ pub struct ApplicationNativeHumanIdentity {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AdapterSecretReader {
+pub struct ApplicationSecretReader {
     pub audience: String,
 
     pub role_name: String,
@@ -10859,7 +9111,7 @@ pub struct ApplicationProtocolPeerDelivery {
 
     pub artifact_digest: String,
 
-    pub bindings: Vec<ProtocolPeerBinding>,
+    pub bindings: Vec<ApplicationProtocolPeerBindingDelivery>,
 
     pub max_response_bytes: i64,
 
@@ -10871,134 +9123,9 @@ pub struct ApplicationProtocolPeerDelivery {
     pub native_instance_ref: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret_readers: Option<Vec<ProtocolPeerSecretReader>>,
+    pub secret_readers: Option<Vec<ApplicationSecretReader>>,
 
     pub timeout_seconds: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolPeerBinding {
-    pub binding_id: String,
-
-    pub config_digest: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub credential_generation: Option<i64>,
-
-    pub isolation_mode: String,
-
-    /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_credentials: Option<Vec<PurpleApplicationPeerCredentialDelivery>>,
-
-    /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_resources: Option<Vec<FluffyApplicationNativeResourceDelivery>>,
-
-    pub native_scope_ref: String,
-
-    pub service_principal_id: String,
-
-    pub tenant_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PurpleApplicationPeerCredentialDelivery {
-    pub audience: String,
-
-    pub header: String,
-
-    pub locator: String,
-
-    pub prefix: String,
-
-    pub secret_key: String,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FluffyApplicationNativeResourceDelivery {
-    pub evidence_digest: String,
-
-    pub evidence_ref: String,
-
-    pub native_ref: String,
-
-    pub native_type: String,
-
-    pub type_key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolPeerSecretReader {
-    pub audience: String,
-
-    pub role_name: String,
-
-    pub service_principal_id: String,
-}
-
-/// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
-/// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingCreate {
-    pub adapter_service_ref: String,
-
-    pub binding_id: String,
-
-    pub call_identity_mode: ApplicationCallIdentityMode,
-
-    pub capability_categories: Vec<ApplicationBindingCreateCapabilityCategoryClass>,
-
-    pub component_release_id: String,
-
-    pub isolation_mode: ApplicationIsolationMode,
-
-    pub model_call_mode: ApplicationModelCallMode,
-
-    pub native_instance_ref: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_scope_ref: Option<String>,
-
-    pub normalized_config_json: String,
-
-    pub retain_on_tenant_delete: bool,
-
-    /// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
-    /// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
-    /// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
-    pub secret_refs: Vec<ApplicationBindingCreateSecretRefClass>,
-
-    pub service_principal_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ApplicationBindingCreateCapabilityCategoryClass {
-    pub category: String,
-
-    pub version: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingCreateSecretRefClass {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub secret_key: String,
-
-    pub version: i64,
 }
 
 /// DD-92: modelGateway within the approved binding config. Only existing route and meter
@@ -11011,238 +9138,6 @@ pub struct ApplicationModelGatewayConfig {
     pub route_resource_ids: Vec<String>,
 }
 
-/// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AutomationApprovalPolicyRef {
-    pub id: String,
-
-    pub version: i64,
-}
-
-/// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
-/// 固定 SKIP。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationScheduleSpec {
-    pub catchup_window_seconds: i64,
-
-    /// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cron: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub every_seconds: Option<i64>,
-
-    /// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ScheduleSpecKind>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset_seconds: Option<i64>,
-}
-
-/// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AutomationSecretRef {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub version: i64,
-}
-
-/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
-/// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationStep {
-    pub action: ActionEnum,
-
-    /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<ApprovalPolicyElement>,
-
-    /// 原请求体模板；不保存响应正文。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<String>,
-
-    /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub emoji: Option<String>,
-
-    /// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
-    /// 者）不得明文保存，必须改用 secretHeaders。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<HashMap<String, String>>,
-
-    pub id: String,
-
-    /// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
-    /// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
-    /// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
-    /// ActionExecution；求值错误使该运行在任何副作用前失败。
-    #[serde(rename = "if")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_step_if: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-
-    /// 原 HTTP 方法，缺省 POST。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub method: Option<StepMethod>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
-    /// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret_headers: Option<HashMap<String, SecretHeaderValue>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-
-    /// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
-    /// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
-    /// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
-    /// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
-    #[serde(rename = "timeout_secs")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout_secs: Option<i64>,
-
-    /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
-
-    /// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
-    /// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
-    /// AgentGateway 出站，不跟随重定向。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-}
-
-/// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
-/// history。时间仅来自原生事实，未知时省略。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationStepTrace {
-    /// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<ReasonCode>,
-
-    pub output: AutomationStepTraceOutput,
-
-    /// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<String>,
-
-    pub status: AutomationStepStatus,
-
-    pub step_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationStepTraceOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action_execution_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_workflow_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history_event_id: Option<i64>,
-
-    /// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub http_status: Option<i64>,
-
-    /// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub run_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
-}
-
-/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
-/// 配置或凭据。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationVersionContent {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<AutomationVersionContentAction>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<ApprovalPolicyElement>,
-
-    /// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub format_version: Option<i64>,
-
-    /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    pub result_target: AutomationResultTarget,
-
-    ///
-    /// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub steps: Option<Vec<StepElement>>,
-
-    pub trigger: AutomationVersionContentTrigger,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AutomationVersionContentAction {
-    pub kind: ActionKind,
-
-    pub template: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationVersionContentTrigger {
-    /// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub emoji: Option<String>,
-
-    /// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
-    /// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
-    /// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-
-    pub kind: AutomationTriggerKind,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mention_principal_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schedule_spec: Option<ScheduleSpecClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text_prefix: Option<String>,
-}
-
 /// DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
 /// JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
 /// LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
@@ -11250,7 +9145,7 @@ pub struct AutomationVersionContentTrigger {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityConformanceVectors {
-    pub cases: Vec<Case>,
+    pub cases: Vec<CapabilityConformanceVectorsCasesItem>,
 
     pub format_version: CapabilityVectorFormat,
 
@@ -11272,7 +9167,7 @@ pub struct CapabilityConformanceVectors {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Case {
+pub struct CapabilityConformanceVectorsCasesItem {
     pub case_key: String,
 
     /// V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the
@@ -11298,7 +9193,7 @@ pub struct Case {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preconditions: Option<Vec<CapabilityVectorPrecondition>>,
 
-    pub steps: Vec<Step>,
+    pub steps: Vec<CapabilityConformanceVectorsCasesItemStepsItem>,
 }
 
 /// V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the
@@ -11348,16 +9243,16 @@ pub struct CapabilityVectorPreconditionProperty {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Step {
+pub struct CapabilityConformanceVectorsCasesItemStepsItem {
     /// V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
     /// exactly once.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bindings: Option<Vec<BindingElement>>,
+    pub bindings: Option<Vec<CapabilityVectorBinding>>,
 
     /// V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
     /// provides to later steps.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureClass>>,
+    pub captures: Option<Vec<CapabilityVectorCapture>>,
 
     pub contract_key: String,
 
@@ -11414,141 +9309,6 @@ pub struct CapabilityVectorPreconditionKind {
     pub kind: String,
 
     pub properties: Vec<String>,
-}
-
-/// 固定 Catalog 自然键，不授予业务能力 consume 权限。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRef {
-    pub category_key: String,
-
-    pub contract_version: i64,
-}
-
-/// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistration {
-    pub category_key: String,
-
-    pub content_reference_semantics: CapabilityContractRegistrationContentReferenceSemanticsClass,
-
-    pub contract_version: i64,
-
-    pub operation_contracts: Vec<CapabilityContractRegistrationOperationContractClass>,
-
-    pub protocol_session_kinds: Vec<String>,
-
-    pub required_declarations: Vec<CapabilityRequiredDeclaration>,
-
-    pub resource_type_family: Vec<CapabilityContractRegistrationResourceTypeFamilyClass>,
-
-    pub schema_documents: Vec<String>,
-
-    /// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
-    /// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
-    pub test_vectors_json: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationContentReferenceSemanticsClass {
-    pub authorization_target_rule: String,
-
-    pub native_object_ref_rule: String,
-
-    pub native_revision_rule: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationOperationContractClass {
-    pub contract_key: String,
-
-    pub input_schema_digest: String,
-
-    pub output_schema_digest: String,
-
-    pub permission: CapabilityPermission,
-
-    pub surface: CapabilitySurface,
-
-    pub target_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
-    pub kind: String,
-
-    pub type_key: String,
-}
-
-/// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
-/// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
-/// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
-/// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
-/// RECEIVER case INPUT may also bind the step's own captures: Core compares that input with
-/// the admission the isolated Core actually produced whenever the step's evidence has reads.
-/// The plan digest fixes the declaration, never the value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CapabilityVectorBinding {
-    pub key: String,
-
-    pub pointer: String,
-
-    pub side: CapabilityVectorSide,
-
-    pub source: CapabilityVectorBindingSource,
-}
-
-/// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
-/// of the same case. key is unique in the case and must be consumed at least once. pointer
-/// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
-/// step's contract key; in a RECEIVER case it equals an INPUT entry and reads the admission
-/// the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER
-/// cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
-/// the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CapabilityVectorCapture {
-    pub key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pointer: Option<String>,
-
-    pub slot: CapabilityVectorCaptureSlot,
-}
-
-/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
-/// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
-/// 仍校验原目标、能力 schema、审批和用量。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentActionInput {
-    pub action_version: i64,
-
-    /// Canonical JSON for the existing registered capability input schema; mutually exclusive
-    /// with inputReference, validated before AE admission.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_json: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_reference: Option<ReferenceElement>,
-
-    pub result_exposure_policy_id: String,
-
-    pub result_exposure_policy_version: i64,
-}
-
-/// DD-124(2): one captured value of the current suite run. Core derives it only from the
-/// candidate's actual wire response or typed ContentReference; it is kept only in that
-/// step's observation evidence and re-checked when the report is recorded. Never a fixture,
-/// seed or administrator value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ComponentConformanceCaptureValue {
-    pub key: String,
-
-    pub value: String,
 }
 
 /// 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -11610,7 +9370,7 @@ pub struct ComponentConformanceFixture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preconditions: Option<Vec<ComponentConformancePreconditionValue>>,
 
-    pub steps: Vec<PlanStep>,
+    pub steps: Vec<ComponentConformanceStep>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -11620,7 +9380,7 @@ pub struct ComponentNativeReceiverFixture {
 
     pub contract_key: String,
 
-    pub request: RequestClass,
+    pub request: ComponentNativeReceiverRequest,
 
     pub step_key: String,
 }
@@ -11656,7 +9416,7 @@ pub struct ComponentConformanceIdentity {
     /// DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源
     /// release，随身份摘要进入原计划。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_environment: Option<ReceiverEnvironmentClass>,
+    pub receiver_environment: Option<ComponentConformanceReceiverEnvironment>,
 
     pub secret_audience: String,
 
@@ -11709,97 +9469,6 @@ pub struct ComponentConformanceIdentityContext {
     pub workspace_id: Option<String>,
 }
 
-/// DD-124(4), 07 §8A: identity of the isolated receiver deployment a plan with
-/// receiver_start/receiver_observe steps observes. isolatedCoreBuildId is the
-/// PlatformBuildInfo CORE buildId of the isolated Core/Worker and must equal the current
-/// production Core build. sourceReleaseId with its artifact and manifest digests names the
-/// production Catalog release, APPROVED and declaring read_edge SOURCE or BOTH, that the
-/// isolated deployment runs as the source. It is delivered with the isolated identity, fixed
-/// by the plan identity digest and copied into the plan; it is not evidence that any step
-/// passed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentConformanceReceiverEnvironment {
-    pub isolated_core_build_id: String,
-
-    pub source_artifact_digest: String,
-
-    pub source_manifest_digest: String,
-
-    pub source_release_id: String,
-}
-
-/// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
-/// SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
-/// 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
-/// nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个
-/// case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentNativeReceiverObservation {
-    pub completed: bool,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub finished_at: Option<String>,
-
-    pub native_batch_id: String,
-
-    pub native_status: String,
-
-    pub read_operations: Vec<ComponentNativeReceiverObservationReadOperation>,
-
-    pub request: RequestClass,
-
-    pub started_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentNativeReceiverObservationReadOperation {
-    pub action_execution_id: String,
-
-    /// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
-    /// receiverActionExecutionId）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_batch: Option<ReadOperationNativeBatch>,
-
-    pub operation_id: String,
-
-    pub read_request: ReadRequestClass,
-
-    pub receiver_action_execution_id: String,
-
-    pub receiver_generation: i64,
-
-    pub receiver_receipt: AdapterReadReceipt,
-
-    pub source_binding_id: String,
-
-    pub source_receipt: AdapterReadReceipt,
-
-    pub source_resource_id: String,
-}
-
-/// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP
-/// 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION
-/// 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution
-/// 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentNativeReceiverRequest {
-    pub binding_id: String,
-
-    /// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
-    pub expires_at: String,
-
-    pub generation: i64,
-
-    pub idempotency_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub import_config_ref: Option<String>,
-}
-
 /// 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
 /// 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -11819,115 +9488,11 @@ pub struct ComponentProtocolPeerEnvironment {
 
     /// 隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_credentials: Option<Vec<ComponentProtocolPeerEnvironmentNativeCredential>>,
+    pub native_credentials: Option<Vec<ApplicationPeerCredentialDelivery>>,
 
     pub read_only_tools: Vec<String>,
 
     pub timeout_seconds: i64,
-}
-
-/// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentReleaseApprovalTarget {
-    pub action_execution_id: String,
-
-    pub component_release_id: String,
-
-    pub workflow_id: String,
-}
-
-/// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
-/// Worker 独立执行隔离套件。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentReleaseRegistration {
-    pub binding_config_schema_json: String,
-
-    pub manifest_json: String,
-
-    pub package_json: String,
-}
-
-/// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentReference {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asset_id: Option<String>,
-
-    pub display_name: String,
-
-    pub media_type: String,
-
-    pub native_object_ref: String,
-
-    pub native_revision: String,
-
-    pub resource_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DelegationGrantParameters {
-    pub expires_at: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_uses: Option<i64>,
-
-    /// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub renews_delegation_id: Option<String>,
-
-    /// DD-126(5)：被替换 Grant 的当前 version（CAS）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub renews_delegation_version: Option<i64>,
-
-    pub scopes: Vec<ScopeElement>,
-
-    pub valid_from: String,
-}
-
-/// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DelegationScopeParameters {
-    pub action_key: String,
-
-    pub action_version: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub create_workspace_id: Option<String>,
-
-    pub output_schema_hash: String,
-
-    pub redaction_policy: String,
-
-    pub result_exposure_mode: ResultExposureMode,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_id: Option<String>,
-
-    pub target_type: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_resource_id: Option<String>,
-}
-
-/// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
-/// credentials are only string form fields, never a persisted Task, chat or ContentReference.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentLaunchDescriptor {
-    pub action_url: String,
-
-    pub editor_origin: String,
-
-    pub expires_at: String,
-
-    pub form_fields: HashMap<String, String>,
-
-    pub method: LaunchDescriptorMethod,
 }
 
 /// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
@@ -11970,46 +9535,6 @@ pub enum PublishRestrictionKind {
     TimedOut,
 }
 
-/// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
-/// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
-/// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
-/// Agent。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HuddleAgentInput {
-    pub agent_installation_resource_id: String,
-}
-
-/// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
-/// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
-/// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
-/// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
-/// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
-/// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HuddleStartInput {
-    /// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
-    /// ChannelAgentBinding 且本人有 execute 的 Installation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_installation_resource_ids: Option<Vec<String>>,
-
-    /// 原 buildHuddleChannelName 生成的临时频道名
-    pub channel_name: String,
-
-    /// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub creator_pubkey: Option<String>,
-
-    /// 父私聊（ConversationBuzzBinding id）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_conversation_id: Option<String>,
-
-    /// 父 Workspace；须等于 ActionCommand.workspaceId
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_workspace_id: Option<String>,
-}
-
 /// BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12027,30 +9552,6 @@ pub struct ResolvedIdentity {
     pub tenant_principal_id: String,
 }
 
-/// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
-/// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LlmRouteCreateInput {
-    pub model: Model,
-
-    pub provider: Model,
-
-    pub provider_credential_mode: LlmProviderCredentialMode,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_secret_ref: Option<LlmRouteCreateInputProviderSecretRef>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LlmRouteCreateInputProviderSecretRef {
-    pub audience: String,
-
-    pub locator: String,
-
-    pub version: i64,
-}
-
 /// 18: native authenticated file-menu metadata from the Adapter typed reference producer.
 /// This is NOT Action admission; the normal Kailo HUMAN session must independently
 /// fresh-admit the frozen target and version. No ticket or content bytes.
@@ -12065,7 +9566,7 @@ pub struct NativeDocumentSelection {
 
     pub generation: i64,
 
-    pub reference: ReferenceElement,
+    pub reference: ContentReference,
 
     pub resource_version: i64,
 
@@ -12081,113 +9582,10 @@ pub enum NativeDocumentSelectionActionKey {
     FileStorageOpenViewV1,
 }
 
-/// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlatformBuildInfo {
-    pub adapter_protocol_versions: Vec<String>,
-
-    pub build_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub connector_kinds: Option<Vec<String>>,
-
-    pub driver_registry_keys: Vec<String>,
-
-    pub host_api_version: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp_protocol_versions: Option<Vec<String>>,
-
-    pub platform_port_keys: Vec<PlatformPortKey>,
-
-    pub reported_at: String,
-
-    pub subject: Subject,
-}
-
-/// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
-/// Revision and presentation are frozen once; session expiry comes from controlled Core
-/// delivery.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolSessionOpenInput {
-    pub action_version: i64,
-
-    /// The selected native source binding; must equal the target's real binding, not an
-    /// authorization claim.
-    pub application_binding_id: String,
-
-    pub locale: Locale,
-
-    /// Exact approved projection selected by the native menu; never latest.
-    pub projection_generation: i64,
-
-    pub reference: ReferenceElement,
-
-    pub theme: Theme,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResourceCreate {
-    pub evidence_digest: String,
-
-    pub evidence_ref: String,
-
-    pub native_ref: String,
-
-    pub native_type: String,
-
-    pub type_key: String,
-}
-
 /// 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeProfileDirectory {
-    pub profiles: Vec<Profile>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Profile {
-    pub capability_contract: FluffyCapabilityContract,
-
-    pub key: String,
-
-    pub kind: RuntimeProfileKind,
-
-    pub status: String,
-
-    pub web_availability: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FluffyCapabilityContract {
-    pub capability_requirements: Vec<String>,
-
-    pub max_idle_timeout_seconds: i64,
-
-    pub max_parallelism: i64,
-
-    pub max_turn_duration_seconds: i64,
-
-    pub reply_policies: Vec<String>,
-
-    /// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reply_policy_mappings: Option<Vec<FluffyRuntimeReplyPolicyMapping>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FluffyRuntimeReplyPolicyMapping {
-    pub broadcast_replies: bool,
-
-    pub key: String,
-
-    pub thread_replies: bool,
+    pub profiles: Vec<RuntimeProfileDirectoryProfilesItem>,
 }
 
 /// Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
@@ -12217,16 +9615,6 @@ pub struct TaskStateReport {
     pub workflow_id: String,
 }
 
-/// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-/// OpenMeter entitlement for the platform feature, resetting monthly.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TenantQuotaSetting {
-    pub feature: TenantQuotaFeature,
-
-    pub limit_per_period: i64,
-}
-
 /// Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 /// platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17
 /// 迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。
@@ -12250,73 +9638,6 @@ pub struct WorkflowRef {
 
     /// 固定格式的业务 workflow ID
     pub workflow_id: String,
-}
-
-/// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
-/// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
-/// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WorkspaceCanvasSetInput {
-    pub content: String,
-}
-
-/// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceChannelCreate {
-    pub channel_type: ChannelType,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<i64>,
-}
-
-/// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
-/// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
-/// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceUpdate {
-    /// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub clear_ttl: Option<bool>,
-
-    /// 原 9002 about；空字符串清空描述。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    /// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-
-    /// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
-    /// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reopen: Option<bool>,
-
-    /// 设置原 Buzz 临时频道的不活跃期限（秒）。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl_seconds: Option<i64>,
-
-    /// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visibility: Option<WorkspaceVisibility>,
-}
-
-/// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AffectedOwnerRef {
-    pub owner_principal_id: String,
-
-    pub target_id: String,
-
-    pub target_type: String,
-
-    pub target_version: i64,
 }
 
 /// 唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
@@ -12394,14 +9715,14 @@ pub struct AgentTaskAdvanceRequest {
 #[serde(rename_all = "camelCase")]
 pub struct AgentTaskAdvanceResult {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_input: Option<ApprovalInputClass>,
+    pub approval_input: Option<ApprovalWorkflowInput>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_workflow_id: Option<String>,
 
     /// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub delay_step: Option<DelayStep>,
+    pub delay_step: Option<AgentTaskAdvanceResultDelayStep>,
 
     /// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
     pub finish_activity: bool,
@@ -12417,14 +9738,14 @@ pub struct AgentTaskAdvanceResult {
 /// ActionExecution。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApprovalInputClass {
+pub struct ApprovalWorkflowInput {
     pub action_definition_version: i64,
 
     pub action_execution_id: String,
 
     pub action_key: String,
 
-    pub affected_owner_refs: Vec<AffectedOwnerRefElement>,
+    pub affected_owner_refs: Vec<AffectedOwnerRef>,
 
     /// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
     pub consume_window_seconds: i64,
@@ -12445,9 +9766,9 @@ pub struct ApprovalInputClass {
     pub policy_version: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resume: Option<ResumeClass>,
+    pub resume: Option<ApprovalResume>,
 
-    pub role_requirements: Vec<RoleRequirementElement>,
+    pub role_requirements: Vec<ApprovalRoleRequirement>,
 
     pub self_approval: ApprovalSelfApproval,
 
@@ -12465,7 +9786,7 @@ pub struct ApprovalInputClass {
 /// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AffectedOwnerRefElement {
+pub struct AffectedOwnerRef {
     pub owner_principal_id: String,
 
     pub target_id: String,
@@ -12492,7 +9813,7 @@ pub enum ApprovalOwnerRequirement {
 /// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResumeClass {
+pub struct ApprovalResume {
     /// RFC3339，UTC
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consumed_at: Option<String>,
@@ -12501,7 +9822,7 @@ pub struct ResumeClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consume_deadline: Option<String>,
 
-    pub decisions: Vec<DecisionElement>,
+    pub decisions: Vec<ApprovalDecisionRecord>,
 
     /// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
     /// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
@@ -12510,7 +9831,7 @@ pub struct ResumeClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
 
-    pub refusals: Vec<RefusalElement>,
+    pub refusals: Vec<ApprovalRefusal>,
 
     pub status: ApprovalStatus,
 }
@@ -12519,7 +9840,7 @@ pub struct ResumeClass {
 /// §4）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RefusalElement {
+pub struct ApprovalRefusal {
     pub approver_principal_id: String,
 
     pub reason: ReasonCode,
@@ -12538,7 +9859,7 @@ pub enum ApprovalSelfApproval {
 /// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DelayStep {
+pub struct AgentTaskAdvanceResultDelayStep {
     pub id: String,
 
     pub seconds: i64,
@@ -12548,29 +9869,6 @@ pub struct DelayStep {
     pub timeout_seconds: Option<i64>,
 }
 
-/// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentTaskWorkflowInput {
-    pub agent_version_asset_id: String,
-
-    pub cancel_pending: bool,
-
-    pub event_base: i64,
-
-    pub heartbeat_interval_seconds: i64,
-
-    pub heartbeat_timeout_seconds: i64,
-
-    pub installation_id: String,
-
-    pub invocation_id: String,
-
-    pub observation_interval_seconds: i64,
-
-    pub projection_generation: i64,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBindingAdvanceRequest {
@@ -12578,12 +9876,12 @@ pub struct ApplicationBindingAdvanceRequest {
 
     pub run_id: String,
 
-    pub target: ApplicationBindingAdvanceRequestTarget,
+    pub target: ApplicationBindingTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingAdvanceRequestTarget {
+pub struct ApplicationBindingTarget {
     pub action_execution_id: String,
 
     pub binding_id: String,
@@ -12601,18 +9899,6 @@ pub struct ApplicationBindingAdvanceResult {
     pub status: TaskStatus,
 
     pub waiting_reason: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplicationBindingTarget {
-    pub action_execution_id: String,
-
-    pub binding_id: String,
-
-    pub binding_version: i64,
-
-    pub workflow_id: String,
 }
 
 /// consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
@@ -12641,21 +9927,6 @@ pub struct ApprovalDecisionOutcome {
     pub status: ApprovalStatus,
 }
 
-/// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalDecisionRecord {
-    pub approver_principal_id: String,
-
-    /// RFC3339，UTC
-    pub decided_at: String,
-
-    pub decision: ApprovalDecision,
-
-    /// 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
-    pub satisfied_selectors: Vec<ApprovalSelector>,
-}
-
 /// decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server
 /// 侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12666,107 +9937,11 @@ pub struct ApprovalDecisionUpdate {
     pub decision: ApprovalDecision,
 }
 
-/// ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
-/// ActionExecution。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalWorkflowInput {
-    pub action_definition_version: i64,
-
-    pub action_execution_id: String,
-
-    pub action_key: String,
-
-    pub affected_owner_refs: Vec<AffectedOwnerRefElement>,
-
-    /// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
-    pub consume_window_seconds: i64,
-
-    /// RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
-    pub expires_at: String,
-
-    pub initiator_principal_id: String,
-
-    pub operation_id: String,
-
-    pub owner_requirement: ApprovalOwnerRequirement,
-
-    pub parameter_hash: String,
-
-    pub policy_id: String,
-
-    pub policy_version: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resume: Option<ResumeClass>,
-
-    pub role_requirements: Vec<RoleRequirementElement>,
-
-    pub self_approval: ApprovalSelfApproval,
-
-    pub target_id: String,
-
-    pub target_type: String,
-
-    pub tenant_id: String,
-
-    /// TENANT_ONLY 动作缺省
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-}
-
 /// invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
 /// <action_execution_id>:invalidate。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApprovalInvalidateUpdate {
     pub reason: ReasonCode,
-}
-
-/// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
-/// §4）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalRefusal {
-    pub approver_principal_id: String,
-
-    pub reason: ReasonCode,
-}
-
-/// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
-/// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalResume {
-    /// RFC3339，UTC
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumed_at: Option<String>,
-
-    /// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consume_deadline: Option<String>,
-
-    pub decisions: Vec<DecisionElement>,
-
-    /// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
-    /// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-    pub event_base: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<ReasonCode>,
-
-    pub refusals: Vec<RefusalElement>,
-
-    pub status: ApprovalStatus,
-}
-
-/// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
-/// §4）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalRoleRequirement {
-    pub min_distinct: i64,
-
-    pub selector: ApprovalSelector,
 }
 
 /// ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与
@@ -12782,7 +9957,7 @@ pub struct ApprovalStateReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consume_deadline: Option<String>,
 
-    pub decisions: Vec<DecisionElement>,
+    pub decisions: Vec<ApprovalDecisionRecord>,
 
     /// 报告时跨 run 累计的 history 长度
     pub event_id: i64,
@@ -12804,7 +9979,7 @@ pub struct ApprovalStateReport {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationScheduleAdmitRequest {
-    pub input: InputClass,
+    pub input: AutomationScheduleTaskInput,
 
     pub run_id: String,
 
@@ -12814,7 +9989,7 @@ pub struct AutomationScheduleAdmitRequest {
 /// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InputClass {
+pub struct AutomationScheduleTaskInput {
     pub automation_resource_id: String,
 
     pub automation_version_asset_id: String,
@@ -12842,13 +10017,13 @@ pub struct AutomationScheduleAdmitResult {
     pub reason_code: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub task_input: Option<TaskInputClass>,
+    pub task_input: Option<AgentTaskWorkflowInput>,
 }
 
 /// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskInputClass {
+pub struct AgentTaskWorkflowInput {
     pub agent_version_asset_id: String,
 
     pub cancel_pending: bool,
@@ -12868,23 +10043,6 @@ pub struct TaskInputClass {
     pub projection_generation: i64,
 }
 
-/// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationScheduleTaskInput {
-    pub automation_resource_id: String,
-
-    pub automation_version_asset_id: String,
-
-    /// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_pending: Option<bool>,
-
-    pub schedule_id: String,
-
-    pub source_kind: AutomationScheduleSource,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentActionAdvanceRequest {
@@ -12892,13 +10050,13 @@ pub struct ComponentActionAdvanceRequest {
 
     pub run_id: String,
 
-    pub target: ComponentActionAdvanceRequestTarget,
+    pub target: ComponentActionTarget,
 }
 
 /// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComponentActionAdvanceRequestTarget {
+pub struct ComponentActionTarget {
     pub action_execution_id: String,
 
     pub binding_id: String,
@@ -12922,23 +10080,6 @@ pub struct ComponentActionAdvanceResult {
     pub waiting_reason: String,
 }
 
-/// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentActionTarget {
-    pub action_execution_id: String,
-
-    pub binding_id: String,
-
-    pub binding_version: i64,
-
-    pub component_release_id: String,
-
-    pub projection_generation: i64,
-
-    pub workflow_id: String,
-}
-
 /// 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
 /// 不表示套件失败或成功。响应正文与测试凭据不进入报告。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12952,7 +10093,7 @@ pub struct ComponentConformanceObservation {
 
     pub contract_digests: Vec<String>,
 
-    pub observations: Vec<ObservationElement>,
+    pub observations: Vec<ComponentConformanceStepObservation>,
 
     pub operation_id: String,
 
@@ -12967,19 +10108,19 @@ pub struct ComponentConformanceObservation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ObservationElement {
+pub struct ComponentConformanceStepObservation {
     /// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding_digest: Option<String>,
 
     /// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureElement>>,
+    pub captures: Option<Vec<ComponentConformanceCaptureValue>>,
 
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
+    pub content_reference: Option<ContentReference>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_class: Option<ErrorClass>,
@@ -12987,16 +10128,16 @@ pub struct ObservationElement {
     pub http_status: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp_result_kind: Option<McpResultKind>,
+    pub mcp_result_kind: Option<ComponentConformanceStepExpectedMcpResultKind>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_observation: Option<ExecutionElement>,
+    pub native_observation: Option<AdapterExecutionObservation>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
+    pub native_receiver_observation: Option<ComponentNativeReceiverObservation>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_scope_observation: Option<NativeScopeObservationClass>,
+    pub native_scope_observation: Option<AdapterScopeObservation>,
 
     pub operation: ComponentConformanceOperation,
 
@@ -13014,7 +10155,7 @@ pub struct ObservationElement {
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeScopeObservationClass {
+pub struct AdapterScopeObservation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
 
@@ -13026,160 +10167,15 @@ pub struct NativeScopeObservationClass {
     pub result: NativeScopeResult,
 }
 
-/// 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentConformancePlan {
-    pub action_execution_id: String,
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NativeScopeResult {
+    #[serde(rename = "ABSENT_FENCED")]
+    AbsentFenced,
 
-    pub artifact_digest: String,
+    Found,
 
-    pub component_release_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub connector_kind: Option<ConnectorKind>,
-
-    pub contract_digests: Vec<String>,
-
-    /// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
-    pub identity_digest: String,
-
-    pub operation_id: String,
-
-    pub plan_digest: String,
-
-    /// DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_environment: Option<ReceiverEnvironmentClass>,
-
-    /// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
-    /// Describe 与同 workflow 的当前 TaskProjection 核对。
-    pub run_id: String,
-
-    pub steps: Vec<ComponentConformancePlanStep>,
-
-    pub suite_digest: String,
-
-    pub workflow_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentConformancePlanStep {
-    /// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
-    /// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
-    /// 以它们比对隔离 Core 实际产生的接收方准入。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bindings: Option<Vec<BindingElement>>,
-
-    /// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureClass>>,
-
-    pub case_key: String,
-
-    /// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
-    /// native 任务元数据。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contract_key: Option<String>,
-
-    /// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
-    pub expected_http_status: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_mcp_result_kind: Option<McpResultKind>,
-
-    pub expected_response_json: String,
-
-    pub idempotency_key: String,
-
-    /// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core
-    /// 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_receiver_input_json: Option<String>,
-
-    pub operation: ComponentConformanceOperation,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference_asset_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference_from_step_key: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference_resource_id: Option<String>,
-
-    pub request_json: String,
-
-    pub step_key: String,
-}
-
-/// 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
-/// history 承接，不建立另一执行账本。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentConformanceProbe {
-    /// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
-    /// 或管理员值替代。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureElement>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
-
-    pub plan: PlanClass,
-
-    /// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reconcile: Option<bool>,
-
-    pub step_index: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentConformanceStepObservation {
-    /// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding_digest: Option<String>,
-
-    /// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub captures: Option<Vec<CaptureElement>>,
-
-    pub case_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceElement>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_class: Option<ErrorClass>,
-
-    pub http_status: i64,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mcp_result_kind: Option<McpResultKind>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_observation: Option<ExecutionElement>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_receiver_observation: Option<NativeReceiverObservationClass>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_scope_observation: Option<NativeScopeObservationClass>,
-
-    pub operation: ComponentConformanceOperation,
-
-    pub request_digest: String,
-
-    pub response_digest: String,
-
-    /// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_digest: Option<String>,
-
-    pub step_key: String,
+    Refused,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -13187,12 +10183,12 @@ pub struct ComponentConformanceStepObservation {
 pub struct ConversationProjectionRequest {
     pub run_id: String,
 
-    pub target: ConversationProjectionRequestTarget,
+    pub target: ConversationProjectionTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConversationProjectionRequestTarget {
+pub struct ConversationProjectionTarget {
     pub action_execution_id: String,
 
     pub conversation_id: String,
@@ -13208,16 +10204,6 @@ pub struct ConversationProjectionResult {
     pub status: TaskStatus,
 
     pub waiting_reason: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationProjectionTarget {
-    pub action_execution_id: String,
-
-    pub conversation_id: String,
-
-    pub workflow_id: String,
 }
 
 /// FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
@@ -13251,63 +10237,11 @@ pub struct ProtocolSessionReconcileRequest {
     pub cancel_requested: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub round: Option<RoundClass>,
+    pub round: Option<ProtocolSessionReconcileRound>,
 
     pub run_id: String,
 
-    pub target: ProtocolSessionReconcileRequestTarget,
-}
-
-/// Actual original Session snapshot. The Activity result freezes this query round into
-/// history, not into a new authority.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RoundClass {
-    pub session_version: i64,
-
-    pub state: ProtocolSessionViewState,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub write_observation: Option<WriteObservationClass>,
-}
-
-/// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolSessionReconcileRequestTarget {
-    pub action_definition_id: String,
-
-    pub action_execution_id: String,
-
-    pub base_revision: String,
-
-    pub binding_id: String,
-
-    pub correlation_ref: String,
-
-    pub native_object_ref: String,
-
-    pub projection_generation: i64,
-
-    pub protocol_session_id: String,
-
-    pub release_id: String,
-
-    pub session_version: i64,
-
-    pub workflow_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolSessionReconcileResult {
-    pub protocol_session_id: String,
-
-    pub round: RoundClass,
-
-    pub status: TaskStatus,
-
-    pub waiting_reason: String,
+    pub target: ProtocolSessionReconcileTarget,
 }
 
 /// Actual original Session snapshot. The Activity result freezes this query round into
@@ -13317,10 +10251,10 @@ pub struct ProtocolSessionReconcileResult {
 pub struct ProtocolSessionReconcileRound {
     pub session_version: i64,
 
-    pub state: ProtocolSessionViewState,
+    pub state: ProtocolSessionReconcileRoundState,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub write_observation: Option<WriteObservationClass>,
+    pub write_observation: Option<ProtocolWriteObservation>,
 }
 
 /// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
@@ -13352,48 +10286,24 @@ pub struct ProtocolSessionReconcileTarget {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileResult {
+    pub protocol_session_id: String,
+
+    pub round: ProtocolSessionReconcileRound,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceProvisionAdvanceRequest {
     pub cancel_requested: bool,
 
     pub run_id: String,
 
-    pub target: ResourceProvisionAdvanceRequestTarget,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResourceProvisionAdvanceRequestTarget {
-    pub action_execution_id: String,
-
-    pub binding_id: String,
-
-    pub binding_version: i64,
-
-    pub component_release_id: String,
-
-    pub native_instance_ref: String,
-
-    pub native_scope_ref: String,
-
-    pub projection_generation: i64,
-
-    pub reference: ResourceCreateClass,
-
-    pub resource_id: String,
-
-    pub resource_version: i64,
-
-    pub workflow_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResourceProvisionAdvanceResult {
-    pub resource_id: String,
-
-    pub status: TaskStatus,
-
-    pub waiting_reason: String,
+    pub target: ResourceProvisionTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -13413,13 +10323,23 @@ pub struct ResourceProvisionTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ResourceCreateClass,
+    pub reference: ResourceCreate,
 
     pub resource_id: String,
 
     pub resource_version: i64,
 
     pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProvisionAdvanceResult {
+    pub resource_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
 }
 
 /// TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。

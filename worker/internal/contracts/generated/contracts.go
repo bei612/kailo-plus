@@ -924,8 +924,6 @@
 
 package generated
 
-import "time"
-
 import "encoding/json"
 
 func UnmarshalCanary(data []byte) (Canary, error) {
@@ -4014,7 +4012,7 @@ type Canary struct {
 	// 基础 string
 	Name string `json:"name"`
 	// 内联对象，同样显式关闭 additionalProperties
-	Nested Nested `json:"nested"`
+	Nested CanaryNested `json:"nested"`
 	// RFC3339 时间戳，按普通 string 传输。format: date-time 不在可用子集内——Dart 的 toIso8601String()
 	// 强制补毫秒，四侧线格式不等价。取值合法性由 Core 在 Admission 校验，不由 schema 承担。
 	OccurredAt *string `json:"occurredAt,omitempty"`
@@ -4023,20 +4021,20 @@ type Canary struct {
 	// 同构数组
 	Tags []string `json:"tags"`
 	// 变体类型的平坦表达：封闭枚举 tag 加各变体字段全部可选，替代被禁用的 oneOf
-	Variants []Variant `json:"variants,omitempty"`
+	Variants []CanaryVariantsItem `json:"variants,omitempty"`
 }
 
 // 内联对象，同样显式关闭 additionalProperties
-type Nested struct {
+type CanaryNested struct {
 	Label   string    `json:"label"`
 	Weights []float64 `json:"weights,omitempty"`
 }
 
-type Variant struct {
-	FileDigest  *string     `json:"fileDigest,omitempty"`
-	Kind        VariantKind `json:"kind"`
-	MessageBody *string     `json:"messageBody,omitempty"`
-	TaskAttempt *int64      `json:"taskAttempt,omitempty"`
+type CanaryVariantsItem struct {
+	FileDigest  *string                `json:"fileDigest,omitempty"`
+	Kind        CanaryVariantsItemKind `json:"kind"`
+	MessageBody *string                `json:"messageBody,omitempty"`
+	TaskAttempt *int64                 `json:"taskAttempt,omitempty"`
 }
 
 type ApplicationModelAdmission struct {
@@ -4091,16 +4089,16 @@ type FileStorageListInput struct {
 // Core. Its canonical item digest is the native listing revision, never a fabricated file
 // VersionId.
 type FileStorageListOutput struct {
-	Items           []ContentReferenceElement `json:"items"`
-	ListingDigest   string                    `json:"listingDigest"`
-	NativeObjectRef string                    `json:"nativeObjectRef"`
-	NativeRevision  string                    `json:"nativeRevision"`
-	OperationID     string                    `json:"operationId"`
-	ResourceID      string                    `json:"resourceId"`
+	Items           []ContentReference `json:"items"`
+	ListingDigest   string             `json:"listingDigest"`
+	NativeObjectRef string             `json:"nativeObjectRef"`
+	NativeRevision  string             `json:"nativeRevision"`
+	OperationID     string             `json:"operationId"`
+	ResourceID      string             `json:"resourceId"`
 }
 
 // design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-type ContentReferenceElement struct {
+type ContentReference struct {
 	AssetID         *string `json:"assetId,omitempty"`
 	DisplayName     string  `json:"displayName"`
 	MediaType       string  `json:"mediaType"`
@@ -4120,7 +4118,7 @@ type FileStorageListRevisionsInput struct {
 // in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion
 // receipt.
 type FileStorageListRevisionsOutput struct {
-	Citations []ContentReferenceElement `json:"citations"`
+	Citations []ContentReference `json:"citations"`
 }
 
 // Read the exact typed native file revision in the admitted Resource; never substitute the
@@ -4216,45 +4214,12 @@ type AdapterSecretRead struct {
 	Version   int64  `json:"version"`
 }
 
-// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
-type AdapterBindingReconcileRequest struct {
-	BindingID         string `json:"bindingId"`
-	ConfigDigest      string `json:"configDigest"`
-	Generation        int64  `json:"generation"`
-	IdempotencyKey    string `json:"idempotencyKey"`
-	NativeInstanceRef string `json:"nativeInstanceRef"`
-	NativeScopeRef    string `json:"nativeScopeRef"`
-}
-
 // 完整原生枚举的同引用观察，非新的任务/结果权威。complete 只在全部原存储流正常结束后成立；部分枚举、超限或不可核验不得当空集合。observations
 // 保留所有代次的原始幂等引用，未知任务不得遗漏；Core 自行核验终态，不接收 drained 声明。
 type AdapterBindingReconcileResponse struct {
-	Complete     bool               `json:"complete"`
-	Observations []ExecutionElement `json:"observations"`
-	Reference    ReferenceClass     `json:"reference"`
-}
-
-// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
-// 允许未取得，值域与具体操作的终态证据由接收者验证。取消接收仍为 RUNNING/UNKNOWN，不伪装 CANCELLED。
-type ExecutionElement struct {
-	CancelCapability NativeCancelCapability  `json:"cancelCapability"`
-	IdempotencyKey   string                  `json:"idempotencyKey"`
-	LastObservedAt   *string                 `json:"lastObservedAt,omitempty"`
-	NativeID         *string                 `json:"nativeId,omitempty"`
-	NativeStatus     *string                 `json:"nativeStatus,omitempty"`
-	NativeType       string                  `json:"nativeType"`
-	PlatformStatus   ExternalExecutionStatus `json:"platformStatus"`
-	TerminalAt       *string                 `json:"terminalAt,omitempty"`
-}
-
-// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
-type ReferenceClass struct {
-	BindingID         string `json:"bindingId"`
-	ConfigDigest      string `json:"configDigest"`
-	Generation        int64  `json:"generation"`
-	IdempotencyKey    string `json:"idempotencyKey"`
-	NativeInstanceRef string `json:"nativeInstanceRef"`
-	NativeScopeRef    string `json:"nativeScopeRef"`
+	Complete     bool                           `json:"complete"`
+	Observations []AdapterExecutionObservation  `json:"observations"`
+	Reference    AdapterBindingReconcileRequest `json:"reference"`
 }
 
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -4270,30 +4235,31 @@ type AdapterExecutionObservation struct {
 	TerminalAt       *string                 `json:"terminalAt,omitempty"`
 }
 
-// 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
-// 未取得时只用冻结幂等键查证。
-type AdapterExecutionReference struct {
-	ExternalExecutionID string  `json:"externalExecutionId"`
-	IdempotencyKey      string  `json:"idempotencyKey"`
-	NativeID            *string `json:"nativeId,omitempty"`
-	NativeType          string  `json:"nativeType"`
+// 07§5.2/6.2 已停止新准入的 binding reconcile。引用原停用生命周期及冻结代次，只观察原生任务，不创建 ExternalExecution 或重放动作。
+type AdapterBindingReconcileRequest struct {
+	BindingID         string `json:"bindingId"`
+	ConfigDigest      string `json:"configDigest"`
+	Generation        int64  `json:"generation"`
+	IdempotencyKey    string `json:"idempotencyKey"`
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	NativeScopeRef    string `json:"nativeScopeRef"`
 }
 
 // ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
 // Core 的套件报告。
 type AdapterExecutionResponse struct {
-	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
+	ContentReference *ContentReference `json:"contentReference,omitempty"`
 	// 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
-	ContentReferences []ContentReferenceElement `json:"contentReferences,omitempty"`
-	Execution         ExecutionElement          `json:"execution"`
-	ResultJSON        *string                   `json:"resultJson,omitempty"`
-	SourceResources   []SourceResourceElement   `json:"sourceResources,omitempty"`
+	ContentReferences []ContentReference          `json:"contentReferences,omitempty"`
+	Execution         AdapterExecutionObservation `json:"execution"`
+	ResultJSON        *string                     `json:"resultJson,omitempty"`
+	SourceResources   []AdapterSourceResource     `json:"sourceResources,omitempty"`
 }
 
 // Actual native planner source within the existing execution binding. Metadata only:
 // neither SQL/content nor a grant. The original action and result-exposure authority must
 // authorize every resolved Resource.
-type SourceResourceElement struct {
+type AdapterSourceResource struct {
 	NativeRef  string `json:"nativeRef"`
 	NativeType string `json:"nativeType"`
 }
@@ -4301,14 +4267,14 @@ type SourceResourceElement struct {
 // DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
 // ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
 type AdapterExecutionUsage struct {
-	ExternalExecutionID string                             `json:"externalExecutionId"`
-	IdempotencyKey      string                             `json:"idempotencyKey"`
-	Measurements        []AdapterExecutionUsageMeasurement `json:"measurements"`
-	NativeID            string                             `json:"nativeId"`
-	NativeType          string                             `json:"nativeType"`
+	ExternalExecutionID string                                  `json:"externalExecutionId"`
+	IdempotencyKey      string                                  `json:"idempotencyKey"`
+	Measurements        []AdapterExecutionUsageMeasurementsItem `json:"measurements"`
+	NativeID            string                                  `json:"nativeId"`
+	NativeType          string                                  `json:"nativeType"`
 }
 
-type AdapterExecutionUsageMeasurement struct {
+type AdapterExecutionUsageMeasurementsItem struct {
 	MeterKey   string `json:"meterKey"`
 	OccurredAt string `json:"occurredAt"`
 	Quantity   int64  `json:"quantity"`
@@ -4316,16 +4282,16 @@ type AdapterExecutionUsageMeasurement struct {
 
 // 绑定 SERVICE 领取原已派发 HUMAN COMPONENT_ACTION 的既存 native task 未消费步骤；不创建执行或延长期限。
 type NativeTaskExecutionAdmissionRequest struct {
-	ActionExecutionID string         `json:"actionExecutionId"`
-	BindingID         string         `json:"bindingId"`
-	Execution         ExecutionClass `json:"execution"`
+	ActionExecutionID string                    `json:"actionExecutionId"`
+	BindingID         string                    `json:"bindingId"`
+	Execution         AdapterExecutionReference `json:"execution"`
 	// 首次 dispatch 审计时间与冻结声明期限得出的原 RFC3339 截止时间，不接受续期。
 	NativeTaskDeadline string `json:"nativeTaskDeadline"`
 }
 
 // 原 ExternalExecution 的 observe/extract_usage 引用；不携带正文，不新建执行，不接受引用自报 scope。nativeId
 // 未取得时只用冻结幂等键查证。
-type ExecutionClass struct {
+type AdapterExecutionReference struct {
 	ExternalExecutionID string  `json:"externalExecutionId"`
 	IdempotencyKey      string  `json:"idempotencyKey"`
 	NativeID            *string `json:"nativeId,omitempty"`
@@ -4344,12 +4310,12 @@ type NativeTaskExecutionAdmissionResponse struct {
 // ADR-12
 // adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
 type AdapterPepCheckRequest struct {
-	ActionToken      string                   `json:"actionToken"`
-	ArgumentsJSON    string                   `json:"argumentsJson"`
-	BindingID        string                   `json:"bindingId"`
-	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
-	Operation        string                   `json:"operation"`
-	SourceResources  []SourceResourceElement  `json:"sourceResources,omitempty"`
+	ActionToken      string                  `json:"actionToken"`
+	ArgumentsJSON    string                  `json:"argumentsJson"`
+	BindingID        string                  `json:"bindingId"`
+	ContentReference *ContentReference       `json:"contentReference,omitempty"`
+	Operation        string                  `json:"operation"`
+	SourceResources  []AdapterSourceResource `json:"sourceResources,omitempty"`
 }
 
 // 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
@@ -4376,66 +4342,46 @@ type AdapterAuthorizedResource struct {
 	ResourceID        string `json:"resourceId"`
 }
 
-// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
-// VersionId，不提供文件字节或当前权限。
-type ProtocolRevisionQuery struct {
-	BaseRevision      string                `json:"baseRevision"`
-	ProtocolSessionID string                `json:"protocolSessionId"`
-	WriteObservation  WriteObservationClass `json:"writeObservation"`
-}
-
-// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
-// file bytes or an authorization grant.
-type WriteObservationClass struct {
-	BaseModifiedAt time.Time `json:"baseModifiedAt"`
-	BytesWritten   int64     `json:"bytesWritten"`
-	CorrelationRef string    `json:"correlationRef"`
-	Editors        string    `json:"editors"`
-	NativeEtag     *string   `json:"nativeEtag,omitempty"`
-	Phase          Phase     `json:"phase"`
-	ResultRevision *string   `json:"resultRevision,omitempty"`
-}
-
 // 18: execute the original admitted file protocol Session, not an arbitrary editor URL or
 // native object create. All fields are frozen Core facts and the whole body is covered by
 // ActionToken.
 type AdapterProtocolSessionLaunchRequest struct {
-	AdmittedMode                 TedMode                 `json:"admittedMode"`
-	AuthorizationTargetNativeRef string                  `json:"authorizationTargetNativeRef"`
-	ExpiresAt                    string                  `json:"expiresAt"`
-	IdempotencyKey               string                  `json:"idempotencyKey"`
-	Locale                       Locale                  `json:"locale"`
-	ProtocolSessionID            string                  `json:"protocolSessionId"`
-	Reference                    ContentReferenceElement `json:"reference"`
-	Theme                        Theme                   `json:"theme"`
+	AdmittedMode                 ProtocolSessionMode   `json:"admittedMode"`
+	AuthorizationTargetNativeRef string                `json:"authorizationTargetNativeRef"`
+	ExpiresAt                    string                `json:"expiresAt"`
+	IdempotencyKey               string                `json:"idempotencyKey"`
+	Locale                       ProtocolSessionLocale `json:"locale"`
+	ProtocolSessionID            string                `json:"protocolSessionId"`
+	Reference                    ContentReference      `json:"reference"`
+	Theme                        ProtocolSessionTheme  `json:"theme"`
 }
 
 // 18: the original native PAT reference plus transient launch descriptor. This value occurs
 // only in the original execute response; it must not be stored as reconciliation evidence
 // or recovered by reminting a token.
 type AdapterProtocolSessionLaunchResponse struct {
-	LaunchDescriptor LaunchDescriptorClass `json:"launchDescriptor"`
-	NativeSessionRef string                `json:"nativeSessionRef"`
+	LaunchDescriptor DocumentLaunchDescriptor `json:"launchDescriptor"`
+	NativeSessionRef string                   `json:"nativeSessionRef"`
 }
 
 // DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
 // credentials are only string form fields, never a persisted Task, chat or ContentReference.
-type LaunchDescriptorClass struct {
-	ActionURL    string                 `json:"actionUrl"`
-	EditorOrigin string                 `json:"editorOrigin"`
-	ExpiresAt    string                 `json:"expiresAt"`
-	FormFields   map[string]string      `json:"formFields"`
-	Method       LaunchDescriptorMethod `json:"method"`
+type DocumentLaunchDescriptor struct {
+	ActionURL    string                         `json:"actionUrl"`
+	EditorOrigin string                         `json:"editorOrigin"`
+	ExpiresAt    string                         `json:"expiresAt"`
+	FormFields   map[string]string              `json:"formFields"`
+	Method       DocumentLaunchDescriptorMethod `json:"method"`
 }
 
 // DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
 // PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
 type ProtocolSessionLifecyclePepResponse struct {
-	Decision          DecisionEnum `json:"decision"`
-	ExpiresAt         time.Time    `json:"expiresAt"`
-	NativeObjectRef   string       `json:"nativeObjectRef"`
-	ProtocolSessionID string       `json:"protocolSessionId"`
-	RequestedMode     TedMode      `json:"requestedMode"`
+	Decision          ProtocolSessionLifecyclePepResponseDecision `json:"decision"`
+	ExpiresAt         string                                      `json:"expiresAt"`
+	NativeObjectRef   string                                      `json:"nativeObjectRef"`
+	ProtocolSessionID string                                      `json:"protocolSessionId"`
+	RequestedMode     ProtocolSessionMode                         `json:"requestedMode"`
 }
 
 // 18 §5.1: observe/cancel the same native document PAT only. No access token, launch
@@ -4449,33 +4395,45 @@ type AdapterProtocolSessionLifecycleRequest struct {
 // Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must
 // remain unavailable, never ABSENT.
 type AdapterProtocolSessionLifecycleResponse struct {
-	ExpiresAt         *time.Time  `json:"expiresAt,omitempty"`
-	NativeObjectRef   string      `json:"nativeObjectRef"`
-	NativeSessionRef  *string     `json:"nativeSessionRef,omitempty"`
-	NativeState       NativeState `json:"nativeState"`
-	ProtocolSessionID string      `json:"protocolSessionId"`
+	ExpiresAt         *string                                            `json:"expiresAt,omitempty"`
+	NativeObjectRef   string                                             `json:"nativeObjectRef"`
+	NativeSessionRef  *string                                            `json:"nativeSessionRef,omitempty"`
+	NativeState       AdapterProtocolSessionLifecycleResponseNativeState `json:"nativeState"`
+	ProtocolSessionID string                                             `json:"protocolSessionId"`
 }
 
 // 18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token
 // grants platform permissions.
 type ProtocolSessionPepRequest struct {
-	BindingID         string                 `json:"bindingId"`
-	NativeObjectRef   string                 `json:"nativeObjectRef"`
-	NativeOperation   NativeOperation        `json:"nativeOperation"`
-	ProtocolSessionID string                 `json:"protocolSessionId"`
-	WriteObservation  *WriteObservationClass `json:"writeObservation,omitempty"`
+	BindingID         string                                   `json:"bindingId"`
+	NativeObjectRef   string                                   `json:"nativeObjectRef"`
+	NativeOperation   ProtocolSessionPepRequestNativeOperation `json:"nativeOperation"`
+	ProtocolSessionID string                                   `json:"protocolSessionId"`
+	WriteObservation  *ProtocolWriteObservation                `json:"writeObservation,omitempty"`
+}
+
+// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+// file bytes or an authorization grant.
+type ProtocolWriteObservation struct {
+	BaseModifiedAt string                        `json:"baseModifiedAt"`
+	BytesWritten   int64                         `json:"bytesWritten"`
+	CorrelationRef string                        `json:"correlationRef"`
+	Editors        string                        `json:"editors"`
+	NativeEtag     *string                       `json:"nativeEtag,omitempty"`
+	Phase          ProtocolWriteObservationPhase `json:"phase"`
+	ResultRevision *string                       `json:"resultRevision,omitempty"`
 }
 
 // Original Session facts, not native revision existence or write success. Cells must still
 // query its exact VersionId and ACLs.
 type ProtocolSessionPepResponse struct {
-	AdmittedMode  TedMode      `json:"admittedMode"`
-	BaseRevision  string       `json:"baseRevision"`
-	Decision      DecisionEnum `json:"decision"`
-	DisplayName   string       `json:"displayName"`
-	ExpiresAt     time.Time    `json:"expiresAt"`
-	ExportAllowed bool         `json:"exportAllowed"`
-	MinZedToken   string       `json:"minZedToken"`
+	AdmittedMode  ProtocolSessionMode                         `json:"admittedMode"`
+	BaseRevision  string                                      `json:"baseRevision"`
+	Decision      ProtocolSessionLifecyclePepResponseDecision `json:"decision"`
+	DisplayName   string                                      `json:"displayName"`
+	ExpiresAt     string                                      `json:"expiresAt"`
+	ExportAllowed bool                                        `json:"exportAllowed"`
+	MinZedToken   string                                      `json:"minZedToken"`
 	// Confirmed original native token/session reference. Required by native READ/WRITE
 	// consumers, absent before the first native OPEN creation.
 	NativeSessionRef *string `json:"nativeSessionRef,omitempty"`
@@ -4492,18 +4450,6 @@ type ProtocolSessionPepResponse struct {
 	PostMessageOrigin *string `json:"postMessageOrigin,omitempty"`
 }
 
-// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
-// file bytes or an authorization grant.
-type ProtocolWriteObservation struct {
-	BaseModifiedAt time.Time `json:"baseModifiedAt"`
-	BytesWritten   int64     `json:"bytesWritten"`
-	CorrelationRef string    `json:"correlationRef"`
-	Editors        string    `json:"editors"`
-	NativeEtag     *string   `json:"nativeEtag,omitempty"`
-	Phase          Phase     `json:"phase"`
-	ResultRevision *string   `json:"resultRevision,omitempty"`
-}
-
 // Receipt of native write evidence. It grants no read or write permission.
 type ProtocolWriteReceipt struct {
 	ProtocolSessionID string                    `json:"protocolSessionId"`
@@ -4513,18 +4459,18 @@ type ProtocolWriteReceipt struct {
 // 07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
 // scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
 type AdapterQueryRevisionRequest struct {
-	AuthorizationTargetNativeRef *string                 `json:"authorizationTargetNativeRef,omitempty"`
-	IdempotencyKey               string                  `json:"idempotencyKey"`
-	NativeObjectRef              string                  `json:"nativeObjectRef"`
-	ProtocolReconcile            *ProtocolReconcileClass `json:"protocolReconcile,omitempty"`
+	AuthorizationTargetNativeRef *string                `json:"authorizationTargetNativeRef,omitempty"`
+	IdempotencyKey               string                 `json:"idempotencyKey"`
+	NativeObjectRef              string                 `json:"nativeObjectRef"`
+	ProtocolReconcile            *ProtocolRevisionQuery `json:"protocolReconcile,omitempty"`
 }
 
 // DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
 // VersionId，不提供文件字节或当前权限。
-type ProtocolReconcileClass struct {
-	BaseRevision      string                `json:"baseRevision"`
-	ProtocolSessionID string                `json:"protocolSessionId"`
-	WriteObservation  WriteObservationClass `json:"writeObservation"`
+type ProtocolRevisionQuery struct {
+	BaseRevision      string                   `json:"baseRevision"`
+	ProtocolSessionID string                   `json:"protocolSessionId"`
+	WriteObservation  ProtocolWriteObservation `json:"writeObservation"`
 }
 
 // 07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
@@ -4533,38 +4479,6 @@ type AdapterQueryRevisionResponse struct {
 	NativeObjectRef   string  `json:"nativeObjectRef"`
 	NativeRevision    string  `json:"nativeRevision"`
 	ProtocolSessionID *string `json:"protocolSessionId,omitempty"`
-}
-
-// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
-// read batch. Input is checked against the approved source action schema; Core retains its
-// digest, not the returned business content.
-type AdapterReadGrantRequest struct {
-	ActionKey      string `json:"actionKey"`
-	ActionVersion  int64  `json:"actionVersion"`
-	IdempotencyKey string `json:"idempotencyKey"`
-	InputJSON      string `json:"inputJson"`
-	// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
-	// exactly one mode, freezes these references, and resolves the receiver from its
-	// authenticated binding.
-	NativeBatch *NativeBatch `json:"nativeBatch,omitempty"`
-	// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
-	// receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
-	ObserveActionExecutionID  *string `json:"observeActionExecutionId,omitempty"`
-	ReceiverActionExecutionID *string `json:"receiverActionExecutionId,omitempty"`
-	ReceiverArgumentsJSON     *string `json:"receiverArgumentsJson,omitempty"`
-	ReceiverBindingID         string  `json:"receiverBindingId"`
-	SourceResourceID          string  `json:"sourceResourceId"`
-}
-
-// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
-// exactly one mode, freezes these references, and resolves the receiver from its
-// authenticated binding.
-type NativeBatch struct {
-	ActionKey          string `json:"actionKey"`
-	ActionVersion      int64  `json:"actionVersion"`
-	BatchID            string `json:"batchId"`
-	ImportConfigRef    string `json:"importConfigRef"`
-	ReceiverResourceID string `json:"receiverResourceId"`
 }
 
 // DD-89: short-lived source Adapter authorization, not native credentials or proof that the
@@ -4578,7 +4492,7 @@ type AdapterReadGrantResponse struct {
 	OperationID       string  `json:"operationId"`
 	// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
 	// UNKNOWN/PENDING carry no renewed authorization.
-	Outcome *OutcomeEnum `json:"outcome,omitempty"`
+	Outcome *AdapterReadGrantResponseOutcome `json:"outcome,omitempty"`
 	// 仅 COMPLETED 观察返回同一 Operation 已核实的原接收方子执行引用。
 	ReceiverActionExecutionID *string `json:"receiverActionExecutionId,omitempty"`
 	// 仅 COMPLETED 观察返回原子执行冻结的 receiver generation，不是当前绑定代次。
@@ -4587,8 +4501,8 @@ type AdapterReadGrantResponse struct {
 	// Separate governed receiver action in the same read Operation. The native importer must
 	// perform the existing authenticated PEP check with this token immediately before its
 	// write; issuance is not completion.
-	ReceiverWrite   *ReceiverWrite `json:"receiverWrite,omitempty"`
-	SourceBindingID string         `json:"sourceBindingId"`
+	ReceiverWrite   *AdapterReadGrantResponseReceiverWrite `json:"receiverWrite,omitempty"`
+	SourceBindingID string                                 `json:"sourceBindingId"`
 	// 仅原生批次 COMPLETED 观察返回已保存的 SOURCE 回执；不是新的读取授权。
 	SourceReceipt *AdapterReadReceipt `json:"sourceReceipt,omitempty"`
 }
@@ -4601,18 +4515,18 @@ type AdapterReadReceipt struct {
 	BindingID string `json:"bindingId"`
 	// Original native RFC3339 timestamp; Core validates it without rewriting the native
 	// representation.
-	CompletedAt     string                           `json:"completedAt"`
-	ContentBytes    int64                            `json:"contentBytes"`
-	ContentSha256   string                           `json:"contentSha256"`
-	IdempotencyKey  string                           `json:"idempotencyKey"`
-	Measurements    []AdapterReadReceiptMeasurement  `json:"measurements"`
-	NativeObjectRef string                           `json:"nativeObjectRef"`
-	NativeRevision  string                           `json:"nativeRevision"`
-	OperationID     string                           `json:"operationId"`
-	Role            ApplicationReadResourceDirection `json:"role"`
+	CompletedAt     string                               `json:"completedAt"`
+	ContentBytes    int64                                `json:"contentBytes"`
+	ContentSha256   string                               `json:"contentSha256"`
+	IdempotencyKey  string                               `json:"idempotencyKey"`
+	Measurements    []AdapterReadReceiptMeasurementsItem `json:"measurements"`
+	NativeObjectRef string                               `json:"nativeObjectRef"`
+	NativeRevision  string                               `json:"nativeRevision"`
+	OperationID     string                               `json:"operationId"`
+	Role            ApplicationReadResourceDirection     `json:"role"`
 }
 
-type AdapterReadReceiptMeasurement struct {
+type AdapterReadReceiptMeasurementsItem struct {
 	MeterKey string `json:"meterKey"`
 	Quantity int64  `json:"quantity"`
 }
@@ -4620,151 +4534,573 @@ type AdapterReadReceiptMeasurement struct {
 // Separate governed receiver action in the same read Operation. The native importer must
 // perform the existing authenticated PEP check with this token immediately before its
 // write; issuance is not completion.
-type ReceiverWrite struct {
+type AdapterReadGrantResponseReceiverWrite struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	ActionToken       string `json:"actionToken"`
 	ArgumentsJSON     string `json:"argumentsJson"`
 	ExpiresAt         int64  `json:"expiresAt"`
 }
 
-// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
-type AdapterScopeObservation struct {
-	NativeRef           *string           `json:"nativeRef,omitempty"`
-	NativeType          *string           `json:"nativeType,omitempty"`
-	PlatformResourceRef string            `json:"platformResourceRef"`
-	Result              NativeScopeResult `json:"result"`
+// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
+// Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
+type AgentActiveTurnPage struct {
+	Turns       []AgentActiveTurnView `json:"turns"`
+	WorkspaceID string                `json:"workspaceId"`
 }
 
-// Actual native planner source within the existing execution binding. Metadata only:
-// neither SQL/content nor a grant. The original action and result-exposure authority must
-// authorize every resolved Resource.
-type AdapterSourceResource struct {
-	NativeRef  string `json:"nativeRef"`
-	NativeType string `json:"nativeType"`
+// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
+// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
+type AgentActiveTurnView struct {
+	// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
+	AgentPubkey *string `json:"agentPubkey,omitempty"`
+	// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
+	// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
+	CancelActionKey *string `json:"cancelActionKey,omitempty"`
+	InstallationID  string  `json:"installationId"`
+	InvocationID    string  `json:"invocationId"`
+	// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
+	OriginalActionExecutionID string `json:"originalActionExecutionId"`
+	ProjectionGeneration      int64  `json:"projectionGeneration"`
+	// AgentSession 根引用。
+	RootEventID string `json:"rootEventId"`
+	// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
+	StartedAt *string `json:"startedAt,omitempty"`
+	// AgentSession 的原生 thread ID。
+	ThreadID *string `json:"threadId,omitempty"`
+	// 已记录的原生 turn ID；派发结果尚未记录时省略。
+	TurnID *string `json:"turnId,omitempty"`
 }
 
-// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
-// actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
-type ActionCommand struct {
-	ActionKey string `json:"actionKey"`
-	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
-	AgentVersionContent       *AgentVersionContentClass      `json:"agentVersionContent,omitempty"`
-	ApplicationBindingCreate  *ApplicationBindingCreateClass `json:"applicationBindingCreate,omitempty"`
-	ApplicationBindingID      *string                        `json:"applicationBindingId,omitempty"`
-	ApplicationBindingVersion *int64                         `json:"applicationBindingVersion,omitempty"`
-	// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
-	AssetID *string `json:"assetId,omitempty"`
-	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
-	AssetVersion *int64 `json:"assetVersion,omitempty"`
-	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
-	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
-	// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
-	// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
-	// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
-	BindingSecretValues []ActionCommandBindingSecretValue `json:"bindingSecretValues,omitempty"`
-	// 仅 capability_contract.approve/deprecate：固定已登记版本。
-	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
-	// 仅 capability_contract.register：真实 schema 与测试向量内容。
-	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
-	ComponentAction                *ComponentActionClass                `json:"componentAction,omitempty"`
-	// 仅组件批准：已登记的不可变ComponentRelease标识。
-	ComponentReleaseID           *string                            `json:"componentReleaseId,omitempty"`
-	ComponentReleaseRegistration *ComponentReleaseRegistrationClass `json:"componentReleaseRegistration,omitempty"`
-	ConversationOpen             *ConversationOpenClass             `json:"conversationOpen,omitempty"`
-	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
-	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
-	DelegationID *string `json:"delegationId,omitempty"`
-	// 仅 revoke：调用方实际读取的 Grant 版本。
-	DelegationVersion *int64 `json:"delegationVersion,omitempty"`
-	// 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
-	ExecutorInstallationResourceID *string `json:"executorInstallationResourceId,omitempty"`
-	// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
-	// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
-	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
-	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
-	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
-	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
-	HuddleAgent     *HuddleAgentClass        `json:"huddleAgent,omitempty"`
-	// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
-	// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
-	HuddleID    *string           `json:"huddleId,omitempty"`
-	HuddleStart *HuddleStartClass `json:"huddleStart,omitempty"`
-	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
-	IdempotencyKey string `json:"idempotencyKey"`
-	// tenant.member.invite.revoke 的目标邀请
-	InvitationID *string `json:"invitationId,omitempty"`
-	// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
-	LlmRouteCreate *LlmRouteCreateClass `json:"llmRouteCreate,omitempty"`
-	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
-	// 输入；其他命令禁止携带。
-	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
-	// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
-	// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
-	ModerationEventID *string `json:"moderationEventId,omitempty"`
-	// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
-	// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
-	// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
-	// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-	ModerationMember *ActionCommandModerationMember `json:"moderationMember,omitempty"`
-	// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
-	// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
-	// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-	ModerationReport *ActionCommandModerationReport `json:"moderationReport,omitempty"`
-	// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
-	// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-	ModerationResolution *ActionCommandModerationResolution `json:"moderationResolution,omitempty"`
-	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
-	Name *string `json:"name,omitempty"`
-	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
-	// 回合中断（task.cancel.agent.invoke.v1）的发起人可以是原发起人或该 Installation manage 持有人（DD-125(6) 扩展
-	// DD-84），其余规则不变
-	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
-	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner；resource.grant_read/revoke_read 的同
-	// Tenant 接收者，Core 核对真实 HUMAN 成员、原 AGENT Installation 或 receiverResource 所属 SERVICE
-	PrincipalID *string `json:"principalId,omitempty"`
-	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
-	// identity; no Agent or caller-selected native credentials.
-	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
-	// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
-	// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-	ReceiverResource *ActionCommandReceiverResource `json:"receiverResource,omitempty"`
-	ResourceCreate   *ResourceCreateClass           `json:"resourceCreate,omitempty"`
-	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
-	// agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
-	// explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
-	// 解析（TARGET_HOME_WORKSPACE），不接受 workspaceId、assetId 或其他参数；原“重启”是 assetId 等于固定 Version 的
-	// agent.installation.upgrade
-	ResourceID *string `json:"resourceId,omitempty"`
-	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
-	ResourceVersion *int64 `json:"resourceVersion,omitempty"`
-	// workspace.create 或 agent.definition.create 的稳定 slug
-	Slug *string `json:"slug,omitempty"`
-	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
-	SourceEventID *string `json:"sourceEventId,omitempty"`
-	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
-	TenantID *string `json:"tenantId,omitempty"`
-	// 仅 tenant.quota.set（DD-123）
-	TenantQuotaSetting *TenantQuotaSettingClass `json:"tenantQuotaSetting,omitempty"`
-	// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
-	// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
-	WorkspaceCanvas  *WorkspaceCanvasClass  `json:"workspaceCanvas,omitempty"`
-	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
-	// Workspace 内动作的执行 Workspace
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
-	// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
-	WorkspaceUpdate *WorkspaceUpdateClass `json:"workspaceUpdate,omitempty"`
-	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
+// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
+type AgentDefinitionPage struct {
+	Definitions []AgentDefinitionView `json:"definitions"`
+	NextOffset  *int64                `json:"nextOffset,omitempty"`
+}
+
+// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
+type AgentDefinitionView struct {
+	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
+	DisplayName                    string        `json:"displayName"`
+	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
+	ResourceID                     string        `json:"resourceId"`
+	ResourceState                  ResourceState `json:"resourceState"`
+	ResourceVersion                int64         `json:"resourceVersion"`
+	StableSlug                     string        `json:"stableSlug"`
+	Status                         string        `json:"status"`
+}
+
+type AgentDelegationPage struct {
+	CanGrant               bool                  `json:"canGrant"`
+	CanRevoke              bool                  `json:"canRevoke"`
+	Grants                 []AgentDelegationView `json:"grants"`
+	InstallationResourceID string                `json:"installationResourceId"`
+	NextOffset             *int64                `json:"nextOffset,omitempty"`
+	ResourceVersion        int64                 `json:"resourceVersion"`
+	WorkspaceID            string                `json:"workspaceId"`
+}
+
+// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
+// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
+type AgentDelegationView struct {
+	DelegationID      string `json:"delegationId"`
+	DelegationVersion int64  `json:"delegationVersion"`
+	// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+	// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+	// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+	EffectiveState     DelegationEffectiveState  `json:"effectiveState"`
+	GrantorPrincipalID string                    `json:"grantorPrincipalId"`
+	Parameters         DelegationGrantParameters `json:"parameters"`
+	State              AgentDelegationViewState  `json:"state"`
+	// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
+	SupersededByDelegationID *string `json:"supersededByDelegationId,omitempty"`
+	Uses                     int64   `json:"uses"`
+}
+
+// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+type DelegationGrantParameters struct {
+	ExpiresAt string `json:"expiresAt"`
+	MaxUses   *int64 `json:"maxUses,omitempty"`
+	// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
+	RenewsDelegationID *string `json:"renewsDelegationId,omitempty"`
+	// DD-126(5)：被替换 Grant 的当前 version（CAS）。
+	RenewsDelegationVersion *int64                      `json:"renewsDelegationVersion,omitempty"`
+	Scopes                  []DelegationScopeParameters `json:"scopes"`
+	ValidFrom               string                      `json:"validFrom"`
+}
+
+// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
+type DelegationScopeParameters struct {
+	ActionKey          string                                      `json:"actionKey"`
+	ActionVersion      int64                                       `json:"actionVersion"`
+	CreateWorkspaceID  *string                                     `json:"createWorkspaceId,omitempty"`
+	OutputSchemaHash   string                                      `json:"outputSchemaHash"`
+	RedactionPolicy    string                                      `json:"redactionPolicy"`
+	ResultExposureMode DelegationScopeParametersResultExposureMode `json:"resultExposureMode"`
+	TargetID           *string                                     `json:"targetId,omitempty"`
+	TargetType         string                                      `json:"targetType"`
+	ToolResourceID     *string                                     `json:"toolResourceId,omitempty"`
+}
+
+// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
+type AgentDelegationTargetPage struct {
+	InstallationResourceID string                      `json:"installationResourceId"`
+	NextOffset             *int64                      `json:"nextOffset,omitempty"`
+	ResourceVersion        int64                       `json:"resourceVersion"`
+	Scopes                 []DelegationScopeParameters `json:"scopes"`
+	WorkspaceID            string                      `json:"workspaceId"`
+}
+
+type AgentInstallationCandidatePage struct {
+	// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
+	CanCreate   bool                         `json:"canCreate"`
+	Candidates  []AgentInstallationCandidate `json:"candidates"`
+	NextOffset  *int64                       `json:"nextOffset,omitempty"`
+	WorkspaceID string                       `json:"workspaceId"`
+}
+
+// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
+type AgentInstallationCandidate struct {
+	AgentResourceID     string `json:"agentResourceId"`
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	AssetVersion        int64  `json:"assetVersion"`
+	DisplayName         string `json:"displayName"`
+	Ordinal             int64  `json:"ordinal"`
+	ResourceVersion     int64  `json:"resourceVersion"`
+}
+
+// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
+type AgentInstallationPage struct {
+	Installations []AgentInstallationView `json:"installations"`
+	NextOffset    *int64                  `json:"nextOffset,omitempty"`
+}
+
+// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
+// 正文、执行或管理权限。
+type AgentInstallationView struct {
+	ActiveProjectionGeneration *int64 `json:"activeProjectionGeneration,omitempty"`
+	// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
+	// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
+	AgentDisplayName    *string                                  `json:"agentDisplayName,omitempty"`
+	AgentPrincipalID    string                                   `json:"agentPrincipalId"`
+	AgentPrincipalState AgentInstallationViewAgentPrincipalState `json:"agentPrincipalState"`
+	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+	AgentPubkey     *string `json:"agentPubkey,omitempty"`
+	AgentResourceID string  `json:"agentResourceId"`
+	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+	// 准入。缺失或空集合不支持 Schedule。
+	AutomationResultTargets []AutomationResultTarget `json:"automationResultTargets,omitempty"`
+	// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
+	// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
+	CanAudit *bool `json:"canAudit,omitempty"`
+	// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
+	// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
+	// explicitConfirmation。不代表已准入，旧服务缺省不显示。
+	CanDisable *bool `json:"canDisable,omitempty"`
+	// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
+	// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
+	CanEnable *bool `json:"canEnable,omitempty"`
+	// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
+	// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
+	// PUBLISHED 时为 true；仍沿升级审批与排空。
+	CanRestart *bool `json:"canRestart,omitempty"`
+	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+	CanUpgrade           *bool                                     `json:"canUpgrade,omitempty"`
+	ChannelBinding       *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission  *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID     string                                    `json:"ownerPrincipalId"`
+	PinnedVersionAssetID string                                    `json:"pinnedVersionAssetId"`
+	Projection           *AgentInstallationProjectionView          `json:"projection,omitempty"`
+	ReadPermission       *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
+	ResourceID           string                                    `json:"resourceId"`
+	ResourceState        ResourceState                             `json:"resourceState"`
+	ResourceVersion      int64                                     `json:"resourceVersion"`
+	State                AgentInstallationState                    `json:"state"`
+	WorkspaceID          string                                    `json:"workspaceId"`
+}
+
+type AgentInstallationViewChannelBinding struct {
+	ChannelID *string                                   `json:"channelId,omitempty"`
+	Status    AgentInstallationViewChannelBindingStatus `json:"status"`
+	Triggers  []AgentTrigger                            `json:"triggers"`
+}
+
+type AgentInstallationViewExecutionPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
+}
+
+// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
+type AgentInstallationProjectionView struct {
+	AgentVersionAssetID string                      `json:"agentVersionAssetId"`
+	ConfigHash          string                      `json:"configHash"`
+	Generation          int64                       `json:"generation"`
+	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
+	State               AgentRuntimeProjectionState `json:"state"`
+}
+
+type AgentInstallationViewReadPermission struct {
+	CanGrant                 bool    `json:"canGrant"`
+	CanRevoke                bool    `json:"canRevoke"`
+	Effective                bool    `json:"effective"`
+	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
+	Requested                bool    `json:"requested"`
+}
+
+// DD-122: the tools an Agent Installation's current generation requests and their effective
+// state. Read-only; grants happen only through installation create/upgrade.
+type AgentInstallationToolPage struct {
+	Generation             int64                       `json:"generation"`
+	InstallationResourceID string                      `json:"installationResourceId"`
+	Tools                  []AgentInstallationToolView `json:"tools"`
+}
+
+type AgentInstallationToolView struct {
+	ApplicationBindingID *string                `json:"applicationBindingId,omitempty"`
+	BindingStatus        AgentToolBindingStatus `json:"bindingStatus"`
+	// APPLICATION only: the requested capability contract key@version.
+	CapabilityRequirement *string                     `json:"capabilityRequirement,omitempty"`
+	Name                  *string                     `json:"name,omitempty"`
+	ReasonCode            *ReasonCode                 `json:"reasonCode,omitempty"`
+	Source                AgentInstallationToolSource `json:"source"`
+	// Absent when an application capability requirement has no resolved provider yet.
+	ToolResourceID *string `json:"toolResourceId,omitempty"`
+}
+
+// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
+// reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
+// 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
+type AgentInstallationUsePage struct {
+	InstallationID           string                                `json:"installationId"`
+	Members                  []AgentInstallationUsePageMembersItem `json:"members"`
+	PendingActionExecutionID *string                               `json:"pendingActionExecutionId,omitempty"`
+	ResourceVersion          int64                                 `json:"resourceVersion"`
+	// DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
+	// agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
+	RespondTo *AgentRespondToMode `json:"respondTo,omitempty"`
+}
+
+type AgentInstallationUsePageMembersItem struct {
+	CanGrant    bool   `json:"canGrant"`
+	CanRevoke   bool   `json:"canRevoke"`
+	DisplayName string `json:"displayName"`
+	Effective   bool   `json:"effective"`
+	PrincipalID string `json:"principalId"`
+	Requested   bool   `json:"requested"`
+}
+
+// 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
+// prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
+type AgentInvocationPage struct {
+	Invocations []AgentInvocationView `json:"invocations"`
+	NextCursor  *string               `json:"nextCursor,omitempty"`
+}
+
+// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
+// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
+type AgentInvocationView struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	CancelPending     bool   `json:"cancelPending"`
+	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
+	CanReadTask bool `json:"canReadTask"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt     string                    `json:"createdAt"`
+	InvocationID  string                    `json:"invocationId"`
+	Observation   *ReasonCode               `json:"observation,omitempty"`
+	RuntimeTurnID *string                   `json:"runtimeTurnId,omitempty"`
+	Status        AgentInvocationViewStatus `json:"status"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
+// snapshot，不是严格存量权威。
+type AgentMemoryEntryPage struct {
+	Entries                []AgentMemoryEntryView `json:"entries"`
+	InstallationResourceID string                 `json:"installationResourceId"`
+	OperationID            string                 `json:"operationId"`
+	// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+	// 记忆工具结果省略，客户端保持 slug 顺序。
+	References  *AgentMemoryReferenceView `json:"references,omitempty"`
+	State       AgentMemoryEntryPageState `json:"state"`
+	WorkspaceID string                    `json:"workspaceId"`
+}
+
+// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
+// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
+type AgentMemoryEntryView struct {
+	CreatedAt int64  `json:"createdAt"`
+	EventID   string `json:"eventId"`
+	// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
+	// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
+	OutgoingRefs []string `json:"outgoingRefs,omitempty"`
+	Slug         string   `json:"slug"`
+	Tombstone    bool     `json:"tombstone"`
+}
+
+// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
+// 记忆工具结果省略，客户端保持 slug 顺序。
+//
+// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
+// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
+// core、其引用树先序、未被引用者按 slug 排列。
+type AgentMemoryReferenceView struct {
+	// 本次读取存在 core head；false 时客户端显示“没有 core”。
+	CoreExists bool `json:"coreExists"`
+	// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
+	CoreRefs []string `json:"coreRefs"`
+	// 按目标 slug 排序。
+	Dangling []AgentMemoryDanglingRefView `json:"dangling"`
+}
+
+// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
+// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
+type AgentMemoryDanglingRefView struct {
+	// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
+	ReferencedBy []string `json:"referencedBy"`
+	Slug         string   `json:"slug"`
+}
+
+// DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
+// Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
+type AgentMemoryReadView struct {
+	Content *string `json:"content,omitempty"`
+	// UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
+	// billing measurement.
+	ContentBytes           *int64                   `json:"contentBytes,omitempty"`
+	CreatedAt              *int64                   `json:"createdAt,omitempty"`
+	EventID                *string                  `json:"eventId,omitempty"`
+	InstallationResourceID string                   `json:"installationResourceId"`
+	OperationID            string                   `json:"operationId"`
+	Slug                   string                   `json:"slug"`
+	State                  AgentMemoryReadViewState `json:"state"`
+	// FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
+	// not the JSON body or a stored plaintext copy.
+	ValueHash   *string `json:"valueHash,omitempty"`
+	WorkspaceID string  `json:"workspaceId"`
+}
+
+// DD-121: only agent.invoke executions initiated by the caller for the requested source
+// events; no message body, no other member's executions, no Agent internals. A mentioned
+// Agent without an outcome is still PENDING (not yet scanned).
+type AgentMentionOutcomePage struct {
+	Outcomes []AgentMentionOutcomeView `json:"outcomes"`
+}
+
+type AgentMentionOutcomeView struct {
+	EventID        string                   `json:"eventId"`
+	InstallationID string                   `json:"installationId"`
+	ReasonCode     *ReasonCode              `json:"reasonCode,omitempty"`
+	ReplyEventID   *string                  `json:"replyEventId,omitempty"`
+	State          AgentMentionOutcomeState `json:"state"`
+}
+
+// DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
+// outcome the caller may see.
+type AgentMentionOutcomeQueryRequest struct {
+	EventIDS []string `json:"eventIds"`
+}
+
+// 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
+// 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
+type AgentSessionPage struct {
+	NextCursor *string            `json:"nextCursor,omitempty"`
+	Sessions   []AgentSessionView `json:"sessions"`
+}
+
+type AgentSessionView struct {
+	AgentVersionAssetID string `json:"agentVersionAssetId"`
+	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
+	CreatedAt              string `json:"createdAt"`
+	InstallationResourceID string `json:"installationResourceId"`
+	ProjectionGeneration   int64  `json:"projectionGeneration"`
+	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
+	RootEventID     string                 `json:"rootEventId"`
+	RuntimeThreadID *string                `json:"runtimeThreadId,omitempty"`
+	Status          AgentSessionViewStatus `json:"status"`
+	WorkspaceID     string                 `json:"workspaceId"`
+}
+
+// GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
+// Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
+// 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
+// 审计。帧不落库，断线后以分页读取补齐。
+type AgentTranscriptEvent struct {
+	// 原生通知时间（item 的 startedAtMs/completedAtMs 或 turn 通知的 emittedAtMs），Unix 毫秒。
+	AtMS           *int64 `json:"atMs,omitempty"`
+	InstallationID string `json:"installationId"`
+	// ITEM_STARTED / ITEM_COMPLETED 时给出。
+	Item                 *AgentTranscriptItem      `json:"item,omitempty"`
+	Phase                AgentTranscriptEventPhase `json:"phase"`
+	ProjectionGeneration int64                     `json:"projectionGeneration"`
+	RootEventID          string                    `json:"rootEventId"`
+	ThreadID             string                    `json:"threadId"`
+	TurnID               string                    `json:"turnId"`
+}
+
+// ITEM_STARTED / ITEM_COMPLETED 时给出。
+//
+// DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
+// audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
+// item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
+// 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
+type AgentTranscriptItem struct {
+	// COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
+	AggregatedOutput *string `json:"aggregatedOutput,omitempty"`
+	// 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
+	ArgumentsJSON *string `json:"argumentsJson,omitempty"`
+	// COMMAND_EXECUTION 的命令。
+	Command *string `json:"command,omitempty"`
+	// item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+	CompletedAtMS *int64 `json:"completedAtMs,omitempty"`
+	// COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
+	Cwd *string `json:"cwd,omitempty"`
+	// COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
+	DurationMS *int64 `json:"durationMs,omitempty"`
+	// MCP_TOOL_CALL 的原生 error.message。
+	ErrorText *string `json:"errorText,omitempty"`
+	ExitCode  *int64  `json:"exitCode,omitempty"`
+	// FILE_CHANGE 的逐文件变更。
+	FileChanges []AgentTranscriptFileChange `json:"fileChanges,omitempty"`
+	// 原生 ThreadItem.id。
+	ItemID string                  `json:"itemId"`
+	Kind   AgentTranscriptItemKind `json:"kind"`
+	// 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
+	NativeType string                       `json:"nativeType"`
+	Phase      *AgentTranscriptMessagePhase `json:"phase,omitempty"`
+	// WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
+	Query *string `json:"query,omitempty"`
+	// REASONING 的原文段（原生提供时）。
+	ReasoningContent []string `json:"reasoningContent,omitempty"`
+	// REASONING 的 summary 段。
+	ReasoningSummary []string `json:"reasoningSummary,omitempty"`
+	// 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
+	ResultText *string `json:"resultText,omitempty"`
+	// MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
+	Server *string `json:"server,omitempty"`
+	// item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
+	StartedAtMS *int64                     `json:"startedAtMs,omitempty"`
+	Status      *AgentTranscriptItemStatus `json:"status,omitempty"`
+	// USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
+	Text *string `json:"text,omitempty"`
+	// MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
+	Tool *string `json:"tool,omitempty"`
+	// 所属原生 turn ID。
+	TurnID string `json:"turnId"`
+}
+
+type AgentTranscriptFileChange struct {
+	ChangeKind AgentTranscriptFileChangeKind `json:"changeKind"`
+	// 原生 unified diff 文本。
+	Diff string `json:"diff"`
+	// UPDATE 改名时的目标路径。
+	MovePath *string `json:"movePath,omitempty"`
+	Path     string  `json:"path"`
+}
+
+// GET
+// /api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按
+// AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core
+// 不复制正文。nextCursor 绑定读者、Installation 与 Session，原生 cursor 不外露。activeTurn 只在该 Session
+// 有运行中回合时给出。Session 尚无原生 thread 时 items 为空且省略 threadId。
+type AgentTranscriptPage struct {
+	ActiveTurn           *AgentActiveTurnView  `json:"activeTurn,omitempty"`
+	InstallationID       string                `json:"installationId"`
+	Items                []AgentTranscriptItem `json:"items"`
+	NextCursor           *string               `json:"nextCursor,omitempty"`
+	ProjectionGeneration int64                 `json:"projectionGeneration"`
+	RootEventID          string                `json:"rootEventId"`
+	ThreadID             *string               `json:"threadId,omitempty"`
+}
+
+// DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
+// canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
+type AgentVersionConfigurationPage struct {
+	AgentResourceID string                                `json:"agentResourceId"`
+	CanCreate       bool                                  `json:"canCreate"`
+	NextOffset      *int64                                `json:"nextOffset"`
+	Profiles        []RuntimeProfileDirectoryProfilesItem `json:"profiles"`
+	ResourceVersion int64                                 `json:"resourceVersion"`
+	Routes          []AgentVersionRouteOption             `json:"routes"`
+}
+
+type RuntimeProfileDirectoryProfilesItem struct {
+	CapabilityContract RuntimeProfileDirectoryProfilesItemCapabilityContract `json:"capabilityContract"`
+	Key                string                                                `json:"key"`
+	Kind               RuntimeProfileKind                                    `json:"kind"`
+	Status             string                                                `json:"status"`
+	WebAvailability    string                                                `json:"webAvailability"`
+}
+
+type RuntimeProfileDirectoryProfilesItemCapabilityContract struct {
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
+	MaxParallelism         int64    `json:"maxParallelism"`
+	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
+	ReplyPolicies          []string `json:"replyPolicies"`
+	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+	ReplyPolicyMappings []RuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
+}
+
+type RuntimeReplyPolicyMapping struct {
+	BroadcastReplies bool   `json:"broadcastReplies"`
+	Key              string `json:"key"`
+	ThreadReplies    bool   `json:"threadReplies"`
+}
+
+// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+type AgentVersionRouteOption struct {
+	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
+	NativeConfigHash       string  `json:"nativeConfigHash"`
+	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
+	NativeRevision         int64   `json:"nativeRevision"`
+	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
+	ResourceID             string  `json:"resourceId"`
+	ResourceVersion        int64   `json:"resourceVersion"`
+}
+
+// DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
+// 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
+type AgentVersionPage struct {
+	AgentResourceID string             `json:"agentResourceId"`
+	NextOffset      *int64             `json:"nextOffset"`
+	ResourceVersion int64              `json:"resourceVersion"`
+	Versions        []AgentVersionView `json:"versions"`
+}
+
+type AgentVersionView struct {
+	AgentResourceID string `json:"agentResourceId"`
+	AssetID         string `json:"assetId"`
+	AssetVersion    int64  `json:"assetVersion"`
+	// Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
+	// to the existing same-origin profile media reader. Read projection only; not content, a
+	// credential, or an arbitrary remote proxy.
+	AvatarMediaPaths map[string]string `json:"avatarMediaPaths,omitempty"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
+	// 资格；缺字段不允许发布，不证明已安装或可运行。
+	CanPublish *bool `json:"canPublish,omitempty"`
+	// 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
+	// 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
+	CanRetire *bool `json:"canRetire,omitempty"`
+	// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
+	CanUpdate        *bool               `json:"canUpdate,omitempty"`
+	ConfigHash       string              `json:"configHash"`
+	Content          AgentVersionContent `json:"content"`
+	Ordinal          int64               `json:"ordinal"`
+	OwnerPrincipalID string              `json:"ownerPrincipalId"`
+	State            AgentVersionState   `json:"state"`
 }
 
 // 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
 //
 // 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
 // environment。发布不等于安装或运行授权。
-type AgentVersionContentClass struct {
+type AgentVersionContent struct {
 	// 精确 contract_key@version，不引用业务能力实现名。
 	CapabilityRequirements  []string                           `json:"capabilityRequirements"`
 	DeclaredToolResourceIDS []string                           `json:"declaredToolResourceIds"`
@@ -4795,1298 +5131,6 @@ type AgentVersionContentPersonaIdentity struct {
 type AgentVersionContentTurnLimits struct {
 	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
 	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
-}
-
-// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
-// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
-type ApplicationBindingCreateClass struct {
-	AdapterServiceRef    string                                       `json:"adapterServiceRef"`
-	BindingID            string                                       `json:"bindingId"`
-	CallIdentityMode     ApplicationCallIdentityMode                  `json:"callIdentityMode"`
-	CapabilityCategories []ApplicationBindingCreateCapabilityCategory `json:"capabilityCategories"`
-	ComponentReleaseID   string                                       `json:"componentReleaseId"`
-	IsolationMode        ApplicationIsolationMode                     `json:"isolationMode"`
-	ModelCallMode        ApplicationModelCallMode                     `json:"modelCallMode"`
-	NativeInstanceRef    string                                       `json:"nativeInstanceRef"`
-	NativeScopeRef       *string                                      `json:"nativeScopeRef,omitempty"`
-	NormalizedConfigJSON string                                       `json:"normalizedConfigJson"`
-	RetainOnTenantDelete bool                                         `json:"retainOnTenantDelete"`
-	// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
-	// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
-	// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
-	SecretRefs         []ApplicationBindingCreateSecretRef `json:"secretRefs"`
-	ServicePrincipalID string                              `json:"servicePrincipalId"`
-}
-
-type ApplicationBindingCreateCapabilityCategory struct {
-	Category string `json:"category"`
-	Version  int64  `json:"version"`
-}
-
-type ApplicationBindingCreateSecretRef struct {
-	Audience  string `json:"audience"`
-	Locator   string `json:"locator"`
-	SecretKey string `json:"secretKey"`
-	Version   int64  `json:"version"`
-}
-
-// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
-//
-// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
-// 配置或凭据。
-type AutomationVersionContentClass struct {
-	Action         *AutomationVersionContentAction `json:"action,omitempty"`
-	ApprovalPolicy *ApprovalPolicyElement          `json:"approvalPolicy,omitempty"`
-	// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
-	Description *string `json:"description,omitempty"`
-	// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
-	FormatVersion *int64 `json:"formatVersion,omitempty"`
-	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-	Name         *string                `json:"name,omitempty"`
-	ResultTarget AutomationResultTarget `json:"resultTarget"`
-	//
-	// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
-	Steps   []StepElement                   `json:"steps,omitempty"`
-	Trigger AutomationVersionContentTrigger `json:"trigger"`
-}
-
-type AutomationVersionContentAction struct {
-	Kind     ActionKind `json:"kind"`
-	Template string     `json:"template"`
-}
-
-// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
-//
-// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-type ApprovalPolicyElement struct {
-	ID      string `json:"id"`
-	Version int64  `json:"version"`
-}
-
-// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
-// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
-type StepElement struct {
-	Action ActionEnum `json:"action"`
-	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
-	// 原请求体模板；不保存响应正文。
-	Body     *string `json:"body,omitempty"`
-	Duration *string `json:"duration,omitempty"`
-	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
-	Emoji *string `json:"emoji,omitempty"`
-	// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
-	// 者）不得明文保存，必须改用 secretHeaders。
-	Headers map[string]string `json:"headers,omitempty"`
-	ID      string            `json:"id"`
-	// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
-	// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
-	// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
-	// ActionExecution；求值错误使该运行在任何副作用前失败。
-	If      *string `json:"if,omitempty"`
-	Message *string `json:"message,omitempty"`
-	// 原 HTTP 方法，缺省 POST。
-	Method *StepMethod `json:"method,omitempty"`
-	Name   *string     `json:"name,omitempty"`
-	// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
-	// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
-	SecretHeaders map[string]SecretHeaderValue `json:"secretHeaders,omitempty"`
-	Text          *string                      `json:"text,omitempty"`
-	// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
-	// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
-	// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
-	// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
-	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
-	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
-	Topic *string `json:"topic,omitempty"`
-	// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
-	// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
-	// AgentGateway 出站，不跟随重定向。
-	URL *string `json:"url,omitempty"`
-}
-
-// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
-type SecretHeaderValue struct {
-	Audience string `json:"audience"`
-	Locator  string `json:"locator"`
-	Version  int64  `json:"version"`
-}
-
-type AutomationVersionContentTrigger struct {
-	// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
-	Emoji *string `json:"emoji,omitempty"`
-	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
-	// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
-	// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
-	Filter             *string               `json:"filter,omitempty"`
-	Kind               AutomationTriggerKind `json:"kind"`
-	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
-	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
-	TextPrefix         *string               `json:"textPrefix,omitempty"`
-}
-
-// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
-// 固定 SKIP。
-type ScheduleSpecClass struct {
-	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
-	// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
-	Cron         *string `json:"cron,omitempty"`
-	EverySeconds *int64  `json:"everySeconds,omitempty"`
-	// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-	Kind          *ScheduleSpecKind `json:"kind,omitempty"`
-	OffsetSeconds *int64            `json:"offsetSeconds,omitempty"`
-}
-
-type ActionCommandBindingSecretValue struct {
-	SecretKey string `json:"secretKey"`
-	Value     string `json:"value"`
-}
-
-// 仅 capability_contract.approve/deprecate：固定已登记版本。
-//
-// 固定 Catalog 自然键，不授予业务能力 consume 权限。
-type CapabilityContractRefClass struct {
-	CategoryKey     string `json:"categoryKey"`
-	ContractVersion int64  `json:"contractVersion"`
-}
-
-// 仅 capability_contract.register：真实 schema 与测试向量内容。
-//
-// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
-type CapabilityContractRegistrationClass struct {
-	CategoryKey               string                                                  `json:"categoryKey"`
-	ContentReferenceSemantics CapabilityContractRegistrationContentReferenceSemantics `json:"contentReferenceSemantics"`
-	ContractVersion           int64                                                   `json:"contractVersion"`
-	OperationContracts        []CapabilityContractRegistrationOperationContract       `json:"operationContracts"`
-	ProtocolSessionKinds      []string                                                `json:"protocolSessionKinds"`
-	RequiredDeclarations      []CapabilityRequiredDeclaration                         `json:"requiredDeclarations"`
-	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamily      `json:"resourceTypeFamily"`
-	SchemaDocuments           []string                                                `json:"schemaDocuments"`
-	// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
-	// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
-	TestVectorsJSON string `json:"testVectorsJson"`
-}
-
-type CapabilityContractRegistrationContentReferenceSemantics struct {
-	AuthorizationTargetRule string `json:"authorizationTargetRule"`
-	NativeObjectRefRule     string `json:"nativeObjectRefRule"`
-	NativeRevisionRule      string `json:"nativeRevisionRule"`
-}
-
-type CapabilityContractRegistrationOperationContract struct {
-	ContractKey        string               `json:"contractKey"`
-	InputSchemaDigest  string               `json:"inputSchemaDigest"`
-	OutputSchemaDigest string               `json:"outputSchemaDigest"`
-	Permission         CapabilityPermission `json:"permission"`
-	Surface            CapabilitySurface    `json:"surface"`
-	TargetType         string               `json:"targetType"`
-}
-
-type CapabilityContractRegistrationResourceTypeFamily struct {
-	Kind    string `json:"kind"`
-	TypeKey string `json:"typeKey"`
-}
-
-// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
-// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
-// 仍校验原目标、能力 schema、审批和用量。
-type ComponentActionClass struct {
-	ActionVersion int64 `json:"actionVersion"`
-	// Canonical JSON for the existing registered capability input schema; mutually exclusive
-	// with inputReference, validated before AE admission.
-	InputJSON                   *string                  `json:"inputJson,omitempty"`
-	InputReference              *ContentReferenceElement `json:"inputReference,omitempty"`
-	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
-}
-
-// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
-// Worker 独立执行隔离套件。
-type ComponentReleaseRegistrationClass struct {
-	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
-	ManifestJSON            string `json:"manifestJson"`
-	PackageJSON             string `json:"packageJson"`
-}
-
-// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
-type ConversationOpenClass struct {
-	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
-}
-
-// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-type DelegationGrantClass struct {
-	ExpiresAt time.Time `json:"expiresAt"`
-	MaxUses   *int64    `json:"maxUses,omitempty"`
-	// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
-	RenewsDelegationID *string `json:"renewsDelegationId,omitempty"`
-	// DD-126(5)：被替换 Grant 的当前 version（CAS）。
-	RenewsDelegationVersion *int64         `json:"renewsDelegationVersion,omitempty"`
-	Scopes                  []ScopeElement `json:"scopes"`
-	ValidFrom               time.Time      `json:"validFrom"`
-}
-
-// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
-type ScopeElement struct {
-	ActionKey          string             `json:"actionKey"`
-	ActionVersion      int64              `json:"actionVersion"`
-	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
-	OutputSchemaHash   string             `json:"outputSchemaHash"`
-	RedactionPolicy    string             `json:"redactionPolicy"`
-	ResultExposureMode ResultExposureMode `json:"resultExposureMode"`
-	TargetID           *string            `json:"targetId,omitempty"`
-	TargetType         string             `json:"targetType"`
-	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
-}
-
-// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
-// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
-// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
-// Agent。
-type HuddleAgentClass struct {
-	AgentInstallationResourceID string `json:"agentInstallationResourceId"`
-}
-
-// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
-// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
-// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
-// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
-// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
-// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
-type HuddleStartClass struct {
-	// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
-	// ChannelAgentBinding 且本人有 execute 的 Installation
-	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds,omitempty"`
-	// 原 buildHuddleChannelName 生成的临时频道名
-	ChannelName string `json:"channelName"`
-	// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
-	CreatorPubkey *string `json:"creatorPubkey,omitempty"`
-	// 父私聊（ConversationBuzzBinding id）
-	ParentConversationID *string `json:"parentConversationId,omitempty"`
-	// 父 Workspace；须等于 ActionCommand.workspaceId
-	ParentWorkspaceID *string `json:"parentWorkspaceId,omitempty"`
-}
-
-// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
-//
-// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
-// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
-type LlmRouteCreateClass struct {
-	Model                  Model                            `json:"model"`
-	Provider               Model                            `json:"provider"`
-	ProviderCredentialMode LlmProviderCredentialMode        `json:"providerCredentialMode"`
-	ProviderSecretRef      *LlmRouteCreateProviderSecretRef `json:"providerSecretRef,omitempty"`
-}
-
-type Model struct {
-	ID       string `json:"id"`
-	Revision int64  `json:"revision"`
-	Sha256   string `json:"sha256"`
-}
-
-type LlmRouteCreateProviderSecretRef struct {
-	Audience string `json:"audience"`
-	Locator  string `json:"locator"`
-	Version  int64  `json:"version"`
-}
-
-// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
-// 输入；其他命令禁止携带。
-//
-// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
-type MemoryWriteClass struct {
-	// entry.patch 当前原生 value 的 SHA-256。
-	BaseHash *string `json:"baseHash,omitempty"`
-	// 调用方实际读取的 head；null 只表示原生确认不存在。
-	ExpectedHeadEventID *string `json:"expectedHeadEventId,omitempty"`
-	// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-	ExpectedHeadState ExpectedHeadState `json:"expectedHeadState"`
-	// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
-	Patch *string `json:"patch,omitempty"`
-	Slug  string  `json:"slug"`
-	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
-	Value *string `json:"value,omitempty"`
-}
-
-// 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
-// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
-// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
-// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-type ActionCommandModerationMember struct {
-	// 64 位小写十六进制 Nostr 公钥
-	TargetPubkey    string                     `json:"targetPubkey"`
-	TimeoutDuration *ModerationTimeoutDuration `json:"timeoutDuration,omitempty"`
-}
-
-// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
-// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
-// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-type ActionCommandModerationReport struct {
-	// 消息所在私聊；本人须为其当前参与者
-	ConversationID *string `json:"conversationId,omitempty"`
-	// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
-	EventID string `json:"eventId"`
-	// 原“补充说明（可选）”，至多 1000 字符
-	Note       *string              `json:"note,omitempty"`
-	ReportType ModerationReportType `json:"reportType"`
-	// 消息所在 Workspace Channel；本人须为其当前成员
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-}
-
-// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
-// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-type ActionCommandModerationResolution struct {
-	ReportEventIDS   []string                   `json:"reportEventIds"`
-	ResolutionAction ModerationResolutionAction `json:"resolutionAction"`
-	Status           ModerationResolutionStatus `json:"status"`
-}
-
-// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
-// identity; no Agent or caller-selected native credentials.
-//
-// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
-// Revision and presentation are frozen once; session expiry comes from controlled Core
-// delivery.
-type ProtocolSessionOpenClass struct {
-	ActionVersion int64 `json:"actionVersion"`
-	// The selected native source binding; must equal the target's real binding, not an
-	// authorization claim.
-	ApplicationBindingID string `json:"applicationBindingId"`
-	Locale               Locale `json:"locale"`
-	// Exact approved projection selected by the native menu; never latest.
-	ProjectionGeneration int64                   `json:"projectionGeneration"`
-	Reference            ContentReferenceElement `json:"reference"`
-	Theme                Theme                   `json:"theme"`
-}
-
-// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
-// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
-// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-type ActionCommandReceiverResource struct {
-	ID      string `json:"id"`
-	Version int64  `json:"version"`
-}
-
-type ResourceCreateClass struct {
-	EvidenceDigest string `json:"evidenceDigest"`
-	EvidenceRef    string `json:"evidenceRef"`
-	NativeRef      string `json:"nativeRef"`
-	NativeType     string `json:"nativeType"`
-	TypeKey        string `json:"typeKey"`
-}
-
-// 仅 tenant.quota.set（DD-123）
-//
-// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-// OpenMeter entitlement for the platform feature, resetting monthly.
-type TenantQuotaSettingClass struct {
-	Feature        TenantQuotaFeature `json:"feature"`
-	LimitPerPeriod int64              `json:"limitPerPeriod"`
-}
-
-// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
-// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
-//
-// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
-// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
-// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
-type WorkspaceCanvasClass struct {
-	Content string `json:"content"`
-}
-
-// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
-type WorkspaceChannelClass struct {
-	ChannelType ChannelType `json:"channelType"`
-	Description *string     `json:"description,omitempty"`
-	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
-	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
-}
-
-// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
-// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
-//
-// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
-// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
-// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
-type WorkspaceUpdateClass struct {
-	// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
-	ClearTTL *bool `json:"clearTtl,omitempty"`
-	// 原 9002 about；空字符串清空描述。
-	Description *string `json:"description,omitempty"`
-	// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
-	Name *string `json:"name,omitempty"`
-	// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
-	// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
-	Reopen *bool `json:"reopen,omitempty"`
-	// 设置原 Buzz 临时频道的不活跃期限（秒）。
-	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
-	// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
-}
-
-// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
-// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
-// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-type ActionSubmission struct {
-	ActionExecutionID  string                 `json:"actionExecutionId"`
-	ActionKey          string                 `json:"actionKey"`
-	ApprovalWorkflowID *string                `json:"approvalWorkflowId,omitempty"`
-	DispatchState      ActionDispatchState    `json:"dispatchState"`
-	DocumentLaunch     *LaunchDescriptorClass `json:"documentLaunch,omitempty"`
-	GateState          ActionGateState        `json:"gateState"`
-	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-	HuddleID          *string             `json:"huddleId,omitempty"`
-	Invitation        *InvitationClass    `json:"invitation,omitempty"`
-	OperationID       string              `json:"operationId"`
-	ProtocolSessionID *string             `json:"protocolSessionId,omitempty"`
-	Reason            *ReasonCode         `json:"reason,omitempty"`
-	WebhookSecret     *WebhookSecretClass `json:"webhookSecret,omitempty"`
-	WorkflowID        *string             `json:"workflowId,omitempty"`
-}
-
-// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-type InvitationClass struct {
-	// RFC3339，UTC
-	ExpiresAt    string `json:"expiresAt"`
-	InvitationID string `json:"invitationId"`
-	// 部署登记的链接基址 + '#' + 一次性凭据
-	Link string `json:"link"`
-}
-
-// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-type WebhookSecretClass struct {
-	AutomationResourceID string `json:"automationResourceId"`
-	Hint                 string `json:"hint"`
-	// 32 字节随机密钥的 base64 展示形式。
-	Secret string `json:"secret"`
-	// 公开投递地址；部署未配置公开基址时省略。
-	URL *string `json:"url,omitempty"`
-}
-
-// GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
-// Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
-type AgentActiveTurnPage struct {
-	Turns       []ActiveTurnElement `json:"turns"`
-	WorkspaceID string              `json:"workspaceId"`
-}
-
-// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
-// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
-type ActiveTurnElement struct {
-	// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
-	AgentPubkey *string `json:"agentPubkey,omitempty"`
-	// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
-	// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
-	CancelActionKey *string `json:"cancelActionKey,omitempty"`
-	InstallationID  string  `json:"installationId"`
-	InvocationID    string  `json:"invocationId"`
-	// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
-	OriginalActionExecutionID string `json:"originalActionExecutionId"`
-	ProjectionGeneration      int64  `json:"projectionGeneration"`
-	// AgentSession 根引用。
-	RootEventID string `json:"rootEventId"`
-	// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
-	StartedAt *string `json:"startedAt,omitempty"`
-	// AgentSession 的原生 thread ID。
-	ThreadID *string `json:"threadId,omitempty"`
-	// 已记录的原生 turn ID；派发结果尚未记录时省略。
-	TurnID *string `json:"turnId,omitempty"`
-}
-
-// DD-125(6)、17 §8：一个仍在运行的 Agent 回合（Invocation DISPATCHING/RUNNING）。只对该 Installation
-// Resource audit 持有人呈现（回合开始时刻、活动入口与中断）；其他成员只见 Agent 20002 的工作中信号。读取写 ACCESS 审计。
-type AgentActiveTurnView struct {
-	// Installation 的 ACTIVE AGENT 公钥，供原工作中 Agent 行匹配资料与 20002。
-	AgentPubkey *string `json:"agentPubkey,omitempty"`
-	// DD-84 取消控制键（task.cancel.agent.invoke.v1）：本人是原发起人或持有该 Installation manage、控制定义 ACTIVE 且原
-	// Workflow 仍 OPEN 时给出。省略即不显示中断；提交仍完整重新准入。
-	CancelActionKey *string `json:"cancelActionKey,omitempty"`
-	InstallationID  string  `json:"installationId"`
-	InvocationID    string  `json:"invocationId"`
-	// 该回合的 agent.invoke ActionExecution；中断时作为 DD-84 取消控制的 originalActionExecutionId。
-	OriginalActionExecutionID string `json:"originalActionExecutionId"`
-	ProjectionGeneration      int64  `json:"projectionGeneration"`
-	// AgentSession 根引用。
-	RootEventID string `json:"rootEventId"`
-	// 原生 turn 开始时刻（RFC3339，取自 Codex turn startedAt）；不可查证时省略，不以本机时钟代替。
-	StartedAt *string `json:"startedAt,omitempty"`
-	// AgentSession 的原生 thread ID。
-	ThreadID *string `json:"threadId,omitempty"`
-	// 已记录的原生 turn ID；派发结果尚未记录时省略。
-	TurnID *string `json:"turnId,omitempty"`
-}
-
-// 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
-type AgentDefinitionPage struct {
-	Definitions []DefinitionElement `json:"definitions"`
-	NextOffset  *int64              `json:"nextOffset,omitempty"`
-}
-
-// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
-type DefinitionElement struct {
-	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
-	DisplayName                    string        `json:"displayName"`
-	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
-	ResourceID                     string        `json:"resourceId"`
-	ResourceState                  ResourceState `json:"resourceState"`
-	ResourceVersion                int64         `json:"resourceVersion"`
-	StableSlug                     string        `json:"stableSlug"`
-	Status                         string        `json:"status"`
-}
-
-// DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
-type AgentDefinitionView struct {
-	CurrentPublishedVersionAssetID *string       `json:"currentPublishedVersionAssetId,omitempty"`
-	DisplayName                    string        `json:"displayName"`
-	OwnerPrincipalID               string        `json:"ownerPrincipalId"`
-	ResourceID                     string        `json:"resourceId"`
-	ResourceState                  ResourceState `json:"resourceState"`
-	ResourceVersion                int64         `json:"resourceVersion"`
-	StableSlug                     string        `json:"stableSlug"`
-	Status                         string        `json:"status"`
-}
-
-type AgentDelegationPage struct {
-	CanGrant               bool           `json:"canGrant"`
-	CanRevoke              bool           `json:"canRevoke"`
-	Grants                 []GrantElement `json:"grants"`
-	InstallationResourceID string         `json:"installationResourceId"`
-	NextOffset             *int64         `json:"nextOffset,omitempty"`
-	ResourceVersion        int64          `json:"resourceVersion"`
-	WorkspaceID            string         `json:"workspaceId"`
-}
-
-// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
-// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
-type GrantElement struct {
-	DelegationID      string `json:"delegationId"`
-	DelegationVersion int64  `json:"delegationVersion"`
-	// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-	// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-	// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-	EffectiveState     DelegationEffectiveState `json:"effectiveState"`
-	GrantorPrincipalID string                   `json:"grantorPrincipalId"`
-	Parameters         DelegationGrantClass     `json:"parameters"`
-	State              GrantState               `json:"state"`
-	// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
-	SupersededByDelegationID *string `json:"supersededByDelegationId,omitempty"`
-	Uses                     int64   `json:"uses"`
-}
-
-// 原 Grant 校验器当前允许的确切 Action/target/exposure；空页没有可授予对象，不伪造默认 Scope。
-type AgentDelegationTargetPage struct {
-	InstallationResourceID string         `json:"installationResourceId"`
-	NextOffset             *int64         `json:"nextOffset,omitempty"`
-	ResourceVersion        int64          `json:"resourceVersion"`
-	Scopes                 []ScopeElement `json:"scopes"`
-	WorkspaceID            string         `json:"workspaceId"`
-}
-
-// 同 Installation 的实际 Grant、Scope 与使用引用；没有 token、正文或新的权限裁决。state 是持久记录；effectiveState 是
-// DD-126(4) 的只读投影，只有它为 ACTIVE 时 Grant 才真实可用（仍不证明当次 permission）。
-type AgentDelegationView struct {
-	DelegationID      string `json:"delegationId"`
-	DelegationVersion int64  `json:"delegationVersion"`
-	// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-	// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-	// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-	EffectiveState     DelegationEffectiveState `json:"effectiveState"`
-	GrantorPrincipalID string                   `json:"grantorPrincipalId"`
-	Parameters         DelegationGrantClass     `json:"parameters"`
-	State              GrantState               `json:"state"`
-	// DD-126(5)：state=SUPERSEDED 时替换本 Grant 的续签 Grant。
-	SupersededByDelegationID *string `json:"supersededByDelegationId,omitempty"`
-	Uses                     int64   `json:"uses"`
-}
-
-// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
-type AgentInstallationCandidate struct {
-	AgentResourceID     string `json:"agentResourceId"`
-	AgentVersionAssetID string `json:"agentVersionAssetId"`
-	AssetVersion        int64  `json:"assetVersion"`
-	DisplayName         string `json:"displayName"`
-	Ordinal             int64  `json:"ordinal"`
-	ResourceVersion     int64  `json:"resourceVersion"`
-}
-
-type AgentInstallationCandidatePage struct {
-	// 原 Installation create exposure、目录与 fresh Workspace create；每个候选还须 consume/投影查证，提交时全部重验。
-	CanCreate   bool               `json:"canCreate"`
-	Candidates  []CandidateElement `json:"candidates"`
-	NextOffset  *int64             `json:"nextOffset,omitempty"`
-	WorkspaceID string             `json:"workspaceId"`
-}
-
-// 实际 ACTIVE Definition/PUBLISHED Asset 的安装来源与版本；不表示新 Installation 或 runtime 已 ACTIVE。
-type CandidateElement struct {
-	AgentResourceID     string `json:"agentResourceId"`
-	AgentVersionAssetID string `json:"agentVersionAssetId"`
-	AssetVersion        int64  `json:"assetVersion"`
-	DisplayName         string `json:"displayName"`
-	Ordinal             int64  `json:"ordinal"`
-	ResourceVersion     int64  `json:"resourceVersion"`
-}
-
-// 按既有部署登记页长扫描同一 Workspace，再以 fresh Installation Resource read 过滤；空页不代表整个 Workspace 无安装。
-type AgentInstallationPage struct {
-	Installations []InstallationElement `json:"installations"`
-	NextOffset    *int64                `json:"nextOffset,omitempty"`
-}
-
-// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
-// 正文、执行或管理权限。
-type InstallationElement struct {
-	ActiveProjectionGeneration *int64 `json:"activeProjectionGeneration,omitempty"`
-	// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
-	// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
-	AgentDisplayName    *string             `json:"agentDisplayName,omitempty"`
-	AgentPrincipalID    string              `json:"agentPrincipalId"`
-	AgentPrincipalState AgentPrincipalState `json:"agentPrincipalState"`
-	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
-	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
-	AgentPubkey     *string `json:"agentPubkey,omitempty"`
-	AgentResourceID string  `json:"agentResourceId"`
-	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
-	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
-	// 准入。缺失或空集合不支持 Schedule。
-	AutomationResultTargets []AutomationResultTarget `json:"automationResultTargets,omitempty"`
-	// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
-	// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
-	CanAudit *bool `json:"canAudit,omitempty"`
-	// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
-	// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
-	// explicitConfirmation。不代表已准入，旧服务缺省不显示。
-	CanDisable *bool `json:"canDisable,omitempty"`
-	// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
-	// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
-	CanEnable *bool `json:"canEnable,omitempty"`
-	// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
-	// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
-	// PUBLISHED 时为 true；仍沿升级审批与排空。
-	CanRestart *bool `json:"canRestart,omitempty"`
-	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
-	CanUpgrade           *bool                            `json:"canUpgrade,omitempty"`
-	ChannelBinding       *InstallationChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission  *InstallationExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID     string                           `json:"ownerPrincipalId"`
-	PinnedVersionAssetID string                           `json:"pinnedVersionAssetId"`
-	Projection           *ProjectionClass                 `json:"projection,omitempty"`
-	ReadPermission       *InstallationReadPermission      `json:"readPermission,omitempty"`
-	ResourceID           string                           `json:"resourceId"`
-	ResourceState        ResourceState                    `json:"resourceState"`
-	ResourceVersion      int64                            `json:"resourceVersion"`
-	State                AgentInstallationState           `json:"state"`
-	WorkspaceID          string                           `json:"workspaceId"`
-}
-
-type InstallationChannelBinding struct {
-	ChannelID *string              `json:"channelId,omitempty"`
-	Status    ChannelBindingStatus `json:"status"`
-	Triggers  []AgentTrigger       `json:"triggers"`
-}
-
-type InstallationExecutionPermission struct {
-	CanGrant                 bool    `json:"canGrant"`
-	CanRevoke                bool    `json:"canRevoke"`
-	Effective                bool    `json:"effective"`
-	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
-	Requested                bool    `json:"requested"`
-}
-
-// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
-type ProjectionClass struct {
-	AgentVersionAssetID string                      `json:"agentVersionAssetId"`
-	ConfigHash          string                      `json:"configHash"`
-	Generation          int64                       `json:"generation"`
-	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
-	State               AgentRuntimeProjectionState `json:"state"`
-}
-
-type InstallationReadPermission struct {
-	CanGrant                 bool    `json:"canGrant"`
-	CanRevoke                bool    `json:"canRevoke"`
-	Effective                bool    `json:"effective"`
-	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
-	Requested                bool    `json:"requested"`
-}
-
-// 17 §8 的持久运行投影摘要；不证明本机进程当前健康，不返回正文、凭据或隔离目录。
-type AgentInstallationProjectionView struct {
-	AgentVersionAssetID string                      `json:"agentVersionAssetId"`
-	ConfigHash          string                      `json:"configHash"`
-	Generation          int64                       `json:"generation"`
-	RuntimeProfileKey   string                      `json:"runtimeProfileKey"`
-	State               AgentRuntimeProjectionState `json:"state"`
-}
-
-// DD-122: the tools an Agent Installation's current generation requests and their effective
-// state. Read-only; grants happen only through installation create/upgrade.
-type AgentInstallationToolPage struct {
-	Generation             int64                       `json:"generation"`
-	InstallationResourceID string                      `json:"installationResourceId"`
-	Tools                  []AgentInstallationToolView `json:"tools"`
-}
-
-type AgentInstallationToolView struct {
-	ApplicationBindingID *string                `json:"applicationBindingId,omitempty"`
-	BindingStatus        AgentToolBindingStatus `json:"bindingStatus"`
-	// APPLICATION only: the requested capability contract key@version.
-	CapabilityRequirement *string                     `json:"capabilityRequirement,omitempty"`
-	Name                  *string                     `json:"name,omitempty"`
-	ReasonCode            *ReasonCode                 `json:"reasonCode,omitempty"`
-	Source                AgentInstallationToolSource `json:"source"`
-	// Absent when an application capability requirement has no resolved provider yet.
-	ToolResourceID *string `json:"toolResourceId,omitempty"`
-}
-
-// 05 §2.10、17 §8：一个 Agent Installation 在其 Workspace 的成员使用权目录。requested 是该成员显式持有
-// reader/executor/delegator 三项关系；effective 是 fresh read/execute/delegate 全部允许（含 owner/admin
-// 既有权限）。canGrant/canRevoke 只说明当前查看者可提交对应受治理请求，不代表请求已准入。
-type AgentInstallationUsePage struct {
-	InstallationID           string   `json:"installationId"`
-	Members                  []Member `json:"members"`
-	PendingActionExecutionID *string  `json:"pendingActionExecutionId,omitempty"`
-	ResourceVersion          int64    `json:"resourceVersion"`
-	// DD-125(6)：原 respondTo 在本页的映射。至少一名成员 requested=true 即 ALLOWLIST，否则 OWNER_ONLY；切换只经逐成员
-	// agent.installation.use.grant/revoke，不存在 anyone。旧服务缺省时客户端按 members 推导。
-	RespondTo *AgentRespondToMode `json:"respondTo,omitempty"`
-}
-
-type Member struct {
-	CanGrant    bool   `json:"canGrant"`
-	CanRevoke   bool   `json:"canRevoke"`
-	DisplayName string `json:"displayName"`
-	Effective   bool   `json:"effective"`
-	PrincipalID string `json:"principalId"`
-	Requested   bool   `json:"requested"`
-}
-
-// 03 §7、17 §8：同 Tenant、已准入 Workspace 且 fresh Installation Resource read 允许的只读事实；不授予 Version
-// 正文、执行或管理权限。
-type AgentInstallationView struct {
-	ActiveProjectionGeneration *int64 `json:"activeProjectionGeneration,omitempty"`
-	// 17 §3：固定 Version personaIdentity 的展示名，经同一 Installation Resource read
-	// 准入；只供提及与成员目录呈现，不授予执行或 Definition 读取。旧服务缺省时调用方回退到原 Definition 读取。
-	AgentDisplayName    *string             `json:"agentDisplayName,omitempty"`
-	AgentPrincipalID    string              `json:"agentPrincipalId"`
-	AgentPrincipalState AgentPrincipalState `json:"agentPrincipalState"`
-	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
-	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
-	AgentPubkey     *string `json:"agentPubkey,omitempty"`
-	AgentResourceID string  `json:"agentResourceId"`
-	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
-	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
-	// 准入。缺失或空集合不支持 Schedule。
-	AutomationResultTargets []AutomationResultTarget `json:"automationResultTargets,omitempty"`
-	// DD-125(6)、17 §8：本人 fresh Installation Resource audit 允许读取会话转写、实时 item
-	// 与运行中回合（受审计敏感读取）。false 或缺省时只呈现 20002 工作中信号。
-	CanAudit *bool `json:"canAudit,omitempty"`
-	// DD-125(6)、05 §2.11：原“停止 / 从频道移除 / 删除”入口。动作目录开放 agent.installation.disable、安装 ACTIVE
-	// 且没有未终结投影、本人 fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与
-	// explicitConfirmation。不代表已准入，旧服务缺省不显示。
-	CanDisable *bool `json:"canDisable,omitempty"`
-	// DD-125(6)：原“启动”入口。目录开放 agent.installation.enable、安装 DISABLED、固定 Version 仍 PUBLISHED、本人
-	// fresh Installation manage 时为 true；命令只带 resourceId、resourceVersion 与 explicitConfirmation。
-	CanEnable *bool `json:"canEnable,omitempty"`
-	// DD-125(6)、DD-122(4)：原“重启”入口，即对固定 Version 的同版本
-	// agent.installation.upgrade（assetId=pinnedVersionAssetId）。canUpgrade 成立且固定 Version 仍
-	// PUBLISHED 时为 true；仍沿升级审批与排空。
-	CanRestart *bool `json:"canRestart,omitempty"`
-	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
-	CanUpgrade           *bool                                     `json:"canUpgrade,omitempty"`
-	ChannelBinding       *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission  *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID     string                                    `json:"ownerPrincipalId"`
-	PinnedVersionAssetID string                                    `json:"pinnedVersionAssetId"`
-	Projection           *ProjectionClass                          `json:"projection,omitempty"`
-	ReadPermission       *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
-	ResourceID           string                                    `json:"resourceId"`
-	ResourceState        ResourceState                             `json:"resourceState"`
-	ResourceVersion      int64                                     `json:"resourceVersion"`
-	State                AgentInstallationState                    `json:"state"`
-	WorkspaceID          string                                    `json:"workspaceId"`
-}
-
-type AgentInstallationViewChannelBinding struct {
-	ChannelID *string              `json:"channelId,omitempty"`
-	Status    ChannelBindingStatus `json:"status"`
-	Triggers  []AgentTrigger       `json:"triggers"`
-}
-
-type AgentInstallationViewExecutionPermission struct {
-	CanGrant                 bool    `json:"canGrant"`
-	CanRevoke                bool    `json:"canRevoke"`
-	Effective                bool    `json:"effective"`
-	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
-	Requested                bool    `json:"requested"`
-}
-
-type AgentInstallationViewReadPermission struct {
-	CanGrant                 bool    `json:"canGrant"`
-	CanRevoke                bool    `json:"canRevoke"`
-	Effective                bool    `json:"effective"`
-	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
-	Requested                bool    `json:"requested"`
-}
-
-// 原 Session 同 generation 调用元事实，逐页 fresh Installation read，且仅本人发起或实际 AE 目标 audit 允许；不返回
-// prompt、tool result、reasoning、凭据或成本。未授权项过滤后空页仍可能有 nextCursor。
-type AgentInvocationPage struct {
-	Invocations []InvocationElement `json:"invocations"`
-	NextCursor  *string             `json:"nextCursor,omitempty"`
-}
-
-// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
-// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
-type InvocationElement struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	CancelPending     bool   `json:"cancelPending"`
-	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
-	CanReadTask bool `json:"canReadTask"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	CreatedAt     string           `json:"createdAt"`
-	InvocationID  string           `json:"invocationId"`
-	Observation   *ReasonCode      `json:"observation,omitempty"`
-	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
-	Status        InvocationStatus `json:"status"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	UpdatedAt string `json:"updatedAt"`
-}
-
-// 原 AgentInvocation 持久状态，不替代 Temporal。observation 或 UNKNOWN 时不得渲染为成功/失败；cancelPending
-// 不等于已取消；createdAt/updatedAt 是 Core 记录时间，不是假造的原生事件时间。
-type AgentInvocationView struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	CancelPending     bool   `json:"cancelPending"`
-	// 当前 HUMAN 是否为原任务发起人。仅控制任务详情入口；任务读取仍执行自身实时授权。
-	CanReadTask bool `json:"canReadTask"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	CreatedAt     string           `json:"createdAt"`
-	InvocationID  string           `json:"invocationId"`
-	Observation   *ReasonCode      `json:"observation,omitempty"`
-	RuntimeTurnID *string          `json:"runtimeTurnId,omitempty"`
-	Status        InvocationStatus `json:"status"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	UpdatedAt string `json:"updatedAt"`
-}
-
-// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
-// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
-type AgentMemoryDanglingRefView struct {
-	// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
-	ReferencedBy []string `json:"referencedBy"`
-	Slug         string   `json:"slug"`
-}
-
-// 19 §5：复合游标走到原生末尾才 COMPLETE。BOUND_EXCEEDED/UNKNOWN 不是空库存；只是本次 best-effort head tuple
-// snapshot，不是严格存量权威。
-type AgentMemoryEntryPage struct {
-	Entries                []EntryElement `json:"entries"`
-	InstallationResourceID string         `json:"installationResourceId"`
-	OperationID            string         `json:"operationId"`
-	// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
-	// 记忆工具结果省略，客户端保持 slug 顺序。
-	References  *ReferencesClass          `json:"references,omitempty"`
-	State       AgentMemoryEntryPageState `json:"state"`
-	WorkspaceID string                    `json:"workspaceId"`
-}
-
-// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
-// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
-type EntryElement struct {
-	CreatedAt int64  `json:"createdAt"`
-	EventID   string `json:"eventId"`
-	// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
-	// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
-	OutgoingRefs []string `json:"outgoingRefs,omitempty"`
-	Slug         string   `json:"slug"`
-	Tombstone    bool     `json:"tombstone"`
-}
-
-// 仅 HUMAN 管理读取且 state 为 COMPLETE 时提供（DD-125(10)）；BOUND_EXCEEDED/UNKNOWN 与 Agent
-// 记忆工具结果省略，客户端保持 slug 顺序。
-//
-// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
-// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
-// core、其引用树先序、未被引用者按 slug 排列。
-type ReferencesClass struct {
-	// 本次读取存在 core head；false 时客户端显示“没有 core”。
-	CoreExists bool `json:"coreExists"`
-	// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
-	CoreRefs []string `json:"coreRefs"`
-	// 按目标 slug 排序。
-	Dangling []DanglingElement `json:"dangling"`
-}
-
-// 被某条已解密 head 以 [[slug]] 引用、但不在本次 COMPLETE listing 的非 tombstone 条目集合中的目标（原版 Missing
-// link，DD-125(10)）。tombstone 目标与没有 core 时对 core 的引用同样悬挂。只含 slug，不含正文。
-type DanglingElement struct {
-	// 引用者 slug，core 记为 "core"；去重并按 slug 排序。
-	ReferencedBy []string `json:"referencedBy"`
-	Slug         string   `json:"slug"`
-}
-
-// NIP-AE cold head tuple，不含 value 或任何正文；tombstone 是当前原生 head，不回退旧 value。listing 为 COMPLETE
-// 的 HUMAN 管理读取另含该条正文中的引用 slug（DD-125(10)），Agent 记忆工具结果不含。
-type AgentMemoryEntryView struct {
-	CreatedAt int64  `json:"createdAt"`
-	EventID   string `json:"eventId"`
-	// 仅 HUMAN 管理读取、listing COMPLETE 且非 tombstone 时提供：以原 extract_refs 从该条正文提取的 [[slug]]
-	// 引用，按首次出现顺序去重、只含合法 slug。BOUND_EXCEEDED/UNKNOWN、tombstone 与 Agent 记忆工具结果省略。
-	OutgoingRefs []string `json:"outgoingRefs,omitempty"`
-	Slug         string   `json:"slug"`
-	Tombstone    bool     `json:"tombstone"`
-}
-
-// DD-66/68、19 §5：fresh HUMAN Installation read 后的原生 core/cold head。正文仅本次 no-store HTTP，不入
-// Core 数据库、审计或客户端持久存储。ABSENT 不等于 UNREADABLE；tombstone 可带原 head 引用。
-type AgentMemoryReadView struct {
-	Content *string `json:"content,omitempty"`
-	// UTF-8 bytes of the returned content string, not the whole native NIP-44 JSON body or a
-	// billing measurement.
-	ContentBytes           *int64                   `json:"contentBytes,omitempty"`
-	CreatedAt              *int64                   `json:"createdAt,omitempty"`
-	EventID                *string                  `json:"eventId,omitempty"`
-	InstallationResourceID string                   `json:"installationResourceId"`
-	OperationID            string                   `json:"operationId"`
-	Slug                   string                   `json:"slug"`
-	State                  AgentMemoryReadViewState `json:"state"`
-	// FOUND only: native buzz mem hash of the exact UTF-8 value, used by strict patch baseHash;
-	// not the JSON body or a stored plaintext copy.
-	ValueHash   *string `json:"valueHash,omitempty"`
-	WorkspaceID string  `json:"workspaceId"`
-}
-
-// agent.memory.entry.list 为 COMPLETE 时，在同一准入与同一次 NIP-AE 读取内，以原 extract_refs 从 core head
-// 与各条非 tombstone head 的已解密正文提取的引用关系（DD-125(10)）。只是派生视图：不含正文，不授予任何读取权；客户端据此按
-// core、其引用树先序、未被引用者按 slug 排列。
-type AgentMemoryReferenceView struct {
-	// 本次读取存在 core head；false 时客户端显示“没有 core”。
-	CoreExists bool `json:"coreExists"`
-	// core profile 中的引用，按首次出现顺序去重，只含合法 slug；没有 core 时为空。
-	CoreRefs []string `json:"coreRefs"`
-	// 按目标 slug 排序。
-	Dangling []DanglingElement `json:"dangling"`
-}
-
-// DD-121: only agent.invoke executions initiated by the caller for the requested source
-// events; no message body, no other member's executions, no Agent internals. A mentioned
-// Agent without an outcome is still PENDING (not yet scanned).
-type AgentMentionOutcomePage struct {
-	Outcomes []AgentMentionOutcomeView `json:"outcomes"`
-}
-
-type AgentMentionOutcomeView struct {
-	EventID        string                   `json:"eventId"`
-	InstallationID string                   `json:"installationId"`
-	ReasonCode     *ReasonCode              `json:"reasonCode,omitempty"`
-	ReplyEventID   *string                  `json:"replyEventId,omitempty"`
-	State          AgentMentionOutcomeState `json:"state"`
-}
-
-// DD-121: the caller's own channel messages (event IDs) whose agent.invoke admission
-// outcome the caller may see.
-type AgentMentionOutcomeQueryRequest struct {
-	EventIDS []string `json:"eventIds"`
-}
-
-// 17 §8、19 §4：已准入 Workspace 与 Installation read 的原 Session 元事实；不包含或授权 Codex rollout
-// 正文。cursor 固定 HUMAN、scope、筛选与原生 generation。
-type AgentSessionPage struct {
-	NextCursor *string          `json:"nextCursor,omitempty"`
-	Sessions   []SessionElement `json:"sessions"`
-}
-
-type SessionElement struct {
-	AgentVersionAssetID string `json:"agentVersionAssetId"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	CreatedAt              string `json:"createdAt"`
-	InstallationResourceID string `json:"installationResourceId"`
-	ProjectionGeneration   int64  `json:"projectionGeneration"`
-	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
-	RootEventID     string        `json:"rootEventId"`
-	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`
-	Status          SessionStatus `json:"status"`
-	WorkspaceID     string        `json:"workspaceId"`
-}
-
-type AgentSessionView struct {
-	AgentVersionAssetID string `json:"agentVersionAssetId"`
-	// Core 记录的 RFC3339 时间字符串，按原线格式传输。
-	CreatedAt              string `json:"createdAt"`
-	InstallationResourceID string `json:"installationResourceId"`
-	ProjectionGeneration   int64  `json:"projectionGeneration"`
-	// 既有 BUZZ_EVENT、SCHEDULE 或 MANUAL Session 根引用；不从客户端生成 native thread。
-	RootEventID     string        `json:"rootEventId"`
-	RuntimeThreadID *string       `json:"runtimeThreadId,omitempty"`
-	Status          SessionStatus `json:"status"`
-	WorkspaceID     string        `json:"workspaceId"`
-}
-
-// GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
-// Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
-// 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
-// 审计。帧不落库，断线后以分页读取补齐。
-type AgentTranscriptEvent struct {
-	// 原生通知时间（item 的 startedAtMs/completedAtMs 或 turn 通知的 emittedAtMs），Unix 毫秒。
-	AtMS           *int64 `json:"atMs,omitempty"`
-	InstallationID string `json:"installationId"`
-	// ITEM_STARTED / ITEM_COMPLETED 时给出。
-	Item                 *ItemElement              `json:"item,omitempty"`
-	Phase                AgentTranscriptEventPhase `json:"phase"`
-	ProjectionGeneration int64                     `json:"projectionGeneration"`
-	RootEventID          string                    `json:"rootEventId"`
-	ThreadID             string                    `json:"threadId"`
-	TurnID               string                    `json:"turnId"`
-}
-
-// ITEM_STARTED / ITEM_COMPLETED 时给出。
-//
-// DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
-// audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
-// item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
-// 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
-type ItemElement struct {
-	// COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
-	AggregatedOutput *string `json:"aggregatedOutput,omitempty"`
-	// 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
-	ArgumentsJSON *string `json:"argumentsJson,omitempty"`
-	// COMMAND_EXECUTION 的命令。
-	Command *string `json:"command,omitempty"`
-	// item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-	CompletedAtMS *int64 `json:"completedAtMs,omitempty"`
-	// COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
-	Cwd *string `json:"cwd,omitempty"`
-	// COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
-	DurationMS *int64 `json:"durationMs,omitempty"`
-	// MCP_TOOL_CALL 的原生 error.message。
-	ErrorText *string `json:"errorText,omitempty"`
-	ExitCode  *int64  `json:"exitCode,omitempty"`
-	// FILE_CHANGE 的逐文件变更。
-	FileChanges []ItemFileChange `json:"fileChanges,omitempty"`
-	// 原生 ThreadItem.id。
-	ItemID string                  `json:"itemId"`
-	Kind   AgentTranscriptItemKind `json:"kind"`
-	// 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
-	NativeType string                       `json:"nativeType"`
-	Phase      *AgentTranscriptMessagePhase `json:"phase,omitempty"`
-	// WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
-	Query *string `json:"query,omitempty"`
-	// REASONING 的原文段（原生提供时）。
-	ReasoningContent []string `json:"reasoningContent,omitempty"`
-	// REASONING 的 summary 段。
-	ReasoningSummary []string `json:"reasoningSummary,omitempty"`
-	// 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
-	ResultText *string `json:"resultText,omitempty"`
-	// MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
-	Server *string `json:"server,omitempty"`
-	// item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-	StartedAtMS *int64                     `json:"startedAtMs,omitempty"`
-	Status      *AgentTranscriptItemStatus `json:"status,omitempty"`
-	// USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
-	Text *string `json:"text,omitempty"`
-	// MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
-	Tool *string `json:"tool,omitempty"`
-	// 所属原生 turn ID。
-	TurnID string `json:"turnId"`
-}
-
-type ItemFileChange struct {
-	ChangeKind AgentTranscriptFileChangeKind `json:"changeKind"`
-	// 原生 unified diff 文本。
-	Diff string `json:"diff"`
-	// UPDATE 改名时的目标路径。
-	MovePath *string `json:"movePath,omitempty"`
-	Path     string  `json:"path"`
-}
-
-// DD-125(6)、SF-COD-09/17、17 §8：一条 Codex ThreadItem 的转写适配形状。BFF 只在 Installation Resource
-// audit 准入后，由 Core 经同一 Installation 的原生 app-server 读取（thread/items/list 或
-// item/started、item/completed 通知），按固定 Codex 类型逐字段映射后直接回应；Core 不存储、不复制正文。变体按 kind
-// 解释，各变体字段全部可选（contracts §1 平坦结构）。客户端把它适配为原 Buzz 转写条目。
-type AgentTranscriptItem struct {
-	// COMMAND_EXECUTION 的 stdout/stderr 聚合输出。
-	AggregatedOutput *string `json:"aggregatedOutput,omitempty"`
-	// 工具调用参数的 JSON 文本（原生 arguments 原样序列化）。
-	ArgumentsJSON *string `json:"argumentsJson,omitempty"`
-	// COMMAND_EXECUTION 的命令。
-	Command *string `json:"command,omitempty"`
-	// item/completed 的 completedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-	CompletedAtMS *int64 `json:"completedAtMs,omitempty"`
-	// COMMAND_EXECUTION 的工作目录（Installation 隔离目录内）。
-	Cwd *string `json:"cwd,omitempty"`
-	// COMMAND_EXECUTION、MCP_TOOL_CALL、DYNAMIC_TOOL_CALL 的原生耗时。
-	DurationMS *int64 `json:"durationMs,omitempty"`
-	// MCP_TOOL_CALL 的原生 error.message。
-	ErrorText *string `json:"errorText,omitempty"`
-	ExitCode  *int64  `json:"exitCode,omitempty"`
-	// FILE_CHANGE 的逐文件变更。
-	FileChanges []AgentTranscriptItemFileChange `json:"fileChanges,omitempty"`
-	// 原生 ThreadItem.id。
-	ItemID string                  `json:"itemId"`
-	Kind   AgentTranscriptItemKind `json:"kind"`
-	// 原生 ThreadItem 的 type 标签原文（如 commandExecution）；OTHER 时客户端以原 raw 条目呈现。
-	NativeType string                       `json:"nativeType"`
-	Phase      *AgentTranscriptMessagePhase `json:"phase,omitempty"`
-	// WEB_SEARCH 的查询词（部署已关闭托管搜索，一般不出现）。
-	Query *string `json:"query,omitempty"`
-	// REASONING 的原文段（原生提供时）。
-	ReasoningContent []string `json:"reasoningContent,omitempty"`
-	// REASONING 的 summary 段。
-	ReasoningSummary []string `json:"reasoningSummary,omitempty"`
-	// 工具结果中的文本内容按原顺序以换行连接；非文本内容不转发。
-	ResultText *string `json:"resultText,omitempty"`
-	// MCP_TOOL_CALL 的 MCP server 名；DYNAMIC_TOOL_CALL 的 namespace。
-	Server *string `json:"server,omitempty"`
-	// item/started 的 startedAtMs（Unix 毫秒）；历史页没有该原生事实时省略。
-	StartedAtMS *int64                     `json:"startedAtMs,omitempty"`
-	Status      *AgentTranscriptItemStatus `json:"status,omitempty"`
-	// USER_MESSAGE 的文本输入按原顺序以换行连接；AGENT_MESSAGE 与 PLAN 的正文。
-	Text *string `json:"text,omitempty"`
-	// MCP_TOOL_CALL / DYNAMIC_TOOL_CALL 的工具名。
-	Tool *string `json:"tool,omitempty"`
-	// 所属原生 turn ID。
-	TurnID string `json:"turnId"`
-}
-
-type AgentTranscriptItemFileChange struct {
-	ChangeKind AgentTranscriptFileChangeKind `json:"changeKind"`
-	// 原生 unified diff 文本。
-	Diff string `json:"diff"`
-	// UPDATE 改名时的目标路径。
-	MovePath *string `json:"movePath,omitempty"`
-	Path     string  `json:"path"`
-}
-
-// GET
-// /api/v1/agent-installations/{id}/transcript?rootEventId&projectionGeneration&cursor（DD-125(6)、V-SCN-143）：按
-// AgentSession 分页读取 Codex thread/items/list（升序），要求 Installation Resource audit，受审计敏感读取，Core
-// 不复制正文。nextCursor 绑定读者、Installation 与 Session，原生 cursor 不外露。activeTurn 只在该 Session
-// 有运行中回合时给出。Session 尚无原生 thread 时 items 为空且省略 threadId。
-type AgentTranscriptPage struct {
-	ActiveTurn           *ActiveTurnElement `json:"activeTurn,omitempty"`
-	InstallationID       string             `json:"installationId"`
-	Items                []ItemElement      `json:"items"`
-	NextCursor           *string            `json:"nextCursor,omitempty"`
-	ProjectionGeneration int64              `json:"projectionGeneration"`
-	RootEventID          string             `json:"rootEventId"`
-	ThreadID             *string            `json:"threadId,omitempty"`
-}
-
-// DD-24/25/26：Definition 范围的受权版本配置目录，消费平台发布 RuntimeProfile 合同与已治理 Route。缺真实来源时两目录为空且
-// canCreate=false；目录或 canCreate 不授予发布、安装和运行权限。
-type AgentVersionConfigurationPage struct {
-	AgentResourceID string                          `json:"agentResourceId"`
-	CanCreate       bool                            `json:"canCreate"`
-	NextOffset      *int64                          `json:"nextOffset"`
-	Profiles        []RuntimeProfileDirectorySchema `json:"profiles"`
-	ResourceVersion int64                           `json:"resourceVersion"`
-	Routes          []RouteElement                  `json:"routes"`
-}
-
-type RuntimeProfileDirectorySchema struct {
-	CapabilityContract PurpleCapabilityContract `json:"capabilityContract"`
-	Key                string                   `json:"key"`
-	Kind               RuntimeProfileKind       `json:"kind"`
-	Status             string                   `json:"status"`
-	WebAvailability    string                   `json:"webAvailability"`
-}
-
-type PurpleCapabilityContract struct {
-	CapabilityRequirements []string `json:"capabilityRequirements"`
-	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
-	MaxParallelism         int64    `json:"maxParallelism"`
-	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
-	ReplyPolicies          []string `json:"replyPolicies"`
-	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-	ReplyPolicyMappings []PurpleRuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
-}
-
-type PurpleRuntimeReplyPolicyMapping struct {
-	BroadcastReplies bool   `json:"broadcastReplies"`
-	Key              string `json:"key"`
-	ThreadReplies    bool   `json:"threadReplies"`
-}
-
-// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
-// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
-type RouteElement struct {
-	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
-	NativeConfigHash       string  `json:"nativeConfigHash"`
-	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
-	NativeRevision         int64   `json:"nativeRevision"`
-	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
-	ResourceID             string  `json:"resourceId"`
-	ResourceVersion        int64   `json:"resourceVersion"`
-}
-
-// DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
-// 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
-type AgentVersionPage struct {
-	AgentResourceID string           `json:"agentResourceId"`
-	NextOffset      *int64           `json:"nextOffset"`
-	ResourceVersion int64            `json:"resourceVersion"`
-	Versions        []VersionElement `json:"versions"`
-}
-
-type VersionElement struct {
-	AgentResourceID string `json:"agentResourceId"`
-	AssetID         string `json:"assetId"`
-	AssetVersion    int64  `json:"assetVersion"`
-	// Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
-	// to the existing same-origin profile media reader. Read projection only; not content, a
-	// credential, or an arbitrary remote proxy.
-	AvatarMediaPaths map[string]string `json:"avatarMediaPaths,omitempty"`
-	// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
-	// 资格；缺字段不允许发布，不证明已安装或可运行。
-	CanPublish *bool `json:"canPublish,omitempty"`
-	// 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
-	// 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
-	CanRetire *bool `json:"canRetire,omitempty"`
-	// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
-	CanUpdate        *bool                    `json:"canUpdate,omitempty"`
-	ConfigHash       string                   `json:"configHash"`
-	Content          AgentVersionContentClass `json:"content"`
-	Ordinal          int64                    `json:"ordinal"`
-	OwnerPrincipalID string                   `json:"ownerPrincipalId"`
-	State            AgentVersionState        `json:"state"`
-}
-
-// 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
-// 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
-type AgentVersionRouteOption struct {
-	HomeWorkspaceID        *string `json:"homeWorkspaceId"`
-	NativeConfigHash       string  `json:"nativeConfigHash"`
-	NativeConfigResourceID string  `json:"nativeConfigResourceId"`
-	NativeRevision         int64   `json:"nativeRevision"`
-	OwnerPrincipalID       string  `json:"ownerPrincipalId"`
-	ResourceID             string  `json:"resourceId"`
-	ResourceVersion        int64   `json:"resourceVersion"`
-}
-
-type AgentVersionView struct {
-	AgentResourceID string `json:"agentResourceId"`
-	AssetID         string `json:"assetId"`
-	AssetVersion    int64  `json:"assetVersion"`
-	// Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
-	// to the existing same-origin profile media reader. Read projection only; not content, a
-	// credential, or an arbitrary remote proxy.
-	AvatarMediaPaths map[string]string `json:"avatarMediaPaths,omitempty"`
-	// 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
-	// 资格；缺字段不允许发布，不证明已安装或可运行。
-	CanPublish *bool `json:"canPublish,omitempty"`
-	// 当前 HUMAN 对此 exact PUBLISHED 的已登记 EXPLICIT retire 动作及 fresh Asset manage
-	// 资格；缺字段不允许退役，退役只禁止新安装，保留既有安装与在途的固定版本。
-	CanRetire *bool `json:"canRetire,omitempty"`
-	// 当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。
-	CanUpdate        *bool                    `json:"canUpdate,omitempty"`
-	ConfigHash       string                   `json:"configHash"`
-	Content          AgentVersionContentClass `json:"content"`
-	Ordinal          int64                    `json:"ordinal"`
-	OwnerPrincipalID string                   `json:"ownerPrincipalId"`
-	State            AgentVersionState        `json:"state"`
 }
 
 // 当前HUMAN管理scope内的真实接入元数据。不是组件内部状态、配置、SecretRef或原生管理credential。
@@ -6181,27 +5225,27 @@ type ApprovalDecisionRequest struct {
 // GET /api/v1/approvals（待我审批）、GET /api/v1/approvals/initiated（本人发起且已有结果的审批，DD-125(5) Inbox
 // Needs action 的第二来源）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history 的投影。
 type ApprovalView struct {
-	ActionExecutionID string               `json:"actionExecutionId"`
-	ActionKey         string               `json:"actionKey"`
-	AutomationStep    *AutomationStepClass `json:"automationStep,omitempty"`
+	ActionExecutionID string                      `json:"actionExecutionId"`
+	ActionKey         string                      `json:"actionKey"`
+	AutomationStep    *AutomationApprovalStepView `json:"automationStep,omitempty"`
 	// RFC3339，UTC
-	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
-	Decisions       []DecisionElement `json:"decisions"`
+	ConsumeDeadline *string                  `json:"consumeDeadline,omitempty"`
+	Decisions       []ApprovalDecisionRecord `json:"decisions"`
 	// RFC3339，UTC
-	ExpiresAt            string                   `json:"expiresAt"`
-	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
-	Observation          *ReasonCode              `json:"observation,omitempty"`
-	Reason               *ReasonCode              `json:"reason,omitempty"`
-	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
-	Status               ApprovalStatus           `json:"status"`
-	TargetID             string                   `json:"targetId"`
-	TargetType           string                   `json:"targetType"`
-	WorkflowID           string                   `json:"workflowId"`
-	WorkspaceID          *string                  `json:"workspaceId,omitempty"`
+	ExpiresAt            string                    `json:"expiresAt"`
+	InitiatorPrincipalID string                    `json:"initiatorPrincipalId"`
+	Observation          *ReasonCode               `json:"observation,omitempty"`
+	Reason               *ReasonCode               `json:"reason,omitempty"`
+	RoleRequirements     []ApprovalRoleRequirement `json:"roleRequirements"`
+	Status               ApprovalStatus            `json:"status"`
+	TargetID             string                    `json:"targetId"`
+	TargetType           string                    `json:"targetType"`
+	WorkflowID           string                    `json:"workflowId"`
+	WorkspaceID          *string                   `json:"workspaceId,omitempty"`
 }
 
 // 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
-type AutomationStepClass struct {
+type AutomationApprovalStepView struct {
 	ID             string  `json:"id"`
 	Message        string  `json:"message"`
 	Name           *string `json:"name,omitempty"`
@@ -6209,7 +5253,7 @@ type AutomationStepClass struct {
 }
 
 // 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
-type DecisionElement struct {
+type ApprovalDecisionRecord struct {
 	ApproverPrincipalID string `json:"approverPrincipalId"`
 	// RFC3339，UTC
 	DecidedAt string           `json:"decidedAt"`
@@ -6220,7 +5264,7 @@ type DecisionElement struct {
 
 // ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
 // §4）。
-type RoleRequirementElement struct {
+type ApprovalRoleRequirement struct {
 	MinDistinct int64            `json:"minDistinct"`
 	Selector    ApprovalSelector `json:"selector"`
 }
@@ -6256,38 +5300,20 @@ type AuditEvidenceSlot struct {
 	Sensitivity *EvidenceSensitivity `json:"sensitivity,omitempty"`
 }
 
-// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
-type AutomationApprovalStepView struct {
-	ID             string  `json:"id"`
-	Message        string  `json:"message"`
-	Name           *string `json:"name,omitempty"`
-	VersionAssetID string  `json:"versionAssetId"`
-}
-
-// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
-type AutomationDelegationView struct {
-	DelegationID                   string `json:"delegationId"`
-	DelegationVersion              int64  `json:"delegationVersion"`
-	ExecutorInstallationResourceID string `json:"executorInstallationResourceId"`
-	// RFC3339，UTC；与现有管理查询时间字段一致。
-	ExpiresAt        string `json:"expiresAt"`
-	OwnerPrincipalID string `json:"ownerPrincipalId"`
-}
-
 type AutomationDetailView struct {
-	Automation AutomationElement `json:"automation"`
+	Automation AutomationView `json:"automation"`
 	// 当前 Resource manage；不是运行准入、额度允许或业务成功。
 	CanManage bool `json:"canManage"`
 	// 仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原
 	// automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。
-	CanRun               *bool               `json:"canRun,omitempty"`
-	Delegations          []DelegationElement `json:"delegations"`
-	NextDelegationOffset *int64              `json:"nextDelegationOffset,omitempty"`
-	NextVersionOffset    *int64              `json:"nextVersionOffset,omitempty"`
-	Versions             []VersionClass      `json:"versions"`
+	CanRun               *bool                      `json:"canRun,omitempty"`
+	Delegations          []AutomationDelegationView `json:"delegations"`
+	NextDelegationOffset *int64                     `json:"nextDelegationOffset,omitempty"`
+	NextVersionOffset    *int64                     `json:"nextVersionOffset,omitempty"`
+	Versions             []AutomationVersionView    `json:"versions"`
 }
 
-type AutomationElement struct {
+type AutomationView struct {
 	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
 	CreatedAt                      *string         `json:"createdAt,omitempty"`
 	DelegationID                   *string         `json:"delegationId,omitempty"`
@@ -6309,7 +5335,7 @@ type AutomationElement struct {
 }
 
 // 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
-type DelegationElement struct {
+type AutomationDelegationView struct {
 	DelegationID                   string `json:"delegationId"`
 	DelegationVersion              int64  `json:"delegationVersion"`
 	ExecutorInstallationResourceID string `json:"executorInstallationResourceId"`
@@ -6319,20 +5345,126 @@ type DelegationElement struct {
 }
 
 // Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
-type VersionClass struct {
-	AssetID              string                        `json:"assetId"`
-	AssetVersion         int64                         `json:"assetVersion"`
-	AutomationResourceID string                        `json:"automationResourceId"`
-	ConfigHash           string                        `json:"configHash"`
-	Content              AutomationVersionContentClass `json:"content"`
-	Ordinal              int64                         `json:"ordinal"`
-	OwnerPrincipalID     string                        `json:"ownerPrincipalId"`
-	State                AgentVersionState             `json:"state"`
+type AutomationVersionView struct {
+	AssetID              string                   `json:"assetId"`
+	AssetVersion         int64                    `json:"assetVersion"`
+	AutomationResourceID string                   `json:"automationResourceId"`
+	ConfigHash           string                   `json:"configHash"`
+	Content              AutomationVersionContent `json:"content"`
+	Ordinal              int64                    `json:"ordinal"`
+	OwnerPrincipalID     string                   `json:"ownerPrincipalId"`
+	State                AgentVersionState        `json:"state"`
+}
+
+// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+//
+// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+// 配置或凭据。
+type AutomationVersionContent struct {
+	Action         *AutomationVersionContentAction `json:"action,omitempty"`
+	ApprovalPolicy *AutomationApprovalPolicyRef    `json:"approvalPolicy,omitempty"`
+	// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
+	Description *string `json:"description,omitempty"`
+	// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
+	FormatVersion *int64 `json:"formatVersion,omitempty"`
+	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+	Name         *string                `json:"name,omitempty"`
+	ResultTarget AutomationResultTarget `json:"resultTarget"`
+	//
+	// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
+	Steps   []AutomationStep                `json:"steps,omitempty"`
+	Trigger AutomationVersionContentTrigger `json:"trigger"`
+}
+
+type AutomationVersionContentAction struct {
+	Kind     AutomationVersionContentActionKind `json:"kind"`
+	Template string                             `json:"template"`
+}
+
+// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+//
+// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+type AutomationApprovalPolicyRef struct {
+	ID      string `json:"id"`
+	Version int64  `json:"version"`
+}
+
+// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
+// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
+type AutomationStep struct {
+	Action AutomationStepAction `json:"action"`
+	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+	ApprovalPolicy *AutomationApprovalPolicyRef `json:"approvalPolicy,omitempty"`
+	// 原请求体模板；不保存响应正文。
+	Body     *string `json:"body,omitempty"`
+	Duration *string `json:"duration,omitempty"`
+	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+	Emoji *string `json:"emoji,omitempty"`
+	// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
+	// 者）不得明文保存，必须改用 secretHeaders。
+	Headers map[string]string `json:"headers,omitempty"`
+	ID      string            `json:"id"`
+	// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
+	// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
+	// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
+	// ActionExecution；求值错误使该运行在任何副作用前失败。
+	If      *string `json:"if,omitempty"`
+	Message *string `json:"message,omitempty"`
+	// 原 HTTP 方法，缺省 POST。
+	Method *AutomationStepMethod `json:"method,omitempty"`
+	Name   *string               `json:"name,omitempty"`
+	// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
+	// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
+	SecretHeaders map[string]AutomationSecretRef `json:"secretHeaders,omitempty"`
+	Text          *string                        `json:"text,omitempty"`
+	// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
+	// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
+	// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
+	// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
+	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
+	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+	Topic *string `json:"topic,omitempty"`
+	// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
+	// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
+	// AgentGateway 出站，不跟随重定向。
+	URL *string `json:"url,omitempty"`
+}
+
+// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
+type AutomationSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
+}
+
+type AutomationVersionContentTrigger struct {
+	// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
+	Emoji *string `json:"emoji,omitempty"`
+	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
+	// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
+	// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+	Filter             *string                 `json:"filter,omitempty"`
+	Kind               AutomationTriggerKind   `json:"kind"`
+	MentionPrincipalID *string                 `json:"mentionPrincipalId,omitempty"`
+	ScheduleSpec       *AutomationScheduleSpec `json:"scheduleSpec,omitempty"`
+	TextPrefix         *string                 `json:"textPrefix,omitempty"`
+}
+
+// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+// 固定 SKIP。
+type AutomationScheduleSpec struct {
+	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
+	// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+	Cron         *string `json:"cron,omitempty"`
+	EverySeconds *int64  `json:"everySeconds,omitempty"`
+	// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+	Kind          *AutomationScheduleSpecKind `json:"kind,omitempty"`
+	OffsetSeconds *int64                      `json:"offsetSeconds,omitempty"`
 }
 
 type AutomationPage struct {
-	Automations               []AutomationElement     `json:"automations"`
-	AvailableApprovalPolicies []ApprovalPolicyElement `json:"availableApprovalPolicies,omitempty"`
+	Automations               []AutomationView              `json:"automations"`
+	AvailableApprovalPolicies []AutomationApprovalPolicyRef `json:"availableApprovalPolicies,omitempty"`
 	// 本次 fresh Workspace create 与已暴露真实动作共同成立；写前仍重新核验。
 	CanCreate  bool   `json:"canCreate"`
 	NextOffset *int64 `json:"nextOffset,omitempty"`
@@ -6342,37 +5474,37 @@ type AutomationPage struct {
 type AutomationRunPage struct {
 	AutomationResourceID string `json:"automationResourceId"`
 	// 不透明 createdAt/id 稳定分页边界；缺省表示本次查询没有更多行。
-	NextCursor *string      `json:"nextCursor,omitempty"`
-	Runs       []RunElement `json:"runs"`
+	NextCursor *string             `json:"nextCursor,omitempty"`
+	Runs       []AutomationRunView `json:"runs"`
 }
 
 // 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
-type RunElement struct {
+type AutomationRunView struct {
 	// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
-	ExecutionTrace []ExecutionTraceElement `json:"executionTrace,omitempty"`
+	ExecutionTrace []AutomationStepTrace `json:"executionTrace,omitempty"`
 	// 原 TaskProjection 进度；缺省不推测百分比或成功。
 	Progress *string `json:"progress,omitempty"`
 	// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
-	StepApprovalTask *StepApprovalTaskClass `json:"stepApprovalTask,omitempty"`
-	Task             StepApprovalTaskClass  `json:"task"`
+	StepApprovalTask *TaskView `json:"stepApprovalTask,omitempty"`
+	Task             TaskView  `json:"task"`
 	// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
 	UsageEventIDS []string `json:"usageEventIds"`
 }
 
 // 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
 // history。时间仅来自原生事实，未知时省略。
-type ExecutionTraceElement struct {
+type AutomationStepTrace struct {
 	// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
-	CompletedAt *string              `json:"completedAt,omitempty"`
-	Error       *ReasonCode          `json:"error,omitempty"`
-	Output      ExecutionTraceOutput `json:"output"`
+	CompletedAt *string                   `json:"completedAt,omitempty"`
+	Error       *ReasonCode               `json:"error,omitempty"`
+	Output      AutomationStepTraceOutput `json:"output"`
 	// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
 	StartedAt *string              `json:"startedAt,omitempty"`
 	Status    AutomationStepStatus `json:"status"`
 	StepID    string               `json:"stepId"`
 }
 
-type ExecutionTraceOutput struct {
+type AutomationStepTraceOutput struct {
 	ActionExecutionID  *string `json:"actionExecutionId,omitempty"`
 	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
 	EventID            *string `json:"eventId,omitempty"`
@@ -6389,7 +5521,7 @@ type ExecutionTraceOutput struct {
 //
 // GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
 // 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
-type StepApprovalTaskClass struct {
+type TaskView struct {
 	ActionExecutionID  string          `json:"actionExecutionId"`
 	ActionKey          string          `json:"actionKey"`
 	ActionVersion      int64           `json:"actionVersion"`
@@ -6414,144 +5546,12 @@ type StepApprovalTaskClass struct {
 	WorkspaceID    *string       `json:"workspaceId,omitempty"`
 }
 
-// 本人发起的 automation.run；原 TaskProjection 与 UsageEvent 引用，不是新的运行权威。
-type AutomationRunView struct {
-	// 原 TaskProjection 步骤证据。旧投影缺省表示尚无步骤证据，不表示没有步骤或运行成功；不通过读取原 history 旁路回填。
-	ExecutionTrace []ExecutionTraceElement `json:"executionTrace,omitempty"`
-	// 原 TaskProjection 进度；缺省不推测百分比或成功。
-	Progress *string `json:"progress,omitempty"`
-	// 同一运行的原步骤审批 child ActionExecution；缺省不代表无需审批。详情仍经本人 Tasks/Approvals fresh 授权读取，不是额外运行记录。
-	StepApprovalTask *StepApprovalTaskClass `json:"stepApprovalTask,omitempty"`
-	Task             StepApprovalTaskClass  `json:"task"`
-	// 同 Tenant/Workspace/Operation 的原 UsageEvent 引用；不代表已结算，空集合不代表零用量。
-	UsageEventIDS []string `json:"usageEventIds"`
-}
-
-// Core 自有 AutomationVersion 正文只在该 Asset fresh read 授权后返回；immutable Asset 三态复用既有版本契约。
-type AutomationVersionView struct {
-	AssetID              string                        `json:"assetId"`
-	AssetVersion         int64                         `json:"assetVersion"`
-	AutomationResourceID string                        `json:"automationResourceId"`
-	ConfigHash           string                        `json:"configHash"`
-	Content              AutomationVersionContentClass `json:"content"`
-	Ordinal              int64                         `json:"ordinal"`
-	OwnerPrincipalID     string                        `json:"ownerPrincipalId"`
-	State                AgentVersionState             `json:"state"`
-}
-
-type AutomationView struct {
-	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition 写事务记录的真实创建时间；历史无证据时省略，不回填当前时间。
-	CreatedAt                      *string         `json:"createdAt,omitempty"`
-	DelegationID                   *string         `json:"delegationId,omitempty"`
-	ExecutorInstallationResourceID string          `json:"executorInstallationResourceId"`
-	OwnerPrincipalID               string          `json:"ownerPrincipalId"`
-	PinnedVersionAssetID           *string         `json:"pinnedVersionAssetId,omitempty"`
-	ResourceID                     string          `json:"resourceId"`
-	ResourceState                  ResourceState   `json:"resourceState"`
-	ResourceVersion                int64           `json:"resourceVersion"`
-	State                          AutomationState `json:"state"`
-	// RFC3339，UTC，与既有管理查询时间字段一致。原 AutomationDefinition/Version 实际写入时间；未观察到更新的历史行省略，不从
-	// UUID、审计投递时间或浏览器时钟推测。
-	UpdatedAt *string `json:"updatedAt,omitempty"`
-	// 当前 WEBHOOK 密钥展示形式的末四位，仅用于辨认；密钥本身不可再取回（DD-116）。
-	WebhookSecretHint *string `json:"webhookSecretHint,omitempty"`
-	// WEBHOOK 触发的公开投递地址（部署配置的公开基址 + /hooks/{resourceId}）；只在密钥 ACTIVE 时给出（DD-116）。
-	WebhookURL  *string `json:"webhookUrl,omitempty"`
-	WorkspaceID string  `json:"workspaceId"`
-}
-
-// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-type AutomationWebhookSecret struct {
-	AutomationResourceID string `json:"automationResourceId"`
-	Hint                 string `json:"hint"`
-	// 32 字节随机密钥的 base64 展示形式。
-	Secret string `json:"secret"`
-	// 公开投递地址；部署未配置公开基址时省略。
-	URL *string `json:"url,omitempty"`
-}
-
 // GET /api/v1/operations 的有界回应（.design/14 §7）：本人发起或实际执行的操作，或调用方对其持有 audit permission 的
 // Tenant/Workspace 范围内的操作，每次 fresh Check；新的在前。
 type BusinessOperationPage struct {
 	// 下一页首项之前的 ActionExecution ID；缺省即已读完
-	NextCursor *string            `json:"nextCursor,omitempty"`
-	Operations []OperationElement `json:"operations"`
-}
-
-// 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
-// 或原生结果；用量只来自 Core UsageEvent outbox 的冻结 quantity 与投递事实，不是余额或账单。
-type OperationElement struct {
-	ActionExecutionID string          `json:"actionExecutionId"`
-	ActionKey         string          `json:"actionKey"`
-	ActionVersion     int64           `json:"actionVersion"`
-	ActorPrincipalID  string          `json:"actorPrincipalId"`
-	ApprovalStatus    *ApprovalStatus `json:"approvalStatus,omitempty"`
-	// RFC3339，UTC
-	CreatedAt            string                 `json:"createdAt"`
-	InitiatorPrincipalID string                 `json:"initiatorPrincipalId"`
-	OperationID          string                 `json:"operationId"`
-	Phase                BusinessOperationPhase `json:"phase"`
-	Reason               *ReasonCode            `json:"reason,omitempty"`
-	TargetID             string                 `json:"targetId"`
-	// RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
-	TerminalAt   *string             `json:"terminalAt,omitempty"`
-	Usage        []OperationUsage    `json:"usage"`
-	UsageState   OperationUsageState `json:"usageState"`
-	WorkflowKind *WorkflowKind       `json:"workflowKind,omitempty"`
-	// 缺省即 Tenant 级动作
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-}
-
-type OperationUsage struct {
-	MeterKey string `json:"meterKey"`
-	// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
-	Quantity int64                 `json:"quantity"`
-	Status   UsageSettlementStatus `json:"status"`
-}
-
-// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
-type BusinessOperationPhaseCount struct {
-	Count int64                  `json:"count"`
-	Phase BusinessOperationPhase `json:"phase"`
-}
-
-// GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
-// audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
-type BusinessOperationSummary struct {
-	Actions []BusinessOperationActionSummary `json:"actions"`
-	// RFC3339，含
-	From     string         `json:"from"`
-	Phases   []PhaseElement `json:"phases"`
-	TenantID string         `json:"tenantId"`
-	// RFC3339，不含
-	To          string              `json:"to"`
-	Total       int64               `json:"total"`
-	UsageStates []UsageStateElement `json:"usageStates"`
-	WorkspaceID *string             `json:"workspaceId,omitempty"`
-}
-
-type BusinessOperationActionSummary struct {
-	ActionKey string `json:"actionKey"`
-	// timedTerminalCount 为 0 时缺省
-	AverageTerminalSeconds *float64       `json:"averageTerminalSeconds,omitempty"`
-	Phases                 []PhaseElement `json:"phases"`
-	// 有确定终态时间、计入平均耗时的操作数
-	TimedTerminalCount int64 `json:"timedTerminalCount"`
-	Total              int64 `json:"total"`
-}
-
-// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
-type PhaseElement struct {
-	Count int64                  `json:"count"`
-	Phase BusinessOperationPhase `json:"phase"`
-}
-
-// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
-type UsageStateElement struct {
-	Count int64               `json:"count"`
-	State OperationUsageState `json:"state"`
+	NextCursor *string                 `json:"nextCursor,omitempty"`
+	Operations []BusinessOperationView `json:"operations"`
 }
 
 // 业务操作时间线的一项：一个根 Governed Action（.design/14 §2、§7）。只含平台元数据与权威引用，不含参数、正文、prompt/response
@@ -6570,39 +5570,62 @@ type BusinessOperationView struct {
 	Reason               *ReasonCode            `json:"reason,omitempty"`
 	TargetID             string                 `json:"targetId"`
 	// RFC3339，UTC；只在阶段为确定终态且终态时间来自 TaskProjection 或同 operation 的审计事实时给出
-	TerminalAt   *string                      `json:"terminalAt,omitempty"`
-	Usage        []BusinessOperationViewUsage `json:"usage"`
-	UsageState   OperationUsageState          `json:"usageState"`
-	WorkflowKind *WorkflowKind                `json:"workflowKind,omitempty"`
+	TerminalAt   *string              `json:"terminalAt,omitempty"`
+	Usage        []OperationUsageLine `json:"usage"`
+	UsageState   OperationUsageState  `json:"usageState"`
+	WorkflowKind *WorkflowKind        `json:"workflowKind,omitempty"`
 	// 缺省即 Tenant 级动作
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
-type BusinessOperationViewUsage struct {
+type OperationUsageLine struct {
 	MeterKey string `json:"meterKey"`
 	// 冻结 CloudEvent 的 quantity；status 非 COMMITTED 时不表示已入账
 	Quantity int64                 `json:"quantity"`
 	Status   UsageSettlementStatus `json:"status"`
 }
 
-type CapabilityContractPage struct {
-	CanRegister bool              `json:"canRegister"`
-	Contracts   []ContractElement `json:"contracts"`
-	NextOffset  *int64            `json:"nextOffset,omitempty"`
+// GET /api/v1/operations/summary：Tenant 或其中一个 Workspace 在区间内的业务聚合（.design/14 §7），调用方须对该范围持有
+// audit permission，每次 fresh Check。等待审批、运行中、UNKNOWN、投影落后与撤销单列，不从分母中丢弃；平均耗时只取有确定终态时间的操作。
+type BusinessOperationSummary struct {
+	Actions []BusinessOperationActionSummary `json:"actions"`
+	// RFC3339，含
+	From     string                        `json:"from"`
+	Phases   []BusinessOperationPhaseCount `json:"phases"`
+	TenantID string                        `json:"tenantId"`
+	// RFC3339，不含
+	To          string                `json:"to"`
+	Total       int64                 `json:"total"`
+	UsageStates []OperationUsageCount `json:"usageStates"`
+	WorkspaceID *string               `json:"workspaceId,omitempty"`
 }
 
-// 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
-type ContractElement struct {
-	// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
-	BootstrapActionExecutionID    *string                  `json:"bootstrapActionExecutionId,omitempty"`
-	CanApprove                    bool                     `json:"canApprove"`
-	CanDeprecate                  bool                     `json:"canDeprecate"`
-	CategoryKey                   string                   `json:"categoryKey"`
-	ConformanceSuiteDigest        string                   `json:"conformanceSuiteDigest"`
-	ContractVersion               int64                    `json:"contractVersion"`
-	RegisteredByActionExecutionID *string                  `json:"registeredByActionExecutionId,omitempty"`
-	SchemaSetDigest               string                   `json:"schemaSetDigest"`
-	Status                        CapabilityContractStatus `json:"status"`
+type BusinessOperationActionSummary struct {
+	ActionKey string `json:"actionKey"`
+	// timedTerminalCount 为 0 时缺省
+	AverageTerminalSeconds *float64                      `json:"averageTerminalSeconds,omitempty"`
+	Phases                 []BusinessOperationPhaseCount `json:"phases"`
+	// 有确定终态时间、计入平均耗时的操作数
+	TimedTerminalCount int64 `json:"timedTerminalCount"`
+	Total              int64 `json:"total"`
+}
+
+// 一个阶段在所选范围与区间内的根业务操作数量。只列出现过的阶段，不补零。
+type BusinessOperationPhaseCount struct {
+	Count int64                  `json:"count"`
+	Phase BusinessOperationPhase `json:"phase"`
+}
+
+// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
+type OperationUsageCount struct {
+	Count int64               `json:"count"`
+	State OperationUsageState `json:"state"`
+}
+
+type CapabilityContractPage struct {
+	CanRegister bool                     `json:"canRegister"`
+	Contracts   []CapabilityContractView `json:"contracts"`
+	NextOffset  *int64                   `json:"nextOffset,omitempty"`
 }
 
 // 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
@@ -6626,13 +5649,13 @@ type CapabilityContractView struct {
 // 个模板。模板不授予任何权限：应用时仍逐项提交 workspace.create、workspace.canvas.set 与
 // agent.installation.create。DELETE 同一路径以 UserStateVersion 为请求体。version 不符即 409。
 type ChannelTemplateRequest struct {
-	AgentResourceIDS []string            `json:"agentResourceIds"`
-	CanvasTemplate   *string             `json:"canvasTemplate,omitempty"`
-	ChannelType      ChannelType         `json:"channelType"`
-	Description      *string             `json:"description,omitempty"`
-	Name             string              `json:"name"`
-	Version          int64               `json:"version"`
-	Visibility       WorkspaceVisibility `json:"visibility"`
+	AgentResourceIDS []string                          `json:"agentResourceIds"`
+	CanvasTemplate   *string                           `json:"canvasTemplate,omitempty"`
+	ChannelType      WorkspaceChannelCreateChannelType `json:"channelType"`
+	Description      *string                           `json:"description,omitempty"`
+	Name             string                            `json:"name"`
+	Version          int64                             `json:"version"`
+	Visibility       WorkspaceVisibility               `json:"visibility"`
 }
 
 // GET /api/v1/identity/client-keys 回应数组的元素：本人登记且未撤销的原生设备公钥（DD-77/79）。
@@ -6670,18 +5693,18 @@ type ComponentConformanceWireDigests struct {
 	BindingDigest *string `json:"bindingDigest,omitempty"`
 	// DD-124：仅当冻结步骤声明 captures 且实际应答为带原生状态的 SUCCEEDED 时，从 typed ContentReference 或登记的
 	// generatedRefs 输出字段取出的值。
-	Captures                  []CaptureElement                `json:"captures,omitempty"`
-	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
-	RequestDigest             string                          `json:"requestDigest"`
-	ResponseDigest            string                          `json:"responseDigest"`
-	ResultDigest              *string                         `json:"resultDigest,omitempty"`
+	Captures                  []ComponentConformanceCaptureValue  `json:"captures,omitempty"`
+	NativeReceiverObservation *ComponentNativeReceiverObservation `json:"nativeReceiverObservation,omitempty"`
+	RequestDigest             string                              `json:"requestDigest"`
+	ResponseDigest            string                              `json:"responseDigest"`
+	ResultDigest              *string                             `json:"resultDigest,omitempty"`
 }
 
 // DD-124(2): one captured value of the current suite run. Core derives it only from the
 // candidate's actual wire response or typed ContentReference; it is kept only in that
 // step's observation evidence and re-checked when the report is recorded. Never a fixture,
 // seed or administrator value.
-type CaptureElement struct {
+type ComponentConformanceCaptureValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
@@ -6691,38 +5714,38 @@ type CaptureElement struct {
 // 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
 // nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个
 // case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
-type NativeReceiverObservationClass struct {
-	Completed      bool                                     `json:"completed"`
-	FinishedAt     *string                                  `json:"finishedAt,omitempty"`
-	NativeBatchID  string                                   `json:"nativeBatchId"`
-	NativeStatus   string                                   `json:"nativeStatus"`
-	ReadOperations []NativeReceiverObservationReadOperation `json:"readOperations"`
-	Request        RequestClass                             `json:"request"`
-	StartedAt      string                                   `json:"startedAt"`
+type ComponentNativeReceiverObservation struct {
+	Completed      bool                             `json:"completed"`
+	FinishedAt     *string                          `json:"finishedAt,omitempty"`
+	NativeBatchID  string                           `json:"nativeBatchId"`
+	NativeStatus   string                           `json:"nativeStatus"`
+	ReadOperations []ComponentNativeReadObservation `json:"readOperations"`
+	Request        ComponentNativeReceiverRequest   `json:"request"`
+	StartedAt      string                           `json:"startedAt"`
 }
 
-type NativeReceiverObservationReadOperation struct {
+type ComponentNativeReadObservation struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
 	// receiverActionExecutionId）。
-	NativeBatch               *ReadOperationNativeBatch `json:"nativeBatch,omitempty"`
-	OperationID               string                    `json:"operationId"`
-	ReadRequest               ReadRequestClass          `json:"readRequest"`
-	ReceiverActionExecutionID string                    `json:"receiverActionExecutionId"`
-	ReceiverGeneration        int64                     `json:"receiverGeneration"`
-	ReceiverReceipt           AdapterReadReceipt        `json:"receiverReceipt"`
-	SourceBindingID           string                    `json:"sourceBindingId"`
-	SourceReceipt             AdapterReadReceipt        `json:"sourceReceipt"`
-	SourceResourceID          string                    `json:"sourceResourceId"`
+	NativeBatch               *AdapterReadGrantRequestNativeBatch `json:"nativeBatch,omitempty"`
+	OperationID               string                              `json:"operationId"`
+	ReadRequest               AdapterReadGrantRequest             `json:"readRequest"`
+	ReceiverActionExecutionID string                              `json:"receiverActionExecutionId"`
+	ReceiverGeneration        int64                               `json:"receiverGeneration"`
+	ReceiverReceipt           AdapterReadReceipt                  `json:"receiverReceipt"`
+	SourceBindingID           string                              `json:"sourceBindingId"`
+	SourceReceipt             AdapterReadReceipt                  `json:"sourceReceipt"`
+	SourceResourceID          string                              `json:"sourceResourceId"`
 }
 
-// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
-// receiverActionExecutionId）。
-//
 // Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
 // exactly one mode, freezes these references, and resolves the receiver from its
 // authenticated binding.
-type ReadOperationNativeBatch struct {
+//
+// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
+// receiverActionExecutionId）。
+type AdapterReadGrantRequestNativeBatch struct {
 	ActionKey          string `json:"actionKey"`
 	ActionVersion      int64  `json:"actionVersion"`
 	BatchID            string `json:"batchId"`
@@ -6733,7 +5756,7 @@ type ReadOperationNativeBatch struct {
 // DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
 // read batch. Input is checked against the approved source action schema; Core retains its
 // digest, not the returned business content.
-type ReadRequestClass struct {
+type AdapterReadGrantRequest struct {
 	ActionKey      string `json:"actionKey"`
 	ActionVersion  int64  `json:"actionVersion"`
 	IdempotencyKey string `json:"idempotencyKey"`
@@ -6741,7 +5764,7 @@ type ReadRequestClass struct {
 	// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
 	// exactly one mode, freezes these references, and resolves the receiver from its
 	// authenticated binding.
-	NativeBatch *ReadOperationNativeBatch `json:"nativeBatch,omitempty"`
+	NativeBatch *AdapterReadGrantRequestNativeBatch `json:"nativeBatch,omitempty"`
 	// 只观察已存在的同一原生 SOURCE AE；必须匹配原 key/nativeBatch（或锚定的 receiverActionExecutionId 与
 	// receiverArgumentsJson）/输入，查无或未就绪不得创建、续发 grant 或进入新准入。
 	ObserveActionExecutionID  *string `json:"observeActionExecutionId,omitempty"`
@@ -6755,7 +5778,7 @@ type ReadRequestClass struct {
 // 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION
 // 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution
 // 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
-type RequestClass struct {
+type ComponentNativeReceiverRequest struct {
 	BindingID string `json:"bindingId"`
 	// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
 	ExpiresAt       string  `json:"expiresAt"`
@@ -6766,43 +5789,43 @@ type RequestClass struct {
 
 // 受信Worker实际HTTP响应的瞬时核验输入。正文仅在Activity与Core请求内存中存在，不得进入Temporal历史、报告、日志或数据库；不是用户上传的通过声明。
 type ComponentConformanceWireObservation struct {
-	HTTPStatus   int64      `json:"httpStatus"`
-	Probe        ProbeClass `json:"probe"`
-	ResponseJSON string     `json:"responseJson"`
+	HTTPStatus   int64                     `json:"httpStatus"`
+	Probe        ComponentConformanceProbe `json:"probe"`
+	ResponseJSON string                    `json:"responseJson"`
 }
 
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 // history 承接，不建立另一执行账本。
-type ProbeClass struct {
+type ComponentConformanceProbe struct {
 	// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
 	// 或管理员值替代。
-	Captures         []CaptureElement         `json:"captures,omitempty"`
-	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
-	Plan             PlanClass                `json:"plan"`
+	Captures         []ComponentConformanceCaptureValue `json:"captures,omitempty"`
+	ContentReference *ContentReference                  `json:"contentReference,omitempty"`
+	Plan             ComponentConformancePlan           `json:"plan"`
 	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
 	Reconcile *bool `json:"reconcile,omitempty"`
 	StepIndex int64 `json:"stepIndex"`
 }
 
 // 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
-type PlanClass struct {
-	ActionExecutionID  string         `json:"actionExecutionId"`
-	ArtifactDigest     string         `json:"artifactDigest"`
-	ComponentReleaseID string         `json:"componentReleaseId"`
-	ConnectorKind      *ConnectorKind `json:"connectorKind,omitempty"`
-	ContractDigests    []string       `json:"contractDigests"`
+type ComponentConformancePlan struct {
+	ActionExecutionID  string                                 `json:"actionExecutionId"`
+	ArtifactDigest     string                                 `json:"artifactDigest"`
+	ComponentReleaseID string                                 `json:"componentReleaseId"`
+	ConnectorKind      *ComponentConformancePlanConnectorKind `json:"connectorKind,omitempty"`
+	ContractDigests    []string                               `json:"contractDigests"`
 	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
 	IdentityDigest string `json:"identityDigest"`
 	OperationID    string `json:"operationId"`
 	PlanDigest     string `json:"planDigest"`
 	// DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
-	ReceiverEnvironment *ReceiverEnvironmentClass `json:"receiverEnvironment,omitempty"`
+	ReceiverEnvironment *ComponentConformanceReceiverEnvironment `json:"receiverEnvironment,omitempty"`
 	// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
 	// Describe 与同 workflow 的当前 TaskProjection 核对。
-	RunID       string     `json:"runId"`
-	Steps       []PlanStep `json:"steps"`
-	SuiteDigest string     `json:"suiteDigest"`
-	WorkflowID  string     `json:"workflowId"`
+	RunID       string                     `json:"runId"`
+	Steps       []ComponentConformanceStep `json:"steps"`
+	SuiteDigest string                     `json:"suiteDigest"`
+	WorkflowID  string                     `json:"workflowId"`
 }
 
 // DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
@@ -6818,29 +5841,29 @@ type PlanClass struct {
 //
 // DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源
 // release，随身份摘要进入原计划。
-type ReceiverEnvironmentClass struct {
+type ComponentConformanceReceiverEnvironment struct {
 	IsolatedCoreBuildID  string `json:"isolatedCoreBuildId"`
 	SourceArtifactDigest string `json:"sourceArtifactDigest"`
 	SourceManifestDigest string `json:"sourceManifestDigest"`
 	SourceReleaseID      string `json:"sourceReleaseId"`
 }
 
-type PlanStep struct {
+type ComponentConformanceStep struct {
 	// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
 	// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
 	// 以它们比对隔离 Core 实际产生的接收方准入。
-	Bindings []BindingElement `json:"bindings,omitempty"`
+	Bindings []CapabilityVectorBinding `json:"bindings,omitempty"`
 	// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
-	Captures []CaptureClass `json:"captures,omitempty"`
-	CaseKey  string         `json:"caseKey"`
+	Captures []CapabilityVectorCapture `json:"captures,omitempty"`
+	CaseKey  string                    `json:"caseKey"`
 	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
 	// native 任务元数据。
 	ContractKey *string `json:"contractKey,omitempty"`
 	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
-	ExpectedHTTPStatus    int64          `json:"expectedHttpStatus"`
-	ExpectedMCPResultKind *MCPResultKind `json:"expectedMcpResultKind,omitempty"`
-	ExpectedResponseJSON  string         `json:"expectedResponseJson"`
-	IdempotencyKey        string         `json:"idempotencyKey"`
+	ExpectedHTTPStatus    int64                                          `json:"expectedHttpStatus"`
+	ExpectedMCPResultKind *ComponentConformanceStepExpectedMCPResultKind `json:"expectedMcpResultKind,omitempty"`
+	ExpectedResponseJSON  string                                         `json:"expectedResponseJson"`
+	IdempotencyKey        string                                         `json:"idempotencyKey"`
 	// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core
 	// 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
 	NativeReceiverInputJSON *string                       `json:"nativeReceiverInputJson,omitempty"`
@@ -6859,7 +5882,7 @@ type PlanStep struct {
 // RECEIVER case INPUT may also bind the step's own captures: Core compares that input with
 // the admission the isolated Core actually produced whenever the step's evidence has reads.
 // The plan digest fixes the declaration, never the value.
-type BindingElement struct {
+type CapabilityVectorBinding struct {
 	Key     string                        `json:"key"`
 	Pointer string                        `json:"pointer"`
 	Side    CapabilityVectorSide          `json:"side"`
@@ -6873,7 +5896,7 @@ type BindingElement struct {
 // the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER
 // cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
 // the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
-type CaptureClass struct {
+type CapabilityVectorCapture struct {
 	Key     string                      `json:"key"`
 	Pointer *string                     `json:"pointer,omitempty"`
 	Slot    CapabilityVectorCaptureSlot `json:"slot"`
@@ -6881,29 +5904,29 @@ type CaptureClass struct {
 
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 type ComponentReleaseApprovalReport struct {
-	RunID       string           `json:"runId"`
-	Target      TargetClass      `json:"target"`
-	WorkerBuild WorkerBuildClass `json:"workerBuild"`
+	RunID       string                         `json:"runId"`
+	Target      ComponentReleaseApprovalTarget `json:"target"`
+	WorkerBuild PlatformBuildInfo              `json:"workerBuild"`
 }
 
 // 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
-type TargetClass struct {
+type ComponentReleaseApprovalTarget struct {
 	ActionExecutionID  string `json:"actionExecutionId"`
 	ComponentReleaseID string `json:"componentReleaseId"`
 	WorkflowID         string `json:"workflowId"`
 }
 
 // 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
-type WorkerBuildClass struct {
-	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
-	BuildID                 string            `json:"buildId"`
-	ConnectorKinds          []string          `json:"connectorKinds,omitempty"`
-	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
-	HostAPIVersion          string            `json:"hostApiVersion"`
-	MCPProtocolVersions     []string          `json:"mcpProtocolVersions,omitempty"`
-	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
-	ReportedAt              time.Time         `json:"reportedAt"`
-	Subject                 Subject           `json:"subject"`
+type PlatformBuildInfo struct {
+	AdapterProtocolVersions []string                                `json:"adapterProtocolVersions"`
+	BuildID                 string                                  `json:"buildId"`
+	ConnectorKinds          []string                                `json:"connectorKinds,omitempty"`
+	DriverRegistryKeys      []string                                `json:"driverRegistryKeys"`
+	HostAPIVersion          string                                  `json:"hostApiVersion"`
+	MCPProtocolVersions     []string                                `json:"mcpProtocolVersions,omitempty"`
+	PlatformPortKeys        []PlatformBuildInfoPlatformPortKeysItem `json:"platformPortKeys"`
+	ReportedAt              string                                  `json:"reportedAt"`
+	Subject                 PlatformBuildInfoSubject                `json:"subject"`
 }
 
 // 受Catalog管理权限保护的已登记release元数据，正文与套件令牌不外露；REGISTERED不等于APPROVED或binding可用。
@@ -6936,41 +5959,29 @@ type ComponentReleaseReceipt struct {
 	Status             ComponentReleaseStatus `json:"status"`
 }
 
-// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
-type ConversationOpenRequest struct {
-	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
-}
-
 type ConversationPage struct {
-	Items      []ItemClass `json:"items"`
-	NextCursor *string     `json:"nextCursor,omitempty"`
+	Items      []ConversationView `json:"items"`
+	NextCursor *string            `json:"nextCursor,omitempty"`
 }
 
 // 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
-type ItemClass struct {
-	ChannelID               string    `json:"channelId"`
-	ID                      string    `json:"id"`
-	OperationID             string    `json:"operationId"`
-	ParticipantPrincipalIDS []string  `json:"participantPrincipalIds"`
-	State                   ItemState `json:"state"`
-	Version                 int64     `json:"version"`
+type ConversationView struct {
+	ChannelID               string                `json:"channelId"`
+	ID                      string                `json:"id"`
+	OperationID             string                `json:"operationId"`
+	ParticipantPrincipalIDS []string              `json:"participantPrincipalIds"`
+	State                   ConversationViewState `json:"state"`
+	Version                 int64                 `json:"version"`
+}
+
+type ConversationParticipantPage struct {
+	Items           []ConversationParticipant `json:"items"`
+	MaxParticipants int64                     `json:"maxParticipants"`
+	NextCursor      *string                   `json:"nextCursor,omitempty"`
 }
 
 // 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
 type ConversationParticipant struct {
-	DisplayName string   `json:"displayName"`
-	PrincipalID string   `json:"principalId"`
-	Pubkeys     []string `json:"pubkeys"`
-}
-
-type ConversationParticipantPage struct {
-	Items           []ConversationParticipantPageItem `json:"items"`
-	MaxParticipants int64                             `json:"maxParticipants"`
-	NextCursor      *string                           `json:"nextCursor,omitempty"`
-}
-
-// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
-type ConversationParticipantPageItem struct {
 	DisplayName string   `json:"displayName"`
 	PrincipalID string   `json:"principalId"`
 	Pubkeys     []string `json:"pubkeys"`
@@ -6982,16 +5993,6 @@ type ConversationPreferenceRequest struct {
 	Muted   bool  `json:"muted"`
 	Starred bool  `json:"starred"`
 	Version int64 `json:"version"`
-}
-
-// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
-type ConversationView struct {
-	ChannelID               string    `json:"channelId"`
-	ID                      string    `json:"id"`
-	OperationID             string    `json:"operationId"`
-	ParticipantPrincipalIDS []string  `json:"participantPrincipalIds"`
-	State                   ItemState `json:"state"`
-	Version                 int64     `json:"version"`
 }
 
 // 已授权普通 Action 的 v1 平台元数据结果；不含业务正文、邀请凭证、文档或协议会话。仅 agent.invoke、automation.run 及已接入普通
@@ -7007,64 +6008,43 @@ type DelegatedActionMetadataV1 struct {
 	WorkflowID         *string             `json:"workflowId,omitempty"`
 }
 
+type DiscoverableWorkspacePage struct {
+	Items      []DiscoverableWorkspace `json:"items"`
+	NextCursor *string                 `json:"nextCursor,omitempty"`
+}
+
 type DiscoverableWorkspace struct {
 	// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
 	// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
-	CanReopen *bool        `json:"canReopen,omitempty"`
-	Channel   ChannelClass `json:"channel"`
-	CreatedAt time.Time    `json:"createdAt"`
-	ID        string       `json:"id"`
+	CanReopen *bool          `json:"canReopen,omitempty"`
+	Channel   WebChannelView `json:"channel"`
+	CreatedAt string         `json:"createdAt"`
+	ID        string         `json:"id"`
 	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
-	IsMember      bool           `json:"isMember"`
-	JoinActionKey *JoinActionKey `json:"joinActionKey,omitempty"`
+	IsMember      bool                                `json:"isMember"`
+	JoinActionKey *DiscoverableWorkspaceJoinActionKey `json:"joinActionKey,omitempty"`
 	// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
 	// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
-	LeaveActionKey  *LeaveActionKey           `json:"leaveActionKey,omitempty"`
-	MemberCount     int64                     `json:"memberCount"`
-	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
+	LeaveActionKey  *DiscoverableWorkspaceLeaveActionKey `json:"leaveActionKey,omitempty"`
+	MemberCount     int64                                `json:"memberCount"`
+	MembershipState *WorkspaceMembershipState            `json:"membershipState,omitempty"`
 	// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
 	// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
-	UpdateActionKey *UpdateActionKey    `json:"updateActionKey,omitempty"`
-	Visibility      WorkspaceVisibility `json:"visibility"`
+	UpdateActionKey *DiscoverableWorkspaceUpdateActionKey `json:"updateActionKey,omitempty"`
+	Visibility      WorkspaceVisibility                   `json:"visibility"`
 }
 
 // Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
-type ChannelClass struct {
-	Archived    bool        `json:"archived"`
-	ChannelID   string      `json:"channelId"`
-	ChannelType ChannelType `json:"channelType"`
-	Description *string     `json:"description,omitempty"`
-	Name        string      `json:"name"`
+type WebChannelView struct {
+	Archived    bool                              `json:"archived"`
+	ChannelID   string                            `json:"channelId"`
+	ChannelType WorkspaceChannelCreateChannelType `json:"channelType"`
+	Description *string                           `json:"description,omitempty"`
+	Name        string                            `json:"name"`
 	// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
-	Topic       *string    `json:"topic,omitempty"`
-	TTLDeadline *time.Time `json:"ttlDeadline,omitempty"`
-	TTLSeconds  *int64     `json:"ttlSeconds,omitempty"`
-}
-
-type DiscoverableWorkspacePage struct {
-	Items      []DiscoverableWorkspacePageItem `json:"items"`
-	NextCursor *string                         `json:"nextCursor,omitempty"`
-}
-
-type DiscoverableWorkspacePageItem struct {
-	// 与 updateActionKey 同时给出且为 true 时，Channel 是被原生 reaper 按 TTL 到期归档的，界面只提供以 workspace.update 的
-	// reopen 解档；省略或 false 时 updateActionKey 只用于修改名称、描述、TTL 与可见性。
-	CanReopen *bool        `json:"canReopen,omitempty"`
-	Channel   ChannelClass `json:"channel"`
-	CreatedAt time.Time    `json:"createdAt"`
-	ID        string       `json:"id"`
-	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
-	IsMember      bool           `json:"isMember"`
-	JoinActionKey *JoinActionKey `json:"joinActionKey,omitempty"`
-	// 当前 Principal 持有 ACTIVE WorkspaceMembership、fresh Workspace discover
-	// 检查通过且目录已开放时给出；主体固定为本人。省略即不显示退出入口。
-	LeaveActionKey  *LeaveActionKey           `json:"leaveActionKey,omitempty"`
-	MemberCount     int64                     `json:"memberCount"`
-	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
-	// 当前 Principal 经 fresh Workspace manage 检查、目录已开放、Workspace ACTIVE 且没有未终结的 workspace.update
-	// 时给出；Channel 已归档时仅在 canReopen 为 true 时给出。省略即不显示编辑入口，提交仍重新准入。
-	UpdateActionKey *UpdateActionKey    `json:"updateActionKey,omitempty"`
-	Visibility      WorkspaceVisibility `json:"visibility"`
+	Topic       *string `json:"topic,omitempty"`
+	TTLDeadline *string `json:"ttlDeadline,omitempty"`
+	TTLSeconds  *int64  `json:"ttlSeconds,omitempty"`
 }
 
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
@@ -7104,6 +6084,14 @@ type HuddleAnnouncementView struct {
 	StartedEventID string `json:"startedEventId"`
 }
 
+// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
+// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
+type HuddleLifecyclePage struct {
+	Events []HuddleLifecycleEvent `json:"events"`
+	// Relay 48104 存活查询是否返回该会话
+	Live bool `json:"live"`
+}
+
 // 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
 // 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
 type HuddleLifecycleEvent struct {
@@ -7121,56 +6109,9 @@ type HuddleLifecycleEvent struct {
 	RosterRevision *int64 `json:"rosterRevision,omitempty"`
 }
 
-// GET /api/v1/huddles/{huddleId}/lifecycle：该 Huddle 在父频道中的生命周期事件（按 created_at 升序）与 Relay
-// 合成的存活（48104，房间非空才为 true），供原 huddlePresence 重建参与者与卡片状态。
-type HuddleLifecyclePage struct {
-	Events []EventElement `json:"events"`
-	// Relay 48104 存活查询是否返回该会话
-	Live bool `json:"live"`
-}
-
-// 父频道中一条原版 Huddle 生命周期事件（kind 48100–48103，SF-BUZ-53），由 BFF 以本人身份读取并校验签名：48100
-// 只取临时频道创建者签名，48101/48102 只取 Relay 签名，48103 取创建者或 Relay 签名。content 按原 JSON 解析为下列字段，未知字段丢弃。
-type EventElement struct {
-	AdmissionID *string `json:"admissionId,omitempty"`
-	// 事件 created_at（Unix 秒）
-	CreatedAt          int64   `json:"createdAt"`
-	EphemeralChannelID string  `json:"ephemeralChannelId"`
-	EventID            string  `json:"eventId"`
-	Generation         *string `json:"generation,omitempty"`
-	Kind               int64   `json:"kind"`
-	// 48101/48102 的 p 标签
-	ParticipantPubkey *string `json:"participantPubkey,omitempty"`
-	// 签名者公钥
-	Pubkey         string `json:"pubkey"`
-	RosterRevision *int64 `json:"rosterRevision,omitempty"`
-}
-
 // GET /api/v1/huddles：一个父 Workspace 或父私聊中本人可见、尚未结束的 Huddle（PROVISIONING 或 ACTIVE），按创建时间倒序。
 type HuddlePage struct {
-	Items []HuddlePageItem `json:"items"`
-}
-
-// 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
-// Relay 的 48101–48104 呈现。
-type HuddlePageItem struct {
-	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds"`
-	// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
-	ChannelID   string    `json:"channelId"`
-	ChannelName string    `json:"channelName"`
-	CreatedAt   time.Time `json:"createdAt"`
-	// 临时频道 created_by：本人发起会话的 HUMAN 公钥
-	CreatorPubkey        string     `json:"creatorPubkey"`
-	EndedAt              *time.Time `json:"endedAt,omitempty"`
-	HuddleID             string     `json:"huddleId"`
-	InitiatorPrincipalID string     `json:"initiatorPrincipalId"`
-	// 发起该 Huddle 的 huddle.start operation
-	OperationID          string      `json:"operationId"`
-	ParentChannelID      string      `json:"parentChannelId"`
-	ParentConversationID *string     `json:"parentConversationId,omitempty"`
-	ParentWorkspaceID    *string     `json:"parentWorkspaceId,omitempty"`
-	State                HuddleState `json:"state"`
-	Version              int64       `json:"version"`
+	Items []HuddleView `json:"items"`
 }
 
 // 本人可见的一个原版 Huddle 临时频道投影（HuddleBuzzBinding，DD-125(3)）。只含平台引用与状态，不含音频、参与者音频状态或消息正文；参与者与存活由
@@ -7178,14 +6119,14 @@ type HuddlePageItem struct {
 type HuddleView struct {
 	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds"`
 	// Core 预分配的临时 Channel UUID（原 ephemeral_channel_id）
-	ChannelID   string    `json:"channelId"`
-	ChannelName string    `json:"channelName"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ChannelID   string `json:"channelId"`
+	ChannelName string `json:"channelName"`
+	CreatedAt   string `json:"createdAt"`
 	// 临时频道 created_by：本人发起会话的 HUMAN 公钥
-	CreatorPubkey        string     `json:"creatorPubkey"`
-	EndedAt              *time.Time `json:"endedAt,omitempty"`
-	HuddleID             string     `json:"huddleId"`
-	InitiatorPrincipalID string     `json:"initiatorPrincipalId"`
+	CreatorPubkey        string  `json:"creatorPubkey"`
+	EndedAt              *string `json:"endedAt,omitempty"`
+	HuddleID             string  `json:"huddleId"`
+	InitiatorPrincipalID string  `json:"initiatorPrincipalId"`
 	// 发起该 Huddle 的 huddle.start operation
 	OperationID          string      `json:"operationId"`
 	ParentChannelID      string      `json:"parentChannelId"`
@@ -7224,16 +6165,6 @@ type InvitationRedemptionRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
-// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-type IssuedInvitation struct {
-	// RFC3339，UTC
-	ExpiresAt    string `json:"expiresAt"`
-	InvitationID string `json:"invitationId"`
-	// 部署登记的链接基址 + '#' + 一次性凭据
-	Link string `json:"link"`
-}
-
 // GET /api/v1/identity/legacy-secret-refs 的有界视图。只列当前 Tenant 中可发起 DD-85 归位的 SERVER
 // binding，不暴露 locator、版本或私钥。
 type LegacySecretRefPage struct {
@@ -7243,9 +6174,9 @@ type LegacySecretRefPage struct {
 
 // 业务 Tenant 的旧 SERVER 身份引用；仅给有 tenant manage 权限的人展示。
 type LegacySecretRefBinding struct {
-	Kind        BindingKind `json:"kind"`
-	PrincipalID string      `json:"principalId"`
-	Pubkey      string      `json:"pubkey"`
+	Kind        LegacySecretRefBindingKind `json:"kind"`
+	PrincipalID string                     `json:"principalId"`
+	Pubkey      string                     `json:"pubkey"`
 }
 
 // GET /api/v1/moderation/access（DD-125(2)）：原版只对 Community owner/admin 显示的审核入口在 Kailo 对应
@@ -7357,56 +6288,56 @@ type NativeHumanActionRequest struct {
 	// client-selected IDs. This is not Action admission or a reusable ticket.
 	AuthorizeScope *NativeHumanScopeQuery `json:"authorizeScope,omitempty"`
 	BindingID      string                 `json:"bindingId"`
-	Command        *CommandClass          `json:"command,omitempty"`
+	Command        *ActionCommand         `json:"command,omitempty"`
 	IdempotencyKey *string                `json:"idempotencyKey,omitempty"`
 	// Same-request writer admission for the original dispatched AE/EE and native intent, never
 	// another execute. Both the binding SERVICE and independent current HUMAN credentials are
 	// required.
 	NativeExecutionAdmission *NativeHumanActionRequestNativeExecutionAdmission `json:"nativeExecutionAdmission,omitempty"`
-	ReadReceipt              *ReadReceiptClass                                 `json:"readReceipt,omitempty"`
+	ReadReceipt              *NativeHumanReadReceipt                           `json:"readReceipt,omitempty"`
 	// Read the already-registered exact native object for the verified HUMAN and action. This
 	// never creates a Resource or native object.
 	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
-	SourceResources []SourceResourceElement   `json:"sourceResources,omitempty"`
+	SourceResources []AdapterSourceResource   `json:"sourceResources,omitempty"`
 }
 
 // Native metadata access uses existing tenant/workspace permissions. Scope and identity
 // come exclusively from the authenticated binding and HUMAN token, never from
 // client-selected IDs. This is not Action admission or a reusable ticket.
 type NativeHumanScopeQuery struct {
-	Permission Permission `json:"permission"`
+	Permission NativeHumanScopeQueryPermission `json:"permission"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 // actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
-type CommandClass struct {
+type ActionCommand struct {
 	ActionKey string `json:"actionKey"`
 	// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
-	AgentVersionContent       *AgentVersionContentClass      `json:"agentVersionContent,omitempty"`
-	ApplicationBindingCreate  *ApplicationBindingCreateClass `json:"applicationBindingCreate,omitempty"`
-	ApplicationBindingID      *string                        `json:"applicationBindingId,omitempty"`
-	ApplicationBindingVersion *int64                         `json:"applicationBindingVersion,omitempty"`
+	AgentVersionContent       *AgentVersionContent      `json:"agentVersionContent,omitempty"`
+	ApplicationBindingCreate  *ApplicationBindingCreate `json:"applicationBindingCreate,omitempty"`
+	ApplicationBindingID      *string                   `json:"applicationBindingId,omitempty"`
+	ApplicationBindingVersion *int64                    `json:"applicationBindingVersion,omitempty"`
 	// AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
 	AssetID *string `json:"assetId,omitempty"`
 	// 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
 	AssetVersion *int64 `json:"assetVersion,omitempty"`
 	// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
-	AutomationVersionContent *AutomationVersionContentClass `json:"automationVersionContent,omitempty"`
+	AutomationVersionContent *AutomationVersionContent `json:"automationVersionContent,omitempty"`
 	// 仅 application_binding.create 的瞬态输入（03 §9、DD-70）：按已批准 release 的 secretSchema 逐项提交 secret
 	// 值，每个 secretKey 恰好一项。Core 在同一 Governed Action 的准入通过后写入该 Tenant 的 OpenBao namespace，只把版本号记成
 	// SecretRef；值不进入 Params、ActionExecution、日志、Workflow history、AuditEvent 或回应。其他命令禁止携带。
-	BindingSecretValues []CommandBindingSecretValue `json:"bindingSecretValues,omitempty"`
+	BindingSecretValues []ApplicationBindingSecretValue `json:"bindingSecretValues,omitempty"`
 	// 仅 capability_contract.approve/deprecate：固定已登记版本。
-	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
+	CapabilityContractRef *CapabilityContractRef `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
-	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
-	ComponentAction                *ComponentActionClass                `json:"componentAction,omitempty"`
+	CapabilityContractRegistration *CapabilityContractRegistration `json:"capabilityContractRegistration,omitempty"`
+	ComponentAction                *ComponentActionInput           `json:"componentAction,omitempty"`
 	// 仅组件批准：已登记的不可变ComponentRelease标识。
-	ComponentReleaseID           *string                            `json:"componentReleaseId,omitempty"`
-	ComponentReleaseRegistration *ComponentReleaseRegistrationClass `json:"componentReleaseRegistration,omitempty"`
-	ConversationOpen             *ConversationOpenClass             `json:"conversationOpen,omitempty"`
+	ComponentReleaseID           *string                       `json:"componentReleaseId,omitempty"`
+	ComponentReleaseRegistration *ComponentReleaseRegistration `json:"componentReleaseRegistration,omitempty"`
+	ConversationOpen             *ConversationOpenRequest      `json:"conversationOpen,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
-	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
+	DelegationGrant *DelegationGrantParameters `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
 	DelegationID *string `json:"delegationId,omitempty"`
 	// 仅 revoke：调用方实际读取的 Grant 版本。
@@ -7419,20 +6350,20 @@ type CommandClass struct {
 	// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
 	// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
 	GrantPermission *ResourceGrantPermission `json:"grantPermission,omitempty"`
-	HuddleAgent     *HuddleAgentClass        `json:"huddleAgent,omitempty"`
+	HuddleAgent     *HuddleAgentInput        `json:"huddleAgent,omitempty"`
 	// 仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标
 	// HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。
 	HuddleID    *string           `json:"huddleId,omitempty"`
-	HuddleStart *HuddleStartClass `json:"huddleStart,omitempty"`
+	HuddleStart *HuddleStartInput `json:"huddleStart,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
 	// tenant.member.invite.revoke 的目标邀请
 	InvitationID *string `json:"invitationId,omitempty"`
 	// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
-	LlmRouteCreate *LlmRouteCreateClass `json:"llmRouteCreate,omitempty"`
+	LlmRouteCreate *LlmRouteCreateInput `json:"llmRouteCreate,omitempty"`
 	// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
 	// 输入；其他命令禁止携带。
-	MemoryWrite *MemoryWriteClass `json:"memoryWrite,omitempty"`
+	MemoryWrite *AgentMemoryWriteInput `json:"memoryWrite,omitempty"`
 	// 仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay
 	// 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。
 	ModerationEventID *string `json:"moderationEventId,omitempty"`
@@ -7440,14 +6371,14 @@ type CommandClass struct {
 	// 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
 	// CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
 	// agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-	ModerationMember *CommandModerationMember `json:"moderationMember,omitempty"`
+	ModerationMember *ModerationMemberTarget `json:"moderationMember,omitempty"`
 	// 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
 	// conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
 	// kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-	ModerationReport *CommandModerationReport `json:"moderationReport,omitempty"`
+	ModerationReport *ModerationReportSubmit `json:"moderationReport,omitempty"`
 	// 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
 	// ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-	ModerationResolution *CommandModerationResolution `json:"moderationResolution,omitempty"`
+	ModerationResolution *ModerationReportResolution `json:"moderationResolution,omitempty"`
 	// workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
 	Name *string `json:"name,omitempty"`
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析。Agent
@@ -7459,12 +6390,12 @@ type CommandClass struct {
 	PrincipalID *string `json:"principalId,omitempty"`
 	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
 	// identity; no Agent or caller-selected native credentials.
-	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
+	ProtocolSessionOpen *ProtocolSessionOpenInput `json:"protocolSessionOpen,omitempty"`
 	// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
 	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
 	// Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-	ReceiverResource *CommandReceiverResource `json:"receiverResource,omitempty"`
-	ResourceCreate   *ResourceCreateClass     `json:"resourceCreate,omitempty"`
+	ReceiverResource *ActionCommandReceiverResource `json:"receiverResource,omitempty"`
+	ResourceCreate   *ResourceCreate                `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影。agent.installation.disable /
 	// agent.installation.enable（DD-125(6)、05 §2.11）只带 resourceId、resourceVersion 与
 	// explicitConfirmation=true：目标 Workspace 由 Installation 的 home Workspace
@@ -7480,30 +6411,203 @@ type CommandClass struct {
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
 	TenantID *string `json:"tenantId,omitempty"`
 	// 仅 tenant.quota.set（DD-123）
-	TenantQuotaSetting *TenantQuotaSettingClass `json:"tenantQuotaSetting,omitempty"`
+	TenantQuotaSetting *TenantQuotaSetting `json:"tenantQuotaSetting,omitempty"`
 	// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
 	// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
-	WorkspaceCanvas  *WorkspaceCanvasClass  `json:"workspaceCanvas,omitempty"`
-	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
+	WorkspaceCanvas  *WorkspaceCanvasSetInput `json:"workspaceCanvas,omitempty"`
+	WorkspaceChannel *WorkspaceChannelCreate  `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 	// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
 	// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
-	WorkspaceUpdate *WorkspaceUpdateClass `json:"workspaceUpdate,omitempty"`
+	WorkspaceUpdate *WorkspaceUpdate `json:"workspaceUpdate,omitempty"`
 	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
 	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
 }
 
-type CommandBindingSecretValue struct {
+// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
+// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
+type ApplicationBindingCreate struct {
+	AdapterServiceRef    string                           `json:"adapterServiceRef"`
+	BindingID            string                           `json:"bindingId"`
+	CallIdentityMode     ApplicationCallIdentityMode      `json:"callIdentityMode"`
+	CapabilityCategories []ApplicationCapabilitySelection `json:"capabilityCategories"`
+	ComponentReleaseID   string                           `json:"componentReleaseId"`
+	IsolationMode        ApplicationIsolationMode         `json:"isolationMode"`
+	ModelCallMode        ApplicationModelCallMode         `json:"modelCallMode"`
+	NativeInstanceRef    string                           `json:"nativeInstanceRef"`
+	NativeScopeRef       *string                          `json:"nativeScopeRef,omitempty"`
+	NormalizedConfigJSON string                           `json:"normalizedConfigJson"`
+	RetainOnTenantDelete bool                             `json:"retainOnTenantDelete"`
+	// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
+	// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
+	// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
+	SecretRefs         []ApplicationBindingSecretRef `json:"secretRefs"`
+	ServicePrincipalID string                        `json:"servicePrincipalId"`
+}
+
+type ApplicationCapabilitySelection struct {
+	Category string `json:"category"`
+	Version  int64  `json:"version"`
+}
+
+type ApplicationBindingSecretRef struct {
+	Audience  string `json:"audience"`
+	Locator   string `json:"locator"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
+}
+
+type ApplicationBindingSecretValue struct {
 	SecretKey string `json:"secretKey"`
 	Value     string `json:"value"`
+}
+
+// 仅 capability_contract.approve/deprecate：固定已登记版本。
+//
+// 固定 Catalog 自然键，不授予业务能力 consume 权限。
+type CapabilityContractRef struct {
+	CategoryKey     string `json:"categoryKey"`
+	ContractVersion int64  `json:"contractVersion"`
+}
+
+// 仅 capability_contract.register：真实 schema 与测试向量内容。
+//
+// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
+type CapabilityContractRegistration struct {
+	CategoryKey               string                                                  `json:"categoryKey"`
+	ContentReferenceSemantics CapabilityContractRegistrationContentReferenceSemantics `json:"contentReferenceSemantics"`
+	ContractVersion           int64                                                   `json:"contractVersion"`
+	OperationContracts        []CapabilityContractRegistrationOperationContractsItem  `json:"operationContracts"`
+	ProtocolSessionKinds      []string                                                `json:"protocolSessionKinds"`
+	RequiredDeclarations      []CapabilityRequiredDeclaration                         `json:"requiredDeclarations"`
+	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamilyItem  `json:"resourceTypeFamily"`
+	SchemaDocuments           []string                                                `json:"schemaDocuments"`
+	// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
+	// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
+	TestVectorsJSON string `json:"testVectorsJson"`
+}
+
+type CapabilityContractRegistrationContentReferenceSemantics struct {
+	AuthorizationTargetRule string `json:"authorizationTargetRule"`
+	NativeObjectRefRule     string `json:"nativeObjectRefRule"`
+	NativeRevisionRule      string `json:"nativeRevisionRule"`
+}
+
+type CapabilityContractRegistrationOperationContractsItem struct {
+	ContractKey        string               `json:"contractKey"`
+	InputSchemaDigest  string               `json:"inputSchemaDigest"`
+	OutputSchemaDigest string               `json:"outputSchemaDigest"`
+	Permission         CapabilityPermission `json:"permission"`
+	Surface            CapabilitySurface    `json:"surface"`
+	TargetType         string               `json:"targetType"`
+}
+
+type CapabilityContractRegistrationResourceTypeFamilyItem struct {
+	Kind    string `json:"kind"`
+	TypeKey string `json:"typeKey"`
+}
+
+// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
+// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
+// 仍校验原目标、能力 schema、审批和用量。
+type ComponentActionInput struct {
+	ActionVersion int64 `json:"actionVersion"`
+	// Canonical JSON for the existing registered capability input schema; mutually exclusive
+	// with inputReference, validated before AE admission.
+	InputJSON                   *string           `json:"inputJson,omitempty"`
+	InputReference              *ContentReference `json:"inputReference,omitempty"`
+	ResultExposurePolicyID      string            `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64             `json:"resultExposurePolicyVersion"`
+}
+
+// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
+// Worker 独立执行隔离套件。
+type ComponentReleaseRegistration struct {
+	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
+	ManifestJSON            string `json:"manifestJson"`
+	PackageJSON             string `json:"packageJson"`
+}
+
+// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+type ConversationOpenRequest struct {
+	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
+}
+
+// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
+// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
+// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
+// Agent。
+type HuddleAgentInput struct {
+	AgentInstallationResourceID string `json:"agentInstallationResourceId"`
+}
+
+// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
+// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
+// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
+// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
+// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
+// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
+type HuddleStartInput struct {
+	// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
+	// ChannelAgentBinding 且本人有 execute 的 Installation
+	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds,omitempty"`
+	// 原 buildHuddleChannelName 生成的临时频道名
+	ChannelName string `json:"channelName"`
+	// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
+	CreatorPubkey *string `json:"creatorPubkey,omitempty"`
+	// 父私聊（ConversationBuzzBinding id）
+	ParentConversationID *string `json:"parentConversationId,omitempty"`
+	// 父 Workspace；须等于 ActionCommand.workspaceId
+	ParentWorkspaceID *string `json:"parentWorkspaceId,omitempty"`
+}
+
+// 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+//
+// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
+// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
+type LlmRouteCreateInput struct {
+	Model                  LlmRouteCreateInputNativeSource       `json:"model"`
+	Provider               LlmRouteCreateInputNativeSource       `json:"provider"`
+	ProviderCredentialMode LlmProviderCredentialMode             `json:"providerCredentialMode"`
+	ProviderSecretRef      *LlmRouteCreateInputProviderSecretRef `json:"providerSecretRef,omitempty"`
+}
+
+type LlmRouteCreateInputNativeSource struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+	Sha256   string `json:"sha256"`
+}
+
+type LlmRouteCreateInputProviderSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
+}
+
+// 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+// 输入；其他命令禁止携带。
+//
+// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
+type AgentMemoryWriteInput struct {
+	// entry.patch 当前原生 value 的 SHA-256。
+	BaseHash *string `json:"baseHash,omitempty"`
+	// 调用方实际读取的 head；null 只表示原生确认不存在。
+	ExpectedHeadEventID *string `json:"expectedHeadEventId,omitempty"`
+	// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+	ExpectedHeadState AgentMemoryWriteInputExpectedHeadState `json:"expectedHeadState"`
+	// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
+	Patch *string `json:"patch,omitempty"`
+	Slug  string  `json:"slug"`
+	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
+	Value *string `json:"value,omitempty"`
 }
 
 // 仅 moderation.ban / unban / timeout / untimeout 且必带（DD-125(2)）。targetPubkey
 // 是消息签名者或成员栏所列公钥，Core 解析为同 Tenant 非本人、非有效 Tenant admin 的 HUMAN Principal，并对其全部非 REVOKED 公钥由
 // CONTROL 签 9040–9043；AGENT 公钥以 PERMISSION_DENIED 拒绝（停用走
 // agent.installation.disable）。timeoutDuration 只随 moderation.timeout 且必带，到期时刻在准入时冻结。
-type CommandModerationMember struct {
+type ModerationMemberTarget struct {
 	// 64 位小写十六进制 Nostr 公钥
 	TargetPubkey    string                     `json:"targetPubkey"`
 	TimeoutDuration *ModerationTimeoutDuration `json:"timeoutDuration,omitempty"`
@@ -7512,7 +6616,7 @@ type CommandModerationMember struct {
 // 仅 moderation.report.submit（DD-125(2)、05 §2.11）且必带：原举报对话框的一条消息举报。Core 在 workspaceId 或
 // conversationId（恰好一个）给出的本人当前可读范围内以本人身份回读 eventId，以其签名者为 p 目标（HUMAN 目标须同 Tenant），再以本人身份签
 // kind 1984（e 标签带 reportType）；note 去首尾空白后作为正文，空即省略。
-type CommandModerationReport struct {
+type ModerationReportSubmit struct {
 	// 消息所在私聊；本人须为其当前参与者
 	ConversationID *string `json:"conversationId,omitempty"`
 	// 被举报消息的 Relay 事件 ID（64 位小写十六进制）
@@ -7526,18 +6630,93 @@ type CommandModerationReport struct {
 
 // 仅 moderation.report.resolve 且必带（DD-125(2)）：同一目标的一组未结举报（1–100 条 kind 1984 事件
 // ID，不重复），CONTROL 逐条签 9044 并按举报状态回读；只记决定、不执法。dismiss 与 dismissed 配对，其余与 resolved 配对。
-type CommandModerationResolution struct {
+type ModerationReportResolution struct {
 	ReportEventIDS   []string                   `json:"reportEventIds"`
 	ResolutionAction ModerationResolutionAction `json:"resolutionAction"`
 	Status           ModerationResolutionStatus `json:"status"`
 }
 
+// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+// identity; no Agent or caller-selected native credentials.
+//
+// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+// Revision and presentation are frozen once; session expiry comes from controlled Core
+// delivery.
+type ProtocolSessionOpenInput struct {
+	ActionVersion int64 `json:"actionVersion"`
+	// The selected native source binding; must equal the target's real binding, not an
+	// authorization claim.
+	ApplicationBindingID string                `json:"applicationBindingId"`
+	Locale               ProtocolSessionLocale `json:"locale"`
+	// Exact approved projection selected by the native menu; never latest.
+	ProjectionGeneration int64                `json:"projectionGeneration"`
+	Reference            ContentReference     `json:"reference"`
+	Theme                ProtocolSessionTheme `json:"theme"`
+}
+
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
 // 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略时，原 AGENT Installation 仍只接受自身 AGENT；组件
 // Resource 接收者必须是同 Tenant 的 HUMAN，授予时重新核对有效成员与目标 scope。
-type CommandReceiverResource struct {
+type ActionCommandReceiverResource struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
+}
+
+type ResourceCreate struct {
+	EvidenceDigest string `json:"evidenceDigest"`
+	EvidenceRef    string `json:"evidenceRef"`
+	NativeRef      string `json:"nativeRef"`
+	NativeType     string `json:"nativeType"`
+	TypeKey        string `json:"typeKey"`
+}
+
+// 仅 tenant.quota.set（DD-123）
+//
+// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
+// OpenMeter entitlement for the platform feature, resetting monthly.
+type TenantQuotaSetting struct {
+	Feature        TenantQuotaFeature `json:"feature"`
+	LimitPerPeriod int64              `json:"limitPerPeriod"`
+}
+
+// 仅 workspace.canvas.set 且必带（DD-125(4)）：目标 Workspace 由 workspaceId 给出，须带
+// explicitConfirmation=true；正文是瞬态输入，只冻结摘要。其他命令禁止携带。
+//
+// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
+// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
+// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
+type WorkspaceCanvasSetInput struct {
+	Content string `json:"content"`
+}
+
+// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+type WorkspaceChannelCreate struct {
+	ChannelType WorkspaceChannelCreateChannelType `json:"channelType"`
+	Description *string                           `json:"description,omitempty"`
+	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+}
+
+// 仅 workspace.update 使用且必带，目标 Workspace 由 workspaceId 给出；该动作不接受顶层 name、workspaceVisibility
+// 或 workspaceChannel。workspace.leave 只带 workspaceId，主体固定为发起人，不接受 principalId。
+//
+// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
+// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
+// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
+type WorkspaceUpdate struct {
+	// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
+	ClearTTL *bool `json:"clearTtl,omitempty"`
+	// 原 9002 about；空字符串清空描述。
+	Description *string `json:"description,omitempty"`
+	// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
+	Name *string `json:"name,omitempty"`
+	// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
+	// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
+	Reopen *bool `json:"reopen,omitempty"`
+	// 设置原 Buzz 临时频道的不活跃期限（秒）。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
+	// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
 }
 
 // Same-request writer admission for the original dispatched AE/EE and native intent, never
@@ -7551,19 +6730,19 @@ type NativeHumanActionRequestNativeExecutionAdmission struct {
 
 // Original HUMAN synchronous application read completion, authenticated by its binding
 // SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
-type ReadReceiptClass struct {
-	CompletedAt     string                   `json:"completedAt"`
-	ContentBytes    int64                    `json:"contentBytes"`
-	ContentSha256   string                   `json:"contentSha256"`
-	IdempotencyKey  string                   `json:"idempotencyKey"`
-	Measurements    []ReadReceiptMeasurement `json:"measurements"`
-	NativeObjectRef string                   `json:"nativeObjectRef"`
-	NativeRevision  string                   `json:"nativeRevision"`
-	OperationID     string                   `json:"operationId"`
-	StartedAt       string                   `json:"startedAt"`
+type NativeHumanReadReceipt struct {
+	CompletedAt     string                                   `json:"completedAt"`
+	ContentBytes    int64                                    `json:"contentBytes"`
+	ContentSha256   string                                   `json:"contentSha256"`
+	IdempotencyKey  string                                   `json:"idempotencyKey"`
+	Measurements    []NativeHumanReadReceiptMeasurementsItem `json:"measurements"`
+	NativeObjectRef string                                   `json:"nativeObjectRef"`
+	NativeRevision  string                                   `json:"nativeRevision"`
+	OperationID     string                                   `json:"operationId"`
+	StartedAt       string                                   `json:"startedAt"`
 }
 
-type ReadReceiptMeasurement struct {
+type NativeHumanReadReceiptMeasurementsItem struct {
 	MeterKey string `json:"meterKey"`
 	Quantity int64  `json:"quantity"`
 }
@@ -7586,11 +6765,11 @@ type NativeHumanResourceQuery struct {
 type NativeHumanActionResult struct {
 	// Original admitted canonical capability metadata input; exactly one input form, never a
 	// result body or a new execution authority.
-	InputJSON      *string                  `json:"inputJson,omitempty"`
-	InputReference *ContentReferenceElement `json:"inputReference,omitempty"`
+	InputJSON      *string           `json:"inputJson,omitempty"`
+	InputReference *ContentReference `json:"inputReference,omitempty"`
 	// Original dispatched native-writer reference only. Neither existence nor RUNNING proves
 	// byte completion; no bearer is exposed by observation.
-	NativeExecution *NativeExecution `json:"nativeExecution,omitempty"`
+	NativeExecution *NativeHumanActionResultNativeExecution `json:"nativeExecution,omitempty"`
 	// Transient same-request writer bearer for the exact original AE/EE. The native task must
 	// atomically claim the byte step before using it; never persisted or exposed to the browser.
 	NativeExecutionAdmission *NativeHumanActionResultNativeExecutionAdmission `json:"nativeExecutionAdmission,omitempty"`
@@ -7598,14 +6777,14 @@ type NativeHumanActionResult struct {
 	NativeType               *string                                          `json:"nativeType,omitempty"`
 	// First native same-request read only. Never returned by idempotency observation or retried
 	// admission; the bearer is not persisted.
-	ReadAdmission  *ReadAdmission  `json:"readAdmission,omitempty"`
-	Submission     SubmissionClass `json:"submission"`
-	TerminalStatus *TaskStatus     `json:"terminalStatus,omitempty"`
+	ReadAdmission  *NativeHumanActionResultReadAdmission `json:"readAdmission,omitempty"`
+	Submission     ActionSubmission                      `json:"submission"`
+	TerminalStatus *TaskStatus                           `json:"terminalStatus,omitempty"`
 }
 
 // Original dispatched native-writer reference only. Neither existence nor RUNNING proves
 // byte completion; no bearer is exposed by observation.
-type NativeExecution struct {
+type NativeHumanActionResultNativeExecution struct {
 	BindingGeneration   int64  `json:"bindingGeneration"`
 	ExternalExecutionID string `json:"externalExecutionId"`
 	IdempotencyKey      string `json:"idempotencyKey"`
@@ -7624,7 +6803,7 @@ type NativeHumanActionResultNativeExecutionAdmission struct {
 
 // First native same-request read only. Never returned by idempotency observation or retried
 // admission; the bearer is not persisted.
-type ReadAdmission struct {
+type NativeHumanActionResultReadAdmission struct {
 	ActionToken   string `json:"actionToken"`
 	ArgumentsJSON string `json:"argumentsJson"`
 	ExpiresAt     int64  `json:"expiresAt"`
@@ -7634,40 +6813,43 @@ type ReadAdmission struct {
 // 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
 // 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
 // automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-type SubmissionClass struct {
-	ActionExecutionID  string                 `json:"actionExecutionId"`
-	ActionKey          string                 `json:"actionKey"`
-	ApprovalWorkflowID *string                `json:"approvalWorkflowId,omitempty"`
-	DispatchState      ActionDispatchState    `json:"dispatchState"`
-	DocumentLaunch     *LaunchDescriptorClass `json:"documentLaunch,omitempty"`
-	GateState          ActionGateState        `json:"gateState"`
+type ActionSubmission struct {
+	ActionExecutionID  string                    `json:"actionExecutionId"`
+	ActionKey          string                    `json:"actionKey"`
+	ApprovalWorkflowID *string                   `json:"approvalWorkflowId,omitempty"`
+	DispatchState      ActionDispatchState       `json:"dispatchState"`
+	DocumentLaunch     *DocumentLaunchDescriptor `json:"documentLaunch,omitempty"`
+	GateState          ActionGateState           `json:"gateState"`
 	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-	HuddleID          *string             `json:"huddleId,omitempty"`
-	Invitation        *InvitationClass    `json:"invitation,omitempty"`
-	OperationID       string              `json:"operationId"`
-	ProtocolSessionID *string             `json:"protocolSessionId,omitempty"`
-	Reason            *ReasonCode         `json:"reason,omitempty"`
-	WebhookSecret     *WebhookSecretClass `json:"webhookSecret,omitempty"`
-	WorkflowID        *string             `json:"workflowId,omitempty"`
+	HuddleID          *string                  `json:"huddleId,omitempty"`
+	Invitation        *IssuedInvitation        `json:"invitation,omitempty"`
+	OperationID       string                   `json:"operationId"`
+	ProtocolSessionID *string                  `json:"protocolSessionId,omitempty"`
+	Reason            *ReasonCode              `json:"reason,omitempty"`
+	WebhookSecret     *AutomationWebhookSecret `json:"webhookSecret,omitempty"`
+	WorkflowID        *string                  `json:"workflowId,omitempty"`
 }
 
-// Original HUMAN synchronous application read completion, authenticated by its binding
-// SERVICE. Metadata only; no body, replacement identity, native Task or ExternalExecution.
-type NativeHumanReadReceipt struct {
-	CompletedAt     string                              `json:"completedAt"`
-	ContentBytes    int64                               `json:"contentBytes"`
-	ContentSha256   string                              `json:"contentSha256"`
-	IdempotencyKey  string                              `json:"idempotencyKey"`
-	Measurements    []NativeHumanReadReceiptMeasurement `json:"measurements"`
-	NativeObjectRef string                              `json:"nativeObjectRef"`
-	NativeRevision  string                              `json:"nativeRevision"`
-	OperationID     string                              `json:"operationId"`
-	StartedAt       string                              `json:"startedAt"`
+// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+type IssuedInvitation struct {
+	// RFC3339，UTC
+	ExpiresAt    string `json:"expiresAt"`
+	InvitationID string `json:"invitationId"`
+	// 部署登记的链接基址 + '#' + 一次性凭据
+	Link string `json:"link"`
 }
 
-type NativeHumanReadReceiptMeasurement struct {
-	MeterKey string `json:"meterKey"`
-	Quantity int64  `json:"quantity"`
+// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+type AutomationWebhookSecret struct {
+	AutomationResourceID string `json:"automationResourceId"`
+	Hint                 string `json:"hint"`
+	// 32 字节随机密钥的 base64 展示形式。
+	Secret string `json:"secret"`
+	// 公开投递地址；部署未配置公开基址时省略。
+	URL *string `json:"url,omitempty"`
 }
 
 // Current already-registered native Resource selected under the original HUMAN action
@@ -7694,20 +6876,14 @@ type NativeHumanScopeResult struct {
 }
 
 type NativeHumanScopeSelection struct {
-	BindingID         string     `json:"bindingId"`
-	CheckedRevision   string     `json:"checkedRevision"`
-	Generation        int64      `json:"generation"`
-	NativeInstanceRef string     `json:"nativeInstanceRef"`
-	NativeScopeRef    string     `json:"nativeScopeRef"`
-	Permission        Permission `json:"permission"`
-	TenantID          string     `json:"tenantId"`
-	WorkspaceID       *string    `json:"workspaceId,omitempty"`
-}
-
-// 一个用量结算状态在所选范围与区间内的根业务操作数量。只列出现过的状态，不补零。
-type OperationUsageCount struct {
-	Count int64               `json:"count"`
-	State OperationUsageState `json:"state"`
+	BindingID         string                          `json:"bindingId"`
+	CheckedRevision   string                          `json:"checkedRevision"`
+	Generation        int64                           `json:"generation"`
+	NativeInstanceRef string                          `json:"nativeInstanceRef"`
+	NativeScopeRef    string                          `json:"nativeScopeRef"`
+	Permission        NativeHumanScopeQueryPermission `json:"permission"`
+	TenantID          string                          `json:"tenantId"`
+	WorkspaceID       *string                         `json:"workspaceId,omitempty"`
 }
 
 // GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
@@ -7748,36 +6924,22 @@ type PlatformTenantView struct {
 }
 
 type PlatformToolPage struct {
-	NextOffset *int64        `json:"nextOffset,omitempty"`
-	Tools      []ToolElement `json:"tools"`
-}
-
-type ToolElement struct {
-	ActionKey        ActionKey     `json:"actionKey"`
-	CanConsume       bool          `json:"canConsume"`
-	InputSchemaHash  string        `json:"inputSchemaHash"`
-	Name             ActionKey     `json:"name"`
-	OutputSchemaHash string        `json:"outputSchemaHash"`
-	OwnerPrincipalID string        `json:"ownerPrincipalId"`
-	ResourceID       string        `json:"resourceId"`
-	ResourceState    ResourceState `json:"resourceState"`
-	ResourceVersion  int64         `json:"resourceVersion"`
-	Source           SourceEnum    `json:"source"`
-	Status           ToolStatus    `json:"status"`
+	NextOffset *int64             `json:"nextOffset,omitempty"`
+	Tools      []PlatformToolView `json:"tools"`
 }
 
 type PlatformToolView struct {
-	ActionKey        ActionKey     `json:"actionKey"`
-	CanConsume       bool          `json:"canConsume"`
-	InputSchemaHash  string        `json:"inputSchemaHash"`
-	Name             ActionKey     `json:"name"`
-	OutputSchemaHash string        `json:"outputSchemaHash"`
-	OwnerPrincipalID string        `json:"ownerPrincipalId"`
-	ResourceID       string        `json:"resourceId"`
-	ResourceState    ResourceState `json:"resourceState"`
-	ResourceVersion  int64         `json:"resourceVersion"`
-	Source           SourceEnum    `json:"source"`
-	Status           ToolStatus    `json:"status"`
+	ActionKey        PlatformToolViewActionKey `json:"actionKey"`
+	CanConsume       bool                      `json:"canConsume"`
+	InputSchemaHash  string                    `json:"inputSchemaHash"`
+	Name             PlatformToolViewActionKey `json:"name"`
+	OutputSchemaHash string                    `json:"outputSchemaHash"`
+	OwnerPrincipalID string                    `json:"ownerPrincipalId"`
+	ResourceID       string                    `json:"resourceId"`
+	ResourceState    ResourceState             `json:"resourceState"`
+	ResourceVersion  int64                     `json:"resourceVersion"`
+	Source           PlatformToolViewSource    `json:"source"`
+	Status           PlatformToolViewStatus    `json:"status"`
 }
 
 // DD-40 original Projects Added/remove preference. Native coordinate only, not membership
@@ -7948,8 +7110,8 @@ type ProjectsPublishRequest struct {
 	// Other HUMAN recipient of an original issue-author/repository-owner assignment. Resolved
 	// against the admitted Tenant's existing HUMAN identity directory; never a signing
 	// identity. Self operations do not accept this field.
-	AssigneePubkey *string             `json:"assigneePubkey,omitempty"`
-	Attachments    []AttachmentElement `json:"attachments,omitempty"`
+	AssigneePubkey *string                `json:"assigneePubkey,omitempty"`
+	Attachments    []WebMessageAttachment `json:"attachments,omitempty"`
 	// Original complete markdown including attachment markdown. Issues may be empty; comments
 	// must be nonempty after trim. Current Relay NIP-11 and body admission limits are enforced
 	// before signing.
@@ -8002,7 +7164,7 @@ type ProjectsPublishRequest struct {
 	WorkspaceID *string                   `json:"workspaceId,omitempty"`
 }
 
-type AttachmentElement struct {
+type WebMessageAttachment struct {
 	// 原 Buzz imeta 模糊预览编码。
 	Blurhash *string `json:"blurhash,omitempty"`
 	// 原 Buzz imeta 媒体尺寸显示元数据。
@@ -8039,29 +7201,29 @@ type ProjectsQueryRequest struct {
 // 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
 // launch credential, native body or replacement revision is recoverable from this reader.
 type ProtocolSessionView struct {
-	ActionExecutionID      string                   `json:"actionExecutionId"`
-	AdmittedMode           TedMode                  `json:"admittedMode"`
-	ApplicationBindingID   string                   `json:"applicationBindingId"`
-	BaseRevision           string                   `json:"baseRevision"`
-	EffectiveEditorOrigins []string                 `json:"effectiveEditorOrigins"`
-	ExpiresAt              time.Time                `json:"expiresAt"`
-	LaunchLocale           Locale                   `json:"launchLocale"`
-	LaunchTheme            Theme                    `json:"launchTheme"`
-	ProtocolSessionID      string                   `json:"protocolSessionId"`
-	Reference              ContentReferenceElement  `json:"reference"`
-	ResultRevision         *string                  `json:"resultRevision,omitempty"`
-	State                  ProtocolSessionViewState `json:"state"`
-	TenantID               string                   `json:"tenantId"`
-	Version                int64                    `json:"version"`
-	WorkspaceID            *string                  `json:"workspaceId,omitempty"`
+	ActionExecutionID      string                             `json:"actionExecutionId"`
+	AdmittedMode           ProtocolSessionMode                `json:"admittedMode"`
+	ApplicationBindingID   string                             `json:"applicationBindingId"`
+	BaseRevision           string                             `json:"baseRevision"`
+	EffectiveEditorOrigins []string                           `json:"effectiveEditorOrigins"`
+	ExpiresAt              string                             `json:"expiresAt"`
+	LaunchLocale           ProtocolSessionLocale              `json:"launchLocale"`
+	LaunchTheme            ProtocolSessionTheme               `json:"launchTheme"`
+	ProtocolSessionID      string                             `json:"protocolSessionId"`
+	Reference              ContentReference                   `json:"reference"`
+	ResultRevision         *string                            `json:"resultRevision,omitempty"`
+	State                  ProtocolSessionReconcileRoundState `json:"state"`
+	TenantID               string                             `json:"tenantId"`
+	Version                int64                              `json:"version"`
+	WorkspaceID            *string                            `json:"workspaceId,omitempty"`
 }
 
 type PulsePublishRequest struct {
-	Attachments   []AttachmentElement `json:"attachments,omitempty"`
-	Content       string              `json:"content"`
-	Mentions      []string            `json:"mentions,omitempty"`
-	Operation     Operation           `json:"operation"`
-	TargetEventID *string             `json:"targetEventId,omitempty"`
+	Attachments   []WebMessageAttachment       `json:"attachments,omitempty"`
+	Content       string                       `json:"content"`
+	Mentions      []string                     `json:"mentions,omitempty"`
+	Operation     PulsePublishRequestOperation `json:"operation"`
+	TargetEventID *string                      `json:"targetEventId,omitempty"`
 }
 
 type PulseQueryRequest struct {
@@ -8166,7 +7328,7 @@ type RoleMemberView struct {
 // 创建、暂停与恢复动作提示。动作提交仍由 Core 重新准入，不等于可进入频道。
 type RoleWorkspacePage struct {
 	// 当前 Principal 经 fresh Tenant create 检查可见的动作 key；目录未开放或无权时省略
-	CreateActionKey *CreateActionKey `json:"createActionKey,omitempty"`
+	CreateActionKey *RoleWorkspacePageCreateActionKey `json:"createActionKey,omitempty"`
 	// 下一页的 Core 索引偏移；不暴露无权 Workspace 的 ID，缺省即读完
 	NextOffset *int64              `json:"nextOffset,omitempty"`
 	Workspaces []RoleWorkspaceView `json:"workspaces"`
@@ -8237,33 +7399,6 @@ type SidebarSortRequest struct {
 	Version  int64           `json:"version"`
 }
 
-// GET /api/v1/tasks 与 /api/v1/tasks/{actionExecutionId} 的元素：调用方本人发起的一个受治理动作。observation
-// 非空时投影不可担保为当前（PROJECTION_DELAYED）或结果不明（EXTERNAL_RESULT_UNKNOWN），UI 不得把它渲染成成功或失败。
-type TaskView struct {
-	ActionExecutionID  string          `json:"actionExecutionId"`
-	ActionKey          string          `json:"actionKey"`
-	ActionVersion      int64           `json:"actionVersion"`
-	ApprovalStatus     *ApprovalStatus `json:"approvalStatus,omitempty"`
-	ApprovalWorkflowID *string         `json:"approvalWorkflowId,omitempty"`
-	// 仅任务详情且 Core 当前完成本人、权限、原 Workflow 运行事实重查后提供；提交时仍重新准入
-	CancelActionKey *string `json:"cancelActionKey,omitempty"`
-	// RFC3339，UTC
-	CreatedAt     string              `json:"createdAt"`
-	DispatchState ActionDispatchState `json:"dispatchState"`
-	GateState     ActionGateState     `json:"gateState"`
-	Observation   *ReasonCode         `json:"observation,omitempty"`
-	OperationID   string              `json:"operationId"`
-	Reason        *ReasonCode         `json:"reason,omitempty"`
-	// 仅任务详情且 Core 证明原 Workflow 已关闭、终态投影一致、原目标仍在收敛版本并完成本人和权限重查后提供；提交与派发时仍重新准入
-	RerunActionKey *string       `json:"rerunActionKey,omitempty"`
-	TargetID       string        `json:"targetId"`
-	TaskStatus     *TaskStatus   `json:"taskStatus,omitempty"`
-	WaitingReason  *string       `json:"waitingReason,omitempty"`
-	WorkflowID     *string       `json:"workflowId,omitempty"`
-	WorkflowKind   *WorkflowKind `json:"workflowKind,omitempty"`
-	WorkspaceID    *string       `json:"workspaceId,omitempty"`
-}
-
 // GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
 // 的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。
 type TenantInvitationView struct {
@@ -8294,17 +7429,8 @@ type TenantMemberJoinPage struct {
 	// 不透明位置，下一次作为 after 原样回传；空串表示起点（本 Tenant 尚无记下进入时刻的成员）。客户端不得解析或构造；格式非法时服务端回 400。
 	Cursor string `json:"cursor"`
 	// 游标之后仍有未扫描的成员事实，应立即以新 cursor 续读；为 true 时本页 items 可能为空。
-	HasMore bool                       `json:"hasMore"`
-	Items   []TenantMemberJoinPageItem `json:"items"`
-}
-
-// 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
-// 身份或邀请凭据；按 HUMAN Principal 计，新设备公钥（DD-77）不产生条目。
-type TenantMemberJoinPageItem struct {
-	DisplayName string `json:"displayName"`
-	// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
-	JoinedAt    time.Time `json:"joinedAt"`
-	PrincipalID string    `json:"principalId"`
+	HasMore bool                   `json:"hasMore"`
+	Items   []TenantMemberJoinView `json:"items"`
 }
 
 // 一名在游标之后进入 ACTIVE 的同 Tenant 其他 HUMAN 成员（DD-125(9)）。只含 Principal ID、显示名与进入时刻，不含公钥、IdP
@@ -8312,8 +7438,8 @@ type TenantMemberJoinPageItem struct {
 type TenantMemberJoinView struct {
 	DisplayName string `json:"displayName"`
 	// TenantMembership 最近一次转入 ACTIVE 的时刻（重新加入覆盖），RFC3339 UTC；不是邀请或创建时间。
-	JoinedAt    time.Time `json:"joinedAt"`
-	PrincipalID string    `json:"principalId"`
+	JoinedAt    string `json:"joinedAt"`
+	PrincipalID string `json:"principalId"`
 }
 
 // DD-123: platform quota items of the Tenant read from OpenMeter (the only authority).
@@ -8321,7 +7447,7 @@ type TenantMemberJoinView struct {
 type TenantQuotaPage struct {
 	Quotas []TenantQuotaView `json:"quotas"`
 	// Present only when the caller may set quotas now (Tenant manage); auditors read without it.
-	SetActionKey *SetActionKey `json:"setActionKey,omitempty"`
+	SetActionKey *TenantQuotaPageSetActionKey `json:"setActionKey,omitempty"`
 }
 
 type TenantQuotaView struct {
@@ -8329,7 +7455,7 @@ type TenantQuotaView struct {
 	HardLimit      bool               `json:"hardLimit"`
 	HasAccess      bool               `json:"hasAccess"`
 	LimitPerPeriod *int64             `json:"limitPerPeriod,omitempty"`
-	PeriodResetAt  *time.Time         `json:"periodResetAt,omitempty"`
+	PeriodResetAt  *string            `json:"periodResetAt,omitempty"`
 	Usage          *float64           `json:"usage,omitempty"`
 }
 
@@ -8354,11 +7480,11 @@ type UsageBillingView struct {
 	Entitlements     []UsageEntitlementView `json:"entitlements"`
 	EntitlementState UsageSectionState      `json:"entitlementState"`
 	// RFC3339，含
-	From           string              `json:"from"`
-	Invoices       []UsageInvoiceView  `json:"invoices"`
-	Meters         []UsageMeterView    `json:"meters"`
-	OperationUsage []UsageStateElement `json:"operationUsage"`
-	TenantID       string              `json:"tenantId"`
+	From           string                `json:"from"`
+	Invoices       []UsageInvoiceView    `json:"invoices"`
+	Meters         []UsageMeterView      `json:"meters"`
+	OperationUsage []OperationUsageCount `json:"operationUsage"`
+	TenantID       string                `json:"tenantId"`
 	// RFC3339，不含
 	To          string  `json:"to"`
 	WorkspaceID *string `json:"workspaceId,omitempty"`
@@ -8428,19 +7554,6 @@ type WebChannelCanvasView struct {
 	WorkspaceID  string  `json:"workspaceId"`
 }
 
-// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
-type WebChannelView struct {
-	Archived    bool        `json:"archived"`
-	ChannelID   string      `json:"channelId"`
-	ChannelType ChannelType `json:"channelType"`
-	Description *string     `json:"description,omitempty"`
-	Name        string      `json:"name"`
-	// 原 39000 topic 标签；Relay 对空主题省略该标签，缺省即无主题。
-	Topic       *string    `json:"topic,omitempty"`
-	TTLDeadline *time.Time `json:"ttlDeadline,omitempty"`
-	TTLSeconds  *int64     `json:"ttlSeconds,omitempty"`
-}
-
 // Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
 // imageUrl removes only the caller's entry.
 type WebCustomEmojiMutation struct {
@@ -8467,22 +7580,6 @@ type WebGIFCapabilityView struct {
 	ImageOrigins []string `json:"imageOrigins"`
 }
 
-// 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
-// gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
-// https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
-type WebGIFItem struct {
-	Height        int64   `json:"height"`
-	PosterURL     *string `json:"posterUrl,omitempty"`
-	PreviewHeight int64   `json:"previewHeight"`
-	PreviewURL    string  `json:"previewUrl"`
-	PreviewWidth  int64   `json:"previewWidth"`
-	Size          int64   `json:"size"`
-	Slug          string  `json:"slug"`
-	Title         string  `json:"title"`
-	URL           string  `json:"url"`
-	Width         int64   `json:"width"`
-}
-
 // POST /api/v1/gifs/search：BFF 以本人身份经 NIP-98 转发 Relay 原 /gifs/search（成员门与 GIF 限速由 Relay
 // 执行，超额以 LIMIT 类回应）。query 为空即原 trending，至多 200 字符；locale 为浏览器语言（1–32 字符）。原 KLIPY
 // customer_id 由 BFF 按 Tenant 与本人 Principal 派生为稳定匿名标识，Browser 不提供。
@@ -8493,13 +7590,13 @@ type WebGIFSearchRequest struct {
 
 // POST /api/v1/gifs/search 的回应：原 Relay 固定一页（24 项）结果，按提供方顺序。
 type WebGIFSearchView struct {
-	Gifs []GIFElement `json:"gifs"`
+	Gifs []WebGIFItem `json:"gifs"`
 }
 
 // 原 normalizeKlipyGifs 的一项（BFF 归一化，Browser 不接收提供方原始 JSON）：original 取 md/hd/sm/xs 的首个完整
 // gif，preview 取 sm.webp/sm.gif/xs.webp/xs.gif/md.webp 或 original，poster 取首个完整 jpg。所有地址都是
 // https 且来源在部署登记的 GIF 图片来源之内，否则该项不返回。发送时原版把 url 以 ![image](url) 追加到正文，不带 imeta。
-type GIFElement struct {
+type WebGIFItem struct {
 	Height        int64   `json:"height"`
 	PosterURL     *string `json:"posterUrl,omitempty"`
 	PreviewHeight int64   `json:"previewHeight"`
@@ -8553,29 +7650,6 @@ type WebLinkPreviewSnapshotView struct {
 	URL string `json:"url"`
 }
 
-type WebMessageAttachment struct {
-	// 原 Buzz imeta 模糊预览编码。
-	Blurhash *string `json:"blurhash,omitempty"`
-	// 原 Buzz imeta 媒体尺寸显示元数据。
-	Dim *string `json:"dim,omitempty"`
-	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-	DisplayLabel *string `json:"displayLabel,omitempty"`
-	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-	Duration *float64 `json:"duration,omitempty"`
-	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-	Filename *string `json:"filename,omitempty"`
-	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-	Image  *string `json:"image,omitempty"`
-	Sha256 string  `json:"sha256"`
-	Size   int64   `json:"size"`
-	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-	Spoiler *bool `json:"spoiler,omitempty"`
-	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-	Thumb *string `json:"thumb,omitempty"`
-	Type  string  `json:"type"`
-	URL   string  `json:"url"`
-}
-
 // Typed read of authors proven by signed events in one currently admitted channel or
 // private conversation. No caller-selected pubkey or Relay filter; Core partitions Relay
 // reads by its existing page/NIP-11 limits.
@@ -8587,13 +7661,13 @@ type WebMessageAuthorQuery struct {
 // be verified; a missing kind:0 is an empty profile, while missing message proof fails the
 // whole read. No profile body is persisted by Core.
 type WebMessageAuthorView struct {
-	Profiles map[string]ProfileValue `json:"profiles"`
+	Profiles map[string]WebProfileView `json:"profiles"`
 }
 
 // Profile read from Buzz for the current identity or an author proven by a currently
 // admitted channel/private-conversation message, never a Core profile copy. An absent
 // kind:0 is an empty profile, not a fabricated event.
-type ProfileValue struct {
+type WebProfileView struct {
 	About *string `json:"about,omitempty"`
 	// Same-origin BFF paths for exact media URLs on the current community. A read projection,
 	// never an upload or remote proxy authority.
@@ -8666,26 +7740,11 @@ type WebProfileUpdateRequest struct {
 	Nip05Handle    *string `json:"nip05Handle,omitempty"`
 }
 
-// Profile read from Buzz for the current identity or an author proven by a currently
-// admitted channel/private-conversation message, never a Core profile copy. An absent
-// kind:0 is an empty profile, not a fabricated event.
-type WebProfileView struct {
-	About *string `json:"about,omitempty"`
-	// Same-origin BFF paths for exact media URLs on the current community. A read projection,
-	// never an upload or remote proxy authority.
-	AvatarMediaPaths map[string]string `json:"avatarMediaPaths"`
-	AvatarURL        *string           `json:"avatarUrl,omitempty"`
-	DisplayName      *string           `json:"displayName,omitempty"`
-	EventID          *string           `json:"eventId,omitempty"`
-	Nip05Handle      *string           `json:"nip05Handle,omitempty"`
-	Pubkey           string            `json:"pubkey"`
-}
-
 // Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 // signed event。
 type WebPublishMessageRequest struct {
-	Attachments []AttachmentElement `json:"attachments,omitempty"`
-	Content     string              `json:"content"`
+	Attachments []WebMessageAttachment `json:"attachments,omitempty"`
+	Content     string                 `json:"content"`
 	// 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
 	// editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
 	DeleteEventID *string `json:"deleteEventId,omitempty"`
@@ -8856,56 +7915,6 @@ type AgentMemoryEntryReadInput struct {
 	Slug string `json:"slug"`
 }
 
-// HUMAN Memory Action 本次瞬态输入；正文仅用于原生 NIP-AE 构造，不进入 ActionExecution、审计、outbox 或 history。
-type AgentMemoryWriteInput struct {
-	// entry.patch 当前原生 value 的 SHA-256。
-	BaseHash *string `json:"baseHash,omitempty"`
-	// 调用方实际读取的 head；null 只表示原生确认不存在。
-	ExpectedHeadEventID *string `json:"expectedHeadEventId,omitempty"`
-	// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-	ExpectedHeadState ExpectedHeadState `json:"expectedHeadState"`
-	// entry.patch 的原生严格 unified diff，不支持 fuzz、offset 或多文件。
-	Patch *string `json:"patch,omitempty"`
-	Slug  string  `json:"slug"`
-	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
-	Value *string `json:"value,omitempty"`
-}
-
-// 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
-// environment。发布不等于安装或运行授权。
-type AgentVersionContent struct {
-	// 精确 contract_key@version，不引用业务能力实现名。
-	CapabilityRequirements  []string                                `json:"capabilityRequirements"`
-	DeclaredToolResourceIDS []string                                `json:"declaredToolResourceIds"`
-	Instructions            string                                  `json:"instructions"`
-	MemoryPolicy            AgentVersionContentMemoryPolicyClass    `json:"memoryPolicy"`
-	ModelRouteResourceID    string                                  `json:"modelRouteResourceId"`
-	Parallelism             int64                                   `json:"parallelism"`
-	PersonaIdentity         AgentVersionContentPersonaIdentityClass `json:"personaIdentity"`
-	// RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
-	ReplyPolicy          string                             `json:"replyPolicy"`
-	RuntimeProfileKey    string                             `json:"runtimeProfileKey"`
-	SkillVersionAssetIDS []string                           `json:"skillVersionAssetIds"`
-	TriggerDefaults      []AgentTrigger                     `json:"triggerDefaults"`
-	TurnLimits           AgentVersionContentTurnLimitsClass `json:"turnLimits"`
-}
-
-type AgentVersionContentMemoryPolicyClass struct {
-	ColdWrite AgentMemoryColdWrite `json:"coldWrite"`
-	CoreWrite AgentMemoryCoreWrite `json:"coreWrite"`
-}
-
-type AgentVersionContentPersonaIdentityClass struct {
-	AvatarURL   *string `json:"avatarUrl,omitempty"`
-	Description *string `json:"description,omitempty"`
-	DisplayName string  `json:"displayName"`
-}
-
-type AgentVersionContentTurnLimitsClass struct {
-	IdleTimeoutSeconds     int64 `json:"idleTimeoutSeconds"`
-	MaxTurnDurationSeconds int64 `json:"maxTurnDurationSeconds"`
-}
-
 // DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
 type ApplicationAdapterDirectory struct {
 	Adapters []ApplicationAdapterDelivery `json:"adapters"`
@@ -8919,34 +7928,34 @@ type ApplicationAdapterDelivery struct {
 	ArtifactDigest      string `json:"artifactDigest"`
 	BaseURL             string `json:"baseUrl"`
 	// 可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
-	Bindings                  []AdapterBinding                     `json:"bindings,omitempty"`
-	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
-	MCPURL                    *string                              `json:"mcpUrl,omitempty"`
-	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
+	Bindings                  []ApplicationProtocolPeerBindingDelivery `json:"bindings,omitempty"`
+	MaxResponseBytes          int64                                    `json:"maxResponseBytes"`
+	MCPURL                    *string                                  `json:"mcpUrl,omitempty"`
+	ModelCredentialDeliveries []ApplicationModelCredentialDelivery     `json:"modelCredentialDeliveries,omitempty"`
 	// 受控原生浏览器认证信任投递；IdP只认证HUMAN，不承载实例业务许可。绑定、ACTIVE成员与SpiceDB实时检查决定权限；不由请求提供issuer/subject/key
 	// URL。
 	NativeHumanIdentities []ApplicationNativeHumanIdentity `json:"nativeHumanIdentities,omitempty"`
 	NativeInstanceRef     string                           `json:"nativeInstanceRef"`
-	SecretReaders         []AdapterSecretReader            `json:"secretReaders"`
+	SecretReaders         []ApplicationSecretReader        `json:"secretReaders"`
 	TimeoutSeconds        int64                            `json:"timeoutSeconds"`
 }
 
-type AdapterBinding struct {
+type ApplicationProtocolPeerBindingDelivery struct {
 	BindingID            string `json:"bindingId"`
 	ConfigDigest         string `json:"configDigest"`
 	CredentialGeneration *int64 `json:"credentialGeneration,omitempty"`
 	IsolationMode        string `json:"isolationMode"`
 	// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-	NativeCredentials []ComponentProtocolPeerEnvironmentNativeCredential `json:"nativeCredentials,omitempty"`
+	NativeCredentials []ApplicationPeerCredentialDelivery `json:"nativeCredentials,omitempty"`
 	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
-	NativeResources    []PurpleApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
-	NativeScopeRef     string                                    `json:"nativeScopeRef"`
-	ServicePrincipalID string                                    `json:"servicePrincipalId"`
-	TenantID           string                                    `json:"tenantId"`
-	WorkspaceID        *string                                   `json:"workspaceId,omitempty"`
+	NativeResources    []ApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
+	NativeScopeRef     string                              `json:"nativeScopeRef"`
+	ServicePrincipalID string                              `json:"servicePrincipalId"`
+	TenantID           string                              `json:"tenantId"`
+	WorkspaceID        *string                             `json:"workspaceId,omitempty"`
 }
 
-type ComponentProtocolPeerEnvironmentNativeCredential struct {
+type ApplicationPeerCredentialDelivery struct {
 	Audience  string `json:"audience"`
 	Header    string `json:"header"`
 	Locator   string `json:"locator"`
@@ -8955,7 +7964,7 @@ type ComponentProtocolPeerEnvironmentNativeCredential struct {
 	Version   int64  `json:"version"`
 }
 
-type PurpleApplicationNativeResourceDelivery struct {
+type ApplicationNativeResourceDelivery struct {
 	EvidenceDigest string `json:"evidenceDigest"`
 	EvidenceRef    string `json:"evidenceRef"`
 	NativeRef      string `json:"nativeRef"`
@@ -8993,93 +8002,22 @@ type ApplicationNativeHumanIdentity struct {
 	JwksFile           string `json:"jwksFile"`
 }
 
-type AdapterSecretReader struct {
+type ApplicationSecretReader struct {
 	Audience           string `json:"audience"`
 	RoleName           string `json:"roleName"`
 	ServicePrincipalID string `json:"servicePrincipalId"`
 }
 
 type ApplicationProtocolPeerDelivery struct {
-	AdapterServiceRef         string                               `json:"adapterServiceRef"`
-	ArtifactDigest            string                               `json:"artifactDigest"`
-	Bindings                  []ProtocolPeerBinding                `json:"bindings"`
-	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
-	MCPURL                    string                               `json:"mcpUrl"`
-	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
-	NativeInstanceRef         string                               `json:"nativeInstanceRef"`
-	SecretReaders             []ProtocolPeerSecretReader           `json:"secretReaders,omitempty"`
-	TimeoutSeconds            int64                                `json:"timeoutSeconds"`
-}
-
-type ProtocolPeerBinding struct {
-	BindingID            string `json:"bindingId"`
-	ConfigDigest         string `json:"configDigest"`
-	CredentialGeneration *int64 `json:"credentialGeneration,omitempty"`
-	IsolationMode        string `json:"isolationMode"`
-	// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-	NativeCredentials []PurpleApplicationPeerCredentialDelivery `json:"nativeCredentials,omitempty"`
-	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
-	NativeResources    []FluffyApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
-	NativeScopeRef     string                                    `json:"nativeScopeRef"`
-	ServicePrincipalID string                                    `json:"servicePrincipalId"`
-	TenantID           string                                    `json:"tenantId"`
-	WorkspaceID        *string                                   `json:"workspaceId,omitempty"`
-}
-
-type PurpleApplicationPeerCredentialDelivery struct {
-	Audience  string `json:"audience"`
-	Header    string `json:"header"`
-	Locator   string `json:"locator"`
-	Prefix    string `json:"prefix"`
-	SecretKey string `json:"secretKey"`
-	Version   int64  `json:"version"`
-}
-
-type FluffyApplicationNativeResourceDelivery struct {
-	EvidenceDigest string `json:"evidenceDigest"`
-	EvidenceRef    string `json:"evidenceRef"`
-	NativeRef      string `json:"nativeRef"`
-	NativeType     string `json:"nativeType"`
-	TypeKey        string `json:"typeKey"`
-}
-
-type ProtocolPeerSecretReader struct {
-	Audience           string `json:"audience"`
-	RoleName           string `json:"roleName"`
-	ServicePrincipalID string `json:"servicePrincipalId"`
-}
-
-// DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
-// ActionCommand 的瞬态 bindingSecretValues 提交（03 §9）。Workspace 取原 ActionCommand。
-type ApplicationBindingCreate struct {
-	AdapterServiceRef    string                                            `json:"adapterServiceRef"`
-	BindingID            string                                            `json:"bindingId"`
-	CallIdentityMode     ApplicationCallIdentityMode                       `json:"callIdentityMode"`
-	CapabilityCategories []ApplicationBindingCreateCapabilityCategoryClass `json:"capabilityCategories"`
-	ComponentReleaseID   string                                            `json:"componentReleaseId"`
-	IsolationMode        ApplicationIsolationMode                          `json:"isolationMode"`
-	ModelCallMode        ApplicationModelCallMode                          `json:"modelCallMode"`
-	NativeInstanceRef    string                                            `json:"nativeInstanceRef"`
-	NativeScopeRef       *string                                           `json:"nativeScopeRef,omitempty"`
-	NormalizedConfigJSON string                                            `json:"normalizedConfigJson"`
-	RetainOnTenantDelete bool                                              `json:"retainOnTenantDelete"`
-	// 必须为空数组。binding 的 SecretRef 只由 Core 在本动作内把 bindingSecretValues 写入该 Tenant OpenBao
-	// namespace 的 application-binding/<bindingId>/<secretKey> 后按返回版本生成；调用方提供的 locator/version
-	// 一律拒绝（03 §9，不以运维旁路写入的 KV 冒充受治理写入）。
-	SecretRefs         []ApplicationBindingCreateSecretRefClass `json:"secretRefs"`
-	ServicePrincipalID string                                   `json:"servicePrincipalId"`
-}
-
-type ApplicationBindingCreateCapabilityCategoryClass struct {
-	Category string `json:"category"`
-	Version  int64  `json:"version"`
-}
-
-type ApplicationBindingCreateSecretRefClass struct {
-	Audience  string `json:"audience"`
-	Locator   string `json:"locator"`
-	SecretKey string `json:"secretKey"`
-	Version   int64  `json:"version"`
+	AdapterServiceRef         string                                   `json:"adapterServiceRef"`
+	ArtifactDigest            string                                   `json:"artifactDigest"`
+	Bindings                  []ApplicationProtocolPeerBindingDelivery `json:"bindings"`
+	MaxResponseBytes          int64                                    `json:"maxResponseBytes"`
+	MCPURL                    string                                   `json:"mcpUrl"`
+	ModelCredentialDeliveries []ApplicationModelCredentialDelivery     `json:"modelCredentialDeliveries,omitempty"`
+	NativeInstanceRef         string                                   `json:"nativeInstanceRef"`
+	SecretReaders             []ApplicationSecretReader                `json:"secretReaders,omitempty"`
+	TimeoutSeconds            int64                                    `json:"timeoutSeconds"`
 }
 
 // DD-92: modelGateway within the approved binding config. Only existing route and meter
@@ -9089,141 +8027,13 @@ type ApplicationModelGatewayConfig struct {
 	RouteResourceIDS []string `json:"routeResourceIds"`
 }
 
-// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
-type AutomationApprovalPolicyRef struct {
-	ID      string `json:"id"`
-	Version int64  `json:"version"`
-}
-
-// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
-// 固定 SKIP。
-type AutomationScheduleSpec struct {
-	CatchupWindowSeconds int64 `json:"catchupWindowSeconds"`
-	// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
-	Cron         *string `json:"cron,omitempty"`
-	EverySeconds *int64  `json:"everySeconds,omitempty"`
-	// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-	Kind          *ScheduleSpecKind `json:"kind,omitempty"`
-	OffsetSeconds *int64            `json:"offsetSeconds,omitempty"`
-}
-
-// 同 Tenant OpenBao KV v2 的精确版本引用（DD-70）；只是 locator，不含密钥正文。audience 必须是 Core 的服务身份。
-type AutomationSecretRef struct {
-	Audience string `json:"audience"`
-	Locator  string `json:"locator"`
-	Version  int64  `json:"version"`
-}
-
-// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。call_webhook 需要工作区管理权限（原
-// requires_elevated_authority），保存与每次运行均重新核验。其它原动作不由此宣称已实现。
-type AutomationStep struct {
-	Action ActionEnum `json:"action"`
-	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
-	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
-	// 原请求体模板；不保存响应正文。
-	Body     *string `json:"body,omitempty"`
-	Duration *string `json:"duration,omitempty"`
-	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
-	Emoji *string `json:"emoji,omitempty"`
-	// 原附加请求头，值可含原模板变量。凭据类请求头（Authorization、Cookie，以及名称含 token/secret/password/api-key/apikey
-	// 者）不得明文保存，必须改用 secretHeaders。
-	Headers map[string]string `json:"headers,omitempty"`
-	ID      string            `json:"id"`
-	// 固定 Buzz Step.if 的 evalexpr 条件，原 4096 UTF-8
-	// 字节上限；为假时跳过该步骤（不失败）。只允许引用触发变量（trigger_text/author/channel_id/timestamp/emoji/message_id/is_reply），引用步骤输出在定义校验时以
-	// CAPABILITY_BLOCKED 拒绝。Kailo 在 automation.run 准入时按已验签触发事件一次求值并把跳过集合冻结进该
-	// ActionExecution；求值错误使该运行在任何副作用前失败。
-	If      *string `json:"if,omitempty"`
-	Message *string `json:"message,omitempty"`
-	// 原 HTTP 方法，缺省 POST。
-	Method *StepMethod `json:"method,omitempty"`
-	Name   *string     `json:"name,omitempty"`
-	// Kailo 治理：请求头密钥只以同 Tenant OpenBao SecretRef 保存，Core 仅在派发时读取 field=value
-	// 注入请求，不写入版本、参数、审计或轨迹。名称不得与 headers 重复（不区分大小写）。
-	SecretHeaders map[string]SecretHeaderValue `json:"secretHeaders,omitempty"`
-	Text          *string                      `json:"text,omitempty"`
-	// 固定 Buzz Step.timeout_secs。Delay 由原 AgentTask 的独立 Temporal Timer
-	// 执行；send_message/add_reaction/set_channel_topic/call_webhook 由 Core
-	// 自本运行首次到达该步骤起计时，截止前未派发则以 STEP_TIMEOUT 失败，已派发的结果走既有对账（不明记 UNKNOWN，不重放）；call_webhook
-	// 的单次请求另受原 10 秒上限。缺省保持既有版本行为，不给历史补写默认值。
-	TimeoutSecs *int64 `json:"timeout_secs,omitempty"`
-	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
-	Topic *string `json:"topic,omitempty"`
-	// 固定 Buzz ActionDef::CallWebhook.url：公网 HTTPS
-	// 端点。scheme、主机与端口必须是字面值（原模板变量只可出现在路径与查询中），不得含用户信息。Core 每次派发前按 DNS 结果拒绝非全局单播地址，并只经
-	// AgentGateway 出站，不跟随重定向。
-	URL *string `json:"url,omitempty"`
-}
-
-// 既有 TaskProjection 中固定 AutomationVersion 步骤的可核验证据；不是执行权威。不含正文、模板、密钥、任意输出或原始 Temporal
-// history。时间仅来自原生事实，未知时省略。
-type AutomationStepTrace struct {
-	// 原生计时终态时间 RFC3339；不存在则省略，不由父任务完成推断。
-	CompletedAt *string                   `json:"completedAt,omitempty"`
-	Error       *ReasonCode               `json:"error,omitempty"`
-	Output      AutomationStepTraceOutput `json:"output"`
-	// 原生步骤开始时间 RFC3339；不存在则省略，不用投影更新时间替代。
-	StartedAt *string              `json:"startedAt,omitempty"`
-	Status    AutomationStepStatus `json:"status"`
-	StepID    string               `json:"stepId"`
-}
-
-type AutomationStepTraceOutput struct {
-	ActionExecutionID  *string `json:"actionExecutionId,omitempty"`
-	ApprovalWorkflowID *string `json:"approvalWorkflowId,omitempty"`
-	EventID            *string `json:"eventId,omitempty"`
-	HistoryEventID     *int64  `json:"historyEventId,omitempty"`
-	// call_webhook 实际收到的 HTTP 状态码；不保存响应正文或请求头。
-	HTTPStatus *int64 `json:"httpStatus,omitempty"`
-	// call_webhook 本次派发的稳定请求引用（随请求发送的 Kailo-Request-Id）。
-	RequestID  *string `json:"requestId,omitempty"`
-	RunID      *string `json:"runId,omitempty"`
-	WorkflowID *string `json:"workflowId,omitempty"`
-}
-
-// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
-// 配置或凭据。
-type AutomationVersionContent struct {
-	Action         *AutomationVersionContentActionClass `json:"action,omitempty"`
-	ApprovalPolicy *ApprovalPolicyElement               `json:"approvalPolicy,omitempty"`
-	// 固定 Buzz WorkflowDef 的可选说明；随原不可变版本和 config_hash 冻结。旧版本缺省不补写，空值与空白沿原 YAML 保留。
-	Description *string `json:"description,omitempty"`
-	// 2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
-	FormatVersion *int64 `json:"formatVersion,omitempty"`
-	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-	Name         *string                `json:"name,omitempty"`
-	ResultTarget AutomationResultTarget `json:"resultTarget"`
-	//
-	// 不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
-	Steps   []StepElement                        `json:"steps,omitempty"`
-	Trigger AutomationVersionContentTriggerClass `json:"trigger"`
-}
-
-type AutomationVersionContentActionClass struct {
-	Kind     ActionKind `json:"kind"`
-	Template string     `json:"template"`
-}
-
-type AutomationVersionContentTriggerClass struct {
-	// 固定 Buzz TriggerDef::ReactionAdded.emoji；仅 REACTION_ADDED，可选，精确匹配原回应内容。
-	Emoji *string `json:"emoji,omitempty"`
-	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION/DIFF_POSTED/REACTION_ADDED（DIFF_POSTED
-	// 为同频道 kind:40008，与消息触发同一组变量；REACTION_ADDED 另有 trigger_emoji 与被回应消息 trigger_message_id），原
-	// 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
-	Filter             *string               `json:"filter,omitempty"`
-	Kind               AutomationTriggerKind `json:"kind"`
-	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
-	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
-	TextPrefix         *string               `json:"textPrefix,omitempty"`
-}
-
 // DD-102 / ADR-12：能力契约固定的机器向量。每个 case 按 steps 顺序执行契约操作，参数与预期结果是实际
 // JSON，不执行文本代码。格式有效不表示组件套件通过；线协议性质、真实执行与 release 证据关联另行核验。DD-124：V2 的每个值只来自
 // LITERAL、PRECONDITION 或 CAPTURE；generatedRefs、preconditionKinds、preconditions、bindings 与
 // captures 只属于 V2，V1 仍按原规则执行。
 type CapabilityConformanceVectors struct {
-	Cases         []Case                 `json:"cases"`
-	FormatVersion CapabilityVectorFormat `json:"formatVersion"`
+	Cases         []CapabilityConformanceVectorsCasesItem `json:"cases"`
+	FormatVersion CapabilityVectorFormat                  `json:"formatVersion"`
 	// V2 only. Contract fields whose values the implementation generates (opaque non-empty
 	// strings). nativeRevision is always implementation-generated and need not be listed. A
 	// listed position present in a step document may never be LITERAL; EXPECTED entries are the
@@ -9237,7 +8047,7 @@ type CapabilityConformanceVectors struct {
 	PreconditionKinds []CapabilityVectorPreconditionKind `json:"preconditionKinds,omitempty"`
 }
 
-type Case struct {
+type CapabilityConformanceVectorsCasesItem struct {
 	CaseKey string `json:"caseKey"`
 	// V2 only; absent means FORWARD. A RECEIVER case (DD-124(3)(4)) runs entirely in the
 	// isolated deployment; the production plan observes each of its steps only through
@@ -9257,8 +8067,8 @@ type Case struct {
 	// registered property of the kind is declared with its literal value and verified by a
 	// later literal expectation of this case; in a RECEIVER case, whose expectations are {}, by
 	// a literal member of a later step input, which Core compares with the isolated admission.
-	Preconditions []CapabilityVectorPrecondition `json:"preconditions,omitempty"`
-	Steps         []Step                         `json:"steps"`
+	Preconditions []CapabilityVectorPrecondition                   `json:"preconditions,omitempty"`
+	Steps         []CapabilityConformanceVectorsCasesItemStepsItem `json:"steps"`
 }
 
 type CapabilityVectorPrecondition struct {
@@ -9272,17 +8082,17 @@ type CapabilityVectorPreconditionProperty struct {
 	ValueJSON string `json:"valueJson"`
 }
 
-type Step struct {
+type CapabilityConformanceVectorsCasesItemStepsItem struct {
 	// V2 only. Every reserved placeholder in inputJson/expectedOutputJson is declared here
 	// exactly once.
-	Bindings []BindingElement `json:"bindings,omitempty"`
+	Bindings []CapabilityVectorBinding `json:"bindings,omitempty"`
 	// V2 only. Values this step's SUCCEEDED observation with complete native terminal evidence
 	// provides to later steps.
-	Captures           []CaptureClass `json:"captures,omitempty"`
-	ContractKey        string         `json:"contractKey"`
-	ExpectedOutputJSON string         `json:"expectedOutputJson"`
-	InputJSON          string         `json:"inputJson"`
-	ReferenceAssetID   *string        `json:"referenceAssetId,omitempty"`
+	Captures           []CapabilityVectorCapture `json:"captures,omitempty"`
+	ContractKey        string                    `json:"contractKey"`
+	ExpectedOutputJSON string                    `json:"expectedOutputJson"`
+	InputJSON          string                    `json:"inputJson"`
+	ReferenceAssetID   *string                   `json:"referenceAssetId,omitempty"`
 	// V1 only. 只引用同 case 已成功的更早 stepKey 的唯一 typed ContentReference；不得指定 JSON 路径或表达式。与固定
 	// Resource/Asset 目标一起进入规范化参数 hash。
 	ReferenceFromStepKey *string `json:"referenceFromStepKey,omitempty"`
@@ -9309,96 +8119,6 @@ type CapabilityVectorPreconditionKind struct {
 	Description string   `json:"description"`
 	Kind        string   `json:"kind"`
 	Properties  []string `json:"properties"`
-}
-
-// 固定 Catalog 自然键，不授予业务能力 consume 权限。
-type CapabilityContractRef struct {
-	CategoryKey     string `json:"categoryKey"`
-	ContractVersion int64  `json:"contractVersion"`
-}
-
-// DD-102：平台管理员登记实际 schema 与一致性测试向量。Core 按实际 canonical JSON 计算摘要并固定原内容；不接受只填摘要。
-type CapabilityContractRegistration struct {
-	CategoryKey               string                                                       `json:"categoryKey"`
-	ContentReferenceSemantics CapabilityContractRegistrationContentReferenceSemanticsClass `json:"contentReferenceSemantics"`
-	ContractVersion           int64                                                        `json:"contractVersion"`
-	OperationContracts        []CapabilityContractRegistrationOperationContractClass       `json:"operationContracts"`
-	ProtocolSessionKinds      []string                                                     `json:"protocolSessionKinds"`
-	RequiredDeclarations      []CapabilityRequiredDeclaration                              `json:"requiredDeclarations"`
-	ResourceTypeFamily        []CapabilityContractRegistrationResourceTypeFamilyClass      `json:"resourceTypeFamily"`
-	SchemaDocuments           []string                                                     `json:"schemaDocuments"`
-	// CapabilityConformanceVectors 的 JSON 编码，formatVersion 固定格式；任意自然语言对象数组不构成可执行向量。Core
-	// 校验所有步骤参数/结果符合契约 schema，覆盖所有 operationContracts，然后固定 canonical digest。
-	TestVectorsJSON string `json:"testVectorsJson"`
-}
-
-type CapabilityContractRegistrationContentReferenceSemanticsClass struct {
-	AuthorizationTargetRule string `json:"authorizationTargetRule"`
-	NativeObjectRefRule     string `json:"nativeObjectRefRule"`
-	NativeRevisionRule      string `json:"nativeRevisionRule"`
-}
-
-type CapabilityContractRegistrationOperationContractClass struct {
-	ContractKey        string               `json:"contractKey"`
-	InputSchemaDigest  string               `json:"inputSchemaDigest"`
-	OutputSchemaDigest string               `json:"outputSchemaDigest"`
-	Permission         CapabilityPermission `json:"permission"`
-	Surface            CapabilitySurface    `json:"surface"`
-	TargetType         string               `json:"targetType"`
-}
-
-type CapabilityContractRegistrationResourceTypeFamilyClass struct {
-	Kind    string `json:"kind"`
-	TypeKey string `json:"typeKey"`
-}
-
-// DD-124(2): one substitution position of a V2 step. pointer is an RFC 6901 JSON Pointer
-// into the step input (INPUT) or expected output (EXPECTED); the literal there must be
-// exactly the reserved placeholder {{SOURCE:key}}. INPUT may bind PRECONDITION or CAPTURE;
-// EXPECTED may bind CAPTURE or a PRECONDITION already sent as INPUT in this case. In a
-// RECEIVER case INPUT may also bind the step's own captures: Core compares that input with
-// the admission the isolated Core actually produced whenever the step's evidence has reads.
-// The plan digest fixes the declaration, never the value.
-type CapabilityVectorBinding struct {
-	Key     string                        `json:"key"`
-	Pointer string                        `json:"pointer"`
-	Side    CapabilityVectorSide          `json:"side"`
-	Source  CapabilityVectorBindingSource `json:"source"`
-}
-
-// DD-124(1)(2): a value this step's actual SUCCEEDED observation produces for later steps
-// of the same case. key is unique in the case and must be consumed at least once. pointer
-// is present only for GENERATED_REF and must equal an EXPECTED generatedRefs entry of the
-// step's contract key; in a RECEIVER case it equals an INPUT entry and reads the admission
-// the isolated Core produced. ACTION_EXECUTION_ID and OPERATION_ID exist only in RECEIVER
-// cases; a step of a RECEIVER case takes them and CONTENT_REFERENCE_* from its own read and
-// the receiver's read_receipt of that admission, so a capturing step's evidence has reads.
-type CapabilityVectorCapture struct {
-	Key     string                      `json:"key"`
-	Pointer *string                     `json:"pointer,omitempty"`
-	Slot    CapabilityVectorCaptureSlot `json:"slot"`
-}
-
-// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。inputReference 或 inputJson 恰一：前者保持持久
-// ContentReference，后者是原登记能力 inputSchema 的规范化元数据参数，不把 SQL、提示或结果正文写入 Core/Temporal。Core
-// 仍校验原目标、能力 schema、审批和用量。
-type ComponentActionInput struct {
-	ActionVersion int64 `json:"actionVersion"`
-	// Canonical JSON for the existing registered capability input schema; mutually exclusive
-	// with inputReference, validated before AE admission.
-	InputJSON                   *string                  `json:"inputJson,omitempty"`
-	InputReference              *ContentReferenceElement `json:"inputReference,omitempty"`
-	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
-}
-
-// DD-124(2): one captured value of the current suite run. Core derives it only from the
-// candidate's actual wire response or typed ContentReference; it is kept only in that
-// step's observation evidence and re-checked when the report is recorded. Never a fixture,
-// seed or administrator value.
-type ComponentConformanceCaptureValue struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
 }
 
 // 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -9437,14 +8157,14 @@ type ComponentConformanceFixture struct {
 	// 经真实 resource.create 登记既有原生引用后返回的 Resource ID，DD-124(4)）；Core
 	// 在冻结计划时代入，并核对每个声明恰有一个取值。不是期望值来源。
 	Preconditions []ComponentConformancePreconditionValue `json:"preconditions,omitempty"`
-	Steps         []PlanStep                              `json:"steps"`
+	Steps         []ComponentConformanceStep              `json:"steps"`
 }
 
 type ComponentNativeReceiverFixture struct {
-	CaseKey     string       `json:"caseKey"`
-	ContractKey string       `json:"contractKey"`
-	Request     RequestClass `json:"request"`
-	StepKey     string       `json:"stepKey"`
+	CaseKey     string                         `json:"caseKey"`
+	ContractKey string                         `json:"contractKey"`
+	Request     ComponentNativeReceiverRequest `json:"request"`
+	StepKey     string                         `json:"stepKey"`
 }
 
 type ComponentConformancePreconditionValue struct {
@@ -9465,11 +8185,11 @@ type ComponentConformanceIdentity struct {
 	PrivateKeyField string                                `json:"privateKeyField"`
 	// DD-124(4)：计划含 receiver_start/receiver_observe 步骤时必填；固定隔离接收方部署的 Core 构建与来源
 	// release，随身份摘要进入原计划。
-	ReceiverEnvironment *ReceiverEnvironmentClass `json:"receiverEnvironment,omitempty"`
-	SecretAudience      string                    `json:"secretAudience"`
-	SecretLocator       string                    `json:"secretLocator"`
-	SecretVersion       int64                     `json:"secretVersion"`
-	TokenSeconds        int64                     `json:"tokenSeconds"`
+	ReceiverEnvironment *ComponentConformanceReceiverEnvironment `json:"receiverEnvironment,omitempty"`
+	SecretAudience      string                                   `json:"secretAudience"`
+	SecretLocator       string                                   `json:"secretLocator"`
+	SecretVersion       int64                                    `json:"secretVersion"`
+	TokenSeconds        int64                                    `json:"tokenSeconds"`
 }
 
 type ComponentConformanceIdentityContext struct {
@@ -9494,64 +8214,6 @@ type ComponentConformanceIdentityContext struct {
 	WorkspaceID                 *string `json:"workspaceId,omitempty"`
 }
 
-// DD-124(4), 07 §8A: identity of the isolated receiver deployment a plan with
-// receiver_start/receiver_observe steps observes. isolatedCoreBuildId is the
-// PlatformBuildInfo CORE buildId of the isolated Core/Worker and must equal the current
-// production Core build. sourceReleaseId with its artifact and manifest digests names the
-// production Catalog release, APPROVED and declaring read_edge SOURCE or BOTH, that the
-// isolated deployment runs as the source. It is delivered with the isolated identity, fixed
-// by the plan identity digest and copied into the plan; it is not evidence that any step
-// passed.
-type ComponentConformanceReceiverEnvironment struct {
-	IsolatedCoreBuildID  string `json:"isolatedCoreBuildId"`
-	SourceArtifactDigest string `json:"sourceArtifactDigest"`
-	SourceManifestDigest string `json:"sourceManifestDigest"`
-	SourceReleaseID      string `json:"sourceReleaseId"`
-}
-
-// 原生 SyncLog 的真实批次与同批多个原 SERVICE read Operation 元数据；completed 不能单独证明通过，Core 仍核对每个
-// SOURCE/RECEIVER 回执及冻结请求。DD-124(4)：请求省略 importConfigRef 时，本观察是隔离 Core 真实 APPLICATION
-// 接收方动作的原生执行（nativeBatchId 为其原生任务标识，nativeStatus 为原生状态原值），每个 read Operation 锚定该动作而无
-// nativeBatch；RECEIVER case 中不读取来源的步骤（如 read/export/search/delete）可无 read Operation，读取由整个
-// case 承载。执行、operation 与批次标识须为隔离 Core 本次生成且不在计划或 fixture 中。
-type ComponentNativeReceiverObservation struct {
-	Completed      bool                                              `json:"completed"`
-	FinishedAt     *string                                           `json:"finishedAt,omitempty"`
-	NativeBatchID  string                                            `json:"nativeBatchId"`
-	NativeStatus   string                                            `json:"nativeStatus"`
-	ReadOperations []ComponentNativeReceiverObservationReadOperation `json:"readOperations"`
-	Request        RequestClass                                      `json:"request"`
-	StartedAt      string                                            `json:"startedAt"`
-}
-
-type ComponentNativeReceiverObservationReadOperation struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	// 原生批次读取必填且等于 readRequest.nativeBatch；锚定 APPLICATION 接收方动作的读取必须省略（readRequest 携带
-	// receiverActionExecutionId）。
-	NativeBatch               *ReadOperationNativeBatch `json:"nativeBatch,omitempty"`
-	OperationID               string                    `json:"operationId"`
-	ReadRequest               ReadRequestClass          `json:"readRequest"`
-	ReceiverActionExecutionID string                    `json:"receiverActionExecutionId"`
-	ReceiverGeneration        int64                     `json:"receiverGeneration"`
-	ReceiverReceipt           AdapterReadReceipt        `json:"receiverReceipt"`
-	SourceBindingID           string                    `json:"sourceBindingId"`
-	SourceReceipt             AdapterReadReceipt        `json:"sourceReceipt"`
-	SourceResourceID          string                    `json:"sourceResourceId"`
-}
-
-// 07§8A 隔离原生接收方验证的冻结请求。原生生成真实 batch ID；同键重入与观察必须保持全部字段，不是生产 execute 输入或通用 HTTP
-// 脚本。DD-124(4)：importConfigRef 存在时为 NATIVE_MANAGED 原生批次，由候选实现原生发起；省略时为隔离部署内的 APPLICATION
-// 接收方动作（如经 READ_EDGE 的 ingest），由平台维护的隔离部署以真实 APPLICATION ActionExecution
-// 准入与派发，原能力输入只由已登记向量与 fixture 前置值冻结。
-type ComponentNativeReceiverRequest struct {
-	BindingID string `json:"bindingId"`
-	// 受控夹具固定的 RFC3339 首派期限，须受原生 SyncLog 保留策略约束；过期仍可观察同一批次，不得续期重派。
-	ExpiresAt       string  `json:"expiresAt"`
-	Generation      int64   `json:"generation"`
-	IdempotencyKey  string  `json:"idempotencyKey"`
-	ImportConfigRef *string `json:"importConfigRef,omitempty"`
-}
-
 // 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
 // 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
 type ComponentProtocolPeerEnvironment struct {
@@ -9562,68 +8224,9 @@ type ComponentProtocolPeerEnvironment struct {
 	MaxSteps             int64  `json:"maxSteps"`
 	MCPURL               string `json:"mcpUrl"`
 	// 隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
-	NativeCredentials []ComponentProtocolPeerEnvironmentNativeCredential `json:"nativeCredentials,omitempty"`
-	ReadOnlyTools     []string                                           `json:"readOnlyTools"`
-	TimeoutSeconds    int64                                              `json:"timeoutSeconds"`
-}
-
-// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
-type ComponentReleaseApprovalTarget struct {
-	ActionExecutionID  string `json:"actionExecutionId"`
-	ComponentReleaseID string `json:"componentReleaseId"`
-	WorkflowID         string `json:"workflowId"`
-}
-
-// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
-// Worker 独立执行隔离套件。
-type ComponentReleaseRegistration struct {
-	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
-	ManifestJSON            string `json:"manifestJson"`
-	PackageJSON             string `json:"packageJson"`
-}
-
-// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-type ContentReference struct {
-	AssetID         *string `json:"assetId,omitempty"`
-	DisplayName     string  `json:"displayName"`
-	MediaType       string  `json:"mediaType"`
-	NativeObjectRef string  `json:"nativeObjectRef"`
-	NativeRevision  string  `json:"nativeRevision"`
-	ResourceID      string  `json:"resourceId"`
-}
-
-type DelegationGrantParameters struct {
-	ExpiresAt time.Time `json:"expiresAt"`
-	MaxUses   *int64    `json:"maxUses,omitempty"`
-	// DD-126(5)：续签时被替换的本人 Grant；与 renewsDelegationVersion 成对出现，缺省为新授予。
-	RenewsDelegationID *string `json:"renewsDelegationId,omitempty"`
-	// DD-126(5)：被替换 Grant 的当前 version（CAS）。
-	RenewsDelegationVersion *int64         `json:"renewsDelegationVersion,omitempty"`
-	Scopes                  []ScopeElement `json:"scopes"`
-	ValidFrom               time.Time      `json:"validFrom"`
-}
-
-// 03 §6 的确切 Action/target/exposure 限制；管理发现与原 Grant 写入共用，发现不授予 permission。
-type DelegationScopeParameters struct {
-	ActionKey          string             `json:"actionKey"`
-	ActionVersion      int64              `json:"actionVersion"`
-	CreateWorkspaceID  *string            `json:"createWorkspaceId,omitempty"`
-	OutputSchemaHash   string             `json:"outputSchemaHash"`
-	RedactionPolicy    string             `json:"redactionPolicy"`
-	ResultExposureMode ResultExposureMode `json:"resultExposureMode"`
-	TargetID           *string            `json:"targetId,omitempty"`
-	TargetType         string             `json:"targetType"`
-	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
-}
-
-// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
-// credentials are only string form fields, never a persisted Task, chat or ContentReference.
-type DocumentLaunchDescriptor struct {
-	ActionURL    string                 `json:"actionUrl"`
-	EditorOrigin string                 `json:"editorOrigin"`
-	ExpiresAt    string                 `json:"expiresAt"`
-	FormFields   map[string]string      `json:"formFields"`
-	Method       LaunchDescriptorMethod `json:"method"`
+	NativeCredentials []ApplicationPeerCredentialDelivery `json:"nativeCredentials,omitempty"`
+	ReadOnlyTools     []string                            `json:"readOnlyTools"`
+	TimeoutSeconds    int64                               `json:"timeoutSeconds"`
 }
 
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
@@ -9645,34 +8248,6 @@ type PublishRestriction struct {
 	Until *string `json:"until,omitempty"`
 }
 
-// 仅 huddle.agent.add / huddle.agent.remove（DD-125(3)）且必带，目标 Huddle 由 ActionCommand.huddleId
-// 给出。加入要求父 Workspace 中 ACTIVE、有 ChannelAgentBinding 且本人有 execute 的 Installation，Tenant
-// CONTROL 以 9000 role=bot 投影并回读；移除另接受父 Workspace manage，CONTROL 以 9001 移出并回读。私聊父的 Huddle 没有
-// Agent。
-type HuddleAgentInput struct {
-	AgentInstallationResourceID string `json:"agentInstallationResourceId"`
-}
-
-// 仅 huddle.start（DD-125(3)、05 §2.11）且必带：在父 Workspace 或父私聊中发起原版 Huddle。parentWorkspaceId 与
-// parentConversationId 恰有一个：前者要求执行 Workspace 即该 Workspace（discover），后者要求本人是该私聊当前参与者。Core
-// 预分配 HuddleBuzzBinding 与临时 Channel UUID，由 Tenant CONTROL 以带 creator 的
-// 9007（private、stream、ttl=3600）投影临时频道，并以 9000 role=bot 加入所选 Agent；私聊父不接受
-// Agent。creatorPubkey 是本人发起会话的 ACTIVE HUMAN 公钥（原生端为该设备 CLIENT 公钥），省略即本人 SERVER
-// 公钥（Web）；它是临时频道的 created_by，也是唯一可签 48100/48106 的公钥。
-type HuddleStartInput struct {
-	// 原 Add agents 所选 Agent（至多 20 个，沿原 MAX_HUDDLE_AGENTS）：父 Workspace 中 ACTIVE、有
-	// ChannelAgentBinding 且本人有 execute 的 Installation
-	AgentInstallationResourceIDS []string `json:"agentInstallationResourceIds,omitempty"`
-	// 原 buildHuddleChannelName 生成的临时频道名
-	ChannelName string `json:"channelName"`
-	// 64 位小写十六进制 Nostr 公钥；省略即本人 SERVER 公钥
-	CreatorPubkey *string `json:"creatorPubkey,omitempty"`
-	// 父私聊（ConversationBuzzBinding id）
-	ParentConversationID *string `json:"parentConversationId,omitempty"`
-	// 父 Workspace；须等于 ActionCommand.workspaceId
-	ParentWorkspaceID *string `json:"parentWorkspaceId,omitempty"`
-}
-
 // BFF 从内网身份 header 解析出的执行身份（.design/09）。它只由已验证的 issuer/subject 推导，不接受调用方自报的任何字段。
 type ResolvedIdentity struct {
 	// 当前选定的 Workspace；未选定时缺省
@@ -9683,21 +8258,6 @@ type ResolvedIdentity struct {
 	TenantPrincipalID  string  `json:"tenantPrincipalId"`
 }
 
-// 受治理 Route 创建只传原生配置与同 Tenant OpenBao 凭据的确切引用。providerCredentialMode 必须明确提供：NONE
-// 仅表示固定原生提供方配置不使用认证；SECRET_REF 必须有确切引用。端点、模型正文与 key 不进入 Core 参数。
-type LlmRouteCreateInput struct {
-	Model                  Model                                 `json:"model"`
-	Provider               Model                                 `json:"provider"`
-	ProviderCredentialMode LlmProviderCredentialMode             `json:"providerCredentialMode"`
-	ProviderSecretRef      *LlmRouteCreateInputProviderSecretRef `json:"providerSecretRef,omitempty"`
-}
-
-type LlmRouteCreateInputProviderSecretRef struct {
-	Audience string `json:"audience"`
-	Locator  string `json:"locator"`
-	Version  int64  `json:"version"`
-}
-
 // 18: native authenticated file-menu metadata from the Adapter typed reference producer.
 // This is NOT Action admission; the normal Kailo HUMAN session must independently
 // fresh-admit the frozen target and version. No ticket or content bytes.
@@ -9706,74 +8266,14 @@ type NativeDocumentSelection struct {
 	ActionVersion   int64                            `json:"actionVersion"`
 	BindingID       string                           `json:"bindingId"`
 	Generation      int64                            `json:"generation"`
-	Reference       ContentReferenceElement          `json:"reference"`
+	Reference       ContentReference                 `json:"reference"`
 	ResourceVersion int64                            `json:"resourceVersion"`
 	WorkspaceID     string                           `json:"workspaceId"`
 }
 
-// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
-type PlatformBuildInfo struct {
-	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
-	BuildID                 string            `json:"buildId"`
-	ConnectorKinds          []string          `json:"connectorKinds,omitempty"`
-	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
-	HostAPIVersion          string            `json:"hostApiVersion"`
-	MCPProtocolVersions     []string          `json:"mcpProtocolVersions,omitempty"`
-	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
-	ReportedAt              time.Time         `json:"reportedAt"`
-	Subject                 Subject           `json:"subject"`
-}
-
-// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
-// Revision and presentation are frozen once; session expiry comes from controlled Core
-// delivery.
-type ProtocolSessionOpenInput struct {
-	ActionVersion int64 `json:"actionVersion"`
-	// The selected native source binding; must equal the target's real binding, not an
-	// authorization claim.
-	ApplicationBindingID string `json:"applicationBindingId"`
-	Locale               Locale `json:"locale"`
-	// Exact approved projection selected by the native menu; never latest.
-	ProjectionGeneration int64                   `json:"projectionGeneration"`
-	Reference            ContentReferenceElement `json:"reference"`
-	Theme                Theme                   `json:"theme"`
-}
-
-type ResourceCreate struct {
-	EvidenceDigest string `json:"evidenceDigest"`
-	EvidenceRef    string `json:"evidenceRef"`
-	NativeRef      string `json:"nativeRef"`
-	NativeType     string `json:"nativeType"`
-	TypeKey        string `json:"typeKey"`
-}
-
 // 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
 type RuntimeProfileDirectory struct {
-	Profiles []Profile `json:"profiles"`
-}
-
-type Profile struct {
-	CapabilityContract FluffyCapabilityContract `json:"capabilityContract"`
-	Key                string                   `json:"key"`
-	Kind               RuntimeProfileKind       `json:"kind"`
-	Status             string                   `json:"status"`
-	WebAvailability    string                   `json:"webAvailability"`
-}
-
-type FluffyCapabilityContract struct {
-	CapabilityRequirements []string `json:"capabilityRequirements"`
-	MaxIdleTimeoutSeconds  int64    `json:"maxIdleTimeoutSeconds"`
-	MaxParallelism         int64    `json:"maxParallelism"`
-	MaxTurnDurationSeconds int64    `json:"maxTurnDurationSeconds"`
-	ReplyPolicies          []string `json:"replyPolicies"`
-	// 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-	ReplyPolicyMappings []FluffyRuntimeReplyPolicyMapping `json:"replyPolicyMappings,omitempty"`
-}
-
-type FluffyRuntimeReplyPolicyMapping struct {
-	BroadcastReplies bool   `json:"broadcastReplies"`
-	Key              string `json:"key"`
-	ThreadReplies    bool   `json:"threadReplies"`
+	Profiles []RuntimeProfileDirectoryProfilesItem `json:"profiles"`
 }
 
 // Workflow 经 ProjectTaskState Activity 写回 Core 的一次状态跃迁（.design/06 §3.1）。Core 按 workflowId
@@ -9792,13 +8292,6 @@ type TaskStateReport struct {
 	WorkflowID string `json:"workflowId"`
 }
 
-// DD-123: tenant.quota.set parameters. Writes only the Tenant Customer's hard-limit
-// OpenMeter entitlement for the platform feature, resetting monthly.
-type TenantQuotaSetting struct {
-	Feature        TenantQuotaFeature `json:"feature"`
-	LimitPerPeriod int64              `json:"limitPerPeriod"`
-}
-
 // Core 在 Temporal Start 之前持久化的唯一引用（.design/06）。workflowId 一律取
 // platform:<kind>:<tenantId>:<primaryEntityId>:<entityVersion>（前缀是协议常量，不随部署显示名变化；ADR-17
 // 迁移窗口内的存量引用仍为旧前缀），使「不分配第二个业务 workflow ID」可被机械校验。
@@ -9813,48 +8306,6 @@ type WorkflowRef struct {
 	TenantID string  `json:"tenantId"`
 	// 固定格式的业务 workflow ID
 	WorkflowID string `json:"workflowId"`
-}
-
-// 仅 workspace.canvas.set（DD-125(4)、05 §2.11）的瞬态输入：原频道 Canvas 的 Markdown 正文（SF-BUZ-54，UTF-8
-// 不超过 64 KiB，空串即原“清空”）。Core 只用它签 Tenant CONTROL 的 kind 40100 并按 DD-81 对账；正文不进入
-// Params、ActionExecution、审计、日志或 Workflow history，只冻结其 SHA-256 与字节数，同一幂等键重发须携带同一正文。
-type WorkspaceCanvasSetInput struct {
-	Content string `json:"content"`
-}
-
-// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
-type WorkspaceChannelCreate struct {
-	ChannelType ChannelType `json:"channelType"`
-	Description *string     `json:"description,omitempty"`
-	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
-	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
-}
-
-// workspace.update 的冻结目标状态（DD-119）。至少给出 name、description、ttlSeconds/clearTtl、visibility
-// 之一，或只给 reopen=true；省略的字段保持不变。Core 在 Admission 校验组合，空集、ttlSeconds 与 clearTtl 同时出现、reopen
-// 与其他字段混用或取 false 均以 INVALID_PARAMETERS 拒绝。stream/forum 类型只在创建时设定，不可编辑；slug 不变。
-type WorkspaceUpdate struct {
-	// 只能为 true：清除 TTL 改为长期频道（原 9002 空 ttl 标签）；与 ttlSeconds 互斥。
-	ClearTTL *bool `json:"clearTtl,omitempty"`
-	// 原 9002 about；空字符串清空描述。
-	Description *string `json:"description,omitempty"`
-	// 新的频道与 Workspace 显示名；CONTROL 9002 回读 39000 一致后才在同一事务提交 Core 的 Workspace 名称。
-	Name *string `json:"name,omitempty"`
-	// 只能为 true 且单独出现：解档被原生 reaper 按 TTL 到期归档的 Channel。要求 Workspace ACTIVE、回读 archived=true 且设有
-	// TTL，CONTROL 发 archived=false 后回读确认；主动归档仍用 workspace.suspend/restore。
-	Reopen *bool `json:"reopen,omitempty"`
-	// 设置原 Buzz 临时频道的不活跃期限（秒）。
-	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
-	// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
-}
-
-// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
-type AffectedOwnerRef struct {
-	OwnerPrincipalID string `json:"ownerPrincipalId"`
-	TargetID         string `json:"targetId"`
-	TargetType       string `json:"targetType"`
-	TargetVersion    int64  `json:"targetVersion"`
 }
 
 // 唯一安装 Workflow 推进同一 ActionExecution/version/generation；取消接收不是原生清理终态。
@@ -9900,10 +8351,10 @@ type AgentTaskAdvanceRequest struct {
 
 // Core 查证的引用与状态；native completed 缺 reply/usage 证据仍 RUNNING。
 type AgentTaskAdvanceResult struct {
-	ApprovalInput      *ApprovalInputClass `json:"approvalInput,omitempty"`
-	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
+	ApprovalInput      *ApprovalWorkflowInput `json:"approvalInput,omitempty"`
+	ApprovalWorkflowID *string                `json:"approvalWorkflowId,omitempty"`
 	// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
-	DelayStep *DelayStep `json:"delayStep,omitempty"`
+	DelayStep *AgentTaskAdvanceResultDelayStep `json:"delayStep,omitempty"`
 	// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
 	FinishActivity bool       `json:"finishActivity"`
 	InvocationID   string     `json:"invocationId"`
@@ -9913,33 +8364,33 @@ type AgentTaskAdvanceResult struct {
 
 // ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
 // ActionExecution。
-type ApprovalInputClass struct {
-	ActionDefinitionVersion int64                     `json:"actionDefinitionVersion"`
-	ActionExecutionID       string                    `json:"actionExecutionId"`
-	ActionKey               string                    `json:"actionKey"`
-	AffectedOwnerRefs       []AffectedOwnerRefElement `json:"affectedOwnerRefs"`
+type ApprovalWorkflowInput struct {
+	ActionDefinitionVersion int64              `json:"actionDefinitionVersion"`
+	ActionExecutionID       string             `json:"actionExecutionId"`
+	ActionKey               string             `json:"actionKey"`
+	AffectedOwnerRefs       []AffectedOwnerRef `json:"affectedOwnerRefs"`
 	// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
 	ConsumeWindowSeconds int64 `json:"consumeWindowSeconds"`
 	// RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
-	ExpiresAt            string                   `json:"expiresAt"`
-	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
-	OperationID          string                   `json:"operationId"`
-	OwnerRequirement     ApprovalOwnerRequirement `json:"ownerRequirement"`
-	ParameterHash        string                   `json:"parameterHash"`
-	PolicyID             string                   `json:"policyId"`
-	PolicyVersion        int64                    `json:"policyVersion"`
-	Resume               *ResumeClass             `json:"resume,omitempty"`
-	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
-	SelfApproval         ApprovalSelfApproval     `json:"selfApproval"`
-	TargetID             string                   `json:"targetId"`
-	TargetType           string                   `json:"targetType"`
-	TenantID             string                   `json:"tenantId"`
+	ExpiresAt            string                    `json:"expiresAt"`
+	InitiatorPrincipalID string                    `json:"initiatorPrincipalId"`
+	OperationID          string                    `json:"operationId"`
+	OwnerRequirement     ApprovalOwnerRequirement  `json:"ownerRequirement"`
+	ParameterHash        string                    `json:"parameterHash"`
+	PolicyID             string                    `json:"policyId"`
+	PolicyVersion        int64                     `json:"policyVersion"`
+	Resume               *ApprovalResume           `json:"resume,omitempty"`
+	RoleRequirements     []ApprovalRoleRequirement `json:"roleRequirements"`
+	SelfApproval         ApprovalSelfApproval      `json:"selfApproval"`
+	TargetID             string                    `json:"targetId"`
+	TargetType           string                    `json:"targetType"`
+	TenantID             string                    `json:"tenantId"`
 	// TENANT_ONLY 动作缺省
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
 // 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
-type AffectedOwnerRefElement struct {
+type AffectedOwnerRef struct {
 	OwnerPrincipalID string `json:"ownerPrincipalId"`
 	TargetID         string `json:"targetId"`
 	TargetType       string `json:"targetType"`
@@ -9948,55 +8399,42 @@ type AffectedOwnerRefElement struct {
 
 // ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
 // 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
-type ResumeClass struct {
+type ApprovalResume struct {
 	// RFC3339，UTC
 	ConsumedAt *string `json:"consumedAt,omitempty"`
 	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
-	Decisions       []DecisionElement `json:"decisions"`
+	ConsumeDeadline *string                  `json:"consumeDeadline,omitempty"`
+	Decisions       []ApprovalDecisionRecord `json:"decisions"`
 	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
 	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-	EventBase int64            `json:"eventBase"`
-	Reason    *ReasonCode      `json:"reason,omitempty"`
-	Refusals  []RefusalElement `json:"refusals"`
-	Status    ApprovalStatus   `json:"status"`
+	EventBase int64             `json:"eventBase"`
+	Reason    *ReasonCode       `json:"reason,omitempty"`
+	Refusals  []ApprovalRefusal `json:"refusals"`
+	Status    ApprovalStatus    `json:"status"`
 }
 
 // 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
 // §4）。
-type RefusalElement struct {
+type ApprovalRefusal struct {
 	ApproverPrincipalID string     `json:"approverPrincipalId"`
 	Reason              ReasonCode `json:"reason"`
 }
 
 // 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
-type DelayStep struct {
+type AgentTaskAdvanceResultDelayStep struct {
 	ID      string `json:"id"`
 	Seconds int64  `json:"seconds"`
 	// 显式 Delay 步骤时限；独立原生 Timer，不替换 seconds。缺省走原 history 分支。
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
-// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
-type AgentTaskWorkflowInput struct {
-	AgentVersionAssetID        string `json:"agentVersionAssetId"`
-	CancelPending              bool   `json:"cancelPending"`
-	EventBase                  int64  `json:"eventBase"`
-	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
-	HeartbeatTimeoutSeconds    int64  `json:"heartbeatTimeoutSeconds"`
-	InstallationID             string `json:"installationId"`
-	InvocationID               string `json:"invocationId"`
-	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
-	ProjectionGeneration       int64  `json:"projectionGeneration"`
-}
-
 type ApplicationBindingAdvanceRequest struct {
-	CancelRequested bool                                   `json:"cancelRequested"`
-	RunID           string                                 `json:"runId"`
-	Target          ApplicationBindingAdvanceRequestTarget `json:"target"`
+	CancelRequested bool                     `json:"cancelRequested"`
+	RunID           string                   `json:"runId"`
+	Target          ApplicationBindingTarget `json:"target"`
 }
 
-type ApplicationBindingAdvanceRequestTarget struct {
+type ApplicationBindingTarget struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	BindingID         string `json:"bindingId"`
 	BindingVersion    int64  `json:"bindingVersion"`
@@ -10007,13 +8445,6 @@ type ApplicationBindingAdvanceResult struct {
 	BindingID     string     `json:"bindingId"`
 	Status        TaskStatus `json:"status"`
 	WaitingReason string     `json:"waitingReason"`
-}
-
-type ApplicationBindingTarget struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	BindingID         string `json:"bindingId"`
-	BindingVersion    int64  `json:"bindingVersion"`
-	WorkflowID        string `json:"workflowId"`
 }
 
 // consume、invalidate、withdraw 三个 Update 的结果：执行后的 Approval 状态。
@@ -10033,48 +8464,11 @@ type ApprovalDecisionOutcome struct {
 	Status ApprovalStatus `json:"status"`
 }
 
-// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
-type ApprovalDecisionRecord struct {
-	ApproverPrincipalID string `json:"approverPrincipalId"`
-	// RFC3339，UTC
-	DecidedAt string           `json:"decidedAt"`
-	Decision  ApprovalDecision `json:"decision"`
-	// 该 approver 在决定时经 fresh Check 满足的选择器；同一人可在多个要求中计数，但只产生一个决定
-	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
-}
-
 // decide Update 的参数。Update ID 固定为 <approval_workflow_id>:<approver_principal_id>，由 Server
 // 侧去重；approverPrincipalId 由 Core 从 PlatformSession 取得，不接受 Browser 自报。
 type ApprovalDecisionUpdate struct {
 	ApproverPrincipalID string           `json:"approverPrincipalId"`
 	Decision            ApprovalDecision `json:"decision"`
-}
-
-// ApprovalWorkflow 的冻结输入（.design/06 §4）。运行中不得更换 Tenant、Workspace、target、参数摘要或策略版本；意图改变时建立新
-// ActionExecution。
-type ApprovalWorkflowInput struct {
-	ActionDefinitionVersion int64                     `json:"actionDefinitionVersion"`
-	ActionExecutionID       string                    `json:"actionExecutionId"`
-	ActionKey               string                    `json:"actionKey"`
-	AffectedOwnerRefs       []AffectedOwnerRefElement `json:"affectedOwnerRefs"`
-	// APPROVED 之后等待 consume 的上界；超时自动 INVALIDATED
-	ConsumeWindowSeconds int64 `json:"consumeWindowSeconds"`
-	// RFC3339，UTC。Core 按 ApprovalPolicy.expires_in 在请求时冻结；Workflow 以 workflow.Now() 与之比较
-	ExpiresAt            string                   `json:"expiresAt"`
-	InitiatorPrincipalID string                   `json:"initiatorPrincipalId"`
-	OperationID          string                   `json:"operationId"`
-	OwnerRequirement     ApprovalOwnerRequirement `json:"ownerRequirement"`
-	ParameterHash        string                   `json:"parameterHash"`
-	PolicyID             string                   `json:"policyId"`
-	PolicyVersion        int64                    `json:"policyVersion"`
-	Resume               *ResumeClass             `json:"resume,omitempty"`
-	RoleRequirements     []RoleRequirementElement `json:"roleRequirements"`
-	SelfApproval         ApprovalSelfApproval     `json:"selfApproval"`
-	TargetID             string                   `json:"targetId"`
-	TargetType           string                   `json:"targetType"`
-	TenantID             string                   `json:"tenantId"`
-	// TENANT_ONLY 动作缺省
-	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
 // invalidate Update 的参数：Core 在批准后重新准入不通过时发出（.design/06 §4）。Update ID 固定为
@@ -10083,44 +8477,14 @@ type ApprovalInvalidateUpdate struct {
 	Reason ReasonCode `json:"reason"`
 }
 
-// 一位 approver 的资格已被 FreshApprovalAdmission 判定为不通过：同一 Update ID 的重发回答同一结论，不再判定（.design/06
-// §4）。
-type ApprovalRefusal struct {
-	ApproverPrincipalID string     `json:"approverPrincipalId"`
-	Reason              ReasonCode `json:"reason"`
-}
-
-// ApprovalWorkflow 经 continue-as-new 续跑时带入新 run 的已有状态（.design/06 §3）。冻结输入原样沿用；这里只放 history
-// 才知道的东西——状态、不可变决定、资格判定的结论与 consume 截止。由 Workflow 自己写入，Core 启动审批时从不填写。
-type ApprovalResume struct {
-	// RFC3339，UTC
-	ConsumedAt *string `json:"consumedAt,omitempty"`
-	// RFC3339，UTC。进入 APPROVED 时确定，续跑不重算
-	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
-	Decisions       []DecisionElement `json:"decisions"`
-	// 此前各 run 的 history 长度之和。投影的 event_id 按 workflow ID 单调去重，新 run 的 history
-	// 从零数起，不加上它续跑后的投影会被当成旧事件丢掉
-	EventBase int64            `json:"eventBase"`
-	Reason    *ReasonCode      `json:"reason,omitempty"`
-	Refusals  []RefusalElement `json:"refusals"`
-	Status    ApprovalStatus   `json:"status"`
-}
-
-// ApprovalPolicy.role_requirements 的一项：该选择器要求至少 minDistinct 个不同 active HUMAN 批准（.design/03
-// §4）。
-type ApprovalRoleRequirement struct {
-	MinDistinct int64            `json:"minDistinct"`
-	Selector    ApprovalSelector `json:"selector"`
-}
-
 // ApprovalWorkflow 经 ProjectApprovalState Activity 写回 Core 的一次状态跃迁。Core 按 workflowId 与
 // eventId 单调 upsert；ApprovalProjection 只接受这一条写入路径（DD-47）。
 type ApprovalStateReport struct {
 	// RFC3339，UTC；进入 CONSUMED 时的 workflow.Now()
 	ConsumedAt *string `json:"consumedAt,omitempty"`
 	// RFC3339，UTC；进入 APPROVED 时由 workflow.Now() 加 consumeWindowSeconds 得出
-	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
-	Decisions       []DecisionElement `json:"decisions"`
+	ConsumeDeadline *string                  `json:"consumeDeadline,omitempty"`
+	Decisions       []ApprovalDecisionRecord `json:"decisions"`
 	// 报告时跨 run 累计的 history 长度
 	EventID int64 `json:"eventId"`
 	// RFC3339，UTC
@@ -10133,38 +8497,9 @@ type ApprovalStateReport struct {
 }
 
 type AutomationScheduleAdmitRequest struct {
-	Input      InputClass `json:"input"`
-	RunID      string     `json:"runId"`
-	WorkflowID string     `json:"workflowId"`
-}
-
-// DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
-type InputClass struct {
-	AutomationResourceID     string `json:"automationResourceId"`
-	AutomationVersionAssetID string `json:"automationVersionAssetId"`
-	// 原 Workflow continue-as-new 仅携 true 保留已观察取消；首 native Schedule input 缺省。
-	CancelPending *bool                    `json:"cancelPending,omitempty"`
-	ScheduleID    string                   `json:"scheduleId"`
-	SourceKind    AutomationScheduleSource `json:"sourceKind"`
-}
-
-type AutomationScheduleAdmitResult struct {
-	Admitted   bool            `json:"admitted"`
-	ReasonCode string          `json:"reasonCode"`
-	TaskInput  *TaskInputClass `json:"taskInput,omitempty"`
-}
-
-// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
-type TaskInputClass struct {
-	AgentVersionAssetID        string `json:"agentVersionAssetId"`
-	CancelPending              bool   `json:"cancelPending"`
-	EventBase                  int64  `json:"eventBase"`
-	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
-	HeartbeatTimeoutSeconds    int64  `json:"heartbeatTimeoutSeconds"`
-	InstallationID             string `json:"installationId"`
-	InvocationID               string `json:"invocationId"`
-	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
-	ProjectionGeneration       int64  `json:"projectionGeneration"`
+	Input      AutomationScheduleTaskInput `json:"input"`
+	RunID      string                      `json:"runId"`
+	WorkflowID string                      `json:"workflowId"`
 }
 
 // DD-107 Schedule 原生启动 AgentTaskWorkflow 的输入。计划时间仅取 native history，不由调用方提供。
@@ -10177,14 +8512,33 @@ type AutomationScheduleTaskInput struct {
 	SourceKind    AutomationScheduleSource `json:"sourceKind"`
 }
 
+type AutomationScheduleAdmitResult struct {
+	Admitted   bool                    `json:"admitted"`
+	ReasonCode string                  `json:"reasonCode"`
+	TaskInput  *AgentTaskWorkflowInput `json:"taskInput,omitempty"`
+}
+
+// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
+type AgentTaskWorkflowInput struct {
+	AgentVersionAssetID        string `json:"agentVersionAssetId"`
+	CancelPending              bool   `json:"cancelPending"`
+	EventBase                  int64  `json:"eventBase"`
+	HeartbeatIntervalSeconds   int64  `json:"heartbeatIntervalSeconds"`
+	HeartbeatTimeoutSeconds    int64  `json:"heartbeatTimeoutSeconds"`
+	InstallationID             string `json:"installationId"`
+	InvocationID               string `json:"invocationId"`
+	ObservationIntervalSeconds int64  `json:"observationIntervalSeconds"`
+	ProjectionGeneration       int64  `json:"projectionGeneration"`
+}
+
 type ComponentActionAdvanceRequest struct {
-	CancelRequested bool                                `json:"cancelRequested"`
-	RunID           string                              `json:"runId"`
-	Target          ComponentActionAdvanceRequestTarget `json:"target"`
+	CancelRequested bool                  `json:"cancelRequested"`
+	RunID           string                `json:"runId"`
+	Target          ComponentActionTarget `json:"target"`
 }
 
 // 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
-type ComponentActionAdvanceRequestTarget struct {
+type ComponentActionTarget struct {
 	ActionExecutionID    string `json:"actionExecutionId"`
 	BindingID            string `json:"bindingId"`
 	BindingVersion       int64  `json:"bindingVersion"`
@@ -10199,148 +8553,56 @@ type ComponentActionAdvanceResult struct {
 	WaitingReason     string     `json:"waitingReason"`
 }
 
-// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
-type ComponentActionTarget struct {
-	ActionExecutionID    string `json:"actionExecutionId"`
-	BindingID            string `json:"bindingId"`
-	BindingVersion       int64  `json:"bindingVersion"`
-	ComponentReleaseID   string `json:"componentReleaseId"`
-	ProjectionGeneration int64  `json:"projectionGeneration"`
-	WorkflowID           string `json:"workflowId"`
-}
-
 // 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
 // 不表示套件失败或成功。响应正文与测试凭据不进入报告。
 type ComponentConformanceObservation struct {
-	ActionExecutionID  string               `json:"actionExecutionId"`
-	ArtifactDigest     string               `json:"artifactDigest"`
-	ComponentReleaseID string               `json:"componentReleaseId"`
-	ContractDigests    []string             `json:"contractDigests"`
-	Observations       []ObservationElement `json:"observations"`
-	OperationID        string               `json:"operationId"`
-	PlanDigest         string               `json:"planDigest"`
-	RunID              string               `json:"runId"`
-	SuiteDigest        string               `json:"suiteDigest"`
-	WorkflowID         string               `json:"workflowId"`
-}
-
-type ObservationElement struct {
-	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
-	BindingDigest *string `json:"bindingDigest,omitempty"`
-	// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
-	Captures                  []CaptureElement                `json:"captures,omitempty"`
-	CaseKey                   string                          `json:"caseKey"`
-	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
-	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
-	HTTPStatus                int64                           `json:"httpStatus"`
-	MCPResultKind             *MCPResultKind                  `json:"mcpResultKind,omitempty"`
-	NativeObservation         *ExecutionElement               `json:"nativeObservation,omitempty"`
-	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
-	NativeScopeObservation    *NativeScopeObservationClass    `json:"nativeScopeObservation,omitempty"`
-	Operation                 ComponentConformanceOperation   `json:"operation"`
-	RequestDigest             string                          `json:"requestDigest"`
-	ResponseDigest            string                          `json:"responseDigest"`
-	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
-	ResultDigest *string `json:"resultDigest,omitempty"`
-	StepKey      string  `json:"stepKey"`
-}
-
-// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
-type NativeScopeObservationClass struct {
-	NativeRef           *string           `json:"nativeRef,omitempty"`
-	NativeType          *string           `json:"nativeType,omitempty"`
-	PlatformResourceRef string            `json:"platformResourceRef"`
-	Result              NativeScopeResult `json:"result"`
-}
-
-// 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
-type ComponentConformancePlan struct {
-	ActionExecutionID  string         `json:"actionExecutionId"`
-	ArtifactDigest     string         `json:"artifactDigest"`
-	ComponentReleaseID string         `json:"componentReleaseId"`
-	ConnectorKind      *ConnectorKind `json:"connectorKind,omitempty"`
-	ContractDigests    []string       `json:"contractDigests"`
-	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
-	IdentityDigest string `json:"identityDigest"`
-	OperationID    string `json:"operationId"`
-	PlanDigest     string `json:"planDigest"`
-	// DD-124(4)：仅含接收方向步骤的计划。Core 冻结时从已核验的隔离身份复制；登记与批准以它核对当前 Core 构建与来源类别已 APPROVED 的 release。
-	ReceiverEnvironment *ReceiverEnvironmentClass `json:"receiverEnvironment,omitempty"`
-	// Core 冻结时为空；原 ComponentTaskWorkflow 启动后写入真实 Temporal run UUID。报告的 runId 仍必须为 UUID，Core 以
-	// Describe 与同 workflow 的当前 TaskProjection 核对。
-	RunID       string                         `json:"runId"`
-	Steps       []ComponentConformancePlanStep `json:"steps"`
-	SuiteDigest string                         `json:"suiteDigest"`
-	WorkflowID  string                         `json:"workflowId"`
-}
-
-type ComponentConformancePlanStep struct {
-	// DD-124：仅 V2 契约步骤。Core 冻结时已代入 PRECONDITION 的 fixture 值，这里只保留 CAPTURE 的代入位置声明（不含值）；运行时 Core
-	// 在 ActionToken 签名前代入请求、在比对前代入期望。权限拒绝重放保留同一 INPUT 声明。接收方向步骤只保留本步自身捕获的 INPUT 声明：请求不被代入，Core
-	// 以它们比对隔离 Core 实际产生的接收方准入。
-	Bindings []BindingElement `json:"bindings,omitempty"`
-	// DD-124：仅 V2 契约步骤。本步 SUCCEEDED 且原生终态证据完整时由 Core 从实际应答的封闭槽位取值，写入本步观察证据。
-	Captures []CaptureClass `json:"captures,omitempty"`
-	CaseKey  string         `json:"caseKey"`
-	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
-	// native 任务元数据。
-	ContractKey *string `json:"contractKey,omitempty"`
-	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
-	ExpectedHTTPStatus    int64          `json:"expectedHttpStatus"`
-	ExpectedMCPResultKind *MCPResultKind `json:"expectedMcpResultKind,omitempty"`
-	ExpectedResponseJSON  string         `json:"expectedResponseJson"`
-	IdempotencyKey        string         `json:"idempotencyKey"`
-	// 仅接收方向步骤（V1 的 NATIVE_INTERNAL/NATIVE 能力步骤，或 V2 RECEIVER case 的步骤），由 Core
-	// 保留已代入前置值的原能力向量输入；SOURCE AE 与 batch 必须以同批真实入站观察替换，不是预造授权。
-	NativeReceiverInputJSON *string                       `json:"nativeReceiverInputJson,omitempty"`
-	Operation               ComponentConformanceOperation `json:"operation"`
-	ReferenceAssetID        *string                       `json:"referenceAssetId,omitempty"`
-	ReferenceFromStepKey    *string                       `json:"referenceFromStepKey,omitempty"`
-	ReferenceResourceID     *string                       `json:"referenceResourceId,omitempty"`
-	RequestJSON             string                        `json:"requestJson"`
-	StepKey                 string                        `json:"stepKey"`
-}
-
-// 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
-// history 承接，不建立另一执行账本。
-type ComponentConformanceProbe struct {
-	// DD-124：本步 CAPTURE 绑定所需的值，只取同 case 更早步骤已记录观察中的 captures；Core 代入后签名，登记时再按报告重算，不能以 fixture
-	// 或管理员值替代。
-	Captures         []CaptureElement         `json:"captures,omitempty"`
-	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
-	Plan             PlanClass                `json:"plan"`
-	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
-	Reconcile *bool `json:"reconcile,omitempty"`
-	StepIndex int64 `json:"stepIndex"`
+	ActionExecutionID  string                                `json:"actionExecutionId"`
+	ArtifactDigest     string                                `json:"artifactDigest"`
+	ComponentReleaseID string                                `json:"componentReleaseId"`
+	ContractDigests    []string                              `json:"contractDigests"`
+	Observations       []ComponentConformanceStepObservation `json:"observations"`
+	OperationID        string                                `json:"operationId"`
+	PlanDigest         string                                `json:"planDigest"`
+	RunID              string                                `json:"runId"`
+	SuiteDigest        string                                `json:"suiteDigest"`
+	WorkflowID         string                                `json:"workflowId"`
 }
 
 type ComponentConformanceStepObservation struct {
 	// 成功 validate_binding 的固定字段摘要，由 Core 从真实回执按 component_conformance_wire_digests 计算；其他操作不得携带。
 	BindingDigest *string `json:"bindingDigest,omitempty"`
 	// DD-124：本步声明的捕获值，只由 Core 从本次实际应答的封闭槽位取得；仅随该步观察证据保存。
-	Captures                  []CaptureElement                `json:"captures,omitempty"`
-	CaseKey                   string                          `json:"caseKey"`
-	ContentReference          *ContentReferenceElement        `json:"contentReference,omitempty"`
-	ErrorClass                *ErrorClass                     `json:"errorClass,omitempty"`
-	HTTPStatus                int64                           `json:"httpStatus"`
-	MCPResultKind             *MCPResultKind                  `json:"mcpResultKind,omitempty"`
-	NativeObservation         *ExecutionElement               `json:"nativeObservation,omitempty"`
-	NativeReceiverObservation *NativeReceiverObservationClass `json:"nativeReceiverObservation,omitempty"`
-	NativeScopeObservation    *NativeScopeObservationClass    `json:"nativeScopeObservation,omitempty"`
-	Operation                 ComponentConformanceOperation   `json:"operation"`
-	RequestDigest             string                          `json:"requestDigest"`
-	ResponseDigest            string                          `json:"responseDigest"`
+	Captures                  []ComponentConformanceCaptureValue             `json:"captures,omitempty"`
+	CaseKey                   string                                         `json:"caseKey"`
+	ContentReference          *ContentReference                              `json:"contentReference,omitempty"`
+	ErrorClass                *ErrorClass                                    `json:"errorClass,omitempty"`
+	HTTPStatus                int64                                          `json:"httpStatus"`
+	MCPResultKind             *ComponentConformanceStepExpectedMCPResultKind `json:"mcpResultKind,omitempty"`
+	NativeObservation         *AdapterExecutionObservation                   `json:"nativeObservation,omitempty"`
+	NativeReceiverObservation *ComponentNativeReceiverObservation            `json:"nativeReceiverObservation,omitempty"`
+	NativeScopeObservation    *AdapterScopeObservation                       `json:"nativeScopeObservation,omitempty"`
+	Operation                 ComponentConformanceOperation                  `json:"operation"`
+	RequestDigest             string                                         `json:"requestDigest"`
+	ResponseDigest            string                                         `json:"responseDigest"`
 	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
 	ResultDigest *string `json:"resultDigest,omitempty"`
 	StepKey      string  `json:"stepKey"`
 }
 
-type ConversationProjectionRequest struct {
-	RunID  string                              `json:"runId"`
-	Target ConversationProjectionRequestTarget `json:"target"`
+// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
+type AdapterScopeObservation struct {
+	NativeRef           *string           `json:"nativeRef,omitempty"`
+	NativeType          *string           `json:"nativeType,omitempty"`
+	PlatformResourceRef string            `json:"platformResourceRef"`
+	Result              NativeScopeResult `json:"result"`
 }
 
-type ConversationProjectionRequestTarget struct {
+type ConversationProjectionRequest struct {
+	RunID  string                       `json:"runId"`
+	Target ConversationProjectionTarget `json:"target"`
+}
+
+type ConversationProjectionTarget struct {
 	ActionExecutionID string `json:"actionExecutionId"`
 	ConversationID    string `json:"conversationId"`
 	WorkflowID        string `json:"workflowId"`
@@ -10350,12 +8612,6 @@ type ConversationProjectionResult struct {
 	ConversationID string     `json:"conversationId"`
 	Status         TaskStatus `json:"status"`
 	WaitingReason  string     `json:"waitingReason"`
-}
-
-type ConversationProjectionTarget struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	ConversationID    string `json:"conversationId"`
-	WorkflowID        string `json:"workflowId"`
 }
 
 // FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
@@ -10375,48 +8631,18 @@ type FreshApprovalAdmissionResult struct {
 }
 
 type ProtocolSessionReconcileRequest struct {
-	CancelRequested bool                                  `json:"cancelRequested"`
-	Round           *RoundClass                           `json:"round,omitempty"`
-	RunID           string                                `json:"runId"`
-	Target          ProtocolSessionReconcileRequestTarget `json:"target"`
-}
-
-// Actual original Session snapshot. The Activity result freezes this query round into
-// history, not into a new authority.
-type RoundClass struct {
-	SessionVersion   int64                    `json:"sessionVersion"`
-	State            ProtocolSessionViewState `json:"state"`
-	WriteObservation *WriteObservationClass   `json:"writeObservation,omitempty"`
-}
-
-// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
-type ProtocolSessionReconcileRequestTarget struct {
-	ActionDefinitionID   string `json:"actionDefinitionId"`
-	ActionExecutionID    string `json:"actionExecutionId"`
-	BaseRevision         string `json:"baseRevision"`
-	BindingID            string `json:"bindingId"`
-	CorrelationRef       string `json:"correlationRef"`
-	NativeObjectRef      string `json:"nativeObjectRef"`
-	ProjectionGeneration int64  `json:"projectionGeneration"`
-	ProtocolSessionID    string `json:"protocolSessionId"`
-	ReleaseID            string `json:"releaseId"`
-	SessionVersion       int64  `json:"sessionVersion"`
-	WorkflowID           string `json:"workflowId"`
-}
-
-type ProtocolSessionReconcileResult struct {
-	ProtocolSessionID string     `json:"protocolSessionId"`
-	Round             RoundClass `json:"round"`
-	Status            TaskStatus `json:"status"`
-	WaitingReason     string     `json:"waitingReason"`
+	CancelRequested bool                           `json:"cancelRequested"`
+	Round           *ProtocolSessionReconcileRound `json:"round,omitempty"`
+	RunID           string                         `json:"runId"`
+	Target          ProtocolSessionReconcileTarget `json:"target"`
 }
 
 // Actual original Session snapshot. The Activity result freezes this query round into
 // history, not into a new authority.
 type ProtocolSessionReconcileRound struct {
-	SessionVersion   int64                    `json:"sessionVersion"`
-	State            ProtocolSessionViewState `json:"state"`
-	WriteObservation *WriteObservationClass   `json:"writeObservation,omitempty"`
+	SessionVersion   int64                              `json:"sessionVersion"`
+	State            ProtocolSessionReconcileRoundState `json:"state"`
+	WriteObservation *ProtocolWriteObservation          `json:"writeObservation,omitempty"`
 }
 
 // DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
@@ -10434,44 +8660,37 @@ type ProtocolSessionReconcileTarget struct {
 	WorkflowID           string `json:"workflowId"`
 }
 
-type ResourceProvisionAdvanceRequest struct {
-	CancelRequested bool                                  `json:"cancelRequested"`
-	RunID           string                                `json:"runId"`
-	Target          ResourceProvisionAdvanceRequestTarget `json:"target"`
+type ProtocolSessionReconcileResult struct {
+	ProtocolSessionID string                        `json:"protocolSessionId"`
+	Round             ProtocolSessionReconcileRound `json:"round"`
+	Status            TaskStatus                    `json:"status"`
+	WaitingReason     string                        `json:"waitingReason"`
 }
 
-type ResourceProvisionAdvanceRequestTarget struct {
-	ActionExecutionID    string              `json:"actionExecutionId"`
-	BindingID            string              `json:"bindingId"`
-	BindingVersion       int64               `json:"bindingVersion"`
-	ComponentReleaseID   string              `json:"componentReleaseId"`
-	NativeInstanceRef    string              `json:"nativeInstanceRef"`
-	NativeScopeRef       string              `json:"nativeScopeRef"`
-	ProjectionGeneration int64               `json:"projectionGeneration"`
-	Reference            ResourceCreateClass `json:"reference"`
-	ResourceID           string              `json:"resourceId"`
-	ResourceVersion      int64               `json:"resourceVersion"`
-	WorkflowID           string              `json:"workflowId"`
+type ResourceProvisionAdvanceRequest struct {
+	CancelRequested bool                    `json:"cancelRequested"`
+	RunID           string                  `json:"runId"`
+	Target          ResourceProvisionTarget `json:"target"`
+}
+
+type ResourceProvisionTarget struct {
+	ActionExecutionID    string         `json:"actionExecutionId"`
+	BindingID            string         `json:"bindingId"`
+	BindingVersion       int64          `json:"bindingVersion"`
+	ComponentReleaseID   string         `json:"componentReleaseId"`
+	NativeInstanceRef    string         `json:"nativeInstanceRef"`
+	NativeScopeRef       string         `json:"nativeScopeRef"`
+	ProjectionGeneration int64          `json:"projectionGeneration"`
+	Reference            ResourceCreate `json:"reference"`
+	ResourceID           string         `json:"resourceId"`
+	ResourceVersion      int64          `json:"resourceVersion"`
+	WorkflowID           string         `json:"workflowId"`
 }
 
 type ResourceProvisionAdvanceResult struct {
 	ResourceID    string     `json:"resourceId"`
 	Status        TaskStatus `json:"status"`
 	WaitingReason string     `json:"waitingReason"`
-}
-
-type ResourceProvisionTarget struct {
-	ActionExecutionID    string              `json:"actionExecutionId"`
-	BindingID            string              `json:"bindingId"`
-	BindingVersion       int64               `json:"bindingVersion"`
-	ComponentReleaseID   string              `json:"componentReleaseId"`
-	NativeInstanceRef    string              `json:"nativeInstanceRef"`
-	NativeScopeRef       string              `json:"nativeScopeRef"`
-	ProjectionGeneration int64               `json:"projectionGeneration"`
-	Reference            ResourceCreateClass `json:"reference"`
-	ResourceID           string              `json:"resourceId"`
-	ResourceVersion      int64               `json:"resourceVersion"`
-	WorkflowID           string              `json:"workflowId"`
 }
 
 // TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。
@@ -10521,12 +8740,12 @@ const (
 	Limit                  ErrorClass = "LIMIT"
 )
 
-type VariantKind string
+type CanaryVariantsItemKind string
 
 const (
-	File    VariantKind = "FILE"
-	Message VariantKind = "MESSAGE"
-	Task    VariantKind = "TASK"
+	File    CanaryVariantsItemKind = "FILE"
+	Message CanaryVariantsItemKind = "MESSAGE"
+	Task    CanaryVariantsItemKind = "TASK"
 )
 
 type FileStorageShareOperation string
@@ -10572,87 +8791,87 @@ const (
 	PendingReference                 NativeTaskAdmissionState = "PENDING_REFERENCE"
 )
 
-type Phase string
+type ProtocolSessionMode string
 
 const (
-	PhaseACCEPTED Phase = "ACCEPTED"
-	PhaseCONFLICT Phase = "CONFLICT"
-	PhaseFAILED   Phase = "FAILED"
-	PhaseUNKNOWN  Phase = "UNKNOWN"
-	Started       Phase = "STARTED"
+	Edit ProtocolSessionMode = "EDIT"
+	View ProtocolSessionMode = "VIEW"
 )
 
-type TedMode string
+type ProtocolSessionLocale string
 
 const (
-	Edit TedMode = "EDIT"
-	View TedMode = "VIEW"
+	En   ProtocolSessionLocale = "en"
+	ZhCN ProtocolSessionLocale = "zh-CN"
 )
 
-type Locale string
+type ProtocolSessionTheme string
 
 const (
-	En   Locale = "en"
-	ZhCN Locale = "zh-CN"
+	Dark  ProtocolSessionTheme = "DARK"
+	Light ProtocolSessionTheme = "LIGHT"
 )
 
-type Theme string
+type DocumentLaunchDescriptorMethod string
 
 const (
-	Dark  Theme = "DARK"
-	Light Theme = "LIGHT"
+	DocumentLaunchDescriptorMethodGET  DocumentLaunchDescriptorMethod = "GET"
+	DocumentLaunchDescriptorMethodPOST DocumentLaunchDescriptorMethod = "POST"
 )
 
-type LaunchDescriptorMethod string
+type ProtocolSessionLifecyclePepResponseDecision string
 
 const (
-	PurpleGET  LaunchDescriptorMethod = "GET"
-	PurplePOST LaunchDescriptorMethod = "POST"
+	ProtocolSessionLifecyclePepResponseDecisionALLOW ProtocolSessionLifecyclePepResponseDecision = "ALLOW"
 )
 
-type DecisionEnum string
+type AdapterProtocolSessionLifecycleResponseNativeState string
 
 const (
-	DecisionALLOW DecisionEnum = "ALLOW"
+	AdapterProtocolSessionLifecycleResponseNativeStateABSENT  AdapterProtocolSessionLifecycleResponseNativeState = "ABSENT"
+	AdapterProtocolSessionLifecycleResponseNativeStateACTIVE  AdapterProtocolSessionLifecycleResponseNativeState = "ACTIVE"
+	AdapterProtocolSessionLifecycleResponseNativeStateEXPIRED AdapterProtocolSessionLifecycleResponseNativeState = "EXPIRED"
 )
 
-type NativeState string
+type ProtocolSessionPepRequestNativeOperation string
 
 const (
-	NativeStateABSENT  NativeState = "ABSENT"
-	NativeStateACTIVE  NativeState = "ACTIVE"
-	NativeStateEXPIRED NativeState = "EXPIRED"
+	ProtocolSessionPepRequestNativeOperationOBSERVE ProtocolSessionPepRequestNativeOperation = "OBSERVE"
+	ProtocolSessionPepRequestNativeOperationOPEN    ProtocolSessionPepRequestNativeOperation = "OPEN"
+	ProtocolSessionPepRequestNativeOperationREAD    ProtocolSessionPepRequestNativeOperation = "READ"
+	TokenObserve                                    ProtocolSessionPepRequestNativeOperation = "TOKEN_OBSERVE"
+	TokenRevoke                                     ProtocolSessionPepRequestNativeOperation = "TOKEN_REVOKE"
+	Write                                           ProtocolSessionPepRequestNativeOperation = "WRITE"
 )
 
-type NativeOperation string
+type ProtocolWriteObservationPhase string
 
 const (
-	NativeOperationOBSERVE NativeOperation = "OBSERVE"
-	NativeOperationOPEN    NativeOperation = "OPEN"
-	NativeOperationREAD    NativeOperation = "READ"
-	TokenObserve           NativeOperation = "TOKEN_OBSERVE"
-	TokenRevoke            NativeOperation = "TOKEN_REVOKE"
-	Write                  NativeOperation = "WRITE"
+	ProtocolWriteObservationPhaseACCEPTED ProtocolWriteObservationPhase = "ACCEPTED"
+	ProtocolWriteObservationPhaseCONFLICT ProtocolWriteObservationPhase = "CONFLICT"
+	ProtocolWriteObservationPhaseFAILED   ProtocolWriteObservationPhase = "FAILED"
+	ProtocolWriteObservationPhaseUNKNOWN  ProtocolWriteObservationPhase = "UNKNOWN"
+	Started                               ProtocolWriteObservationPhase = "STARTED"
 )
 
 type ProtocolWriteReceiptState string
 
 const (
-	PurpleCONFLICT ProtocolWriteReceiptState = "CONFLICT"
-	PurpleDIRTY    ProtocolWriteReceiptState = "DIRTY"
-	PurpleFAILED   ProtocolWriteReceiptState = "FAILED"
-	PurpleSAVED    ProtocolWriteReceiptState = "SAVED"
-	PurpleUNKNOWN  ProtocolWriteReceiptState = "UNKNOWN"
+	ProtocolWriteReceiptStateCONFLICT ProtocolWriteReceiptState = "CONFLICT"
+	ProtocolWriteReceiptStateDIRTY    ProtocolWriteReceiptState = "DIRTY"
+	ProtocolWriteReceiptStateFAILED   ProtocolWriteReceiptState = "FAILED"
+	ProtocolWriteReceiptStateSAVED    ProtocolWriteReceiptState = "SAVED"
+	ProtocolWriteReceiptStateUNKNOWN  ProtocolWriteReceiptState = "UNKNOWN"
 )
 
 // Native retry observation. COMPLETED requires both immutable receipts and committed usage;
 // UNKNOWN/PENDING carry no renewed authorization.
-type OutcomeEnum string
+type AdapterReadGrantResponseOutcome string
 
 const (
-	OutcomeCOMPLETED OutcomeEnum = "COMPLETED"
-	OutcomePENDING   OutcomeEnum = "PENDING"
-	OutcomeUNKNOWN   OutcomeEnum = "UNKNOWN"
+	AdapterReadGrantResponseOutcomeCOMPLETED AdapterReadGrantResponseOutcome = "COMPLETED"
+	AdapterReadGrantResponseOutcomePENDING   AdapterReadGrantResponseOutcome = "PENDING"
+	AdapterReadGrantResponseOutcomeUNKNOWN   AdapterReadGrantResponseOutcome = "UNKNOWN"
 )
 
 type ApplicationReadResourceDirection string
@@ -10662,56 +8881,58 @@ const (
 	Source                                   ApplicationReadResourceDirection = "SOURCE"
 )
 
-type NativeScopeResult string
+// 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
+type ResourceState string
 
 const (
-	AbsentFenced           NativeScopeResult = "ABSENT_FENCED"
-	NativeScopeResultFOUND NativeScopeResult = "FOUND"
-	Refused                NativeScopeResult = "REFUSED"
+	ResourceStateACTIVE       ResourceState = "ACTIVE"
+	ResourceStateDELETED      ResourceState = "DELETED"
+	ResourceStateDELETING     ResourceState = "DELETING"
+	ResourceStateFAILED       ResourceState = "FAILED"
+	ResourceStatePROVISIONING ResourceState = "PROVISIONING"
+	ResourceStateUNKNOWN      ResourceState = "UNKNOWN"
+	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
 )
 
-type AgentMemoryColdWrite string
+// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
+// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
+// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
+type DelegationEffectiveState string
 
 const (
-	AgentMemoryColdWriteDISABLED AgentMemoryColdWrite = "DISABLED"
-	InvocationScoped             AgentMemoryColdWrite = "INVOCATION_SCOPED"
+	DelegationEffectiveStateACTIVE     DelegationEffectiveState = "ACTIVE"
+	DelegationEffectiveStateEXPIRED    DelegationEffectiveState = "EXPIRED"
+	DelegationEffectiveStateREVOKED    DelegationEffectiveState = "REVOKED"
+	DelegationEffectiveStateREVOKING   DelegationEffectiveState = "REVOKING"
+	DelegationEffectiveStateSUPERSEDED DelegationEffectiveState = "SUPERSEDED"
+	NeedsRenewal                       DelegationEffectiveState = "NEEDS_RENEWAL"
+	NotYetValid                        DelegationEffectiveState = "NOT_YET_VALID"
+	UsesExhausted                      DelegationEffectiveState = "USES_EXHAUSTED"
 )
 
-type AgentMemoryCoreWrite string
+type DelegationScopeParametersResultExposureMode string
 
 const (
-	AgentWithApproval AgentMemoryCoreWrite = "AGENT_WITH_APPROVAL"
-	HumanOnly         AgentMemoryCoreWrite = "HUMAN_ONLY"
+	ConsumeOnly                                       DelegationScopeParametersResultExposureMode = "CONSUME_ONLY"
+	DelegationScopeParametersResultExposureModeEXPORT DelegationScopeParametersResultExposureMode = "EXPORT"
+	DelegationScopeParametersResultExposureModeREAD   DelegationScopeParametersResultExposureMode = "READ"
 )
 
-type AgentTrigger string
+type AgentDelegationViewState string
 
 const (
-	AgentTriggerMENTION AgentTrigger = "MENTION"
-	ManualAssignment    AgentTrigger = "MANUAL_ASSIGNMENT"
+	AgentDelegationViewStateACTIVE     AgentDelegationViewState = "ACTIVE"
+	AgentDelegationViewStateEXPIRED    AgentDelegationViewState = "EXPIRED"
+	AgentDelegationViewStateREVOKED    AgentDelegationViewState = "REVOKED"
+	AgentDelegationViewStateREVOKING   AgentDelegationViewState = "REVOKING"
+	AgentDelegationViewStateSUPERSEDED AgentDelegationViewState = "SUPERSEDED"
 )
 
-type ApplicationCallIdentityMode string
+type AgentInstallationViewAgentPrincipalState string
 
 const (
-	EndUserToken    ApplicationCallIdentityMode = "END_USER_TOKEN"
-	InstanceService ApplicationCallIdentityMode = "INSTANCE_SERVICE"
-	TenantService   ApplicationCallIdentityMode = "TENANT_SERVICE"
-)
-
-type ApplicationModelCallMode string
-
-const (
-	ApplicationModelCallModeNONE ApplicationModelCallMode = "NONE"
-	PlatformLlmRoute             ApplicationModelCallMode = "PLATFORM_LLM_ROUTE"
-	SelfManagedModel             ApplicationModelCallMode = "SELF_MANAGED_MODEL"
-)
-
-type ActionKind string
-
-const (
-	AgentTurn   ActionKind = "AGENT_TURN"
-	PostMessage ActionKind = "POST_MESSAGE"
+	AgentInstallationViewAgentPrincipalStateACTIVE   AgentInstallationViewAgentPrincipalState = "ACTIVE"
+	AgentInstallationViewAgentPrincipalStateDISABLED AgentInstallationViewAgentPrincipalState = "DISABLED"
 )
 
 type AutomationResultTarget string
@@ -10721,217 +8942,49 @@ const (
 	TriggerThread AutomationResultTarget = "TRIGGER_THREAD"
 )
 
-type ActionEnum string
+type AgentInstallationViewChannelBindingStatus string
 
 const (
-	AddReaction     ActionEnum = "add_reaction"
-	CallWebhook     ActionEnum = "call_webhook"
-	Delay           ActionEnum = "delay"
-	RequestApproval ActionEnum = "request_approval"
-	SendMessage     ActionEnum = "send_message"
-	SetChannelTopic ActionEnum = "set_channel_topic"
+	AgentInstallationViewChannelBindingStatusACTIVE   AgentInstallationViewChannelBindingStatus = "ACTIVE"
+	AgentInstallationViewChannelBindingStatusDISABLED AgentInstallationViewChannelBindingStatus = "DISABLED"
+	AgentInstallationViewChannelBindingStatusERROR    AgentInstallationViewChannelBindingStatus = "ERROR"
 )
 
-// 原 HTTP 方法，缺省 POST。
-type StepMethod string
+type AgentTrigger string
 
 const (
-	FluffyGET    StepMethod = "GET"
-	FluffyPOST   StepMethod = "POST"
-	MethodDELETE StepMethod = "DELETE"
-	Patch        StepMethod = "PATCH"
-	Put          StepMethod = "PUT"
+	AgentTriggerMENTION AgentTrigger = "MENTION"
+	ManualAssignment    AgentTrigger = "MANUAL_ASSIGNMENT"
 )
 
-type AutomationTriggerKind string
+// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
+type AgentRuntimeProjectionState string
 
 const (
-	AutomationTriggerKindMENTION  AutomationTriggerKind = "MENTION"
-	AutomationTriggerKindSCHEDULE AutomationTriggerKind = "SCHEDULE"
-	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
-	DiffPosted                    AutomationTriggerKind = "DIFF_POSTED"
-	ReactionAdded                 AutomationTriggerKind = "REACTION_ADDED"
-	Webhook                       AutomationTriggerKind = "WEBHOOK"
+	AgentRuntimeProjectionStateACTIVE  AgentRuntimeProjectionState = "ACTIVE"
+	AgentRuntimeProjectionStateERROR   AgentRuntimeProjectionState = "ERROR"
+	AgentRuntimeProjectionStatePENDING AgentRuntimeProjectionState = "PENDING"
+	AgentRuntimeProjectionStateREVOKED AgentRuntimeProjectionState = "REVOKED"
 )
 
-// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
-type ScheduleSpecKind string
+// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
+type AgentInstallationState string
 
 const (
-	Cron     ScheduleSpecKind = "CRON"
-	Interval ScheduleSpecKind = "INTERVAL"
+	AgentInstallationStateACTIVE       AgentInstallationState = "ACTIVE"
+	AgentInstallationStateDISABLED     AgentInstallationState = "DISABLED"
+	AgentInstallationStateERROR        AgentInstallationState = "ERROR"
+	AgentInstallationStatePROVISIONING AgentInstallationState = "PROVISIONING"
+	Draining                           AgentInstallationState = "DRAINING"
 )
 
-type CapabilityPermission string
+type AgentToolBindingStatus string
 
 const (
-	Approve                      CapabilityPermission = "approve"
-	Audit                        CapabilityPermission = "audit"
-	CapabilityPermissionConsume  CapabilityPermission = "consume"
-	CapabilityPermissionDelete   CapabilityPermission = "delete"
-	CapabilityPermissionDiscover CapabilityPermission = "discover"
-	CapabilityPermissionExecute  CapabilityPermission = "execute"
-	CapabilityPermissionManage   CapabilityPermission = "manage"
-	CapabilityPermissionRead     CapabilityPermission = "read"
-	Create                       CapabilityPermission = "create"
-	Delegate                     CapabilityPermission = "delegate"
-	Export                       CapabilityPermission = "export"
-	Share                        CapabilityPermission = "share"
-	TransferOwner                CapabilityPermission = "transfer_owner"
-	Update                       CapabilityPermission = "update"
-)
-
-type CapabilitySurface string
-
-const (
-	Action CapabilitySurface = "ACTION"
-	Tool   CapabilitySurface = "TOOL"
-)
-
-type CapabilityRequiredDeclaration string
-
-const (
-	CapabilityRequiredDeclarationCANCEL  CapabilityRequiredDeclaration = "CANCEL"
-	CapabilityRequiredDeclarationOBSERVE CapabilityRequiredDeclaration = "OBSERVE"
-	Meter                                CapabilityRequiredDeclaration = "METER"
-	OnlineEditing                        CapabilityRequiredDeclaration = "ONLINE_EDITING"
-	ReadEdge                             CapabilityRequiredDeclaration = "READ_EDGE"
-	RevisionQuery                        CapabilityRequiredDeclaration = "REVISION_QUERY"
-	TenantDelete                         CapabilityRequiredDeclaration = "TENANT_DELETE"
-	VersionedModel                       CapabilityRequiredDeclaration = "VERSIONED_MODEL"
-)
-
-type ResultExposureMode string
-
-const (
-	ConsumeOnly              ResultExposureMode = "CONSUME_ONLY"
-	ResultExposureModeEXPORT ResultExposureMode = "EXPORT"
-	ResultExposureModeREAD   ResultExposureMode = "READ"
-)
-
-// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
-// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
-type ResourceGrantPermission string
-
-const (
-	ResourceGrantPermissionConsume  ResourceGrantPermission = "consume"
-	ResourceGrantPermissionDiscover ResourceGrantPermission = "discover"
-	ResourceGrantPermissionExecute  ResourceGrantPermission = "execute"
-	ResourceGrantPermissionRead     ResourceGrantPermission = "read"
-)
-
-// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
-type LlmProviderCredentialMode string
-
-const (
-	LlmProviderCredentialModeNONE LlmProviderCredentialMode = "NONE"
-	SecretRef                     LlmProviderCredentialMode = "SECRET_REF"
-)
-
-// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
-type ExpectedHeadState string
-
-const (
-	ExpectedHeadStateABSENT ExpectedHeadState = "ABSENT"
-	ExpectedHeadStateFOUND  ExpectedHeadState = "FOUND"
-)
-
-// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
-// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
-type ModerationTimeoutDuration string
-
-const (
-	OneDay    ModerationTimeoutDuration = "ONE_DAY"
-	OneHour   ModerationTimeoutDuration = "ONE_HOUR"
-	SevenDays ModerationTimeoutDuration = "SEVEN_DAYS"
-)
-
-// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
-// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
-type ModerationReportType string
-
-const (
-	Illegal       ModerationReportType = "illegal"
-	Impersonation ModerationReportType = "impersonation"
-	Malware       ModerationReportType = "malware"
-	Nudity        ModerationReportType = "nudity"
-	Other         ModerationReportType = "other"
-	Profanity     ModerationReportType = "profanity"
-	Spam          ModerationReportType = "spam"
-)
-
-// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
-// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
-type ModerationResolutionAction string
-
-const (
-	Ban                              ModerationResolutionAction = "ban"
-	Dismiss                          ModerationResolutionAction = "dismiss"
-	Escalate                         ModerationResolutionAction = "escalate"
-	Kick                             ModerationResolutionAction = "kick"
-	ModerationResolutionActionDelete ModerationResolutionAction = "delete"
-)
-
-// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
-// resolved。
-type ModerationResolutionStatus string
-
-const (
-	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
-	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
-)
-
-type TenantQuotaFeature string
-
-const (
-	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
-	AgentTokens       TenantQuotaFeature = "agent_tokens"
-	AutomationRuns    TenantQuotaFeature = "automation_runs"
-)
-
-type ChannelType string
-
-const (
-	Forum  ChannelType = "forum"
-	Stream ChannelType = "stream"
-)
-
-// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
-//
-// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
-//
-// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
-//
-// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
-type WorkspaceVisibility string
-
-const (
-	Private                 WorkspaceVisibility = "private"
-	WorkspaceVisibilityOpen WorkspaceVisibility = "open"
-)
-
-// ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
-// seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
-type ActionDispatchState string
-
-const (
-	ActionDispatchStateABORTED       ActionDispatchState = "ABORTED"
-	ActionDispatchStateNOTDISPATCHED ActionDispatchState = "NOT_DISPATCHED"
-	ActionDispatchStateUNKNOWN       ActionDispatchState = "UNKNOWN"
-	Dispatched                       ActionDispatchState = "DISPATCHED"
-)
-
-// ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
-// 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
-type ActionGateState string
-
-const (
-	ActionGateStateDENIED     ActionGateState = "DENIED"
-	ActionGateStateEVALUATING ActionGateState = "EVALUATING"
-	ActionGateStateEXPIRED    ActionGateState = "EXPIRED"
-	ActionGateStateREVOKED    ActionGateState = "REVOKED"
-	ActionGateStateWAITING    ActionGateState = "WAITING"
-	Allowed                   ActionGateState = "ALLOWED"
+	AgentToolBindingStatusACTIVE  AgentToolBindingStatus = "ACTIVE"
+	AgentToolBindingStatusPENDING AgentToolBindingStatus = "PENDING"
+	AgentToolBindingStatusREVOKED AgentToolBindingStatus = "REVOKED"
+	NoPermission                  AgentToolBindingStatus = "NO_PERMISSION"
 )
 
 // 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
@@ -10995,90 +9048,6 @@ const (
 	WaitingApproval              ReasonCode = "WAITING_APPROVAL"
 )
 
-// 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
-type ResourceState string
-
-const (
-	ResourceStateACTIVE       ResourceState = "ACTIVE"
-	ResourceStateDELETED      ResourceState = "DELETED"
-	ResourceStateDELETING     ResourceState = "DELETING"
-	ResourceStateFAILED       ResourceState = "FAILED"
-	ResourceStatePROVISIONING ResourceState = "PROVISIONING"
-	ResourceStateUNKNOWN      ResourceState = "UNKNOWN"
-	RetainedReadOnly          ResourceState = "RETAINED_READ_ONLY"
-)
-
-// DD-126(4)：ACTIVE＝持久 ACTIVE、在有效期内、次数未尽且每个 Scope 的同意摘要与当前解析定义相等；NEEDS_RENEWAL＝其余条件成立但有
-// Scope 的同意摘要已变化或当前已无可解析定义；NOT_YET_VALID/EXPIRED/USES_EXHAUSTED
-// 按时钟与使用次数；REVOKING/REVOKED/SUPERSEDED 取持久状态。
-type DelegationEffectiveState string
-
-const (
-	DelegationEffectiveStateACTIVE     DelegationEffectiveState = "ACTIVE"
-	DelegationEffectiveStateEXPIRED    DelegationEffectiveState = "EXPIRED"
-	DelegationEffectiveStateREVOKED    DelegationEffectiveState = "REVOKED"
-	DelegationEffectiveStateREVOKING   DelegationEffectiveState = "REVOKING"
-	DelegationEffectiveStateSUPERSEDED DelegationEffectiveState = "SUPERSEDED"
-	NeedsRenewal                       DelegationEffectiveState = "NEEDS_RENEWAL"
-	NotYetValid                        DelegationEffectiveState = "NOT_YET_VALID"
-	UsesExhausted                      DelegationEffectiveState = "USES_EXHAUSTED"
-)
-
-type GrantState string
-
-const (
-	PurpleACTIVE    GrantState = "ACTIVE"
-	PurpleEXPIRED   GrantState = "EXPIRED"
-	PurpleREVOKED   GrantState = "REVOKED"
-	StateREVOKING   GrantState = "REVOKING"
-	StateSUPERSEDED GrantState = "SUPERSEDED"
-)
-
-type AgentPrincipalState string
-
-const (
-	AgentPrincipalStateACTIVE   AgentPrincipalState = "ACTIVE"
-	AgentPrincipalStateDISABLED AgentPrincipalState = "DISABLED"
-)
-
-type ChannelBindingStatus string
-
-const (
-	FluffyACTIVE   ChannelBindingStatus = "ACTIVE"
-	StatusDISABLED ChannelBindingStatus = "DISABLED"
-	StatusERROR    ChannelBindingStatus = "ERROR"
-)
-
-// 03 §7 的静态运行投影状态，不承载 Invocation 动态准入。
-type AgentRuntimeProjectionState string
-
-const (
-	AgentRuntimeProjectionStateACTIVE  AgentRuntimeProjectionState = "ACTIVE"
-	AgentRuntimeProjectionStateERROR   AgentRuntimeProjectionState = "ERROR"
-	AgentRuntimeProjectionStatePENDING AgentRuntimeProjectionState = "PENDING"
-	AgentRuntimeProjectionStateREVOKED AgentRuntimeProjectionState = "REVOKED"
-)
-
-// 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
-type AgentInstallationState string
-
-const (
-	AgentInstallationStateACTIVE       AgentInstallationState = "ACTIVE"
-	AgentInstallationStateDISABLED     AgentInstallationState = "DISABLED"
-	AgentInstallationStateERROR        AgentInstallationState = "ERROR"
-	AgentInstallationStatePROVISIONING AgentInstallationState = "PROVISIONING"
-	Draining                           AgentInstallationState = "DRAINING"
-)
-
-type AgentToolBindingStatus string
-
-const (
-	AgentToolBindingStatusACTIVE  AgentToolBindingStatus = "ACTIVE"
-	AgentToolBindingStatusPENDING AgentToolBindingStatus = "PENDING"
-	AgentToolBindingStatusREVOKED AgentToolBindingStatus = "REVOKED"
-	NoPermission                  AgentToolBindingStatus = "NO_PERMISSION"
-)
-
 type AgentInstallationToolSource string
 
 const (
@@ -11099,32 +9068,32 @@ const (
 	OwnerOnly AgentRespondToMode = "OWNER_ONLY"
 )
 
-type InvocationStatus string
+type AgentInvocationViewStatus string
 
 const (
-	Created         InvocationStatus = "CREATED"
-	Dispatching     InvocationStatus = "DISPATCHING"
-	FluffyUNKNOWN   InvocationStatus = "UNKNOWN"
-	StatusCANCELED  InvocationStatus = "CANCELED"
-	StatusCOMPLETED InvocationStatus = "COMPLETED"
-	StatusFAILED    InvocationStatus = "FAILED"
-	StatusRUNNING   InvocationStatus = "RUNNING"
+	AgentInvocationViewStatusCANCELED  AgentInvocationViewStatus = "CANCELED"
+	AgentInvocationViewStatusCOMPLETED AgentInvocationViewStatus = "COMPLETED"
+	AgentInvocationViewStatusFAILED    AgentInvocationViewStatus = "FAILED"
+	AgentInvocationViewStatusRUNNING   AgentInvocationViewStatus = "RUNNING"
+	AgentInvocationViewStatusUNKNOWN   AgentInvocationViewStatus = "UNKNOWN"
+	Created                            AgentInvocationViewStatus = "CREATED"
+	Dispatching                        AgentInvocationViewStatus = "DISPATCHING"
 )
 
 type AgentMemoryEntryPageState string
 
 const (
-	BoundExceeded    AgentMemoryEntryPageState = "BOUND_EXCEEDED"
-	StateCOMPLETE    AgentMemoryEntryPageState = "COMPLETE"
-	TentacledUNKNOWN AgentMemoryEntryPageState = "UNKNOWN"
+	AgentMemoryEntryPageStateCOMPLETE AgentMemoryEntryPageState = "COMPLETE"
+	AgentMemoryEntryPageStateUNKNOWN  AgentMemoryEntryPageState = "UNKNOWN"
+	BoundExceeded                     AgentMemoryEntryPageState = "BOUND_EXCEEDED"
 )
 
 type AgentMemoryReadViewState string
 
 const (
-	StateABSENT AgentMemoryReadViewState = "ABSENT"
-	StateFOUND  AgentMemoryReadViewState = "FOUND"
-	Unreadable  AgentMemoryReadViewState = "UNREADABLE"
+	AgentMemoryReadViewStateABSENT AgentMemoryReadViewState = "ABSENT"
+	AgentMemoryReadViewStateFOUND  AgentMemoryReadViewState = "FOUND"
+	Unreadable                     AgentMemoryReadViewState = "UNREADABLE"
 )
 
 type AgentMentionOutcomeState string
@@ -11136,14 +9105,14 @@ const (
 	Replied                         AgentMentionOutcomeState = "REPLIED"
 )
 
-type SessionStatus string
+type AgentSessionViewStatus string
 
 const (
-	Starting        SessionStatus = "STARTING"
-	StatusCLOSED    SessionStatus = "CLOSED"
-	StatusPENDING   SessionStatus = "PENDING"
-	StickyUNKNOWN   SessionStatus = "UNKNOWN"
-	TentacledACTIVE SessionStatus = "ACTIVE"
+	AgentSessionViewStatusACTIVE  AgentSessionViewStatus = "ACTIVE"
+	AgentSessionViewStatusCLOSED  AgentSessionViewStatus = "CLOSED"
+	AgentSessionViewStatusPENDING AgentSessionViewStatus = "PENDING"
+	AgentSessionViewStatusUNKNOWN AgentSessionViewStatus = "UNKNOWN"
+	Starting                      AgentSessionViewStatus = "STARTING"
 )
 
 // Codex FileUpdateChange.kind 的标签（add/delete/update）；update 的改名目标另以 movePath 给出。
@@ -11211,6 +9180,20 @@ const (
 	LocalACP       RuntimeProfileKind = "LOCAL_ACP"
 	RemoteProvider RuntimeProfileKind = "REMOTE_PROVIDER"
 	ServerCodex    RuntimeProfileKind = "SERVER_CODEX"
+)
+
+type AgentMemoryColdWrite string
+
+const (
+	AgentMemoryColdWriteDISABLED AgentMemoryColdWrite = "DISABLED"
+	InvocationScoped             AgentMemoryColdWrite = "INVOCATION_SCOPED"
+)
+
+type AgentMemoryCoreWrite string
+
+const (
+	AgentWithApproval AgentMemoryCoreWrite = "AGENT_WITH_APPROVAL"
+	HumanOnly         AgentMemoryCoreWrite = "HUMAN_ONLY"
 )
 
 type AgentVersionState string
@@ -11365,6 +9348,54 @@ const (
 	Paused                  AutomationState = "PAUSED"
 )
 
+type AutomationVersionContentActionKind string
+
+const (
+	AgentTurn   AutomationVersionContentActionKind = "AGENT_TURN"
+	PostMessage AutomationVersionContentActionKind = "POST_MESSAGE"
+)
+
+type AutomationStepAction string
+
+const (
+	AddReaction     AutomationStepAction = "add_reaction"
+	CallWebhook     AutomationStepAction = "call_webhook"
+	Delay           AutomationStepAction = "delay"
+	RequestApproval AutomationStepAction = "request_approval"
+	SendMessage     AutomationStepAction = "send_message"
+	SetChannelTopic AutomationStepAction = "set_channel_topic"
+)
+
+// 原 HTTP 方法，缺省 POST。
+type AutomationStepMethod string
+
+const (
+	AutomationStepMethodDELETE AutomationStepMethod = "DELETE"
+	AutomationStepMethodGET    AutomationStepMethod = "GET"
+	AutomationStepMethodPOST   AutomationStepMethod = "POST"
+	Patch                      AutomationStepMethod = "PATCH"
+	Put                        AutomationStepMethod = "PUT"
+)
+
+type AutomationTriggerKind string
+
+const (
+	AutomationTriggerKindMENTION  AutomationTriggerKind = "MENTION"
+	AutomationTriggerKindSCHEDULE AutomationTriggerKind = "SCHEDULE"
+	ChannelMessage                AutomationTriggerKind = "CHANNEL_MESSAGE"
+	DiffPosted                    AutomationTriggerKind = "DIFF_POSTED"
+	ReactionAdded                 AutomationTriggerKind = "REACTION_ADDED"
+	Webhook                       AutomationTriggerKind = "WEBHOOK"
+)
+
+// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+type AutomationScheduleSpecKind string
+
+const (
+	Cron     AutomationScheduleSpecKind = "CRON"
+	Interval AutomationScheduleSpecKind = "INTERVAL"
+)
+
 type AutomationStepStatus string
 
 const (
@@ -11376,6 +9407,30 @@ const (
 	Running                             AutomationStepStatus = "running"
 	Skipped                             AutomationStepStatus = "skipped"
 	Unknown                             AutomationStepStatus = "unknown"
+)
+
+// ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
+// seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
+type ActionDispatchState string
+
+const (
+	ActionDispatchStateABORTED       ActionDispatchState = "ABORTED"
+	ActionDispatchStateNOTDISPATCHED ActionDispatchState = "NOT_DISPATCHED"
+	ActionDispatchStateUNKNOWN       ActionDispatchState = "UNKNOWN"
+	Dispatched                       ActionDispatchState = "DISPATCHED"
+)
+
+// ActionExecution 的准入门禁状态（.design/03 §6）。它与 dispatch_state
+// 是两台独立状态机：门禁说的是「允许不允许」，派发说的是「副作用发生没发生」，合并后无法表达「准入通过但派发结果不明」。
+type ActionGateState string
+
+const (
+	ActionGateStateDENIED     ActionGateState = "DENIED"
+	ActionGateStateEVALUATING ActionGateState = "EVALUATING"
+	ActionGateStateEXPIRED    ActionGateState = "EXPIRED"
+	ActionGateStateREVOKED    ActionGateState = "REVOKED"
+	ActionGateStateWAITING    ActionGateState = "WAITING"
+	Allowed                   ActionGateState = "ALLOWED"
 )
 
 // TaskProjection 的状态（.design/03 §6、.design/06 §3.1）。RUNNING 之外的值都是 Temporal 的终态，与其 close
@@ -11476,6 +9531,27 @@ const (
 	Deprecated                      CapabilityContractStatus = "DEPRECATED"
 )
 
+type WorkspaceChannelCreateChannelType string
+
+const (
+	Forum  WorkspaceChannelCreateChannelType = "forum"
+	Stream WorkspaceChannelCreateChannelType = "stream"
+)
+
+// 只在准入事务内改写 Core 的 Workspace 可见性；已有成员不变，不写 SpiceDB，Relay 投影保持 private、不发送 visibility 标签。
+//
+// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+//
+// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+//
+// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+type WorkspaceVisibility string
+
+const (
+	Private                 WorkspaceVisibility = "private"
+	WorkspaceVisibilityOpen WorkspaceVisibility = "open"
+)
+
 // BuzzIdentityBinding 状态机。custody=CLIENT 时跳过 PENDING_SECRET，自 RECONCILING 起始。
 type BuzzIdentityState string
 
@@ -11508,11 +9584,11 @@ const (
 	ValidateBinding                      ComponentConformanceOperation = "validate_binding"
 )
 
-type ConnectorKind string
+type ComponentConformancePlanConnectorKind string
 
 const (
-	ProtocolPeer  ConnectorKind = "PROTOCOL_PEER"
-	RemoteAdapter ConnectorKind = "REMOTE_ADAPTER"
+	ProtocolPeer  ComponentConformancePlanConnectorKind = "PROTOCOL_PEER"
+	RemoteAdapter ComponentConformancePlanConnectorKind = "REMOTE_ADAPTER"
 )
 
 // DD-124(2): the vector document a JSON Pointer addresses — the step input or its expected
@@ -11548,32 +9624,32 @@ const (
 	OperationID                                  CapabilityVectorCaptureSlot = "OPERATION_ID"
 )
 
-type MCPResultKind string
+type ComponentConformanceStepExpectedMCPResultKind string
 
 const (
-	MCPResultKindERROR MCPResultKind = "ERROR"
-	Result             MCPResultKind = "RESULT"
+	ComponentConformanceStepExpectedMCPResultKindERROR ComponentConformanceStepExpectedMCPResultKind = "ERROR"
+	Result                                             ComponentConformanceStepExpectedMCPResultKind = "RESULT"
 )
 
-type PlatformPortKey string
+type PlatformBuildInfoPlatformPortKeysItem string
 
 const (
-	AIGateway          PlatformPortKey = "AI_GATEWAY"
-	ApprovalWorkflow   PlatformPortKey = "APPROVAL_WORKFLOW"
-	Authorization      PlatformPortKey = "AUTHORIZATION"
-	CollaborationRelay PlatformPortKey = "COLLABORATION_RELAY"
-	CoreInternal       PlatformPortKey = "CORE_INTERNAL"
-	IdentityEdge       PlatformPortKey = "IDENTITY_EDGE"
-	MeteringBilling    PlatformPortKey = "METERING_BILLING"
-	SecretStore        PlatformPortKey = "SECRET_STORE"
+	AIGateway          PlatformBuildInfoPlatformPortKeysItem = "AI_GATEWAY"
+	ApprovalWorkflow   PlatformBuildInfoPlatformPortKeysItem = "APPROVAL_WORKFLOW"
+	Authorization      PlatformBuildInfoPlatformPortKeysItem = "AUTHORIZATION"
+	CollaborationRelay PlatformBuildInfoPlatformPortKeysItem = "COLLABORATION_RELAY"
+	CoreInternal       PlatformBuildInfoPlatformPortKeysItem = "CORE_INTERNAL"
+	IdentityEdge       PlatformBuildInfoPlatformPortKeysItem = "IDENTITY_EDGE"
+	MeteringBilling    PlatformBuildInfoPlatformPortKeysItem = "METERING_BILLING"
+	SecretStore        PlatformBuildInfoPlatformPortKeysItem = "SECRET_STORE"
 )
 
-type Subject string
+type PlatformBuildInfoSubject string
 
 const (
-	BuzzWeb     Subject = "BUZZ_WEB"
-	SubjectCORE Subject = "CORE"
-	Worker      Subject = "WORKER"
+	BuzzWeb                      PlatformBuildInfoSubject = "BUZZ_WEB"
+	PlatformBuildInfoSubjectCORE PlatformBuildInfoSubject = "CORE"
+	Worker                       PlatformBuildInfoSubject = "WORKER"
 )
 
 type ComponentReleaseStatus string
@@ -11585,25 +9661,25 @@ const (
 	Rejected                       ComponentReleaseStatus = "REJECTED"
 )
 
-type ItemState string
+type ConversationViewState string
 
 const (
-	StateDISABLED     ItemState = "DISABLED"
-	StatePROVISIONING ItemState = "PROVISIONING"
-	StateRECONCILING  ItemState = "RECONCILING"
-	StickyACTIVE      ItemState = "ACTIVE"
+	ConversationViewStateACTIVE       ConversationViewState = "ACTIVE"
+	ConversationViewStateDISABLED     ConversationViewState = "DISABLED"
+	ConversationViewStatePROVISIONING ConversationViewState = "PROVISIONING"
+	ConversationViewStateRECONCILING  ConversationViewState = "RECONCILING"
 )
 
-type JoinActionKey string
+type DiscoverableWorkspaceJoinActionKey string
 
 const (
-	WorkspaceJoin JoinActionKey = "workspace.join"
+	WorkspaceJoin DiscoverableWorkspaceJoinActionKey = "workspace.join"
 )
 
-type LeaveActionKey string
+type DiscoverableWorkspaceLeaveActionKey string
 
 const (
-	WorkspaceLeave LeaveActionKey = "workspace.leave"
+	WorkspaceLeave DiscoverableWorkspaceLeaveActionKey = "workspace.leave"
 )
 
 // WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
@@ -11617,10 +9693,10 @@ const (
 	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
 )
 
-type UpdateActionKey string
+type DiscoverableWorkspaceUpdateActionKey string
 
 const (
-	UpdateActionKeyWorkspaceUpdate UpdateActionKey = "workspace.update"
+	DiscoverableWorkspaceUpdateActionKeyWorkspaceUpdate DiscoverableWorkspaceUpdateActionKey = "workspace.update"
 )
 
 // 解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。
@@ -11666,11 +9742,25 @@ const (
 	TenantMembershipStateREVOKING     TenantMembershipState = "REVOKING"
 )
 
-type BindingKind string
+type LegacySecretRefBindingKind string
 
 const (
-	Control BindingKind = "CONTROL"
-	Human   BindingKind = "HUMAN"
+	Control LegacySecretRefBindingKind = "CONTROL"
+	Human   LegacySecretRefBindingKind = "HUMAN"
+)
+
+// 原 Buzz NIP-56 举报类型（buzz-relay handlers/report.rs::REPORT_TYPES，SF-BUZ-52）。线格式即 kind 1984
+// 目标标签第三元素，Relay 只接受这七个值（DD-125(2)）。
+type ModerationReportType string
+
+const (
+	Illegal       ModerationReportType = "illegal"
+	Impersonation ModerationReportType = "impersonation"
+	Malware       ModerationReportType = "malware"
+	Nudity        ModerationReportType = "nudity"
+	Other         ModerationReportType = "other"
+	Profanity     ModerationReportType = "profanity"
+	Spam          ModerationReportType = "spam"
 )
 
 // Relay moderation_reports.status（buzz migrations/0006_moderation.sql 的 CHECK
@@ -11693,11 +9783,132 @@ const (
 	Pubkey ModerationReportTargetKind = "pubkey"
 )
 
-type Permission string
+type NativeHumanScopeQueryPermission string
 
 const (
-	PermissionDiscover Permission = "discover"
-	PermissionManage   Permission = "manage"
+	NativeHumanScopeQueryPermissionDiscover NativeHumanScopeQueryPermission = "discover"
+	NativeHumanScopeQueryPermissionManage   NativeHumanScopeQueryPermission = "manage"
+)
+
+type ApplicationCallIdentityMode string
+
+const (
+	EndUserToken    ApplicationCallIdentityMode = "END_USER_TOKEN"
+	InstanceService ApplicationCallIdentityMode = "INSTANCE_SERVICE"
+	TenantService   ApplicationCallIdentityMode = "TENANT_SERVICE"
+)
+
+type ApplicationModelCallMode string
+
+const (
+	ApplicationModelCallModeNONE ApplicationModelCallMode = "NONE"
+	PlatformLlmRoute             ApplicationModelCallMode = "PLATFORM_LLM_ROUTE"
+	SelfManagedModel             ApplicationModelCallMode = "SELF_MANAGED_MODEL"
+)
+
+type CapabilityPermission string
+
+const (
+	Approve                      CapabilityPermission = "approve"
+	Audit                        CapabilityPermission = "audit"
+	CapabilityPermissionConsume  CapabilityPermission = "consume"
+	CapabilityPermissionDelete   CapabilityPermission = "delete"
+	CapabilityPermissionDiscover CapabilityPermission = "discover"
+	CapabilityPermissionExecute  CapabilityPermission = "execute"
+	CapabilityPermissionManage   CapabilityPermission = "manage"
+	CapabilityPermissionRead     CapabilityPermission = "read"
+	Create                       CapabilityPermission = "create"
+	Delegate                     CapabilityPermission = "delegate"
+	Export                       CapabilityPermission = "export"
+	Share                        CapabilityPermission = "share"
+	TransferOwner                CapabilityPermission = "transfer_owner"
+	Update                       CapabilityPermission = "update"
+)
+
+type CapabilitySurface string
+
+const (
+	Action CapabilitySurface = "ACTION"
+	Tool   CapabilitySurface = "TOOL"
+)
+
+type CapabilityRequiredDeclaration string
+
+const (
+	CapabilityRequiredDeclarationCANCEL  CapabilityRequiredDeclaration = "CANCEL"
+	CapabilityRequiredDeclarationOBSERVE CapabilityRequiredDeclaration = "OBSERVE"
+	Meter                                CapabilityRequiredDeclaration = "METER"
+	OnlineEditing                        CapabilityRequiredDeclaration = "ONLINE_EDITING"
+	ReadEdge                             CapabilityRequiredDeclaration = "READ_EDGE"
+	RevisionQuery                        CapabilityRequiredDeclaration = "REVISION_QUERY"
+	TenantDelete                         CapabilityRequiredDeclaration = "TENANT_DELETE"
+	VersionedModel                       CapabilityRequiredDeclaration = "VERSIONED_MODEL"
+)
+
+// 仅 resource.grant_read/revoke_read：授予或收回的 permission，省略即 read。AGENT 接收者按其工具契约所需 permission
+// 授予（DD-122）；HUMAN 与 SERVICE 接收者只接受 read
+type ResourceGrantPermission string
+
+const (
+	ResourceGrantPermissionConsume  ResourceGrantPermission = "consume"
+	ResourceGrantPermissionDiscover ResourceGrantPermission = "discover"
+	ResourceGrantPermissionExecute  ResourceGrantPermission = "execute"
+	ResourceGrantPermissionRead     ResourceGrantPermission = "read"
+)
+
+// 提供方认证的显式封闭选择；NONE 不豁免 Gateway 调用者认证或业务授权。
+type LlmProviderCredentialMode string
+
+const (
+	LlmProviderCredentialModeNONE LlmProviderCredentialMode = "NONE"
+	SecretRef                     LlmProviderCredentialMode = "SECRET_REF"
+)
+
+// 原生读取的确定状态；UNKNOWN/UNREADABLE 不构成覆盖写许可。
+type AgentMemoryWriteInputExpectedHeadState string
+
+const (
+	AgentMemoryWriteInputExpectedHeadStateABSENT AgentMemoryWriteInputExpectedHeadState = "ABSENT"
+	AgentMemoryWriteInputExpectedHeadStateFOUND  AgentMemoryWriteInputExpectedHeadState = "FOUND"
+)
+
+// 原禁言时长预设（moderation/lib/timeout.ts::TIMEOUT_PRESETS：1 小时、24 小时、7 天）。到期时刻由 Core
+// 在准入时以数据库时钟冻结，不接受调用方给出的绝对时刻（DD-125(2)）。
+type ModerationTimeoutDuration string
+
+const (
+	OneDay    ModerationTimeoutDuration = "ONE_DAY"
+	OneHour   ModerationTimeoutDuration = "ONE_HOUR"
+	SevenDays ModerationTimeoutDuration = "SEVEN_DAYS"
+)
+
+// 审核队列可提交的 kind 9044 action 标签（原 settings/lib/moderationQueue.ts::resolvableActions）。9044
+// 只记决定、不执法；delete/kick/ban 须先经各自受治理动作执法（DD-125(2)）。原队列不提供禁言，因此不含 timeout。
+type ModerationResolutionAction string
+
+const (
+	Ban                              ModerationResolutionAction = "ban"
+	Dismiss                          ModerationResolutionAction = "dismiss"
+	Escalate                         ModerationResolutionAction = "escalate"
+	Kick                             ModerationResolutionAction = "kick"
+	ModerationResolutionActionDelete ModerationResolutionAction = "delete"
+)
+
+// kind 9044 的 status 标签（moderation_commands.rs，SF-BUZ-52）：dismiss 只与 dismissed 配对，其余处理一律
+// resolved。
+type ModerationResolutionStatus string
+
+const (
+	ModerationResolutionStatusDismissed ModerationResolutionStatus = "dismissed"
+	ModerationResolutionStatusResolved  ModerationResolutionStatus = "resolved"
+)
+
+type TenantQuotaFeature string
+
+const (
+	AgentMemoryWrites TenantQuotaFeature = "agent_memory_writes"
+	AgentTokens       TenantQuotaFeature = "agent_tokens"
+	AutomationRuns    TenantQuotaFeature = "automation_runs"
 )
 
 // 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作
@@ -11727,24 +9938,24 @@ const (
 	TenantStateSUSPENDING   TenantState = "SUSPENDING"
 )
 
-type ActionKey string
+type PlatformToolViewActionKey string
 
 const (
-	AgentMemoryEntryList ActionKey = "agent.memory.entry.list"
-	AgentMemoryEntryRead ActionKey = "agent.memory.entry.read"
+	AgentMemoryEntryList PlatformToolViewActionKey = "agent.memory.entry.list"
+	AgentMemoryEntryRead PlatformToolViewActionKey = "agent.memory.entry.read"
 )
 
-type SourceEnum string
+type PlatformToolViewSource string
 
 const (
-	SourcePLATFORMNATIVE SourceEnum = "PLATFORM_NATIVE"
+	PlatformToolViewSourcePLATFORMNATIVE PlatformToolViewSource = "PLATFORM_NATIVE"
 )
 
-type ToolStatus string
+type PlatformToolViewStatus string
 
 const (
-	IndigoACTIVE       ToolStatus = "ACTIVE"
-	StatusPROVISIONING ToolStatus = "PROVISIONING"
+	PlatformToolViewStatusACTIVE       PlatformToolViewStatus = "ACTIVE"
+	PlatformToolViewStatusPROVISIONING PlatformToolViewStatus = "PROVISIONING"
 )
 
 type ProjectsGitQueryRequestView string
@@ -11838,29 +10049,29 @@ const (
 	WorkItems        ProjectsQueryRequestView = "WORK_ITEMS"
 )
 
-type ProtocolSessionViewState string
+type ProtocolSessionReconcileRoundState string
 
 const (
-	FluffyCONFLICT ProtocolSessionViewState = "CONFLICT"
-	FluffyDIRTY    ProtocolSessionViewState = "DIRTY"
-	FluffyEXPIRED  ProtocolSessionViewState = "EXPIRED"
-	FluffyFAILED   ProtocolSessionViewState = "FAILED"
-	FluffyREVOKED  ProtocolSessionViewState = "REVOKED"
-	FluffySAVED    ProtocolSessionViewState = "SAVED"
-	IndigoUNKNOWN  ProtocolSessionViewState = "UNKNOWN"
-	Opening        ProtocolSessionViewState = "OPENING"
-	ReadOnly       ProtocolSessionViewState = "READ_ONLY"
-	StateADMITTED  ProtocolSessionViewState = "ADMITTED"
-	StateCLOSED    ProtocolSessionViewState = "CLOSED"
-	StateOPEN      ProtocolSessionViewState = "OPEN"
+	Opening                                    ProtocolSessionReconcileRoundState = "OPENING"
+	ProtocolSessionReconcileRoundStateADMITTED ProtocolSessionReconcileRoundState = "ADMITTED"
+	ProtocolSessionReconcileRoundStateCLOSED   ProtocolSessionReconcileRoundState = "CLOSED"
+	ProtocolSessionReconcileRoundStateCONFLICT ProtocolSessionReconcileRoundState = "CONFLICT"
+	ProtocolSessionReconcileRoundStateDIRTY    ProtocolSessionReconcileRoundState = "DIRTY"
+	ProtocolSessionReconcileRoundStateEXPIRED  ProtocolSessionReconcileRoundState = "EXPIRED"
+	ProtocolSessionReconcileRoundStateFAILED   ProtocolSessionReconcileRoundState = "FAILED"
+	ProtocolSessionReconcileRoundStateOPEN     ProtocolSessionReconcileRoundState = "OPEN"
+	ProtocolSessionReconcileRoundStateREVOKED  ProtocolSessionReconcileRoundState = "REVOKED"
+	ProtocolSessionReconcileRoundStateSAVED    ProtocolSessionReconcileRoundState = "SAVED"
+	ProtocolSessionReconcileRoundStateUNKNOWN  ProtocolSessionReconcileRoundState = "UNKNOWN"
+	ReadOnly                                   ProtocolSessionReconcileRoundState = "READ_ONLY"
 )
 
-type Operation string
+type PulsePublishRequestOperation string
 
 const (
-	Like   Operation = "LIKE"
-	Note   Operation = "NOTE"
-	Unlike Operation = "UNLIKE"
+	Like   PulsePublishRequestOperation = "LIKE"
+	Note   PulsePublishRequestOperation = "NOTE"
+	Unlike PulsePublishRequestOperation = "UNLIKE"
 )
 
 type PulseQueryRequestView string
@@ -11891,10 +10102,10 @@ const (
 	ReminderStatusPending   ReminderStatus = "pending"
 )
 
-type CreateActionKey string
+type RoleWorkspacePageCreateActionKey string
 
 const (
-	WorkspaceCreate CreateActionKey = "workspace.create"
+	WorkspaceCreate RoleWorkspacePageCreateActionKey = "workspace.create"
 )
 
 // 当前 Principal 经 fresh Tenant manage 检查、按该 Workspace 当前状态可发起的暂停（ACTIVE 或
@@ -11949,10 +10160,10 @@ const (
 	TenantInvitationStatusREVOKED TenantInvitationStatus = "REVOKED"
 )
 
-type SetActionKey string
+type TenantQuotaPageSetActionKey string
 
 const (
-	TenantQuotaSet SetActionKey = "tenant.quota.set"
+	TenantQuotaSet TenantQuotaPageSetActionKey = "tenant.quota.set"
 )
 
 // 用量与账单页中额度、账单两类 Customer
@@ -12080,4 +10291,12 @@ type AutomationScheduleSource string
 
 const (
 	AutomationScheduleSourceSCHEDULE AutomationScheduleSource = "SCHEDULE"
+)
+
+type NativeScopeResult string
+
+const (
+	AbsentFenced           NativeScopeResult = "ABSENT_FENCED"
+	NativeScopeResultFOUND NativeScopeResult = "FOUND"
+	Refused                NativeScopeResult = "REFUSED"
 )
