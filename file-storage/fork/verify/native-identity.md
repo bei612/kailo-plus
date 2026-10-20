@@ -3751,3 +3751,39 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
 仅两项既有 G 生成物改变产品字节；历史台账/来源回执不覆盖。
 分类是原版来源与授权用途证据，不是 242 文件全语义或全业务验收。
 本批没有部署、binding ACTIVE、普通 SSO 上传回读或新的 full-gate 通过结果。
+
+## 首次 OIDC 登录即时开户（2026-10-20，DD-127(9)，源码阶段）
+
+1. 权威：`.design/02` DD-127(9) 与 `.design/16` V-SCN-171（用户 2026-10-20 批准）。固定 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 没有外部 OIDC 自动建号：
+   `common/auth/connector-pydio.go::DefaultConnectorScanner` 只加载本地密码 connector，原生建号只有
+   `idm/user/rest/handler.go::PutUser`（建 user role、写 `AuditUserCreate`，更新时只回填已有 `pydio:` 属性）与 CLI；
+   `idm/user/dao/sql/sql.go::Add` 在目标路径已有节点时就地更新。本节是二开新增能力，不是上游行为。
+2. 影响：解析与开户集中于 `common/auth/native-oidc-user.go::ResolveOrProvisionNativeOIDCUser`。浏览器回调
+   （`frontend/web/kailo-oidc.go`）传入已按 connector issuer 与专属 client 校验的 `*oidc.IDToken`；文档 PAT
+   （`idm/oauth/rest/protocol-token.go`、`idm/oauth/grpc/protocol-document.go`）、WOPI（`gateway/wopi/platform-session.go`）
+   与原生动作凭据（`common/auth/native-human-session.go`）传 `nil`，只解析不开户。原 `NativeOIDCUserUUID`、
+   `ResolveNativeOIDCUser` 与回调里重复的 SearchOne/VerifyContext 已并入该入口；之后的原生 `oidc/login` policy、
+   `CreateLogin/GetLogin/LoginChallengeCode` 不变。connector 识别与链接校验由 `auth.NativeOIDCConnector.Validate`
+   单点负责，回调的 `validate` 复用它。没有 Core API、数据库 schema、Workflow 或依赖锁变化。
+3. 规则与副作用：解析顺序显式关联 → 派生 UUID（`uuid.NewSHA1(固定命名空间, issuer\0subject)`）上
+   `pydio:kailo_oidc_issuer/subject` 精确一致的账号 → 开户。开户只在 connector `provisionUsers=true`
+   （`provisionProfile=standard`）且令牌 issuer/subject/audience 与配置一致时发生；进程内互斥后先重新解析，
+   派生 UUID 被不带同一关联的账号占用即拒绝；先写原生 user role 再写用户（策略与原 PutUser 相同，根组，
+   profile standard，不写 workspace/角色/ACL），写 `AuditUserCreate`，最后按派生 UUID 回读。登录名为规范化
+   `preferred_username`，被任一用户或组占用时改为 `<名称>-<sha256(issuer\0subject) 前 12 hex>`（不合法时
+   `oidc-<摘要>`），仍占用即拒绝。`name` 写显示名，`email` 仅 `email_verified=true` 时写入；IdP groups 不读取。
+   原生 REST `PutUser` 以 `auth.WithoutNativeOIDCLink` 丢弃调用方提交的两个关联属性，更新时由原逻辑回填已有值。
+   部署：`start.sh` 要求 kailo-oidc config 显式声明布尔 `provisionUsers`，为 true 时 `provisionProfile` 必须为
+   `standard`，为 false 时不得出现；`.env.example` 与 `deploy/components` 两份模板注明取值。
+4. 验证（待在 CI 节点 golang 容器运行，本机不编译）：`go test -mod=readonly ./common/auth ./frontend/web -count=1`，
+   以及受调用方改动影响的 `go vet`/编译 `./idm/oauth/... ./gateway/wopi/... ./idm/user/rest/...`。
+   `common/auth/native-oidc-provision_test.go` 以 idmtest 的 sqlite 原生 user/role/ACL 服务覆盖：首次开户的
+   账号形态、user role 与零 ACL、显式关联优先、PAT 路径与再次登录命中开户关联、8 路并发首次登录只得一个账号、
+   同名冲突的确定后缀与后缀仍占用时拒绝、开关关闭仍返回 `ErrNativeOIDCNotLinked`、issuer/audience/subject
+   不符拒绝且不建号、派生 UUID 被占用或关联属性被复制到其他 UUID 时不解析，以及 connector 校验与 REST 属性守卫。
+   `frontend/web/kailo-oidc_test.go::TestKailoOIDCFirstLoginProvisioning` 走真实回调：开启时 303、建一个账号与
+   一个 role、未验证 email 与 groups 不入账号、第二次登录不再写入；关闭时 403 且无写入。
+
+完成边界：本节只有源码与测试源码；Go 测试、镜像、部署、生产 connector 投递与三名真人首次登录验收均未执行。
+进程内互斥以单实例 Cells 部署单元为前提；与管理员同时手工创建同名用户的竞争沿用原生先查后建语义。

@@ -36,7 +36,9 @@ func (a *TokenHandler) generatePlatformDocumentToken(ctx context.Context, sessio
 	if err != nil {
 		return errors.WithMessage(errors.StatusForbidden, "document session admission unavailable")
 	}
-	user, err := commonauth.ResolveNativeOIDCUser(ctx, facts.OIDCIssuer, facts.OIDCSubject)
+	// Resolve only (DD-127(9)): Core-projected facts are not an ID token of the
+	// Cells client, and an unprovisioned HUMAN has no native ACL to open with.
+	user, err := commonauth.ResolveOrProvisionNativeOIDCUser(ctx, facts.OIDCIssuer, facts.OIDCSubject, nil)
 	if err != nil {
 		return errors.WithMessage(errors.StatusForbidden, "native HUMAN projection unavailable")
 	}

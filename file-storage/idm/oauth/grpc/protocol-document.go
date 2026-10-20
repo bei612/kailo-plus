@@ -39,7 +39,8 @@ func validatePlatformDocumentToken(ctx context.Context, request *auth.PatGenerat
 	if err != nil {
 		return errors.WithMessage(errors.StatusForbidden, "document token admission unavailable")
 	}
-	user, err := commonauth.ResolveNativeOIDCUser(ctx, facts.OIDCIssuer, facts.OIDCSubject)
+	// Resolve only (DD-127(9)): the PAT write never provisions a native user.
+	user, err := commonauth.ResolveOrProvisionNativeOIDCUser(ctx, facts.OIDCIssuer, facts.OIDCSubject, nil)
 	if err != nil || user.Uuid != request.UserUuid || user.Login != request.UserLogin ||
 		facts.ExpiresAt.Unix() != request.ExpiresAt ||
 		(scope[2] == "rw") != (facts.AdmittedMode == "EDIT") {

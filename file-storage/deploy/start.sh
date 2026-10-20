@@ -66,6 +66,12 @@ try:
     oidc = [c for c in connectors if c.get('type') == 'kailo-oidc']
     require(len(oidc) == 1 and isinstance(oidc[0].get('config'), dict), 'one native OIDC connector required')
     require(oidc[0]['config'].get('clientSecretFile') == '/run/secrets/cells_oidc_client_secret', 'native connector credential must match the Compose secret mount')
+    # First-login provisioning (DD-127(9)) is an explicit deployment decision:
+    # true creates standard native accounts, false keeps explicit links only.
+    provision = oidc[0]['config'].get('provisionUsers')
+    require(isinstance(provision, bool), 'native OIDC connector must declare provisionUsers as true or false')
+    require(oidc[0]['config'].get('provisionProfile') == 'standard' if provision else 'provisionProfile' not in oidc[0]['config'],
+            'provisionUsers true requires provisionProfile "standard"; false carries no provisionProfile')
     require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
     oauth_secret = json.loads(secret_file('CELLS_OAUTH_SECRET_FILE'))
     require(isinstance(oauth_secret, str) and oauth_secret.strip() and oauth_secret != 'a-very-insecure-secret-for-checking-out-the-demo', 'non-default independent native OAuth secret required')

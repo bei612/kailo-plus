@@ -21,6 +21,7 @@ import (
 	jose "github.com/go-jose/go-jose/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth"
@@ -47,6 +48,9 @@ type nativeOIDCFixture struct {
 	accessMode                            string
 	accessToken                           string
 	exchanges, nativeCodes                int
+	preferredUsername                     string
+	created                               *idm.User
+	creates, roles                        int
 }
 
 var nativeOIDCTestProvider sync.Once
@@ -121,7 +125,11 @@ func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 			if f.badNonce {
 				nonce = "different-transaction"
 			}
-			payload, _ := json.Marshal(map[string]any{"iss": f.issuer.URL, "sub": f.subject, "aud": "cells-oidc-client", "exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "email": f.email, "groups": []string{"admin"}})
+			idClaims := map[string]any{"iss": f.issuer.URL, "sub": f.subject, "aud": "cells-oidc-client", "exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "email": f.email, "groups": []string{"admin"}}
+			if f.preferredUsername != "" {
+				idClaims["preferred_username"] = f.preferredUsername
+			}
+			payload, _ := json.Marshal(idClaims)
 			signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: jose.JSONWebKey{Key: key, KeyID: "fixture-key"}}, nil)
 			if err != nil {
 				t.Error(err)
@@ -197,6 +205,7 @@ func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 	clientgrpc.RegisterMock(common.ServiceUserGRPC, f)
 	clientgrpc.RegisterMock(common.ServiceOAuthGRPC, f)
 	clientgrpc.RegisterMock(common.ServicePolicyGRPC, f)
+	clientgrpc.RegisterMock(common.ServiceRoleGRPC, f)
 	// Production registers this provider in idm/oauth/grpc/service::init.
 	nativeOIDCTestProvider.Do(func() { auth.RegisterGRPCProvider(auth.ProviderTypeGrpc, common.ServiceOAuthGRPC) })
 	permissions.ClearCachedPolicies(f.ctx, "oidc")
@@ -219,10 +228,32 @@ func (f *nativeOIDCFixture) Invoke(ctx context.Context, method string, args any,
 		if err := args.(*idm.SearchUserRequest).Query.SubQueries[0].UnmarshalTo(query); err != nil {
 			return err
 		}
-		if query.Uuid != "native-user" || query.NodeType != idm.NodeType_USER {
+		if query.NodeType != idm.NodeType_USER {
 			return errors.New("not an exact native user lookup")
 		}
-		reply.(*idm.SearchUserResponse).User = f.user
+		switch {
+		case query.Uuid == "native-user":
+			reply.(*idm.SearchUserResponse).User = f.user
+		case f.created != nil && query.Uuid == f.created.Uuid:
+			reply.(*idm.SearchUserResponse).User = f.created
+		default:
+			return errors.New("not an exact native user lookup")
+		}
+	case "/idm.UserService/CreateUser":
+		in := args.(*idm.CreateUserRequest).GetUser()
+		if f.created != nil || in.GetUuid() == "" || in.GetGroupPath() != "/" {
+			return errors.New("unexpected native user write")
+		}
+		f.creates++
+		f.created = proto.Clone(in).(*idm.User)
+		reply.(*idm.CreateUserResponse).User = f.created
+	case "/idm.RoleService/CreateRole":
+		in := args.(*idm.CreateRoleRequest).GetRole()
+		if !in.GetUserRole() || in.GetUuid() == "" {
+			return errors.New("unexpected native role write")
+		}
+		f.roles++
+		reply.(*idm.CreateRoleResponse).Role = in
 	case "/auth.LoginProvider/CreateLogin":
 		if args.(*pauth.CreateLoginRequest).ClientID != config.DefaultOAuthClientID {
 			return errors.New("not the original frontend client")
@@ -236,7 +267,11 @@ func (f *nativeOIDCFixture) Invoke(ctx context.Context, method string, args any,
 		out.Challenge, out.ClientID, out.RequestURL, out.SessionID = "native-challenge", config.DefaultOAuthClientID, "https://cells.example.invalid/oauth2/auth", "native-session"
 	case "/auth.LoginChallengeCode/LoginChallengeCode":
 		in := args.(*pauth.LoginChallengeCodeRequest)
-		if in.Challenge != "native-challenge" || in.Claims["subject"] != f.user.Uuid || in.Claims["name"] != f.user.Login || in.Claims["email"] != f.user.Attributes["email"] || in.Claims["authSource"] != f.connector.ID {
+		native := f.user
+		if f.created != nil {
+			native = f.created
+		}
+		if in.Challenge != "native-challenge" || in.Claims["subject"] != native.Uuid || in.Claims["name"] != native.Login || in.Claims["email"] != native.Attributes["email"] || in.Claims["authSource"] != f.connector.ID {
 			return errors.New("external claims replaced native identity")
 		}
 		f.nativeCodes++
@@ -249,10 +284,47 @@ func (f *nativeOIDCFixture) Invoke(ctx context.Context, method string, args any,
 }
 
 func (f *nativeOIDCFixture) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-	if method != "/idm.PolicyEngineService/StreamPolicyGroups" {
-		return nil, errors.New("unexpected native stream")
+	switch method {
+	case "/idm.PolicyEngineService/StreamPolicyGroups":
+		return &nativeOIDCPolicyStream{ctx: ctx}, nil
+	case "/idm.UserService/SearchUser":
+		return &nativeOIDCUserStream{ctx: ctx, f: f}, nil
 	}
-	return &nativeOIDCPolicyStream{ctx: ctx}, nil
+	return nil, errors.New("unexpected native stream")
+}
+
+// Serves the shared identity entry's exact UUID/login lookups.
+type nativeOIDCUserStream struct {
+	ctx     context.Context
+	f       *nativeOIDCFixture
+	matches []*idm.User
+}
+
+func (s *nativeOIDCUserStream) Header() (metadata.MD, error) { return nil, nil }
+func (s *nativeOIDCUserStream) Trailer() metadata.MD         { return nil }
+func (s *nativeOIDCUserStream) CloseSend() error             { return nil }
+func (s *nativeOIDCUserStream) Context() context.Context     { return s.ctx }
+func (s *nativeOIDCUserStream) SendMsg(m any) error {
+	query := new(idm.UserSingleQuery)
+	if err := m.(*idm.SearchUserRequest).Query.SubQueries[0].UnmarshalTo(query); err != nil {
+		return err
+	}
+	if query.Uuid == "" && query.Login == "" {
+		return errors.New("not an exact native user lookup")
+	}
+	for _, u := range []*idm.User{s.f.user, s.f.created} {
+		if u != nil && (query.Uuid == "" || query.Uuid == u.Uuid) && (query.Login == "" || query.Login == u.Login) {
+			s.matches = append(s.matches, u)
+		}
+	}
+	return nil
+}
+func (s *nativeOIDCUserStream) RecvMsg(value any) error {
+	if len(s.matches) == 0 {
+		return io.EOF
+	}
+	value.(*idm.SearchUserResponse).User, s.matches = s.matches[0], s.matches[1:]
+	return nil
 }
 
 type nativeOIDCPolicyStream struct {
@@ -270,7 +342,7 @@ func (s *nativeOIDCPolicyStream) RecvMsg(value any) error {
 		return io.EOF
 	}
 	s.sent = true
-	value.(*idm.PolicyGroup).Policies = []*idm.Policy{{ID: "native-login-policy", Subjects: []string{"subject:native-user"}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}
+	value.(*idm.PolicyGroup).Policies = []*idm.Policy{{ID: "native-login-policy", Subjects: []string{"subject:native-user", "profile:standard"}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}
 	return nil
 }
 
@@ -351,6 +423,50 @@ func TestKailoOIDCNativeConsumer(t *testing.T) {
 				if u.Scheme != "https" || u.Host != "cells.example.invalid" || u.Path != "/login/callback" || u.Query().Get("code") != "native-one-use-code" || strings.Contains(u.String(), "external-token") {
 					t.Fatal("native UI did not receive only its own authorization code")
 				}
+			}
+		})
+	}
+}
+
+// DD-127(9): an unlinked subject gets a native standard account only when the
+// connector enables provisioning; otherwise the callback still refuses (403).
+func TestKailoOIDCFirstLoginProvisioning(t *testing.T) {
+	for _, scenario := range []struct {
+		name                    string
+		provision               bool
+		status, codes, accounts int
+	}{
+		{"provisioning-on-creates-native-user", true, http.StatusSeeOther, 1, 1},
+		{"provisioning-off-refuses-unlinked", false, http.StatusForbidden, 0, 0},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newNativeOIDCFixture(t)
+			f.subject, f.preferredUsername = "first-login-subject", "First.Login"
+			if scenario.provision {
+				f.connector.Config.ProvisionUsers, f.connector.Config.ProvisionProfile = true, "standard"
+				if err := config.Set(f.ctx, []kailoOIDCConnector{f.connector}, "services", "pydio.web.oauth", "connectors"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cookie, state := f.begin()
+			w := f.callback(cookie, state)
+			if w.Code != scenario.status || f.nativeCodes != scenario.codes || f.creates != scenario.accounts || f.roles != scenario.accounts {
+				t.Fatalf("status=%d codes=%d accounts=%d roles=%d body=%s", w.Code, f.nativeCodes, f.creates, f.roles, w.Body.String())
+			}
+			if !scenario.provision {
+				return
+			}
+			a := f.created.GetAttributes()
+			// Unverified email and IdP groups never reach the native account.
+			if f.created.Login != "first.login" || a["profile"] != "standard" || a[auth.NativeOIDCIssuerAttribute] != f.issuer.URL ||
+				a[auth.NativeOIDCSubjectAttribute] != f.subject || a["email"] != "" || len(f.created.GetRoles()) != 0 {
+				t.Fatalf("unexpected native account: %s %v", f.created.Login, a)
+			}
+			// The next login resolves the same account without another write.
+			f.exchanges = 0
+			cookie, state = f.begin()
+			if w := f.callback(cookie, state); w.Code != http.StatusSeeOther || f.nativeCodes != 2 || f.creates != 1 || f.roles != 1 {
+				t.Fatalf("second login: status=%d codes=%d accounts=%d", w.Code, f.nativeCodes, f.creates)
 			}
 		})
 	}
@@ -469,8 +585,19 @@ func TestKailoOIDCStateRefusesExternalExchange(t *testing.T) {
 
 func TestKailoOIDCNativeLinksAndOrigin(t *testing.T) {
 	f := newNativeOIDCFixture(t)
-	if _, err := f.connector.nativeUserUUID(f.issuer.URL+"/other-issuer", f.subject); err == nil {
+	if _, err := auth.ResolveOrProvisionNativeOIDCUser(f.ctx, f.issuer.URL+"/other-issuer", f.subject, nil); err == nil {
 		t.Fatal("issuer mismatch accepted")
+	}
+	for _, change := range []func(*kailoOIDCConfig){
+		func(c *kailoOIDCConfig) { c.ProvisionUsers = true },
+		func(c *kailoOIDCConfig) { c.ProvisionUsers, c.ProvisionProfile = true, "admin" },
+		func(c *kailoOIDCConfig) { c.ProvisionProfile = "standard" },
+	} {
+		bad := f.connector
+		change(&bad.Config)
+		if err := bad.validate("https://cells.example.invalid"); err == nil {
+			t.Fatal("implicit or non-standard provisioning accepted")
+		}
 	}
 	f.connector.Config.Users = append(f.connector.Config.Users, kailoOIDCUser{Subject: f.subject, UserUUID: "other-native-user"})
 	if err := f.connector.validate("https://cells.example.invalid"); err == nil {
