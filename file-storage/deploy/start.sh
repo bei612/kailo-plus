@@ -332,9 +332,11 @@ if "$check_only"; then exit 0; fi
 # Per-service SQL tables (cells admin config db prefixes, run in a one-off
 # container of this project: same configuration, database and data mounts,
 # no published port). Exit 0: in effect or nothing installed yet; 3: a move is
-# pending; 2: refused. The binding root and the personal folders (my-files
-# template personal/<login>) are assigned to their datasources; any other
-# top-level index entry needs an explicit decision.
+# pending; 2: refused; 4: only datasource indexes lack the table and root
+# their service creates on its first run only (additive). The binding root
+# and the personal folders (my-files template personal/<login>) are assigned
+# to their datasources; any other top-level index entry needs an explicit
+# decision.
 table_prefixes=("${compose[@]}" run --rm -T cells cells admin config db prefixes
   --index-assign-user-folders=personal "--index-assign=$CELLS_BINDING_DATASOURCE=$CELLS_BINDING_ROOT_FOLDER" "${table_decisions[@]}")
 if [[ $migrate_tables == plan ]]; then
@@ -357,7 +359,7 @@ if [[ $migrate_tables == apply ]]; then
   "${table_prefixes[@]}" || code=$?
   case $code in
     0) printf 'Per-service tables already in effect; nothing moved. Start Cells with: bash start.sh CONTROLLED_ENV_FILE\n'; exit 0 ;;
-    3) ;;
+    3|4) ;;
     *) printf 'Table move refused or failed (exit %s); nothing was changed and Cells stays stopped\n' "$code" >&2; exit 2 ;;
   esac
   mapfile -t databases < <("${compose[@]}" ps --quiet cells-db)
@@ -374,7 +376,7 @@ if [[ $migrate_tables == apply ]]; then
   [[ -s $backup/cells-db-$stamp.dump && -s $backup/pydio-$stamp.json ]] || { printf 'backup is empty; nothing moved\n' >&2; exit 2; }
   printf 'Backup written: %s/cells-db-%s.dump and %s/pydio-%s.json\n' "$backup" "$stamp" "$backup" "$stamp"
   "${table_prefixes[@]}" --apply
-  printf 'Tables moved to their per-service names; Cells is stopped. Start it with: bash start.sh CONTROLLED_ENV_FILE\n'
+  printf 'Per-service tables in effect; Cells is stopped. Start it with: bash start.sh CONTROLLED_ENV_FILE\n'
   exit 0
 fi
 
@@ -413,10 +415,23 @@ fi
 # metadata, policies and every datasource index in shared tables) is moved
 # first, before any container of this project is replaced; a new install
 # receives the template from its validated install DSN.
-if ! "${table_prefixes[@]}" >&2; then
-  printf 'Cells SQL tables are not the per-service tables: run start.sh --migrate-tables-plan, then --migrate-tables (verify/deployment.md); nothing replaced or started\n' >&2
-  exit 2
-fi
+code=0
+"${table_prefixes[@]}" >&2 || code=$?
+case $code in
+  0) ;;
+  4)
+    # Datasource indexes without their table and root (e.g. left by the move of
+    # an earlier release): created with the index DAO's own migration, in one
+    # transaction, while Cells is stopped; it is started again below.
+    "${compose[@]}" stop cells
+    "${table_prefixes[@]}" --apply >&2 \
+      || { printf 'Datasource index tables not created (the transaction changed nothing); Cells is stopped, re-run start.sh\n' >&2; exit 2; }
+    ;;
+  *)
+    printf 'Cells SQL tables are not the per-service tables: run start.sh --migrate-tables-plan, then --migrate-tables (verify/deployment.md); nothing replaced or started\n' >&2
+    exit 2
+    ;;
+esac
 "${compose[@]}" create --no-build --pull never
 mapfile -t containers < <("${compose[@]}" ps --all --quiet cells cells-db)
 [[ ${#containers[@]} == 2 ]] || { printf 'unexpected independent Cells service set\n' >&2; exit 2; }

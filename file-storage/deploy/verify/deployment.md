@@ -1,5 +1,111 @@
 # Cells 独立原生部署接缝
 
+## 2026-10-20 Datasource index tables and roots after the per-service move
+
+### Symptom and findings (production, read-only)
+
+After the 2026-10-20 production move, qa-1/2/3 opening Common Files
+(`common-files`, rooted on `DATASOURCE:pydiods1`) get "Oops, something went
+wrong! Resource was not found." and `cells admin datasource resync
+--datasource=pydiods1` fails with `runtime error: invalid memory address or
+nil pointer dereference`. Read on the running image `4558de37` (names, counts
+and booleans only):
+
+- the database has `data_index_kailobinding_idx_tree` and
+  `data_index_personal_idx_tree` (each with `ROOT` at mpath `1`) and no
+  `data_index_{pydiods1,cellsdata,thumbnails,versions}_idx_tree`: exactly the
+  four the plan printed as "no entry (the index service creates its own
+  root)";
+- `pydio.json` records `versions/pydio.grpc.data.index.<ds>` = `5.0.3-dev` for
+  all six datasources;
+- the log since the 09:33 start has no index storage migration;
+  `pydio.grpc.data.sync.{pydiods1,cellsdata,thumbnails,versions}` loop on
+  `Index not ready yet: ... relation "data_index_<ds>_idx_tree" does not exist
+  (SQLSTATE 42P01)`, every `ROOT`/workspace node read on these datasources
+  fails with 42P01 (`[loadNodePathAcls] Cannot find node
+  DATASOURCE:pydiods1`), and `GetDataSourceConfig` answers `syncConfig not
+  initialized yet`;
+- the resync panic is in `pydio.grpc.data.sync`,
+  `data/source/sync/grpc/handler.go:232` `(*Handler).TriggerResync`
+  (`sh.SyncConfig.FlatStorage`): `Syncer.InitSync` returns at
+  `clients.InitEndpoints` while the index has no root and only sets
+  `SyncConfig` after it; the index Lost+found call just before already failed
+  with 42P01.
+
+`cellsdata`, `thumbnails` and `versions` have the same defect (no index: no
+file of these datasources can be read or written, so thumbnails and stored
+versions fail too). The sync checksum tables are not concerned (the sync DAO
+creates them when it is opened).
+
+### Root cause
+
+The index service creates its table and `ROOT` only in its storage migration
+(`data/source/index/service`: `service.FirstRunOrChange` →
+`manager.StorageMigration` → `data/source/index/dao/sql` `Migrate`:
+AutoMigrate, then `GetOrCreateNodeByPath("/")` with uuid `ROOT`). The install
+service runs it per datasource and records `versions/<service>.<ds>`; it runs
+again only when no version is recorded (first start of that datasource index)
+or the version changes (`common/service/versions.go`). Nothing creates the
+table on access. "The index service creates its own root" therefore holds
+only for a datasource index that never started; on an installed database
+every index version is recorded and the move keeps the image version, so a
+datasource the split leaves without entries never gets its table.
+
+### Fix
+
+- `cells admin config db prefixes` (`discovery/install/prefixes`) creates, in
+  the move transaction and with the index DAO's own `Migrate` (the code of the
+  service's first-run migration), the table and root of every datasource index
+  the split leaves without entries.
+- It completes an installed database the same way: a datasource index whose
+  table is missing while `versions/pydio.grpc.data.index.<ds>` is recorded is
+  reported (`create data_index_<ds>_idx_tree with its root`, check exit 4) and
+  created by `--apply`; an index without a recorded version is left to its
+  service's first start. Idempotent: once created, the check exits 0.
+- `start.sh` (deployment): exit 4 → stop `cells`, `--apply` (one transaction,
+  additive, nothing else changed), then the normal create/start, key
+  verification and reconcile. `--migrate-tables` accepts 4 as it accepts 3.
+- `TriggerResync` answers `syncConfig not initialized yet` (unavailable)
+  before the sync is initialised, like `GetDataSourceConfig`, instead of
+  dereferencing the missing config.
+
+### Production convergence
+
+1. Build the image from this change and set `CELLS_IMAGE` to its digest.
+2. Read-only check (no downtime):
+   `bash file-storage/deploy/start.sh --migrate-tables-plan ENV` → exit 4,
+   "No legacy unprefixed table remains" and one `create
+   data_index_<ds>_idx_tree with its root` line each for `cellsdata`,
+   `pydiods1`, `thumbnails`, `versions`.
+3. Deploy: `bash file-storage/deploy/start.sh ENV` (or the component deploy).
+   The guard sees exit 4, stops `cells`, creates the four tables with their
+   root, starts Cells and verifies/reconciles as usual. A failure rolls the
+   transaction back and leaves Cells stopped; re-running is safe.
+4. Verify: step 2 now exits 0; the database lists six
+   `data_index_<ds>_idx_tree`, each with one `ROOT` at mpath `1`; the log has
+   no 42P01 for the index and each `pydio.grpc.data.sync.<ds>` reports `Index
+   connected: Ready`; `cells admin datasource resync --datasource=pydiods1`
+   succeeds; qa-1/2/3 open Common Files (an empty `pydiods1` tree: its stray
+   objects were never indexed in `pydiods1` and stay unlisted); a thumbnail is
+   generated and a file version is listed.
+
+Rollback: not needed for the completion itself (it only adds the four tables
+and roots); the backup of the 2026-10-20 move remains the rollback of the
+move.
+
+### Verification of this change
+
+Go tests written, not run on the dev box (workspace rule):
+`go test ./discovery/install/prefixes ./data/source/sync/grpc
+./common/storage/sql ./cmd` (the index DAO is opened, as in the services,
+with `storagesql.NewDialector`: the GORM dialector plus the SQL helper it
+asserts; the move keeps the plain dialector, whose savepoints the wrapper
+hides) (sqlite: a
+datasource without entries gets its table and a ROOT the index DAO resolves;
+an already moved database is completed only for recorded index migrations and
+stays complete after the service's own migration; resync before init is
+unavailable). `bash -n start.sh` on the dev box.
+
 ## 2026-10-19 (b) Per-service SQL tables, binding datasource before start, seed signing host
 
 ### Per-service SQL tables (production defect)
@@ -63,8 +169,9 @@ transaction:
   both back.
 
 Without `--apply` it only reads (exit 0 in effect or nothing installed, 3
-pending, 2 refused). `start.sh` runs it in a one-off container of the project
-before replacing any container and refuses to deploy while a move is pending.
+pending, 2 refused, 4 only datasource index tables and roots missing — see
+2026-10-20). `start.sh` runs it in a one-off container of the project before
+replacing any container and refuses to deploy while a move is pending.
 
 Expected plan (read 2026-10-19, production / isolated): `meta` 0 rows;
 `resource_policies` 73 / 52 rows, all owned (43 / 26 shared by a user and its
@@ -96,8 +203,9 @@ The image must contain this batch (`CELLS_IMAGE` = its digest).
    directory, re-checks, then applies. Cells stays stopped.
 5. Redeploy: `bash file-storage/deploy/start.sh ENV` (or the component
    deploy): the guard passes, the entrypoint ensures the binding datasource
-   and the keys, each service completes its own schema, `start.sh` verifies
-   the keys and reconciles.
+   and the keys, `start.sh` verifies the keys and reconciles. (Correction
+   2026-10-20: services do not complete a schema whose migration is already
+   recorded; the move now creates the index tables and roots itself.)
 
 Rollback (only if step 4 or 5 fails after the commit): stop Cells,
 `pg_restore --clean --if-exists` the dump into the same database inside

@@ -18,6 +18,15 @@
 // The move is computed from the same GORM models and naming the services use,
 // runs in one transaction and never guesses: a row is placed only where an
 // explicit rule puts it, anything else is reported and refuses the move.
+//
+// A datasource index creates its table and root only in the storage migration
+// of its service (data/source/index/service: FirstRunOrChange, recorded under
+// versions/pydio.grpc.data.index.<datasource>), i.e. on the first start of
+// that datasource index or on a version change; nothing creates them on
+// access. On an installed database every index version is recorded, so the
+// move creates the table and root of each datasource index the split leaves
+// without entries with the index DAO's own Migrate, and completes any
+// datasource index whose table is missing while its version is recorded.
 package prefixes
 
 import (
@@ -50,6 +59,7 @@ import (
 	storagesql "github.com/pydio/cells/v5/common/storage/sql"
 	datakeysql "github.com/pydio/cells/v5/data/key/dao/sql"
 	datametasql "github.com/pydio/cells/v5/data/meta/dao/sql"
+	indexsql "github.com/pydio/cells/v5/data/source/index/dao/sql"
 	syncsql "github.com/pydio/cells/v5/data/source/sync/dao/sql"
 	aclsql "github.com/pydio/cells/v5/idm/acl/dao/sql"
 	userkeysql "github.com/pydio/cells/v5/idm/key/dao/sql"
@@ -319,6 +329,10 @@ type Options struct {
 	IndexDropUnbacked bool
 	// Sources is the object layout of every datasource.
 	Sources map[string]Source
+	// IndexMigrated holds the datasources whose index service has recorded
+	// its storage migration (versions/pydio.grpc.data.index.<datasource>):
+	// it does not create a missing table or root again.
+	IndexMigrated map[string]bool
 }
 
 type rename struct {
@@ -383,6 +397,25 @@ type Plan struct {
 	policies []*policySplit
 	indexes  []*indexSplit
 	columns  []*columnSplit
+	// roots are the datasource indexes whose table and root no service will
+	// create: they are created as the index service's own migration does.
+	roots []target
+}
+
+// Changes is true while legacy tables remain or a datasource index lacks its
+// table and root.
+func (p *Plan) Changes() bool {
+	return p.Pending || len(p.roots) > 0
+}
+
+// IndexRoots are the tables of the datasource indexes the move creates with
+// their root.
+func (p *Plan) IndexRoots() []string {
+	var out []string
+	for _, t := range p.roots {
+		out = append(out, t.table)
+	}
+	return out
 }
 
 func (p *Plan) problem(format string, args ...any) {
@@ -415,7 +448,7 @@ func (p *Plan) Report(w io.Writer) {
 		fmt.Fprintf(w, "split %s by datasource:\n", s.from)
 		for _, t := range s.targets {
 			if len(t.entries) == 0 {
-				fmt.Fprintf(w, "  %s: no entry (the index service creates its own root)\n", t.table)
+				fmt.Fprintf(w, "  %s: no entry (created below with its root)\n", t.table)
 				continue
 			}
 			var names []string
@@ -441,6 +474,9 @@ func (p *Plan) Report(w io.Writer) {
 			fmt.Fprintf(w, "  columns of the other owner removed from the kept table: %s\n", strings.Join(s.dropColumns, ", "))
 		}
 	}
+	for _, t := range p.roots {
+		fmt.Fprintf(w, "create %s with its root (%s): its index service only creates them in its first-run or version-change migration\n", t.table, t.storage.Service)
+	}
 	for _, n := range p.Notes {
 		fmt.Fprintf(w, "note: %s\n", n)
 	}
@@ -465,6 +501,25 @@ func openWith(driver string, conn gorm.ConnPool, namer schema.Namer) (*gorm.DB, 
 	default:
 		return nil, fmt.Errorf("SQL driver %s is not supported: the move needs transactional DDL (PostgreSQL or SQLite)", driver)
 	}
+	return openDialector(dialector, namer)
+}
+
+// openService opens a connection with the dialector the services get from the
+// storage pool (storagesql.NewDialector: the GORM dialector and the SQL helper
+// their DAOs assert). The wrapper hides the dialector's savepoints, so the
+// move itself keeps openWith.
+func openService(driver string, conn gorm.ConnPool, namer schema.Namer) (*gorm.DB, error) {
+	if driver != storagesql.PostgreDriver && driver != storagesql.SqliteDriver {
+		return nil, fmt.Errorf("SQL driver %s is not supported: the move needs transactional DDL (PostgreSQL or SQLite)", driver)
+	}
+	dialector, err := storagesql.NewDialector(driver, conn)
+	if err != nil {
+		return nil, err
+	}
+	return openDialector(dialector, namer)
+}
+
+func openDialector(dialector gorm.Dialector, namer schema.Namer) (*gorm.DB, error) {
 	return gorm.Open(dialector, &gorm.Config{
 		NamingStrategy:         namer,
 		SkipDefaultTransaction: true,
@@ -474,7 +529,9 @@ func openWith(driver string, conn gorm.ConnPool, namer schema.Namer) (*gorm.DB, 
 }
 
 type run struct {
+	ctx         context.Context
 	driver      string
+	storages    []Storage
 	tx          *gorm.DB
 	opts        Options
 	mapping     map[string][]target
@@ -520,7 +577,7 @@ func within(ctx context.Context, db *gorm.DB, driver string, storages []Storage,
 	if tx.Error != nil {
 		return tx.Error
 	}
-	r := &run{driver: driver, tx: tx, opts: opts, mapping: mapping, legacyCache: &sync.Map{}}
+	r := &run{ctx: ctx, driver: driver, storages: storages, tx: tx, opts: opts, mapping: mapping, legacyCache: &sync.Map{}}
 	if err := f(r); err != nil {
 		tx.Rollback()
 		return err
@@ -575,9 +632,18 @@ func (r *run) plan() (*Plan, error) {
 	}
 	sort.Strings(present)
 	p := &Plan{Pending: len(present) > 0}
-	if !p.Pending {
-		return p, nil
+	if p.Pending {
+		if err := r.planMove(p, present, targets); err != nil {
+			return nil, err
+		}
 	}
+	if err := r.planRoots(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (r *run) planMove(p *Plan, present []string, targets map[string]bool) error {
 	var unknown []string
 	for name := range r.tables {
 		if _, legacy := r.mapping[name]; !legacy && !targets[name] {
@@ -603,19 +669,19 @@ func (r *run) plan() (*Plan, error) {
 		case kindPolicies:
 			s, err := r.planPolicies(p, from, ts)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			p.policies = append(p.policies, s)
 		case kindIndex:
 			s, err := r.planIndex(p, from, ts)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			p.indexes = append(p.indexes, s)
 		case kindColumns:
 			s, err := r.planColumns(p, from, ts)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			p.columns = append(p.columns, s)
 		default:
@@ -626,7 +692,44 @@ func (r *run) plan() (*Plan, error) {
 			p.problem("legacy table %s is shared by %s and no rule splits it", from, strings.Join(owners, ", "))
 		}
 	}
-	return p, nil
+	return nil
+}
+
+// planRoots lists the datasource indexes whose table neither exists nor comes
+// out of the move while their service will not create it: during a move (the
+// index service already ran on the shared table) or once the service has
+// recorded its migration. A datasource index without a recorded migration
+// creates its own table and root on its first start.
+func (r *run) planRoots(p *Plan) error {
+	produced := map[string]bool{}
+	for _, rn := range p.renames {
+		produced[rn.to.table] = true
+	}
+	for _, s := range p.indexes {
+		for _, t := range s.targets {
+			if len(t.entries) > 0 {
+				produced[t.table] = true
+			}
+		}
+	}
+	for _, st := range r.storages {
+		if st.Datasource == "" || st.Service != indexService+"."+st.Datasource {
+			continue
+		}
+		if !p.Pending && !r.opts.IndexMigrated[st.Datasource] {
+			continue
+		}
+		model := &tree.TreeNode{}
+		sch, err := schema.Parse(model, &sync.Map{}, st.Namer())
+		if err != nil {
+			return fmt.Errorf("%s: %w", st.Service, err)
+		}
+		if r.tables[sch.Table] || produced[sch.Table] {
+			continue
+		}
+		p.roots = append(p.roots, target{storage: st, model: model, table: sch.Table})
+	}
+	return nil
 }
 
 const (
@@ -1069,6 +1172,29 @@ func (r *run) apply(p *Plan) error {
 				return err
 			}
 		}
+	}
+	for _, t := range p.roots {
+		if err := r.createIndex(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createIndex creates the table and root of a datasource index with the
+// Migrate of the index DAO, as the storage migration of its service does
+// (data/source/index/dao/sql: AutoMigrate, then the ROOT node at "/"), on the
+// same transaction opened with the services' dialector.
+func (r *run) createIndex(t target) error {
+	view, err := openService(r.driver, r.tx.Statement.ConnPool, t.storage.Namer())
+	if err != nil {
+		return err
+	}
+	if err := indexsql.NewDAO(view).Migrate(r.ctx); err != nil {
+		return fmt.Errorf("create %s with its root: %w", t.table, err)
+	}
+	if !r.tx.Migrator().HasTable(t.table) {
+		return fmt.Errorf("the index DAO did not create %s", t.table)
 	}
 	return nil
 }

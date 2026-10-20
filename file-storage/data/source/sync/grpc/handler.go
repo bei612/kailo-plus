@@ -126,6 +126,11 @@ func (h *Handler) TriggerResync(c context.Context, req *sync.ResyncRequest) (*sy
 	if !ok {
 		return nil, errors.WithMessage(errors.StatusInternalServerError, "cannot find datasource in context")
 	}
+	// InitSync sets the config last, once the index and the objects answer
+	// (not while the datasource index lacks its table and root).
+	if sh.SyncConfig == nil {
+		return nil, errors.WithMessage(errors.StatusServiceUnavailable, "syncConfig not initialized yet")
+	}
 
 	resp := &sync.ResyncResponse{}
 
