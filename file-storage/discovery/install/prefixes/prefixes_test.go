@@ -170,6 +170,17 @@ func named(t *testing.T, conn *sql.DB, s Storage) *gorm.DB {
 	return db
 }
 
+// served opens a storage as the service gets it from the pool (with the SQL
+// helper the index DAO asserts).
+func served(t *testing.T, conn *sql.DB, s Storage) *gorm.DB {
+	t.Helper()
+	db, err := openService(storagesql.SqliteDriver, conn, s.Namer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
 type migrator interface {
 	Migrate(context.Context) error
 }
@@ -414,7 +425,7 @@ func TestMoveSplitsALegacyDatabaseIntoTheOwnersTables(t *testing.T) {
 // resolves "/" to it.
 func hasIndexRoot(t *testing.T, conn *sql.DB, st Storage, table string, nodes int64) {
 	t.Helper()
-	db := named(t, conn, st)
+	db := served(t, conn, st)
 	if !db.Migrator().HasTable(table) {
 		t.Fatalf("%s was not created", table)
 	}
@@ -485,8 +496,8 @@ func TestCompletesTheIndexesAMoveLeftWithoutTable(t *testing.T) {
 	conn := openSQLite(t)
 	storages := bootstrapStorages(t, "cellsdata", "kailobinding", "pydiods1")
 	binding := storageOf(t, storages, "pydio.grpc.data.index.kailobinding")
-	migrate(t, indexsql.NewDAO(named(t, conn, binding)))
-	if _, _, err := indexsql.NewDAO(named(t, conn, binding)).GetOrCreateNodeByPath(ctx, "/kailo-binding", &tree.Node{Uuid: "f-bind", Type: tree.NodeType_COLLECTION}); err != nil {
+	migrate(t, indexsql.NewDAO(served(t, conn, binding)))
+	if _, _, err := indexsql.NewDAO(served(t, conn, binding)).GetOrCreateNodeByPath(ctx, "/kailo-binding", &tree.Node{Uuid: "f-bind", Type: tree.NodeType_COLLECTION}); err != nil {
 		t.Fatal(err)
 	}
 	db, err := Open(storagesql.SqliteDriver, conn)
@@ -516,6 +527,6 @@ func TestCompletesTheIndexesAMoveLeftWithoutTable(t *testing.T) {
 		t.Fatalf("completion not idempotent: %v %v", err, after)
 	}
 	// The service's own migration on the completed table changes nothing.
-	migrate(t, indexsql.NewDAO(named(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"))))
+	migrate(t, indexsql.NewDAO(served(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"))))
 	hasIndexRoot(t, conn, storageOf(t, storages, "pydio.grpc.data.index.pydiods1"), "data_index_pydiods1_idx_tree", 1)
 }

@@ -325,3 +325,20 @@ func (d *Dialector) Translate(err error) error {
 
 	return t.Translate(err)
 }
+
+// NewDialector returns, for one connection, the source dialector OpenPool
+// builds: the GORM dialector of the driver with the SQL helper the DAOs assert
+// (tx.Dialector.(Helper), e.g. the index DAO when it allocates a child mpath).
+// It is meant for tools opening a storage outside the pool. It does not expose
+// the SavePoint/RollbackTo of the wrapped dialector.
+func NewDialector(driver string, conn gorm.ConnPool) (gorm.Dialector, error) {
+	switch driver {
+	case MySQLDriver:
+		return &Dialector{Dialector: mysql.New(mysql.Config{Conn: conn, SkipInitializeWithVersion: true}), Helper: &mysqlHelper{}}, nil
+	case PostgreDriver:
+		return &Dialector{Dialector: postgres.New(postgres.Config{Conn: conn}), Helper: &postgresHelper{}}, nil
+	case SqliteDriver:
+		return &Dialector{Dialector: &sqlite.Dialector{Conn: conn}, Helper: &sqliteHelper{}}, nil
+	}
+	return nil, fmt.Errorf("SQL driver %s has no dialector", driver)
+}

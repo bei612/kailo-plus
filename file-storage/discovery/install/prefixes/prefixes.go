@@ -501,6 +501,25 @@ func openWith(driver string, conn gorm.ConnPool, namer schema.Namer) (*gorm.DB, 
 	default:
 		return nil, fmt.Errorf("SQL driver %s is not supported: the move needs transactional DDL (PostgreSQL or SQLite)", driver)
 	}
+	return openDialector(dialector, namer)
+}
+
+// openService opens a connection with the dialector the services get from the
+// storage pool (storagesql.NewDialector: the GORM dialector and the SQL helper
+// their DAOs assert). The wrapper hides the dialector's savepoints, so the
+// move itself keeps openWith.
+func openService(driver string, conn gorm.ConnPool, namer schema.Namer) (*gorm.DB, error) {
+	if driver != storagesql.PostgreDriver && driver != storagesql.SqliteDriver {
+		return nil, fmt.Errorf("SQL driver %s is not supported: the move needs transactional DDL (PostgreSQL or SQLite)", driver)
+	}
+	dialector, err := storagesql.NewDialector(driver, conn)
+	if err != nil {
+		return nil, err
+	}
+	return openDialector(dialector, namer)
+}
+
+func openDialector(dialector gorm.Dialector, namer schema.Namer) (*gorm.DB, error) {
 	return gorm.Open(dialector, &gorm.Config{
 		NamingStrategy:         namer,
 		SkipDefaultTransaction: true,
@@ -1164,9 +1183,10 @@ func (r *run) apply(p *Plan) error {
 
 // createIndex creates the table and root of a datasource index with the
 // Migrate of the index DAO, as the storage migration of its service does
-// (data/source/index/dao/sql: AutoMigrate, then the ROOT node at "/").
+// (data/source/index/dao/sql: AutoMigrate, then the ROOT node at "/"), on the
+// same transaction opened with the services' dialector.
 func (r *run) createIndex(t target) error {
-	view, err := r.view(t.storage.Namer())
+	view, err := openService(r.driver, r.tx.Statement.ConnPool, t.storage.Namer())
 	if err != nil {
 		return err
 	}

@@ -96,8 +96,11 @@ move.
 ### Verification of this change
 
 Go tests written, not run on the dev box (workspace rule):
-`go test ./discovery/install/prefixes ./data/source/sync/grpc ./cmd -run
-'Template|Bootstrap|Prefixes|Move|Completes|TriggerResync'` (sqlite: a
+`go test ./discovery/install/prefixes ./data/source/sync/grpc
+./common/storage/sql ./cmd` (the index DAO is opened, as in the services,
+with `storagesql.NewDialector`: the GORM dialector plus the SQL helper it
+asserts; the move keeps the plain dialector, whose savepoints the wrapper
+hides) (sqlite: a
 datasource without entries gets its table and a ROOT the index DAO resolves;
 an already moved database is completed only for recorded index migrations and
 stays complete after the service's own migration; resync before init is
