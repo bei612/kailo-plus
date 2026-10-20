@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 从 contracts/ 的 JSON Schema 生成四侧类型（ADR-03）。
+# 从 contracts/ 的 JSON Schema 生成四侧类型（ADR-03，类型表示与命名见 ADR-21）。
 # contracts/ 是唯一权威；生成目录只由本脚本写入，不手工编辑。
 # 用法：tools/gen.sh [--check]   --check 只校验工作树与重新生成结果一致
 set -euo pipefail
@@ -17,12 +17,19 @@ declare -A OUT=(
   [ts]="client-kit/ts/contracts/src/generated/contracts.ts"
   [dart]="client-kit/dart/lib/shared/contracts/generated/contracts.dart"
 )
+# 四侧共用：format: date-time 按线格式生成为字符串（RFC3339，ADR-21）。不加时
+# TS 生成 Date、Go 生成 time.Time、Dart 生成 DateTime，而 JSON 里只有字符串：
+# TS 的 --just-types 不做任何转换，类型与运行时值不符；Dart 往返把 ...Z 改写
+# 成 ...000Z。解析成本地时间类型是使用方在领域边界上的决定，不由生成物代做。
+COMMON="--no-date-times"
 declare -A EXTRA=(
   # skip-serializing-none / omit-empty：可选字段缺省时必须省略而不是写 null，
   # 否则四侧线格式不一致，且与 schema 的 additionalProperties:false 抵触。
   [rs]="--visibility public --derive-debug --derive-clone --derive-partial-eq --skip-serializing-none"
   [go]="--package generated --omit-empty"
-  [ts]="--just-types --explicit-unions"
+  # acronym-style camel：缩写按普通单词大写首字母（WebGif、McpResultKind），
+  # 与 Rust、Dart 的类型名逐字相同；quicktype 的 TS 默认 pascal 会写成 WebGIF。
+  [ts]="--just-types --explicit-unions --acronym-style camel"
   [dart]="--final-props"
 )
 
@@ -35,17 +42,24 @@ TOPLEVEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["title
 # workflow/ 是 Workflow input、Update 参数与结果、Activity 载荷（01 §2）；
 # adapter/ 是实际 Adapter Protocol 线协议消费者（ADR-12）。
 # enums/ 不单独传入——它们由 $ref 引入，单独传会生成重复类型。
-SCHEMAS=("$SRC/canary.schema.json")
-while IFS= read -r f; do SCHEMAS+=("$f"); done < <(find "$SRC/domain" "$SRC/api" "$SRC/workflow" "$SRC/adapter" -name '*.schema.json' 2>/dev/null | sort)
+# contracts-prepare.py 把这些 schema 整理到临时目录：去掉根 $id 使 $ref 按文件
+# 路径解析（同一 schema 只生成一个类型），给内联 object/enum 补确定的 title，
+# 并拒绝同名异形的类型。生成器只读这份副本，contracts/ 本身不变。
+schema_dir="$work/schema"
+if ! python3 tools/contracts-prepare.py "$SRC" "$schema_dir" >"$work/inputs"; then
+  printf '  \033[31mFAIL\033[0m contracts-prepare.py 失败\n'; exit 1
+fi
+mapfile -t SCHEMAS <"$work/inputs"
 fail=0
 
 for lang in "${!OUT[@]}"; do
   dest="${OUT[$lang]}"
   tmp="$work/$(basename "$dest")"
   mkdir -p "$(dirname "$dest")"
+  # 在整理后的目录内以相对路径传入，$ref 与顶层输入落在同一套路径上。
   # shellcheck disable=SC2086
-  if ! npx --yes "$QT" --src-lang schema --lang "$lang" --top-level "$TOPLEVEL" \
-        ${EXTRA[$lang]} --out "$tmp" "${SCHEMAS[@]}" >/dev/null 2>"$work/$lang.err"; then
+  if ! (cd "$schema_dir" && npx --yes "$QT" --src-lang schema --lang "$lang" --top-level "$TOPLEVEL" \
+        $COMMON ${EXTRA[$lang]} --out "$tmp" "${SCHEMAS[@]}") >/dev/null 2>"$work/$lang.err"; then
     printf '  \033[31mFAIL\033[0m %-5s 生成失败\n' "$lang"; sed 's/^/        /' "$work/$lang.err"; fail=1; continue
   fi
   case "$lang" in
