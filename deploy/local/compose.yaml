@@ -4,6 +4,10 @@
 # 四层 network 的可达关系在此显式声明，默认不可达。任何服务加入新 network
 # 视同边界变更，按 AGENTS.md 评审。本文件只含 Stage 0 已接入的服务；
 # 上游组件随各自 Stage 加入，届时一并声明其 network 归属。
+#
+# 运行投递与数据（secrets/、data/）一律经 ${KAILO_RUNTIME_DIR:-.} 引用（ADR-20 §3）：未设置时即
+# 本目录，本地拓扑不变；发布入口在 CI 节点以固定发布树为项目目录、以运行目录绝对路径设置它，
+# 配置文件取自发布树，投递与数据取自运行目录，发布树不再放入任何软链接。
 
 name: platform-local
 
@@ -177,7 +181,7 @@ services:
     image: registry@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec1a7c9ddb0a5b14a6e0
     networks: [mgmt]
     volumes:
-      - ./data/registry:/var/lib/registry
+      - ${KAILO_RUNTIME_DIR:-.}/data/registry:/var/lib/registry
     ports:
       - "127.0.0.1:${REGISTRY_PORT:?必须显式提供，禁止硬编码}:5000"
 
@@ -215,10 +219,10 @@ services:
     image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     networks: [buzz-data]
     env_file:
-      - ./secrets/buzz-objects.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-objects.env
     command: ["server", "/data"]
     volumes:
-      - ./data/collab-objects:/data
+      - ${KAILO_RUNTIME_DIR:-.}/data/collab-objects:/data
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 5s
@@ -232,7 +236,7 @@ services:
     depends_on:
       buzz-objects: { condition: service_healthy }
     env_file:
-      - ./secrets/buzz-objects.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-objects.env
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -250,7 +254,7 @@ services:
     depends_on:
       buzz-db: { condition: service_healthy }
     env_file:
-      - ./secrets/buzz-relay.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-relay.env
     entrypoint: ["/usr/local/bin/buzz-admin"]
     command: ["migrate"]
     restart: "no"
@@ -294,7 +298,7 @@ services:
       # 未设定即上游行为——成员可自建 Channel、自加入、读写非 private Channel。
       BUZZ_MEMBER_EVENT_KINDS: ${BUZZ_MEMBER_EVENT_KINDS:?必须显式提供，禁止硬编码}
     env_file:
-      - ./secrets/buzz-relay.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/buzz-relay.env
     ports:
       # Desktop/Mobile 直连的协作入口，复用公开绑定地址；Community Host 与
       # operator 签名 URL 保持原值，宿主发布地址不参与身份或签名目标计算。
@@ -417,7 +421,7 @@ services:
       AGGREGATION_CLICKHOUSE_DATABASE: ${OPENMETER_CLICKHOUSE_DB_NAME:?必须显式提供，禁止硬编码}
       INGEST_KAFKA_BROKER: openmeter-kafka:9092
       OPENMETER_API_PORT: ${OPENMETER_API_PORT:?必须显式提供，禁止硬编码}
-    env_file: [./secrets/openmeter.env]
+    env_file: ["${KAILO_RUNTIME_DIR:-.}/secrets/openmeter.env"]
     configs:
       - source: openmeter_usage_config
         target: ${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}
@@ -502,7 +506,7 @@ services:
       INGEST_KAFKA_BROKER: openmeter-kafka:9092
       TELEMETRY_ADDRESS: "127.0.0.1:${OPENMETER_SINK_TELEMETRY_PORT:?必须显式提供，禁止硬编码}"
       OPENMETER_SINK_TELEMETRY_PORT: ${OPENMETER_SINK_TELEMETRY_PORT:?必须显式提供，禁止硬编码}
-    env_file: [./secrets/openmeter.env]
+    env_file: ["${KAILO_RUNTIME_DIR:-.}/secrets/openmeter.env"]
     configs:
       - source: openmeter_usage_config
         target: ${OPENMETER_CONFIG_FILE:?必须显式提供，禁止硬编码}
@@ -737,17 +741,17 @@ services:
     group_add: ["${OPENBAO_AUDIT_READER_GID:?必须显式提供 audit 观察副本属组}"]
     volumes:
       - type: bind
-        source: ./data/secret-store-audit
+        source: ${KAILO_RUNTIME_DIR:-.}/data/secret-store-audit
         target: /openbao/audit-observed
         read_only: true
         bind: { create_host_path: false }
     env_file:
-      - ./secrets/core-db-url.env
-      - ./secrets/openbao-core.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/core-db-url.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/openbao-core.env
       # Core 自己的 OIDC client secret；不进 .env、不上命令行
-      - ./secrets/core-service.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/core-service.env
       # SpiceDB preshared key（SPICEDB_PRESHARED_KEY）；不进 .env、不上命令行
-      - ./secrets/core-spicedb.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/core-spicedb.env
     secrets:
       - source: openmeter_core_token
         target: ${OPENMETER_CORE_TOKEN_FILE:?必须显式提供，禁止硬编码}
@@ -801,7 +805,7 @@ services:
       OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:?必须显式提供，禁止硬编码}
     env_file:
       # Worker 自己的 client secret 与 SpiceDB 的 PSK；都不进 .env、不上命令行
-      - ./secrets/worker.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/worker.env
 
   # Web 面：三端共用 TypeScript 主体的浏览器那一份（DD-74）。
   # 镜像由 tools/build-upstream.sh 从 web-client 构建——固定 commit 的源码加本仓库改动：
@@ -877,9 +881,9 @@ services:
       AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。
-      - ./secrets/browser-client.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/browser-client.env
       # 日志库连接串（含口令），由 bootstrap.sh 从 agentgateway_db_password 派生
-      - ./secrets/agentgateway-db.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/agentgateway-db.env
     volumes:
       - agentgateway-provider-secrets:${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     configs:
@@ -944,11 +948,11 @@ services:
       - source: openbao_config
         target: /openbao/config/config.hcl
     volumes:
-      - ./data/secret-store:/openbao/data
+      - ${KAILO_RUNTIME_DIR:-.}/data/secret-store:/openbao/data
       # 第二个 audit device（core-observed/）的单独目录：属组为 OPENBAO_AUDIT_READER_GID、
       # setgid 2750，由 bootstrap.sh 预建；目录缺失或属主不对时该 device 无法打开、
       # 解封失败（core.go postUnseal 的 audit 建立），不会静默少一份审计。
-      - ./data/secret-store-audit:/openbao/audit-observed
+      - ${KAILO_RUNTIME_DIR:-.}/data/secret-store-audit:/openbao/audit-observed
     # 具名卷由 Docker 以 root 创建，而镜像以 uid 100 运行；不改成 root 运行，
     # 而是让卷归属进程自身的 uid，保持最小权限。
     user: "100:1000"
@@ -985,7 +989,7 @@ services:
       BOUND_BYTES: ${OPENBAO_AUDIT_LOG_BOUND_BYTES:?必须显式提供 audit 观察副本截断阈值}
       INTERVAL_SECONDS: ${OPENBAO_AUDIT_BOUND_INTERVAL_SECONDS:?必须显式提供 audit 观察副本检查间隔}
     volumes:
-      - ./data/secret-store-audit:/openbao/audit-observed
+      - ${KAILO_RUNTIME_DIR:-.}/data/secret-store-audit:/openbao/audit-observed
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
@@ -1056,7 +1060,7 @@ services:
       spicedb: { condition: service_healthy }
     # PSK 经 env_file 投递；ZED_TOKEN 不上命令行（SF-SPZ-04 的同一理由）。
     env_file:
-      - ./secrets/zed.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/zed.env
     environment:
       ZED_ENDPOINT: spicedb:50051
       ZED_INSECURE: "true"
@@ -1092,7 +1096,7 @@ services:
       # 持久卷挂在镜像已有且属 keycloak 用户的 data 目录：空卷首次挂载时继承该属主，
       # H2 在其中的 h2/ 子目录；挂到镜像里不存在的路径时新卷根属 root，Keycloak 无法写入。
       - keycloak-data:/opt/keycloak/data
-      - ./secrets/idp-import:/opt/keycloak/data/import:ro
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/idp-import:/opt/keycloak/data/import:ro
     # 口令从 secret 挂载读入后导出：Keycloak 不支持 _FILE 变体，
     # 直接写进 environment 会让它出现在 compose 与 .env 里。
     entrypoint: ["/bin/bash", "-c"]
@@ -1139,7 +1143,7 @@ services:
     depends_on:
       spicedb-db: { condition: service_healthy }
     env_file:
-      - ./secrets/spicedb.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/spicedb.env
     command: ["datastore", "migrate", "head"]
     restart: "no"
 
@@ -1159,7 +1163,7 @@ services:
     # tracing 时会随 OTel resource 导出（SF-SPZ-04、07 §1）。该文件在 secrets/ 下，
     # 由 bootstrap.sh 生成并被 gitignore；镜像是 distroless，无法用入口脚本读取挂载。
     env_file:
-      - ./secrets/spicedb.env
+      - ${KAILO_RUNTIME_DIR:-.}/secrets/spicedb.env
     command: ["serve"]
     ports:
       # 仅绑回环，供本机对投影链路做查证；不暴露到宿主网络之外。
@@ -1172,25 +1176,25 @@ services:
 
 secrets:
   openmeter_db_password:
-    file: ./secrets/openmeter_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/openmeter_db_password
   openmeter_clickhouse_password:
-    file: ./secrets/openmeter_clickhouse_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/openmeter_clickhouse_password
   openmeter_core_token:
-    file: ./secrets/openmeter_core_token
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/openmeter_core_token
   buzz_db_password:
-    file: ./secrets/buzz_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/buzz_db_password
   agentgateway_db_password:
-    file: ./secrets/agentgateway_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/agentgateway_db_password
   keycloak_admin_password:
-    file: ./secrets/keycloak_admin_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/keycloak_admin_password
   temporal_db_password:
-    file: ./secrets/temporal_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/temporal_db_password
   spicedb_db_password:
-    file: ./secrets/spicedb_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/spicedb_db_password
   core_db_password:
     # 开发用 secret 也经受控投递面取得，不在仓库、环境文件或脚本中出现明文
     # （07 §2）。该文件由 deploy/local/bootstrap.sh 从受控来源生成。
-    file: ./secrets/core_db_password
+    file: ${KAILO_RUNTIME_DIR:-.}/secrets/core_db_password
 
 configs:
   # 唯一原生去重配置由 .env 投影，API 与 sink 共用真正的 YAML bool/整数。

@@ -23,8 +23,10 @@ case "$#:$*" in
   *) echo '用法：start-core.sh [--no-build|--prepare-action-token|--prepare-conformance-identity]' >&2; exit 2 ;;
 esac
 cd "$(dirname "$0")"
+# 运行投递（.env、secrets/、data/）在运行目录，代码与配置在本目录（ADR-20 §3）
+. ./runtime-dir.sh
 (cd ../.. && python3 tools/gen-registry.py --check)
-. ./.env
+. "$KAILO_RUNTIME_DIR/.env"
 : "${OPENBAO_PLATFORM_NAMESPACE:?}" "${OPENBAO_TENANT_PARENT_NAMESPACE:?}" \
   "${OPENBAO_TENANT_PROVISIONER_ROLE_NAME:?}" \
   "${OPENBAO_SECRET_ID_WRAP_TTL:?缺少 .env 中的 OPENBAO_SECRET_ID_WRAP_TTL}"
@@ -559,10 +561,11 @@ def write_backend_auth(value, gateways):
         if source.count(marker) != 1:
             raise SystemExit("Gateway 原配置缺少唯一投递位置")
         source = source.replace(marker, replacement)
-    destination = Path("secrets/agentgateway-service.yaml").resolve()
+    runtime = Path(os.environ.get("KAILO_RUNTIME_DIR", "."))
+    destination = (runtime / "secrets/agentgateway-service.yaml").resolve()
     overlay = {"configs": {"agentgateway_config": {"file": str(destination)}}}
     for target, content, mode in ((destination, source, 0o444),
-                           (Path("secrets/agentgateway-service.compose.json"), json.dumps(overlay), 0o600)):
+                           (runtime / "secrets/agentgateway-service.compose.json", json.dumps(overlay), 0o600)):
         descriptor, temporary = tempfile.mkstemp(prefix=".gateway-service-", dir=target.parent)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
@@ -694,8 +697,8 @@ app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IP
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${conformance_signing_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
-root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
+compose() { sudo -n --preserve-env=BUILDX_BUILDER,KAILO_RUNTIME_DIR docker compose --env-file "$KAILO_RUNTIME_DIR/.env" -f compose.yaml "${runtime_compose[@]}" "${action_token_compose[@]}" "${conformance_signing_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
+root_token=$(python3 -c 'import json,os;print(json.load(open(os.environ["KAILO_RUNTIME_DIR"] + "/secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {
   local nsv=$1; shift
@@ -727,7 +730,7 @@ tmp=$(mktemp)
   printf 'OPENBAO_TENANT_CORE_BOUND_CIDRS=%s\n' "$app_cidr"; } > "$tmp"
 # 十行都非空才落位：半份投递会让 Core 以「缺少某项」退出，却看不出是投递失败
 [ "$(grep -c '=.\+' "$tmp")" = 10 ] || { echo "投递不完整，未改动 secrets/openbao-core.env" >&2; exit 2; }
-mv "$tmp" secrets/openbao-core.env
+mv "$tmp" "$KAILO_RUNTIME_DIR/secrets/openbao-core.env"
 tmp=
 
 # Versioned public-JWKS rendering shared by both deployment-only signing keys:
@@ -798,8 +801,10 @@ try:
     require(re.fullmatch(r"[A-Za-z0-9_-]+", role) is not None)
     timeout = int(os.environ["OPENBAO_HTTP_TIMEOUT_SECONDS"])
     require(timeout > 0)
-    root = json.loads(private_read(Path("secrets/openbao_init.json").resolve()))["root_token"]
-    compose = ["sudo","-n","docker","compose","--env-file",".env","-f","compose.yaml"]
+    runtime = Path(os.environ["KAILO_RUNTIME_DIR"])
+    root = json.loads(private_read((runtime / "secrets/openbao_init.json").resolve()))["root_token"]
+    compose = ["sudo","-n","--preserve-env=KAILO_RUNTIME_DIR","docker","compose",
+               "--env-file",str(runtime / ".env"),"-f","compose.yaml"]
     def bao(path, fields=None, missing=False, wrap=None, version=None):
         args = (["kv", "get", "-version=" + str(version), "-format=json"] if version is not None
             else ["read" if fields is None else "write", "-format=json"])

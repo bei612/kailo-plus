@@ -16,7 +16,9 @@ case "$#:${1:-}" in
   1:--check) mode=check ;;
   *) echo '用法：secret-store-audit-dir.sh --prepare|--check' >&2; exit 2 ;;
 esac
-. ./.env
+# .env 与 data/ 在运行目录（ADR-20 §3；缺省即本目录）
+. ./runtime-dir.sh
+. "$KAILO_RUNTIME_DIR/.env"
 gid=${OPENBAO_AUDIT_READER_GID:?缺少 .env 中的 OPENBAO_AUDIT_READER_GID}
 max=${OPENBAO_AUDIT_LOG_MAX_BYTES:?缺少 .env 中的 OPENBAO_AUDIT_LOG_MAX_BYTES}
 bound=${OPENBAO_AUDIT_LOG_BOUND_BYTES:?缺少 .env 中的 OPENBAO_AUDIT_LOG_BOUND_BYTES}
@@ -28,8 +30,8 @@ done
 [ "$bound" -lt "$max" ] || { echo 'OPENBAO_AUDIT_LOG_BOUND_BYTES 必须小于 OPENBAO_AUDIT_LOG_MAX_BYTES' >&2; exit 2; }
 [ "$gid" != 1000 ] || { echo 'OPENBAO_AUDIT_READER_GID 不得复用 OpenBao 进程组 1000' >&2; exit 2; }
 
-dir=data/secret-store-audit
-[ -d data ] || { echo '缺少 deploy/local/data' >&2; exit 2; }
+dir=$KAILO_RUNTIME_DIR/data/secret-store-audit
+[ -d "$KAILO_RUNTIME_DIR/data" ] || { echo "缺少运行目录 data：$KAILO_RUNTIME_DIR/data" >&2; exit 2; }
 if [ "$mode" = prepare ]; then
   [ -L "$dir" ] && { echo "$dir 不得是符号链接" >&2; exit 2; }
   sudo -n mkdir -p -- "$dir"
@@ -38,7 +40,7 @@ if [ "$mode" = prepare ]; then
 fi
 [ -d "$dir" ] && [ ! -L "$dir" ] || { echo "$dir 不存在或是符号链接：先运行 --prepare" >&2; exit 2; }
 real=$(realpath -e -- "$dir")
-store=$(realpath -e -- data/secret-store 2>/dev/null || true)
+store=$(realpath -e -- "$KAILO_RUNTIME_DIR/data/secret-store" 2>/dev/null || true)
 if [ -n "$store" ]; then
   case "$real/" in "$store"/*) echo "$dir 不得位于 raft 数据目录之内" >&2; exit 2 ;; esac
 fi
