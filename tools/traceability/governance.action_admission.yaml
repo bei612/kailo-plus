@@ -64,7 +64,7 @@ release:
     - name: web-client
       digest: sha256:376e896afda1ba2bbb3a1ff7fa0dd049e10edfdfa6ec2faa69291a6d5e6e073f
     - name: core
-      digest: sha256:08a9229b626b8637c83033aa60e1d0bea30f97fed303a99a7bce11e518c777ca
+      digest: sha256:5d7592514a99718c48ccafe4a6c8133c0bb7da80ccd71006226a4b71dc7d61d1
     - name: worker
-      digest: sha256:ce157b54b08fd85a00e1c597c663a282c7850db0375bdc9c0c3af979551b90d7
+      digest: sha256:93d578d9c6dafacb9794696f6631660cf3ae0a70cf35d8c728fa866dbd89fe74
   gate: blocked_until_seams_closed
