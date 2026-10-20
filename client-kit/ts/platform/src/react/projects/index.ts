@@ -27,3 +27,5 @@ export { createProjectsGitHost, type ProjectsGitHost, type ProjectRepoSnapshot, 
   type ProjectRepoBranchResult, type CreateProjectRemoteBranchInput, type DeleteProjectRemoteBranchInput,
   type MergeProjectPullRequestInput, type ProjectRepoMergeResult } from "./projectGit";
 export { SidebarProjectsSection, type SidebarProjectChannel, type SidebarProjectMembership } from "../sidebar/SidebarProjectsSection";
+export type { ProjectAgentChatHost } from "./projectAgentChatHost";
+export type { ProjectAgentConversationEvent, ProjectAgentSendRequest } from "./lib/projectAgentConversation";

@@ -43,6 +43,7 @@ import {entityDiscussionQuery} from "./discussionChannels";
 import {ProjectDetailRightPanel} from "./ProjectDetailRightPanel";
 import {ProjectWorkItemCommunicationActions} from "./ProjectWorkItemCommunicationActions";
 import type {ProjectDiscussInChannel} from "./useProjectDiscussInChannel";
+import type {ProjectDetailAgentContext} from "./lib/projectDetailAgentContext";
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
 }
@@ -224,7 +225,7 @@ export function PullRequestDetailHeader({
   );
 }
 
-type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel:ProjectDiscussInChannel};
+type PullRequestDetailProps={profiles?:UserProfileLookup;project:Project;pullRequest:ProjectPullRequest;publication?:{host:ProjectsHost;projectId:string};contextPanel?:{channelId?:string|null;onDiscussInChannel?:ProjectDiscussInChannel;agentContext?:ProjectDetailAgentContext};
   diffStats?:{additions:number;deletions:number}|null;filesChanged?:(controls:ReviewFilesChangedControls)=>React.ReactNode;filesCount?:number};
 export function ProjectPullRequestDetail(props:PullRequestDetailProps) {
  return <PullRequestDetailBody key={`${props.publication?.host.scopeKey??"read"}:${props.pullRequest.id}`} {...props}/>;
@@ -700,7 +701,7 @@ function PullRequestDetailBody({profiles,project,pullRequest:source,publication,
       </div>:null}
     </div>
   );
-  return contextPanel&&publication?<ProjectDetailRightPanel pullRequest={pullRequest} repository={project}
+  return contextPanel&&publication?<ProjectDetailRightPanel pullRequest={pullRequest} repository={project} agentContext={contextPanel.agentContext}
     actions={<ProjectWorkItemCommunicationActions pullRequest={pullRequest} channelId={contextPanel.channelId} scopeKey={publication.host.scopeKey} onDiscuss={contextPanel.onDiscussInChannel}/>}
   >{detail}</ProjectDetailRightPanel>:detail;
 }

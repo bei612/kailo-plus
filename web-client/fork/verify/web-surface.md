@@ -6851,3 +6851,25 @@ V-SCN-105/106（DD-39/81/117/120）。本批只做 TypeScript/UI 与 Web 宿主�
   不合契约、填写→核对→确认的精确命令与刷新、低于已用量警示、UNKNOWN 同键重查、拒绝如实显示），扩充 `agent-mention-status.test.tsx`
   与 `web-client/web/src/platform/bff-client.test.ts`（额度路由），待 CI。BFF 路由、部署与浏览器验收均未进行；不声称 V-SCN-114/115/116
   或 DD-123 已验收。追溯记录待与后端批次合并时补。
+
+## 原版 Projects 项目 Agent 对话（DD-130，2026-10-20，分支 `feat/projects-agent-chat`）
+
+依据 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `ProjectAgentChatPanel`、`projectAgentConversation`、
+`projectAgentConversationStorage`、`projectDetailAgentContext`、`AgentContextPayloadPreview`、
+`ProjectAgentSubmittedContextPill`、`ProjectAgentContextStrip`、`ProjectAgentSelectionComposerBanner`、
+`buildProjectsViewAgentContext`、`useProjectsOverviewAgentContext` 与 `ProjectsAgentPromptPage` 中的选择器和
+`ConversationThread`，共享实现位于 `client-kit/ts/platform/src/react/projects/`，Web 与 Desktop 只各提供一个传输宿主。
+
+- 入口：概览 chrome 的“与 Agent 讨论本分区”与 Agent 栏、仓库详情右栏的项目对话模式、任务/审阅上下文卡的“与 Agent 对话”。
+- 映射：候选是本人 ACTIVE 成员频道中已准入的 Installation（与该频道 @ 候选同一目录）；首条为绑定频道顶层消息，追问为其线程
+  回复，每条经 `agent.invoke` 准入。Web 用既有 BFF 发布（`mentionInstallationIds`，结果不明保留原幂等键）与线程读取；Desktop
+  用本机 CLIENT 发送（`p` 为 Agent，捕获 relay 与签名公钥）与线程读取。不开 Agent 私聊，不启动、启用或安装 Agent。
+- 未纳入本批：概览多选计数菜单（依赖原多选恢复）、`ProjectConversationPanel`（讨论侧栏，非 Agent 对话）、固定提交中没有挂载点的
+  `ProjectsAgentPromptPage` 与 `ProjectsOverviewChatToggle`、面板附件（在频道中发送）。
+- 验证（CI 节点手工检出同一分支提交 `19345b8d4a0cb941e7343559aba25baa69f7d75a`，与 CI worker 相同的检查镜像、限额和 GitHub 源）：
+  `tools/check.sh lint` 退出 0（含 client-kit 与 web-client `tsc --noEmit`、dart analyze）；`verify` 退出 0，client-kit 121 个测试文件
+  1688 项、web-client 46 个文件 710 项全部通过，含新增 `client-kit/ts/platform/test/project-agent-chat.test.tsx`。首个提交
+  `291003fb` 的 verify 曾因测试夹具缺频道读取与 Web 宿主挂载即读本人资料而失败 5+1 项，修正后通过，失败日志未保留在仓库。
+  `trace` 只因手工检出未挂接 CI 的发布证明目录而报 dist digest 缺失，设计 ID 与追溯本身通过；`contract` 只报
+  `client-kit/dart/lib/shared/platform/platform_text.dart` 待 `tools/gen.sh` 重新生成（新增 40 个词条）。
+- 未做：Desktop `tsc` 与构建、部署、浏览器或 Windows 实测；V-SCN-177–179 尚无业务验收，不据此声称可用。
