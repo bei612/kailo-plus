@@ -61,11 +61,11 @@ verify all producers for Tenant+subject+meter are Core-governed
 UsageEvent 以 `(tenant_id, source_type, source_id, meter_key)` 在 Core 唯一，并显式保存 Tenant、Workspace、OpenMeter Customer、subject 与受控 dimensions。OpenMeter 的去重键是 `(namespace, source, event.id)`，而相同 ledger group 可独立入账（SF-OMT-04）。因此：
 
 1. ingest dedupe 和 sink dedupe 都必须启用，因为两者源码默认都是 false（SF-OMT-03）。
-2. outbox 重试不产生新 event ID，不改 source/body/quantity/timestamp。
+2. outbox 重试不产生新 event ID，不改 source/body/quantity/timestamp；投递体是冻结体的确定投影，`data` 中值为 null 的成员不上送（DD-08）。
 3. 同一 operation 可有多个可证明 native source，但同一 source+meter 只结算一次。
 4. 只从具有完整持久事实的字段（字节数、任务、查询结果等能力契约声明的计量事实）发 actual usage。不可观测或存在落账前丢失路径的量不写 actual。
 5. 标准远程模型调用的唯一 usage identity 是 AgentGateway 完成请求时生成的稳定 log ID，但当前 request-log DB writer 失败后清批次（SF-AGW-09）。只有 SS-AGW-USAGE 闭合为 durable acknowledged usage 后才能创建 token/page/cost UsageEvent；不同 provider 的 token 与 OCR page 使用不同 meter，不互相换算。经网关路由的调用（平台自有 Agent 与 `PLATFORM_LLM_ROUTE` binding），Codex `RawResponseCompleted.response_id`、业务能力服务自带的 usage log 与原始 Gateway log 都只作 correlation/诊断 evidence，调用方自报 token 不形成计费事件（SF-AGW-06）。`SELF_MANAGED_MODEL` binding 的调用不经网关，不适用本项：其 actual usage source 是该服务经 Adapter Protocol 上报的 usage 记录（DD-21/92）。
-6. Core 以 `IngressCheckpoint(source_key=agentgateway-durable-usage-tail)` 保存 cursor；cursor 晚写允许重复读取，稳定 log ID 防重复 UsageEvent。游标不恢复写库前已丢的记录。gateway identity 可解析到业务能力 binding、只缺 operation correlation 的 durable usage 按该 binding scope 入账；缺 Tenant/Workspace identity 的 durable usage 进入 reconcile；两种情形都不按时间或 model 名猜 operation（DD-20/92）。
+6. Core 以 `IngressCheckpoint(source_key=agentgateway-durable-usage-tail)` 保存 cursor；cursor 晚写允许重复读取，稳定 log ID 防重复 UsageEvent。游标不恢复写库前已丢的记录。gateway identity 可解析到业务能力 binding、只缺 operation correlation 的 durable usage 按该 binding scope 入账；缺 Tenant/Workspace identity 的 durable usage 进入 reconcile；两种情形都不按时间或 model 名猜 operation（DD-20/92）。每条 durable 条目恰有一个入账终态（DD-21）：全部冻结 meter 有原生数量即写 UsageEvent，没有原生数量即写同 log ID 的 `BILLING_UNAVAILABLE` 审计而不写 UsageEvent，两者都与 cursor 同事务前移；只有身份、归因或冻结 meter 不可核验才保留 cursor 并告警。
 7. OpenMeter 202 只把 UsageEvent 标为 `ACCEPTED`；按 ID/source 查到 event 已 `stored_at` 才标 `COMMITTED`——但 `COMMITTED` 只证明计量事件已落库，**不证明**该 Tenant+subject+meter 的 credit/entitlement 余额快照已吸收它（上游余额由持久快照推进，并专门处理迟到事件）。因此释放 settlement reservation 的条件另有两个之一：该 meter 的余额查询返回值已单调下降至少本次 `quantity`，或返回的快照时间点已不早于该事件时间。在此之前 reservation 保持占用。按 `stored_at` 就释放会让同一额度在下一次 STRICT 准入中被再次算作可用，正是 STRICT_RESERVATION 要防的超卖。`validation_errors` 与 `customer` 由 OpenMeter 在每次查询时按当时的 meter 集合与 subject→Customer 映射重算、不落库（SF-OMT-07）：首次读取出现 validation error 时 Core 记录配置告警并进入 `UNKNOWN` 并由对账动作收敛，但不据此把已 `stored_at` 的事件回退为未提交，也不在后续 meter 配置变更后重判。这不表示 invoice 已 finalized；调用失败与无法确认分别为 `FAILED/UNKNOWN`，不得显示零用量或已结算账单。
 
 ## 5. meter 来源
