@@ -28,7 +28,11 @@ function NativeApplicationScope({ workspaceId, label, selectedId, onSelect }: {
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
   const offset = offsets[index] ?? 0;
-  const [state, reload] = useLoad(`native-entries:${workspaceId ?? "tenant"}:${offset}`, () => client.applicationBindings(workspaceId, offset));
+  // Focus revalidation keeps the current entries mounted: a click that moves focus out of an
+  // entry's iframe must not land on a list that was just swapped for a loading notice. Each
+  // launch freshly re-admits the binding and origin, so the shown list is never the authority.
+  const [state, reload] = useLoad(`native-entries:${workspaceId ?? "tenant"}:${offset}`,
+    () => client.applicationBindings(workspaceId, offset), { keepWhileRevalidating: true });
   useEffect(() => {
     const refresh = () => { reload(); };
     window.addEventListener("focus", refresh);

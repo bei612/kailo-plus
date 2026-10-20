@@ -400,6 +400,26 @@ describe("shared external service connection management", () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({bindingId:connection.bindingId}));
   });
 
+  it("keeps the entries mounted while a focus revalidation is pending, so the focusing click lands",async()=>{
+    let pending=false;
+    const send=vi.fn((request:BffRequest)=>pending&&!request.path.endsWith("/native-page")
+      ? new Promise<BffReply>(()=>{})
+      : Promise.resolve({status:200,body:{bindings:[{...connection,hasNativePage:true,canDisable:false}],canCreate:false}} as BffReply));
+    const onSelect=vi.fn();
+    const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" onSelect={onSelect} />
+    </SidebarProvider></PlatformProvider>);
+    const entry=host.querySelector<HTMLButtonElement>('button[aria-label="Knowledge"]')!;
+    pending=true;
+    // Leaving an entry's iframe focuses the window first; the click follows on the same button.
+    await act(async()=>window.dispatchEvent(new Event("focus")));
+    expect(send.mock.calls.length).toBeGreaterThan(1);
+    expect(entry.isConnected).toBe(true);
+    expect(host.textContent).not.toContain("Loading");
+    await click(entry);
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({bindingId:connection.bindingId}));
+  });
+
   it("does not manufacture entries for inactive, non-native or empty bindings",async()=>{
     for(const bindings of [[],[{...connection,state:"DISABLED",hasNativePage:true}],[{...connection,hasNativePage:false}]]){
       const client=createBffClient({send:async()=>({status:200,body:{bindings,canCreate:false}})});
