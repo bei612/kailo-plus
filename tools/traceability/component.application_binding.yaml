@@ -84,6 +84,11 @@ implementation:
     # DD-128 原生页面入口的组件专属模型 key：运维侧按 binding 投递（只读冻结 projection 与一条 KV 版本）。
     - deploy/components/native-model-delivery.py
     - deploy/components/test_native_model_delivery.py
+    # WeKnora 消费面：原生内置模型声明按名引用组件专属 env（SF-WEK-17），入口拒绝未解析引用。
+    - deploy/components/knowledge-builtin-models.template.yaml
+    - knowledge/fork/deploy/compose.native-model.yaml
+    - knowledge/fork/deploy/native_entrypoint.py
+    - knowledge/fork/deploy/start.sh
     # DD-129 问数验收数据源：部署单元内的专用示例业务库与只读角色核验。
     - data-query/docker/sample-datasource.yaml
     - data-query/docker/sample-datasource/

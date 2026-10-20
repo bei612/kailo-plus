@@ -134,6 +134,9 @@ case "$component" in
     ENV=${COMPONENT_ENV_FILE:-/volumes/data/kailo/components/knowledge/native.env}
     private_env "$ENV"
     here=$S/knowledge/fork/deploy
+    # DD-128(5): the native page entry model key lives only in its own 0600 env.
+    model_env=$(env_value "$ENV" KNOWLEDGE_MODEL_SECRET_ENV_FILE)
+    [ -z "$model_env" ] || private_env "$model_env"
     for kind in APP UI DOCREADER; do
       ensure_image "$(env_value "$ENV" "KNOWLEDGE_${kind}_REPOSITORY")@sha256:$(env_value "$ENV" "KNOWLEDGE_${kind}_DIGEST")"
     done

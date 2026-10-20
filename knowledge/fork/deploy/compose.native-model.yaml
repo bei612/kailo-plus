@@ -1,0 +1,20 @@
+# DD-128(5): the native page entry binding's Core-projected model key, applied
+# with compose.model-gateway.yaml. The original built-in model loader
+# (SF-WEK-17) reads this non-secret declaration at startup, expands its quoted
+# "${KAILO_MODEL_...}" api_key references from the process environment and
+# stores the rows itself, encrypted with SYSTEM_AES_KEY. The value comes only
+# from the component-only 0600 env written by
+# deploy/local/bootstrap.sh --native-model-delivery materialize-weknora.
+# native_entrypoint.py refuses startup when a reference is unresolved.
+services:
+  app:
+    environment:
+      BUILTIN_MODELS_CONFIG: /opt/kailo-knowledge/builtin_models.yaml
+    env_file:
+      - ${KNOWLEDGE_MODEL_SECRET_ENV_FILE:?component-only native model env file required}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_BUILTIN_MODELS_FILE:?native built-in model declaration required}
+        target: /opt/kailo-knowledge/builtin_models.yaml
+        read_only: true
+        bind: {create_host_path: false}

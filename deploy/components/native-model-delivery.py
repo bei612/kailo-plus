@@ -11,8 +11,11 @@ original COMPONENT_BINDING workflow. This program only
   page binding from the Core database (read-only transaction);
 * ``prepare``: reads back or creates the per-binding read-only policy and a
   one-use AppRole in that Tenant namespace and writes the OpenBao Agent input;
-* ``materialize``: after the Agent rendered ``credential.json``, publishes the
-  key into the component-only env file named by the native configuration;
+* ``materialize-<component>``: after the Agent rendered ``credential.json``,
+  checks the component's native model declaration against the frozen projection
+  and publishes the key into the component-only env file under the names that
+  declaration references. Wren and WeKnora share this one delivery; only the
+  declaration parser differs (``CONSUMERS``);
 * ``retire``: removes the per-binding policy/role after the binding is DISABLED.
 
 No value read here is printed; diagnostics never include the key.
@@ -27,6 +30,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from typing import Callable, NamedTuple
 from uuid import UUID
 
 ROLE = re.compile(r"application-model-[0-9a-f]{32}")
@@ -51,13 +55,16 @@ def unique(pairs):
     return result
 
 
-def private_path(raw, directory=False):
+def private_path(raw, directory=False, shared=False):
+    """A controlled path owned by this account. Owner-only unless ``shared``: a
+    non-secret native declaration a non-root container user must read may be
+    readable by others, never writable by them."""
     path = Path(raw)
     require(path.is_absolute() and str(path) == str(raw) and path.resolve(strict=True) == path,
             "controlled path must be absolute, canonical and existing")
     info = path.stat()
     require((stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
-            and not info.st_mode & 0o077 and info.st_uid == os.geteuid(),
+            and not info.st_mode & (0o022 if shared else 0o077) and info.st_uid == os.geteuid(),
             "controlled path must be owner-only and owned by this account")
     return path
 
@@ -77,8 +84,8 @@ def runtime_dir(env):
     return path
 
 
-def read(path):
-    private_path(str(path))
+def read(path, shared=False):
+    private_path(str(path), shared=shared)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as stream:
         return stream.read()
 
@@ -338,6 +345,84 @@ def wren_consumers(config_path, projection, model_base):
     return sorted(names)
 
 
+WEKNORA_ENTRY = {"id", "name", "type", "source", "description", "is_default", "status", "parameters"}
+WEKNORA_PARAMETERS = {"base_url", "api_key", "provider", "embedding_parameters", "context_window",
+                      "max_output_tokens", "max_concurrency", "supports_vision"}
+WEKNORA_KEY_NAME = r"KAILO_MODEL_[A-Z0-9_]+"
+
+
+def weknora_consumers(config_path, projection, model_base):
+    """Names of the keys the original WeKnora built-in model declaration references
+    (DD-128(5), SF-WEK-17). The native loader replaces ${NAME} anywhere in the raw
+    text before parsing, so a reference may only be a whole double-quoted api_key."""
+    import yaml
+
+    # Not a secret: the native process (a non-root container user) reads it too.
+    text = read(config_path, shared=True)
+    quoted = re.findall(r'^[ \t]*api_key:[ \t]*"\$\{(' + WEKNORA_KEY_NAME + r')\}"[ \t]*$', text, re.M)
+    require(sorted(re.findall(r"\$\{([^}]*)\}", text)) == sorted(quoted),
+            "${NAME} may appear only as a whole double-quoted api_key: \"${KAILO_MODEL_...}\"")
+    documents = list(yaml.safe_load_all(text))
+    require(len(documents) == 1 and isinstance(documents[0], dict) and set(documents[0]) == {"builtin_models"},
+            "builtin_models.yaml must hold exactly one builtin_models list")
+    entries = documents[0]["builtin_models"]
+    require(isinstance(entries, list) and entries, "builtin_models must not be empty")
+    ids, names, models = set(), set(), set()
+    for entry in entries:
+        require(isinstance(entry, dict) and {"id", "name", "type", "parameters"} <= set(entry) <= WEKNORA_ENTRY,
+                "built-in model entry fields differ from the platform model shape")
+        require(isinstance(entry["id"], str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", entry["id"])
+                and entry["id"] not in ids, "built-in model ids must be unique stable identifiers")
+        ids.add(entry["id"])
+        require(entry["type"] in ("KnowledgeQA", "Embedding", "Rerank")
+                and entry.get("source", "remote") == "remote" and entry.get("status", "active") == "active"
+                and type(entry.get("is_default", False)) is bool, "only active remote chat/embedding/rerank models")
+        parameters = entry["parameters"]
+        require(isinstance(parameters, dict) and {"base_url", "api_key", "provider"} <= set(parameters) <= WEKNORA_PARAMETERS,
+                "no provider headers, extra config or cloud credentials")
+        require(parameters["base_url"] == model_base, "base_url must be the AgentGateway independent model listener")
+        require(parameters["provider"] in ("openai", "generic"), "only the OpenAI-compatible native clients")
+        reference = re.fullmatch(r"\$\{(" + WEKNORA_KEY_NAME + r")\}", str(parameters["api_key"]))
+        require(reference, "api_key must reference the component-only env")
+        if entry["type"] == "Embedding":
+            dimensions = parameters.get("embedding_parameters")
+            require(isinstance(dimensions, dict) and type(dimensions.get("dimension")) is int
+                    and dimensions["dimension"] > 0, "an embedding model needs its measured dimension")
+        require(isinstance(entry["name"], str), "model name must be the route's native id")
+        names.add(reference[1])
+        models.add(entry["name"])
+    # One reference per entry: none hidden in a block scalar the loader would also expand.
+    require(len(quoted) == len(entries), "each built-in model references the key exactly once")
+    require(models == set(projection["nativeModels"]),
+            "builtin_models.yaml models must be exactly the binding's frozen native models")
+    return sorted(names)
+
+
+class Consumer(NamedTuple):
+    """Where one native component reads the delivered key: the env names of its
+    delivery directory, component-only secret env and native model declaration."""
+    directory: str
+    destination: str
+    declaration: Callable[[dict], Path]
+    names: Callable[[Path, dict, str], list]
+
+
+CONSUMERS = {
+    "wren": Consumer("WREN_NATIVE_MODEL_DELIVERY_DIR", "WREN_AI_SECRET_ENV_FILE",
+                     lambda env: Path(env["WREN_PROJECT_DIR"]) / "config.yaml", wren_consumers),
+    "weknora": Consumer("KNOWLEDGE_NATIVE_MODEL_DELIVERY_DIR", "KNOWLEDGE_MODEL_SECRET_ENV_FILE",
+                        lambda env: Path(env["KNOWLEDGE_BUILTIN_MODELS_FILE"]), weknora_consumers),
+}
+
+
+def deliver(env, consumer):
+    """The one materialization for every native consumer (DD-128(5))."""
+    directory = env[consumer.directory]
+    projection = validate_projection(document(private_path(directory, directory=True) / "projection.json"))
+    names = consumer.names(consumer.declaration(env), projection, env["AGENTGATEWAY_MODEL_BASE_URL"])
+    return materialize(env, directory, env[consumer.destination], names)
+
+
 def materialize(env, directory, destination, names):
     directory = private_path(directory, directory=True)
     descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -397,15 +482,13 @@ def main(argv, env):
         return export(env, argv[1], argv[2])
     if operation == "prepare" and len(argv) == 2:
         return prepare(env, argv[1])
-    if operation == "materialize-wren" and len(argv) == 1:
-        directory = env["WREN_NATIVE_MODEL_DELIVERY_DIR"]
-        projection = validate_projection(document(private_path(directory, directory=True) / "projection.json"))
-        names = wren_consumers(Path(env["WREN_PROJECT_DIR"]) / "config.yaml", projection,
-                               env["AGENTGATEWAY_MODEL_BASE_URL"])
-        return materialize(env, directory, env["WREN_AI_SECRET_ENV_FILE"], names)
+    consumer = CONSUMERS.get(operation[len("materialize-"):]) if operation.startswith("materialize-") else None
+    if consumer and len(argv) == 1:
+        return deliver(env, consumer)
     if operation == "retire" and len(argv) == 2:
         return retire(env, argv[1])
-    raise Refused("usage: export <dir> <binding-id> | prepare <dir> | materialize-wren | retire <dir>")
+    raise Refused("usage: export <dir> <binding-id> | prepare <dir> | materialize-wren | materialize-weknora"
+                  " | retire <dir>")
 
 
 if __name__ == "__main__":

@@ -41,18 +41,47 @@ fi
 # its one KV version; never creates a binding, route, Gateway key or KV value.
 #   --native-model-delivery export <dir> <binding-id>   (frozen non-secret projection)
 #   --native-model-delivery prepare <dir>               (per-binding policy + one-use AppRole)
-#   --native-model-delivery materialize-wren <native.env> (after the OpenBao Agent render)
+#   --native-model-delivery materialize-wren <native.env>    (after the OpenBao Agent render)
+#   --native-model-delivery materialize-weknora <native.env> (same delivery, WeKnora declaration)
 #   --native-model-delivery retire <dir>                (after the binding is DISABLED)
 if [ "$#" -ge 2 ] && [ "$1" = '--native-model-delivery' ]; then
   shift
-  if [ "$1" = materialize-wren ]; then
-    [ "$#" -eq 2 ] || { echo '用法：--native-model-delivery materialize-wren <Wren native.env>' >&2; exit 2; }
-    load_wren_env "$2"
-    set -- materialize-wren
-    export WREN_NATIVE_MODEL_DELIVERY_DIR="${WREN_NATIVE_MODEL_DELIVERY_DIR:?native page model delivery directory is required}" \
-      WREN_AI_SECRET_ENV_FILE="${WREN_AI_SECRET_ENV_FILE:?component-only env destination is required}" \
-      WREN_PROJECT_DIR="${WREN_PROJECT_DIR:?existing native configuration is required}"
-  fi
+  case "$1" in
+    materialize-wren)
+      [ "$#" -eq 2 ] || { echo '用法：--native-model-delivery materialize-wren <Wren native.env>' >&2; exit 2; }
+      load_wren_env "$2"
+      set -- materialize-wren
+      export WREN_NATIVE_MODEL_DELIVERY_DIR="${WREN_NATIVE_MODEL_DELIVERY_DIR:?native page model delivery directory is required}" \
+        WREN_AI_SECRET_ENV_FILE="${WREN_AI_SECRET_ENV_FILE:?component-only env destination is required}" \
+        WREN_PROJECT_DIR="${WREN_PROJECT_DIR:?existing native configuration is required}"
+      ;;
+    materialize-weknora)
+      [ "$#" -eq 2 ] || { echo '用法：--native-model-delivery materialize-weknora <WeKnora native.env>' >&2; exit 2; }
+      file=$2
+      [[ $file == /* && -f $file && ! -L $file && $(stat -c '%a' -- "$file") == 600 ]] \
+        || { echo 'WeKnora 原生组件 env 必须是绝对路径的 0600 普通文件' >&2; exit 2; }
+      # The WeKnora native.env is a Compose env file, not shell input: take the three
+      # named keys only, never source it (component-deploy.sh env_value).
+      for name in KNOWLEDGE_NATIVE_MODEL_DELIVERY_DIR KNOWLEDGE_MODEL_SECRET_ENV_FILE KNOWLEDGE_BUILTIN_MODELS_FILE; do
+        value=$(python3 -I - "$file" "$name" <<'PY'
+import re, sys
+name = sys.argv[2]
+for line in open(sys.argv[1], encoding="utf-8"):
+    m = re.match(r"^" + re.escape(name) + r"=(.*)$", line.rstrip("\n"))
+    if m:
+        v = m.group(1)
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+            v = v[1:-1]
+        print(v)
+        break
+PY
+)
+        [ -n "$value" ] || { echo "WeKnora 原生组件 env 缺少 $name" >&2; exit 2; }
+        export "$name=$value"
+      done
+      set -- materialize-weknora
+      ;;
+  esac
   CORE_DB_USER="${CORE_DB_USER:?}" CORE_DB_NAME="${CORE_DB_NAME:?}" \
   AGENTGATEWAY_MODEL_BASE_URL="${AGENTGATEWAY_MODEL_BASE_URL:?}" \
   OPENBAO_ADDR="${OPENBAO_ADDR:?}" \

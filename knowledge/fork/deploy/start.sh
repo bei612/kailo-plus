@@ -54,6 +54,16 @@ if [[ -n "$platform_env" ]]; then
   if grep -Eq '^KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE=.+$' "$native_env"; then
     args+=(-f "$deployment_dir/compose.model-delivery.yaml")
   fi
+  # DD-128(5): a native page entry binding's key, read by the original built-in
+  # model declaration. Both files are named together or not at all.
+  model_secret=$(grep -Ec '^KNOWLEDGE_MODEL_SECRET_ENV_FILE=.+$' "$native_env" || true)
+  model_declaration=$(grep -Ec '^KNOWLEDGE_BUILTIN_MODELS_FILE=.+$' "$native_env" || true)
+  if [[ "$model_secret$model_declaration" == 11 ]]; then
+    args+=(-f "$deployment_dir/compose.native-model.yaml")
+  elif [[ "$model_secret$model_declaration" != 00 ]]; then
+    echo 'KNOWLEDGE_MODEL_SECRET_ENV_FILE and KNOWLEDGE_BUILTIN_MODELS_FILE are named together, once each' >&2
+    exit 78
+  fi
 fi
 if [[ "$platform_adapter" == true ]]; then
   args+=(-f "$deployment_dir/compose.adapter.yaml")

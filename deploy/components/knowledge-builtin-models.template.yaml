@@ -1,0 +1,39 @@
+# WeKnora native built-in model declaration for a native page entry binding that
+# selected PLATFORM_LLM_ROUTE (DD-128(5), SF-WEK-17). Install it as
+# KNOWLEDGE_BUILTIN_MODELS_FILE (owned by the operator, mode 0644: it holds no
+# secret and the non-root native process reads it). The original loader reads it
+# at every app start, expands each quoted api_key reference from the
+# component-only env written by bootstrap.sh --native-model-delivery
+# materialize-weknora, and stores the rows itself (encrypted with SYSTEM_AES_KEY),
+# visible to every native workspace and editable only by a native system admin.
+#
+# Rules checked by materialize-weknora and the native entrypoint:
+# - names are exactly the binding's frozen native models (the routes' native ids);
+# - base_url is exactly the platform AGENTGATEWAY_MODEL_BASE_URL; provider openai
+#   or generic; no custom_headers, extra_config or cloud credentials;
+# - api_key is exactly the double-quoted reference below, on its own line, and a
+#   reference appears nowhere else in this file (not even in a comment);
+# - an Embedding entry states the dimension measured from a real embedding
+#   response of its route;
+# - ids stay stable across key rotations: knowledge bases reference them.
+builtin_models:
+  - id: kailo-platform-chat
+    name: <to-fill:chat route native id>
+    type: KnowledgeQA
+    source: remote
+    is_default: true
+    parameters:
+      base_url: <to-fill:AGENTGATEWAY_MODEL_BASE_URL>
+      provider: openai
+      api_key: "${KAILO_MODEL_API_KEY}"
+  - id: kailo-platform-embedding
+    name: <to-fill:embedding route native id>
+    type: Embedding
+    source: remote
+    is_default: true
+    parameters:
+      base_url: <to-fill:AGENTGATEWAY_MODEL_BASE_URL>
+      provider: openai
+      api_key: "${KAILO_MODEL_API_KEY}"
+      embedding_parameters:
+        dimension: <to-fill:measured embedding dimension>

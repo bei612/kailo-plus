@@ -82,6 +82,36 @@ def http_url(env, name, origin=False):
     return value
 
 
+MODEL_KEY_NAME = re.compile(r"KAILO_MODEL_[A-Z0-9_]+")
+
+
+def builtin_model_references(env):
+    """DD-128(5): the original loader leaves an unresolved ${NAME} as a literal
+    key and skips a missing file, so the platform model declaration is checked
+    here, before exec: only the Gateway transport, a regular file, and every
+    reference a nonempty single-line value from the component-only env."""
+    if "KNOWLEDGE_PLATFORM_MODEL_BASE_URL" not in env:
+        raise ConfigurationError("BUILTIN_MODELS_CONFIG: Gateway model transport required")
+    path = required(env, "BUILTIN_MODELS_CONFIG")
+    if not os.path.isabs(path):
+        raise ConfigurationError("BUILTIN_MODELS_CONFIG: absolute file path required")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as declaration:
+            if not stat.S_ISREG(os.fstat(declaration.fileno()).st_mode):
+                raise ConfigurationError("BUILTIN_MODELS_CONFIG: regular file required")
+            text = declaration.read(1048577).decode("utf-8")
+    except (OSError, UnicodeError):
+        raise ConfigurationError("BUILTIN_MODELS_CONFIG: unreadable") from None
+    names = re.findall(r"\$\{([^}]*)\}", text)
+    if not names or len(text) > 1048576:
+        raise ConfigurationError("BUILTIN_MODELS_CONFIG: bounded declaration with key references required")
+    for name in names:
+        if not MODEL_KEY_NAME.fullmatch(name):
+            raise ConfigurationError("BUILTIN_MODELS_CONFIG: only KAILO_MODEL_* references are allowed")
+        required(env, name)
+
+
 def prepare_environment(original):
     env = dict(original)
     # This entrypoint belongs to the adjacent independent-service Compose only.
@@ -103,6 +133,8 @@ def prepare_environment(original):
     http_url(env, "OIDC_AUTH_ISSUER_URL")
     http_url(env, "OIDC_AUTH_DISCOVERY_URL")
     http_url(env, "FRONTEND_BASE_URL", origin=True)
+    if "BUILTIN_MODELS_CONFIG" in env:
+        builtin_model_references(env)
     if "KNOWLEDGE_PLATFORM_MODEL_BASE_URL" in env:
         value = http_url(env, "KNOWLEDGE_PLATFORM_MODEL_BASE_URL")
         parsed = urlsplit(value)

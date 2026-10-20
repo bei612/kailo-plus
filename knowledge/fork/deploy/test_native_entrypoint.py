@@ -246,6 +246,94 @@ class NativeEntrypointTests(unittest.TestCase):
                 self.assertEqual(operations[1][-8:], ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps", "app"])
                 calls.unlink()
 
+    def builtin_models(self, text):
+        declaration = Path(self.directory.name) / "builtin_models.yaml"
+        declaration.write_text(text)
+        declaration.chmod(0o644)  # not a secret: the non-root native user reads it
+        self.env["BUILTIN_MODELS_CONFIG"] = str(declaration)
+        return declaration
+
+    def test_builtin_model_declaration_needs_gateway_and_every_reference_resolved(self):
+        """DD-128(5): the original loader keeps an unresolved ${NAME} as a literal key
+        and skips a missing file; startup is refused instead."""
+        key = "ab" * 32
+        self.builtin_models('builtin_models:\n  - id: kailo-chat\n    parameters:\n'
+                            '      api_key: "${KAILO_MODEL_API_KEY}"\n')
+        self.env["KAILO_MODEL_API_KEY"] = key
+        self.assert_refused()  # no Gateway transport overlay
+        self.env["KNOWLEDGE_PLATFORM_MODEL_BASE_URL"] = "http://model-edge:18081/v1"
+        delivered = entrypoint.prepare_environment(self.env)
+        self.assertEqual(delivered["KAILO_MODEL_API_KEY"], key)
+        self.assertEqual(delivered["BUILTIN_MODELS_CONFIG"], self.env["BUILTIN_MODELS_CONFIG"])
+        for missing in ("", " " + key, None):
+            with self.subTest(value=missing):
+                env = dict(self.env)
+                if missing is None:
+                    del env["KAILO_MODEL_API_KEY"]
+                else:
+                    env["KAILO_MODEL_API_KEY"] = missing
+                with self.assertRaises(entrypoint.ConfigurationError) as error:
+                    entrypoint.prepare_environment(env)
+                self.assertNotIn(key, str(error.exception))
+        # Only platform key names; never another process setting such as a DB user.
+        for text in ('builtin_models:\n  - parameters:\n      api_key: "${DB_USER}"\n',
+                     "builtin_models: []\n"):
+            with self.subTest(text=text):
+                self.builtin_models(text)
+                self.assert_refused()
+        declaration = self.builtin_models('api_key: "${KAILO_MODEL_API_KEY}"\n')
+        for path in (str(declaration.with_name("absent.yaml")), "builtin_models.yaml", self.directory.name):
+            with self.subTest(path=path):
+                self.assert_refused({**self.env, "BUILTIN_MODELS_CONFIG": path})
+        link = declaration.with_name("link.yaml")
+        link.symlink_to(declaration)
+        self.assert_refused({**self.env, "BUILTIN_MODELS_CONFIG": str(link)})
+
+    def test_native_model_overlay_needs_the_transport_and_both_files(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        platform = root / "platform.env"
+        platform.write_text("PLATFORM_EDGE_NETWORK=fixture\nAGENTGATEWAY_MODEL_HOST=gateway.example.test\nAGENTGATEWAY_MODEL_PORT=80\nAGENTGATEWAY_MODEL_BASE_URL=http://gateway.example.test/v1\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        overlay = str(root / "compose.native-model.yaml")
+        files = "KNOWLEDGE_MODEL_SECRET_ENV_FILE=/m/ai.env\nKNOWLEDGE_BUILTIN_MODELS_FILE=/m/builtin_models.yaml\n"
+        for native, platform_model, applied in ((files, True, True), (files, False, False), ("", True, False)):
+            with self.subTest(native=native, platform_model=platform_model):
+                (root / ".env").write_text(native)
+                command = ["bash", str(root / "start.sh")] + (["--platform-model", str(platform)] if platform_model else [])
+                subprocess.run(command + ["--validate"], env=env, check=True, capture_output=True)
+                operations = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertEqual(len(operations), 1)
+                self.assertEqual(overlay in operations[0], applied)
+                if applied:
+                    self.assertLess(operations[0].index(str(root / "compose.model-gateway.yaml")), operations[0].index(overlay))
+                calls.unlink()
+        for native in ("KNOWLEDGE_MODEL_SECRET_ENV_FILE=/m/ai.env\n", "KNOWLEDGE_BUILTIN_MODELS_FILE=/m/b.yaml\n",
+                       files + "KNOWLEDGE_BUILTIN_MODELS_FILE=/m/other.yaml\n"):
+            with self.subTest(native=native):
+                (root / ".env").write_text(native)
+                refused = subprocess.run(["bash", str(root / "start.sh"), "--platform-model", str(platform), "--validate"],
+                                         env=env, capture_output=True)
+                self.assertEqual(refused.returncode, 78)
+                self.assertFalse(calls.exists())
+
+    def test_native_model_overlay_reads_the_declaration_and_component_env_only(self):
+        import yaml
+        overlay = yaml.safe_load(Path(__file__).with_name("compose.native-model.yaml").read_text())
+        self.assertEqual(set(overlay), {"services"})
+        self.assertEqual(set(overlay["services"]), {"app"})
+        app = overlay["services"]["app"]
+        self.assertEqual(app["environment"], {"BUILTIN_MODELS_CONFIG": "/opt/kailo-knowledge/builtin_models.yaml"})
+        self.assertEqual(len(app["env_file"]), 1)
+        self.assertTrue(app["env_file"][0].startswith("${KNOWLEDGE_MODEL_SECRET_ENV_FILE:?"))
+        (mount,) = app["volumes"]
+        self.assertEqual((mount["target"], mount["read_only"], mount["bind"]),
+                         ("/opt/kailo-knowledge/builtin_models.yaml", True, {"create_host_path": False}))
+
     def test_adapter_reader_generates_actual_scoped_uncached_agent_input(self):
         root = Path(self.directory.name)
         outputs, bootstrap = root / "outputs", root / "bootstrap"

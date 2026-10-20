@@ -213,6 +213,113 @@ embedding_model_dim: 2560
             with self.assertRaises(delivery.Refused):
                 delivery.wren_consumers(config, self.value, self.env["AGENTGATEWAY_MODEL_BASE_URL"])
 
+    def weknora(self, text=None, mode=0o644, file="builtin_models.yaml", **fill):
+        """The repository template, filled as an operator would (DD-128(5), SF-WEK-17)."""
+        values = {"chat route native id": "chat-route", "embedding route native id": "embedding-route",
+                  "AGENTGATEWAY_MODEL_BASE_URL": self.env["AGENTGATEWAY_MODEL_BASE_URL"],
+                  "measured embedding dimension": "2560", **fill}
+        if text is None:
+            text = (HERE / "knowledge-builtin-models.template.yaml").read_text(encoding="utf-8")
+            text = re.sub(r"<to-fill:([^>]*)>", lambda m: values[m[1]], text)
+        declaration = self.work / file
+        declaration.write_text(text, encoding="utf-8")
+        declaration.chmod(mode)
+        return declaration
+
+    def test_weknora_declaration_must_reference_the_key_only_as_frozen_gateway_models(self):
+        base = self.env["AGENTGATEWAY_MODEL_BASE_URL"]
+        valid = self.weknora()
+        self.assertEqual(delivery.weknora_consumers(valid, self.value, base), ["KAILO_MODEL_API_KEY"])
+        # Owner-written, readable by the non-root native process, never writable by others.
+        self.assertEqual(delivery.weknora_consumers(self.weknora(mode=0o600), self.value, base), ["KAILO_MODEL_API_KEY"])
+        text = valid.read_text(encoding="utf-8")
+        key = '      api_key: "${KAILO_MODEL_API_KEY}"\n'
+        refused = {
+            "group writable": self.weknora(mode=0o664, file="writable.yaml"),
+            "direct provider": self.weknora(file="provider.yaml", **{"AGENTGATEWAY_MODEL_BASE_URL": "https://provider.example/v1"}),
+            "another model": self.weknora(file="other.yaml", **{"embedding route native id": "other-route"}),
+            "guessed dimension": self.weknora(file="dimension.yaml", **{"measured embedding dimension": "unknown"}),
+        }
+        for name, change in {
+            "reference in a comment": lambda s: "# api_key: \"${KAILO_MODEL_API_KEY}\"\n" + s,
+            "reference in a description": lambda s: s.replace("    type: KnowledgeQA\n",
+                                                              '    type: KnowledgeQA\n    description: "${KAILO_MODEL_API_KEY}"\n'),
+            "unquoted reference": lambda s: s.replace(key, "      api_key: ${KAILO_MODEL_API_KEY}\n", 1),
+            "literal key": lambda s: s.replace(key, '      api_key: "' + "ab" * 32 + '"\n', 1),
+            "process setting": lambda s: s.replace("KAILO_MODEL_API_KEY", "DB_USER"),
+            "provider header": lambda s: s.replace("      provider: openai\n",
+                                                   "      provider: openai\n      custom_headers: {X-Route: other}\n", 1),
+            "vendor client": lambda s: s.replace("provider: openai", "provider: aliyun", 1),
+            "duplicate id": lambda s: s.replace("kailo-platform-embedding", "kailo-platform-chat"),
+            "local model": lambda s: s.replace("source: remote", "source: local", 1),
+            "second document": lambda s: s + "---\nbuiltin_models: []\n",
+        }.items():
+            refused[name] = self.weknora(text=change(text), file=name.replace(" ", "-") + ".yaml")
+        for name, declaration in refused.items():
+            with self.subTest(name):
+                with self.assertRaises(delivery.Refused):
+                    delivery.weknora_consumers(declaration, self.value, base)
+
+    def test_weknora_key_names_are_the_ones_the_native_entrypoint_accepts(self):
+        entrypoint = load("knowledge_native_entrypoint", ROOT / "knowledge/fork/deploy/native_entrypoint.py")
+        self.assertEqual(entrypoint.MODEL_KEY_NAME.pattern, delivery.WEKNORA_KEY_NAME)
+
+    def consumer_env(self, component):
+        destination = self.work / (component + ".env")
+        private(destination, "")
+        if component == "wren":
+            project = self.work / "wren"
+            project.mkdir(mode=0o700)
+            self.config().rename(project / "config.yaml")
+            names = {"WREN_NATIVE_MODEL_DELIVERY_DIR": str(self.dir), "WREN_AI_SECRET_ENV_FILE": str(destination),
+                     "WREN_PROJECT_DIR": str(project)}
+        else:
+            names = {"KNOWLEDGE_NATIVE_MODEL_DELIVERY_DIR": str(self.dir),
+                     "KNOWLEDGE_MODEL_SECRET_ENV_FILE": str(destination),
+                     "KNOWLEDGE_BUILTIN_MODELS_FILE": str(self.weknora())}
+        return names, destination
+
+    def test_wren_and_weknora_share_one_materialization(self):
+        self.write_projection()
+        for component in ("wren", "weknora"):
+            with self.subTest(component):
+                names, destination = self.consumer_env(component)
+                self.credential()
+                result = delivery.main(["materialize-" + component], {**self.env, **names})
+                self.assertEqual((result["operation"], result["keyNames"]), ("materialize", ["KAILO_MODEL_API_KEY"]))
+                self.assertEqual(destination.read_text(), 'KAILO_MODEL_API_KEY="' + "ab" * 32 + '"\n')
+                self.assertFalse((self.dir / "credential.json").exists())
+        for argv in (["materialize-cells"], ["materialize-"], ["materialize-weknora", "extra"]):
+            with self.assertRaises(delivery.Refused):
+                delivery.main(argv, self.env)
+
+    def test_bootstrap_materializes_weknora_from_its_compose_env_without_sourcing_it(self):
+        runtime = Path(self.env["KAILO_RUNTIME_DIR"])
+        private(runtime / ".env", "".join(f"{k}={v}\n" for k, v in ENV.items()))
+        self.write_projection()
+        names, destination = self.consumer_env("weknora")
+        self.credential()
+        native = self.work / "native.env"
+        # A Compose env value with a space would run a command if the file were sourced.
+        sourced = self.work / "sourced"
+        private(native, f"KAILO_FRAME_ANCESTORS=http://a.example touch {sourced}\n"
+                + "".join(f"{k}={v}\n" for k, v in names.items()))
+        command = ["bash", str(ROOT / "deploy/local/bootstrap.sh"), "--native-model-delivery", "materialize-weknora"]
+        env = {**{k: v for k, v in os.environ.items() if k not in ENV}, "KAILO_RUNTIME_DIR": str(runtime)}
+        result = subprocess.run(command + [str(native)], env=env, cwd=self.work, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["keyNames"], ["KAILO_MODEL_API_KEY"])
+        self.assertNotIn("ab" * 32, result.stdout + result.stderr)
+        self.assertEqual(destination.read_text(), 'KAILO_MODEL_API_KEY="' + "ab" * 32 + '"\n')
+        self.assertFalse(sourced.exists())
+        native.chmod(0o640)
+        self.assertEqual(subprocess.run(command + [str(native)], env=env, capture_output=True).returncode, 2)
+        private(native, "KNOWLEDGE_NATIVE_MODEL_DELIVERY_DIR=" + str(self.dir) + "\n")
+        native.chmod(0o600)
+        missing = subprocess.run(command + [str(native)], env=env, capture_output=True, text=True)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("KNOWLEDGE_MODEL_SECRET_ENV_FILE", missing.stderr)
+
     def credential(self, **change):
         material = {"bindingId": self.value["bindingId"], "generation": 1,
                     "requestId": str(uuid4()), "version": 1, "value": "ab" * 32, **change}
