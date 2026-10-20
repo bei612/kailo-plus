@@ -1111,6 +1111,20 @@ describe("DD-125(8) mentioning people outside the Workspace channel", () => {
     expect(state.submit).not.toHaveBeenCalled();
   });
 
+  it("re-queries an UNKNOWN reference-only send under the same key and choice without prompting again", async () => {
+    state.publish.mockRejectedValue(new TransportError("lost response"));
+    const host = await render(outsideComposer());
+    await mentionOutsider(host);
+    await click(dialogButtons().find(entry => entry.textContent === "Send anyway")!);
+    await act(async () => {await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(1));});
+    const first = state.publish.mock.calls[0]!;
+    await click(button(host, "platform.send"));
+    await act(async () => {await vi.waitFor(() => expect(state.publish).toHaveBeenCalledTimes(2));});
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(state.publish.mock.calls[1]).toEqual(first);
+    expect(state.publish.mock.calls[1]![5]).toEqual({mentionPubkeys: [], referenceMentionPubkeys: [outsider]});
+  });
+
   it("invites with admission and publishes the full mention only after the membership is ACTIVE", async () => {
     state.roleMembers.mockResolvedValue({members: [{principalId: "olive", displayName: "Olive", tenantAdmin: false, workspaceAdmin: false,
       lastTenantAdmin: false, canGrantTenantAdmin: false, canRevokeTenantAdmin: false, canGrantWorkspaceAdmin: false,

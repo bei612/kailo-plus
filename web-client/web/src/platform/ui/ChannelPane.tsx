@@ -1669,13 +1669,13 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
     let referenceMentionPubkeys: string[] = [];
     if (nonMemberPubkeys.length) {
       const covers = (keys: readonly string[] | undefined) => keys !== undefined && nonMemberPubkeys.every(pubkey => keys.includes(pubkey));
-      // An unresolved intent that froze no reference mentions published these people as `p`,
-      // which only an earlier "Invite" admits: replay that same choice under the same key.
-      const frozenReferences = unresolvedSameMessage ? frozenReferenceMentions(intent.current?.signature) : undefined;
-      const choice = decision && covers(decision.pubkeys) ? decision.kind
-        : !unresolvedSameMessage ? undefined
-          : frozenReferences === undefined ? "invited"
-            : covers(frozenReferences) ? "reference" : undefined;
+      // DD-125(8), V-SCN-164: an unresolved (UNKNOWN) intent keeps its recipients. Only an intent
+      // that froze these people as reference mentions is re-queried under the same key; one that
+      // froze them as `p` recipients who are no longer members fails closed below, with no prompt,
+      // no replay and no silently dropped recipient.
+      const choice = unresolvedSameMessage
+        ? covers(frozenReferenceMentions(intent.current?.signature)) ? "reference" : undefined
+        : decision && covers(decision.pubkeys) ? decision.kind : undefined;
       if (!choice) {
         // An unresolved intent cannot gain a new recipient decision; nor is it silently replayed.
         if (unresolvedSameMessage) { setProblem(t("platform.loadFailed")); return; }
