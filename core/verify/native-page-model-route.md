@@ -70,7 +70,15 @@ schema public` 与 `permission denied to create temporary tables`；角色无超
   Compose env 文件。`knowledge/fork/deploy/compose.native-model.yaml` 由 `start.sh` 在 Gateway 传输
   叠加之后加入（两个文件须同时给出）；`native_entrypoint.py` 在无 Gateway 传输、声明缺失或非普通
   文件、引用非 `KAILO_MODEL_*`、值缺失或为空时拒绝启动（上游加载器会把字面量当 key、缺文件则跳过）。
-- 模板 `deploy/components/knowledge-builtin-models.template.yaml`；`knowledge.env.template` 新增三键。
+- 声明不手填：与 Wren `config.yaml` 同一渲染器 `deploy/components/native-config.py`（spec `knowledge`），
+  模板 `deploy/components/knowledge-builtin-models.template.yaml`，事实取 knowledge `native.env` 的
+  `KNOWLEDGE_MODEL_CHAT_ID`、`KNOWLEDGE_MODEL_EMBEDDING_ID`、`KNOWLEDGE_MODEL_EMBEDDING_DIM`、
+  `KNOWLEDGE_MODEL_API_KEY_NAME`（按字面读取，不 source）与平台 `.env` 的
+  `AGENTGATEWAY_MODEL_BASE_URL`；缺值拒绝、不回退默认，内容相同不写，变化时备份后原子替换并只列键名。
+  渲染结果先经 `weknora_models`——`materialize-weknora` 对部署文件执行的同一函数——核对（有投递目录时
+  须等于冻结集合）才发布，0644 发布在 owner-only 目录内。`component-deploy.sh knowledge` 在镜像、备份与
+  Compose 之前（含 `--check`）只读 `check`，数据库备份后、首次 compose up 前 `apply`。
+  `knowledge.env.template` 新增投递三键与四个事实键。
 - 影响：`knowledge-service` 的输入含 `knowledge/fork/deploy`，source_digest 随之变化，发布须重建；
   上游源码树未改（`upstream_manifest.py diff` 不变）；无 schema/API/Workflow 变化，Wren 物化不变。
 
@@ -86,6 +94,12 @@ schema public` 与 `permission denied to create temporary tables`；角色无超
   未解析引用、`start.sh` 叠加条件与 overlay 形态）；
 - 检查镜像内 `tools/check.sh lint`、`docs` 退出 0；`trace` 在接入发布证明目录后退出 0。`supply`
   在浅克隆中取不到上游基准与历史 release.sh 而失败，属取码形态，不作结论。
+
+渲染器补充后（分支提交 `37165c0d4abf2203c59d4c8b671afaab0e325a0b`，CI 节点 GitHub 取码）：
+`python3 -I -B -m unittest discover -s deploy/components -p "test_native_*.py"` 35 passed（投递 16、
+渲染 19，其中新增 WeKnora 渲染 7 项：发布 0644 且通过 `materialize-weknora` 同一核对、模板占位符恰为
+声明事实、缺失或畸形事实与平台地址缺失拒绝且不写、冻结集合不符拒绝、相同内容不写与变化时备份并只列
+键名、目标目录与文件权限、部署入口顺序）；`knowledge/fork/deploy` 下 `test_native_entrypoint` 36 passed。
 
 ## 未覆盖
 
