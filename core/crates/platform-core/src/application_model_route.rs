@@ -1311,4 +1311,138 @@ END $$;
         down.rollback().await.unwrap();
         tx.rollback().await.unwrap();
     }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated migrated APPLICATION_MODEL_TEST_DATABASE_URL with original base fixture"]
+    async fn native_page_projection_activates_only_with_its_own_discovery_receipt() {
+        use sqlx::{Acquire, Connection};
+        let mut conn = sqlx::PgConnection::connect(
+            &std::env::var("APPLICATION_MODEL_TEST_DATABASE_URL").expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = Connection::begin(&mut conn).await.unwrap();
+        // DD-128: a native page release registered and approved through the
+        // original guards (empty suite plan), then the exact runtime facts.
+        sqlx::raw_sql(r#"
+DO $$
+DECLARE release uuid:=gen_random_uuid(); register_ae uuid:=gen_random_uuid(); approve_ae uuid:=gen_random_uuid();
+ binding uuid:=gen_random_uuid(); service uuid:=gen_random_uuid(); ae uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
+ tenant constant uuid:='00000000-0000-0000-0000-000000000001';
+ human constant uuid:='00000000-0000-0000-0000-000000000011';
+ role text; model jsonb; receipt jsonb;
+BEGIN
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,
+   component_conformance_plan,component_conformance_observation)
+ VALUES(register_ae,register_ae,tenant,'component_release.register',1,human,human,release,repeat('c',64),
+   'ALLOWED','DISPATCHED',register_ae,'{"planDigest":"page","suiteDigest":"page","contractDigests":[]}',
+   jsonb_build_object('actionExecutionId',register_ae,'operationId',register_ae,'workflowId','page-register-'||register_ae,
+     'runId','page-run','componentReleaseId',release,'artifactDigest',repeat('d',64),'planDigest','page',
+     'suiteDigest','page','contractDigests','[]'::jsonb,'observations','[]'::jsonb));
+ INSERT INTO projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,kind,tenant_id,operation_id,action_execution_id,projection_state)
+ VALUES('page-register-'||register_ae,'page-run','ComponentTaskWorkflow',1,'COMPONENT_RELEASE',tenant,register_ae,register_ae,'RUNNING');
+ INSERT INTO projection.task_projection(workflow_id,run_id,last_event_id,status) VALUES('page-register-'||register_ae,'page-run',1,'RUNNING');
+ INSERT INTO catalog.component_definition(type_key,catalog_tenant_id,class,platform_port_key,status)
+ VALUES('page_fixture',tenant,'APPLICATION','NONE','ACTIVE');
+ INSERT INTO catalog.component_release(id,component_type_key,catalog_tenant_id,version,manifest,component_package,binding_config_schema,
+   manifest_digest,component_package_digest,adapter_build_ref,registered_by_action_execution_id,status)
+ VALUES(release,'page_fixture',tenant,'page-v1',jsonb_build_object('componentTypeKey','page_fixture','implements','[]'::jsonb,
+   'allowedModelCallModes','["NONE","PLATFORM_LLM_ROUTE"]'::jsonb,'frontendDelivery','{"mode":"NATIVE_PAGE"}'::jsonb,
+   'executionConnector','{"mode":"NONE","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}'::jsonb),
+   '{}','{}',repeat('d',64),repeat('d',64),repeat('d',64),register_ae,'REGISTERED');
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,
+   temporal_workflow_id,approval_workflow_id,component_compatibility_observation)
+ VALUES(approve_ae,approve_ae,tenant,'component_release.approve',1,'00000000-0000-0000-0000-000000000021',
+   '00000000-0000-0000-0000-000000000021',release,repeat('e',64),'ALLOWED','DISPATCHED',approve_ae,
+   'page-approve-'||approve_ae,'page-approval-'||approve_ae,
+   jsonb_build_object('actionExecutionId',approve_ae,'componentReleaseId',release,'workflowId','page-approve-'||approve_ae,
+     'runId','page-run','approvalWorkflowId','page-approval-'||approve_ae,'registrationPlanDigest','page','builds','[{},{},{}]'::jsonb));
+ INSERT INTO projection.workflow_ref(workflow_id,run_id,workflow_type,workflow_version,kind,tenant_id,operation_id,action_execution_id,projection_state)
+ VALUES('page-approve-'||approve_ae,'page-run','ComponentTaskWorkflow',1,'COMPONENT_RELEASE',tenant,approve_ae,approve_ae,'RUNNING'),
+   ('page-approval-'||approve_ae,'page-run','ApprovalWorkflow',1,NULL,tenant,approve_ae,approve_ae,'RUNNING');
+ INSERT INTO projection.task_projection(workflow_id,run_id,last_event_id,status) VALUES('page-approve-'||approve_ae,'page-run',1,'RUNNING');
+ INSERT INTO projection.approval_projection(workflow_id,action_execution_id,tenant_id,run_id,last_event_id,status,decisions,expires_at,consume_deadline)
+ VALUES('page-approval-'||approve_ae,approve_ae,tenant,'page-run',1,'APPROVED','[]',now()+interval '1 hour',now()+interval '1 hour');
+ UPDATE catalog.component_release SET status='APPROVED',approved_by_action_execution_id=approve_ae WHERE id=release;
+
+ INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(service,tenant,'SERVICE','ACTIVE');
+ INSERT INTO identity.service_principal(principal_id,audience) VALUES(service,'NONE');
+ INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+   initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+ VALUES(ae,ae,tenant,'application_binding.create',1,human,human,binding,repeat('a',64),'ALLOWED','DISPATCHED',ae);
+ INSERT INTO catalog.application_binding(id,tenant_id,component_type_key,component_release_id,service_principal_id,
+   adapter_service_ref,native_instance_ref,isolation_mode,call_identity_mode,capability_categories,normalized_config,
+   config_digest,secret_refs,model_call_mode,retain_on_tenant_delete,state,version,created_by_action_execution_id,projection_action_execution_id)
+ VALUES(binding,tenant,'page_fixture',release,service,'NONE','page-instance','DEDICATED_INSTANCE','INSTANCE_SERVICE',
+   '[]','{}',repeat('7',64),'[]','PLATFORM_LLM_ROUTE',false,'PROVISIONING',1,ae,ae);
+ UPDATE identity.service_principal SET component_binding_kind='APPLICATION',component_binding_id=binding WHERE principal_id=service;
+ INSERT INTO projection.application_runtime(binding_id,generation,component_release_id,normalized_manifest_digest,
+   adapter_contract_digest,state,action_execution_id)
+ VALUES(binding,1,release,repeat('d',64),repeat('d',64),'PENDING',ae);
+
+ role:='application-model-'||replace(binding::text,'-','');
+ model:=jsonb_build_object('tenantId',tenant,'workspaceId',NULL,'bindingId',binding,'generation',1,
+   'gatewayPrincipalId',service,'operationId',ae,'configDigest',repeat('7',64),'deliveryMode','NATIVE_PAGE',
+   'meters',jsonb_build_array(jsonb_build_object('key','component_model_tokens')),
+   'routeResourceIds',jsonb_build_array(route),'nativeModels',jsonb_build_array(route::text),'deliveryChallenges','[]'::jsonb,
+   'secretReader',jsonb_build_object('roleName',role,'audience',role,'servicePrincipalId',service),
+   'serviceSecretRef',jsonb_build_object('locator','tenants/x/kv/model','version',1,'audience',role),
+   'secretRef',jsonb_build_object('locator','tenants/x/kv/model','version',1,'audience','core'));
+ receipt:=jsonb_build_object('deliveryMode','NATIVE_PAGE','verification','GATEWAY_MODEL_DISCOVERY','bindingId',binding,
+   'generation',1,'gatewayPrincipalId',service,'nativeModels',jsonb_build_array(route::text),
+   'nativeKeyId','page-native-key','nativeKeyRevision',3);
+ -- A reader that is not this binding's own role never activates.
+ BEGIN
+   UPDATE projection.application_runtime SET model_projection=jsonb_set(model,'{secretReader,roleName}',
+     to_jsonb('application-model-'||repeat('0',32))),model_state='PENDING' WHERE binding_id=binding;
+   UPDATE projection.application_runtime SET model_dispatch_started=true,model_native_key_id='page-native-key',
+     model_native_key_revision=3 WHERE binding_id=binding;
+   UPDATE projection.application_runtime SET model_delivery_receipt=receipt,model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'foreign reader activated a native page key';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ UPDATE projection.application_runtime SET model_projection=model,model_state='PENDING' WHERE binding_id=binding;
+ UPDATE projection.application_runtime SET model_dispatch_started=true,model_native_key_id='page-native-key',
+   model_native_key_revision=3 WHERE binding_id=binding;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=receipt||'{"nativeProof":"x"}'::jsonb,
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'native page receipt carried a foreign field';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_set(receipt,'{nativeKeyRevision}','4'),
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'receipt of another native key revision activated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_build_array(receipt),
+     model_state='ACTIVE' WHERE binding_id=binding;
+   RAISE EXCEPTION 'adapter-shaped receipt activated a native page key';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+ UPDATE projection.application_runtime SET model_delivery_receipt=receipt,model_state='ACTIVE' WHERE binding_id=binding;
+ BEGIN
+   UPDATE projection.application_runtime SET model_delivery_receipt=jsonb_set(receipt,'{generation}','2')
+   WHERE binding_id=binding;
+   RAISE EXCEPTION 'native page receipt mutated';
+ EXCEPTION WHEN check_violation THEN NULL; END;
+END $$;
+"#).execute(&mut *tx).await.unwrap();
+        let mut down = tx.begin().await.unwrap();
+        let refused = sqlx::raw_sql(include_str!(
+            "../../../migrations/20261021010000_native_page_model_route.down.sql"
+        ))
+        .execute(&mut *down)
+        .await
+        .expect_err("rollback must retain native page model facts");
+        assert_eq!(
+            refused
+                .as_database_error()
+                .and_then(|e| e.code())
+                .as_deref(),
+            Some("23514")
+        );
+        down.rollback().await.unwrap();
+        tx.rollback().await.unwrap();
+    }
 }
