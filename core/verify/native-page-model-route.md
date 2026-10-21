@@ -101,7 +101,20 @@ schema public` 与 `permission denied to create temporary tables`；角色无超
 声明事实、缺失或畸形事实与平台地址缺失拒绝且不写、冻结集合不符拒绝、相同内容不写与变化时备份并只列
 键名、目标目录与文件权限、部署入口顺序）；`knowledge/fork/deploy` 下 `test_native_entrypoint` 36 passed。
 
+### WeKnora 生产投递与知识库问答（2026-10-21）
+
+release `0d1dc76a-5329-594a-a37f-80fff61965e9`（weknora `1.1.0-native-page`）获批后，binding
+`9bd03b28-e85d-5112-b9e3-8a94d7418f33` 以 `PLATFORM_LLM_ROUTE` 和两条 Tenant 级 route（chat
+`62f190fc-c993-4351-aa32-dbcc3c763af2`、embedding `82eb8730-354c-4ebf-85a7-ae9f0da79ada`）激活；
+投递目录 `/volumes/data/kailo/components/knowledge/model-delivery-9bd03b28`，reader
+`application-model-9bd03b28e85d5112b9e38a94d7418f33`；`native-config.py apply knowledge` 渲染内置模型声明后
+`materialize-weknora` 只写键名 `KAILO_MODEL_API_KEY`，部署后原生加载器写入两条内置行；旧入口 binding
+`ea708037-76f1-526a-b588-94e33f701e62` 已停用。首次问答因部署未声明检索驱动而检索为空，经
+SF-WEK-18 修复与重新解析后，qa-1 的问答答案与文档原文三处核对一致；计量与审计回读（24 条
+`component_model_tokens` 全部 `COMMITTED`、24 条 `MODEL_CALL_ADMITTED` 一一对应、无
+`BILLING_UNAVAILABLE`）见 [WeKnora 检索驱动与生产验收](../../knowledge/fork/verify/retrieval-driver-20261021.md)。
+
 ## 未覆盖
 
-生产 Core 的 Gateway key 登记、ExtAuthz 回调、OpenBao 写入与审计、真实 usage 入账、
-Wren 原生向导连接与真实问数、WeKnora 以内置模型声明的生产投递与真实知识库问答，均未在本记录中执行。
+生产 Core 的 Gateway key 登记、ExtAuthz 回调、OpenBao 写入与审计在本记录的源码与隔离验证中未执行；
+WeKnora 的生产执行结果见上节引用的证据。Wren 原生向导连接与真实问数不在本记录。

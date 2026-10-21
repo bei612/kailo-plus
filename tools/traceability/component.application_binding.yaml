@@ -29,6 +29,8 @@ validation:
       ref: file-storage/fork/verify/native-identity.md
     - dimension: 安全边界
       ref: core/verify/native-page-model-route.md
+    - dimension: 端到端场景
+      ref: knowledge/fork/verify/retrieval-driver-20261021.md
 
 implementation:
   owners: [team-platform]
