@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kailo DD-132(2): ONLYOFFICE DocumentServer editing inside the native Cells page.
+     The server provider (gateway/restv2/editor-onlyoffice.go) selects the WOPI action
+     from discovery; this page takes the native document PAT and opens the action by
+     form POST. Authorisation is the Cells ACL. Configured by file-storage/deploy/reconcile.py. -->
+<editor
+        id="editor.onlyoffice" enabled="false" actions="PydioOnlyOffice.Actions" openable="true" order="2" text="onlyoffice.1" title="onlyoffice.1"
+        canWrite="true" iconClass="mdi mdi-file-document-edit" className="PydioOnlyOffice"
+        mimes="docx,xlsx,pptx,docm,xlsm,pptm,dotx,xltx,potx,ppsx,doc,xls,ppt,odt,ods,odp,rtf,txt,csv,pdf"
+        formId="onlyoffice_box" label="CONF_MESSAGE[ONLYOFFICE Docs]" description="CONF_MESSAGE[ONLYOFFICE DocumentServer editor for office documents]">
+
+    <server_settings>
+        <global_param name="KAILO_DOCUMENT_BINDING" type="string" label="CONF_MESSAGE[Kailo document binding projection]" description="CONF_MESSAGE[Controlled bindingId/generation, Resource/version, native workspace/root and platform origin metadata. Set it to switch to governed editing: no native document token is issued then. Empty keeps native editing; this does not grant access.]" mandatory="false" expose="true"/>
+        <global_param name="ONLYOFFICE_PUBLIC_ORIGIN" type="string" label="CONF_MESSAGE[DocumentServer origin]" description="CONF_MESSAGE[Public origin of the DocumentServer instance (its wopi.host); discovery is read there]" default="" mandatory="true" expose="true"/>
+        <global_param name="ONLYOFFICE_WOPI_SOURCE_ORIGIN" type="string" label="CONF_MESSAGE[WOPI source origin]" description="CONF_MESSAGE[Cells origin used in wopisrc, the only origin the DocumentServer may request]" default="" mandatory="true" expose="true"/>
+        <global_param name="ONLYOFFICE_EXTENSIONS" type="string" label="CONF_MESSAGE[Enabled extensions]" description="CONF_MESSAGE[Comma separated extensions opened with the DocumentServer]" default="" mandatory="true" expose="true"/>
+    </server_settings>
+    <client_settings>
+        <resources>
+            <js file="plug/editor.onlyoffice/res/dist/PydioOnlyOffice.min.js" className="PydioOnlyOffice"/>
+            <i18n namespace="onlyoffice" remote="plug/editor.onlyoffice/resources/i18n" />
+        </resources>
+    </client_settings>
+
+    <clientForm id="onlyoffice_box"><![CDATA[
+		<div id="onlyoffice_box"  box_width="90%" box_height="90%" box_resize="true" box_padding="5" class="editor_container"><div id="onlyOfficeContainer"></div></div>
+	]]></clientForm>
+
+</editor>

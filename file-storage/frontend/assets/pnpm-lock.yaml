@@ -922,6 +922,57 @@ importers:
         specifier: ^5.0.1
         version: 5.1.4(webpack@5.104.1)
 
+  editor.onlyoffice:
+    devDependencies:
+      '@babel/core':
+        specifier: ^7.14.6
+        version: 7.28.6
+      '@babel/plugin-proposal-decorators':
+        specifier: ^7.14.5
+        version: 7.28.6(@babel/core@7.28.6)
+      '@babel/plugin-syntax-dynamic-import':
+        specifier: ^7.8.3
+        version: 7.8.3(@babel/core@7.28.6)
+      '@babel/preset-env':
+        specifier: ^7.14.7
+        version: 7.28.6(@babel/core@7.28.6)
+      '@babel/preset-react':
+        specifier: ^7.14.5
+        version: 7.28.5(@babel/core@7.28.6)
+      assemble-less:
+        specifier: ~0.7.0
+        version: 0.7.0
+      babel-loader:
+        specifier: ^9.1.2
+        version: 9.2.1(@babel/core@7.28.6)(webpack@5.104.1)
+      babel-plugin-add-module-exports:
+        specifier: ^1.0.4
+        version: 1.0.4
+      compression-webpack-plugin:
+        specifier: ^10.0.0
+        version: 10.0.0(webpack@5.104.1)
+      css-loader:
+        specifier: ^6.7.3
+        version: 6.11.0(webpack@5.104.1)
+      less:
+        specifier: ^4.1.3
+        version: 4.5.1
+      less-loader:
+        specifier: ^11.1.0
+        version: 11.1.4(less@4.5.1)(webpack@5.104.1)
+      less-plugin-autoprefix:
+        specifier: ^2.0.0
+        version: 2.0.0
+      style-loader:
+        specifier: ^3.3.1
+        version: 3.3.4(webpack@5.104.1)
+      webpack:
+        specifier: '>=5.76.0'
+        version: 5.104.1(webpack-cli@5.1.4)
+      webpack-cli:
+        specifier: ^5.0.1
+        version: 5.1.4(webpack@5.104.1)
+
   editor.openlayer:
     dependencies:
       ol:

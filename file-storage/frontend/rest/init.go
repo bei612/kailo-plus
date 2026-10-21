@@ -60,6 +60,7 @@ var BasePluginsBox = service.PluginBox{
 		"editor.exif",
 		"editor.infopanel",
 		"editor.libreoffice",
+		"editor.onlyoffice",
 		"editor.openlayer",
 		"editor.pdfjs",
 		"editor.soundmanager",
