@@ -136,6 +136,7 @@ COPY --chmod=0755 fork/packaging/runtime-config.py /usr/local/lib/kailo-ds/runti
 RUN mv /opt/kailo-core/bin "$DS/server/FileConverter/bin" && mv /opt/kailo-core/tools "$DS/server/tools" && rmdir /opt/kailo-core \
  && cp "$DS/sdkjs/pdf/src/engine/cmap.bin" "$DS/server/FileConverter/bin/cmap.bin" \
  && mkdir -p "$DS/fonts" \
+ && export LD_LIBRARY_PATH="$DS/server/FileConverter/bin" \
  && "$DS/server/tools/allfontsgen" --input="$DS/core-fonts" --allfonts-web="$DS/sdkjs/common/AllFonts.js" \
       --allfonts="$DS/server/FileConverter/bin/AllFonts.js" --images="$DS/sdkjs/common/Images" \
       --selection="$DS/server/FileConverter/bin/font_selection.bin" --output-web="$DS/fonts" \

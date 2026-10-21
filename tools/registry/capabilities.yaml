@@ -308,6 +308,12 @@ capabilities:
   tools: []
   workflow_kinds:
   - COMPONENT_RELEASE
+- id: files.native_editing
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: gateway.admin
   exposure: tenant_admin
   routes:
