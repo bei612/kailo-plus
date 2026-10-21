@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_artifact_violation.schema.json",
+  "title": "SkillArtifactViolation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code"],
+  "properties": {
+    "code": {"$ref": "../enums/skill_artifact_violation_code.schema.json"},
+    "path": {"type": "string", "description": "违规条目在上传包内的路径（不含正文）；与整体相关的违规省略。"}
+  }
+}

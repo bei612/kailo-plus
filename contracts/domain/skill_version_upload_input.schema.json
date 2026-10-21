@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/skill_version_upload_input.schema.json",
+  "title": "SkillVersionUploadInput",
+  "description": "仅 skill.version.create（DD-135(3)）：引用本 PlatformSession、本人、目标定义的一次性上传及其规范 artifact digest；能力需求只声明契约键与版本，不授予工具。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "artifactDigest", "capabilityRequirements"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "artifactDigest": {"type": "string", "description": "上传返回的规范 SKILL.md SHA-256（64 位小写十六进制）；准入事务内重算比对。"},
+    "capabilityRequirements": {"type": "array", "items": {"type": "string"}, "description": "contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。"}
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_skill_view.schema.json",
+  "title": "AgentInstallationSkillView",
+  "description": "DD-135(7)：Installation pinned Version 引用的一个 Skill 的 requested 事实、投影结果与当前状态；不含正文或物化路径。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skillVersionAssetId", "skillResourceId", "stableSlug", "ordinal", "artifactDigest", "projected", "status"],
+  "properties": {
+    "skillVersionAssetId": {"type": "string", "format": "uuid"},
+    "skillResourceId": {"type": "string", "format": "uuid"},
+    "stableSlug": {"type": "string"},
+    "ordinal": {"type": "integer"},
+    "artifactDigest": {"type": "string"},
+    "projected": {"type": "boolean", "description": "当前 generation 已以 digest 物化并经 skills/list 核对。"},
+    "status": {"$ref": "../enums/agent_installation_skill_status.schema.json"}
+  }
+}

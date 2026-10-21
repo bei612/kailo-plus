@@ -121,6 +121,10 @@
       "type": "integer",
       "description": "调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。"
     },
+    "skillVersionUpload": {
+      "$ref": "../domain/skill_version_upload_input.schema.json",
+      "description": "仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。"
+    },
     "agentVersionContent": {
       "$ref": "../domain/agent_version_content.schema.json",
       "description": "仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。"

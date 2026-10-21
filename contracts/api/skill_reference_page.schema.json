@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_reference_page.schema.json",
+  "title": "SkillReferencePage",
+  "description": "DD-135(4)：AgentVersion 编辑器可选的 Skill 版本目录——当前 HUMAN fresh 可 read 的 ACTIVE 定义下的 PUBLISHED 版本；不授予任何 Installation permission。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["versions"],
+  "properties": {
+    "versions": {"type": "array", "items": {"$ref": "skill_version_view.schema.json"}},
+    "nextOffset": {"type": "integer"}
+  }
+}

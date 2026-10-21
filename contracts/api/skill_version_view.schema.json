@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_version_view.schema.json",
+  "title": "SkillVersionView",
+  "description": "DD-135(1)(2)：不可变 SkillVersion 的元数据；正文只经内容读取端点返回。state 与 AgentVersion 共用同一生命周期枚举。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assetId", "skillResourceId", "stableSlug", "ordinal", "assetVersion", "ownerPrincipalId", "skillName", "description", "artifactFormat", "artifactDigest", "artifactByteSize", "metadataHash", "capabilityRequirements", "state"],
+  "properties": {
+    "assetId": {"type": "string", "format": "uuid"},
+    "skillResourceId": {"type": "string", "format": "uuid"},
+    "stableSlug": {"type": "string"},
+    "ordinal": {"type": "integer"},
+    "assetVersion": {"type": "integer"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "skillName": {"type": "string"},
+    "description": {"type": "string"},
+    "shortDescription": {"type": "string"},
+    "artifactFormat": {"type": "string"},
+    "artifactDigest": {"type": "string"},
+    "artifactByteSize": {"type": "integer"},
+    "metadataHash": {"type": "string"},
+    "capabilityRequirements": {"type": "array", "items": {"type": "string"}},
+    "state": {"$ref": "../enums/agent_version_state.schema.json"},
+    "current": {"type": "boolean", "description": "是所属定义当前的发布指针。"},
+    "canPublish": {"type": "boolean"},
+    "canRetire": {"type": "boolean"}
+  }
+}

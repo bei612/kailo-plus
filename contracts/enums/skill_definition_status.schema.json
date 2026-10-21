@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/skill_definition_status.schema.json",
+  "title": "SkillDefinitionStatus",
+  "description": "DD-135(1)、03 §7：SkillDefinition 状态。DISABLED 不可逆，DELETED 是 Tenant 销毁墓碑。",
+  "type": "string",
+  "enum": ["PROVISIONING", "ACTIVE", "DISABLED", "DELETED"]
+}

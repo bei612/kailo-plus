@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_installation_skill_status.schema.json",
+  "title": "AgentInstallationSkillStatus",
+  "description": "DD-135(5)(7)、17 §4：Installation 中一个被引 Skill 的当前状态。PROJECTION_FAILED 与 RUNTIME_NOT_READY 来自 generation 投影；DISABLED 与 NO_PERMISSION 来自读取时的 fresh 判定，与每次 turn/start 前的判定同一规则。",
+  "type": "string",
+  "enum": ["EFFECTIVE", "DISABLED", "NO_PERMISSION", "PROJECTION_FAILED", "RUNTIME_NOT_READY"]
+}

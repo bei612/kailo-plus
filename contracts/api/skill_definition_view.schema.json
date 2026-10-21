@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_definition_view.schema.json",
+  "title": "SkillDefinitionView",
+  "description": "DD-135(1)(4)：Tenant 级 Skill 定义与 Resource 事实；can* 只是当前 HUMAN 的 fresh 入口提示，提交时仍重验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "ownerPrincipalId", "stableSlug", "displayName", "status", "resourceVersion", "catalogShared"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "stableSlug": {"type": "string"},
+    "displayName": {"type": "string"},
+    "status": {"$ref": "../enums/skill_definition_status.schema.json"},
+    "resourceVersion": {"type": "integer"},
+    "currentPublishedVersionAssetId": {"type": "string", "format": "uuid"},
+    "catalogShared": {"type": "boolean", "description": "本 Tenant 成员同时持有该定义的 discoverer 与 reader（DD-131(6)）。"},
+    "canUpload": {"type": "boolean"},
+    "canDisable": {"type": "boolean"},
+    "canShare": {"type": "boolean"}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/skill_artifact_encoding.schema.json",
+  "title": "SkillArtifactEncoding",
+  "description": "DD-135(2)：上传字节的编码。规范 artifact 恒为一个 SKILL.md，与上传编码无关。",
+  "type": "string",
+  "enum": ["SKILL_MD", "TAR", "TAR_GZIP"]
+}

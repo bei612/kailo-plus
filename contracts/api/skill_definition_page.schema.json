@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_definition_page.schema.json",
+  "title": "SkillDefinitionPage",
+  "description": "同 Tenant 且当前 discover 允许的 Skill 定义页；nextOffset 续读同一排序。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["definitions"],
+  "properties": {
+    "definitions": {"type": "array", "items": {"$ref": "skill_definition_view.schema.json"}},
+    "nextOffset": {"type": "integer"}
+  }
+}

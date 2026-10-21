@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_version_page.schema.json",
+  "title": "SkillVersionPage",
+  "description": "一个 Skill 定义的版本页（ordinal 降序）；DRAFT 只对版本 Asset read 持有者列出。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skillResourceId", "resourceVersion", "versions"],
+  "properties": {
+    "skillResourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer"},
+    "versions": {"type": "array", "items": {"$ref": "skill_version_view.schema.json"}},
+    "nextOffset": {"type": "integer"}
+  }
+}

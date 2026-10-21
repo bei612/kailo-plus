@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_installation_skill_page.schema.json",
+  "title": "AgentInstallationSkillPage",
+  "description": "Installation 的 Skill 投影状态（requested/projection/current）；需 Installation read，读取不触发投影或重试。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["installationResourceId", "agentVersionAssetId", "skills"],
+  "properties": {
+    "installationResourceId": {"type": "string", "format": "uuid"},
+    "agentVersionAssetId": {"type": "string", "format": "uuid"},
+    "generation": {"type": "integer"},
+    "skills": {"type": "array", "items": {"$ref": "agent_installation_skill_view.schema.json"}}
+  }
+}

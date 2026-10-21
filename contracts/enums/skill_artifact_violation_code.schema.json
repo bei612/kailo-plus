@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/skill_artifact_violation_code.schema.json",
+  "title": "SkillArtifactViolationCode",
+  "description": "DD-135(2)(9)：上传校验的封闭违规码；与路径一起逐项返回，不含文件正文。",
+  "type": "string",
+  "enum": [
+    "UNSUPPORTED_ENCODING",
+    "UPLOAD_TOO_LARGE",
+    "EXPANDED_TOO_LARGE",
+    "ARCHIVE_INVALID",
+    "ENTRY_LIMIT_EXCEEDED",
+    "UNSAFE_PATH",
+    "LINK_ENTRY",
+    "SPECIAL_ENTRY",
+    "EXECUTABLE_ENTRY",
+    "EXTRA_ENTRY",
+    "MISSING_SKILL_MD",
+    "DUPLICATE_SKILL_MD",
+    "SKILL_MD_TOO_LARGE",
+    "NOT_UTF8",
+    "CONTROL_CHARACTER",
+    "MISSING_FRONTMATTER",
+    "INVALID_FRONTMATTER",
+    "UNSUPPORTED_FRONTMATTER_KEY",
+    "NAME_MISMATCH",
+    "MISSING_DESCRIPTION",
+    "DESCRIPTION_TOO_LONG"
+  ]
+}

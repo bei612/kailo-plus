@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_artifact_upload_view.schema.json",
+  "title": "SkillArtifactUploadView",
+  "description": "DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter 元数据；否则只给逐项违规，不暂存字节。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accepted", "skillResourceId", "uploadDigest", "uploadByteSize", "violations"],
+  "properties": {
+    "accepted": {"type": "boolean"},
+    "skillResourceId": {"type": "string", "format": "uuid"},
+    "uploadDigest": {"type": "string"},
+    "uploadByteSize": {"type": "integer"},
+    "encoding": {"$ref": "../enums/skill_artifact_encoding.schema.json"},
+    "uploadId": {"type": "string", "format": "uuid"},
+    "artifactDigest": {"type": "string"},
+    "artifactByteSize": {"type": "integer"},
+    "skillName": {"type": "string"},
+    "description": {"type": "string"},
+    "shortDescription": {"type": "string"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "violations": {"type": "array", "items": {"$ref": "skill_artifact_violation.schema.json"}}
+  }
+}
