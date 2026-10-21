@@ -1,0 +1,55 @@
+{
+  "services": {
+    "CoAuthoring": {
+      "token": {
+        "enable": {
+          "browser": true,
+          "request": {
+            "inbox": true,
+            "outbox": true
+          }
+        }
+      },
+      "secret": {
+        "browser": {"string": "", "file": "/run/kailo-ds/secrets/token"},
+        "inbox": {"string": "", "file": "/run/kailo-ds/secrets/token"},
+        "outbox": {"string": "", "file": "/run/kailo-ds/secrets/token"},
+        "session": {"string": "", "file": "/run/kailo-ds/secrets/token"}
+      },
+      "ipfilter": {
+        "rules": [
+          {"address": "${DOCUMENT_EDITOR_WOPI_SOURCE_HOST}", "allowed": true},
+          {"address": "*", "allowed": false}
+        ],
+        "useforrequest": false,
+        "errorcode": 403
+      },
+      "request-filtering-agent": {
+        "allowPrivateIPAddress": false,
+        "allowMetaIPAddress": false
+      },
+      "plugins": {
+        "autostart": []
+      }
+    }
+  },
+  "wopi": {
+    "enable": true,
+    "host": "${DOCUMENT_EDITOR_PUBLIC_ORIGIN}"
+  },
+  "externalRequest": {
+    "directIfIn": {
+      "allowList": ["${DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN}/wopi/files/"],
+      "jwtToken": false
+    },
+    "action": {
+      "allow": false,
+      "blockPrivateIP": true,
+      "proxyUrl": ""
+    }
+  },
+  "aiSettings": {
+    "allowedCorsOrigins": [],
+    "proxy": ""
+  }
+}

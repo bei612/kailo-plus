@@ -91,7 +91,7 @@ RUN find deploy/web-apps/apps -name '*.js.map' -delete \
  && grep -q '{{HASH_POSTFIX}}' /build/web-apps/deploy/web-apps/apps/api/documents/api.js \
  && test -s /build/web-apps/deploy/web-apps/apps/api/wopi/editor-wopi.ejs \
  && for app in documenteditor spreadsheeteditor presentationeditor pdfeditor visioeditor; do \
-      test -s "deploy/web-apps/apps/$app/main/app.js" || { echo "missing $app main bundle" >&2; exit 1; }; done
+      test -s "/build/web-apps/deploy/web-apps/apps/$app/main/app.js" || { echo "missing $app main bundle" >&2; exit 1; }; done
 
 # ── assemble on the official layer, then flatten ───────────────────────────
 FROM ${OFFICIAL_IMAGE} AS assemble

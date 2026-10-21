@@ -17,9 +17,9 @@ func TestApplyNativeEditorFacts(t *testing.T) {
 		write        bool
 		origin       string
 	}{
-		"rw PAT on a writable node":   {scoped("node:n:rw"), true, "http://192.168.0.193:58092", true, "http://192.168.0.193:58092"},
-		"r PAT on a writable node":    {scoped("node:n:r"), true, "http://192.168.0.193:58092/", false, "http://192.168.0.193:58092"},
-		"rw PAT on a read-only node":  {scoped("node:n:rw"), false, "https://cells.example/sub", false, "https://cells.example"},
+		"rw PAT on a writable node":  {scoped("node:n:rw"), true, "http://192.168.0.193:58092", true, "http://192.168.0.193:58092"},
+		"r PAT on a writable node":   {scoped("node:n:r"), true, "http://192.168.0.193:58092/", false, "http://192.168.0.193:58092"},
+		"rw PAT on a read-only node": {scoped("node:n:rw"), false, "https://cells.example/sub", false, "https://cells.example"},
 	} {
 		f := &FileInfo{UserCanWrite: c.writableNode}
 		if err := applyNativeEditorFacts(f, c.claims, c.site); err != nil {
@@ -33,11 +33,11 @@ func TestApplyNativeEditorFacts(t *testing.T) {
 		claims claim.Claims
 		site   string
 	}{
-		"no site URL":     {scoped("node:n:rw"), ""},
-		"relative site":   {scoped("node:n:rw"), "/cells"},
-		"other scheme":    {scoped("node:n:rw"), "ftp://cells.example"},
-		"no scope":        {claim.Claims{}, "http://cells.example"},
-		"two scopes":      {claim.Claims{ProvidesScopes: true, Scopes: []string{"node:a:rw", "node:b:rw"}}, "http://cells.example"},
+		"no site URL":   {scoped("node:n:rw"), ""},
+		"relative site": {scoped("node:n:rw"), "/cells"},
+		"other scheme":  {scoped("node:n:rw"), "ftp://cells.example"},
+		"no scope":      {claim.Claims{}, "http://cells.example"},
+		"two scopes":    {claim.Claims{ProvidesScopes: true, Scopes: []string{"node:a:rw", "node:b:rw"}}, "http://cells.example"},
 	} {
 		f := &FileInfo{UserCanWrite: true}
 		if err := applyNativeEditorFacts(f, c.claims, c.site); err == nil {

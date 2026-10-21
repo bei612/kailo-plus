@@ -1,6 +1,6 @@
-"""DD-127(7) / DD-128: the native Wren config.yaml and the WeKnora built-in model
-declaration are rendered from repository templates and declarative deployment facts,
-never maintained by hand.
+"""DD-127(7) / DD-128 / DD-132: the native Wren config.yaml, the WeKnora built-in model
+declaration and the DocumentServer local.json are rendered from repository templates
+and declarative deployment facts, never maintained by hand.
 
 Run: python3 -I -B -m unittest discover -s deploy/components -p test_native_config.py
 (from the apps root; needs PyYAML). No Docker, OpenBao or Core database is contacted.
@@ -402,6 +402,116 @@ class RenderKnowledge(unittest.TestCase):
             self.assertLess(check, branch.index(later), later)
         self.assertLess(branch.index("backup_pg "), apply)
         self.assertLess(apply, branch.index('bash "$here/start.sh" --native-env "$ENV"\n'))
+
+
+DOCUMENT_EDITOR_FACTS = {"DOCUMENT_EDITOR_PUBLIC_ORIGIN": "http://192.168.0.193:58096",
+                         "DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN": "http://192.168.0.193:58092"}
+
+
+class RenderDocumentEditor(unittest.TestCase):
+    """DD-132(3): the DocumentServer local.json comes from the same renderer, carries
+    no secret and passes the invariants the image entrypoint checks at start."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp()).resolve()
+        self.component = self.work / "document-editor"
+        self.backup = self.work / "backup"
+        for directory in (self.component, self.backup):
+            directory.mkdir(mode=0o700)
+        # No platform fact: the renderer must not need the platform runtime directory.
+        self.environ = {}
+        self.env_file = self.component / "native.env"
+        self.local = self.component / "local.json"
+        self.write_env(DOCUMENT_EDITOR_FACTS)
+
+    def tearDown(self):
+        subprocess.run(["rm", "-rf", "--", str(self.work)], check=True)
+
+    def write_env(self, facts, **extra):
+        lines = {"DOCUMENT_EDITOR_FRAME_ANCESTORS": "'http://192.168.0.193:58092 http://192.168.0.193:58090'",
+                 "DOCUMENT_EDITOR_LOCAL_CONFIG_FILE": str(self.local), **facts, **extra}
+        private(self.env_file, "".join(f"{k}={v}\n" for k, v in lines.items()))
+
+    def run_native(self, operation, *, backup=True):
+        argv = [operation, "document-editor", "--env", str(self.env_file)] + (["--backup-dir", str(self.backup)] if backup else [])
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            result = native.main(argv, self.environ)
+        return result, errors.getvalue()
+
+    def test_render_publishes_the_invariant_local_json_without_secrets(self):
+        result, _ = self.run_native("apply")
+        self.assertTrue(result["written"])
+        self.assertEqual(self.local.stat().st_mode & 0o777, 0o644)
+        config = json.loads(self.local.read_text(encoding="utf-8"))
+        services = config["services"]["CoAuthoring"]
+        self.assertEqual(config["wopi"], {"enable": True, "host": "http://192.168.0.193:58096"})
+        self.assertEqual(config["externalRequest"]["directIfIn"], {"allowList": ["http://192.168.0.193:58092/wopi/files/"], "jwtToken": False})
+        self.assertFalse(config["externalRequest"]["action"]["allow"])
+        self.assertEqual(services["ipfilter"]["rules"], [{"address": "192.168.0.193", "allowed": True}, {"address": "*", "allowed": False}])
+        self.assertEqual(services["token"]["enable"], {"browser": True, "request": {"inbox": True, "outbox": True}})
+        for kind in ("browser", "inbox", "outbox", "session"):
+            self.assertEqual(services["secret"][kind], {"string": "", "file": "/run/kailo-ds/secrets/token"})
+        self.assertNotIn("storage", config)
+        self.assertNotIn("secret\"", self.local.read_text(encoding="utf-8").replace('"secret":', ""))
+        # The image entrypoint applies the very same rule at start.
+        native.document_editor_runtime.invariants(config, "http://192.168.0.193:58096")
+
+    def test_template_placeholders_are_exactly_the_declared_and_derived_facts(self):
+        spec = native.SPECS["document-editor"]
+        text = spec["template"].read_text(encoding="utf-8")
+        self.assertEqual(set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", text)), set(spec["facts"]) | set(spec["derived"]))
+
+    def test_a_missing_or_malformed_fact_refuses_and_writes_nothing(self):
+        for name, value in (("DOCUMENT_EDITOR_PUBLIC_ORIGIN", ""), ("DOCUMENT_EDITOR_PUBLIC_ORIGIN", "http://192.168.0.193:58096/"),
+                            ("DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN", "*"), ("DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN", "ftp://cells.example"),
+                            ("DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN", "http://user@cells.example")):
+            with self.subTest(name=name, value=value):
+                self.write_env({**DOCUMENT_EDITOR_FACTS, name: value})
+                with self.assertRaises(native.Refused):
+                    self.run_native("apply")
+                self.assertFalse(self.local.exists())
+
+    def test_the_rendered_file_must_keep_the_invariants(self):
+        broken = {"wopi.enable": lambda c: c["wopi"].update(enable=False),
+                  "allow-all ipfilter": lambda c: c["services"]["CoAuthoring"]["ipfilter"].update(rules=[{"address": "*", "allowed": True}]),
+                  "jwt direct path": lambda c: c["externalRequest"]["directIfIn"].update(jwtToken=True),
+                  "other outbound": lambda c: c["externalRequest"]["action"].update(allow=True),
+                  "inline secret": lambda c: c["services"]["CoAuthoring"]["secret"]["inbox"].update(string="secret"),
+                  "token off": lambda c: c["services"]["CoAuthoring"]["token"]["enable"].update(browser=False)}
+        _, documents = native.render(native.SPECS["document-editor"], native.facts(native.SPECS["document-editor"], DOCUMENT_EDITOR_FACTS, {}), "")
+        for name, change in broken.items():
+            with self.subTest(name=name):
+                config = json.loads(json.dumps(documents[0]))
+                change(config)
+                with self.assertRaises(native.Refused):
+                    native.document_editor_check(DOCUMENT_EDITOR_FACTS, {}, [config], "")
+
+    def test_apply_is_idempotent_and_a_hand_edit_is_backed_up(self):
+        self.run_native("apply")
+        result, _ = self.run_native("apply")
+        self.assertFalse(result["written"])
+        self.assertFalse(result["changed"])
+        edited = json.loads(self.local.read_text(encoding="utf-8"))
+        edited["wopi"]["host"] = "http://elsewhere.example"
+        os.chmod(self.local, 0o644)
+        self.local.write_text(json.dumps(edited), encoding="utf-8")
+        result, errors = self.run_native("apply")
+        self.assertTrue(result["changed"] and result["written"])
+        self.assertIn("~ ", errors)
+        self.assertNotIn("elsewhere", errors)
+        self.assertEqual(json.loads((self.backup / "local.json").read_text(encoding="utf-8"))["wopi"]["host"], "http://elsewhere.example")
+
+    def test_deploy_entry_checks_before_any_change_and_renders_before_start(self):
+        script = (HERE / "component-deploy.sh").read_text(encoding="utf-8")
+        branch = script[script.index("  document-editor)"):script.index("  *) echo \"未知组件")]
+        check = branch.index('"${render[@]}" check document-editor')
+        apply = branch.index('"${render[@]}" apply document-editor')
+        self.assertLess(branch.index('"$adapter" && '), check)
+        for later in ("ensure_image", 'if "$check"; then', "mkdir -p \"$dir\""):
+            self.assertLess(check, branch.index(later), later)
+        self.assertLess(apply, branch.index('bash "$here/start.sh" --force-recreate "$ENV"'))
+        self.assertLess(apply, branch.index('bash "$here/start.sh" "$ENV"'))
 
 
 if __name__ == "__main__":

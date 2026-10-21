@@ -1,0 +1,55 @@
+# Kailo document-editor (ONLYOFFICE DocumentServer 9.4.0) as its own deployment
+# unit (DD-132(1)): own project, network, state directory and owner-only secret
+# files; no platform secret, database or broker (9.4 community runs in memory).
+name: ${DOCUMENT_EDITOR_COMPOSE_PROJECT:?explicit independent project required}
+
+services:
+  document-server:
+    # Only the recorded document-editor artifact (document-editor/fork/upstream.yaml),
+    # never the unadapted official image.
+    image: ${DOCUMENT_EDITOR_IMAGE:?recorded document-editor image digest required}
+    restart: unless-stopped
+    cpus: ${DOCUMENT_EDITOR_CPUS:?required}
+    mem_limit: ${DOCUMENT_EDITOR_MEMORY:?required}
+    memswap_limit: ${DOCUMENT_EDITOR_MEMORY:?required}
+    networks: [document-editor]
+    environment:
+      DS_PUBLIC_ORIGIN: ${DOCUMENT_EDITOR_PUBLIC_ORIGIN:?required}
+      # 07 §4.6: exact host origins (Cells and its own hosts), never '*'.
+      DS_FRAME_ANCESTORS: ${DOCUMENT_EDITOR_FRAME_ANCESTORS:?exact frame ancestors required}
+    secrets: [ds_token_secret, ds_secure_link_secret]
+    tmpfs:
+      - /run/kailo-ds:mode=0755
+    volumes:
+      # Rendered by deploy/components/native-config.py (no secret).
+      - type: bind
+        source: ${DOCUMENT_EDITOR_LOCAL_CONFIG_FILE:?rendered local.json required}
+        target: /etc/kailo-ds/local.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${DOCUMENT_EDITOR_DATA_DIR:?required}
+        target: /var/lib/onlyoffice
+        bind: {create_host_path: false}
+    ports:
+      - target: 80
+        published: "${DOCUMENT_EDITOR_PUBLIC_PORT:?required}"
+        host_ip: ${DOCUMENT_EDITOR_PUBLIC_ADDRESS:?required}
+        protocol: tcp
+    healthcheck:
+      test: [CMD, /usr/bin/curl, -fsS, -o, /dev/null, "http://127.0.0.1/healthcheck"]
+      interval: ${DOCUMENT_EDITOR_HEALTH_INTERVAL:?required}
+      timeout: ${DOCUMENT_EDITOR_HEALTH_TIMEOUT:?required}
+      retries: ${DOCUMENT_EDITOR_HEALTH_RETRIES:?required}
+      start_period: ${DOCUMENT_EDITOR_HEALTH_START_PERIOD:?required}
+
+secrets:
+  ds_token_secret:
+    file: ${DOCUMENT_EDITOR_TOKEN_SECRET_FILE:?existing owner-only token secret file required}
+  ds_secure_link_secret:
+    file: ${DOCUMENT_EDITOR_SECURE_LINK_SECRET_FILE:?existing owner-only cache signing secret file required}
+
+networks:
+  document-editor:
+    ipam:
+      config: [{subnet: "${DOCUMENT_EDITOR_SUBNET:?explicit independent subnet required}"}]

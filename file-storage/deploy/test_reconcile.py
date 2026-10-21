@@ -57,6 +57,9 @@ class Cells:
                             for name in ("pydiods1", "personal", "cellsdata", "versions", "thumbnails")}
         self.namespaces = {}
         self.params = {"PYDIO_PLUGIN_ENABLED": True}
+        # Editor plugins as installed: Collabora switched on by hand, ONLYOFFICE untouched.
+        self.plugins = {"editor.libreoffice": {"PYDIO_PLUGIN_ENABLED": True, "LIBREOFFICE_HOST": "office"},
+                        "editor.onlyoffice": {}}
         self.nodes = {}  # path -> node
         self.workspaces = {}
         self.acls = []
@@ -118,6 +121,12 @@ class Cells:
             if method == "PUT":
                 self.params = json.loads(body["Data"])
             return 200, {"FullPath": "frontend/plugin/meta.user", "Data": json.dumps(self.params)}
+        if path.startswith("config/frontend/plugin/editor."):
+            plugin = path.rsplit("/", 1)[1]
+            if method == "PUT":
+                assert body["FullPath"] == "frontend/plugin/" + plugin
+                self.plugins[plugin] = json.loads(body["Data"])
+            return 200, {"FullPath": "frontend/plugin/" + plugin, "Data": json.dumps(self.plugins[plugin])}
         if (method, path) == ("POST", "tree/admin/stat"):
             wanted = body["Node"]
             for node in self.nodes.values():
@@ -197,6 +206,39 @@ class Server:
         self.httpd.server_close()
 
 
+DISCOVERY_TAIL = "?&amp;lt;ui=UI_LLCC&amp;amp;&amp;gt;&amp;lt;wopisrc=WOPI_SOURCE&amp;amp;&amp;gt;&amp;amp;"
+
+
+class Discovery:
+    """A DocumentServer discovery endpoint (wopiClient.js shape)."""
+
+    def __init__(self, exts=("docx", "xlsx", "pptx"), foreign=False):
+        outer = self
+        self.exts, self.foreign = exts, foreign
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                origin = "http://elsewhere.example" if outer.foreign else outer.url
+                actions = "".join(f'<action name="{mode}" ext="{ext}" urlsrc="{origin}/hosting/wopi/word/{mode}{DISCOVERY_TAIL}"/>'
+                                  for ext in outer.exts for mode in ("view", "edit"))
+                data = f'<?xml version="1.0" encoding="utf-8"?><wopi-discovery><net-zone name="external-http"><app name="Word">{actions}</app></net-zone></wopi-discovery>'.encode()
+                self.send_response(200 if self.path == "/hosting/discovery" else 404)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
 class ReconcileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -259,6 +301,11 @@ class ReconcileTests(unittest.TestCase):
         grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read"), (self.cells.users["actor"], "read"), (self.cells.users["actor"], "write")})
         self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
+        # DD-132(3): Collabora is switched off declaratively, other parameters kept;
+        # without a DocumentServer origin the ONLYOFFICE plugin is declared disabled.
+        self.assertEqual(self.cells.plugins["editor.libreoffice"], {"PYDIO_PLUGIN_ENABLED": False, "LIBREOFFICE_HOST": "office"})
+        self.assertEqual(self.cells.plugins["editor.onlyoffice"], {"PYDIO_PLUGIN_ENABLED": False})
+        self.assertEqual(facts["documentEditor"], {"enabled": False})
         self.cells.mutations.clear()
         code, out, err = self.run_main()
         self.assertEqual(code, 0, err)
@@ -357,17 +404,70 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("nativeScopeRef is not the binding workspace", err)
 
+    def onlyoffice(self, discovery, extensions="docx,xlsx"):
+        self.addCleanup(discovery.close)
+        self.env["CELLS_ONLYOFFICE_PUBLIC_ORIGIN"] = discovery.url
+        self.env["CELLS_ONLYOFFICE_EXTENSIONS"] = extensions
+
+    def test_onlyoffice_is_enabled_after_its_discovery_is_read_back(self):
+        discovery = Discovery()
+        self.onlyoffice(discovery)
+        self.cells.plugins["editor.onlyoffice"] = {"KAILO_DOCUMENT_BINDING": ""}
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.cells.plugins["editor.onlyoffice"], {
+            "KAILO_DOCUMENT_BINDING": "", "PYDIO_PLUGIN_ENABLED": True, "ONLYOFFICE_PUBLIC_ORIGIN": discovery.url,
+            "ONLYOFFICE_WOPI_SOURCE_ORIGIN": self.server.url, "ONLYOFFICE_EXTENSIONS": "docx,xlsx"})
+        self.assertFalse(self.cells.plugins["editor.libreoffice"]["PYDIO_PLUGIN_ENABLED"])
+        self.assertIn("editor.onlyoffice configured", json.loads(out)["changes"])
+        facts = json.loads(Path(self.env["CELLS_BINDING_FACTS_FILE"]).read_text())
+        self.assertEqual(facts["documentEditor"], {"enabled": True, "origin": discovery.url,
+                                                   "wopiSourceOrigin": self.server.url, "extensions": ["docx", "xlsx"]})
+        self.cells.mutations.clear()
+        code, out, err = self.run_main()
+        self.assertEqual((code, json.loads(out)["changes"]), (0, ["none"]), err)
+        self.assertFalse([m for m in self.cells.mutations if m[0] == "PUT"])
+
+    def test_onlyoffice_is_not_enabled_when_its_discovery_does_not_serve_it(self):
+        for name, discovery, extensions in (("missing extension", Discovery(exts=("docx",)), "docx,xlsx"),
+                                            ("foreign actions", Discovery(foreign=True), "docx")):
+            with self.subTest(name):
+                self.onlyoffice(discovery, extensions)
+                self.cells.plugins["editor.onlyoffice"] = {}
+                code, _, err = self.run_main()
+                self.assertEqual(code, 2, name)
+                self.assertNotIn("PYDIO_PLUGIN_ENABLED", self.cells.plugins["editor.onlyoffice"])
+        self.env["CELLS_ONLYOFFICE_PUBLIC_ORIGIN"] = "http://127.0.0.1:1"
+        code, _, err = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("discovery unreachable", err)
+
     def test_settings_are_checked_without_network(self):
         self.assertEqual(self.run_main("--check")[0], 0)
         for key, value in (("CELLS_DRAFT_NAMESPACE", "kailo-draft"), ("CELLS_BINDING_DATASOURCE", "versions"),
                            ("CELLS_BINDING_ROOT_FOLDER", "a/b"), ("CELLS_BINDING_PRINCIPALS", "svc:x"),
-                           ("CELLS_BINDING_SERVICE_LOGIN", "actor2"), ("CELLS_BINDING_FACTS_FILE", "relative.json")):
-            saved = self.env[key]
+                           ("CELLS_BINDING_SERVICE_LOGIN", "actor2"), ("CELLS_BINDING_FACTS_FILE", "relative.json"),
+                           ("CELLS_ONLYOFFICE_PUBLIC_ORIGIN", self.env["CELLS_EXTERNAL"]),
+                           ("CELLS_ONLYOFFICE_PUBLIC_ORIGIN", "http://ds.example:58096/"),
+                           ("CELLS_ONLYOFFICE_EXTENSIONS", "docx")):
+            saved = self.env.get(key)
             self.env[key] = value
+            if key == "CELLS_ONLYOFFICE_PUBLIC_ORIGIN":
+                self.env["CELLS_ONLYOFFICE_EXTENSIONS"] = "docx"
             code, _, err = self.run_main("--check")
             self.assertEqual(code, 2, key)
             self.assertNotIn(value, err) if key == "CELLS_BINDING_PRINCIPALS" else None
-            self.env[key] = saved
+            for name in (key, "CELLS_ONLYOFFICE_EXTENSIONS"):
+                self.env.pop(name, None)
+            if saved is not None:
+                self.env[key] = saved
+        self.env["CELLS_ONLYOFFICE_PUBLIC_ORIGIN"] = "http://ds.example:58096"
+        for value in ("docx,../x", "docx,docx", ""):
+            self.env["CELLS_ONLYOFFICE_EXTENSIONS"] = value
+            self.assertEqual(self.run_main("--check")[0], 2, value)
+        self.env["CELLS_ONLYOFFICE_EXTENSIONS"] = "docx,xlsx"
+        self.assertEqual(self.run_main("--check")[0], 0)
+        del self.env["CELLS_ONLYOFFICE_PUBLIC_ORIGIN"], self.env["CELLS_ONLYOFFICE_EXTENSIONS"]
         os.chmod(self.env["CELLS_INSTALL_FILE"], 0o644)
         self.assertEqual(self.run_main("--check")[0], 2)
 

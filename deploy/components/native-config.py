@@ -19,8 +19,11 @@ published, the rendered result must pass the same rule the component's
 fact refuses: nothing falls back to a template or upstream default. Output lists key
 paths only, never values; the result line is JSON on stdout.
 
+A JSON template (``format: json``) is rendered as JSON; facts a template needs in
+another form are ``derived`` from declared facts, never read separately.
+
 Usage (component-deploy.sh, KAILO_RUNTIME_DIR exported by runtime-dir.sh):
-  native-config.py check|apply data-query|knowledge --env <component env> [--source <commit>] [--backup-dir <dir>]
+  native-config.py check|apply data-query|knowledge|document-editor --env <component env> [--source <commit>] [--backup-dir <dir>]
 """
 
 import argparse
@@ -30,19 +33,23 @@ import os
 from pathlib import Path
 import re
 import sys
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 
 
-def _framework():
-    spec = importlib.util.spec_from_file_location("native_model_delivery", HERE / "native-model-delivery.py")
+def _module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-delivery = _framework()
+delivery = _module("native_model_delivery", HERE / "native-model-delivery.py")
+# The document-editor image consumes local.json through this module at start
+# (entrypoint); the renderer applies the same invariants before publishing.
+document_editor_runtime = _module("document_editor_runtime", ROOT / "document-editor/fork/packaging/runtime-config.py")
 Refused, require = delivery.Refused, delivery.require
 
 MODEL_ID = re.compile(r"[A-Za-z0-9._:/-]+")  # validate_projection's native model id rule
@@ -68,6 +75,14 @@ def key_reference(raw):
     reference, which the native loader (not this renderer) resolves at startup."""
     require(re.fullmatch(delivery.WEKNORA_KEY_NAME, raw), "must be a KAILO_MODEL_* key name")
     return "${" + raw + "}"
+
+
+def explicit_origin(raw):
+    parts = urlsplit(raw)
+    require(parts.scheme in ("http", "https") and parts.hostname and not parts.username and not parts.password
+            and raw == f"{parts.scheme}://{parts.netloc}" and not any(c in raw for c in "*;'\"\\ "),
+            "explicit scheme://host[:port] origin required")
+    return raw
 
 
 def directory_file(directory_key, name):
@@ -119,6 +134,22 @@ SPECS = {
             "AGENTGATEWAY_MODEL_BASE_URL": ("platform", pattern(BASE_URL)),
         },
     },
+    # DD-132(3): DocumentServer local.json. No secret: token secrets are read from
+    # the runtime file the image entrypoint writes, the cache signing secret is
+    # layered in at start.
+    "document-editor": {
+        "template": ROOT / "document-editor/deploy/local.template.json",
+        "format": "json",
+        "destination": named_file("DOCUMENT_EDITOR_LOCAL_CONFIG_FILE"),
+        "mode": 0o644,
+        "facts": {
+            "DOCUMENT_EDITOR_PUBLIC_ORIGIN": ("component", explicit_origin),
+            "DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN": ("component", explicit_origin),
+        },
+        "derived": {
+            "DOCUMENT_EDITOR_WOPI_SOURCE_HOST": lambda values: urlsplit(values["DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN"]).hostname,
+        },
+    },
 }
 
 
@@ -146,13 +177,13 @@ def platform_value(values, name, seen=()):
     return PLACEHOLDER.sub(lambda m: platform_value(values, m[1], seen + (name,)), raw)
 
 
-def facts(spec, component_env, runtime):
+def facts(spec, component_env, environ):
     platform = None
     result = {}
     for name, (source, parse) in spec["facts"].items():
         if source == "platform":
             if platform is None:
-                platform = env_file(runtime / ".env")
+                platform = env_file(delivery.runtime_dir(environ) / ".env")
             raw = platform_value(platform, name)
         else:
             raw = component_env.get(name, "")
@@ -161,6 +192,8 @@ def facts(spec, component_env, runtime):
             result[name] = parse(raw)
         except Refused:
             raise Refused("deployment fact " + name + " is malformed")
+    for name, derive in spec.get("derived", {}).items():
+        result[name] = derive(result)
     return result
 
 
@@ -183,6 +216,13 @@ def substitute(node, values, used):
 def render(spec, values, source):
     import yaml
 
+    if spec.get("format") == "json":
+        used = set()
+        document = substitute(json.loads(spec["template"].read_text(encoding="utf-8")), values, used)
+        require(used == set(spec["facts"]) | set(spec.get("derived", {})), "template and declared deployment facts differ")
+        text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+        require(json.loads(text) == document, "rendered text does not round-trip")
+        return text, [document]
     template = list(yaml.safe_load_all(spec["template"].read_text(encoding="utf-8")))
     used = set()
     documents = [substitute(document, values, used) for document in template if document is not None]
@@ -267,7 +307,16 @@ def weknora_check(values, component_env, documents, text):
             "rendered models must all use the declared key name")
 
 
-CONSUMER_CHECKS = {"data-query": wren_check, "knowledge": weknora_check}
+def document_editor_check(values, component_env, documents, text):
+    """The rendered local.json must pass the invariants the image entrypoint checks
+    at start (document-editor/fork/packaging/runtime-config.py, DD-132(3))."""
+    try:
+        document_editor_runtime.invariants(documents[0], values["DOCUMENT_EDITOR_PUBLIC_ORIGIN"])
+    except (document_editor_runtime.Refused, KeyError, TypeError, ValueError):
+        raise Refused("rendered local.json breaks the DD-132(3) invariants")
+
+
+CONSUMER_CHECKS = {"data-query": wren_check, "knowledge": weknora_check, "document-editor": document_editor_check}
 
 
 def run(operation, component, env_path, source, backup, environ):
@@ -275,15 +324,17 @@ def run(operation, component, env_path, source, backup, environ):
 
     require(component in SPECS, "no rendered native configuration for " + component)
     spec = SPECS[component]
-    runtime = delivery.runtime_dir(environ)
     component_env = env_file(delivery.private_path(env_path))
-    values = facts(spec, component_env, runtime)
+    values = facts(spec, component_env, environ)
     destination = spec["destination"](component_env)
     shared = bool(spec["mode"] & 0o044)
     text, documents = render(spec, values, source)
     CONSUMER_CHECKS[component](values, component_env, documents, text)
     previous_text = delivery.read(destination, shared=shared) if os.path.lexists(destination) else None
-    previous = list(yaml.safe_load_all(previous_text)) if previous_text is not None else None
+    if previous_text is not None and spec.get("format") == "json":
+        previous = [json.loads(previous_text)]
+    else:
+        previous = list(yaml.safe_load_all(previous_text)) if previous_text is not None else None
     previous = [d for d in previous if d is not None] if previous is not None else None
     diff = changes(previous, documents) if previous is not None else []
     changed = previous is None or previous != documents
