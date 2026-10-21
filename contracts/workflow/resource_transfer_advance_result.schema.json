@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_transfer_advance_result.schema.json",
+  "title": "ResourceTransferAdvanceResult",
+  "description": "一轮推进的权威结果：COMPLETED 表示 ExportPackage 已 READY 或导入的新对象已 ACTIVE 并写入终态审计；FAILED 表示确定拒绝且整包未提交；RUNNING 带 waitingReason 继续下一轮。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "status", "waitingReason"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "status": {"$ref": "../enums/task_status.schema.json"},
+    "waitingReason": {"type": "string"}
+  }
+}

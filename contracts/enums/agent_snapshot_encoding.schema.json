@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_snapshot_encoding.schema.json",
+  "title": "AgentSnapshotEncoding",
+  "description": "DD-131(2)(3) 的快照包字节编码：JSON 为原版 .agent.json / .team.json 清单；PNG 为原版 .agent.png / .team.png，同一清单以 base64 放入 tEXt 块（buzz_agent_snapshot / buzz_team_snapshot）。digest 一律是包字节 SHA-256。",
+  "type": "string",
+  "enum": ["JSON", "PNG"]
+}

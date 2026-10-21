@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_snapshot_import_input.schema.json",
+  "title": "AgentSnapshotImportInput",
+  "description": "仅 agent.definition.import / agent.team.import 且必带（DD-131(2)(3)、05 §2.12）。uploadId 必须是同一 PlatformSession 上传、尚未过期的包，contentDigest 必须等于 Core 对其字节重算的 SHA-256；包内 owner、公钥、Tenant、ACL、URL 与运行配置一律不被信任。runtimeProfileKey 与 modelRouteResourceId 是导入人按本 Tenant 目录为新 DRAFT 选定的运行合同与模型路由（来源 Tenant 的引用不可移植），Core 按与草稿创建相同的规则 fresh 校验。新 Definition 与 DRAFT Version 的 owner 是发起人，不发布、不安装。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "contentDigest", "runtimeProfileKey", "modelRouteResourceId"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "contentDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runtimeProfileKey": {"type": "string"},
+    "modelRouteResourceId": {"type": "string", "format": "uuid"}
+  }
+}

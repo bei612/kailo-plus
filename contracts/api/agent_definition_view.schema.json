@@ -14,6 +14,7 @@
     "status": {"type": "string"},
     "resourceVersion": {"type": "integer"},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
-    "resourceState": {"$ref": "../enums/resource_state.schema.json"}
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"},
+    "catalogShared": {"type": "boolean", "description": "DD-131(6)：该定义已由 agent.definition.share 写入 tenant#member 的 discoverer/reader；缺省即未分享。只表示同 Tenant 成员可发现与读取，不授予任何 Installation 使用权。"}
   }
 }

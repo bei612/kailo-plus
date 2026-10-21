@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_transfer_target.schema.json",
+  "title": "ResourceTransferTarget",
+  "description": "ComponentTaskWorkflow(kind=RESOURCE_EXPORT|RESOURCE_IMPORT) 的冻结输入（DD-42、DD-131(2)(3)、06 §7.1）：只有原 ActionExecution、动作键、目标与其准入版本，不携带包字节、清单正文、instructions 或任何 SecretRef。export 的 targetId 是被导出的 agent_definition 或 agent_team Resource；import 的 targetId 是将要新建的 Resource（Definition 或 Team）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "actionKey", "targetId", "targetVersion", "workflowId"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "actionKey": {"type": "string"},
+    "targetId": {"type": "string", "format": "uuid"},
+    "targetVersion": {"type": "integer", "minimum": 0},
+    "workflowId": {"type": "string"}
+  }
+}

@@ -56,6 +56,9 @@
       }
     },
     "moderationEventId": { "type": "string", "description": "仅 moderation.message.delete 且必带（DD-125(2)）：workspaceId 所指 Workspace Channel 中一条消息的 Relay 事件 ID；Core 以 CONTROL 回读确认属于该 Channel 后签 9005，按 DD-81 以 9005 事件 ID 对账。" },
+    "agentTeam": { "$ref": "../domain/agent_team_input.schema.json" },
+    "snapshotExport": { "$ref": "../domain/agent_snapshot_export_input.schema.json" },
+    "snapshotImport": { "$ref": "../domain/agent_snapshot_import_input.schema.json" },
     "huddleStart": { "$ref": "../domain/huddle_start_input.schema.json" },
     "huddleAgent": { "$ref": "../domain/huddle_agent_input.schema.json" },
     "huddleId": { "type": "string", "format": "uuid", "description": "仅 huddle.agent.add / huddle.agent.remove / huddle.end 且必带（DD-125(3)）：目标 HuddleBuzzBinding；父 Workspace 的 Huddle 另须 workspaceId 等于其父 Workspace。" },

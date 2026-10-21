@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_snapshot_upload_view.schema.json",
+  "title": "AgentSnapshotUploadView",
+  "description": "POST /api/v1/agent-snapshots/uploads 的回应（DD-131(2)(3)(5)(7)、DD-42）：本会话上传的快照包字节已按 v1 格式解析，供导入前预览；不是导入结果，也不建立任何 Resource。uploadId 只在同一 PlatformSession、expiresAt 之前可被 agent.definition.import / agent.team.import 引用，contentDigest 是 Core 对字节重算的 SHA-256。team 只在 snapshotKind=TEAM 时出现。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "contentDigest", "byteSize", "encoding", "snapshotKind", "expiresAt", "members"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "contentDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "byteSize": {"type": "integer", "minimum": 1},
+    "encoding": {"$ref": "../enums/agent_snapshot_encoding.schema.json"},
+    "snapshotKind": {"$ref": "../enums/agent_snapshot_kind.schema.json"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "team": {
+      "title": "AgentSnapshotTeamPreview",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "discardedFields"],
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "discardedFields": {"type": "array", "items": {"$ref": "../enums/agent_snapshot_discarded_field.schema.json"}}
+      }
+    },
+    "members": {"type": "array", "items": {"$ref": "agent_snapshot_member_preview.schema.json"}}
+  }
+}

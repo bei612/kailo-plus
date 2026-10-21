@@ -1294,4 +1294,36 @@ void main() {
       );
     }
   });
+  test('DD-131 agent teams and snapshot transfer round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/agent-teams-snapshots.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'teamCreateCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'teamShareCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'definitionExportCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'teamImportCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'teamView': (v) => AgentTeamView.fromJson(v).toJson(),
+      'teamPage': (v) => AgentTeamPage.fromJson(v).toJson(),
+      'definitionView': (v) => AgentDefinitionView.fromJson(v).toJson(),
+      'uploadView': (v) => AgentSnapshotUploadView.fromJson(v).toJson(),
+      'exportPackageView': (v) => ExportPackageView.fromJson(v).toJson(),
+      'transferAdvanceRequest': (v) =>
+          ResourceTransferAdvanceRequest.fromJson(v).toJson(),
+      'transferAdvanceResult': (v) =>
+          ResourceTransferAdvanceResult.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
 }

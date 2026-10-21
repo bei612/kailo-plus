@@ -1130,3 +1130,55 @@ test("DD-125 member joins and memory references preserve fields and absence", ()
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-131 agent teams and snapshot transfer contracts preserve fields and absence", () => {
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  type TeamView = import("../src/generated/contracts.js").AgentTeamView;
+  type TeamPage = import("../src/generated/contracts.js").AgentTeamPage;
+  type Definition = import("../src/generated/contracts.js").AgentDefinitionView;
+  type Upload = import("../src/generated/contracts.js").AgentSnapshotUploadView;
+  type Member = import("../src/generated/contracts.js").AgentSnapshotMemberPreview;
+  type Package = import("../src/generated/contracts.js").ExportPackageView;
+  type Request = import("../src/generated/contracts.js").ResourceTransferAdvanceRequest;
+  type Result = import("../src/generated/contracts.js").ResourceTransferAdvanceResult;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-teams-snapshots.sample.json", import.meta.url), "utf8"));
+  const command = (row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey,
+    resourceId: row.resourceId, resourceVersion: row.resourceVersion, assetId: row.assetId,
+    agentTeam: row.agentTeam && {name: row.agentTeam.name, description: row.agentTeam.description,
+      memberAgentResourceIds: row.agentTeam.memberAgentResourceIds},
+    snapshotExport: row.snapshotExport && {encoding: row.snapshotExport.encoding},
+    snapshotImport: row.snapshotImport && {uploadId: row.snapshotImport.uploadId, contentDigest: row.snapshotImport.contentDigest,
+      runtimeProfileKey: row.snapshotImport.runtimeProfileKey, modelRouteResourceId: row.snapshotImport.modelRouteResourceId},
+    explicitConfirmation: row.explicitConfirmation});
+  const team = (row: TeamView) => ({resourceId: row.resourceId, name: row.name, description: row.description,
+    memberAgentResourceIds: row.memberAgentResourceIds, hiddenMemberCount: row.hiddenMemberCount,
+    ownerPrincipalId: row.ownerPrincipalId, resourceVersion: row.resourceVersion, resourceState: row.resourceState,
+    catalogShared: row.catalogShared});
+  const page = (row: TeamPage) => ({teams: row.teams.map(team), nextOffset: row.nextOffset});
+  const definition = (row: Definition) => ({resourceId: row.resourceId, stableSlug: row.stableSlug, displayName: row.displayName,
+    currentPublishedVersionAssetId: row.currentPublishedVersionAssetId, status: row.status, resourceVersion: row.resourceVersion,
+    ownerPrincipalId: row.ownerPrincipalId, resourceState: row.resourceState, catalogShared: row.catalogShared});
+  const member = (row: Member) => ({displayName: row.displayName, description: row.description, avatarDataUrl: row.avatarDataUrl,
+    instructions: row.instructions, parallelism: row.parallelism, idleTimeoutSeconds: row.idleTimeoutSeconds,
+    maxTurnDurationSeconds: row.maxTurnDurationSeconds, replyPolicy: row.replyPolicy, triggerDefaults: row.triggerDefaults,
+    discardedFields: row.discardedFields});
+  const upload = (row: Upload) => ({uploadId: row.uploadId, contentDigest: row.contentDigest, byteSize: row.byteSize,
+    encoding: row.encoding, snapshotKind: row.snapshotKind, expiresAt: row.expiresAt,
+    team: row.team && {name: row.team.name, description: row.team.description, discardedFields: row.team.discardedFields},
+    members: row.members.map(member)});
+  const exportPackage = (row: Package) => ({assetId: row.assetId, sourceResourceId: row.sourceResourceId,
+    sourceAssetId: row.sourceAssetId, formatKey: row.formatKey, formatVersion: row.formatVersion, encoding: row.encoding,
+    contentDigest: row.contentDigest, byteSize: row.byteSize, mediaType: row.mediaType, fileName: row.fileName, state: row.state});
+  const request = (row: Request) => ({target: {actionExecutionId: row.target.actionExecutionId, actionKey: row.target.actionKey,
+    targetId: row.target.targetId, targetVersion: row.target.targetVersion, workflowId: row.target.workflowId},
+    runId: row.runId, cancelRequested: row.cancelRequested});
+  const result = (row: Result) => ({actionExecutionId: row.actionExecutionId, status: row.status, waitingReason: row.waitingReason});
+  const actual = {
+    teamCreateCommand: command(value.teamCreateCommand), teamShareCommand: command(value.teamShareCommand),
+    definitionExportCommand: command(value.definitionExportCommand), teamImportCommand: command(value.teamImportCommand),
+    teamView: team(value.teamView), teamPage: page(value.teamPage), definitionView: definition(value.definitionView),
+    uploadView: upload(value.uploadView), exportPackageView: exportPackage(value.exportPackageView),
+    transferAdvanceRequest: request(value.transferAdvanceRequest), transferAdvanceResult: result(value.transferAdvanceResult),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

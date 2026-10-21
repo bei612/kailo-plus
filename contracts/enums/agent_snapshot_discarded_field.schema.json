@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_snapshot_discarded_field.schema.json",
+  "title": "AgentSnapshotDiscardedField",
+  "description": "导入预览中按 DD-131(2)(3)(4) 丢弃的原版清单字段：respondTo allowlist 及名单（使用权是 Installation 上的逐成员授权）、anyone（不提供）、runtime/model/provider/namePool/sessionPolicy（DD-26）、记忆条目（DD-131(4)）、团队 instructions（DD-131(1)）、超限或非内联的头像引用、Skill 引用（须按本 Tenant 目录重选）。",
+  "type": "string",
+  "enum": [
+    "RESPOND_TO_ALLOWLIST",
+    "RESPOND_TO_ANYONE",
+    "RUNTIME",
+    "MODEL",
+    "PROVIDER",
+    "NAME_POOL",
+    "SESSION_POLICY",
+    "MEMORY",
+    "TEAM_INSTRUCTIONS",
+    "AVATAR_REFERENCE",
+    "SKILLS",
+    "CAPABILITY_REQUIREMENTS"
+  ]
+}

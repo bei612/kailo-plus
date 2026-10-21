@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/export_package_state.schema.json",
+  "title": "ExportPackageState",
+  "description": "03 §3 ExportPackage 的状态；只有 READY 可下载。",
+  "type": "string",
+  "enum": ["CREATING", "READY", "REVOKED", "DELETED", "ERROR"]
+}

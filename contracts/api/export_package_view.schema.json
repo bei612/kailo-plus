@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/export_package_view.schema.json",
+  "title": "ExportPackageView",
+  "description": "源 Tenant 内 ExportPackage Asset（03 §3、DD-42、DD-131(2)(3)）的元数据，assetId 等于产生它的 export ActionExecution ID；读取要求该 Asset 的 read。字节只经 GET /api/v1/export-packages/{assetId}/content 在 READY 时下载，fileName 沿原版 .agent.json/.agent.png/.team.json/.team.png 命名。不含 instructions 或包正文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assetId", "sourceResourceId", "formatKey", "formatVersion", "encoding", "contentDigest", "byteSize", "mediaType", "fileName", "state"],
+  "properties": {
+    "assetId": {"type": "string", "format": "uuid"},
+    "sourceResourceId": {"type": "string", "format": "uuid"},
+    "sourceAssetId": {"type": "string", "format": "uuid"},
+    "formatKey": {"type": "string"},
+    "formatVersion": {"type": "integer"},
+    "encoding": {"$ref": "../enums/agent_snapshot_encoding.schema.json"},
+    "contentDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "byteSize": {"type": "integer", "minimum": 1},
+    "mediaType": {"type": "string"},
+    "fileName": {"type": "string"},
+    "state": {"$ref": "../enums/export_package_state.schema.json"}
+  }
+}

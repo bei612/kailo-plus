@@ -1,0 +1,138 @@
+{
+  "teamCreateCommand": {
+    "actionKey": "agent.team.create",
+    "idempotencyKey": "00000000-0000-4000-8000-000000001301",
+    "agentTeam": {
+      "name": "Research crew",
+      "description": "Finds and summarizes sources",
+      "memberAgentResourceIds": [
+        "00000000-0000-4000-8000-000000001302",
+        "00000000-0000-4000-8000-000000001303"
+      ]
+    },
+    "explicitConfirmation": true
+  },
+  "teamShareCommand": {
+    "actionKey": "agent.team.share",
+    "idempotencyKey": "00000000-0000-4000-8000-000000001304",
+    "resourceId": "00000000-0000-4000-8000-000000001305",
+    "resourceVersion": 2,
+    "explicitConfirmation": true
+  },
+  "definitionExportCommand": {
+    "actionKey": "agent.definition.export",
+    "idempotencyKey": "00000000-0000-4000-8000-000000001306",
+    "resourceId": "00000000-0000-4000-8000-000000001302",
+    "resourceVersion": 3,
+    "assetId": "00000000-0000-4000-8000-000000001307",
+    "snapshotExport": {"encoding": "PNG"}
+  },
+  "teamImportCommand": {
+    "actionKey": "agent.team.import",
+    "idempotencyKey": "00000000-0000-4000-8000-000000001308",
+    "snapshotImport": {
+      "uploadId": "00000000-0000-4000-8000-000000001309",
+      "contentDigest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "runtimeProfileKey": "server-codex",
+      "modelRouteResourceId": "00000000-0000-4000-8000-00000000130a"
+    },
+    "explicitConfirmation": true
+  },
+  "teamView": {
+    "resourceId": "00000000-0000-4000-8000-000000001305",
+    "name": "Research crew",
+    "description": "Finds and summarizes sources",
+    "memberAgentResourceIds": ["00000000-0000-4000-8000-000000001302"],
+    "hiddenMemberCount": 1,
+    "ownerPrincipalId": "00000000-0000-4000-8000-00000000130b",
+    "resourceVersion": 2,
+    "resourceState": "ACTIVE",
+    "catalogShared": true
+  },
+  "teamPage": {
+    "teams": [
+      {
+        "resourceId": "00000000-0000-4000-8000-00000000130c",
+        "name": "Solo",
+        "memberAgentResourceIds": [],
+        "hiddenMemberCount": 0,
+        "ownerPrincipalId": "00000000-0000-4000-8000-00000000130b",
+        "resourceVersion": 1,
+        "resourceState": "ACTIVE",
+        "catalogShared": false
+      }
+    ],
+    "nextOffset": 50
+  },
+  "definitionView": {
+    "resourceId": "00000000-0000-4000-8000-000000001302",
+    "stableSlug": "researcher",
+    "displayName": "Researcher",
+    "currentPublishedVersionAssetId": "00000000-0000-4000-8000-000000001307",
+    "status": "ACTIVE",
+    "resourceVersion": 3,
+    "ownerPrincipalId": "00000000-0000-4000-8000-00000000130b",
+    "resourceState": "ACTIVE",
+    "catalogShared": true
+  },
+  "uploadView": {
+    "uploadId": "00000000-0000-4000-8000-000000001309",
+    "contentDigest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "byteSize": 2048,
+    "encoding": "JSON",
+    "snapshotKind": "TEAM",
+    "expiresAt": "2026-10-21T12:30:00Z",
+    "team": {
+      "name": "Research crew",
+      "description": "Finds and summarizes sources",
+      "discardedFields": ["TEAM_INSTRUCTIONS"]
+    },
+    "members": [
+      {
+        "displayName": "Researcher",
+        "description": "Reads papers",
+        "instructions": "Summarize the sources you are given.",
+        "parallelism": 2,
+        "idleTimeoutSeconds": 600,
+        "maxTurnDurationSeconds": 1800,
+        "discardedFields": ["RESPOND_TO_ALLOWLIST", "RUNTIME", "MODEL", "MEMORY"]
+      },
+      {
+        "displayName": "Editor",
+        "instructions": "Tighten the draft.",
+        "replyPolicy": "thread",
+        "triggerDefaults": ["MENTION"],
+        "discardedFields": []
+      }
+    ]
+  },
+  "exportPackageView": {
+    "assetId": "00000000-0000-4000-8000-000000001306",
+    "sourceResourceId": "00000000-0000-4000-8000-000000001302",
+    "sourceAssetId": "00000000-0000-4000-8000-000000001307",
+    "formatKey": "buzz-agent-snapshot",
+    "formatVersion": 1,
+    "encoding": "PNG",
+    "contentDigest": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
+    "byteSize": 4096,
+    "mediaType": "image/png",
+    "fileName": "researcher.agent.png",
+    "state": "READY"
+  },
+  "transferAdvanceRequest": {
+    "target": {
+      "actionExecutionId": "00000000-0000-4000-8000-000000001306",
+      "actionKey": "agent.definition.export",
+      "targetId": "00000000-0000-4000-8000-000000001302",
+      "targetVersion": 3,
+      "workflowId": "platform:RESOURCE_EXPORT:00000000-0000-4000-8000-00000000130d:00000000-0000-4000-8000-000000001306:3"
+    },
+    "runId": "00000000-0000-4000-8000-00000000130e",
+    "cancelRequested": false
+  },
+  "transferAdvanceResult": {
+    "actionExecutionId": "00000000-0000-4000-8000-000000001306",
+    "status": "COMPLETED",
+    "waitingReason": "NONE"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_transfer_advance_request.schema.json",
+  "title": "ResourceTransferAdvanceRequest",
+  "description": "Worker 每轮向 Core /service/v1/resource-transfers/advance 提交的冻结目标与本 run；Core 以原 ActionExecution、WorkflowRef 与 Temporal 观察核对后推进，不信任载荷自报的结果。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["target", "runId", "cancelRequested"],
+  "properties": {
+    "target": {"$ref": "resource_transfer_target.schema.json"},
+    "runId": {"type": "string", "format": "uuid"},
+    "cancelRequested": {"type": "boolean"}
+  }
+}

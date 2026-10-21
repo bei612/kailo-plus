@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_snapshot_export_input.schema.json",
+  "title": "AgentSnapshotExportInput",
+  "description": "仅 agent.definition.export / agent.team.export 且必带（DD-131(2)(3)、05 §2.12）。目标由 resourceId 与读到的 resourceVersion 给出；agent.definition.export 另以 assetId 指定该 Definition 的一个 PUBLISHED AgentVersion，agent.team.export 取各成员当前已发布版本。没有记忆级别选项（DD-131(4)），不含卡片铸造或锁定卡。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["encoding"],
+  "properties": {
+    "encoding": {"$ref": "../enums/agent_snapshot_encoding.schema.json"}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_snapshot_kind.schema.json",
+  "title": "AgentSnapshotKind",
+  "description": "DD-131 登记的两种 TransferFormat：AGENT 为 agent_definition 的 buzz-agent-snapshot@1，TEAM 为 agent_team 的 buzz-team-snapshot@1。",
+  "type": "string",
+  "enum": ["AGENT", "TEAM"]
+}

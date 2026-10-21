@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_snapshot_member_preview.schema.json",
+  "title": "AgentSnapshotMemberPreview",
+  "description": "一个 buzz-agent-snapshot@1 清单按 DD-131(2) 映射后的可移植字段：displayName/description/avatarDataUrl → personaIdentity，instructions ← systemPrompt，parallelism 原样，idle/单轮时限 → turnLimits；replyPolicy、triggerDefaults 与 memoryPolicy 只来自 Kailo 导出的扩展段。discardedFields 列出被丢弃的原版字段，不回显其内容（名单公钥、runtime 等）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["displayName", "instructions", "discardedFields"],
+  "properties": {
+    "displayName": {"type": "string"},
+    "description": {"type": "string"},
+    "avatarDataUrl": {"type": "string", "description": "清单内联且不超过 2 MiB 的 data: 图片；BFF 已核对是图片 MIME 与 base64"},
+    "instructions": {"type": "string"},
+    "parallelism": {"type": "integer"},
+    "idleTimeoutSeconds": {"type": "integer"},
+    "maxTurnDurationSeconds": {"type": "integer"},
+    "replyPolicy": {"type": "string"},
+    "triggerDefaults": {"type": "array", "items": {"$ref": "../enums/agent_trigger.schema.json"}},
+    "discardedFields": {"type": "array", "items": {"$ref": "../enums/agent_snapshot_discarded_field.schema.json"}}
+  }
+}
