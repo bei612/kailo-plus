@@ -25,7 +25,9 @@
     "resourceId": "00000000-0000-4000-8000-000000001302",
     "resourceVersion": 3,
     "assetId": "00000000-0000-4000-8000-000000001307",
-    "snapshotExport": {"encoding": "PNG"}
+    "snapshotExport": {
+      "encoding": "PNG"
+    }
   },
   "teamImportCommand": {
     "actionKey": "agent.team.import",
@@ -42,7 +44,9 @@
     "resourceId": "00000000-0000-4000-8000-000000001305",
     "name": "Research crew",
     "description": "Finds and summarizes sources",
-    "memberAgentResourceIds": ["00000000-0000-4000-8000-000000001302"],
+    "memberAgentResourceIds": [
+      "00000000-0000-4000-8000-000000001302"
+    ],
     "hiddenMemberCount": 1,
     "ownerPrincipalId": "00000000-0000-4000-8000-00000000130b",
     "resourceVersion": 2,
@@ -85,7 +89,9 @@
     "team": {
       "name": "Research crew",
       "description": "Finds and summarizes sources",
-      "discardedFields": ["TEAM_INSTRUCTIONS"]
+      "discardedFields": [
+        "TEAM_INSTRUCTIONS"
+      ]
     },
     "members": [
       {
@@ -95,13 +101,20 @@
         "parallelism": 2,
         "idleTimeoutSeconds": 600,
         "maxTurnDurationSeconds": 1800,
-        "discardedFields": ["RESPOND_TO_ALLOWLIST", "RUNTIME", "MODEL", "MEMORY"]
+        "discardedFields": [
+          "RESPOND_TO_ALLOWLIST",
+          "RUNTIME",
+          "MODEL",
+          "MEMORY"
+        ]
       },
       {
         "displayName": "Editor",
         "instructions": "Tighten the draft.",
         "replyPolicy": "thread",
-        "triggerDefaults": ["MENTION"],
+        "triggerDefaults": [
+          "MENTION"
+        ],
         "discardedFields": []
       }
     ]
@@ -134,5 +147,11 @@
     "actionExecutionId": "00000000-0000-4000-8000-000000001306",
     "status": "COMPLETED",
     "waitingReason": "NONE"
+  },
+  "importConfiguration": {
+    "profiles": [],
+    "routes": [],
+    "nextOffset": 50,
+    "canImport": true
   }
 }

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_import_configuration_page.schema.json",
+  "title": "AgentImportConfigurationPage",
+  "description": "DD-131(2)(3)：导入快照时由导入人按本 Tenant 目录选择的运行合同与模型路由（来源 Tenant 的引用不可移植）。与 Definition 范围的版本配置目录同一来源与过滤规则，但不依附任何已有 Definition；canImport 表示当前会话对 Tenant 有 create 且导入动作已开放，不授予发布、安装或运行权限。缺任一真实来源时两目录为空。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles", "routes", "nextOffset", "canImport"],
+  "properties": {
+    "profiles": {
+      "type": "array",
+      "items": {"$ref": "../domain/runtime_profile_directory.schema.json#/properties/profiles/items"}
+    },
+    "routes": {
+      "type": "array",
+      "items": {"$ref": "agent_version_route_option.schema.json"}
+    },
+    "nextOffset": {"type": ["integer", "null"], "minimum": 0},
+    "canImport": {"type": "boolean"}
+  }
+}

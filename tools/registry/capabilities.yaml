@@ -32,6 +32,7 @@ capabilities:
   - /api/v1/agent-teams
   - /api/v1/agent-teams/{resource_id}
   - /api/v1/agent-snapshots/uploads
+  - /api/v1/agent-snapshots/import-configuration
   - /api/v1/export-packages/{asset_id}
   - /api/v1/export-packages/{asset_id}/content
   actions:

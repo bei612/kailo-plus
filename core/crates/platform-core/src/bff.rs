@@ -514,6 +514,10 @@ pub fn router(state: BffState) -> Router {
             ),
         )
         .exposed_route(
+            "/api/v1/agent-snapshots/import-configuration",
+            get(crate::agent_version_query::import_configuration),
+        )
+        .exposed_route(
             "/api/v1/export-packages/{asset_id}",
             get(crate::governance::agent_transfer::package),
         )
