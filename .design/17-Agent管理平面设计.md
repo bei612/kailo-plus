@@ -21,7 +21,7 @@ Tenant
   ├─ Agent Definition Resource (HUMAN owner)
   │    └─ Agent Version Asset 1..n (immutable after PUBLISHED)
   ├─ Skill Definition Resource (HUMAN owner)
-  │    └─ Skill Version Asset 1..n (immutable after PUBLISHED)
+  │    └─ Skill Version Asset 1..n (artifact immutable from upload)
   ├─ Tool Resource / LLM Route Resource
   └─ Workspace
        └─ Agent Installation Resource (HUMAN owner)
@@ -53,6 +53,8 @@ Tenant
 | 工具 | 能力需求集合：`PLATFORM_NATIVE` 工具键，或 `APPLICATION` 能力契约键 + 版本（如 `knowledge.search@v1`），不引用产品或实现 | 由哪个实现提供、ToolBinding、Resource permission、Delegation、Approval |
 | 触发 | mention/manual-assignment 默认值 | Workspace 是否安装、Channel 是否启用 |
 | 记忆 | core write mode、cold write mode | 记忆正文、NIP-AE key/counterparty、HUMAN owner、当前 head |
+
+Skill 引用只能选择作者当前可 `read`、`ACTIVE` 定义下的 `PUBLISHED` 版本，同一定义至多一个版本，至多 16 个，且 Skill 的能力需求须包含在本版本的能力需求中（DD-135(4)）；SkillVersion 不同于 AgentVersion，没有可编辑的 DRAFT 内容，改内容即上传新版本。
 
 DRAFT 可编辑；PUBLISHED 后内容与 `config_hash` 不变；RETIRED 禁止新安装但不改写仍被历史 Invocation 引用的事实。Agent 的 stable slug、HUMAN owner 与 published-version pointer 属于 Definition Resource，不塞入版本正文。
 
@@ -108,6 +110,8 @@ AgentRuntimeProjection effective
 | `NOT_SUPPORTED_BY_RUNTIME` | selected runtime 不实现声明能力 |
 | `DISABLED` | Definition、Version、Installation、binding 或资源已停用 |
 
+Skill 的 reason 按同一表解释：Installation owner 不再持有定义的 Resource `read` 为 `NO_PERMISSION`，定义被停用为 `DISABLED`，artifact digest、文件写入或 `skills/list` 核对不符为 `PROJECTION_FAILED`；前两者由每次 `turn/start` 前的 fresh 判定得出、只停用该 Skill，后者阻止 generation 激活（DD-135(5)(7)）。
+
 Reason 只解释结果，不替代 ActionDecision。运行时只收到 effective 子集，不收到被拒绝的 Secret、工具或 Resource 列表。
 
 ## 5. RuntimeProfile 与一期 Codex 投影
@@ -126,7 +130,8 @@ RuntimeProfile 是平台随版本发布的能力合同。Codex 是平台核心�
 - Installation 的 CODEX_HOME 配置中不创建 local environment，这是跨 resume 的承重封堵；`thread/start.environments=[]` 与 Core 从不发送 `turn/start.environments` 是纵深防御。client `initialize` 仍声明 experimental API 以发送 thread/start 空数组；`shell_tool=false` 只作纵深防御，Core 不调用三个 host RPC（SF-COD-03/04/11/12，DD-15）。
 - model provider 只指向已授权 AgentGateway Responses route（SF-COD-05、SF-AGW-04）。
 - MCP 只含有效 ToolBinding 交集，使用 `enabled_tools/disabled_tools`、timeout 与 approval mode 再收窄（SF-COD-08）。
-- SkillVersion artifact 以 digest 验证后进入 Installation 专属只读 root；Core 用 `skills/extraRoots/set` 与 `skills/list(force_reload)` 核对发现结果。`skills/config/write` 只改变 Codex 本地启用投影，不改变 Platform Resource/permission（SF-COD-07）。
+- SkillVersion artifact 以 digest 验证后进入 Installation 专属只读 root `<CODEX_HOME>/kailo-skills/g<generation>/<slug>/SKILL.md`，generation 写入时固定 `skill_root_ref`；Core 每次 spawn 后用 `skills/extraRoots/set` 登记该根，再用 `skills/list(force_reload)` 核对发现结果恰为被引集合，不引 Skill 时为空集合，不符即 `PROJECTION_FAILED`。`skills/config/write` 只改变 Codex 本地启用投影，不改变 Platform Resource/permission（SF-COD-07）；Core 只用它把 fresh 判定失效的 Skill 停用或恢复（DD-135(7)）。
+- 一期 SERVER_CODEX 没有文件读取与 shell，模型无法按技能目录自行打开 `SKILL.md`（SF-COD-18(5)），因此 `skills.include_instructions=false`；Core 在每个 AgentSession 的首个 turn 以 `UserInput::Skill{name,path}` 显式选择当前有效的全部 Skill，Codex 注入完整正文，HUMAN 在消息中写 `$slug` 同样选中有效 Skill（SF-COD-18(3)(4)、DD-135(6)）。artifact 因而只承载 `SKILL.md`（DD-135(2)）。
 - Codex thread 固定为非 ephemeral 并持久回填 AgentSession `runtime_thread_id`；新 Session 从 AgentMemoryBinding 读取一次 NIP-AE core 并固定 event ID。Codex MemoryTool（平台核心 runtime 的一期配置）固定关闭，不建第二长期记忆投影（SF-COD-09/10、DD-65/67）。
 
 Buzz Persona 的 `skills` 当前未接执行（SF-BUZ-12），因此一期不声称“写入 Buzz Persona skills 即完成安装”。Buzz Persona 是行为语义来源，Codex skill root 才是 `SERVER_CODEX` 执行投影。
@@ -203,7 +208,8 @@ Agent 与 Skill 的 accountable owner 始终是 active HUMAN。AgentPrincipal �
 | Agent 列表 | Tenant Agent、owner、published version、Workspace 安装数、状态 | `discover` |
 | Definition | identity、instructions、RuntimeProfile、版本历史、publish/retire | `read/update/manage` |
 | Installation | Workspace、exact version、AgentPrincipal、Channel trigger、runtime state；成员使用权（`05` §2.10 的授予/撤销，逐成员显示是否已授予与是否已生效） | Installation Resource `read/manage`；使用权变更需 `share` |
-| Capabilities | model、skills、tools、Resources 的 requested/effective/source/reason 矩阵 | `read`；敏感 evidence 需 `audit` |
+| Capabilities | model、skills、tools、Resources 的 requested/effective/source/reason 矩阵；Installation 详情逐个 Skill 显示 slug、版本序号、digest、投影结果与当前状态（DD-135(7)） | `read`；敏感 evidence 需 `audit` |
+| Skills | Agents 页内与 Agent 定义、团队并列的 Skills 区：本人可发现的 Skill 卡片、新建定义、详情（版本历史、上传版本并预览名称/说明/digest/违规、发布、退役、内容查看、分享到目录、停用）；AgentVersion 编辑器按 DD-135(4) 选择 Skill 版本（DD-135） | 列表 `discover`；详情与已发布内容 `read`；`DRAFT` 版本 Asset `read`；上传版本 `create`；发布、退役 Asset `manage`；停用 `manage`；分享 `share` |
 | 团队 | Tenant 级 `agent_team`：名称、说明、有序成员定义；新建、编辑、删除、分享到目录，部署到频道为逐个 `agent.installation.create`，@ 团队展开为成员普通提及（DD-131(1)） | Team `read/update/manage/share`；成员只显示本人可 `discover` 者 |
 | 目录、快照与分享 | 本人可发现的定义与团队目录（安装或复制为本人 DRAFT）；Agent/团队快照导出为 ExportPackage、导入为新 Definition 与 DRAFT Version，发送导出包即分享；不提供卡片铸造、锁定卡与记忆导出（DD-131(2)–(7)） | 目录 `discover/read`；分享 `share`；导出 `export` 并经 owner 审批；导入 Tenant `create` |
 | Delegation & Approval | 谁可委托什么、有效期/次数、同意是否仍现行（只有真实可用的显示为有效，需要续签、次数用尽、已到期与已被替换分别显示，续签替换原 Grant，DD-126）、等待中的审批 | `delegate/approve` |
@@ -237,6 +243,7 @@ Core AgentRuntimeProjection
 - Version retire：禁止新安装；现存 Installation 继续固定旧版本，直到显式升级、回滚或停用。
 - Installation disable：先停 discovery/trigger，再撤 Tool/Skill/LLM projection，取消等待动作并按真实能力 drain/cancel runtime；不删除 Definition、历史 Invocation、Usage 或 Audit。
 - Definition disable：阻止其全部新安装/升级，并对各 Installation 执行同一停用收敛；不跨 Workspace 合并状态。
+- Skill 撤权或停用：每次 `turn/start` 前 fresh 判定，失效 Skill 在运行中的 app-server 停用并核对，不再注入、不能被 `$slug` 选中，Agent 其余能力照常；已注入 thread 历史的正文不追溯删除；从 generation 根中移除须升级到不引用它的 AgentVersion（DD-135(7)）。
 - Skill/Tool/LLM Route 撤销：effective matrix 立即给出确定 reason；受影响 projection 重建。能力实现停用时，依赖其契约键的工具在新 generation 中为 `NO_PROVIDER`（该 Workspace 无其他可解析实现）或 `DISABLED`。类别内切换实现是新建 binding、旧 binding 转 `DISABLED` 只读保留：指向旧 binding Tool 的 ToolBinding 失效并按契约键重绑到新 binding 的 Tool，以旧 Resource 或旧 Tool 为 target 的 DelegationScope 失效、须由 grantor 重新授予，重绑后生成新 projection generation，AgentVersion 不重发（DD-88/92）。Skill 缺工具依赖时只禁用该 skill/tool 路径，不自动扩大权限或切换替代工具。
 - projection 超时：状态为 `ERROR/PROJECTION_FAILED`，不得以旧配置响应新触发；运行中旧 Invocation 仍按撤权规则做副作用 fresh check。
 - runtime 回应成功但 Buzz reply 发布失败：Invocation 不标成功；保留 runtime outcome 与 reply failure evidence，由原 operation 对账，不能另建无关联回复。
