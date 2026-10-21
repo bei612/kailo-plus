@@ -107,18 +107,22 @@ def identity_admin(env, timeout):
     return api, collection
 
 
-def native_client(env, timeout):
-    origin = http_url(env, "KNOWLEDGE_NATIVE_ORIGIN", origin=True).rstrip("/")
-    client_id = required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
-    api, collection = identity_admin(env, timeout)
-    query = collection + "?" + urllib.parse.urlencode({"clientId": client_id})
-    wanted = {
+def native_client_shape(origin, client_id):
+    return {
         "clientId": client_id, "enabled": True, "protocol": "openid-connect",
         "publicClient": False, "standardFlowEnabled": True,
         "directAccessGrantsEnabled": False, "serviceAccountsEnabled": False,
         "redirectUris": [origin + "/api/v1/auth/oidc/callback"],
         "webOrigins": [origin],
     }
+
+
+def native_client(env, timeout):
+    origin = http_url(env, "KNOWLEDGE_NATIVE_ORIGIN", origin=True).rstrip("/")
+    client_id = required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
+    api, collection = identity_admin(env, timeout)
+    query = collection + "?" + urllib.parse.urlencode({"clientId": client_id})
+    wanted = native_client_shape(origin, client_id)
     matches = api.request("GET", query)
     if not matches:
         # No retry after a possibly committed POST. A subsequent operator run
@@ -134,6 +138,49 @@ def native_client(env, timeout):
     if secret.get("type") != "secret" or not isinstance(value, str) or not value:
         raise ConfigurationError("native OIDC client secret is absent")
     return value, client["id"]
+
+
+KAILO_LOGOUT_ATTRIBUTES = {
+    "backchannel.logout.session.required": "true",
+    "backchannel.logout.revoke.offline.tokens": "false",
+}
+
+
+def kailo_client(env):
+    """Kailo DD-133: end native sessions when the Kailo session ends.
+
+    Adds only the OpenID Connect back-channel logout registration to the
+    existing native client. The client must otherwise be exactly the native
+    client; a different back-channel URL configured by someone else is not
+    overwritten. Repeatable: an already matching client is left unchanged.
+    """
+    timeout = int(required(env, "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS"))
+    if timeout <= 0:
+        raise ConfigurationError("provision timeout must be positive")
+    origin = http_url(env, "KNOWLEDGE_NATIVE_ORIGIN", origin=True).rstrip("/")
+    client_id = required(env, "KNOWLEDGE_OIDC_CLIENT_ID")
+    logout_url = env.get("KNOWLEDGE_BACKCHANNEL_LOGOUT_URL") or origin + "/api/v1/auth/oidc/backchannel-logout"
+    logout_url = http_url({"KNOWLEDGE_BACKCHANNEL_LOGOUT_URL": logout_url}, "KNOWLEDGE_BACKCHANNEL_LOGOUT_URL")
+    if not logout_url.endswith("/api/v1/auth/oidc/backchannel-logout"):
+        raise ConfigurationError("KNOWLEDGE_BACKCHANNEL_LOGOUT_URL: native back-channel logout endpoint required")
+    api, collection = identity_admin(env, timeout)
+    matches = api.request("GET", collection + "?" + urllib.parse.urlencode({"clientId": client_id}))
+    if not isinstance(matches, list) or len(matches) != 1 or matches[0].get("clientId") != client_id:
+        raise ConfigurationError("native OIDC client is not unique")
+    path = collection + "/" + matches[0]["id"]
+    client = api.request("GET", path)
+    exact(client, native_client_shape(origin, client_id), "native OIDC client")
+    wanted = {**KAILO_LOGOUT_ATTRIBUTES, "backchannel.logout.url": logout_url}
+    attributes = client.get("attributes") or {}
+    if any(attributes.get(key) != value for key, value in wanted.items()) or client.get("frontchannelLogout") is not False:
+        if attributes.get("backchannel.logout.url") not in (None, "", logout_url):
+            raise ConfigurationError("native OIDC client back-channel logout differs; not overwritten")
+        api.request("PUT", path, {**client, "frontchannelLogout": False, "attributes": {**attributes, **wanted}})
+        client = api.request("GET", path)
+        exact(client.get("attributes") or {}, wanted, "native OIDC client back-channel logout")
+        if client.get("frontchannelLogout") is not False:
+            raise ConfigurationError("native OIDC client front-channel logout readback differs")
+    print(json.dumps({"nativeClientId": client_id, "backchannelLogoutUrl": logout_url}))
 
 
 def adapter_client(env):
@@ -704,9 +751,10 @@ if __name__ == "__main__":
     try:
         operation = sys.argv[1] if len(sys.argv) == 2 else "native" if len(sys.argv) == 1 else ""
         actions = {"native": provision, "model-reader": model_reader, "model-delivery": model_delivery,
-                   "adapter-reader": adapter_reader, "adapter-client": adapter_client}
+                   "adapter-reader": adapter_reader, "adapter-client": adapter_client,
+                   "kailo-client": kailo_client}
         if operation not in actions:
-            raise ConfigurationError("expected native, model-reader, model-delivery, adapter-reader, or adapter-client")
+            raise ConfigurationError("expected native, model-reader, model-delivery, adapter-reader, adapter-client, or kailo-client")
         actions[operation](os.environ)
     except (ConfigurationError, OSError, ValueError, KeyError, TypeError) as error:
         # ConfigurationError messages contain field names only. HTTP transport

@@ -44,6 +44,8 @@ class NativeEntrypointTests(unittest.TestCase):
             "DOCREADER_ADDR": "docreader:50051",
             "OIDC_AUTH_ENABLE": "true",
             "AUTO_RECOVER_DIRTY": "false",
+            "KAILO_INTEGRATION_ENABLE": "true",
+            "KAILO_ORG_SYNC": "required",
             "OIDC_AUTH_ISSUER_URL": "https://idp.example.test/realms/native",
             "OIDC_AUTH_DISCOVERY_URL": "https://idp.example.test/realms/native/.well-known/openid-configuration",
             "OIDC_AUTH_CLIENT_ID": "native-fixture-client",
@@ -75,6 +77,25 @@ class NativeEntrypointTests(unittest.TestCase):
                 delivered[name].encode(), Path(original[name + "_FILE"]).read_bytes()
             )
             self.assertNotIn(name + "_FILE", delivered)
+
+    def test_kailo_mode_is_required_and_org_sync_is_explicit(self):
+        # Kailo DD-133: the deployment never falls back to native local
+        # credentials or personal spaces.
+        for name, value in (
+            ("KAILO_INTEGRATION_ENABLE", "false"),
+            ("KAILO_INTEGRATION_ENABLE", None),
+            ("KAILO_ORG_SYNC", "maybe"),
+            ("KAILO_ORG_SYNC", None),
+        ):
+            with self.subTest(name=name, value=value):
+                env = dict(self.env)
+                if value is None:
+                    del env[name]
+                else:
+                    env[name] = value
+                self.assert_refused(env)
+        self.env["KAILO_ORG_SYNC"] = "disabled"
+        self.assertEqual(entrypoint.prepare_environment(self.env)["KAILO_ORG_SYNC"], "disabled")
 
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])
@@ -825,6 +846,65 @@ class NativeProvisioningTests(unittest.TestCase):
                 with self.assertRaisesRegex(provision.ConfigurationError, "not overwritten"):
                     provision.native_client(env, 1)
             self.assertEqual([call.args[0] for call in api.request.call_args_list], ["GET", "GET"])
+
+    def kailo_client_run(self, client, readback=None):
+        with tempfile.TemporaryDirectory() as directory:
+            password = Path(directory) / "operator"
+            password.write_text("operator-fixture")
+            password.chmod(0o600)
+            env = {
+                "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "5",
+                "KNOWLEDGE_NATIVE_ORIGIN": "https://knowledge.example.test",
+                "KNOWLEDGE_IDP_ADMIN_URL": "https://idp.example.test",
+                "KNOWLEDGE_IDP_REALM": "native",
+                "KNOWLEDGE_OIDC_CLIENT_ID": "knowledge-client",
+                "KNOWLEDGE_OIDC_ISSUER_URL": "https://idp.example.test/realms/native",
+                "KNOWLEDGE_IDP_ADMIN_USER": "operator-fixture",
+                "KNOWLEDGE_IDP_ADMIN_PASSWORD_FILE": str(password),
+            }
+            token_response = MagicMock()
+            token_response.__enter__.return_value.read.return_value = b'{"access_token":"fixture"}'
+            api = MagicMock()
+            responses = [[{"id": "fixture-id", "clientId": "knowledge-client"}], client]
+            if readback is not None:
+                responses += [None, readback]
+            api.request.side_effect = responses
+            with (
+                patch.object(provision, "open_direct", return_value=token_response),
+                patch.object(provision, "API", return_value=api),
+                redirect_stdout(io.StringIO()),
+            ):
+                provision.kailo_client(env)
+            return api
+
+    def native_client_fixture(self, **extra):
+        return {"id": "fixture-id", **provision.native_client_shape("https://knowledge.example.test", "knowledge-client"), **extra}
+
+    def test_kailo_client_registers_backchannel_logout_once(self):
+        url = "https://knowledge.example.test/api/v1/auth/oidc/backchannel-logout"
+        configured = {**provision.KAILO_LOGOUT_ATTRIBUTES, "backchannel.logout.url": url}
+        api = self.kailo_client_run(
+            self.native_client_fixture(attributes={"pkce.code.challenge.method": "S256"}, frontchannelLogout=True),
+            self.native_client_fixture(attributes={"pkce.code.challenge.method": "S256", **configured}, frontchannelLogout=False),
+        )
+        methods = [call.args[0] for call in api.request.call_args_list]
+        self.assertEqual(methods, ["GET", "GET", "PUT", "GET"])
+        body = api.request.call_args_list[2].args[2]
+        self.assertEqual(body["attributes"]["backchannel.logout.url"], url)
+        self.assertEqual(body["attributes"]["pkce.code.challenge.method"], "S256")
+        self.assertIs(body["frontchannelLogout"], False)
+        # Repeatable: an already configured client is not written again.
+        api = self.kailo_client_run(self.native_client_fixture(attributes=configured, frontchannelLogout=False))
+        self.assertEqual([call.args[0] for call in api.request.call_args_list], ["GET", "GET"])
+
+    def test_kailo_client_never_overwrites_foreign_configuration(self):
+        for client in (
+            self.native_client_fixture(attributes={"backchannel.logout.url": "https://other.example.test/logout"}),
+            self.native_client_fixture(redirectUris=["https://different.example.test/callback"]),
+        ):
+            with self.subTest(client=client):
+                with self.assertRaisesRegex(provision.ConfigurationError, "not overwritten"):
+                    self.kailo_client_run(client)
 
     def test_adapter_service_client_uses_delivered_identity_and_exact_readback(self):
         directory = tempfile.TemporaryDirectory()

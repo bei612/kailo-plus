@@ -9,6 +9,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -348,7 +349,14 @@ func setOIDCNonceCookie(c *gin.Context, nonce string) {
 		return
 	}
 	secure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
-	c.SetSameSite(http.SameSiteLaxMode)
+	// The login may run inside the Kailo iframe. Over HTTPS the binding
+	// cookie must survive a cross-site frame (SameSite=None; Secure); plain
+	// HTTP deployments are same-site by host and keep Lax.
+	if secure {
+		c.SetSameSite(http.SameSiteNoneMode)
+	} else {
+		c.SetSameSite(http.SameSiteLaxMode)
+	}
 	c.SetCookie(oidcNonceCookieName, nonce, oidcNonceCookieMaxAge, "/", "", secure, true)
 }
 
@@ -373,7 +381,11 @@ func oidcCallbackURL(c *gin.Context) string {
 // @Router       /auth/oidc/start [get]
 func (h *AuthHandler) OIDCStart(c *gin.Context) {
 	ctx := c.Request.Context()
-	resp, err := h.userService.GetOIDCAuthorizationURL(ctx, oidcCallbackURL(c))
+	opts := types.OIDCAuthOptions{
+		Prompt:   normaliseOIDCPrompt(c.Query("prompt")),
+		ReturnTo: normaliseOIDCReturnTo(c.Query("return_to")),
+	}
+	resp, err := h.userService.GetOIDCAuthorizationURLWithOptions(ctx, oidcCallbackURL(c), opts)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate OIDC authorization URL: %v", err)
 		appErr := errors.NewForbiddenError("OIDC authorization unavailable").WithDetails(err.Error())
@@ -422,21 +434,40 @@ func (h *AuthHandler) GetOIDCConfig(c *gin.Context) {
 func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	ctx := c.Request.Context()
 	frontendRedirectURI := "/"
+	silent := false
 
-	if providerError := strings.TrimSpace(c.Query("error")); providerError != "" {
-		redirectURL := frontendRedirectURI + "#oidc_error=" + urlQueryEscape(providerError)
-		if description := strings.TrimSpace(c.Query("error_description")); description != "" {
+	state := strings.TrimSpace(c.Query("state"))
+	decodedState, stateErr := decodeOIDCState(state, c.Request)
+	if stateErr == nil {
+		// Return to the page that started the login (Kailo DD-133 §2); the
+		// value was validated before it was signed into the state.
+		if decodedState.ReturnTo != "" {
+			frontendRedirectURI = decodedState.ReturnTo
+		}
+		silent = decodedState.Prompt == "none"
+	}
+	redirectError := func(code, description string) {
+		redirectURL := frontendRedirectURI + "#oidc_error=" + urlQueryEscape(code)
+		if description != "" {
 			redirectURL += "&oidc_error_description=" + urlQueryEscape(description)
 		}
+		if silent {
+			redirectURL += "&oidc_prompt=none"
+		}
 		c.Redirect(http.StatusFound, redirectURL)
+	}
+
+	if providerError := strings.TrimSpace(c.Query("error")); providerError != "" {
+		if stateErr == nil {
+			c.SetCookie(oidcNonceCookieName, "", -1, "/", "", false, true)
+		}
+		redirectError(providerError, strings.TrimSpace(c.Query("error_description")))
 		return
 	}
 
-	state := strings.TrimSpace(c.Query("state"))
-	decodedState, err := decodeOIDCState(state, c.Request)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to decode OIDC state: %v", err)
-		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("invalid_state"))
+	if stateErr != nil {
+		logger.Errorf(ctx, "Failed to decode OIDC state: %v", stateErr)
+		redirectError("invalid_state", "")
 		return
 	}
 	// One-time use: clear the binding cookie as soon as it is checked.
@@ -444,29 +475,95 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 
 	code := strings.TrimSpace(c.Query("code"))
 	if code == "" {
-		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("missing_code"))
+		redirectError("missing_code", "")
 		return
 	}
 
 	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
-		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))
+		if stderrors.Is(err, service.ErrKailoOrgClaim) {
+			redirectError(service.ErrKailoOrgClaim.Error(), "")
+			return
+		}
+		redirectError("login_failed", err.Error())
 		return
 	}
 	if !resp.Success {
-		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(resp.Message))
+		redirectError("login_failed", resp.Message)
 		return
 	}
 
 	payload, err := encodeOIDCCallbackPayload(resp)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to encode OIDC callback payload: %v", err)
-		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
+		redirectError("payload_encode_failed", "")
 		return
 	}
 
 	c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_result="+urlQueryEscape(payload))
+}
+
+// OIDCBackchannelLogout godoc
+// @Summary      OIDC 后端通道登出
+// @Description  身份提供方在用户退出 Kailo 时回调（OpenID Connect Back-Channel Logout 1.0），
+// @Description  校验 logout_token 后吊销该身份在本服务的全部会话。
+// @Tags         认证
+// @Accept       x-www-form-urlencoded
+// @Param        logout_token  formData  string  true  "签名的登出令牌"
+// @Success      200
+// @Failure      400  {object}  map[string]string
+// @Router       /auth/oidc/backchannel-logout [post]
+func (h *AuthHandler) OIDCBackchannelLogout(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	err := h.userService.LogoutByOIDCBackchannel(c.Request.Context(), strings.TrimSpace(c.PostForm("logout_token")))
+	if err == nil {
+		c.Status(http.StatusOK)
+		return
+	}
+	if stderrors.Is(err, service.ErrInvalidLogoutToken) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	logger.Errorf(c.Request.Context(), "OIDC back-channel logout failed: %v", err)
+	c.JSON(http.StatusBadRequest, gin.H{"error": "logout_failed"})
+}
+
+// normaliseOIDCPrompt keeps only the prompt values the SPA may request:
+// "none" for the silent login inside the Kailo iframe, "login" to force
+// re-authentication. Anything else is dropped.
+func normaliseOIDCPrompt(value string) string {
+	switch strings.TrimSpace(value) {
+	case "none":
+		return "none"
+	case "login":
+		return "login"
+	default:
+		return ""
+	}
+}
+
+// normaliseOIDCReturnTo accepts only a same-origin absolute path so the
+// callback can never be turned into an open redirect.
+func normaliseOIDCReturnTo(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 1024 || !strings.HasPrefix(value, "/") ||
+		strings.HasPrefix(value, "//") || strings.HasPrefix(value, "/\\") {
+		return ""
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || r == '\\' || r == '#' {
+			return ""
+		}
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "" || parsed.Host != "" || parsed.User != nil {
+		return ""
+	}
+	if strings.HasPrefix(parsed.Path, "/api/") {
+		return ""
+	}
+	return value
 }
 
 func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error) {
@@ -480,6 +577,8 @@ func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error)
 type oidcStatePayload struct {
 	Nonce       string
 	RedirectURI string
+	ReturnTo    string
+	Prompt      string
 }
 
 func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
@@ -497,6 +596,8 @@ func decodeOIDCState(raw string, req *http.Request) (*oidcStatePayload, error) {
 	return &oidcStatePayload{
 		Nonce:       payload.Nonce,
 		RedirectURI: strings.TrimSpace(payload.RedirectURI),
+		ReturnTo:    normaliseOIDCReturnTo(payload.ReturnTo),
+		Prompt:      normaliseOIDCPrompt(payload.Prompt),
 	}, nil
 }
 
@@ -837,10 +938,20 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		h.configInfo,
 		h.systemSettingSvc,
 	)
+	localAuth := !h.configInfo.LocalAuthDisabled()
+	if !localAuth {
+		// Kailo mode: no self-service accounts exist, whatever the stored
+		// registration setting says.
+		mode = config.AuthRegistrationModeInviteOnly
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success":                  true,
 		"registration_mode":        mode,
 		"complex_password_enabled": complexPasswordEnabled,
+		// Kailo DD-133: the SPA hides every local credential surface and
+		// starts OIDC by itself instead of showing a login page.
+		"local_auth_enabled": localAuth,
+		"oidc_auto_login":    h.configInfo.KailoEnabled(),
 	})
 }
 

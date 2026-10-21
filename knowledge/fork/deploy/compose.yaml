@@ -19,6 +19,11 @@ services:
       APP_SCHEME: http
       KNOWLEDGE_NATIVE_ORIGIN: ${KNOWLEDGE_NATIVE_ORIGIN:?native frontend origin required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
+      # Kailo DD-133: white-label product name, silent SSO and host bridge.
+      KAILO_MODE: "true"
+      PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?Kailo deployment display name required}
+      KAILO_ORIGINS: ${KAILO_ORIGINS:-}
+      KAILO_LOGOUT_URL: ${KAILO_LOGOUT_URL:-}
     volumes:
       - ./frontend_entrypoint.sh:/opt/kailo-knowledge/frontend_entrypoint.sh:ro
       - ./render_proxy.awk:/opt/kailo-knowledge/render_proxy.awk:ro
@@ -69,6 +74,11 @@ services:
       OIDC_AUTH_CLIENT_ID: ${KNOWLEDGE_OIDC_CLIENT_ID:?independent native OIDC client required}
       OIDC_AUTH_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       OIDC_AUTH_SCOPES: openid profile email
+      # Kailo DD-133: OIDC only, profile refreshed from the Kailo claims and
+      # membership projected from the Kailo organisation claim on every login.
+      KAILO_INTEGRATION_ENABLE: "true"
+      KAILO_ORG_SYNC: ${KNOWLEDGE_KAILO_ORG_SYNC:-required}
+      KAILO_ORG_CLAIM: kailo_org
       # Native SSRF remains enabled. Explicit deployment-approved hosts only;
       # needed when the real IdP uses a private address or an IP literal.
       SSRF_WHITELIST_EXTRA: ${KNOWLEDGE_SSRF_WHITELIST_EXTRA:-}

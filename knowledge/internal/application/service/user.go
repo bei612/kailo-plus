@@ -104,6 +104,7 @@ type userService struct {
 	memberService    interfaces.TenantMemberService
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
+	kailoOrg         interfaces.KailoOrgService
 }
 
 // NewUserService creates a new user service instance
@@ -114,6 +115,7 @@ func NewUserService(
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
+	kailoOrg interfaces.KailoOrgService,
 ) interfaces.UserService {
 	return &userService{
 		userRepo:         userRepo,
@@ -122,6 +124,7 @@ func NewUserService(
 		memberService:    memberService,
 		config:           configInfo,
 		systemSettingSvc: systemSettingSvc,
+		kailoOrg:         kailoOrg,
 	}
 }
 
@@ -446,6 +449,16 @@ func synthFallbackMembership(user *types.User, activeTenant *types.Tenant) []typ
 
 // GetOIDCAuthorizationURL builds the OIDC authorization URL.
 func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error) {
+	return s.GetOIDCAuthorizationURLWithOptions(ctx, redirectURI, types.OIDCAuthOptions{})
+}
+
+// GetOIDCAuthorizationURLWithOptions builds the OIDC authorization URL with
+// an optional prompt and return path (Kailo DD-133 §2).
+func (s *userService) GetOIDCAuthorizationURLWithOptions(
+	ctx context.Context,
+	redirectURI string,
+	opts types.OIDCAuthOptions,
+) (*types.OIDCAuthURLResponse, error) {
 	cfg, err := s.getOIDCConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -462,6 +475,8 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 	state, err := secutils.SignOIDCState(&secutils.OIDCStatePayload{
 		Nonce:       nonce,
 		RedirectURI: strings.TrimSpace(redirectURI),
+		ReturnTo:    opts.ReturnTo,
+		Prompt:      opts.Prompt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode OIDC state: %w", err)
@@ -473,6 +488,9 @@ func (s *userService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI s
 	query.Set("redirect_uri", redirectURI)
 	query.Set("scope", strings.Join(cfg.Scopes, " "))
 	query.Set("state", state)
+	if opts.Prompt != "" {
+		query.Set("prompt", opts.Prompt)
+	}
 
 	authURL := cfg.AuthorizationEndpoint
 	if strings.Contains(authURL, "?") {
@@ -524,6 +542,21 @@ func (s *userService) LoginWithOIDC(
 		return nil, errors.New("OIDC provider did not return email")
 	}
 
+	// Kailo DD-133: membership comes from the verified Kailo organisation
+	// claim. Validate it before any account exists so a login without it
+	// never leaves a half-provisioned user or a personal space behind.
+	var orgClaim *types.KailoOrgClaim
+	if s.config.KailoOrgSyncRequired() {
+		orgClaim, err = types.ParseKailoOrgClaim(userInfo.Claims[s.config.KailoOrgClaimName()])
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrKailoOrgClaim, err)
+		}
+		if s.kailoOrg == nil {
+			return nil, errors.New("kailo organisation sync is not configured")
+		}
+		provisioning = types.TenantProvisioningTenantless
+	}
+
 	user, err := s.userRepo.GetUserByOIDCIdentity(ctx, userInfo.Issuer, userInfo.Subject)
 	if err != nil && !isUserLookupNotFound(err) {
 		return nil, fmt.Errorf("failed to query OIDC identity: %w", err)
@@ -534,13 +567,27 @@ func (s *userService) LoginWithOIDC(
 		if err != nil {
 			// A simultaneous first login may have inserted this exact identity.
 			// Read it once; never retry provisioning or fall back to an email.
-			user, lookupErr := s.userRepo.GetUserByOIDCIdentity(ctx, userInfo.Issuer, userInfo.Subject)
-			if lookupErr != nil || user == nil {
+			existing, lookupErr := s.userRepo.GetUserByOIDCIdentity(ctx, userInfo.Issuer, userInfo.Subject)
+			if lookupErr != nil || existing == nil {
 				return nil, err
 			}
-			return s.finishOIDCLogin(ctx, user, false)
+			user = existing
+		} else {
+			isNewUser = true
 		}
-		isNewUser = true
+	}
+	if !user.IsActive {
+		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
+	}
+	if s.config.KailoEnabled() {
+		if err := s.refreshOIDCProfile(ctx, user, userInfo); err != nil {
+			return nil, err
+		}
+	}
+	if orgClaim != nil {
+		if _, err := s.kailoOrg.SyncLogin(ctx, user, orgClaim); err != nil {
+			return nil, err
+		}
 	}
 	return s.finishOIDCLogin(ctx, user, isNewUser)
 }

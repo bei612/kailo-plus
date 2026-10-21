@@ -36,7 +36,7 @@ var versionedSQLiteTables = []string{
 var versionedSQLiteColumns = map[string][]string{
 	"memory_subjects":    {"extraction_state"},                                              // 000094
 	"memory_items":       {"replaces_id"},                                                   // 000094
-	"tenants":            {"api_principal_config"},                                          // 000064
+	"tenants":            {"api_principal_config", "kailo_scope_ref"},                       // 000064, 000109
 	"users":              {"is_system_admin"},                                               // 000053
 	"knowledges":         {"pending_subtasks_count", "profile"},                             // 000056, 000101
 	"knowledge_bases":    {"profile_config", "generated_profile"},                           // 000101
@@ -46,9 +46,10 @@ var versionedSQLiteColumns = map[string][]string{
 	"embed_channels":     {"allow_memory"},                                                  // 000060
 	"mcp_oauth_tokens":   {"principal_type", "principal_id"},                                // 000064
 	"mcp_tool_approvals": {"enabled"},                                                       // 000091
+	"organizations":      {"kailo_tenant_ref"},                                              // 000109
 }
 
-const expectedSQLiteMigrationVersion = 23
+const expectedSQLiteMigrationVersion = 28
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

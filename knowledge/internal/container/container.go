@@ -229,6 +229,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewModelService))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
+	must(container.Provide(service.NewKailoOrgService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
 	must(container.Provide(func(

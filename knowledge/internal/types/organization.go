@@ -88,6 +88,10 @@ type Organization struct {
 	Searchable bool `json:"searchable" gorm:"default:false"`
 	// Max members allowed; 0 means no limit
 	MemberLimit int `json:"member_limit" gorm:"default:50"`
+	// KailoTenantRef is the Kailo Tenant this organization represents
+	// (Kailo DD-133). Its member spaces are the Tenant's mapped spaces and
+	// cannot be edited natively.
+	KailoTenantRef *string `json:"kailo_tenant_ref,omitempty" gorm:"column:kailo_tenant_ref;type:varchar(160);uniqueIndex:idx_organizations_kailo_tenant_ref"`
 	// Creation time
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time
