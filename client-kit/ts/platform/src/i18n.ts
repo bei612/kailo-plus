@@ -4773,6 +4773,7 @@ export const evidenceKindMessages = {
   [EvidenceKind.TemporalFirstRunId]: { en: "First workflow run", "zh-CN": "流程首次运行" },
   [EvidenceKind.TemporalRunId]: { en: "Workflow run", "zh-CN": "流程运行" },
   [EvidenceKind.TemporalWorkflowId]: { en: "Workflow", "zh-CN": "流程" },
+  [EvidenceKind.TransferPackageDigest]: { en: "Snapshot package digest", "zh-CN": "快照包摘要" },
   [EvidenceKind.TenantDeleteSubprocessId]: { en: "Organization deletion subprocess", "zh-CN": "组织删除子流程" },
   [EvidenceKind.TenantInvitationId]: { en: "Organization invitation", "zh-CN": "组织邀请" },
   [EvidenceKind.TenantLifecycleSnapshotId]: { en: "Organization lifecycle snapshot", "zh-CN": "组织生命周期快照" },

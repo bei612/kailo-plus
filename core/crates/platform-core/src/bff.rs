@@ -497,6 +497,30 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),
         )
+        // DD-131(1)(6)：Tenant 级 Agent 团队与目录读取
+        .exposed_route(
+            "/api/v1/agent-teams",
+            get(crate::governance::agent_catalog::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-teams/{resource_id}",
+            get(crate::governance::agent_catalog::get),
+        )
+        // DD-131(2)(3)(5)(7)、DD-42：本会话快照包上传预览（上界为原版团队 PNG 的 50 MiB）
+        .exposed_route(
+            "/api/v1/agent-snapshots/uploads",
+            axum::routing::post(crate::governance::agent_transfer::upload_snapshot).layer(
+                axum::extract::DefaultBodyLimit::max(crate::agent_snapshot::MAX_TEAM_PNG_BYTES),
+            ),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}",
+            get(crate::governance::agent_transfer::package),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}/content",
+            get(crate::governance::agent_transfer::package_content),
+        )
         .exposed_route("/api/v1/automations", get(crate::automation_query::list))
         .exposed_route("/api/v1/platform-tools", get(crate::agent_tool::list))
         .exposed_route(
