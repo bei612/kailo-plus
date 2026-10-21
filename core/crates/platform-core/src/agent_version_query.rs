@@ -174,7 +174,7 @@ async fn catalog_options(
         .iter()
         .filter_map(|route| route.home_workspace_id)
         .collect();
-    let admitted = crate::web_transport::workspace_admissions(state, &context, &workspaces)
+    let admitted = crate::web_transport::workspace_admissions(state, context, &workspaces)
         .await
         .map_err(IntoResponse::into_response)?;
     let mut routes = Vec::new();
