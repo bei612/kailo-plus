@@ -1783,6 +1783,7 @@ func TestDD131AgentTeamsAndSnapshotsRoundtrip(t *testing.T) {
 		"exportPackageView":       new(generated.ExportPackageView),
 		"transferAdvanceRequest":  new(generated.ResourceTransferAdvanceRequest),
 		"transferAdvanceResult":   new(generated.ResourceTransferAdvanceResult),
+		"importConfiguration":     new(generated.AgentImportConfigurationPage),
 	} {
 		if err := json.Unmarshal(samples[name], typed); err != nil {
 			t.Fatal(name, err)

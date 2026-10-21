@@ -79,88 +79,8 @@ async fn configuration_page(
         .map_err(crate::service_api::unavailable)?;
     let parent = read_definition(state, &context, &mut connection, id).await?;
 
-    let mut profiles = match crate::agent_version::runtime_profile_directory() {
-        Ok(directory) => directory.profiles,
-        // 未投递整个运行组是已关闭的能力，不生成默认 Profile。
-        Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)) => Vec::new(),
-        Err(error) => return Err(error.respond(None)),
-    };
-    profiles.retain_mut(retain_consumable_profile);
-    let rows: Vec<RouteRow> = sqlx::query_as(&format!("{ROUTES} order by r.id offset $2 limit $3"))
-        .bind(context.tenant_id)
-        .bind(offset)
-        .bind(limit)
-        .fetch_all(&mut *connection)
-        .await
-        .map_err(crate::service_api::unavailable)?;
-    let next =
-        (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
-    let workspaces: Vec<_> = rows
-        .iter()
-        .filter_map(|route| route.home_workspace_id)
-        .collect();
-    let admitted = crate::web_transport::workspace_admissions(state, &context, &workspaces)
-        .await
-        .map_err(IntoResponse::into_response)?;
-    let mut routes = Vec::new();
-    for route in rows {
-        if route
-            .home_workspace_id
-            .is_some_and(|workspace| !admitted.contains_key(&workspace))
-        {
-            continue;
-        }
-        // 复用发布/安装同一原生读取链；不存在反向导入 Gateway 授权。
-        match crate::model_route::validate_reference(
-            &state.governance,
-            &mut connection,
-            context.tenant_id,
-            context.tenant_principal_id,
-            route.resource_id,
-        )
-        .await
-        {
-            Ok(()) => {}
-            Err(Refusal::Denied(_)) | Err(Refusal::Precondition(ReasonCode::BindingNotActive)) => {
-                continue
-            }
-            Err(error) => return Err(error.respond(None)),
-        }
-        let observed: Option<RouteRow> = sqlx::query_as(&format!("{ROUTES} and r.id=$2"))
-            .bind(context.tenant_id)
-            .bind(route.resource_id)
-            .fetch_optional(&mut *connection)
-            .await
-            .map_err(crate::service_api::unavailable)?;
-        if observed.as_ref() != Some(&route) {
-            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict).respond(None));
-        }
-        if route.native_id != route.resource_id.to_string()
-            || route.resource_version <= 0
-            || route.native_revision <= 0
-            || route.native_config_hash.len() != 64
-            || !route
-                .native_config_hash
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(Refusal::Unavailable("Route 元数据不完整".into()).respond(None));
-        }
-        routes.push(json!({
-            "resourceId": route.resource_id,
-            "resourceVersion": route.resource_version,
-            "ownerPrincipalId": route.owner_principal_id,
-            "homeWorkspaceId": route.home_workspace_id,
-            "nativeConfigResourceId": route.native_id,
-            "nativeRevision": route.native_revision,
-            "nativeConfigHash": route.native_config_hash,
-        }));
-    }
-    // 缺任一真实来源时目录无可用配置，不从一个半份选项生成写入口。
-    if routes.is_empty() || profiles.is_empty() {
-        routes.clear();
-        profiles.clear();
-    }
+    let (profiles, routes, next) =
+        catalog_options(state, &context, &mut connection, offset, limit).await?;
     // 发布策略仍由实际 ActionDefinition 决定；目录缺失不猜确认/审批策略。
     let can_create =
         if !routes.is_empty() && crate::capability_registry::action_exposed("agent.version.create")
@@ -217,6 +137,164 @@ async fn configuration_page(
         "canCreate": can_create,
     }))
     .map_err(|_| Refusal::Unavailable("Version 配置目录不符合共享契约".into()).respond(None))
+}
+
+/// 本 Tenant 可消费的运行合同与受权 Route（Definition 版本配置与 DD-131 导入共用同一来源）。
+async fn catalog_options(
+    state: &BffState,
+    context: &ExecutionContext,
+    connection: &mut sqlx::PgConnection,
+    offset: i64,
+    limit: i64,
+) -> Result<
+    (
+        Vec<contracts::RuntimeProfileDirectoryProfilesItem>,
+        Vec<serde_json::Value>,
+        Option<i64>,
+    ),
+    Response,
+> {
+    let mut profiles = match crate::agent_version::runtime_profile_directory() {
+        Ok(directory) => directory.profiles,
+        // 未投递整个运行组是已关闭的能力，不生成默认 Profile。
+        Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)) => Vec::new(),
+        Err(error) => return Err(error.respond(None)),
+    };
+    profiles.retain_mut(retain_consumable_profile);
+    let rows: Vec<RouteRow> = sqlx::query_as(&format!("{ROUTES} order by r.id offset $2 limit $3"))
+        .bind(context.tenant_id)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(&mut *connection)
+        .await
+        .map_err(crate::service_api::unavailable)?;
+    let next =
+        (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
+    let workspaces: Vec<_> = rows
+        .iter()
+        .filter_map(|route| route.home_workspace_id)
+        .collect();
+    let admitted = crate::web_transport::workspace_admissions(state, &context, &workspaces)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let mut routes = Vec::new();
+    for route in rows {
+        if route
+            .home_workspace_id
+            .is_some_and(|workspace| !admitted.contains_key(&workspace))
+        {
+            continue;
+        }
+        // 复用发布/安装同一原生读取链；不存在反向导入 Gateway 授权。
+        match crate::model_route::validate_reference(
+            &state.governance,
+            &mut *connection,
+            context.tenant_id,
+            context.tenant_principal_id,
+            route.resource_id,
+        )
+        .await
+        {
+            Ok(()) => {}
+            Err(Refusal::Denied(_)) | Err(Refusal::Precondition(ReasonCode::BindingNotActive)) => {
+                continue
+            }
+            Err(error) => return Err(error.respond(None)),
+        }
+        let observed: Option<RouteRow> = sqlx::query_as(&format!("{ROUTES} and r.id=$2"))
+            .bind(context.tenant_id)
+            .bind(route.resource_id)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(crate::service_api::unavailable)?;
+        if observed.as_ref() != Some(&route) {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict).respond(None));
+        }
+        if route.native_id != route.resource_id.to_string()
+            || route.resource_version <= 0
+            || route.native_revision <= 0
+            || route.native_config_hash.len() != 64
+            || !route
+                .native_config_hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(Refusal::Unavailable("Route 元数据不完整".into()).respond(None));
+        }
+        routes.push(json!({
+            "resourceId": route.resource_id,
+            "resourceVersion": route.resource_version,
+            "ownerPrincipalId": route.owner_principal_id,
+            "homeWorkspaceId": route.home_workspace_id,
+            "nativeConfigResourceId": route.native_id,
+            "nativeRevision": route.native_revision,
+            "nativeConfigHash": route.native_config_hash,
+        }));
+    }
+    // 缺任一真实来源时目录无可用配置，不从一个半份选项生成写入口。
+    if routes.is_empty() || profiles.is_empty() {
+        routes.clear();
+        profiles.clear();
+    }
+    Ok((profiles, routes, next))
+}
+
+/// `GET /api/v1/agent-snapshots/import-configuration`（DD-131(2)(3)）：导入人为新 DRAFT 选择
+/// 本 Tenant 的运行合同与模型路由；不依附任何已有 Definition。
+pub async fn import_configuration(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    let context = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let offset = query.offset.unwrap_or(0);
+    let limit = i64::from(state.governance.cfg.relationship_page);
+    if offset < 0 || limit <= 0 || offset.checked_add(limit).is_none() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let mut connection = match state.pool.acquire().await {
+        Ok(c) => c,
+        Err(e) => return crate::service_api::unavailable(e),
+    };
+    let (profiles, routes, next) =
+        match catalog_options(&state, &context, &mut connection, offset, limit).await {
+            Ok(v) => v,
+            Err(r) => return r,
+        };
+    drop(connection);
+    let can_import = if routes.is_empty()
+        || !crate::capability_registry::action_exposed("agent.definition.import")
+    {
+        false
+    } else {
+        match state
+            .governance
+            .spicedb
+            .check(
+                "tenant",
+                &context.tenant_id.to_string(),
+                "create",
+                &context.tenant_principal_id.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+        {
+            Ok(c) => c.allowed,
+            Err(e) => return Refusal::Unavailable(e.to_string()).respond(None),
+        }
+    };
+    match serde_json::from_value::<contracts::AgentImportConfigurationPage>(json!({
+        "profiles": profiles,
+        "routes": routes,
+        "nextOffset": next,
+        "canImport": can_import,
+    })) {
+        Ok(page) => Json(page).into_response(),
+        Err(_) => Refusal::Unavailable("导入配置目录不符合共享契约".into()).respond(None),
+    }
 }
 
 fn retain_consumable_profile(profile: &mut contracts::RuntimeProfileDirectoryProfilesItem) -> bool {

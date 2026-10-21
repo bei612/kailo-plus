@@ -1141,6 +1141,7 @@ test("DD-131 agent teams and snapshot transfer contracts preserve fields and abs
   type Package = import("../src/generated/contracts.js").ExportPackageView;
   type Request = import("../src/generated/contracts.js").ResourceTransferAdvanceRequest;
   type Result = import("../src/generated/contracts.js").ResourceTransferAdvanceResult;
+  type ImportConfiguration = import("../src/generated/contracts.js").AgentImportConfigurationPage;
   const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-teams-snapshots.sample.json", import.meta.url), "utf8"));
   const command = (row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey,
     resourceId: row.resourceId, resourceVersion: row.resourceVersion, assetId: row.assetId,
@@ -1179,6 +1180,8 @@ test("DD-131 agent teams and snapshot transfer contracts preserve fields and abs
     teamView: team(value.teamView), teamPage: page(value.teamPage), definitionView: definition(value.definitionView),
     uploadView: upload(value.uploadView), exportPackageView: exportPackage(value.exportPackageView),
     transferAdvanceRequest: request(value.transferAdvanceRequest), transferAdvanceResult: result(value.transferAdvanceResult),
+    importConfiguration: ((row: ImportConfiguration) => ({profiles: row.profiles, routes: row.routes,
+      nextOffset: row.nextOffset, canImport: row.canImport}))(value.importConfiguration),
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });

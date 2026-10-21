@@ -1316,6 +1316,8 @@ void main() {
           ResourceTransferAdvanceRequest.fromJson(v).toJson(),
       'transferAdvanceResult': (v) =>
           ResourceTransferAdvanceResult.fromJson(v).toJson(),
+      'importConfiguration': (v) =>
+          AgentImportConfigurationPage.fromJson(v).toJson(),
     };
     for (final entry in codecs.entries) {
       final original = value[entry.key] as Map<String, dynamic>;

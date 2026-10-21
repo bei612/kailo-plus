@@ -1217,6 +1217,7 @@ fn dd131_agent_teams_and_snapshots_preserve_fields_and_absence() {
     roundtrip::<contracts::ExportPackageView>(&value["exportPackageView"]);
     roundtrip::<contracts::ResourceTransferAdvanceRequest>(&value["transferAdvanceRequest"]);
     roundtrip::<contracts::ResourceTransferAdvanceResult>(&value["transferAdvanceResult"]);
+    roundtrip::<contracts::AgentImportConfigurationPage>(&value["importConfiguration"]);
     let mut missing = value["teamView"].clone();
     missing.as_object_mut().unwrap().remove("catalogShared");
     assert!(serde_json::from_value::<contracts::AgentTeamView>(missing).is_err());
