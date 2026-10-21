@@ -472,6 +472,24 @@ async fn evidence_existence(
                 .await?;
             return Ok(present(found.contains(&rel)));
         }
+        // DD-131(8)：导出包摘要只在同 operation 的 READY 包仍在时可证实；导入包的暂存
+        // 字节在消费后清空，没有可按摘要查证的对象。
+        K::TransferPackageDigest => {
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.export_package
+                where content_digest=$1 and tenant_id=$2 and export_operation_id=$3 and state='READY'",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .bind(operation_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(if found.is_some() {
+                Existence::Present
+            } else {
+                Existence::Unverifiable
+            });
+        }
         K::SpicedbZedtoken
         | K::BuzzEventId
         | K::BuzzPubkey

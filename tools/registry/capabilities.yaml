@@ -29,6 +29,11 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/transcript
   - /api/v1/agent-installations/{resource_id}/transcript/stream
   - /api/v1/workspaces/{workspace_id}/agent-turns
+  - /api/v1/agent-teams
+  - /api/v1/agent-teams/{resource_id}
+  - /api/v1/agent-snapshots/uploads
+  - /api/v1/export-packages/{asset_id}
+  - /api/v1/export-packages/{asset_id}/content
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -66,9 +71,22 @@ capabilities:
   - agent.installation.use.revoke
   - resource.grant_read
   - resource.revoke_read
+  - agent.team.create
+  - agent.team.update
+  - agent.team.delete
+  - agent.team.share
+  - agent.team.unshare
+  - agent.definition.share
+  - agent.definition.unshare
+  - agent.definition.export
+  - agent.team.export
+  - agent.definition.import
+  - agent.team.import
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+  - RESOURCE_EXPORT
+  - RESOURCE_IMPORT
 - id: collab.channel.management
   exposure: end_user
   routes:

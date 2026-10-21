@@ -118,6 +118,11 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/resources/advance",
             post(crate::resource_provision::advance),
         )
+        // DD-131(2)(3)、DD-42：ComponentTaskWorkflow(kind=RESOURCE_EXPORT|RESOURCE_IMPORT)
+        .route(
+            "/service/v1/resource-transfers/advance",
+            post(crate::governance::agent_transfer::advance),
+        )
         .route(
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),

@@ -2063,6 +2063,10 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
         "update catalog.resource set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
         "update catalog.tool_definition set status='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and state='DELETED') and status<>'DELETED'",
+        // DD-131：团队墓碑；导出包与上传暂存的字节不是历史，随 Tenant 销毁清空。
+        "update catalog.agent_team set state='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'DELETED'",
+        "update catalog.export_package set state='DELETED',content=null where tenant_id=$1 and state<>'DELETED'",
+        "delete from admission.agent_snapshot_upload where tenant_id = $1",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-125(5): short-term link-preview snapshots are not history; nothing references them.
