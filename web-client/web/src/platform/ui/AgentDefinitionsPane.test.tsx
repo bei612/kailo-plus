@@ -10,14 +10,15 @@ import type { AgentVersionView } from "@client-kit/contracts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 type AgentProps = NonNullable<ComponentProps<typeof AgentDefinitionsPage>>;
-const state = vi.hoisted(() => ({ props: null as AgentProps | null, upload: vi.fn() }));
-vi.mock("../bff-client", () => ({ uploadProfileAvatar: state.upload }));
+const state = vi.hoisted(() => ({ props: null as AgentProps | null, upload: vi.fn(), uploadConversation: vi.fn(), publishConversation: vi.fn() }));
+vi.mock("../bff-client", () => ({ uploadProfileAvatar: state.upload, uploadConversationMedia: state.uploadConversation,
+  publishConversationMessage: state.publishConversation }));
 vi.mock("@client-kit/platform/react/pages", () => ({ AgentDefinitionsPage: (props: AgentProps) => {
   state.props = props; return <div data-testid="shared-agent-page" />;
 } }));
 let root: Root | null = null;
 let element: HTMLDivElement | null = null;
-beforeEach(() => { state.props = null; state.upload.mockReset(); });
+beforeEach(() => { state.props = null; state.upload.mockReset(); state.uploadConversation.mockReset(); state.publishConversation.mockReset(); });
 afterEach(() => { if (root) act(() => root!.unmount()); root = null; element?.remove(); element = null; });
 const pubkey = "a".repeat(64);
 const profile = { pubkey, eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} };
@@ -72,5 +73,27 @@ describe("Web original Agent avatar host", () => {
     expect(state.props!.avatarHost!().rewriteMediaUrl(uploaded.url)).toBe(`/api/v1/profile/media/${uploaded.sha256}`);
     await renderScope("tenant-b:principal-b");
     expect(state.props!.avatarHost!().rewriteMediaUrl(uploaded.url)).toBe(uploaded.url);
+  });
+
+  // DD-131(7): the Web snapshot host only moves an approved ExportPackage through existing BFF routes.
+  it("sends a snapshot package as an ordinary DM attachment and copies only the BFF package path", async () => {
+    await mount();
+    const host = state.props!.snapshotHost!;
+    const descriptor = { url: "https://community.example/media/x", sha256: "e".repeat(64), type: "image/png", size: 3, uploaded: 1 };
+    state.uploadConversation.mockResolvedValue(descriptor);
+    state.publishConversation.mockResolvedValue({ eventId: "e", operationId: "o" });
+    const conversation = { id: "conversation-1", channelId: "channel-1" } as Parameters<typeof host.sendAttachment>[0];
+    await host.sendAttachment(conversation, { bytes: new Uint8Array([1, 2, 3]), fileName: "scribe.agent.png", mediaType: "image/png" }, "Scribe", "key-1");
+    const [conversationId, file] = state.uploadConversation.mock.calls[0]!;
+    expect(conversationId).toBe("conversation-1");
+    expect((file as File).name).toBe("scribe.agent.png");
+    expect((file as File).type).toBe("image/png");
+    expect(state.publishConversation).toHaveBeenCalledExactlyOnceWith("conversation-1", "",
+      [{ ...descriptor, filename: "scribe.agent.png", displayLabel: "Scribe" }], "key-1");
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    await host.copyLink!({ bytes: new Uint8Array([1]), fileName: "a.agent.png", mediaType: "image/png" },
+      { assetId: "asset-1" } as Parameters<NonNullable<typeof host.copyLink>>[1]);
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(`${window.location.origin}/api/v1/export-packages/asset-1/content`);
   });
 });

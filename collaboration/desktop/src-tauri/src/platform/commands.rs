@@ -131,6 +131,129 @@ pub(crate) async fn platform_api(
         .await
 }
 
+/// DD-131 快照包上传可用的媒体类型；其余不代发。
+const SNAPSHOT_MEDIA_TYPES: [&str; 3] = ["application/json", "image/png", "application/octet-stream"];
+
+/// `X-Snapshot-Filename` 只用于让 Core 拒绝旧 `.persona.*`：限可见 ASCII，至多 255 字节。
+fn checked_snapshot_filename(value: Option<String>) -> Result<Option<String>, String> {
+    match value {
+        None => Ok(None),
+        Some(name) if !name.is_empty() && name.len() <= 255 && name.bytes().all(|b| (0x20..0x7f).contains(&b)) => Ok(Some(name)),
+        Some(_) => Err("快照文件名不合规".to_owned()),
+    }
+}
+
+/// 把字节回应编成 `native.ts::decodeBytesReply` 约定的帧：2 字节状态码、2 字节
+/// Content-Type 长度（大端）、Content-Type、正文。正文不经 JSON 数组。
+fn bytes_frame(response: super::api::BytesResponse) -> tauri::ipc::Response {
+    let content_type = response.content_type.unwrap_or_default();
+    let content_type = if content_type.len() > usize::from(u16::MAX) { String::new() } else { content_type };
+    let mut frame = Vec::with_capacity(4 + content_type.len() + response.body.len());
+    frame.extend_from_slice(&response.status.to_be_bytes());
+    frame.extend_from_slice(&(content_type.len() as u16).to_be_bytes());
+    frame.extend_from_slice(content_type.as_bytes());
+    frame.extend_from_slice(&response.body);
+    tauri::ipc::Response::new(frame)
+}
+
+/// DD-131：代发快照包的上传（POST 原始字节）或 ExportPackage 下载（GET）。路径仍限
+/// `/api/v1/`，鉴权、刷新与代际规则与 `platform_api` 相同；令牌不出 Rust。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn platform_api_bytes(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    method: String,
+    path: String,
+    body: Option<Vec<u8>>,
+    content_type: Option<String>,
+    snapshot_filename: Option<String>,
+) -> Result<tauri::ipc::Response, String> {
+    let method = match method.as_str() {
+        "GET" => Method::GET,
+        "POST" => Method::POST,
+        other => return Err(format!("不支持的方法 {other}")),
+    };
+    if let Some(kind) = content_type.as_deref() {
+        if !SNAPSHOT_MEDIA_TYPES.contains(&kind) {
+            return Err(format!("不代发 {kind} 正文"));
+        }
+    }
+    let filename = checked_snapshot_filename(snapshot_filename)?;
+    let upload = match (&body, content_type.as_deref()) {
+        (Some(data), Some(kind)) => Some((data.as_slice(), kind)),
+        (None, None) => None,
+        _ => return Err("正文与 Content-Type 须同时给出".to_owned()),
+    };
+    let cfg = require_config(&app)?;
+    let response = session
+        .call_bytes(&state.http_client, &cfg, method, &path, upload, filename.as_deref())
+        .await?;
+    Ok(bytes_frame(response))
+}
+
+/// `platform_api_save` 的结果：BFF 状态码、是否写入了用户选定的文件、非 2xx 时的错误体。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveReport {
+    status: u16,
+    saved: bool,
+    body: serde_json::Value,
+}
+
+/// 只保留可见 ASCII 的文件名字符，去掉路径分隔与控制字符。
+fn save_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
+        .collect();
+    let trimmed = cleaned.trim_matches(|c| c == '.' || c == ' ');
+    if trimmed.is_empty() { "snapshot".to_owned() } else { trimmed.chars().take(200).collect() }
+}
+
+/// DD-131：以本人会话下载一个 READY 的 ExportPackage（Asset `read`，Core 逐次授权），经
+/// 原生保存对话框写入用户选定的文件。字节不经前端；只代发 ExportPackage 内容路径。
+#[tauri::command]
+pub(crate) async fn platform_api_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    path: String,
+    suggested_filename: String,
+) -> Result<SaveReport, String> {
+    let rest = path
+        .strip_prefix("/api/v1/export-packages/")
+        .and_then(|rest| rest.strip_suffix("/content"))
+        .ok_or_else(|| "只保存 ExportPackage 内容".to_owned())?;
+    if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        return Err("只保存 ExportPackage 内容".to_owned());
+    }
+    let cfg = require_config(&app)?;
+    let response = session
+        .call_bytes(&state.http_client, &cfg, Method::GET, &path, None, None)
+        .await?;
+    if !(200..300).contains(&response.status) {
+        let body = serde_json::from_slice(&response.body).unwrap_or(serde_json::Value::Null);
+        return Ok(SaveReport { status: response.status, saved: false, body });
+    }
+    let filename = save_filename(&suggested_filename);
+    let extension = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_owned);
+    let extensions: Vec<&str> = extension.as_deref().into_iter().collect();
+    let saved = crate::commands::export_util::save_bytes_with_dialog(
+        &app,
+        &filename,
+        "Agent snapshot",
+        &extensions,
+        &response.body,
+    )
+    .await?;
+    Ok(SaveReport { status: response.status, saved, body: serde_json::Value::Null })
+}
+
 /// 以本机设备身份登记公钥（`DD-79`）。
 ///
 /// 持钥证明绑定当前 PlatformSession：截获的证明不能在别人的会话里重放。设备私钥

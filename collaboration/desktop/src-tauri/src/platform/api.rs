@@ -253,6 +253,76 @@ impl NativeSession {
         path: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<ApiResponse, String> {
+        let body = body.map_or(RequestBody::None, RequestBody::Json);
+        let (resp, generation) = self.send(http, cfg, method, path, body, None).await?;
+        let status = resp.status();
+        let body = if status == reqwest::StatusCode::NO_CONTENT {
+            serde_json::Value::Null
+        } else {
+            resp.json().await.unwrap_or(serde_json::Value::Null)
+        };
+        Self::check_generation(&*self.state()?, generation)?;
+        Ok(ApiResponse {
+            status: status.as_u16(),
+            body,
+        })
+    }
+
+    /// DD-131 快照包：以原始字节上传或下载一个 BFF 路径，同一鉴权、刷新与代际规则。
+    /// 回应正文不解读（错误体也原样给前端）；超过 `MAX_BYTES_REPLY` 视为没有可用回应。
+    pub(crate) async fn call_bytes(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        method: Method,
+        path: &str,
+        body: Option<(&[u8], &str)>,
+        snapshot_filename: Option<&str>,
+    ) -> Result<BytesResponse, String> {
+        let body = body.map_or(RequestBody::None, |(data, content_type)| RequestBody::Bytes {
+            data,
+            content_type,
+        });
+        let (resp, generation) = self
+            .send(http, cfg, method, path, body, snapshot_filename)
+            .await?;
+        let status = resp.status().as_u16();
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_BYTES_REPLY)
+        {
+            return Err("PLATFORM_REPLY_TOO_LARGE".to_owned());
+        }
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|_| "PLATFORM_SERVICE_UNAVAILABLE".to_owned())?;
+        if bytes.len() as u64 > MAX_BYTES_REPLY {
+            return Err("PLATFORM_REPLY_TOO_LARGE".to_owned());
+        }
+        Self::check_generation(&*self.state()?, generation)?;
+        Ok(BytesResponse {
+            status,
+            content_type,
+            body: bytes.to_vec(),
+        })
+    }
+
+    /// 发出一次带 Bearer 的请求并返回 BFF 的非 401 回应与发出时的会话代际。
+    async fn send(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        method: Method,
+        path: &str,
+        body: RequestBody<'_>,
+        snapshot_filename: Option<&str>,
+    ) -> Result<(reqwest::Response, u64), String> {
         if !path.starts_with(API_PREFIX) || path.contains("..") {
             return Err(format!("不代发 {API_PREFIX} 之外的路径"));
         }
@@ -269,8 +339,17 @@ impl NativeSession {
             let mut req = http
                 .request(method.clone(), url.clone())
                 .bearer_auth(&token);
-            if let Some(b) = body {
-                req = req.json(b);
+            match body {
+                RequestBody::None => {}
+                RequestBody::Json(b) => req = req.json(b),
+                RequestBody::Bytes { data, content_type } => {
+                    req = req
+                        .header(reqwest::header::CONTENT_TYPE, content_type)
+                        .body(data.to_vec());
+                }
+            }
+            if let Some(name) = snapshot_filename {
+                req = req.header("X-Snapshot-Filename", name);
             }
             let response = req
                 .send()
@@ -295,19 +374,29 @@ impl NativeSession {
                 self.refresh.delete()?;
                 return Err(NOT_SIGNED_IN.to_owned());
             }
-            let body = if status == reqwest::StatusCode::NO_CONTENT {
-                serde_json::Value::Null
-            } else {
-                resp.json().await.unwrap_or(serde_json::Value::Null)
-            };
-            Self::check_generation(&*self.state()?, generation)?;
-            return Ok(ApiResponse {
-                status: status.as_u16(),
-                body,
-            });
+            return Ok((resp, generation));
         }
         Err(NOT_SIGNED_IN.to_owned())
     }
+}
+
+/// 一次管理平面请求的正文：JSON（`platform_api`）或原始字节（`platform_api_bytes`）。
+#[derive(Clone, Copy)]
+enum RequestBody<'a> {
+    None,
+    Json(&'a serde_json::Value),
+    Bytes { data: &'a [u8], content_type: &'a str },
+}
+
+/// DD-131 原版团队 PNG 快照上限 50 MiB，另留错误体与编码余量。
+pub(crate) const MAX_BYTES_REPLY: u64 = 64 * 1024 * 1024;
+
+/// 字节回应：状态码、Content-Type 与原始正文，由前端解读。
+#[derive(Debug)]
+pub(crate) struct BytesResponse {
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub body: Vec<u8>,
 }
 
 // 注销只使用从本机移出的原凭据；刷新结果不能写回当前 NativeSession。

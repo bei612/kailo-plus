@@ -9,6 +9,8 @@
 // 这里写一次。
 
 import {
+  type BffBytesReply,
+  type BffBytesRequest,
   type BffReply,
   type BffRequest,
   type BffTransport,
@@ -92,7 +94,63 @@ export function createInvokeTransport(
         throw failure(e, onSessionEnded);
       }
     },
+    async exchangeBytes(request: BffBytesRequest) {
+      const onSessionEnded = sessionEndHandler(options);
+      let raw: unknown;
+      try {
+        raw = await invoke("platform_api_bytes", {
+          method: request.method,
+          path: request.path,
+          body: request.body ? Array.from(request.body) : null,
+          contentType: request.contentType ?? null,
+          snapshotFilename: request.headers?.["X-Snapshot-Filename"] ?? null,
+        });
+      } catch (e) {
+        throw failure(e, onSessionEnded);
+      }
+      return decodeBytesReply(raw);
+    },
   };
+}
+
+/**
+ * Rust 侧 `platform_api_bytes` 以原始字节回应（`tauri::ipc::Response`），按本模块与
+ * `platform/commands.rs` 约定的帧解读：2 字节状态码、2 字节 Content-Type 长度（均为大端）、
+ * Content-Type（UTF-8）、正文。帧不合规即没有得到可解读的回应。
+ */
+export function decodeBytesReply(raw: unknown): BffBytesReply {
+  const frame = raw instanceof ArrayBuffer ? new Uint8Array(raw)
+    : raw instanceof Uint8Array ? new Uint8Array(raw)
+    : Array.isArray(raw) ? Uint8Array.from(raw as number[]) : null;
+  if (!frame || frame.byteLength < 4) throw new TransportError("platform_api_bytes：invalid reply frame");
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  const status = view.getUint16(0);
+  const typeLength = view.getUint16(2);
+  if (4 + typeLength > frame.byteLength) throw new TransportError("platform_api_bytes：invalid reply frame");
+  const contentType = typeLength > 0 ? new TextDecoder().decode(frame.subarray(4, 4 + typeLength)) : undefined;
+  return { status, contentType, bytes: frame.slice(4 + typeLength) };
+}
+
+/** `platform_api_save` 的结果：BFF 状态码、是否已写入用户选定的文件、非 2xx 时的错误体。 */
+export type NativeSaveReport = { status: number; saved: boolean; body: unknown };
+
+/**
+ * DD-131：以本人会话下载一个 ExportPackage 并经原生保存对话框写入文件。字节不经前端；
+ * 取消对话框时 `saved` 为 false。
+ */
+export async function saveNativeExportPackage(
+  invoke: Invoke,
+  options: SessionObserver,
+  path: string,
+  suggestedFilename: string,
+): Promise<NativeSaveReport> {
+  const onSessionEnded = sessionEndHandler(options);
+  try {
+    const raw = (await invoke("platform_api_save", { path, suggestedFilename })) as Partial<NativeSaveReport> | null;
+    return { status: Number(raw?.status ?? 0), saved: raw?.saved === true, body: raw?.body ?? undefined };
+  } catch (e) {
+    throw failure(e, onSessionEnded);
+  }
 }
 
 /**

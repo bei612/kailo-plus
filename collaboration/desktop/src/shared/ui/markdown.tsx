@@ -49,6 +49,7 @@ import {
 } from "./markdown/CodeBlock";
 import { ExternalLinkAnchor } from "./markdown/ExternalLinkAnchor";
 import { FileCard } from "./markdown/FileCard";
+import { AgentSnapshotCard } from "./markdown/AgentSnapshotCard";
 import {
   AuthoredDeepLinkAnchor,
   ChannelDeepLinkAnchor,
@@ -66,7 +67,7 @@ import {
   MarkdownRuntimeContext,
   useMarkdownRuntime,
 } from "./markdown/runtimeContext";
-import { resolveFileCard } from "./markdownFileCard";
+import { resolveFileCard, resolveSnapshotCard } from "./markdownFileCard";
 import type { MarkdownProps, MarkdownRuntime } from "./markdown/types";
 import { SpoilerInline } from "./markdown/SpoilerInline";
 import { getReactNodeText, useStableArray } from "./markdown/utils";
@@ -137,6 +138,14 @@ export function createMarkdownComponents(
         : undefined,
     );
     if (audioAttachment) return audioAttachment;
+
+    // DD-131(5)(7) original snapshot attachment card (Import + Download).
+    const snapshotCard = resolveSnapshotCard(
+      href ? imetaByUrl?.get(href) : undefined,
+      href,
+      label,
+    );
+    if (snapshotCard) return <AgentSnapshotCard card={snapshotCard} />;
 
     // Render non-media imeta links as download cards; media uses `img`.
     const card = resolveFileCard(

@@ -1,10 +1,15 @@
 import {
   resolveFileCard as resolveSharedFileCard,
+  resolveSnapshotCard,
   type FileCardImetaEntry,
   type ResolvedFileCard,
+  type ResolvedSnapshotCard,
 } from "@client-kit/platform/react/messages/resolveFileCard";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
-export type { FileCardImetaEntry, ResolvedFileCard };
+export type { FileCardImetaEntry, ResolvedFileCard, ResolvedSnapshotCard };
+
+/** Original snapshot attachment classification (shared with Web). */
+export { resolveSnapshotCard };
 
 /**
  * Decide whether a markdown link should render as a generic-file download

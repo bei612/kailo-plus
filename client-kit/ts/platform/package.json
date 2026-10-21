@@ -360,7 +360,13 @@
     "./react/video-review/VideoReviewNavigation": "./src/react/video-review/VideoReviewNavigation.tsx",
     "./react/video-review/VideoReviewPosterPreview": "./src/react/video-review/VideoReviewPosterPreview.tsx",
     "./react/video-review/VideoReviewTimecodeButton": "./src/react/video-review/VideoReviewTimecodeButton.tsx",
-    "./react/profile/buzz/shared/ui/checkbox": "./src/react/profile/buzz/shared/ui/checkbox.tsx"
+    "./react/profile/buzz/shared/ui/checkbox": "./src/react/profile/buzz/shared/ui/checkbox.tsx",
+    "./react/composer/features/messages/ui/useTeamMentionCandidates": "./src/react/composer/features/messages/ui/useTeamMentionCandidates.ts",
+    "./react/composer/features/messages/lib/teamMentionCandidates": "./src/react/composer/features/messages/lib/teamMentionCandidates.ts",
+    "./react/open-snapshot-import-event": "./src/react/open-snapshot-import-event.ts",
+    "./react/messages/AgentSnapshotCard": "./src/react/messages/AgentSnapshotCard.tsx",
+    "./react/agent-library/agentSnapshotHost": "./src/react/agent-library/agentSnapshotHost.ts",
+    "./react/agent-library/snapshotFlow": "./src/react/agent-library/snapshotFlow.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

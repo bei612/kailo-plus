@@ -3,6 +3,7 @@ import { useBffClient } from "@client-kit/platform/react/context";
 import { useNativeSession } from "@/features/platform/activeCommunity";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
+import { useTeamMentionCandidates } from "@client-kit/platform/react/composer/features/messages/ui/useTeamMentionCandidates";
 import { getPersistentAgentAudienceScope } from "@client-kit/platform/react/composer/features/messages/lib/persistentAgentAudience";
 import { setKeepMentionedAgentsPinned } from "@client-kit/platform/react/composer/features/messages/lib/autoPinMentionedAgentsPreference";
 import { useThreadAgentAudience } from "@client-kit/platform/react/composer/features/messages/ui/useThreadAgentAudience";
@@ -156,7 +157,10 @@ function MessageComposerImpl({
   }).filter(person => !agents.some(agent => agent.pubkey === person.pubkey))
     .map(person => ({pubkey: person.pubkey, displayName: person.displayName, notInChannel: true})) : undefined,
   [memberPubkeys, tenantDirectory.data, agentDirectory.data, agents]);
-  const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey, outsidePeople);
+  // DD-131(1) original "@team": rows expand only to this channel's admitted Installations.
+  const teamMentions = useTeamMentionCandidates(bff, { principal: session.devicePubkey, workspaceId: workspace?.id }, agentDirectory.data?.agents,
+    channelType !== "dm" && channelId !== null && workspace !== undefined && !editTarget);
+  const mentions = useMentions(channelId, profiles, admittedPeople, agents, session.devicePubkey, outsidePeople, teamMentions);
   for (const ref of mentions.getDraftMentionRefs(contentRef.current)) if (ref.isAgent === true) knownAgentKeys.add(ref.pubkey);
   const getAgentDraftMentionRefs = React.useCallback((content: string) => mentions.getDraftMentionRefs(content).map(ref => ({...ref, isAgent: ref.isAgent === true || knownAgentKeys.has(ref.pubkey)})), [mentions.getDraftMentionRefs, knownAgentKeys]);
   const agentMentions = {...mentions, getDraftMentionRefs: getAgentDraftMentionRefs};

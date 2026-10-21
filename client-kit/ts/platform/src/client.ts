@@ -106,10 +106,25 @@ import type {
   HuddleAnnouncementView,
   AgentTranscriptPage,
   AgentTranscriptEvent,
+  AgentTeamPage,
+  AgentTeamView,
+  AgentSnapshotUploadView,
+  ExportPackageView,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
-import { type BffRequest, type BffTransport, unwrap } from "./transport";
+import { type BffBytesRequest, type BffRequest, type BffTransport, TransportError, bytesJson, unwrap } from "./transport";
+
+/** DD-131 snapshot package media types the upload route accepts. */
+export type SnapshotMediaType = "application/json" | "image/png" | "application/octet-stream";
+
+/**
+ * `X-Snapshot-Filename` only lets Core reject the original legacy `.persona.*` names; a header
+ * value must be visible ASCII, so any other character is replaced and the suffix is kept.
+ */
+export function snapshotFilenameHeader(fileName: string): string {
+  return fileName.replace(/[^\x20-\x7e]/g, "_").slice(-255);
+}
 
 export type BffClient = ReturnType<typeof createBffClient>;
 
@@ -185,8 +200,19 @@ export function createBffClient(transport: BffTransport) {
     return profile;
   };
 
+  const bytes = async (request: BffBytesRequest) => {
+    if (!transport.exchangeBytes) throw new TransportError(`${request.method} ${request.path}：binary transport unavailable`);
+    if (request.method !== "GET") { profiles.clear(); authors.clear(); }
+    const reply = await transport.exchangeBytes(request);
+    // Non-2xx carries the same JSON rejection body as /api/v1/actions.
+    if (reply.status < 200 || reply.status >= 300) unwrap({ method: request.method, path: request.path }, { status: reply.status, body: bytesJson(reply) });
+    return reply;
+  };
+
   return {
     transport,
+    /** Whether this host can move DD-131 snapshot package bytes (upload, download). */
+    supportsSnapshotBytes: transport.exchangeBytes !== undefined,
     profile: () => profileRead("/api/v1/profile", 30_000),
     customEmoji: () => get<WebCustomEmojiView>("/api/v1/custom-emoji"),
     updateCustomEmoji: (body: WebCustomEmojiMutation) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/custom-emoji", body }),
@@ -302,6 +328,34 @@ export function createBffClient(transport: BffTransport) {
       get<AgentDefinitionPage>(`/api/v1/agent-definitions${offset ? `?offset=${offset}` : ""}`),
     platformTools: (offset = 0) =>
       get<PlatformToolPage>(`/api/v1/platform-tools?offset=${offset}`),
+
+    /**
+     * DD-131(1)(6): same-Tenant, undeleted Agent teams the caller can discover. Members list only
+     * the Definitions the caller can discover (original order); the rest are a count.
+     */
+    agentTeams: (offset?: number) =>
+      get<AgentTeamPage>(`/api/v1/agent-teams${offset ? `?offset=${offset}` : ""}`),
+    agentTeam: (resourceId: string) =>
+      get<AgentTeamView>(`/api/v1/agent-teams/${encodeURIComponent(resourceId)}`),
+    /**
+     * DD-131(2)(3)(5): stage this session's snapshot package bytes for an import preview. It is not
+     * an import and creates no Resource; Core recomputes the digest and rejects oversize (413) or
+     * non-v1, legacy `.persona.*` and zip packages (400).
+     */
+    uploadAgentSnapshot: async (body: Uint8Array<ArrayBuffer>, fileName: string, mediaType: SnapshotMediaType) => {
+      const path = "/api/v1/agent-snapshots/uploads";
+      const reply = await bytes({ method: "POST", path, body, contentType: mediaType,
+        headers: { "X-Snapshot-Filename": snapshotFilenameHeader(fileName) } });
+      return unwrap<AgentSnapshotUploadView>({ method: "POST", path }, { status: reply.status, body: bytesJson(reply) });
+    },
+    /** One ExportPackage's metadata (assetId = export ActionExecution ID); 404 until generated. */
+    exportPackage: (assetId: string) =>
+      get<ExportPackageView>(`/api/v1/export-packages/${encodeURIComponent(assetId)}`, true),
+    /** The READY package bytes; every download is an Asset `read` Core re-authorizes. */
+    exportPackageContent: async (assetId: string) => {
+      const reply = await bytes({ method: "GET", path: `/api/v1/export-packages/${encodeURIComponent(assetId)}/content` });
+      return reply.bytes;
+    },
     agentDefinition: (resourceId: string) =>
       get<AgentDefinitionView>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}`),
     agentVersion: (assetId: string) =>

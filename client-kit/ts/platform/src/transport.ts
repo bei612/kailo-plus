@@ -19,8 +19,38 @@ export type BffRequest = {
 /** BFF 的回应：状态码与已解析的正文（没有正文或不是 JSON 时为 `undefined`）。 */
 export type BffReply = { status: number; body: unknown };
 
+/**
+ * DD-131 快照包的二进制请求：上传原始包字节、下载 ExportPackage 字节。路径同样限 `/api/v1/`；
+ * `headers` 只放该路由定义的头（目前仅 `X-Snapshot-Filename`），宿主按白名单转发。
+ */
+export type BffBytesRequest = {
+  method: "GET" | "POST";
+  path: string;
+  body?: Uint8Array<ArrayBuffer>;
+  contentType?: string;
+  headers?: Record<string, string>;
+};
+
+/** 二进制回应：状态码、Content-Type 与原始字节；错误体（JSON）也以字节给出，由 client 解读。 */
+export type BffBytesReply = { status: number; contentType?: string; bytes: Uint8Array<ArrayBuffer> };
+
 export interface BffTransport {
   send(request: BffRequest): Promise<BffReply>;
+  /**
+   * 可选的二进制接缝（Web：同源 fetch；Desktop：Tauri `platform_api_bytes`）。没有它的宿主
+   * 不能上传或下载快照包，相关入口不出现。
+   */
+  exchangeBytes?(request: BffBytesRequest): Promise<BffBytesReply>;
+}
+
+/** 字节回应的 JSON 解读（错误体或 JSON 回应）；不是 JSON 时为 `undefined`。 */
+export function bytesJson(reply: BffBytesReply): unknown {
+  if (reply.bytes.byteLength === 0) return undefined;
+  try {
+    return JSON.parse(new TextDecoder().decode(reply.bytes));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

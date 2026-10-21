@@ -3,7 +3,7 @@ mod channel_window;
 mod channels;
 mod clipboard;
 mod custom_emoji;
-mod export_util;
+pub(crate) mod export_util;
 mod ffmpeg_locator;
 mod gifs;
 mod identity;

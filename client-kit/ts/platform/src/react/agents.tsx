@@ -97,6 +97,9 @@ import { effectiveAgentDescription } from "./agent-library/agentDescription";
 import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
 import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
+import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
+import { PersonaActionsMenu } from "./agent-library/PersonaActionsMenu";
+import type { AgentSnapshotHost } from "./agent-library/agentSnapshotHost";
 import { WorkflowScheduleFields } from "./workflow-schedule-fields";
 import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
@@ -156,7 +159,11 @@ export type WorkflowRouteNavigation = {
 
 type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
 
-export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost } = {}) {
+/**
+ * `snapshotHost` (DD-131): the host seam for snapshot package save/send/link. With it the original
+ * Teams section, community catalog, snapshot import/export and persona sharing are rendered.
+ */
+export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost; snapshotHost?: AgentSnapshotHost } = {}) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
@@ -173,6 +180,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const [versionRevision, setVersionRevision] = useState(0);
   const [installationLocked, setInstallationLocked] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
+  const [shareDefinition, setShareDefinition] = useState<AgentDefinitionView | null>(null);
+  const { snapshotHost } = navigation;
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
   // create dialog the New agent card opens, only while that card would be enabled.
@@ -214,7 +223,9 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
                   onClick={() => setCreateOpen(true)} />
                 {page.definitions.map((row) => (
                   <DefinitionIdentityCard key={`${row.resourceId}:${row.resourceVersion}:${refreshRevision}:${versionRevision}`} row={row} avatarHost={navigation.avatarHost}
-                    disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)} />
+                    disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)}
+                    actions={snapshotHost ? <PersonaActionsMenu disabled={blocked || versionEdit !== null} displayName={row.displayName}
+                      resourceId={row.resourceId} onShare={() => setShareDefinition(row)} /> : undefined} />
                 ))}
               </div>
             <div className="flex gap-2">
@@ -227,6 +238,9 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
             </div>
           </>}
       </section>
+      {snapshotHost ? <AgentTeamsLibrary host={snapshotHost} refreshRevision={refreshRevision + versionRevision}
+        onDirectoryChanged={reload} onCreateAgent={() => { if (!blocked && edit === null && versionEdit === null) setCreateOpen(true); }}
+        shareDefinition={shareDefinition} onShareDefinitionChange={setShareDefinition} /> : null}
       {/* The action hook stays mounted when its presentation closes. UNKNOWN cannot close it. */}
       <DefinitionAction edit={edit} open={createOpen || edit !== null} onClose={() => { setCreateOpen(false); setEdit(null); }}
         externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
@@ -247,8 +261,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
 }
 
 /** Original AgentPersonaCard identity face, backed by the authorized exact published Asset. */
-function DefinitionIdentityCard({ row, disabled, onClick, avatarHost }: {
-  row: AgentDefinitionView; disabled: boolean; onClick: () => void; avatarHost?: AgentAvatarHost;
+function DefinitionIdentityCard({ row, disabled, onClick, avatarHost, actions }: {
+  row: AgentDefinitionView; disabled: boolean; onClick: () => void; avatarHost?: AgentAvatarHost; actions?: ReactNode;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -258,7 +272,7 @@ function DefinitionIdentityCard({ row, disabled, onClick, avatarHost }: {
   const value = state.status === "ok" ? state.data : null;
   const version = value && validVersion(value, row.resourceId) && value.assetId === assetId
     && value.state === AgentVersionState.Published ? value : null;
-  const card = <AgentIdentityCard dataTestId={`agent-definition-${row.resourceId}`}
+  const card = <AgentIdentityCard dataTestId={`agent-definition-${row.resourceId}`} actions={actions}
     label={version?.content.personaIdentity.displayName ?? row.displayName}
     subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
     avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}

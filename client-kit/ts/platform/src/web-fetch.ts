@@ -4,6 +4,8 @@
 // 配置的 API 地址，就等于给「连到别处去」留了口子。浏览器侧不持有任何令牌。
 
 import {
+  type BffBytesReply,
+  type BffBytesRequest,
   type BffReply,
   type BffRequest,
   type BffTransport,
@@ -12,6 +14,8 @@ import {
 } from "./transport";
 
 export type FetchTransport = BffTransport & {
+  /** DD-131 snapshot package bytes (upload/download) through the same gateway session. */
+  exchangeBytes(request: BffBytesRequest): Promise<BffBytesReply>;
   /**
    * 以任意 fetch 选项发一次请求，回应按同一规则解读。只有 Web 需要的请求（二进制
    * 媒体上传、带 Idempotency-Key 的发布）经它发出；它们在 Desktop 上不经 BFF。
@@ -112,8 +116,40 @@ export function createFetchTransport(options: FetchTransportOptions): FetchTrans
   };
 
   const exchange = coalesced;
+  // Snapshot package bytes are never shared or cached: an upload is a write and a package
+  // download is an Asset `read` that Core re-authorizes every time.
+  const exchangeBytes = async (request: BffBytesRequest): Promise<BffBytesReply> => {
+    if (!request.path.startsWith("/api/v1/")) throw new TransportError(`${request.method} ${request.path}：path outside /api/v1/`);
+    if (request.method !== "GET") invalidateReads();
+    const headers: Record<string, string> = { ...(request.headers ?? {}) };
+    if (request.contentType) headers["Content-Type"] = request.contentType;
+    let response: Response;
+    try {
+      response = await (options.fetch ?? fetch)(request.path, {
+        method: request.method,
+        headers,
+        ...(request.body === undefined ? {} : { body: request.body }),
+        credentials: "same-origin",
+        redirect: "manual",
+      });
+    } catch (e) {
+      throw new TransportError(`${request.method} ${request.path}：${String(e)}`);
+    }
+    if (response.type === "opaqueredirect" || response.status === 401) {
+      options.onSessionEnded();
+      throw new SessionEndedError();
+    }
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      bytes = response.status === 204 ? new Uint8Array(0) : new Uint8Array(await response.arrayBuffer());
+    } catch (e) {
+      throw new TransportError(`${request.method} ${request.path}：${String(e)}`);
+    }
+    return { status: response.status, contentType: response.headers.get("Content-Type") ?? undefined, bytes };
+  };
   return {
     exchange,
+    exchangeBytes,
     invalidateReads,
     send: (request: BffRequest) =>
       coalesced(request.path, {

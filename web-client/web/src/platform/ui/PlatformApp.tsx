@@ -53,6 +53,7 @@ import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-chan
 import { getChannelDescription } from "@client-kit/platform/react/channel-description";
 import { TopChromeHistoryButtons } from "@client-kit/platform/react/top-chrome-history";
 import { requestOpenCreateAgent } from "@client-kit/platform/react/open-create-agent-event";
+import { subscribeSnapshotImportNavigation } from "@client-kit/platform/react/open-snapshot-import-event";
 import { ProfileDirectMessageProvider } from "@client-kit/platform/react/pulse/profile-direct-message";
 import { ComposerChannelLinksProvider } from "@client-kit/platform/react/composer/features/messages/ui/ComposerChannelLinksContext";
 import { SidebarLoadingContent, useSidebarLoadingShape } from "@client-kit/platform/react/sidebar/sidebar-loading-skeleton";
@@ -403,6 +404,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       else if (tab !== "conversation" && tab !== "application") void navigation.openTab(tab, active);
     };
   }, [tab, active, navigation]);
+  // DD-131(5)(7): a snapshot card in a message opens the Agents page import preview.
+  const openAgentsRef = useRef(() => setTab("agents"));
+  openAgentsRef.current = () => setTab("agents");
+  useEffect(() => subscribeSnapshotImportNavigation(() => openAgentsRef.current()), []);
   useTextScaleShortcuts();
   useHomeShortcut({ disabled: tab === "settings", onGoHome: () => navigation.openTab("inbox", active) });
   useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });

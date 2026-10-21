@@ -20,7 +20,8 @@ import {
 import { ImageOff } from "lucide-react";
 import { cn } from "@client-kit/platform/react/cn";
 import { FileCard } from "@client-kit/platform/react/messages";
-import { resolveFileCard } from "@client-kit/platform/react/messages/resolveFileCard";
+import { resolveFileCard, resolveSnapshotCard } from "@client-kit/platform/react/messages/resolveFileCard";
+import { AgentSnapshotCard } from "@client-kit/platform/react/messages/AgentSnapshotCard";
 import { ImageBlock, ImageMosaic, ImageZoomOverlay, createLinkPreviewImageLightbox, type ImageActions } from "@client-kit/platform/react/image-lightbox";
 import { Children, isValidElement } from "react";
 import { classifyChildren, hasBlockMedia, isImageOnlyParagraph } from "@client-kit/platform/react/composer/shared/ui/markdownMedia";
@@ -331,6 +332,25 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
         downloadUrl={isVoiceNoteAttachment(entry) ? undefined : attachment.href}
       />
     );
+  }
+  // DD-131(5)(7) original snapshot attachment card: import through the Agents page preview.
+  const snapshot = resolveSnapshotCard({ ...entry, x: media.sha256 }, href, getReactNodeText(children));
+  if (snapshot) {
+    const url = resolveMediaUrl(media.sha256);
+    return <AgentSnapshotCard displayName={snapshot.displayName} filename={snapshot.filename} size={snapshot.size}
+      sha256={snapshot.sha256} snapshotKind={snapshot.snapshotKind} thumb={snapshot.isAgentPng ? url : undefined}
+      fetchBytes={async () => {
+        // Same authorized BFF media path as the file card; never the sender's imeta origin.
+        const response = await fetch(url, { credentials: "same-origin", redirect: "manual" });
+        if (!response.ok) throw new Error(String(response.status));
+        return new Uint8Array(await response.arrayBuffer());
+      }}
+      onDownload={async () => {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = snapshot.filename;
+        anchor.click();
+      }} />;
   }
   const card = resolveFileCard(entry, href, getReactNodeText(children));
   if (card) {

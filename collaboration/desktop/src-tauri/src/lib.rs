@@ -198,6 +198,8 @@ pub fn run() {
             platform::commands::platform_cancel_sign_in,
             platform::commands::platform_sign_out,
             platform::commands::platform_api,
+            platform::commands::platform_api_bytes,
+            platform::commands::platform_api_save,
             platform::commands::platform_register_device,
             acknowledge_pending_navigation_deep_link,
             acknowledge_pending_entity_deep_link,

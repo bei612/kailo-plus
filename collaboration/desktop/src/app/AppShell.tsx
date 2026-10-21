@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import { deriveShellRoute, markAllReadSources } from "@/app/AppShell.helpers";
 import * as BuzzTheme from "@client-kit/platform/react/surfaces";
 import { useConversations, useConversationInvalidation } from "@client-kit/platform/react/new-message";
+import { subscribeSnapshotImportNavigation } from "@client-kit/platform/react/open-snapshot-import-event";
 import { checkedUserState, conversationNotificationMutes } from "@client-kit/platform/inbox";
 import { AppShellProvider } from "@/app/AppShellContext";
 import { AppShellChannelSurface } from "@/app/AppShellChannelSurface";
@@ -91,6 +92,9 @@ export function AppShell() {
   } = useAppNavigation();
   const { canGoBack, canGoForward, goBack, goForward } =
     useBackForwardControls();
+  // DD-131(5)(7): a snapshot card in a message opens the Agents page import preview.
+  const openAgentsForSnapshot = React.useEffectEvent(() => { void goPlatform("agents"); });
+  React.useEffect(() => subscribeSnapshotImportNavigation(() => openAgentsForSnapshot()), []);
   const { selectedChannelId, selectedPlatformSection, selectedView } =
     React.useMemo(
       () => deriveShellRoute(location.pathname),
