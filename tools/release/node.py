@@ -657,6 +657,30 @@ class Release:
                 raise NodeError(f"{service} 在 {timeout} 秒内未就绪")
             time.sleep(3)
 
+    def apply_config_oneoffs(self):
+        """Run every configuration one-shot whose config digest differs from the last applied one
+        (ADR-20 §5), before any service is replaced, and record the digest only after success."""
+        path = os.path.join(self.decl["node"]["journal"], "config-oneoffs.json")
+        applied = {}
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as stream:
+                applied = json.load(stream)
+        ran = []
+        for svc, digest in sorted(self.model.config_oneoffs(self.compose_text, self.deploy_dir).items()):
+            if applied.get(svc) == digest:
+                continue
+            say(f"== 配置一次性服务 {svc}（输入 {digest[:19]}）")
+            self.run_prerequisite(svc)
+            applied[svc] = digest
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".")
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(applied, stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+            ran.append(svc)
+        return ran
+
     def run_prerequisite(self, service):
         say(f"   一次性前置 {service}")
         self.compose("up", "-d", "--no-deps", "--force-recreate", "--no-build", service, capture=False)
@@ -720,6 +744,7 @@ class Release:
         for plan in migrations:
             say(f"== 迁移 {plan['name']}：待执行 {len(plan['pending'])} 个")
             self.migrate(plan)
+        journal["config_oneoffs"] = self.apply_config_oneoffs()
         extra = self.ci_env
         for svc in targets:
             say(f"== {svc}")

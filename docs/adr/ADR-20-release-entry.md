@@ -49,7 +49,7 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 | pin | 开发机 | 按结构替换 compose 镜像 pin 与追溯记录 `release.artifacts[].digest`；断言 `deploy/`、`tools/` 不再残留旧 digest；提交并快进 push | 远端 main 已含该 pin 提交 |
 | check | CI worker | `kailo-ci submit <pin> check`（原 full） | 该 commit 的 full 任务 SUCCEEDED |
 | backup | 节点（发布树内代码） | 对受影响服务直接依赖的 Postgres 做 `pg_dump -Fc`，`pg_restore --list` 校验，连同 `.env` 快照写 manifest | 该 pin commit 的 manifest 存在且文件摘要一致 |
-| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 按序替换服务 → 回读 | 运行镜像 digest 已等于 pin 的服务跳过 |
+| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → 按序替换服务 → 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过 |
 | verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器 | 每次重算 |
 
 `run` 从第一个未完成的阶段继续；中断后再次执行同一命令即恢复。恢复依据两层：开发机日志

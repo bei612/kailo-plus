@@ -186,6 +186,29 @@ def is_postgres(spec):
     return spec["raw_image"].startswith("postgres@") or spec["raw_image"].startswith("postgres:")
 
 
+def config_oneoffs(text, compose_dir):
+    """One-shot services (restart "no") whose input is compose configuration read from the release
+    tree, e.g. the SpiceDB schema write: {service: sha256 of the configs it consumes}. Their input is
+    a file, not an image digest, so a deploy runs one when this digest differs from the last applied
+    one. Configs resolved from the runtime directory (interpolated paths) are deliveries, not inputs."""
+    doc = yaml.safe_load(text) or {}
+    files = {name: (spec or {}).get("file") for name, spec in (doc.get("configs") or {}).items()}
+    out = {}
+    for name, spec in (doc.get("services") or {}).items():
+        if str(spec.get("restart")) != "no":
+            continue
+        used = sorted({c.get("source") if isinstance(c, dict) else c for c in spec.get("configs") or []})
+        paths = [files.get(u) for u in used]
+        if not used or any(p is None or "${" in str(p) for p in paths):
+            continue
+        h = hashlib.sha256()
+        for config, path in zip(used, paths):
+            with open(os.path.join(compose_dir, path), "rb") as stream:
+                h.update(config.encode() + b"\0" + stream.read() + b"\0")
+        out[name] = "sha256:" + h.hexdigest()
+    return out
+
+
 def prerequisites(services, service):
     """一次性前置：被依赖、以完成为条件、不重启、且与该服务使用同一产物镜像（例如以 Relay 镜像执行迁移的 buzz-schema）。"""
     spec = services[service]

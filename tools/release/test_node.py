@@ -45,5 +45,32 @@ class RegistryReference(unittest.TestCase):
         self.assertIsNone(node.registry_has("127.0.0.1:9/metering@" + PIN, timeout=1))
 
 
+class ConfigOneoffs(unittest.TestCase):
+    def test_digest_follows_config_content_and_skips_deliveries(self):
+        import tempfile
+        _mspec = importlib.util.spec_from_file_location("release_model", os.path.join(os.path.dirname(__file__), "model.py"))
+        model = importlib.util.module_from_spec(_mspec)
+        _mspec.loader.exec_module(model)
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "authorization"))
+            with open(os.path.join(tmp, "authorization", "schema.zed"), "w") as stream:
+                stream.write("definition principal {}\n")
+            text = """
+services:
+  spicedb-schema: {restart: "no", configs: [{source: spicedb_schema, target: /etc/schema.zed}]}
+  runtime-oneoff: {restart: "no", configs: [delivered]}
+  long-running: {configs: [spicedb_schema]}
+configs:
+  spicedb_schema: {file: ./authorization/schema.zed}
+  delivered: {file: "${KAILO_RUNTIME_DIR:-.}/secrets/x"}
+"""
+            first = model.config_oneoffs(text, tmp)
+            self.assertEqual(list(first), ["spicedb-schema"])
+            self.assertEqual(model.config_oneoffs(text, tmp), first)
+            with open(os.path.join(tmp, "authorization", "schema.zed"), "a") as stream:
+                stream.write("definition tenant {}\n")
+            self.assertNotEqual(model.config_oneoffs(text, tmp), first)
+
+
 if __name__ == "__main__":
     unittest.main()
