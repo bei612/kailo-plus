@@ -243,7 +243,7 @@
     "other": "服务"
   },
   "173": {
-    "other": "Pydio 后端服务及其运行状态"
+    "other": "文件服务 后端服务及其运行状态"
   },
   "174": {
     "other": "身份管理"
@@ -537,13 +537,13 @@
     "other": "功能插件"
   },
   "topbar.title": {
-    "other": "单元格控制台"
+    "other": "控制台"
   },
   "topbar.button.advanced": {
     "other": "显示/隐藏高级参数"
   },
   "topbar.button.about": {
-    "other": "了解更多关于 Pydio Cells"
+    "other": "了解更多关于 文件服务"
   },
   "group_access": {
     "other": "g"

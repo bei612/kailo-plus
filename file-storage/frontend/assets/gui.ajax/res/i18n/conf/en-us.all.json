@@ -3,7 +3,7 @@
     "other": "Additional JS frameworks"
   },
   "Additional JS frameworks description": {
-    "other": "List of comma separated pathes to JS files, which must be loaded BEFORE the main Pydio framework is loaded. The preferred way should be using plugin resources declarations. Loading JS files at the very start up of the page might be option in some cases only."
+    "other": "List of comma separated pathes to JS files, which must be loaded BEFORE the main Kailo framework is loaded. The preferred way should be using plugin resources declarations. Loading JS files at the very start up of the page might be option in some cases only."
   },
   "An additionnal message displayed in the start up screen": {
     "other": "An additional message displayed in the start up screen"
@@ -246,7 +246,7 @@
     "other": "URI to a custom image to be used as start up logo"
   },
   "Use Events Logging, experimental only implemented on download action in Pydio": {
-    "other": "Use Events Logging, experimental only implemented on download action in Pydio"
+    "other": "Use Events Logging, experimental only implemented on download action in Kailo"
   },
   "Use configured branding": {
     "other": "Use configured branding"

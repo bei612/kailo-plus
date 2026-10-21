@@ -3,7 +3,7 @@
     "other": "额外的JS框架"
   },
   "Additional JS frameworks description": {
-    "other": "以逗号分隔的 JS 文件路径列表，这些文件必须在加载主 Pydio 框架之前加载。首选方式应该是使用插件资源声明。 在页面开头加载JS文件只是在某些情况下的备选方案。"
+    "other": "以逗号分隔的 JS 文件路径列表，这些文件必须在加载主 Kailo 框架之前加载。首选方式应该是使用插件资源声明。 在页面开头加载JS文件只是在某些情况下的备选方案。"
   },
   "An additionnal message displayed in the start up screen": {
     "other": "在启动屏幕上显示的附加消息"

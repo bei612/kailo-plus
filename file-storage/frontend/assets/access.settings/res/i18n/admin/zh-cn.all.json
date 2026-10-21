@@ -9,7 +9,7 @@
     "other": "加载中..."
   },
   "ds.board.ds.legend": {
-    "other": "数据源是由 Pydio 聚合到全局树中的具体存储位置。 它们可以根据需要分布在许多存储节点上。"
+    "other": "数据源是由 文件服务 聚合到全局树中的具体存储位置。 它们可以根据需要分布在许多存储节点上。"
   },
   "ds.board.ds.internal.legend": {
     "other": "内部数据源用于存储二进制文件，例如文件版本"
@@ -18,7 +18,7 @@
     "other": "数据源"
   },
   "ds.board.enc.legend": {
-    "other": "主密钥由 Pydio 服务自动生成并存储在服务器保护的密钥链中。 使用下面的工具导出/导入这些密钥，以防您需要在另一服务器上重新安装或部署"
+    "other": "主密钥由 文件服务自动生成并存储在服务器保护的密钥链中。 使用下面的工具导出/导入这些密钥，以防您需要在另一服务器上重新安装或部署"
   },
   "ds.board.enc.title": {
     "other": "加密主密钥"
@@ -63,7 +63,7 @@
     "other": "树形结构反映在存储中并实时同步维护。 不建议使用此旧选项，并且仅应将其用于导入现有数据。 它是基于事件的，不得在高负载或集群安装中使用。"
   },
   "ds.format-picker.internal.title": {
-    "other": "单元内部"
+    "other": "内部"
   },
   "ds.format-picker.internal.legend": {
     "other": "用于存储内部二进制文件(例如文件版本、缩略图)。 功能有限，数据未在搜索引擎中建立索引。"
@@ -144,7 +144,7 @@
     "other": "从本地或网络连接的文件系统浏览数据。"
   },
   "ds.editor.storage.legend.fs.peer": {
-    "other": "限制数据源到某一个节点时，将会仅启动一个特定节点的服务。 使用\"Any\"值，将在运行 Cells 的所有节点上启动服务，如果所有节点上的相同位置挂载了共享文件系统，或者如果你的节点在重新启动时可能改变其 IP，这会很方便。为避免冲突，最好对所有数据源使用 ANY，或为所有数据源都选择特定节点。"
+    "other": "限制数据源到某一个节点时，将会仅启动一个特定节点的服务。 使用\"Any\"值，将在运行 文件服务 的所有节点上启动服务，如果所有节点上的相同位置挂载了共享文件系统，或者如果你的节点在重新启动时可能改变其 IP，这会很方便。为避免冲突，最好对所有数据源使用 ANY，或为所有数据源都选择特定节点。"
   },
   "ds.editor.storage.legend.fs.path": {
     "other": "请确保最后一个文件夹名是小写的，其父文件夹是可写的。 如果您现有的文件夹是大写，您可以使用别名链接来处理此限制。"
@@ -168,7 +168,7 @@
     "other": "只读模式"
   },
   "ds.editor.storage.legend.readOnly": {
-    "other": "如果您要求 Cell 永远不写入任何隐藏文件并使用本机 eTags 作为校验和(这对于具有大量现有数据的存储桶来说可能是必要的)，请使用只读模式。 但是，请注意，在此数据源上创建的任何工作区都应设置为只读，因为移动功能无法正常运行。"
+    "other": "如果您要求 文件服务 永远不写入任何隐藏文件并使用本机 eTags 作为校验和(这对于具有大量现有数据的存储桶来说可能是必要的)，请使用只读模式。 但是，请注意，在此数据源上创建的任何工作区都应设置为只读，因为移动功能无法正常运行。"
   },
   "ds.editor.storage.flatStorage": {
     "other": "将数据结构保存在存储中"
@@ -189,7 +189,7 @@
     "other": "使用原生ETags(将禁用桌面同步)"
   },
   "ds.editor.storage.legend.checksumMapper": {
-    "other": "为了正确的检测文件变更，文件校验码(md5) 由Cells来计算(或者可能的话由储存的副本来计算) 并作为元数据附加到对象上。 处于最佳性能的考虑，使用原生ETags标志来保留存储原始值，但是这将会禁用此数据源上的桌面同步功能。 您还可以通过本地存储元数据，避免在计算校验和时修改对象。"
+    "other": "为了正确的检测文件变更，文件校验码(md5) 由文件服务来计算(或者可能的话由储存的副本来计算) 并作为元数据附加到对象上。 处于最佳性能的考虑，使用原生ETags标志来保留存储原始值，但是这将会禁用此数据源上的桌面同步功能。 您还可以通过本地存储元数据，避免在计算校验和时修改对象。"
   },
   "ds.editor.new": {
     "other": "新数据源"
@@ -708,7 +708,7 @@
     "other": "用户如何从应用程序的各个部分获取通知。"
   },
   "menu.16": {
-    "other": "Pydio 助推器"
+    "other": "助推器"
   },
   "menu.17": {
     "other": "即时通讯和外部加速器工具"
@@ -984,28 +984,28 @@
     "other": "必填"
   },
   "perfs.booster.description": {
-    "other": "检查 Pydio助推器是否已启动并启用 WebSocket 通信"
+    "other": "检查 助推器是否已启动并启用 WebSocket 通信"
   },
   "perfs.booster.error": {
-    "other": "Pydio助推器错误，请查看专用面板"
+    "other": "助推器错误，请查看专用面板"
   },
   "perfs.booster.help": {
-    "other": "Pydio助推器提供了一个易于部署的附加工具，用于添加 WebSocket 支持以及Pydio 上传/下载加速器。"
+    "other": "助推器提供了一个易于部署的附加工具，用于添加 WebSocket 支持以及文件服务 上传/下载加速器。"
   },
   "perfs.booster.title": {
-    "other": "Pydio 助推器"
+    "other": "助推器"
   },
   "perfs.cache.description": {
-    "other": "检查Pydio是否配置为使用缓存层"
+    "other": "检查文件服务是否配置为使用缓存层"
   },
   "perfs.cache.error": {
     "other": "您似乎没有启用缓存服务。"
   },
   "perfs.cache.help": {
-    "other": "Pydio 可以连接到外部缓存服务器，如Redis 或 Memcache, 或者使用内存缓存来大大提高文件浏览性能。"
+    "other": "文件服务 可以连接到外部缓存服务器，如Redis 或 Memcache, 或者使用内存缓存来大大提高文件浏览性能。"
   },
   "perfs.cache.title": {
-    "other": "Pydio 缓存"
+    "other": "文件服务 缓存"
   },
   "perfs.cli.description": {
     "other": "将耗时的任务推迟到命令行。"
@@ -1041,7 +1041,7 @@
     "other": "也许有必要向您的服务器添加一些 CPU 或 RAM。"
   },
   "perfs.load.help": {
-    "other": "服务器负载高可能表明您的服务器缺少 CPU 或 RAM，因为您使用的是 Pydio。"
+    "other": "服务器负载高可能表明您的服务器缺少 CPU 或 RAM，因为您使用的是 文件服务。"
   },
   "perfs.load.title": {
     "other": "服务器负载"
@@ -1068,7 +1068,7 @@
     "other": "未检测到 APC、APCu、Opcache 或 XCache 的任何php 扩展。"
   },
   "perfs.opcache.help": {
-    "other": "Pydio是一个丰富的 PHP 框架，需要在内存中加载大量文件。 请确保启用 PHP Opcache 像APC/u, Opcache 或 XCache 。"
+    "other": "文件服务是一个丰富的 PHP 框架，需要在内存中加载大量文件。 请确保启用 PHP Opcache 像APC/u, Opcache 或 XCache 。"
   },
   "perfs.opcache.title": {
     "other": "Opcode 缓存扩展"
@@ -1239,7 +1239,7 @@
     "other": "您将要禁用子级别的权限管理：全部\n                         其子级会自动继承此文件夹的权限，而你当前的设置\n                         因为这些子级将会丢失。 您确定确认吗？"
   },
   "scheduler.1": {
-    "other": "调度程序用于定期自动触发任务。 它需要定期启动主命令：如果您正在使用 Pydio 助推器，它应该会为您触发此命令。 否则，使用 CRON 每分钟启动一次主命令。"
+    "other": "调度程序用于定期自动触发任务。 它需要定期启动主命令：如果您正在使用 助推器，它应该会为您触发此命令。 否则，使用 CRON 每分钟启动一次主命令。"
   },
   "scheduler.2": {
     "other": "命令行在 %1中未启用，调度程序将无法运行任务。"
@@ -1434,7 +1434,7 @@
     "other": "模板标签"
   },
   "virtual.legend.1": {
-    "other": "模板路径是根据上下文动态计算的。它们可以用作工作区的根，以替换固定的数据源路径。 默认情况下，它们用于创建指向每个用户的不同文件夹的个人文件工作区，并用于计算用户单元文件夹的位置。"
+    "other": "模板路径是根据上下文动态计算的。它们可以用作工作区的根，以替换固定的数据源路径。 默认情况下，它们用于创建指向每个用户的不同文件夹的个人文件工作区，并用于计算用户共享空间文件夹的位置。"
   },
   "virtual.legend.2": {
     "other": "在编辑器中使用Ctrl + Space可获得有关可能值的提示。 支持的当前值为：User.Name（动态解析为当前用户登录的登录名）和DataSources（动态选择数据源）。"
@@ -1698,7 +1698,7 @@
     "other": "数据源定义了您存储数据的位置。"
   },
   "ws.76": {
-    "other": "Pydio将把您所有的数据源合并成一个主树，您可以在这个树上使用工作区赋予权限。"
+    "other": "文件服务将把您所有的数据源合并成一个主树，您可以在这个树上使用工作区赋予权限。"
   },
   "ws.8": {
     "other": "现有数据源"
@@ -1794,7 +1794,7 @@
     "other": "跳过回收站"
   },
   "ws.editor.other.skiprecycle.legend": {
-    "other": "禁用此工作区回收站：所有文件将被永久删除。 这不适用于在此工作区中创建的单元，文件将始终移至工作区回收以避免人为错误。"
+    "other": "禁用此工作区回收站：所有文件将被永久删除。 这不适用于在此工作区中创建的共享空间，文件将始终移至工作区回收以避免人为错误。"
   },
   "ws.editor.other.sync": {
     "other": "允许桌面同步"
@@ -1971,7 +1971,7 @@
     "other": "+ 自定义流程"
   },
   "scheduler.cellsflows.cta.text": {
-    "other": "你需要创建自己的流程吗？了解单元格的流程方式，使您可以轻松地在单元格中自动执行重复的手动任务。"
+    "other": "你需要创建自己的流程吗？了解共享空间的流程方式，使您可以轻松地在共享空间中自动执行重复的手动任务。"
   },
   "scheduler.cellsflows.dialog.button": {
     "other": "了解更多"
@@ -2010,7 +2010,7 @@
     "other": "文件和文件夹(节点) 事件：检测文件修改以自动移动它们或更新其元数据。"
   },
   "scheduler.trigger.type.workspaces": {
-    "other": "工作区事件：在工作区创建/删除时触发。 使用范围标志从单元中过滤工作区"
+    "other": "工作区事件：在工作区创建/删除时触发。 使用范围标志从共享空间中过滤工作区"
   },
   "scheduler.trigger.type.acls": {
     "other": "ACL事件：访问控制列表将工作区、节点和角色链接在一起以提供对数据的访问。"
@@ -2130,19 +2130,19 @@
     "other": "创建工作区"
   },
   "scheduler.trigger.workspace.create.description": {
-    "other": "创建了一个新的工作区或单元格。"
+    "other": "创建了一个新的工作区或共享空间。"
   },
   "scheduler.trigger.workspace.update": {
     "other": "更新工作区"
   },
   "scheduler.trigger.workspace.update.description": {
-    "other": "工作区或单元格已更新。"
+    "other": "工作区或共享空间已更新。"
   },
   "scheduler.trigger.workspace.delete": {
     "other": "删除工作区"
   },
   "scheduler.trigger.workspace.delete.description": {
-    "other": "工作区或单元格已删除。"
+    "other": "工作区或共享空间已删除。"
   },
   "scheduler.trigger.acl.create": {
     "other": "创建/更新 ACL"
@@ -2340,7 +2340,7 @@
     "other": "Rest API 文档"
   },
   "developer.rest.apis.legend": {
-    "other": "以下是Pydio Cell中所有可用的 API。 要使用这些API，您首先必须通过OpenIDConnect 服务的验证才能获得一个有效的JWT。 查看在线管理员指南了解更多信息。"
+    "other": "以下是文件服务中所有可用的 API。 要使用这些API，您首先必须通过OpenIDConnect 服务的验证才能获得一个有效的JWT。 查看在线管理员指南了解更多信息。"
   },
   "mailer.test.title": {
     "other": "发送测试邮件"
@@ -2358,13 +2358,13 @@
     "other": "外部网址"
   },
   "sites.details": {
-    "other": "<div>\n站点定义 Cells 如何绑定到网络接口以及如何暴露给外部世界。\n使用“<i>./cells 配置站点</i>”从命令行管理您的站点。\n<br/><br/>\n每个站点都有以下参数：\n\n<ol>\n<li>1. <u>绑定</u>：一个或多个[ip/hostname:port]，用于挂钩内部网络服务器。</li>\n<li>2. <u>TLS 设置</u>：HTTPS 支持的 TLS 配置。</li>\n<li>3. <u>外部 URL</u>：您与最终用户交流的 URL。 它可能与您的绑定地址不同，通常如果应用程序位于反向代理后面或位于具有端口映射的容器内。</li>\n<li>4. <u>维护模式</u> [开|关]：尽管 Cells 正在运行，但在此端点上显示维护页面。</li>\n</ol></div>"
+    "other": "<div>\n站点定义 文件服务 如何绑定到网络接口以及如何暴露给外部世界。\n使用“<i>配置站点</i>”从命令行管理您的站点。\n<br/><br/>\n每个站点都有以下参数：\n\n<ol>\n<li>1. <u>绑定</u>：一个或多个[ip/hostname:port]，用于挂钩内部网络服务器。</li>\n<li>2. <u>TLS 设置</u>：HTTPS 支持的 TLS 配置。</li>\n<li>3. <u>外部 URL</u>：您与最终用户交流的 URL。 它可能与您的绑定地址不同，通常如果应用程序位于反向代理后面或位于具有端口映射的容器内。</li>\n<li>4. <u>维护模式</u> [开|关]：尽管 文件服务 正在运行，但在此端点上显示维护页面。</li>\n</ol></div>"
   },
   "sites.details.note": {
-    "other": "<div><i>附加说明</i>\n<ol>\n<li>1. 当没有定义站点时，Cells 使用默认配置 (具有自签名的 https://0.0.0.0:8080)。</li>\n<li>2. 可以使用 '--bind' 参数或 'CELS_BIND' 环境变量在运行时覆盖网页上的站点。\n</li>\n</ol></div>"
+    "other": "<div><i>附加说明</i>\n<ol>\n<li>1. 当没有定义站点时，文件服务 使用默认配置 (具有自签名的 https://0.0.0.0:8080)。</li>\n<li>2. 可以使用 '--bind' 参数或 'CELS_BIND' 环境变量在运行时覆盖网页上的站点。\n</li>\n</ol></div>"
   },
   "sites.externals.details": {
-    "other": "<div>\nCells 在某些功能中使用其检测到的公共 URL。 它将尝试根据您的配置使用最合适的值。 <br/><br/>例如：\n<ul>\n<li>&bull; 如果定义了一个独特的站点并且它有一个外部的 URL， 这可能是正确的。</li>\n<li>&bull; 当定义了多个站点，您可能想要强制一个独特的URL用于所有外部通信。</li>\n<li>&bull; 如果没有检测到外部URL，它将回退到内部绑定地址。 在这种情况下，您可能不想对外发送私有IP(或0.0.0.0:端口…)。</li>\n</ul>\n\n<br/>\n下面的字段显示检测到的值。 选择以编辑或输入自定义值并按回车键保存。\n</div>"
+    "other": "<div>\n文件服务 在某些功能中使用其检测到的公共 URL。 它将尝试根据您的配置使用最合适的值。 <br/><br/>例如：\n<ul>\n<li>&bull; 如果定义了一个独特的站点并且它有一个外部的 URL， 这可能是正确的。</li>\n<li>&bull; 当定义了多个站点，您可能想要强制一个独特的URL用于所有外部通信。</li>\n<li>&bull; 如果没有检测到外部URL，它将回退到内部绑定地址。 在这种情况下，您可能不想对外发送私有IP(或0.0.0.0:端口…)。</li>\n</ul>\n\n<br/>\n下面的字段显示检测到的值。 选择以编辑或输入自定义值并按回车键保存。\n</div>"
   },
   "sites.mailer.url": {
     "other": "用于邮件中生成链接的 URL"
@@ -2382,7 +2382,7 @@
     "other": "目前检测到的站点"
   },
   "sites.configs.command": {
-    "other": "使用“/cells config sites”命令来编辑站点。"
+    "other": "使用“config sites”命令来编辑站点。"
   },
   "sites.column.bind": {
     "other": "绑定"

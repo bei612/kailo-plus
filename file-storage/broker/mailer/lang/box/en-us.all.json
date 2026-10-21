@@ -1,6 +1,6 @@
 {
   "Mail.Main.Copyright":{
-    "other": "File Sharing platform proudly powered by Pydio"
+    "other": "Kailo"
   },
   "Mail.Main.Troubleshoot": {
     "other": "If the {ACTION}-button is not working for you, just copy and paste the URL below into your web browser."
@@ -136,7 +136,7 @@
     "other" : "{{.TplData.Message}}"
   },
   "Mail.AdminTestMail.LinkLabel": {
-    "other" : "Open Cells"
+    "other" : "Open Files"
   },
   "Mail.AdminTestMail.LinkInstructions": {
     "other" : "Click to open the frontend"

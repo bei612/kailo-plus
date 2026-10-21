@@ -22,17 +22,34 @@
                     <clientCallback module="AuthfrontCoreActions.Callbacks.loginPassword"/>
                 </processing>
             </action>
+            <!-- The native session logout stays callable (session expiry, public
+                 link minisites); the user menu shows kailo_logout instead (DD-133). -->
             <action name="logout" expireDefault="true">
                 <gui text="164" title="169" iconClass="mdi mdi-logout" weight="400"
                      accessKey="" hasAccessKey="false">
                     <context selection="false" dir="" recycle="false"
-                             contextMenu="false" actionBar="true" actionBarGroup="zlogin,minisite">
+                             contextMenu="false" actionBar="true" actionBarGroup="minisite">
                     </context>
                 </gui>
                 <rightsContext noUser="false" userLogged="only" guestLogged="hidden" read="false" write="false" adminOnly=""/>
                 <processing>
                     <clientCallback module="AuthfrontCoreActions.Callbacks.sessionLogout"/>
                 </processing> 
+            </action>
+            <action name="kailo_logout">
+                <gui text="164" title="169" iconClass="mdi mdi-logout" weight="400"
+                     accessKey="" hasAccessKey="false">
+                    <context selection="false" dir="" recycle="false"
+                             contextMenu="false" actionBar="true" actionBarGroup="zlogin">
+                    </context>
+                </gui>
+                <rightsContext noUser="false" userLogged="only" guestLogged="hidden" read="false" write="false" adminOnly=""/>
+                <processing>
+                    <activeCondition><![CDATA[
+                        return !window.KailoCells || window.KailoCells.showLogout();
+                    ]]></activeCondition>
+                    <clientCallback module="AuthfrontCoreActions.Callbacks.platformLogout"/>
+                </processing>
             </action>
         </actions>
     </registry_contributions>

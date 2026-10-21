@@ -165,7 +165,7 @@ func ComputeBootConf(ctx context.Context, pool *PluginsPool, showVersion ...bool
 		AjxpImagesCommon:             true,
 		CustomWording: CustomWording{
 			Title: config.Get(ctx, config.FrontendPluginPath(config.KeyFrontPluginCorePydio, config.KeyFrontApplicationTitle)...).Default("Pydio Cells").String(),
-			Icon:  "plug/gui.ajax/res/themes/common/images/LoginBoxLogo.png",
+			Icon:  "plug/kailo.embed/brand/app-icon.png", // Kailo application icon (DD-133 §1)
 		},
 		AvailableLanguages: languages.AvailableLanguages,
 		I18nMessages:       pool.I18nMessages(ctx, lang).Messages,

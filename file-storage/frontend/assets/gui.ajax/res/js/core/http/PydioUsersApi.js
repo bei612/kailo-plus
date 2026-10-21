@@ -264,7 +264,8 @@ class UsersApi{
 
         const avatarUrl = UsersApi.buildUserAvatarUrl(pydio.user.id, pydio.user.getPreference('avatar'));
         if (avatarUrl) {
-            userObject.setAvatar(avatarUrl + '?' + pydio.user.getPreference('avatar'));
+            // A Kailo picture is already a complete address (DD-133 §3).
+            userObject.setAvatar(UsersApi.isPictureUrl(pydio.user.getPreference('avatar')) ? avatarUrl : avatarUrl + '?' + pydio.user.getPreference('avatar'));
             callback(userObject);
         } else if (pydio.user.preferences.has('external_avatar_loaded')){
             callback(userObject);
@@ -328,6 +329,15 @@ class UsersApi{
     }
 
     /**
+     * Whether an avatar attribute is an absolute HTTP(S) picture address.
+     * @param avatarId
+     * @returns {boolean}
+     */
+    static isPictureUrl(avatarId){
+        return typeof avatarId === 'string' && /^https?:\/\/[^\s]+$/.test(avatarId);
+    }
+
+    /**
      * Build avatar url from avatarId
      * @param userId
      * @param avatarId
@@ -335,6 +345,11 @@ class UsersApi{
      */
     static buildUserAvatarUrl(userId, avatarId = null){
 
+        // Accounts synchronised from Kailo carry the Kailo picture address
+        // instead of a native binary id (common/auth native OIDC refresh).
+        if(UsersApi.isPictureUrl(avatarId)){
+            return avatarId;
+        }
         if(avatarId){
             return PydioApi.getClient().getPydioObject().Parameters.get('ENDPOINT_REST_API') + '/frontend/binaries/USER/' + userId;
         }else{

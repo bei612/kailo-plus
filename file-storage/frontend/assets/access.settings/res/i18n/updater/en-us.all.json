@@ -54,7 +54,7 @@
     "other": "Save configs"
   },
   "upgrade.ed.title":{
-    "other": "Upgrade to Cells Enterprise"
+    "other": "Upgrade to the file service"
   },
   "upgrade.ed.button.next":{
     "other": "Next"
@@ -78,7 +78,7 @@
     "other": "I thereby accept this EULA"
   },
   "upgrade.ed.key.title":{
-    "other": "Enter a valid license key (provided by a Pydio sales representative)"
+    "other": "Enter a valid license key (provided by a the file service sales representative)"
   },
   "upgrade.ed.key.legend":{
     "other": "If you do not own one, you can receive a trial key by contacting sales using the button below or directly via "
@@ -87,10 +87,10 @@
     "other": "Paste provided key here..."
   },
   "upgrade.ed.version.loading":{
-    "other": "Looking for the closest Cells Enterprise version"
+    "other": "Looking for the closest the file service version"
   },
   "upgrade.ed.version.error":{
-    "other": "Cannot load available versions for Cells Enterprise!"
+    "other": "Cannot load available versions for the file service!"
   },
   "upgrade.ed.version.error.string":{
     "other": "Error was"
@@ -108,16 +108,16 @@
     "other": "Description"
   },
   "upgrade.ed.version.legend":{
-    "other": "Hitting Next will now download this new version and replace your current Cells binary. A backup of the original executable will be made inside your cells config folder (under %s), if you need to recover it."
+    "other": "Hitting Next will now download this new version and replace your current service binary. A backup of the original executable will be made inside your config folder (under %s), if you need to recover it."
   },
   "upgrade.ed.version.nomatch":{
-    "other": "Could not find a similar version for Cells Enterprise"
+    "other": "Could not find a similar version for the file service"
   },
   "upgrade.ed.version.nomatch.legend1":{
-    "other": "To avoid mixing upgrade and updates, we recommend upgrading Cells Home to Enterprise on the same version."
+    "other": "To avoid mixing upgrade and updates, we recommend upgrading the file service on the same version."
   },
   "upgrade.ed.version.nomatch.legend2":{
-    "other": "Please first update your current version to one of the following, then retry upgrading to Cells Enterprise."
+    "other": "Please first update your current version to one of the following, then retry upgrading to the file service."
   },
   "upgrade.ed.installing":{
     "other": "Installing upgrade, please wait..."

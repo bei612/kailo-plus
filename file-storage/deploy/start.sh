@@ -72,6 +72,28 @@ try:
     require(isinstance(provision, bool), 'native OIDC connector must declare provisionUsers as true or false')
     require(oidc[0]['config'].get('provisionProfile') == 'standard' if provision else 'provisionProfile' not in oidc[0]['config'],
             'provisionUsers true requires provisionProfile "standard"; false carries no provisionProfile')
+    # DD-133 §3: provisioned accounts belong to the Kailo Tenant(s) bound to
+    # this instance; the Tenant-admin claim (native admin profile) only for
+    # an instance dedicated to one Tenant. Cells re-validates the same rules.
+    organization = oidc[0]['config'].get('organization')
+    require(not provision or isinstance(organization, dict), 'provisionUsers true requires the Kailo Tenant organization mapping')
+    if organization is not None:
+        tenants = organization.get('tenants')
+        require(isinstance(tenants, list) and tenants and all(isinstance(t, dict) and isinstance(t.get('id'), str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', t['id'])
+                and isinstance(t.get('name'), str) and t['name'].strip() == t['name'] != '' and t['name'].isprintable() for t in tenants)
+                and len({t['id'].lower() for t in tenants}) == len(tenants), 'organization tenants need unique ids and printable names')
+        claim = r'[A-Za-z_][A-Za-z0-9_.:-]{0,63}'
+        require(set(organization) <= {'tenants', 'tenantClaim', 'tenantAdminClaim'}, 'unknown organization field')
+        require(organization.get('tenantClaim') is None or re.fullmatch(claim, organization['tenantClaim']), 'invalid tenant claim name')
+        require(organization.get('tenantClaim') is not None or len(tenants) == 1, 'several Tenants require tenantClaim')
+        require(organization.get('tenantAdminClaim') is None or (re.fullmatch(claim, organization['tenantAdminClaim']) and len(tenants) == 1),
+                'tenantAdminClaim requires an instance dedicated to one Tenant')
+    logout = oidc[0]['config'].get('platformLogoutUrl')
+    if logout is not None:
+        parsed = urlsplit(logout)
+        require(parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password, 'platformLogoutUrl must be an absolute HTTP(S) Kailo address')
+    display = env['PLATFORM_DISPLAY_NAME']
+    require(display.strip() == display != '' and len(display) <= 64 and display.isprintable(), 'PLATFORM_DISPLAY_NAME: printable Kailo display name required')
     require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
     oauth_secret = json.loads(secret_file('CELLS_OAUTH_SECRET_FILE'))
     require(isinstance(oauth_secret, str) and oauth_secret.strip() and oauth_secret != 'a-very-insecure-secret-for-checking-out-the-demo', 'non-default independent native OAuth secret required')
