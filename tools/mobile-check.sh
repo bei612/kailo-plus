@@ -83,6 +83,14 @@ inner() {
     [ "$rc" -eq 0 ] || failed=1
     return "$rc"
   }
+  # 格式不符时给出逐文件 diff，修正只在源码仓库里做，不回传容器内的改写。
+  format_diff() {
+    local file
+    dart format --output=none --show=changed . 2>/dev/null |
+      sed -n 's/^Changed //p' | while IFS= read -r file; do
+        dart format --output=show "$file" | diff -u "$file" - || true
+      done
+  }
   local offline=()
   [ -n "${HTTPS_PROXY:-}" ] || offline=(--offline)
   # pub 失败时后续步骤没有意义，直接结束。
@@ -90,7 +98,7 @@ inner() {
   for step in "$@"; do
     case "$step" in
       pub) ;;
-      format) run_step format dart format --output=none --set-exit-if-changed . || true ;;
+      format) run_step format dart format --output=none --set-exit-if-changed . || format_diff ;;
       analyze) run_step analyze flutter analyze --no-pub || true ;;
       test) run_step test flutter test --no-pub -j "$jobs" --reporter expanded \
               --file-reporter "json:/out/flutter-test.json" || true ;;

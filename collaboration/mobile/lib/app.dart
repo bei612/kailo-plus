@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'features/activity/activity_provider.dart';
 import 'features/channels/deep_link_dispatcher.dart';
 import 'features/channels/unread_badge/unread_badge_provider.dart';
 import 'features/channels/voice_note_recording.dart';
@@ -71,6 +72,10 @@ class App extends HookConsumerWidget {
       ref.watch(relaySessionProvider);
       ref.watch(appLifecycleProvider);
     }
+    // The Activity tab's unread dot follows the inbox rows, only once signed in.
+    final unreadInboxCount = authenticated
+        ? ref.watch(unreadInboxItemCountProvider)
+        : 0;
 
     // Start listening for buzz:// links immediately (even pre-auth) so a
     // cold-start link survives until the authenticated UI can dispatch it.
@@ -124,8 +129,11 @@ class App extends HookConsumerWidget {
         loading: () => const _SplashScreen(),
         error: (_, _) => const PlatformSignInPage(),
         data: (state) => switch (state.status) {
-          AuthStatus.authenticated => const DeepLinkDispatcher(
-            child: HomePage(settingsPageBuilder: _buildSettingsPage),
+          AuthStatus.authenticated => DeepLinkDispatcher(
+            child: HomePage(
+              settingsPageBuilder: _buildSettingsPage,
+              unreadInboxCount: unreadInboxCount,
+            ),
           ),
           _ => const DeepLinkDispatcher(
             dispatchMessageLinks: false,

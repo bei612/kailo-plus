@@ -7,6 +7,9 @@ const _fontFamily = 'Inter';
 /// Avatar size for full channel and thread messages.
 const messageAvatarSize = 42.0;
 
+/// Avatar size for conversation-oriented Activity rows.
+const activityAvatarSize = messageAvatarSize;
+
 /// Avatar size for compact message-result rows.
 const compactMessageAvatarSize = messageAvatarSize;
 
@@ -108,6 +111,12 @@ const systemMessageBodyTextStyle = TextStyle(
   height: 20 / 15,
   letterSpacing: 0,
 );
+
+/// Activity sender names share the primary author style.
+const activityUsernameTextStyle = messageUsernameTextStyle;
+
+/// Activity timestamps share the compact message timestamp treatment.
+const activityTimestampTextStyle = messageTimestampTextStyle;
 
 /// Activity context labels: 13.1sp medium on a 17sp line height.
 const activityContextTextStyle = TextStyle(

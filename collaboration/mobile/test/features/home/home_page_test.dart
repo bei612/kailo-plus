@@ -11,6 +11,7 @@ void main() {
   Future<Widget> buildHome({
     bool disableAnimations = false,
     Gradient? topSectionGradient,
+    int unreadInboxCount = 0,
   }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -24,7 +25,10 @@ void main() {
           ).copyWith(disableAnimations: disableAnimations),
           child: child!,
         ),
-        home: const HomePage(settingsPageBuilder: _buildSettingsPage),
+        home: HomePage(
+          settingsPageBuilder: _buildSettingsPage,
+          unreadInboxCount: unreadInboxCount,
+        ),
       ),
     );
   }
@@ -188,6 +192,58 @@ void main() {
     await tester.tap(find.byTooltip('Home'));
     await tester.pump();
     expect(hapticCalls, hasLength(2));
+  });
+
+  testWidgets('places the Inbox tab between Home and Search', (tester) async {
+    await tester.pumpWidget(await buildHome());
+    await tester.pump();
+
+    final home = tester.getCenter(find.byTooltip('Home'));
+    final inbox = tester.getCenter(find.byTooltip('Inbox'));
+    final search = tester.getCenter(find.byTooltip('Search'));
+    expect(home.dx, lessThan(inbox.dx));
+    expect(inbox.dx, lessThan(search.dx));
+    expect(
+      find.byKey(const ValueKey('activity-tab-unread-dot')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('badges the Inbox tab when it has unread rows', (tester) async {
+    await tester.pumpWidget(await buildHome(unreadInboxCount: 1));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('activity-tab-unread-dot')),
+      findsOneWidget,
+    );
+    final badge = tester.widget<Container>(
+      find.byKey(const ValueKey('activity-tab-unread-dot')),
+    );
+    expect(badge.constraints?.maxWidth, 12);
+    expect(badge.constraints?.maxHeight, 12);
+    expect(find.bySemanticsLabel('Inbox, 1 unread'), findsOneWidget);
+    AnimatedScale unreadDotScale() => tester.widget<AnimatedScale>(
+      find.byKey(const ValueKey('activity-tab-unread-dot-scale')),
+    );
+    expect(unreadDotScale().scale, 1);
+    expect(unreadDotScale().alignment, const Alignment(-0.5, 0.5));
+    expect(unreadDotScale().duration, const Duration(milliseconds: 220));
+
+    await tester.tap(find.byTooltip('Inbox'));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('activity-tab-unread-dot')),
+      findsOneWidget,
+    );
+    expect(unreadDotScale().scale, 0);
+    expect(find.bySemanticsLabel('Inbox, 1 unread'), findsNothing);
+
+    await tester.tap(find.byTooltip('Home'));
+    await tester.pump();
+
+    expect(unreadDotScale().scale, 1);
   });
 
   testWidgets('fades and slides tab content in the selected direction', (

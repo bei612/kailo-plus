@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -10,13 +11,21 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
+import '../activity/activity_page.dart';
 import '../channels/channels_page.dart';
 import '../search/search_page.dart';
 
 class HomePage extends HookConsumerWidget {
-  const HomePage({required this.settingsPageBuilder, super.key});
+  const HomePage({
+    required this.settingsPageBuilder,
+    this.unreadInboxCount = 0,
+    super.key,
+  });
 
   final WidgetBuilder settingsPageBuilder;
+
+  /// Unread Activity rows; a positive count shows the Activity tab's dot.
+  final int unreadInboxCount;
 
   static const double _tabBarHeight = mobileTabBarHeight;
   static const double _tabBarRadius = _tabBarHeight / 2;
@@ -29,6 +38,7 @@ class HomePage extends HookConsumerWidget {
   static const double _tabIconSize = 22;
   static const double _fabClearance = _tabBarHeight + _tabBarBottomGap;
   static const Duration _tabIconWeightDuration = Duration(milliseconds: 120);
+  static const Duration _tabUnreadBadgeDuration = Duration(milliseconds: 220);
   static const double _settingsBackgroundScale = 0.97;
   static const Duration _tabContentTransitionDuration = Duration(
     milliseconds: 240,
@@ -36,13 +46,18 @@ class HomePage extends HookConsumerWidget {
   static const Curve _tabContentTransitionCurve = Cubic(0.22, 1, 0.36, 1);
   static const double _tabContentTransitionDistance = 24;
 
-  static const _destinations = [
-    _HomeDestination(
+  static List<_HomeDestination> _destinationsFor(String locale) => [
+    const _HomeDestination(
       icon: LucideIcons.house300,
       selectedIcon: LucideIcons.house500,
       label: 'Home',
     ),
     _HomeDestination(
+      icon: LucideIcons.inbox300,
+      selectedIcon: LucideIcons.inbox500,
+      label: platformText(PlatformMessageKey.inboxTitle, locale: locale),
+    ),
+    const _HomeDestination(
       icon: LucideIcons.search300,
       selectedIcon: LucideIcons.search500,
       label: 'Search',
@@ -51,6 +66,8 @@ class HomePage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final destinations = _destinationsFor(locale);
     final tabIndex = useState(0);
     final visitedTabs = useRef(<int>{0});
     final tabContentTransitionDirection = useRef(1.0);
@@ -62,6 +79,7 @@ class HomePage extends HookConsumerWidget {
       tabContentTransitionController,
     );
     final homeReselection = useValueNotifier(0);
+    final activityReselection = useValueNotifier(0);
     final searchReselection = useValueNotifier(0);
     final settingsTransitionProgress = useValueNotifier(0.0);
     final reducedMotion = MediaQuery.of(context).disableAnimations;
@@ -71,7 +89,7 @@ class HomePage extends HookConsumerWidget {
     final systemBottomInset = MediaQuery.paddingOf(context).bottom;
     final navigationBarWidth = _floatingTabBarWidth(
       MediaQuery.sizeOf(context).width,
-      _destinations.length,
+      destinations.length,
     );
 
     final pages = [
@@ -85,6 +103,10 @@ class HomePage extends HookConsumerWidget {
         },
       ),
       if (visitedTabs.value.contains(1))
+        ActivityPage(tabReselection: activityReselection)
+      else
+        const SizedBox.shrink(),
+      if (visitedTabs.value.contains(2))
         SearchPage(tabReselection: searchReselection)
       else
         const SizedBox.shrink(),
@@ -172,12 +194,15 @@ class HomePage extends HookConsumerWidget {
             ),
             bottomNavigationBar: _FloatingTabBar(
               selectedIndex: tabIndex.value,
+              unreadInboxCount: unreadInboxCount,
               onDestinationSelected: (i) {
                 if (i == tabIndex.value) {
                   switch (i) {
                     case 0:
                       homeReselection.value++;
                     case 1:
+                      activityReselection.value++;
+                    case 2:
                       searchReselection.value++;
                   }
                   return;
@@ -194,7 +219,7 @@ class HomePage extends HookConsumerWidget {
                   unawaited(tabContentTransitionController.forward(from: 0));
                 }
               },
-              destinations: _destinations,
+              destinations: destinations,
             ),
           ),
           builder: (context, progress, child) {
@@ -269,11 +294,13 @@ class _HomeDestination {
 
 class _FloatingTabBar extends StatelessWidget {
   final int selectedIndex;
+  final int unreadInboxCount;
   final ValueChanged<int> onDestinationSelected;
   final List<_HomeDestination> destinations;
 
   const _FloatingTabBar({
     required this.selectedIndex,
+    required this.unreadInboxCount,
     required this.onDestinationSelected,
     required this.destinations,
   });
@@ -375,6 +402,7 @@ class _FloatingTabBar extends StatelessWidget {
                                 child: _FloatingTabDestination(
                                   destination: destinations[i],
                                   selected: i == safeSelectedIndex,
+                                  unreadCount: i == 1 ? unreadInboxCount : 0,
                                   onTap: () => onDestinationSelected(i),
                                 ),
                               ),
@@ -396,26 +424,43 @@ class _FloatingTabBar extends StatelessWidget {
 class _FloatingTabDestination extends StatelessWidget {
   final _HomeDestination destination;
   final bool selected;
+  final int unreadCount;
   final VoidCallback onTap;
 
   const _FloatingTabDestination({
     required this.destination,
     required this.selected,
+    required this.unreadCount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colors;
+    final isDark = context.theme.brightness == Brightness.dark;
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     final foregroundColor = selected
         ? colorScheme.onPrimaryContainer
         : colorScheme.onSurfaceVariant;
     final icon = selected ? destination.selectedIcon : destination.icon;
+    final badgeOutlineColor = selected
+        ? colorScheme.primaryContainer
+        : (isDark ? colorScheme.surfaceContainerHighest : colorScheme.surface);
+
+    final showUnreadBadge = unreadCount > 0;
+    final showVisibleUnreadBadge = showUnreadBadge && !selected;
+    final unreadLabel = platformText(
+      PlatformMessageKey.inboxUnreadCount,
+      locale: Localizations.localeOf(context).toLanguageTag(),
+      variables: {'count': unreadCount},
+    );
+
     return Semantics(
       button: true,
       selected: selected,
-      label: destination.label,
+      label: showVisibleUnreadBadge
+          ? '${destination.label}, $unreadLabel'
+          : destination.label,
       child: Tooltip(
         message: destination.label,
         excludeFromSemantics: true,
@@ -453,6 +498,36 @@ class _FloatingTabDestination extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (showUnreadBadge)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: AnimatedScale(
+                          key: const ValueKey('activity-tab-unread-dot-scale'),
+                          scale: selected ? 0 : 1,
+                          alignment: const Alignment(-0.5, 0.5),
+                          duration: reducedMotion
+                              ? Duration.zero
+                              : HomePage._tabUnreadBadgeDuration,
+                          curve: Curves.easeOutCubic,
+                          child: Container(
+                            key: const ValueKey('activity-tab-unread-dot'),
+                            width: 12,
+                            height: 12,
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: badgeOutlineColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
