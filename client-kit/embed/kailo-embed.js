@@ -77,7 +77,14 @@
     theme: urlTheme || member(stored.theme, THEMES) || (systemDark ? "dark" : "light"),
     locale: urlLocale || member(stored.locale, LOCALES) || "zh-CN"
   };
-  var explicitLocale = !!(urlLocale || member(stored.locale, LOCALES));
+  // What Kailo itself supplied (launch URL, earlier in this tab, or the host).
+  // Only these values persist, so a device default or the identity locale
+  // never masquerades as a Kailo value after the next redirect.
+  var supplied = {
+    theme: urlTheme || member(stored.theme, THEMES) || undefined,
+    locale: urlLocale || member(stored.locale, LOCALES) || undefined
+  };
+  if (urlTheme || urlLocale) writeStore(supplied);
   var hostConnected = false;
   var listeners = [];
 
@@ -97,7 +104,6 @@
     var changed = { theme: theme !== state.theme, locale: locale !== state.locale };
     state.theme = theme;
     state.locale = locale;
-    writeStore({ theme: theme, locale: locale });
     apply();
     if (!changed.theme && !changed.locale) return;
     var current = snapshot();
@@ -127,7 +133,8 @@
     var locale = member(data.locale, LOCALES);
     if (!theme || !locale) return;
     hostConnected = true;
-    explicitLocale = true;
+    supplied = { theme: theme, locale: locale };
+    writeStore(supplied);
     update(theme, locale);
   });
 
@@ -160,7 +167,7 @@
      */
     useIdentityLocale: function (locale) {
       var value = member(locale, LOCALES);
-      if (!value || explicitLocale) return false;
+      if (!value || supplied.locale) return false;
       update(state.theme, value);
       return true;
     },
