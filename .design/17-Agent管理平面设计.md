@@ -230,6 +230,8 @@ Core AgentRuntimeProjection
 
 不使用 xDS 反向写配置（SF-AGW-03），不允许 Browser、Agent 或 Tenant admin 直接访问当前无 auth middleware 的 `/api/config/resources`、`POST /api/config`（覆写配置文件）与 `llm.settings`/`mcp.settings`（SF-AGW-02、SS-AGW-ADMIN），也不通过 AgentRegistry 中转（DD-29）。SS-AGW-ADMIN 未闭合时 Gateway 管理投影不得 active；内网或 CORS 不作替代。Gateway route/policy 被人工或外部过程改变时，read-back hash 不一致使 projection `ERROR`，Core 停止新触发，不从 Gateway 反向生成业务授权。
 
+网关管理区（DD-134）只读呈现这一执行投影：effective config 与 ConfigResource 由 Core 读取并打码后返回，版本历史取 Core 写入并回读确认时保存的写入证据，没有证据的 revision 标为 `UNRECORDED` 而不反向导入；管理区不嵌入或代理 AgentGateway 原生 UI 与 admin API，修改只经既有 Governed Action。
+
 ## 10. 停用与失败语义
 
 - Version retire：禁止新安装；现存 Installation 继续固定旧版本，直到显式升级、回滚或停用。
