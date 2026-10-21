@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-03, V-REQ-05, V-REQ-09, V-REQ-11, V-REQ-15, V-REQ-19, V-REQ-20, V-REQ-23, V-REQ-24]
-  decisions: [DD-24, DD-25, DD-26, DD-27, DD-49, DD-65, DD-66, DD-67, DD-68, DD-107, DD-13, DD-105, DD-121, DD-122, DD-117, DD-126]
+  decisions: [DD-24, DD-25, DD-26, DD-27, DD-49, DD-65, DD-66, DD-67, DD-68, DD-107, DD-13, DD-105, DD-121, DD-122, DD-117, DD-126, DD-131]
   # 此列表仅登记 S5 决策；复用的跨阶段合同由下方既有核验记录关联。
   # S1: DD-37/DD-70/DD-71；S3: DD-99/DD-100，归属仍以覆盖矩阵为准。
   facts: [SF-SPZ-01, SF-SPZ-02, SF-COD-09, SF-COD-17, SF-BUZ-16, SF-BUZ-17, SF-BUZ-55, SF-BUZ-58, SF-TMP-01, SF-TMP-04]
@@ -16,7 +16,7 @@ design:
 
 validation:
   # 新增场景只关联实现，未记为业务验收通过。
-  scenarios: [V-SCN-07, V-SCN-23, V-SCN-31, V-SCN-37, V-SCN-38, V-SCN-59, V-SCN-60, V-SCN-105, V-SCN-106, V-SCN-107, V-SCN-108, V-SCN-109, V-SCN-110, V-SCN-111, V-SCN-112, V-SCN-143, V-SCN-144, V-SCN-146, V-SCN-147, V-SCN-148, V-SCN-149, V-SCN-168, V-SCN-169]
+  scenarios: [V-SCN-07, V-SCN-23, V-SCN-31, V-SCN-37, V-SCN-38, V-SCN-59, V-SCN-60, V-SCN-105, V-SCN-106, V-SCN-107, V-SCN-108, V-SCN-109, V-SCN-110, V-SCN-111, V-SCN-112, V-SCN-143, V-SCN-144, V-SCN-146, V-SCN-147, V-SCN-148, V-SCN-149, V-SCN-168, V-SCN-169, V-SCN-180, V-SCN-181, V-SCN-182, V-SCN-183, V-SCN-184, V-SCN-185]
   evidence:
     - dimension: 安全边界
       ref: core/verify/agent-session-query.md
