@@ -4477,6 +4477,8 @@ export const platformMessages = {
   "agentTeams.selectAgents": { en: "Select the agents to include in this team, in order.", "zh-CN": "按顺序选择要包含在此团队中的 Agent。" },
   "agentTeams.dialogMissing.one": { en: "This team references {count} agent that is no longer available to you. Save to remove it.", "zh-CN": "此团队引用了 {count} 个你已无法使用的 Agent。保存后将移除。" },
   "agentTeams.dialogMissing.other": { en: "This team references {count} agents that are no longer available to you. Save to remove them.", "zh-CN": "此团队引用了 {count} 个你已无法使用的 Agent。保存后将移除。" },
+  "agentTeams.hiddenEditLocked.one": { en: "{count} member of this team is hidden from you. Saving replaces the member list and would remove it, so this team can't be edited here.", "zh-CN": "此团队有 {count} 个成员对你不可见。保存会整体替换成员列表并移除该成员，因此无法在此编辑此团队。" },
+  "agentTeams.hiddenEditLocked.other": { en: "{count} members of this team are hidden from you. Saving replaces the member list and would remove them, so this team can't be edited here.", "zh-CN": "此团队有 {count} 个成员对你不可见。保存会整体替换成员列表并移除这些成员，因此无法在此编辑此团队。" },
   "agentTeams.memberLimit": { en: "A team can have at most {count} agents.", "zh-CN": "一个团队最多包含 {count} 个 Agent。" },
   "agentTeams.emptyAgents": { en: "No agents are available to add yet.", "zh-CN": "暂无可添加的 Agent。" },
   "agentTeams.created": { en: "Created team \"{name}\".", "zh-CN": "已创建团队“{name}”。" },

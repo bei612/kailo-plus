@@ -84,7 +84,7 @@ export function useTeamActions(refreshRevision: number) {
     clearFeedback(); save.dismiss();
     setTeamDialogState({ title: t("agentTeams.editTitle"), description: "", submitLabel: t("agentTeams.saveChanges"),
       initialValues: { resourceId: team.resourceId, resourceVersion: team.resourceVersion, name: team.name, description: team.description ?? "",
-        memberAgentResourceIds: [...team.memberAgentResourceIds] } });
+        memberAgentResourceIds: [...team.memberAgentResourceIds], hiddenMemberCount: team.hiddenMemberCount } });
   }
 
   function handleTeamSubmit(input: TeamSubmitInput) {

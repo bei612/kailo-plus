@@ -74,7 +74,7 @@ export function validSnapshotUpload(view: AgentSnapshotUploadView, kind?: Snapsh
 
 /** Stage one snapshot file for preview; the kind must match the file the user picked. */
 export async function uploadSnapshotFile(client: Pick<BffClient, "uploadAgentSnapshot">, file: SnapshotFile, kind: SnapshotKind): Promise<AgentSnapshotUploadView> {
-  const view = await client.uploadAgentSnapshot(file.bytes, file.fileName, snapshotMediaType(file.fileName));
+  const view = await client.uploadAgentSnapshot(file.bytes, file.fileName, snapshotMediaType(file.fileName), kind === "team" ? "TEAM" : "AGENT");
   if (!validSnapshotUpload(view, kind)) throw new TransportError("Snapshot preview unavailable");
   return view;
 }

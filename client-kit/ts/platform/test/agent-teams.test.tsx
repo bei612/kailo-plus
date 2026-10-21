@@ -185,6 +185,13 @@ describe("DD-131(1) Teams section over governed agent_team actions", () => {
     expect(document.querySelector('[data-testid="team-delete-dialog"]')).toBeNull();
   });
 
+  it("does not let the owner edit a team whose members are partly hidden (update replaces the member list)", async () => {
+    const { host } = await mountLibrary(() => undefined);
+    const menu = await openMenu(host.querySelector<HTMLElement>(`[data-testid="team-actions-${TEAM}"]`)!);
+    expect(menuItem(menu, "Edit").hasAttribute("data-disabled")).toBe(true);
+    expect(menuItem(menu, "Delete").hasAttribute("data-disabled")).toBe(false);
+  });
+
   it("offers Edit and Delete only to the team owner", async () => {
     const fake = transport((request) => request.path === "/api/v1/agent-teams" ? ok({ teams: [team({ ownerPrincipalId: OTHER })] })
       : request.path === "/api/v1/agent-definitions" ? ok({ definitions: [definition(A, "Scribe"), definition(B, "Critic")] }) : undefined);
@@ -223,7 +230,7 @@ describe("DD-131(1) deploy to channel and @team", () => {
     const agents = [
       { pubkey: "a".repeat(64), displayName: "Scribe", installation: { agentResourceId: A } },
       { pubkey: "b".repeat(64), displayName: "Scribe", installation: { agentResourceId: B } },
-    ] as Parameters<typeof buildTeamMentionCandidates>[1];
+    ] as unknown as Parameters<typeof buildTeamMentionCandidates>[1];
     const rows = buildTeamMentionCandidates([team({ memberAgentResourceIds: [B, C, A] }), team({ resourceId: OTHER, name: "Empty", memberAgentResourceIds: [C] })], agents);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ kind: "team", teamId: TEAM, displayName: "Engineering Squad", isAgent: false });

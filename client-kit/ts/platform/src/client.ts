@@ -340,10 +340,10 @@ export function createBffClient(transport: BffTransport) {
     /**
      * DD-131(2)(3)(5): stage this session's snapshot package bytes for an import preview. It is not
      * an import and creates no Resource; Core recomputes the digest and rejects oversize (413) or
-     * non-v1, legacy `.persona.*` and zip packages (400).
+     * non-v1, legacy `.persona.*` and zip packages or a package of another `kind` (422 INVALID_PARAMETERS).
      */
-    uploadAgentSnapshot: async (body: Uint8Array<ArrayBuffer>, fileName: string, mediaType: SnapshotMediaType) => {
-      const path = "/api/v1/agent-snapshots/uploads";
+    uploadAgentSnapshot: async (body: Uint8Array<ArrayBuffer>, fileName: string, mediaType: SnapshotMediaType, kind?: "AGENT" | "TEAM") => {
+      const path = `/api/v1/agent-snapshots/uploads${kind ? `?kind=${kind}` : ""}`;
       const reply = await bytes({ method: "POST", path, body, contentType: mediaType,
         headers: { "X-Snapshot-Filename": snapshotFilenameHeader(fileName) } });
       return unwrap<AgentSnapshotUploadView>({ method: "POST", path }, { status: reply.status, body: bytesJson(reply) });

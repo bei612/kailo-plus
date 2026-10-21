@@ -132,13 +132,20 @@ pub(crate) async fn platform_api(
 }
 
 /// DD-131 快照包上传可用的媒体类型；其余不代发。
-const SNAPSHOT_MEDIA_TYPES: [&str; 3] = ["application/json", "image/png", "application/octet-stream"];
+const SNAPSHOT_MEDIA_TYPES: [&str; 3] =
+    ["application/json", "image/png", "application/octet-stream"];
 
 /// `X-Snapshot-Filename` 只用于让 Core 拒绝旧 `.persona.*`：限可见 ASCII，至多 255 字节。
 fn checked_snapshot_filename(value: Option<String>) -> Result<Option<String>, String> {
     match value {
         None => Ok(None),
-        Some(name) if !name.is_empty() && name.len() <= 255 && name.bytes().all(|b| (0x20..0x7f).contains(&b)) => Ok(Some(name)),
+        Some(name)
+            if !name.is_empty()
+                && name.len() <= 255
+                && name.bytes().all(|b| (0x20..0x7f).contains(&b)) =>
+        {
+            Ok(Some(name))
+        }
         Some(_) => Err("快照文件名不合规".to_owned()),
     }
 }
@@ -147,7 +154,11 @@ fn checked_snapshot_filename(value: Option<String>) -> Result<Option<String>, St
 /// Content-Type 长度（大端）、Content-Type、正文。正文不经 JSON 数组。
 fn bytes_frame(response: super::api::BytesResponse) -> tauri::ipc::Response {
     let content_type = response.content_type.unwrap_or_default();
-    let content_type = if content_type.len() > usize::from(u16::MAX) { String::new() } else { content_type };
+    let content_type = if content_type.len() > usize::from(u16::MAX) {
+        String::new()
+    } else {
+        content_type
+    };
     let mut frame = Vec::with_capacity(4 + content_type.len() + response.body.len());
     frame.extend_from_slice(&response.status.to_be_bytes());
     frame.extend_from_slice(&(content_type.len() as u16).to_be_bytes());
@@ -188,7 +199,14 @@ pub(crate) async fn platform_api_bytes(
     };
     let cfg = require_config(&app)?;
     let response = session
-        .call_bytes(&state.http_client, &cfg, method, &path, upload, filename.as_deref())
+        .call_bytes(
+            &state.http_client,
+            &cfg,
+            method,
+            &path,
+            upload,
+            filename.as_deref(),
+        )
         .await?;
     Ok(bytes_frame(response))
 }
@@ -206,10 +224,20 @@ pub(crate) struct SaveReport {
 fn save_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim_matches(|c| c == '.' || c == ' ');
-    if trimmed.is_empty() { "snapshot".to_owned() } else { trimmed.chars().take(200).collect() }
+    if trimmed.is_empty() {
+        "snapshot".to_owned()
+    } else {
+        trimmed.chars().take(200).collect()
+    }
 }
 
 /// DD-131：以本人会话下载一个 READY 的 ExportPackage（Asset `read`，Core 逐次授权），经
@@ -235,7 +263,11 @@ pub(crate) async fn platform_api_save(
         .await?;
     if !(200..300).contains(&response.status) {
         let body = serde_json::from_slice(&response.body).unwrap_or(serde_json::Value::Null);
-        return Ok(SaveReport { status: response.status, saved: false, body });
+        return Ok(SaveReport {
+            status: response.status,
+            saved: false,
+            body,
+        });
     }
     let filename = save_filename(&suggested_filename);
     let extension = std::path::Path::new(&filename)
@@ -251,7 +283,11 @@ pub(crate) async fn platform_api_save(
         &response.body,
     )
     .await?;
-    Ok(SaveReport { status: response.status, saved, body: serde_json::Value::Null })
+    Ok(SaveReport {
+        status: response.status,
+        saved,
+        body: serde_json::Value::Null,
+    })
 }
 
 /// 以本机设备身份登记公钥（`DD-79`）。

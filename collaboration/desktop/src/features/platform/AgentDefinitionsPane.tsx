@@ -3,7 +3,6 @@
 // DD-131: the native snapshot host (nativeAgentSnapshotHost.ts) saves ExportPackages through Rust,
 // sends them through the original native DM publish path and copies Relay media links.
 import { useMemo, type ComponentProps } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { AgentDefinitionsPage } from "@client-kit/platform/react/pages";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
@@ -11,7 +10,7 @@ import { ReadFailure } from "@client-kit/platform/react/ui";
 import { useProfileQuery } from "@/features/profile/hooks";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { uploadProfileAvatar } from "@/shared/api/tauriProfiles";
-import { getChannels, uploadMediaBytes } from "@/shared/api/tauri";
+import { getChannels, invokeTauri, TauriInvokeError, uploadMediaBytes } from "@/shared/api/tauri";
 import { copyTextToSystemClipboard } from "@/shared/api/tauriMedia";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { channelsQueryKey } from "@/features/channels/hooks";
@@ -41,7 +40,11 @@ export function AgentDefinitionsPane(props: Props) {
     performDefaultHaptic,
   }) : undefined, [actor, community.relayUrl, locale]);
   const snapshotHost = useMemo(() => createNativeAgentSnapshotHost({
-    invoke: (command, args) => invoke(command, args),
+    // The shared native host reads the raw Rust error (e.g. PLATFORM_NOT_SIGNED_IN).
+    invoke: async (command, args) => {
+      try { return await invokeTauri<unknown>(command, args); }
+      catch (error) { throw error instanceof TauriInvokeError ? error.payload : error; }
+    },
     onSessionEnded: () => { void client.session({ fresh: true }).catch(() => undefined); },
     getChannels: async () => {
       const snapshot = await getChannels(null);

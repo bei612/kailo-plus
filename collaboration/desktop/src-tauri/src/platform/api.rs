@@ -279,9 +279,8 @@ impl NativeSession {
         body: Option<(&[u8], &str)>,
         snapshot_filename: Option<&str>,
     ) -> Result<BytesResponse, String> {
-        let body = body.map_or(RequestBody::None, |(data, content_type)| RequestBody::Bytes {
-            data,
-            content_type,
+        let body = body.map_or(RequestBody::None, |(data, content_type)| {
+            RequestBody::Bytes { data, content_type }
         });
         let (resp, generation) = self
             .send(http, cfg, method, path, body, snapshot_filename)
@@ -385,7 +384,10 @@ impl NativeSession {
 enum RequestBody<'a> {
     None,
     Json(&'a serde_json::Value),
-    Bytes { data: &'a [u8], content_type: &'a str },
+    Bytes {
+        data: &'a [u8],
+        content_type: &'a str,
+    },
 }
 
 /// DD-131 原版团队 PNG 快照上限 50 MiB，另留错误体与编码余量。

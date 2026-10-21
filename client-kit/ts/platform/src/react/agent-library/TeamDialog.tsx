@@ -29,6 +29,8 @@ export type TeamDialogValues = {
   name: string;
   description: string;
   memberAgentResourceIds: string[];
+  /** Members hidden from the editor; an update replaces the member list, so editing is blocked. */
+  hiddenMemberCount?: number;
 };
 
 export type TeamSubmitInput = TeamDialogValues;
@@ -69,8 +71,10 @@ export function TeamDialog({
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<string[]>([]);
   const [initialSelectedIdsForSort, setInitialSelectedIdsForSort] = React.useState<string[]>([]);
   const [confirmRemovalOpen, setConfirmRemovalOpen] = React.useState(false);
-  const locked = isPending || unknown;
   const isEditMode = Boolean(initialValues?.resourceId);
+  // Core replaces the whole member list on update: a hidden member would silently be dropped.
+  const hiddenCount = isEditMode ? initialValues?.hiddenMemberCount ?? 0 : 0;
+  const locked = isPending || unknown || hiddenCount > 0;
   const missingInitialMemberCount = React.useMemo(() => {
     if (!initialValues) return 0;
     return countMissingMemberIds(initialValues.memberAgentResourceIds, definitions);
@@ -85,7 +89,7 @@ export function TeamDialog({
   }, [initialValues, open]);
 
   function handleOpenChange(next: boolean) {
-    if (!next && locked) return;
+    if (!next && (isPending || unknown)) return;
     if (!next) {
       setName("");
       setTeamDescription("");
@@ -152,9 +156,9 @@ export function TeamDialog({
   return (
     <>
       <Dialog onOpenChange={handleOpenChange} open={open}>
-        <DialogContent className="max-w-2xl overflow-hidden p-0" data-testid="team-dialog" showCloseButton={!locked}
-          onEscapeKeyDown={(event) => { if (locked) event.preventDefault(); }}
-          onInteractOutside={(event) => { if (locked) event.preventDefault(); }}>
+        <DialogContent className="max-w-2xl overflow-hidden p-0" data-testid="team-dialog" showCloseButton={!isPending && !unknown}
+          onEscapeKeyDown={(event) => { if (isPending || unknown) event.preventDefault(); }}
+          onInteractOutside={(event) => { if (isPending || unknown) event.preventDefault(); }}>
           <div className="flex max-h-[85vh] flex-col">
             <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
               <DialogTitle>{title}</DialogTitle>
@@ -200,6 +204,11 @@ export function TeamDialog({
                 {missingInitialMemberCount > 0 ? (
                   <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {t(missingInitialMemberCount === 1 ? "agentTeams.dialogMissing.one" : "agentTeams.dialogMissing.other", { count: missingInitialMemberCount })}
+                  </p>
+                ) : null}
+                {hiddenCount > 0 ? (
+                  <p className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3 text-sm" data-testid="team-dialog-hidden-locked" role="status">
+                    {t(hiddenCount === 1 ? "agentTeams.hiddenEditLocked.one" : "agentTeams.hiddenEditLocked.other", { count: hiddenCount })}
                   </p>
                 ) : null}
                 {atLimit ? <p className="text-xs text-muted-foreground" role="status">{t("agentTeams.memberLimit", { count: MAX_TEAM_MEMBERS })}</p> : null}
@@ -253,12 +262,12 @@ export function TeamDialog({
 
             <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border/60 px-6 py-4">
               <div className="flex items-center gap-2">
-                <Button disabled={locked} onClick={() => handleOpenChange(false)} size="sm" type="button" variant="outline">
+                <Button disabled={isPending || unknown} onClick={() => handleOpenChange(false)} size="sm" type="button" variant="outline">
                   {t("buzz.cancel")}
                 </Button>
                 <Button
                   data-testid="team-dialog-submit"
-                  disabled={!unknown && (name.trim().length === 0 || selectedMemberIds.length === 0 || isPending)}
+                  disabled={!unknown && (name.trim().length === 0 || selectedMemberIds.length === 0 || isPending || hiddenCount > 0)}
                   onClick={handleSubmit}
                   size="sm"
                   type="button"

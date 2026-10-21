@@ -116,7 +116,7 @@ export function TeamsSection({
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {owner ? (
-                        <DropdownMenuItem disabled={isPending} onClick={() => onEdit(team)}>
+                        <DropdownMenuItem disabled={isPending || team.hiddenMemberCount > 0} onClick={() => onEdit(team)}>
                           <Pencil className="h-4 w-4" />
                           {t("agentTeams.edit")}
                         </DropdownMenuItem>

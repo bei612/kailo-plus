@@ -22,6 +22,6 @@ export function useTeamMentionCandidates(
     staleTime: 30_000,
     queryFn: () => loadAgentTeams(client),
   });
-  const teams = enabled && query.isSuccess ? query.data : undefined;
+  const teams = enabled && query.isSuccess && Array.isArray(query.data) ? query.data : undefined;
   return React.useMemo(() => teams && agents && agents.length > 0 ? buildTeamMentionCandidates(teams, agents) : [], [teams, agents]);
 }
