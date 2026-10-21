@@ -68,16 +68,6 @@ impl Semantic {
         )
     }
 
-    pub(crate) fn is_transfer(self) -> bool {
-        matches!(
-            self,
-            Self::AgentDefinitionExport
-                | Self::AgentTeamExport
-                | Self::AgentDefinitionImport
-                | Self::AgentTeamImport
-        )
-    }
-
     /// 目标是既有 agent.team Resource 的动作。
     fn targets_team(self) -> bool {
         matches!(

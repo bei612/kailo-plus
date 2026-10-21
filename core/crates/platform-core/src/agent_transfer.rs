@@ -163,9 +163,7 @@ struct Upload {
     session_id: Uuid,
     principal_id: Uuid,
     snapshot_kind: String,
-    encoding: String,
     content_digest: String,
-    byte_size: i32,
     content: Option<Vec<u8>>,
     consumed_by_action_execution_id: Option<Uuid>,
 }
@@ -177,7 +175,7 @@ async fn upload(
     lock: bool,
 ) -> Result<Option<Upload>, sqlx::Error> {
     sqlx::query_as(&format!(
-        "select id,session_id,principal_id,snapshot_kind,encoding,content_digest,byte_size,content,
+        "select id,session_id,principal_id,snapshot_kind,content_digest,content,
          consumed_by_action_execution_id from admission.agent_snapshot_upload
          where id=$1 and tenant_id=$2 and expires_at>now(){}",
         if lock { " for update" } else { "" }
@@ -1499,7 +1497,7 @@ pub async fn upload_snapshot(
         .get("x-snapshot-filename")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let decoded = match snapshot::decode(&body, file_name.as_deref()) {
+    let mut decoded = match snapshot::decode(&body, file_name.as_deref()) {
         Ok(d) => d,
         Err(snapshot::DecodeError::TooLarge) => {
             return crate::web_transport::error_body(
@@ -1513,6 +1511,34 @@ pub async fn upload_snapshot(
     };
     if q.kind.as_deref().is_some_and(|k| k != decoded.kind.wire()) {
         return invalid().respond(None);
+    }
+    // 能力需求只保留本部署运行合同支持的契约键；预览先提示将被丢弃的成员。
+    let supported: std::collections::HashSet<String> =
+        crate::agent_version::runtime_profile_directory()
+            .map(|d| {
+                d.profiles
+                    .iter()
+                    .flat_map(|p| {
+                        p.capability_contract
+                            .capability_requirements
+                            .iter()
+                            .cloned()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+    for member in &mut decoded.members {
+        if member
+            .capability_requirements
+            .iter()
+            .any(|r| !supported.contains(r))
+        {
+            member
+                .discarded
+                .push(snapshot::Discarded::CapabilityRequirements);
+            member.discarded.sort();
+            member.discarded.dedup();
+        }
     }
     let id = Uuid::new_v4();
     let digest = hex::encode(Sha256::digest(&body));

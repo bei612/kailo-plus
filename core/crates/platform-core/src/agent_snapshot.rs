@@ -270,7 +270,9 @@ pub(crate) fn decode(bytes: &[u8], file_name: Option<&str>) -> Result<Decoded, D
     let kind = match format {
         Some(AGENT_FORMAT) => Kind::Agent,
         Some(TEAM_FORMAT) => Kind::Team,
-        // 锁定卡、旧 `{version:1,type:"team"}` 团队文件与其他 format 一律拒绝。
+        // DD-131(5)：锁定卡需要 Agent 私钥才能解开，Kailo 不向客户端交付，整包拒绝。
+        Some(LOCKED_FORMAT) => return Err(DecodeError::Invalid),
+        // 旧 `{version:1,type:"team"}` 团队文件与其他 format 一律拒绝。
         _ => return Err(DecodeError::Invalid),
     };
     if png_kind.is_some_and(|k| k != kind) {
