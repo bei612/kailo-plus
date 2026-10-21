@@ -306,11 +306,21 @@ describe("DD-131(2)(5) upload preview and governed import", () => {
       discardedFields: [AgentSnapshotDiscardedField.RespondToAllowlist, AgentSnapshotDiscardedField.Memory, AgentSnapshotDiscardedField.Runtime] }],
   } as AgentSnapshotUploadView;
 
+  it("keeps import unavailable when the Tenant import directory says canImport=false", async () => {
+    const fake = transport((request) => request.path === "/api/v1/agent-snapshots/import-configuration?offset=0"
+      ? ok({ canImport: false, nextOffset: null, profiles: [], routes: [] }) : undefined);
+    await render(<PlatformProvider client={createBffClient({ send: fake.send })} locale="en" currentPrincipalId={OWNER}>
+      <AgentSnapshotImportDialog open preview={preview} onOpenChange={vi.fn()} onImported={vi.fn()} />
+    </PlatformProvider>);
+    await settle();
+    expect(document.querySelector('[data-testid="agent-snapshot-import-not-allowed"]')).not.toBeNull();
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="agent-snapshot-import-confirm"]')!.disabled).toBe(true);
+    expect(fake.actions()).toEqual([]);
+  });
+
   it("shows discarded fields, requires this Tenant's runtime choice and submits agent.definition.import", async () => {
     const fake = transport((request) => {
-      if (request.path === "/api/v1/agent-definitions") return ok({ definitions: [definition(A, "Scribe")] });
-      if (request.path === `/api/v1/agent-definitions/${A}/version-configuration?offset=0`) return ok({ agentResourceId: A, resourceVersion: 1,
-        canCreate: true, nextOffset: null, profiles: [{ key: "codex", kind: "SERVER_CODEX", status: "ACTIVE", webAvailability: "ENABLED",
+      if (request.path === "/api/v1/agent-snapshots/import-configuration?offset=0") return ok({ canImport: true, nextOffset: null, profiles: [{ key: "codex", kind: "SERVER_CODEX", status: "ACTIVE", webAvailability: "ENABLED",
           capabilityContract: { capabilityRequirements: [], maxIdleTimeoutSeconds: 60, maxParallelism: 4, maxTurnDurationSeconds: 600, replyPolicies: ["thread"] } }],
         routes: [{ resourceId: ROUTE, resourceVersion: 1, ownerPrincipalId: OWNER, homeWorkspaceId: null, nativeConfigResourceId: ROUTE,
           nativeRevision: 1, nativeConfigHash: "c".repeat(64) }] });

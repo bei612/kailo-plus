@@ -565,7 +565,7 @@ function CatalogCopyPanel({ source, definition, onBusyChange, onChanged, onCance
   const [result, setResult] = React.useState<CopyResult | null>(null);
   const scope = React.useRef({ active: true });
   React.useEffect(() => { const current = { active: true }; scope.current = current; return () => { current.active = false; }; }, []);
-  const profile = sources.state.status === "ok" ? sources.state.data?.profiles.find((value) => value.key === profileKey) : undefined;
+  const profile = sources.state.status === "ok" ? sources.state.data.profiles.find((value) => value.key === profileKey) : undefined;
   const problems = profile ? copyContentProblems(source.content, profile) : [];
   const valid = !!name.trim() && /^[a-z0-9][a-z0-9-]*$/.test(slug.trim()) && !!profile && !!routeId && problems.length === 0;
   const copy = async () => {
@@ -596,7 +596,7 @@ function CatalogCopyPanel({ source, definition, onBusyChange, onChanged, onCance
         <p className="text-xs text-muted-foreground">{t("workspace.create.slugHint")}</p>
       </div>
       <SnapshotImportRuntimeFields sources={sources.state} onReload={sources.reload} profileKey={profileKey} routeId={routeId}
-        onProfileChange={setProfileKey} onRouteChange={setRouteId} disabled={busy || result !== null} testIdPrefix="catalog-copy" />
+        onProfileChange={setProfileKey} onRouteChange={setRouteId} disabled={busy || result !== null} testIdPrefix="catalog-copy" requireImport={false} />
       {problems.length > 0 ? <p className="text-sm text-destructive" data-testid="catalog-copy-problems" role="alert">{t("agentCatalog.copyIncompatible", { fields: problems.join(", ") })}</p> : null}
       {resultText ? <p className="text-sm" data-outcome={result?.outcome} data-testid="community-catalog-copy-result" role="status">{resultText}</p> : null}
       <div className="flex justify-end gap-2">

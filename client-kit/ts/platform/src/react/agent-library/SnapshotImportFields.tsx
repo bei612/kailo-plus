@@ -1,15 +1,13 @@
 // DD-131(2)(3): the importer chooses this Tenant's runtime contract and model route for the new DRAFT
-// (the source Tenant's references are not portable). The choices come from the same directory the
-// governed version editor uses (`GET /agent-definitions/{id}/version-configuration`: Tenant-wide
-// runtime profiles and the routes the caller may reference), read through a Definition the caller
-// can read; Core re-validates both on `agent.definition.import` / `agent.team.import`. The preview
+// (the source Tenant's references are not portable). The choices come from the Tenant import directory
+// (`GET /agent-snapshots/import-configuration`, same filtering as the version editor's directory);
+// `canImport` says whether this session may import at all. Core re-validates both on `agent.definition.import` / `agent.team.import`. The preview
 // lists the original fields that were discarded, never their content (allowlist keys, runtime, ...).
 import * as React from "react";
 import {
   AgentSnapshotDiscardedField,
-  ResourceState,
   RuntimeProfileKind,
-  type AgentVersionConfigurationPage,
+  type AgentImportConfigurationPage,
   type RuntimeProfileDirectoryProfilesItemCapabilityContract,
 } from "@client-kit/contracts";
 import type { PlatformMessageKey } from "../../i18n";
@@ -36,25 +34,24 @@ const DISCARDED_LABELS = {
 export type ImportRuntimeProfile = { key: string; contract: RuntimeProfileDirectoryProfilesItemCapabilityContract };
 
 export type ImportRuntimeSources = {
+  canImport: boolean;
   profiles: ImportRuntimeProfile[];
   routes: { resourceId: string; label: string }[];
 };
 
 const MAX_SOURCE_PAGES = 20;
 
-/** Tenant runtime profiles and referenceable model routes, read through a readable Definition. */
-export async function loadImportRuntimeSources(client: Pick<BffClient, "agentDefinitions" | "agentVersionConfiguration">): Promise<ImportRuntimeSources | null> {
-  const page = await client.agentDefinitions(0);
-  if (!page || !Array.isArray(page.definitions)) throw new TransportError("Agent catalog unavailable");
-  const source = page.definitions.find((definition) => definition?.resourceState === ResourceState.Active && !!definition.resourceId);
-  if (!source) return null;
+/** Tenant runtime profiles and referenceable model routes for a new imported or copied DRAFT. */
+export async function loadImportRuntimeSources(client: Pick<BffClient, "agentImportConfiguration">): Promise<ImportRuntimeSources> {
+  let canImport = true;
   const profiles = new Map<string, ImportRuntimeProfile>();
   const routes = new Map<string, string>();
   let offset = 0;
   for (let index = 0; index < MAX_SOURCE_PAGES; index += 1) {
-    const configuration: AgentVersionConfigurationPage = await client.agentVersionConfiguration(source.resourceId, offset);
-    if (!configuration || configuration.agentResourceId !== source.resourceId || !Array.isArray(configuration.profiles) || !Array.isArray(configuration.routes))
+    const configuration: AgentImportConfigurationPage = await client.agentImportConfiguration(offset);
+    if (!configuration || typeof configuration.canImport !== "boolean" || !Array.isArray(configuration.profiles) || !Array.isArray(configuration.routes))
       throw new TransportError("Runtime directory unavailable");
+    canImport &&= configuration.canImport;
     for (const profile of configuration.profiles)
       if (profile && typeof profile.key === "string" && profile.key.trim() && profile.kind === RuntimeProfileKind.ServerCodex
         && profile.status === "ACTIVE" && !!profile.capabilityContract && Array.isArray(profile.capabilityContract.replyPolicies)
@@ -67,10 +64,15 @@ export async function loadImportRuntimeSources(client: Pick<BffClient, "agentDef
     if (!Number.isSafeInteger(configuration.nextOffset) || configuration.nextOffset <= offset) throw new TransportError("Runtime directory cursor mismatch");
     offset = configuration.nextOffset;
   }
-  return { profiles: [...profiles.values()], routes: [...routes].map(([resourceId, label]) => ({ resourceId, label })) };
+  return { canImport, profiles: [...profiles.values()], routes: [...routes].map(([resourceId, label]) => ({ resourceId, label })) };
 }
 
-export type SourcesState = { status: "pending" } | { status: "ok"; data: ImportRuntimeSources | null } | { status: "error" };
+export type SourcesState = { status: "pending" } | { status: "ok"; data: ImportRuntimeSources } | { status: "error" };
+
+/** Whether the import confirm may be offered at all (Core still decides on submit). */
+export function importAllowed(state: SourcesState): boolean {
+  return state.status === "ok" && state.data.canImport;
+}
 
 export function useImportRuntimeSources(enabled: boolean) {
   const client = useBffClient();
@@ -87,7 +89,7 @@ export function useImportRuntimeSources(enabled: boolean) {
   return { state, reload: () => setRound((value) => value + 1) };
 }
 
-export function SnapshotImportRuntimeFields({ sources, onReload, profileKey, routeId, onProfileChange, onRouteChange, disabled, testIdPrefix }: {
+export function SnapshotImportRuntimeFields({ sources, onReload, profileKey, routeId, onProfileChange, onRouteChange, disabled, testIdPrefix, requireImport = true }: {
   sources: SourcesState;
   onReload: () => void;
   profileKey: string;
@@ -96,6 +98,8 @@ export function SnapshotImportRuntimeFields({ sources, onReload, profileKey, rou
   onRouteChange: (value: string) => void;
   disabled: boolean;
   testIdPrefix: string;
+  /** Snapshot import needs `canImport`; the catalog copy only borrows the directory. */
+  requireImport?: boolean;
 }) {
   const t = useUiT();
   return (
@@ -107,7 +111,9 @@ export function SnapshotImportRuntimeFields({ sources, onReload, profileKey, rou
       {sources.status === "pending" ? <p className="text-sm text-muted-foreground" role="status">{t("platform.loading")}</p>
         : sources.status === "error" ? <p className="text-sm text-destructive" role="alert">{t("platform.loadFailed")}{" "}
           <button className="underline" onClick={onReload} type="button">{t("platform.retry")}</button></p>
-        : !sources.data || sources.data.profiles.length === 0 || sources.data.routes.length === 0
+        : !sources.data.canImport && requireImport
+          ? <p className="text-sm text-muted-foreground" data-testid={`${testIdPrefix}-not-allowed`} role="status">{t("agentSnapshots.importNotAllowed")}</p>
+        : sources.data.profiles.length === 0 || sources.data.routes.length === 0
           ? <p className="text-sm text-muted-foreground" role="status">{t("agentSnapshots.runtimeUnavailable")}</p>
           : <>
             <div className="space-y-1.5">

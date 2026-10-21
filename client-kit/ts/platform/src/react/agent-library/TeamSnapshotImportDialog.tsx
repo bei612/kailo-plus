@@ -13,7 +13,7 @@ import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from ".
 import { useUiT } from "../context";
 import { useGovernedChannelAction } from "../channel-management-actions";
 import { agentActionOutcomeText } from "./agentActionOutcome";
-import { DiscardedFields, SnapshotImportRuntimeFields, useImportRuntimeSources } from "./SnapshotImportFields";
+import { DiscardedFields, importAllowed, SnapshotImportRuntimeFields, useImportRuntimeSources } from "./SnapshotImportFields";
 
 type TeamSnapshotImportDialogProps = {
   open: boolean;
@@ -35,7 +35,7 @@ export function TeamSnapshotImportDialog({ open, preview, onOpenChange, onImport
   const settled = action.outcome !== null && action.outcome.kind !== "unknown" && action.outcome.kind !== "rejected";
   const phase: "preview" | "confirming" | "result" = settled ? "result" : action.busy ? "confirming" : "preview";
   const locked = action.busy || action.unknown;
-  const canConfirm = !!team && preview.members.length > 0 && !expired && !!profileKey && !!routeId && !action.busy;
+  const canConfirm = !!team && preview.members.length > 0 && !expired && importAllowed(sources.state) && !!profileKey && !!routeId && !action.busy;
   const discarded = [...(team?.discardedFields ?? []), ...preview.members.flatMap((member) => member.discardedFields)];
 
   const confirm = () => {

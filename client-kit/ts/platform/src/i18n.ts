@@ -4621,6 +4621,7 @@ export const platformMessages = {
   "agentSnapshots.discarded.unknown": { en: "Other field", "zh-CN": "其他字段" },
   "agentSnapshots.runtimeTitle": { en: "Runtime and model route", "zh-CN": "运行合同与模型路由" },
   "agentSnapshots.runtimeHint": { en: "Choose this organization's runtime profile and model route for the new draft.", "zh-CN": "为新草稿选择本组织的运行合同与模型路由。" },
+  "agentSnapshots.importNotAllowed": { en: "You can't import agents in this organization.", "zh-CN": "你无法在本组织导入 Agent。" },
   "agentSnapshots.runtimeUnavailable": { en: "No runtime profile or model route is available to you here.", "zh-CN": "这里没有你可用的运行合同或模型路由。" },
   "agentSnapshots.uploadExpired": { en: "This upload has expired. Choose the file again.", "zh-CN": "此次上传已过期，请重新选择文件。" },
   "agentSnapshots.creatingAgent": { en: "Requesting agent import…", "zh-CN": "正在申请导入 Agent…" },

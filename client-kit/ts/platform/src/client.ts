@@ -109,6 +109,7 @@ import type {
   AgentTeamPage,
   AgentTeamView,
   AgentSnapshotUploadView,
+  AgentImportConfigurationPage,
   ExportPackageView,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
@@ -348,6 +349,12 @@ export function createBffClient(transport: BffTransport) {
         headers: { "X-Snapshot-Filename": snapshotFilenameHeader(fileName) } });
       return unwrap<AgentSnapshotUploadView>({ method: "POST", path }, { status: reply.status, body: bytesJson(reply) });
     },
+    /**
+     * DD-131(2)(3): this Tenant's runtime profiles and referenceable model routes for a snapshot
+     * import's new DRAFT (same filtering as version-configuration, not bound to a Definition).
+     */
+    agentImportConfiguration: (offset = 0) =>
+      get<AgentImportConfigurationPage>(`/api/v1/agent-snapshots/import-configuration?offset=${offset}`),
     /** One ExportPackage's metadata (assetId = export ActionExecution ID); 404 until generated. */
     exportPackage: (assetId: string) =>
       get<ExportPackageView>(`/api/v1/export-packages/${encodeURIComponent(assetId)}`, true),

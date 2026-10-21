@@ -15,7 +15,7 @@ import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from ".
 import { useUiT } from "../context";
 import { useGovernedChannelAction } from "../channel-management-actions";
 import { agentActionOutcomeText } from "./agentActionOutcome";
-import { DiscardedFields, SnapshotImportRuntimeFields, useImportRuntimeSources } from "./SnapshotImportFields";
+import { DiscardedFields, importAllowed, SnapshotImportRuntimeFields, useImportRuntimeSources } from "./SnapshotImportFields";
 
 type AgentSnapshotImportDialogProps = {
   open: boolean;
@@ -38,7 +38,7 @@ export function AgentSnapshotImportDialog({ open, preview, onOpenChange, onImpor
   const settled = action.outcome !== null && action.outcome.kind !== "unknown" && action.outcome.kind !== "rejected";
   const phase: "preview" | "confirming" | "result" = settled ? "result" : action.busy ? "confirming" : "preview";
   const locked = action.busy || action.unknown;
-  const canConfirm = !!member && !expired && !!profileKey && !!routeId && !action.busy;
+  const canConfirm = !!member && !expired && importAllowed(sources.state) && !!profileKey && !!routeId && !action.busy;
 
   const confirm = () => {
     if (action.unknown) { void action.submit(); return; }
