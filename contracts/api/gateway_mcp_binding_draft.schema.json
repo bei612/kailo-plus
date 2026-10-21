@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_binding_draft.schema.json",
+  "title": "GatewayMcpBindingDraft",
+  "description": "DD-134(5)⑥：需由运维加入交付目录 protocolPeers[].bindings 的条目（不含 secret）；Core 回读到同 bindingId 的条目后才放行 application_binding.create。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bindingId",
+    "servicePrincipalId",
+    "configDigest",
+    "adapterServiceRef",
+    "directoryEntryJson"
+  ],
+  "properties": {
+    "bindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "servicePrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "configDigest": {
+      "type": "string"
+    },
+    "adapterServiceRef": {
+      "type": "string"
+    },
+    "directoryEntryJson": {
+      "type": "string"
+    }
+  }
+}

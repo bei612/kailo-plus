@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_config_history.schema.json",
+  "title": "GatewayConfigHistory",
+  "description": "DD-134(3)⑥：一个 ConfigResource 的 Core 写入证据（打码后的值）与相邻已记录 revision 之间的差异；当前 revision 没有证据时 currentSource=UNRECORDED。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "id",
+    "currentSource",
+    "revisions"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "currentRevision": {
+      "type": "integer"
+    },
+    "currentSource": {
+      "$ref": "../enums/gateway_config_revision_source.schema.json"
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "title": "GatewayConfigRevisionView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "recordedAt",
+          "valueJson",
+          "valueDigest",
+          "deleted",
+          "changes"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valueJson": {
+            "type": "string"
+          },
+          "valueDigest": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "actionExecutionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actionKey": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "title": "GatewayConfigChange",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "change"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "RFC 6901 JSON pointer。"
+                },
+                "change": {
+                  "$ref": "../enums/gateway_config_change_kind.schema.json"
+                },
+                "beforeJson": {
+                  "type": "string"
+                },
+                "afterJson": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

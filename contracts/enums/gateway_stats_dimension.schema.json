@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_stats_dimension.schema.json",
+  "title": "GatewayStatsDimension",
+  "description": "DD-134(3)④：聚合维度。TOOL、AGENT、BINDING 只在 TENANT 范围可用；TENANT 只在 PLATFORM 范围可用。",
+  "type": "string",
+  "enum": [
+    "MODEL_ROUTE",
+    "TOOL",
+    "AGENT",
+    "BINDING",
+    "TENANT"
+  ]
+}

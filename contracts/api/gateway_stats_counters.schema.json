@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_stats_counters.schema.json",
+  "title": "GatewayStatsCounters",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "DD-134(3)④：计数与分位数。错误率由呈现层按 failed/requests 计算；模型与工具时延分列，不混算。",
+  "required": [
+    "requests",
+    "succeeded",
+    "failed",
+    "denied",
+    "running",
+    "unknown",
+    "billingUnavailable",
+    "inputTokens",
+    "outputTokens",
+    "totalTokens"
+  ],
+  "properties": {
+    "requests": {
+      "type": "integer"
+    },
+    "succeeded": {
+      "type": "integer"
+    },
+    "failed": {
+      "type": "integer"
+    },
+    "denied": {
+      "type": "integer"
+    },
+    "running": {
+      "type": "integer"
+    },
+    "unknown": {
+      "type": "integer"
+    },
+    "billingUnavailable": {
+      "type": "integer",
+      "description": "模型调用：Gateway 日志已有而没有 durable UsageEvent 或已记 BILLING_UNAVAILABLE 审计的次数（14 §8）。"
+    },
+    "inputTokens": {
+      "type": "integer"
+    },
+    "outputTokens": {
+      "type": "integer"
+    },
+    "totalTokens": {
+      "type": "integer"
+    },
+    "modelP50Ms": {
+      "type": "integer",
+      "description": "模型调用 Gateway durationMs 的 P50；没有模型调用时省略。"
+    },
+    "modelP95Ms": {
+      "type": "integer"
+    },
+    "toolP50Ms": {
+      "type": "integer",
+      "description": "工具调用 Core 观测时延（INTENT 到 OUTCOME）的 P50；没有已终结工具调用时省略。"
+    },
+    "toolP95Ms": {
+      "type": "integer"
+    }
+  }
+}

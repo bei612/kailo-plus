@@ -519,6 +519,59 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/platform/component-releases",
             get(crate::component_release::list),
         )
+        // DD-134 网关管理区：只读查询；范围取会话 Tenant，每次 fresh 授权。
+        .exposed_route(
+            "/api/v1/gateway/access",
+            get(crate::gateway_admin::access::get),
+        )
+        .exposed_route(
+            "/api/v1/gateway/stats",
+            get(crate::gateway_admin::stats::stats),
+        )
+        .exposed_route(
+            "/api/v1/gateway/calls",
+            get(crate::gateway_admin::stats::calls),
+        )
+        .exposed_route(
+            "/api/v1/gateway/calls/{call_id}",
+            get(crate::gateway_admin::stats::call_detail),
+        )
+        .exposed_route(
+            "/api/v1/gateway/tools",
+            get(crate::gateway_admin::tools::list),
+        )
+        .exposed_route(
+            "/api/v1/gateway/model-routes",
+            get(crate::gateway_admin::routes::list),
+        )
+        .exposed_route(
+            "/api/v1/gateway/model-sources",
+            get(crate::gateway_admin::routes::sources),
+        )
+        .exposed_route(
+            "/api/v1/gateway/mcp/releases",
+            get(crate::gateway_admin::mcp::releases),
+        )
+        .exposed_route(
+            "/api/v1/gateway/mcp/binding-drafts",
+            axum::routing::post(crate::gateway_admin::mcp::binding_draft),
+        )
+        .exposed_route(
+            "/api/v1/platform/gateway/config",
+            get(crate::gateway_admin::config::view),
+        )
+        .exposed_route(
+            "/api/v1/platform/gateway/config/history",
+            get(crate::gateway_admin::config::history),
+        )
+        .exposed_route(
+            "/api/v1/platform/gateway/mcp/peers",
+            get(crate::gateway_admin::mcp::peers),
+        )
+        .exposed_route(
+            "/api/v1/platform/gateway/mcp/probes",
+            axum::routing::post(crate::gateway_admin::probe::run),
+        )
         .exposed_route(
             "/api/v1/automations/{resource_id}",
             get(crate::automation_query::get),

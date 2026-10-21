@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_call_outcome.schema.json",
+  "title": "GatewayCallOutcome",
+  "description": "DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。",
+  "type": "string",
+  "enum": [
+    "SUCCEEDED",
+    "FAILED",
+    "DENIED",
+    "RUNNING",
+    "UNKNOWN"
+  ]
+}

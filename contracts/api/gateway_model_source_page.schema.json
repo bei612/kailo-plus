@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_model_source_page.schema.json",
+  "title": "GatewayModelSourcePage",
+  "description": "DD-134(7)：Gateway 中已存在、尚未被 llm_route 引用的原生 provider 与 model ConfigResource（打码），供 llm_route.create 选择；revision 与 sha256 为 Core 回读值。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sources"
+  ],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "title": "GatewayModelSource",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model",
+          "providerType",
+          "modelName"
+        ],
+        "properties": {
+          "provider": {
+            "title": "GatewayConfigRef",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "model": {
+            "title": "GatewayConfigRef",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "providerType": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "credentialRequired": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

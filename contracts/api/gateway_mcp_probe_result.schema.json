@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_probe_result.schema.json",
+  "title": "GatewayMcpProbeResult",
+  "description": "DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "probeId",
+    "adapterServiceRef",
+    "probedAt",
+    "toolSchemaDigest",
+    "tools"
+  ],
+  "properties": {
+    "probeId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "adapterServiceRef": {
+      "type": "string"
+    },
+    "probedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "serverName": {
+      "type": "string"
+    },
+    "serverVersion": {
+      "type": "string"
+    },
+    "protocolVersion": {
+      "type": "string"
+    },
+    "toolSchemaDigest": {
+      "type": "string"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "title": "GatewayMcpProbedTool",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "inputSchemaJson",
+          "inputSchemaDigest",
+          "matchingContracts"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayTitle": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchemaJson": {
+            "type": "string"
+          },
+          "inputSchemaDigest": {
+            "type": "string"
+          },
+          "outputSchemaJson": {
+            "type": "string"
+          },
+          "outputSchemaDigest": {
+            "type": "string"
+          },
+          "readOnlyHint": {
+            "type": "boolean"
+          },
+          "matchingContracts": {
+            "type": "array",
+            "items": {
+              "title": "GatewayMcpContractMatch",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "categoryKey",
+                "contractVersion",
+                "contractKey",
+                "permission"
+              ],
+              "properties": {
+                "categoryKey": {
+                  "type": "string"
+                },
+                "contractVersion": {
+                  "type": "integer"
+                },
+                "contractKey": {
+                  "type": "string"
+                },
+                "permission": {
+                  "$ref": "../enums/capability_permission.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

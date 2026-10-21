@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_config_change_kind.schema.json",
+  "title": "GatewayConfigChangeKind",
+  "description": "DD-134(3)⑥：打码后的值在相邻两个已记录 revision 之间按 JSON 路径的差异。",
+  "type": "string",
+  "enum": [
+    "ADDED",
+    "REMOVED",
+    "CHANGED"
+  ]
+}

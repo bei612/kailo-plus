@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_tool_page.schema.json",
+  "title": "GatewayToolPage",
+  "description": "DD-134(6)：本 Tenant 的 PLATFORM_NATIVE 与 APPLICATION 工具（按 Tool Resource discover 过滤），附时间窗内调用统计。停用只作用于所属连接；PLATFORM_NATIVE 无启停入口。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "from",
+    "to",
+    "tools"
+  ],
+  "properties": {
+    "from": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "to": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "title": "GatewayToolView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resourceId",
+          "resourceVersion",
+          "name",
+          "source",
+          "resourceState",
+          "actionKey",
+          "requests",
+          "failed",
+          "denied",
+          "canDisableBinding",
+          "canTestCall"
+        ],
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceVersion": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "PLATFORM_NATIVE",
+              "APPLICATION"
+            ]
+          },
+          "resourceState": {
+            "$ref": "../enums/resource_state.schema.json"
+          },
+          "actionKey": {
+            "type": "string"
+          },
+          "capabilityContractKey": {
+            "type": "string"
+          },
+          "contractPermission": {
+            "$ref": "../enums/capability_permission.schema.json"
+          },
+          "applicationBindingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "applicationBindingVersion": {
+            "type": "integer"
+          },
+          "bindingState": {
+            "$ref": "../enums/application_binding_state.schema.json"
+          },
+          "bindingWorkspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "componentTypeKey": {
+            "type": "string"
+          },
+          "componentReleaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "releaseVersion": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "denied": {
+            "type": "integer"
+          },
+          "toolP95Ms": {
+            "type": "integer"
+          },
+          "canDisableBinding": {
+            "type": "boolean"
+          },
+          "canTestCall": {
+            "type": "boolean",
+            "description": "契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时 fresh 重做。"
+          },
+          "testCall": {
+            "title": "GatewayToolTestCall",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actionKey",
+              "actionVersion",
+              "inputSchemaJson",
+              "resultExposurePolicyId",
+              "resultExposurePolicyVersion",
+              "targets"
+            ],
+            "properties": {
+              "actionKey": {
+                "type": "string"
+              },
+              "actionVersion": {
+                "type": "integer"
+              },
+              "inputSchemaJson": {
+                "type": "string",
+                "description": "契约固定的输入 schema（canonical JSON）。"
+              },
+              "resultExposurePolicyId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "resultExposurePolicyVersion": {
+                "type": "integer"
+              },
+              "targets": {
+                "type": "array",
+                "items": {
+                  "title": "GatewayToolTestTarget",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resourceId",
+                    "resourceVersion",
+                    "displayName"
+                  ],
+                  "properties": {
+                    "resourceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "resourceVersion": {
+                      "type": "integer"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "nextOffset": {
+      "type": "integer"
+    }
+  }
+}

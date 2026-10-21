@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_stats.schema.json",
+  "title": "GatewayStats",
+  "description": "DD-134(3)：时间窗内按一个维度的聚合与时间桶。每次请求实时计算；扫描原始记录超出上限时 truncated=true，结果只基于已扫描部分。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "from",
+    "to",
+    "bucketSeconds",
+    "dimension",
+    "truncated",
+    "modelLogAvailable",
+    "totals",
+    "rows",
+    "buckets"
+  ],
+  "properties": {
+    "scope": {
+      "$ref": "../enums/gateway_admin_scope.schema.json"
+    },
+    "from": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "to": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bucketSeconds": {
+      "type": "integer"
+    },
+    "dimension": {
+      "$ref": "../enums/gateway_stats_dimension.schema.json"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "modelLogAvailable": {
+      "type": "boolean",
+      "description": "Gateway request log 是否可读；false 时模型调用计数缺失，不显示为零。"
+    },
+    "totals": {
+      "$ref": "gateway_stats_counters.schema.json"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "title": "GatewayStatsRow",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "counters"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "维度键：llm_route Resource ID 或 Gateway route 名、Tool Resource ID、Installation Resource ID、binding ID 或 Tenant ID；UNATTRIBUTED 为无法归属的记录。"
+          },
+          "label": {
+            "type": "string",
+            "description": "受权的展示名（工具名、Agent 名、模型名）；平台范围不含业务名称。"
+          },
+          "kind": {
+            "$ref": "../enums/gateway_call_kind.schema.json"
+          },
+          "counters": {
+            "$ref": "gateway_stats_counters.schema.json"
+          }
+        }
+      }
+    },
+    "buckets": {
+      "type": "array",
+      "items": {
+        "title": "GatewayStatsBucket",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "requests",
+          "failed",
+          "denied",
+          "totalTokens"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requests": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "denied": {
+            "type": "integer"
+          },
+          "totalTokens": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_call_detail.schema.json",
+  "title": "GatewayCallDetail",
+  "description": "DD-134(3)⑤：单次调用下钻。TENANT 范围关联 ActionExecution 与同 operation 的 AuditEvent；PLATFORM 范围只有 call。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "call",
+    "auditEvents"
+  ],
+  "properties": {
+    "call": {
+      "$ref": "gateway_call_view.schema.json"
+    },
+    "execution": {
+      "title": "GatewayCallExecution",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionExecutionId",
+        "operationId",
+        "actionKey",
+        "actionVersion",
+        "gateState",
+        "dispatchState",
+        "createdAt"
+      ],
+      "properties": {
+        "actionExecutionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actionKey": {
+          "type": "string"
+        },
+        "actionVersion": {
+          "type": "integer"
+        },
+        "gateState": {
+          "$ref": "../enums/action_gate_state.schema.json"
+        },
+        "dispatchState": {
+          "$ref": "../enums/action_dispatch_state.schema.json"
+        },
+        "reasonCode": {
+          "$ref": "../enums/reason_code.schema.json"
+        },
+        "parentActionExecutionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "auditEvents": {
+      "type": "array",
+      "items": {
+        "title": "GatewayCallAuditEvent",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "eventType",
+          "actionKey",
+          "decision",
+          "resultCode",
+          "occurredAt"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventType": {
+            "$ref": "../enums/audit_event_type.schema.json"
+          },
+          "actionKey": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "resultCode": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actionExecutionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  }
+}

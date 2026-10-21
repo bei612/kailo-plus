@@ -16,6 +16,9 @@ use crate::{
 
 #[path = "application_model_route.rs"]
 pub(crate) mod application;
+/// DD-134(7)：`llm_route.disable`（`05` §2.13）。
+#[path = "model_route_disable.rs"]
+pub(crate) mod disable;
 
 type CreateInput = contracts::LlmRouteCreateInput;
 

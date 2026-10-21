@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_binding_fact.schema.json",
+  "title": "GatewayMcpBindingFact",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "DD-98/134(5)⑥：交付目录中一条 binding 归属事实（运维域），不是授权；不含 secret。",
+  "required": [
+    "bindingId",
+    "tenantId",
+    "servicePrincipalId",
+    "nativeScopeRef",
+    "configDigest",
+    "isolationMode",
+    "credentialKeys",
+    "bound"
+  ],
+  "properties": {
+    "bindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "servicePrincipalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nativeScopeRef": {
+      "type": "string"
+    },
+    "configDigest": {
+      "type": "string"
+    },
+    "isolationMode": {
+      "$ref": "../enums/application_isolation_mode.schema.json"
+    },
+    "credentialKeys": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "交付的凭据键名（无 locator 与值）。"
+      }
+    },
+    "bound": {
+      "type": "boolean",
+      "description": "已有同 ID 的 ApplicationBinding。"
+    }
+  }
+}
