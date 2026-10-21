@@ -36,6 +36,10 @@ validation:
       ref: model-gateway/fork/verify/llm-instruction-role.md
     - dimension: 领域规则
       ref: core/verify/tenant-deletion.md
+    - dimension: 领域规则
+      ref: core/verify/agent-teams-snapshots.md
+    - dimension: 安全边界
+      ref: core/verify/agent-teams-snapshots.md
 
 implementation:
   owners: [team-platform]
