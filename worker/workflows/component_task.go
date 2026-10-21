@@ -116,6 +116,7 @@ type ComponentTaskInput struct {
 	ReleaseApproval      *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
 	ApplicationBinding   *generated.ApplicationBindingTarget             `json:"applicationBinding,omitempty"`
 	ResourceProvision    *generated.ResourceProvisionTarget              `json:"resourceProvision,omitempty"`
+	ResourceTransfer     *generated.ResourceTransferTarget               `json:"resourceTransfer,omitempty"`
 	ComponentAction      *generated.ComponentActionTarget                `json:"componentAction,omitempty"`
 	ProtocolSession      *generated.ProtocolSessionReconcileTarget       `json:"protocolSession,omitempty"`
 	ProtocolSessionRound *generated.ProtocolSessionReconcileRound        `json:"protocolSessionRound,omitempty"`
@@ -324,7 +325,7 @@ func (t *task) cancel() error {
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") &&
-		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && in.Kind != generated.WorkflowKind("COMPONENT_ACTION") && in.Kind != generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE") && in.Kind != generated.WorkflowKind("CONVERSATION_PROJECTION") && !(in.Kind == generated.TenantLifecycle &&
+		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && in.Kind != generated.WorkflowKind("RESOURCE_EXPORT") && in.Kind != generated.WorkflowKind("RESOURCE_IMPORT") && in.Kind != generated.WorkflowKind("COMPONENT_ACTION") && in.Kind != generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE") && in.Kind != generated.WorkflowKind("CONVERSATION_PROJECTION") && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
@@ -337,6 +338,8 @@ func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 		return componentAction(ctx, in)
 	case generated.WorkflowKind("RESOURCE_PROVISION"):
 		return resourceProvision(ctx, in)
+	case generated.WorkflowKind("RESOURCE_EXPORT"), generated.WorkflowKind("RESOURCE_IMPORT"):
+		return resourceTransfer(ctx, in)
 	case generated.MembershipProjection:
 		return membershipLifecycle(ctx, in, activities.Present, "ACTIVE")
 	case generated.MembershipRevocation:

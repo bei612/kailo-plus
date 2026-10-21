@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/evidence_kind.schema.json",
   "title": "EvidenceKind",
-  "description": "AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带 version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。",
+  "description": "AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带 version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。TRANSFER_PACKAGE_DIGEST 是 DD-131/DD-42 导出或导入包字节的 SHA-256（version 为 TransferFormat 版本），不含包正文。",
   "type": "string",
   "enum": [
     "TEMPORAL_WORKFLOW_ID",
@@ -30,6 +30,7 @@
     "AGENTGATEWAY_USAGE_ID",
     "TRACE_ID",
     "EXTERNAL_SUBJECT_SHA256",
+    "TRANSFER_PACKAGE_DIGEST",
     "DEPLOYMENT_BOOTSTRAP"
   ]
 }

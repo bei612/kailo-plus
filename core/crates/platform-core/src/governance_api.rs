@@ -85,6 +85,14 @@ pub async fn submit_action(
     if cmd.workspace_canvas.is_some() && cmd.action_key != crate::workspace_canvas::ACTION {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-131(2)(3): snapshot transfer inputs belong only to the export/import actions.
+    if (cmd.snapshot_import.is_some()
+        && !crate::governance::agent_transfer::is_import(&cmd.action_key))
+        || (cmd.snapshot_export.is_some()
+            && !crate::governance::agent_transfer::is_export(&cmd.action_key))
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     // DD-125(3): Huddle inputs belong only to the huddle.* actions.
     if (cmd.huddle_start.is_some() || cmd.huddle_agent.is_some() || cmd.huddle_id.is_some())
         && !crate::huddle::is_action(&cmd.action_key)
@@ -109,6 +117,12 @@ pub async fn submit_action(
     } else if crate::huddle::is_action(&cmd.action_key) {
         // DD-125(3)：Huddle 临时频道投影有自己的 CONTROL 派发与对账路径
         crate::huddle::submit(&state, &ctx, &cmd).await
+    } else if crate::governance::agent_transfer::is_import(&cmd.action_key) {
+        // DD-42、DD-131(2)：导入只接收本 PlatformSession 上传的包；会话不符即不存在。
+        match crate::governance::agent_transfer::check_session(&state, &ctx, &cmd).await {
+            Ok(()) => state.governance.submit(actor(&ctx), &cmd).await,
+            Err(refusal) => Err((refusal, None)),
+        }
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };
@@ -863,6 +877,16 @@ async fn eligible(
         && ctx.access_mode == contracts::PlatformSessionAccessMode::Full
     {
         crate::governance::installation_permission::approval_owner_eligible(
+            g,
+            ctx.tenant_id,
+            ctx.tenant_principal_id,
+            row.action_execution_id,
+        )
+        .await
+    } else if crate::governance::agent_transfer::is_export(&row.action_key)
+        && ctx.access_mode == contracts::PlatformSessionAccessMode::Full
+    {
+        crate::governance::agent_transfer::approval_owner_eligible(
             g,
             ctx.tenant_id,
             ctx.tenant_principal_id,
