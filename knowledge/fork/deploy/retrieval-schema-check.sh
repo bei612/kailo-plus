@@ -89,5 +89,5 @@ else echo "PASS skipped initialisation lacks embeddings ($(grep -c '^index|embed
 grep -v '^version|' "$work/normal-107" > "$work/normal-107.s"; grep -v '^version|' "$work/normal-108" > "$work/normal-108.s"
 check no-op-on-normal normal-107.s normal-108.s
 check repaired-equals-normal normal-108 skipped-108
-grep -q '^version|108|f$' "$work/skipped-108" && echo 'PASS repaired database at 108, not dirty' || { echo 'FAIL repaired database version'; fail=1; }
+grep -Eq '^version\|108\|(f|false)$' "$work/skipped-108" && echo 'PASS repaired database at 108, not dirty' || { echo 'FAIL repaired database version'; fail=1; }
 exit "$fail"
