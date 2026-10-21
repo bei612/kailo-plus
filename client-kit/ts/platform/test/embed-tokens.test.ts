@@ -2,6 +2,8 @@
 // own theme sources. This test regenerates it and fails on any drift; with
 // KAILO_WRITE_EMBED_TOKENS=1 it rewrites the committed file instead.
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import githubDark from "shiki/themes/github-dark.mjs";
 import githubLight from "shiki/themes/github-light.mjs";
 import { describe, expect, it } from "vitest";
@@ -9,8 +11,10 @@ import { createThemeVars } from "../src/theme/adaptive-theme";
 import { EMBED_COLOR_TOKENS, renderEmbedTokenCss } from "../src/theme/embed-tokens";
 import { extractThemeInfo } from "../src/theme/theme-loader";
 
-const text = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
-const target = new URL("../../../embed/kailo-theme-tokens.css", import.meta.url);
+// Plain paths: Vite rewrites `new URL(literal, import.meta.url)` into served asset URLs.
+const here = dirname(fileURLToPath(import.meta.url));
+const text = (path: string) => readFileSync(resolve(here, path), "utf8");
+const target = resolve(here, "../../../embed/kailo-theme-tokens.css");
 
 function render() {
   return renderEmbedTokenCss({

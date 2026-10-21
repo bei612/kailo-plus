@@ -1,10 +1,12 @@
 // DD-133 component half: client-kit/embed/kailo-embed.js, exercised as the
 // plain script components load (V-SCN-191..193).
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KailoEmbedRuntime } from "../../../embed/kailo-embed";
 
-const source = readFileSync(new URL("../../../embed/kailo-embed.js", import.meta.url), "utf8");
+const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../embed/kailo-embed.js"), "utf8");
 const KAILO = "https://kailo.example.test";
 const parentDescriptor = Object.getOwnPropertyDescriptor(window, "parent");
 let host: HTMLIFrameElement | null = null;
