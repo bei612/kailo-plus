@@ -4,6 +4,27 @@ upstream_url: https://github.com/Canner/WrenAI
 evidence_commit: c5f02a0391c87420dba78632dcd86073710deb72
 implementation_base_commit: c5f02a0391c87420dba78632dcd86073710deb72
 base_divergence: none
+remove_paths:
+  # DD-133 §1: upstream brand assets, onboarding guide and product telemetry
+  # are not part of the white-labelled Kailo page.
+  - wren-ui/public/favicon.ico
+  - wren-ui/public/images/dashboard/s1.jpg
+  - wren-ui/public/images/dashboard/s2.jpg
+  - wren-ui/public/images/dashboard/s3.jpg
+  - wren-ui/public/images/learning/ask-question.jpg
+  - wren-ui/public/images/learning/data-modeling.jpg
+  - wren-ui/public/images/learning/deploy-modeling.jpg
+  - wren-ui/public/images/learning/edit-metadata.gif
+  - wren-ui/public/images/learning/edit-model.gif
+  - wren-ui/public/images/learning/instructions.png
+  - wren-ui/public/images/learning/save-to-knowledge.gif
+  - wren-ui/public/images/logo-white-with-text.svg
+  - wren-ui/public/images/logo.svg
+  - wren-ui/src/components/learning/guide/index.tsx
+  - wren-ui/src/components/learning/guide/stories.tsx
+  - wren-ui/src/components/learning/guide/utils.ts
+  - wren-ui/src/components/learning/index.tsx
+  - wren-ui/src/utils/telemetry.ts
 source_components:
   wren-engine: 47ca29ebba291100ba5d70ce1790f9887eaed7a0
 artifacts:
@@ -11,7 +32,7 @@ artifacts:
     kind: image
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
-    inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs]
+    inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs, web-client/web/public/app-icon.png]
     source_digest: sha256:5b3a94c5f365fb08bf6c939639e407460eaef193bc27cc11d0d9b37813f686f5
     artifact_digest: sha256:b576e7ffdead152149ca6cd660d29ad21a7be133628e194e7a3a8b5e76bd332b
   - name: data-query-ai-service

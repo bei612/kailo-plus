@@ -12,6 +12,8 @@ import {
   GroupActionButton,
 } from '@/components/sidebar/utils';
 import TreeTitle from './TreeTitle';
+import useKailoText from '@/utils/kailoI18n';
+import { KailoUserView } from '@/components/kailo/KailoUser';
 
 const StyledSidebarTree = styled(SidebarTree)`
   ${sidebarCommonStyle}
@@ -36,6 +38,8 @@ const StyledSidebarTree = styled(SidebarTree)`
 export interface ThreadData {
   id: string;
   name: string;
+  owner?: KailoUserView | null;
+  canManage?: boolean;
 }
 
 interface Props {
@@ -49,6 +53,7 @@ interface Props {
 export default function ThreadTree(props: Props) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const t = useKailoText();
   const {
     threads = [],
     selectedKeys,
@@ -58,7 +63,7 @@ export default function ThreadTree(props: Props) {
   } = props;
 
   const getThreadGroupNode = createTreeGroupNode({
-    groupName: 'Threads',
+    groupName: t('threads'),
     groupKey: 'threads',
     actions: [
       {
@@ -69,7 +74,7 @@ export default function ThreadTree(props: Props) {
             icon={<PlusOutlined />}
             onClick={() => router.push(Path.Home)}
           >
-            New
+            {t('newThread')}
           </GroupActionButton>
         ),
       },
@@ -94,6 +99,8 @@ export default function ThreadTree(props: Props) {
               <TreeTitle
                 id={nodeKey}
                 title={thread.name}
+                owner={thread.owner}
+                canManage={thread.canManage}
                 onRename={onRename}
                 onDelete={onDeleteThread}
               />

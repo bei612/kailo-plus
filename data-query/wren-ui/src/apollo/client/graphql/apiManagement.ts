@@ -18,6 +18,10 @@ export const API_HISTORY = gql`
         durationMs
         createdAt
         updatedAt
+        owner {
+          name
+          picture
+        }
       }
       total
       hasMore

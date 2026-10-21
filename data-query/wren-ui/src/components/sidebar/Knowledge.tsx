@@ -5,6 +5,7 @@ import FunctionOutlined from '@ant-design/icons/FunctionOutlined';
 import { Path, MENU_KEY } from '@/utils/enum';
 import { InstructionsSVG } from '@/utils/svgs';
 import SidebarMenu from '@/components/sidebar/SidebarMenu';
+import useKailoText from '@/utils/kailoI18n';
 
 const Layout = styled.div`
   padding: 16px 0;
@@ -13,7 +14,7 @@ const Layout = styled.div`
   left: 0;
   top: 0;
   width: 100%;
-  background-color: var(--gray-2);
+  background-color: var(--kailo-sidebar);
   overflow: hidden;
 `;
 
@@ -26,13 +27,14 @@ const linkStyle = { color: 'inherit', transition: 'none' };
 
 export default function Knowledge() {
   const router = useRouter();
+  const t = useKailoText();
 
   const menuItems = [
     {
       'data-guideid': 'question-sql-pairs',
       label: (
         <Link style={linkStyle} href={Path.KnowledgeQuestionSQLPairs}>
-          Question-SQL pairs
+          {t('questionSqlPairs')}
         </Link>
       ),
       icon: <FunctionOutlined />,
@@ -43,7 +45,7 @@ export default function Knowledge() {
       'data-guideid': 'instructions',
       label: (
         <Link style={linkStyle} href={Path.KnowledgeInstructions}>
-          Instructions
+          {t('instructions')}
         </Link>
       ),
       icon: <InstructionsSVG />,

@@ -27,6 +27,31 @@ import {
   nativeWriteNotStarted,
   NativeWriteReference,
 } from './utils/error';
+import {
+  assertStandaloneAdmin,
+  assertStandaloneOwnerOrAdmin,
+  isKailoAdmin,
+} from './services/kailoUserService';
+import { kailoUserLabel } from '@/utils/kailoUser';
+
+type StandaloneCheck = (args: any, ctx: IContext) => Promise<void>;
+
+// DD-133 §3, STANDALONE: what the Core `manage` permission guards on a
+// GOVERNED instance is reserved to the Kailo Tenant admin entitlement.
+const standaloneAdmin: StandaloneCheck = async (_args, ctx) =>
+  assertStandaloneAdmin(ctx.kailoUser, ctx.kailoNativeService);
+
+// STANDALONE: the Kailo user who started a thread may rename, delete or
+// correct it; anyone else needs the admin entitlement.
+const standaloneThreadOwner =
+  (target: (args: any) => { threadId?: number; responseId?: number }) =>
+  async (args: any, ctx: IContext) => {
+    if (ctx.kailoUser?.admin === true || ctx.kailoNativeService) return;
+    assertStandaloneOwnerOrAdmin(
+      ctx.kailoUser,
+      await ctx.askingService.getThreadOwner(target(args)),
+    );
+  };
 
 // Original native metadata remains native CRUD, not a fabricated query Action.
 // This request boundary consumes the existing binding's public scope permission;
@@ -36,11 +61,15 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
   permission: string,
   disclose?: (ctx: IContext, output: Awaited<ReturnType<T>>) => Promise<void>,
   nativeType?: NativeWriteReference['nativeType'],
+  standaloneCheck: StandaloneCheck = standaloneAdmin,
 ): T {
   return (async (root: any, args: any, ctx: IContext, info: any) => {
     const identityScope = ctx.nativeIdentityScope;
     const token = ctx.nativeHumanToken;
-    if (!isGovernedQueryMode()) return resolver(root, args, ctx, info);
+    if (!isGovernedQueryMode()) {
+      if (permission === 'manage') await standaloneCheck(args, ctx);
+      return resolver(root, args, ctx, info);
+    }
     let config: NativeQueryDelivery;
     let scope: string;
     let generation: number;
@@ -129,6 +158,49 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
   }) as T;
 }
 
+// DD-133 §1: product name = deployment display name + component name.
+function kailoProductName(): string {
+  const name = process.env.PLATFORM_DISPLAY_NAME?.trim();
+  return name || '';
+}
+
+// The same deployment input as the middleware frame-ancestors (07 §4.6).
+function kailoHostOrigins(): string[] {
+  return (process.env.KAILO_FRAME_ANCESTORS || '')
+    .trim()
+    .split(/\s+/)
+    .filter((origin) => /^https?:\/\/[^/\s]+$/.test(origin));
+}
+
+const kailoUserOutput = (
+  user: {
+    name: string | null;
+    username: string | null;
+    email: string | null;
+    picture: string | null;
+  },
+  isCurrentUser: boolean,
+) => ({
+  name: kailoUserLabel(user),
+  username: user.username,
+  email: user.email,
+  picture: user.picture,
+  isCurrentUser,
+});
+
+// DD-133 §3: owners are shown with the Kailo name and avatar; rows created
+// before ownership was recorded have none.
+const kailoOwner = async (
+  parent: { ownerKey?: string | null },
+  _args: unknown,
+  ctx: IContext,
+) => {
+  const user = await ctx.kailoUsers?.load(parent?.ownerKey);
+  return user
+    ? kailoUserOutput(user, user.userKey === ctx.kailoUser?.key)
+    : null;
+};
+
 const projectResolver = new ProjectResolver();
 const modelResolver = new ModelResolver();
 const askingResolver = new AskingResolver();
@@ -142,6 +214,12 @@ const resolvers = {
   JSON: GraphQLJSON,
   DialectSQL: DialectSQLScalar,
   Query: {
+    kailoSession: async (_root: any, _args: any, ctx: IContext) => ({
+      user: ctx.kailoUser ? kailoUserOutput(ctx.kailoUser, true) : null,
+      isAdmin: await isKailoAdmin(ctx.kailoUser, ctx.nativeHumanToken),
+      productName: kailoProductName(),
+      hostOrigins: kailoHostOrigins(),
+    }),
     listDataSourceTables: projectResolver.listDataSourceTables,
     autoGenerateRelation: projectResolver.autoGenerateRelation,
     listModels: modelResolver.listModels,
@@ -310,12 +388,27 @@ const resolvers = {
 
     // Thread
     createThread: askingResolver.createThread,
-    updateThread: nativeProjectResolver(askingResolver.updateThread, 'manage'),
-    deleteThread: nativeProjectResolver(askingResolver.deleteThread, 'manage'),
+    updateThread: nativeProjectResolver(
+      askingResolver.updateThread,
+      'manage',
+      undefined,
+      undefined,
+      standaloneThreadOwner((args) => ({ threadId: args.where?.id })),
+    ),
+    deleteThread: nativeProjectResolver(
+      askingResolver.deleteThread,
+      'manage',
+      undefined,
+      undefined,
+      standaloneThreadOwner((args) => ({ threadId: args.where?.id })),
+    ),
     createThreadResponse: askingResolver.createThreadResponse,
     updateThreadResponse: nativeProjectResolver(
       askingResolver.updateThreadResponse,
       'manage',
+      undefined,
+      undefined,
+      standaloneThreadOwner((args) => ({ responseId: args.where?.id })),
     ),
     previewData: askingResolver.previewData,
     previewBreakdownData: askingResolver.previewBreakdownData,
@@ -436,6 +529,8 @@ const resolvers = {
       'manage',
     ),
   },
+  Thread: { owner: kailoOwner },
+  Instruction: { owner: kailoOwner },
   ThreadResponse: askingResolver.getThreadResponseNestedResolver(),
   DetailStep: askingResolver.getDetailStepNestedResolver(),
   ResultCandidate: askingResolver.getResultCandidateNestedResolver(),
@@ -450,10 +545,13 @@ const resolvers = {
   DetailedChangeColumn: { type: convertColumnType },
 
   // Add this line to include the SqlPair nested resolver
-  SqlPair: sqlPairResolver.getSqlPairNestedResolver(),
+  SqlPair: { ...sqlPairResolver.getSqlPairNestedResolver(), owner: kailoOwner },
 
   // Add ApiHistoryResponse nested resolvers
-  ApiHistoryResponse: apiHistoryResolver.getApiHistoryNestedResolver(),
+  ApiHistoryResponse: {
+    ...apiHistoryResolver.getApiHistoryNestedResolver(),
+    owner: kailoOwner,
+  },
 };
 
 // Every original project query checks discovery, including empty dashboards and

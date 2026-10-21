@@ -12,6 +12,7 @@ import type { NativeDeploymentObject } from './deployLogRepository';
 import { AskingTaskRepository } from './askingTaskRepository';
 import { AskResultStatus } from '../models/adaptor';
 import { lockNativeBinding } from './projectRepository';
+import { decodeKailoUser, KAILO_USER_HEADER } from '@/utils/kailoUser';
 
 // SS-WRN-IDENTITY: request credentials must never become API history.
 // Keep protocol metadata only; a denylist would miss provider-specific keys.
@@ -59,6 +60,8 @@ export interface ApiHistory {
   updatedAt?: string;
   governanceBindingId?: string;
   governanceGeneration?: number;
+  // DD-133 §3: Kailo user of the request (from the verified middleware header).
+  ownerKey?: string | null;
   governanceKey?: string;
   governanceActionExecutionId?: string;
   governanceOperationId?: string;
@@ -713,6 +716,13 @@ export class ApiHistoryRepository
     if (!isPlainObject(data)) {
       throw new Error('Unexpected dbdata');
     }
+    // DD-133 §3: the request's verified Kailo user becomes the row owner; the
+    // header itself is never stored (historyHeaders keeps protocol metadata).
+    const owner =
+      data.ownerKey === undefined && isPlainObject(data.headers)
+        ? decodeKailoUser(data.headers[KAILO_USER_HEADER])?.key
+        : undefined;
+    if (owner) data = { ...data, ownerKey: owner };
     const transformedData = mapValues(data, (value, key) => {
       if (key === 'headers') return JSON.stringify(historyHeaders(value));
       if (this.jsonbColumns.includes(key)) {

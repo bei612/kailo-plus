@@ -70,7 +70,13 @@ export class InstructionResolver {
     const { instruction, questions, isDefault } = args.data;
     const project = await this.currentProject(ctx);
     return await ctx.instructionService.createInstruction(
-      { instruction, questions, isDefault, projectId: project.id },
+      {
+        instruction,
+        questions,
+        isDefault,
+        projectId: project.id,
+        ownerKey: ctx.kailoUser?.key ?? null,
+      },
       ctx.nativeProjectCheck,
     );
   }

@@ -7,6 +7,8 @@ import {
   handleApiError,
   validateSql,
   handleNativeSqlPairRequest,
+  assertStandaloneKnowledgeAdmin,
+  standaloneOwnerKey,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
@@ -85,6 +87,7 @@ const handleCreateSqlPair = async (
   const newSqlPair = await sqlPairService.createSqlPair(project.id, {
     sql,
     question,
+    ownerKey: standaloneOwnerKey(req),
   });
 
   // Return the created SQL pair directly
@@ -119,6 +122,7 @@ export default async function handler(
 
     // Handle POST method - create SQL pair
     if (req.method === 'POST') {
+      assertStandaloneKnowledgeAdmin(req);
       await handleCreateSqlPair(req, res, project, startTime);
       return;
     }

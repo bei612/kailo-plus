@@ -106,8 +106,8 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
     if (!nativeSQLResult.nativeSQLMode) {
       message.success(
         <>
-          You copied Wren SQL. This dialect is for the Wren Engine and may not
-          run directly on your database.
+          You copied the semantic-layer SQL. This dialect may not run directly
+          on your database.
           {hasNativeSQL && (
             <>
               {' '}
@@ -126,17 +126,9 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
         className="mb-3 adm-alert-info"
         message={
           <>
-            You’re viewing Wren SQL by default. If you want to run this query on
-            your own database, click “Show original SQL” to get the exact
-            syntax.
-            <Typography.Link
-              className="underline ml-1"
-              href="https://docs.getwren.ai/oss/guide/home/wren_sql"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learn more about Wren SQL
-            </Typography.Link>
+            You’re viewing the semantic-layer SQL by default. If you want to run
+            this query on your own database, click “Show original SQL” to get
+            the exact syntax.
           </>
         }
         type="info"
@@ -160,7 +152,7 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
             ) : (
               <span className="d-flex align-center gx-2">
                 <Logo size={18} />
-                <Text className="gray-8 text-medium text-sm">Wren SQL</Text>
+                <Text className="gray-8 text-medium text-sm">SQL</Text>
               </span>
             )}
           </div>
@@ -187,8 +179,6 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
             )}
             <Button
               type="link"
-              data-ph-capture="true"
-              data-ph-capture-attribute-name="view_sql_copy_sql"
               icon={<CodeFilled />}
               size="small"
               onClick={() => onOpenAdjustSQLModal({ sql, responseId: id })}
@@ -219,8 +209,6 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
           }
           loading={previewDataResult.loading || query.preparing}
           onClick={onPreviewData}
-          data-ph-capture="true"
-          data-ph-capture-attribute-name="view_sql_preview_data"
         >
           {query.pending || query.error ? text.check : text.results}
         </Button>

@@ -71,6 +71,7 @@ export type ApiHistoryResponse = {
   durationMs?: Maybe<Scalars['Int']>;
   headers?: Maybe<Scalars['JSON']>;
   id: Scalars['String'];
+  owner?: Maybe<KailoUser>;
   projectId: Scalars['Int'];
   requestPayload?: Maybe<Scalars['JSON']>;
   responsePayload?: Maybe<Scalars['JSON']>;
@@ -625,6 +626,7 @@ export type Instruction = {
   id: Scalars['Int'];
   instruction: Scalars['String'];
   isDefault: Scalars['Boolean'];
+  owner?: Maybe<KailoUser>;
   projectId: Scalars['Int'];
   questions: Array<Scalars['String']>;
   updatedAt: Scalars['String'];
@@ -640,6 +642,23 @@ export type ItemLayoutInput = {
   w: Scalars['Int'];
   x: Scalars['Int'];
   y: Scalars['Int'];
+};
+
+export type KailoSession = {
+  __typename?: 'KailoSession';
+  hostOrigins: Array<Scalars['String']>;
+  isAdmin: Scalars['Boolean'];
+  productName: Scalars['String'];
+  user?: Maybe<KailoUser>;
+};
+
+export type KailoUser = {
+  __typename?: 'KailoUser';
+  email?: Maybe<Scalars['String']>;
+  isCurrentUser: Scalars['Boolean'];
+  name?: Maybe<Scalars['String']>;
+  picture?: Maybe<Scalars['String']>;
+  username?: Maybe<Scalars['String']>;
 };
 
 export type LearningRecord = {
@@ -1175,6 +1194,7 @@ export type Query = {
   getThreadRecommendationQuestions: RecommendedQuestionsTask;
   instantRecommendedQuestions: RecommendedQuestionsTask;
   instructions: Array<Maybe<Instruction>>;
+  kailoSession: KailoSession;
   learningRecord: LearningRecord;
   listDataSourceTables: Array<CompactTable>;
   listModels: Array<ModelInfo>;
@@ -1409,6 +1429,7 @@ export type SqlPair = {
   createdAt?: Maybe<Scalars['String']>;
   id: Scalars['Int'];
   nativeWritePending?: Maybe<Scalars['Boolean']>;
+  owner?: Maybe<KailoUser>;
   projectId: Scalars['Int'];
   question: Scalars['String'];
   sql: Scalars['String'];
@@ -1445,6 +1466,7 @@ export type Task = {
 export type Thread = {
   __typename?: 'Thread';
   id: Scalars['Int'];
+  owner?: Maybe<KailoUser>;
   summary: Scalars['String'];
 };
 

@@ -1,4 +1,8 @@
-@import '~antd/dist/antd.less';
+// DD-133 §4: antd's variable build, so that its palette is CSS custom
+// properties that the Kailo overlay maps onto Kailo tokens at runtime.
+@import '~antd/dist/antd.variable.less';
+// Kailo design tokens (client-kit structure), verbatim.
+@import (inline) './kailo/kailo-theme-tokens.css';
 
 // Components
 @import './components/table.less';
@@ -25,3 +29,9 @@
 @import './utilities/color.less';
 @import './utilities/spacing.less';
 @import './utilities/border.less';
+
+// DD-133 §4: the original Wren overrides again after the variable build (it
+// redefines every theme variable), then the Kailo token mapping, last.
+@import (multiple) './antd-variables.less';
+@import './kailo/antd-theme.less';
+@import './kailo/overlay.less';

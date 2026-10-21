@@ -87,6 +87,8 @@ export interface AskingDetailTaskInput {
   question?: string;
   sql?: string;
   trackedAskingResult?: TrackedAskingResult;
+  // DD-133 §3: Kailo user (issuer+subject digest) who started the thread.
+  ownerKey?: string | null;
 }
 
 export interface AskingDetailTaskUpdateInput {
@@ -181,6 +183,11 @@ export interface IAskingService {
     beforeWrite?: (projectId: number) => Promise<void>,
   ): Promise<void>;
   listThreads(): Promise<Thread[]>;
+  // DD-133 §3: the Kailo user who started a thread of the current project.
+  getThreadOwner(input: {
+    threadId?: number;
+    responseId?: number;
+  }): Promise<string | null>;
   createThreadResponse(
     input: AskingDetailTaskInput,
     threadId: number,
@@ -800,7 +807,11 @@ export class AskingService implements IAskingService {
     const tx = await this.threadRepository.transaction();
     try {
       const thread = await this.threadRepository.createOne(
-        { projectId: project.id, summary: input.question },
+        {
+          projectId: project.id,
+          summary: input.question,
+          ownerKey: input.ownerKey ?? null,
+        },
         { tx },
       );
       const response = await this.threadResponseRepository.createOne(
@@ -827,6 +838,21 @@ export class AskingService implements IAskingService {
       await this.threadRepository.rollback(tx);
       throw error;
     }
+  }
+
+  public async getThreadOwner(input: {
+    threadId?: number;
+    responseId?: number;
+  }): Promise<string | null> {
+    const project = await this.projectService.getCurrentProject();
+    let threadId = input.threadId;
+    if (input.responseId !== undefined) {
+      const response = await this.getResponse(input.responseId, project);
+      if (!response) throw new Error(`Thread response not found`);
+      threadId = response.threadId;
+    }
+    const thread = await this.currentThread(threadId, project);
+    return thread.ownerKey ?? null;
   }
 
   public async listThreads(): Promise<Thread[]> {

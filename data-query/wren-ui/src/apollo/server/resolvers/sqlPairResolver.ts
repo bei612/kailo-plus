@@ -95,13 +95,16 @@ export class SqlPairResolver {
   ): Promise<SqlPair> {
     const project = await ctx.projectService.getCurrentProject();
     await this.validateSql(arg.data.sql, ctx, arg.data);
+    const native = await this.nativeContext(ctx, true, project.id);
     return await ctx.sqlPairService.createSqlPair(
       project.id,
       {
         sql: arg.data.sql,
         question: arg.data.question,
+        // The GOVERNED write keeps its exact persisted native request.
+        ...(native ? {} : { ownerKey: ctx.kailoUser?.key ?? null }),
       },
-      await this.nativeContext(ctx, true, project.id),
+      native,
       arg.data.idempotencyKey,
     );
   }

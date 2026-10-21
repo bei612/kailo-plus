@@ -1,10 +1,9 @@
 import { AppProps } from 'next/app';
 import Head from 'next/head';
 import { Spin } from 'antd';
-import posthog from 'posthog-js';
 import apolloClient from '@/apollo/client';
 import { GlobalConfigProvider } from '@/hooks/useGlobalConfig';
-import { PostHogProvider } from 'posthog-js/react';
+import { KailoSessionProvider } from '@/hooks/useKailoSession';
 import { ApolloProvider } from '@apollo/client';
 import { defaultIndicator } from '@/components/PageLoading';
 
@@ -16,16 +15,16 @@ function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>Wren AI</title>
-        <link rel="icon" href="/favicon.ico" />
+        {/* DD-133 §1: Kailo's own icon, copied from the web-client build. */}
+        <link rel="icon" type="image/png" href="/kailo/app-icon.png" />
       </Head>
       <GlobalConfigProvider>
         <ApolloProvider client={apolloClient}>
-          <PostHogProvider client={posthog}>
+          <KailoSessionProvider>
             <main className="app">
               <Component {...pageProps} />
             </main>
-          </PostHogProvider>
+          </KailoSessionProvider>
         </ApolloProvider>
       </GlobalConfigProvider>
     </>

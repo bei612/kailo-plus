@@ -52,6 +52,7 @@ export const typeDefs = gql`
     durationMs: Int
     createdAt: String!
     updatedAt: String!
+    owner: KailoUser
   }
 
   type ApiHistoryPaginatedResponse {
@@ -836,6 +837,25 @@ export const typeDefs = gql`
   type Thread {
     id: Int!
     summary: String!
+    owner: KailoUser
+  }
+
+  # DD-133 §3: a Kailo user, from the display claims of the verified token.
+  type KailoUser {
+    name: String
+    username: String
+    email: String
+    picture: String
+    # Whether this is the Kailo user of the current request.
+    isCurrentUser: Boolean!
+  }
+
+  type KailoSession {
+    user: KailoUser
+    isAdmin: Boolean!
+    productName: String!
+    # Exact Kailo Web origins allowed to embed this page and to message it.
+    hostOrigins: [String!]!
   }
 
   # Detailed thread consists of thread and thread responses
@@ -1078,6 +1098,7 @@ export const typeDefs = gql`
     createdAt: String
     updatedAt: String
     nativeWritePending: Boolean
+    owner: KailoUser
   }
 
   input CreateSqlPairInput {
@@ -1115,6 +1136,7 @@ export const typeDefs = gql`
     isDefault: Boolean!
     createdAt: String!
     updatedAt: String!
+    owner: KailoUser
   }
 
   input CreateInstructionInput {
@@ -1135,6 +1157,9 @@ export const typeDefs = gql`
 
   # Query and Mutation
   type Query {
+    # DD-133: current Kailo user, derived role and deployment product name
+    kailoSession: KailoSession!
+
     # On Boarding Steps
     listDataSourceTables: [CompactTable!]!
     autoGenerateRelation: [RecommendRelations!]!

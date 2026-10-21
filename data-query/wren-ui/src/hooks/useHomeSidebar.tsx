@@ -6,9 +6,13 @@ import {
   useThreadsQuery,
   useUpdateThreadMutation,
 } from '@/apollo/client/graphql/home.generated';
+import useKailoSession from '@/hooks/useKailoSession';
+import useGlobalConfig from '@/hooks/useGlobalConfig';
 
 export default function useHomeSidebar() {
   const router = useRouter();
+  const { isAdmin } = useKailoSession();
+  const { config } = useGlobalConfig();
   const { data, refetch } = useThreadsQuery({
     fetchPolicy: 'cache-and-network',
   });
@@ -24,8 +28,15 @@ export default function useHomeSidebar() {
       (data?.threads || []).map((thread) => ({
         id: thread.id.toString(),
         name: thread.summary,
+        // DD-133 §3: the Kailo user who started the thread. Renaming and
+        // deleting are its creator's (STANDALONE) or an admin's.
+        owner: thread.owner,
+        canManage:
+          isAdmin ||
+          (config?.nativeBindingConfigured === false &&
+            thread.owner?.isCurrentUser === true),
       })),
-    [data],
+    [data, isAdmin, config],
   );
 
   const onSelect = (selectKeys: string[]) => {

@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { Table, TableColumnsType, Button, Tag, Typography } from 'antd';
 import { getAbsoluteTime } from '@/utils/time';
@@ -20,6 +19,8 @@ import { ApiType, ApiHistoryResponse } from '@/apollo/client/graphql/__types__';
 import { getUserConfig } from '@/utils/env';
 import { getApiHistoryText } from '@/utils/language';
 import { useRouter } from 'next/router';
+import KailoUser from '@/components/kailo/KailoUser';
+import { kailoText } from '@/utils/kailoI18n';
 
 const PAGE_SIZE = 10;
 
@@ -56,7 +57,8 @@ export default function APIHistory() {
     identity: string | undefined;
   }>();
   const activeHistoryId = useRef<string>();
-  const text = getApiHistoryText(useRouter().locale);
+  const { locale } = useRouter();
+  const text = getApiHistoryText(locale);
   const [readPage] = useApiHistoryLazyQuery({ fetchPolicy: 'no-cache' });
   const [readHistory] = useApiHistoryLazyQuery({ fetchPolicy: 'no-cache' });
 
@@ -306,6 +308,17 @@ export default function APIHistory() {
       }),
     },
     {
+      // DD-133 §3: the Kailo user behind the call (none for older rows and
+      // for the instance's own service calls).
+      title: kailoText(locale, 'owner'),
+      dataIndex: 'owner',
+      key: 'owner',
+      width: 160,
+      render: (owner) => (
+        <KailoUser user={owner} emptyText={kailoText(locale, 'ownerUnknown')} />
+      ),
+    },
+    {
       title: 'Duration (ms)',
       dataIndex: 'durationMs',
       key: 'durationMs',
@@ -346,15 +359,7 @@ export default function APIHistory() {
           <>
             <div>
               Here you can view the full history of API calls, including request
-              inputs, responses, and execution details.{' '}
-              <Link
-                className="gray-8 underline mr-2"
-                href="https://docs.getwren.ai/oss/guide/api-access/history"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Learn more.
-              </Link>
+              inputs, responses, and execution details.
             </div>
           </>
         }

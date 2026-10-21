@@ -35,6 +35,10 @@ COPY data-query/wren-ui/.prettierrc ./
 COPY data-query/wren-ui/next.config.js ./
 COPY data-query/wren-ui/tsconfig.json ./
 COPY client-kit/adapter/protocol.mjs /app/client-kit/adapter/protocol.mjs
+# DD-133 §1: Kailo's icon is the web-client's own file (its build serves
+# public/app-icon.png unchanged), copied in as a build input; never fetched
+# cross-origin at run time.
+COPY web-client/web/public/app-icon.png ./public/kailo/app-icon.png
 
 RUN yarn build
 

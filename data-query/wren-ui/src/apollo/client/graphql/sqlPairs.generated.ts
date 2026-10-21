@@ -3,19 +3,19 @@ import * as Types from './__types__';
 import { gql } from '@apollo/client';
 import * as Apollo from '@apollo/client';
 const defaultOptions = {} as const;
-export type SqlPairFragment = { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null };
+export type SqlPairFragment = { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null } | null };
 
 export type SqlPairsQueryVariables = Types.Exact<{ [key: string]: never; }>;
 
 
-export type SqlPairsQuery = { __typename?: 'Query', sqlPairs: Array<{ __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null } | null> };
+export type SqlPairsQuery = { __typename?: 'Query', sqlPairs: Array<{ __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null } | null } | null> };
 
 export type CreateSqlPairMutationVariables = Types.Exact<{
   data: Types.CreateSqlPairInput;
 }>;
 
 
-export type CreateSqlPairMutation = { __typename?: 'Mutation', createSqlPair: { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null } };
+export type CreateSqlPairMutation = { __typename?: 'Mutation', createSqlPair: { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null } | null } };
 
 export type UpdateSqlPairMutationVariables = Types.Exact<{
   where: Types.SqlPairWhereUniqueInput;
@@ -23,7 +23,7 @@ export type UpdateSqlPairMutationVariables = Types.Exact<{
 }>;
 
 
-export type UpdateSqlPairMutation = { __typename?: 'Mutation', updateSqlPair: { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null } };
+export type UpdateSqlPairMutation = { __typename?: 'Mutation', updateSqlPair: { __typename?: 'SqlPair', id: number, projectId: number, sql: string, question: string, createdAt?: string | null, updatedAt?: string | null, nativeWritePending?: boolean | null, owner?: { __typename?: 'KailoUser', name?: string | null, picture?: string | null } | null } };
 
 export type DeleteSqlPairMutationVariables = Types.Exact<{
   where: Types.SqlPairWhereUniqueInput;
@@ -41,6 +41,10 @@ export const SqlPairFragmentDoc = gql`
   createdAt
   updatedAt
   nativeWritePending
+  owner {
+    name
+    picture
+  }
 }
     `;
 export const SqlPairsDocument = gql`

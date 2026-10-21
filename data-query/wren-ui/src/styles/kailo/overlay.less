@@ -1,0 +1,221 @@
+// DD-133 §4: Wren's native styles mapped onto the Kailo design tokens.
+//
+// Single overlay, emitted after antd and the original Wren styles. It reads
+// only the client-kit token names (kailo-theme-tokens.css); no page carries
+// its own colour. Light/dark is the `.dark` class on <html>, set from Kailo.
+
+// 1. Semantic aliases of the client-kit HSL triplets.
+:root {
+  --kailo-bg: ~'hsl(var(--background))';
+  --kailo-fg: ~'hsl(var(--foreground))';
+  --kailo-card: ~'hsl(var(--card))';
+  --kailo-card-fg: ~'hsl(var(--card-foreground))';
+  --kailo-popover: ~'hsl(var(--popover))';
+  --kailo-muted: ~'hsl(var(--muted))';
+  --kailo-muted-fg: ~'hsl(var(--muted-foreground))';
+  --kailo-accent: ~'hsl(var(--accent))';
+  --kailo-primary: ~'hsl(var(--primary))';
+  --kailo-primary-fg: ~'hsl(var(--primary-foreground))';
+  --kailo-border: ~'hsl(var(--border))';
+  --kailo-input: ~'hsl(var(--input))';
+  --kailo-ring: ~'hsl(var(--ring))';
+  --kailo-danger: ~'hsl(var(--destructive))';
+  --kailo-sidebar: ~'hsl(var(--sidebar-background))';
+  --kailo-sidebar-fg: ~'hsl(var(--sidebar-foreground))';
+  --kailo-sidebar-border: ~'hsl(var(--sidebar-border))';
+  --kailo-radius-lg: var(--radius);
+  --kailo-radius-md: calc(var(--radius) - 2px);
+  --kailo-radius-sm: calc(var(--radius) - 4px);
+  --kailo-tint: color-mix(in srgb, var(--kailo-fg) 8%, var(--kailo-bg));
+}
+
+// 2. antd variable-build palette (the antd 4 equivalent of ConfigProvider
+//    theme tokens). Kailo's accent is its neutral primary.
+:root {
+  --ant-primary-color: var(--kailo-primary);
+  --ant-primary-color-hover: color-mix(in srgb, var(--kailo-primary) 82%, var(--kailo-bg));
+  --ant-primary-color-active: color-mix(in srgb, var(--kailo-primary) 92%, var(--kailo-fg));
+  --ant-primary-color-outline: color-mix(in srgb, var(--kailo-ring) 20%, transparent);
+  --ant-primary-1: color-mix(in srgb, var(--kailo-primary) 6%, var(--kailo-bg));
+  --ant-primary-2: color-mix(in srgb, var(--kailo-primary) 12%, var(--kailo-bg));
+  --ant-primary-3: color-mix(in srgb, var(--kailo-primary) 24%, var(--kailo-bg));
+  --ant-primary-4: color-mix(in srgb, var(--kailo-primary) 40%, var(--kailo-bg));
+  --ant-primary-5: color-mix(in srgb, var(--kailo-primary) 70%, var(--kailo-bg));
+  --ant-primary-6: var(--kailo-primary);
+  --ant-primary-7: color-mix(in srgb, var(--kailo-primary) 90%, var(--kailo-fg));
+  --ant-primary-color-deprecated-l-35: var(--ant-primary-2);
+  --ant-primary-color-deprecated-l-20: var(--ant-primary-3);
+  --ant-primary-color-deprecated-t-20: var(--ant-primary-5);
+  --ant-primary-color-deprecated-t-50: var(--ant-primary-4);
+  --ant-primary-color-deprecated-f-12: color-mix(in srgb, var(--kailo-primary) 12%, transparent);
+  --ant-primary-color-active-deprecated-f-30: color-mix(in srgb, var(--kailo-primary) 10%, transparent);
+  --ant-primary-color-active-deprecated-d-02: var(--ant-primary-2);
+  --ant-info-color: var(--kailo-primary);
+  --ant-info-color-deprecated-bg: var(--ant-primary-1);
+  --ant-info-color-deprecated-border: var(--ant-primary-3);
+  --ant-error-color: var(--kailo-danger);
+  --ant-error-color-hover: color-mix(in srgb, var(--kailo-danger) 80%, var(--kailo-bg));
+  --ant-error-color-active: color-mix(in srgb, var(--kailo-danger) 90%, var(--kailo-fg));
+  --ant-error-color-outline: color-mix(in srgb, var(--kailo-danger) 20%, transparent);
+  --ant-error-color-deprecated-bg: color-mix(in srgb, var(--kailo-danger) 8%, var(--kailo-bg));
+  --ant-error-color-deprecated-border: color-mix(in srgb, var(--kailo-danger) 35%, var(--kailo-bg));
+}
+
+// 3. Wren's own palette variables (--gray-N, --geekblue-N) used by its
+//    styled components and utility classes, as a Kailo neutral ramp.
+:root {
+  --gray-1: var(--kailo-card);
+  --gray-2: var(--kailo-sidebar);
+  --gray-3: var(--kailo-bg);
+  --gray-4: var(--kailo-muted);
+  --gray-5: var(--kailo-border);
+  --gray-6: color-mix(in srgb, var(--kailo-fg) 30%, var(--kailo-bg));
+  --gray-7: var(--kailo-muted-fg);
+  --gray-8: color-mix(in srgb, var(--kailo-fg) 72%, var(--kailo-bg));
+  --gray-9: color-mix(in srgb, var(--kailo-fg) 86%, var(--kailo-bg));
+  --gray-10: var(--kailo-fg);
+  --geekblue-1: var(--ant-primary-1);
+  --geekblue-2: var(--ant-primary-2);
+  --geekblue-3: var(--ant-primary-3);
+  --geekblue-4: var(--ant-primary-4);
+  --geekblue-5: var(--ant-primary-5);
+  --geekblue-6: var(--ant-primary-6);
+  --geekblue-7: var(--ant-primary-7);
+  --geekblue-8: var(--ant-primary-7);
+  --geekblue-9: var(--kailo-fg);
+  --geekblue-10: var(--kailo-fg);
+  --disabled: color-mix(in srgb, var(--kailo-fg) 35%, transparent);
+}
+
+// 4. Document and text that antd compiles as constants.
+html body {
+  background: var(--kailo-bg);
+  color: var(--kailo-fg);
+  font-family: var(--kailo-font-sans);
+}
+
+.ant-typography.ant-typography-secondary,
+.ant-form-item-extra,
+.ant-form-item-explain:not(.ant-form-item-explain-error),
+.ant-empty-description,
+.ant-select-arrow,
+.ant-picker-suffix,
+.ant-input-prefix,
+.ant-input-suffix,
+.ant-modal-close,
+.ant-drawer-close,
+.ant-table-column-sorter,
+.ant-pagination-item-ellipsis,
+.ant-steps-item-description,
+.ant-tree-switcher,
+.ant-select-selection-placeholder,
+.ant-input::placeholder,
+.ant-input-number-input::placeholder,
+textarea.ant-input::placeholder {
+  color: var(--kailo-muted-fg);
+}
+
+.ant-btn[disabled],
+.ant-btn[disabled]:hover,
+.ant-input[disabled],
+.ant-select-disabled .ant-select-selector,
+.ant-menu-item-disabled,
+.ant-typography.ant-typography-disabled {
+  color: var(--disabled) !important;
+}
+
+.ant-modal-mask,
+.ant-drawer-mask {
+  background-color: color-mix(in srgb, #000 45%, transparent);
+}
+
+.ant-modal-content,
+.ant-modal-header,
+.ant-drawer-content,
+.ant-drawer-header {
+  border-radius: var(--kailo-radius-lg);
+}
+
+.ant-btn-primary {
+  color: var(--kailo-primary-fg);
+}
+
+.ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-popover-inner,
+.ant-picker-dropdown .ant-picker-panel-container {
+  background-color: var(--kailo-popover);
+  box-shadow: var(--kailo-shadow-card);
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td,
+.ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: var(--kailo-accent);
+}
+
+pre,
+code,
+.ace_editor {
+  font-family: var(--kailo-font-mono);
+}
+
+// 5. Dark theme: surfaces that antd and the original styles hard-code.
+html.dark {
+  .ant-switch {
+    background-color: var(--kailo-border);
+  }
+
+  .ant-switch-checked {
+    background-color: var(--kailo-primary);
+  }
+
+  .ant-tag {
+    background: var(--kailo-muted);
+    border-color: var(--kailo-border);
+    color: var(--kailo-fg);
+  }
+
+  .ant-alert-info {
+    background: var(--ant-primary-1);
+    border-color: var(--ant-primary-3);
+  }
+
+  .react-flow__background,
+  .react-flow__renderer {
+    background-color: var(--kailo-bg);
+  }
+
+  .ace_editor,
+  .ace_editor .ace_gutter {
+    background-color: var(--kailo-muted);
+    color: var(--kailo-fg);
+  }
+}
+
+// 6. Kailo user (avatar + name) and ownership marks.
+.kailo-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--kailo-muted-fg);
+  font-size: 12px;
+
+  .kailo-user__avatar {
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--kailo-muted);
+    color: var(--kailo-fg);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+  }
+
+  .kailo-user__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

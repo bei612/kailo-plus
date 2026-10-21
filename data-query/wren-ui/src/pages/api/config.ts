@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getConfig } from '@/apollo/server/config';
 import {
   loadQueryDelivery,
   NativeQueryRefusal,
@@ -15,10 +14,6 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   res.setHeader('Cache-Control', 'private, no-store');
-  const config = getConfig();
-  const encodedTelemetryKey = config.posthogApiKey
-    ? Buffer.from(config.posthogApiKey).toString('base64')
-    : '';
   let queryScope: string | undefined;
   let nativeBindingGeneration: number | undefined;
   const queryConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
@@ -55,11 +50,8 @@ export default async function handler(
     }
   }
 
+  // DD-133 §1: no upstream telemetry configuration reaches the browser.
   res.status(200).json({
-    isTelemetryEnabled: config.telemetryEnabled || false,
-    telemetryKey: encodedTelemetryKey,
-    telemetryHost: config.posthogHost || '',
-    userUUID: config.userUUID || '',
     nativeBindingConfigured,
     nativeBindingGeneration,
     queryScope,

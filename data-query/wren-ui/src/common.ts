@@ -19,6 +19,7 @@ import {
   InstructionRepository,
   ApiHistoryRepository,
   DashboardItemRefreshJobRepository,
+  KailoUserRepository,
 } from '@server/repositories';
 import {
   WrenEngineAdaptor,
@@ -45,6 +46,7 @@ import {
 import { SqlPairService } from './apollo/server/services/sqlPairService';
 import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 import { isGovernedQueryMode } from './apollo/server/services/nativeQueryMode';
+import { KailoUserDirectory } from './apollo/server/services/kailoUserService';
 
 export const serverConfig = getConfig();
 
@@ -85,6 +87,8 @@ export const initComponents = () => {
   const apiHistoryRepository = new ApiHistoryRepository(knex);
   const dashboardItemRefreshJobRepository =
     new DashboardItemRefreshJobRepository(knex);
+  const kailoUserRepository = new KailoUserRepository(knex);
+  const kailoUserDirectory = new KailoUserDirectory(kailoUserRepository);
 
   // adaptors
   const wrenEngineAdaptor = new WrenEngineAdaptor({
@@ -207,6 +211,8 @@ export const initComponents = () => {
     apiHistoryRepository,
     instructionRepository,
     dashboardItemRefreshJobRepository,
+    kailoUserRepository,
+    kailoUserDirectory,
 
     // adaptors
     wrenEngineAdaptor,

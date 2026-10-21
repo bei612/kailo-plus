@@ -4,6 +4,11 @@ import { ApiType, ApiHistory } from '@server/repositories/apiHistoryRepository';
 import * as Errors from '@server/utils/error';
 import { components } from '@/common';
 import {
+  assertStandaloneAdmin,
+  requestIsNativeService,
+  requestKailoUser,
+} from '@server/services/kailoUserService';
+import {
   AskResult,
   AskResultStatus,
   AskResultType,
@@ -327,6 +332,28 @@ export class ApiError extends Error {
     this.additionalData = additionalData;
   }
 }
+
+// DD-133 §3, STANDALONE: knowledge changes through the original REST API need
+// the Kailo Tenant admin entitlement, as in the original GraphQL resolvers.
+// GOVERNED requests keep their Core `manage` admission.
+export const assertStandaloneKnowledgeAdmin = (req: NextApiRequest) => {
+  try {
+    assertStandaloneAdmin(
+      requestKailoUser(req.headers),
+      requestIsNativeService(req.headers),
+    );
+  } catch {
+    throw new ApiError(
+      'Only a Kailo Tenant administrator can change knowledge',
+      403,
+      Errors.GeneralErrorCodes.KAILO_ADMIN_REQUIRED,
+    );
+  }
+};
+
+// DD-133 §3: the verified Kailo user of a STANDALONE REST request.
+export const standaloneOwnerKey = (req: NextApiRequest): string | null =>
+  requestKailoUser(req.headers)?.key ?? null;
 
 /**
  * Common response handler for API endpoints that also logs to API history

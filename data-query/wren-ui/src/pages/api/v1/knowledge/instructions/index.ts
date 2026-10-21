@@ -5,6 +5,8 @@ import {
   ApiError,
   respondWithSimple,
   handleApiError,
+  assertStandaloneKnowledgeAdmin,
+  standaloneOwnerKey,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 import { isNil } from 'lodash';
@@ -132,6 +134,7 @@ const handleCreateInstruction = async (
     : await components.instructionService.createInstruction({
         ...data,
         projectId: project.id,
+        ownerKey: standaloneOwnerKey(req),
       });
 
   // Return the created instruction directly
@@ -271,6 +274,7 @@ export default async function handler(
 
     // Handle POST method - create instruction
     if (req.method === 'POST') {
+      assertStandaloneKnowledgeAdmin(req);
       await handleCreateInstruction(req, res, project, startTime, {
         context: native?.context,
         verify,
