@@ -118,6 +118,7 @@ def prepare_environment(original):
     # It must not silently use native Lite mode or a platform Core database.
     for name, expected in (
         ("DB_DRIVER", "postgres"),
+        ("RETRIEVE_DRIVER", "postgres"),
         ("DB_HOST", "postgres"),
         ("DB_PORT", "5432"),
         ("REDIS_ADDR", "redis:6379"),

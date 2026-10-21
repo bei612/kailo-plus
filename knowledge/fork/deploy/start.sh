@@ -32,6 +32,12 @@ while (($#)); do
   esac
 done
 [[ -f "$native_env" ]] || { echo 'native deployment .env is required' >&2; exit 78; }
+# DD-128(5), SF-WEK-18: knowledge retrieval needs the postgres driver declared
+# in this deployment (native_entrypoint.py refuses to start without it).
+grep -Eq '^      RETRIEVE_DRIVER: postgres$' "$deployment_dir/compose.yaml" || {
+  echo 'compose.yaml must declare app RETRIEVE_DRIVER: postgres' >&2
+  exit 78
+}
 # Neither ambient variables nor the native .env are another model endpoint
 # authority. The platform env is last, so its derived values win in Compose.
 unset PLATFORM_EDGE_NETWORK AGENTGATEWAY_MODEL_HOST AGENTGATEWAY_MODEL_PORT AGENTGATEWAY_MODEL_BASE_URL

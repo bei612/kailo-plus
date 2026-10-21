@@ -47,6 +47,10 @@ services:
       # Native dirty recovery forces a migration version; never guess completion.
       AUTO_RECOVER_DIRTY: "false"
       DB_DRIVER: postgres
+      # DD-128(5), SF-WEK-18: the upstream Compose default. Without it WeKnora
+      # registers no retrieval engine and migrates with app.skip_embedding=true;
+      # migration 000108 restores what an earlier undeclared start skipped.
+      RETRIEVE_DRIVER: postgres
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: ${KNOWLEDGE_DB_USER:?independent native DB user required}

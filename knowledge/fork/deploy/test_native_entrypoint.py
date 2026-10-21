@@ -31,8 +31,11 @@ class NativeEntrypointTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
+        # start.sh checks the adjacent deployment declaration (SF-WEK-18).
+        (Path(self.directory.name) / "compose.yaml").write_bytes(Path(__file__).with_name("compose.yaml").read_bytes())
         self.env = {
             "DB_DRIVER": "postgres",
+            "RETRIEVE_DRIVER": "postgres",
             "DB_HOST": "postgres",
             "DB_PORT": "5432",
             "DB_USER": "native_fixture",
@@ -427,12 +430,40 @@ class NativeEntrypointTests(unittest.TestCase):
             ("REDIS_ADDR", ""),
             ("DB_HOST", "core-db"),
             ("DB_DRIVER", "sqlite"),
+            # SF-WEK-18: without postgres no retrieval engine and skipped embedding schema.
+            ("RETRIEVE_DRIVER", ""),
+            ("RETRIEVE_DRIVER", "elasticsearch_v8"),
+            ("RETRIEVE_DRIVER", "postgres,sqlite"),
             ("AUTO_RECOVER_DIRTY", "true"),
             ("DOCREADER_ADDR", ""),
         ):
             with self.subTest(name=name):
                 changed = {**self.env, name: wrong}
                 self.assert_refused(changed)
+
+    def test_start_refuses_a_deployment_without_the_postgres_retrieval_driver(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        (root / ".env").write_text("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        declared = (root / "compose.yaml").read_text()
+        self.assertEqual(declared.count("\n      RETRIEVE_DRIVER: postgres\n"), 1)
+        ok = subprocess.run(["bash", str(root / "start.sh"), "--validate"], env=env, capture_output=True)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        calls.unlink()
+        for text in (declared.replace("      RETRIEVE_DRIVER: postgres\n", ""),
+                     declared.replace("RETRIEVE_DRIVER: postgres", "RETRIEVE_DRIVER: elasticsearch_v8"),
+                     declared.replace("      RETRIEVE_DRIVER: postgres\n", "      # RETRIEVE_DRIVER: postgres\n")):
+            with self.subTest(text=text.count("RETRIEVE_DRIVER")):
+                (root / "compose.yaml").write_text(text)
+                refused = subprocess.run(["bash", str(root / "start.sh"), "--validate"], env=env, capture_output=True, text=True)
+                self.assertEqual(refused.returncode, 78)
+                self.assertIn("RETRIEVE_DRIVER", refused.stderr)
+                self.assertFalse(calls.exists())
 
     def test_direct_secret_is_not_a_second_configuration_source(self):
         for name in entrypoint.SECRET_NAMES:
