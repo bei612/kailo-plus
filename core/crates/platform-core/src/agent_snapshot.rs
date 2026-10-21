@@ -138,7 +138,11 @@ pub(crate) fn file_name(kind: Kind, encoding: Encoding, name: &str) -> String {
         stem = stem.replace("--", "-");
     }
     let stem = stem.trim_matches('-');
-    let stem = if stem.is_empty() { kind.file_suffix() } else { stem };
+    let stem = if stem.is_empty() {
+        kind.file_suffix()
+    } else {
+        stem
+    };
     let stem: String = stem.chars().take(64).collect();
     format!("{stem}.{}.{}", kind.file_suffix(), encoding.extension())
 }
@@ -236,7 +240,9 @@ pub(crate) enum DecodeError {
 pub(crate) fn decode(bytes: &[u8], file_name: Option<&str>) -> Result<Decoded, DecodeError> {
     if let Some(name) = file_name.map(str::to_ascii_lowercase) {
         // 原版 `snapshot/import.rs::reject_legacy_persona_filename`；v1 没有 zip（v2 才有）。
-        if name.ends_with(".persona.json") || name.ends_with(".persona.png") || name.ends_with(".zip")
+        if name.ends_with(".persona.json")
+            || name.ends_with(".persona.png")
+            || name.ends_with(".zip")
         {
             return Err(DecodeError::Invalid);
         }
@@ -284,7 +290,10 @@ pub(crate) fn decode(bytes: &[u8], file_name: Option<&str>) -> Result<Decoded, D
             if value.get("version").and_then(Value::as_u64) != Some(FORMAT_VERSION) {
                 return Err(DecodeError::Invalid);
             }
-            let team = value.get("team").and_then(Value::as_object).ok_or(DecodeError::Invalid)?;
+            let team = value
+                .get("team")
+                .and_then(Value::as_object)
+                .ok_or(DecodeError::Invalid)?;
             let name = text(team.get("name"))?.ok_or(DecodeError::Invalid)?;
             if name.chars().count() > 200 || !visible(&name, false) {
                 return Err(DecodeError::Invalid);
@@ -438,7 +447,10 @@ fn agent_member(value: &Value) -> Result<Member, DecodeError> {
     // 原版不变式：level none 而带条目是畸形包；任何记忆都按 DD-131(4) 丢弃。
     if let Some(memory) = object.get("memory").filter(|m| !m.is_null()) {
         let memory = memory.as_object().ok_or(DecodeError::Invalid)?;
-        let level = memory.get("level").and_then(Value::as_str).unwrap_or("none");
+        let level = memory
+            .get("level")
+            .and_then(Value::as_str)
+            .unwrap_or("none");
         let entries = non_empty_array(memory.get("entries"))?;
         match level {
             "none" if entries => return Err(DecodeError::Invalid),
@@ -1025,6 +1037,9 @@ mod tests {
             file_name(Kind::Agent, Encoding::Png, "Research Bot!"),
             "research-bot.agent.png"
         );
-        assert_eq!(file_name(Kind::Team, Encoding::Json, "研究"), "team.team.json");
+        assert_eq!(
+            file_name(Kind::Team, Encoding::Json, "研究"),
+            "team.team.json"
+        );
     }
 }

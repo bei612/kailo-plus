@@ -687,7 +687,11 @@ impl DefinitionRow {
 }
 
 /// DD-131(6)：投影闭合时返回是否已分享到目录；不一致或不可核验即不可用。
-async fn catalog_shared(state: &BffState, tenant: Uuid, r: &DefinitionRow) -> Result<bool, Refusal> {
+async fn catalog_shared(
+    state: &BffState,
+    tenant: Uuid,
+    r: &DefinitionRow,
+) -> Result<bool, Refusal> {
     state
         .governance
         .spicedb

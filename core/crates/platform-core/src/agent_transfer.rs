@@ -61,7 +61,9 @@ fn kind_of(action: &str) -> Kind {
 // 参数
 // ---------------------------------------------------------------------------
 
-pub(super) fn normalize_import(input: &contracts::AgentSnapshotImportInput) -> Result<Value, Refusal> {
+pub(super) fn normalize_import(
+    input: &contracts::AgentSnapshotImportInput,
+) -> Result<Value, Refusal> {
     let upload = Uuid::parse_str(&input.upload_id).map_err(|_| invalid())?;
     let route = Uuid::parse_str(&input.model_route_resource_id).map_err(|_| invalid())?;
     let digest = input.content_digest.as_str();
@@ -69,7 +71,9 @@ pub(super) fn normalize_import(input: &contracts::AgentSnapshotImportInput) -> R
     if upload.is_nil()
         || route.is_nil()
         || digest.len() != 64
-        || !digest.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        || !digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         || profile.is_empty()
     {
         return Err(invalid());
@@ -317,7 +321,8 @@ pub(super) async fn target_current(
     def: &Definition,
 ) -> Result<bool, Refusal> {
     let params = ae.params().ok_or_else(invalid)?;
-    let sem = Semantic::from_key(&def.action_key).ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    let sem = Semantic::from_key(&def.action_key)
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     match agent_catalog::target(
         tx,
         ae.tenant_id,
@@ -330,7 +335,9 @@ pub(super) async fn target_current(
     )
     .await
     {
-        Ok(target) => Ok(target.id == ae.target_id && Some(target.version) == ae.frozen_target_version()),
+        Ok(target) => {
+            Ok(target.id == ae.target_id && Some(target.version) == ae.frozen_target_version())
+        }
         Err(r @ Refusal::Unavailable(_)) => Err(r),
         Err(_) => Ok(false),
     }
@@ -354,7 +361,10 @@ pub(crate) async fn approval_owner_eligible(
         Err(Refusal::Unavailable(e)) => return Err(Refusal::Unavailable(e)),
         Err(_) => return Ok(false),
     };
-    if !refs.iter().any(|r| r.owner_principal_id == principal.to_string()) {
+    if !refs
+        .iter()
+        .any(|r| r.owner_principal_id == principal.to_string())
+    {
         return Ok(false);
     }
     let mut tx = g.pool.begin().await?;
@@ -530,7 +540,10 @@ fn version_content(
 
 /// 导出成员：只取冻结 PUBLISHED/RETIRED 版本的可移植字段（DD-131(2)），不含 owner、
 /// 公钥、Installation、绑定、`llm_route`、RuntimeProfile、Delegation、记忆或 SecretRef。
-fn export_member(content: &contracts::AgentVersionContent, avatar: Option<snapshot::Avatar>) -> Member {
+fn export_member(
+    content: &contracts::AgentVersionContent,
+    avatar: Option<snapshot::Avatar>,
+) -> Member {
     let persona = &content.persona_identity;
     Member {
         display_name: persona.display_name.clone(),
@@ -541,13 +554,7 @@ fn export_member(content: &contracts::AgentVersionContent, avatar: Option<snapsh
         idle_timeout_seconds: Some(content.turn_limits.idle_timeout_seconds),
         max_turn_duration_seconds: Some(content.turn_limits.max_turn_duration_seconds),
         reply_policy: Some(content.reply_policy.clone()),
-        trigger_defaults: Some(
-            content
-                .trigger_defaults
-                .iter()
-                .map(super::wire)
-                .collect(),
-        ),
+        trigger_defaults: Some(content.trigger_defaults.iter().map(super::wire).collect()),
         core_write: Some(super::wire(&content.memory_policy.core_write)),
         cold_write: Some(super::wire(&content.memory_policy.cold_write)),
         capability_requirements: content.capability_requirements.clone(),
@@ -613,7 +620,10 @@ pub(crate) async fn start(
 pub(crate) async fn advance(
     State(state): State<ServiceState>,
     headers: HeaderMap,
-    body: Result<Json<contracts::ResourceTransferAdvanceRequest>, axum::extract::rejection::JsonRejection>,
+    body: Result<
+        Json<contracts::ResourceTransferAdvanceRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
 ) -> Response {
     if let Err(response) = crate::service_api::authorize(&state, &headers).await {
         return response;
@@ -637,7 +647,9 @@ async fn advance_inner(
 ) -> Result<Value, Refusal> {
     let target = &input.target;
     let id = Uuid::parse_str(&target.action_execution_id).map_err(|_| invalid())?;
-    let ae = super::load_execution(&state.pool, id).await?.ok_or_else(conflict)?;
+    let ae = super::load_execution(&state.pool, id)
+        .await?
+        .ok_or_else(conflict)?;
     let kind = if is_export(&ae.action_key) {
         EXPORT_KIND
     } else if is_import(&ae.action_key) {
@@ -692,7 +704,11 @@ async fn advance_inner(
     if let Some(code) = terminal {
         return Ok(result(
             ae.id,
-            if code == "SUCCEEDED" { "COMPLETED" } else { "FAILED" },
+            if code == "SUCCEEDED" {
+                "COMPLETED"
+            } else {
+                "FAILED"
+            },
             "NONE",
         ));
     }
@@ -711,7 +727,10 @@ async fn terminal(
     code: &str,
     evidence: Vec<crate::audit::Evidence>,
 ) -> Result<(), Refusal> {
-    let mut refs = vec![crate::audit::Evidence::new(EvidenceKind::ActionExecutionId, ae.id)];
+    let mut refs = vec![crate::audit::Evidence::new(
+        EvidenceKind::ActionExecutionId,
+        ae.id,
+    )];
     refs.extend(evidence);
     crate::audit::append(
         tx,
@@ -767,7 +786,11 @@ fn export_spec(ae: &Execution) -> Result<(Encoding, Vec<(Uuid, Uuid)>), Refusal>
         .ok_or_else(conflict)?
         .iter()
         .map(|m| {
-            let id = |k: &str| m.get(k).and_then(Value::as_str).and_then(|s| Uuid::parse_str(s).ok());
+            let id = |k: &str| {
+                m.get(k)
+                    .and_then(Value::as_str)
+                    .and_then(|s| Uuid::parse_str(s).ok())
+            };
             Some((id("resourceId")?, id("assetId")?))
         })
         .collect::<Option<Vec<_>>>()
@@ -791,7 +814,10 @@ async fn fetch_avatar(
     )
     .await
     .map_err(|_| Refusal::Unavailable("CONTROL media reader unavailable".into()))?;
-    match client.fetch_media(&state.http, &format!("/media/{sha}")).await {
+    match client
+        .fetch_media(&state.http, &format!("/media/{sha}"))
+        .await
+    {
         Ok((bytes, content_type)) if content_type.starts_with("image/") => {
             let raw = bytes.clone();
             Ok(snapshot::inline_avatar(bytes).map(|a| (a, raw)))
@@ -810,7 +836,8 @@ async fn fetch_avatar(
 fn media_sha(url: &str) -> Option<String> {
     let last = url.split(['?', '#']).next()?.rsplit('/').next()?;
     let stem = last.split('.').next()?;
-    (stem.len() == 64 && stem.bytes().all(|b| b.is_ascii_hexdigit())).then(|| stem.to_ascii_lowercase())
+    (stem.len() == 64 && stem.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| stem.to_ascii_lowercase())
 }
 
 async fn export(
@@ -869,12 +896,18 @@ async fn export(
             let v = crate::agent_version::version(&mut conn, ae.tenant_id, *asset, false)
                 .await?
                 .filter(|v| {
-                    v.agent_resource_id == *resource && matches!(v.state.as_str(), "PUBLISHED" | "RETIRED")
+                    v.agent_resource_id == *resource
+                        && matches!(v.state.as_str(), "PUBLISHED" | "RETIRED")
                 })
                 .ok_or_else(conflict)?;
             let content: contracts::AgentVersionContent =
                 serde_json::from_value(v.content).map_err(|_| conflict())?;
-            let avatar = fetch_avatar(state, ae.tenant_id, content.persona_identity.avatar_url.as_deref()).await?;
+            let avatar = fetch_avatar(
+                state,
+                ae.tenant_id,
+                content.persona_identity.avatar_url.as_deref(),
+            )
+            .await?;
             let (avatar, raw) = avatar.map_or((None, None), |(a, r)| (Some(a), Some(r)));
             if body.is_none() {
                 body = raw;
@@ -891,10 +924,14 @@ async fn export(
             )
         } else {
             let member = snapshot_members.first().ok_or_else(conflict)?;
-            (snapshot::agent_manifest(member), member.display_name.clone())
+            (
+                snapshot::agent_manifest(member),
+                member.display_name.clone(),
+            )
         };
         drop(conn);
-        let bytes = snapshot::encode(kind, encoding, &manifest, body.as_deref()).map_err(decode_refusal);
+        let bytes =
+            snapshot::encode(kind, encoding, &manifest, body.as_deref()).map_err(decode_refusal);
         let bytes = match bytes {
             Ok(b) => b,
             Err(_) => return fail_export(state, ae, def, false).await,
@@ -966,10 +1003,12 @@ async fn export(
     .bind(ae.id)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("update catalog.asset set state='READY',projection_action_execution_id=null where id=$1")
-        .bind(ae.id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "update catalog.asset set state='READY',projection_action_execution_id=null where id=$1",
+    )
+    .bind(ae.id)
+    .execute(&mut *tx)
+    .await?;
     terminal(
         &mut tx,
         ae,
@@ -980,7 +1019,10 @@ async fn export(
             crate::audit::Evidence::new(EvidenceKind::SpicedbZedtoken, proof.zed_token),
             crate::audit::Evidence::new(
                 EvidenceKind::SpicedbRelationship,
-                format!("asset:{}#owner@principal:{}", ae.id, ae.initiator_principal_id),
+                format!(
+                    "asset:{}#owner@principal:{}",
+                    ae.id, ae.initiator_principal_id
+                ),
             ),
         ],
     )
@@ -1041,7 +1083,11 @@ fn planned(ae: &Execution, kind: Kind, members: &[Member]) -> Vec<Planned> {
             let version = Uuid::new_v5(&ae.id, format!("version:{i}").as_bytes());
             let base = snapshot::file_name(Kind::Agent, Encoding::Json, &m.display_name);
             let stem = base.trim_end_matches(".agent.json");
-            let stem = if stem == "agent" { "imported-agent" } else { stem };
+            let stem = if stem == "agent" {
+                "imported-agent"
+            } else {
+                stem
+            };
             let slug = format!("{stem}-{}", &definition.simple().to_string()[..8]);
             Planned {
                 definition,
@@ -1119,7 +1165,9 @@ async fn import(
                                 crate::tenant_lifecycle::ProjectionDirection::Establish,
                             )
                             .await
-                            .map_err(|_| Refusal::Unavailable("CONTROL media writer unavailable".into()))?
+                            .map_err(|_| {
+                                Refusal::Unavailable("CONTROL media writer unavailable".into())
+                            })?
                             .0,
                         );
                     }
@@ -1150,7 +1198,12 @@ async fn import(
         let mut tx = state.pool.begin().await?;
         lock_execution(&mut tx, ae.id).await?;
         if !crate::roles::lock_tenant(&mut tx, ae.tenant_id).await?
-            || !crate::agent_definition::active_owner(&mut tx, ae.tenant_id, ae.initiator_principal_id).await?
+            || !crate::agent_definition::active_owner(
+                &mut tx,
+                ae.tenant_id,
+                ae.initiator_principal_id,
+            )
+            .await?
         {
             drop(tx);
             return fail_import(state, ae, def, false, &plan).await;
@@ -1189,10 +1242,15 @@ async fn import(
                 values ($1,$2,'agent.definition',$3,'core','agent.definition',$1::text,'PROVISIONING',1,$4)")
                 .bind(p.definition).bind(ae.tenant_id).bind(ae.initiator_principal_id).bind(ae.id)
                 .execute(&mut *tx).await?;
-            sqlx::query("insert into catalog.agent_definition(resource_id,stable_slug,display_name,status)
-                values ($1,$2,$3,'PROVISIONING')")
-                .bind(p.definition).bind(&p.slug).bind(&content.persona_identity.display_name)
-                .execute(&mut *tx).await?;
+            sqlx::query(
+                "insert into catalog.agent_definition(resource_id,stable_slug,display_name,status)
+                values ($1,$2,$3,'PROVISIONING')",
+            )
+            .bind(p.definition)
+            .bind(&p.slug)
+            .bind(&content.persona_identity.display_name)
+            .execute(&mut *tx)
+            .await?;
             sqlx::query("insert into catalog.asset
                 (id,tenant_id,resource_id,type_key,owner_principal_id,producer_principal_id,native_ref,state,version,projection_action_execution_id)
                 values ($1,$2,$3,'agent.version',$4,$4,$1::text,'DRAFT',1,$5)")
@@ -1239,7 +1297,13 @@ async fn import(
             .map_err(|e| Refusal::Unavailable(e.to_string()))?;
         let asset = g
             .spicedb
-            .asset_projection_matches(&p.version.to_string(), &tenant, &id, &owner, g.cfg.relationship_page)
+            .asset_projection_matches(
+                &p.version.to_string(),
+                &tenant,
+                &id,
+                &owner,
+                g.cfg.relationship_page,
+            )
             .await
             .map_err(|e| Refusal::Unavailable(e.to_string()))?;
         if !resource || !asset {
@@ -1271,7 +1335,13 @@ async fn import(
     }
     let proof = g
         .spicedb
-        .check("tenant", &tenant, "discover", &owner, Consistency::FullyConsistent)
+        .check(
+            "tenant",
+            &tenant,
+            "discover",
+            &owner,
+            Consistency::FullyConsistent,
+        )
         .await
         .map_err(|e| Refusal::Unavailable(e.to_string()))?;
     let mut tx = state.pool.begin().await?;
@@ -1292,10 +1362,17 @@ async fn import(
         .bind(input.upload_id).bind(ae.id).execute(&mut *tx).await?;
     evidence.insert(
         0,
-        crate::audit::Evidence::versioned(EvidenceKind::TransferPackageDigest, &input.content_digest, 1),
+        crate::audit::Evidence::versioned(
+            EvidenceKind::TransferPackageDigest,
+            &input.content_digest,
+            1,
+        ),
     );
     if !proof.zed_token.is_empty() {
-        evidence.push(crate::audit::Evidence::new(EvidenceKind::SpicedbZedtoken, proof.zed_token));
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::SpicedbZedtoken,
+            proof.zed_token,
+        ));
     }
     terminal(&mut tx, ae, def, "SUCCEEDED", evidence).await?;
     tx.commit().await?;
@@ -1617,10 +1694,17 @@ pub async fn package_content(
         .unwrap_or_else(|_| HeaderValue::from_static("attachment"));
     (
         [
-            (header::CONTENT_TYPE, HeaderValue::from_str(&row.media_type).unwrap_or(HeaderValue::from_static("application/octet-stream"))),
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(&row.media_type)
+                    .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+            ),
             (header::CONTENT_DISPOSITION, disposition),
             (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
-            (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            (
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ),
         ],
         bytes,
     )
@@ -1638,39 +1722,55 @@ mod tests {
     #[test]
     fn import_and_export_commands_are_closed_sets() {
         let digest = "a".repeat(64);
-        let import = command(json!({"actionKey":"agent.team.import","idempotencyKey":Uuid::new_v4(),
+        let import = command(
+            json!({"actionKey":"agent.team.import","idempotencyKey":Uuid::new_v4(),
             "snapshotImport":{"uploadId":Uuid::new_v4(),"contentDigest":digest,
                 "runtimeProfileKey":" server-codex ","modelRouteResourceId":Uuid::new_v4()},
-            "explicitConfirmation":true}));
+            "explicitConfirmation":true}),
+        );
         let p = super::super::parse_command(Semantic::AgentTeamImport, &import).unwrap();
         let input = import_input(&p).unwrap();
         assert_eq!(input.runtime_profile_key, "server-codex");
         assert_eq!(Params::from_json(&p.to_json()), Some(p));
-        let upper = command(json!({"actionKey":"agent.team.import","idempotencyKey":Uuid::new_v4(),
+        let upper = command(
+            json!({"actionKey":"agent.team.import","idempotencyKey":Uuid::new_v4(),
             "snapshotImport":{"uploadId":Uuid::new_v4(),"contentDigest":"A".repeat(64),
-                "runtimeProfileKey":"k","modelRouteResourceId":Uuid::new_v4()},"explicitConfirmation":true}));
+                "runtimeProfileKey":"k","modelRouteResourceId":Uuid::new_v4()},"explicitConfirmation":true}),
+        );
         assert!(super::super::parse_command(Semantic::AgentTeamImport, &upper).is_err());
-        let export = command(json!({"actionKey":"agent.definition.export","idempotencyKey":Uuid::new_v4(),
+        let export = command(
+            json!({"actionKey":"agent.definition.export","idempotencyKey":Uuid::new_v4(),
             "resourceId":Uuid::new_v4(),"resourceVersion":3,"assetId":Uuid::new_v4(),
-            "snapshotExport":{"encoding":"PNG"}}));
+            "snapshotExport":{"encoding":"PNG"}}),
+        );
         let p = super::super::parse_command(Semantic::AgentDefinitionExport, &export).unwrap();
         assert_eq!(export_encoding(&p), Some(Encoding::Png));
         // 导出没有确认位、记忆级别或其他参数；团队导出不带版本 Asset。
-        let confirmed = command(json!({"actionKey":"agent.definition.export","idempotencyKey":Uuid::new_v4(),
+        let confirmed = command(
+            json!({"actionKey":"agent.definition.export","idempotencyKey":Uuid::new_v4(),
             "resourceId":Uuid::new_v4(),"resourceVersion":3,"assetId":Uuid::new_v4(),
-            "snapshotExport":{"encoding":"PNG"},"explicitConfirmation":true}));
+            "snapshotExport":{"encoding":"PNG"},"explicitConfirmation":true}),
+        );
         assert!(super::super::parse_command(Semantic::AgentDefinitionExport, &confirmed).is_err());
-        let team_asset = command(json!({"actionKey":"agent.team.export","idempotencyKey":Uuid::new_v4(),
+        let team_asset = command(
+            json!({"actionKey":"agent.team.export","idempotencyKey":Uuid::new_v4(),
             "resourceId":Uuid::new_v4(),"resourceVersion":3,"assetId":Uuid::new_v4(),
-            "snapshotExport":{"encoding":"JSON"}}));
+            "snapshotExport":{"encoding":"JSON"}}),
+        );
         assert!(super::super::parse_command(Semantic::AgentTeamExport, &team_asset).is_err());
     }
 
     #[test]
     fn media_sha_reads_only_content_addressed_paths() {
         let sha = "ab".repeat(32);
-        assert_eq!(media_sha(&format!("https://relay.example/{sha}.png")), Some(sha.clone()));
-        assert_eq!(media_sha(&format!("/api/v1/profile/media/{sha}")), Some(sha));
+        assert_eq!(
+            media_sha(&format!("https://relay.example/{sha}.png")),
+            Some(sha.clone())
+        );
+        assert_eq!(
+            media_sha(&format!("/api/v1/profile/media/{sha}")),
+            Some(sha)
+        );
         assert_eq!(media_sha("https://relay.example/avatar.png"), None);
     }
 
@@ -1712,7 +1812,10 @@ mod tests {
         let first = planned(&ae, Kind::Team, &members);
         assert_eq!(first, planned(&ae, Kind::Team, &members));
         assert_ne!(first[0].definition, first[1].definition);
-        assert!(first.iter().all(|p| super::super::valid_slug(&p.slug)), "{first:?}");
+        assert!(
+            first.iter().all(|p| super::super::valid_slug(&p.slug)),
+            "{first:?}"
+        );
         assert!(first[0].slug.starts_with("research-bot-"));
         assert!(first[1].slug.starts_with("imported-agent-"));
     }

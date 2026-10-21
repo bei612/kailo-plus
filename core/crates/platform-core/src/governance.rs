@@ -3776,6 +3776,9 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             tenant_quota_setting: None,
+            agent_team: None,
+            snapshot_export: None,
+            snapshot_import: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3882,6 +3885,9 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             tenant_quota_setting: None,
+            agent_team: None,
+            snapshot_export: None,
+            snapshot_import: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(

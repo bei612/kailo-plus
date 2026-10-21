@@ -154,7 +154,8 @@ pub(super) fn normalize_team(input: &contracts::AgentTeamInput) -> Result<Value,
         .filter(|d| !d.is_empty());
     if description.is_some_and(|d| {
         d.chars().count() > MAX_DESCRIPTION_CHARS
-            || d.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
+            || d.chars()
+                .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
     }) {
         return Err(invalid());
     }
@@ -315,7 +316,9 @@ pub(crate) async fn team(
 }
 
 fn usable(team: &Team) -> bool {
-    team.state == "ACTIVE" && team.team_state == "ACTIVE" && team.projection_action_execution_id.is_none()
+    team.state == "ACTIVE"
+        && team.team_state == "ACTIVE"
+        && team.projection_action_execution_id.is_none()
 }
 
 /// 成员须是同 Tenant、当前 ACTIVE 且无未闭合投影的 AgentDefinition；read 在 gate 里 fresh 查。
@@ -582,7 +585,10 @@ pub(super) async fn prewrite(
 // 派发
 // ---------------------------------------------------------------------------
 
-async fn tenant_active(tx: &mut Transaction<'_, Postgres>, tenant: Uuid) -> Result<bool, sqlx::Error> {
+async fn tenant_active(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query_scalar::<_, bool>(
         "select state='ACTIVE' from identity.tenant where id=$1 for update",
     )
@@ -629,7 +635,8 @@ pub(super) async fn dispatch_create(
         .filter(|t| t.projection_action_execution_id == Some(ae.id))
         .ok_or_else(conflict)?;
     let owner = t.owner_principal_id;
-    let valid = active && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, owner).await?;
+    let valid =
+        active && crate::agent_definition::active_owner(&mut tx, ae.tenant_id, owner).await?;
     if !valid {
         return abort_create(g, tx, &ae, def, &t).await;
     }
@@ -778,7 +785,10 @@ async fn abort_create(
                 ae.id,
                 def.audit_class(),
                 Err(StatusCode::FORBIDDEN),
-                vec![crate::audit::Evidence::new(EvidenceKind::SpicedbZedtoken, token)],
+                vec![crate::audit::Evidence::new(
+                    EvidenceKind::SpicedbZedtoken,
+                    token,
+                )],
             )
             .await?;
             tx.commit().await?;
@@ -864,9 +874,12 @@ pub(super) async fn dispatch_grants(
     let fresh = match current {
         Some(_) if active && first && grant => {
             // 首次写入前 fresh 复核发起人当前的 share 与 scope。
-            let scoped =
-                crate::agent_definition::active_owner(&mut tx, ae.tenant_id, ae.initiator_principal_id)
-                    .await?;
+            let scoped = crate::agent_definition::active_owner(
+                &mut tx,
+                ae.tenant_id,
+                ae.initiator_principal_id,
+            )
+            .await?;
             let checked = g
                 .spicedb
                 .check(
@@ -909,7 +922,8 @@ pub(super) async fn dispatch_grants(
         tx.commit().await?;
         return Err(conflict());
     }
-    let grants = Relationship::catalog_share_grants(&ae.target_id.to_string(), &ae.tenant_id.to_string());
+    let grants =
+        Relationship::catalog_share_grants(&ae.target_id.to_string(), &ae.tenant_id.to_string());
     let writes: Vec<_> = grants
         .iter()
         .map(|r| (if grant { Write::Touch } else { Write::Delete }, r.clone()))
@@ -1043,7 +1057,8 @@ async fn shared_of(g: &Governance, t: &Team) -> Result<bool, Refusal> {
         .ok_or_else(|| Refusal::Unavailable("Resource 权限投影不一致".into()))
 }
 
-const TEAM_COLUMNS: &str = "r.id,r.tenant_id,r.owner_principal_id,r.state,r.version,r.projection_action_execution_id,
+const TEAM_COLUMNS: &str =
+    "r.id,r.tenant_id,r.owner_principal_id,r.state,r.version,r.projection_action_execution_id,
     t.name,t.description,t.member_agent_resource_ids as members,t.state as team_state";
 
 /// `GET /api/v1/agent-teams`
@@ -1077,11 +1092,17 @@ pub async fn list(
         Ok(r) => r,
         Err(e) => return crate::service_api::unavailable(e),
     };
-    let next = (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
+    let next =
+        (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);
     let ids: Vec<String> = rows.iter().map(|r| r.id.to_string()).collect();
     let discoverable = match g
         .spicedb
-        .check_bulk("resource", &ids, "discover", &ctx.tenant_principal_id.to_string())
+        .check_bulk(
+            "resource",
+            &ids,
+            "discover",
+            &ctx.tenant_principal_id.to_string(),
+        )
         .await
     {
         Ok(a) => a,
@@ -1270,5 +1291,141 @@ mod tests {
         assert!(Semantic::AgentTeamUpdate.completes_in_admission());
         assert!(!Semantic::AgentTeamDelete.completes_in_admission());
         assert!(!Semantic::AgentDefinitionShare.completes_in_admission());
+    }
+
+    /// 隔离库：团队、导出包与上传暂存的库内不变式（迁移后的一次性库，事务回滚）。
+    #[tokio::test]
+    #[ignore = "requires isolated AGENT_TEAM_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn agent_team_isolated_database_invariants() {
+        use sqlx::Connection;
+        let mut conn = PgConnection::connect(
+            &std::env::var("AGENT_TEAM_TEST_DATABASE_URL").expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let other_tenant = Uuid::new_v4();
+        let (human, principal, membership) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let (foreign_human, foreign_principal) = (Uuid::new_v4(), Uuid::new_v4());
+        for (id, slug) in [(tenant, "dd131-a"), (other_tenant, "dd131-b")] {
+            sqlx::query("insert into identity.tenant(id,slug,name,state) values ($1,$2||'-'||$1::text,'isolated DD-131','ACTIVE')")
+                .bind(id).bind(slug).execute(&mut *tx).await.unwrap();
+        }
+        for h in [human, foreign_human] {
+            sqlx::query("insert into identity.human_identity(id,display_name,status) values ($1,'isolated','ACTIVE')")
+                .bind(h).execute(&mut *tx).await.unwrap();
+        }
+        for (p, t) in [(principal, tenant), (foreign_principal, other_tenant)] {
+            sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values ($1,$2,'HUMAN','ACTIVE')")
+                .bind(p).bind(t).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values ($1,$2,$3,$4,'ACTIVE'),($5,$6,$7,$8,'ACTIVE')")
+            .bind(membership).bind(tenant).bind(human).bind(principal)
+            .bind(Uuid::new_v4()).bind(other_tenant).bind(foreign_human).bind(foreign_principal)
+            .execute(&mut *tx).await.unwrap();
+        async fn definition(tx: &mut PgConnection, tenant: Uuid, owner: Uuid) -> Uuid {
+            let id = Uuid::new_v4();
+            sqlx::query("insert into catalog.resource(id,tenant_id,type_key,owner_principal_id,component_type_key,native_type,native_id,state,version)
+                values ($1,$2,'agent.definition',$3,'core','agent.definition',$1::text,'ACTIVE',1)")
+                .bind(id).bind(tenant).bind(owner).execute(&mut *tx).await.unwrap();
+            sqlx::query("insert into catalog.agent_definition(resource_id,stable_slug,display_name,status) values ($1,'d-'||$1::text,'D','ACTIVE')")
+                .bind(id).execute(&mut *tx).await.unwrap();
+            id
+        }
+        let a = definition(&mut tx, tenant, principal).await;
+        let b = definition(&mut tx, tenant, principal).await;
+        let foreign = definition(&mut tx, other_tenant, foreign_principal).await;
+        let team_id = Uuid::new_v4();
+        sqlx::query("insert into catalog.resource(id,tenant_id,type_key,owner_principal_id,component_type_key,native_type,native_id,state,version)
+            values ($1,$2,'agent.team',$3,'core','agent.team',$1::text,'ACTIVE',1)")
+            .bind(team_id).bind(tenant).bind(principal).execute(&mut *tx).await.unwrap();
+        let insert = |members: Vec<Uuid>| {
+            sqlx::query("insert into catalog.agent_team(resource_id,name,member_agent_resource_ids,state) values ($1,'Crew',$2,'ACTIVE')")
+                .bind(team_id).bind(members)
+        };
+        // 重复成员与跨 Tenant 成员由库内守卫拒绝（逐次在保存点内尝试）。
+        for bad in [vec![a, a], vec![a, foreign]] {
+            let mut sp = tx.begin().await.unwrap();
+            assert!(insert(bad).execute(&mut *sp).await.is_err());
+            sp.rollback().await.unwrap();
+        }
+        insert(vec![b, a]).execute(&mut *tx).await.unwrap();
+        let t = team(&mut tx, tenant, team_id, true).await.unwrap().unwrap();
+        assert_eq!(t.members, vec![b, a]);
+        assert!(usable(&t));
+        assert!(team(&mut tx, other_tenant, team_id, false)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(members_exist(&mut tx, tenant, &[a, b]).await.unwrap());
+        assert!(!members_exist(&mut tx, tenant, &[a, foreign]).await.unwrap());
+        // 墓碑不可改写。
+        sqlx::query("update catalog.agent_team set state='DELETED' where resource_id=$1")
+            .bind(team_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        {
+            let mut sp = tx.begin().await.unwrap();
+            assert!(sqlx::query(
+                "update catalog.agent_team set name='Again',state='ACTIVE' where resource_id=$1"
+            )
+            .bind(team_id)
+            .execute(&mut *sp)
+            .await
+            .is_err());
+            sp.rollback().await.unwrap();
+        }
+        assert!(!usable(
+            &team(&mut tx, tenant, team_id, false)
+                .await
+                .unwrap()
+                .unwrap()
+        ));
+        // 导出包：字节只在 CREATING/READY 存在且长度一致；定义导出必须固定源版本。
+        let asset = Uuid::new_v4();
+        sqlx::query("insert into catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,producer_principal_id,native_ref,state,version)
+            values ($1,$2,$3,'export.package',$4,$4,$1::text,'READY',1)")
+            .bind(asset).bind(tenant).bind(team_id).bind(principal).execute(&mut *tx).await.unwrap();
+        let package = |state: &'static str, content: Option<Vec<u8>>, size: i32| {
+            sqlx::query("insert into catalog.export_package(asset_id,tenant_id,source_resource_id,source_object_version,format_key,format_version,
+                encoding,media_type,file_name,content_digest,byte_size,content,export_operation_id,state)
+                values ($1,$2,$3,1,'buzz-team-snapshot',1,'JSON','application/json','crew.team.json',$4,$5,$6,$1,$7)")
+                .bind(asset).bind(tenant).bind(team_id).bind("a".repeat(64)).bind(size).bind(content).bind(state)
+        };
+        for (state, content, size) in [
+            ("READY", None, 3),
+            ("DELETED", Some(vec![1u8, 2, 3]), 3),
+            ("READY", Some(vec![1u8]), 3),
+        ] {
+            let mut sp = tx.begin().await.unwrap();
+            assert!(package(state, content, size)
+                .execute(&mut *sp)
+                .await
+                .is_err());
+            sp.rollback().await.unwrap();
+        }
+        package("READY", Some(vec![1u8, 2, 3]), 3)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        // 上传暂存只属于真实 PlatformSession；同一 AE 只能消费一份。
+        let session = Uuid::new_v4();
+        sqlx::query("insert into identity.platform_session(id,human_identity_id,tenant_membership_id,issued_at,expires_at,status)
+            values ($1,$2,$3,now(),now()+interval '1 hour','ACTIVE')")
+            .bind(session).bind(human).bind(membership).execute(&mut *tx).await.unwrap();
+        let upload = Uuid::new_v4();
+        sqlx::query("insert into admission.agent_snapshot_upload(id,tenant_id,session_id,principal_id,snapshot_kind,encoding,content_digest,byte_size,content,expires_at)
+            values ($1,$2,$3,$4,'TEAM','JSON',$5,2,'{}'::bytea,now()+interval '30 minutes')")
+            .bind(upload).bind(tenant).bind(session).bind(principal).bind("b".repeat(64))
+            .execute(&mut *tx).await.unwrap();
+        let mut sp = tx.begin().await.unwrap();
+        assert!(sqlx::query("insert into admission.agent_snapshot_upload(id,tenant_id,session_id,principal_id,snapshot_kind,encoding,content_digest,byte_size,content,expires_at)
+            values ($1,$2,$3,$4,'TEAM','JSON',$5,9,'{}'::bytea,now())")
+            .bind(Uuid::new_v4()).bind(tenant).bind(session).bind(principal).bind("c".repeat(64))
+            .execute(&mut *sp).await.is_err());
+        sp.rollback().await.unwrap();
+        tx.rollback().await.unwrap();
     }
 }
