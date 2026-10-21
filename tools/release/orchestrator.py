@@ -222,8 +222,15 @@ class State:
         self._dump(self.index_path, data)
 
     def ensure_worktree(self):
-        """源 commit 的独立检出：只由入口写入（record/pin），HEAD 只能是源 commit 或本次 pin 提交。"""
+        """源 commit 的独立检出：只由入口写入（record/pin），HEAD 只能是源 commit 或本次 pin 提交。
+        其它源 commit 的发布 worktree 一并移除：日志保留，恢复该次发布时按日志重新检出。"""
         wt = self.worktree
+        parent = os.path.dirname(wt)
+        for other in (os.listdir(parent) if os.path.isdir(parent) else []):
+            path = os.path.join(parent, other)
+            if path != wt and re.fullmatch(r"[0-9a-f]{40}", other) and os.path.isdir(path):
+                self.git("worktree", "remove", "--force", path)
+        self.git("worktree", "prune")
         if not os.path.isdir(wt):
             self._mkdir(os.path.dirname(wt))
             self.git("worktree", "add", "--quiet", "--detach", wt, self.source)
