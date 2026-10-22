@@ -108,6 +108,7 @@
 //     final componentConformanceAuthorization = componentConformanceAuthorizationFromJson(jsonString);
 //     final componentConformanceWireDigests = componentConformanceWireDigestsFromJson(jsonString);
 //     final componentConformanceWireObservation = componentConformanceWireObservationFromJson(jsonString);
+//     final componentMemberDirectory = componentMemberDirectoryFromJson(jsonString);
 //     final componentReleaseApprovalReport = componentReleaseApprovalReportFromJson(jsonString);
 //     final componentReleasePage = componentReleasePageFromJson(jsonString);
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
@@ -1016,6 +1017,12 @@ ComponentConformanceWireObservation componentConformanceWireObservationFromJson(
 String componentConformanceWireObservationToJson(
   ComponentConformanceWireObservation data,
 ) => json.encode(data.toJson());
+
+ComponentMemberDirectory componentMemberDirectoryFromJson(String str) =>
+    ComponentMemberDirectory.fromJson(json.decode(str));
+
+String componentMemberDirectoryToJson(ComponentMemberDirectory data) =>
+    json.encode(data.toJson());
 
 ComponentReleaseApprovalReport componentReleaseApprovalReportFromJson(
   String str,
@@ -10498,6 +10505,182 @@ final componentConformanceStepExpectedMcpResultKindValues = EnumValues({
   "ERROR": ComponentConformanceStepExpectedMcpResultKind.ERROR,
   "RESULT": ComponentConformanceStepExpectedMcpResultKind.RESULT,
 });
+
+///Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
+///DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
+///display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
+///never paged: a person absent from it is removed from the component organisation.
+///directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No
+///email, Buzz key, session or credential.
+class ComponentMemberDirectory {
+  final String bindingId;
+
+  ///Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+  ///unchanged content keeps the same version.
+  final String directoryVersion;
+  final List<ComponentDirectoryMember> members;
+  final ComponentDirectoryTenant tenant;
+
+  ///Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+  ///one).
+  final List<ComponentDirectoryWorkspace> workspaces;
+
+  ComponentMemberDirectory({
+    required this.bindingId,
+    required this.directoryVersion,
+    required this.members,
+    required this.tenant,
+    required this.workspaces,
+  });
+
+  factory ComponentMemberDirectory.fromJson(Map<String, dynamic> json) =>
+      ComponentMemberDirectory(
+        bindingId: json["bindingId"],
+        directoryVersion: json["directoryVersion"],
+        members: List<ComponentDirectoryMember>.from(
+          json["members"].map((x) => ComponentDirectoryMember.fromJson(x)),
+        ),
+        tenant: ComponentDirectoryTenant.fromJson(json["tenant"]),
+        workspaces: List<ComponentDirectoryWorkspace>.from(
+          json["workspaces"].map(
+            (x) => ComponentDirectoryWorkspace.fromJson(x),
+          ),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "directoryVersion": directoryVersion,
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "tenant": tenant.toJson(),
+    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
+  });
+}
+
+class ComponentDirectoryMember {
+  ///Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+  ///HumanIdentity display name.
+  final String displayName;
+
+  ///One entry per ACTIVE external identity; the component keys its account on issuer +
+  ///subject.
+  final List<ComponentDirectoryIdentity> identities;
+  final String principalId;
+  final ComponentDirectoryRole tenantRole;
+  final List<ComponentDirectoryMembership> workspaces;
+
+  ComponentDirectoryMember({
+    required this.displayName,
+    required this.identities,
+    required this.principalId,
+    required this.tenantRole,
+    required this.workspaces,
+  });
+
+  factory ComponentDirectoryMember.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryMember(
+        displayName: json["displayName"],
+        identities: List<ComponentDirectoryIdentity>.from(
+          json["identities"].map((x) => ComponentDirectoryIdentity.fromJson(x)),
+        ),
+        principalId: json["principalId"],
+        tenantRole: componentDirectoryRoleValues.map[json["tenantRole"]]!,
+        workspaces: List<ComponentDirectoryMembership>.from(
+          json["workspaces"].map(
+            (x) => ComponentDirectoryMembership.fromJson(x),
+          ),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "identities": List<dynamic>.from(identities.map((x) => x.toJson())),
+    "principalId": principalId,
+    "tenantRole": componentDirectoryRoleValues.reverse[tenantRole],
+    "workspaces": List<dynamic>.from(workspaces.map((x) => x.toJson())),
+  });
+}
+
+class ComponentDirectoryIdentity {
+  final String issuer;
+
+  ///<PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+  ///claim.
+  final String picture;
+  final String subject;
+
+  ComponentDirectoryIdentity({
+    required this.issuer,
+    required this.picture,
+    required this.subject,
+  });
+
+  factory ComponentDirectoryIdentity.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryIdentity(
+        issuer: json["issuer"],
+        picture: json["picture"],
+        subject: json["subject"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"issuer": issuer, "picture": picture, "subject": subject});
+}
+
+///成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
+///ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
+enum ComponentDirectoryRole { ADMIN, MEMBER }
+
+final componentDirectoryRoleValues = EnumValues({
+  "ADMIN": ComponentDirectoryRole.ADMIN,
+  "MEMBER": ComponentDirectoryRole.MEMBER,
+});
+
+class ComponentDirectoryMembership {
+  final ComponentDirectoryRole role;
+  final String workspaceId;
+
+  ComponentDirectoryMembership({required this.role, required this.workspaceId});
+
+  factory ComponentDirectoryMembership.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryMembership(
+        role: componentDirectoryRoleValues.map[json["role"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "role": componentDirectoryRoleValues.reverse[role],
+    "workspaceId": workspaceId,
+  });
+}
+
+class ComponentDirectoryTenant {
+  final String name;
+  final String tenantId;
+
+  ComponentDirectoryTenant({required this.name, required this.tenantId});
+
+  factory ComponentDirectoryTenant.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryTenant(name: json["name"], tenantId: json["tenantId"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"name": name, "tenantId": tenantId});
+}
+
+class ComponentDirectoryWorkspace {
+  final String name;
+  final String workspaceId;
+
+  ComponentDirectoryWorkspace({required this.name, required this.workspaceId});
+
+  factory ComponentDirectoryWorkspace.fromJson(Map<String, dynamic> json) =>
+      ComponentDirectoryWorkspace(
+        name: json["name"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"name": name, "workspaceId": workspaceId});
+}
 
 ///原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 class ComponentReleaseApprovalReport {

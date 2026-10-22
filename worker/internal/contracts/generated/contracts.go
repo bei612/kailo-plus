@@ -325,6 +325,9 @@
 //    componentConformanceWireObservation, err := UnmarshalComponentConformanceWireObservation(bytes)
 //    bytes, err = componentConformanceWireObservation.Marshal()
 //
+//    componentMemberDirectory, err := UnmarshalComponentMemberDirectory(bytes)
+//    bytes, err = componentMemberDirectory.Marshal()
+//
 //    componentReleaseApprovalReport, err := UnmarshalComponentReleaseApprovalReport(bytes)
 //    bytes, err = componentReleaseApprovalReport.Marshal()
 //
@@ -2096,6 +2099,16 @@ func UnmarshalComponentConformanceWireObservation(data []byte) (ComponentConform
 }
 
 func (r *ComponentConformanceWireObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentMemberDirectory(data []byte) (ComponentMemberDirectory, error) {
+	var r ComponentMemberDirectory
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentMemberDirectory) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6323,6 +6336,59 @@ type CapabilityVectorCapture struct {
 	Key     string                      `json:"key"`
 	Pointer *string                     `json:"pointer,omitempty"`
 	Slot    CapabilityVectorCaptureSlot `json:"slot"`
+}
+
+// Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
+// DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
+// display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
+// never paged: a person absent from it is removed from the component organisation.
+// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No
+// email, Buzz key, session or credential.
+type ComponentMemberDirectory struct {
+	BindingID string `json:"bindingId"`
+	// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+	// unchanged content keeps the same version.
+	DirectoryVersion string                     `json:"directoryVersion"`
+	Members          []ComponentDirectoryMember `json:"members"`
+	Tenant           ComponentDirectoryTenant   `json:"tenant"`
+	// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+	// one).
+	Workspaces []ComponentDirectoryWorkspace `json:"workspaces"`
+}
+
+type ComponentDirectoryMember struct {
+	// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+	// HumanIdentity display name.
+	DisplayName string `json:"displayName"`
+	// One entry per ACTIVE external identity; the component keys its account on issuer +
+	// subject.
+	Identities  []ComponentDirectoryIdentity   `json:"identities"`
+	PrincipalID string                         `json:"principalId"`
+	TenantRole  ComponentDirectoryRole         `json:"tenantRole"`
+	Workspaces  []ComponentDirectoryMembership `json:"workspaces"`
+}
+
+type ComponentDirectoryIdentity struct {
+	Issuer string `json:"issuer"`
+	// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+	// claim.
+	Picture string `json:"picture"`
+	Subject string `json:"subject"`
+}
+
+type ComponentDirectoryMembership struct {
+	Role        ComponentDirectoryRole `json:"role"`
+	WorkspaceID string                 `json:"workspaceId"`
+}
+
+type ComponentDirectoryTenant struct {
+	Name     string `json:"name"`
+	TenantID string `json:"tenantId"`
+}
+
+type ComponentDirectoryWorkspace struct {
+	Name        string `json:"name"`
+	WorkspaceID string `json:"workspaceId"`
 }
 
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -10616,6 +10682,15 @@ type ComponentConformanceStepExpectedMCPResultKind string
 const (
 	ComponentConformanceStepExpectedMCPResultKindERROR ComponentConformanceStepExpectedMCPResultKind = "ERROR"
 	Result                                             ComponentConformanceStepExpectedMCPResultKind = "RESULT"
+)
+
+// 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
+// ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
+type ComponentDirectoryRole string
+
+const (
+	Admin  ComponentDirectoryRole = "ADMIN"
+	Member ComponentDirectoryRole = "MEMBER"
 )
 
 type PlatformBuildInfoPlatformPortKeysItem string
