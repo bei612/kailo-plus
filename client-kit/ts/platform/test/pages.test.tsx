@@ -4034,10 +4034,13 @@ describe("AgentDefinitionsPage read outcomes", () => {
 
   it.each(["en", "zh-CN"] as const)("uses the original Agent introduction and one page refresh for both readers (%s)", async (locale) => {
     const t = transport((r) => r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [] } }
+      : r.path === "/api/v1/skill-definitions" ? { status: 200, body: { definitions: [] } }
       : r.path === "/api/v1/workspaces" ? { status: 200, body: [{ id: "workspace-one", name: "Workspace", slug: "workspace" }] }
       : r.path.startsWith("/api/v1/agent-installations?") ? { status: 200, body: { installations: [] } }
       : { status: 200, body: [] });
     const host = await mount(t, <AgentDefinitionsPage />, locale);
+    // DD-135, 17 §8: the Skills area sits inside the Agents page and reloads with the one page Refresh.
+    expect(host.querySelector("[data-testid=skills-section]")).not.toBeNull();
     expect(host.textContent).toContain(locale === "en" ? "Set up and manage your agents." : "设置和管理你的 Agent。");
     expect(host.textContent).not.toContain(locale === "en" ? "Manage stable definitions" : "此处管理稳定定义");
     expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
@@ -4045,9 +4048,9 @@ describe("AgentDefinitionsPage read outcomes", () => {
       (node.getAttribute("aria-label") ?? node.textContent) === (locale === "en" ? "Refresh" : "刷新"));
     expect(buttons).toHaveLength(1);
     const reads = (path: string) => t.send.mock.calls.filter(([r]) => r.path.startsWith(path)).length;
-    const before = [reads("/api/v1/agent-definitions"), reads("/api/v1/workspaces"), reads("/api/v1/agent-installations?")];
+    const before = [reads("/api/v1/agent-definitions"), reads("/api/v1/workspaces"), reads("/api/v1/agent-installations?"), reads("/api/v1/skill-definitions")];
     await click(buttons[0]!);
-    for (const [index, path] of ["/api/v1/agent-definitions", "/api/v1/workspaces", "/api/v1/agent-installations?"].entries()) {
+    for (const [index, path] of ["/api/v1/agent-definitions", "/api/v1/workspaces", "/api/v1/agent-installations?", "/api/v1/skill-definitions"].entries()) {
       expect(reads(path)).toBeGreaterThan(before[index]!);
     }
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);

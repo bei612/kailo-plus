@@ -290,14 +290,15 @@ export const installationSkillLabels = {
 // Skills 区（Agents 页内）
 // ---------------------------------------------------------------------------
 
-export function SkillsSection({ locked = false }: { locked?: boolean }) {
+/** Original AgentsView keeps one page-level Refresh; the page passes its revision so Skills reload with it. */
+export function SkillsSection({ locked = false, refreshRevision = 0 }: { locked?: boolean; refreshRevision?: number }) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
   const [pageIndex, setPageIndex] = useState(0);
   const [revision, setRevision] = useState(0);
   const offset = offsets[pageIndex] ?? 0;
-  const [state, reload] = useLoad(`skill-definitions:${offset}:${revision}`, () => client.skillDefinitions(offset));
+  const [state, reload] = useLoad(`skill-definitions:${offset}:${revision}:${refreshRevision}`, () => client.skillDefinitions(offset));
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -306,12 +307,9 @@ export function SkillsSection({ locked = false }: { locked?: boolean }) {
     && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset)) ? data : null;
   const blocked = locked || busy;
   return <section className="flex flex-col gap-3" data-testid="skills-section" aria-labelledby="skills-section-title">
-    <div className="flex flex-wrap items-end justify-between gap-2">
-      <div className="min-w-0">
-        <h2 id="skills-section-title" className="text-lg font-semibold">{t("skills.title")}</h2>
-        <p className="text-sm text-muted-foreground">{t("skills.description")}</p>
-      </div>
-      <Button disabled={blocked || state.status === "pending"} onClick={reload}>{t("platform.refresh")}</Button>
+    <div className="min-w-0">
+      <h2 id="skills-section-title" className="text-lg font-semibold">{t("skills.title")}</h2>
+      <p className="text-sm text-muted-foreground">{t("skills.description")}</p>
     </div>
     {state.status === "pending" ? <div className={GRID_CLASS} role="status" aria-label={t("platform.loading")}>
       <IdentityCardSkeleton footerSubtitleWidthClass="w-14" footerTitleWidthClass="w-24" />

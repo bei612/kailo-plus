@@ -113,7 +113,7 @@ describe("Skills section in the Agents page", () => {
     const t = transport((request) => {
       if (request.path === "/api/v1/skill-definitions") return { status: 200, body: { definitions: [definition] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}`) return { status: 200, body: definition };
-      if (request.path === `/api/v1/skill-definitions/${definitionId}/versions`) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
+      if (request.path.startsWith(`/api/v1/skill-definitions/${definitionId}/versions`)) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}/uploads`) return { status: 200, body: uploaded };
       if (request.path === "/api/v1/actions") return submission(request.body as ActionCommand);
       return { status: 404, body: undefined };
@@ -144,7 +144,7 @@ describe("Skills section in the Agents page", () => {
     const t = transport((request) => {
       if (request.path === "/api/v1/skill-definitions") return { status: 200, body: { definitions: [definition] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}`) return { status: 200, body: definition };
-      if (request.path === `/api/v1/skill-definitions/${definitionId}/versions`) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
+      if (request.path.startsWith(`/api/v1/skill-definitions/${definitionId}/versions`)) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}/uploads`) return { status: 422, body: {
         accepted: false, skillResourceId: definitionId, uploadDigest: "c".repeat(64), uploadByteSize: 2048,
         violations: [{ code: "EXECUTABLE_ENTRY", path: "s/scripts/run.sh" }, { code: "EXTRA_ENTRY", path: "s/references/a.png" }],
@@ -169,7 +169,7 @@ describe("Skills section in the Agents page", () => {
     const t = transport((request) => {
       if (request.path === "/api/v1/skill-definitions") return { status: 200, body: { definitions: [definition] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}`) return { status: 200, body: definition };
-      if (request.path === `/api/v1/skill-definitions/${definitionId}/versions`) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [draft] } };
+      if (request.path.startsWith(`/api/v1/skill-definitions/${definitionId}/versions`)) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [draft] } };
       if (request.path === "/api/v1/actions") return submission(request.body as ActionCommand);
       return { status: 404, body: undefined };
     });
@@ -188,7 +188,7 @@ describe("Skills section in the Agents page", () => {
     const t = transport((request) => {
       if (request.path === "/api/v1/skill-definitions") return { status: 200, body: { definitions: [definition] } };
       if (request.path === `/api/v1/skill-definitions/${definitionId}`) return { status: 200, body: definition };
-      if (request.path === `/api/v1/skill-definitions/${definitionId}/versions`) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
+      if (request.path.startsWith(`/api/v1/skill-definitions/${definitionId}/versions`)) return { status: 200, body: { skillResourceId: definitionId, resourceVersion: 2, versions: [] } };
       if (request.path === "/api/v1/actions") {
         calls += 1;
         return { status: 503, body: { class: "UNKNOWN", reason: "DISPATCH_RESULT_UNKNOWN", operationId: "op" } };

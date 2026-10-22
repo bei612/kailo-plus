@@ -239,7 +239,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
           onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
       </AgentManagementDialog>
       {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
-      <SkillsSection locked={blocked || versionEdit !== null} />
+      <SkillsSection locked={blocked || versionEdit !== null} refreshRevision={refreshRevision} />
       <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
       <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
         <ToolManagement />
