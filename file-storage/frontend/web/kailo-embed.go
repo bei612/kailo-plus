@@ -15,11 +15,10 @@ import (
 	"os"
 	"strings"
 	"unicode"
-
 )
 
 const (
-	kailoEmbedRoot      = "plug/kailo.embed"
+	kailoEmbedRoot = "plug/kailo.embed"
 	// KailoFavicon is the Kailo application icon copied from the web-client
 	// build at image build time (one asset for favicon, loader and logos).
 	KailoFavicon = kailoEmbedRoot + "/brand/app-icon.png"
@@ -205,7 +204,6 @@ func serveKailoAuthRequired(w http.ResponseWriter) {
 		Script:    template.JS(script),
 	})
 }
-
 
 // silentLoginRequired reports a prompt=none answer meaning "no IdP session".
 func silentLoginRequired(code string) bool {

@@ -400,10 +400,6 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OIDC identity is not linked", http.StatusForbidden)
 		return
 	}
-	if errors.Is(err, auth.ErrNativeOIDCTenantRefused) {
-		http.Error(w, "OIDC identity is not a member of a Tenant of this instance", http.StatusForbidden)
-		return
-	}
 	if err != nil {
 		http.Error(w, "Native user is unavailable", http.StatusForbidden)
 		return

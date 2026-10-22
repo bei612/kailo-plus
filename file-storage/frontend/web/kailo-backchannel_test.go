@@ -133,9 +133,9 @@ func TestKailoBackchannelLogoutRefusals(t *testing.T) {
 	}
 	good := f.logoutToken(t, nil, jose.RS256, nil)
 	for name, w := range map[string]*httptest.ResponseRecorder{
-		"json":      postLogout(f, "application/json", url.Values{"logout_token": {good}}.Encode()),
-		"two":       postLogout(f, form, url.Values{"logout_token": {good, good}}.Encode()),
-		"no-token":  postLogout(f, form, "other=1"),
+		"json":     postLogout(f, "application/json", url.Values{"logout_token": {good}}.Encode()),
+		"two":      postLogout(f, form, url.Values{"logout_token": {good, good}}.Encode()),
+		"no-token": postLogout(f, form, "other=1"),
 	} {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d", name, w.Code)

@@ -183,11 +183,11 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 func TestNativeOIDCOrganizationValidation(t *testing.T) {
 	base := auth.NativeOIDCConnector{Issuer: provisionIssuer, ClientID: provisionClient}
 	for name, tenant := range map[string]auth.NativeOIDCTenant{
-		"no-tenant":      {},
-		"blank-name":     {ID: "a", Name: " "},
-		"invalid-id":     {ID: "../a", Name: "A"},
-		"non-printable":  {ID: "a", Name: "A\nB"},
-		"padded-name":    {ID: "a", Name: " A"},
+		"no-tenant":     {},
+		"blank-name":    {ID: "a", Name: " "},
+		"invalid-id":    {ID: "../a", Name: "A"},
+		"non-printable": {ID: "a", Name: "A\nB"},
+		"padded-name":   {ID: "a", Name: " A"},
 	} {
 		c := base
 		c.Organization = &auth.NativeOIDCOrganization{Tenant: tenant}
