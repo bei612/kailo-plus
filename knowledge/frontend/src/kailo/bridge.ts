@@ -33,7 +33,7 @@ export interface KailoEmbedRuntime {
 type RuntimeHost = { KailoEmbed?: unknown }
 
 /** The runtime installed by kailo-embed.js, or null when it is absent or not wire v1. */
-export function kailoEmbed(host: RuntimeHost | undefined = typeof window !== 'undefined' ? window : undefined): KailoEmbedRuntime | null {
+export function kailoEmbed(host: RuntimeHost | undefined = typeof window !== 'undefined' ? (window as unknown as RuntimeHost) : undefined): KailoEmbedRuntime | null {
   const runtime = host?.KailoEmbed as Partial<KailoEmbedRuntime> | undefined
   if (!runtime || runtime.version !== 1 || typeof runtime.getState !== 'function') return null
   return runtime as KailoEmbedRuntime

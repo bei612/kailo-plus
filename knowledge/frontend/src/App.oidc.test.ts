@@ -131,7 +131,7 @@ test('native OIDC hydrates identity and scope and completes navigation before mo
   const f = fixture()
   try {
     assert.deepEqual(f.meRequests, ['native-session'])
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     await flush()
     assert.deepEqual(f.invitationScopes, [], 'polling also waits for the native scope')
     f.userInfo.resolve({ success: true, data: {
@@ -140,7 +140,7 @@ test('native OIDC hydrates identity and scope and completes navigation before mo
     } })
     await flush()
     assert.deepEqual(f.routes, ['/platform/knowledge-bases'])
-    assert.deepEqual(f.mounts, [], 'navigation must finish before the old route can mount')
+    assert.equal(f.mounts.length, 0, 'navigation must finish before the old route can mount')
     f.navigation.resolve()
     await flush()
     assert.equal(f.mounts.length, 4)
@@ -164,7 +164,7 @@ test('failed native user hydration logs out and completes login navigation befor
   try {
     f.userInfo.reject(new Error('native identity rejected'))
     await flush()
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     assert.equal(f.store.token, '')
     assert.deepEqual(f.routes, ['/login'])
     f.navigation.resolve()
@@ -178,7 +178,7 @@ test('IdP error never starts user hydration or mounts the callback route', async
   const f = fixture('error')
   try {
     assert.deepEqual(f.meRequests, [])
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     f.navigation.resolve()
     await flush()
     assert.ok(f.mounts.every(mount => mount.path === '/login'))
