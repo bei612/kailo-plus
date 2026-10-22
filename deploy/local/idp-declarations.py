@@ -128,13 +128,15 @@ def declared_clients(values):
     raw = (values.get("NATIVE_OIDC_CLIENTS") or "").strip()
     if not raw:
         return []
-    try:
-        declared = json.loads(raw)
-    except ValueError:
-        raise Refused("NATIVE_OIDC_CLIENTS 不是 JSON") from None
+    # .env 同时被 Compose 与 bash `.` 读取、经发布入口 env.set 声明，值不得含空白与引号：
+    # 每项为 <clientId>=<back-channel 地址>，以逗号分隔（地址不带 query，故不含 = 与 ,）。
+    declared = []
+    for item in raw.split(","):
+        client_id, sep, url = item.partition("=")
+        if not sep:
+            raise Refused("NATIVE_OIDC_CLIENTS 每项必须是 <clientId>=<backchannelLogoutUrl>，以逗号分隔")
+        declared.append({"clientId": client_id, "backchannelLogoutUrl": url})
     allowed = set((values.get("NATIVE_PAGE_ORIGINS") or "").split())
-    if not isinstance(declared, list) or not declared:
-        raise Refused("NATIVE_OIDC_CLIENTS 必须是非空 JSON 数组")
     if not allowed or not all(exact_origin(o) for o in allowed) or values["PUBLIC_ORIGIN"] in allowed:
         raise Refused("NATIVE_PAGE_ORIGINS 必须是精确 origin 且不含平台 origin")
     platform = {values[k] for k in ("OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID",

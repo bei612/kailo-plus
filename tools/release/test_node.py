@@ -342,7 +342,7 @@ _ispec.loader.exec_module(idp)
 SENTINELS = ("http://sentinel.example:1", "sentinel-browser", "sentinel-native", "sentinel-cells-client")
 ENV = {"PUBLIC_HOST": ["sentinel.example"], "AGENTGATEWAY_PORT": ["1"],
        "PUBLIC_ORIGIN": ["http://${PUBLIC_HOST}:${AGENTGATEWAY_PORT}"],
-       "NATIVE_OIDC_CLIENTS": ['[{"clientId":"sentinel-cells-client","backchannelLogoutUrl":"http://c.example:2/oauth/backchannel-logout"}]'],
+       "NATIVE_OIDC_CLIENTS": ['sentinel-cells-client=http://c.example:2/oauth/backchannel-logout'],
        "UNRELATED": ["a"]}
 KEYS = ["PUBLIC_ORIGIN", "NATIVE_OIDC_CLIENTS", "OIDC_ISSUER"]
 FILES = "sha256:" + "1" * 64
@@ -496,7 +496,7 @@ TEMPLATE = {"clients": [
 VALUES = {"PUBLIC_ORIGIN": "http://k.example:1", "OIDC_BROWSER_CLIENT_ID": "browser", "OIDC_NATIVE_CLIENT_ID": "native",
           "OIDC_SERVICE_CLIENT_ID": "core", "OIDC_WORKER_CLIENT_ID": "worker",
           "OIDC_NATIVE_MOBILE_REDIRECT_URI": "kailo://cb", "NATIVE_PAGE_ORIGINS": "http://c.example:2",
-          "NATIVE_OIDC_CLIENTS": '[{"clientId":"cells","backchannelLogoutUrl":"http://c.example:2/auth/kailo/backchannel-logout"}]'}
+          "NATIVE_OIDC_CLIENTS": 'cells=http://c.example:2/auth/kailo/backchannel-logout'}
 
 
 class FakeKeycloak:
