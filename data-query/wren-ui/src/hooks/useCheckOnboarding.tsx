@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useOnboardingStatusQuery } from '@/apollo/client/graphql/onboarding.generated';
 import { OnboardingStatus } from '@/apollo/client/graphql/__types__';
 import { Path } from '@/utils/enum';
+import useKailoSession from '@/hooks/useKailoSession';
 
 const redirectRoute = {
   [OnboardingStatus.DATASOURCE_SAVED]: Path.OnboardingModels,
@@ -14,6 +15,8 @@ const redirectRoute = {
 export const useWithOnboarding = () => {
   const router = useRouter();
   const { data, loading } = useOnboardingStatusQuery();
+  // DD-133 §3: members land on asking; modeling is the admins' entry.
+  const { isAdmin, loaded: sessionLoaded } = useKailoSession();
 
   const onboardingStatus = data?.onboardingStatus?.status;
 
@@ -45,7 +48,8 @@ export const useWithOnboarding = () => {
 
       // redirect to the home page when entering the Index page
       if (pathname === '/') {
-        router.push(newPath);
+        if (!sessionLoaded) return;
+        router.push(isAdmin ? newPath : Path.Home);
         return;
       }
 
@@ -68,7 +72,7 @@ export const useWithOnboarding = () => {
         return;
       }
     }
-  }, [onboardingStatus, router.pathname]);
+  }, [onboardingStatus, router.pathname, sessionLoaded, isAdmin]);
 
   return {
     loading,

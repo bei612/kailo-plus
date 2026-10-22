@@ -53,10 +53,10 @@
     "redactionPolicy": "PLATFORM_METADATA_ONLY"
   },
   "frontendPresentationContract": {
-    "integrationMode": "NONE",
-    "themeMapping": {},
-    "localeMapping": {},
-    "themeChangePolicy": "NONE",
-    "localeResolutionPolicy": "NONE"
+    "integrationMode": "KAILO_EMBED",
+    "themeMapping": { "LIGHT": "light", "DARK": "dark" },
+    "localeMapping": { "ZH_CN": "zh-CN", "EN": "en" },
+    "themeChangePolicy": "LIVE",
+    "localeResolutionPolicy": "BROWSER_RESOLVED"
   }
 }

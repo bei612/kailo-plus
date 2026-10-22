@@ -60,6 +60,10 @@ export enum GeneralErrorCodes {
 
   // sql execution error
   SQL_EXECUTION_ERROR = 'SQL_EXECUTION_ERROR',
+
+  // DD-133 §3: modeling, connection, project and knowledge administration of a
+  // STANDALONE instance require the Kailo Tenant admin entitlement.
+  KAILO_ADMIN_REQUIRED = 'KAILO_ADMIN_REQUIRED',
 }
 
 export const errorMessages = {
@@ -128,6 +132,8 @@ export const errorMessages = {
 
   // sql execution error
   [GeneralErrorCodes.SQL_EXECUTION_ERROR]: 'SQL execution error',
+  [GeneralErrorCodes.KAILO_ADMIN_REQUIRED]:
+    'Only a Kailo Tenant administrator can change this.',
 };
 
 export const shortMessages = {
@@ -161,6 +167,7 @@ export const shortMessages = {
     'Failed to generate Vega spec',
   [GeneralErrorCodes.POLLING_TIMEOUT]: 'Polling timeout',
   [GeneralErrorCodes.SQL_EXECUTION_ERROR]: 'SQL execution error',
+  [GeneralErrorCodes.KAILO_ADMIN_REQUIRED]: 'Administrator required',
 };
 
 export const create = (

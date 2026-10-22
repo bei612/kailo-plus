@@ -16,6 +16,7 @@ export interface Instruction {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  ownerKey?: string | null; // DD-133 §3: creating Kailo user
 }
 
 export interface IInstructionRepository extends IBasicRepository<Instruction> {}

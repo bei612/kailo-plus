@@ -81,7 +81,8 @@ export class ProjectResolver {
     const dataSourceType = project.type;
 
     return {
-      productVersion: ctx.config.wrenProductVersion || '',
+      // DD-133 §1: no upstream version is shown in the white-labelled page.
+      productVersion: '',
       dataSource: {
         type: dataSourceType,
         properties: {

@@ -1,35 +1,44 @@
-import { AppProps } from 'next/app';
-import Head from 'next/head';
+import NextApp, { AppContext, AppProps } from 'next/app';
 import { Spin } from 'antd';
-import posthog from 'posthog-js';
 import apolloClient from '@/apollo/client';
 import { GlobalConfigProvider } from '@/hooks/useGlobalConfig';
-import { PostHogProvider } from 'posthog-js/react';
+import { KailoSessionProvider } from '@/hooks/useKailoSession';
 import { ApolloProvider } from '@apollo/client';
 import { defaultIndicator } from '@/components/PageLoading';
+
+// DD-133: the Kailo font is part of this build (the same package and version
+// as web-client), never loaded from Kailo at run time.
+import '@fontsource-variable/inter/wght.css';
 
 require('../styles/index.less');
 
 Spin.setDefaultIndicator(defaultIndicator);
 
-function App({ Component, pageProps }: AppProps) {
+type Props = AppProps & { kailoDisplayName?: string };
+
+function App({ Component, pageProps, kailoDisplayName }: Props) {
   return (
     <>
-      <Head>
-        <title>Wren AI</title>
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
       <GlobalConfigProvider>
         <ApolloProvider client={apolloClient}>
-          <PostHogProvider client={posthog}>
+          <KailoSessionProvider displayName={kailoDisplayName}>
             <main className="app">
               <Component {...pageProps} />
             </main>
-          </PostHogProvider>
+          </KailoSessionProvider>
         </ApolloProvider>
       </GlobalConfigProvider>
     </>
   );
 }
+
+// DD-133: the page head carries deployment facts (Kailo web origin, product
+// name), so pages render per request instead of at image build time.
+App.getInitialProps = async (context: AppContext) => {
+  const props = await NextApp.getInitialProps(context);
+  return typeof window === 'undefined'
+    ? { ...props, kailoDisplayName: process.env.PLATFORM_DISPLAY_NAME?.trim() }
+    : props;
+};
 
 export default App;

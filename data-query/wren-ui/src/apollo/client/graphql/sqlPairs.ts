@@ -9,6 +9,10 @@ const SQL_PAIR = gql`
     createdAt
     updatedAt
     nativeWritePending
+    owner {
+      name
+      picture
+    }
   }
 `;
 

@@ -45,6 +45,8 @@ const logger = getLogger('SqlPairService');
 export interface CreateSqlPair {
   sql: string;
   question: string;
+  // DD-133 §3: creating Kailo user; recorded on the original native row only.
+  ownerKey?: string | null;
 }
 
 export interface EditSqlPair {

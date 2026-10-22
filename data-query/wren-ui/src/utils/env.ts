@@ -9,10 +9,6 @@ export type UserConfig = {
   nativeBindingConfigured: boolean;
   nativeBindingGeneration?: number;
   queryScope?: string;
-  isTelemetryEnabled: boolean;
-  telemetryKey: string;
-  telemetryHost: string;
-  userUUID: string;
 };
 
 // Get the user configuration
@@ -22,10 +18,5 @@ export const getUserConfig = async (): Promise<UserConfig> => {
     cache: 'no-store',
   });
   if (!response.ok) throw new Error('Native configuration unavailable');
-  const config = await response.json();
-  const decodedTelemetryKey = Buffer.from(
-    config.telemetryKey,
-    'base64',
-  ).toString();
-  return { ...config, telemetryKey: decodedTelemetryKey };
+  return await response.json();
 };

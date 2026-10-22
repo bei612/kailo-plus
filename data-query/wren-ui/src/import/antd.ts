@@ -46,7 +46,7 @@ export { default as Popover } from 'antd/lib/popover';
 // export { default as Progress } from 'antd/lib/progress';
 export { default as Radio } from 'antd/lib/radio';
 // export { default as Rate } from 'antd/lib/rate';
-// export { default as Result } from 'antd/lib/result';
+export { default as Result } from 'antd/lib/result';
 export { default as Row } from 'antd/lib/row';
 export { default as Select } from 'antd/lib/select';
 // export { default as Segmented } from 'antd/lib/segmented';

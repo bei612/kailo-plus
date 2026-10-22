@@ -4,6 +4,16 @@ upstream_url: https://github.com/Canner/WrenAI
 evidence_commit: c5f02a0391c87420dba78632dcd86073710deb72
 implementation_base_commit: c5f02a0391c87420dba78632dcd86073710deb72
 base_divergence: none
+remove_paths:
+  # DD-133(1): upstream brand assets, onboarding guide screenshots and product
+  # telemetry are not part of the white-labelled Kailo page.
+  - wren-ui/public/favicon.ico
+  - wren-ui/public/images/dashboard
+  - wren-ui/public/images/learning
+  - wren-ui/public/images/logo-white-with-text.svg
+  - wren-ui/public/images/logo.svg
+  - wren-ui/src/components/learning
+  - wren-ui/src/utils/telemetry.ts
 source_components:
   wren-engine: 47ca29ebba291100ba5d70ce1790f9887eaed7a0
 artifacts:
@@ -11,7 +21,7 @@ artifacts:
     kind: image
     build_context: .
     build_dockerfile: data-query/wren-ui/Dockerfile
-    inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs]
+    inputs: [data-query/wren-ui/, client-kit/adapter/protocol.mjs, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, client-kit/embed/kailo-embed.d.ts, web-client/web/public/app-icon.png]
     source_digest: sha256:5b3a94c5f365fb08bf6c939639e407460eaef193bc27cc11d0d9b37813f686f5
     artifact_digest: sha256:b576e7ffdead152149ca6cd660d29ad21a7be133628e194e7a3a8b5e76bd332b
   - name: data-query-ai-service
@@ -37,6 +47,6 @@ artifacts:
     artifact_digest: sha256:792b843117cef6f9617c7ad1191a65fcc9cb1e9e66371970cbca6ffde28acda1
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
-compatibility_evidence: [data-query/fork/verify/native-integration.md]
+compatibility_evidence: [data-query/fork/verify/native-integration.md, data-query/fork/verify/kailo-embed-integration.md]
 owner: team-platform
 last_reverified: 2026-10-05

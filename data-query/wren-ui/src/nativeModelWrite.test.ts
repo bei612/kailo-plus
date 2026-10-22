@@ -218,6 +218,9 @@ describe.each(['createModel', 'updateModel'] as const)(
         }),
       };
       context = {
+        // DD-133: STANDALONE writes are Kailo Tenant admin actions; GOVERNED
+        // ones keep the Core `manage` check exercised below.
+        kailoUser: { key: 'a'.repeat(64), admin: true },
         nativeHumanToken: 'verified-test-person',
         nativeIdentityScope: 'a'.repeat(64),
         projectService,

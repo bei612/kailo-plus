@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { Modal, Layout, Button } from 'antd';
 import styled from 'styled-components';
 import { SETTINGS } from '@/utils/enum';
 import { makeIterable } from '@/utils/iteration';
 import { ModalAction } from '@/hooks/useModalAction';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
-import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 import DataSourceSettings from './DataSourceSettings';
 import ProjectSettings from './ProjectSettings';
 import { getSettingMenu } from './utils';
+import useKailoText from '@/utils/kailoI18n';
 import {
   useGetSettingsLazyQuery,
   GetSettingsQuery,
@@ -74,8 +75,8 @@ const DynamicComponent = ({
   );
 };
 
-const MenuTemplate = ({ currentMenu, value, onClick }) => {
-  const current = getSettingMenu(value);
+const MenuTemplate = ({ currentMenu, value, onClick, locale }) => {
+  const current = getSettingMenu(value, locale);
   return (
     <StyledButton
       className={currentMenu === value ? 'geekblue-6 bg-gray-4' : 'gray-8'}
@@ -93,8 +94,10 @@ const MenuIterator = makeIterable(MenuTemplate);
 
 export default function Settings(props: Props) {
   const { onClose, visible } = props;
+  const { locale } = useRouter();
+  const t = useKailoText();
   const [menu, setMenu] = useState<SETTINGS>(SETTINGS.DATA_SOURCE);
-  const current = getSettingMenu(menu);
+  const current = getSettingMenu(menu, locale);
   const menuList = Object.keys(SETTINGS).map((key) => ({
     key,
     value: SETTINGS[key],
@@ -102,10 +105,6 @@ export default function Settings(props: Props) {
   const [fetchSettings, { data, refetch }] = useGetSettingsLazyQuery({
     fetchPolicy: 'cache-and-network',
   });
-
-  const productVersion = useMemo(() => {
-    return data?.settings?.productVersion;
-  }, [data?.settings]);
 
   useEffect(() => {
     if (visible) fetchSettings();
@@ -127,21 +126,16 @@ export default function Settings(props: Props) {
         <StyledSider width={310} className="border-r border-gray-4">
           <div className="gray-9 text-bold py-3 px-5">
             <SettingOutlined className="mr-2" />
-            Settings
+            {t('settings')}
           </div>
           <div className="p-3 flex-grow-1">
             <MenuIterator
               data={menuList}
               currentMenu={menu}
               onClick={onMenuClick}
+              locale={locale}
             />
           </div>
-          {!!productVersion && (
-            <div className="gray-7 d-flex align-center p-3 px-5">
-              <InfoCircleOutlined className="mr-2 text-sm" />
-              Wren AI version: {productVersion}
-            </div>
-          )}
         </StyledSider>
         <Content className="d-flex flex-column">
           <div className="d-flex align-center gray-9 border-b border-gray-4 text-bold py-3 px-4">

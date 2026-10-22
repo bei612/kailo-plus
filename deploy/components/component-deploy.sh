@@ -16,7 +16,7 @@
 #                adapter-delivery.py reader 已完成。
 # 受控 env 默认：Cells cells/deploy.env、WeKnora knowledge/native.env、Wren
 # data-query/native.env（均在 /volumes/data/kailo/components 下，0600）；平台 .env 只读取
-# 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK，--adapter 另取两份公钥路径）。
+# 各组件声明的公共键（Wren：OIDC_ISSUER、PLATFORM_EDGE_NETWORK、PLATFORM_DISPLAY_NAME，--adapter 另取两份公钥路径）。
 # Wren 原生 config.yaml 每次由 native-config.py 以 data-query/docker/config.template.yaml + 部署事实
 # （组件 env 的 WREN_MODEL_*、平台 .env 的 AGENTGATEWAY_MODEL_BASE_URL）渲染，缺事实即拒绝。
 # 环境：COMPONENT_ENV_FILE 覆盖默认受控 env；COMPONENT_BACKUP_ROOT（默认 /volumes/data/kailo/backups/components）。
@@ -193,6 +193,8 @@ case "$component" in
     echo "== 0. 原生 config.yaml 渲染核对（只列键名）"
     "${render[@]}" check data-query --env "$ENV" --source "$commit" >/dev/null
     platform_keys=("OIDC_ISSUER=$(platform_value OIDC_ISSUER)" "PLATFORM_EDGE_NETWORK=$(platform_value PLATFORM_EDGE_NETWORK)")
+    # DD-133 §1：问数页面的产品名 = 部署显示名 + 组件名，显示名只取平台 .env 这一处。
+    platform_keys+=("PLATFORM_DISPLAY_NAME=$(platform_value PLATFORM_DISPLAY_NAME)")
     if "$adapter"; then platform_keys+=("GATEWAY_SERVICE_JWKS_FILE=$(platform_value GATEWAY_SERVICE_JWKS_FILE)"); fi
     # 原生 AI Service 经 edge 网络到达 AgentGateway 独立模型入口（只是传输，key 仍由 Core 投影）。
     compose=(env "${platform_keys[@]}" docker compose --env-file "$ENV" -f "$S/data-query/docker/docker-compose.yaml"
