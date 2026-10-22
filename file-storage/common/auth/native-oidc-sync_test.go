@@ -86,20 +86,22 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 		permissions.ClearCachedPolicies(ctx, "oidc")
 		idp := provisionIdP{t: t, key: key}
 		dedicated := auth.NativeOIDCConnector{Issuer: provisionIssuer, ClientID: provisionClient, ProvisionUsers: true, ProvisionProfile: common.PydioProfileStandard,
-			Organization: &auth.NativeOIDCOrganization{Tenants: []auth.NativeOIDCTenant{{ID: "6179e160-tenant", Name: "Kailo Verify"}}, TenantAdminClaim: "kailo_tenant_admin"}}
+			Organization: &auth.NativeOIDCOrganization{Tenant: auth.NativeOIDCTenant{ID: "6179e160-tenant", Name: "Kailo Verify"}}}
 
 		t.Run("tenant-group-profile-and-refresh", func(t *testing.T) {
 			setProvisionConnector(t, ctx, dedicated)
 			first, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-member", idp.token(provisionIssuer, "subject-member", provisionClient, map[string]any{
 				"preferred_username": "member", "name": "成员甲", "email": "member@example.invalid", "email_verified": true,
-				"picture": "https://kailo.example.invalid/avatars/member.png", "locale": "zh-CN", "kailo_tenant_admin": true}))
+				"picture": "https://kailo.example.invalid/api/v1/identity/avatars/subject-member", "locale": "zh-CN",
+				// IdP groups or role-like claims never derive a native role (07 §4.7.4).
+				"groups": []string{"admin"}, "kailo_tenant_admin": true}))
 			if err != nil {
 				t.Fatal(err)
 			}
 			group := tenantGroup(t, ctx, "6179e160-tenant")
 			a := first.GetAttributes()
-			if first.GetGroupPath() != "/kailo-6179e160-tenant" || a[idm.UserAttrProfile] != common.PydioProfileAdmin || a[idm.UserAttrDisplayName] != "成员甲" ||
-				a[idm.UserAttrAvatar] != "https://kailo.example.invalid/avatars/member.png" || a[idm.UserAttrEmail] != "member@example.invalid" {
+			if first.GetGroupPath() != "/kailo-6179e160-tenant" || a[idm.UserAttrProfile] != common.PydioProfileStandard || a[idm.UserAttrDisplayName] != "成员甲" ||
+				a[idm.UserAttrAvatar] != "https://kailo.example.invalid/api/v1/identity/avatars/subject-member" || a[idm.UserAttrEmail] != "member@example.invalid" {
 				t.Fatalf("first login not mapped from Kailo: %s %v", first.GetGroupPath(), a)
 			}
 			if group.GetAttributes()[idm.UserAttrDisplayName] != "Kailo Verify" || !hasPolicy(group.GetPolicies(), service.ResourcePolicyAction_READ, "role:"+group.GetUuid()) {
@@ -121,10 +123,14 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 				t.Fatal("account does not inherit its Tenant group role")
 			}
 
-			// Next login: Kailo changed name, dropped the picture, revoked the
-			// Tenant admin role and switched to English.
+			// A native administrator raised the account in the console; the
+			// next login (Kailo changed name, dropped the picture, switched to
+			// English) puts the Kailo-derived standard profile back.
+			raised := searchUsers(t, ctx, &idm.UserSingleQuery{Uuid: first.GetUuid()})[0]
+			raised.Attributes[idm.UserAttrProfile] = common.PydioProfileAdmin
+			createNativeUser(t, ctx, raised)
 			again, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-member", idp.token(provisionIssuer, "subject-member", provisionClient, map[string]any{
-				"preferred_username": "renamed", "name": "Member A", "locale": "en", "kailo_tenant_admin": false}))
+				"preferred_username": "renamed", "name": "Member A", "locale": "en"}))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -140,35 +146,6 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 			resolved, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-member", nil)
 			if err != nil || resolved.GetAttributes()[idm.UserAttrDisplayName] != "Member A" {
 				t.Fatalf("resolve-only path: %v", err)
-			}
-		})
-
-		t.Run("tenant-claim-admits-only-declared-tenants", func(t *testing.T) {
-			shared := dedicated
-			shared.Organization = &auth.NativeOIDCOrganization{TenantClaim: "kailo_tenant", Tenants: []auth.NativeOIDCTenant{
-				{ID: "tenant-a", Name: "Tenant A"}, {ID: "tenant-b", Name: "Tenant B"}}}
-			setProvisionConnector(t, ctx, shared)
-			for _, claim := range []any{"tenant-x", nil, []any{"tenant-a", "tenant-b"}} {
-				claims := map[string]any{"preferred_username": "outsider"}
-				if claim != nil {
-					claims["kailo_tenant"] = claim
-				}
-				if _, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-outsider", idp.token(provisionIssuer, "subject-outsider", provisionClient, claims)); !errors.Is(err, auth.ErrNativeOIDCTenantRefused) {
-					t.Fatalf("Tenant %v admitted: %v", claim, err)
-				}
-			}
-			if len(linkedTo(t, ctx, "subject-outsider")) != 0 {
-				t.Fatal("a refused identity got an account")
-			}
-			user, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-b", idp.token(provisionIssuer, "subject-b", provisionClient, map[string]any{
-				"preferred_username": "member.b", "kailo_tenant": []any{"tenant-x", "TENANT-B"}}))
-			if err != nil || user.GetGroupPath() != "/kailo-tenant-b" || user.GetAttributes()[idm.UserAttrProfile] != common.PydioProfileStandard {
-				t.Fatalf("declared Tenant member not placed in its group: %v %v", user.GetGroupPath(), err)
-			}
-			// Removed from the Tenant in Kailo: the next login is refused.
-			if _, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-b", idp.token(provisionIssuer, "subject-b", provisionClient, map[string]any{
-				"kailo_tenant": "tenant-x"})); !errors.Is(err, auth.ErrNativeOIDCTenantRefused) {
-				t.Fatalf("former member admitted: %v", err)
 			}
 		})
 
@@ -195,7 +172,7 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 			explicit.Users = []auth.NativeOIDCUser{{Subject: "subject-linked", UserUUID: linked.Uuid}}
 			setProvisionConnector(t, ctx, explicit)
 			user, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-linked", idp.token(provisionIssuer, "subject-linked", provisionClient, map[string]any{
-				"name": "Bootstrap Admin", "kailo_tenant_admin": false}))
+				"name": "Bootstrap Admin"}))
 			if err != nil || user.GetGroupPath() != "/" || user.GetAttributes()[idm.UserAttrProfile] != common.PydioProfileAdmin || user.GetAttributes()[idm.UserAttrDisplayName] != "Bootstrap Admin" {
 				t.Fatalf("explicit link: %v %v", user.GetAttributes(), err)
 			}
@@ -205,25 +182,20 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 
 func TestNativeOIDCOrganizationValidation(t *testing.T) {
 	base := auth.NativeOIDCConnector{Issuer: provisionIssuer, ClientID: provisionClient}
-	one := []auth.NativeOIDCTenant{{ID: "tenant-a", Name: "Tenant A"}}
-	two := []auth.NativeOIDCTenant{{ID: "tenant-a", Name: "Tenant A"}, {ID: "tenant-b", Name: "Tenant B"}}
-	for name, o := range map[string]*auth.NativeOIDCOrganization{
-		"no-tenants":                 {},
-		"several-without-claim":      {Tenants: two},
-		"admin-claim-several":        {Tenants: two, TenantClaim: "kailo_tenant", TenantAdminClaim: "kailo_tenant_admin"},
-		"duplicate-tenant":           {Tenants: []auth.NativeOIDCTenant{{ID: "a", Name: "A"}, {ID: "A", Name: "B"}}, TenantClaim: "t"},
-		"blank-name":                 {Tenants: []auth.NativeOIDCTenant{{ID: "a", Name: " "}}},
-		"invalid-id":                 {Tenants: []auth.NativeOIDCTenant{{ID: "../a", Name: "A"}}},
-		"invalid-claim":              {Tenants: one, TenantClaim: "bad claim"},
-		"non-printable-tenant-label": {Tenants: []auth.NativeOIDCTenant{{ID: "a", Name: "A\nB"}}},
+	for name, tenant := range map[string]auth.NativeOIDCTenant{
+		"no-tenant":      {},
+		"blank-name":     {ID: "a", Name: " "},
+		"invalid-id":     {ID: "../a", Name: "A"},
+		"non-printable":  {ID: "a", Name: "A\nB"},
+		"padded-name":    {ID: "a", Name: " A"},
 	} {
 		c := base
-		c.Organization = o
+		c.Organization = &auth.NativeOIDCOrganization{Tenant: tenant}
 		if c.Validate() == nil {
 			t.Errorf("%s accepted", name)
 		}
 	}
-	for _, o := range []*auth.NativeOIDCOrganization{nil, {Tenants: one}, {Tenants: one, TenantAdminClaim: "kailo_tenant_admin"}, {Tenants: two, TenantClaim: "kailo_tenant"}} {
+	for _, o := range []*auth.NativeOIDCOrganization{nil, {Tenant: auth.NativeOIDCTenant{ID: "6179e160-tenant", Name: "Kailo Verify"}}} {
 		c := base
 		c.Organization = o
 		if err := c.Validate(); err != nil {

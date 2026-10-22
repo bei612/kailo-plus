@@ -72,22 +72,21 @@ try:
     require(isinstance(provision, bool), 'native OIDC connector must declare provisionUsers as true or false')
     require(oidc[0]['config'].get('provisionProfile') == 'standard' if provision else 'provisionProfile' not in oidc[0]['config'],
             'provisionUsers true requires provisionProfile "standard"; false carries no provisionProfile')
-    # DD-133 §3: provisioned accounts belong to the Kailo Tenant(s) bound to
-    # this instance; the Tenant-admin claim (native admin profile) only for
-    # an instance dedicated to one Tenant. Cells re-validates the same rules.
+    # 07 §4.7.4: the instance serves one Kailo Tenant (DEDICATED_INSTANCE);
+    # provisioned accounts join its native group. Cells re-validates it.
     organization = oidc[0]['config'].get('organization')
-    require(not provision or isinstance(organization, dict), 'provisionUsers true requires the Kailo Tenant organization mapping')
+    require(not provision or isinstance(organization, dict), 'provisionUsers true requires the bound Kailo Tenant (organization.tenant)')
     if organization is not None:
-        tenants = organization.get('tenants')
-        require(isinstance(tenants, list) and tenants and all(isinstance(t, dict) and isinstance(t.get('id'), str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', t['id'])
-                and isinstance(t.get('name'), str) and t['name'].strip() == t['name'] != '' and t['name'].isprintable() for t in tenants)
-                and len({t['id'].lower() for t in tenants}) == len(tenants), 'organization tenants need unique ids and printable names')
-        claim = r'[A-Za-z_][A-Za-z0-9_.:-]{0,63}'
-        require(set(organization) <= {'tenants', 'tenantClaim', 'tenantAdminClaim'}, 'unknown organization field')
-        require(organization.get('tenantClaim') is None or re.fullmatch(claim, organization['tenantClaim']), 'invalid tenant claim name')
-        require(organization.get('tenantClaim') is not None or len(tenants) == 1, 'several Tenants require tenantClaim')
-        require(organization.get('tenantAdminClaim') is None or (re.fullmatch(claim, organization['tenantAdminClaim']) and len(tenants) == 1),
-                'tenantAdminClaim requires an instance dedicated to one Tenant')
+        tenant = organization.get('tenant')
+        require(set(organization) == {'tenant'} and isinstance(tenant, dict) and set(tenant) == {'id', 'name'}
+                and isinstance(tenant['id'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', tenant['id'])
+                and isinstance(tenant['name'], str) and tenant['name'].strip() == tenant['name'] != '' and tenant['name'].isprintable() and len(tenant['name']) <= 128,
+                'organization.tenant needs the bound Tenant id and printable name')
+    # 07 §4.7.5: OIDC back-channel logout receiver, explicit bounds.
+    backchannel = oidc[0]['config'].get('backchannelLogout')
+    require(isinstance(backchannel, dict) and set(backchannel) == {'sessionMaxAgeSeconds', 'logoutTokenMaxAgeSeconds'}
+            and all(isinstance(backchannel[k], int) and not isinstance(backchannel[k], bool) and backchannel[k] > 0 for k in backchannel),
+            'backchannelLogout needs positive sessionMaxAgeSeconds and logoutTokenMaxAgeSeconds')
     logout = oidc[0]['config'].get('platformLogoutUrl')
     if logout is not None:
         parsed = urlsplit(logout)

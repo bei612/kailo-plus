@@ -1,9 +1,9 @@
 /*
- * Kailo design tokens → native Material 3 system colors (DD-133 §4).
+ * Kailo design tokens → native Material 3 system colors (07 §4.7.1, DD-133).
  *
- * The Kailo tokens (client-kit theme variables, loaded as kailo-theme-tokens.css
- * and optionally updated by the Kailo host) are shadcn-style "H S% L%"
- * triplets. Every --md-sys-color-* value the native styles and Material-UI
+ * The Kailo tokens (client-kit/embed/kailo-theme-tokens.css, light on :root,
+ * dark under [data-kailo-theme="dark"]) give every color as a bare
+ * "H S% L%" triplet in --kailo-hsl-<name>. Every --md-sys-color-* value the native styles and Material-UI
  * themes consume is derived here from those tokens, so no page hard-codes a
  * color and a Kailo theme change re-themes the whole native page.
  */
@@ -11,14 +11,15 @@ import Color from 'color'
 
 const HSL_TRIPLET = /^(-?[\d.]+)(?:deg)?\s+([\d.]+)%\s+([\d.]+)%(?:\s*\/\s*([\d.]+%?))?$/
 
-export const KAILO_FONT_FAMILY = '"Inter Variable", Inter, "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+// Fallback when the sheet carries no --kailo-font-sans (never in a release).
+export const KAILO_FONT_FAMILY = '"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif'
 
-// Tokens read from the document; the --sidebar-* ones are optional.
-export const KAILO_TOKENS = [
-    '--radius', '--background', '--foreground', '--card', '--card-foreground', '--popover', '--popover-foreground',
-    '--primary', '--primary-foreground', '--secondary', '--secondary-foreground', '--muted', '--muted-foreground',
-    '--accent', '--accent-foreground', '--destructive', '--destructive-foreground', '--border', '--input', '--ring',
-    '--sidebar-background', '--sidebar-foreground',
+// Token names (without the --kailo-hsl- prefix); the sidebar ones are optional.
+export const KAILO_COLOR_NAMES = [
+    'background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground',
+    'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'muted', 'muted-foreground',
+    'accent', 'accent-foreground', 'destructive', 'destructive-foreground', 'border', 'input', 'ring',
+    'sidebar-background', 'sidebar-foreground',
 ]
 
 /**
@@ -67,14 +68,22 @@ export function tokenRadius(value) {
  */
 export function readKailoTokens(element = document.documentElement) {
     const style = window.getComputedStyle(element)
+    const read = (name) => ((element.style && element.style.getPropertyValue(name)) || style.getPropertyValue(name) || '').trim()
     const out = {}
-    KAILO_TOKENS.forEach((name) => {
-        // Host updates are inline on the root element and win the cascade.
-        const v = (element.style && element.style.getPropertyValue(name)) || style.getPropertyValue(name)
-        if (v && v.trim()) {
-            out[name] = v.trim()
+    KAILO_COLOR_NAMES.forEach((name) => {
+        const v = read('--kailo-hsl-' + name)
+        if (v) {
+            out['--' + name] = v
         }
     })
+    const radius = read('--kailo-radius')
+    if (radius) {
+        out['--radius'] = radius
+    }
+    const font = read('--kailo-font-sans')
+    if (font) {
+        out['--font-sans'] = font
+    }
     return out
 }
 
@@ -163,5 +172,5 @@ export function kailoScheme(tokens, dark) {
     colors['paper-border-radius'] = Math.round(radius * 1.2) + 'px'
     colors['card-border-radius'] = radius + 'px'
     colors['fstemplate-master-margin'] = '8px'
-    return {colors, radius, fontFamily: KAILO_FONT_FAMILY}
+    return {colors, radius, fontFamily: tokens['--font-sans'] || KAILO_FONT_FAMILY}
 }

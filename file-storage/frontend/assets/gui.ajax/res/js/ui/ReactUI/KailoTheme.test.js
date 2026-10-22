@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import Color from 'color'
 import { tokenColor, tokenRadius, kailoScheme, kailoThemeActive, readKailoTokens } from './KailoTheme'
 
-// client-kit theme.css static values (Catppuccin Latte / Macchiato).
+// Token values (short names as read from --kailo-hsl-*).
 const LIGHT = {
     '--radius': '0.625rem', '--background': '220 23.08% 94.9%', '--foreground': '234 16.02% 35.49%',
     '--card': '220 23.08% 94.9%', '--card-foreground': '234 16.02% 35.49%', '--popover': '220 23.08% 94.9%',
@@ -66,8 +66,13 @@ describe('Kailo tokens → Material system colors', () => {
         expect(kailoThemeActive({})).toBe(false)
     })
 
-    it('reads the tokens applied to the document', () => {
-        document.documentElement.style.setProperty('--primary', '210 80% 50%')
-        expect(readKailoTokens()['--primary']).toBe('210 80% 50%')
+    it('reads the platform token sheet names applied to the document', () => {
+        document.documentElement.style.setProperty('--kailo-hsl-primary', '210 80% 50%')
+        document.documentElement.style.setProperty('--kailo-radius', '0.5rem')
+        document.documentElement.style.setProperty('--kailo-font-sans', '"Inter Variable", sans-serif')
+        const tokens = readKailoTokens()
+        expect(tokens['--primary']).toBe('210 80% 50%')
+        expect(tokens['--radius']).toBe('0.5rem')
+        expect(kailoScheme({ ...LIGHT, ...tokens }, false).fontFamily).toBe('"Inter Variable", sans-serif')
     })
 })

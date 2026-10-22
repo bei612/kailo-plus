@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'kailo-cells.js'), 'utf8')
+const here = path.dirname(fileURLToPath(import.meta.url))
+const bridge = readFileSync(path.join(here, 'kailo-cells.js'), 'utf8')
+// The platform runtime the image copies next to the bridge (07 §4.7.1).
+const runtime = readFileSync(path.join(here, '../../../../client-kit/embed/kailo-embed.js'), 'utf8')
 const KAILO = 'http://kailo.example.invalid:58090'
 
 function memoryStorage() {
@@ -16,72 +19,74 @@ function memoryStorage() {
     }
 }
 
-// Runs the bridge against a stand-in window (frame relations, location,
-// storage) and the jsdom document; returns the window and the bridge API.
-function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage() } = {}) {
-    document.documentElement.className = ''
-    document.documentElement.removeAttribute('style')
+// Runs kailo-embed.js then kailo-cells.js against a stand-in window (frame
+// relations, location, storage) and the jsdom document, like the page head.
+function load({ search = '', pathname = '/ws-files/folder', embedded = true, params, storage = memoryStorage(), pydio } = {}) {
+    document.documentElement.removeAttribute('data-kailo-embedded')
+    document.documentElement.removeAttribute('data-kailo-theme')
+    document.head.innerHTML = `<meta name="kailo-web-origin" content="${KAILO}">`
     const listeners = {}
     const parent = { postMessage: vi.fn() }
     const win = {
+        document,
         location: { search, pathname, replace: vi.fn(), reload: vi.fn() },
         sessionStorage: storage,
         addEventListener: (type, fn) => { listeners[type] = fn },
+        dispatchEvent: () => true,
         setTimeout: () => 0,
-        startParameters: params === undefined ? { KAILO_EMBED: { origins: [KAILO], titles: { 'zh-cn': 'Kailo 云盘', 'en-us': 'Kailo Files' }, sso: true, logoutUrl: KAILO + '/app/' } } : params,
-        BroadcastChannel: function () { this.onmessage = null },
+        startParameters: params === undefined ? { KAILO_EMBED: { titles: { 'zh-cn': 'Kailo 云盘', 'en-us': 'Kailo Files' }, sso: true, logoutUrl: KAILO + '/app/' } } : params,
+        pydio,
     }
-    win.self = win
-    win.top = embedded ? {} : win
     win.parent = embedded ? parent : win
-    new Function('window', 'document', source)(win, document)
-    return { win, api: win.KailoCells, parent, listeners, storage }
+    new Function('window', runtime)(win)
+    new Function('window', 'document', bridge)(win, document)
+    const host = (data) => listeners.message({ origin: KAILO, source: win.parent, data: { source: 'kailo-host', version: 1, type: 'presentation', ...data } })
+    return { win, api: win.KailoCells, parent, host, storage }
 }
 
-describe('kailo-cells presentation bridge', () => {
+function fakePydio(language = 'zh-cn') {
+    const wording = { title: 'native' }
+    return {
+        UI: { themeBuilder: { applyHostPresentation: vi.fn() } },
+        Parameters: { get: (k) => (k === 'customWording' ? wording : undefined) },
+        currentLanguage: language,
+        loadI18NMessages: vi.fn(function (lang) { this.currentLanguage = lang }),
+        wording,
+    }
+}
+
+describe('Cells bridge over the Kailo embed runtime', () => {
     beforeEach(() => {
         document.body.innerHTML = ''
     })
 
-    it('applies the Kailo theme and locale passed as URL parameters and keeps them for the tab', () => {
-        const { api, storage } = load({ search: '?kailo_theme=DARK&kailo_locale=ZH_CN' })
-        const root = document.documentElement
-        expect(root.classList.contains('dark')).toBe(true)
-        expect(root.classList.contains('kailo-embedded')).toBe(true)
-        expect(root.getAttribute('lang')).toBe('zh-CN')
-        expect(api.presentation()).toMatchObject({ theme: 'dark', dark: true, locale: 'zh-CN', language: 'zh-cn' })
-        // A later navigation without parameters (SSO redirects) keeps them.
-        const again = load({ search: '', storage })
-        expect(again.api.presentation()).toMatchObject({ theme: 'dark', locale: 'zh-CN' })
-    })
-
-    it('defaults to the light theme at top level', () => {
-        const { api } = load({ embedded: false, storage: memoryStorage() })
-        expect(api.embedded).toBe(false)
-        expect(document.documentElement.classList.contains('kailo-standalone')).toBe(true)
-        expect(api.presentation().theme).toBe('light')
-    })
-
-    it('accepts presentation messages only from the allowed Kailo origin and parent frame', () => {
-        const { api, win, parent, listeners } = load()
+    it('starts from the Kailo launch parameters and drives title, language and theme', () => {
+        const pydio = fakePydio('zh-cn')
+        const { api, host, parent } = load({ search: '?kailo_theme=dark&kailo_locale=en', pydio })
+        expect(document.documentElement.getAttribute('data-kailo-theme')).toBe('dark')
+        expect(document.documentElement.hasAttribute('data-kailo-embedded')).toBe(true)
+        expect(api.presentation()).toMatchObject({ dark: true, locale: 'en', language: 'en-us', embedded: true })
+        expect(pydio.loadI18NMessages).toHaveBeenCalledWith('en-us')
+        expect(pydio.wording.title).toBe('Kailo Files')
+        expect(pydio.UI.themeBuilder.applyHostPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ dark: true }))
+        expect(parent.postMessage).toHaveBeenCalledWith({ source: 'kailo-embed', version: 1, type: 'ready' }, KAILO)
+        // A Kailo switch follows live.
         const changes = vi.fn()
         api.subscribe(changes)
-        listeners.message({ origin: 'http://evil.example.invalid', source: parent, data: { type: 'kailo.presentation', theme: 'DARK' } })
-        listeners.message({ origin: KAILO, source: {}, data: { type: 'kailo.presentation', theme: 'DARK' } })
-        expect(api.presentation().theme).toBe('light')
-        expect(changes).not.toHaveBeenCalled()
-        listeners.message({ origin: KAILO, source: win.parent, data: { type: 'kailo.presentation', theme: 'DARK', locale: 'EN',
-            tokens: { '--primary': '210 80% 50%', '--background': 'url(https://evil.example.invalid/x)', 'color': 'red', '--ring': '1px; color: red' } } })
-        expect(api.presentation()).toMatchObject({ theme: 'dark', locale: 'en', language: 'en-us', tokens: { '--primary': '210 80% 50%' } })
-        expect(Object.keys(api.presentation().tokens)).toEqual(['--primary'])
-        expect(document.documentElement.style.getPropertyValue('--primary')).toBe('210 80% 50%')
-        expect(changes).toHaveBeenCalledTimes(1)
+        host({ theme: 'light', locale: 'zh-CN' })
+        expect(changes).toHaveBeenCalledWith(expect.objectContaining({ dark: false, language: 'zh-cn' }))
+        expect(pydio.wording.title).toBe('Kailo 云盘')
+        expect(pydio.UI.themeBuilder.applyHostPresentation).toHaveBeenLastCalledWith(expect.objectContaining({ dark: false }))
     })
 
-    it('announces readiness to the allowed Kailo origins only', () => {
-        const { parent } = load()
-        expect(parent.postMessage).toHaveBeenCalledWith({ type: 'kailo.native.ready', component: 'file_storage' }, KAILO)
-        expect(parent.postMessage).toHaveBeenCalledTimes(1)
+    it('seeds the language from the account at top level only when Kailo supplied none', () => {
+        const pydio = fakePydio('en-us')
+        const { api } = load({ embedded: false, pydio })
+        expect(api.presentation().locale).toBe('en')
+        expect(pydio.loadI18NMessages).not.toHaveBeenCalled()
+        const kailo = fakePydio('en-us')
+        expect(load({ embedded: false, search: '?kailo_locale=zh-CN', pydio: kailo }).api.presentation().locale).toBe('zh-CN')
+        expect(kailo.loadI18NMessages).toHaveBeenCalledWith('zh-cn')
     })
 
     it('starts a silent OIDC login inside a Kailo frame and remembers the page', () => {
@@ -103,20 +108,19 @@ describe('kailo-cells presentation bridge', () => {
         expect(win.location.replace).toHaveBeenCalledWith('/auth/kailo/login')
     })
 
-    it('stops a redirect loop and asks the Kailo host to sign in again', () => {
+    it('stops a redirect loop and asks Kailo for a top-level sign-in (wire v1)', () => {
         const { api, win, parent } = load()
-        expect(api.startLogin('/auth/kailo/login')).toBe(true)
-        expect(api.startLogin('/auth/kailo/login')).toBe(true)
-        expect(api.startLogin('/auth/kailo/login')).toBe(true)
+        for (let i = 0; i < 3; i += 1) {
+            expect(api.startLogin('/auth/kailo/login')).toBe(true)
+        }
         expect(api.startLogin('/auth/kailo/login')).toBe(false)
         expect(win.location.replace).toHaveBeenCalledTimes(3)
-        expect(parent.postMessage).toHaveBeenCalledWith({ type: 'kailo.native.auth-required', component: 'file_storage' }, KAILO)
+        expect(parent.postMessage).toHaveBeenCalledWith({ source: 'kailo-embed', version: 1, type: 'auth-required' }, KAILO)
         expect(document.getElementById('kailo-auth-problem')).not.toBeNull()
     })
 
     it('only returns to same-origin application paths', () => {
-        const { api } = load()
-        const { safeReturnPath } = api._internal
+        const { safeReturnPath } = load().api._internal
         for (const bad of ['//evil.example.invalid/', 'https://evil.example.invalid/', '/\\evil', '/login/callback?code=x', '/auth/kailo/callback', 'relative']) {
             expect(safeReturnPath(bad)).toBe('/')
         }
@@ -128,20 +132,7 @@ describe('kailo-cells presentation bridge', () => {
         const top = load({ embedded: false })
         expect(top.api.showLogout()).toBe(true)
         expect(top.api.logoutUrl()).toBe(KAILO + '/app/')
-        const noUrl = load({ embedded: false, params: { KAILO_EMBED: { origins: [], sso: true } } })
-        expect(noUrl.api.showLogout()).toBe(false)
-        const plain = load({ embedded: false, params: {} })
-        expect(plain.api.showLogout()).toBe(true)
-    })
-
-    it('normalizes Kailo enums and locales', () => {
-        const { normalizeTheme, normalizeLocale, nativeLanguage } = load().api._internal
-        expect(normalizeTheme('LIGHT')).toBe('light')
-        expect(normalizeTheme('system')).toBe('')
-        expect(normalizeLocale('ZH_CN')).toBe('zh-CN')
-        expect(normalizeLocale('en-US')).toBe('en')
-        expect(normalizeLocale('fr')).toBe('')
-        expect(nativeLanguage('zh-CN')).toBe('zh-cn')
-        expect(nativeLanguage('en')).toBe('en-us')
+        expect(load({ embedded: false, params: { KAILO_EMBED: { sso: true } } }).api.showLogout()).toBe(false)
+        expect(load({ embedded: false, params: {} }).api.showLogout()).toBe(true)
     })
 })

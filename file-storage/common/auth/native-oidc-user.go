@@ -60,8 +60,8 @@ type NativeOIDCConnector struct {
 	Users            []NativeOIDCUser `json:"users"`
 	ProvisionUsers   bool             `json:"provisionUsers"`
 	ProvisionProfile string           `json:"provisionProfile"`
-	// Kailo Tenant → native group and profile (DD-133 §3); nil keeps the
-	// DD-127(9) root-group accounts.
+	// Kailo Tenant of this dedicated instance → native group (07 §4.7.4);
+	// nil keeps the DD-127(9) root-group accounts.
 	Organization *NativeOIDCOrganization `json:"organization,omitempty"`
 }
 
@@ -115,9 +115,8 @@ func loadNativeOIDCConnector(ctx context.Context) (NativeOIDCConnector, error) {
 // with the connector switch on and an ID token the callback verified for the
 // connector's own client) a new standard account. Email, display name and
 // groups never select or create an account. With that ID token (browser
-// login only) the account is refreshed from Kailo (DD-133 §3): profile data
-// always, Tenant group and profile for provisioned accounts; an identity
-// outside the declared Tenants is refused. Callers keep their own native
+// login only) the account is refreshed from Kailo (07 §4.7.3, DD-133):
+// profile data always, the Tenant group for provisioned accounts. Callers keep their own native
 // policy checks; the returned user already passed ResolveNativeUser.
 func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject string, login *oidc.IDToken) (*idm.User, error) {
 	c, err := loadNativeOIDCConnector(ctx)
@@ -137,16 +136,6 @@ func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject strin
 				return user, err
 			}
 			return refreshNativeOIDCUser(ctx, c, user, login, false)
-		}
-	}
-	if login != nil && c.Organization != nil {
-		// Tenant membership is checked before any account is read or created.
-		var claims map[string]any
-		if err := login.Claims(&claims); err != nil {
-			return nil, err
-		}
-		if _, err := c.Organization.tenant(claims); err != nil {
-			return nil, err
 		}
 	}
 	id := nativeOIDCUserUUID(issuer, subject)

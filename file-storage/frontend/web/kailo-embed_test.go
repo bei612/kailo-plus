@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/config"
 )
 
@@ -61,8 +60,9 @@ func TestKailoSilentLoginWithoutIdPSession(t *testing.T) {
 	}
 	w := f.callbackQuery(cookie, url.Values{"state": {state}, "error": {"login_required"}})
 	body := w.Body.String()
-	if w.Code != http.StatusOK || f.exchanges != 0 || f.nativeCodes != 0 || !strings.Contains(body, "kailo.native.auth-required") ||
-		!strings.Contains(body, `["http://kailo.example.invalid:58090"]`) || strings.Contains(strings.ToLower(body), "password") {
+	if w.Code != http.StatusOK || f.exchanges != 0 || f.nativeCodes != 0 || !strings.Contains(body, "requestTopLevelSignIn()") ||
+		!strings.Contains(body, `<meta name="kailo-web-origin" content="http://kailo.example.invalid:58090">`) ||
+		!strings.Contains(body, "kailo.embed/kailo-embed.js") || strings.Contains(strings.ToLower(body), "password") {
 		t.Fatalf("silent login_required: status=%d body=%s", w.Code, body)
 	}
 	csp := w.Header().Get("Content-Security-Policy")
@@ -103,60 +103,6 @@ func TestKailoSilentLoginRefusals(t *testing.T) {
 	}
 }
 
-func TestKailoTenantOutsiderRefused(t *testing.T) {
-	f := newNativeOIDCFixture(t)
-	f.subject, f.preferredUsername = "outsider-subject", "outsider"
-	f.connector.Config.ProvisionUsers, f.connector.Config.ProvisionProfile = true, "standard"
-	f.connector.Config.Organization = &auth.NativeOIDCOrganization{TenantClaim: "kailo_tenant",
-		Tenants: []auth.NativeOIDCTenant{{ID: "tenant-a", Name: "Tenant A"}, {ID: "tenant-b", Name: "Tenant B"}}}
-	if err := config.Set(f.ctx, []kailoOIDCConnector{f.connector}, "services", "pydio.web.oauth", "connectors"); err != nil {
-		t.Fatal(err)
-	}
-	cookie, state := f.begin()
-	if w := f.callback(cookie, state); w.Code != http.StatusForbidden || f.creates != 0 || f.nativeCodes != 0 {
-		t.Fatalf("identity outside the declared Tenants: status=%d creates=%d", w.Code, f.creates)
-	}
-}
-
-// DD-133 §2: the IdP front-channel logout ends this browser's native session.
-func TestKailoFrontChannelLogout(t *testing.T) {
-	t.Setenv("KAILO_FRAME_ANCESTORS", "http://kailo.example.invalid:58090")
-	f := newNativeOIDCFixture(t)
-	get := func(query string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, "https://cells.example.invalid"+KailoOIDCLogoutPath+query, nil).WithContext(f.ctx)
-		w := httptest.NewRecorder()
-		NativeKailoOIDCLogout(w, r)
-		return w
-	}
-	for _, query := range []string{"?iss=" + url.QueryEscape("https://other-idp.example.invalid"), "?iss=a&iss=b", "?sid=a&sid=b"} {
-		if w := get(query); w.Code != http.StatusBadRequest {
-			t.Fatalf("%s accepted: %d", query, w.Code)
-		}
-	}
-	w := get("?iss=" + url.QueryEscape(f.issuer.URL) + "&sid=idp-session")
-	csp := w.Header().Get("Content-Security-Policy")
-	if w.Code != http.StatusOK || !strings.Contains(csp, "frame-ancestors 'self' "+f.issuer.URL+" http://kailo.example.invalid:58090") ||
-		!strings.Contains(w.Body.String(), `AuthInfo:{type:"logout"}`) || !strings.Contains(w.Body.String(), "kailo.native.logged-out") ||
-		w.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("front-channel logout page: %d %s %s", w.Code, csp, w.Body.String())
-	}
-	r := httptest.NewRequest(http.MethodPost, "https://cells.example.invalid"+KailoOIDCLogoutPath, nil).WithContext(f.ctx)
-	r.AddCookie(&http.Cookie{Name: "pydio", Value: "native-session"})
-	post := httptest.NewRecorder()
-	NativeKailoOIDCLogout(post, r)
-	var expired bool
-	for _, c := range post.Result().Cookies() {
-		expired = expired || (c.Name == "pydio" && c.MaxAge < 0 && strings.HasSuffix(c.Path, "/frontend"))
-	}
-	if post.Code != http.StatusNoContent || !expired {
-		t.Fatalf("native session cookie not expired: %d %v", post.Code, post.Result().Cookies())
-	}
-	foreign := httptest.NewRequest(http.MethodGet, "https://other.example.invalid"+KailoOIDCLogoutPath, nil).WithContext(f.ctx)
-	if w := httptest.NewRecorder(); func() int { NativeKailoOIDCLogout(w, foreign); return w.Code }() != http.StatusBadRequest {
-		t.Fatal("logout served on another host")
-	}
-}
-
 func TestKailoEmbedParameters(t *testing.T) {
 	t.Setenv("KAILO_FRAME_ANCESTORS", "http://kailo.example.invalid:58090 tauri://localhost")
 	t.Setenv("PLATFORM_DISPLAY_NAME", "Kailo")
@@ -191,10 +137,16 @@ func TestKailoEmbedParameters(t *testing.T) {
 	if p["titles"].(map[string]string)["zh-cn"] != "云盘" || len(p["origins"].([]string)) != 0 {
 		t.Fatalf("unsafe deployment values used: %v", p)
 	}
+	t.Setenv("KAILO_FRAME_ANCESTORS", "http://kailo.example.invalid:58090 tauri://localhost")
 	head := string(kailoHead("v1&x"))
-	for _, want := range []string{"plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x", "plug/kailo.embed/kailo-overlay.css?v=v1%26x", "plug/kailo.embed/kailo-cells.js?v=v1%26x"} {
-		if !strings.Contains(head, want) {
-			t.Fatalf("head lacks %s: %s", want, head)
+	order := []string{`<meta name="kailo-web-origin" content="http://kailo.example.invalid:58090">`, "plug/kailo.embed/kailo-theme-tokens.css?v=v1%26x",
+		"plug/kailo.embed/kailo-overlay.css?v=v1%26x", "plug/kailo.embed/kailo-embed.js?v=v1%26x", "plug/kailo.embed/kailo-cells.js?v=v1%26x"}
+	last := -1
+	for _, want := range order {
+		at := strings.Index(head, want)
+		if at <= last {
+			t.Fatalf("head lacks %s in 07 §4.7.1 order: %s", want, head)
 		}
+		last = at
 	}
 }

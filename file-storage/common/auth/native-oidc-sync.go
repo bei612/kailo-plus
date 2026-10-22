@@ -15,7 +15,6 @@ import (
 	"unicode"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
@@ -27,115 +26,45 @@ import (
 	"github.com/pydio/cells/v5/common/utils/i18n/languages"
 )
 
-// Kailo user system in Cells (DD-133 §3, extends DD-127(9)): every browser
-// login refreshes the provisioned account from the verified ID token of the
-// connector client. The Kailo Tenant of the identity selects one native group
-// (the "organization"); account visibility is limited to that group, and the
-// optional Tenant-admin claim derives the native profile. Explicitly linked
-// legacy accounts only receive the profile data refresh: their group and
-// profile stay with the native administrator.
-
-// ErrNativeOIDCTenantRefused: the identity is not a member of a Kailo Tenant
-// bound to this native instance. Nothing is created or changed.
-var ErrNativeOIDCTenantRefused = errors.New("OIDC identity is not a member of a Tenant bound to this instance")
+// Kailo user system in Cells (07 §4.7.3/§4.7.4, DD-133, extends DD-127(9)):
+// every browser login refreshes the provisioned account from the verified ID
+// token of the connector client. The instance serves one Kailo Tenant
+// (DEDICATED_INSTANCE); its provisioned accounts live in that Tenant's native
+// group and are visible only to its members. Roles are not derived from the
+// IdP: until the platform member directory is delivered, accounts are
+// standard members and no native admin is granted. Explicitly linked legacy
+// accounts only receive the profile data refresh.
 
 // NativeOIDCTenantGroupPrefix starts the native group path of a Kailo Tenant.
 const NativeOIDCTenantGroupPrefix = "kailo-"
 
 var (
 	nativeOIDCTenantID   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	nativeOIDCClaimName  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:-]{0,63}$`)
 	nativeOIDCPictureMax = 2048
 )
 
-// NativeOIDCTenant is one Kailo Tenant whose members may use this instance.
+// NativeOIDCTenant is the Kailo Tenant this instance is bound to.
 type NativeOIDCTenant struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-// NativeOIDCOrganization maps the Kailo Tenant of a verified identity onto a
-// native group. Without TenantClaim the instance is dedicated to its single
-// declared Tenant. TenantAdminClaim derives the native admin profile; the
-// native admin profile is instance-wide, so it is accepted only for an
-// instance dedicated to exactly one Tenant.
+// NativeOIDCOrganization declares the Tenant of this dedicated instance.
 type NativeOIDCOrganization struct {
-	Tenants          []NativeOIDCTenant `json:"tenants"`
-	TenantClaim      string             `json:"tenantClaim,omitempty"`
-	TenantAdminClaim string             `json:"tenantAdminClaim,omitempty"`
+	Tenant NativeOIDCTenant `json:"tenant"`
 }
 
-// Validate refuses an ambiguous or unsafe organization mapping.
+// Validate refuses a missing or unsafe Tenant declaration.
 func (o *NativeOIDCOrganization) Validate() error {
 	if o == nil {
 		return nil
 	}
-	if len(o.Tenants) == 0 {
-		return errors.New("native OIDC organization must declare the Tenants bound to this instance")
-	}
-	seen := map[string]bool{}
-	for _, t := range o.Tenants {
-		name := strings.TrimSpace(t.Name)
-		if !nativeOIDCTenantID.MatchString(t.ID) || seen[strings.ToLower(t.ID)] || name == "" || name != t.Name || len(name) > 128 ||
-			strings.IndexFunc(name, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
-			return errors.New("native OIDC organization Tenants need unique ids and printable names")
-		}
-		seen[strings.ToLower(t.ID)] = true
-	}
-	for _, claimName := range []string{o.TenantClaim, o.TenantAdminClaim} {
-		if claimName != "" && !nativeOIDCClaimName.MatchString(claimName) {
-			return errors.New("invalid native OIDC organization claim name")
-		}
-	}
-	if o.TenantClaim == "" && len(o.Tenants) != 1 {
-		return errors.New("several Tenants require the Tenant claim of the identity")
-	}
-	if o.TenantAdminClaim != "" && len(o.Tenants) != 1 {
-		return errors.New("the instance-wide native admin profile is derived only for an instance dedicated to one Tenant")
+	name := strings.TrimSpace(o.Tenant.Name)
+	if !nativeOIDCTenantID.MatchString(o.Tenant.ID) || name == "" || name != o.Tenant.Name || len(name) > 128 ||
+		strings.IndexFunc(name, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return errors.New("native OIDC organization needs the bound Tenant id and printable name")
 	}
 	return nil
-}
-
-// tenant selects the Tenant of a verified identity among the declared ones.
-func (o *NativeOIDCOrganization) tenant(claims map[string]any) (NativeOIDCTenant, error) {
-	if o.TenantClaim == "" {
-		return o.Tenants[0], nil
-	}
-	var values []string
-	switch v := claims[o.TenantClaim].(type) {
-	case string:
-		values = []string{v}
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				values = append(values, s)
-			}
-		}
-	}
-	var matches []NativeOIDCTenant
-	for _, t := range o.Tenants {
-		if slices.ContainsFunc(values, func(v string) bool { return strings.EqualFold(strings.TrimSpace(v), t.ID) }) {
-			matches = append(matches, t)
-		}
-	}
-	if len(matches) != 1 {
-		return NativeOIDCTenant{}, ErrNativeOIDCTenantRefused
-	}
-	return matches[0], nil
-}
-
-// tenantAdmin reads the optional boolean Tenant-admin claim.
-func (o *NativeOIDCOrganization) tenantAdmin(claims map[string]any) bool {
-	if o.TenantAdminClaim == "" {
-		return false
-	}
-	switch v := claims[o.TenantAdminClaim].(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true")
-	}
-	return false
 }
 
 // NativeOIDCTenantGroupPath is the native group of a Tenant: lowercase ids are
@@ -333,23 +262,16 @@ func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.Us
 	}
 	groupPath, policies := user.GetGroupPath(), user.GetPolicies()
 	if provisioned && c.Organization != nil {
-		tenant, err := c.Organization.tenant(claims)
+		group, err := ensureNativeOIDCTenantGroup(ctx, c.Organization.Tenant)
 		if err != nil {
 			return nil, err
 		}
-		group, err := ensureNativeOIDCTenantGroup(ctx, tenant)
-		if err != nil {
-			return nil, err
-		}
-		groupPath = NativeOIDCTenantGroupPath(tenant.ID)
+		groupPath = NativeOIDCTenantGroupPath(c.Organization.Tenant.ID)
 		policies = nativeOIDCTenantUserPolicies(user.GetUuid(), group.GetUuid())
-		if c.Organization.TenantAdminClaim != "" {
-			if c.Organization.tenantAdmin(claims) {
-				attributes[idm.UserAttrProfile] = common.PydioProfileAdmin
-			} else {
-				attributes[idm.UserAttrProfile] = common.PydioProfileStandard
-			}
-		}
+		// Roles come from Kailo only (07 §4.7.4): until the member directory
+		// is delivered a provisioned account is a standard member, also when
+		// a native administrator raised it in the console.
+		attributes[idm.UserAttrProfile] = common.PydioProfileStandard
 	}
 	changed := strings.TrimSuffix(groupPath, "/") != strings.TrimSuffix(user.GetGroupPath(), "/") || !samePolicies(policies, user.GetPolicies()) ||
 		len(attributes) != len(user.GetAttributes())
@@ -359,7 +281,6 @@ func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.Us
 		}
 	}
 	if changed {
-		before := user.GetAttributes()[idm.UserAttrProfile]
 		update := &idm.User{Uuid: user.GetUuid(), Login: user.GetLogin(), GroupPath: groupPath, Attributes: attributes, Policies: policies}
 		updated, err := idmc.UserServiceClient(ctx).CreateUser(ctx, &idm.CreateUserRequest{User: update})
 		if err != nil {
@@ -367,10 +288,6 @@ func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.Us
 		}
 		if updated.GetUser().GetUuid() != user.GetUuid() || updated.GetUser().GetLogin() != user.GetLogin() {
 			return nil, errors.New("native OIDC profile refresh changed the account identity")
-		}
-		if after := attributes[idm.UserAttrProfile]; after != before {
-			log.Auditer(ctx).Info(fmt.Sprintf("Profile of [%s] derived from the Kailo Tenant role: %s", user.GetLogin(), after),
-				log.GetAuditId(common.AuditUserUpdate), zap.String(common.KeyUserUuid, user.GetUuid()))
 		}
 	}
 	if profile.language != "" {

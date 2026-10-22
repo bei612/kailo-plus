@@ -73,7 +73,7 @@ func GetLoadingString(lang string) string {
 }
 
 var Loader = `
-<div class="kailo-loader" style="position: absolute;display:flex; flex-direction:column ;top: 0;bottom: 0;left: 0;right: 0;align-items: center;justify-content: center; font-family: 'Inter Variable', Inter, 'Avenir Next', 'Segoe UI', sans-serif;background-color:hsl(var(--background, 220 23.08% 94.9%)); color: hsl(var(--muted-foreground, 233 12.8% 41.37%))">
+<div class="kailo-loader" style="position: absolute;display:flex; flex-direction:column ;top: 0;bottom: 0;left: 0;right: 0;align-items: center;justify-content: center; font-family: var(--kailo-font-sans);background-color:var(--kailo-color-background); color: var(--kailo-color-muted-foreground)">
 	<img src="` + KailoFavicon + `" alt="" width="56" height="56" style="border-radius: 12px">
 	<div style="font-size:12px; margin-top: 10px;">{{.LoadingString}}</div>
 </div>`
@@ -89,11 +89,11 @@ var loading = `<!DOCTYPE html>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
 	</head>
-	<body style="position: absolute;display:flex;top: 0;bottom: 0;left: 0;right: 0;align-items: center;justify-content: center; background-color:hsl(var(--background, 220 23.08% 94.9%));" class="react-mui-context">
+	<body style="position: absolute;display:flex;top: 0;bottom: 0;left: 0;right: 0;align-items: center;justify-content: center; background-color:var(--kailo-color-background);" class="react-mui-context">
 		<script type="text/javascript">
 			window.setTimeout(function(){window.location.reload();}, 4000);
 		</script>
-		<div style="color: hsl(var(--foreground, 234 16.02% 35.49%))">{{.ApplicationTitle}} …</div>
+		<div style="color: var(--kailo-color-foreground)">{{.ApplicationTitle}} …</div>
 	</body>
 </html>
 `
@@ -110,7 +110,7 @@ var Page = `<!DOCTYPE html>
 		<script language="javascript" type="text/javascript" src="{{.ResourcesFolder}}/dist/boot/pydio.boot.min.js?v={{.Version}}"></script>
 		<link rel="icon" type="image/png" href="{{.Favicon}}">
 	</head>
-	<body style="overflow: hidden;background-color: hsl(var(--background, 220 23.08% 94.9%));" class="react-mui-context">
+	<body style="overflow: hidden;background-color: var(--kailo-color-background);" class="react-mui-context">
 		<script type="text/javascript">
 			var pydio, startParameters = {}, MessageHash={};
 			startParameters = {{.StartParameters}};
@@ -133,7 +133,7 @@ var Public = `<!DOCTYPE html>
 		<script language="javascript" type="text/javascript" src="{{.ResourcesFolder}}/dist/boot/pydio.boot.min.js?v={{.Version}}"></script>
 		<link rel="icon" type="image/png" href="{{.Favicon}}">
 	</head>
-	<body style="overflow: hidden;background-color: hsl(var(--background, 220 23.08% 94.9%));" class="react-mui-context">
+	<body style="overflow: hidden;background-color: var(--kailo-color-background);" class="react-mui-context">
 		<script type="text/javascript">
 			var pydio, startParameters = {}, MessageHash={};
 			startParameters = {{.StartParameters}};

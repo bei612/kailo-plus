@@ -8,7 +8,6 @@ package web
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -17,15 +16,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/pydio/cells/v5/common/auth"
-	"github.com/pydio/cells/v5/common/service/frontend"
-	"github.com/pydio/cells/v5/common/service/frontend/sessions"
 )
 
 const (
-	// KailoOIDCLogoutPath receives the IdP front-channel logout of the Kailo
-	// session (GET, in an IdP frame) and the cookie clearing step (POST).
-	KailoOIDCLogoutPath = "/auth/kailo/logout"
 	kailoEmbedRoot      = "plug/kailo.embed"
 	// KailoFavicon is the Kailo application icon copied from the web-client
 	// build at image build time (one asset for favicon, loader and logos).
@@ -98,28 +91,30 @@ func kailoPlatformLogoutURL(raw string) error {
 	return nil
 }
 
-func kailoEmbedFileExists(name string) bool {
-	f, err := frontend.GetPluginsFS().Open(strings.TrimPrefix(kailoEmbedRoot, "plug/") + "/" + name)
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	return true
-}
-
-// kailoHead links the Kailo tokens, the native overlay and the bridge before
-// the native boot script, so the first paint already uses Kailo colors.
+// kailoHead places, before the native styles and boot script (07 §4.7.1):
+// the Kailo web origin (KAILO_FRAME_ANCESTORS, the frame-ancestors fact), the
+// platform token sheet and runtime (kailo-embed.js), the Cells overlay and
+// the Cells bridge, so the first paint already uses the Kailo theme.
 func kailoHead(version string) template.HTML {
 	v := url.QueryEscape(version)
 	var b strings.Builder
+	fmt.Fprintf(&b, `<meta name="kailo-web-origin" content="%s">`+"\n", template.HTMLEscapeString(strings.Join(kailoWebOrigins(), " ")))
 	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-theme-tokens.css?v=%s">`+"\n", kailoEmbedRoot, v)
 	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-overlay.css?v=%s">`+"\n", kailoEmbedRoot, v)
-	if kailoEmbedFileExists("kailo-embed.js") {
-		// Platform-delivered embedding client (client-kit), when present.
-		fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-embed.js?v=%s"></script>`+"\n", kailoEmbedRoot, v)
-	}
+	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-embed.js?v=%s"></script>`+"\n", kailoEmbedRoot, v)
 	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-cells.js?v=%s"></script>`+"\n", kailoEmbedRoot, v)
 	return template.HTML(b.String())
+}
+
+// kailoWebOrigins are the HTTP(S) Kailo origins of kailoHostOrigins.
+func kailoWebOrigins() []string {
+	out := []string{}
+	for _, o := range kailoHostOrigins() {
+		if strings.HasPrefix(o, "http://") || strings.HasPrefix(o, "https://") {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 func kailoNonce() (string, error) {
@@ -146,8 +141,10 @@ var kailoMinimalPage = template.Must(template.New("kailo-minimal").Parse(`<!DOCT
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
 <link rel="icon" type="image/png" href="/{{.Favicon}}">
+<meta name="kailo-web-origin" content="{{.Origins}}">
 <link rel="stylesheet" type="text/css" href="/{{.Root}}/kailo-theme-tokens.css">
 <link rel="stylesheet" type="text/css" href="/{{.Root}}/kailo-overlay.css">
+<script nonce="{{.Nonce}}" src="/{{.Root}}/kailo-embed.js"></script>
 </head>
 <body class="kailo-minimal-page">
 {{if .Message}}<main class="kailo-minimal-message"><img src="/{{.Favicon}}" alt="" width="40" height="40"><p>{{.Message}}</p><p lang="en">{{.MessageEn}}</p></main>{{end}}
@@ -157,8 +154,8 @@ var kailoMinimalPage = template.Must(template.New("kailo-minimal").Parse(`<!DOCT
 `))
 
 type kailoMinimalPageData struct {
-	Title, Favicon, Root, Message, MessageEn, Nonce string
-	Script                                          template.JS
+	Title, Favicon, Root, Origins, Message, MessageEn, Nonce string
+	Script                                                   template.JS
 }
 
 func writeKailoMinimalPage(w http.ResponseWriter, status int, ancestors []string, data kailoMinimalPageData) {
@@ -168,6 +165,7 @@ func writeKailoMinimalPage(w http.ResponseWriter, status int, ancestors []string
 		return
 	}
 	data.Nonce, data.Favicon, data.Root = nonce, KailoFavicon, kailoEmbedRoot
+	data.Origins = strings.Join(kailoWebOrigins(), " ")
 	if data.Title == "" {
 		data.Title = nativeKailoEmbedTitle()
 	}
@@ -194,76 +192,20 @@ func nativeKailoEmbedTitle() string {
 }
 
 // serveKailoAuthRequired answers a silent (prompt=none) login that found no
-// IdP session: the Kailo host is asked to sign in again at top level. No
-// login form, button or popup is rendered inside the frame.
+// IdP session: through the platform runtime (wire v1 "auth-required") the
+// Kailo host signs in again at top level. No login form, button or popup is
+// rendered inside the frame; a top-level visit restarts the Kailo login.
 func serveKailoAuthRequired(w http.ResponseWriter) {
-	origins := kailoHostOrigins()
-	script := `(function(){var o=` + jsStringArray(origins) + `;var m={type:"kailo.native.auth-required",component:"file_storage"};` +
-		`if(window.parent&&window.parent!==window){for(var i=0;i<o.length;i++){try{window.parent.postMessage(m,o[i]);}catch(e){}}}` +
+	script := `(function(){var e=window.KailoEmbed;` +
+		`if(window.parent!==window){if(e){e.requestTopLevelSignIn();}}` +
 		`else{window.location.replace("/");}})();`
-	writeKailoMinimalPage(w, http.StatusOK, origins, kailoMinimalPageData{
+	writeKailoMinimalPage(w, http.StatusOK, kailoWebOrigins(), kailoMinimalPageData{
 		Message:   "Kailo 登录状态已失效，请在 Kailo 中重新登录后再打开云盘。",
 		MessageEn: "Your Kailo sign-in has expired. Sign in to Kailo again to open Files.",
 		Script:    template.JS(script),
 	})
 }
 
-// jsStringArray: JSON (with <, >, & escaped) is a safe script literal.
-func jsStringArray(values []string) string {
-	data, err := json.Marshal(values)
-	if err != nil {
-		return "[]"
-	}
-	return string(data)
-}
-
-// NativeKailoOIDCLogout is the OIDC front-channel logout receiver of the
-// connector client (GET in an IdP frame, with optional iss/sid) and the
-// cookie clearing step its page posts back. The native session is ended the
-// native way first (POST /a/frontend/session logout revokes its tokens), then
-// both native cookies are expired; open native pages of this browser are told
-// to reload through a same-origin BroadcastChannel.
-func NativeKailoOIDCLogout(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	c, err := loadKailoOIDC(r.Context())
-	if err != nil {
-		http.Error(w, "Native OIDC is unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	if cb, _ := url.Parse(c.Config.RedirectURI); cb == nil || r.Host != cb.Host {
-		http.Error(w, "Invalid native frontend origin", http.StatusBadRequest)
-		return
-	}
-	switch r.Method {
-	case http.MethodPost:
-		// Only expires this browser's native cookies; nothing else is changed.
-		opts := sessions.SessionOptionsFromConfig(r.Context())
-		secure := strings.HasPrefix(c.Config.RedirectURI, "https://")
-		// The native cookie session (common/service/frontend/sessions/utils.SessionName).
-		http.SetCookie(w, &http.Cookie{Name: "pydio", Value: "", Path: opts.Path, MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: opts.SameSite})
-		if err := auth.ClearNativeHumanToken(r, w); err != nil {
-			http.Error(w, "Native session could not be cleared", http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	case http.MethodGet:
-		query, err := url.ParseQuery(r.URL.RawQuery)
-		if err != nil || len(query["iss"]) > 1 || len(query["sid"]) > 1 || (query.Has("iss") && query.Get("iss") != c.Config.Issuer) {
-			http.Error(w, "Not a logout of the configured identity provider", http.StatusBadRequest)
-			return
-		}
-		_ = auth.ClearNativeHumanToken(r, w)
-		script := `(function(){function done(){try{new BroadcastChannel("kailo-cells").postMessage({type:"kailo.native.logged-out"});}catch(e){}}` +
-			`var h={"Content-Type":"application/json"};` +
-			`fetch("/a/frontend/session",{method:"POST",credentials:"same-origin",headers:h,body:JSON.stringify({AuthInfo:{type:"logout"}})})` +
-			`.catch(function(){}).then(function(){return fetch("` + KailoOIDCLogoutPath + `",{method:"POST",credentials:"same-origin"});})` +
-			`.catch(function(){}).then(done);})();`
-		ancestors := append([]string{kailoPageOrigin(c.Config.Issuer)}, kailoHostOrigins()...)
-		writeKailoMinimalPage(w, http.StatusOK, ancestors, kailoMinimalPageData{Script: template.JS(script)})
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
 
 // silentLoginRequired reports a prompt=none answer meaning "no IdP session".
 func silentLoginRequired(code string) bool {

@@ -1,26 +1,27 @@
 /*
- * Kailo overlay of the native file storage page (DD-133 §1, §4).
+ * Kailo overlay of the native file storage page (07 §4.7.1, DD-133).
  *
- * Colors come only from the Kailo design tokens (kailo-theme-tokens.css, built
- * from client-kit; shadcn-style "H S% L%" triplets used as hsl(var(--x))). The
- * native Material palette is mapped onto the same tokens by the theme builder
- * (gui.ajax ThemeBuilder + KailoTheme); this file covers what is plain CSS:
- * typography, the embedded shell and the two minimal OIDC pages.
+ * Colors, font, radius come only from the platform token sheet
+ * (client-kit/embed/kailo-theme-tokens.css: --kailo-color-*, --kailo-hsl-*,
+ * --kailo-font-sans, --kailo-radius*; dark under [data-kailo-theme="dark"]).
+ * The native Material palette is mapped onto the same tokens by the theme
+ * builder (gui.ajax ThemeBuilder + KailoTheme); this file covers what is
+ * plain CSS: typography, the embedded shell and the minimal OIDC page.
  */
 :root {
-    --kailo-font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --kailo-cells-font: var(--kailo-font-sans);
 }
 
 html,
 body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
 }
 
 body,
 body.react-mui-context,
 .react-mui-context {
-    font-family: var(--kailo-font-family) !important;
+    font-family: var(--kailo-cells-font) !important;
 }
 
 .react-mui-context input,
@@ -31,14 +32,15 @@ body.react-mui-context,
 }
 
 ::selection {
-    background-color: hsl(var(--primary) / 0.25);
+    background-color: hsl(var(--kailo-hsl-primary) / 0.25);
 }
 
-/* Inside a Kailo frame the Kailo shell already shows the brand, the account,
- * help and sign-out: only the component's own business navigation remains. */
-.kailo-embedded .home-top-logo,
-.kailo-embedded .loginLogo,
-.kailo-embedded .loginLanguagePicker {
+/* Inside a Kailo frame (kailo-embed.js sets data-kailo-embedded) the Kailo
+ * shell already shows the brand, the account, help and sign-out: only the
+ * component's own business navigation remains. */
+[data-kailo-embedded] .home-top-logo,
+[data-kailo-embedded] .loginLogo,
+[data-kailo-embedded] .loginLanguagePicker {
     display: none !important;
 }
 
@@ -54,9 +56,9 @@ body.react-mui-context,
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: var(--kailo-font-family);
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    font-family: var(--kailo-cells-font);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
 }
 
 .kailo-minimal-message {
@@ -65,11 +67,11 @@ body.react-mui-context,
     text-align: center;
     font-size: 14px;
     line-height: 22px;
-    color: hsl(var(--muted-foreground));
+    color: var(--kailo-color-muted-foreground);
 }
 
 .kailo-minimal-message img {
-    border-radius: calc(var(--radius) + 2px);
+    border-radius: var(--kailo-radius-lg);
 }
 
 .kailo-minimal-message p {
@@ -83,7 +85,7 @@ body.react-mui-context,
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: hsl(var(--background));
+    background-color: var(--kailo-color-background);
 }
 
 /* The upstream product glyph marks shared spaces in the native UI; Kailo uses

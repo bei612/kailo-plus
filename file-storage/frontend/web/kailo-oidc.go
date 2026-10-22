@@ -63,6 +63,16 @@ type kailoOIDCConfig struct {
 	// Kailo sign-out address opened by the native "logout" outside of a Kailo
 	// frame (DD-133 §2); empty hides that action.
 	PlatformLogoutURL string `json:"platformLogoutUrl,omitempty"`
+	// OIDC back-channel logout receiver (07 §4.7.5); nil leaves it disabled.
+	BackchannelLogout *kailoBackchannelConfig `json:"backchannelLogout,omitempty"`
+}
+
+// Explicit bounds, no defaults: native sessions of a Kailo login live at most
+// sessionMaxAgeSeconds (not longer than the IdP SSO session maximum) and a
+// logout_token is accepted until logoutTokenMaxAgeSeconds after its iat.
+type kailoBackchannelConfig struct {
+	SessionMaxAgeSeconds     int `json:"sessionMaxAgeSeconds"`
+	LogoutTokenMaxAgeSeconds int `json:"logoutTokenMaxAgeSeconds"`
 }
 
 // identity is the part consumed by the shared native identity entry.
@@ -154,6 +164,9 @@ func (c kailoOIDCConnector) validate(nativeOrigin string) error {
 	}
 	if err := kailoPlatformLogoutURL(c.Config.PlatformLogoutURL); err != nil {
 		return err
+	}
+	if b := c.Config.BackchannelLogout; b != nil && (b.SessionMaxAgeSeconds <= 0 || b.LogoutTokenMaxAgeSeconds <= 0) {
+		return errors.New("native OIDC back-channel logout bounds must be explicitly configured")
 	}
 	// Explicit links and the provisioning switch: the same rules as the shared
 	// identity entry, so a connector it refuses never offers a login.
@@ -448,6 +461,18 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 	if err != nil || confirmed.String() != redirect.String() || login.GetChallenge() != before.GetChallenge() {
 		http.Error(w, "Invalid native callback", http.StatusUnauthorized)
 		return
+	}
+	// Back-channel logout (07 §4.7.5): the native session is bound to the IdP
+	// sid and iss+sub before its code is delivered; untracked is refused.
+	if b := c.Config.BackchannelLogout; b != nil {
+		var sid struct {
+			SID string `json:"sid"`
+		}
+		_ = id.Claims(&sid)
+		if auth.RecordNativeOIDCSession(login.GetSessionID(), id.Issuer, id.Subject, sid.SID, user.Uuid, time.Duration(b.SessionMaxAgeSeconds)*time.Second) != nil {
+			http.Error(w, "Native login is unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	// Only the confirmed native callback may establish the encrypted backend
 	// credential. No raw upstream token enters frontend JSON or localStorage.
