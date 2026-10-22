@@ -1,5 +1,5 @@
 capability_id: component.native_embed
-title: 组件一体化呈现的平台部分：呈现令牌与运行时、宿主协议、头像解析、资料声明与退出联动
+title: 组件一体化呈现的平台部分：呈现令牌与运行时、宿主协议、头像解析、成员目录、资料声明与退出联动
 stage: EXT-BASE
 status: in_progress
 exposure: end_user
@@ -11,15 +11,19 @@ design:
   facts: []
   seams: [SS-AGW-END-SESSION]
   blockers: []
-  entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding]
+  entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding, TenantMembership, WorkspaceMembership, ExternalIdentity]
 
 validation:
-  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205]
+  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/end-session.md
     - dimension: 合同一致
       ref: client-kit/embed/README.md
+    - dimension: 合同一致
+      ref: contracts/api/component_member_directory.schema.json
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_directory.rs
 
 implementation:
   owners: [team-platform]
@@ -33,6 +37,13 @@ implementation:
     - client-kit/dart/lib/shared/platform/platform_text.dart
     - core/crates/platform-core/src/component_release.rs
     - core/crates/platform-core/src/web_profile.rs
+    - core/crates/platform-core/src/component_directory.rs
+    - core/crates/platform-core/src/spicedb.rs
+    - core/crates/platform-core/src/service_api.rs
+    - file-storage/fork/release/binding-config.native-page.schema.json
+    - knowledge/fork/release/binding-config.native-page.schema.json
+    - data-query/fork/release/binding-config.native-page.schema.json
+    - tools/component-release/flow/component-bind.mjs
     - web-client/web/src/platform/bff-client.ts
     - web-client/web/src/platform/ui/PlatformApp.tsx
     - web-client/web/Caddyfile
@@ -41,7 +52,7 @@ implementation:
     - deploy/local/identity-provider/realm.json
     - deploy/local/model-gateway-config.yaml
   surfaces: [web, desktop]
-  schemas: []
+  schemas: [contracts/api/component_member_directory.schema.json, contracts/enums/component_directory_role.schema.json]
   migrations: []
 
 runtime:
