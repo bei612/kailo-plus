@@ -18,14 +18,15 @@ D=(sudo -n docker)
 fail=0
 bad() { echo "  FAIL: $*"; fail=1; }
 ok() { echo "  ok: $*"; }
-value() {
-  python3 -I - "$R/.env" "$1" <<'PY'
+value() {  # 声明式 .env 的投递路径以 ${KAILO_RUNTIME_DIR} 引用运行目录（ADR-20 §8），与 bash 读取同样展开
+  python3 -I - "$R/.env" "$1" "$R" <<'PY'
 import re, sys
 for line in open(sys.argv[1], encoding="utf-8"):
     m = re.match(r"^" + re.escape(sys.argv[2]) + r"=(.*)$", line.rstrip("\n"))
     if m:
         v = m.group(1)
-        print(v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v)
+        v = v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v
+        print(v.replace("${KAILO_RUNTIME_DIR}", sys.argv[3]))
         break
 PY
 }

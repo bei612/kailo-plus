@@ -74,8 +74,32 @@ overlays:
 # 由发布保证的生产 .env 非密键（ADR-20 §4）。键必须登记在 deploy/local/.env.example；值单行、
 # 无空白与引号，只允许 ${NAME} 引用。入口只报告键与动作，不输出值。
 env:
-  set: {}
-  unset: []
+  set:
+    # ADR-20 §8：运维域投递的唯一位置，由下方 delivery.protocol_peers 渲染；start-core.sh 原路径只读挂载给 Core/Worker
+    APPLICATION_ADAPTER_DIRECTORY_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json
+    COMPONENT_CONFORMANCE_ENVIRONMENT_FILE: ${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json
+    PROTOCOL_PEER_REFERENCE_CPUS: "0.5"
+    PROTOCOL_PEER_REFERENCE_MEMORY: 256m
+  # 一致性套件同一时间只有一个候选（07 §8A）：原生 MCP peer 只投递 environment，HTTP adapter 的另两项须缺省
+  unset: [COMPONENT_CONFORMANCE_FIXTURE_FILE, COMPONENT_CONFORMANCE_IDENTITY_FILE]
+
+# 运维域运行体（ADR-20 §8、DD-94(2)(5)、DD-136）：上游固定 digest 的外部镜像，不是构建单元。deploy 阶段
+# 保证其运行镜像引用等于 compose 的固定引用（缺失即创建、不同即替换），先于消费其投递的服务，回读运行、
+# 本地解析与健康。
+operated: [protocol-peer-reference]
+
+# 运维域投递（ADR-20 §8、DD-94、DD-98、DD-134(5)、DD-136）：仓库内声明 → 运行目录 runtime 下的真实规范文件
+# （adapter-directory.json 与 conformance-environment.json，0644）。交付目录的 adapters 保留运行文件中的已有
+# 条目（组件入口维护），protocolPeers 整体取 directory；一致性环境取 conformance（期望应答由
+# deploy/local/protocol-peers/record-conformance.py 经同一 Gateway 构建记录）。声明摘要与上次经 restart 的启动
+# 入口生效的不同时，deploy 重建该服务（start-core.sh 按文件原路径挂载，替换文件不进入已运行容器）。
+# binding 归属事实（DD-98）在网关管理区生成草稿后登记进 directory 的 bindings，随下一次发布生效。
+delivery:
+  protocol_peers:
+    directory: deploy/local/protocol-peers/directory.json
+    conformance: deploy/local/protocol-peers/conformance/protocol-peer-reference.json
+    runtime: data/protocol-peers
+    restart: core-bff
 
 # CI 节点：SSH 名与 CI 执行配置位置。运行目录、发布树根、证明库、Compose 项目名与 Web
 # build-info 位置从该配置读取，不在仓库复制。
