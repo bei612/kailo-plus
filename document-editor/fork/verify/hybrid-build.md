@@ -33,4 +33,22 @@
 
 ## 3. 试构建
 
-结果见下节。试构建只在 CI 节点进行：按 GitHub 提交取码，用 `tools/upstream_manifest.py stage` 同一份输入，在受限 builder `kailo-core-data` 上 `--load` 构建；不推送 registry，也不登记 digest。
+试构建只在 CI 节点进行：按 GitHub 提交取码，用 `tools/upstream_manifest.py stage` 同一份输入，在受限 builder `kailo-core-data` 上 `--load` 构建；不推送 registry，也不登记 digest。
+
+固定提交 `f23f22ef3ca84ac13c1a5f3300cecbcfb44bc7ef` 的试构建结果：
+
+- 构建成功。本地镜像 `local/document-editor-trial:f23f22ef3ca8`，image ID `sha256:665ad4de140c7fd0d92a540d32654662eee8362edc5bd10cacfa40741ee93c6a`，大小 1,320,038,618 字节，只有 1 层（从 scratch 平铺）。web-apps 的 grunt 构建没有加 `--force`，用时约 400 秒。
+- 产物内容：
+  - `sdkjs/cell/sdk-all.js` 含 `ApiWorkbook` 导出；文件头为 `9.4.0 (build:131)`；`commondefines.js` 为 `9.4.0`/`131`。
+  - `editor-wopi.ejs` 含 SS-OFF-WOPI 映射。
+  - 以下内容均不存在：`sdkjs-plugins`、`pluginsmanager`、示例、`documentserver-pluginsmanager.sh`、`run-document-server.sh`。
+  - x2t 的 V8 snapshot 与 JS cache（word、cell、slide 的 `sdk-all.bin`、`sdk-all.cache`）都已生成，字体 218 个，node 为 `v20.20.2`。
+- 渲染器与部署脚本：`native-config.py apply document-editor` 生成 `local.json`，再次 `check` 结果为语义相同；`start.sh --check` 通过。
+- 冒烟运行：按 compose 同样的挂载、secret 与 tmpfs，在 loopback 端口上运行，非生产。
+  - 容器 healthy，DocService 报告 `Version: 9.4.0. Build: 131` 并在进程内启动转换器。
+  - `/healthcheck` 返回 `true`。discovery 共 472 个 action，全部在实例 origin 上。
+  - `frame-ancestors 'self' http://192.168.0.193:58092 http://192.168.0.193:58090` 出现在 discovery 与 `api.js` 的响应中。
+  - `/`、`/ai-proxy/`、`/sdkjs-plugins/`、`/welcome/` 均返回 404，`/info/` 返回 403，`/plugins.json` 返回空列表。按缓存标签访问编辑器 bundle 返回 200。
+  - 出站拒绝：`wopisrc` 指向非 Cells host 时，ipfilter 以 403 拒绝 CheckFileInfo；指向 Cells host 的其他端口时，DocService 报 "Block external request"。
+- 冒烟容器已删除；镜像没有推送，也没有登记 digest。
+
