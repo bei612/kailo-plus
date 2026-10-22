@@ -177,8 +177,11 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
 - **顺序理由**：新增回调、mapper 与退出属性对仍在运行的旧服务是兼容增量，而新网关的 end-session 回跳、组件的 claim
   依赖它们已登记（`03` §7 的兼容顺序：先放宽依赖，再替换消费者），因此先于 Core/Worker 与其余服务。
 - **拒绝**：`NATIVE_OIDC_CLIENTS` 为空时组件专属客户端未声明——命令输出 `UNDECLARED`、不联系 IdP、不失败，摘要照常记录，
-  verify 如实报告 `UNDECLARED`；值无效、平台 client 被声明为组件 client、back-channel 地址不在组件 origin、已有同名而不一致的
-  mapper 或资料属性时拒绝，不覆写。任一命令非零退出即 deploy 失败，不记录摘要。
+  verify 如实报告 `UNDECLARED`；值无效、平台 client 被声明为组件 client、back-channel 地址不在组件 origin 或路径不是
+  `.design/07` §4.7.5 的固定接收路径、组件 client 不存在（不创建）、已有同名而不一致的 mapper 或资料属性时拒绝，不覆写。
+  已有组件 client 的四项退出属性（`frontchannelLogout=false`、`backchannel.logout.url`、`backchannel.logout.session.required=true`、
+  `backchannel.logout.revoke.offline.tokens=false`）完全由声明决定，不一致即以声明值收敛并回读确认（§4.7.5）。任一命令非零退出即
+  deploy 失败，不记录摘要。
 - **回读**：verify 执行两条只读回读（包装层拒绝任何写请求），并核对记录的摘要等于本次输入；回调字段、默认 scope、mapper、
   退出属性、资料属性或任一用户 `picture` 不一致，或摘要不符，verify 失败。在两次 deploy 之间新加入的用户在下一次 deploy
   才补 `picture`，期间的 verify 如实失败。

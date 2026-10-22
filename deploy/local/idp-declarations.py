@@ -115,6 +115,14 @@ def exact_origin(value):
             and not parts.password and not parts.path and not parts.query and not parts.fragment)
 
 
+# .design/07 §4.7.5 固定接收路径（Cells、WeKnora、Wren）。新组件先在设计表中登记路径，再加入此集合。
+BACKCHANNEL_LOGOUT_PATHS = frozenset({
+    "/auth/kailo/backchannel-logout",
+    "/api/v1/auth/oidc/backchannel-logout",
+    "/oauth/backchannel-logout",
+})
+
+
 def declared_clients(values):
     """NATIVE_OIDC_CLIENTS 的已校验声明；空值返回 []（未声明），无效即拒绝。"""
     raw = (values.get("NATIVE_OIDC_CLIENTS") or "").strip()
@@ -139,8 +147,9 @@ def declared_clients(values):
         url = urllib.parse.urlsplit(entry["backchannelLogoutUrl"])
         origin = urllib.parse.urlunsplit((url.scheme, url.netloc, "", "", ""))
         if (entry["clientId"] in platform or entry["clientId"] in seen or origin not in allowed
-                or not url.path.startswith("/") or url.query or url.fragment or url.username or url.password):
-            raise Refused("clientId 须是组件专属且唯一，back-channel 地址须在该组件自身 origin")
+                or url.path not in BACKCHANNEL_LOGOUT_PATHS or url.query or url.fragment
+                or url.username or url.password):
+            raise Refused("clientId 须是组件专属且唯一，back-channel 地址须在该组件自身 origin 且为 07 §4.7.5 的固定路径")
         seen.add(entry["clientId"])
     return declared
 

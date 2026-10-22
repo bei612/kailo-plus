@@ -83,7 +83,7 @@ _ispec.loader.exec_module(idp)
 SENTINELS = ("http://sentinel.example:1", "sentinel-browser", "sentinel-native", "sentinel-cells-client")
 ENV = {"PUBLIC_HOST": ["sentinel.example"], "AGENTGATEWAY_PORT": ["1"],
        "PUBLIC_ORIGIN": ["http://${PUBLIC_HOST}:${AGENTGATEWAY_PORT}"],
-       "NATIVE_OIDC_CLIENTS": ['[{"clientId":"sentinel-cells-client","backchannelLogoutUrl":"http://c.example:2/x"}]'],
+       "NATIVE_OIDC_CLIENTS": ['[{"clientId":"sentinel-cells-client","backchannelLogoutUrl":"http://c.example:2/oauth/backchannel-logout"}]'],
        "UNRELATED": ["a"]}
 KEYS = ["PUBLIC_ORIGIN", "NATIVE_OIDC_CLIENTS", "OIDC_ISSUER"]
 FILES = "sha256:" + "1" * 64
@@ -341,8 +341,12 @@ class IdpDeclarations(unittest.TestCase):
 
     def test_empty_declaration_is_undeclared_without_network_and_invalid_is_refused(self):
         self.assertEqual(idp.declared_clients(dict(VALUES, NATIVE_OIDC_CLIENTS="")), [])
-        for raw in ("{", "[]", '[{"clientId":"browser","backchannelLogoutUrl":"http://c.example:2/x"}]',
-                    '[{"clientId":"x","backchannelLogoutUrl":"http://other.example/x"}]'):
+        for raw in ("{", "[]",
+                    '[{"clientId":"browser","backchannelLogoutUrl":"http://c.example:2/auth/kailo/backchannel-logout"}]',
+                    '[{"clientId":"x","backchannelLogoutUrl":"http://other.example/auth/kailo/backchannel-logout"}]',
+                    # 07 §4.7.5: only the fixed receiver paths
+                    '[{"clientId":"x","backchannelLogoutUrl":"http://c.example:2/x"}]',
+                    '[{"clientId":"x","backchannelLogoutUrl":"http://c.example:2/oauth/backchannel-logout?a=1"}]'):
             with self.assertRaises(idp.Refused):
                 idp.declared_clients(dict(VALUES, NATIVE_OIDC_CLIENTS=raw))
         env = {k: v for k, v in dict(VALUES, NATIVE_OIDC_CLIENTS="", OIDC_ISSUER="http://k.example:3/realms/r",
@@ -358,6 +362,39 @@ class IdpDeclarations(unittest.TestCase):
             idp.Admin = original
             os.environ.clear()
             os.environ.update(saved)
+
+    def test_existing_client_back_channel_attributes_converge_and_drift_is_reported(self):
+        # 07 §4.7.5: the four logout attributes follow the declaration on an existing client.
+        kc = FakeKeycloak()
+        idp.native_profiles(kc, VALUES, "declare")
+        cells = kc.clients["c"]
+        self.assertIs(cells["frontchannelLogout"], False)
+        self.assertEqual({k: cells["attributes"][k] for k in ("backchannel.logout.url",
+                          "backchannel.logout.session.required", "backchannel.logout.revoke.offline.tokens")},
+                         {"backchannel.logout.url": "http://c.example:2/auth/kailo/backchannel-logout",
+                          "backchannel.logout.session.required": "true",
+                          "backchannel.logout.revoke.offline.tokens": "false"})
+        kc.writes.clear()
+        self.assertEqual(idp.native_profiles(kc, VALUES, "declare")["nativeClientProfiles"], "DECLARED")
+        self.assertEqual(kc.writes, [], "a converged client is not written again")
+        for key, drifted in (("frontchannelLogout", True),
+                             ("backchannel.logout.url", "http://c.example:2/elsewhere"),
+                             ("backchannel.logout.session.required", "false"),
+                             ("backchannel.logout.revoke.offline.tokens", "true")):
+            if key == "frontchannelLogout":
+                cells[key] = drifted
+            else:
+                cells["attributes"][key] = drifted
+            report = idp.native_profiles(idp.ReadOnly(kc), VALUES, "verify")
+            self.assertEqual(report["nativeClientProfiles"], "DRIFTED", key)
+            self.assertNotIn("elsewhere", json.dumps(report, ensure_ascii=False))
+            idp.native_profiles(kc, VALUES, "declare")
+            self.assertEqual(idp.native_profiles(idp.ReadOnly(kc), VALUES, "verify")["problems"], [], key)
+        del kc.clients["c"]
+        with self.assertRaises(idp.Refused):
+            idp.native_profiles(kc, VALUES, "declare")
+        self.assertFalse(any(path == "/clients" for method, path in kc.writes if method == "POST"),
+                         "a missing component client is never created")
 
     def test_read_only_wrapper_refuses_writes(self):
         with self.assertRaises(idp.Refused):
