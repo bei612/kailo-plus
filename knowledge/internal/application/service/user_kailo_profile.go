@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -102,13 +101,6 @@ func (s *userService) oidcDisplayName(ctx context.Context, user *types.User, inf
 
 func normaliseDisplayName(value string) string {
 	return truncateRunes(strings.Join(strings.Fields(value), " "), usernameMaxRunes)
-}
-
-func truncateRunes(value string, max int) string {
-	if utf8.RuneCountInString(value) <= max {
-		return value
-	}
-	return string([]rune(value)[:max])
 }
 
 // oidcAvatar accepts only an absolute http(s) picture URL that fits the
