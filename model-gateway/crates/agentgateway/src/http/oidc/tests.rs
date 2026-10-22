@@ -1704,7 +1704,10 @@ mod backchannel_logout {
 			"https://app.example.com/protected",
 			Some("text/html"),
 		);
-		add_cookie(&mut req, format!("{}={encoded}", policy.session.cookie_name));
+		add_cookie(
+			&mut req,
+			format!("{}={encoded}", policy.session.cookie_name),
+		);
 		let response = test_helpers::test_policy(policy, &mut req)
 			.await
 			.expect("browser policy apply");
@@ -1774,7 +1777,12 @@ mod backchannel_logout {
 			400
 		);
 		assert_eq!(
-			deliver(&policy, "other=1".into(), "application/x-www-form-urlencoded").await,
+			deliver(
+				&policy,
+				"other=1".into(),
+				"application/x-www-form-urlencoded"
+			)
+			.await,
 			400
 		);
 		assert!(session_alive(&policy, "sid-1", "user-1", now - 5).await);
