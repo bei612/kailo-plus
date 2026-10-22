@@ -57,6 +57,24 @@ Keycloak `services/src/main/java/org/keycloak/protocol/oidc/endpoints/LogoutEndp
   `a_late_hint_cannot_outlive_sign_out_or_a_new_login`；既有用例以“无提示不开窗口”的假实现运行。
 - `client-kit/ts/platform/test/bootstrap.test.tsx`：WebView IdP 会话未确认、旧形状缺字段均提示未确认。
 
+## CI 节点执行结果（2026-10-22，固定 `f0d3a1fb6defd7617289f87847b2815ec8169e0e`）
+
+在 CI 节点 NVMe 临时目录、检查镜像 `local/kailo-check`（容器内经依赖代理安装 webkit2gtk-4.1 等 Tauri
+系统库，`collaboration/rust-toolchain.toml` 的 1.95.0）中执行：
+
+- `rustfmt --edition 2021 --check` 五个改动文件：全部 0。
+- `cargo test --lib platform::`：21 passed、0 failed、1 ignored（既有端到端用例）。前提：主干的
+  `src/events.rs:258` 测试代码对 nostr 0.44.7 的 `EventId::from_hex` 传 `String`，`--lib` 测试目标在
+  `origin/main` 上即不能编译；只在容器副本中改为 `&"11".repeat(32)` 后运行，该修正未提交。测试必须在
+  没有 `HTTP(S)_PROXY` 的环境运行（假 IdP 在 127.0.0.1，代理会截走回环请求）。
+- `cargo clippy --lib --tests`：退出 0；8 条警告全部位于既有文件（`commands/custom_emoji.rs`、
+  `commands/messages.rs`、`commands/profile.rs`、`events.rs`），改动文件无警告。
+- `client-kit/ts/platform`：`pnpm -r typecheck` 0；`pnpm test` 126 个文件 1728 项全部通过。
+- `collaboration/desktop`：`tsc --noEmit` 0；`biome check` 三个改动的测试辅助文件 0；
+  `pnpm test`（node 测试）2483 项中 58 项失败，与 `origin/main` 同一环境的失败集合逐条相同（无新增）。
+- `web-client/web`：`npm run typecheck` 0。
+- 未运行：Playwright 桌面 e2e（`tests/e2e/platform-pages.spec.ts` 仅改夹具形状）、Windows 打包。
+
 仍未覆盖：真实 Tauri 窗口的导航拦截、Keycloak 实例上的 end-session 与组件接收端 back-channel 投递、
 Windows 11 安装包实测（V-SCN-219 业务验收）。改动使 `desktop-client` 的 `source_digest` 失效，需按原
 入口重建并回填 `fork/upstream.yaml`。
