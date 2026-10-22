@@ -8,10 +8,11 @@
 // light/dark switch needs no second stylesheet.
 //
 // Imported last by index.less: Less uses the last definition of a variable
-// everywhere, so these values win over the antd defaults and over the
-// original Wren overrides re-applied just before. Only variables that antd
-// never passes through a Less colour function are mapped here; text-colour-
-// secondary/disabled colours are handled in overlay.less.
+// everywhere, so these values win over the antd defaults and the original
+// Wren overrides. Only variables that antd never passes through a Less
+// function are mapped here (checked by compiling each one against antd
+// 4.20.4); split borders, tooltip and secondary/disabled text colours, which
+// antd derives with lighten()/fadeout()/shade(), are mapped in overlay.less.
 
 // Palette: back to the variable-build references (antd-variables.less pins
 // the original Wren blue).
@@ -33,13 +34,11 @@
 @text-color: ~'var(--kailo-color-foreground)';
 @heading-color: ~'var(--kailo-color-foreground)';
 @border-color-base: ~'var(--kailo-color-input)';
-@border-color-split: ~'var(--kailo-color-border)';
 @background-color-light: ~'var(--kailo-color-muted)';
 @background-color-base: ~'var(--kailo-color-muted)';
 @item-hover-bg: ~'var(--kailo-color-accent)';
 @table-header-bg: ~'var(--kailo-color-muted)';
 @table-row-hover-bg: ~'var(--kailo-color-accent)';
-@tooltip-bg: ~'var(--kailo-color-foreground)';
 @tooltip-color: ~'var(--kailo-color-background)';
 
 // Shape and type
