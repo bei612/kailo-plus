@@ -25,7 +25,7 @@
 
 - `deploy/local/model-gateway-config.yaml` 的 listener 级 logout 开启 `endSession`，落点 `/app/`。
 - IdP 浏览器客户端登记 `post.logout.redirect.uris = ${PUBLIC_ORIGIN}/app/`
-  （`identity-provider/realm.json`，既有 realm 由 `bootstrap.sh --sync-client-redirects` 同步）。
+  （`identity-provider/realm.json`，既有 realm 由 `bootstrap.sh --sync-client-redirects` 同步；发布 deploy 按配置摘要自动执行，ADR-20 §8）。
 - Web 以顶层表单 POST 提交 `/logout`（`web-client/web/src/platform/bff-client.ts::signOut`），
   CSP `form-action` 只追加 OIDC issuer 前缀（`WEB_IDP_END_SESSION_SOURCE`）。
 - IdP 结束会话后按组件专属客户端的 back-channel 配置（`bootstrap.sh --declare-native-client-profiles`）

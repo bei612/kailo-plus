@@ -49,8 +49,8 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 | pin | 开发机 | 按结构替换 compose 镜像 pin 与追溯记录 `release.artifacts[].digest`；断言 `deploy/`、`tools/` 不再残留旧 digest；提交并快进 push | 远端 main 已含该 pin 提交 |
 | check | CI worker | `kailo-ci submit <pin> check`（原 full） | 该 commit 的 full 任务 SUCCEEDED |
 | backup | 节点（发布树内代码） | 对受影响服务直接依赖的 Postgres 做 `pg_dump -Fc`，`pg_restore --list` 校验，连同 `.env` 快照写 manifest | 该 pin commit 的 manifest 存在且文件摘要一致 |
-| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → 按序替换服务 → 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过 |
-| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器 | 每次重算 |
+| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → IdP 声明式配置（§8）→ 按序替换服务 → 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定 |
+| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8） | 每次重算 |
 
 `run` 从第一个未完成的阶段继续；中断后再次执行同一命令即恢复。恢复依据两层：开发机日志
 `$XDG_STATE_HOME/kailo-release/<源commit>.json` 记录任务 ID、构建输出与 pin commit，避免重复提交 CI 任务；
@@ -154,6 +154,38 @@ CI worker 的 Web 部署在 `up` 之后用 `docker ps -q`（12 位截断 ID）�
 运行投递软链接（其 Compose 已以 `--project-directory <runtime>` 解析相对路径，软链接并不被使用）。该修正属于 CI 运维文件
 `ci/worker.py`，单独提交审批；入口自身的部署以完整 ID 比较，不依赖该任务。按 §3 的同一规则，worker 的 Web 部署应改为
 以 `KAILO_RUNTIME_DIR=<runtime>` 调用 Compose（项目目录仍是发布树），并删去建链接与清理链接两段，同属该运维文件。
+
+### 8. IdP 声明式配置
+
+持久化 realm 不会再次导入 `identity-provider/realm.json`，模板与 `.env` 的后续变化（平台浏览器/原生客户端的回调与
+`post.logout.redirect.uris`，DD-133(6)、SS-AGW-END-SESSION；组件专属 browser client 的 profile/email 默认 scope、
+`kailo-picture`/`kailo-locale` mapper、back-channel 退出属性、realm 用户资料 `picture` 属性与全部用户的 `picture`，
+DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前它们由操作者手工执行 `bootstrap.sh` 的对应模式；
+现在由 deploy 自动执行，`release.yaml` 的 `idp` 段声明等待的服务、期望值定义文件与命令：
+
+- **期望值只有一份**：`deploy/local/idp-declarations.py` 定义全部期望与读取的 `.env` 键（`INPUT_ENV`）及摘要覆盖的文件
+  （`INPUT_FILES`：它自身与 realm 模板）；`bootstrap.sh` 的 `--sync-client-redirects`、`--declare-native-client-profiles`、
+  `--declare-native-user-pictures` 与只读的 `--verify-client-redirects`、`--verify-native-client-profiles` 都调用它，
+  声明与回读不会各写一份。回调同步的期望值取自目标 commit 的模板、只代入非密 `.env` 键（两条回调由 `PUBLIC_ORIGIN`
+  派生）；不再读取运行目录里 `bootstrap.sh` 初始化时渲染的 `secrets/idp-import/realm.json`——发布从不重渲染那份含 secret
+  的导入文件，按它同步会把旧模板写回；模板回调字段出现非 `.env` 占位符即拒绝，不读取 secret 补齐。
+- **触发与幂等**：deploy 在配置一次性服务之后、替换任何服务之前，等待 `keycloak` 就绪后计算配置摘要 =
+  `INPUT_FILES` 内容 + `INPUT_ENV` 键及其 `${NAME}` 引用闭包在运行 `.env` 中原始值的 SHA-256（只保留摘要）。与
+  `releases/idp-declarations.json` 记录的上次成功摘要不同（或从未记录）时依次执行 `apply`，全部成功后才记录；相同则跳过。
+  `always`（`--declare-native-user-pictures`）每次 deploy 执行：只给新用户补 `picture`，客户端与资料属性只读核对，发现漂移即
+  拒绝并作废已记录的摘要，使下一次 deploy 重新执行完整声明。各命令本身先读后写、回读确认，重复执行无副作用。
+- **顺序理由**：新增回调、mapper 与退出属性对仍在运行的旧服务是兼容增量，而新网关的 end-session 回跳、组件的 claim
+  依赖它们已登记（`03` §7 的兼容顺序：先放宽依赖，再替换消费者），因此先于 Core/Worker 与其余服务。
+- **拒绝**：`NATIVE_OIDC_CLIENTS` 为空时组件专属客户端未声明——命令输出 `UNDECLARED`、不联系 IdP、不失败，摘要照常记录，
+  verify 如实报告 `UNDECLARED`；值无效、平台 client 被声明为组件 client、back-channel 地址不在组件 origin、已有同名而不一致的
+  mapper 或资料属性时拒绝，不覆写。任一命令非零退出即 deploy 失败，不记录摘要。
+- **回读**：verify 执行两条只读回读（包装层拒绝任何写请求），并核对记录的摘要等于本次输入；回调字段、默认 scope、mapper、
+  退出属性、资料属性或任一用户 `picture` 不一致，或摘要不符，verify 失败。在两次 deploy 之间新加入的用户在下一次 deploy
+  才补 `picture`，期间的 verify 如实失败。
+- **凭据与输出**：命令以 `KAILO_RUNTIME_DIR=<运行目录>` 在发布树 `deploy/local` 下执行，管理口令只从运行目录
+  `secrets/keycloak_admin_password` 读入内存，管理令牌不经跳转与代理转发；标准输出只有一行状态与计数，消息只写角色
+  （「平台浏览器客户端」「组件专属客户端第 N 项」），不输出 client id、URL、口令或令牌。plan/`--dry-run` 只报告摘要状态
+  （从未记录/已变化/未变）与是否声明了组件专属客户端。
 
 ## 后果
 
