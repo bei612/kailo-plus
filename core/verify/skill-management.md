@@ -55,3 +55,26 @@
 首次 `verify` 的 3 项前端失败已修正并复测通过：Agents 页原版只有一个页面刷新（Skills 区改为随页面刷新重读，并为该断言增加 Skills 读取），以及测试路由未匹配带分页参数的版本读取。
 
 业务验收（上传 → 发布 → 引用 → 安装 → Codex 发现 → 频道使用 → 审计回读）在合并发布后执行，本文件届时追加实际回执。
+
+## 生产验收发现与修复（2026-10-22，分支 `fix/skills-acceptance`）
+
+生产验收（V-SCN-210..217，release dd3278a2）发现的问题与修复：
+
+- **停用后首个新话题仍以 `$slug` 选中失效 Skill（V-SCN-215）**：Codex
+  7498521d 的 `skills/config/write` 只改 `config.toml` 并清缓存，已加载 thread 的启用规则
+  取自其 session config 快照；Core 在 `thread/start` 之后才收敛。修复：`agent_task` 在
+  Session 诞生（`thread/start`）与既有 Session 的 `thread/resume` 之前、以及 `turn/start`
+  前都做 fresh 判定与收敛；`reconcile_skills` 写入后以 `config/batchWrite{edits:[],
+  reloadUserConfig:true}` 热加载每个已加载 thread，再 `skills/list` 核对，全部成立才提交
+  本地启用值。回归：`agent_runtime::skill_reconcile_tests`。
+- **digest 不符回 `TARGET_NOT_FOUND`（V-SCN-211）**：本人本定义的上传 digest 或名称不符
+  改为 `INVALID_PARAMETERS`（`skill_catalog::staged_target`）。
+- **超限上传回纯文本 413（V-SCN-211）**：请求体超过上限时回同一结构化视图
+  `accepted=false`、`UPLOAD_TOO_LARGE`；此时 `uploadDigest/uploadByteSize` 缺省（契约改为可选）。
+- **审计证据不全（DD-135(8)）**：Skill 版本动作记 `SKILL_SLUG`、`SKILL_VERSION_ASSET_ID`
+  （version=序号）、`SKILL_ARTIFACT_DIGEST`（version=字节数），创建另记 `SKILL_UPLOAD_DIGEST`；
+  定义创建与停用记 slug；AgentVersion 创建、编辑、发布记被引 `SKILL_VERSION_ASSET_ID`。
+- **分享/取消分享 DISPATCH 审计停在 `DISPATCH_RESULT_UNKNOWN`**：写前意图之后，原生写入经回读
+  确认即以 `record_dispatch` 推进 `DISPATCHED`（或确定未写时 `DISPATCH_ABORTED`）并追加
+  DISPATCH 审计，与 ActionExecution 一致。
+- **确认文案的版本号**：发布/退役确认显示 `v{ordinal}`，不再显示 assetVersion。

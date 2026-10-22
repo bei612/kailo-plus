@@ -565,6 +565,13 @@ async fn advance_accepted(
             generation: invocation.projection_generation,
             config_hash,
         };
+        let dispatchable = invocation.status == "CREATED" && invocation.runtime_turn_id.is_none();
+        // DD-135(7)：将要派发的 Invocation 先收敛 Skill 再 thread/resume，既有 Session 的
+        // thread 由此热加载停用/恢复结果；只观察既有 turn 的轮次不改动启用投影。
+        if dispatchable && !reconcile_turn_skills(&state, runtime, &invocation, &projection).await {
+            timing.outcome("SKILL_RECONCILE_UNAVAILABLE");
+            return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+        }
         let resumed = crate::agent_session::resume_existing(&state, id, &projection).await;
         if invocation.status == "CREATED" {
             timing.step("session_resume");
@@ -760,6 +767,14 @@ async fn advance_accepted(
         generation: invocation.projection_generation,
         config_hash: facts.projection_config_hash,
     };
+    // DD-135(7)：新 Session 的 thread/start 之前收敛 Skill。Codex 在 thread/start 时固定该
+    // thread 的配置快照；先 thread/start 后停用会让首个 turn 仍以 `$slug` 选中失效 Skill。
+    let skills_ready = reconcile_turn_skills(&state, runtime, &invocation, &projection).await;
+    timing.step("skill_reconcile_birth");
+    if !skills_ready {
+        timing.outcome("SKILL_RECONCILE_UNAVAILABLE");
+        return result(id, TaskStatus::Running, "RUNTIME_ADMISSION_UNAVAILABLE");
+    }
     // birth owns its lifecycle/fresh authorization transaction; the plaintext
     // is passed directly to this first turn and is never a durable Task input.
     let born = crate::agent_session::birth(&state, id, &projection, &input).await;
@@ -967,6 +982,31 @@ async fn cancel_before_dispatch_in_transaction(
     Ok(true)
 }
 
+/// DD-135(7)：fresh 判定被引 Skill 的有效集合，并在运行中的 app-server 停用或恢复、热加载到
+/// 已加载的 thread。必须先于本 Invocation 的 `thread/start`（Session 诞生）与 `thread/resume`，
+/// 并在 `turn/start` 前再做一次：Codex 的 `$slug` 解析与注入只看 thread 的配置快照。
+async fn reconcile_turn_skills(
+    state: &ServiceState,
+    runtime: &crate::agent_runtime::Supervisor,
+    invocation: &Invocation,
+    projection: &RuntimeRef,
+) -> bool {
+    match crate::skill_projection::turn_effective(
+        &state.governance,
+        invocation.tenant_id,
+        invocation.installation_resource_id,
+        invocation.agent_version_asset_id,
+    )
+    .await
+    {
+        Ok(effective) => runtime
+            .reconcile_skills(projection, &effective)
+            .await
+            .is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// The only first-turn sender. Once DISPATCHING is committed this branch is
 /// unreachable on retry: recovery consumes the same clientUserMessageId from
 /// native history, never another model request or a newer memory head.
@@ -1033,22 +1073,9 @@ async fn first_turn(
             );
         }
     };
-    // DD-135(7)：派发意图之前 fresh 判定被引 Skill，并在运行中的 app-server 停用或恢复；
-    // 失败只让本次准入稍后重试，不写派发意图。
-    let skills_ready = match crate::skill_projection::turn_effective(
-        &state.governance,
-        invocation.tenant_id,
-        invocation.installation_resource_id,
-        invocation.agent_version_asset_id,
-    )
-    .await
-    {
-        Ok(effective) => runtime
-            .reconcile_skills(projection, &effective)
-            .await
-            .is_ok(),
-        Err(_) => false,
-    };
+    // DD-135(7)：派发意图之前再 fresh 判定一次被引 Skill（birth/resume 前已判定过，期间可能
+    // 又有撤权或停用）；失败只让本次准入稍后重试，不写派发意图。
+    let skills_ready = reconcile_turn_skills(state, runtime, invocation, projection).await;
     timing.step("skill_reconcile");
     if !skills_ready {
         timing.outcome("SKILL_RECONCILE_UNAVAILABLE");

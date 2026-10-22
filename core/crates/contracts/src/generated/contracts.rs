@@ -3244,7 +3244,10 @@ pub enum EvidenceAuthority {
 /// 存量种类不可识别时缺省
 ///
 /// AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
-/// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+/// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+/// 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+/// 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+/// 为上传字节的 SHA-256。均不含 SKILL.md 正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EvidenceKind {
@@ -3295,6 +3298,15 @@ pub enum EvidenceKind {
 
     #[serde(rename = "SKILL_ARTIFACT_DIGEST")]
     SkillArtifactDigest,
+
+    #[serde(rename = "SKILL_SLUG")]
+    SkillSlug,
+
+    #[serde(rename = "SKILL_UPLOAD_DIGEST")]
+    SkillUploadDigest,
+
+    #[serde(rename = "SKILL_VERSION_ASSET_ID")]
+    SkillVersionAssetId,
 
     #[serde(rename = "SPICEDB_RELATIONSHIP")]
     SpicedbRelationship,
@@ -9135,9 +9147,13 @@ pub struct SkillArtifactUploadView {
 
     pub skill_resource_id: String,
 
-    pub upload_byte_size: i64,
+    /// 上传字节数。缺省条件同 uploadDigest。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_byte_size: Option<i64>,
 
-    pub upload_digest: String,
+    /// 上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_digest: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upload_id: Option<String>,

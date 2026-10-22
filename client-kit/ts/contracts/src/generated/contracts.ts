@@ -2245,7 +2245,10 @@ export enum EvidenceAuthority {
  * 存量种类不可识别时缺省
  *
  * AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
- * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+ * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+ * 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+ * 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+ * 为上传字节的 SHA-256。均不含 SKILL.md 正文。
  */
 export enum EvidenceKind {
     ActionExecutionId = "ACTION_EXECUTION_ID",
@@ -2264,6 +2267,9 @@ export enum EvidenceKind {
     PlatformSessionId = "PLATFORM_SESSION_ID",
     SecretRefRehomeId = "SECRET_REF_REHOME_ID",
     SkillArtifactDigest = "SKILL_ARTIFACT_DIGEST",
+    SkillSlug = "SKILL_SLUG",
+    SkillUploadDigest = "SKILL_UPLOAD_DIGEST",
+    SkillVersionAssetId = "SKILL_VERSION_ASSET_ID",
     SpicedbRelationship = "SPICEDB_RELATIONSHIP",
     SpicedbZedtoken = "SPICEDB_ZEDTOKEN",
     TemporalFirstRunId = "TEMPORAL_FIRST_RUN_ID",
@@ -6534,10 +6540,16 @@ export interface SkillArtifactUploadView {
     shortDescription?: string;
     skillName?:        string;
     skillResourceId:   string;
-    uploadByteSize:    number;
-    uploadDigest:      string;
-    uploadId?:         string;
-    violations:        SkillArtifactViolation[];
+    /**
+     * 上传字节数。缺省条件同 uploadDigest。
+     */
+    uploadByteSize?: number;
+    /**
+     * 上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+     */
+    uploadDigest?: string;
+    uploadId?:     string;
+    violations:    SkillArtifactViolation[];
 }
 
 /**
