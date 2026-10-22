@@ -38,6 +38,7 @@ implementation:
     - web-client/web/Caddyfile
     - model-gateway/crates/agentgateway/src/http/oidc
     - deploy/local/bootstrap.sh
+    - deploy/local/idp-declarations.py
     - deploy/local/identity-provider/realm.json
     - deploy/local/model-gateway-config.yaml
   surfaces: [web, desktop]

@@ -66,6 +66,22 @@ order:
   first: [core, worker]
   last: [web-client]
 
+# IdP 声明式配置（ADR-20 §1、DD-133(3)(6)、SS-AGW-END-SESSION）。deploy 在 keycloak 就绪后、替换任何服务前执行：
+# 配置摘要（inputs 中 INPUT_FILES 的内容 + INPUT_ENV 键及其 ${NAME} 引用在运行 .env 中的原始值摘要）与上次
+# 成功应用的不同则依次执行 apply，全部成功后才记录摘要；always 每次 deploy 执行（只给新用户补 picture，客户端只读
+# 核对）；verify 阶段执行只读回读。命令在发布树 deploy/local 下以 KAILO_RUNTIME_DIR=运行目录 执行，输出只有状态与计数。
+idp:
+  wait: keycloak
+  inputs: deploy/local/idp-declarations.py
+  apply:
+    - [./bootstrap.sh, --sync-client-redirects]
+    - [./bootstrap.sh, --declare-native-client-profiles]
+  always:
+    - [./bootstrap.sh, --declare-native-user-pictures]
+  verify:
+    - [./bootstrap.sh, --verify-client-redirects]
+    - [./bootstrap.sh, --verify-native-client-profiles]
+
 # 运行目录中由 start-core.sh 持久派生的 Compose 叠加文件；存在即参与每一次 Compose 调用，
 # 否则重建 agentgateway 会丢掉其派生配置。
 overlays:
