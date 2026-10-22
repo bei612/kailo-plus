@@ -17,7 +17,7 @@ use ::http::{Method, StatusCode, header};
 use serde_json::{Map, Value};
 use tracing::{info, warn};
 
-use super::{now_unix, OidcPolicy};
+use super::{OidcPolicy, now_unix};
 use crate::http::{Body, PolicyResponse, Request, jwt};
 use crate::{apply, schema};
 
@@ -132,7 +132,9 @@ impl BackchannelLogout {
 		if revocations.jtis.contains_key(&jti) {
 			return Err(Rejection::Replayed);
 		}
-		revocations.jtis.insert(jti, now + MAX_TOKEN_AGE_SECS + FUTURE_SKEW_SECS);
+		revocations
+			.jtis
+			.insert(jti, now + MAX_TOKEN_AGE_SECS + FUTURE_SKEW_SECS);
 		match (&sid, &sub) {
 			(Some(sid), _) => {
 				revocations.sids.insert(sid.clone(), (now, until));
@@ -205,7 +207,11 @@ impl OidcPolicy {
 			.get(header::CONTENT_TYPE)
 			.and_then(|value| value.to_str().ok())
 			.and_then(|value| value.split(';').next())
-			.is_some_and(|value| value.trim().eq_ignore_ascii_case("application/x-www-form-urlencoded"));
+			.is_some_and(|value| {
+				value
+					.trim()
+					.eq_ignore_ascii_case("application/x-www-form-urlencoded")
+			});
 		if !form {
 			return Some(respond(StatusCode::BAD_REQUEST));
 		}
