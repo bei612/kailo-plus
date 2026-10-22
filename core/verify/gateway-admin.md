@@ -72,3 +72,18 @@
 5. 次要：平台按组织分组显示组织名而非 Tenant ID；无权成员停用已停用路由先得到 409（状态先于权限判定）；`llm_route.create`/`disable` 停在 DISPATCHED 无 OUTCOME 审计（历史 24 条同样）。
 
 留下的数据：两条测试路由 `8553d435…`、`f367309b…` 为 RETAINED_READ_ONLY（停用不可逆）；`kailo-platform-approver` 首次进入 Catalog 时按会话 displayName 填写显示名（operation `e64de483`）。
+
+### 5.1 缺陷处置（分支 `feat/gw-mcp-reference`，设计 `f2a2f1a2`）
+
+| 缺陷 | 处置 | 提交 / 测试 |
+|---|---|---|
+| 1 无状态无错误记为成功 | 记为 UNKNOWN | `20bec644`，`outcomes` |
+| 2 路由维度按模型名 | 路由键取 request log `genAi.providerName`（route 原生 ID），其次请求模型；用量、`modelRouteResourceId` 同键 | `4f44f048`，`model_route_follows_the_route_native_id_not_the_model_name` |
+| 3 普通成员见入口 | 设计裁决（DD-134(2) 区级门槛，V-SCN-191）：网关管理区与区内全部只读查询要求 Catalog `audit` 或 Tenant/某 Workspace `audit`；普通成员无入口、查询 403 | `ee89a8cc`，`zone_opens_only_on_audit` |
+| 4 新建路由无来源 | 来源列表只排除 route 自身投影，与 `llm_route.create` 准入一致 | `ee89a8cc`，`a_source_used_by_an_existing_route_is_still_offered` |
+| 5a 平台按组织名分组 | 只呈现 Tenant ID | `4f44f048` |
+| 5b 无权者先得到 409 | `llm_route.disable` 先授权后判状态（授权后的 target_gate） | `dc2a17d2`，`scope_separates_state_from_scope_mismatch` |
+| 5c 无 OUTCOME 审计 | 属缺陷（`05` §2.13 审计 FULL_LIFECYCLE、`14` §4）：create/disable 结果确定时追加 OUTCOME | `dc2a17d2` |
+
+以上均为源码与单元测试证据，生产复验待合并发布后进行。
+
