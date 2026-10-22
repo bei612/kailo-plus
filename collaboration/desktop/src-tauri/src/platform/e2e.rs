@@ -110,6 +110,17 @@ async fn wait_device(
     }
 }
 
+/// 无图形会话：没有 WebView，也就不能有退出窗口。
+struct NoWebView;
+impl crate::platform::api::LogoutBrowser for NoWebView {
+    fn end_session<'a>(
+        &'a self,
+        _: url::Url,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        panic!("没有退出提示时不能打开退出窗口")
+    }
+}
+
 #[tokio::test]
 #[ignore = "端到端核验：需要运行中的本地拓扑与真实 Workspace，见模块说明"]
 async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
@@ -127,7 +138,10 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
     let state = crate::app_state::build_app_state();
     let http = state.http_client.clone();
     let refresh_store = MemoryStore::default();
-    let session = NativeSession::with_store(Box::new(refresh_store.clone()));
+    let session = NativeSession::with_stores(
+        Box::new(refresh_store.clone()),
+        Box::new(MemoryStore::default()),
+    );
 
     // 1. RFC 8252 登录
     let open = |url: &str| {
@@ -246,9 +260,15 @@ async fn desktop_signs_in_registers_device_and_publishes_through_relay() {
         .load()
         .expect("读刷新令牌")
         .expect("应持有刷新令牌");
-    let report = session.end_session(&http, &cfg).await.expect("注销");
+    // 本核验没有经原生认证窗口建立 WebView IdP 会话：没有退出提示，不开退出窗口。
+    let report = session
+        .end_session(&http, &cfg, &NoWebView)
+        .await
+        .expect("注销");
     assert!(
-        report.core_session_revoked && report.refresh_token_revoked,
+        report.core_session_revoked
+            && report.refresh_token_revoked
+            && report.embedded_idp_session_ended,
         "Core 与 IdP 都应确认结束登录：{report:?}"
     );
     assert!(!session.has_credentials().expect("读凭据"));

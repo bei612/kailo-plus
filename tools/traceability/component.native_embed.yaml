@@ -14,7 +14,7 @@ design:
   entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding, TenantMembership, WorkspaceMembership, ExternalIdentity]
 
 validation:
-  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218]
+  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/end-session.md
@@ -24,6 +24,8 @@ validation:
       ref: contracts/api/component_member_directory.schema.json
     - dimension: 单元测试
       ref: core/crates/platform-core/src/component_directory.rs
+    - dimension: 退出联动
+      ref: collaboration/fork/verify/desktop-embedded-idp-logout.md
 
 implementation:
   owners: [team-platform]
@@ -38,6 +40,12 @@ implementation:
     - core/crates/platform-core/src/component_release.rs
     - core/crates/platform-core/src/web_profile.rs
     - core/crates/platform-core/src/component_directory.rs
+    - collaboration/desktop/src-tauri/src/platform/native_auth.rs
+    - collaboration/desktop/src-tauri/src/platform/oidc.rs
+    - collaboration/desktop/src-tauri/src/platform/api.rs
+    - collaboration/desktop/src-tauri/src/platform/commands.rs
+    - client-kit/ts/platform/src/native.ts
+    - client-kit/ts/platform/src/react/NativeBootstrap.tsx
     - core/crates/platform-core/src/spicedb.rs
     - core/crates/platform-core/src/service_api.rs
     - file-storage/fork/release/binding-config.native-page.schema.json

@@ -123,7 +123,8 @@
         "__OIDC_NATIVE_MOBILE_REDIRECT_URI__"
       ],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1/kailo/signed-out"
       },
       "protocolMappers": [
         {

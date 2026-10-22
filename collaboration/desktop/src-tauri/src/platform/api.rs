@@ -1,11 +1,15 @@
 //! 令牌的持有与管理平面调用。
 //!
 //! 刷新令牌存 OS keyring（与设备身份同一个 secret store），访问令牌只在内存。
+//! 原生认证窗口在应用 WebView 中建立的 IdP 会话，其 ID token 作为退出提示存同一
+//! secret store（DD-133(6)、`.design/07` §4.7.5「Desktop」）。
 //! 不按到期时间提前刷新——那要一个拍脑袋的提前量；而是在 BFF 回 401 时刷新一次
 //! 并重试一次，两次都不行即判为需要重新登录。
 
 use reqwest::Method;
 use serde::Serialize;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Mutex as StateMutex, MutexGuard};
 use tokio::sync::Mutex;
 
@@ -16,11 +20,14 @@ use crate::secret_store::SecretStore;
 
 /// keyring 中刷新令牌的条目名
 const REFRESH_KEY: &str = "platform-refresh-token";
+/// keyring 中 WebView IdP 会话退出提示（原生认证窗口那次登录的 ID token）的条目名
+const EMBEDDED_HINT_KEY: &str = "platform-embedded-id-token";
 
 /// 前端可经本模块调用的 BFF 路径前缀。其余一概不代发。
 const API_PREFIX: &str = "/api/v1/";
 
-/// 刷新令牌的存放处。应用里是 OS keyring；无图形会话的端到端核验里是内存。
+/// 一条长期凭据（刷新令牌或退出提示）的存放处。应用里是 OS keyring；无图形会话的
+/// 端到端核验里是内存。
 pub(crate) trait RefreshStore: Send + Sync {
     fn load(&self) -> Result<Option<String>, String>;
     fn store(&self, value: &str) -> Result<(), String>;
@@ -29,24 +36,33 @@ pub(crate) trait RefreshStore: Send + Sync {
 
 /// OS keyring，与设备身份同一个 secret store。keyring 不可用时写入失败，登录随之
 /// 失败——不退而把长期凭据写成文件。
-struct KeyringStore;
+struct KeyringStore(&'static str);
 
 impl RefreshStore for KeyringStore {
     fn load(&self) -> Result<Option<String>, String> {
-        store().load(REFRESH_KEY)
+        store().load(self.0)
     }
     fn store(&self, value: &str) -> Result<(), String> {
-        store().store(REFRESH_KEY, value)
+        store().store(self.0, value)
     }
     fn delete(&self) -> Result<(), String> {
-        store().delete(REFRESH_KEY)
+        store().delete(self.0)
     }
+}
+
+/// 退出时结束应用 WebView 中 IdP 会话的那个不可见窗口。应用里是 Tauri 窗口
+/// （`native_auth::WindowLogoutBrowser`），测试里是假实现。
+pub(crate) trait LogoutBrowser: Send + Sync {
+    /// 导航到 RP-Initiated Logout 地址；只有到达被拦截的回跳地址才返回 true。
+    fn end_session<'a>(&'a self, url: url::Url) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 }
 
 pub(crate) struct NativeSession {
     state: StateMutex<SessionState>,
     refreshing: Mutex<()>,
     refresh: Box<dyn RefreshStore>,
+    /// WebView IdP 会话的退出提示；新的一次覆盖旧值，退出时取出并删除
+    embedded_hint: Box<dyn RefreshStore>,
     pub(crate) pending: PendingLogin,
 }
 
@@ -58,7 +74,10 @@ struct SessionState {
 
 impl Default for NativeSession {
     fn default() -> Self {
-        Self::with_store(Box::new(KeyringStore))
+        Self::with_stores(
+            Box::new(KeyringStore(REFRESH_KEY)),
+            Box::new(KeyringStore(EMBEDDED_HINT_KEY)),
+        )
     }
 }
 
@@ -79,6 +98,10 @@ pub(crate) struct SignOutReport {
     pub core_session_revoked: bool,
     /// IdP 以 200 回答了刷新令牌撤销（RFC 7009），或本机本就没有刷新令牌
     pub refresh_token_revoked: bool,
+    /// 应用 WebView 中的 IdP 会话已由 RP-Initiated Logout 确认结束（窗口到达被拦截的
+    /// 回跳地址），或本机没有退出提示——即从未经原生认证窗口建立该会话
+    /// （`.design/07` §4.7.5「Desktop」）。只有它为 true，组件才会收到 back-channel 退出。
+    pub embedded_idp_session_ended: bool,
 }
 
 /// 前端据此判断是否要回到登录页。
@@ -93,21 +116,42 @@ fn store() -> &'static SecretStore {
 impl NativeSession {
     pub(super) fn page_generation(&self) -> Result<u64, String> {
         let state = self.state()?;
-        if state.access.is_none() { return Err(NOT_SIGNED_IN.into()); }
+        if state.access.is_none() {
+            return Err(NOT_SIGNED_IN.into());
+        }
         Ok(state.generation)
     }
 
     pub(super) fn page_generation_matches(&self, generation: u64) -> bool {
-        self.state().is_ok_and(|state| state.generation == generation && state.access.is_some())
+        self.state()
+            .is_ok_and(|state| state.generation == generation && state.access.is_some())
     }
 
-    pub(crate) fn with_store(refresh: Box<dyn RefreshStore>) -> Self {
+    pub(crate) fn with_stores(
+        refresh: Box<dyn RefreshStore>,
+        embedded_hint: Box<dyn RefreshStore>,
+    ) -> Self {
         Self {
             state: StateMutex::new(SessionState::default()),
             refreshing: Mutex::new(()),
             refresh,
+            embedded_hint,
             pending: PendingLogin::default(),
         }
+    }
+
+    /// 保存原生认证窗口那次登录的 ID token，覆盖旧值。只在该窗口打开时的登录
+    /// 代际仍有效时保存：期间已退出或换了登录，迟到的提示不落盘。
+    pub(crate) fn store_embedded_hint(
+        &self,
+        generation: u64,
+        id_token: &str,
+    ) -> Result<(), String> {
+        let state = self.state()?;
+        if state.generation != generation || state.access.is_none() {
+            return Err(SUPERSEDED.to_owned());
+        }
+        self.embedded_hint.store(id_token)
     }
 
     fn state(&self) -> Result<MutexGuard<'_, SessionState>, String> {
@@ -162,8 +206,9 @@ impl NativeSession {
         &self,
         http: &reqwest::Client,
         cfg: &PlatformConfig,
+        browser: &dyn LogoutBrowser,
     ) -> Result<SignOutReport, String> {
-        let (mut access, mut refresh, refresh_in_flight) = {
+        let (mut access, mut refresh, refresh_in_flight, hint) = {
             let mut state = self.state()?;
             state.generation = state.generation.wrapping_add(1);
             self.pending.cancel();
@@ -174,7 +219,10 @@ impl NativeSession {
             let refresh_in_flight = self.refreshing.try_lock().is_err();
             // 即使读取失败也尝试删除，不让一次读取错误跳过本机退出。
             self.refresh.delete()?;
-            (access, refresh, refresh_in_flight)
+            // 退出提示同样先移出本机：不论 IdP 是否确认都不再保留（07 §4.7.5）。
+            let hint = self.embedded_hint.load();
+            self.embedded_hint.delete()?;
+            (access, refresh, refresh_in_flight, hint)
         };
         let core_session_revoked = match refresh.as_mut() {
             Ok(refresh) => logout_snapshot(http, cfg, &mut access, refresh).await,
@@ -185,18 +233,34 @@ impl NativeSession {
             Ok(None) => true,
             Err(_) => false,
         } && !refresh_in_flight;
+        // 在 Core 与刷新令牌之后结束 WebView 中的 IdP 会话：IdP 随即对其中的组件
+        // client 投递 back-channel logout_token（DD-133(6)）。没有提示即没有该会话。
+        let embedded_idp_session_ended = match hint {
+            Ok(None) => true,
+            Ok(Some(id_token)) => match oidc::end_session_url(http, cfg, &id_token).await {
+                Ok(url) => browser.end_session(url).await,
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
         Ok(SignOutReport {
             core_session_revoked,
             refresh_token_revoked,
+            embedded_idp_session_ended,
         })
     }
 
-    pub(crate) async fn sign_out(&self) -> Result<(), String> {
+    /// 没有部署配置时的本机退出：丢弃令牌与退出提示，返回提示是否存在过
+    /// （存在而无法结束即未确认）。
+    pub(crate) async fn sign_out(&self) -> Result<bool, String> {
         let mut state = self.state()?;
         state.generation = state.generation.wrapping_add(1);
         state.access = None;
         self.pending.cancel();
-        self.refresh.delete()
+        let hint_held = !matches!(self.embedded_hint.load(), Ok(None));
+        self.embedded_hint.delete()?;
+        self.refresh.delete()?;
+        Ok(hint_held)
     }
 
     async fn refresh(
@@ -373,6 +437,7 @@ mod sign_out_tests {
     #[derive(Default)]
     struct Fake {
         advertise_revocation: bool,
+        advertise_end_session: bool,
         revoke_status: u16,
         logout_status: u16,
         logout_body: Option<serde_json::Value>,
@@ -417,6 +482,32 @@ mod sign_out_tests {
 
     type Shared = Arc<Mutex<Fake>>;
 
+    /// 没有退出提示时不得打开任何窗口。
+    struct NoWindow;
+    impl LogoutBrowser for NoWindow {
+        fn end_session<'a>(
+            &'a self,
+            _: url::Url,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+            panic!("没有退出提示时不能打开退出窗口")
+        }
+    }
+
+    /// 记录收到的退出地址并回答事先给定的结果。
+    struct Window {
+        confirms: bool,
+        opened: Mutex<Vec<url::Url>>,
+    }
+    impl LogoutBrowser for Window {
+        fn end_session<'a>(
+            &'a self,
+            url: url::Url,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+            self.opened.lock().unwrap().push(url);
+            Box::pin(async move { self.confirms })
+        }
+    }
+
     struct Memory(Mutex<Option<String>>);
     impl RefreshStore for Memory {
         fn load(&self) -> Result<Option<String>, String> {
@@ -449,6 +540,10 @@ mod sign_out_tests {
                         if f.advertise_revocation {
                             doc["revocation_endpoint"] =
                                 serde_json::json!(format!("{}/realm/revoke", f.base));
+                        }
+                        if f.advertise_end_session {
+                            doc["end_session_endpoint"] =
+                                serde_json::json!(format!("{}/realm/logout", f.base));
                         }
                         Json(doc)
                     }),
@@ -519,11 +614,15 @@ mod sign_out_tests {
     }
 
     async fn signed_in() -> NativeSession {
-        let session = NativeSession::with_store(Box::new(Memory(Mutex::new(None))));
+        let session = NativeSession::with_stores(
+            Box::new(Memory(Mutex::new(None))),
+            Box::new(Memory(Mutex::new(None))),
+        );
         session
             .adopt(TokenResponse {
                 access_token: "access-1".into(),
                 refresh_token: Some("refresh-1".into()),
+                id_token: None,
             })
             .await
             .unwrap();
@@ -547,7 +646,7 @@ mod sign_out_tests {
         let session = signed_in().await;
 
         let report = session
-            .end_session(&reqwest::Client::new(), &cfg)
+            .end_session(&reqwest::Client::new(), &cfg, &NoWindow)
             .await
             .unwrap();
 
@@ -556,6 +655,7 @@ mod sign_out_tests {
             SignOutReport {
                 core_session_revoked: true,
                 refresh_token_revoked: true,
+                embedded_idp_session_ended: true,
             }
         );
         let f = f.lock().unwrap();
@@ -581,7 +681,7 @@ mod sign_out_tests {
             let session = signed_in().await;
 
             let report = session
-                .end_session(&reqwest::Client::new(), &cfg)
+                .end_session(&reqwest::Client::new(), &cfg, &NoWindow)
                 .await
                 .unwrap();
 
@@ -590,6 +690,7 @@ mod sign_out_tests {
                 SignOutReport {
                     core_session_revoked: core_ok,
                     refresh_token_revoked: idp_ok,
+                    embedded_idp_session_ended: true,
                 },
                 "advertise={advertise} revoke={revoke} logout={logout}"
             );
@@ -601,6 +702,7 @@ mod sign_out_tests {
         TokenResponse {
             access_token: "new-login-access".into(),
             refresh_token: Some("new-login-refresh".into()),
+            id_token: None,
         }
     }
 
@@ -617,7 +719,7 @@ mod sign_out_tests {
             let cfg = serve(f).await;
             let session = signed_in().await;
             let report = session
-                .end_session(&reqwest::Client::new(), &cfg)
+                .end_session(&reqwest::Client::new(), &cfg, &NoWindow)
                 .await
                 .unwrap();
             assert_eq!(report.core_session_revoked, confirmed);
@@ -759,7 +861,7 @@ mod sign_out_tests {
         let cfg = serve(f.clone()).await;
         let session = signed_in().await;
         let http = reqwest::Client::new();
-        let (report, ()) = tokio::join!(session.end_session(&http, &cfg), async {
+        let (report, ()) = tokio::join!(session.end_session(&http, &cfg, &NoWindow), async {
             gate.arrived().await;
             assert!(!session.has_credentials().unwrap(), "本机先退出，不等网络");
             session.adopt(replacement()).await.unwrap();
@@ -769,7 +871,8 @@ mod sign_out_tests {
             report.unwrap(),
             SignOutReport {
                 core_session_revoked: true,
-                refresh_token_revoked: true
+                refresh_token_revoked: true,
+                embedded_idp_session_ended: true,
             }
         );
         assert_eq!(f.lock().unwrap().revocations[0]["token"], "refresh-1");
@@ -786,7 +889,7 @@ mod sign_out_tests {
         let (result, report) = tokio::join!(probe(&session, &cfg), async {
             gate.arrived().await;
             let report = session
-                .end_session(&reqwest::Client::new(), &cfg)
+                .end_session(&reqwest::Client::new(), &cfg, &NoWindow)
                 .await
                 .unwrap();
             gate.release.add_permits(1);
@@ -796,5 +899,102 @@ mod sign_out_tests {
         assert!(report.core_session_revoked);
         assert!(!report.refresh_token_revoked);
         assert!(!session.has_credentials().unwrap());
+    }
+
+    async fn with_hint(session: &NativeSession) {
+        let generation = session.page_generation().unwrap();
+        session.store_embedded_hint(generation, "hint-1").unwrap();
+    }
+
+    #[tokio::test]
+    async fn sign_out_ends_the_webview_idp_session_with_the_stored_hint() {
+        let f = fake(true, 200, 200);
+        f.lock().unwrap().advertise_end_session = true;
+        let cfg = serve(f.clone()).await;
+        let session = signed_in().await;
+        with_hint(&session).await;
+        let window = Window {
+            confirms: true,
+            opened: Mutex::new(vec![]),
+        };
+        let report = session
+            .end_session(&reqwest::Client::new(), &cfg, &window)
+            .await
+            .unwrap();
+        assert_eq!(
+            report,
+            SignOutReport {
+                core_session_revoked: true,
+                refresh_token_revoked: true,
+                embedded_idp_session_ended: true,
+            }
+        );
+        let opened = window.opened.lock().unwrap();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].path(), "/realm/logout");
+        let params: HashMap<String, String> = opened[0].query_pairs().into_owned().collect();
+        assert_eq!(params["id_token_hint"], "hint-1");
+        assert_eq!(params["client_id"], "native-client");
+        assert_eq!(
+            params["post_logout_redirect_uri"],
+            oidc::SIGNED_OUT_REDIRECT
+        );
+        assert_eq!(
+            session.embedded_hint.load().unwrap(),
+            None,
+            "提示随退出删除"
+        );
+        // Core 与刷新令牌照常先结束
+        let f = f.lock().unwrap();
+        assert_eq!(f.logouts, 1);
+        assert_eq!(f.revocations.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_unconfirmed_idp_end_session_is_reported_and_the_hint_still_goes() {
+        // 窗口未到达回跳地址；IdP 未公布 end_session_endpoint（不开窗口）
+        for (advertise, confirms, opens) in [(true, false, 1), (false, true, 0)] {
+            let f = fake(true, 200, 200);
+            f.lock().unwrap().advertise_end_session = advertise;
+            let cfg = serve(f).await;
+            let session = signed_in().await;
+            with_hint(&session).await;
+            let window = Window {
+                confirms,
+                opened: Mutex::new(vec![]),
+            };
+            let report = session
+                .end_session(&reqwest::Client::new(), &cfg, &window)
+                .await
+                .unwrap();
+            assert!(!report.embedded_idp_session_ended, "advertise={advertise}");
+            assert!(report.core_session_revoked && report.refresh_token_revoked);
+            assert_eq!(window.opened.lock().unwrap().len(), opens);
+            assert_eq!(session.embedded_hint.load().unwrap(), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_late_hint_cannot_outlive_sign_out_or_a_new_login() {
+        let session = signed_in().await;
+        let generation = session.page_generation().unwrap();
+        session.sign_out().await.unwrap();
+        assert_eq!(
+            session.store_embedded_hint(generation, "late").unwrap_err(),
+            SUPERSEDED
+        );
+        session.adopt(replacement()).await.unwrap();
+        assert!(session.store_embedded_hint(generation, "late").is_err());
+        assert_eq!(session.embedded_hint.load().unwrap(), None);
+        // 新的一次覆盖旧值
+        let current = session.page_generation().unwrap();
+        session.store_embedded_hint(current, "first").unwrap();
+        session.store_embedded_hint(current, "second").unwrap();
+        assert_eq!(
+            session.embedded_hint.load().unwrap().as_deref(),
+            Some("second")
+        );
+        assert!(session.sign_out().await.unwrap(), "退出报告提示曾存在");
+        assert_eq!(session.embedded_hint.load().unwrap(), None);
     }
 }
