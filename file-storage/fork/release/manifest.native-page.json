@@ -1,7 +1,7 @@
 {
   "id": "{{releaseId}}",
   "componentTypeKey": "cells",
-  "version": "1.0.1-native-page",
+  "version": "1.1.0-native-page",
   "class": "APPLICATION",
   "platformPortKey": "NONE",
   "manifestSchemaVersion": 1,
@@ -52,10 +52,10 @@
     "redactionPolicy": "PLATFORM_METADATA_ONLY"
   },
   "frontendPresentationContract": {
-    "integrationMode": "NONE",
-    "themeMapping": {},
-    "localeMapping": {},
-    "themeChangePolicy": "NONE",
-    "localeResolutionPolicy": "NONE"
+    "integrationMode": "KAILO_EMBED",
+    "themeMapping": {"LIGHT": "mui3-light", "DARK": "mui3-dark"},
+    "localeMapping": {"ZH_CN": "zh-cn", "EN": "en-us"},
+    "themeChangePolicy": "LIVE",
+    "localeResolutionPolicy": "BROWSER_RESOLVED"
   }
 }
