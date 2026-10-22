@@ -80,7 +80,8 @@ ARG PLATFORM_DISPLAY_NAME
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 WORKDIR /build/web-apps
 COPY document-editor/web-apps/ ./
-COPY document-editor/sdkjs/common/embed/ /build/sdkjs/common/embed/
+# The grunt inline task reads sdkjs sources next to web-apps (e.g. device_scale.js).
+COPY document-editor/sdkjs/ /build/sdkjs/
 COPY --from=build-tools /build/build_tools/ /build/build_tools/
 # DD-132(7)①: the Kailo icon is a build input (DD-133 §4.7.1), copied next to the
 # header images the fork's header.less/about.less reference.

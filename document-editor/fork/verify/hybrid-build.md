@@ -52,3 +52,44 @@
   - 出站拒绝：`wopisrc` 指向非 Cells host 时，ipfilter 以 403 拒绝 CheckFileInfo；指向 Cells host 的其他端口时，DocService 报 "Block external request"。
 - 冒烟容器已删除；镜像没有推送，也没有登记 digest。
 
+## 4. 一体化呈现：白标、Kailo 主题与法律声明（DD-132(7)、DD-133）
+
+### 构建输入与产物改动
+
+- 新增构建输入 `client-kit/embed/kailo-theme-tokens.css` 与 `web-client/web/public/app-icon.png`，构建上下文因此改为仓库根。令牌文件取自 `feat/platform-embed` 的 `03993cc5`，内容逐字节相同，合并该分支时不会冲突。
+- 优先使用 web-apps 原生的品牌参数（Gruntfile.js 的 `jsreplacements` 与 api 任务）：
+  - `APP_TITLE_TEXT`、`COMPANY_NAME`、`APP_CUSTOMER_NAME` 取构建参数 `PLATFORM_DISPLAY_NAME`；
+  - 帮助、反馈、支持、发布方与 API 文档等链接参数取 `about:blank`；
+  - 发布方与销售联系方式取 `-`。
+- 开源版不读取 `customization` 中的品牌项（`server/Common/sources/license.js` 的 `branding/customization=false`，以及各编辑器 `Main.js` 的 `canBranding`）。因此下面这些改动直接放在 fork 源码中，由 `upstream_manifest.py diff` 可查：
+  - `apps/api/wopi/editor-wopi.ejs`：页标题为文件名，favicon 为 Kailo 图标；`thm=1/2` 映射到 `theme-kailo-light/dark`；`about`、`help`、`feedback`、`macros`、`plugins` 固定为 false，放在宿主 `docs_api_config` 之后合并；`UserExtraInfo.avatar` 作为 `user.image`；新增宿主消息 `Kailo_Presentation`。
+  - 五个编辑器的 `Main.js`：去掉开源版强制显示“关于”的分支。
+  - `common/main/lib/controller/Themes.js`：URL 指定 Kailo 主题时锁定主题选择，并接受同源写入的 Kailo 主题即时换肤。
+  - `common/main/lib/view/Header.js`、`header.less`、`about.less`：logo 改为 Kailo 图标，不再链接到外站。
+  - `MacrosDialog.js`：去掉上游文档链接与提示词中的产品名（宏已按 DD-35 关闭）。
+  - 页面模板（`*.deploy` 与源 html）的静态标题、forms 页头链接，六种语言中 `textNoLicenseTitle` 的产品名，以及 forms 葡萄牙语、日语错误信息中的上游 API 链接。
+  - sdkjs 拼写检查例外词中的产品名。
+  - `server/Common/config/default.json`：AI 插件 CORS 来源清空（DD-35），许可证到期通知不再指向上游销售邮箱。
+- 产物中不再包含：内置帮助、移动端与嵌入版前端、上游页头和关于页 logo、DocService 的开发配置（`development-*.json`），以及 supervisor 中的 `APPLICATION_NAME`。
+- 主题：`kailo-themes.py` 在构建时读取令牌文件，生成 `theme-kailo-light.json` 与 `theme-kailo-dark.json`，DocService 的 `/themes.json` 会列出它们。编辑器变量与 Kailo 令牌的对应表只在该脚本中维护；没有映射的变量（如文档页面底色）保持编辑器自身的明暗默认值。
+- 法律声明：`/kailo-legal/` 包含以下内容，依据见 DD-132(7)②；源码获取地址是必填部署事实 `DOCUMENT_EDITOR_SOURCE_OFFER_URL`，缺失即拒绝启动。
+  - 原始开发者 Ascensio System SIA 与原始软件名称，只有文字；
+  - 修改说明：显示名、构建时间与源码 commit 来自 `build_facts`；
+  - AGPLv3 与 Additional Terms 全文（`LICENSE.txt`）、第三方许可（`3rd-Party.txt`）、CC BY-SA 4.0 链接与无担保声明；
+  - 对应源码获取地址。
+- `/favicon.ico` 返回 Kailo 图标；discovery 的 `favIconUrl*` 也指向它。
+
+### 品牌扫描（构建最后一步，`brand-scan.py`）
+
+扫描范围：`web-apps`、`sdkjs`、`server`（含 node_modules）、`document-formats`、`document-templates`、`/etc/nginx`、`/etc/onlyoffice`、`/etc/kailo-ds`、`/usr/local/lib/kailo-ds`、`/var/www/onlyoffice/kailo-legal`。
+
+每处命中归入以下一类；不属于任何一类的命中使构建失败：
+
+| 类别 | 含义 |
+|---|---|
+| legal | 许可证文件、`/kailo-legal/`、版权或许可证注释块，以及 `package.json` 的 homepage 等来源声明（Additional Terms 1 要求保留） |
+| comment | 代码包中的非许可注释（从不渲染） |
+| identifier | 登记的代码标识、文档格式命名空间与协议键，只在代码中允许，大小写须完全一致。`ONLYOFFICE`、`OnlyOffice` 这类显示拼写和上游站点域名永远不算。JSON 配置只多允许小写配置键 |
+| path | 官方层的安装路径（`/var/www/onlyoffice` 等），只出现在服务端配置中 |
+
+HTML、SVG、CSS 与 locale 不享有 comment 类的放行。

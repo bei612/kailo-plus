@@ -327,6 +327,13 @@ define([
                     if ( obj != 'error' ) {
                         parse_themes_object(obj);
                         check_launched_custom_theme();
+                        // Kailo DD-132(7)③: a Kailo theme named in the URL is a custom
+                        // theme the editor has never stored; apply its colours now.
+                        const launched = window.uitheme.id;
+                        if ( me.locked && /^theme-kailo-(light|dark)$/.test(launched) && themes_map[launched] ) {
+                            apply_theme.call(me, launched);
+                            Common.NotificationCenter.trigger('uitheme:changed', launched);
+                        }
                     } else {
                         console.warn('failed to load/parse themes.json');
                     }
