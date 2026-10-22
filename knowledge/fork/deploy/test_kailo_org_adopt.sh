@@ -44,9 +44,9 @@ INSERT INTO tenant_members (user_id, tenant_id, role, status, joined_at) VALUES
   ('u-qa2', 10003, 'owner', 'active', now());
 INSERT INTO auth_tokens (id, user_id, token, token_type, expires_at, is_revoked) VALUES
   ('t-qa2', 'u-qa2', 'jwt-qa2', 'access_token', now() + interval '1 day', false);
-INSERT INTO knowledge_bases (id, name, tenant_id, embedding_model_id, summary_model_id, rerank_model_id) VALUES
-  ('kb-greenhouse', 'r-accept-星河兰花温室', 10002, '', '', ''),
-  ('kb-conformance', 'CONFORMANCE_ONLY receiver', 10000, '', '', '');
+INSERT INTO knowledge_bases (id, name, tenant_id, embedding_model_id, summary_model_id) VALUES
+  ('kb-greenhouse', 'r-accept-星河兰花温室', 10002, '', ''),
+  ('kb-conformance', 'CONFORMANCE_ONLY receiver', 10000, '', '');
 SQL
 
 adopt() {
@@ -80,7 +80,7 @@ adopt apply --backup-dir "$backups" | grep -q 'space 10002 unchanged' || fail "s
 
 # A space with content is never retired.
 psql -c "UPDATE tenants SET deleted_at = NULL WHERE id = 10003" >/dev/null
-psql -c "INSERT INTO knowledge_bases (id, name, tenant_id, embedding_model_id, summary_model_id, rerank_model_id) VALUES ('kb-qa2', 'qa2', 10003, '', '', '')" >/dev/null
+psql -c "INSERT INTO knowledge_bases (id, name, tenant_id, embedding_model_id, summary_model_id) VALUES ('kb-qa2', 'qa2', 10003, '', '')" >/dev/null
 if adopt plan >/dev/null 2>&1; then fail "retiring a space with content was accepted"; fi
 # Another space cannot take over an adopted Kailo Tenant.
 if KNOWLEDGE_POSTGRES_CONTAINER=$pg DOCKER=$docker bash "$here/kailo-org-adopt.sh" plan \
