@@ -193,7 +193,7 @@ func (s *kailoOrgService) ensureOrganization(
 ) (*types.Organization, error) {
 	ref := membership.Tenant.ID
 	var org types.Organization
-	err := tx.Where("kailo_tenant_ref = ?", ref).First(&org).Error
+	err := tx.Select("id", "name").Where("kailo_tenant_ref = ?", ref).First(&org).Error
 	if err == nil {
 		if org.Name != membership.Tenant.Name {
 			if err := tx.Model(&types.Organization{}).Where("id = ?", org.ID).

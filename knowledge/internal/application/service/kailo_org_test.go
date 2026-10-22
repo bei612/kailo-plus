@@ -199,7 +199,7 @@ func TestKailoLoginPutsEveryTenantMemberIntoOneSpace(t *testing.T) {
 		t.Fatalf("native spaces = %d, want only the Tenant space (no personal spaces)", n)
 	}
 	var org types.Organization
-	if err := f.db.Where("kailo_tenant_ref = ?", kailoTestTenant).First(&org).Error; err != nil {
+	if err := f.db.Select("id", "owner_tenant_id").Where("kailo_tenant_ref = ?", kailoTestTenant).First(&org).Error; err != nil {
 		t.Fatalf("Tenant organization: %v", err)
 	}
 	var members []types.OrganizationTenantMember
@@ -328,7 +328,7 @@ func TestKailoLoginRenamesSpaceAndOrganization(t *testing.T) {
 		t.Fatalf("space name = %q", got)
 	}
 	var o types.Organization
-	if err := f.db.Where("kailo_tenant_ref = ?", kailoTestTenant).First(&o).Error; err != nil || o.Name != "Acme Labs" {
+	if err := f.db.Select("name").Where("kailo_tenant_ref = ?", kailoTestTenant).First(&o).Error; err != nil || o.Name != "Acme Labs" {
 		t.Fatalf("organization name = %q err=%v", o.Name, err)
 	}
 }
