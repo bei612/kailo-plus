@@ -25,6 +25,7 @@ export const PLATFORM_SECTION_LABEL: Record<
   approvals: "platform.tab.approvals",
   usage: "platform.tab.usage",
   operations: "platform.tab.operations",
+  gateway: "platform.tab.gateway",
   audit: "platform.tab.audit",
   devices: "platform.tab.devices",
 };

@@ -134,7 +134,7 @@ export function GatewayActionPanel({ action, testId }: { action: GatewayAction; 
           : submission.gateState === ActionGateState.Denied
             ? t("gateway.action.denied", { reason: submission.reason ? reasonText(submission.reason) : submission.gateState })
             : t("gateway.action.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p>
-      <Button className="w-fit" onClick={() => setTask(submission.actionExecutionId)}>{t("components.viewTask")}</Button>
+      <Button className="w-fit" onClick={() => setTask(submission.actionExecutionId)}>{t("gateway.action.viewTask")}</Button>
     </div> : null}
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"}>{failure.kind === "unknown"
       ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : failureText(failure)}</p> : null}

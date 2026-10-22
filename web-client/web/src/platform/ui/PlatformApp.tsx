@@ -37,6 +37,7 @@ import {
 import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigationState } from "@client-kit/platform/react/workflows";
 import { webWorkflowMessageHost } from "./workflowMessageHost";
 import { BusinessOperationsPage, UsageBillingPage } from "@client-kit/platform/react/business-observability";
+import { GatewayPage } from "@client-kit/platform/react/gateway";
 import { useBlocker } from "@tanstack/react-router";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
 import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
@@ -473,6 +474,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       devices: t("platform.tab.devices"),
       usage: t("platform.tab.usage"),
       operations: t("platform.tab.operations"),
+      gateway: t("platform.tab.gateway"),
       audit: t("platform.tab.audit"),
       settings: translate(getLocale(), "platform.settings.title"),
       application: translate(getLocale(), "bindings.nativeTitle"),
@@ -601,6 +603,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <UsageBillingPage />
     ) : tab === "operations" ? (
       <BusinessOperationsPage />
+    ) : tab === "gateway" ? (
+      <GatewayPage />
     ) : tab === "audit" ? (
       <AuditPage />
     ) : tab === "devices" ? (
