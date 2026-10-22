@@ -497,6 +497,34 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),
         )
+        // DD-135(2)(3)(4)、17 §8：Skill 目录、版本、正文、一次性上传暂存与 AgentVersion 引用目录
+        .exposed_route("/api/v1/skill-definitions", get(crate::skill_query::list))
+        .exposed_route(
+            "/api/v1/skill-definitions/{resource_id}",
+            get(crate::skill_query::get),
+        )
+        .exposed_route(
+            "/api/v1/skill-definitions/{resource_id}/versions",
+            get(crate::skill_query::versions),
+        )
+        .exposed_route(
+            "/api/v1/skill-definitions/{resource_id}/uploads",
+            axum::routing::post(crate::skill_query::upload).layer(
+                axum::extract::DefaultBodyLimit::max(crate::skill_query::MAX_UPLOAD_REQUEST_BYTES),
+            ),
+        )
+        .exposed_route(
+            "/api/v1/skill-versions/{asset_id}",
+            get(crate::skill_query::version),
+        )
+        .exposed_route(
+            "/api/v1/skill-versions/{asset_id}/content",
+            get(crate::skill_query::content),
+        )
+        .exposed_route(
+            "/api/v1/skill-references",
+            get(crate::skill_query::references),
+        )
         .exposed_route("/api/v1/automations", get(crate::automation_query::list))
         .exposed_route("/api/v1/platform-tools", get(crate::agent_tool::list))
         .exposed_route(
@@ -587,6 +615,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/agent-installations/{resource_id}/tools",
             get(crate::agent_installation_query::tools),
+        )
+        .exposed_route(
+            "/api/v1/agent-installations/{resource_id}/skills",
+            get(crate::agent_installation_query::skills),
         )
         .exposed_route(
             "/api/v1/agent-installations/{resource_id}/memory/core",

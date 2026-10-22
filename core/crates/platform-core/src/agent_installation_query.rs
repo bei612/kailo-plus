@@ -762,12 +762,9 @@ pub async fn candidates(
         {
             return Refusal::Unavailable("安装版本内容 hash 不一致".into()).respond(None);
         }
-        // Skill materialization still has no producer. Native Tool references
-        // already have one: use the actual install checks, not the old blanket
-        // exclusion, and never replace requested references with empty config.
-        if !content.skill_version_asset_ids.is_empty() {
-            continue;
-        }
+        // Skill references are frozen facts of the PUBLISHED Version; their
+        // per-skill effect is decided before each turn (DD-135(7)). Native Tool
+        // references use the actual install checks, never an empty config.
         match crate::agent_version::runtime_profile(&content) {
             Ok(()) => {}
             Err(Refusal::Blocked(_)) => continue,
@@ -833,4 +830,107 @@ pub async fn candidates(
         next_offset: next,
     })
     .into_response()
+}
+
+/// DD-135(7)、17 §8：pinned Version 引用的每个 Skill 的 requested 事实、投影结果与当前状态。
+/// 与详情同一 scope 与 fresh Installation read；读取不触发投影、重试或启停。
+pub async fn skills(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(r) => return r,
+    };
+    if let Err(r) = read_view(&state, &ctx, id).await {
+        return r;
+    }
+    #[derive(FromRow)]
+    struct Row {
+        pinned_version_asset_id: Uuid,
+        content: serde_json::Value,
+        owner_principal_id: Uuid,
+        installation_state: String,
+        generation: Option<i64>,
+        projection_state: Option<String>,
+        effective_fields: Option<serde_json::Value>,
+    }
+    let row: Option<Row> = match sqlx::query_as(
+        "select i.pinned_version_asset_id,v.content,r.owner_principal_id,i.state as installation_state,
+         p.generation,p.state as projection_state,p.effective_fields
+         from catalog.agent_installation i
+         join catalog.resource r on r.id=i.resource_id and r.tenant_id=$2
+         join catalog.agent_version v on v.asset_id=i.pinned_version_asset_id
+         left join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+           and p.agent_version_asset_id=i.pinned_version_asset_id and p.state<>'REVOKED'
+         where i.resource_id=$1 order by p.generation desc nulls last limit 1",
+    )
+    .bind(id)
+    .bind(ctx.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => return crate::service_api::unavailable(e),
+    };
+    let Some(row) = row else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content: contracts::AgentVersionContent = match serde_json::from_value(row.content) {
+        Ok(c) => c,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let states = match crate::skill_projection::governance_states(
+        &state.governance,
+        ctx.tenant_id,
+        row.owner_principal_id,
+        &content.skill_version_asset_ids,
+    )
+    .await
+    {
+        Ok(states) => states,
+        Err(e) => return e.respond(None),
+    };
+    // 投影事实：ACTIVE generation 的 skillVersionAssetIds 字段已 effective 才算已核对物化。
+    let projected = row.projection_state.as_deref() == Some("ACTIVE")
+        && row
+            .effective_fields
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|fields| {
+                fields.iter().any(|f| {
+                    f.get("fieldKey").and_then(serde_json::Value::as_str)
+                        == Some("skillVersionAssetIds")
+                        && f.get("effectiveValueHash")
+                            .is_some_and(serde_json::Value::is_string)
+                        && f.get("reasonCode").is_some_and(serde_json::Value::is_null)
+                })
+            });
+    let failed =
+        row.installation_state == "ERROR" || row.projection_state.as_deref() == Some("ERROR");
+    let skills: Vec<_> = states
+        .iter()
+        .map(|s| {
+            let status = if projected {
+                s.status.clone()
+            } else if failed {
+                contracts::AgentInstallationSkillStatus::ProjectionFailed
+            } else {
+                contracts::AgentInstallationSkillStatus::RuntimeNotReady
+            };
+            json!({
+                "skillVersionAssetId": s.asset_id, "skillResourceId": s.skill_resource_id,
+                "stableSlug": s.slug, "ordinal": s.ordinal, "artifactDigest": s.digest,
+                "projected": projected, "status": status,
+            })
+        })
+        .collect();
+    match serde_json::from_value::<contracts::AgentInstallationSkillPage>(json!({
+        "installationResourceId": id, "agentVersionAssetId": row.pinned_version_asset_id,
+        "generation": row.generation, "skills": skills,
+    })) {
+        Ok(page) => Json(page).into_response(),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
 }

@@ -46,6 +46,10 @@ pub struct SpiceDb {
 /// DD-122 (1)：原生 Tool Resource 上授予 `tenant:<tenant_id>#member` 的全部 relation。
 /// 权限公式不变，成员资格由 Tenant 的 `member` 关系动态展开。
 pub(crate) const TENANT_MEMBER_GRANTS: [&str; 3] = ["discoverer", "consumer", "sharer"];
+/// DD-131(6)、03 §5：目录分享只为 `agent.definition` 与 `agent.team` 写入的 `tenant#member`
+/// 授予（唯一写者是 `agent.definition.share` / `agent.team.share`）。只表示同 Tenant 成员可
+/// 发现与读取，不授予 Installation 使用权或 `export`。
+pub(crate) const CATALOG_SHARE_GRANTS: [&str; 2] = ["discoverer", "reader"];
 /// 主体集 `tenant#member` 的 relation 名。
 const MEMBER_RELATION: &str = "member";
 
@@ -143,6 +147,16 @@ impl Relationship {
         }
     }
 
+    /// DD-131(6)：一个定义或团队对本 Tenant 每个有效成员的目录授予。
+    pub(crate) fn catalog_share_grants(resource: &str, tenant: &str) -> [Self; 2] {
+        CATALOG_SHARE_GRANTS.map(|relation| Self {
+            object_type: "resource".into(),
+            object_id: resource.to_owned(),
+            relation: relation.into(),
+            subject: Subject::TenantMembers(tenant.to_owned()),
+        })
+    }
+
     /// DD-122 (1)：原生 Tool 对本 Tenant 每个有效成员的全部授予。
     pub(crate) fn tenant_member_grants(tool: &str, tenant: &str) -> [Self; 3] {
         TENANT_MEMBER_GRANTS.map(|relation| Self {
@@ -218,7 +232,9 @@ impl ResourceProjection {
             let subject_type = text("/subject/object/objectType");
             let subject = text("/subject/object/objectId").unwrap_or_default();
             if let Some(set) = text("/subject/optionalRelation").filter(|x| !x.is_empty()) {
-                let grant = relation.filter(|rel| TENANT_MEMBER_GRANTS.contains(rel))?;
+                let grant = relation.filter(|rel| {
+                    TENANT_MEMBER_GRANTS.contains(rel) || CATALOG_SHARE_GRANTS.contains(rel)
+                })?;
                 let members = set == MEMBER_RELATION && subject_type == Some("tenant");
                 if !members || subject != tenant {
                     return None;
@@ -237,6 +253,13 @@ impl ResourceProjection {
             }
         }
         Some(seen)
+    }
+
+    /// DD-131(6)：本 Tenant 成员同时持有目录的 discoverer 与 reader。
+    fn catalog_shared(&self) -> bool {
+        CATALOG_SHARE_GRANTS
+            .iter()
+            .all(|grant| self.member_grants.iter().any(|g| g == grant))
     }
 
     fn closes(&self, tenant: &str, owner: &str, workspace: Option<&str>) -> bool {
@@ -263,7 +286,14 @@ pub(crate) enum NativeToolProjection {
 impl NativeToolProjection {
     fn of(rows: &[serde_json::Value], id: &str, tenant: &str, owner: &str) -> Self {
         match ResourceProjection::observe(rows, id, tenant) {
-            Some(seen) if seen.closes(tenant, owner, None) => {
+            // 目录 reader 授予只属于定义与团队；出现在原生 Tool 上即与唯一写者不符。
+            Some(seen)
+                if seen.closes(tenant, owner, None)
+                    && seen
+                        .member_grants
+                        .iter()
+                        .all(|g| TENANT_MEMBER_GRANTS.contains(&g.as_str())) =>
+            {
                 let held = |grant: &&str| seen.member_grants.iter().any(|g| g == grant);
                 if TENANT_MEMBER_GRANTS.iter().all(held) {
                     Self::Closed
@@ -669,6 +699,21 @@ impl SpiceDb {
         Ok(seen.is_some_and(|p| p.closes(tenant, owner, workspace)))
     }
 
+    /// DD-131(6)：Tenant 级定义或团队的 tenant/owner 投影闭合时，返回本 Tenant 成员是否持有
+    /// 全部目录授予；投影与 Core 事实不符或不可核验时为 `None`。
+    pub(crate) async fn catalog_projection(
+        &self,
+        id: &str,
+        tenant: &str,
+        owner: &str,
+        page: u32,
+    ) -> Result<Option<bool>, SpiceDbError> {
+        let rows = self.read_resource(id, page).await?;
+        Ok(ResourceProjection::observe(&rows, id, tenant)
+            .filter(|p| p.closes(tenant, owner, None))
+            .map(|p| p.catalog_shared()))
+    }
+
     /// DD-122 (1)：原生 Tool 的 tenant/owner 投影与本 Tenant 成员的全部授予。
     pub(crate) async fn native_tool_projection(
         &self,
@@ -1023,7 +1068,6 @@ mod tests {
         for wrong in [
             row("consumer", members("other")),
             row("owner", members("t")),
-            row("reader", members("t")),
             row("owner", object("principal", "o2")),
             json!({
                 "resource": { "objectType": "resource", "objectId": "tool" },
@@ -1038,5 +1082,34 @@ mod tests {
             let generic = ResourceProjection::observe(&rows, "tool", "t");
             assert!(!generic.is_some_and(|seen| seen.closes("t", "o", None)));
         }
+        // DD-131(6)：目录 reader 授予不改变通用判定，但不属于原生 Tool。
+        let mut catalog = granted.clone();
+        catalog.push(row("reader", members("t")));
+        assert_eq!(of(&catalog), NativeToolProjection::Mismatch);
+        let generic = ResourceProjection::observe(&catalog, "tool", "t");
+        assert!(generic.is_some_and(|seen| seen.closes("t", "o", None)));
+    }
+
+    #[test]
+    fn catalog_share_requires_both_member_grants_of_its_own_tenant() {
+        let base = vec![
+            row("tenant", object("tenant", "t")),
+            row("owner", object("principal", "o")),
+        ];
+        let seen = |rows: &[serde_json::Value]| ResourceProjection::observe(rows, "tool", "t");
+        assert!(seen(&base).is_some_and(|p| p.closes("t", "o", None) && !p.catalog_shared()));
+        let mut shared = base.clone();
+        for relation in CATALOG_SHARE_GRANTS {
+            shared.push(row(relation, members("t")));
+        }
+        assert!(seen(&shared).is_some_and(|p| p.closes("t", "o", None) && p.catalog_shared()));
+        let mut half = base.clone();
+        half.push(row("reader", members("t")));
+        assert!(seen(&half).is_some_and(|p| !p.catalog_shared()));
+        let mut foreign = base;
+        foreign.push(row("reader", members("other")));
+        assert!(seen(&foreign).is_none());
+        let grants = Relationship::catalog_share_grants("d", "t");
+        assert_eq!(grants[1].to_string(), "resource:d#reader@tenant:t#member");
     }
 }

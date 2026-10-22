@@ -472,6 +472,18 @@ async fn evidence_existence(
                 .await?;
             return Ok(present(found.contains(&rel)));
         }
+        // DD-135(8)：Skill 版本的规范 artifact 摘要只在同 Tenant 仍有该摘要的版本时可证实；
+        // Tenant 销毁清空字节后版本行仍在，摘要即是历史事实。
+        K::SkillArtifactDigest => {
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.skill_version where artifact_digest=$1 and tenant_id=$2 limit 1",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
         K::SpicedbZedtoken
         | K::BuzzEventId
         | K::BuzzPubkey

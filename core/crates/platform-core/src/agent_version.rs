@@ -246,7 +246,23 @@ pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal
 }
 
 /// 引用只声明 requested；引用存在与 fresh read 不把 execute 权限送给未来 Installation。
+/// 作者侧（Version 创建、编辑、发布）另按 DD-135(4) 严格校验 Skill 引用。
 pub(crate) async fn validate_references(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    human: Uuid,
+    value: &AgentVersionContent,
+) -> Result<(), Refusal> {
+    validate_runtime_references(gov, conn, tenant, human, value).await?;
+    crate::governance::skill_catalog::validate_agent_references(gov, conn, tenant, human, value)
+        .await
+}
+
+/// 运行侧（Installation 就绪与回合准入、自动化执行者）只重验 profile、工具与模型路由。
+/// 已发布版本的 Skill 引用是冻结事实：撤权或停用按 DD-135(7) 在每次 `turn/start` 前逐个
+/// 停用该 Skill，不让单个 Skill 的失效阻断整个 Installation。
+pub(crate) async fn validate_runtime_references(
     gov: &Governance,
     conn: &mut PgConnection,
     tenant: Uuid,
@@ -255,10 +271,6 @@ pub(crate) async fn validate_references(
 ) -> Result<(), Refusal> {
     runtime_profile(value)?;
     let route = Uuid::parse_str(&value.model_route_resource_id).map_err(|_| invalid())?;
-    if !value.skill_version_asset_ids.is_empty() {
-        // Skill 尚无真实 producer；Tool 仅引用受控、受权的原生目录。
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
     for tool in &value.declared_tool_resource_ids {
         let tool = Uuid::parse_str(tool).map_err(|_| invalid())?;
         crate::agent_tool::validate_reference(gov, conn, tenant, human, tool).await?;

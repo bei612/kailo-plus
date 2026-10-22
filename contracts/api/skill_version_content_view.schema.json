@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_version_content_view.schema.json",
+  "title": "SkillVersionContentView",
+  "description": "DD-135(4)(8)：一个可读版本的规范 SKILL.md 正文；读取即对该版本的 read，返回前以 digest 重算。不进入审计或日志。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assetId", "artifactDigest", "content"],
+  "properties": {
+    "assetId": {"type": "string", "format": "uuid"},
+    "artifactDigest": {"type": "string"},
+    "content": {"type": "string"}
+  }
+}

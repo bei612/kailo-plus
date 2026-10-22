@@ -810,7 +810,7 @@ async fn management_installation(
     {
         Ok(())
     } else {
-        crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
+        crate::agent_version::validate_runtime_references(g, tx, tenant, human, &requested).await
     }
 }
 

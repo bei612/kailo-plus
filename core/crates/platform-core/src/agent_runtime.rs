@@ -2,7 +2,7 @@
 //! 只发送固定 thread/turn RPC；不继承 Core env，不提供 host 执行 RPC。
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -43,6 +43,23 @@ pub(crate) struct Projection {
     pub model: String,
     pub gateway_base_url: String,
     pub instructions: String,
+    /// DD-135(5)：generation 写入时固定的 Skill 根相对引用；不引 Skill 时为空。
+    pub skill_root_ref: Option<String>,
+    /// pinned Version 引用的 artifact（已按 digest 核对），保持版本中的顺序。
+    pub skills: Vec<crate::skill_projection::SkillArtifact>,
+}
+
+/// Installation 专属 Skill 根的目录名；不用 Codex 自动扫描的 `$CODEX_HOME/skills`。
+const SKILL_ROOT_DIR: &str = "kailo-skills";
+
+/// 一个已物化并经 `skills/list` 核对的 Skill；`enabled` 是 Codex 本地启用投影的当前值。
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProjectedSkill {
+    asset_id: Uuid,
+    name: String,
+    digest: String,
+    path: String,
+    enabled: bool,
 }
 
 /// 观察/取消仅需要已有原生引用的 fence，不伪造空模型或 credential。
@@ -126,6 +143,8 @@ struct Process {
     gateway_base_url: String,
     instructions: String,
     credential_digest: [u8; 32],
+    // DD-135(5)(7)：本 generation 物化并核对的 Skill 及其当前启用投影。
+    skills: Vec<ProjectedSkill>,
     home: PathBuf,
     next_id: u64,
     pending_line: Vec<u8>,
@@ -174,6 +193,9 @@ impl RpcDiagnostic {
             "thread/items/list" => "thread/items/list",
             "turn/start" => "turn/start",
             "turn/interrupt" => "turn/interrupt",
+            "skills/extraRoots/set" => "skills/extraRoots/set",
+            "skills/list" => "skills/list",
+            "skills/config/write" => "skills/config/write",
             _ => "UNRECOGNIZED_METHOD",
         };
         Self {
@@ -400,6 +422,14 @@ impl Supervisor {
                 || process.gateway_base_url != projection.gateway_base_url
                 || process.instructions != projection.instructions
                 || process.credential_digest != credential_digest
+                || process.skills.len() != projection.skills.len()
+                || process
+                    .skills
+                    .iter()
+                    .zip(&projection.skills)
+                    .any(|(loaded, wanted)| {
+                        loaded.asset_id != wanted.asset_id || loaded.digest != wanted.digest
+                    })
             {
                 // 同一 hash 不能掩盖已换 provider/credential；要求安装链 drain/reconcile，
                 // 不让旧进程冒称新投递已加载。指纹只在内存、不进入模型/日志/history。
@@ -463,12 +493,20 @@ impl Supervisor {
                 .await
                 .map_err(|_| RuntimeError::Unavailable)?;
         }
+        // DD-135(5)：先移除旧 generation 的 Skill 根，再以 digest 核对后的 artifact 物化当前根。
+        let (skill_root, mut skills) = materialize_skills(
+            &home,
+            projection.skill_root_ref.as_deref(),
+            &projection.skills,
+        )
+        .await?;
         let quoted = |s: &str| serde_json::to_string(s).map_err(|_| RuntimeError::Protocol);
-        // 当前既有 Version 准入拒绝非空 Skill 引用；Tool 另走受治理 MCP 投影。原生 bundled skill
-        // 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
+        // 原生 bundled skill 默认开启，必须明确关闭；不能把默认发现当成已治理的 SkillVersion。
+        // DD-135(6)：模型没有文件读取与 shell，无法按技能目录自行打开 SKILL.md，因此关闭
+        // 技能目录提示，由 Core 以 UserInput::Skill 显式选择（SF-COD-18）。
         // 固定 Codex 的 custom provider 也默认启用 hosted web search/cached；
         // 该路径不经 MCP/ExtMcp，不能成为 ToolBinding/Admission 的替代入口。
-        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\nthread_unload_delay_secs = {}\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\nplugins = false\napps = false\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, THREAD_UNLOAD_DELAY_SECS, quoted(&projection.gateway_base_url)?);
+        let config = format!("model = {}\nmodel_provider = \"platform_gateway\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"user\"\nweb_search = \"disabled\"\nsqlite_home = {}\ndeveloper_instructions = {}\nthread_unload_delay_secs = {}\n[skills]\ninclude_instructions = false\n[skills.bundled]\nenabled = false\n[features]\nmemories = false\nshell_tool = false\ntool_call_mcp_elicitation = true\nplugins = false\napps = false\n[model_providers.platform_gateway]\nname = \"Platform AgentGateway\"\nbase_url = {}\nwire_api = \"responses\"\nenv_key = \"KAILO_CODEX_MODEL_TOKEN\"\n", quoted(&projection.model)?, quoted(&home.to_string_lossy())?, quoted(&projection.instructions)?, THREAD_UNLOAD_DELAY_SECS, quoted(&projection.gateway_base_url)?);
         let config = config + &native_trace_config(&self.trace_endpoint)?;
         tokio::fs::write(home.join("config.toml"), config)
             .await
@@ -517,6 +555,7 @@ impl Supervisor {
             gateway_base_url: projection.gateway_base_url.clone(),
             instructions: projection.instructions.clone(),
             credential_digest: Sha256::digest(model_token.as_bytes()).into(),
+            skills: Vec::new(),
             home,
             next_id: 0,
             pending_line: Vec::new(),
@@ -548,6 +587,7 @@ impl Supervisor {
             || config.get("developer_instructions").and_then(Value::as_str) != Some(projection.instructions.as_str())
             || config.get("thread_unload_delay_secs").and_then(Value::as_u64) != Some(THREAD_UNLOAD_DELAY_SECS)
             || config.pointer("/skills/bundled/enabled").and_then(Value::as_bool) != Some(false)
+            || config.pointer("/skills/include_instructions").and_then(Value::as_bool) != Some(false)
             // 固定 ConfigToml 的 MCP 默认是空 map；显式未知形状或非空配置
             // 都不能借 initialize 成功变成已加载的有效 ToolBinding 交集。
             || config.get("mcp_servers").is_some_and(|servers| servers.as_object().is_none_or(|servers| !servers.is_empty()))
@@ -564,7 +604,91 @@ impl Supervisor {
         {
             return Err(RuntimeError::Protocol);
         }
+        // DD-135(5)：extra roots 只在进程内存，每次 spawn 都重新登记，再以 forceReload 核对
+        // 发现集合恰为被引集合；不引 Skill 时必须为空集合（没有未治理的 Skill 来源）。
+        if let Some(root) = &skill_root {
+            process
+                .rpc(
+                    "skills/extraRoots/set",
+                    json!({"extraRoots":[root]}),
+                    self.timeout,
+                    self.max_message_bytes,
+                )
+                .await?;
+        }
+        let listed = process
+            .rpc(
+                "skills/list",
+                json!({"cwds":[process.home], "forceReload": true}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        if !skills_listed(&listed, &process.home, &skills) {
+            return Err(RuntimeError::Protocol);
+        }
+        process.skills = std::mem::take(&mut skills);
         *slot = Some(process);
+        Ok(())
+    }
+
+    /// DD-135(7)：每次 `turn/start` 前按 fresh 判定的有效集合调整 Codex 本地启用投影，并以
+    /// `skills/list` 核对；失效 Skill 不再注入、不能被 `$slug` 选中，其余能力照常。
+    pub(crate) async fn reconcile_skills(
+        &self,
+        projection: &RuntimeRef,
+        effective: &HashSet<Uuid>,
+    ) -> Result<(), RuntimeError> {
+        let process = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut slot = process.lock().await;
+        let process = slot.as_mut().ok_or(RuntimeError::Unavailable)?;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        let changes: Vec<(usize, bool)> = process
+            .skills
+            .iter()
+            .enumerate()
+            .filter_map(|(index, skill)| {
+                let wanted = effective.contains(&skill.asset_id);
+                (skill.enabled != wanted).then_some((index, wanted))
+            })
+            .collect();
+        if changes.is_empty() {
+            return Ok(());
+        }
+        for (index, enabled) in changes {
+            let path = process.skills[index].path.clone();
+            let written = process
+                .rpc(
+                    "skills/config/write",
+                    json!({"path": path, "enabled": enabled}),
+                    self.timeout,
+                    self.max_message_bytes,
+                )
+                .await?;
+            if written.get("effectiveEnabled").and_then(Value::as_bool) != Some(enabled) {
+                return Err(RuntimeError::Protocol);
+            }
+            process.skills[index].enabled = enabled;
+        }
+        let listed = process
+            .rpc(
+                "skills/list",
+                json!({"cwds":[process.home], "forceReload": true}),
+                self.timeout,
+                self.max_message_bytes,
+            )
+            .await?;
+        if !skills_listed(&listed, &process.home, &process.skills) {
+            return Err(RuntimeError::Protocol);
+        }
         Ok(())
     }
 
@@ -916,6 +1040,7 @@ impl Supervisor {
         thread: &str,
         source_context: (&str, Option<&str>, Option<&str>),
         trace: &str,
+        inject_skills: bool,
     ) -> Result<String, RuntimeError> {
         let (input, core_memory, thread_context) = source_context;
         if Uuid::parse_str(thread).is_err() || input.is_empty() {
@@ -1001,6 +1126,13 @@ impl Supervisor {
         }
         let context = (!fragments.is_empty()).then_some(Value::Object(fragments));
         let mut inputs = Vec::new();
+        // DD-135(6)：Session 首个 turn 显式选择当前启用的全部 Skill，Codex 注入完整正文；
+        // 之后的 turn 依赖同一 thread 历史，不重复注入。
+        if inject_skills {
+            for skill in process.skills.iter().filter(|skill| skill.enabled) {
+                inputs.push(json!({"type":"skill","name":skill.name,"path":skill.path}));
+            }
+        }
         if let Some(template) = template {
             inputs.push(json!({"type":"text","text":template,"textElements":[]}));
         }
@@ -1283,6 +1415,8 @@ impl Supervisor {
             return Err(RuntimeError::Unavailable);
         }
         // 根不是 /，唯一 UUID 目标已实际解析；持有 ownership，已无可写子进程。
+        // DD-135(5) 的只读 Skill 根先恢复 owner 可写，否则非 root 进程删不掉其中的条目。
+        writable_tree(canonical.join(SKILL_ROOT_DIR)).await?;
         tokio::fs::remove_dir_all(&canonical)
             .await
             .map_err(|_| RuntimeError::Unknown)?;
@@ -1533,6 +1667,157 @@ async fn terminate(child: &mut Child, timeout: Duration) -> Result<(), RuntimeEr
         .map_err(|_| RuntimeError::Unknown)?
         .map_err(|_| RuntimeError::Unknown)?;
     Ok(())
+}
+
+/// 把一棵目录树恢复为 owner 可写（目录 0700、文件 0600）；不跟随符号链接，不存在即成功。
+async fn writable_tree(root: PathBuf) -> Result<(), RuntimeError> {
+    tokio::task::spawn_blocking(move || {
+        fn walk(path: &Path) -> std::io::Result<()> {
+            let meta = std::fs::symlink_metadata(path)?;
+            if meta.file_type().is_symlink() {
+                return Err(std::io::Error::other("symlink in skill root"));
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = if meta.is_dir() { 0o700 } else { 0o600 };
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+            }
+            if meta.is_dir() {
+                for entry in std::fs::read_dir(path)? {
+                    walk(&entry?.path())?;
+                }
+            }
+            Ok(())
+        }
+        match walk(&root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    })
+    .await
+    .map_err(|_| RuntimeError::Unknown)?
+    .map_err(|_| RuntimeError::Unavailable)
+}
+
+/// DD-135(5)：在 Installation 专属 home 下物化本 generation 的 Skill 根
+/// `kailo-skills/g<generation>/<slug>/SKILL.md`。字节在写入前后都以 digest 核对；文件与目录
+/// 只读（同一 uid 下只是防误写的模式位，模型没有 shell 与文件写工具）。
+async fn materialize_skills(
+    home: &Path,
+    root_ref: Option<&str>,
+    skills: &[crate::skill_projection::SkillArtifact],
+) -> Result<(Option<String>, Vec<ProjectedSkill>), RuntimeError> {
+    let base = home.join(SKILL_ROOT_DIR);
+    writable_tree(base.clone()).await?;
+    if let Err(error) = tokio::fs::remove_dir_all(&base).await {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return Err(RuntimeError::Unavailable);
+        }
+    }
+    let root_ref = match (root_ref, skills.is_empty()) {
+        (None, true) => return Ok((None, Vec::new())),
+        (Some(root_ref), false)
+            if root_ref
+                .strip_prefix("kailo-skills/g")
+                .is_some_and(|g| !g.is_empty() && g.bytes().all(|b| b.is_ascii_digit())) =>
+        {
+            root_ref
+        }
+        _ => return Err(RuntimeError::Protocol),
+    };
+    let root = home.join(root_ref);
+    tokio::fs::create_dir_all(&root)
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
+    let root = tokio::fs::canonicalize(&root)
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
+    if !root.starts_with(home) || root.parent() != Some(base.as_path()) {
+        return Err(RuntimeError::Unavailable);
+    }
+    let mut projected = Vec::with_capacity(skills.len());
+    for skill in skills {
+        if !crate::skill_artifact::valid_slug(&skill.name)
+            || crate::skill_artifact::sha256_hex(&skill.bytes) != skill.digest
+        {
+            return Err(RuntimeError::Protocol);
+        }
+        let dir = root.join(&skill.name);
+        // create_dir 而非 create_dir_all：同名两个 Skill 是投影错误，不能静默覆盖。
+        tokio::fs::create_dir(&dir)
+            .await
+            .map_err(|_| RuntimeError::Protocol)?;
+        let file = dir.join(crate::skill_artifact::SKILL_FILE);
+        tokio::fs::write(&file, &skill.bytes)
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?;
+        let read = tokio::fs::read(&file)
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?;
+        if crate::skill_artifact::sha256_hex(&read) != skill.digest {
+            return Err(RuntimeError::Protocol);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444))
+                .await
+                .map_err(|_| RuntimeError::Unavailable)?;
+            tokio::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555))
+                .await
+                .map_err(|_| RuntimeError::Unavailable)?;
+        }
+        projected.push(ProjectedSkill {
+            asset_id: skill.asset_id,
+            name: skill.name.clone(),
+            digest: skill.digest.clone(),
+            path: file.to_string_lossy().into_owned(),
+            enabled: true,
+        });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for dir in [&root, &base] {
+            tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555))
+                .await
+                .map_err(|_| RuntimeError::Unavailable)?;
+        }
+    }
+    Ok((Some(root.to_string_lossy().into_owned()), projected))
+}
+
+/// `skills/list` 对 `CODEX_HOME` 的回应必须恰为预期集合：同名、同规范路径、`user` scope、
+/// 启用标志一致且无解析错误；出现任何其他 Skill 即不一致（DD-135(5)、SF-COD-18）。
+fn skills_listed(listed: &Value, home: &Path, expected: &[ProjectedSkill]) -> bool {
+    let Some([entry]) = listed
+        .get("data")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+    else {
+        return false;
+    };
+    if entry.get("cwd").and_then(Value::as_str) != home.to_str()
+        || entry
+            .get("errors")
+            .and_then(Value::as_array)
+            .is_none_or(|errors| !errors.is_empty())
+    {
+        return false;
+    }
+    let Some(skills) = entry.get("skills").and_then(Value::as_array) else {
+        return false;
+    };
+    skills.len() == expected.len()
+        && expected.iter().all(|want| {
+            skills.iter().any(|skill| {
+                skill.get("name").and_then(Value::as_str) == Some(want.name.as_str())
+                    && skill.get("path").and_then(Value::as_str) == Some(want.path.as_str())
+                    && skill.get("scope").and_then(Value::as_str) == Some("user")
+                    && skill.get("enabled").and_then(Value::as_bool) == Some(want.enabled)
+            })
+        })
 }
 
 impl Process {
@@ -2178,6 +2463,8 @@ mod activity_tests {
             model: "model".into(),
             gateway_base_url: "http://gateway.invalid/v1".into(),
             instructions: "fixed".into(),
+            skill_root_ref: None,
+            skills: Vec::new(),
         };
         assert!(matches!(
             tokio::time::timeout(
@@ -2969,5 +3256,109 @@ mod activity_tests {
         assert_eq!(turn_started(&page, "c"), None);
         assert_eq!(turn_started(&page, "missing"), None);
         assert_eq!(turn_started(&json!({}), "a"), None);
+    }
+}
+
+#[cfg(test)]
+mod skill_projection_tests {
+    use super::{materialize_skills, skills_listed, ProjectedSkill, SKILL_ROOT_DIR};
+    use crate::skill_projection::SkillArtifact;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    const BODY: &[u8] = b"---\nname: release-notes\ndescription: d\n---\n";
+
+    fn artifact() -> SkillArtifact {
+        SkillArtifact {
+            asset_id: Uuid::new_v4(),
+            name: "release-notes".into(),
+            digest: crate::skill_artifact::sha256_hex(BODY),
+            bytes: BODY.to_vec(),
+        }
+    }
+
+    fn listed(home: &std::path::Path, skills: &[ProjectedSkill]) -> serde_json::Value {
+        json!({"data":[{"cwd": home, "errors": [], "skills": skills.iter().map(|s| json!({
+            "name": s.name, "path": s.path, "scope": "user", "enabled": s.enabled,
+            "description": "d"})).collect::<Vec<_>>()}]})
+    }
+
+    #[tokio::test]
+    async fn materializes_a_read_only_generation_root_and_replaces_older_ones() {
+        let home = std::env::temp_dir().join(format!("kailo-skill-test-{}", Uuid::new_v4()));
+        tokio::fs::create_dir_all(&home).await.unwrap();
+        let home = tokio::fs::canonicalize(&home).await.unwrap();
+        let skill = artifact();
+        let (root, first) =
+            materialize_skills(&home, Some("kailo-skills/g1"), std::slice::from_ref(&skill))
+                .await
+                .unwrap();
+        let root = root.unwrap();
+        assert!(root.ends_with("kailo-skills/g1"));
+        assert_eq!(tokio::fs::read(&first[0].path).await.unwrap(), BODY);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = tokio::fs::metadata(&first[0].path)
+                .await
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o444);
+        }
+        assert!(skills_listed(&listed(&home, &first), &home, &first));
+        // A second generation replaces the old read-only root entirely.
+        let (_, second) =
+            materialize_skills(&home, Some("kailo-skills/g2"), std::slice::from_ref(&skill))
+                .await
+                .unwrap();
+        assert!(second[0].path.contains("/g2/"));
+        assert!(tokio::fs::metadata(home.join(SKILL_ROOT_DIR).join("g1"))
+            .await
+            .is_err());
+        // No skills: the root is removed and nothing is registered.
+        let (none, empty) = materialize_skills(&home, None, &[]).await.unwrap();
+        assert!(none.is_none() && empty.is_empty());
+        assert!(tokio::fs::metadata(home.join(SKILL_ROOT_DIR))
+            .await
+            .is_err());
+        assert!(skills_listed(&listed(&home, &[]), &home, &[]));
+        tokio::fs::remove_dir_all(&home).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn refuses_tampered_bytes_mismatched_refs_and_unexpected_discovery() {
+        let home = std::env::temp_dir().join(format!("kailo-skill-test-{}", Uuid::new_v4()));
+        tokio::fs::create_dir_all(&home).await.unwrap();
+        let home = tokio::fs::canonicalize(&home).await.unwrap();
+        let mut tampered = artifact();
+        tampered.bytes.push(b'x');
+        assert!(
+            materialize_skills(&home, Some("kailo-skills/g1"), &[tampered])
+                .await
+                .is_err()
+        );
+        assert!(materialize_skills(&home, None, &[artifact()])
+            .await
+            .is_err());
+        assert!(materialize_skills(&home, Some("../escape"), &[artifact()])
+            .await
+            .is_err());
+        let (_, projected) = materialize_skills(&home, Some("kailo-skills/g3"), &[artifact()])
+            .await
+            .unwrap();
+        let mut extra = listed(&home, &projected);
+        extra["data"][0]["skills"].as_array_mut().unwrap().push(json!({
+            "name":"stray","path":"/etc/codex/skills/stray/SKILL.md","scope":"admin","enabled":true}));
+        assert!(!skills_listed(&extra, &home, &projected));
+        let mut errors = listed(&home, &projected);
+        errors["data"][0]["errors"] = json!([{"path":"x","message":"invalid YAML"}]);
+        assert!(!skills_listed(&errors, &home, &projected));
+        let mut disabled = projected.clone();
+        disabled[0].enabled = false;
+        assert!(!skills_listed(&listed(&home, &projected), &home, &disabled));
+        assert!(skills_listed(&listed(&home, &disabled), &home, &disabled));
+        super::writable_tree(home.clone()).await.unwrap();
+        tokio::fs::remove_dir_all(&home).await.unwrap();
     }
 }

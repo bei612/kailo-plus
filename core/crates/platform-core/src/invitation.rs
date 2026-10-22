@@ -531,6 +531,7 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             tenant_quota_setting: None,
+            skill_version_upload: None,
         };
         let admit = match open_execution(
             &mut tx,

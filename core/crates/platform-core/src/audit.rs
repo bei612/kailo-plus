@@ -106,6 +106,7 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::SecretRefRehomeId
         | K::UsageEventId
         | K::TraceId
+        | K::SkillArtifactDigest
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }
 }

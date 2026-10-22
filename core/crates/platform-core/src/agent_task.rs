@@ -1033,6 +1033,31 @@ async fn first_turn(
             );
         }
     };
+    // DD-135(7)：派发意图之前 fresh 判定被引 Skill，并在运行中的 app-server 停用或恢复；
+    // 失败只让本次准入稍后重试，不写派发意图。
+    let skills_ready = match crate::skill_projection::turn_effective(
+        &state.governance,
+        invocation.tenant_id,
+        invocation.installation_resource_id,
+        invocation.agent_version_asset_id,
+    )
+    .await
+    {
+        Ok(effective) => runtime
+            .reconcile_skills(projection, &effective)
+            .await
+            .is_ok(),
+        Err(_) => false,
+    };
+    timing.step("skill_reconcile");
+    if !skills_ready {
+        timing.outcome("SKILL_RECONCILE_UNAVAILABLE");
+        return result(
+            invocation.id,
+            TaskStatus::Running,
+            "RUNTIME_ADMISSION_UNAVAILABLE",
+        );
+    }
     let prepared = prepare_dispatch(
         state,
         invocation,
@@ -1078,6 +1103,7 @@ async fn first_turn(
             thread,
             (&source.content, core, source.thread_context.as_deref()),
             &trace,
+            matches!(memory, TurnMemory::Initial(_)),
         )
         .await;
     timing.step("turn_start");

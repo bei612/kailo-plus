@@ -38,6 +38,22 @@ const EFFECTIVE_FIELDS: [&str; 7] = [
     "parallelism",
     "replyPolicy",
 ];
+/// DD-135(5)：引用 Skill 的版本另有一个 effective 字段；不引 Skill 的 generation 保持原七项，
+/// 既有 ACTIVE generation 的 config hash 不变。
+const SKILL_FIELD: &str = "skillVersionAssetIds";
+
+fn effective_keys(content: &AgentVersionContent) -> Vec<&'static str> {
+    let mut keys = EFFECTIVE_FIELDS.to_vec();
+    if !content.skill_version_asset_ids.is_empty() {
+        keys.push(SKILL_FIELD);
+    }
+    keys
+}
+
+/// generation 写入时固定的 Skill 根相对引用（DD-135(5)）；不引 Skill 时为空。
+pub(crate) fn skill_root_ref(content: &AgentVersionContent, generation: i64) -> Option<String> {
+    (!content.skill_version_asset_ids.is_empty()).then(|| format!("kailo-skills/g{generation}"))
+}
 
 /// DD-122 (4): an ACTIVE Installation without a pending projection may be
 /// upgraded to any PUBLISHED Version of its Definition, including the pinned
@@ -353,7 +369,9 @@ pub(crate) async fn prewrite(
 }
 
 /// The pinned Version's content as an Installation may project it: the frozen
-/// hash, no Skill references and a model route visible from this Workspace.
+/// hash and a model route visible from this Workspace. Skill references are a
+/// frozen fact of the PUBLISHED Version (DD-135(4)); per-skill revocation is
+/// applied before each turn (DD-135(7)), not by refusing the installation.
 async fn version_content(
     tx: &mut Transaction<'_, Postgres>,
     tenant: Uuid,
@@ -365,9 +383,6 @@ async fn version_content(
     let (requested, content_hash) = crate::agent_version::content(&content)?;
     if version.config_hash != content_hash {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
-    }
-    if !content.skill_version_asset_ids.is_empty() {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
     let route_scope: bool = sqlx::query_scalar(
@@ -400,7 +415,7 @@ async fn insert_pending_generation(
 ) -> Result<(), Refusal> {
     let route = Uuid::parse_str(&content.model_route_resource_id).map_err(|_| invalid())?;
     let mut fields = Vec::new();
-    for key in EFFECTIVE_FIELDS {
+    for key in effective_keys(content) {
         let value = requested.get(key).ok_or_else(invalid)?;
         let hash = hex::encode(Sha256::digest(
             serde_json::to_vec(value).map_err(|_| invalid())?,
@@ -413,14 +428,14 @@ async fn insert_pending_generation(
     let projection = crate::agent_version::canonical(serde_json::json!({
         "installationResourceId":ae.target_id,"generation":generation,"agentVersionAssetId":version_id,
         "runtimeProfileKey":content.runtime_profile_key,"modelRouteResourceId":route,
-        "gatewayResourceIds":[route],"skillRootRef":null,"effectiveFields":fields}));
+        "gatewayResourceIds":[route],"skillRootRef":skill_root_ref(content, generation),"effectiveFields":fields}));
     let hash = hex::encode(Sha256::digest(
         serde_json::to_vec(&projection).map_err(|_| invalid())?,
     ));
     sqlx::query(
         "insert into catalog.agent_runtime_projection(installation_resource_id,generation,
         agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,
-        effective_fields,config_hash,state) values($1,$8,$2,$3,$4,$5,$6,$7,'PENDING')",
+        effective_fields,config_hash,state,skill_root_ref) values($1,$8,$2,$3,$4,$5,$6,$7,'PENDING',$9)",
     )
     .bind(ae.target_id)
     .bind(version_id)
@@ -430,6 +445,7 @@ async fn insert_pending_generation(
     .bind(serde_json::Value::Array(fields))
     .bind(hash)
     .bind(generation)
+    .bind(skill_root_ref(content, generation))
     .execute(&mut **tx)
     .await?;
     crate::agent_tool::install_bindings(
@@ -1190,6 +1206,17 @@ pub(crate) struct RuntimeFacts {
     pub content: AgentVersionContent,
 }
 
+impl RuntimeFacts {
+    /// Installation 的问责 HUMAN；Skill 的逐回合 fresh 判定以它的定义 `read` 为准（DD-135(7)）。
+    pub(crate) fn owner_principal_id(&self) -> Uuid {
+        self.snapshot.owner_principal_id
+    }
+
+    pub(crate) fn skill_root_ref(&self) -> Option<&str> {
+        self.snapshot.skill_root_ref.as_deref()
+    }
+}
+
 #[derive(FromRow, PartialEq)]
 struct InstallationRow {
     tenant_id: Uuid,
@@ -1327,7 +1354,7 @@ async fn runtime_facts(
         provisioning,
     )?;
     let mut tx = state.pool.begin().await?;
-    crate::agent_version::validate_references(
+    crate::agent_version::validate_runtime_references(
         &state.governance,
         &mut tx,
         row.tenant_id,
@@ -1491,12 +1518,13 @@ fn verify_projection(
         || row.runtime_profile_key != content.runtime_profile_key
         || row.model_route_resource_id.to_string() != content.model_route_resource_id
         || row.gateway_resource_ids.is_empty()
-        || row.skill_root_ref.is_some() && content.skill_version_asset_ids.is_empty()
+        || row.skill_root_ref != skill_root_ref(content, generation)
     {
         return Err(unavailable());
     }
     let fields = row.effective_fields.as_array().ok_or_else(unavailable)?;
-    if fields.len() != EFFECTIVE_FIELDS.len() {
+    let keys_expected = effective_keys(content);
+    if fields.len() != keys_expected.len() {
         return Err(unavailable());
     }
     let mut keys = std::collections::HashSet::new();
@@ -1516,7 +1544,7 @@ fn verify_projection(
     }
     // PENDING 允许原安装 AE 初始化候选并核对原生加载值；ACTIVE/turn 则必须
     // 全部 effective。RuntimeProfile 的上界验证不冒充尚无消费者的策略执行。
-    for key in EFFECTIVE_FIELDS {
+    for key in keys_expected {
         let field = fields
             .iter()
             .find(|field| field.get("fieldKey").and_then(serde_json::Value::as_str) == Some(key))
@@ -1603,6 +1631,9 @@ fn supports_effective_field(content: &AgentVersionContent, key: &str) -> bool {
         // implemented thread-only consumer. Missing/unknown/broadcast mappings
         // do not become effective merely because replyPolicies contains a key.
         "replyPolicy" => crate::agent_version::runtime_profile(content).is_ok(),
+        // DD-135(5)：ensure 以 digest 物化并经 skills/extraRoots/set 与
+        // skills/list(forceReload) 核对恰为被引集合后，候选才进入锁内 CAS。
+        SKILL_FIELD => !content.skill_version_asset_ids.is_empty(),
         _ => false,
     }
 }
@@ -1835,6 +1866,13 @@ async fn initialize_steps(
         .read(&model.secret_ref, "value")
         .await
         .map_err(|_| Refusal::Unavailable("Agent 模型 SecretRef 不可查证".into()))?;
+    step.enter("skill_artifacts");
+    let skills = crate::skill_projection::artifacts(
+        &state.pool,
+        facts.tenant_id,
+        &facts.content.skill_version_asset_ids,
+    )
+    .await?;
     let projection = crate::agent_runtime::Projection {
         installation_id: installation,
         generation,
@@ -1842,6 +1880,8 @@ async fn initialize_steps(
         model: model.model,
         gateway_base_url: model.gateway_base_url,
         instructions: facts.content.instructions.clone(),
+        skill_root_ref: facts.skill_root_ref().map(str::to_owned),
+        skills,
     };
     // 回读关键 config 成立才可推进；既有进程匹配同代/hash 时不重启，不发 turn。
     step.enter("runtime_ensure");

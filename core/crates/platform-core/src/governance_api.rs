@@ -85,6 +85,10 @@ pub async fn submit_action(
     if cmd.workspace_canvas.is_some() && cmd.action_key != crate::workspace_canvas::ACTION {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-135(3): the staged upload reference belongs only to skill.version.create.
+    if cmd.skill_version_upload.is_some() != (cmd.action_key == "skill.version.create") {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     // DD-125(3): Huddle inputs belong only to the huddle.* actions.
     if (cmd.huddle_start.is_some() || cmd.huddle_agent.is_some() || cmd.huddle_id.is_some())
         && !crate::huddle::is_action(&cmd.action_key)
@@ -109,6 +113,12 @@ pub async fn submit_action(
     } else if crate::huddle::is_action(&cmd.action_key) {
         // DD-125(3)：Huddle 临时频道投影有自己的 CONTROL 派发与对账路径
         crate::huddle::submit(&state, &ctx, &cmd).await
+    } else if cmd.action_key == "skill.version.create" {
+        // DD-135(3)：上传版本只接收本 PlatformSession、本人的暂存上传；不符即不存在。
+        match crate::skill_query::check_session(&state, &ctx, &cmd).await {
+            Ok(()) => state.governance.submit(actor(&ctx), &cmd).await,
+            Err(refusal) => Err((refusal, None)),
+        }
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };

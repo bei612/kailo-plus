@@ -62,6 +62,9 @@ pub(crate) mod installation_permission;
 #[path = "task_control.rs"]
 pub(crate) mod task_control;
 
+#[path = "skill_catalog.rs"]
+pub(crate) mod skill_catalog;
+
 /// Worker 注册的审批 Workflow 类型名，两侧逐字相同。
 pub const APPROVAL_WORKFLOW_TYPE: &str = "ApprovalWorkflow";
 /// 审批 workflow ID 的类型段。它不是 ComponentTaskWorkflow 的 kind，只占
@@ -549,6 +552,14 @@ pub enum Semantic {
     AutomationRotateWebhookSecret,
     ResourceTransferOwner,
     ResourceCreate,
+    /// DD-135、05 §2.14：Tenant 级 skill.definition 与不可变 skill.version 的管理。
+    SkillDefinitionCreate,
+    SkillVersionCreate,
+    SkillVersionPublish,
+    SkillVersionRetire,
+    SkillDefinitionDisable,
+    SkillDefinitionShare,
+    SkillDefinitionUnshare,
 }
 
 impl Semantic {
@@ -613,6 +624,13 @@ impl Semantic {
             "automation.rotate_webhook_secret" => Self::AutomationRotateWebhookSecret,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
+            "skill.definition.create" => Self::SkillDefinitionCreate,
+            "skill.version.create" => Self::SkillVersionCreate,
+            "skill.version.publish" => Self::SkillVersionPublish,
+            "skill.version.retire" => Self::SkillVersionRetire,
+            "skill.definition.disable" => Self::SkillDefinitionDisable,
+            "skill.definition.share" => Self::SkillDefinitionShare,
+            "skill.definition.unshare" => Self::SkillDefinitionUnshare,
             _ => return None,
         })
     }
@@ -661,6 +679,10 @@ impl Semantic {
         self.is_capability_contract()
             || matches!(
                 self,
+                Self::SkillVersionPublish | Self::SkillVersionRetire | Self::SkillDefinitionDisable
+            )
+            || matches!(
+                self,
                 Self::TenantMemberInvite
                     | Self::TenantMemberInviteRevoke
                     | Self::AgentDefinitionUpdate
@@ -700,6 +722,7 @@ impl Semantic {
             || self.is_capability_contract()
             || self.is_installation_permission()
             || self.is_automation()
+            || self.is_skill()
             || matches!(
                 self,
                 Self::TenantMemberRevoke
@@ -744,7 +767,8 @@ impl Semantic {
 
     /// 由用户在目标详情上显式确认、确认位冻结在参数里的语义（`confirmation_mode=EXPLICIT`）。
     fn takes_explicit_confirmation(self) -> bool {
-        self == Self::ComponentReleaseRegister
+        self.is_skill()
+            || self == Self::ComponentReleaseRegister
             || self.is_application_binding()
             || self.is_automation()
             || matches!(
@@ -798,7 +822,7 @@ impl Semantic {
 
 /// 规范化参数。只含引用与平台自有事实；AgentVersion requested 内容属于 Core
 /// 权威，不接收上游业务正文、凭据或 host environment。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Params {
     pub workspace_visibility: Option<contracts::WorkspaceVisibility>,
     pub workspace_channel: Option<Value>,
@@ -839,6 +863,8 @@ pub struct Params {
     pub resource_create: Option<Value>,
     /// tenant.quota.set 的规范化参数（DD-123）：额度项与每期上限
     pub tenant_quota_setting: Option<Value>,
+    /// DD-135(3)：skill.version.create 的一次性上传引用、规范 digest 与能力需求
+    pub skill_version_upload: Option<Value>,
 }
 
 impl Params {
@@ -861,6 +887,9 @@ impl Params {
         }
         if let Some(setting) = &self.tenant_quota_setting {
             m.insert("tenantQuotaSetting".into(), setting.clone());
+        }
+        if let Some(upload) = &self.skill_version_upload {
+            m.insert("skillVersionUpload".into(), upload.clone());
         }
         if let Some(input) = &self.application_binding_create {
             m.insert("applicationBindingCreate".into(), input.clone());
@@ -1013,6 +1042,7 @@ impl Params {
             application_binding_create: v.get("applicationBindingCreate").cloned(),
             resource_create: v.get("resourceCreate").cloned(),
             tenant_quota_setting: v.get("tenantQuotaSetting").cloned(),
+            skill_version_upload: v.get("skillVersionUpload").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
                 .get("applicationBindingVersion")
@@ -1393,7 +1423,20 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .as_ref()
             .map(crate::tenant_quota::normalize)
             .transpose()?,
+        skill_version_upload: cmd
+            .skill_version_upload
+            .as_ref()
+            .map(skill_catalog::normalize_upload)
+            .transpose()?,
     };
+    // DD-135（05 §2.14）：Skill 动作的参数各为闭集，其他动作不得携带上传引用。
+    if sem.is_skill() {
+        skill_catalog::validate_params(sem, &p)?;
+        return Ok(p);
+    }
+    if p.skill_version_upload.is_some() {
+        return Err(bad());
+    }
     if (p.receiver_resource.is_some() || p.grant_permission.is_some())
         && !matches!(
             sem,
@@ -1803,7 +1846,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ComponentReleaseApprove
         | Semantic::ApplicationBindingCreate
         | Semantic::ApplicationBindingDisable
-        | Semantic::ResourceCreate => false,
+        | Semantic::ResourceCreate
+        // DD-135：已在上方按各自闭集校验并返回
+        | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
+        | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
+        | Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare => false,
     };
     if ok {
         Ok(p)
@@ -1910,6 +1957,15 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::SkillDefinitionCreate
+        | Semantic::SkillVersionCreate
+        | Semantic::SkillVersionPublish
+        | Semantic::SkillVersionRetire
+        | Semantic::SkillDefinitionDisable
+        | Semantic::SkillDefinitionShare
+        | Semantic::SkillDefinitionUnshare => {
+            skill_catalog::target(conn, tenant, initiator, def, sem, p, frozen, lock).await
+        }
         Semantic::ConversationOpen => {
             crate::conversations::target(conn, tenant, initiator, def, p, frozen).await
         }
@@ -2899,6 +2955,17 @@ impl Governance {
                         ));
                     }
                     target.id
+                } else if def.action_key.starts_with("skill.") {
+                    // DD-135：skill.definition 目标的投影核对容许目录分享的成员授予。
+                    if !skill_catalog::evaluate_definition(self, actor.tenant_id, target).await? {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
                 } else if def.action_key.starts_with("automation.") {
                     let mut conn = self.pool.acquire().await?;
                     let row = crate::automation::management_resource(
@@ -3019,6 +3086,17 @@ impl Governance {
                     }
                     target.id
                 }
+            }
+            "asset" if def.action_key.starts_with("skill.") => {
+                if !skill_catalog::evaluate_version(self, actor.tenant_id, target).await? {
+                    return Ok(deny(
+                        "DENY",
+                        "NOT_APPLICABLE",
+                        None,
+                        ReasonCode::ScopeGuardFailed,
+                    ));
+                }
+                target.id
             }
             "asset" => {
                 let mut conn = self.pool.acquire().await?;
@@ -3663,6 +3741,7 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             tenant_quota_setting: None,
+            skill_version_upload: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3769,6 +3848,7 @@ impl Governance {
             application_binding_version: None,
             resource_create: None,
             tenant_quota_setting: None,
+            skill_version_upload: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -5233,6 +5313,7 @@ impl Governance {
             || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
+            || sem.is_skill()
             || matches!(
                 sem,
                 Semantic::AgentDefinitionCreate
@@ -5265,6 +5346,7 @@ impl Governance {
             || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
+            || sem.is_skill()
             || matches!(
                 sem,
                 Semantic::TenantDelete
@@ -5506,6 +5588,30 @@ impl Governance {
                             def,
                             "AGENT_DEFINITION_UPDATED",
                             Vec::new(),
+                        )
+                        .await?;
+                    }
+                    Ok(None)
+                }
+                Semantic::SkillDefinitionCreate
+                | Semantic::SkillVersionCreate
+                | Semantic::SkillVersionPublish
+                | Semantic::SkillVersionRetire
+                | Semantic::SkillDefinitionDisable
+                | Semantic::SkillDefinitionShare
+                | Semantic::SkillDefinitionUnshare => {
+                    let evidence = skill_catalog::prewrite(self, tx, ae, def, sem, params).await?;
+                    if completes {
+                        self.record_local_outcome(
+                            tx,
+                            ae,
+                            def,
+                            match sem {
+                                Semantic::SkillVersionPublish => "SKILL_VERSION_PUBLISHED",
+                                Semantic::SkillVersionRetire => "SKILL_VERSION_RETIRED",
+                                _ => "SKILL_DEFINITION_DISABLED",
+                            },
+                            evidence,
                         )
                         .await?;
                     }
@@ -5773,7 +5879,10 @@ impl Governance {
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
             | Semantic::TenantRestore
-            | Semantic::TenantQuotaSet => {
+            | Semantic::TenantQuotaSet
+            | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
+            | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
+            | Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare => {
                 return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked))
             }
         };
@@ -6280,6 +6389,9 @@ impl Governance {
         if sem.is_capability_contract() {
             crate::capability_contract::target(conn, tenant, def, sem, p, None, false).await?;
             return Ok(());
+        }
+        if sem.is_skill() {
+            return skill_catalog::gate(self, conn, tenant, initiator, sem, p).await;
         }
         if sem.is_installation_permission() {
             return installation_permission::gate(
@@ -7253,6 +7365,15 @@ impl Governance {
                 .await
             } else if sem == Semantic::AgentVersionCreate {
                 crate::agent_version::dispatch(self, ae_id, &def).await
+            } else if sem == Semantic::SkillDefinitionCreate {
+                skill_catalog::dispatch_create(self, ae_id, &def).await
+            } else if sem == Semantic::SkillVersionCreate {
+                skill_catalog::dispatch_version(self, ae_id, &def).await
+            } else if matches!(
+                sem,
+                Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare
+            ) {
+                skill_catalog::dispatch_grants(self, ae_id, &def, sem).await
             } else if sem == Semantic::LlmRouteCreate {
                 crate::model_route::create_dispatch(self, ae_id, &def).await
             } else if sem == Semantic::TenantQuotaSet {
@@ -7397,7 +7518,10 @@ impl Governance {
                 // 业务 Tenant 生命周期由 dispatch_tenant_lifecycle 派发
                 | Semantic::TenantSuspend
                 | Semantic::TenantRestore
-                | Semantic::TenantQuotaSet => Err(StatusCode::CONFLICT.into_response()),
+                | Semantic::TenantQuotaSet
+                | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
+                | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
+                | Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare => Err(StatusCode::CONFLICT.into_response()),
             };
             match started {
                 Ok(r) if r.workflow_id == workflow_id => Ok(()),

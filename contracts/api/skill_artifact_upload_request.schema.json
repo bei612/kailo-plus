@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/skill_artifact_upload_request.schema.json",
+  "title": "SkillArtifactUploadRequest",
+  "description": "DD-135(2)(3)：一次 Skill 上传的原始字节（标准 base64，两端同一 JSON 传输）。解码后不超过 1 MiB；编码只接受 SKILL.md、tar 或 tar.gz，由 Core 判定。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contentBase64"],
+  "properties": {
+    "contentBase64": {"type": "string"}
+  }
+}

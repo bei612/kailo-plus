@@ -18,6 +18,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "pro
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "macros", "json", "chrono"] }
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
 hex = "0.4"
+# DD-135(2): gzip-encoded Skill uploads; flate2 is already in the lock (png, reqwest).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # DD-125(3): the same-origin Huddle audio bridge upgrades the browser request itself
 # (hyper upgrade + tokio-tungstenite 0.24, both already in the lock through axum and
 # collab-bridge) instead of enabling axum's `ws`, which would pull a second tungstenite.

@@ -2063,6 +2063,10 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.asset set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
         "update catalog.resource set state='DELETED',version=version+1,projection_action_execution_id=null where tenant_id=$1 and state<>'DELETED'",
         "update catalog.tool_definition set status='DELETED' where resource_id in (select id from catalog.resource where tenant_id=$1 and state='DELETED') and status<>'DELETED'",
+        // DD-135(8)：Skill 定义转墓碑、版本 artifact 字节清空（版本元数据与 digest 作为历史保留），暂存上传删除。
+        "update catalog.skill_definition set status='DELETED' where tenant_id=$1 and status<>'DELETED'",
+        "update catalog.skill_version set artifact=null where tenant_id=$1 and artifact is not null",
+        "delete from admission.skill_artifact_upload where tenant_id = $1",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-125(5): short-term link-preview snapshots are not history; nothing references them.

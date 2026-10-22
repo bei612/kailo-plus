@@ -459,7 +459,9 @@ async fn lifecycle_resource(
             or (r.type_key='automation' and exists(select 1 from catalog.automation_definition d
                 where d.resource_id=r.id and d.workspace_id=r.home_workspace_id))
             or (r.type_key='tool.definition' and r.home_workspace_id is null
-                and exists(select 1 from catalog.tool_definition t where t.resource_id=r.id))) for update of r")
+                and exists(select 1 from catalog.tool_definition t where t.resource_id=r.id))
+            or (r.type_key='skill.definition' and r.home_workspace_id is null
+                and exists(select 1 from catalog.skill_definition s where s.resource_id=r.id))) for update of r")
         .bind(tenant).bind(id).fetch_optional(conn).await
 }
 
@@ -481,12 +483,15 @@ async fn lifecycle_asset(
     lock: bool,
 ) -> Result<Option<LifecycleAsset>, sqlx::Error> {
     sqlx::query_as(&format!("select a.id,a.resource_id,a.owner_principal_id,a.version,a.state,
-        case when a.type_key='agent.version' then av.state else automation.state end native_state,
+        case when a.type_key='agent.version' then av.state when a.type_key='skill.version' then skill.state
+          else automation.state end native_state,
         a.projection_action_execution_id from catalog.asset a
         left join catalog.agent_version av on av.asset_id=a.id and av.agent_resource_id=a.resource_id
         left join catalog.automation_version automation on automation.asset_id=a.id and automation.automation_resource_id=a.resource_id
+        left join catalog.skill_version skill on skill.asset_id=a.id and skill.skill_resource_id=a.resource_id
         where a.tenant_id=$1 and a.id=$2 and ((a.type_key='agent.version' and av.asset_id is not null)
-          or (a.type_key='automation.version' and automation.asset_id is not null)){}",
+          or (a.type_key='automation.version' and automation.asset_id is not null)
+          or (a.type_key='skill.version' and skill.asset_id is not null)){}",
         if lock{" for update of a"}else{""}))
         .bind(tenant).bind(id).fetch_optional(conn).await
 }
