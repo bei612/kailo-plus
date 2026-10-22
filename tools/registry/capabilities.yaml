@@ -270,6 +270,13 @@ capabilities:
   - capability_contract.deprecate
   tools: []
   workflow_kinds: []
+- id: component.native_embed
+  exposure: end_user
+  routes:
+  - /api/v1/identity/avatars/{subject}
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.release_registration
   exposure: tenant_admin
   routes:

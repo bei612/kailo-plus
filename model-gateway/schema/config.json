@@ -6718,6 +6718,11 @@
             "null"
           ],
           "default": null
+        },
+        "endSession": {
+          "description": "End the identity-provider session as well (OIDC RP-Initiated Logout). After the\nlocal cookies are cleared, a request carrying a valid session is redirected to the\nprovider's discovered `end_session_endpoint` with `id_token_hint`, `client_id` and\n`post_logout_redirect_uri` (the callback origin plus the logout destination). Without\na valid session the local destination is used. Requires discovery metadata that\nadvertises `end_session_endpoint`.",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false,

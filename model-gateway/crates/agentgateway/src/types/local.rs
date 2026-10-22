@@ -4049,6 +4049,7 @@ async fn convert_attached_ui(
 						policy.logout = Some(crate::http::oidc::OidcLogout {
 							path: "/api/auth/logout".into(),
 							redirect: Some("/ui/login".into()),
+							end_session: false,
 						});
 						entry
 					}),

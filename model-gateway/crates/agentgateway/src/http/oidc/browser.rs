@@ -1,5 +1,6 @@
 //! Configurable browser login and logout endpoints.
 use ::http::{Method, StatusCode, Uri, header};
+use secrecy::ExposeSecret;
 
 use super::{OidcPolicy, build_redirect_response, session};
 use crate::http::{PolicyResponse, Request};
@@ -59,21 +60,46 @@ impl OidcPolicy {
 						.clear_cookie(cookie.name(), self.redirect_uri.https)
 				}),
 		);
-		let mut response = build_redirect_response(
-			self
-				.logout
-				.as_ref()
-				.and_then(|v| v.redirect.as_deref())
-				.or_else(|| self.login.as_ref().and_then(|v| v.redirect.as_deref()))
-				.unwrap_or("/"),
-			&cookies,
-		)
-		.map_err(ProxyError::OidcFailure)?;
+		let destination = self
+			.logout
+			.as_ref()
+			.and_then(|v| v.redirect.as_deref())
+			.or_else(|| self.login.as_ref().and_then(|v| v.redirect.as_deref()))
+			.unwrap_or("/");
+		let location = self
+			.end_session_location(req, destination)
+			.unwrap_or_else(|| destination.to_string());
+		let mut response =
+			build_redirect_response(&location, &cookies).map_err(ProxyError::OidcFailure)?;
 		*response.status_mut() = StatusCode::SEE_OTHER;
 		response.headers_mut().insert(
 			header::CACHE_CONTROL,
 			http::HeaderValue::from_static("no-store"),
 		);
 		Ok(Some(PolicyResponse::default().with_response(response)))
+	}
+
+	/// SS-AGW-END-SESSION (Kailo): RP-Initiated Logout. Only a session this policy can
+	/// decode supplies `id_token_hint`; anything else keeps the local destination, so a
+	/// forged or stale cookie never steers the redirect. The hint goes to the provider
+	/// once, in the browser's top-level navigation; it is never logged or forwarded.
+	fn end_session_location(&self, req: &Request, destination: &str) -> Option<String> {
+		let endpoint = self.end_session_endpoint.as_ref()?;
+		let cookie = crate::http::read_request_cookie(req, &self.session.cookie_name)?;
+		let browser_session = self.session.decode_browser_session(&cookie).ok()?;
+		if browser_session.policy_id != self.policy_id {
+			return None;
+		}
+		Some(endpoint.with_query(&[
+			(
+				"id_token_hint",
+				browser_session.raw_id_token.expose_secret().to_string(),
+			),
+			("client_id", self.client.client_id.clone()),
+			(
+				"post_logout_redirect_uri",
+				format!("{}{destination}", self.redirect_uri.origin),
+			),
+		]))
 	}
 }

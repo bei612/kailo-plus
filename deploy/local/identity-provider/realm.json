@@ -104,6 +104,9 @@
       "webOrigins": [
         "+"
       ],
+      "attributes": {
+        "post.logout.redirect.uris": "__OIDC_POST_LOGOUT_REDIRECT_URI__"
+      },
       "secret": "__BROWSER_CLIENT_SECRET__"
     },
     {

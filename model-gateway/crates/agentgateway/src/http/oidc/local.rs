@@ -21,6 +21,9 @@ struct OidcDiscoveryDocument {
 	jwks_uri: String,
 	#[serde(default)]
 	token_endpoint_auth_methods_supported: Option<Vec<String>>,
+	/// Kailo SS-AGW-END-SESSION: optional RP-Initiated Logout endpoint.
+	#[serde(default)]
+	end_session_endpoint: Option<String>,
 }
 
 struct PreparedOidcProvider {
@@ -29,6 +32,7 @@ struct PreparedOidcProvider {
 	token_endpoint: ProviderEndpoint,
 	token_endpoint_auth: TokenEndpointAuth,
 	id_token_jwks: JwkSet,
+	end_session_endpoint: Option<ProviderEndpoint>,
 }
 
 struct PreparedOidcPolicy {
@@ -85,6 +89,14 @@ pub struct OidcLogout {
 	/// immediately start another OAuth login using the existing identity-provider session.
 	#[serde(default)]
 	pub redirect: Option<String>,
+	/// End the identity-provider session as well (OIDC RP-Initiated Logout). After the
+	/// local cookies are cleared, a request carrying a valid session is redirected to the
+	/// provider's discovered `end_session_endpoint` with `id_token_hint`, `client_id` and
+	/// `post_logout_redirect_uri` (the callback origin plus the logout destination). Without
+	/// a valid session the local destination is used. Requires discovery metadata that
+	/// advertises `end_session_endpoint`.
+	#[serde(default)]
+	pub end_session: bool,
 }
 
 /// Browser-based OIDC authentication policy.
@@ -159,6 +171,7 @@ struct DiscoveredProviderMetadata {
 	token_endpoint: ProviderEndpoint,
 	token_endpoint_auth: TokenEndpointAuth,
 	jwks: FileInlineOrRemote,
+	end_session_endpoint: Option<ProviderEndpoint>,
 }
 
 impl LocalOidcConfig {
@@ -284,6 +297,7 @@ impl LocalOidcConfig {
 					token_endpoint: discovered.token_endpoint,
 					token_endpoint_auth: discovered.token_endpoint_auth,
 					id_token_jwks,
+					end_session_endpoint: discovered.end_session_endpoint,
 				}
 			},
 			3 => {
@@ -310,6 +324,11 @@ impl LocalOidcConfig {
 			},
 		};
 
+		if logout.as_ref().is_some_and(|v| v.end_session) && provider.end_session_endpoint.is_none() {
+			return Err(Error::Config(
+				"logout.endSession requires discovery metadata with end_session_endpoint".into(),
+			));
+		}
 		Ok(PreparedOidcPolicy {
 			provider,
 			client_id,
@@ -356,7 +375,16 @@ async fn discover_provider_metadata(
 			.parse()
 			.map_err(|e| Error::Config(format!("invalid jwks uri: {e}")))?,
 	};
+	let end_session_endpoint = document
+		.end_session_endpoint
+		.map(|value| {
+			value
+				.parse()
+				.map_err(|e| Error::Config(format!("invalid end session endpoint: {e}")))
+		})
+		.transpose()?;
 	Ok(DiscoveredProviderMetadata {
+		end_session_endpoint,
 		authorization_endpoint: document
 			.authorization_endpoint
 			.parse()
@@ -386,6 +414,7 @@ async fn resolve_explicit_provider(
 		token_endpoint,
 		token_endpoint_auth,
 		id_token_jwks,
+		end_session_endpoint: None,
 	})
 }
 
@@ -460,6 +489,10 @@ impl PreparedOidcPolicy {
 		} = self;
 		let scopes = dedupe_scopes(scopes);
 		let token_endpoint_auth = provider.token_endpoint_auth;
+		let end_session_endpoint = provider
+			.end_session_endpoint
+			.clone()
+			.filter(|_| logout.as_ref().is_some_and(|v| v.end_session));
 		let provider = Arc::new(provider.compile(client_id.clone())?);
 
 		Ok(OidcPolicy {
@@ -484,6 +517,7 @@ impl PreparedOidcPolicy {
 			login,
 			logout,
 			ui_locales,
+			end_session_endpoint,
 		})
 	}
 }
