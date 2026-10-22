@@ -235,6 +235,12 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/adapter/read_receipt",
             post(crate::application_binding::read_grant::receipt::record),
         )
+        // DD-133(4), 07 §4.7.4: read-only member directory for an embedded
+        // component; the caller is the binding's own directory client.
+        .route(
+            "/service/v1/component-directory/bindings/{binding}/members",
+            axum::routing::get(crate::component_directory::members),
+        )
         .with_state(state.clone());
     match (
         state.gateway_service_auth.clone(),

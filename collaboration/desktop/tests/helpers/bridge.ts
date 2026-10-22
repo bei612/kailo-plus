@@ -229,7 +229,11 @@ export type PlatformMockOptions = {
   community?: PlatformReply;
   revoke?: PlatformReply;
   /** What `platform_sign_out` reports about the server side. */
-  signOut?: { coreSessionRevoked: boolean; refreshTokenRevoked: boolean };
+  signOut?: {
+    coreSessionRevoked: boolean;
+    refreshTokenRevoked: boolean;
+    embeddedIdpSessionEnded: boolean;
+  };
   workspaces?: Array<{ id: string; name: string; slug: string }>;
   members?: unknown[];
   audit?: unknown[];

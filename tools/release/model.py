@@ -380,6 +380,62 @@ def env_value_digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+# ---- IdP 声明式配置 ------------------------------------------------------------
+
+IDP_COMMAND = re.compile(r"\./[a-z][a-z0-9-]*\.sh")
+IDP_FLAG = re.compile(r"--[a-z][a-z0-9-]*")
+
+
+def idp_declaration(decl=None):
+    """release.yaml 的 idp 段（ADR-20 §1）：等待的服务、期望值定义文件，以及在 deploy/local 下执行的
+    apply（摘要变化时）、always（每次 deploy）、verify（只读回读）命令。命令只允许 ./<脚本>.sh --<模式>。"""
+    decl = decl or declarations()
+    spec = decl.get("idp")
+    if not isinstance(spec, dict):
+        raise ReleaseError(f"{DECLARATIONS}: 缺少映射 idp")
+    if not isinstance(spec.get("wait"), str) or not isinstance(spec.get("inputs"), str):
+        raise ReleaseError(f"{DECLARATIONS}: idp.wait 与 idp.inputs 必须是字符串")
+    for key in ("apply", "always", "verify"):
+        commands = spec.get(key)
+        if not isinstance(commands, list) or (key != "always" and not commands) or not all(
+                isinstance(c, list) and len(c) == 2 and IDP_COMMAND.fullmatch(str(c[0]))
+                and IDP_FLAG.fullmatch(str(c[1])) for c in commands):
+            raise ReleaseError(f"{DECLARATIONS}: idp.{key} 必须是 [./<脚本>.sh, --<模式>] 列表")
+    return spec
+
+
+def _literal(tree, name):
+    import ast
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            value = ast.literal_eval(node.value)
+            if isinstance(value, (tuple, list)) and all(isinstance(v, str) and v for v in value):
+                return [str(v) for v in value]
+    raise ReleaseError(f"IdP 期望值定义缺少字符串元组 {name}")
+
+
+def idp_inputs(decl=None):
+    """(文件摘要, .env 键)：以 ast 读取期望值定义文件中的 INPUT_ENV 与 INPUT_FILES（不执行它）；
+    文件摘要覆盖 INPUT_FILES 列出的文件内容（相对定义文件所在目录）。"""
+    import ast
+    spec = idp_declaration(decl)
+    path = _path(spec["inputs"])
+    with open(path, encoding="utf-8") as stream:
+        tree = ast.parse(stream.read())
+    keys = _literal(tree, "INPUT_ENV")
+    if not all(ENV_KEY.fullmatch(k) for k in keys):
+        raise ReleaseError("INPUT_ENV 含非法键名")
+    h = hashlib.sha256()
+    base = os.path.dirname(path)
+    for rel in sorted(_literal(tree, "INPUT_FILES")):
+        full = os.path.realpath(os.path.join(base, rel))
+        if not full.startswith(os.path.realpath(base) + os.sep):
+            raise ReleaseError(f"INPUT_FILES 越出定义文件目录：{rel}")
+        with open(full, "rb") as stream:
+            h.update(rel.encode() + b"\0" + hashlib.sha256(stream.read()).digest())
+    return "sha256:" + h.hexdigest(), sorted(set(keys))
+
+
 # ---- 迁移 ---------------------------------------------------------------------
 
 def migration_versions(name, decl=None):

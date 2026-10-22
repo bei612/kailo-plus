@@ -270,9 +270,11 @@ def compute_plan(root, node, decl, source):
     env_set, env_unset = model.env_declaration(decl)
     migrations = [dict(name=name, database=str(spec["database"]), versions=model.migration_versions(name, decl))
                   for name, spec in decl["migrations"].items()]
+    idp_files, idp_env = model.idp_inputs(decl)
     facts = node.inspect(dict(commit=source, services=sorted(managed), proofs=proofs,
                               env_set={k: model.env_value_digest(v) for k, v in env_set.items()},
-                              env_unset=env_unset, required_env=model.required_env(text), migrations=migrations))
+                              env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
+                              idp=dict(files=idp_files, env=idp_env, journal=str(decl["node"]["journal"]))))
 
     plan = dict(source=source, head=model.head(), compose_project=model.project_name(text), units={},
                 sources=facts["sources"])
@@ -337,9 +339,20 @@ def compute_plan(root, node, decl, source):
     plan["backups"] = backups
     plan["env"] = dict(changes=facts.get("env", {}), missing_required=facts.get("missing_required", []),
                        runtime_present=facts.get("runtime_present"))
+    plan["idp"] = facts.get("idp")
     plan["receipt"] = facts.get("receipt")
     plan["active_ci_deploys"] = facts.get("active_ci_deploys", [])
     return plan
+
+
+def idp_line(idp):
+    """IdP 声明式配置是否执行：只报告摘要状态与是否声明了组件专属客户端，不输出任何值。"""
+    if not idp:
+        return "IdP 声明式配置：运行目录缺少 .env，无法判定（deploy 将按摘要判定）"
+    action = {"never": "从未记录摘要，将执行声明", "changed": "配置摘要已变化，将执行声明",
+              "unchanged": "配置摘要未变，跳过声明"}[idp["state"]]
+    return (f"IdP 声明式配置（keycloak 就绪后、替换服务前）：{action}；每次补齐新用户 picture；"
+            + ("组件专属客户端已声明" if idp["native_clients_declared"] else "组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）"))
 
 
 def render_plan(plan, note=None):
@@ -390,6 +403,7 @@ def render_plan(plan, note=None):
     for name, m in p["migrations"].items():
         say(f"  迁移 {name}：" + (m["error"] if "error" in m else
                                   f"已执行 {m['applied']} 个，待执行 {len(m['pending'])} 个 {m['pending'][:6]}"))
+    say("  " + idp_line(p.get("idp")))
     d = p["deploy"]
     say(f"  替换顺序：{' → '.join(d['order']) or '无（运行镜像均已等于 pin）'}")
     if d["drift"]:
@@ -402,7 +416,8 @@ def render_plan(plan, note=None):
         say(f"    {t} 经 {' '.join(cmd)}（KAILO_RUNTIME_DIR=运行目录）")
     if p["active_ci_deploys"]:
         say(f"  ！CI 队列有进行中的 deploy：{p['active_ci_deploys']}；节点 deploy 会拒绝并发")
-    say("\n[6] verify（CI 节点）：受管服务镜像 digest/镜像 ID/健康、buzz-web build-info、无关容器；业务验收不在此判定")
+    say("\n[6] verify（CI 节点）：受管服务镜像 digest/镜像 ID/健康、buzz-web build-info、无关容器、IdP 声明只读回读；"
+        "业务验收不在此判定")
 
 
 def rehearse(plan):
@@ -426,8 +441,12 @@ def rehearse(plan):
     say(f"  check : kailo-ci submit {target} check；kailo-ci wait")
     program = f"{plan['sources']}/{target}/apps/tools/release/node.py"
     say(f"  backup: ssh 节点 python3 -I -B {program} backup --commit {target}")
-    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 迁移 → {' → '.join(plan['deploy']['order']) or '（无服务）'}")
-    say("  verify: ssh 节点 … verify")
+    idp = plan.get("idp") or {}
+    idp_action = ("bootstrap.sh --sync-client-redirects / --declare-native-client-profiles → "
+                  if idp.get("state") != "unchanged" else "")
+    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 迁移 → 配置一次性服务 → IdP（{idp_action}"
+        f"--declare-native-user-pictures）→ {' → '.join(plan['deploy']['order']) or '（无服务）'}")
+    say("  verify: ssh 节点 … verify（含 bootstrap.sh --verify-client-redirects / --verify-native-client-profiles 只读回读）")
 
 
 # ---- 阶段 ---------------------------------------------------------------------
@@ -682,12 +701,18 @@ class Release:
         value = self.node_stage("deploy")
         for s in value.get("services", []):
             say(f"  {s['service']}: {s['digest'][:19]} {s.get('health') or 'running'}")
+        idp = value.get("idp") or {}
+        if idp:
+            say(f"  IdP 声明式配置：{'已执行声明' if idp.get('applied') else '摘要未变，跳过声明'}；"
+                f"命令 {', '.join(c['command'] for c in idp.get('commands', []))}")
         if value.get("unrelated_recreated"):
             say(f"  同名重建（非本次目标，如 start-core.sh 按投递重建）：{value['unrelated_recreated']}")
 
     def verify(self, plan):
         value = self.node_stage("verify")
-        say(f"  回读 {len(value.get('services', []))} 个受管服务与 pin 一致；{value.get('business_acceptance')}")
+        idp = value.get("idp") or {}
+        say(f"  回读 {len(value.get('services', []))} 个受管服务与 pin 一致；IdP 声明回读一致"
+            f"（组件专属客户端 {idp.get('native_client_profiles') or '未知'}）；{value.get('business_acceptance')}")
 
     def run(self):
         self.state.lock()
