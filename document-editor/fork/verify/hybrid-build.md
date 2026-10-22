@@ -116,6 +116,17 @@ HTML、SVG、CSS 与 locale 不享有 comment 类的放行。
 - 首轮界面核验发现两个问题，已修正并复验：
   - web-apps 构建阶段没有 sdkjs 源码，`device_scale.js` 因此没有内联；
   - doc-formats 精灵图（`formats@2.5x.svg`）在 common 资源复制之后才生成。现按 `prebuild-icons-sprite` 先生成。
-- 已知差异：
-  - 编辑器界面字体沿用 web-apps 自带字体栈，主题机制不覆盖字体，所以没有改为 `--kailo-font-sans`；
-  - 编辑器“高级设置”中的其他个人偏好（如单位、缩放）保留为编辑器的原生功能；Kailo 主题下不提供主题选择。
+- 已知差异：编辑器“高级设置”中的其他个人偏好（如单位、缩放）保留为编辑器的原生功能；Kailo 主题下不提供主题选择。（该轮记录的“界面字体未改为 `--kailo-font-sans`”已由下一节解决。）
+
+### 构建时源码地址与 Kailo 界面字体（固定提交 `ed389039615effdb625fbcb962dd41504f7e5753`）
+
+方法同上一节（CI 节点 ubuntu 身份、不加 sudo，未推送、未登记 digest）。之后的提交只改文档与 `DESIGN_COMMIT`，artifact `inputs` 下的内容不变。
+
+- 镜像：image ID `sha256:519c09b2e15f04ef80603d2d1a152ba5ea1ba097e2d69c297ccd422dbbe44a85`，825,477,690 字节，1 层。
+- 品牌扫描 finding 0：legal 7285、path 219、identifier 171、comment 151，identifier 明细与上一节相同。path 多出的 1 处是 nginx 法律页 `root /var/www/onlyoffice/kailo-legal`（原为 tmpfs 路径）。
+- 冒烟复验通过：`start.sh --check` 不再要求源码地址；容器 healthy；discovery 472 个 action 全部在实例 origin 上；frame-ancestors 精确；`/`、`/ai-proxy/`、`/sdkjs-plugins/`、`/welcome/` 返回 404；非 Cells host 的 WOPI 请求被 ipfilter 以 403 拒绝。
+- 法律页：返回 200，对应源码地址为 `https://github.com/bei612/kailo-plus/tree/ed389039615effdb625fbcb962dd41504f7e5753/document-editor`，与构建提交一致；`Inter-OFL.txt` 返回 200（text/plain）。
+- 界面核验（同一 Playwright 流程，`thm=1&ui=zh-CN` 打开、即时切换 dark 与 light、`thm=2&ui=en-US` 打开，四个状态结果一致）：
+  - `--font-family-base` 计算值为 `"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif`；body、工具栏与功能区页签的计算字体都以该字体栈开头；`document.fonts` 中 `Inter Variable` 已加载（拉丁子集；其他子集按 unicode-range 按需加载）；
+  - 文档页面中部像素为 `rgb(255,255,255)`，浅色与深色主题下文档画布都不变；
+  - 主题、白标、用户与头像的结果与上一节相同。截图见 CI 节点 `/home/ubuntu/oo-trial/ui-check/run-ed389039615e/out/`。
