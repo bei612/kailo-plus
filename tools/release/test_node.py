@@ -215,5 +215,58 @@ class RepositoryPeerDeclaration(unittest.TestCase):
         self.assertTrue({"echo", "get-sum"} <= listed)
 
 
+class DeliveryRendering(unittest.TestCase):
+    """node.py renders the declaration into the runtime directory, keeps component adapters,
+    rewrites nothing when unchanged and treats the delivery as effective only after record_delivery."""
+
+    def release(self, tmp):
+        import json
+        model = _model()
+        runtime, journal = os.path.join(tmp, "runtime"), os.path.join(tmp, "journal")
+        os.makedirs(os.path.join(runtime, "data"))
+        os.makedirs(journal)
+        release = node.Release.__new__(node.Release)
+        release.model, release.runtime = model, runtime
+        release.delivery = model.peer_delivery()
+        release.decl = {"node": {"journal": journal}}
+        folder = os.path.join(runtime, "data", "protocol-peers")
+        os.makedirs(folder)
+        with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), "w", encoding="utf-8") as stream:
+            json.dump({"adapters": [{"adapterServiceRef": "knowledge-adapter"}]}, stream)
+        return release, folder
+
+    def test_render_keeps_adapters_is_idempotent_and_takes_effect_on_record(self):
+        import json
+        import stat
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            release, folder = self.release(tmp)
+            model = release.model
+            self.assertEqual(sorted(release.write_deliveries()),
+                             [model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE])
+            self.assertEqual(release.write_deliveries(), [])
+            with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), encoding="utf-8") as stream:
+                directory = json.load(stream)
+            self.assertEqual(directory["adapters"], [{"adapterServiceRef": "knowledge-adapter"}])
+            self.assertEqual(directory["protocolPeers"], release.delivery["peers"])
+            for name in (model.PEER_DIRECTORY_FILE, model.PEER_CONFORMANCE_FILE):
+                self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, name)).st_mode), 0o644)
+            self.assertTrue(release.delivery_pending())
+            self.assertTrue(any("尚未" in p for p in release.delivery_problems()))
+            release.record_delivery()
+            self.assertFalse(release.delivery_pending())
+            self.assertEqual(release.delivery_problems(), [])
+
+    def test_symlinked_delivery_path_is_refused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            release, folder = self.release(tmp)
+            elsewhere = os.path.join(tmp, "elsewhere")
+            os.rename(folder, elsewhere)
+            os.symlink(elsewhere, folder)
+            with self.assertRaises(node.NodeError):
+                release.write_deliveries()
+
+
 if __name__ == "__main__":
     unittest.main()
