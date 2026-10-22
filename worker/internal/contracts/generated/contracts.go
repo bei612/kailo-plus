@@ -367,6 +367,63 @@
 //    followedPrincipalRequest, err := UnmarshalFollowedPrincipalRequest(bytes)
 //    bytes, err = followedPrincipalRequest.Marshal()
 //
+//    gatewayAccess, err := UnmarshalGatewayAccess(bytes)
+//    bytes, err = gatewayAccess.Marshal()
+//
+//    gatewayCallDetail, err := UnmarshalGatewayCallDetail(bytes)
+//    bytes, err = gatewayCallDetail.Marshal()
+//
+//    gatewayCallPage, err := UnmarshalGatewayCallPage(bytes)
+//    bytes, err = gatewayCallPage.Marshal()
+//
+//    gatewayCallView, err := UnmarshalGatewayCallView(bytes)
+//    bytes, err = gatewayCallView.Marshal()
+//
+//    gatewayConfigHistory, err := UnmarshalGatewayConfigHistory(bytes)
+//    bytes, err = gatewayConfigHistory.Marshal()
+//
+//    gatewayConfigView, err := UnmarshalGatewayConfigView(bytes)
+//    bytes, err = gatewayConfigView.Marshal()
+//
+//    gatewayMCPBindingDraft, err := UnmarshalGatewayMCPBindingDraft(bytes)
+//    bytes, err = gatewayMCPBindingDraft.Marshal()
+//
+//    gatewayMCPBindingDraftRequest, err := UnmarshalGatewayMCPBindingDraftRequest(bytes)
+//    bytes, err = gatewayMCPBindingDraftRequest.Marshal()
+//
+//    gatewayMCPBindingFact, err := UnmarshalGatewayMCPBindingFact(bytes)
+//    bytes, err = gatewayMCPBindingFact.Marshal()
+//
+//    gatewayMCPPeerPage, err := UnmarshalGatewayMCPPeerPage(bytes)
+//    bytes, err = gatewayMCPPeerPage.Marshal()
+//
+//    gatewayMCPProbeRequest, err := UnmarshalGatewayMCPProbeRequest(bytes)
+//    bytes, err = gatewayMCPProbeRequest.Marshal()
+//
+//    gatewayMCPProbeResult, err := UnmarshalGatewayMCPProbeResult(bytes)
+//    bytes, err = gatewayMCPProbeResult.Marshal()
+//
+//    gatewayMCPReleasePage, err := UnmarshalGatewayMCPReleasePage(bytes)
+//    bytes, err = gatewayMCPReleasePage.Marshal()
+//
+//    gatewayModelRoutePage, err := UnmarshalGatewayModelRoutePage(bytes)
+//    bytes, err = gatewayModelRoutePage.Marshal()
+//
+//    gatewayModelSourcePage, err := UnmarshalGatewayModelSourcePage(bytes)
+//    bytes, err = gatewayModelSourcePage.Marshal()
+//
+//    gatewayStats, err := UnmarshalGatewayStats(bytes)
+//    bytes, err = gatewayStats.Marshal()
+//
+//    gatewayStatsCounters, err := UnmarshalGatewayStatsCounters(bytes)
+//    bytes, err = gatewayStatsCounters.Marshal()
+//
+//    gatewayToolPage, err := UnmarshalGatewayToolPage(bytes)
+//    bytes, err = gatewayToolPage.Marshal()
+//
+//    gatewayToolTestCallResult, err := UnmarshalGatewayToolTestCallResult(bytes)
+//    bytes, err = gatewayToolTestCallResult.Marshal()
+//
 //    huddleAnnouncementView, err := UnmarshalHuddleAnnouncementView(bytes)
 //    bytes, err = huddleAnnouncementView.Marshal()
 //
@@ -2179,6 +2236,196 @@ func UnmarshalFollowedPrincipalRequest(data []byte) (FollowedPrincipalRequest, e
 }
 
 func (r *FollowedPrincipalRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayAccess(data []byte) (GatewayAccess, error) {
+	var r GatewayAccess
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayAccess) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayCallDetail(data []byte) (GatewayCallDetail, error) {
+	var r GatewayCallDetail
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayCallDetail) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayCallPage(data []byte) (GatewayCallPage, error) {
+	var r GatewayCallPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayCallPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayCallView(data []byte) (GatewayCallView, error) {
+	var r GatewayCallView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayCallView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayConfigHistory(data []byte) (GatewayConfigHistory, error) {
+	var r GatewayConfigHistory
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayConfigHistory) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayConfigView(data []byte) (GatewayConfigView, error) {
+	var r GatewayConfigView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayConfigView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPBindingDraft(data []byte) (GatewayMCPBindingDraft, error) {
+	var r GatewayMCPBindingDraft
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPBindingDraft) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPBindingDraftRequest(data []byte) (GatewayMCPBindingDraftRequest, error) {
+	var r GatewayMCPBindingDraftRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPBindingDraftRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPBindingFact(data []byte) (GatewayMCPBindingFact, error) {
+	var r GatewayMCPBindingFact
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPBindingFact) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPPeerPage(data []byte) (GatewayMCPPeerPage, error) {
+	var r GatewayMCPPeerPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPPeerPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPProbeRequest(data []byte) (GatewayMCPProbeRequest, error) {
+	var r GatewayMCPProbeRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPProbeRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPProbeResult(data []byte) (GatewayMCPProbeResult, error) {
+	var r GatewayMCPProbeResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPProbeResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayMCPReleasePage(data []byte) (GatewayMCPReleasePage, error) {
+	var r GatewayMCPReleasePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayMCPReleasePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayModelRoutePage(data []byte) (GatewayModelRoutePage, error) {
+	var r GatewayModelRoutePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayModelRoutePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayModelSourcePage(data []byte) (GatewayModelSourcePage, error) {
+	var r GatewayModelSourcePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayModelSourcePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayStats(data []byte) (GatewayStats, error) {
+	var r GatewayStats
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayStats) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayStatsCounters(data []byte) (GatewayStatsCounters, error) {
+	var r GatewayStatsCounters
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayStatsCounters) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayToolPage(data []byte) (GatewayToolPage, error) {
+	var r GatewayToolPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayToolPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalGatewayToolTestCallResult(data []byte) (GatewayToolTestCallResult, error) {
+	var r GatewayToolTestCallResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *GatewayToolTestCallResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -6248,6 +6495,489 @@ type FollowedPrincipalRequest struct {
 	Version  int64  `json:"version"`
 }
 
+// DD-134(2)：本会话在网关管理区可用的分区。只决定入口与按钮是否呈现；每个查询与动作仍在 BFF fresh 授权，前端隐藏不构成授权。
+type GatewayAccess struct {
+	// TENANT 范围：application_binding.create 的准入预评估（Tenant manage）。
+	CanBindMCP bool `json:"canBindMcp"`
+	// llm_route.create 的准入预评估（Tenant create）。
+	CanCreateModelRoute bool `json:"canCreateModelRoute"`
+	// PLATFORM 范围：active HUMAN 且 Catalog Tenant manage（交付目录读取、受控探测、契约与 release 登记批准）。
+	CanManageMCP bool `json:"canManageMcp"`
+	// PLATFORM 范围：Catalog Tenant audit。
+	CanReadConfig bool `json:"canReadConfig"`
+	// TENANT 范围：Tenant discover。PLATFORM 范围恒为 false（平台只在实时配置中看到 route 的 Gateway 投影）。
+	CanReadModelRoutes bool `json:"canReadModelRoutes"`
+	// PLATFORM：Catalog Tenant audit；TENANT：Tenant audit（Workspace audit 只在选择该 Workspace 时生效）。
+	CanReadStats bool `json:"canReadStats"`
+	// TENANT 范围：Tenant discover。PLATFORM 范围恒为 false。
+	CanReadTools bool              `json:"canReadTools"`
+	Scope        GatewayAdminScope `json:"scope"`
+	TenantID     string            `json:"tenantId"`
+}
+
+// DD-134(3)⑤：单次调用下钻。TENANT 范围关联 ActionExecution 与同 operation 的 AuditEvent；PLATFORM 范围只有
+// call。
+type GatewayCallDetail struct {
+	AuditEvents []GatewayCallAuditEvent `json:"auditEvents"`
+	Call        GatewayCallView         `json:"call"`
+	Execution   *GatewayCallExecution   `json:"execution,omitempty"`
+}
+
+type GatewayCallAuditEvent struct {
+	ActionExecutionID *string        `json:"actionExecutionId,omitempty"`
+	ActionKey         string         `json:"actionKey"`
+	Decision          string         `json:"decision"`
+	EventID           string         `json:"eventId"`
+	EventType         AuditEventType `json:"eventType"`
+	OccurredAt        string         `json:"occurredAt"`
+	ResultCode        string         `json:"resultCode"`
+}
+
+// DD-134(3)⑤：一次模型或工具调用的元数据。不含 prompt 预览、turn、payload、工具参数或结果正文。PLATFORM 范围只填 Gateway 原生字段与
+// tenantId。
+type GatewayCallView struct {
+	ActionExecutionID           *string `json:"actionExecutionId,omitempty"`
+	AgentInstallationResourceID *string `json:"agentInstallationResourceId,omitempty"`
+	AgentName                   *string `json:"agentName,omitempty"`
+	ApplicationBindingID        *string `json:"applicationBindingId,omitempty"`
+	// MODEL 为 request log ID 前缀 model:，TOOL 为 ActionExecution ID 前缀 tool:。
+	CallID      string          `json:"callId"`
+	CompletedAt *string         `json:"completedAt,omitempty"`
+	DurationMS  *int64          `json:"durationMs,omitempty"`
+	HTTPStatus  *int64          `json:"httpStatus,omitempty"`
+	InputTokens *int64          `json:"inputTokens,omitempty"`
+	Kind        GatewayCallKind `json:"kind"`
+	Model       *string         `json:"model,omitempty"`
+	// Gateway 上的模型路由名（request log 的请求模型）。
+	ModelRouteKey        *string                      `json:"modelRouteKey,omitempty"`
+	ModelRouteResourceID *string                      `json:"modelRouteResourceId,omitempty"`
+	OperationID          *string                      `json:"operationId,omitempty"`
+	Outcome              GatewayCallOutcome           `json:"outcome"`
+	OutputTokens         *int64                       `json:"outputTokens,omitempty"`
+	Provider             *string                      `json:"provider,omitempty"`
+	ReasonCode           *ReasonCode                  `json:"reasonCode,omitempty"`
+	RequestLogID         *string                      `json:"requestLogId,omitempty"`
+	StartedAt            string                       `json:"startedAt"`
+	TenantID             *string                      `json:"tenantId,omitempty"`
+	ToolName             *string                      `json:"toolName,omitempty"`
+	ToolResourceID       *string                      `json:"toolResourceId,omitempty"`
+	ToolSource           *AgentInstallationToolSource `json:"toolSource,omitempty"`
+	TotalTokens          *int64                       `json:"totalTokens,omitempty"`
+	TraceID              *string                      `json:"traceId,omitempty"`
+	UsageState           *OperationUsageState         `json:"usageState,omitempty"`
+	WorkspaceID          *string                      `json:"workspaceId,omitempty"`
+}
+
+type GatewayCallExecution struct {
+	ActionExecutionID       string              `json:"actionExecutionId"`
+	ActionKey               string              `json:"actionKey"`
+	ActionVersion           int64               `json:"actionVersion"`
+	CreatedAt               string              `json:"createdAt"`
+	DispatchState           ActionDispatchState `json:"dispatchState"`
+	GateState               ActionGateState     `json:"gateState"`
+	OperationID             string              `json:"operationId"`
+	ParentActionExecutionID *string             `json:"parentActionExecutionId,omitempty"`
+	ReasonCode              *ReasonCode         `json:"reasonCode,omitempty"`
+	UpdatedAt               *string             `json:"updatedAt,omitempty"`
+}
+
+// DD-134(3)：时间窗内的调用列表，按开始时间倒序；nextCursor 只在同一查询条件内继续。
+type GatewayCallPage struct {
+	Calls             []GatewayCallView `json:"calls"`
+	ModelLogAvailable bool              `json:"modelLogAvailable"`
+	NextCursor        *string           `json:"nextCursor,omitempty"`
+	Scope             GatewayAdminScope `json:"scope"`
+	Truncated         bool              `json:"truncated"`
+}
+
+// DD-134(3)⑥：一个 ConfigResource 的 Core 写入证据（打码后的值）与相邻已记录 revision 之间的差异；当前 revision 没有证据时
+// currentSource=UNRECORDED。
+type GatewayConfigHistory struct {
+	CurrentRevision *int64                      `json:"currentRevision,omitempty"`
+	CurrentSource   GatewayConfigRevisionSource `json:"currentSource"`
+	ID              string                      `json:"id"`
+	Kind            string                      `json:"kind"`
+	Revisions       []GatewayConfigRevisionView `json:"revisions"`
+}
+
+type GatewayConfigRevisionView struct {
+	ActionExecutionID *string               `json:"actionExecutionId,omitempty"`
+	ActionKey         *string               `json:"actionKey,omitempty"`
+	Changes           []GatewayConfigChange `json:"changes"`
+	Deleted           bool                  `json:"deleted"`
+	OperationID       *string               `json:"operationId,omitempty"`
+	RecordedAt        string                `json:"recordedAt"`
+	Revision          int64                 `json:"revision"`
+	ValueDigest       string                `json:"valueDigest"`
+	ValueJSON         string                `json:"valueJson"`
+}
+
+type GatewayConfigChange struct {
+	AfterJSON  *string                 `json:"afterJson,omitempty"`
+	BeforeJSON *string                 `json:"beforeJson,omitempty"`
+	Change     GatewayConfigChangeKind `json:"change"`
+	// RFC 6901 JSON pointer。
+	Path string `json:"path"`
+}
+
+// DD-134(3)⑥(4)：Gateway effective config 与 ConfigResource 当前值，均已在 Core 打码；只读。
+type GatewayConfigView struct {
+	EffectiveConfigJSON string                      `json:"effectiveConfigJson"`
+	ReadAt              string                      `json:"readAt"`
+	Resources           []GatewayConfigResourceView `json:"resources"`
+}
+
+type GatewayConfigResourceView struct {
+	ActionExecutionID *string                     `json:"actionExecutionId,omitempty"`
+	ActionKey         *string                     `json:"actionKey,omitempty"`
+	ID                string                      `json:"id"`
+	Kind              string                      `json:"kind"`
+	OperationID       *string                     `json:"operationId,omitempty"`
+	Revision          int64                       `json:"revision"`
+	Source            GatewayConfigRevisionSource `json:"source"`
+	UpdatedAt         *string                     `json:"updatedAt,omitempty"`
+	ValueJSON         string                      `json:"valueJson"`
+}
+
+// DD-134(5)⑥：需由运维加入交付目录 protocolPeers[].bindings 的条目（不含 secret）；Core 回读到同 bindingId 的条目后才放行
+// application_binding.create。
+type GatewayMCPBindingDraft struct {
+	AdapterServiceRef  string `json:"adapterServiceRef"`
+	BindingID          string `json:"bindingId"`
+	ConfigDigest       string `json:"configDigest"`
+	DirectoryEntryJSON string `json:"directoryEntryJson"`
+	ServicePrincipalID string `json:"servicePrincipalId"`
+}
+
+// DD-134(5)⑥：为尚无交付归属事实的连接生成目录条目草稿；纯计算，不写任何状态。
+type GatewayMCPBindingDraftRequest struct {
+	ComponentReleaseID   string                   `json:"componentReleaseId"`
+	IsolationMode        ApplicationIsolationMode `json:"isolationMode"`
+	NativeScopeRef       string                   `json:"nativeScopeRef"`
+	NormalizedConfigJSON string                   `json:"normalizedConfigJson"`
+	WorkspaceID          *string                  `json:"workspaceId,omitempty"`
+}
+
+// DD-134(5)①：部署交付目录的 protocolPeers 与一致性环境（只读，Catalog manage）。URL 已去掉 userinfo、query 与
+// fragment。
+type GatewayMCPPeerPage struct {
+	ConformanceArtifactDigest *string              `json:"conformanceArtifactDigest,omitempty"`
+	DirectoryAvailable        bool                 `json:"directoryAvailable"`
+	Peers                     []GatewayMCPPeerView `json:"peers"`
+}
+
+type GatewayMCPPeerView struct {
+	AdapterServiceRef string                  `json:"adapterServiceRef"`
+	ArtifactDigest    string                  `json:"artifactDigest"`
+	BindingFacts      []GatewayMCPBindingFact `json:"bindingFacts"`
+	// 部署一致性环境存在且其 artifactDigest 等于本条目。
+	ConformanceReady  bool   `json:"conformanceReady"`
+	MaxResponseBytes  int64  `json:"maxResponseBytes"`
+	MCPURL            string `json:"mcpUrl"`
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	TimeoutSeconds    int64  `json:"timeoutSeconds"`
+}
+
+// DD-98/134(5)⑥：交付目录中一条 binding 归属事实（运维域），不是授权；不含 secret。
+type GatewayMCPBindingFact struct {
+	BindingID string `json:"bindingId"`
+	// 已有同 ID 的 ApplicationBinding。
+	Bound              bool                     `json:"bound"`
+	ConfigDigest       string                   `json:"configDigest"`
+	CredentialKeys     []string                 `json:"credentialKeys"`
+	IsolationMode      ApplicationIsolationMode `json:"isolationMode"`
+	NativeScopeRef     string                   `json:"nativeScopeRef"`
+	ServicePrincipalID string                   `json:"servicePrincipalId"`
+	TenantID           string                   `json:"tenantId"`
+	WorkspaceID        *string                  `json:"workspaceId,omitempty"`
+}
+
+// DD-134(5)②：受控探测只接受交付目录条目引用，不接受 URL。
+type GatewayMCPProbeRequest struct {
+	AdapterServiceRef string `json:"adapterServiceRef"`
+}
+
+// DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
+// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+type GatewayMCPProbeResult struct {
+	AdapterServiceRef string                 `json:"adapterServiceRef"`
+	ProbedAt          string                 `json:"probedAt"`
+	ProbeID           string                 `json:"probeId"`
+	ProtocolVersion   *string                `json:"protocolVersion,omitempty"`
+	ServerName        *string                `json:"serverName,omitempty"`
+	ServerVersion     *string                `json:"serverVersion,omitempty"`
+	Tools             []GatewayMCPProbedTool `json:"tools"`
+	ToolSchemaDigest  string                 `json:"toolSchemaDigest"`
+}
+
+type GatewayMCPProbedTool struct {
+	Description        *string                   `json:"description,omitempty"`
+	DisplayTitle       *string                   `json:"displayTitle,omitempty"`
+	InputSchemaDigest  string                    `json:"inputSchemaDigest"`
+	InputSchemaJSON    string                    `json:"inputSchemaJson"`
+	MatchingContracts  []GatewayMCPContractMatch `json:"matchingContracts"`
+	Name               string                    `json:"name"`
+	OutputSchemaDigest *string                   `json:"outputSchemaDigest,omitempty"`
+	OutputSchemaJSON   *string                   `json:"outputSchemaJson,omitempty"`
+	ReadOnlyHint       *bool                     `json:"readOnlyHint,omitempty"`
+}
+
+type GatewayMCPContractMatch struct {
+	CategoryKey     string               `json:"categoryKey"`
+	ContractKey     string               `json:"contractKey"`
+	ContractVersion int64                `json:"contractVersion"`
+	Permission      CapabilityPermission `json:"permission"`
+}
+
+// DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。
+type GatewayMCPReleasePage struct {
+	Releases []GatewayMCPReleaseView `json:"releases"`
+}
+
+type GatewayMCPReleaseView struct {
+	AdapterBuildRef string `json:"adapterBuildRef"`
+	// 交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。
+	AdapterServiceRef       *string                     `json:"adapterServiceRef,omitempty"`
+	AllowedModelCallModes   []ApplicationModelCallMode  `json:"allowedModelCallModes"`
+	BindingConfigSchemaJSON *string                     `json:"bindingConfigSchemaJson,omitempty"`
+	BindingIDS              []string                    `json:"bindingIds"`
+	CapabilityCategories    []GatewayMCPReleaseCategory `json:"capabilityCategories"`
+	ComponentReleaseID      string                      `json:"componentReleaseId"`
+	ComponentTypeKey        string                      `json:"componentTypeKey"`
+	DeliveryFacts           []GatewayMCPBindingFact     `json:"deliveryFacts"`
+	NativeInstanceRef       *string                     `json:"nativeInstanceRef,omitempty"`
+	SecretKeys              []string                    `json:"secretKeys"`
+	Status                  ComponentReleaseStatus      `json:"status"`
+	Tools                   []GatewayMCPReleaseTool     `json:"tools"`
+	Version                 string                      `json:"version"`
+}
+
+type GatewayMCPReleaseCategory struct {
+	Category string `json:"category"`
+	Version  int64  `json:"version"`
+}
+
+type GatewayMCPReleaseTool struct {
+	ActionKey             string `json:"actionKey"`
+	CapabilityContractKey string `json:"capabilityContractKey"`
+	Name                  string `json:"name"`
+}
+
+// DD-134(7)：本 Tenant 的 llm_route Resource（按 discover 过滤）与时间窗用量；新建沿 llm_route.create，停用沿
+// llm_route.disable。
+type GatewayModelRoutePage struct {
+	CanCreate  bool                    `json:"canCreate"`
+	From       string                  `json:"from"`
+	NextOffset *int64                  `json:"nextOffset,omitempty"`
+	Routes     []GatewayModelRouteView `json:"routes"`
+	To         string                  `json:"to"`
+}
+
+type GatewayModelRouteView struct {
+	BindingCount      int64         `json:"bindingCount"`
+	CanDisable        bool          `json:"canDisable"`
+	Failed            *int64        `json:"failed,omitempty"`
+	HomeWorkspaceID   *string       `json:"homeWorkspaceId,omitempty"`
+	InstallationCount int64         `json:"installationCount"`
+	Model             *string       `json:"model,omitempty"`
+	ModelP95MS        *int64        `json:"modelP95Ms,omitempty"`
+	NativeID          string        `json:"nativeId"`
+	OwnerPrincipalID  string        `json:"ownerPrincipalId"`
+	Provider          *string       `json:"provider,omitempty"`
+	Requests          *int64        `json:"requests,omitempty"`
+	ResourceID        string        `json:"resourceId"`
+	ResourceState     ResourceState `json:"resourceState"`
+	ResourceVersion   int64         `json:"resourceVersion"`
+	TotalTokens       *int64        `json:"totalTokens,omitempty"`
+}
+
+// DD-134(7)：Gateway 中已存在、尚未被 llm_route 引用的原生 provider 与 model ConfigResource（打码），供
+// llm_route.create 选择；revision 与 sha256 为 Core 回读值。
+type GatewayModelSourcePage struct {
+	Sources []GatewayModelSource `json:"sources"`
+}
+
+type GatewayModelSource struct {
+	CredentialRequired *bool         `json:"credentialRequired,omitempty"`
+	Model              ModelClass    `json:"model"`
+	ModelName          string        `json:"modelName"`
+	Provider           ProviderClass `json:"provider"`
+	ProviderType       string        `json:"providerType"`
+}
+
+type ModelClass struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+	Sha256   string `json:"sha256"`
+}
+
+type ProviderClass struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+	Sha256   string `json:"sha256"`
+}
+
+// DD-134(3)：时间窗内按一个维度的聚合与时间桶。每次请求实时计算；扫描原始记录超出上限时 truncated=true，结果只基于已扫描部分。
+type GatewayStats struct {
+	Buckets       []GatewayStatsBucket  `json:"buckets"`
+	BucketSeconds int64                 `json:"bucketSeconds"`
+	Dimension     GatewayStatsDimension `json:"dimension"`
+	From          string                `json:"from"`
+	// Gateway request log 是否可读；false 时模型调用计数缺失，不显示为零。
+	ModelLogAvailable bool                 `json:"modelLogAvailable"`
+	Rows              []GatewayStatsRow    `json:"rows"`
+	Scope             GatewayAdminScope    `json:"scope"`
+	To                string               `json:"to"`
+	Totals            GatewayStatsCounters `json:"totals"`
+	Truncated         bool                 `json:"truncated"`
+	WorkspaceID       *string              `json:"workspaceId,omitempty"`
+}
+
+type GatewayStatsBucket struct {
+	Denied      int64  `json:"denied"`
+	Failed      int64  `json:"failed"`
+	Requests    int64  `json:"requests"`
+	Start       string `json:"start"`
+	TotalTokens int64  `json:"totalTokens"`
+}
+
+type GatewayStatsRow struct {
+	Counters GatewayStatsCounters `json:"counters"`
+	// 维度键：llm_route Resource ID 或 Gateway route 名、Tool Resource ID、Installation Resource
+	// ID、binding ID 或 Tenant ID；UNATTRIBUTED 为无法归属的记录。
+	Key  string           `json:"key"`
+	Kind *GatewayCallKind `json:"kind,omitempty"`
+	// 受权的展示名（工具名、Agent 名、模型名）；平台范围不含业务名称。
+	Label *string `json:"label,omitempty"`
+}
+
+// DD-134(3)④：计数与分位数。错误率由呈现层按 failed/requests 计算；模型与工具时延分列，不混算。
+type GatewayStatsCounters struct {
+	// 模型调用：Gateway 日志已有而没有 durable UsageEvent 或已记 BILLING_UNAVAILABLE 审计的次数（14 §8）。
+	BillingUnavailable int64 `json:"billingUnavailable"`
+	Denied             int64 `json:"denied"`
+	Failed             int64 `json:"failed"`
+	InputTokens        int64 `json:"inputTokens"`
+	// 模型调用 Gateway durationMs 的 P50；没有模型调用时省略。
+	ModelP50MS   *int64 `json:"modelP50Ms,omitempty"`
+	ModelP95MS   *int64 `json:"modelP95Ms,omitempty"`
+	OutputTokens int64  `json:"outputTokens"`
+	Requests     int64  `json:"requests"`
+	Running      int64  `json:"running"`
+	Succeeded    int64  `json:"succeeded"`
+	// 工具调用 Core 观测时延（INTENT 到 OUTCOME）的 P50；没有已终结工具调用时省略。
+	ToolP50MS   *int64 `json:"toolP50Ms,omitempty"`
+	ToolP95MS   *int64 `json:"toolP95Ms,omitempty"`
+	TotalTokens int64  `json:"totalTokens"`
+	Unknown     int64  `json:"unknown"`
+}
+
+// DD-134(6)：本 Tenant 的 PLATFORM_NATIVE 与 APPLICATION 工具（按 Tool Resource discover
+// 过滤），附时间窗内调用统计。停用只作用于所属连接；PLATFORM_NATIVE 无启停入口。
+type GatewayToolPage struct {
+	From       string            `json:"from"`
+	NextOffset *int64            `json:"nextOffset,omitempty"`
+	To         string            `json:"to"`
+	Tools      []GatewayToolView `json:"tools"`
+}
+
+type GatewayToolView struct {
+	ActionKey                 string                   `json:"actionKey"`
+	ApplicationBindingID      *string                  `json:"applicationBindingId,omitempty"`
+	ApplicationBindingVersion *int64                   `json:"applicationBindingVersion,omitempty"`
+	BindingState              *ApplicationBindingState `json:"bindingState,omitempty"`
+	BindingWorkspaceID        *string                  `json:"bindingWorkspaceId,omitempty"`
+	CanDisableBinding         bool                     `json:"canDisableBinding"`
+	// 契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时
+	// fresh 重做。
+	CanTestCall           bool                        `json:"canTestCall"`
+	CapabilityContractKey *string                     `json:"capabilityContractKey,omitempty"`
+	ComponentReleaseID    *string                     `json:"componentReleaseId,omitempty"`
+	ComponentTypeKey      *string                     `json:"componentTypeKey,omitempty"`
+	ContractPermission    *CapabilityPermission       `json:"contractPermission,omitempty"`
+	Denied                int64                       `json:"denied"`
+	Failed                int64                       `json:"failed"`
+	Name                  string                      `json:"name"`
+	ReleaseVersion        *string                     `json:"releaseVersion,omitempty"`
+	Requests              int64                       `json:"requests"`
+	ResourceID            string                      `json:"resourceId"`
+	ResourceState         ResourceState               `json:"resourceState"`
+	ResourceVersion       int64                       `json:"resourceVersion"`
+	Source                AgentInstallationToolSource `json:"source"`
+	TestCall              *GatewayToolTestCall        `json:"testCall,omitempty"`
+	ToolP95MS             *int64                      `json:"toolP95Ms,omitempty"`
+}
+
+type GatewayToolTestCall struct {
+	ActionKey     string `json:"actionKey"`
+	ActionVersion int64  `json:"actionVersion"`
+	// 契约固定的输入 schema（canonical JSON）。
+	InputSchemaJSON             string                  `json:"inputSchemaJson"`
+	ResultExposurePolicyID      string                  `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                   `json:"resultExposurePolicyVersion"`
+	Targets                     []GatewayToolTestTarget `json:"targets"`
+}
+
+type GatewayToolTestTarget struct {
+	DisplayName     string  `json:"displayName"`
+	ResourceID      string  `json:"resourceId"`
+	ResourceVersion int64   `json:"resourceVersion"`
+	WorkspaceID     *string `json:"workspaceId,omitempty"`
+}
+
+// DD-134(6)：网关管理区测试调用的同请求回应。submission 是该工具 ActionDefinition 的准入与派发结论；resultJson
+// 只在本次调用已确定成功时出现，是经 ExtMcp 按冻结 ResultExposurePolicy 与输出 schema 过滤后的 canonical
+// JSON，只回给发起人本人且 Core 不保存；toolError 为真表示原生工具返回了错误结果（不含正文）。结果不明时两者都缺省，ActionExecution 停在
+// UNKNOWN，不重放。
+type GatewayToolTestCallResult struct {
+	ResultJSON *string          `json:"resultJson,omitempty"`
+	Submission ActionSubmission `json:"submission"`
+	ToolError  *bool            `json:"toolError,omitempty"`
+}
+
+// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
+type ActionSubmission struct {
+	ActionExecutionID  string                    `json:"actionExecutionId"`
+	ActionKey          string                    `json:"actionKey"`
+	ApprovalWorkflowID *string                   `json:"approvalWorkflowId,omitempty"`
+	DispatchState      ActionDispatchState       `json:"dispatchState"`
+	DocumentLaunch     *DocumentLaunchDescriptor `json:"documentLaunch,omitempty"`
+	GateState          ActionGateState           `json:"gateState"`
+	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+	HuddleID          *string                  `json:"huddleId,omitempty"`
+	Invitation        *IssuedInvitation        `json:"invitation,omitempty"`
+	OperationID       string                   `json:"operationId"`
+	ProtocolSessionID *string                  `json:"protocolSessionId,omitempty"`
+	Reason            *ReasonCode              `json:"reason,omitempty"`
+	WebhookSecret     *AutomationWebhookSecret `json:"webhookSecret,omitempty"`
+	WorkflowID        *string                  `json:"workflowId,omitempty"`
+}
+
+// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+type IssuedInvitation struct {
+	// RFC3339，UTC
+	ExpiresAt    string `json:"expiresAt"`
+	InvitationID string `json:"invitationId"`
+	// 部署登记的链接基址 + '#' + 一次性凭据
+	Link string `json:"link"`
+}
+
+// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+type AutomationWebhookSecret struct {
+	AutomationResourceID string `json:"automationResourceId"`
+	Hint                 string `json:"hint"`
+	// 32 字节随机密钥的 base64 展示形式。
+	Secret string `json:"secret"`
+	// 公开投递地址；部署未配置公开基址时省略。
+	URL *string `json:"url,omitempty"`
+}
+
 // POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
 // ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
 // ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
@@ -6997,49 +7727,6 @@ type NativeHumanActionResultReadAdmission struct {
 	ActionToken   string `json:"actionToken"`
 	ArgumentsJSON string `json:"argumentsJson"`
 	ExpiresAt     int64  `json:"expiresAt"`
-}
-
-// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
-// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
-// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-type ActionSubmission struct {
-	ActionExecutionID  string                    `json:"actionExecutionId"`
-	ActionKey          string                    `json:"actionKey"`
-	ApprovalWorkflowID *string                   `json:"approvalWorkflowId,omitempty"`
-	DispatchState      ActionDispatchState       `json:"dispatchState"`
-	DocumentLaunch     *DocumentLaunchDescriptor `json:"documentLaunch,omitempty"`
-	GateState          ActionGateState           `json:"gateState"`
-	// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-	HuddleID          *string                  `json:"huddleId,omitempty"`
-	Invitation        *IssuedInvitation        `json:"invitation,omitempty"`
-	OperationID       string                   `json:"operationId"`
-	ProtocolSessionID *string                  `json:"protocolSessionId,omitempty"`
-	Reason            *ReasonCode              `json:"reason,omitempty"`
-	WebhookSecret     *AutomationWebhookSecret `json:"webhookSecret,omitempty"`
-	WorkflowID        *string                  `json:"workflowId,omitempty"`
-}
-
-// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-type IssuedInvitation struct {
-	// RFC3339，UTC
-	ExpiresAt    string `json:"expiresAt"`
-	InvitationID string `json:"invitationId"`
-	// 部署登记的链接基址 + '#' + 一次性凭据
-	Link string `json:"link"`
-}
-
-// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-type AutomationWebhookSecret struct {
-	AutomationResourceID string `json:"automationResourceId"`
-	Hint                 string `json:"hint"`
-	// 32 字节随机密钥的 base64 展示形式。
-	Secret string `json:"secret"`
-	// 公开投递地址；部署未配置公开基址时省略。
-	URL *string `json:"url,omitempty"`
 }
 
 // Current already-registered native Resource selected under the original HUMAN action
@@ -9065,9 +9752,9 @@ const (
 	ExternalExecutionStatusCANCELLED ExternalExecutionStatus = "CANCELLED"
 	ExternalExecutionStatusFAILED    ExternalExecutionStatus = "FAILED"
 	ExternalExecutionStatusRUNNING   ExternalExecutionStatus = "RUNNING"
+	ExternalExecutionStatusSUCCEEDED ExternalExecutionStatus = "SUCCEEDED"
 	ExternalExecutionStatusUNKNOWN   ExternalExecutionStatus = "UNKNOWN"
 	PendingDispatch                  ExternalExecutionStatus = "PENDING_DISPATCH"
-	Succeeded                        ExternalExecutionStatus = "SUCCEEDED"
 )
 
 // 单次原生任务准入查询结果，不是新的持久任务生命周期。PENDING_REFERENCE 无票据；ADMITTED 才允许消费原任务尚未领取步骤。
@@ -10009,6 +10696,91 @@ const (
 	Unverifiable                        EvidenceUnavailableReason = "UNVERIFIABLE"
 )
 
+// DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
+// 归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。
+type GatewayAdminScope string
+
+const (
+	GatewayAdminScopeTENANT GatewayAdminScope = "TENANT"
+	Platform                GatewayAdminScope = "PLATFORM"
+)
+
+// DD-134(3)：MODEL 取 Gateway request log（时延为 Gateway durationMs）；TOOL 取 Core 工具子
+// ActionExecution 与审计（时延为 Core 观测的 INTENT 到 OUTCOME 间隔）。两者时延不混算。
+type GatewayCallKind string
+
+const (
+	GatewayCallKindTOOL GatewayCallKind = "TOOL"
+	Model               GatewayCallKind = "MODEL"
+)
+
+// DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。
+type GatewayCallOutcome string
+
+const (
+	GatewayCallOutcomeDENIED    GatewayCallOutcome = "DENIED"
+	GatewayCallOutcomeFAILED    GatewayCallOutcome = "FAILED"
+	GatewayCallOutcomeRUNNING   GatewayCallOutcome = "RUNNING"
+	GatewayCallOutcomeSUCCEEDED GatewayCallOutcome = "SUCCEEDED"
+	GatewayCallOutcomeUNKNOWN   GatewayCallOutcome = "UNKNOWN"
+)
+
+// DD-134(3)⑥：CORE_RECORDED 表示 Core 写入并回读确认时保存了该 revision 的写入证据；UNRECORDED 表示外部写入或早于写入证据，按
+// 17 §9 作为投影不一致信号，不反向导入。
+type GatewayConfigRevisionSource string
+
+const (
+	CoreRecorded GatewayConfigRevisionSource = "CORE_RECORDED"
+	Unrecorded   GatewayConfigRevisionSource = "UNRECORDED"
+)
+
+// DD-134(3)⑥：打码后的值在相邻两个已记录 revision 之间按 JSON 路径的差异。
+type GatewayConfigChangeKind string
+
+const (
+	Added   GatewayConfigChangeKind = "ADDED"
+	Changed GatewayConfigChangeKind = "CHANGED"
+	Removed GatewayConfigChangeKind = "REMOVED"
+)
+
+type CapabilityPermission string
+
+const (
+	Approve                      CapabilityPermission = "approve"
+	Audit                        CapabilityPermission = "audit"
+	CapabilityPermissionConsume  CapabilityPermission = "consume"
+	CapabilityPermissionDelete   CapabilityPermission = "delete"
+	CapabilityPermissionDiscover CapabilityPermission = "discover"
+	CapabilityPermissionExecute  CapabilityPermission = "execute"
+	CapabilityPermissionManage   CapabilityPermission = "manage"
+	CapabilityPermissionRead     CapabilityPermission = "read"
+	Create                       CapabilityPermission = "create"
+	Delegate                     CapabilityPermission = "delegate"
+	Export                       CapabilityPermission = "export"
+	Share                        CapabilityPermission = "share"
+	TransferOwner                CapabilityPermission = "transfer_owner"
+	Update                       CapabilityPermission = "update"
+)
+
+type ApplicationModelCallMode string
+
+const (
+	ApplicationModelCallModeNONE ApplicationModelCallMode = "NONE"
+	PlatformLlmRoute             ApplicationModelCallMode = "PLATFORM_LLM_ROUTE"
+	SelfManagedModel             ApplicationModelCallMode = "SELF_MANAGED_MODEL"
+)
+
+// DD-134(3)④：聚合维度。TOOL、AGENT、BINDING 只在 TENANT 范围可用；TENANT 只在 PLATFORM 范围可用。
+type GatewayStatsDimension string
+
+const (
+	Agent                       GatewayStatsDimension = "AGENT"
+	Binding                     GatewayStatsDimension = "BINDING"
+	GatewayStatsDimensionTENANT GatewayStatsDimension = "TENANT"
+	GatewayStatsDimensionTOOL   GatewayStatsDimension = "TOOL"
+	ModelRoute                  GatewayStatsDimension = "MODEL_ROUTE"
+)
+
 // HuddleBuzzBinding 状态（03 §2、DD-125(3)）：PROVISIONING 为 CONTROL 9007/9000 投影尚未回读一致（结果不明保留并按
 // Channel UUID 对账）；ACTIVE 为投影回读一致；ENDED 为观察到 48103 或临时频道已归档，终态、不复用；ERROR 为 Relay
 // 确定拒绝投影，不再签发。
@@ -10098,38 +10870,11 @@ const (
 	TenantService   ApplicationCallIdentityMode = "TENANT_SERVICE"
 )
 
-type ApplicationModelCallMode string
-
-const (
-	ApplicationModelCallModeNONE ApplicationModelCallMode = "NONE"
-	PlatformLlmRoute             ApplicationModelCallMode = "PLATFORM_LLM_ROUTE"
-	SelfManagedModel             ApplicationModelCallMode = "SELF_MANAGED_MODEL"
-)
-
-type CapabilityPermission string
-
-const (
-	Approve                      CapabilityPermission = "approve"
-	Audit                        CapabilityPermission = "audit"
-	CapabilityPermissionConsume  CapabilityPermission = "consume"
-	CapabilityPermissionDelete   CapabilityPermission = "delete"
-	CapabilityPermissionDiscover CapabilityPermission = "discover"
-	CapabilityPermissionExecute  CapabilityPermission = "execute"
-	CapabilityPermissionManage   CapabilityPermission = "manage"
-	CapabilityPermissionRead     CapabilityPermission = "read"
-	Create                       CapabilityPermission = "create"
-	Delegate                     CapabilityPermission = "delegate"
-	Export                       CapabilityPermission = "export"
-	Share                        CapabilityPermission = "share"
-	TransferOwner                CapabilityPermission = "transfer_owner"
-	Update                       CapabilityPermission = "update"
-)
-
 type CapabilitySurface string
 
 const (
-	Action CapabilitySurface = "ACTION"
-	Tool   CapabilitySurface = "TOOL"
+	Action                CapabilitySurface = "ACTION"
+	CapabilitySurfaceTOOL CapabilitySurface = "TOOL"
 )
 
 type CapabilityRequiredDeclaration string

@@ -5268,6 +5268,1034 @@ pub struct FollowedPrincipalRequest {
     pub version: i64,
 }
 
+/// DD-134(2)：本会话在网关管理区可用的分区。只决定入口与按钮是否呈现；每个查询与动作仍在 BFF fresh 授权，前端隐藏不构成授权。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayAccess {
+    /// TENANT 范围：application_binding.create 的准入预评估（Tenant manage）。
+    pub can_bind_mcp: bool,
+
+    /// llm_route.create 的准入预评估（Tenant create）。
+    pub can_create_model_route: bool,
+
+    /// PLATFORM 范围：active HUMAN 且 Catalog Tenant manage（交付目录读取、受控探测、契约与 release 登记批准）。
+    pub can_manage_mcp: bool,
+
+    /// PLATFORM 范围：Catalog Tenant audit。
+    pub can_read_config: bool,
+
+    /// TENANT 范围：Tenant discover。PLATFORM 范围恒为 false（平台只在实时配置中看到 route 的 Gateway 投影）。
+    pub can_read_model_routes: bool,
+
+    /// PLATFORM：Catalog Tenant audit；TENANT：Tenant audit（Workspace audit 只在选择该 Workspace 时生效）。
+    pub can_read_stats: bool,
+
+    /// TENANT 范围：Tenant discover。PLATFORM 范围恒为 false。
+    pub can_read_tools: bool,
+
+    pub scope: GatewayAdminScope,
+
+    pub tenant_id: String,
+}
+
+/// DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
+/// 归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GatewayAdminScope {
+    #[serde(rename = "PLATFORM")]
+    Platform,
+
+    #[serde(rename = "TENANT")]
+    Tenant,
+}
+
+/// DD-134(3)⑤：单次调用下钻。TENANT 范围关联 ActionExecution 与同 operation 的 AuditEvent；PLATFORM 范围只有
+/// call。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayCallDetail {
+    pub audit_events: Vec<GatewayCallAuditEvent>,
+
+    pub call: GatewayCallView,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<GatewayCallExecution>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayCallAuditEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    pub action_key: String,
+
+    pub decision: String,
+
+    pub event_id: String,
+
+    pub event_type: AuditEventType,
+
+    pub occurred_at: String,
+
+    pub result_code: String,
+}
+
+/// DD-134(3)⑤：一次模型或工具调用的元数据。不含 prompt 预览、turn、payload、工具参数或结果正文。PLATFORM 范围只填 Gateway 原生字段与
+/// tenantId。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayCallView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_installation_resource_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_id: Option<String>,
+
+    /// MODEL 为 request log ID 前缀 model:，TOOL 为 ActionExecution ID 前缀 tool:。
+    pub call_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+
+    pub kind: GatewayCallKind,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+
+    /// Gateway 上的模型路由名（request log 的请求模型）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_route_key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_route_resource_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+
+    pub outcome: GatewayCallOutcome,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_log_id: Option<String>,
+
+    pub started_at: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_resource_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_source: Option<AgentInstallationToolSource>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_state: Option<OperationUsageState>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-134(3)：MODEL 取 Gateway request log（时延为 Gateway durationMs）；TOOL 取 Core 工具子
+/// ActionExecution 与审计（时延为 Core 观测的 INTENT 到 OUTCOME 间隔）。两者时延不混算。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GatewayCallKind {
+    #[serde(rename = "MODEL")]
+    Model,
+
+    #[serde(rename = "TOOL")]
+    Tool,
+}
+
+/// DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GatewayCallOutcome {
+    #[serde(rename = "DENIED")]
+    Denied,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "RUNNING")]
+    Running,
+
+    #[serde(rename = "SUCCEEDED")]
+    Succeeded,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayCallExecution {
+    pub action_execution_id: String,
+
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub created_at: String,
+
+    pub dispatch_state: ActionDispatchState,
+
+    pub gate_state: ActionGateState,
+
+    pub operation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+/// DD-134(3)：时间窗内的调用列表，按开始时间倒序；nextCursor 只在同一查询条件内继续。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayCallPage {
+    pub calls: Vec<GatewayCallView>,
+
+    pub model_log_available: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+
+    pub scope: GatewayAdminScope,
+
+    pub truncated: bool,
+}
+
+/// DD-134(3)⑥：一个 ConfigResource 的 Core 写入证据（打码后的值）与相邻已记录 revision 之间的差异；当前 revision 没有证据时
+/// currentSource=UNRECORDED。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayConfigHistory {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_revision: Option<i64>,
+
+    pub current_source: GatewayConfigRevisionSource,
+
+    pub id: String,
+
+    pub kind: String,
+
+    pub revisions: Vec<GatewayConfigRevisionView>,
+}
+
+/// DD-134(3)⑥：CORE_RECORDED 表示 Core 写入并回读确认时保存了该 revision 的写入证据；UNRECORDED 表示外部写入或早于写入证据，按
+/// 17 §9 作为投影不一致信号，不反向导入。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GatewayConfigRevisionSource {
+    #[serde(rename = "CORE_RECORDED")]
+    CoreRecorded,
+
+    Unrecorded,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayConfigRevisionView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_key: Option<String>,
+
+    pub changes: Vec<GatewayConfigChange>,
+
+    pub deleted: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+
+    pub recorded_at: String,
+
+    pub revision: i64,
+
+    pub value_digest: String,
+
+    pub value_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayConfigChange {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_json: Option<String>,
+
+    pub change: GatewayConfigChangeKind,
+
+    /// RFC 6901 JSON pointer。
+    pub path: String,
+}
+
+/// DD-134(3)⑥：打码后的值在相邻两个已记录 revision 之间按 JSON 路径的差异。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum GatewayConfigChangeKind {
+    #[serde(rename = "ADDED")]
+    Added,
+
+    #[serde(rename = "CHANGED")]
+    Changed,
+
+    #[serde(rename = "REMOVED")]
+    Removed,
+}
+
+/// DD-134(3)⑥(4)：Gateway effective config 与 ConfigResource 当前值，均已在 Core 打码；只读。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayConfigView {
+    pub effective_config_json: String,
+
+    pub read_at: String,
+
+    pub resources: Vec<GatewayConfigResourceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayConfigResourceView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_key: Option<String>,
+
+    pub id: String,
+
+    pub kind: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+
+    pub revision: i64,
+
+    pub source: GatewayConfigRevisionSource,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+
+    pub value_json: String,
+}
+
+/// DD-134(5)⑥：需由运维加入交付目录 protocolPeers[].bindings 的条目（不含 secret）；Core 回读到同 bindingId 的条目后才放行
+/// application_binding.create。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpBindingDraft {
+    pub adapter_service_ref: String,
+
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub directory_entry_json: String,
+
+    pub service_principal_id: String,
+}
+
+/// DD-134(5)⑥：为尚无交付归属事实的连接生成目录条目草稿；纯计算，不写任何状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpBindingDraftRequest {
+    pub component_release_id: String,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub native_scope_ref: String,
+
+    pub normalized_config_json: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-134(5)①：部署交付目录的 protocolPeers 与一致性环境（只读，Catalog manage）。URL 已去掉 userinfo、query 与
+/// fragment。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpPeerPage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conformance_artifact_digest: Option<String>,
+
+    pub directory_available: bool,
+
+    pub peers: Vec<GatewayMcpPeerView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpPeerView {
+    pub adapter_service_ref: String,
+
+    pub artifact_digest: String,
+
+    pub binding_facts: Vec<GatewayMcpBindingFact>,
+
+    /// 部署一致性环境存在且其 artifactDigest 等于本条目。
+    pub conformance_ready: bool,
+
+    pub max_response_bytes: i64,
+
+    pub mcp_url: String,
+
+    pub native_instance_ref: String,
+
+    pub timeout_seconds: i64,
+}
+
+/// DD-98/134(5)⑥：交付目录中一条 binding 归属事实（运维域），不是授权；不含 secret。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpBindingFact {
+    pub binding_id: String,
+
+    /// 已有同 ID 的 ApplicationBinding。
+    pub bound: bool,
+
+    pub config_digest: String,
+
+    pub credential_keys: Vec<String>,
+
+    pub isolation_mode: ApplicationIsolationMode,
+
+    pub native_scope_ref: String,
+
+    pub service_principal_id: String,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-134(5)②：受控探测只接受交付目录条目引用，不接受 URL。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpProbeRequest {
+    pub adapter_service_ref: String,
+}
+
+/// DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
+/// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpProbeResult {
+    pub adapter_service_ref: String,
+
+    pub probed_at: String,
+
+    pub probe_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+
+    pub tools: Vec<GatewayMcpProbedTool>,
+
+    pub tool_schema_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpProbedTool {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_title: Option<String>,
+
+    pub input_schema_digest: String,
+
+    pub input_schema_json: String,
+
+    pub matching_contracts: Vec<GatewayMcpContractMatch>,
+
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema_digest: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema_json: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpContractMatch {
+    pub category_key: String,
+
+    pub contract_key: String,
+
+    pub contract_version: i64,
+
+    pub permission: CapabilityPermission,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityPermission {
+    Approve,
+
+    Audit,
+
+    Consume,
+
+    Create,
+
+    Delegate,
+
+    Delete,
+
+    Discover,
+
+    Execute,
+
+    Export,
+
+    Manage,
+
+    Read,
+
+    Share,
+
+    #[serde(rename = "transfer_owner")]
+    TransferOwner,
+
+    Update,
+}
+
+/// DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GatewayMcpReleasePage {
+    pub releases: Vec<GatewayMcpReleaseView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpReleaseView {
+    pub adapter_build_ref: String,
+
+    /// 交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_service_ref: Option<String>,
+
+    pub allowed_model_call_modes: Vec<ApplicationModelCallMode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_config_schema_json: Option<String>,
+
+    pub binding_ids: Vec<String>,
+
+    pub capability_categories: Vec<GatewayMcpReleaseCategory>,
+
+    pub component_release_id: String,
+
+    pub component_type_key: String,
+
+    pub delivery_facts: Vec<GatewayMcpBindingFact>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_instance_ref: Option<String>,
+
+    pub secret_keys: Vec<String>,
+
+    pub status: ComponentReleaseStatus,
+
+    pub tools: Vec<GatewayMcpReleaseTool>,
+
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplicationModelCallMode {
+    None,
+
+    #[serde(rename = "PLATFORM_LLM_ROUTE")]
+    PlatformLlmRoute,
+
+    #[serde(rename = "SELF_MANAGED_MODEL")]
+    SelfManagedModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GatewayMcpReleaseCategory {
+    pub category: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMcpReleaseTool {
+    pub action_key: String,
+
+    pub capability_contract_key: String,
+
+    pub name: String,
+}
+
+/// DD-134(7)：本 Tenant 的 llm_route Resource（按 discover 过滤）与时间窗用量；新建沿 llm_route.create，停用沿
+/// llm_route.disable。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayModelRoutePage {
+    pub can_create: bool,
+
+    pub from: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub routes: Vec<GatewayModelRouteView>,
+
+    pub to: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayModelRouteView {
+    pub binding_count: i64,
+
+    pub can_disable: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_workspace_id: Option<String>,
+
+    pub installation_count: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_p95_ms: Option<i64>,
+
+    pub native_id: String,
+
+    pub owner_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requests: Option<i64>,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<i64>,
+}
+
+/// DD-134(7)：Gateway 中已存在、尚未被 llm_route 引用的原生 provider 与 model ConfigResource（打码），供
+/// llm_route.create 选择；revision 与 sha256 为 Core 回读值。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GatewayModelSourcePage {
+    pub sources: Vec<GatewayModelSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayModelSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_required: Option<bool>,
+
+    pub model: ModelClass,
+
+    pub model_name: String,
+
+    pub provider: ProviderClass,
+
+    pub provider_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelClass {
+    pub id: String,
+
+    pub revision: i64,
+
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderClass {
+    pub id: String,
+
+    pub revision: i64,
+
+    pub sha256: String,
+}
+
+/// DD-134(3)：时间窗内按一个维度的聚合与时间桶。每次请求实时计算；扫描原始记录超出上限时 truncated=true，结果只基于已扫描部分。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayStats {
+    pub buckets: Vec<GatewayStatsBucket>,
+
+    pub bucket_seconds: i64,
+
+    pub dimension: GatewayStatsDimension,
+
+    pub from: String,
+
+    /// Gateway request log 是否可读；false 时模型调用计数缺失，不显示为零。
+    pub model_log_available: bool,
+
+    pub rows: Vec<GatewayStatsRow>,
+
+    pub scope: GatewayAdminScope,
+
+    pub to: String,
+
+    pub totals: GatewayStatsCounters,
+
+    pub truncated: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayStatsBucket {
+    pub denied: i64,
+
+    pub failed: i64,
+
+    pub requests: i64,
+
+    pub start: String,
+
+    pub total_tokens: i64,
+}
+
+/// DD-134(3)④：聚合维度。TOOL、AGENT、BINDING 只在 TENANT 范围可用；TENANT 只在 PLATFORM 范围可用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GatewayStatsDimension {
+    Agent,
+
+    Binding,
+
+    #[serde(rename = "MODEL_ROUTE")]
+    ModelRoute,
+
+    Tenant,
+
+    Tool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GatewayStatsRow {
+    pub counters: GatewayStatsCounters,
+
+    /// 维度键：llm_route Resource ID 或 Gateway route 名、Tool Resource ID、Installation Resource
+    /// ID、binding ID 或 Tenant ID；UNATTRIBUTED 为无法归属的记录。
+    pub key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<GatewayCallKind>,
+
+    /// 受权的展示名（工具名、Agent 名、模型名）；平台范围不含业务名称。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// DD-134(3)④：计数与分位数。错误率由呈现层按 failed/requests 计算；模型与工具时延分列，不混算。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayStatsCounters {
+    /// 模型调用：Gateway 日志已有而没有 durable UsageEvent 或已记 BILLING_UNAVAILABLE 审计的次数（14 §8）。
+    pub billing_unavailable: i64,
+
+    pub denied: i64,
+
+    pub failed: i64,
+
+    pub input_tokens: i64,
+
+    /// 模型调用 Gateway durationMs 的 P50；没有模型调用时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_p50_ms: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_p95_ms: Option<i64>,
+
+    pub output_tokens: i64,
+
+    pub requests: i64,
+
+    pub running: i64,
+
+    pub succeeded: i64,
+
+    /// 工具调用 Core 观测时延（INTENT 到 OUTCOME）的 P50；没有已终结工具调用时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_p50_ms: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_p95_ms: Option<i64>,
+
+    pub total_tokens: i64,
+
+    pub unknown: i64,
+}
+
+/// DD-134(6)：本 Tenant 的 PLATFORM_NATIVE 与 APPLICATION 工具（按 Tool Resource discover
+/// 过滤），附时间窗内调用统计。停用只作用于所属连接；PLATFORM_NATIVE 无启停入口。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayToolPage {
+    pub from: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub to: String,
+
+    pub tools: Vec<GatewayToolView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayToolView {
+    pub action_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_binding_version: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_state: Option<ApplicationBindingState>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binding_workspace_id: Option<String>,
+
+    pub can_disable_binding: bool,
+
+    /// 契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时
+    /// fresh 重做。
+    pub can_test_call: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_contract_key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_release_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_type_key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_permission: Option<CapabilityPermission>,
+
+    pub denied: i64,
+
+    pub failed: i64,
+
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_version: Option<String>,
+
+    pub requests: i64,
+
+    pub resource_id: String,
+
+    pub resource_state: ResourceState,
+
+    pub resource_version: i64,
+
+    pub source: AgentInstallationToolSource,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test_call: Option<GatewayToolTestCall>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_p95_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayToolTestCall {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    /// 契约固定的输入 schema（canonical JSON）。
+    pub input_schema_json: String,
+
+    pub result_exposure_policy_id: String,
+
+    pub result_exposure_policy_version: i64,
+
+    pub targets: Vec<GatewayToolTestTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayToolTestTarget {
+    pub display_name: String,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+/// DD-134(6)：网关管理区测试调用的同请求回应。submission 是该工具 ActionDefinition 的准入与派发结论；resultJson
+/// 只在本次调用已确定成功时出现，是经 ExtMcp 按冻结 ResultExposurePolicy 与输出 schema 过滤后的 canonical
+/// JSON，只回给发起人本人且 Core 不保存；toolError 为真表示原生工具返回了错误结果（不含正文）。结果不明时两者都缺省，ActionExecution 停在
+/// UNKNOWN，不重放。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayToolTestCallResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_json: Option<String>,
+
+    pub submission: ActionSubmission,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_error: Option<bool>,
+}
+
+/// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+/// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+/// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionSubmission {
+    pub action_execution_id: String,
+
+    pub action_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    pub dispatch_state: ActionDispatchState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_launch: Option<DocumentLaunchDescriptor>,
+
+    pub gate_state: ActionGateState,
+
+    /// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub huddle_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invitation: Option<IssuedInvitation>,
+
+    pub operation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_session_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<AutomationWebhookSecret>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+}
+
+/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuedInvitation {
+    /// RFC3339，UTC
+    pub expires_at: String,
+
+    pub invitation_id: String,
+
+    /// 部署登记的链接基址 + '#' + 一次性凭据
+    pub link: String,
+}
+
+/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationWebhookSecret {
+    pub automation_resource_id: String,
+
+    pub hint: String,
+
+    /// 32 字节随机密钥的 base64 展示形式。
+    pub secret: String,
+
+    /// 公开投递地址；部署未配置公开基址时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
 /// POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
 /// ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
 /// ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
@@ -6029,18 +7057,6 @@ pub struct ApplicationCapabilitySelection {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ApplicationModelCallMode {
-    None,
-
-    #[serde(rename = "PLATFORM_LLM_ROUTE")]
-    PlatformLlmRoute,
-
-    #[serde(rename = "SELF_MANAGED_MODEL")]
-    SelfManagedModel,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationBindingSecretRef {
     pub audience: String,
@@ -6122,39 +7138,6 @@ pub struct CapabilityContractRegistrationOperationContractsItem {
     pub surface: CapabilitySurface,
 
     pub target_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CapabilityPermission {
-    Approve,
-
-    Audit,
-
-    Consume,
-
-    Create,
-
-    Delegate,
-
-    Delete,
-
-    Discover,
-
-    Execute,
-
-    Export,
-
-    Manage,
-
-    Read,
-
-    Share,
-
-    #[serde(rename = "transfer_owner")]
-    TransferOwner,
-
-    Update,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6761,81 +7744,6 @@ pub struct NativeHumanActionResultReadAdmission {
     pub arguments_json: String,
 
     pub expires_at: i64,
-}
-
-/// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-/// 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
-/// 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
-/// automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ActionSubmission {
-    pub action_execution_id: String,
-
-    pub action_key: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub approval_workflow_id: Option<String>,
-
-    pub dispatch_state: ActionDispatchState,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub document_launch: Option<DocumentLaunchDescriptor>,
-
-    pub gate_state: ActionGateState,
-
-    /// 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huddle_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub invitation: Option<IssuedInvitation>,
-
-    pub operation_id: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub protocol_session_id: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<ReasonCode>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_secret: Option<AutomationWebhookSecret>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_id: Option<String>,
-}
-
-/// tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-/// 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssuedInvitation {
-    /// RFC3339，UTC
-    pub expires_at: String,
-
-    pub invitation_id: String,
-
-    /// 部署登记的链接基址 + '#' + 一次性凭据
-    pub link: String,
-}
-
-/// DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-/// AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-/// `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationWebhookSecret {
-    pub automation_resource_id: String,
-
-    pub hint: String,
-
-    /// 32 字节随机密钥的 base64 展示形式。
-    pub secret: String,
-
-    /// 公开投递地址；部署未配置公开基址时省略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
 }
 
 /// Current already-registered native Resource selected under the original HUMAN action

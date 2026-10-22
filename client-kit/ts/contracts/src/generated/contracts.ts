@@ -3640,6 +3640,666 @@ export interface FollowedPrincipalRequest {
 }
 
 /**
+ * DD-134(2)：本会话在网关管理区可用的分区。只决定入口与按钮是否呈现；每个查询与动作仍在 BFF fresh 授权，前端隐藏不构成授权。
+ */
+export interface GatewayAccess {
+    /**
+     * TENANT 范围：application_binding.create 的准入预评估（Tenant manage）。
+     */
+    canBindMcp: boolean;
+    /**
+     * llm_route.create 的准入预评估（Tenant create）。
+     */
+    canCreateModelRoute: boolean;
+    /**
+     * PLATFORM 范围：active HUMAN 且 Catalog Tenant manage（交付目录读取、受控探测、契约与 release 登记批准）。
+     */
+    canManageMcp: boolean;
+    /**
+     * PLATFORM 范围：Catalog Tenant audit。
+     */
+    canReadConfig: boolean;
+    /**
+     * TENANT 范围：Tenant discover。PLATFORM 范围恒为 false（平台只在实时配置中看到 route 的 Gateway 投影）。
+     */
+    canReadModelRoutes: boolean;
+    /**
+     * PLATFORM：Catalog Tenant audit；TENANT：Tenant audit（Workspace audit 只在选择该 Workspace 时生效）。
+     */
+    canReadStats: boolean;
+    /**
+     * TENANT 范围：Tenant discover。PLATFORM 范围恒为 false。
+     */
+    canReadTools: boolean;
+    scope:        GatewayAdminScope;
+    tenantId:     string;
+}
+
+/**
+ * DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
+ * 归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。
+ */
+export enum GatewayAdminScope {
+    Platform = "PLATFORM",
+    Tenant = "TENANT",
+}
+
+/**
+ * DD-134(3)⑤：单次调用下钻。TENANT 范围关联 ActionExecution 与同 operation 的 AuditEvent；PLATFORM 范围只有
+ * call。
+ */
+export interface GatewayCallDetail {
+    auditEvents: GatewayCallAuditEvent[];
+    call:        GatewayCallView;
+    execution?:  GatewayCallExecution;
+}
+
+export interface GatewayCallAuditEvent {
+    actionExecutionId?: string;
+    actionKey:          string;
+    decision:           string;
+    eventId:            string;
+    eventType:          AuditEventType;
+    occurredAt:         string;
+    resultCode:         string;
+}
+
+/**
+ * DD-134(3)⑤：一次模型或工具调用的元数据。不含 prompt 预览、turn、payload、工具参数或结果正文。PLATFORM 范围只填 Gateway 原生字段与
+ * tenantId。
+ */
+export interface GatewayCallView {
+    actionExecutionId?:           string;
+    agentInstallationResourceId?: string;
+    agentName?:                   string;
+    applicationBindingId?:        string;
+    /**
+     * MODEL 为 request log ID 前缀 model:，TOOL 为 ActionExecution ID 前缀 tool:。
+     */
+    callId:       string;
+    completedAt?: string;
+    durationMs?:  number;
+    httpStatus?:  number;
+    inputTokens?: number;
+    kind:         GatewayCallKind;
+    model?:       string;
+    /**
+     * Gateway 上的模型路由名（request log 的请求模型）。
+     */
+    modelRouteKey?:        string;
+    modelRouteResourceId?: string;
+    operationId?:          string;
+    outcome:               GatewayCallOutcome;
+    outputTokens?:         number;
+    provider?:             string;
+    reasonCode?:           ReasonCode;
+    requestLogId?:         string;
+    startedAt:             string;
+    tenantId?:             string;
+    toolName?:             string;
+    toolResourceId?:       string;
+    toolSource?:           AgentInstallationToolSource;
+    totalTokens?:          number;
+    traceId?:              string;
+    usageState?:           OperationUsageState;
+    workspaceId?:          string;
+}
+
+/**
+ * DD-134(3)：MODEL 取 Gateway request log（时延为 Gateway durationMs）；TOOL 取 Core 工具子
+ * ActionExecution 与审计（时延为 Core 观测的 INTENT 到 OUTCOME 间隔）。两者时延不混算。
+ */
+export enum GatewayCallKind {
+    Model = "MODEL",
+    Tool = "TOOL",
+}
+
+/**
+ * DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。
+ */
+export enum GatewayCallOutcome {
+    Denied = "DENIED",
+    Failed = "FAILED",
+    Running = "RUNNING",
+    Succeeded = "SUCCEEDED",
+    Unknown = "UNKNOWN",
+}
+
+export interface GatewayCallExecution {
+    actionExecutionId:        string;
+    actionKey:                string;
+    actionVersion:            number;
+    createdAt:                string;
+    dispatchState:            ActionDispatchState;
+    gateState:                ActionGateState;
+    operationId:              string;
+    parentActionExecutionId?: string;
+    reasonCode?:              ReasonCode;
+    updatedAt?:               string;
+}
+
+/**
+ * DD-134(3)：时间窗内的调用列表，按开始时间倒序；nextCursor 只在同一查询条件内继续。
+ */
+export interface GatewayCallPage {
+    calls:             GatewayCallView[];
+    modelLogAvailable: boolean;
+    nextCursor?:       string;
+    scope:             GatewayAdminScope;
+    truncated:         boolean;
+}
+
+/**
+ * DD-134(3)⑥：一个 ConfigResource 的 Core 写入证据（打码后的值）与相邻已记录 revision 之间的差异；当前 revision 没有证据时
+ * currentSource=UNRECORDED。
+ */
+export interface GatewayConfigHistory {
+    currentRevision?: number;
+    currentSource:    GatewayConfigRevisionSource;
+    id:               string;
+    kind:             string;
+    revisions:        GatewayConfigRevisionView[];
+}
+
+/**
+ * DD-134(3)⑥：CORE_RECORDED 表示 Core 写入并回读确认时保存了该 revision 的写入证据；UNRECORDED 表示外部写入或早于写入证据，按
+ * 17 §9 作为投影不一致信号，不反向导入。
+ */
+export enum GatewayConfigRevisionSource {
+    CoreRecorded = "CORE_RECORDED",
+    Unrecorded = "UNRECORDED",
+}
+
+export interface GatewayConfigRevisionView {
+    actionExecutionId?: string;
+    actionKey?:         string;
+    changes:            GatewayConfigChange[];
+    deleted:            boolean;
+    operationId?:       string;
+    recordedAt:         string;
+    revision:           number;
+    valueDigest:        string;
+    valueJson:          string;
+}
+
+export interface GatewayConfigChange {
+    afterJson?:  string;
+    beforeJson?: string;
+    change:      GatewayConfigChangeKind;
+    /**
+     * RFC 6901 JSON pointer。
+     */
+    path: string;
+}
+
+/**
+ * DD-134(3)⑥：打码后的值在相邻两个已记录 revision 之间按 JSON 路径的差异。
+ */
+export enum GatewayConfigChangeKind {
+    Added = "ADDED",
+    Changed = "CHANGED",
+    Removed = "REMOVED",
+}
+
+/**
+ * DD-134(3)⑥(4)：Gateway effective config 与 ConfigResource 当前值，均已在 Core 打码；只读。
+ */
+export interface GatewayConfigView {
+    effectiveConfigJson: string;
+    readAt:              string;
+    resources:           GatewayConfigResourceView[];
+}
+
+export interface GatewayConfigResourceView {
+    actionExecutionId?: string;
+    actionKey?:         string;
+    id:                 string;
+    kind:               string;
+    operationId?:       string;
+    revision:           number;
+    source:             GatewayConfigRevisionSource;
+    updatedAt?:         string;
+    valueJson:          string;
+}
+
+/**
+ * DD-134(5)⑥：需由运维加入交付目录 protocolPeers[].bindings 的条目（不含 secret）；Core 回读到同 bindingId 的条目后才放行
+ * application_binding.create。
+ */
+export interface GatewayMcpBindingDraft {
+    adapterServiceRef:  string;
+    bindingId:          string;
+    configDigest:       string;
+    directoryEntryJson: string;
+    servicePrincipalId: string;
+}
+
+/**
+ * DD-134(5)⑥：为尚无交付归属事实的连接生成目录条目草稿；纯计算，不写任何状态。
+ */
+export interface GatewayMcpBindingDraftRequest {
+    componentReleaseId:   string;
+    isolationMode:        ApplicationIsolationMode;
+    nativeScopeRef:       string;
+    normalizedConfigJson: string;
+    workspaceId?:         string;
+}
+
+/**
+ * DD-134(5)①：部署交付目录的 protocolPeers 与一致性环境（只读，Catalog manage）。URL 已去掉 userinfo、query 与
+ * fragment。
+ */
+export interface GatewayMcpPeerPage {
+    conformanceArtifactDigest?: string;
+    directoryAvailable:         boolean;
+    peers:                      GatewayMcpPeerView[];
+}
+
+export interface GatewayMcpPeerView {
+    adapterServiceRef: string;
+    artifactDigest:    string;
+    bindingFacts:      GatewayMcpBindingFact[];
+    /**
+     * 部署一致性环境存在且其 artifactDigest 等于本条目。
+     */
+    conformanceReady:  boolean;
+    maxResponseBytes:  number;
+    mcpUrl:            string;
+    nativeInstanceRef: string;
+    timeoutSeconds:    number;
+}
+
+/**
+ * DD-98/134(5)⑥：交付目录中一条 binding 归属事实（运维域），不是授权；不含 secret。
+ */
+export interface GatewayMcpBindingFact {
+    bindingId: string;
+    /**
+     * 已有同 ID 的 ApplicationBinding。
+     */
+    bound:              boolean;
+    configDigest:       string;
+    credentialKeys:     string[];
+    isolationMode:      ApplicationIsolationMode;
+    nativeScopeRef:     string;
+    servicePrincipalId: string;
+    tenantId:           string;
+    workspaceId?:       string;
+}
+
+/**
+ * DD-134(5)②：受控探测只接受交付目录条目引用，不接受 URL。
+ */
+export interface GatewayMcpProbeRequest {
+    adapterServiceRef: string;
+}
+
+/**
+ * DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
+ * 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+ */
+export interface GatewayMcpProbeResult {
+    adapterServiceRef: string;
+    probedAt:          string;
+    probeId:           string;
+    protocolVersion?:  string;
+    serverName?:       string;
+    serverVersion?:    string;
+    tools:             GatewayMcpProbedTool[];
+    toolSchemaDigest:  string;
+}
+
+export interface GatewayMcpProbedTool {
+    description?:        string;
+    displayTitle?:       string;
+    inputSchemaDigest:   string;
+    inputSchemaJson:     string;
+    matchingContracts:   GatewayMcpContractMatch[];
+    name:                string;
+    outputSchemaDigest?: string;
+    outputSchemaJson?:   string;
+    readOnlyHint?:       boolean;
+}
+
+export interface GatewayMcpContractMatch {
+    categoryKey:     string;
+    contractKey:     string;
+    contractVersion: number;
+    permission:      CapabilityPermission;
+}
+
+export enum CapabilityPermission {
+    Approve = "approve",
+    Audit = "audit",
+    Consume = "consume",
+    Create = "create",
+    Delegate = "delegate",
+    Delete = "delete",
+    Discover = "discover",
+    Execute = "execute",
+    Export = "export",
+    Manage = "manage",
+    Read = "read",
+    Share = "share",
+    TransferOwner = "transfer_owner",
+    Update = "update",
+}
+
+/**
+ * DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。
+ */
+export interface GatewayMcpReleasePage {
+    releases: GatewayMcpReleaseView[];
+}
+
+export interface GatewayMcpReleaseView {
+    adapterBuildRef: string;
+    /**
+     * 交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。
+     */
+    adapterServiceRef?:       string;
+    allowedModelCallModes:    ApplicationModelCallMode[];
+    bindingConfigSchemaJson?: string;
+    bindingIds:               string[];
+    capabilityCategories:     GatewayMcpReleaseCategory[];
+    componentReleaseId:       string;
+    componentTypeKey:         string;
+    deliveryFacts:            GatewayMcpBindingFact[];
+    nativeInstanceRef?:       string;
+    secretKeys:               string[];
+    status:                   ComponentReleaseStatus;
+    tools:                    GatewayMcpReleaseTool[];
+    version:                  string;
+}
+
+export enum ApplicationModelCallMode {
+    None = "NONE",
+    PlatformLlmRoute = "PLATFORM_LLM_ROUTE",
+    SelfManagedModel = "SELF_MANAGED_MODEL",
+}
+
+export interface GatewayMcpReleaseCategory {
+    category: string;
+    version:  number;
+}
+
+export interface GatewayMcpReleaseTool {
+    actionKey:             string;
+    capabilityContractKey: string;
+    name:                  string;
+}
+
+/**
+ * DD-134(7)：本 Tenant 的 llm_route Resource（按 discover 过滤）与时间窗用量；新建沿 llm_route.create，停用沿
+ * llm_route.disable。
+ */
+export interface GatewayModelRoutePage {
+    canCreate:   boolean;
+    from:        string;
+    nextOffset?: number;
+    routes:      GatewayModelRouteView[];
+    to:          string;
+}
+
+export interface GatewayModelRouteView {
+    bindingCount:      number;
+    canDisable:        boolean;
+    failed?:           number;
+    homeWorkspaceId?:  string;
+    installationCount: number;
+    model?:            string;
+    modelP95Ms?:       number;
+    nativeId:          string;
+    ownerPrincipalId:  string;
+    provider?:         string;
+    requests?:         number;
+    resourceId:        string;
+    resourceState:     ResourceState;
+    resourceVersion:   number;
+    totalTokens?:      number;
+}
+
+/**
+ * DD-134(7)：Gateway 中已存在、尚未被 llm_route 引用的原生 provider 与 model ConfigResource（打码），供
+ * llm_route.create 选择；revision 与 sha256 为 Core 回读值。
+ */
+export interface GatewayModelSourcePage {
+    sources: GatewayModelSource[];
+}
+
+export interface GatewayModelSource {
+    credentialRequired?: boolean;
+    model:               ModelClass;
+    modelName:           string;
+    provider:            ProviderClass;
+    providerType:        string;
+}
+
+export interface ModelClass {
+    id:       string;
+    revision: number;
+    sha256:   string;
+}
+
+export interface ProviderClass {
+    id:       string;
+    revision: number;
+    sha256:   string;
+}
+
+/**
+ * DD-134(3)：时间窗内按一个维度的聚合与时间桶。每次请求实时计算；扫描原始记录超出上限时 truncated=true，结果只基于已扫描部分。
+ */
+export interface GatewayStats {
+    buckets:       GatewayStatsBucket[];
+    bucketSeconds: number;
+    dimension:     GatewayStatsDimension;
+    from:          string;
+    /**
+     * Gateway request log 是否可读；false 时模型调用计数缺失，不显示为零。
+     */
+    modelLogAvailable: boolean;
+    rows:              GatewayStatsRow[];
+    scope:             GatewayAdminScope;
+    to:                string;
+    totals:            GatewayStatsCounters;
+    truncated:         boolean;
+    workspaceId?:      string;
+}
+
+export interface GatewayStatsBucket {
+    denied:      number;
+    failed:      number;
+    requests:    number;
+    start:       string;
+    totalTokens: number;
+}
+
+/**
+ * DD-134(3)④：聚合维度。TOOL、AGENT、BINDING 只在 TENANT 范围可用；TENANT 只在 PLATFORM 范围可用。
+ */
+export enum GatewayStatsDimension {
+    Agent = "AGENT",
+    Binding = "BINDING",
+    ModelRoute = "MODEL_ROUTE",
+    Tenant = "TENANT",
+    Tool = "TOOL",
+}
+
+export interface GatewayStatsRow {
+    counters: GatewayStatsCounters;
+    /**
+     * 维度键：llm_route Resource ID 或 Gateway route 名、Tool Resource ID、Installation Resource
+     * ID、binding ID 或 Tenant ID；UNATTRIBUTED 为无法归属的记录。
+     */
+    key:   string;
+    kind?: GatewayCallKind;
+    /**
+     * 受权的展示名（工具名、Agent 名、模型名）；平台范围不含业务名称。
+     */
+    label?: string;
+}
+
+/**
+ * DD-134(3)④：计数与分位数。错误率由呈现层按 failed/requests 计算；模型与工具时延分列，不混算。
+ */
+export interface GatewayStatsCounters {
+    /**
+     * 模型调用：Gateway 日志已有而没有 durable UsageEvent 或已记 BILLING_UNAVAILABLE 审计的次数（14 §8）。
+     */
+    billingUnavailable: number;
+    denied:             number;
+    failed:             number;
+    inputTokens:        number;
+    /**
+     * 模型调用 Gateway durationMs 的 P50；没有模型调用时省略。
+     */
+    modelP50Ms?:  number;
+    modelP95Ms?:  number;
+    outputTokens: number;
+    requests:     number;
+    running:      number;
+    succeeded:    number;
+    /**
+     * 工具调用 Core 观测时延（INTENT 到 OUTCOME）的 P50；没有已终结工具调用时省略。
+     */
+    toolP50Ms?:  number;
+    toolP95Ms?:  number;
+    totalTokens: number;
+    unknown:     number;
+}
+
+/**
+ * DD-134(6)：本 Tenant 的 PLATFORM_NATIVE 与 APPLICATION 工具（按 Tool Resource discover
+ * 过滤），附时间窗内调用统计。停用只作用于所属连接；PLATFORM_NATIVE 无启停入口。
+ */
+export interface GatewayToolPage {
+    from:        string;
+    nextOffset?: number;
+    to:          string;
+    tools:       GatewayToolView[];
+}
+
+export interface GatewayToolView {
+    actionKey:                  string;
+    applicationBindingId?:      string;
+    applicationBindingVersion?: number;
+    bindingState?:              ApplicationBindingState;
+    bindingWorkspaceId?:        string;
+    canDisableBinding:          boolean;
+    /**
+     * 契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时
+     * fresh 重做。
+     */
+    canTestCall:            boolean;
+    capabilityContractKey?: string;
+    componentReleaseId?:    string;
+    componentTypeKey?:      string;
+    contractPermission?:    CapabilityPermission;
+    denied:                 number;
+    failed:                 number;
+    name:                   string;
+    releaseVersion?:        string;
+    requests:               number;
+    resourceId:             string;
+    resourceState:          ResourceState;
+    resourceVersion:        number;
+    source:                 AgentInstallationToolSource;
+    testCall?:              GatewayToolTestCall;
+    toolP95Ms?:             number;
+}
+
+export interface GatewayToolTestCall {
+    actionKey:     string;
+    actionVersion: number;
+    /**
+     * 契约固定的输入 schema（canonical JSON）。
+     */
+    inputSchemaJson:             string;
+    resultExposurePolicyId:      string;
+    resultExposurePolicyVersion: number;
+    targets:                     GatewayToolTestTarget[];
+}
+
+export interface GatewayToolTestTarget {
+    displayName:     string;
+    resourceId:      string;
+    resourceVersion: number;
+    workspaceId?:    string;
+}
+
+/**
+ * DD-134(6)：网关管理区测试调用的同请求回应。submission 是该工具 ActionDefinition 的准入与派发结论；resultJson
+ * 只在本次调用已确定成功时出现，是经 ExtMcp 按冻结 ResultExposurePolicy 与输出 schema 过滤后的 canonical
+ * JSON，只回给发起人本人且 Core 不保存；toolError 为真表示原生工具返回了错误结果（不含正文）。结果不明时两者都缺省，ActionExecution 停在
+ * UNKNOWN，不重放。
+ */
+export interface GatewayToolTestCallResult {
+    resultJson?: string;
+    submission:  ActionSubmission;
+    toolError?:  boolean;
+}
+
+/**
+ * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+ * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+ * 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+ * automation.rotate_webhook_secret 首次回应中出现（DD-116）。
+ */
+export interface ActionSubmission {
+    actionExecutionId:   string;
+    actionKey:           string;
+    approvalWorkflowId?: string;
+    dispatchState:       ActionDispatchState;
+    documentLaunch?:     DocumentLaunchDescriptor;
+    gateState:           ActionGateState;
+    /**
+     * 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+     */
+    huddleId?:          string;
+    invitation?:        IssuedInvitation;
+    operationId:        string;
+    protocolSessionId?: string;
+    reason?:            ReasonCode;
+    webhookSecret?:     AutomationWebhookSecret;
+    workflowId?:        string;
+}
+
+/**
+ * tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+ * 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+ */
+export interface IssuedInvitation {
+    /**
+     * RFC3339，UTC
+     */
+    expiresAt:    string;
+    invitationId: string;
+    /**
+     * 部署登记的链接基址 + '#' + 一次性凭据
+     */
+    link: string;
+}
+
+/**
+ * DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+ * AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+ * `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+ */
+export interface AutomationWebhookSecret {
+    automationResourceId: string;
+    hint:                 string;
+    /**
+     * 32 字节随机密钥的 base64 展示形式。
+     */
+    secret: string;
+    /**
+     * 公开投递地址；部署未配置公开基址时省略。
+     */
+    url?: string;
+}
+
+/**
  * POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
  * ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
  * ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
@@ -4293,12 +4953,6 @@ export interface ApplicationCapabilitySelection {
     version:  number;
 }
 
-export enum ApplicationModelCallMode {
-    None = "NONE",
-    PlatformLlmRoute = "PLATFORM_LLM_ROUTE",
-    SelfManagedModel = "SELF_MANAGED_MODEL",
-}
-
 export interface ApplicationBindingSecretRef {
     audience:  string;
     locator:   string;
@@ -4355,23 +5009,6 @@ export interface CapabilityContractRegistrationOperationContractsItem {
     permission:         CapabilityPermission;
     surface:            CapabilitySurface;
     targetType:         string;
-}
-
-export enum CapabilityPermission {
-    Approve = "approve",
-    Audit = "audit",
-    Consume = "consume",
-    Create = "create",
-    Delegate = "delegate",
-    Delete = "delete",
-    Discover = "discover",
-    Execute = "execute",
-    Export = "export",
-    Manage = "manage",
-    Read = "read",
-    Share = "share",
-    TransferOwner = "transfer_owner",
-    Update = "update",
 }
 
 export enum CapabilitySurface {
@@ -4882,65 +5519,6 @@ export interface NativeHumanActionResultReadAdmission {
     actionToken:   string;
     argumentsJson: string;
     expiresAt:     number;
-}
-
-/**
- * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
- * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
- * 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
- * automation.rotate_webhook_secret 首次回应中出现（DD-116）。
- */
-export interface ActionSubmission {
-    actionExecutionId:   string;
-    actionKey:           string;
-    approvalWorkflowId?: string;
-    dispatchState:       ActionDispatchState;
-    documentLaunch?:     DocumentLaunchDescriptor;
-    gateState:           ActionGateState;
-    /**
-     * 仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-     */
-    huddleId?:          string;
-    invitation?:        IssuedInvitation;
-    operationId:        string;
-    protocolSessionId?: string;
-    reason?:            ReasonCode;
-    webhookSecret?:     AutomationWebhookSecret;
-    workflowId?:        string;
-}
-
-/**
- * tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
- * 里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
- */
-export interface IssuedInvitation {
-    /**
-     * RFC3339，UTC
-     */
-    expiresAt:    string;
-    invitationId: string;
-    /**
-     * 部署登记的链接基址 + '#' + 一次性凭据
-     */
-    link: string;
-}
-
-/**
- * DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
- * AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
- * `{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
- */
-export interface AutomationWebhookSecret {
-    automationResourceId: string;
-    hint:                 string;
-    /**
-     * 32 字节随机密钥的 base64 展示形式。
-     */
-    secret: string;
-    /**
-     * 公开投递地址；部署未配置公开基址时省略。
-     */
-    url?: string;
 }
 
 /**

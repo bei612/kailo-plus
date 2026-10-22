@@ -122,6 +122,25 @@
 //     final discoverableWorkspacePage = discoverableWorkspacePageFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final followedPrincipalRequest = followedPrincipalRequestFromJson(jsonString);
+//     final gatewayAccess = gatewayAccessFromJson(jsonString);
+//     final gatewayCallDetail = gatewayCallDetailFromJson(jsonString);
+//     final gatewayCallPage = gatewayCallPageFromJson(jsonString);
+//     final gatewayCallView = gatewayCallViewFromJson(jsonString);
+//     final gatewayConfigHistory = gatewayConfigHistoryFromJson(jsonString);
+//     final gatewayConfigView = gatewayConfigViewFromJson(jsonString);
+//     final gatewayMcpBindingDraft = gatewayMcpBindingDraftFromJson(jsonString);
+//     final gatewayMcpBindingDraftRequest = gatewayMcpBindingDraftRequestFromJson(jsonString);
+//     final gatewayMcpBindingFact = gatewayMcpBindingFactFromJson(jsonString);
+//     final gatewayMcpPeerPage = gatewayMcpPeerPageFromJson(jsonString);
+//     final gatewayMcpProbeRequest = gatewayMcpProbeRequestFromJson(jsonString);
+//     final gatewayMcpProbeResult = gatewayMcpProbeResultFromJson(jsonString);
+//     final gatewayMcpReleasePage = gatewayMcpReleasePageFromJson(jsonString);
+//     final gatewayModelRoutePage = gatewayModelRoutePageFromJson(jsonString);
+//     final gatewayModelSourcePage = gatewayModelSourcePageFromJson(jsonString);
+//     final gatewayStats = gatewayStatsFromJson(jsonString);
+//     final gatewayStatsCounters = gatewayStatsCountersFromJson(jsonString);
+//     final gatewayToolPage = gatewayToolPageFromJson(jsonString);
+//     final gatewayToolTestCallResult = gatewayToolTestCallResultFromJson(jsonString);
 //     final huddleAnnouncementView = huddleAnnouncementViewFromJson(jsonString);
 //     final huddleLifecycleEvent = huddleLifecycleEventFromJson(jsonString);
 //     final huddleLifecyclePage = huddleLifecyclePageFromJson(jsonString);
@@ -1083,6 +1102,120 @@ FollowedPrincipalRequest followedPrincipalRequestFromJson(String str) =>
     FollowedPrincipalRequest.fromJson(json.decode(str));
 
 String followedPrincipalRequestToJson(FollowedPrincipalRequest data) =>
+    json.encode(data.toJson());
+
+GatewayAccess gatewayAccessFromJson(String str) =>
+    GatewayAccess.fromJson(json.decode(str));
+
+String gatewayAccessToJson(GatewayAccess data) => json.encode(data.toJson());
+
+GatewayCallDetail gatewayCallDetailFromJson(String str) =>
+    GatewayCallDetail.fromJson(json.decode(str));
+
+String gatewayCallDetailToJson(GatewayCallDetail data) =>
+    json.encode(data.toJson());
+
+GatewayCallPage gatewayCallPageFromJson(String str) =>
+    GatewayCallPage.fromJson(json.decode(str));
+
+String gatewayCallPageToJson(GatewayCallPage data) =>
+    json.encode(data.toJson());
+
+GatewayCallView gatewayCallViewFromJson(String str) =>
+    GatewayCallView.fromJson(json.decode(str));
+
+String gatewayCallViewToJson(GatewayCallView data) =>
+    json.encode(data.toJson());
+
+GatewayConfigHistory gatewayConfigHistoryFromJson(String str) =>
+    GatewayConfigHistory.fromJson(json.decode(str));
+
+String gatewayConfigHistoryToJson(GatewayConfigHistory data) =>
+    json.encode(data.toJson());
+
+GatewayConfigView gatewayConfigViewFromJson(String str) =>
+    GatewayConfigView.fromJson(json.decode(str));
+
+String gatewayConfigViewToJson(GatewayConfigView data) =>
+    json.encode(data.toJson());
+
+GatewayMcpBindingDraft gatewayMcpBindingDraftFromJson(String str) =>
+    GatewayMcpBindingDraft.fromJson(json.decode(str));
+
+String gatewayMcpBindingDraftToJson(GatewayMcpBindingDraft data) =>
+    json.encode(data.toJson());
+
+GatewayMcpBindingDraftRequest gatewayMcpBindingDraftRequestFromJson(
+  String str,
+) => GatewayMcpBindingDraftRequest.fromJson(json.decode(str));
+
+String gatewayMcpBindingDraftRequestToJson(
+  GatewayMcpBindingDraftRequest data,
+) => json.encode(data.toJson());
+
+GatewayMcpBindingFact gatewayMcpBindingFactFromJson(String str) =>
+    GatewayMcpBindingFact.fromJson(json.decode(str));
+
+String gatewayMcpBindingFactToJson(GatewayMcpBindingFact data) =>
+    json.encode(data.toJson());
+
+GatewayMcpPeerPage gatewayMcpPeerPageFromJson(String str) =>
+    GatewayMcpPeerPage.fromJson(json.decode(str));
+
+String gatewayMcpPeerPageToJson(GatewayMcpPeerPage data) =>
+    json.encode(data.toJson());
+
+GatewayMcpProbeRequest gatewayMcpProbeRequestFromJson(String str) =>
+    GatewayMcpProbeRequest.fromJson(json.decode(str));
+
+String gatewayMcpProbeRequestToJson(GatewayMcpProbeRequest data) =>
+    json.encode(data.toJson());
+
+GatewayMcpProbeResult gatewayMcpProbeResultFromJson(String str) =>
+    GatewayMcpProbeResult.fromJson(json.decode(str));
+
+String gatewayMcpProbeResultToJson(GatewayMcpProbeResult data) =>
+    json.encode(data.toJson());
+
+GatewayMcpReleasePage gatewayMcpReleasePageFromJson(String str) =>
+    GatewayMcpReleasePage.fromJson(json.decode(str));
+
+String gatewayMcpReleasePageToJson(GatewayMcpReleasePage data) =>
+    json.encode(data.toJson());
+
+GatewayModelRoutePage gatewayModelRoutePageFromJson(String str) =>
+    GatewayModelRoutePage.fromJson(json.decode(str));
+
+String gatewayModelRoutePageToJson(GatewayModelRoutePage data) =>
+    json.encode(data.toJson());
+
+GatewayModelSourcePage gatewayModelSourcePageFromJson(String str) =>
+    GatewayModelSourcePage.fromJson(json.decode(str));
+
+String gatewayModelSourcePageToJson(GatewayModelSourcePage data) =>
+    json.encode(data.toJson());
+
+GatewayStats gatewayStatsFromJson(String str) =>
+    GatewayStats.fromJson(json.decode(str));
+
+String gatewayStatsToJson(GatewayStats data) => json.encode(data.toJson());
+
+GatewayStatsCounters gatewayStatsCountersFromJson(String str) =>
+    GatewayStatsCounters.fromJson(json.decode(str));
+
+String gatewayStatsCountersToJson(GatewayStatsCounters data) =>
+    json.encode(data.toJson());
+
+GatewayToolPage gatewayToolPageFromJson(String str) =>
+    GatewayToolPage.fromJson(json.decode(str));
+
+String gatewayToolPageToJson(GatewayToolPage data) =>
+    json.encode(data.toJson());
+
+GatewayToolTestCallResult gatewayToolTestCallResultFromJson(String str) =>
+    GatewayToolTestCallResult.fromJson(json.decode(str));
+
+String gatewayToolTestCallResultToJson(GatewayToolTestCallResult data) =>
     json.encode(data.toJson());
 
 HuddleAnnouncementView huddleAnnouncementViewFromJson(String str) =>
@@ -11119,6 +11252,1955 @@ class FollowedPrincipalRequest {
       _stripNulls({"followed": followed, "pubkey": pubkey, "version": version});
 }
 
+///DD-134(2)：本会话在网关管理区可用的分区。只决定入口与按钮是否呈现；每个查询与动作仍在 BFF fresh 授权，前端隐藏不构成授权。
+class GatewayAccess {
+  ///TENANT 范围：application_binding.create 的准入预评估（Tenant manage）。
+  final bool canBindMcp;
+
+  ///llm_route.create 的准入预评估（Tenant create）。
+  final bool canCreateModelRoute;
+
+  ///PLATFORM 范围：active HUMAN 且 Catalog Tenant manage（交付目录读取、受控探测、契约与 release 登记批准）。
+  final bool canManageMcp;
+
+  ///PLATFORM 范围：Catalog Tenant audit。
+  final bool canReadConfig;
+
+  ///TENANT 范围：Tenant discover。PLATFORM 范围恒为 false（平台只在实时配置中看到 route 的 Gateway 投影）。
+  final bool canReadModelRoutes;
+
+  ///PLATFORM：Catalog Tenant audit；TENANT：Tenant audit（Workspace audit 只在选择该 Workspace 时生效）。
+  final bool canReadStats;
+
+  ///TENANT 范围：Tenant discover。PLATFORM 范围恒为 false。
+  final bool canReadTools;
+  final GatewayAdminScope scope;
+  final String tenantId;
+
+  GatewayAccess({
+    required this.canBindMcp,
+    required this.canCreateModelRoute,
+    required this.canManageMcp,
+    required this.canReadConfig,
+    required this.canReadModelRoutes,
+    required this.canReadStats,
+    required this.canReadTools,
+    required this.scope,
+    required this.tenantId,
+  });
+
+  factory GatewayAccess.fromJson(Map<String, dynamic> json) => GatewayAccess(
+    canBindMcp: json["canBindMcp"],
+    canCreateModelRoute: json["canCreateModelRoute"],
+    canManageMcp: json["canManageMcp"],
+    canReadConfig: json["canReadConfig"],
+    canReadModelRoutes: json["canReadModelRoutes"],
+    canReadStats: json["canReadStats"],
+    canReadTools: json["canReadTools"],
+    scope: gatewayAdminScopeValues.map[json["scope"]]!,
+    tenantId: json["tenantId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canBindMcp": canBindMcp,
+    "canCreateModelRoute": canCreateModelRoute,
+    "canManageMcp": canManageMcp,
+    "canReadConfig": canReadConfig,
+    "canReadModelRoutes": canReadModelRoutes,
+    "canReadStats": canReadStats,
+    "canReadTools": canReadTools,
+    "scope": gatewayAdminScopeValues.reverse[scope],
+    "tenantId": tenantId,
+  });
+}
+
+///DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant
+///归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。
+enum GatewayAdminScope { PLATFORM, TENANT }
+
+final gatewayAdminScopeValues = EnumValues({
+  "PLATFORM": GatewayAdminScope.PLATFORM,
+  "TENANT": GatewayAdminScope.TENANT,
+});
+
+///DD-134(3)⑤：单次调用下钻。TENANT 范围关联 ActionExecution 与同 operation 的 AuditEvent；PLATFORM 范围只有
+///call。
+class GatewayCallDetail {
+  final List<GatewayCallAuditEvent> auditEvents;
+  final GatewayCallView call;
+  final GatewayCallExecution? execution;
+
+  GatewayCallDetail({
+    required this.auditEvents,
+    required this.call,
+    this.execution,
+  });
+
+  factory GatewayCallDetail.fromJson(Map<String, dynamic> json) =>
+      GatewayCallDetail(
+        auditEvents: List<GatewayCallAuditEvent>.from(
+          json["auditEvents"].map((x) => GatewayCallAuditEvent.fromJson(x)),
+        ),
+        call: GatewayCallView.fromJson(json["call"]),
+        execution: json["execution"] == null
+            ? null
+            : GatewayCallExecution.fromJson(json["execution"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "auditEvents": List<dynamic>.from(auditEvents.map((x) => x.toJson())),
+    "call": call.toJson(),
+    "execution": execution?.toJson(),
+  });
+}
+
+class GatewayCallAuditEvent {
+  final String? actionExecutionId;
+  final String actionKey;
+  final String decision;
+  final String eventId;
+  final AuditEventType eventType;
+  final String occurredAt;
+  final String resultCode;
+
+  GatewayCallAuditEvent({
+    this.actionExecutionId,
+    required this.actionKey,
+    required this.decision,
+    required this.eventId,
+    required this.eventType,
+    required this.occurredAt,
+    required this.resultCode,
+  });
+
+  factory GatewayCallAuditEvent.fromJson(Map<String, dynamic> json) =>
+      GatewayCallAuditEvent(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        decision: json["decision"],
+        eventId: json["eventId"],
+        eventType: auditEventTypeValues.map[json["eventType"]]!,
+        occurredAt: json["occurredAt"],
+        resultCode: json["resultCode"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "decision": decision,
+    "eventId": eventId,
+    "eventType": auditEventTypeValues.reverse[eventType],
+    "occurredAt": occurredAt,
+    "resultCode": resultCode,
+  });
+}
+
+///DD-134(3)⑤：一次模型或工具调用的元数据。不含 prompt 预览、turn、payload、工具参数或结果正文。PLATFORM 范围只填 Gateway 原生字段与
+///tenantId。
+class GatewayCallView {
+  final String? actionExecutionId;
+  final String? agentInstallationResourceId;
+  final String? agentName;
+  final String? applicationBindingId;
+
+  ///MODEL 为 request log ID 前缀 model:，TOOL 为 ActionExecution ID 前缀 tool:。
+  final String callId;
+  final String? completedAt;
+  final int? durationMs;
+  final int? httpStatus;
+  final int? inputTokens;
+  final GatewayCallKind kind;
+  final String? model;
+
+  ///Gateway 上的模型路由名（request log 的请求模型）。
+  final String? modelRouteKey;
+  final String? modelRouteResourceId;
+  final String? operationId;
+  final GatewayCallOutcome outcome;
+  final int? outputTokens;
+  final String? provider;
+  final ReasonCode? reasonCode;
+  final String? requestLogId;
+  final String startedAt;
+  final String? tenantId;
+  final String? toolName;
+  final String? toolResourceId;
+  final AgentInstallationToolSource? toolSource;
+  final int? totalTokens;
+  final String? traceId;
+  final OperationUsageState? usageState;
+  final String? workspaceId;
+
+  GatewayCallView({
+    this.actionExecutionId,
+    this.agentInstallationResourceId,
+    this.agentName,
+    this.applicationBindingId,
+    required this.callId,
+    this.completedAt,
+    this.durationMs,
+    this.httpStatus,
+    this.inputTokens,
+    required this.kind,
+    this.model,
+    this.modelRouteKey,
+    this.modelRouteResourceId,
+    this.operationId,
+    required this.outcome,
+    this.outputTokens,
+    this.provider,
+    this.reasonCode,
+    this.requestLogId,
+    required this.startedAt,
+    this.tenantId,
+    this.toolName,
+    this.toolResourceId,
+    this.toolSource,
+    this.totalTokens,
+    this.traceId,
+    this.usageState,
+    this.workspaceId,
+  });
+
+  factory GatewayCallView.fromJson(Map<String, dynamic> json) =>
+      GatewayCallView(
+        actionExecutionId: json["actionExecutionId"],
+        agentInstallationResourceId: json["agentInstallationResourceId"],
+        agentName: json["agentName"],
+        applicationBindingId: json["applicationBindingId"],
+        callId: json["callId"],
+        completedAt: json["completedAt"],
+        durationMs: json["durationMs"],
+        httpStatus: json["httpStatus"],
+        inputTokens: json["inputTokens"],
+        kind: gatewayCallKindValues.map[json["kind"]]!,
+        model: json["model"],
+        modelRouteKey: json["modelRouteKey"],
+        modelRouteResourceId: json["modelRouteResourceId"],
+        operationId: json["operationId"],
+        outcome: gatewayCallOutcomeValues.map[json["outcome"]]!,
+        outputTokens: json["outputTokens"],
+        provider: json["provider"],
+        reasonCode: json["reasonCode"] == null
+            ? null
+            : reasonCodeValues.map[json["reasonCode"]]!,
+        requestLogId: json["requestLogId"],
+        startedAt: json["startedAt"],
+        tenantId: json["tenantId"],
+        toolName: json["toolName"],
+        toolResourceId: json["toolResourceId"],
+        toolSource: json["toolSource"] == null
+            ? null
+            : agentInstallationToolSourceValues.map[json["toolSource"]]!,
+        totalTokens: json["totalTokens"],
+        traceId: json["traceId"],
+        usageState: json["usageState"] == null
+            ? null
+            : operationUsageStateValues.map[json["usageState"]]!,
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "agentInstallationResourceId": agentInstallationResourceId,
+    "agentName": agentName,
+    "applicationBindingId": applicationBindingId,
+    "callId": callId,
+    "completedAt": completedAt,
+    "durationMs": durationMs,
+    "httpStatus": httpStatus,
+    "inputTokens": inputTokens,
+    "kind": gatewayCallKindValues.reverse[kind],
+    "model": model,
+    "modelRouteKey": modelRouteKey,
+    "modelRouteResourceId": modelRouteResourceId,
+    "operationId": operationId,
+    "outcome": gatewayCallOutcomeValues.reverse[outcome],
+    "outputTokens": outputTokens,
+    "provider": provider,
+    "reasonCode": reasonCodeValues.reverse[reasonCode],
+    "requestLogId": requestLogId,
+    "startedAt": startedAt,
+    "tenantId": tenantId,
+    "toolName": toolName,
+    "toolResourceId": toolResourceId,
+    "toolSource": agentInstallationToolSourceValues.reverse[toolSource],
+    "totalTokens": totalTokens,
+    "traceId": traceId,
+    "usageState": operationUsageStateValues.reverse[usageState],
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-134(3)：MODEL 取 Gateway request log（时延为 Gateway durationMs）；TOOL 取 Core 工具子
+///ActionExecution 与审计（时延为 Core 观测的 INTENT 到 OUTCOME 间隔）。两者时延不混算。
+enum GatewayCallKind { MODEL, TOOL }
+
+final gatewayCallKindValues = EnumValues({
+  "MODEL": GatewayCallKind.MODEL,
+  "TOOL": GatewayCallKind.TOOL,
+});
+
+///DD-134(3)：一次调用的呈现状态。DENIED 是准入拒绝（含 PEP 拒绝）；UNKNOWN 是结果不明、待原 operation 对账；RUNNING 是已准入未终结。
+enum GatewayCallOutcome { DENIED, FAILED, RUNNING, SUCCEEDED, UNKNOWN }
+
+final gatewayCallOutcomeValues = EnumValues({
+  "DENIED": GatewayCallOutcome.DENIED,
+  "FAILED": GatewayCallOutcome.FAILED,
+  "RUNNING": GatewayCallOutcome.RUNNING,
+  "SUCCEEDED": GatewayCallOutcome.SUCCEEDED,
+  "UNKNOWN": GatewayCallOutcome.UNKNOWN,
+});
+
+class GatewayCallExecution {
+  final String actionExecutionId;
+  final String actionKey;
+  final int actionVersion;
+  final String createdAt;
+  final ActionDispatchState dispatchState;
+  final ActionGateState gateState;
+  final String operationId;
+  final String? parentActionExecutionId;
+  final ReasonCode? reasonCode;
+  final String? updatedAt;
+
+  GatewayCallExecution({
+    required this.actionExecutionId,
+    required this.actionKey,
+    required this.actionVersion,
+    required this.createdAt,
+    required this.dispatchState,
+    required this.gateState,
+    required this.operationId,
+    this.parentActionExecutionId,
+    this.reasonCode,
+    this.updatedAt,
+  });
+
+  factory GatewayCallExecution.fromJson(Map<String, dynamic> json) =>
+      GatewayCallExecution(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        createdAt: json["createdAt"],
+        dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+        gateState: actionGateStateValues.map[json["gateState"]]!,
+        operationId: json["operationId"],
+        parentActionExecutionId: json["parentActionExecutionId"],
+        reasonCode: json["reasonCode"] == null
+            ? null
+            : reasonCodeValues.map[json["reasonCode"]]!,
+        updatedAt: json["updatedAt"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "createdAt": createdAt,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "gateState": actionGateStateValues.reverse[gateState],
+    "operationId": operationId,
+    "parentActionExecutionId": parentActionExecutionId,
+    "reasonCode": reasonCodeValues.reverse[reasonCode],
+    "updatedAt": updatedAt,
+  });
+}
+
+///DD-134(3)：时间窗内的调用列表，按开始时间倒序；nextCursor 只在同一查询条件内继续。
+class GatewayCallPage {
+  final List<GatewayCallView> calls;
+  final bool modelLogAvailable;
+  final String? nextCursor;
+  final GatewayAdminScope scope;
+  final bool truncated;
+
+  GatewayCallPage({
+    required this.calls,
+    required this.modelLogAvailable,
+    this.nextCursor,
+    required this.scope,
+    required this.truncated,
+  });
+
+  factory GatewayCallPage.fromJson(Map<String, dynamic> json) =>
+      GatewayCallPage(
+        calls: List<GatewayCallView>.from(
+          json["calls"].map((x) => GatewayCallView.fromJson(x)),
+        ),
+        modelLogAvailable: json["modelLogAvailable"],
+        nextCursor: json["nextCursor"],
+        scope: gatewayAdminScopeValues.map[json["scope"]]!,
+        truncated: json["truncated"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "calls": List<dynamic>.from(calls.map((x) => x.toJson())),
+    "modelLogAvailable": modelLogAvailable,
+    "nextCursor": nextCursor,
+    "scope": gatewayAdminScopeValues.reverse[scope],
+    "truncated": truncated,
+  });
+}
+
+///DD-134(3)⑥：一个 ConfigResource 的 Core 写入证据（打码后的值）与相邻已记录 revision 之间的差异；当前 revision 没有证据时
+///currentSource=UNRECORDED。
+class GatewayConfigHistory {
+  final int? currentRevision;
+  final GatewayConfigRevisionSource currentSource;
+  final String id;
+  final String kind;
+  final List<GatewayConfigRevisionView> revisions;
+
+  GatewayConfigHistory({
+    this.currentRevision,
+    required this.currentSource,
+    required this.id,
+    required this.kind,
+    required this.revisions,
+  });
+
+  factory GatewayConfigHistory.fromJson(Map<String, dynamic> json) =>
+      GatewayConfigHistory(
+        currentRevision: json["currentRevision"],
+        currentSource:
+            gatewayConfigRevisionSourceValues.map[json["currentSource"]]!,
+        id: json["id"],
+        kind: json["kind"],
+        revisions: List<GatewayConfigRevisionView>.from(
+          json["revisions"].map((x) => GatewayConfigRevisionView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "currentRevision": currentRevision,
+    "currentSource": gatewayConfigRevisionSourceValues.reverse[currentSource],
+    "id": id,
+    "kind": kind,
+    "revisions": List<dynamic>.from(revisions.map((x) => x.toJson())),
+  });
+}
+
+///DD-134(3)⑥：CORE_RECORDED 表示 Core 写入并回读确认时保存了该 revision 的写入证据；UNRECORDED 表示外部写入或早于写入证据，按
+///17 §9 作为投影不一致信号，不反向导入。
+enum GatewayConfigRevisionSource { CORE_RECORDED, UNRECORDED }
+
+final gatewayConfigRevisionSourceValues = EnumValues({
+  "CORE_RECORDED": GatewayConfigRevisionSource.CORE_RECORDED,
+  "UNRECORDED": GatewayConfigRevisionSource.UNRECORDED,
+});
+
+class GatewayConfigRevisionView {
+  final String? actionExecutionId;
+  final String? actionKey;
+  final List<GatewayConfigChange> changes;
+  final bool deleted;
+  final String? operationId;
+  final String recordedAt;
+  final int revision;
+  final String valueDigest;
+  final String valueJson;
+
+  GatewayConfigRevisionView({
+    this.actionExecutionId,
+    this.actionKey,
+    required this.changes,
+    required this.deleted,
+    this.operationId,
+    required this.recordedAt,
+    required this.revision,
+    required this.valueDigest,
+    required this.valueJson,
+  });
+
+  factory GatewayConfigRevisionView.fromJson(Map<String, dynamic> json) =>
+      GatewayConfigRevisionView(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        changes: List<GatewayConfigChange>.from(
+          json["changes"].map((x) => GatewayConfigChange.fromJson(x)),
+        ),
+        deleted: json["deleted"],
+        operationId: json["operationId"],
+        recordedAt: json["recordedAt"],
+        revision: json["revision"],
+        valueDigest: json["valueDigest"],
+        valueJson: json["valueJson"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "changes": List<dynamic>.from(changes.map((x) => x.toJson())),
+    "deleted": deleted,
+    "operationId": operationId,
+    "recordedAt": recordedAt,
+    "revision": revision,
+    "valueDigest": valueDigest,
+    "valueJson": valueJson,
+  });
+}
+
+class GatewayConfigChange {
+  final String? afterJson;
+  final String? beforeJson;
+  final GatewayConfigChangeKind change;
+
+  ///RFC 6901 JSON pointer。
+  final String path;
+
+  GatewayConfigChange({
+    this.afterJson,
+    this.beforeJson,
+    required this.change,
+    required this.path,
+  });
+
+  factory GatewayConfigChange.fromJson(Map<String, dynamic> json) =>
+      GatewayConfigChange(
+        afterJson: json["afterJson"],
+        beforeJson: json["beforeJson"],
+        change: gatewayConfigChangeKindValues.map[json["change"]]!,
+        path: json["path"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "afterJson": afterJson,
+    "beforeJson": beforeJson,
+    "change": gatewayConfigChangeKindValues.reverse[change],
+    "path": path,
+  });
+}
+
+///DD-134(3)⑥：打码后的值在相邻两个已记录 revision 之间按 JSON 路径的差异。
+enum GatewayConfigChangeKind { ADDED, CHANGED, REMOVED }
+
+final gatewayConfigChangeKindValues = EnumValues({
+  "ADDED": GatewayConfigChangeKind.ADDED,
+  "CHANGED": GatewayConfigChangeKind.CHANGED,
+  "REMOVED": GatewayConfigChangeKind.REMOVED,
+});
+
+///DD-134(3)⑥(4)：Gateway effective config 与 ConfigResource 当前值，均已在 Core 打码；只读。
+class GatewayConfigView {
+  final String effectiveConfigJson;
+  final String readAt;
+  final List<GatewayConfigResourceView> resources;
+
+  GatewayConfigView({
+    required this.effectiveConfigJson,
+    required this.readAt,
+    required this.resources,
+  });
+
+  factory GatewayConfigView.fromJson(Map<String, dynamic> json) =>
+      GatewayConfigView(
+        effectiveConfigJson: json["effectiveConfigJson"],
+        readAt: json["readAt"],
+        resources: List<GatewayConfigResourceView>.from(
+          json["resources"].map((x) => GatewayConfigResourceView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "effectiveConfigJson": effectiveConfigJson,
+    "readAt": readAt,
+    "resources": List<dynamic>.from(resources.map((x) => x.toJson())),
+  });
+}
+
+class GatewayConfigResourceView {
+  final String? actionExecutionId;
+  final String? actionKey;
+  final String id;
+  final String kind;
+  final String? operationId;
+  final int revision;
+  final GatewayConfigRevisionSource source;
+  final String? updatedAt;
+  final String valueJson;
+
+  GatewayConfigResourceView({
+    this.actionExecutionId,
+    this.actionKey,
+    required this.id,
+    required this.kind,
+    this.operationId,
+    required this.revision,
+    required this.source,
+    this.updatedAt,
+    required this.valueJson,
+  });
+
+  factory GatewayConfigResourceView.fromJson(Map<String, dynamic> json) =>
+      GatewayConfigResourceView(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        id: json["id"],
+        kind: json["kind"],
+        operationId: json["operationId"],
+        revision: json["revision"],
+        source: gatewayConfigRevisionSourceValues.map[json["source"]]!,
+        updatedAt: json["updatedAt"],
+        valueJson: json["valueJson"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "id": id,
+    "kind": kind,
+    "operationId": operationId,
+    "revision": revision,
+    "source": gatewayConfigRevisionSourceValues.reverse[source],
+    "updatedAt": updatedAt,
+    "valueJson": valueJson,
+  });
+}
+
+///DD-134(5)⑥：需由运维加入交付目录 protocolPeers[].bindings 的条目（不含 secret）；Core 回读到同 bindingId 的条目后才放行
+///application_binding.create。
+class GatewayMcpBindingDraft {
+  final String adapterServiceRef;
+  final String bindingId;
+  final String configDigest;
+  final String directoryEntryJson;
+  final String servicePrincipalId;
+
+  GatewayMcpBindingDraft({
+    required this.adapterServiceRef,
+    required this.bindingId,
+    required this.configDigest,
+    required this.directoryEntryJson,
+    required this.servicePrincipalId,
+  });
+
+  factory GatewayMcpBindingDraft.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpBindingDraft(
+        adapterServiceRef: json["adapterServiceRef"],
+        bindingId: json["bindingId"],
+        configDigest: json["configDigest"],
+        directoryEntryJson: json["directoryEntryJson"],
+        servicePrincipalId: json["servicePrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "directoryEntryJson": directoryEntryJson,
+    "servicePrincipalId": servicePrincipalId,
+  });
+}
+
+///DD-134(5)⑥：为尚无交付归属事实的连接生成目录条目草稿；纯计算，不写任何状态。
+class GatewayMcpBindingDraftRequest {
+  final String componentReleaseId;
+  final ApplicationIsolationMode isolationMode;
+  final String nativeScopeRef;
+  final String normalizedConfigJson;
+  final String? workspaceId;
+
+  GatewayMcpBindingDraftRequest({
+    required this.componentReleaseId,
+    required this.isolationMode,
+    required this.nativeScopeRef,
+    required this.normalizedConfigJson,
+    this.workspaceId,
+  });
+
+  factory GatewayMcpBindingDraftRequest.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpBindingDraftRequest(
+        componentReleaseId: json["componentReleaseId"],
+        isolationMode:
+            applicationIsolationModeValues.map[json["isolationMode"]]!,
+        nativeScopeRef: json["nativeScopeRef"],
+        normalizedConfigJson: json["normalizedConfigJson"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "componentReleaseId": componentReleaseId,
+    "isolationMode": applicationIsolationModeValues.reverse[isolationMode],
+    "nativeScopeRef": nativeScopeRef,
+    "normalizedConfigJson": normalizedConfigJson,
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-134(5)①：部署交付目录的 protocolPeers 与一致性环境（只读，Catalog manage）。URL 已去掉 userinfo、query 与
+///fragment。
+class GatewayMcpPeerPage {
+  final String? conformanceArtifactDigest;
+  final bool directoryAvailable;
+  final List<GatewayMcpPeerView> peers;
+
+  GatewayMcpPeerPage({
+    this.conformanceArtifactDigest,
+    required this.directoryAvailable,
+    required this.peers,
+  });
+
+  factory GatewayMcpPeerPage.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpPeerPage(
+        conformanceArtifactDigest: json["conformanceArtifactDigest"],
+        directoryAvailable: json["directoryAvailable"],
+        peers: List<GatewayMcpPeerView>.from(
+          json["peers"].map((x) => GatewayMcpPeerView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "conformanceArtifactDigest": conformanceArtifactDigest,
+    "directoryAvailable": directoryAvailable,
+    "peers": List<dynamic>.from(peers.map((x) => x.toJson())),
+  });
+}
+
+class GatewayMcpPeerView {
+  final String adapterServiceRef;
+  final String artifactDigest;
+  final List<GatewayMcpBindingFact> bindingFacts;
+
+  ///部署一致性环境存在且其 artifactDigest 等于本条目。
+  final bool conformanceReady;
+  final int maxResponseBytes;
+  final String mcpUrl;
+  final String nativeInstanceRef;
+  final int timeoutSeconds;
+
+  GatewayMcpPeerView({
+    required this.adapterServiceRef,
+    required this.artifactDigest,
+    required this.bindingFacts,
+    required this.conformanceReady,
+    required this.maxResponseBytes,
+    required this.mcpUrl,
+    required this.nativeInstanceRef,
+    required this.timeoutSeconds,
+  });
+
+  factory GatewayMcpPeerView.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpPeerView(
+        adapterServiceRef: json["adapterServiceRef"],
+        artifactDigest: json["artifactDigest"],
+        bindingFacts: List<GatewayMcpBindingFact>.from(
+          json["bindingFacts"].map((x) => GatewayMcpBindingFact.fromJson(x)),
+        ),
+        conformanceReady: json["conformanceReady"],
+        maxResponseBytes: json["maxResponseBytes"],
+        mcpUrl: json["mcpUrl"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        timeoutSeconds: json["timeoutSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "artifactDigest": artifactDigest,
+    "bindingFacts": List<dynamic>.from(bindingFacts.map((x) => x.toJson())),
+    "conformanceReady": conformanceReady,
+    "maxResponseBytes": maxResponseBytes,
+    "mcpUrl": mcpUrl,
+    "nativeInstanceRef": nativeInstanceRef,
+    "timeoutSeconds": timeoutSeconds,
+  });
+}
+
+///DD-98/134(5)⑥：交付目录中一条 binding 归属事实（运维域），不是授权；不含 secret。
+class GatewayMcpBindingFact {
+  final String bindingId;
+
+  ///已有同 ID 的 ApplicationBinding。
+  final bool bound;
+  final String configDigest;
+  final List<String> credentialKeys;
+  final ApplicationIsolationMode isolationMode;
+  final String nativeScopeRef;
+  final String servicePrincipalId;
+  final String tenantId;
+  final String? workspaceId;
+
+  GatewayMcpBindingFact({
+    required this.bindingId,
+    required this.bound,
+    required this.configDigest,
+    required this.credentialKeys,
+    required this.isolationMode,
+    required this.nativeScopeRef,
+    required this.servicePrincipalId,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory GatewayMcpBindingFact.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpBindingFact(
+        bindingId: json["bindingId"],
+        bound: json["bound"],
+        configDigest: json["configDigest"],
+        credentialKeys: List<String>.from(json["credentialKeys"].map((x) => x)),
+        isolationMode:
+            applicationIsolationModeValues.map[json["isolationMode"]]!,
+        nativeScopeRef: json["nativeScopeRef"],
+        servicePrincipalId: json["servicePrincipalId"],
+        tenantId: json["tenantId"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "bound": bound,
+    "configDigest": configDigest,
+    "credentialKeys": List<dynamic>.from(credentialKeys.map((x) => x)),
+    "isolationMode": applicationIsolationModeValues.reverse[isolationMode],
+    "nativeScopeRef": nativeScopeRef,
+    "servicePrincipalId": servicePrincipalId,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-134(5)②：受控探测只接受交付目录条目引用，不接受 URL。
+class GatewayMcpProbeRequest {
+  final String adapterServiceRef;
+
+  GatewayMcpProbeRequest({required this.adapterServiceRef});
+
+  factory GatewayMcpProbeRequest.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpProbeRequest(adapterServiceRef: json["adapterServiceRef"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"adapterServiceRef": adapterServiceRef});
+}
+
+///DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
+///已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+class GatewayMcpProbeResult {
+  final String adapterServiceRef;
+  final String probedAt;
+  final String probeId;
+  final String? protocolVersion;
+  final String? serverName;
+  final String? serverVersion;
+  final List<GatewayMcpProbedTool> tools;
+  final String toolSchemaDigest;
+
+  GatewayMcpProbeResult({
+    required this.adapterServiceRef,
+    required this.probedAt,
+    required this.probeId,
+    this.protocolVersion,
+    this.serverName,
+    this.serverVersion,
+    required this.tools,
+    required this.toolSchemaDigest,
+  });
+
+  factory GatewayMcpProbeResult.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpProbeResult(
+        adapterServiceRef: json["adapterServiceRef"],
+        probedAt: json["probedAt"],
+        probeId: json["probeId"],
+        protocolVersion: json["protocolVersion"],
+        serverName: json["serverName"],
+        serverVersion: json["serverVersion"],
+        tools: List<GatewayMcpProbedTool>.from(
+          json["tools"].map((x) => GatewayMcpProbedTool.fromJson(x)),
+        ),
+        toolSchemaDigest: json["toolSchemaDigest"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "probedAt": probedAt,
+    "probeId": probeId,
+    "protocolVersion": protocolVersion,
+    "serverName": serverName,
+    "serverVersion": serverVersion,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "toolSchemaDigest": toolSchemaDigest,
+  });
+}
+
+class GatewayMcpProbedTool {
+  final String? description;
+  final String? displayTitle;
+  final String inputSchemaDigest;
+  final String inputSchemaJson;
+  final List<GatewayMcpContractMatch> matchingContracts;
+  final String name;
+  final String? outputSchemaDigest;
+  final String? outputSchemaJson;
+  final bool? readOnlyHint;
+
+  GatewayMcpProbedTool({
+    this.description,
+    this.displayTitle,
+    required this.inputSchemaDigest,
+    required this.inputSchemaJson,
+    required this.matchingContracts,
+    required this.name,
+    this.outputSchemaDigest,
+    this.outputSchemaJson,
+    this.readOnlyHint,
+  });
+
+  factory GatewayMcpProbedTool.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpProbedTool(
+        description: json["description"],
+        displayTitle: json["displayTitle"],
+        inputSchemaDigest: json["inputSchemaDigest"],
+        inputSchemaJson: json["inputSchemaJson"],
+        matchingContracts: List<GatewayMcpContractMatch>.from(
+          json["matchingContracts"].map(
+            (x) => GatewayMcpContractMatch.fromJson(x),
+          ),
+        ),
+        name: json["name"],
+        outputSchemaDigest: json["outputSchemaDigest"],
+        outputSchemaJson: json["outputSchemaJson"],
+        readOnlyHint: json["readOnlyHint"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "displayTitle": displayTitle,
+    "inputSchemaDigest": inputSchemaDigest,
+    "inputSchemaJson": inputSchemaJson,
+    "matchingContracts": List<dynamic>.from(
+      matchingContracts.map((x) => x.toJson()),
+    ),
+    "name": name,
+    "outputSchemaDigest": outputSchemaDigest,
+    "outputSchemaJson": outputSchemaJson,
+    "readOnlyHint": readOnlyHint,
+  });
+}
+
+class GatewayMcpContractMatch {
+  final String categoryKey;
+  final String contractKey;
+  final int contractVersion;
+  final CapabilityPermission permission;
+
+  GatewayMcpContractMatch({
+    required this.categoryKey,
+    required this.contractKey,
+    required this.contractVersion,
+    required this.permission,
+  });
+
+  factory GatewayMcpContractMatch.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpContractMatch(
+        categoryKey: json["categoryKey"],
+        contractKey: json["contractKey"],
+        contractVersion: json["contractVersion"],
+        permission: capabilityPermissionValues.map[json["permission"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "categoryKey": categoryKey,
+    "contractKey": contractKey,
+    "contractVersion": contractVersion,
+    "permission": capabilityPermissionValues.reverse[permission],
+  });
+}
+
+enum CapabilityPermission {
+  APPROVE,
+  AUDIT,
+  CONSUME,
+  CREATE,
+  DELEGATE,
+  DELETE,
+  DISCOVER,
+  EXECUTE,
+  EXPORT,
+  MANAGE,
+  READ,
+  SHARE,
+  TRANSFER_OWNER,
+  UPDATE,
+}
+
+final capabilityPermissionValues = EnumValues({
+  "approve": CapabilityPermission.APPROVE,
+  "audit": CapabilityPermission.AUDIT,
+  "consume": CapabilityPermission.CONSUME,
+  "create": CapabilityPermission.CREATE,
+  "delegate": CapabilityPermission.DELEGATE,
+  "delete": CapabilityPermission.DELETE,
+  "discover": CapabilityPermission.DISCOVER,
+  "execute": CapabilityPermission.EXECUTE,
+  "export": CapabilityPermission.EXPORT,
+  "manage": CapabilityPermission.MANAGE,
+  "read": CapabilityPermission.READ,
+  "share": CapabilityPermission.SHARE,
+  "transfer_owner": CapabilityPermission.TRANSFER_OWNER,
+  "update": CapabilityPermission.UPDATE,
+});
+
+///DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。
+class GatewayMcpReleasePage {
+  final List<GatewayMcpReleaseView> releases;
+
+  GatewayMcpReleasePage({required this.releases});
+
+  factory GatewayMcpReleasePage.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpReleasePage(
+        releases: List<GatewayMcpReleaseView>.from(
+          json["releases"].map((x) => GatewayMcpReleaseView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "releases": List<dynamic>.from(releases.map((x) => x.toJson())),
+  });
+}
+
+class GatewayMcpReleaseView {
+  final String adapterBuildRef;
+
+  ///交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。
+  final String? adapterServiceRef;
+  final List<ApplicationModelCallMode> allowedModelCallModes;
+  final String? bindingConfigSchemaJson;
+  final List<String> bindingIds;
+  final List<GatewayMcpReleaseCategory> capabilityCategories;
+  final String componentReleaseId;
+  final String componentTypeKey;
+  final List<GatewayMcpBindingFact> deliveryFacts;
+  final String? nativeInstanceRef;
+  final List<String> secretKeys;
+  final ComponentReleaseStatus status;
+  final List<GatewayMcpReleaseTool> tools;
+  final String version;
+
+  GatewayMcpReleaseView({
+    required this.adapterBuildRef,
+    this.adapterServiceRef,
+    required this.allowedModelCallModes,
+    this.bindingConfigSchemaJson,
+    required this.bindingIds,
+    required this.capabilityCategories,
+    required this.componentReleaseId,
+    required this.componentTypeKey,
+    required this.deliveryFacts,
+    this.nativeInstanceRef,
+    required this.secretKeys,
+    required this.status,
+    required this.tools,
+    required this.version,
+  });
+
+  factory GatewayMcpReleaseView.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpReleaseView(
+        adapterBuildRef: json["adapterBuildRef"],
+        adapterServiceRef: json["adapterServiceRef"],
+        allowedModelCallModes: List<ApplicationModelCallMode>.from(
+          json["allowedModelCallModes"].map(
+            (x) => applicationModelCallModeValues.map[x]!,
+          ),
+        ),
+        bindingConfigSchemaJson: json["bindingConfigSchemaJson"],
+        bindingIds: List<String>.from(json["bindingIds"].map((x) => x)),
+        capabilityCategories: List<GatewayMcpReleaseCategory>.from(
+          json["capabilityCategories"].map(
+            (x) => GatewayMcpReleaseCategory.fromJson(x),
+          ),
+        ),
+        componentReleaseId: json["componentReleaseId"],
+        componentTypeKey: json["componentTypeKey"],
+        deliveryFacts: List<GatewayMcpBindingFact>.from(
+          json["deliveryFacts"].map((x) => GatewayMcpBindingFact.fromJson(x)),
+        ),
+        nativeInstanceRef: json["nativeInstanceRef"],
+        secretKeys: List<String>.from(json["secretKeys"].map((x) => x)),
+        status: componentReleaseStatusValues.map[json["status"]]!,
+        tools: List<GatewayMcpReleaseTool>.from(
+          json["tools"].map((x) => GatewayMcpReleaseTool.fromJson(x)),
+        ),
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterBuildRef": adapterBuildRef,
+    "adapterServiceRef": adapterServiceRef,
+    "allowedModelCallModes": List<dynamic>.from(
+      allowedModelCallModes.map(
+        (x) => applicationModelCallModeValues.reverse[x],
+      ),
+    ),
+    "bindingConfigSchemaJson": bindingConfigSchemaJson,
+    "bindingIds": List<dynamic>.from(bindingIds.map((x) => x)),
+    "capabilityCategories": List<dynamic>.from(
+      capabilityCategories.map((x) => x.toJson()),
+    ),
+    "componentReleaseId": componentReleaseId,
+    "componentTypeKey": componentTypeKey,
+    "deliveryFacts": List<dynamic>.from(deliveryFacts.map((x) => x.toJson())),
+    "nativeInstanceRef": nativeInstanceRef,
+    "secretKeys": List<dynamic>.from(secretKeys.map((x) => x)),
+    "status": componentReleaseStatusValues.reverse[status],
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+    "version": version,
+  });
+}
+
+enum ApplicationModelCallMode { NONE, PLATFORM_LLM_ROUTE, SELF_MANAGED_MODEL }
+
+final applicationModelCallModeValues = EnumValues({
+  "NONE": ApplicationModelCallMode.NONE,
+  "PLATFORM_LLM_ROUTE": ApplicationModelCallMode.PLATFORM_LLM_ROUTE,
+  "SELF_MANAGED_MODEL": ApplicationModelCallMode.SELF_MANAGED_MODEL,
+});
+
+class GatewayMcpReleaseCategory {
+  final String category;
+  final int version;
+
+  GatewayMcpReleaseCategory({required this.category, required this.version});
+
+  factory GatewayMcpReleaseCategory.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpReleaseCategory(
+        category: json["category"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"category": category, "version": version});
+}
+
+class GatewayMcpReleaseTool {
+  final String actionKey;
+  final String capabilityContractKey;
+  final String name;
+
+  GatewayMcpReleaseTool({
+    required this.actionKey,
+    required this.capabilityContractKey,
+    required this.name,
+  });
+
+  factory GatewayMcpReleaseTool.fromJson(Map<String, dynamic> json) =>
+      GatewayMcpReleaseTool(
+        actionKey: json["actionKey"],
+        capabilityContractKey: json["capabilityContractKey"],
+        name: json["name"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "capabilityContractKey": capabilityContractKey,
+    "name": name,
+  });
+}
+
+///DD-134(7)：本 Tenant 的 llm_route Resource（按 discover 过滤）与时间窗用量；新建沿 llm_route.create，停用沿
+///llm_route.disable。
+class GatewayModelRoutePage {
+  final bool canCreate;
+  final String from;
+  final int? nextOffset;
+  final List<GatewayModelRouteView> routes;
+  final String to;
+
+  GatewayModelRoutePage({
+    required this.canCreate,
+    required this.from,
+    this.nextOffset,
+    required this.routes,
+    required this.to,
+  });
+
+  factory GatewayModelRoutePage.fromJson(Map<String, dynamic> json) =>
+      GatewayModelRoutePage(
+        canCreate: json["canCreate"],
+        from: json["from"],
+        nextOffset: json["nextOffset"],
+        routes: List<GatewayModelRouteView>.from(
+          json["routes"].map((x) => GatewayModelRouteView.fromJson(x)),
+        ),
+        to: json["to"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canCreate": canCreate,
+    "from": from,
+    "nextOffset": nextOffset,
+    "routes": List<dynamic>.from(routes.map((x) => x.toJson())),
+    "to": to,
+  });
+}
+
+class GatewayModelRouteView {
+  final int bindingCount;
+  final bool canDisable;
+  final int? failed;
+  final String? homeWorkspaceId;
+  final int installationCount;
+  final String? model;
+  final int? modelP95Ms;
+  final String nativeId;
+  final String ownerPrincipalId;
+  final String? provider;
+  final int? requests;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final int? totalTokens;
+
+  GatewayModelRouteView({
+    required this.bindingCount,
+    required this.canDisable,
+    this.failed,
+    this.homeWorkspaceId,
+    required this.installationCount,
+    this.model,
+    this.modelP95Ms,
+    required this.nativeId,
+    required this.ownerPrincipalId,
+    this.provider,
+    this.requests,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    this.totalTokens,
+  });
+
+  factory GatewayModelRouteView.fromJson(Map<String, dynamic> json) =>
+      GatewayModelRouteView(
+        bindingCount: json["bindingCount"],
+        canDisable: json["canDisable"],
+        failed: json["failed"],
+        homeWorkspaceId: json["homeWorkspaceId"],
+        installationCount: json["installationCount"],
+        model: json["model"],
+        modelP95Ms: json["modelP95Ms"],
+        nativeId: json["nativeId"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        provider: json["provider"],
+        requests: json["requests"],
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        totalTokens: json["totalTokens"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingCount": bindingCount,
+    "canDisable": canDisable,
+    "failed": failed,
+    "homeWorkspaceId": homeWorkspaceId,
+    "installationCount": installationCount,
+    "model": model,
+    "modelP95Ms": modelP95Ms,
+    "nativeId": nativeId,
+    "ownerPrincipalId": ownerPrincipalId,
+    "provider": provider,
+    "requests": requests,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "totalTokens": totalTokens,
+  });
+}
+
+///DD-134(7)：Gateway 中已存在、尚未被 llm_route 引用的原生 provider 与 model ConfigResource（打码），供
+///llm_route.create 选择；revision 与 sha256 为 Core 回读值。
+class GatewayModelSourcePage {
+  final List<GatewayModelSource> sources;
+
+  GatewayModelSourcePage({required this.sources});
+
+  factory GatewayModelSourcePage.fromJson(Map<String, dynamic> json) =>
+      GatewayModelSourcePage(
+        sources: List<GatewayModelSource>.from(
+          json["sources"].map((x) => GatewayModelSource.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "sources": List<dynamic>.from(sources.map((x) => x.toJson())),
+  });
+}
+
+class GatewayModelSource {
+  final bool? credentialRequired;
+  final ModelClass model;
+  final String modelName;
+  final ProviderClass provider;
+  final String providerType;
+
+  GatewayModelSource({
+    this.credentialRequired,
+    required this.model,
+    required this.modelName,
+    required this.provider,
+    required this.providerType,
+  });
+
+  factory GatewayModelSource.fromJson(Map<String, dynamic> json) =>
+      GatewayModelSource(
+        credentialRequired: json["credentialRequired"],
+        model: ModelClass.fromJson(json["model"]),
+        modelName: json["modelName"],
+        provider: ProviderClass.fromJson(json["provider"]),
+        providerType: json["providerType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "credentialRequired": credentialRequired,
+    "model": model.toJson(),
+    "modelName": modelName,
+    "provider": provider.toJson(),
+    "providerType": providerType,
+  });
+}
+
+class ModelClass {
+  final String id;
+  final int revision;
+  final String sha256;
+
+  ModelClass({required this.id, required this.revision, required this.sha256});
+
+  factory ModelClass.fromJson(Map<String, dynamic> json) => ModelClass(
+    id: json["id"],
+    revision: json["revision"],
+    sha256: json["sha256"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"id": id, "revision": revision, "sha256": sha256});
+}
+
+class ProviderClass {
+  final String id;
+  final int revision;
+  final String sha256;
+
+  ProviderClass({
+    required this.id,
+    required this.revision,
+    required this.sha256,
+  });
+
+  factory ProviderClass.fromJson(Map<String, dynamic> json) => ProviderClass(
+    id: json["id"],
+    revision: json["revision"],
+    sha256: json["sha256"],
+  );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"id": id, "revision": revision, "sha256": sha256});
+}
+
+///DD-134(3)：时间窗内按一个维度的聚合与时间桶。每次请求实时计算；扫描原始记录超出上限时 truncated=true，结果只基于已扫描部分。
+class GatewayStats {
+  final List<GatewayStatsBucket> buckets;
+  final int bucketSeconds;
+  final GatewayStatsDimension dimension;
+  final String from;
+
+  ///Gateway request log 是否可读；false 时模型调用计数缺失，不显示为零。
+  final bool modelLogAvailable;
+  final List<GatewayStatsRow> rows;
+  final GatewayAdminScope scope;
+  final String to;
+  final GatewayStatsCounters totals;
+  final bool truncated;
+  final String? workspaceId;
+
+  GatewayStats({
+    required this.buckets,
+    required this.bucketSeconds,
+    required this.dimension,
+    required this.from,
+    required this.modelLogAvailable,
+    required this.rows,
+    required this.scope,
+    required this.to,
+    required this.totals,
+    required this.truncated,
+    this.workspaceId,
+  });
+
+  factory GatewayStats.fromJson(Map<String, dynamic> json) => GatewayStats(
+    buckets: List<GatewayStatsBucket>.from(
+      json["buckets"].map((x) => GatewayStatsBucket.fromJson(x)),
+    ),
+    bucketSeconds: json["bucketSeconds"],
+    dimension: gatewayStatsDimensionValues.map[json["dimension"]]!,
+    from: json["from"],
+    modelLogAvailable: json["modelLogAvailable"],
+    rows: List<GatewayStatsRow>.from(
+      json["rows"].map((x) => GatewayStatsRow.fromJson(x)),
+    ),
+    scope: gatewayAdminScopeValues.map[json["scope"]]!,
+    to: json["to"],
+    totals: GatewayStatsCounters.fromJson(json["totals"]),
+    truncated: json["truncated"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "buckets": List<dynamic>.from(buckets.map((x) => x.toJson())),
+    "bucketSeconds": bucketSeconds,
+    "dimension": gatewayStatsDimensionValues.reverse[dimension],
+    "from": from,
+    "modelLogAvailable": modelLogAvailable,
+    "rows": List<dynamic>.from(rows.map((x) => x.toJson())),
+    "scope": gatewayAdminScopeValues.reverse[scope],
+    "to": to,
+    "totals": totals.toJson(),
+    "truncated": truncated,
+    "workspaceId": workspaceId,
+  });
+}
+
+class GatewayStatsBucket {
+  final int denied;
+  final int failed;
+  final int requests;
+  final String start;
+  final int totalTokens;
+
+  GatewayStatsBucket({
+    required this.denied,
+    required this.failed,
+    required this.requests,
+    required this.start,
+    required this.totalTokens,
+  });
+
+  factory GatewayStatsBucket.fromJson(Map<String, dynamic> json) =>
+      GatewayStatsBucket(
+        denied: json["denied"],
+        failed: json["failed"],
+        requests: json["requests"],
+        start: json["start"],
+        totalTokens: json["totalTokens"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "denied": denied,
+    "failed": failed,
+    "requests": requests,
+    "start": start,
+    "totalTokens": totalTokens,
+  });
+}
+
+///DD-134(3)④：聚合维度。TOOL、AGENT、BINDING 只在 TENANT 范围可用；TENANT 只在 PLATFORM 范围可用。
+enum GatewayStatsDimension { AGENT, BINDING, MODEL_ROUTE, TENANT, TOOL }
+
+final gatewayStatsDimensionValues = EnumValues({
+  "AGENT": GatewayStatsDimension.AGENT,
+  "BINDING": GatewayStatsDimension.BINDING,
+  "MODEL_ROUTE": GatewayStatsDimension.MODEL_ROUTE,
+  "TENANT": GatewayStatsDimension.TENANT,
+  "TOOL": GatewayStatsDimension.TOOL,
+});
+
+class GatewayStatsRow {
+  final GatewayStatsCounters counters;
+
+  ///维度键：llm_route Resource ID 或 Gateway route 名、Tool Resource ID、Installation Resource
+  ///ID、binding ID 或 Tenant ID；UNATTRIBUTED 为无法归属的记录。
+  final String key;
+  final GatewayCallKind? kind;
+
+  ///受权的展示名（工具名、Agent 名、模型名）；平台范围不含业务名称。
+  final String? label;
+
+  GatewayStatsRow({
+    required this.counters,
+    required this.key,
+    this.kind,
+    this.label,
+  });
+
+  factory GatewayStatsRow.fromJson(Map<String, dynamic> json) =>
+      GatewayStatsRow(
+        counters: GatewayStatsCounters.fromJson(json["counters"]),
+        key: json["key"],
+        kind: json["kind"] == null
+            ? null
+            : gatewayCallKindValues.map[json["kind"]]!,
+        label: json["label"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "counters": counters.toJson(),
+    "key": key,
+    "kind": gatewayCallKindValues.reverse[kind],
+    "label": label,
+  });
+}
+
+///DD-134(3)④：计数与分位数。错误率由呈现层按 failed/requests 计算；模型与工具时延分列，不混算。
+class GatewayStatsCounters {
+  ///模型调用：Gateway 日志已有而没有 durable UsageEvent 或已记 BILLING_UNAVAILABLE 审计的次数（14 §8）。
+  final int billingUnavailable;
+  final int denied;
+  final int failed;
+  final int inputTokens;
+
+  ///模型调用 Gateway durationMs 的 P50；没有模型调用时省略。
+  final int? modelP50Ms;
+  final int? modelP95Ms;
+  final int outputTokens;
+  final int requests;
+  final int running;
+  final int succeeded;
+
+  ///工具调用 Core 观测时延（INTENT 到 OUTCOME）的 P50；没有已终结工具调用时省略。
+  final int? toolP50Ms;
+  final int? toolP95Ms;
+  final int totalTokens;
+  final int unknown;
+
+  GatewayStatsCounters({
+    required this.billingUnavailable,
+    required this.denied,
+    required this.failed,
+    required this.inputTokens,
+    this.modelP50Ms,
+    this.modelP95Ms,
+    required this.outputTokens,
+    required this.requests,
+    required this.running,
+    required this.succeeded,
+    this.toolP50Ms,
+    this.toolP95Ms,
+    required this.totalTokens,
+    required this.unknown,
+  });
+
+  factory GatewayStatsCounters.fromJson(Map<String, dynamic> json) =>
+      GatewayStatsCounters(
+        billingUnavailable: json["billingUnavailable"],
+        denied: json["denied"],
+        failed: json["failed"],
+        inputTokens: json["inputTokens"],
+        modelP50Ms: json["modelP50Ms"],
+        modelP95Ms: json["modelP95Ms"],
+        outputTokens: json["outputTokens"],
+        requests: json["requests"],
+        running: json["running"],
+        succeeded: json["succeeded"],
+        toolP50Ms: json["toolP50Ms"],
+        toolP95Ms: json["toolP95Ms"],
+        totalTokens: json["totalTokens"],
+        unknown: json["unknown"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "billingUnavailable": billingUnavailable,
+    "denied": denied,
+    "failed": failed,
+    "inputTokens": inputTokens,
+    "modelP50Ms": modelP50Ms,
+    "modelP95Ms": modelP95Ms,
+    "outputTokens": outputTokens,
+    "requests": requests,
+    "running": running,
+    "succeeded": succeeded,
+    "toolP50Ms": toolP50Ms,
+    "toolP95Ms": toolP95Ms,
+    "totalTokens": totalTokens,
+    "unknown": unknown,
+  });
+}
+
+///DD-134(6)：本 Tenant 的 PLATFORM_NATIVE 与 APPLICATION 工具（按 Tool Resource discover
+///过滤），附时间窗内调用统计。停用只作用于所属连接；PLATFORM_NATIVE 无启停入口。
+class GatewayToolPage {
+  final String from;
+  final int? nextOffset;
+  final String to;
+  final List<GatewayToolView> tools;
+
+  GatewayToolPage({
+    required this.from,
+    this.nextOffset,
+    required this.to,
+    required this.tools,
+  });
+
+  factory GatewayToolPage.fromJson(Map<String, dynamic> json) =>
+      GatewayToolPage(
+        from: json["from"],
+        nextOffset: json["nextOffset"],
+        to: json["to"],
+        tools: List<GatewayToolView>.from(
+          json["tools"].map((x) => GatewayToolView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "from": from,
+    "nextOffset": nextOffset,
+    "to": to,
+    "tools": List<dynamic>.from(tools.map((x) => x.toJson())),
+  });
+}
+
+class GatewayToolView {
+  final String actionKey;
+  final String? applicationBindingId;
+  final int? applicationBindingVersion;
+  final ApplicationBindingState? bindingState;
+  final String? bindingWorkspaceId;
+  final bool canDisableBinding;
+
+  ///契约 permission 为 discover、consume 或 read，且存在本人可作用的 ACTIVE 目标 Resource 与有效结果策略；最终准入仍在提交时
+  ///fresh 重做。
+  final bool canTestCall;
+  final String? capabilityContractKey;
+  final String? componentReleaseId;
+  final String? componentTypeKey;
+  final CapabilityPermission? contractPermission;
+  final int denied;
+  final int failed;
+  final String name;
+  final String? releaseVersion;
+  final int requests;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+  final AgentInstallationToolSource source;
+  final GatewayToolTestCall? testCall;
+  final int? toolP95Ms;
+
+  GatewayToolView({
+    required this.actionKey,
+    this.applicationBindingId,
+    this.applicationBindingVersion,
+    this.bindingState,
+    this.bindingWorkspaceId,
+    required this.canDisableBinding,
+    required this.canTestCall,
+    this.capabilityContractKey,
+    this.componentReleaseId,
+    this.componentTypeKey,
+    this.contractPermission,
+    required this.denied,
+    required this.failed,
+    required this.name,
+    this.releaseVersion,
+    required this.requests,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+    required this.source,
+    this.testCall,
+    this.toolP95Ms,
+  });
+
+  factory GatewayToolView.fromJson(Map<String, dynamic> json) =>
+      GatewayToolView(
+        actionKey: json["actionKey"],
+        applicationBindingId: json["applicationBindingId"],
+        applicationBindingVersion: json["applicationBindingVersion"],
+        bindingState: json["bindingState"] == null
+            ? null
+            : applicationBindingStateValues.map[json["bindingState"]]!,
+        bindingWorkspaceId: json["bindingWorkspaceId"],
+        canDisableBinding: json["canDisableBinding"],
+        canTestCall: json["canTestCall"],
+        capabilityContractKey: json["capabilityContractKey"],
+        componentReleaseId: json["componentReleaseId"],
+        componentTypeKey: json["componentTypeKey"],
+        contractPermission: json["contractPermission"] == null
+            ? null
+            : capabilityPermissionValues.map[json["contractPermission"]]!,
+        denied: json["denied"],
+        failed: json["failed"],
+        name: json["name"],
+        releaseVersion: json["releaseVersion"],
+        requests: json["requests"],
+        resourceId: json["resourceId"],
+        resourceState: resourceStateValues.map[json["resourceState"]]!,
+        resourceVersion: json["resourceVersion"],
+        source: agentInstallationToolSourceValues.map[json["source"]]!,
+        testCall: json["testCall"] == null
+            ? null
+            : GatewayToolTestCall.fromJson(json["testCall"]),
+        toolP95Ms: json["toolP95Ms"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "applicationBindingId": applicationBindingId,
+    "applicationBindingVersion": applicationBindingVersion,
+    "bindingState": applicationBindingStateValues.reverse[bindingState],
+    "bindingWorkspaceId": bindingWorkspaceId,
+    "canDisableBinding": canDisableBinding,
+    "canTestCall": canTestCall,
+    "capabilityContractKey": capabilityContractKey,
+    "componentReleaseId": componentReleaseId,
+    "componentTypeKey": componentTypeKey,
+    "contractPermission":
+        capabilityPermissionValues.reverse[contractPermission],
+    "denied": denied,
+    "failed": failed,
+    "name": name,
+    "releaseVersion": releaseVersion,
+    "requests": requests,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+    "source": agentInstallationToolSourceValues.reverse[source],
+    "testCall": testCall?.toJson(),
+    "toolP95Ms": toolP95Ms,
+  });
+}
+
+class GatewayToolTestCall {
+  final String actionKey;
+  final int actionVersion;
+
+  ///契约固定的输入 schema（canonical JSON）。
+  final String inputSchemaJson;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+  final List<GatewayToolTestTarget> targets;
+
+  GatewayToolTestCall({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.inputSchemaJson,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+    required this.targets,
+  });
+
+  factory GatewayToolTestCall.fromJson(Map<String, dynamic> json) =>
+      GatewayToolTestCall(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        inputSchemaJson: json["inputSchemaJson"],
+        resultExposurePolicyId: json["resultExposurePolicyId"],
+        resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+        targets: List<GatewayToolTestTarget>.from(
+          json["targets"].map((x) => GatewayToolTestTarget.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "inputSchemaJson": inputSchemaJson,
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+    "targets": List<dynamic>.from(targets.map((x) => x.toJson())),
+  });
+}
+
+class GatewayToolTestTarget {
+  final String displayName;
+  final String resourceId;
+  final int resourceVersion;
+  final String? workspaceId;
+
+  GatewayToolTestTarget({
+    required this.displayName,
+    required this.resourceId,
+    required this.resourceVersion,
+    this.workspaceId,
+  });
+
+  factory GatewayToolTestTarget.fromJson(Map<String, dynamic> json) =>
+      GatewayToolTestTarget(
+        displayName: json["displayName"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+    "workspaceId": workspaceId,
+  });
+}
+
+///DD-134(6)：网关管理区测试调用的同请求回应。submission 是该工具 ActionDefinition 的准入与派发结论；resultJson
+///只在本次调用已确定成功时出现，是经 ExtMcp 按冻结 ResultExposurePolicy 与输出 schema 过滤后的 canonical
+///JSON，只回给发起人本人且 Core 不保存；toolError 为真表示原生工具返回了错误结果（不含正文）。结果不明时两者都缺省，ActionExecution 停在
+///UNKNOWN，不重放。
+class GatewayToolTestCallResult {
+  final String? resultJson;
+  final ActionSubmission submission;
+  final bool? toolError;
+
+  GatewayToolTestCallResult({
+    this.resultJson,
+    required this.submission,
+    this.toolError,
+  });
+
+  factory GatewayToolTestCallResult.fromJson(Map<String, dynamic> json) =>
+      GatewayToolTestCallResult(
+        resultJson: json["resultJson"],
+        submission: ActionSubmission.fromJson(json["submission"]),
+        toolError: json["toolError"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "resultJson": resultJson,
+    "submission": submission.toJson(),
+    "toolError": toolError,
+  });
+}
+
+///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
+///的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
+///automation.rotate_webhook_secret 首次回应中出现（DD-116）。
+class ActionSubmission {
+  final String actionExecutionId;
+  final String actionKey;
+  final String? approvalWorkflowId;
+  final ActionDispatchState dispatchState;
+  final DocumentLaunchDescriptor? documentLaunch;
+  final ActionGateState gateState;
+
+  ///仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
+  final String? huddleId;
+  final IssuedInvitation? invitation;
+  final String operationId;
+  final String? protocolSessionId;
+  final ReasonCode? reason;
+  final AutomationWebhookSecret? webhookSecret;
+  final String? workflowId;
+
+  ActionSubmission({
+    required this.actionExecutionId,
+    required this.actionKey,
+    this.approvalWorkflowId,
+    required this.dispatchState,
+    this.documentLaunch,
+    required this.gateState,
+    this.huddleId,
+    this.invitation,
+    required this.operationId,
+    this.protocolSessionId,
+    this.reason,
+    this.webhookSecret,
+    this.workflowId,
+  });
+
+  factory ActionSubmission.fromJson(Map<String, dynamic> json) =>
+      ActionSubmission(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        approvalWorkflowId: json["approvalWorkflowId"],
+        dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+        documentLaunch: json["documentLaunch"] == null
+            ? null
+            : DocumentLaunchDescriptor.fromJson(json["documentLaunch"]),
+        gateState: actionGateStateValues.map[json["gateState"]]!,
+        huddleId: json["huddleId"],
+        invitation: json["invitation"] == null
+            ? null
+            : IssuedInvitation.fromJson(json["invitation"]),
+        operationId: json["operationId"],
+        protocolSessionId: json["protocolSessionId"],
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
+        webhookSecret: json["webhookSecret"] == null
+            ? null
+            : AutomationWebhookSecret.fromJson(json["webhookSecret"]),
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "approvalWorkflowId": approvalWorkflowId,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "documentLaunch": documentLaunch?.toJson(),
+    "gateState": actionGateStateValues.reverse[gateState],
+    "huddleId": huddleId,
+    "invitation": invitation?.toJson(),
+    "operationId": operationId,
+    "protocolSessionId": protocolSessionId,
+    "reason": reasonCodeValues.reverse[reason],
+    "webhookSecret": webhookSecret?.toJson(),
+    "workflowId": workflowId,
+  });
+}
+
+///tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
+///里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
+class IssuedInvitation {
+  ///RFC3339，UTC
+  final String expiresAt;
+  final String invitationId;
+
+  ///部署登记的链接基址 + '#' + 一次性凭据
+  final String link;
+
+  IssuedInvitation({
+    required this.expiresAt,
+    required this.invitationId,
+    required this.link,
+  });
+
+  factory IssuedInvitation.fromJson(Map<String, dynamic> json) =>
+      IssuedInvitation(
+        expiresAt: json["expiresAt"],
+        invitationId: json["invitationId"],
+        link: json["link"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt,
+    "invitationId": invitationId,
+    "link": link,
+  });
+}
+
+///DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
+///AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
+///`{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
+class AutomationWebhookSecret {
+  final String automationResourceId;
+  final String hint;
+
+  ///32 字节随机密钥的 base64 展示形式。
+  final String secret;
+
+  ///公开投递地址；部署未配置公开基址时省略。
+  final String? url;
+
+  AutomationWebhookSecret({
+    required this.automationResourceId,
+    required this.hint,
+    required this.secret,
+    this.url,
+  });
+
+  factory AutomationWebhookSecret.fromJson(Map<String, dynamic> json) =>
+      AutomationWebhookSecret(
+        automationResourceId: json["automationResourceId"],
+        hint: json["hint"],
+        secret: json["secret"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "automationResourceId": automationResourceId,
+    "hint": hint,
+    "secret": secret,
+    "url": url,
+  });
+}
+
 ///POST /api/v1/huddles/{huddleId}/announcement（仅 Web 创建者，DD-125(3)）：BFF 以本人 SERVER 身份为
 ///ACTIVE 的 Huddle 各签一次 48106（临时频道，原 voice_mode_guidelines 正文）与 48100（父频道，content 为
 ///ephemeral_channel_id），签名事件随绑定持久化，重试只重投同一事件、不重签（DD-81）。48106 按原版尽力发布，48100 是必需的发现链接。
@@ -12461,14 +14543,6 @@ class ApplicationCapabilitySelection {
       _stripNulls({"category": category, "version": version});
 }
 
-enum ApplicationModelCallMode { NONE, PLATFORM_LLM_ROUTE, SELF_MANAGED_MODEL }
-
-final applicationModelCallModeValues = EnumValues({
-  "NONE": ApplicationModelCallMode.NONE,
-  "PLATFORM_LLM_ROUTE": ApplicationModelCallMode.PLATFORM_LLM_ROUTE,
-  "SELF_MANAGED_MODEL": ApplicationModelCallMode.SELF_MANAGED_MODEL,
-});
-
 class ApplicationBindingSecretRef {
   final String audience;
   final String locator;
@@ -12695,40 +14769,6 @@ class CapabilityContractRegistrationOperationContractsItem {
     "targetType": targetType,
   });
 }
-
-enum CapabilityPermission {
-  APPROVE,
-  AUDIT,
-  CONSUME,
-  CREATE,
-  DELEGATE,
-  DELETE,
-  DISCOVER,
-  EXECUTE,
-  EXPORT,
-  MANAGE,
-  READ,
-  SHARE,
-  TRANSFER_OWNER,
-  UPDATE,
-}
-
-final capabilityPermissionValues = EnumValues({
-  "approve": CapabilityPermission.APPROVE,
-  "audit": CapabilityPermission.AUDIT,
-  "consume": CapabilityPermission.CONSUME,
-  "create": CapabilityPermission.CREATE,
-  "delegate": CapabilityPermission.DELEGATE,
-  "delete": CapabilityPermission.DELETE,
-  "discover": CapabilityPermission.DISCOVER,
-  "execute": CapabilityPermission.EXECUTE,
-  "export": CapabilityPermission.EXPORT,
-  "manage": CapabilityPermission.MANAGE,
-  "read": CapabilityPermission.READ,
-  "share": CapabilityPermission.SHARE,
-  "transfer_owner": CapabilityPermission.TRANSFER_OWNER,
-  "update": CapabilityPermission.UPDATE,
-});
 
 enum CapabilitySurface { ACTION, TOOL }
 
@@ -13808,151 +15848,6 @@ class NativeHumanActionResultReadAdmission {
     "actionToken": actionToken,
     "argumentsJson": argumentsJson,
     "expiresAt": expiresAt,
-  });
-}
-
-///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
-///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite
-///的首次回应中出现，同一幂等键的重放不再给出（DD-83）。webhookSecret 同理，只在生成或轮换 WEBHOOK 密钥的 automation.enable /
-///automation.rotate_webhook_secret 首次回应中出现（DD-116）。
-class ActionSubmission {
-  final String actionExecutionId;
-  final String actionKey;
-  final String? approvalWorkflowId;
-  final ActionDispatchState dispatchState;
-  final DocumentLaunchDescriptor? documentLaunch;
-  final ActionGateState gateState;
-
-  ///仅 huddle.start（DD-125(3)）：Core 预分配的 HuddleBuzzBinding；同一幂等键的重放给出同一值
-  final String? huddleId;
-  final IssuedInvitation? invitation;
-  final String operationId;
-  final String? protocolSessionId;
-  final ReasonCode? reason;
-  final AutomationWebhookSecret? webhookSecret;
-  final String? workflowId;
-
-  ActionSubmission({
-    required this.actionExecutionId,
-    required this.actionKey,
-    this.approvalWorkflowId,
-    required this.dispatchState,
-    this.documentLaunch,
-    required this.gateState,
-    this.huddleId,
-    this.invitation,
-    required this.operationId,
-    this.protocolSessionId,
-    this.reason,
-    this.webhookSecret,
-    this.workflowId,
-  });
-
-  factory ActionSubmission.fromJson(Map<String, dynamic> json) =>
-      ActionSubmission(
-        actionExecutionId: json["actionExecutionId"],
-        actionKey: json["actionKey"],
-        approvalWorkflowId: json["approvalWorkflowId"],
-        dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
-        documentLaunch: json["documentLaunch"] == null
-            ? null
-            : DocumentLaunchDescriptor.fromJson(json["documentLaunch"]),
-        gateState: actionGateStateValues.map[json["gateState"]]!,
-        huddleId: json["huddleId"],
-        invitation: json["invitation"] == null
-            ? null
-            : IssuedInvitation.fromJson(json["invitation"]),
-        operationId: json["operationId"],
-        protocolSessionId: json["protocolSessionId"],
-        reason: json["reason"] == null
-            ? null
-            : reasonCodeValues.map[json["reason"]]!,
-        webhookSecret: json["webhookSecret"] == null
-            ? null
-            : AutomationWebhookSecret.fromJson(json["webhookSecret"]),
-        workflowId: json["workflowId"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "actionExecutionId": actionExecutionId,
-    "actionKey": actionKey,
-    "approvalWorkflowId": approvalWorkflowId,
-    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
-    "documentLaunch": documentLaunch?.toJson(),
-    "gateState": actionGateStateValues.reverse[gateState],
-    "huddleId": huddleId,
-    "invitation": invitation?.toJson(),
-    "operationId": operationId,
-    "protocolSessionId": protocolSessionId,
-    "reason": reasonCodeValues.reverse[reason],
-    "webhookSecret": webhookSecret?.toJson(),
-    "workflowId": workflowId,
-  });
-}
-
-///tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
-///里），服务端只存其摘要，之后任何回应都不再给出；丢失即撤回重发。
-class IssuedInvitation {
-  ///RFC3339，UTC
-  final String expiresAt;
-  final String invitationId;
-
-  ///部署登记的链接基址 + '#' + 一次性凭据
-  final String link;
-
-  IssuedInvitation({
-    required this.expiresAt,
-    required this.invitationId,
-    required this.link,
-  });
-
-  factory IssuedInvitation.fromJson(Map<String, dynamic> json) =>
-      IssuedInvitation(
-        expiresAt: json["expiresAt"],
-        invitationId: json["invitationId"],
-        link: json["link"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "expiresAt": expiresAt,
-    "invitationId": invitationId,
-    "link": link,
-  });
-}
-
-///DD-116：WEBHOOK 触发密钥的唯一一次明文交付。只出现在生成或轮换该密钥的那次 ActionSubmission 中；之后只给出
-///AutomationView.webhookSecretHint。投递方用它按 Standard Webhooks 对
-///`{webhook-id}.{webhook-timestamp}.{正文}` 计算 HMAC-SHA256。
-class AutomationWebhookSecret {
-  final String automationResourceId;
-  final String hint;
-
-  ///32 字节随机密钥的 base64 展示形式。
-  final String secret;
-
-  ///公开投递地址；部署未配置公开基址时省略。
-  final String? url;
-
-  AutomationWebhookSecret({
-    required this.automationResourceId,
-    required this.hint,
-    required this.secret,
-    this.url,
-  });
-
-  factory AutomationWebhookSecret.fromJson(Map<String, dynamic> json) =>
-      AutomationWebhookSecret(
-        automationResourceId: json["automationResourceId"],
-        hint: json["hint"],
-        secret: json["secret"],
-        url: json["url"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "automationResourceId": automationResourceId,
-    "hint": hint,
-    "secret": secret,
-    "url": url,
   });
 }
 
