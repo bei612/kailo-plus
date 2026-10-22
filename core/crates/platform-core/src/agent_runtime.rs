@@ -1031,7 +1031,9 @@ impl Supervisor {
     }
 
     /// SS-COD-TRACE/APP：唯一已准入 Invocation 发派，Core context 仅在本次 RPC 内。
+    /// DD-135(6)：`inject_skills` 只在 Session 首个 turn 为真。
     /// 调用方已原子提交 Invocation/trace 意图；此处再持生命周期 fence/fresh 授权至 RPC 返回。
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn start_turn(
         &self,
         state: &crate::service_api::ServiceState,

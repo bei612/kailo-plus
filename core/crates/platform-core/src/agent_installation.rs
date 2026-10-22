@@ -1207,11 +1207,6 @@ pub(crate) struct RuntimeFacts {
 }
 
 impl RuntimeFacts {
-    /// Installation 的问责 HUMAN；Skill 的逐回合 fresh 判定以它的定义 `read` 为准（DD-135(7)）。
-    pub(crate) fn owner_principal_id(&self) -> Uuid {
-        self.snapshot.owner_principal_id
-    }
-
     pub(crate) fn skill_root_ref(&self) -> Option<&str> {
         self.snapshot.skill_root_ref.as_deref()
     }

@@ -106,6 +106,7 @@ fn definition_json(d: &SkillDefinition, shared: bool) -> Value {
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Response> {
     serde_json::from_value(value).map_err(|_| {
         tracing::error!("Skill 查询事实不符合共享契约");
