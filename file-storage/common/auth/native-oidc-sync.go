@@ -131,9 +131,9 @@ func NativeOIDCLanguage(locale string) string {
 	return ""
 }
 
-// isNativeOIDCPicture recognizes an avatar that holds a Kailo picture URL
+// IsNativeOIDCPicture recognizes an avatar that holds a Kailo picture URL
 // rather than a native binary id.
-func isNativeOIDCPicture(avatar string) bool {
+func IsNativeOIDCPicture(avatar string) bool {
 	return strings.HasPrefix(avatar, "https://") || strings.HasPrefix(avatar, "http://")
 }
 
@@ -256,7 +256,7 @@ func syncNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.Us
 	}
 	if profile.picture != "" {
 		attributes[idm.UserAttrAvatar] = profile.picture
-	} else if isNativeOIDCPicture(attributes[idm.UserAttrAvatar]) {
+	} else if IsNativeOIDCPicture(attributes[idm.UserAttrAvatar]) {
 		// Kailo no longer publishes a picture: drop the stale copy only.
 		delete(attributes, idm.UserAttrAvatar)
 	}

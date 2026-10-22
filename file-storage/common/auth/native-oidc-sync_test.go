@@ -55,6 +55,17 @@ func tenantGroup(t *testing.T, ctx context.Context, tenantID string) *idm.User {
 	return nil
 }
 
+// Production lets both native profiles log in through OIDC; the provisioning
+// fixture policy admits standard only.
+type kailoLoginPolicy struct {
+	idm.UnimplementedPolicyEngineServiceServer
+}
+
+func (*kailoLoginPolicy) StreamPolicyGroups(_ *idm.ListPolicyGroupsRequest, stream idm.PolicyEngineService_StreamPolicyGroupsServer) error {
+	return stream.Send(&idm.PolicyGroup{Policies: []*idm.Policy{{ID: "kailo-oidc-login",
+		Subjects: []string{"profile:" + common.PydioProfileStandard, "profile:" + common.PydioProfileAdmin}, Resources: []string{"oidc"}, Actions: []string{"login"}, Effect: idm.PolicyEffect_allow}}})
+}
+
 func hasPolicy(policies []*service.ResourcePolicy, action service.ResourcePolicyAction, subject string) bool {
 	for _, p := range policies {
 		if p.GetAction() == action && p.GetSubject() == subject && p.GetEffect() == service.ResourcePolicy_allow {
@@ -82,7 +93,7 @@ func TestNativeOIDCKailoUserSystem(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &provisionLoginPolicy{}})
+		grpcclient.RegisterMock(common.ServicePolicyGRPC, &idm.PolicyEngineServiceStub{PolicyEngineServiceServer: &kailoLoginPolicy{}})
 		permissions.ClearCachedPolicies(ctx, "oidc")
 		idp := provisionIdP{t: t, key: key}
 		dedicated := auth.NativeOIDCConnector{Issuer: provisionIssuer, ClientID: provisionClient, ProvisionUsers: true, ProvisionProfile: common.PydioProfileStandard,

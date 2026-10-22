@@ -68,6 +68,14 @@ func TestOnlyOfficeFileInfoProjectsFreshSession(t *testing.T) {
 	client = fixture
 	t.Cleanup(func() { client = originalClient })
 	clientgrpc.RegisterMock(common.ServiceVersionsGRPC, fixture)
+	originalIdentity := kailoIdentity
+	kailoIdentity = func(_ context.Context, userUUID string) (string, string) {
+		if userUUID != "native-human" {
+			t.Fatalf("identity read for %s", userUUID)
+		}
+		return "Kailo Human", "https://kailo.example/api/v1/identity/avatars/idp-subject"
+	}
+	t.Cleanup(func() { kailoIdentity = originalIdentity })
 	for _, mode := range []string{"VIEW", "EDIT"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := config.WithStubStore(context.Background())
@@ -86,10 +94,42 @@ func TestOnlyOfficeFileInfoProjectsFreshSession(t *testing.T) {
 			}
 			if info.PostMessageOrigin != "https://platform.example" || !info.EditNotificationPostMessage || !info.ClosePostMessage ||
 				!info.DisableCopy || !info.DisableExport || !info.DisablePrint || !info.HideExportOption || !info.HidePrintOption ||
-				info.Version != "original-version" || info.Size != 7 || info.UserId != "platform-human" || info.UserCanWrite != (mode == "EDIT") {
+				info.Version != "original-version" || info.Size != 7 || info.UserId != "platform-human" || info.UserCanWrite != (mode == "EDIT") ||
+				info.UserFriendlyName != "Original Human" || info.UserExtraInfo["avatar"] != "https://kailo.example/api/v1/identity/avatars/idp-subject" {
 				t.Fatalf("fresh original Session projection was lost: %+v", info)
 			}
 		})
+	}
+}
+
+// 07 §4.7.3: the editor's user card is the Kailo name and avatar of the account.
+func TestFileInfoKailoIdentity(t *testing.T) {
+	originalIdentity := kailoIdentity
+	t.Cleanup(func() { kailoIdentity = originalIdentity })
+	ctx := auth2.WithImpersonate(config.WithStubStore(context.Background()), &idm.User{Uuid: "native-uuid", Login: "member",
+		Attributes: map[string]string{idm.UserAttrDisplayName: "stale"}})
+	node := &tree.Node{Path: "/p/f.docx", MetaStore: map[string]string{common.MetaNamespaceNodeName: `"f.docx"`}}
+	for _, c := range []struct {
+		name, picture, wantName string
+		wantAvatar              any
+	}{
+		{"成员甲", "https://kailo.example/api/v1/identity/avatars/sub-1", "成员甲", "https://kailo.example/api/v1/identity/avatars/sub-1"},
+		{"成员甲", "native-binary-id", "成员甲", nil},
+		{"", "", "stale", nil},
+	} {
+		kailoIdentity = func(_ context.Context, userUUID string) (string, string) {
+			if userUUID != "native-uuid" {
+				t.Fatalf("identity read for %s", userUUID)
+			}
+			return c.name, c.picture
+		}
+		f, err := GetFileInfoResponseBuilder().Build(ctx, node, nil)
+		if err != nil || f.UserFriendlyName != c.wantName || f.UserExtraInfo["avatar"] != c.wantAvatar || f.UserId != "member" {
+			t.Fatalf("%+v: %v %+v", c, err, f)
+		}
+		if c.wantAvatar == nil && f.UserExtraInfo != nil {
+			t.Fatalf("native avatar exposed: %v", f.UserExtraInfo)
+		}
 	}
 }
 
