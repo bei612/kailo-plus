@@ -57,7 +57,7 @@ type Route = (request: BffRequest) => BffReply | Promise<BffReply>;
 
 function routes(access: unknown, extra: Route = () => ({ status: 503, body: undefined })): Route {
   return (request) => {
-    const path = request.path.split("?")[0];
+    const path = request.path.split("?")[0] ?? "";
     if (path === "/api/v1/gateway/access") return { status: 200, body: access };
     if (path === "/api/v1/workspaces") return { status: 200, body: [] };
     return extra(request);
@@ -136,7 +136,7 @@ describe("gateway statistics and calls", () => {
       auditEvents: [{ eventId: "44444444-4444-4444-8444-444444444444", eventType: "DECISION", actionKey: "time.convert@v1",
         decision: "DENY", resultCode: "DELEGATION_REQUIRED", occurredAt: "2026-10-21T01:00:01Z" }] };
     const { host, send } = await mount(routes(tenantAccess, (request) => {
-      const path = request.path.split("?")[0];
+      const path = request.path.split("?")[0] ?? "";
       if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
       if (path === "/api/v1/gateway/calls") return { status: 200, body: { scope: "TENANT", calls: [call], truncated: false, modelLogAvailable: true } };
       if (path.startsWith("/api/v1/gateway/calls/")) return { status: 200, body: detail };
@@ -170,7 +170,7 @@ describe("gateway writes only submit existing actions", () => {
     source: "PLATFORM_NATIVE", resourceState: "ACTIVE", actionKey: "agent.memory.entry.read", requests: 0, failed: 0, denied: 0,
     canDisableBinding: false, canTestCall: false };
   const toolRoutes = (write: Route) => routes(tenantAccess, (request) => {
-    const path = request.path.split("?")[0];
+    const path = request.path.split("?")[0] ?? "";
     if (path === "/api/v1/gateway/tools") return { status: 200, body: { from: "x", to: "y", tools: [tool, native] } };
     if (path === "/api/v1/gateway/mcp/releases") return { status: 200, body: { releases: [] } };
     if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
@@ -224,7 +224,7 @@ describe("gateway writes only submit existing actions", () => {
     const route = { resourceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", resourceVersion: 7, nativeId: "chat-route", resourceState: "ACTIVE",
       ownerPrincipalId: tenantId, provider: "openai", model: "qwen", installationCount: 2, bindingCount: 1, requests: 9, canDisable: true };
     const { host, send } = await mount(routes(tenantAccess, (request) => {
-      const path = request.path.split("?")[0];
+      const path = request.path.split("?")[0] ?? "";
       if (path === "/api/v1/gateway/model-routes") return { status: 200, body: { from: "x", to: "y", canCreate: false, routes: [route] } };
       if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
       if (path === "/api/v1/actions") return { status: 200, body: { actionKey: "llm_route.disable", actionExecutionId: "a3",
@@ -249,7 +249,7 @@ describe("MCP server wizard", () => {
     tools: [{ name: "convert_time", description: "Convert", inputSchemaJson: '{"type":"object"}', inputSchemaDigest: "e".repeat(64),
       readOnlyHint: true, matchingContracts: [{ categoryKey: "time", contractVersion: 1, contractKey: "time.convert_time@v1", permission: "consume" }] }] };
   const wizardRoutes = (write: Route) => routes(platformAccess, (request) => {
-    const path = request.path.split("?")[0];
+    const path = request.path.split("?")[0] ?? "";
     if (path === "/api/v1/platform/gateway/mcp/peers") return { status: 200, body: { directoryAvailable: true, peers: [peer] } };
     if (path === "/api/v1/platform/gateway/mcp/probes") return { status: 200, body: probe };
     if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE", { scope: "PLATFORM" }) };
@@ -304,7 +304,7 @@ describe("MCP server wizard", () => {
       capabilityCategories: [{ category: "time", version: 1 }], tools: [{ name: "convert_time", actionKey: "time.convert_time@v1",
         capabilityContractKey: "time.convert_time@v1" }], secretKeys: [], allowedModelCallModes: ["NONE"], deliveryFacts: [], bindingIds: [] };
     const { host, send } = await mount(routes(tenantAccess, (request) => {
-      const path = request.path.split("?")[0];
+      const path = request.path.split("?")[0] ?? "";
       if (path === "/api/v1/gateway/mcp/releases") return { status: 200, body: { releases: [release] } };
       if (path === "/api/v1/gateway/tools") return { status: 200, body: { from: "x", to: "y", tools: [] } };
       if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
@@ -327,7 +327,7 @@ describe("MCP server wizard", () => {
 describe("live configuration", () => {
   it("shows masked values, unrecorded revisions and per-revision diffs with their executions", async () => {
     const { host, send } = await mount(routes(platformAccess, (request) => {
-      const path = request.path.split("?")[0];
+      const path = request.path.split("?")[0] ?? "";
       if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE", { scope: "PLATFORM" }) };
       if (path === "/api/v1/platform/gateway/config") return { status: 200, body: { readAt: "2026-10-21T03:00:00Z",
         effectiveConfigJson: '{"llm":{"providers":[{"apiKey":"[REDACTED]"}]}}', resources: [
