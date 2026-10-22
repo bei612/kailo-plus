@@ -250,6 +250,7 @@ import {
   type TenantRole,
 } from '@/api/tenant/members'
 import { useAuthStore } from '@/stores/auth'
+import { kailoConfig } from '@/kailo/runtime'
 import { useI18n } from 'vue-i18n'
 import { useRoleLabel, useHomeTenant } from '@/composables/useRoleLabel'
 import {
@@ -289,7 +290,11 @@ const canLeaveSpace = computed(() => {
 })
 
 /** 在主内容已成功加载、`listMembers` 放行规则就绪且允许退出时出现。 */
+// Kailo mode (DD-133 §3): spaces and their membership are managed by Kailo.
+const kailoMode = kailoConfig().mode
+
 const showLeaveDangerZone = computed(() => {
+  if (kailoMode) return false
   if (loading.value || error.value || !tenantInfo.value) return false
   if (!leaveGateReady.value || leaveGateLoading.value) return false
   if (!currentTenantRole.value) return false
@@ -298,6 +303,7 @@ const showLeaveDangerZone = computed(() => {
 })
 
 const showDeleteDangerZone = computed(() => {
+  if (kailoMode) return false
   if (loading.value || error.value || !tenantInfo.value) return false
   if (Number(tenantInfo.value.id) !== activeTenantNumericId.value) return false
   return authStore.hasRole('owner')

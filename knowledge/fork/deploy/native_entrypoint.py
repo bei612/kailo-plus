@@ -125,9 +125,17 @@ def prepare_environment(original):
         ("DOCREADER_ADDR", "docreader:50051"),
         ("OIDC_AUTH_ENABLE", "true"),
         ("AUTO_RECOVER_DIRTY", "false"),
+        # Kailo DD-133: the Kailo identity is the only way in; local
+        # credentials and native membership edits stay closed.
+        ("KAILO_INTEGRATION_ENABLE", "true"),
     ):
         if env.get(name) != expected:
             raise ConfigurationError(f"{name}: independent deployment value required")
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,140}", env.get("KAILO_TENANT_ID", "")):
+        raise ConfigurationError("KAILO_TENANT_ID: Kailo Tenant id required")
+    required(env, "KAILO_TENANT_NAME")
+    if not re.fullmatch(r"[1-9][0-9]*(s|m|h)", env.get("KAILO_SESSION_MAX_LIFETIME", "")):
+        raise ConfigurationError("KAILO_SESSION_MAX_LIFETIME: positive duration in s, m or h required")
     required(env, "DB_USER")
     required(env, "DB_NAME")
     required(env, "OIDC_AUTH_CLIENT_ID")

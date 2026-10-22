@@ -72,7 +72,8 @@
           </div>
 
           <!-- 邀请成员 (仅管理员可见) -->
-          <div v-if="isAdmin && orgId" class="setting-row setting-row-vertical">
+          <!-- Kailo mode (DD-133 §3): organization membership is derived from Kailo; no invite codes. -->
+          <div v-if="isAdmin && orgId && !kailoMode" class="setting-row setting-row-vertical">
             <div class="setting-info full-width">
               <label>{{ $t('organization.settings.inviteMembers') }}</label>
               <p class="desc">{{ $t('organization.settings.inviteMembersDesc') }}</p>
@@ -373,7 +374,7 @@
                   </div>
                 </template>
               </t-popup>
-              <t-popup v-if="isAdmin" v-model="addMemberPopupVisible" trigger="click" placement="bottom-end"
+              <t-popup v-if="isAdmin && !kailoMode" v-model="addMemberPopupVisible" trigger="click" placement="bottom-end"
                 destroy-on-close overlay-class-name="org-add-member-popup-overlay">
                 <t-button theme="primary" variant="outline" shape="square" size="small"
                   class="members-list-add-btn" :title="$t('organization.addMember.button')"
@@ -441,7 +442,7 @@
               </template>
               <template #role="{ row }">
                 <div class="role-cell">
-                  <t-select v-if="isAdmin && !isOwnerMember(row)" :model-value="row.role"
+                  <t-select v-if="isAdmin && !kailoMode && !isOwnerMember(row)" :model-value="row.role"
                     class="member-role-select" size="small" :options="roleOptions"
                     @change="(val: string) => handleRoleChange(row, val)" />
                   <t-tag v-else size="small" :theme="getRoleTheme(row.role)">
@@ -451,7 +452,7 @@
               </template>
               <template #joined_at="{ row }">{{ formatDate(row.joined_at) }}</template>
               <template #actions="{ row }">
-                <t-popconfirm v-if="isAdmin && !isOwnerMember(row)"
+                <t-popconfirm v-if="isAdmin && !kailoMode && !isOwnerMember(row)"
                   :content="$t('organization.detail.removeMemberConfirm', { name: memberPrimaryLabel(row) })"
                   :confirm-btn="{ content: $t('common.confirm'), theme: 'danger' }"
                   :cancel-btn="{ content: $t('common.cancel') }" placement="left"
@@ -780,6 +781,7 @@
 </template>
 
 <script setup lang="ts">
+import { kailoConfig } from '@/kailo/runtime'
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -842,6 +844,8 @@ const membersLoading = ref(false)
 const memberSearchQuery = ref('')
 const submitting = ref(false)
 const refreshingCode = ref(false)
+// Kailo mode (DD-133 §3): organization membership is derived from Kailo.
+const kailoMode = kailoConfig().mode
 const inviteCode = ref('')
 const inviteCodeExpiresAt = ref<string | null>(null)
 const upgradePopupVisible = ref(false)

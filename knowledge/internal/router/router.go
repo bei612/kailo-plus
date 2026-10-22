@@ -251,6 +251,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 		// apiKeyGroup helpers. Must be attached BEFORE the Register* calls
 		// so that sub-groups inherit it.
 		v1.Use(rbacGuards.apiKeyAuthorizer.Middleware())
+		// Kailo DD-133: in Kailo mode, local credentials and native
+		// membership edits are closed; membership comes from Kailo.
+		v1.Use(middleware.KailoManagedGuard(params.Config))
 
 		RegisterAuthRoutes(v1, params.AuthHandler, rbacGuards)
 		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, rbacGuards)

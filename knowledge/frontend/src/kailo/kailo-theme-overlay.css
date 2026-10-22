@@ -1,0 +1,176 @@
+/*
+ * Kailo design-token overlay (DD-133, design 07 §4.7.1).
+ *
+ * Maps the native TDesign / app variables onto the Kailo presentation tokens
+ * from /kailo/kailo-theme-tokens.css (client-kit/embed, a build input copied
+ * into this artifact). This file holds no colours: every value is a
+ * --kailo-color-*, --kailo-hsl-*, --kailo-font-*, --kailo-radius* or
+ * --kailo-shadow-* token. Dark values come from the token sheet itself under
+ * :root[data-kailo-theme="dark"], which kailo-embed.js sets together with the
+ * theme the native page applies (theme-mode), so one rule covers both modes.
+ *
+ * Applies in Kailo mode only (html[data-kailo-mode], set by src/kailo/setup.ts
+ * and the pre-paint script), so a non-Kailo run keeps the native palette.
+ *
+ * Specificity: the native theme uses :root:root[theme-mode="dark"] (0,3,0);
+ * html[data-kailo-mode]:root:root is (0,3,1) and wins in both modes.
+ */
+html[data-kailo-mode]:root:root {
+  /* Brand scale: 4 is the base, 1-3 tint toward the background, 5-10 shade toward the foreground. */
+  --td-brand-color-1: color-mix(in srgb, var(--kailo-color-primary) 10%, var(--kailo-color-background));
+  --td-brand-color-2: color-mix(in srgb, var(--kailo-color-primary) 25%, var(--kailo-color-background));
+  --td-brand-color-3: color-mix(in srgb, var(--kailo-color-primary) 85%, var(--kailo-color-background));
+  --td-brand-color-4: var(--kailo-color-primary);
+  --td-brand-color-5: color-mix(in srgb, var(--kailo-color-primary) 85%, var(--kailo-color-foreground));
+  --td-brand-color-6: color-mix(in srgb, var(--kailo-color-primary) 70%, var(--kailo-color-foreground));
+  --td-brand-color-7: color-mix(in srgb, var(--kailo-color-primary) 55%, var(--kailo-color-foreground));
+  --td-brand-color-8: color-mix(in srgb, var(--kailo-color-primary) 40%, var(--kailo-color-foreground));
+  --td-brand-color-9: color-mix(in srgb, var(--kailo-color-primary) 30%, var(--kailo-color-foreground));
+  --td-brand-color-10: color-mix(in srgb, var(--kailo-color-primary) 20%, var(--kailo-color-foreground));
+  --td-brand-color: var(--td-brand-color-4);
+  --td-brand-color-hover: var(--td-brand-color-3);
+  --td-brand-color-active: var(--td-brand-color-5);
+  --td-brand-color-light: var(--td-brand-color-1);
+  --td-brand-color-disabled: hsl(var(--kailo-hsl-primary) / 0.4);
+  --td-brand-color-focus: hsl(var(--kailo-hsl-ring) / 0.25);
+  --brand-main: var(--kailo-color-primary);
+
+  /* Error = Kailo destructive. */
+  --td-error-color-1: hsl(var(--kailo-hsl-destructive) / 0.08);
+  --td-error-color-2: hsl(var(--kailo-hsl-destructive) / 0.18);
+  --td-error-color-3: hsl(var(--kailo-hsl-destructive) / 0.35);
+  --td-error-color-4: hsl(var(--kailo-hsl-destructive) / 0.6);
+  --td-error-color-5: color-mix(in srgb, var(--kailo-color-destructive) 85%, var(--kailo-color-background));
+  --td-error-color-6: var(--kailo-color-destructive);
+  --td-error-color-7: color-mix(in srgb, var(--kailo-color-destructive) 85%, var(--kailo-color-foreground));
+  --td-error-color-8: color-mix(in srgb, var(--kailo-color-destructive) 70%, var(--kailo-color-foreground));
+  --td-error-color-9: color-mix(in srgb, var(--kailo-color-destructive) 55%, var(--kailo-color-foreground));
+  --td-error-color-10: color-mix(in srgb, var(--kailo-color-destructive) 40%, var(--kailo-color-foreground));
+  --td-error-color: var(--td-error-color-6);
+  --td-error-color-hover: var(--td-error-color-5);
+  --td-error-color-active: var(--td-error-color-7);
+  --td-error-color-focus: var(--td-error-color-2);
+  --td-error-color-disabled: var(--td-error-color-3);
+  --td-error-color-light: var(--td-error-color-1);
+
+  /* Warning = Kailo warning / warning-background. */
+  --td-warning-color-1: var(--kailo-color-warning-background);
+  --td-warning-color-2: color-mix(in srgb, var(--kailo-color-warning) 20%, var(--kailo-color-background));
+  --td-warning-color-3: color-mix(in srgb, var(--kailo-color-warning) 40%, var(--kailo-color-background));
+  --td-warning-color-4: color-mix(in srgb, var(--kailo-color-warning) 70%, var(--kailo-color-background));
+  --td-warning-color-5: var(--kailo-color-warning);
+  --td-warning-color-6: color-mix(in srgb, var(--kailo-color-warning) 85%, var(--kailo-color-foreground));
+  --td-warning-color-7: color-mix(in srgb, var(--kailo-color-warning) 70%, var(--kailo-color-foreground));
+  --td-warning-color-8: color-mix(in srgb, var(--kailo-color-warning) 55%, var(--kailo-color-foreground));
+  --td-warning-color-9: color-mix(in srgb, var(--kailo-color-warning) 40%, var(--kailo-color-foreground));
+  --td-warning-color-10: color-mix(in srgb, var(--kailo-color-warning) 30%, var(--kailo-color-foreground));
+  --td-warning-color: var(--td-warning-color-5);
+  --td-warning-color-hover: var(--td-warning-color-4);
+  --td-warning-color-active: var(--td-warning-color-6);
+  --td-warning-color-focus: var(--td-warning-color-2);
+  --td-warning-color-disabled: var(--td-warning-color-3);
+  --td-warning-color-light: var(--td-warning-color-1);
+
+  /* Success = Kailo status-added. */
+  --td-success-color-1: color-mix(in srgb, var(--kailo-color-status-added) 10%, var(--kailo-color-background));
+  --td-success-color-2: color-mix(in srgb, var(--kailo-color-status-added) 22%, var(--kailo-color-background));
+  --td-success-color-3: color-mix(in srgb, var(--kailo-color-status-added) 40%, var(--kailo-color-background));
+  --td-success-color-4: color-mix(in srgb, var(--kailo-color-status-added) 70%, var(--kailo-color-background));
+  --td-success-color-5: var(--kailo-color-status-added);
+  --td-success-color-6: color-mix(in srgb, var(--kailo-color-status-added) 85%, var(--kailo-color-foreground));
+  --td-success-color-7: color-mix(in srgb, var(--kailo-color-status-added) 70%, var(--kailo-color-foreground));
+  --td-success-color-8: color-mix(in srgb, var(--kailo-color-status-added) 55%, var(--kailo-color-foreground));
+  --td-success-color-9: color-mix(in srgb, var(--kailo-color-status-added) 40%, var(--kailo-color-foreground));
+  --td-success-color-10: color-mix(in srgb, var(--kailo-color-status-added) 30%, var(--kailo-color-foreground));
+  --td-success-color: var(--td-success-color-5);
+  --td-success-color-hover: var(--td-success-color-4);
+  --td-success-color-active: var(--td-success-color-6);
+  --td-success-color-focus: var(--td-success-color-2);
+  --td-success-color-disabled: var(--td-success-color-3);
+  --td-success-color-light: var(--td-success-color-1);
+
+  /* Surfaces. */
+  --td-bg-color-page: var(--kailo-color-background);
+  --td-bg-color-container: var(--kailo-color-card);
+  --td-bg-color-container-select: var(--kailo-color-card);
+  --td-bg-color-container-hover: var(--kailo-color-accent);
+  --td-bg-color-container-active: color-mix(in srgb, var(--kailo-color-foreground) 10%, var(--kailo-color-card));
+  --td-bg-color-secondarycontainer: var(--kailo-color-muted);
+  --td-bg-color-secondarycontainer-hover: var(--kailo-color-accent);
+  --td-bg-color-secondarycontainer-active: color-mix(in srgb, var(--kailo-color-foreground) 12%, var(--kailo-color-muted));
+  --td-bg-color-component: var(--kailo-color-input);
+  --td-bg-color-component-hover: color-mix(in srgb, var(--kailo-color-foreground) 12%, var(--kailo-color-input));
+  --td-bg-color-component-active: color-mix(in srgb, var(--kailo-color-foreground) 24%, var(--kailo-color-input));
+  --td-bg-color-component-disabled: var(--kailo-color-muted);
+  --td-bg-color-specialcomponent: var(--kailo-color-card);
+  --td-bg-color-sidebar: var(--kailo-color-sidebar-background);
+  --td-bg-color-settings-modal: var(--kailo-color-popover);
+  --td-mask-active: hsl(var(--kailo-hsl-foreground) / 0.4);
+
+  /* Strokes. */
+  --td-component-stroke: var(--kailo-color-border);
+  --td-component-border: var(--kailo-color-input);
+  --td-border-level-1-color: var(--kailo-color-border);
+  --td-border-level-2-color: var(--kailo-color-input);
+
+  /* Text. */
+  --td-text-color-primary: var(--kailo-color-foreground);
+  --td-text-color-secondary: var(--kailo-color-muted-foreground);
+  --td-text-color-placeholder: hsl(var(--kailo-hsl-muted-foreground) / 0.7);
+  --td-text-color-disabled: hsl(var(--kailo-hsl-muted-foreground) / 0.45);
+  --td-text-color-anti: var(--kailo-color-primary-foreground);
+  --td-text-color-brand: var(--kailo-color-primary);
+  --td-text-color-link: var(--kailo-color-primary);
+  --td-font-gray-1: var(--kailo-color-foreground);
+  --td-font-gray-2: var(--kailo-color-muted-foreground);
+  --td-font-gray-3: hsl(var(--kailo-hsl-muted-foreground) / 0.7);
+  --td-font-gray-4: hsl(var(--kailo-hsl-muted-foreground) / 0.45);
+
+  /* Typography. */
+  --app-font-family: var(--kailo-font-sans);
+  --td-font-family: var(--kailo-font-sans);
+  --td-font-family-medium: var(--kailo-font-sans);
+  --td-font-size-link-small: var(--kailo-font-size-xs);
+  --td-font-size-link-medium: var(--kailo-font-size-sm);
+  --td-font-size-link-large: var(--kailo-font-size-base);
+  --td-font-size-mark-small: var(--kailo-font-size-xs);
+  --td-font-size-mark-medium: var(--kailo-font-size-sm);
+  --td-font-size-body-small: var(--kailo-font-size-xs);
+  --td-font-size-body-medium: var(--kailo-font-size-sm);
+  --td-font-size-body-large: var(--kailo-font-size-base);
+  --td-font-size-title-small: var(--kailo-font-size-sm);
+  --td-font-size-title-medium: var(--kailo-font-size-base);
+  --td-font-size-title-large: var(--kailo-font-size-xl);
+  --td-font-size-headline-small: var(--kailo-font-size-2xl);
+  --td-font-size-headline-medium: var(--kailo-font-size-3xl);
+  --td-font-size-headline-large: var(--kailo-font-size-4xl);
+  --td-font-size-display-medium: var(--kailo-font-size-5xl);
+  --td-font-size-display-large: var(--kailo-font-size-6xl);
+  /* The native dense scale keeps its in-between steps; Kailo steps replace their equals. */
+  --app-text-sm: var(--kailo-font-size-xs);
+  --app-text-base: var(--kailo-font-size-sm);
+  --app-text-xl: var(--kailo-font-size-base);
+  --app-text-3xl: var(--kailo-font-size-xl);
+  --app-text-4xl: var(--kailo-font-size-2xl);
+
+  /* Radius. */
+  --td-radius-small: var(--kailo-radius-sm);
+  --td-radius-default: var(--kailo-radius-md);
+  --td-radius-medium: var(--kailo-radius-lg);
+  --td-radius-large: calc(var(--kailo-radius) + 4px);
+  --td-radius-extraLarge: calc(var(--kailo-radius) + 8px);
+  --app-radius-xs: calc(var(--kailo-radius-sm) - 2px);
+  --app-radius-sm: var(--kailo-radius-sm);
+  --app-radius-md: var(--kailo-radius-md);
+  --app-radius-lg: var(--kailo-radius-lg);
+  --app-radius-xl: calc(var(--kailo-radius) + 2px);
+
+  /* Elevation. */
+  --td-shadow-1: var(--kailo-shadow-sm);
+  --td-shadow-2: var(--kailo-shadow-md);
+  --td-shadow-3: var(--kailo-shadow-lg);
+}
+
+html[data-kailo-mode]:root:root ::selection {
+  background: hsl(var(--kailo-hsl-ring) / 0.3);
+}

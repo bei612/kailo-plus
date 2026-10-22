@@ -23,7 +23,23 @@ function deferred<T>() {
 }
 const flush = async () => { await new Promise(resolve => setImmediate(resolve)); await vue.nextTick() }
 
-function fixture(callback: 'success' | 'error' | 'none' = 'success') {
+type KailoCallbackStub = {
+  callbackPath: (location: unknown) => string
+  resolveOIDCErrorRoute: (code: string, prompt: string | null, returnPath: string, env: unknown) => string | null
+  resolveSuccessRoute: (returnPath: string, fallback: string) => string
+  nativeInvitationsEnabled?: () => boolean
+  nativeLoginNoticeEnabled?: () => boolean
+}
+
+// Outside Kailo mode the callback module keeps the native behaviour.
+const nativeCallback: KailoCallbackStub = {
+  callbackPath: () => '',
+  resolveOIDCErrorRoute: () => null,
+  resolveSuccessRoute: (_path, fallback) => fallback,
+  nativeInvitationsEnabled: () => true,
+}
+
+function fixture(callback: 'success' | 'error' | 'none' | { hash: string } = 'success', kailo: KailoCallbackStub = nativeCallback) {
   const userInfo = deferred<any>()
   const navigation = deferred<void>()
   const mounts: Array<{ name: string; token: string; tenant: unknown; path: string }> = []
@@ -48,7 +64,7 @@ function fixture(callback: 'success' | 'error' | 'none' = 'success') {
     vue.onMounted(() => { mounts.push({ name, token: store.token, tenant: store.tenant?.id, path }) })
     return () => null
   } })
-  const hash = callback === 'none' ? '' : callback === 'error' ? '#oidc_error=denied' :
+  const hash = typeof callback === 'object' ? callback.hash : callback === 'none' ? '' : callback === 'error' ? '#oidc_error=denied' :
     '#oidc_result=' + Buffer.from(JSON.stringify({ success: true, token: 'native-session', refresh_token: 'native-refresh' })).toString('base64url')
   const location = { hash }
   const exports: any = {}
@@ -77,6 +93,7 @@ function fixture(callback: 'success' | 'error' | 'none' = 'success') {
       if (name === '@/composables/useRoleLabel') return { useRoleLabel: () => ({ formatRole: () => '', roleIcon: () => '' }) }
       if (name === '@/utils/loginNotify') return { notifyLoginSuccess() {} }
       if (name === '@/utils/workspaceNotifyContent') return { renderWorkspaceNotifyContent() {} }
+      if (name === '@/kailo/oidcCallback') return { nativeInvitationsEnabled: () => true, nativeLoginNoticeEnabled: () => true, ...kailo }
       if (name === 'tdesign-vue-next') return {
         MessagePlugin: { error: (message: string) => errors.push(message), success() {}, warning() {} },
         NotifyPlugin: { success() {} },
@@ -114,7 +131,7 @@ test('native OIDC hydrates identity and scope and completes navigation before mo
   const f = fixture()
   try {
     assert.deepEqual(f.meRequests, ['native-session'])
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     await flush()
     assert.deepEqual(f.invitationScopes, [], 'polling also waits for the native scope')
     f.userInfo.resolve({ success: true, data: {
@@ -123,7 +140,7 @@ test('native OIDC hydrates identity and scope and completes navigation before mo
     } })
     await flush()
     assert.deepEqual(f.routes, ['/platform/knowledge-bases'])
-    assert.deepEqual(f.mounts, [], 'navigation must finish before the old route can mount')
+    assert.equal(f.mounts.length, 0, 'navigation must finish before the old route can mount')
     f.navigation.resolve()
     await flush()
     assert.equal(f.mounts.length, 4)
@@ -147,7 +164,7 @@ test('failed native user hydration logs out and completes login navigation befor
   try {
     f.userInfo.reject(new Error('native identity rejected'))
     await flush()
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     assert.equal(f.store.token, '')
     assert.deepEqual(f.routes, ['/login'])
     f.navigation.resolve()
@@ -161,7 +178,7 @@ test('IdP error never starts user hydration or mounts the callback route', async
   const f = fixture('error')
   try {
     assert.deepEqual(f.meRequests, [])
-    assert.deepEqual(f.mounts, [])
+    assert.equal(f.mounts.length, 0)
     f.navigation.resolve()
     await flush()
     assert.ok(f.mounts.every(mount => mount.path === '/login'))
@@ -176,5 +193,75 @@ test('ordinary startup mounts the original consumers without an OIDC request', a
     assert.equal(f.mounts.length, 4)
     assert.deepEqual(f.meRequests, [])
     assert.deepEqual(f.routes, [])
+  } finally { f.close() }
+})
+
+const successHash = '#oidc_result=' + Buffer.from(JSON.stringify({ success: true, token: 'native-session', refresh_token: 'native-refresh' })).toString('base64url')
+
+test('Kailo mode: a silent IdP failure routes to the neutral re-auth state without a login form or toast', async () => {
+  const calls: Array<{ code: string; prompt: string | null; returnPath: string }> = []
+  const f = fixture({ hash: '#oidc_error=login_required&oidc_prompt=none' }, {
+    callbackPath: () => '/platform/agents',
+    resolveOIDCErrorRoute: (code, prompt, returnPath) => {
+      calls.push({ code, prompt, returnPath })
+      return '/login?kailo_state=reauth&redirect=%2Fplatform%2Fagents'
+    },
+    resolveSuccessRoute: (_path, fallback) => fallback,
+  })
+  try {
+    assert.deepEqual(calls, [{ code: 'login_required', prompt: 'none', returnPath: '/platform/agents' }])
+    assert.deepEqual(f.meRequests, [])
+    assert.deepEqual(f.routes, ['/login?kailo_state=reauth&redirect=%2Fplatform%2Fagents'])
+    f.navigation.resolve()
+    await flush()
+    assert.deepEqual(f.errors, [], 'no native error toast in Kailo mode')
+  } finally { f.close() }
+})
+
+test('Kailo mode: an interactive restart navigates away without routing inside the SPA', async () => {
+  const f = fixture({ hash: '#oidc_error=login_required&oidc_prompt=none' }, {
+    callbackPath: () => '/platform/agents',
+    resolveOIDCErrorRoute: () => '',
+    resolveSuccessRoute: (_path, fallback) => fallback,
+  })
+  try {
+    await flush()
+    assert.deepEqual(f.routes, [])
+    assert.deepEqual(f.errors, [])
+    assert.deepEqual(f.meRequests, [])
+  } finally { f.close() }
+})
+
+test('Kailo mode: a successful callback lands on the originally requested page', async () => {
+  const f = fixture({ hash: successHash }, {
+    callbackPath: () => '/platform/agents?tab=mine',
+    resolveOIDCErrorRoute: () => null,
+    resolveSuccessRoute: (path) => path,
+  })
+  try {
+    f.userInfo.resolve({ success: true, data: {
+      user: { id: 'native-human', tenant_id: 'native-scope' },
+      tenant: { id: 'native-scope', name: 'Workspace' }, memberships: [],
+    } })
+    await flush()
+    assert.deepEqual(f.routes, ['/platform/agents?tab=mine'])
+  } finally { f.close() }
+})
+
+test('Kailo mode: a failed user hydration shows the neutral error state instead of restarting sign-in', async () => {
+  const f = fixture({ hash: successHash }, {
+    callbackPath: () => '/platform/agents',
+    resolveOIDCErrorRoute: (code) => code === 'login_failed' ? '/login?kailo_state=error&redirect=%2Fplatform%2Fagents' : null,
+    resolveSuccessRoute: (path) => path,
+    nativeLoginNoticeEnabled: () => false,
+  })
+  try {
+    f.userInfo.reject(new Error('native identity rejected'))
+    await flush()
+    assert.equal(f.store.token, '')
+    assert.deepEqual(f.routes, ['/login?kailo_state=error&redirect=%2Fplatform%2Fagents'])
+    f.navigation.resolve()
+    await flush()
+    assert.deepEqual(f.errors, ['native identity rejected'], 'only the console error is recorded, no toast')
   } finally { f.close() }
 })

@@ -52,7 +52,7 @@
       </div>
       <p class="section-description">
         {{ $t('tenantMember.sectionDescription') }}
-        <a
+        <a v-if="SHOW_UPSTREAM_LINKS"
           class="doc-link"
           href="https://github.com/Tencent/WeKnora/blob/main/docs/RBAC%E8%AF%B4%E6%98%8E.md"
           target="_blank"
@@ -513,6 +513,8 @@
 </template>
 
 <script setup lang="ts">
+import { SHOW_UPSTREAM_LINKS } from '@/kailo/surface'
+import { kailoConfig } from '@/kailo/runtime'
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -648,8 +650,11 @@ const currentRole = computed<TenantRole | ''>(() => (authStore.currentTenantRole
 // mirror that or the buttons would be invisible to the exact admins
 // who actually need them. Local Owners of their own tenant come in via
 // the role branch.
+// Kailo mode (DD-133 §3): membership and roles are derived from Kailo, so
+// the roster is read-only here (the server also rejects these mutations).
+const kailoMode = kailoConfig().mode
 const canManage = computed(
-  () => currentRole.value === 'owner' || authStore.canAccessAllTenants === true,
+  () => !kailoMode && (currentRole.value === 'owner' || authStore.canAccessAllTenants === true),
 )
 // Admin+ (and cross-tenant superusers) can view the audit log. Mirrors
 // the server's g.Admin() guard on /tenants/:id/audit-log so we don't

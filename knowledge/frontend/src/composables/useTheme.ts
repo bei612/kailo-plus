@@ -20,13 +20,19 @@ const currentTheme = ref<ThemeMode>(loadTheme())
 
 let lastEffective: 'light' | 'dark' | null = null
 
+// Kailo host theme (DD-133, kailo-embed.js state): in Kailo mode it wins over
+// the native preference and is never persisted as a native preference. The
+// runtime itself sets <html data-kailo-theme> for the token sheet.
+let hostTheme: 'light' | 'dark' | null = null
+
 function getSystemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 /** Wails：与原生窗口底色 / 系统深浅色一致，减轻 Ctrl+R 整窗白闪（浅色与 --td-bg-color-page #eee 对齐） */
 function syncWailsNativeChrome(effective: 'light' | 'dark') {
-  const bg = effective === 'dark' ? '#181818' : '#eeeeee'
+  // Under the Kailo host theme the page canvas is the Kailo token, not the native grey.
+  const bg = hostTheme ? 'var(--td-bg-color-page)' : effective === 'dark' ? '#181818' : '#eeeeee'
   document.documentElement.style.background = bg
   document.documentElement.style.minHeight = '100%'
   document.documentElement.style.colorScheme = effective === 'dark' ? 'dark' : 'light'
@@ -61,7 +67,7 @@ function syncWailsNativeChrome(effective: 'light' | 'dark') {
 }
 
 function applyTheme(mode: ThemeMode) {
-  const effective = mode === 'system' ? getSystemTheme() : mode
+  const effective = hostTheme ?? (mode === 'system' ? getSystemTheme() : mode)
   if (lastEffective === effective) return
   lastEffective = effective
   document.documentElement.setAttribute('theme-mode', effective)
@@ -78,6 +84,18 @@ export function useTheme() {
   }
 
   return { currentTheme, setTheme }
+}
+
+/** Applies the Kailo host theme; it overrides the native preference until cleared. */
+export function setHostTheme(mode: 'light' | 'dark' | null) {
+  hostTheme = mode === 'light' || mode === 'dark' ? mode : null
+  lastEffective = null
+  applyTheme(currentTheme.value)
+}
+
+/** True while the Kailo host controls the theme. */
+export function isHostThemeActive(): boolean {
+  return hostTheme !== null
 }
 
 /** Call once in main.ts to initialise theme and listen for OS changes. */

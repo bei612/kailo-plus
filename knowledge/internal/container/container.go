@@ -164,6 +164,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewModelRepository))
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
+	must(container.Provide(repository.NewOIDCLogoutRepository))
 	must(container.Provide(repository.NewSystemSettingRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
 	must(container.Provide(repository.NewMCPServiceRepository))
@@ -229,6 +230,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewModelService))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
+	must(container.Provide(service.NewKailoOrgService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
 	must(container.Provide(func(

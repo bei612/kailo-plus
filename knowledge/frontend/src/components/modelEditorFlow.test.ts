@@ -67,6 +67,7 @@ async function fixture(options: {
       if (name === '@/utils/thinkingControl') return require('../utils/thinkingControl.ts')
       if (name === '@/utils/contextWindow') return require('../utils/contextWindow.ts')
       if (name === '@/components/modelEditorSourceState') return require('./modelEditorSourceState.ts')
+      if (name === '@/kailo/surface') return require('../kailo/surface.ts')
       return { default: {} }
     },
   })

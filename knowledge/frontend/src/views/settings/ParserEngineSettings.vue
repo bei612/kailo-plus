@@ -395,6 +395,7 @@ import {
   type ParserEngineConfig,
 } from '@/api/system'
 import { getWeKnoraCloudStatus } from '@/api/model'
+import { WHITE_LABEL_HIDDEN_PROVIDERS } from '@/kailo/surface'
 
 const { t } = useI18n()
 const uiStore = useUIStore()
@@ -487,7 +488,8 @@ const ENGINE_ORDER: Record<string, number> = {
 }
 
 const sortedEngines = computed(() => {
-  return [...engines.value].sort((a, b) => {
+  // White-label: the upstream cloud parser is not offered (DD-133 §1).
+  return engines.value.filter(e => !WHITE_LABEL_HIDDEN_PROVIDERS.has(e.Name)).sort((a, b) => {
     const oa = ENGINE_ORDER[a.Name] ?? 100
     const ob = ENGINE_ORDER[b.Name] ?? 100
     if (oa !== ob) return oa - ob

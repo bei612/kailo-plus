@@ -19,9 +19,17 @@ import (
 type stubOIDCStartUserService struct {
 	interfaces.UserService
 	getOIDCAuthorizationURL func(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
+	lastOptions             types.OIDCAuthOptions
 }
 
 func (s *stubOIDCStartUserService) GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error) {
+	return s.getOIDCAuthorizationURL(ctx, redirectURI)
+}
+
+func (s *stubOIDCStartUserService) GetOIDCAuthorizationURLWithOptions(
+	ctx context.Context, redirectURI string, opts types.OIDCAuthOptions,
+) (*types.OIDCAuthURLResponse, error) {
+	s.lastOptions = opts
 	return s.getOIDCAuthorizationURL(ctx, redirectURI)
 }
 

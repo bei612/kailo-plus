@@ -32,7 +32,8 @@
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
         <!-- 弹出菜单：账号（头像+昵称）／当前空间（名称+权限）；底部侧栏样式不改。 -->
-        <div v-if="userName" class="dropdown-user-header is-clickable" role="button" tabindex="0"
+        <!-- Embedded in Kailo: personal identity lives in Kailo, not in this page (DD-133 §4). -->
+        <div v-if="userName && !kailoEmbedded" class="dropdown-user-header is-clickable" role="button" tabindex="0"
           @click="handleQuickNav('userprofile')" @keydown.enter.prevent="handleQuickNav('userprofile')"
           @keydown.space.prevent="handleQuickNav('userprofile')">
           <div class="dropdown-user-avatar">
@@ -42,7 +43,7 @@
           <div class="dropdown-user-meta">
             <div class="dropdown-user-name-row">
               <span class="dropdown-user-name">{{ userName }}</span>
-              <t-tooltip :content="$t('newUserGuide.reopen')" placement="top">
+              <t-tooltip v-if="!kailoMode" :content="$t('newUserGuide.reopen')" placement="top">
                 <button type="button" class="dropdown-guide-btn" :aria-label="$t('newUserGuide.reopen')"
                   @click.stop="reopenGuide">
                   <t-icon name="help-circle" size="14px" />
@@ -74,7 +75,7 @@
         </div>
         <div class="menu-divider"></div>
         <!-- 账号与空间是头像菜单的核心上下文；基础设施类配置统一收进「全部设置」。 -->
-        <div class="menu-item" @click="handleQuickNav('general')">
+        <div v-if="!kailoEmbedded" class="menu-item" @click="handleQuickNav('general')">
           <t-icon name="user" class="menu-icon" />
           <span>{{ $t('general.personalSettings') }}</span>
         </div>
@@ -84,7 +85,8 @@
         </div>
         <!-- “管理”类快捷入口只对真正具备写权限的人展示。只读名册和模型列表
              仍可从「全部设置」进入，避免 viewer 看到名不副实的管理入口。 -->
-        <div v-if="canManageMembers" class="menu-item" @click="handleQuickNav('members')">
+        <!-- Kailo mode: membership and roles come from Kailo, so no "manage members" shortcut. -->
+        <div v-if="canManageMembers && !kailoMode" class="menu-item" @click="handleQuickNav('members')">
           <t-icon name="usergroup" class="menu-icon" />
           <span>{{ $t('tenantMember.title') }}</span>
         </div>
@@ -111,29 +113,8 @@
           <t-icon name="server" class="menu-icon" />
           <span>{{ $t('settings.navGroups.systemAdministration') }}</span>
         </div>
-        <div class="menu-divider"></div>
-        <div class="menu-item" @click="openDocs">
-          <t-icon name="help-circle" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('general.helpAndDocs') }}</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z" />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-item" :title="$t('common.githubStarTip')" @click="openGithub">
-          <t-icon name="logo-github" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('common.github') }}</span>
-            <t-icon name="star-filled" class="menu-github-star-icon" size="16px" aria-hidden="true" />
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z" />
-            </svg>
-          </span>
-        </div>
-        <template v-if="!authStore.isLiteMode">
+        <!-- Logout always ends at Kailo; inside the Kailo frame Kailo owns logout. -->
+        <template v-if="!authStore.isLiteMode && !kailoEmbedded">
           <div class="menu-divider"></div>
           <div class="menu-item danger" @click="handleLogout">
             <t-icon name="logout" class="menu-icon" />
@@ -188,7 +169,7 @@
           </div>
         </div>
         <!-- 自助创建入口与 /auth/me 返回的后端能力保持一致。 -->
-        <div v-if="authStore.canCreateTenant" class="tenant-submenu-create" @click="openCreateTenantDialog">
+        <div v-if="authStore.canCreateTenant && !kailoMode" class="tenant-submenu-create" @click="openCreateTenantDialog">
           <t-icon name="add" class="tenant-submenu-create-icon" />
           <span class="tenant-submenu-create-label">{{ $t('tenant.create.action') }}</span>
         </div>
@@ -220,8 +201,14 @@ import { getRootZoom, rectToCssPx, cssViewportSize } from '@/utils/zoom'
 import { openNewUserGuide } from '@/config/contextualGuides'
 import { SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE } from '@/config/settingsAccess'
 import { SKILL_ICON } from '@/types/mention'
+import { kailoConfig } from '@/kailo/runtime'
+import { isKailoEmbedded } from '@/kailo/setup'
+import { decideLogoutAction, signInRoute } from '@/kailo/sso'
 
 const { t } = useI18n()
+
+const kailoMode = kailoConfig().mode
+const kailoEmbedded = isKailoEmbedded()
 
 const router = useRouter()
 const uiStore = useUIStore()
@@ -503,17 +490,6 @@ const reopenGuide = () => {
   openNewUserGuide()
 }
 
-const openDocs = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora/tree/main/docs', '_blank')
-}
-
-// 打开 GitHub
-const openGithub = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora', '_blank')
-}
-
 // 注销
 const handleLogout = async () => {
   menuVisible.value = false
@@ -528,6 +504,18 @@ const handleLogout = async () => {
 
   // 清理所有状态和本地存储
   authStore.logout()
+
+  // Kailo mode: logout always ends at Kailo (DD-133 §2).
+  if (kailoMode) {
+    const cfg = kailoConfig()
+    const action = decideLogoutAction(cfg.logoutUrl, cfg.origins, kailoEmbedded)
+    if (action.kind === 'navigate') {
+      window.location.assign(action.url)
+    } else {
+      router.push(signInRoute('reauth'))
+    }
+    return
+  }
 
   MessagePlugin.success(t('auth.logout'))
 

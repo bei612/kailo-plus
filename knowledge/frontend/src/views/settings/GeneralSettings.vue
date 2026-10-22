@@ -6,8 +6,8 @@
     </div>
 
     <div class="settings-group">
-      <!-- 语言选择 -->
-      <div class="setting-row">
+      <!-- 语言选择（Kailo 模式下语言跟随 Kailo，DD-133 §4） -->
+      <div v-if="!kailoMode" class="setting-row">
         <div class="setting-info">
           <label>{{ $t('language.language') }}</label>
           <p class="desc">{{ $t('language.languageDescription') }}</p>
@@ -28,8 +28,8 @@
         </div>
       </div>
 
-      <!-- 主题设置 -->
-      <div class="setting-row">
+      <!-- 主题设置（Kailo 模式下主题跟随 Kailo） -->
+      <div v-if="!kailoMode" class="setting-row">
         <div class="setting-info">
           <label>{{ $t('theme.theme') }}</label>
           <p class="desc">{{ $t('theme.themeDescription') }}</p>
@@ -48,8 +48,8 @@
         </div>
       </div>
 
-      <!-- 界面字体 -->
-      <div class="setting-row">
+      <!-- 界面字体（Kailo 模式下字体来自 Kailo 设计令牌） -->
+      <div v-if="!kailoMode" class="setting-row">
         <div class="setting-info">
           <label>{{ $t('font.uiFont') }}</label>
           <p class="desc">{{ $t('font.uiFontDescription') }}</p>
@@ -145,6 +145,7 @@ import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
+import { kailoConfig } from '@/kailo/runtime'
 import {
   useFont,
   SANS_STACKS,
@@ -157,6 +158,7 @@ import {
 } from '@/composables/useFont'
 
 const { t, locale } = useI18n()
+const kailoMode = kailoConfig().mode
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const { currentTheme, setTheme } = useTheme()

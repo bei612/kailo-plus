@@ -1,27 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>WeKnora</title>
     <meta charset="utf-8">
+    <!-- Kailo presentation (DD-133, design 07 §4.7.1), before the page's own styles and
+         scripts: Kailo Web origin (rendered by docker-entrypoint.sh from
+         KAILO_FRAME_ANCESTORS), Kailo logo, design tokens and the platform runtime.
+         All three files are build inputs served from this origin. -->
+    <meta name="kailo-web-origin" content="__KAILO_WEB_ORIGIN__">
+    <link rel="icon" type="image/png" href="/kailo/app-icon.png" vite-ignore>
+    <link rel="stylesheet" href="/kailo/kailo-theme-tokens.css" vite-ignore>
+    <script src="/kailo/kailo-embed.js" vite-ignore></script>
+    <!-- White-label: the app replaces this title with the Kailo product name. -->
+    <title>知识库</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, minimal-ui">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
     <meta name="renderer" content="webkit">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="keywords" content="知识问答、微信对话开放平台、对话开放平台、对话平台、人工智能定制、人机对话、智能问答、人机交互、自然语言处理、自然语言理解、NLP、人工智能产品、人工智能开源、人工智能算法、语音助手"/>
-    <meta name="description" content="WeKnora是一款基于大语言模型的文档理解与语义检索框架，专为结构复杂、内容异构的文档场景而打造。"/>
-    <link rel="shortcut icon" type="image/png" href="./public/favicon.ico"/>
-    <link rel="apple-touch-icon" sizes="120x120" type="image/png" href="./public/favicon.ico"/>
+    <link rel="apple-touch-icon" type="image/png" href="/kailo/app-icon.png" vite-ignore>
+    <script src="/config.js" vite-ignore></script>
 </head>
 <body>
 <script>
 (function(){
   var t=localStorage.getItem('WeKnora_theme')||'light';
   if(t==='system')t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  /* Kailo mode: the platform runtime's theme wins and the canvas is the Kailo token. */
+  var kailo=false;
+  try{
+    var cfg=window.__RUNTIME_CONFIG__;
+    if(cfg&&cfg.KAILO_MODE===true&&window.KailoEmbed){
+      kailo=true;
+      t=window.KailoEmbed.getState().theme==='dark'?'dark':'light';
+      document.documentElement.setAttribute('data-kailo-mode','');
+    }
+  }catch(_){}
   document.documentElement.setAttribute('theme-mode',t);
   /* 与 theme.css 中 --td-bg-color-page 一致，避免样式加载后整页背景从 #fff 跳到 #eee 触发重绘闪动 */
-  var bg=t==='dark'?'#181818':'#eee';
+  var bg=kailo?'var(--kailo-color-background)':(t==='dark'?'#181818':'#eee');
   document.documentElement.style.background=bg;
   document.documentElement.style.minHeight='100%';
   document.documentElement.style.colorScheme=t==='dark'?'dark':'light';
@@ -56,7 +73,6 @@
   } catch (e) {}
 })();
 </script>
-<script src="/config.js"></script>
 <!--
   离线部署兼容：提前本地加载 tdesign-icons SVG sprite，避免 tdesign-vue-next 的
   <t-icon> 运行时向 https://tdesign.gtimg.com 发起请求（见 issue #867 / #897）。
@@ -66,9 +82,8 @@
 <div id="app"></div>
 <script>
 (function(){
-  var t=localStorage.getItem('WeKnora_theme')||'light';
-  if(t==='system')t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
-  var bg=t==='dark'?'#181818':'#eee';
+  var t=document.documentElement.getAttribute('theme-mode')==='dark'?'dark':'light';
+  var bg=document.documentElement.hasAttribute('data-kailo-mode')?'var(--kailo-color-background)':(t==='dark'?'#181818':'#eee');
   var el=document.getElementById('app');
   if(el){ el.style.background=bg; el.style.minHeight='100%'; }
 })();
