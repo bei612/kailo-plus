@@ -245,12 +245,14 @@ impl Dimension {
     }
 }
 
-/// 模型调用的呈现状态：2xx 且无错误为成功；401/403 是网关准入拒绝；其余失败。
+/// 模型调用的呈现状态：2xx 且无错误为成功；401/403 是网关准入拒绝；记了错误或非 2xx 为失败。
+/// 既无 HTTP 状态也无错误的 request log 没有记下任何应答（例如上游超时后连接被断开），
+/// 是结果不明，计入 DD-134(3)④ 的结果不明数，不得计为成功（AGENTS.md 第 15 条）。
 pub(crate) fn model_outcome(http_status: Option<i64>, error: Option<&str>) -> Outcome {
     match (http_status, error.filter(|e| !e.is_empty())) {
         (Some(401 | 403), _) => Outcome::Denied,
         (Some(status), None) if (200..300).contains(&status) => Outcome::Succeeded,
-        (None, None) => Outcome::Succeeded,
+        (None, None) => Outcome::Unknown,
         _ => Outcome::Failed,
     }
 }
@@ -1627,6 +1629,10 @@ mod tests {
         assert_eq!(model_outcome(Some(200), None), Outcome::Succeeded);
         assert_eq!(model_outcome(Some(403), None), Outcome::Denied);
         assert_eq!(model_outcome(Some(502), Some("upstream")), Outcome::Failed);
+        // 没有应答也没有错误：结果不明，不是成功（生产 wren binding 超时的 166 条 request log）
+        assert_eq!(model_outcome(None, None), Outcome::Unknown);
+        assert_eq!(model_outcome(None, Some("")), Outcome::Unknown);
+        assert_eq!(model_outcome(None, Some("timeout")), Outcome::Failed);
         assert_eq!(
             model_outcome(Some(200), Some("stream reset")),
             Outcome::Failed
