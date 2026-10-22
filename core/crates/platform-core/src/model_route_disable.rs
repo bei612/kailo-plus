@@ -46,7 +46,9 @@ fn admissible(state: &str, projecting: bool) -> bool {
     state == "ACTIVE" && !projecting
 }
 
-/// 准入只接受当前 `ACTIVE`、无在途投影、版本与请求一致的 Core 治理 route。
+/// 解析本 Tenant 的 route；状态与版本在 [`evaluate_target`] 判定，使不可停用的 route
+/// 也先经权限判定（无权者得到 `PERMISSION_DENIED`，不以 `TARGET_STATE_CONFLICT` 透露状态）。
+/// 冻结版本取请求版本：版本不一致时准入拒绝，绝不改用现有版本放行。
 pub(crate) async fn target(
     conn: &mut sqlx::PgConnection,
     tenant: Uuid,
@@ -70,26 +72,52 @@ pub(crate) async fn target(
     .fetch_optional(&mut *conn)
     .await?
     .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
-    if !admissible(&row.state, row.projection_action_execution_id.is_some())
-        || params.resource_version != Some(row.version)
-        || frozen.is_some_and(|frozen| frozen != id)
-    {
+    if frozen.is_some_and(|frozen| frozen != id) {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    let version = params
+        .resource_version
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
     Ok(crate::governance::Target {
         id,
-        version: row.version,
+        version,
         workspace_id: row.home_workspace_id,
     })
 }
 
-/// `evaluate` 的 scope guard：target 未变化且 SpiceDB 投影与 Core owner 一致后，
+/// [`evaluate_target`] 的判定：`Admissible` 后再 Check `manage`；`NotAdmissible`（非 `ACTIVE`、
+/// 投影在途或版本不符）照常 Check `manage`，冲突由授权之后的 [`gate`] 报出；`ScopeMismatch`
+/// 是投影或归属与事实不一致。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Scope {
+    Admissible,
+    NotAdmissible,
+    ScopeMismatch,
+}
+
+fn scope_of(
+    state: &str,
+    projecting: bool,
+    version: i32,
+    workspace: Option<Uuid>,
+    target: &crate::governance::Target,
+) -> Scope {
+    if workspace != target.workspace_id {
+        Scope::ScopeMismatch
+    } else if !admissible(state, projecting) || version != target.version {
+        Scope::NotAdmissible
+    } else {
+        Scope::Admissible
+    }
+}
+
+/// `evaluate` 的 scope guard：target 可停用、未变化且 SpiceDB 投影与 Core owner 一致后，
 /// 才对该 route Resource fresh Check `manage`。
 pub(crate) async fn evaluate_target(
     gov: &crate::governance::Governance,
     tenant: Uuid,
     target: &crate::governance::Target,
-) -> Result<bool, Refusal> {
+) -> Result<Scope, Refusal> {
     let mut conn = gov.pool.acquire().await?;
     let Some(row) = sqlx::query_as::<_, Disabling>(DISABLING)
         .bind(target.id)
@@ -97,15 +125,20 @@ pub(crate) async fn evaluate_target(
         .fetch_optional(&mut *conn)
         .await?
     else {
-        return Ok(false);
+        return Ok(Scope::ScopeMismatch);
     };
-    if !admissible(&row.state, row.projection_action_execution_id.is_some())
-        || row.version != target.version
-        || row.home_workspace_id != target.workspace_id
-    {
-        return Ok(false);
+    let scope = scope_of(
+        &row.state,
+        row.projection_action_execution_id.is_some(),
+        row.version,
+        row.home_workspace_id,
+        target,
+    );
+    if scope != Scope::Admissible {
+        return Ok(scope);
     }
-    gov.spicedb
+    let matches = gov
+        .spicedb
         .resource_projection_matches_in_workspace(
             &target.id.to_string(),
             &tenant.to_string(),
@@ -114,7 +147,36 @@ pub(crate) async fn evaluate_target(
             gov.cfg.relationship_page,
         )
         .await
-        .map_err(|_| unavailable())
+        .map_err(|_| unavailable())?;
+    Ok(if matches {
+        Scope::Admissible
+    } else {
+        Scope::ScopeMismatch
+    })
+}
+
+/// 授权之后的目标事实门禁：route 必须仍 `ACTIVE`、无在途投影且版本等于请求版本，否则
+/// `TARGET_STATE_CONFLICT`。放在授权之后，无权者先得到 `PERMISSION_DENIED`，不借此探出状态。
+pub(crate) async fn gate(
+    conn: &mut sqlx::PgConnection,
+    tenant: Uuid,
+    params: &crate::governance::Params,
+) -> Result<(), Refusal> {
+    let id = params
+        .resource_id
+        .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let row: Disabling = sqlx::query_as(DISABLING)
+        .bind(id)
+        .bind(tenant)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+    if !admissible(&row.state, row.projection_action_execution_id.is_some())
+        || params.resource_version != Some(row.version)
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    Ok(())
 }
 
 /// 准入同事务：先 fail closed，再派发外部删除。`ROUTE` 只认 `ACTIVE`，此后新调用即被拒绝。
@@ -190,8 +252,15 @@ pub(crate) async fn dispatch(
     .await?;
     let Some(intent) = intent else {
         // 既有原生 route 不是 Core 写入的投影：停用只撤销平台使用，不删除其原生配置。
-        crate::governance::record_dispatch(&mut tx, ae.id, def.audit_class(), Ok(()), Vec::new())
-            .await?;
+        record_settled(
+            &mut tx,
+            &ae,
+            def,
+            Ok(()),
+            Vec::new(),
+            "LLM_ROUTE_RETAINED_READ_ONLY",
+        )
+        .await?;
         tx.commit().await?;
         return Ok(());
     };
@@ -227,8 +296,15 @@ pub(crate) async fn dispatch(
         .execute(&mut *tx)
         .await?;
     }
-    crate::governance::record_dispatch(&mut tx, ae.id, def.audit_class(), Ok(()), Vec::new())
-        .await?;
+    record_settled(
+        &mut tx,
+        &ae,
+        def,
+        Ok(()),
+        Vec::new(),
+        "LLM_ROUTE_RETAINED_READ_ONLY",
+    )
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -251,5 +327,37 @@ mod tests {
         ] {
             assert!(!admissible(state, false), "{state}");
         }
+    }
+
+    /// 不可停用（已停用、投影在途、版本过期）与归属不一致分开：前者先判权限再报冲突，
+    /// 无权者因此得到与其他无权请求相同的 `PERMISSION_DENIED`。
+    #[test]
+    fn scope_separates_state_from_scope_mismatch() {
+        let workspace = Some(Uuid::new_v4());
+        let target = crate::governance::Target {
+            id: Uuid::new_v4(),
+            version: 3,
+            workspace_id: workspace,
+        };
+        assert_eq!(
+            scope_of("ACTIVE", false, 3, workspace, &target),
+            Scope::Admissible
+        );
+        assert_eq!(
+            scope_of("RETAINED_READ_ONLY", false, 3, workspace, &target),
+            Scope::NotAdmissible
+        );
+        assert_eq!(
+            scope_of("ACTIVE", true, 3, workspace, &target),
+            Scope::NotAdmissible
+        );
+        assert_eq!(
+            scope_of("ACTIVE", false, 4, workspace, &target),
+            Scope::NotAdmissible
+        );
+        assert_eq!(
+            scope_of("ACTIVE", false, 3, None, &target),
+            Scope::ScopeMismatch
+        );
     }
 }

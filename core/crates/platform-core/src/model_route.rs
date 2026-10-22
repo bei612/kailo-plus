@@ -439,18 +439,42 @@ async fn creation_abort(
     .bind(ae.id)
     .execute(&mut *tx)
     .await?;
-    crate::governance::record_dispatch(
+    record_settled(
         &mut tx,
-        ae.id,
-        def.audit_class(),
+        ae,
+        def,
         Err(axum::http::StatusCode::FORBIDDEN),
         vec![crate::audit::Evidence::new(
             contracts::EvidenceKind::SpicedbZedtoken,
             token,
         )],
+        "LLM_ROUTE_CREATION_ABORTED",
     )
     .await?;
     tx.commit().await?;
+    Ok(())
+}
+
+/// `14` §4 的事件链：派发结果已确定（效果回读确认或确定中止）时，在同一事务里于 DISPATCH 之后
+/// 追加 OUTCOME；结果不明不写 OUTCOME（对账确定后由同一路径补写），重入时本次未推进派发即不重复。
+pub(crate) async fn record_settled(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    def: &crate::governance::Definition,
+    started: Result<(), axum::http::StatusCode>,
+    evidence: Vec<crate::audit::Evidence>,
+    outcome: &str,
+) -> Result<(), Refusal> {
+    let recorded =
+        crate::governance::record_dispatch(tx, ae.id, def.audit_class(), started, evidence.clone())
+            .await?;
+    if recorded.settled {
+        let decision = if started.is_ok() { "ALLOW" } else { "DENY" };
+        crate::governance::audit(
+            tx, ae, def, "outcome", "OUTCOME", decision, outcome, None, evidence,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -972,15 +996,16 @@ pub(crate) async fn create_dispatch(
     sqlx::query("update catalog.resource set state='ACTIVE',version=version+1,projection_action_execution_id=null
         where id=$1 and tenant_id=$2 and projection_action_execution_id=$3")
         .bind(ae.target_id).bind(ae.tenant_id).bind(ae.id).execute(&mut *tx).await?;
-    crate::governance::record_dispatch(
+    record_settled(
         &mut tx,
-        ae.id,
-        def.audit_class(),
+        &ae,
+        def,
         Ok(()),
         vec![crate::audit::Evidence::new(
             contracts::EvidenceKind::SpicedbZedtoken,
             proof.zed_token,
         )],
+        "LLM_ROUTE_ACTIVE",
     )
     .await?;
     tx.commit().await?;
