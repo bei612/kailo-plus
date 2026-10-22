@@ -100,6 +100,7 @@ class BrandScan(unittest.TestCase):
             "server/package.json": '{"name": "x", "homepage": "https://www.onlyoffice.com"}',
             "web-apps/index.html": "<script>let signature = 'ONLYOFFICEFORM';</script>",
             "server/locale.json": '{"location": "St Helena, Ascension, Tristan da Cunha"}',
+            "server/config/default.json": '{"dbName": "onlyoffice", "$id": "urn:onlyoffice:config:superset:1"}',
         })
         self.assertEqual(code, 0)
         self.assertEqual(report["findingFiles"], 0)

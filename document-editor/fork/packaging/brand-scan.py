@@ -14,7 +14,7 @@ publisher names and classifies each hit:
   finding     anything else: the scan exits 1 and lists the files and tokens
 
 Markup, styles, locale data and images (.html .ejs .json .svg .css .less .txt)
-get no comment allowance; display spellings (ONLYOFFICE, OnlyOffice) and
+get no comment allowance (JSON keeps lower-case configuration keys); display spellings (ONLYOFFICE, OnlyOffice) and
 upstream host names are never registered identifiers. In package.json the
 homepage/author/repository fields are origin notices (LICENSE Additional
 Terms 1) and count as legal.
@@ -53,10 +53,12 @@ IDENTIFIERS = {
     "onlyoffice": "lower-case protocol, drag-and-drop or library key",
     "OnlyOfficeStyles": "sdkjs paste-style table identifier",
     "changeOnlyOfficeUrl": "DocService storage helper function",
-    "urn:onlyoffice:config:superset:1": "DocService configuration schema id",
 }
-# Constants that also appear outside code bundles (inline scripts, JSON schema).
-MARKUP_IDENTIFIERS = {"ONLYOFFICEFORM", "http://schemas.onlyoffice.com", "urn:onlyoffice:config:superset:1"}
+# Constants that also appear outside code bundles: the PDF form signature in
+# inline scripts, the format namespace, and lower-case keys in JSON configuration
+# (DocService defaults such as the unused SQL names, the config schema id).
+MARKUP_IDENTIFIERS = {"ONLYOFFICEFORM", "http://schemas.onlyoffice.com"}
+JSON_IDENTIFIERS = MARKUP_IDENTIFIERS | {"onlyoffice"}
 PATH = re.compile(r"^(?:\.\./)*(?:/(?:var/www|var/lib|var/log|etc|usr/share|usr/bin)/onlyoffice(?:/|$)|.*document-formats/onlyoffice-docs-formats(?:\.json)?$)")
 ORIGIN_FIELDS = re.compile(r'"(?:homepage|author|repository|url)"\s*:\s*"[^"]*(?:onlyoffice|ascensio)[^"]*"', re.I)
 
@@ -110,7 +112,7 @@ def scan(path, rel):
         key = normalise(token)
         if PATH.match(token.rstrip(".")):
             category = "path"
-        elif key in IDENTIFIERS and (code or key in MARKUP_IDENTIFIERS):
+        elif key in IDENTIFIERS and (code or key in (JSON_IDENTIFIERS if rel.endswith(".json") else MARKUP_IDENTIFIERS)):
             category = "identifier:" + key
         else:
             index = remaining.find(token)
