@@ -72,12 +72,14 @@
   - `server/Common/config/default.json`：AI 插件 CORS 来源清空（DD-35），许可证到期通知不再指向上游销售邮箱。
 - 产物中不再包含：内置帮助、移动端与嵌入版前端、上游页头和关于页 logo、DocService 的开发配置（`development-*.json`），以及 supervisor 中的 `APPLICATION_NAME`。
 - 主题：`kailo-themes.py` 在构建时读取令牌文件，生成 `theme-kailo-light.json` 与 `theme-kailo-dark.json`，DocService 的 `/themes.json` 会列出它们。编辑器变量与 Kailo 令牌的对应表只在该脚本中维护；没有映射的变量（如文档页面底色）保持编辑器自身的明暗默认值。
-- 法律声明：`/kailo-legal/` 包含以下内容，依据见 DD-132(7)②；源码获取地址是必填部署事实 `DOCUMENT_EDITOR_SOURCE_OFFER_URL`，缺失即拒绝启动。
+- 法律声明：`/kailo-legal/` 包含以下内容，依据见 DD-132(7)②。整页在构建时由 `legal-render.py` 写成；对应源码地址是构建事实 `https://github.com/bei612/kailo-plus/tree/<KAILO_SOURCE_COMMIT>/document-editor`（仓库地址是该脚本的构建常量，提交号不是完整 40 位十六进制即构建失败），部署不再填写，启动也不再校验。
   - 原始开发者 Ascensio System SIA 与原始软件名称，只有文字；
   - 修改说明：显示名、构建时间与源码 commit 来自 `build_facts`；
   - AGPLv3 与 Additional Terms 全文（`LICENSE.txt`）、第三方许可（`3rd-Party.txt`）、CC BY-SA 4.0 链接与无担保声明；
-  - 对应源码获取地址。
+  - 对应源码获取地址；
+  - 界面字体 Inter 的 SIL OFL 1.1 许可文本（`Inter-OFL.txt`）。
 - `/favicon.ico` 返回 Kailo 图标；discovery 的 `favIconUrl*` 也指向它。
+- 界面字体（DD-132(7)③）：`kailo-fonts.py` 按 `web-client/web/package-lock.json` 中 `@fontsource-variable/inter` 的 `resolved` 下载、按 sha512 `integrity` 校验，生成 `kailo-font.less`（`@font-face` 与 `:root { --font-family-base: <--kailo-font-sans> }`），由 `colors-table.less` 在上游默认值之后导入；字形文件发布在 `web-apps/apps/common/main/resources/fonts/kailo/`。两个 Kailo 主题也携带 `font-family-base`；`Themes.js` 的按钮宽度计算读取同一变量。文档画布由 sdkjs 绘制，不受影响。
 
 ### 品牌扫描（构建最后一步，`brand-scan.py`）
 

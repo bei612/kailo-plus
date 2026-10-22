@@ -17,8 +17,6 @@ services:
       DS_PUBLIC_ORIGIN: ${DOCUMENT_EDITOR_PUBLIC_ORIGIN:?required}
       # 07 §4.6: exact host origins (Cells and its own hosts), never '*'.
       DS_FRAME_ANCESTORS: ${DOCUMENT_EDITOR_FRAME_ANCESTORS:?exact frame ancestors required}
-      # DD-132(7)②: AGPLv3 §13 Corresponding Source offer shown at /kailo-legal/.
-      DS_SOURCE_OFFER_URL: ${DOCUMENT_EDITOR_SOURCE_OFFER_URL:?Corresponding Source offer URL required}
     secrets: [ds_token_secret, ds_secure_link_secret]
     tmpfs:
       - /run/kailo-ds:mode=0755

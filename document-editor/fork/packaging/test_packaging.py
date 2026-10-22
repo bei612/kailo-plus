@@ -2,12 +2,15 @@
 
   python3 -I -B -m unittest discover -s document-editor/fork/packaging -p test_packaging.py   (from apps/)
 """
+import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -25,7 +28,7 @@ def load(name, path):
 themes = load("kailo_themes", HERE / "kailo-themes.py")
 legal = load("legal_render", HERE / "legal-render.py")
 scan = load("brand_scan", HERE / "brand-scan.py")
-runtime = load("runtime_config", HERE / "runtime-config.py")
+fonts = load("kailo_fonts", HERE / "kailo-fonts.py")
 TOKENS = (ROOT / "client-kit/embed/kailo-theme-tokens.css").read_text(encoding="utf-8")
 
 
@@ -35,12 +38,14 @@ class Themes(unittest.TestCase):
         self.assertEqual(set(generated), {"theme-kailo-light", "theme-kailo-dark"})
         light, dark = generated["theme-kailo-light"], generated["theme-kailo-dark"]
         self.assertEqual((light["type"], dark["type"]), ("light", "dark"))
-        self.assertEqual(set(light["colors"]), set(themes.MAPPING))
+        self.assertEqual(set(light["colors"]), set(themes.MAPPING) | {"font-family-base"})
         # Light canvas is Kailo's white background; dark is its content canvas.
         self.assertEqual(light["colors"]["background-normal"], "#ffffff")
         self.assertEqual(dark["colors"]["background-normal"], "#1a1a1a")
         for theme in generated.values():
-            self.assertTrue(all(len(v) == 7 and v.startswith("#") for v in theme["colors"].values()))
+            colors = dict(theme["colors"])
+            self.assertEqual(colors.pop("font-family-base"), fonts.font_stack(TOKENS))
+            self.assertTrue(all(len(v) == 7 and v.startswith("#") for v in colors.values()))
 
     def test_a_missing_block_or_token_is_refused(self):
         with self.assertRaises(themes.Refused):
@@ -53,6 +58,71 @@ class Themes(unittest.TestCase):
         self.assertEqual(themes.hex_color(("0", "100", "50")), "#ff0000")
 
 
+LOCK = (ROOT / "web-client/web/package-lock.json").read_text(encoding="utf-8")
+STYLESHEET = """/* inter-latin-wght-normal */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(./files/inter-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+2000-206F;
+}
+"""
+
+
+def package(stylesheet=STYLESHEET, extra=()):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for name, data in (("package/wght.css", stylesheet.encode()), ("package/LICENSE", b"SIL OPEN FONT LICENSE Version 1.1"),
+                           ("package/files/inter-latin-wght-normal.woff2", b"wOF2\0face")) + tuple(extra):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+class Fonts(unittest.TestCase):
+    def test_the_web_client_lock_names_the_registry_tarball_and_its_sha512(self):
+        url, digest = fonts.locked(LOCK)
+        self.assertRegex(url, r"^https://registry\.npmjs\.org/@fontsource-variable/inter/-/inter-[0-9.]+\.tgz$")
+        self.assertEqual(len(digest), 64)
+        entry = json.loads(LOCK)["packages"]["node_modules/@fontsource-variable/inter"]
+        for change in ({"resolved": "https://mirror.example/inter.tgz"}, {"integrity": "sha1-AAAA"}):
+            with self.assertRaises(fonts.Refused):
+                fonts.locked(json.dumps({"packages": {"node_modules/@fontsource-variable/inter": {**entry, **change}}}))
+        with self.assertRaises(fonts.Refused):
+            fonts.locked(json.dumps({"packages": {}}))
+
+    def test_only_the_locked_bytes_are_accepted(self):
+        data = package()
+        self.assertEqual(fonts.verified(data, hashlib.sha512(data).digest()), data)
+        with self.assertRaises(fonts.Refused):
+            fonts.verified(data + b"x", hashlib.sha512(data).digest())
+
+    def test_the_token_stack_and_the_package_faces_become_the_editor_font(self):
+        stack = fonts.font_stack(TOKENS)
+        self.assertTrue(stack.startswith('"Inter Variable"'))
+        with tempfile.TemporaryDirectory() as out:
+            self.assertEqual(fonts.write(out, package(), stack), ["inter-latin-wght-normal.woff2"])
+            less = Path(out, "kailo-font.less").read_text(encoding="utf-8")
+            self.assertIn("@{common-image-const-path}/../fonts/kailo/inter-latin-wght-normal.woff2", less)
+            self.assertIn("unicode-range: U+0000-00FF,U+0131,U+2000-206F;", less)
+            self.assertIn("--font-family-base: " + stack + ";", less)
+            self.assertEqual(sorted(os.listdir(Path(out, "fonts/kailo"))), ["LICENSE", "inter-latin-wght-normal.woff2"])
+
+    def test_a_package_that_does_not_carry_the_token_family_is_refused(self):
+        with tempfile.TemporaryDirectory() as out:
+            with self.assertRaises(fonts.Refused):
+                fonts.write(out, package(STYLESHEET.replace("'Inter Variable'", "'Other'")), fonts.font_stack(TOKENS))
+            with self.assertRaises(fonts.Refused):
+                fonts.write(out, package("/* none */"), fonts.font_stack(TOKENS))
+        with self.assertRaises(fonts.Refused):
+            fonts.font_stack(TOKENS.replace("--kailo-font-sans:", "--kailo-font-gone:"))
+        with self.assertRaises(fonts.Refused):
+            fonts.font_stack(":root { --kailo-font-sans: x; } .a { --kailo-font-sans: url(evil); }")
+
+
 TEMPLATE = (HERE / "legal/index.html.template").read_text(encoding="utf-8")
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
@@ -61,8 +131,10 @@ class Legal(unittest.TestCase):
     def test_build_values_are_written_and_escaped(self):
         page = legal.render(TEMPLATE, "Kailo", "9.4.0 build 131", COMMIT, "2026-10-22T10:00:00")
         self.assertNotIn("@BUILD_", page)
-        self.assertIn("@RUNTIME_SOURCE_OFFER_URL@", page)
-        for required in ("Ascensio System SIA", "ONLYOFFICE", "WITHOUT ANY WARRANTY", "LICENSE.txt", "3rd-Party.txt",
+        self.assertNotIn("@RUNTIME", page)
+        offer = "https://github.com/bei612/kailo-plus/tree/" + COMMIT + "/document-editor"
+        self.assertEqual(page.count('href="' + offer + '"'), 2)
+        for required in ("Ascensio System SIA", "ONLYOFFICE", "WITHOUT ANY WARRANTY", "LICENSE.txt", "3rd-Party.txt", "Inter-OFL.txt",
                          "CC BY-SA 4.0", COMMIT, "2026-10-22T10:00:00", "Kailo"):
             self.assertIn(required, page)
 
@@ -72,11 +144,11 @@ class Legal(unittest.TestCase):
             with self.assertRaises(ValueError):
                 legal.render(TEMPLATE, *args)
 
-    def test_the_runtime_writes_only_an_explicit_source_offer(self):
-        self.assertEqual(runtime.source_offer("https://example.org/src/kailo.tar.gz"), "https://example.org/src/kailo.tar.gz")
-        for bad in ("", "ftp://example.org/x", "https://example.org/x\"onmouseover=1", "javascript:alert(1)", "https://u:p@example.org/"):
-            with self.assertRaises(runtime.Refused):
-                runtime.source_offer(bad)
+    def test_the_source_offer_is_the_repository_tree_at_a_full_commit(self):
+        self.assertEqual(legal.source_offer(COMMIT), "https://github.com/bei612/kailo-plus/tree/" + COMMIT + "/document-editor")
+        for bad in ("", "HEAD", COMMIT[:12], COMMIT.upper(), COMMIT + "0", "main", COMMIT[:-1] + "g"):
+            with self.assertRaises(ValueError):
+                legal.source_offer(bad)
 
 
 class BrandScan(unittest.TestCase):

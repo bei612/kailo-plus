@@ -31,6 +31,10 @@ implementation:
     - document-editor/fork/packaging/Dockerfile
     - document-editor/fork/packaging/runtime-config.py
     - document-editor/fork/packaging/nginx/includes/ds-docservice.conf
+    - document-editor/fork/packaging/legal-render.py
+    - document-editor/fork/packaging/kailo-themes.py
+    - document-editor/fork/packaging/kailo-fonts.py
+    - document-editor/fork/packaging/brand-scan.py
     - document-editor/deploy/compose.yaml
     - document-editor/deploy/start.sh
     - document-editor/deploy/local.template.json

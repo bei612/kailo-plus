@@ -13,13 +13,14 @@ artifacts:
     kind: image
     build_context: .
     build_dockerfile: document-editor/fork/packaging/Dockerfile
-    # DD-133 §4.7.1 / DD-132(7): the Kailo token package and icon are build inputs.
-    inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png]
+    # DD-133 §4.7.1 / DD-132(7): the Kailo token package, icon and the web client's
+    # locked UI font package (package-lock.json @fontsource-variable/inter) are build inputs.
+    inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png, web-client/web/package-lock.json]
     build_args: [PLATFORM_DISPLAY_NAME]
     build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
     source_digest: none
     artifact_digest: none
-    blocked: Built only as CI-node trials (latest fb51115e, not pushed, no digest recorded); the registered CI build, the DD-132(3) deployment receipt with the operator's Corresponding Source offer, and V-SCN-186..190 acceptance on a deployed instance are still open.
+    blocked: Built only as CI-node trials (latest fb51115e, not pushed, no digest recorded); the registered CI build, the DD-132(3) deployment receipt and V-SCN-186..190 acceptance on a deployed instance are still open.
 source_components:
   core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
   core-fonts: 7030c6681fb5bbed560675cb42422f91df15d5c9

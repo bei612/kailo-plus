@@ -72,6 +72,15 @@ COPY document-editor/sdkjs/ ./
 RUN cd build && PRODUCT_VERSION="$PRODUCT_VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 build.py --beta=false --minimize \
  && test -s ../deploy/sdkjs/cell/sdk-all.js && test -s ../deploy/sdkjs/word/sdk-all-min.js
 
+# ── Kailo UI font (DD-132(7)③): the web client's locked Inter package ─────
+# kailo-fonts.py downloads the package-lock.json `resolved` tarball, verifies its
+# sha512 integrity and writes the @font-face rules for the --kailo-font-sans stack.
+FROM ${NODE_IMAGE} AS kailo-font
+COPY web-client/web/package-lock.json client-kit/embed/kailo-theme-tokens.css \
+     document-editor/fork/packaging/kailo-fonts.py /build/kailo/
+RUN python3 -I /build/kailo/kailo-fonts.py /build/kailo/package-lock.json /build/kailo/kailo-theme-tokens.css /build/kailo/out \
+ && test -s /build/kailo/out/kailo-font.less && test -s /build/kailo/out/fonts/kailo/LICENSE
+
 # ── web-apps: build_tools build_js.py builder target ──────────────────────
 FROM ${NODE_IMAGE} AS web-apps
 ARG PRODUCT_VERSION
@@ -86,6 +95,8 @@ COPY --from=build-tools /build/build_tools/ /build/build_tools/
 # DD-132(7)①: the Kailo icon is a build input (DD-133 §4.7.1), copied next to the
 # header images the fork's header.less/about.less reference.
 COPY web-client/web/public/app-icon.png apps/common/main/resources/img/header/kailo-logo.png
+# DD-132(7)③: the Kailo UI font, imported by colors-table.less after its defaults.
+COPY --from=kailo-font /build/kailo/out/kailo-font.less apps/common/main/resources/less/kailo-font.less
 # web-apps' own branding parameters (Gruntfile.js global.jsreplacements and the
 # api task): product names from the deployment display name, every upstream
 # help, feedback, support, sales and publisher link blanked.
@@ -122,6 +133,14 @@ RUN cd deploy/web-apps/apps \
            common/main/resources/img/header/header-logo_s.svg common/main/resources/img/header/dark-logo_s.svg \
            common/main/resources/img/about \
  && test -s common/main/resources/img/header/kailo-logo.png
+# DD-132(7)③: the font faces kailo-font.less references (with their license);
+# every editor stylesheet carries the Kailo stack.
+COPY --from=kailo-font /build/kailo/out/fonts/kailo/ deploy/web-apps/apps/common/main/resources/fonts/kailo/
+RUN for app in documenteditor spreadsheeteditor presentationeditor pdfeditor visioeditor; do \
+      css="deploy/web-apps/apps/$app/main/resources/css/app.css"; \
+      grep -q 'Inter Variable' "$css" && grep -q 'fonts/kailo/inter-latin-wght-normal.woff2' "$css" \
+      || { echo "$css lacks the Kailo font" >&2; exit 1; }; done \
+ && test -s deploy/web-apps/apps/common/main/resources/fonts/kailo/inter-latin-wght-normal.woff2
 # DD-132(7)③: theme-kailo-light/dark from the Kailo token package (build input);
 # DocService's /themes.json lists every *.json of this directory.
 COPY client-kit/embed/kailo-theme-tokens.css /build/kailo/kailo-theme-tokens.css
@@ -172,13 +191,16 @@ COPY document-editor/fork/packaging/nginx/includes/ /etc/nginx/includes/
 COPY document-editor/fork/packaging/supervisord.conf /etc/kailo-ds/supervisord.conf
 COPY --chmod=0755 document-editor/fork/packaging/entrypoint.sh /usr/local/bin/kailo-ds-entrypoint
 COPY --chmod=0755 document-editor/fork/packaging/runtime-config.py /usr/local/lib/kailo-ds/runtime-config.py
-COPY document-editor/fork/packaging/legal/index.html.template /var/www/onlyoffice/kailo-legal/index.html.template
+COPY document-editor/fork/packaging/legal/index.html.template /tmp/kailo/index.html.template
 COPY document-editor/fork/packaging/legal-render.py document-editor/fork/packaging/brand-scan.py /tmp/kailo/
-# DD-132(7)②: legal notices with the build's modification notice; the source
-# offer is written at start (runtime-config.py). License texts sit beside it.
-RUN python3 -I /tmp/kailo/legal-render.py /var/www/onlyoffice/kailo-legal/index.html.template \
+# DD-132(7)②: legal notices with the build's modification notice and the
+# Corresponding Source offer derived from the source commit. License texts sit beside it.
+RUN mkdir -p /var/www/onlyoffice/kailo-legal \
+ && python3 -I /tmp/kailo/legal-render.py /tmp/kailo/index.html.template /var/www/onlyoffice/kailo-legal/index.html \
       "$PLATFORM_DISPLAY_NAME" "$PRODUCT_VERSION build $BUILD_NUMBER" "$KAILO_SOURCE_COMMIT" "$KAILO_BUILD_TIME" \
  && cp "$DS/LICENSE.txt" "$DS/3rd-Party.txt" /var/www/onlyoffice/kailo-legal/ \
+ && cp "$DS/web-apps/apps/common/main/resources/fonts/kailo/LICENSE" /var/www/onlyoffice/kailo-legal/Inter-OFL.txt \
+ && grep -qi "SIL OPEN FONT LICENSE" /var/www/onlyoffice/kailo-legal/Inter-OFL.txt \
  && grep -q "Additional Terms" /var/www/onlyoffice/kailo-legal/LICENSE.txt
 # FileConverter/bin: official core binaries + cmap.bin of the rebuilt sdkjs
 # and the V8 snapshots (deploy_server.py create_x2t_js_cache, run from the

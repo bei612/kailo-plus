@@ -6,6 +6,8 @@ and writes web-apps custom theme files theme-kailo-light.json and
 theme-kailo-dark.json (Common.UI.Themes: id, type, colors). The mapping below
 is the only place editor variables meet Kailo tokens; colors not mapped keep
 the editor's own light/dark defaults (canvas page colour, document content).
+Both themes also carry the Kailo UI font stack (`--kailo-font-sans`) as the
+editor variable font-family-base (the faces come from kailo-fonts.py).
 
   python3 kailo-themes.py TOKENS_CSS OUTPUT_DIR
 """
@@ -69,6 +71,7 @@ THEMES = {
     "light": {"id": "theme-kailo-light", "name": "Light", "l10n": {"zh": "浅色"}},
     "dark": {"id": "theme-kailo-dark", "name": "Dark", "l10n": {"zh": "深色"}},
 }
+FONT_SANS = re.compile(r"--kailo-font-sans:\s*([^;]+);")
 HSL = re.compile(r"--kailo-hsl-([a-z0-9-]+):\s*([0-9.]+)\s+([0-9.]+)%\s+([0-9.]+)%\s*;")
 
 
@@ -96,15 +99,24 @@ def hex_color(triplet):
     return "#{:02x}{:02x}{:02x}".format(*(round(c * 255) for c in (r, g, b)))
 
 
+def font_stack(css):
+    values = {v.strip() for v in FONT_SANS.findall(css)}
+    if len(values) != 1 or not re.fullmatch(r"[A-Za-z0-9 ,\"'-]+", next(iter(values))):
+        raise Refused("token file must define one plain --kailo-font-sans")
+    return values.pop()
+
+
 def themes(css):
     tokens = blocks(css)
+    font = font_stack(css)
     result = {}
     for kind, meta in THEMES.items():
         missing = sorted({t for t in MAPPING.values() if t not in tokens[kind]})
         if missing:
             raise Refused(kind + " tokens missing: " + ",".join(missing))
         result[meta["id"]] = {"name": meta["name"], "l10n": meta["l10n"], "id": meta["id"], "type": kind,
-                              "colors": {var: hex_color(tokens[kind][token]) for var, token in MAPPING.items()}}
+                              "colors": {**{var: hex_color(tokens[kind][token]) for var, token in MAPPING.items()},
+                                         "font-family-base": font}}
     return result
 
 

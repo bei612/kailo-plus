@@ -655,7 +655,8 @@ define([
                     if (!theme_props[prop]) {
                         theme_props[prop] = {
                             size: document.documentElement.style.getPropertyValue("--font-size-base-app-custom") || window.getComputedStyle(document.body).getPropertyValue("--font-size-base") || '11px',
-                            name: document.documentElement.style.getPropertyValue("--font-family-base-custom") || 'Arial, Helvetica, "Helvetica Neue", sans-serif'
+                            name: document.documentElement.style.getPropertyValue("--font-family-base-custom") ||
+                                    window.getComputedStyle(document.body).getPropertyValue("--font-family-base").trim() || 'Arial, Helvetica, "Helvetica Neue", sans-serif'
                         };
                     }
                 } else if (prop==='tab-style') {
