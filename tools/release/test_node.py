@@ -243,7 +243,7 @@ class DeliveryRendering(unittest.TestCase):
             release, folder = self.release(tmp)
             model = release.model
             self.assertEqual(sorted(release.write_deliveries()),
-                             [model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE])
+                             sorted([model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE]))
             self.assertEqual(release.write_deliveries(), [])
             with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), encoding="utf-8") as stream:
                 directory = json.load(stream)
