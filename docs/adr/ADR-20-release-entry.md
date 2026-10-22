@@ -155,6 +155,30 @@ CI worker 的 Web 部署在 `up` 之后用 `docker ps -q`（12 位截断 ID）�
 `ci/worker.py`，单独提交审批；入口自身的部署以完整 ID 比较，不依赖该任务。按 §3 的同一规则，worker 的 Web 部署应改为
 以 `KAILO_RUNTIME_DIR=<runtime>` 调用 Compose（项目目录仍是发布树），并删去建链接与清理链接两段，同属该运维文件。
 
+### 8. 运维域运行体与投递（2026-10-22 增补，DD-136）
+
+`DD-134(5)` 的外部 MCP 服务器注册需要两类运维域事实：一个按固定 digest 运行的 MCP 运行体，以及 Core 读取的交付目录
+`protocolPeers` 与 `PROTOCOL_PEER` 一致性环境。此前它们没有声明来源，只能由人到节点手写文件、改 `.env` 再手工重建 Core。
+本节把它们并入同一入口，仍不新增门禁：
+
+- **operated**：`release.yaml` 的 `operated` 列出 compose 中按 digest 固定的上游镜像常驻服务（当前为 `protocol-peer-reference`）。
+  它们不是构建单元，不参与 build/record/pin；deploy 在替换受管服务之前保证其运行镜像引用等于 compose 的固定引用（缺失即创建、
+  不同即替换），回读运行、本地解析与健康，verify 每次重算。上游镜像来自原 registry，不做本仓库产物的 registry 复现核对。
+- **delivery.protocol_peers**：仓库内的 `deploy/local/protocol-peers/directory.json`（只含 `protocolPeers`）与一致性环境，由 deploy
+  渲染到运行目录 `data/protocol-peers/` 下的真实规范文件（0644，同目录临时文件 + fsync + 原子替换，内容不变不改写）。交付目录中
+  `adapters` 保留运行文件已有条目（组件入口以 `adapter-directory.mjs --existing` 维护同一文件），`adapterServiceRef` 两类唯一。
+  `.env` 的 `APPLICATION_ADAPTER_DIRECTORY_FILE` 与 `COMPONENT_CONFORMANCE_ENVIRONMENT_FILE` 由 `env.set` 以 `${KAILO_RUNTIME_DIR}`
+  引用指向这两个文件；一致性套件同一时间只有一个候选，HTTP adapter 才有的另两项由 `env.unset` 删除。
+- **生效**：start-core.sh 以原路径只读挂载这些文件，替换文件不会进入已运行的 Core/Worker，只有新的一次性投递（`DD-70`）重建后生效。
+  因此入口记录声明摘要（发布 journal 目录的 `deliveries.json`），摘要与上次经 `restart`（core-bff）启动入口生效的不同时把 core-bff
+  加入部署目标（backup 随之覆盖 core-db），回读成功后才记下新摘要；摘要相同不重建。plan 列出运行体状态与投递是否待生效。
+- **校验**：`model.peer_delivery` 在 plan 即拒绝不合规的声明——端点不是 operated 运行体、`artifactDigest` 不等于其固定 digest、
+  binding 归属事实或一致性环境不符合契约、期望应答未记录、`.env` 键与渲染位置不一致；拒绝时不改动现场。
+- **期望应答**：一致性环境的 `initializeResultJson`/`listResultJson` 由 `deploy/local/protocol-peers/record-conformance.py` 在 CI 节点
+  隔离网络中经与生产同一 Gateway 构建记录（DD-136(3)），随源码提交；peer 或 Gateway 的 digest 变化后重新记录。
+- **binding 归属事实**（`DD-98`）：Tenant 管理员在网关管理区生成草稿后，把草稿给出的条目登记进 `directory.json` 的 `bindings` 并发布；
+  下一次 deploy 因摘要变化重建 Core，向导读到条目后才放行 `application_binding.create`。
+
 ## 后果
 
 正面：一条命令覆盖从规划到回读的全部步骤，所有输入由登记数据推出，改错位置或漏改会在 pin 阶段以残留 digest 断言当场失败；
