@@ -409,7 +409,7 @@ pub(crate) async fn identity_avatar(
     let poster = picture
         .split_once("#buzz-anim=")
         .map_or(picture.as_str(), |(poster, _)| poster);
-    match avatar_media_paths(Some(&picture), &host).get(poster) {
+    match avatar_media_paths(Some(picture.as_str()), &host).get(poster) {
         Some(path) => (
             StatusCode::FOUND,
             [
