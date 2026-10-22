@@ -423,7 +423,7 @@ define([
             if ( me.logo )
                 me.logo.children(0).on('click', function (e) {
                     var _url = !!me.branding && !!me.branding.logo && (me.branding.logo.url!==undefined) ?
-                        me.branding.logo.url : '{{PUBLISHER_URL}}';
+                        me.branding.logo.url : ''; // Kailo DD-132(7)①: the Kailo icon links nowhere
                     if (_url) {
                         var newDocumentPage = window.open(_url);
                         newDocumentPage && newDocumentPage.focus();

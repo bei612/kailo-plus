@@ -63,6 +63,10 @@ try:
             require(value == f'tauri://{parts.netloc}' and re.fullmatch(r'[a-z0-9.-]+', parts.netloc or ''), 'native host origin must be tauri://host')
         else:
             origin(value)
+    offer = urlsplit(env['DOCUMENT_EDITOR_SOURCE_OFFER_URL'])
+    require(offer.scheme in ('http', 'https') and offer.hostname and not offer.username and not offer.password and not offer.fragment
+            and not any(c in env['DOCUMENT_EDITOR_SOURCE_OFFER_URL'] for c in " \"'<>`\\") and '<to-fill' not in env['DOCUMENT_EDITOR_SOURCE_OFFER_URL'],
+            'DOCUMENT_EDITOR_SOURCE_OFFER_URL: absolute http(s) Corresponding Source offer required (AGPLv3 §13)')
     secrets = []
     for key in ('DOCUMENT_EDITOR_TOKEN_SECRET_FILE', 'DOCUMENT_EDITOR_SECURE_LINK_SECRET_FILE'):
         path = pathlib.Path(env[key])
@@ -134,6 +138,9 @@ for path in ('/hosting/discovery', '/web-apps/apps/api/documents/api.js'):
 for path in ('/ai-proxy/', '/sdkjs-plugins/', '/'):
     if get(path)[0] != 404:
         failures.append(path + ' must be absent')
+status, _, body = get('/kailo-legal/')
+if status != 200 or env['DOCUMENT_EDITOR_SOURCE_OFFER_URL'] not in body or 'Additional Terms' not in get('/kailo-legal/LICENSE.txt')[2]:
+    failures.append('legal notices with the source offer and license texts')
 status, _, body = get('/plugins.json')
 if status != 200 or json.loads(body or '{}').get('pluginsData') != []:
     failures.append('plugin list must be empty')

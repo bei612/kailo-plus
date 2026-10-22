@@ -15,9 +15,38 @@ export function editorLocale(preference) {
     return parts[1] && /^[a-z]{2}$/i.test(parts[1]) ? `${lang}-${parts[1].toUpperCase()}` : lang;
 }
 
+// DD-133 §4.7.2 / DD-132(7)③: the Kailo presentation (window.KailoEmbed, loaded by
+// the Cells page) decides the launch theme and locale; without a Kailo host the
+// Cells user preference keeps the locale and the editor default the theme.
+export function kailoPresentation(runtime) {
+    try {
+        const state = runtime && typeof runtime.getState === 'function' ? runtime.getState() : null;
+        if (!state || !state.hostConnected) return null;
+        return {
+            theme: state.theme === 'dark' ? 'dark' : 'light',
+            locale: state.locale === 'zh-CN' ? 'zh-CN' : 'en-US',
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+// WOPI host message the editor page understands (editor-wopi.ejs commandMap).
+export function presentationMessage(theme) {
+    if (theme !== 'light' && theme !== 'dark') throw new Error('unknown Kailo theme');
+    return JSON.stringify({MessageId: 'Kailo_Presentation', SendTime: Date.now(), Values: {theme}});
+}
+
+// DD-132(7)②: the instance's legal notices (AGPLv3 §5(d), §13).
+export function legalNoticeUrl(publicOrigin) {
+    const origin = new URL(publicOrigin);
+    if (origin.origin !== publicOrigin) throw new Error('unexpected document editor origin');
+    return `${publicOrigin}/kailo-legal/`;
+}
+
 // Only the fixed WOPI action of the configured DocumentServer is accepted; the
-// locale parameters are the only ones this page sets.
-export function launchAction(url, publicOrigin, locale) {
+// locale and theme parameters are the only ones this page sets.
+export function launchAction(url, publicOrigin, locale, theme) {
     const action = new URL(url);
     if (action.origin !== publicOrigin || !/^\/hosting\/wopi\/(word|cell|slide|pdf|diagram)\/(view|edit)$/.test(action.pathname)
         || action.username || action.password || action.hash || action.searchParams.has('access_token')
@@ -26,5 +55,6 @@ export function launchAction(url, publicOrigin, locale) {
     }
     action.searchParams.set('ui', locale);
     action.searchParams.set('lang', locale);
+    if (theme === 'light' || theme === 'dark') action.searchParams.set('thm', theme === 'dark' ? '2' : '1');
     return action.toString();
 }

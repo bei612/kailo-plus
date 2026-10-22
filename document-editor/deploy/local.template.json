@@ -11,15 +11,33 @@
         }
       },
       "secret": {
-        "browser": {"string": "", "file": "/run/kailo-ds/secrets/token"},
-        "inbox": {"string": "", "file": "/run/kailo-ds/secrets/token"},
-        "outbox": {"string": "", "file": "/run/kailo-ds/secrets/token"},
-        "session": {"string": "", "file": "/run/kailo-ds/secrets/token"}
+        "browser": {
+          "string": "",
+          "file": "/run/kailo-ds/secrets/token"
+        },
+        "inbox": {
+          "string": "",
+          "file": "/run/kailo-ds/secrets/token"
+        },
+        "outbox": {
+          "string": "",
+          "file": "/run/kailo-ds/secrets/token"
+        },
+        "session": {
+          "string": "",
+          "file": "/run/kailo-ds/secrets/token"
+        }
       },
       "ipfilter": {
         "rules": [
-          {"address": "${DOCUMENT_EDITOR_WOPI_SOURCE_HOST}", "allowed": true},
-          {"address": "*", "allowed": false}
+          {
+            "address": "${DOCUMENT_EDITOR_WOPI_SOURCE_HOST}",
+            "allowed": true
+          },
+          {
+            "address": "*",
+            "allowed": false
+          }
         ],
         "useforrequest": false,
         "errorcode": 403
@@ -35,11 +53,18 @@
   },
   "wopi": {
     "enable": true,
-    "host": "${DOCUMENT_EDITOR_PUBLIC_ORIGIN}"
+    "host": "${DOCUMENT_EDITOR_PUBLIC_ORIGIN}",
+    "favIconUrlWord": "/web-apps/apps/common/main/resources/img/header/kailo-logo.png",
+    "favIconUrlCell": "/web-apps/apps/common/main/resources/img/header/kailo-logo.png",
+    "favIconUrlSlide": "/web-apps/apps/common/main/resources/img/header/kailo-logo.png",
+    "favIconUrlPdf": "/web-apps/apps/common/main/resources/img/header/kailo-logo.png",
+    "favIconUrlDiagram": "/web-apps/apps/common/main/resources/img/header/kailo-logo.png"
   },
   "externalRequest": {
     "directIfIn": {
-      "allowList": ["${DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN}/wopi/files/"],
+      "allowList": [
+        "${DOCUMENT_EDITOR_WOPI_SOURCE_ORIGIN}/wopi/files/"
+      ],
       "jwtToken": false
     },
     "action": {

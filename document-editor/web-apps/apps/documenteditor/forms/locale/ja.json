@@ -96,7 +96,7 @@
   "DE.Controllers.ApplicationController.downloadTextText": "ドキュメントのダウンロード中...",
   "DE.Controllers.ApplicationController.errorAccessDeny": "利用権限がない操作をしようとしました。<br>Documentサーバー管理者に連絡してください。",
   "DE.Controllers.ApplicationController.errorBadImageUrl": "画像のURLが正しくありません。",
-  "DE.Controllers.ApplicationController.errorConnectToServer": "ドキュメントを保存できませんでした。接続設定を確認するか、管理者にお問い合わせください。<br>OKボタンをクリックするとドキュメントをダウンロードするように求められます。<br><br>ドキュメントサーバーの接続の詳細情報は:<a href=\"https://api.onlyoffice.com/editors/callback\" target=\"_blank\">こちら</a>",
+  "DE.Controllers.ApplicationController.errorConnectToServer": "ドキュメントを保存できませんでした。接続設定を確認するか、管理者にお問い合わせください。<br>OKボタンをクリックするとドキュメントをダウンロードするように求められます。<br><",
   "DE.Controllers.ApplicationController.errorCopyDisabled": "セキュリティ上の理由により、この文書の内容はコピーできません。",
   "DE.Controllers.ApplicationController.errorDataEncrypted": "暗号化された変更を受信しましたが、復号化できません。",
   "DE.Controllers.ApplicationController.errorDefaultMessage": "エラー コード: %1",

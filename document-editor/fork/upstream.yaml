@@ -11,9 +11,12 @@ artifacts:
   # official layer below for the core binaries and the four data components.
   - name: document-editor
     kind: image
-    build_context: document-editor
+    build_context: .
     build_dockerfile: document-editor/fork/packaging/Dockerfile
-    inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/]
+    # DD-133 §4.7.1 / DD-132(7): the Kailo token package and icon are build inputs.
+    inputs: [document-editor/fork/packaging/, document-editor/server/, document-editor/web-apps/, document-editor/sdkjs/, client-kit/embed/kailo-theme-tokens.css, web-client/web/public/app-icon.png]
+    build_args: [PLATFORM_DISPLAY_NAME]
+    build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
     source_digest: none
     artifact_digest: none
     blocked: Built only as a CI-node trial (not pushed, no digest recorded). The CI build target document-editor is not registered yet; production deployment waits for a registered build, DD-132(3) deployment receipt and V-SCN-186..190 acceptance.
@@ -58,7 +61,7 @@ official_layer:
     web-apps: {official: 1993a6d89731af0fcb5129ebf0ee380076fea5a9, pin: 9c0ca538c3b211052347df09d2a4d6781f023403, tree: equal plus the Kailo SS-OFF-WOPI line}
     sdkjs: {official: 75b53d504bfd81bfa35d59bb57dd9e56f7c9235d, pin: 72b0421c0bbf9d01eed9cf14834ae47eb2df1b50, tree: pin adds the cell/apiBuilder.js ApiWorkbook export and drops 262 test files}
   version_stamp: {PRODUCT_VERSION: 9.4.0, BUILD_NUMBER: 131, reason: every pinned component tree equals its v9.4.0.131 tag}
-  removed: [sdkjs-plugins, server/tools/pluginsmanager, documentserver-example, admin panel, /usr/bin/documentserver-*.sh, run-document-server.sh, supervisor and nginx packaging configuration, AI proxy route]
+  removed: [sdkjs-plugins, server/tools/pluginsmanager, documentserver-example, admin panel, /usr/bin/documentserver-*.sh, run-document-server.sh, supervisor and nginx packaging configuration, AI proxy route, web-apps built-in help, mobile and embed front ends, upstream header and about logos]
 # Fixed upstream recipe references; fetched by commit from GitHub, never a branch.
 recipe_references:
   - url: https://github.com/ONLYOFFICE/build_tools

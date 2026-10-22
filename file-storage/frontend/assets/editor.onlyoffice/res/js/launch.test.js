@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {DOCS_API_CONFIG, editorLocale, launchAction} from './launch';
+import {DOCS_API_CONFIG, editorLocale, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch';
 
 const origin = 'http://ds.example:58096';
 const selected = `${origin}/hosting/wopi/word/edit?wopisrc=http%3A%2F%2Fcells.example%2Fwopi%2Ffiles%2Fu&ui=en-US&lang=en-US&dchat=1`;
@@ -36,5 +36,34 @@ describe('native ONLYOFFICE launch (DD-132)', () => {
         ]) {
             expect(() => launchAction(url, origin, 'en-US')).toThrow();
         }
+    });
+
+    it('takes theme and locale from the Kailo host once it has spoken', () => {
+        const runtime = (state) => ({getState: () => state});
+        expect(kailoPresentation(undefined)).toBe(null);
+        expect(kailoPresentation(runtime({theme: 'dark', locale: 'zh-CN', embedded: true, hostConnected: false}))).toBe(null);
+        expect(kailoPresentation(runtime({theme: 'dark', locale: 'zh-CN', embedded: true, hostConnected: true})))
+            .toEqual({theme: 'dark', locale: 'zh-CN'});
+        expect(kailoPresentation(runtime({theme: 'light', locale: 'en', embedded: true, hostConnected: true})))
+            .toEqual({theme: 'light', locale: 'en-US'});
+        expect(kailoPresentation({getState: () => { throw new Error('x'); }})).toBe(null);
+    });
+
+    it('maps the Kailo theme to the WOPI thm parameter', () => {
+        expect(new URL(launchAction(selected, origin, 'zh-CN', 'dark')).searchParams.get('thm')).toBe('2');
+        expect(new URL(launchAction(selected, origin, 'en-US', 'light')).searchParams.get('thm')).toBe('1');
+        expect(new URL(launchAction(selected, origin, 'en-US')).searchParams.has('thm')).toBe(false);
+    });
+
+    it('relays theme switches as the WOPI host message the editor page accepts', () => {
+        const message = JSON.parse(presentationMessage('dark'));
+        expect(message.MessageId).toBe('Kailo_Presentation');
+        expect(message.Values).toEqual({theme: 'dark'});
+        expect(() => presentationMessage('sepia')).toThrow();
+    });
+
+    it('links the instance legal notices', () => {
+        expect(legalNoticeUrl(origin)).toBe(`${origin}/kailo-legal/`);
+        expect(() => legalNoticeUrl(`${origin}/x`)).toThrow();
     });
 });

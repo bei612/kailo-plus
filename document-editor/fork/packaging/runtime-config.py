@@ -9,6 +9,8 @@ Inputs, all delivered by document-editor/deploy/compose.yaml:
                                     (DocService storage.fs.secretString = nginx
                                     $secure_link_secret)
   DS_FRAME_ANCESTORS                exact host origins allowed to frame the editor
+  DS_SOURCE_OFFER_URL               where users obtain the Corresponding Source
+                                    (AGPLv3 §13, DD-132(7)②)
 
 Outputs in the /run/kailo-ds tmpfs (root:ds, never printed):
   config/   NODE_CONFIG_DIR: the image default.json and production-linux.json,
@@ -17,8 +19,10 @@ Outputs in the /run/kailo-ds tmpfs (root:ds, never printed):
   secrets/token   the JWT secret file local.json points to (DocService reads
                   secret.*.file natively, Common/sources/utils.js getSecretByElem)
   nginx/secure-link.conf, nginx/frame-ancestors.conf
+  legal/index.html   the legal notices with the source offer
 """
 import grp
+import html
 import json
 import os
 import pathlib
@@ -63,6 +67,17 @@ def ancestors(raw):
         else:
             origin(value)
     return values
+
+
+def source_offer(raw):
+    parts = urlsplit(raw)
+    require(parts.scheme in ("http", "https") and parts.hostname and not parts.username and not parts.password
+            and not parts.fragment and len(raw) <= 512 and not re.search(r"[\s\"'<>`\\]", raw),
+            "DS_SOURCE_OFFER_URL must be an absolute http(s) URL")
+    return raw
+
+
+LEGAL_TEMPLATE = pathlib.Path("/var/www/onlyoffice/kailo-legal/index.html.template")
 
 
 def invariants(config, required_origin):
@@ -127,15 +142,19 @@ def main():
     config = json.loads(LOCAL.read_text(encoding="utf-8"))
     invariants(config, os.environ.get("DS_PUBLIC_ORIGIN") or None)
     frames = ancestors(os.environ.get("DS_FRAME_ANCESTORS", ""))
+    offer = source_offer(os.environ.get("DS_SOURCE_OFFER_URL", ""))
     token, signing = secret("ds_token_secret"), secret("ds_secure_link_secret")
     require(token != signing, "token and signing secrets must differ")
-    for sub, mode in (("config", 0o750), ("secrets", 0o750), ("nginx", 0o700)):
+    for sub, mode in (("config", 0o750), ("secrets", 0o750), ("nginx", 0o700), ("legal", 0o755)):
         directory = RUN / sub
         if directory.exists():
             shutil.rmtree(directory)
         directory.mkdir(parents=True, mode=mode)
         os.chown(directory, 0, ds if mode == 0o750 else 0)
         os.chmod(directory, mode)
+    legal = LEGAL_TEMPLATE.read_text(encoding="utf-8")
+    require("@RUNTIME_SOURCE_OFFER_URL@" in legal, "legal notice template is incomplete")
+    write(RUN / "legal" / "index.html", legal.replace("@RUNTIME_SOURCE_OFFER_URL@", html.escape(offer)), 0o644, 0)
     for name in ("default.json", "production-linux.json"):
         write(RUN / "config" / name, (pathlib.Path("/etc/onlyoffice/documentserver") / name).read_text(encoding="utf-8"), 0o640, ds)
     write(RUN / "config" / "local.json", LOCAL.read_text(encoding="utf-8"), 0o640, ds)

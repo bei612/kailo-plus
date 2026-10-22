@@ -53,7 +53,7 @@ ARG PRODUCT_VERSION
 ARG BUILD_NUMBER
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 WORKDIR /build/server
-COPY server/ ./
+COPY document-editor/server/ ./
 RUN sed -i -E "s/const buildNumber = [0-9]*/const buildNumber = ${BUILD_NUMBER}/; s/const buildVersion = '[0-9.]*'/const buildVersion = '${PRODUCT_VERSION}'/" Common/sources/commondefines.js \
  && sed -i -E "s#const buildDate = '[0-9/-]*'#const buildDate = '$(date -u +%m/%d/%Y)'#" Common/sources/license.js \
  && grep -q "const buildVersion = '${PRODUCT_VERSION}'" Common/sources/commondefines.js \
@@ -68,7 +68,7 @@ ARG PRODUCT_VERSION
 ARG BUILD_NUMBER
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 WORKDIR /build/sdkjs
-COPY sdkjs/ ./
+COPY document-editor/sdkjs/ ./
 RUN cd build && PRODUCT_VERSION="$PRODUCT_VERSION" BUILD_NUMBER="$BUILD_NUMBER" python3 build.py --beta=false --minimize \
  && test -s ../deploy/sdkjs/cell/sdk-all.js && test -s ../deploy/sdkjs/word/sdk-all-min.js
 
@@ -76,12 +76,27 @@ RUN cd build && PRODUCT_VERSION="$PRODUCT_VERSION" BUILD_NUMBER="$BUILD_NUMBER" 
 FROM ${NODE_IMAGE} AS web-apps
 ARG PRODUCT_VERSION
 ARG BUILD_NUMBER
+ARG PLATFORM_DISPLAY_NAME
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 WORKDIR /build/web-apps
-COPY web-apps/ ./
-COPY sdkjs/common/embed/ /build/sdkjs/common/embed/
+COPY document-editor/web-apps/ ./
+COPY document-editor/sdkjs/common/embed/ /build/sdkjs/common/embed/
 COPY --from=build-tools /build/build_tools/ /build/build_tools/
-ENV PRODUCT_VERSION=${PRODUCT_VERSION} BUILD_NUMBER=${BUILD_NUMBER}
+# DD-132(7)①: the Kailo icon is a build input (DD-133 §4.7.1), copied next to the
+# header images the fork's header.less/about.less reference.
+COPY web-client/web/public/app-icon.png apps/common/main/resources/img/header/kailo-logo.png
+# web-apps' own branding parameters (Gruntfile.js global.jsreplacements and the
+# api task): product names from the deployment display name, every upstream
+# help, feedback, support, sales and publisher link blanked.
+RUN test -n "$PLATFORM_DISPLAY_NAME" && test "${#PLATFORM_DISPLAY_NAME}" -le 64 \
+ && ! printf '%s' "$PLATFORM_DISPLAY_NAME" | grep -q '["<>&{}\\]' \
+ || { echo "PLATFORM_DISPLAY_NAME is required (1-64 characters, no quotes or markup)" >&2; exit 1; }
+ENV PRODUCT_VERSION=${PRODUCT_VERSION} BUILD_NUMBER=${BUILD_NUMBER} \
+    APP_TITLE_TEXT=${PLATFORM_DISPLAY_NAME} COMPANY_NAME=${PLATFORM_DISPLAY_NAME} APP_CUSTOMER_NAME=${PLATFORM_DISPLAY_NAME} \
+    PUBLISHER_NAME=- PUBLISHER_ADDRESS=- PUBLISHER_PHONE=- SUPPORT_EMAIL=- SALES_EMAIL=- \
+    PUBLISHER_URL=about:blank SUPPORT_URL=about:blank HELP_URL=about:blank SUGGEST_URL=about:blank \
+    API_URL_EDITING_CALLBACK=about:blank HELP_CENTER_WEB_EDITORS=about:blank \
+    HELP_CENTER_WEB_DE=about:blank HELP_CENTER_WEB_SSE=about:blank HELP_CENTER_WEB_PE=about:blank
 RUN cd translation && python3 merge_and_check.py
 RUN --mount=type=cache,id=document-editor-npm,target=/root/.npm \
     cd build && npm ci --no-audit --no-fund && npx grunt --verbose
@@ -92,11 +107,31 @@ RUN find deploy/web-apps/apps -name '*.js.map' -delete \
  && test -s /build/web-apps/deploy/web-apps/apps/api/wopi/editor-wopi.ejs \
  && for app in documenteditor spreadsheeteditor presentationeditor pdfeditor visioeditor; do \
       test -s "/build/web-apps/deploy/web-apps/apps/$app/main/app.js" || { echo "missing $app main bundle" >&2; exit 1; }; done
+# DD-132(7)①: A-phase launches only the desktop view/edit actions, so the
+# built-in help, the mobile and the embed front ends are not shipped, nor the
+# upstream logo images the fork no longer references.
+RUN cd deploy/web-apps/apps \
+ && rm -rf */main/resources/help common/main/resources/help */mobile common/mobile */embed common/embed \
+           common/main/resources/img/header/header-logo_s.svg common/main/resources/img/header/dark-logo_s.svg \
+           common/main/resources/img/about \
+ && test -s common/main/resources/img/header/kailo-logo.png
+# DD-132(7)③: theme-kailo-light/dark from the Kailo token package (build input);
+# DocService's /themes.json lists every *.json of this directory.
+COPY client-kit/embed/kailo-theme-tokens.css /build/kailo/kailo-theme-tokens.css
+COPY document-editor/fork/packaging/kailo-themes.py /build/kailo/kailo-themes.py
+RUN python3 -I /build/kailo/kailo-themes.py /build/kailo/kailo-theme-tokens.css deploy/web-apps/apps/common/main/resources/themes \
+ && test -s deploy/web-apps/apps/common/main/resources/themes/theme-kailo-light.json \
+ && test -s deploy/web-apps/apps/common/main/resources/themes/theme-kailo-dark.json
 
 # ── assemble on the official layer, then flatten ───────────────────────────
 FROM ${OFFICIAL_IMAGE} AS assemble
 ARG PLATFORM_BUILD_ID=unknown
 ARG PRODUCT_VERSION
+ARG BUILD_NUMBER
+ARG PLATFORM_DISPLAY_NAME
+# Build facts (upstream.yaml build_facts): the modification notice of the legal page.
+ARG KAILO_SOURCE_COMMIT
+ARG KAILO_BUILD_TIME
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV DS=/var/www/onlyoffice/documentserver
 # Keep only the core binaries of the official server tree; everything built
@@ -124,12 +159,20 @@ COPY --from=server /build/server/Common/config/log4js/production.json /etc/onlyo
 COPY --from=sdkjs /build/sdkjs/deploy/sdkjs/ ${DS}/sdkjs/
 COPY --from=web-apps /build/web-apps/deploy/web-apps/ ${DS}/web-apps/
 COPY --from=server /usr/local/bin/node /usr/local/bin/node
-COPY fork/packaging/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY fork/packaging/nginx/ds.conf /etc/nginx/conf.d/ds.conf
-COPY fork/packaging/nginx/includes/ /etc/nginx/includes/
-COPY fork/packaging/supervisord.conf /etc/kailo-ds/supervisord.conf
-COPY --chmod=0755 fork/packaging/entrypoint.sh /usr/local/bin/kailo-ds-entrypoint
-COPY --chmod=0755 fork/packaging/runtime-config.py /usr/local/lib/kailo-ds/runtime-config.py
+COPY document-editor/fork/packaging/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY document-editor/fork/packaging/nginx/ds.conf /etc/nginx/conf.d/ds.conf
+COPY document-editor/fork/packaging/nginx/includes/ /etc/nginx/includes/
+COPY document-editor/fork/packaging/supervisord.conf /etc/kailo-ds/supervisord.conf
+COPY --chmod=0755 document-editor/fork/packaging/entrypoint.sh /usr/local/bin/kailo-ds-entrypoint
+COPY --chmod=0755 document-editor/fork/packaging/runtime-config.py /usr/local/lib/kailo-ds/runtime-config.py
+COPY document-editor/fork/packaging/legal/index.html.template /var/www/onlyoffice/kailo-legal/index.html.template
+COPY document-editor/fork/packaging/legal-render.py document-editor/fork/packaging/brand-scan.py /tmp/kailo/
+# DD-132(7)②: legal notices with the build's modification notice; the source
+# offer is written at start (runtime-config.py). License texts sit beside it.
+RUN python3 -I /tmp/kailo/legal-render.py /var/www/onlyoffice/kailo-legal/index.html.template \
+      "$PLATFORM_DISPLAY_NAME" "$PRODUCT_VERSION build $BUILD_NUMBER" "$KAILO_SOURCE_COMMIT" "$KAILO_BUILD_TIME" \
+ && cp "$DS/LICENSE.txt" "$DS/3rd-Party.txt" /var/www/onlyoffice/kailo-legal/ \
+ && grep -q "Additional Terms" /var/www/onlyoffice/kailo-legal/LICENSE.txt
 # FileConverter/bin: official core binaries + cmap.bin of the rebuilt sdkjs
 # and the V8 snapshots (deploy_server.py create_x2t_js_cache, run from the
 # converter directory), then the font, theme and js caches of
@@ -161,7 +204,13 @@ RUN tag=$(printf '%s' "$PLATFORM_BUILD_ID" | sha256sum | cut -c1-32) \
  && chown -R ds:ds "$DS" /var/lib/onlyoffice \
  && chown -R root:root /etc/onlyoffice /etc/nginx /etc/kailo-ds \
  && chmod -R go-w "$DS" /etc/onlyoffice \
- && test ! -e "$DS/sdkjs-plugins" && test ! -e "$DS/server/tools/pluginsmanager"
+ && test ! -e "$DS/sdkjs-plugins" && test ! -e "$DS/server/tools/pluginsmanager" \
+ && chown -R root:root /var/www/onlyoffice/kailo-legal && chmod -R a+rX,go-w /var/www/onlyoffice/kailo-legal
+# DD-132(7)①: no upstream product or publisher name outside legal notices,
+# registered identifiers and code comments (brand-scan.py lists anything else).
+RUN python3 -I /tmp/kailo/brand-scan.py "$DS/web-apps" "$DS/sdkjs" "$DS/server" "$DS/document-formats" "$DS/document-templates" \
+      /etc/nginx /etc/onlyoffice /etc/kailo-ds /usr/local/lib/kailo-ds /var/www/onlyoffice/kailo-legal \
+ && rm -rf /tmp/kailo
 
 FROM scratch
 COPY --from=assemble / /

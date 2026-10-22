@@ -1,8 +1,20 @@
 {
-  "ONLYOFFICE Docs": { "other": "ONLYOFFICE Docs" },
-  "ONLYOFFICE DocumentServer editor for office documents": { "other": "ONLYOFFICE DocumentServer editor for office documents" },
-  "Kailo document binding projection": { "other": "Kailo document binding projection" },
-  "DocumentServer origin": { "other": "DocumentServer origin" },
-  "WOPI source origin": { "other": "WOPI source origin" },
-  "Enabled extensions": { "other": "Enabled extensions" }
+  "Document editor": {
+    "other": "Document editor"
+  },
+  "Online editor for office documents": {
+    "other": "Online editor for office documents"
+  },
+  "Kailo document binding projection": {
+    "other": "Kailo document binding projection"
+  },
+  "Document editor origin": {
+    "other": "Document editor origin"
+  },
+  "WOPI source origin": {
+    "other": "WOPI source origin"
+  },
+  "Enabled extensions": {
+    "other": "Enabled extensions"
+  }
 }

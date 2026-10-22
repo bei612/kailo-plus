@@ -4,12 +4,8 @@
         margin-bottom: 5px;
 
         &:before {
-            content: ~"url('@{common-image-const-path}/about/logo_s.svg')";
-
-            .theme-type-dark & {
-                content: ~"url('@{common-image-const-path}/about/logo-white_s.svg')";
-            }
-
+            // Kailo DD-132(7): no upstream logo; the legal notices are at /kailo-legal/.
+            content: ~"url('@{common-image-const-path}/header/kailo-logo.png')";
             height: 45px;
             width: auto;
         }

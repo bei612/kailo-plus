@@ -472,9 +472,20 @@ define([
 
 
                 Common.Gateway.on('opendocument', on_document_open.bind(this));
+                // Kailo DD-132(7)③: a host-chosen Kailo theme (uitheme=theme-kailo-*) is
+                // switched only by the host; the editor offers no theme choice then.
+                const kailo_theme = /^theme-kailo-(light|dark)$/;
+                if ( /[?&]uitheme=theme-kailo-(light|dark)(&|$)/.test(window.location.search) )
+                    this.locked = true;
                 $(window).on('storage', function (e) {
                     if ( e.key == 'ui-theme-id' && !Common.Controllers.Desktop.isActive() ) {
-                        if ( !!e.originalEvent.newValue ) {
+                        const value = e.originalEvent.newValue;
+                        if ( this.locked && kailo_theme.test(value || '') && themes_map[value] ) {
+                            // Written by the WOPI page on a Kailo_Presentation host message.
+                            apply_theme.call(this, value);
+                            Common.NotificationCenter.trigger('uitheme:changed', value);
+                        } else
+                        if ( !!value ) {
                             refresh_theme.call(this);
                         }
                     } else

@@ -15,7 +15,7 @@ import {RestDocumentAccessTokenRequest, TokenServiceApi} from 'cells-sdk'
 import React from 'react'
 import {connect} from 'react-redux'
 import {referenceDelivery, nativeDocumentSelection, documentBridge} from '../../../../../adapter/src/native-reference.mjs'
-import {DOCS_API_CONFIG, editorLocale, launchAction} from './launch'
+import {DOCS_API_CONFIG, editorLocale, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch'
 
 const {EditorActions} = Pydio.requireLib('hoc');
 const FRAME = 'kailo-onlyoffice-frame';
@@ -44,7 +44,22 @@ export default class Editor extends React.Component {
             }
         } catch (_) { this.setState({referenceError: true}); return; }
         this.publicOrigin = configs.get("ONLYOFFICE_PUBLIC_ORIGIN");
+        this.followKailo();
         this.open();
+    }
+
+    // DD-132(7)③: Kailo's light/dark switch reaches the open editor without a
+    // reload; a locale change applies at the next launch (design 18 §6.2).
+    followKailo() {
+        const runtime = window.KailoEmbed;
+        if (!runtime || typeof runtime.onThemeChange !== 'function') return;
+        this.stopKailoTheme = runtime.onThemeChange((theme) => {
+            const frame = this.frame && this.frame.contentWindow;
+            if (!frame || !this.state.launch || !this.state.launch.submitted) return;
+            try {
+                frame.postMessage(presentationMessage(theme), this.publicOrigin);
+            } catch (_) { /* the next launch carries the theme */ }
+        });
     }
 
     componentWillReceiveProps(nextProps) {
@@ -71,6 +86,7 @@ export default class Editor extends React.Component {
     componentWillUnmount() {
         this.epoch++;
         if (this.stopDocumentBridge) this.stopDocumentBridge();
+        if (this.stopKailoTheme) this.stopKailoTheme();
     }
 
     async open(node = this.props.node) {
@@ -93,7 +109,9 @@ export default class Editor extends React.Component {
             const value = await response.json();
             const selected = value && value.EditorURLs && value.EditorURLs.onlyoffice && value.EditorURLs.onlyoffice.Url;
             if (!selected) throw new Error('no document editor action');
-            const action = launchAction(selected, publicOrigin, editorLocale(pydio.user.getPreference('lang')));
+            const kailo = kailoPresentation(window.KailoEmbed);
+            const action = launchAction(selected, publicOrigin,
+                kailo ? kailo.locale : editorLocale(pydio.user.getPreference('lang')), kailo ? kailo.theme : undefined);
             const api = new TokenServiceApi(PydioApi.getRestClient());
             const request = new RestDocumentAccessTokenRequest();
             request.Path = PydioApi.getClient().getSlugForNode(node) + node.getPath();
@@ -159,8 +177,13 @@ export default class Editor extends React.Component {
                         <input type="hidden" name="docs_api_config" value={DOCS_API_CONFIG}/>
                     </form>
                 ) : null}
-                {launch ? <iframe name={FRAME} title={messages['onlyoffice.1']} allow="clipboard-read; clipboard-write; fullscreen"
+                {launch ? <iframe name={FRAME} ref={(el) => { this.frame = el; }} title={messages['onlyoffice.1']} allow="clipboard-read; clipboard-write; fullscreen"
                     style={{backgroundColor: 'white', width: '100%', height: '100%', border: 0, flex: 1}}/> : null}
+                {this.publicOrigin ? (
+                    <div style={{fontSize: 12, padding: '2px 8px', textAlign: 'right'}}>
+                        <a href={legalNoticeUrl(this.publicOrigin)} target="_blank" rel="noopener noreferrer">{messages['onlyoffice.legal_notices']}</a>
+                    </div>
+                ) : null}
             </div>
         );
     }

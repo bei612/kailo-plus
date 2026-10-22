@@ -96,7 +96,7 @@
   "DE.Controllers.ApplicationController.downloadTextText": "Baixando documento...",
   "DE.Controllers.ApplicationController.errorAccessDeny": "Você está tentando executar uma ação que você não tem direitos. <br> Contate o administrador do Servidor de Documentos.",
   "DE.Controllers.ApplicationController.errorBadImageUrl": "URL de imagem está incorreta",
-  "DE.Controllers.ApplicationController.errorConnectToServer": "Não foi possível salvar o documento. Verifique as configurações de conexão ou entre em contato com o administrador.<br>Ao clicar no botão “OK”, você será solicitado a baixar o documento.<br><br>Encontre mais informações sobre como conectar o Servidor de Documentos <a href=\"https://api.onlyoffice.com/editors/callback\" target=\"_blank\">aqui</a>",
+  "DE.Controllers.ApplicationController.errorConnectToServer": "Não foi possível salvar o documento. Verifique as configurações de conexão ou entre em contato com o administrador.<br>Ao clicar no botão “OK”, você será solicitado a baixar o documento.<br><",
   "DE.Controllers.ApplicationController.errorCopyDisabled": "Por motivos de segurança, o conteúdo deste documento não pode ser copiado.",
   "DE.Controllers.ApplicationController.errorDataEncrypted": "Alteração criptografadas foram recebidas, e não podem ser decifradas.",
   "DE.Controllers.ApplicationController.errorDefaultMessage": "Código do erro: %1",

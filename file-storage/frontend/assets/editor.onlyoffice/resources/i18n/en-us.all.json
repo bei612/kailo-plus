@@ -1,7 +1,20 @@
 {
-  "1": { "other": "ONLYOFFICE Docs" },
-  "unavailable": { "other": "The document editor is unavailable for this file. Download it or try again later." },
-  "kailo_view": { "other": "Open in Kailo (view)" },
-  "kailo_edit": { "other": "Open in Kailo (edit)" },
-  "kailo_reference_unavailable": { "other": "The native file reference could not be verified. Nothing was submitted to Kailo." }
+  "1": {
+    "other": "Document editor"
+  },
+  "unavailable": {
+    "other": "The document editor is unavailable for this file. Download it or try again later."
+  },
+  "kailo_view": {
+    "other": "Open in Kailo (view)"
+  },
+  "kailo_edit": {
+    "other": "Open in Kailo (edit)"
+  },
+  "kailo_reference_unavailable": {
+    "other": "The native file reference could not be verified. Nothing was submitted to Kailo."
+  },
+  "legal_notices": {
+    "other": "Open-source licenses and legal notices"
+  }
 }
