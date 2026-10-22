@@ -95,13 +95,9 @@ let Dashboard = createReactClass({
         const {pydio} = this.props;
         const message = (id) => {return pydio.MessageHash['admin_dashboard.' + id]};
 
-        // ADMIN GUIDE BUTTONS
-        const guidesButtons = [
-            {icon:'clock-start', id:'start', link:'https://pydio.com/en/docs/cells/v3/quick-admin-tour'},
-            {icon:'network', id:'ws', link:'https://pydio.com/en/docs/cells/v3/workspaces-cells'},
-            {icon:'account-multiple', id:'users', link:'https://pydio.com/en/docs/cells/v3/manage-users'},
-            {icon:'professional-hexagon', id:'advanced', link:'https://pydio.com/en/docs/cells/v3/secure-your-data'}
-        ];
+        // Kailo (DD-133 §1): no upstream guides, community, enterprise or
+        // website links; the dashboard keeps its own administration content.
+        const guidesButtons = [];
 
         // DOCS LIST
         let kbItems = [];
@@ -123,75 +119,8 @@ let Dashboard = createReactClass({
                         <span dangerouslySetInnerHTML={{__html:message('welc.intro')}} onClick={this.welcomeClick}></span>
                         <span dangerouslySetInnerHTML={{__html:message('welc.import')}} onClick={this.welcomeClick}></span>
                     </div>
-                    <p style={{fontSize: 14}}>{message('welc.guide')}</p>
                 </CardText>
-                <Divider/>
-                <CardActions style={{textAlign:'right'}}>
-                    {guidesButtons.map((object) => {
-                        return this.getDocButton(object.icon, message('welc.btn.' + object.id), object.link, flatProps,icProps);
-                    })}
-                </CardActions>
             </Card>
-        );
-
-        const PAY_IT_FORWARD_CARD = (
-            <Card zDepth={0} style={paperStyle} containerStyle={flexContainerStyle}>
-                <CardTitle title={message('cont.title')} subtitle={message('cont.subtitle')} />
-                <CardText style={flexFill}>
-                    <div className="mdi mdi-github-circle" style={{fontSize: 60, display:'inline-block', float:'left', marginRight:10, marginBottom:10}}/>
-                    {message('cont.intro')}
-                    <List>
-                        <ListItem disabled={true} primaryText={message('cont.topic.report')} rightIconButton={this.getOpenIcon('https://forum.pydio.com/')}/>
-                        <Divider/>
-                        <ListItem disabled={true} primaryText={message('cont.topic.report.2')} rightIconButton={this.getOpenIcon('https://github.com/pydio/cells')}/>
-                        <Divider/>
-                        <ListItem disabled={true} primaryText={message('cont.topic.pr')} rightIconButton={this.getOpenIcon('https://github.com/pydio/cells')}/>
-                        <Divider/>
-                        <ListItem disabled={true} primaryText={message('cont.topic.translate')} rightIconButton={this.getOpenIcon('https://pydio.com/en/community/contribute/adding-translation-pydio')} />
-                    </List>
-                </CardText>
-                <Divider/>
-                <CardActions style={{textAlign:'right'}}>
-                    <FlatButton label={message('cont.btn.github')} primary={true} icon={<FontIcon className="mdi mdi-github-box" {...icProps} />} onClick={()=>{window.open('https://github.com/pydio/cells')}} {...flatProps}/>
-                    <FlatButton label={message('cont.btn.tw')} primary={true} icon={<FontIcon className="mdi mdi-twitter-box" {...icProps}/>} onClick={()=>{window.open('https://twitter.com/Pydio')}} {...flatProps} />
-                    <FlatButton label={message('cont.btn.fb')} primary={true} icon={<FontIcon className="mdi mdi-facebook-box" {...icProps}/>} onClick={()=>{window.open('https://facebook.com/Pydio/')}} {...flatProps} />
-                </CardActions>
-            </Card>
-        );
-
-
-        const DISCOVER_ENTERPRISE_CARD = (
-            <Card zDepth={0} style={paperStyle} containerStyle={flexContainerStyle}>
-                <CardMedia
-                    overlay={<CardTitle title={message('ent.title')} subtitle={message('ent.subtitle')}/>}
-                >
-                    <div style={{height:230, backgroundImage:'url(plug/access.settings/res/images/dashboard.png)', backgroundSize:'cover',borderRadius:3}}/>
-                </CardMedia>
-                <List style={flexFill}>
-                    <ListItem leftIcon={<FontIcon style={{color:accent2Color}} className="mdi mdi-certificate"/>} primaryText={message('ent.features')} secondaryText={message('ent.features.legend')} disabled={true} />
-                    <Divider/>
-                    <ListItem leftIcon={<FontIcon style={{color:accent2Color}} className="mdi mdi-chart-areaspline"/>} primaryText={message('ent.advanced')} secondaryText={message('ent.advanced.legend')} disabled={true} />
-                    <Divider/>
-                    <ListItem leftIcon={<FontIcon style={{color:accent2Color}} className="mdi mdi-message-alert"/>} primaryText={message('ent.support')} secondaryText={message('ent.support.legend')} disabled={true} />
-                    <Divider/>
-                    <ListItem leftIcon={<FontIcon style={{color:accent2Color}} className="mdi mdi-download"/>} onClick={()=>{pydio.goTo('/admin/update')}} primaryText={<span style={{color:'rgb(1, 141, 204)'}}>{message('ent.upgrade')}</span>} secondaryText={message('ent.upgrade.legend')}/>
-                </List>
-                <Divider/>
-                <CardActions style={{textAlign:'right'}}>
-                    <FlatButton label={message('ent.btn.more')} icon={<FontIcon className={"icomoon-cells"} {...icProps}/>} primary={true}  onClick={()=>{window.open('https://pydio.com/en/pydio-cells/overview')}} {...flatProps}/>
-                    <FlatButton label={message('ent.btn.contact')}  icon={<FontIcon className={"mdi mdi-domain"} {...icProps}/>} primary={true}  onClick={()=>{window.open('https://pydio.com/en/pricing/contact')}} {...flatProps}/>
-                </CardActions>
-            </Card>
-        );
-
-        const websiteButton = (
-            <IconButton
-                iconClassName={"icomoon-cells"}
-                onClick={()=>{window.open('https://pydio.com')}}
-                tooltip={pydio.MessageHash['settings.topbar.button.about']}
-                tooltipPosition={"bottom-left"}
-                {...adminStyles.props.header.iconButton}
-            />
         );
 
         return (
@@ -199,12 +128,9 @@ let Dashboard = createReactClass({
                 <Header
                     title={message('welc.title.5')}
                     icon="mdi mdi-view-dashboard"
-                    actions={[websiteButton]}
                 />
                 <div className={"layout-fill"} style={{display:'flex', alignItems:'top', flexWrap:'wrap', padding: 5}}>
                     {WELCOME_COMMUNITY_CARD}
-                    {DISCOVER_ENTERPRISE_CARD}
-                    {PAY_IT_FORWARD_CARD}
                 </div>
             </div>
         )

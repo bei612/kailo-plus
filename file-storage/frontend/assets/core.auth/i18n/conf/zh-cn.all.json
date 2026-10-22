@@ -3,7 +3,7 @@
     "other": "点击忘记密码时触发动作"
   },
   "Activate the users management system to protect your Pydio installation.": {
-    "other": "激活用户管理系统以保护您的 Pydio 安装。"
+    "other": "激活用户管理系统以保护您的 Kailo 安装。"
   },
   "Add a Forgot Password link at the bottom of the login form": {
     "other": "在登录表单底部添加忘记密码链接"
@@ -144,10 +144,10 @@
     "other": "当依赖外部身份验证系统时，请将忘记操作替换为将在新窗口中打开的外部链接。"
   },
   "Let user create new cells": {
-    "other": "让用户创建新单元格"
+    "other": "让用户创建新共享空间"
   },
   "Whether users can create their own cells or not": {
-    "other": "用户是否可以创建自己的单元格"
+    "other": "用户是否可以创建自己的共享空间"
   },
   "Delegation": {
     "other": "委托"

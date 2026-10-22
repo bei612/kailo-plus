@@ -56,7 +56,7 @@ class Cells:
                                    "ApiKey": "fixture-key", "ApiSecret": fresh(), "ObjectsServiceName": "local1"}
                             for name in ("pydiods1", "personal", "cellsdata", "versions", "thumbnails")}
         self.namespaces = {}
-        self.params = {"PYDIO_PLUGIN_ENABLED": True}
+        self.plugins = {"meta.user": {"PYDIO_PLUGIN_ENABLED": True}, "gui.ajax": {"CLIENT_TIMEOUT": 24}}
         self.nodes = {}  # path -> node
         self.workspaces = {}
         self.acls = []
@@ -69,6 +69,14 @@ class Cells:
         self.workspaces["common-files"] = {"UUID": common, "Slug": "common-files", "Label": "Common Files", "RootNodes": {"DATASOURCE:pydiods1": {}}}
         self.acls.append({"ID": fresh(), "NodeID": "DATASOURCE:pydiods1", "WorkspaceID": common, "Action": {"Name": "workspace-path", "Value": "pydiods1"}})
         self.mutations = []
+
+    @property
+    def params(self):
+        return self.plugins.get("meta.user", {})
+
+    def root_switches(self):
+        return {a["Action"]["Name"]: a["Action"]["Value"] for a in self.acls
+                if a.get("RoleID") == "ROOT_GROUP" and a.get("WorkspaceID") == "PYDIO_REPO_SCOPE_ALL"}
 
     def writes(self):
         """Mutations other than the original search entries (POST reads)."""
@@ -114,10 +122,12 @@ class Cells:
                 stored = dict(ns, JsonDefinition=json.dumps(dict(json.loads(ns["JsonDefinition"]), entityId=fresh())))
                 self.namespaces[ns["Namespace"]] = stored
             return 200, {"Namespaces": body["Namespaces"]}
-        if path == "config/frontend/plugin/meta.user":
+        if path.startswith("config/frontend/plugin/"):
+            plugin = path.rsplit("/", 1)[1]
             if method == "PUT":
-                self.params = json.loads(body["Data"])
-            return 200, {"FullPath": "frontend/plugin/meta.user", "Data": json.dumps(self.params)}
+                assert body["FullPath"] == "frontend/plugin/" + plugin
+                self.plugins[plugin] = json.loads(body["Data"])
+            return 200, {"FullPath": "frontend/plugin/" + plugin, "Data": json.dumps(self.plugins.get(plugin)) if plugin in self.plugins else ""}
         if (method, path) == ("POST", "tree/admin/stat"):
             wanted = body["Node"]
             for node in self.nodes.values():
@@ -142,9 +152,12 @@ class Cells:
             self.acls.append(dict(body, ID=fresh()))
             return 200, body
         if (method, path) == ("POST", "acl/bulk/delete"):
+            # Native DeleteAcl: every non-empty field of the body is a filter.
+            def matches(a):
+                return all(not body.get(k) or a.get(k) == body[k] for k in ("RoleID", "WorkspaceID", "NodeID")) and \
+                    a["Action"]["Name"] == body["Action"]["Name"] and (not body["Action"].get("Value") or a["Action"]["Value"] == body["Action"]["Value"])
             before = len(self.acls)
-            self.acls = [a for a in self.acls if not (a.get("RoleID") == body["RoleID"] and a.get("WorkspaceID") == body["WorkspaceID"]
-                                                       and a.get("NodeID") == body["NodeID"] and a["Action"]["Name"] == body["Action"]["Name"])]
+            self.acls = [a for a in self.acls if not matches(a)]
             return 200, {"Success": True, "NumRows": before - len(self.acls)}
         if method == "GET" and path.startswith("user/"):
             login = path.split("/", 1)[1]
@@ -215,6 +228,7 @@ class ReconcileTests(unittest.TestCase):
         install.write_text(json.dumps({"frontendLogin": "admin", "frontendPassword": "fixture-not-a-password"}))
         os.chmod(install, 0o600)
         self.env = {
+            "PLATFORM_DISPLAY_NAME": "Kailo",
             "CELLS_EXTERNAL": self.server.url, "CELLS_INSTALL_FILE": str(install), "CELLS_START_TIMEOUT_SECONDS": "30",
             "CELLS_DRAFT_NAMESPACE": "usermeta-kailo-draft", "CELLS_BINDING_DATASOURCE": "kailobinding",
             "CELLS_BINDING_VERSIONING_POLICY": "keep-all", "CELLS_BINDING_ROOT_FOLDER": "kailo-binding",
@@ -256,7 +270,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual((facts["nativeRootRef"], facts["nativeScopeRef"]), (root, workspace))
         self.assertEqual(facts["instanceServiceUuid"], self.cells.users["svc"])
         self.assertEqual(json.loads(out)["nativeScopeRef"], workspace)
-        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
+        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID") and a.get("NodeID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read"), (self.cells.users["actor"], "read"), (self.cells.users["actor"], "write")})
         self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
         self.cells.mutations.clear()
@@ -265,6 +279,34 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(json.loads(out)["changes"], ["none"])
         # Only searches/stats (POST reads) remain; nothing is written again.
         self.assertFalse([m for m in self.cells.mutations if m[0] == "PUT" or m[1] in ("acl/bulk/delete",) or m[1].startswith("config/datasource/")])
+
+    def test_brand_parameters_and_disabled_entries(self):
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.cells.plugins["core.pydio"], {"APPLICATION_TITLE": "Kailo 云盘"})
+        # Merged into the existing native map, never replacing other keys.
+        self.assertEqual(self.cells.plugins["gui.ajax"], {"CLIENT_TIMEOUT": 24, "ENABLE_WELCOME_TOUR": False, "GUI_THEME": "mui3"})
+        self.assertEqual(self.cells.plugins["core.auth"], {"ENABLE_FORGOT_PASSWORD": False, "USER_CREATE_USERS": False})
+        self.assertEqual(self.cells.root_switches(), {f"action:{p}:{a}": "false" for p, a in reconcile.DISABLED_ACTIONS})
+        self.assertIn("pass_change disabled", json.loads(out)["changes"])
+
+    def test_brand_replaces_enabled_switches_and_keeps_other_root_acls(self):
+        lang = {"ID": fresh(), "RoleID": "ROOT_GROUP", "WorkspaceID": "PYDIO_REPO_SCOPE_ALL",
+                "Action": {"Name": "parameter:core.conf:lang", "Value": '"zh-cn"'}}
+        self.cells.acls += [lang] + [{"ID": fresh(), "RoleID": "ROOT_GROUP", "WorkspaceID": "PYDIO_REPO_SCOPE_ALL",
+                                      "Action": {"Name": "action:auth.pydio:pass_change", "Value": v}} for v in ("true", "false")]
+        self.cells.plugins["gui.ajax"]["ENABLE_WELCOME_TOUR"] = True
+        code, _, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn(lang, self.cells.acls)
+        self.assertEqual([a["Action"]["Value"] for a in self.cells.acls if a["Action"]["Name"] == "action:auth.pydio:pass_change"], ["false"])
+        self.assertIs(self.cells.plugins["gui.ajax"]["ENABLE_WELCOME_TOUR"], False)
+        # A brand change made in the console is put back on the next run.
+        self.cells.plugins["core.pydio"]["APPLICATION_TITLE"] = "Pydio Cells"
+        self.cells.mutations.clear()
+        self.assertEqual(self.run_main()[0], 0)
+        self.assertEqual(self.cells.plugins["core.pydio"]["APPLICATION_TITLE"], "Kailo 云盘")
+        self.assertEqual([m for m in self.cells.mutations if m[0] == "PUT"], [("PUT", "config/frontend/plugin/core.pydio")])
 
     def test_datasource_rooting_another_workspace_is_refused_before_any_change(self):
         self.env["CELLS_BINDING_DATASOURCE"] = "pydiods1"
@@ -332,7 +374,7 @@ class ReconcileTests(unittest.TestCase):
         self.env["CELLS_BINDING_SERVICE_LOGIN"] = "svc"
         code, out, err = self.run_main()
         self.assertEqual(code, 0, err)
-        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
+        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID") and a.get("NodeID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read")})
 
     def test_native_action_delivery_must_match_the_facts(self):
@@ -361,7 +403,8 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(self.run_main("--check")[0], 0)
         for key, value in (("CELLS_DRAFT_NAMESPACE", "kailo-draft"), ("CELLS_BINDING_DATASOURCE", "versions"),
                            ("CELLS_BINDING_ROOT_FOLDER", "a/b"), ("CELLS_BINDING_PRINCIPALS", "svc:x"),
-                           ("CELLS_BINDING_SERVICE_LOGIN", "actor2"), ("CELLS_BINDING_FACTS_FILE", "relative.json")):
+                           ("CELLS_BINDING_SERVICE_LOGIN", "actor2"), ("CELLS_BINDING_FACTS_FILE", "relative.json"),
+                           ("PLATFORM_DISPLAY_NAME", ""), ("PLATFORM_DISPLAY_NAME", " Kailo"), ("PLATFORM_DISPLAY_NAME", "Kai\nlo")):
             saved = self.env[key]
             self.env[key] = value
             code, _, err = self.run_main("--check")

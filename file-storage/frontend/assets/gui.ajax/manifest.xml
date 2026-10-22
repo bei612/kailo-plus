@@ -55,16 +55,16 @@
                       editable="true"
                       uploadAction="/frontend/binaries/GLOBAL/{BINARY}"
                       loadAction="/frontend/binaries/GLOBAL/{BINARY}"
-                      defaultImage="plug/gui.ajax/res/themes/common/images/LoginBoxLogo.png"
+                      defaultImage="plug/kailo.embed/brand/app-icon.png"
                       mandatory="false"
                       expose="true"
                 />
-        <global_param name="CUSTOM_ICON" group="CONF_MESSAGE[Login Screen]" type="string" label="CONF_MESSAGE[Icon Path (Legacy)]" description="CONF_MESSAGE[URI to a custom image to be used as start up logo]" default="plug/gui.ajax/res/themes/common/images/LoginBoxLogo.png" mandatory="false" expose="true"/>
+        <global_param name="CUSTOM_ICON" group="CONF_MESSAGE[Login Screen]" type="string" label="CONF_MESSAGE[Icon Path (Legacy)]" description="CONF_MESSAGE[URI to a custom image to be used as start up logo]" default="plug/kailo.embed/brand/app-icon.png" mandatory="false" expose="true"/>
         <global_param name="CUSTOM_DASH_LOGO" group="CONF_MESSAGE[Login Screen]"  label="CONF_MESSAGE[User Home Logo]" description="CONF_MESSAGE[Replace the logo displayed in the welcome page]"  type="image"
                       editable="true"
                       uploadAction="/frontend/binaries/GLOBAL/{BINARY}"
                       loadAction="/frontend/binaries/GLOBAL/{BINARY}"
-                      defaultImage="plug/gui.ajax/res/themes/common/images/PydioCells-[mode].png"
+                      defaultImage="plug/kailo.embed/brand/app-icon.png"
                       expose="true"
                 />
 

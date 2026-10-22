@@ -126,14 +126,7 @@
             </action>
 
             <!-- OTHER ACTIONS -->
-            <action name="pydio-go-pro">
-                <gui text="settings.120" title="settings.121" iconClass="mdi mdi-rocket">
-                    <context dir="true" recycle="true" selection="false" actionBar="true" actionBarGroup="admin"/>
-                </gui>
-                <processing>
-                    <clientCallback module="PydioCoreActions.Navigation.openGoPro"/>
-                </processing>
-            </action>
+            <!-- Kailo (DD-133 §1): upstream "go pro" upgrade entry removed. -->
 
 
         </actions>

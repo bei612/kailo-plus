@@ -12,7 +12,7 @@
     "other": "显示选项"
   },
   "tour.globsearch.1": {
-    "other": "使用此搜索表单可以查找任何工作区和单元格中的文件或文件夹。 仅显示前 5 个结果，输入工作区即可获取更多结果和更多搜索选项。"
+    "other": "使用此搜索表单可以查找任何工作区和共享空间中的文件或文件夹。 仅显示前 5 个结果，输入工作区即可获取更多结果和更多搜索选项。"
   },
   "tour.globsearch.2": {
     "other": "当没有输入搜索内容时，将会使用您最近访问过的文件和文件夹的历史来显示。"
@@ -96,10 +96,10 @@
     "other": "工作区是帮助您组织数据的顶级文件夹。它们只能由您访问或共享给其他用户。"
   },
   "tour.workspaces.2": {
-    "other": "单元格是您可以与其他用户共享的协作空间。 根据文件夹、用户团队或任何相关主题创建您自己的单元。"
+    "other": "共享空间是您可以与其他用户共享的协作空间。 根据文件夹、用户团队或任何相关主题创建您自己的共享空间。"
   },
   "tour.workspaces.title": {
-    "other": "工作区和单元"
+    "other": "工作区和共享空间"
   },
   "tour.theme.title": {
     "other": "明亮/暗黑主题支持"
@@ -108,7 +108,7 @@
     "other": "选择最适合您视觉的浅色或深色主题。"
   },
   "tour.left-resize.title": {
-    "other": "工作区和单元"
+    "other": "工作区和共享空间"
   },
   "tour.left-resize.legend": {
     "other": "左侧列可以调整大小或关闭以适应您的屏幕。"
@@ -249,10 +249,10 @@
     "other": "预览"
   },
   "infopanel.detailcard.cell-info": {
-    "other": "单元格信息"
+    "other": "共享空间信息"
   },
   "infopanel.detailcard.cell-chat": {
-    "other": "单元格聊天"
+    "other": "共享空间聊天"
   },
   "pinned-bookmarks.other": {
     "other": "全部文件"
@@ -339,10 +339,10 @@
     "other": "取消隐藏"
   },
   "wslist-options.merge-workspaces": {
-    "other": "合并工作区和单元格"
+    "other": "合并工作区和共享空间"
   },
   "wslist-options.own-cells-first": {
-    "other": "我先创建的单元格"
+    "other": "我先创建的共享空间"
   },
   "leftrail.buttons.home": {
     "other": "主页"

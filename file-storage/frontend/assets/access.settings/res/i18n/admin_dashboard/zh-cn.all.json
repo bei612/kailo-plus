@@ -12,7 +12,7 @@
     "other": "代码可在 Github上公开查阅。 您想修复错误、帮助论坛中的其他人或推出下一个杀手级功能吗？ 参与其中！\n                            或者在社交网络上表达你的爱！"
   },
   "cont.subtitle": {
-    "other": "Pydio Cells 是免费的开源软件。 回馈！"
+    "other": "文件服务 是免费的开源软件。 回馈！"
   },
   "cont.title": {
     "other": "向前支付！"
@@ -57,13 +57,13 @@
     "other": "直接从核心团队获得安装帮助"
   },
   "ent.title": {
-    "other": "探索 Pydio Cells 企业"
+    "other": "探索 文件服务"
   },
   "ent.upgrade": {
     "other": "立即升级！"
   },
   "ent.upgrade.legend": {
-    "other": "在应用内升级Cells 企业(需要许可文件)"
+    "other": "在应用内升级文件服务(需要许可文件)"
   },
   "welc.btn.advanced": {
     "other": "先进的"
@@ -84,19 +84,19 @@
     "other": "如果你不知道从哪里开始，管理员指南肯定是一本好教材！"
   },
   "welc.intro": {
-    "other": "这是管理Pydio的仪表盘。 使用左侧菜单，您可以创建 <a class=\"doc-link\" data-path=\"/data/workspaces\">工作区</a> 和 <a class=\"doc-link\" data-path=\"/idm/users\">用户</a>,\n                            查看平台上发生的所有 <a class=\"doc-link\" data-path=\"/admin/logs\">事件</a> 并管理 <a class=\"doc-link\" data-path=\"/parameters/core\">配置</a> 和 <a class=\"doc-link\" data-path=\"/plugins/manager\">插件</a>."
+    "other": "这是管理文件服务的仪表盘。 使用左侧菜单，您可以创建 <a class=\"doc-link\" data-path=\"/data/workspaces\">工作区</a> 和 <a class=\"doc-link\" data-path=\"/idm/users\">用户</a>,\n                            查看平台上发生的所有 <a class=\"doc-link\" data-path=\"/admin/logs\">事件</a> 并管理 <a class=\"doc-link\" data-path=\"/parameters/core\">配置</a> 和 <a class=\"doc-link\" data-path=\"/plugins/manager\">插件</a>."
   },
   "welc.import": {
-    "other": "如果您正在运行 Pydio 8 版本， 请注意， <u>Pydio 8 将于 2019 年底被视为停产</u>。 您可以使用 <a class=\"doc-link\" data-path=\"/data/migration\">导入工具</a> 将所有数据迁移到 Pydio Cells。"
+    "other": "如果您正在运行 旧版 版本， 请注意， <u>旧版 将于 2019 年底被视为停产</u>。 您可以使用 <a class=\"doc-link\" data-path=\"/data/migration\">导入工具</a> 将所有数据迁移到 文件服务。"
   },
   "welc.subtitle": {
     "other": "管理和监控您的平台活动的地方"
   },
   "welc.title": {
-    "other": "欢迎使用 Pydio Cells v4"
+    "other": "欢迎使用 文件服务"
   },
   "welc.title.5": {
-    "other": "欢迎使用 Pydio Cells v5"
+    "other": "欢迎使用 文件服务"
   },
   "card.quick-access": {
     "other": "快速访问"

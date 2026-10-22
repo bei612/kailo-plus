@@ -23,6 +23,7 @@ import { getMuiTheme } from 'material-ui/styles';
 import { createTheme } from '@mui/material/styles'
 import Color from 'color'
 import { argbFromHex, hexFromArgb, themeFromSourceColor, applyTheme, argbFromRgb, QuantizerCelebi, Score } from "@material/material-color-utilities";
+import { readKailoTokens, kailoThemeActive, kailoScheme } from './KailoTheme'
 
 /**
  *
@@ -145,6 +146,11 @@ export default class ThemeBuilder {
             this.loadUserData(user) && this.requireRefresh()
         }
         pydio.observe('user_logged', this._userObserver)
+        // Kailo host presentation (DD-133 §4): theme follows Kailo, never the
+        // native preference or the system scheme.
+        if (window.KailoCells && window.KailoCells.subscribe) {
+            window.KailoCells.subscribe((presentation) => this.applyHostPresentation(presentation))
+        }
         DOMUtils.observeWindowResize(() => {
             this.loadBreakpoint() && this.requireRefresh()
         })
@@ -192,7 +198,37 @@ export default class ThemeBuilder {
         return false
     }
 
+    /**
+     * Apply a Kailo presentation change (theme or tokens) and re-render.
+     * @param presentation {{dark: boolean, tokens: Object}}
+     */
+    applyHostPresentation(presentation) {
+        if (!presentation) {
+            return
+        }
+        const key = JSON.stringify([!!presentation.dark, presentation.tokens || {}])
+        if (key === this._hostPresentation) {
+            return
+        }
+        const first = this._hostPresentation === undefined
+        this._hostPresentation = key
+        this.userTheme = 'mui3'
+        this.dark = !!presentation.dark
+        if (!first) {
+            this.requireRefresh()
+        }
+    }
+
     loadUserData(user) {
+        if (window.KailoCells && window.KailoCells.presentation) {
+            const dark = !!window.KailoCells.presentation().dark
+            if (this.userTheme !== 'mui3' || this.dark !== dark) {
+                this.userTheme = 'mui3'
+                this.dark = dark
+                return true
+            }
+            return false
+        }
         let userTheme = pydio.getPluginConfigs('gui.ajax').get('GUI_THEME');
         if(user && user.getPreference('theme') && user.getPreference('theme') !== 'default'){
             userTheme = user.getPreference('theme');
@@ -255,6 +291,20 @@ export default class ThemeBuilder {
         const styleTarget = document.body;
 
         let mui3 = {}, isMUI3
+        // Kailo tokens replace the palette source when the bridge is active.
+        const kailoTokens = readKailoTokens(styleTarget.ownerDocument ? styleTarget.ownerDocument.documentElement : document.documentElement)
+        let kailo
+        if (!customPalette && kailoThemeActive(kailoTokens)) {
+            try {
+                kailo = kailoScheme(kailoTokens, systemDark)
+                palette.primary1Color = kailo.colors['primary']
+                palette.primary2Color = kailo.colors['primary']
+                palette.accent1Color = kailo.colors['primary']
+                palette.accent2Color = kailo.colors['primary']
+            } catch (e) {
+                kailo = undefined
+            }
+        }
 
         if(this.userTheme === 'mui3') {
             // Get the theme from a hex color, prepare blended custom colors
@@ -312,6 +362,11 @@ export default class ThemeBuilder {
             add('card-border-radius', '12px')
             add('hover-background', systemDark ?'rgba(255,255,255,.06)':'rgba(0,0,0,.05)')
 
+            if (kailo) {
+                // Every system color the native styles consume comes from Kailo.
+                Object.keys(kailo.colors).forEach(k => add(k, kailo.colors[k]))
+            }
+
             isMUI3 = true
             palette = {
                 ...palette,
@@ -357,7 +412,8 @@ export default class ThemeBuilder {
 
         const themeCusto = {
             palette,
-            borderRadius: isMUI3?20:undefined,
+            fontFamily: kailo ? kailo.fontFamily : undefined,
+            borderRadius: kailo ? kailo.radius : (isMUI3?20:undefined),
             darkMode:systemDark,
             breakpoint: this.bp,
             userTheme: this.userTheme,
@@ -451,7 +507,10 @@ export default class ThemeBuilder {
         }
 
         themeCusto['@mui'] = createTheme({
-            typography: {
+            typography: kailo ? {
+                fontSize: 13,
+                fontFamily: kailo.fontFamily
+            } : {
                 fontSize: 13
             },
             palette: {

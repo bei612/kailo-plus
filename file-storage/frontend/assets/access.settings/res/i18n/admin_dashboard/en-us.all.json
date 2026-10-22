@@ -12,7 +12,7 @@
     "other": "Code is available publicly on Github. Do you want to fix a bug, help others in the forum or push the next killer feature? Get involved!\n                            Or show your love on social networks!"
   },
   "cont.subtitle": {
-    "other": "Pydio Cells is free open source software. Contribute back!"
+    "other": "The file service is free open source software. Contribute back!"
   },
   "cont.title": {
     "other": "Pay it forward!"
@@ -57,13 +57,13 @@
     "other": "Get help with your installation directly from the core team"
   },
   "ent.title": {
-    "other": "Discover Pydio Cells Enterprise"
+    "other": "Discover the file service"
   },
   "ent.upgrade":{
     "other": "Upgrade now!"
   },
   "ent.upgrade.legend":{
-    "other": "In-app upgrade Cells Enterprise (license required)"
+    "other": "In-app upgrade the file service (license required)"
   },
   "welc.btn.advanced": {
     "other": "Advanced"
@@ -84,19 +84,19 @@
     "other": "If you don't know where to start, the Administrator Guide is definitely a good read!"
   },
   "welc.intro": {
-    "other": "This is your dashboard for managing Pydio. Using the left menu you can create \u003ca class=\"doc-link\" data-path=\"/data/workspaces\"\u003eworkspaces\u003c/a\u003e and \u003ca class=\"doc-link\" data-path=\"/idm/users\"\u003eusers\u003c/a\u003e,\n                            check all \u003ca class=\"doc-link\" data-path=\"/admin/logs\"\u003eevents\u003c/a\u003e that happened on the platform, and manage \u003ca class=\"doc-link\" data-path=\"/parameters/core\"\u003econfigurations\u003c/a\u003e and \u003ca class=\"doc-link\" data-path=\"/plugins/manager\"\u003eplugins\u003c/a\u003e."
+    "other": "This is your dashboard for managing the file service. Using the left menu you can create \u003ca class=\"doc-link\" data-path=\"/data/workspaces\"\u003eworkspaces\u003c/a\u003e and \u003ca class=\"doc-link\" data-path=\"/idm/users\"\u003eusers\u003c/a\u003e,\n                            check all \u003ca class=\"doc-link\" data-path=\"/admin/logs\"\u003eevents\u003c/a\u003e that happened on the platform, and manage \u003ca class=\"doc-link\" data-path=\"/parameters/core\"\u003econfigurations\u003c/a\u003e and \u003ca class=\"doc-link\" data-path=\"/plugins/manager\"\u003eplugins\u003c/a\u003e."
   },
   "welc.import": {
-    "other": "If you are currently running a Pydio 8 installation, please be aware that \u003cu\u003ePydio 8 will be considered End-Of-Life at the end of 2019\u003c/u\u003e. You can use the \u003ca class=\"doc-link\" data-path=\"/data/migration\"\u003eImport Tool\u003c/a\u003e to migrate all data to Pydio Cells."
+    "other": "If you are currently running a legacy installation, please be aware that \u003cu\u003elegacy will be considered End-Of-Life at the end of 2019\u003c/u\u003e. You can use the \u003ca class=\"doc-link\" data-path=\"/data/migration\"\u003eImport Tool\u003c/a\u003e to migrate all data to the file service."
   },
   "welc.subtitle": {
     "other": "The place to administrate and monitor the activity of your platform"
   },
   "welc.title": {
-    "other": "Welcome to Pydio Cells v4"
+    "other": "Welcome to the file service"
   },
   "welc.title.5": {
-    "other": "Welcome to Pydio Cells v5"
+    "other": "Welcome to the file service"
   },
   "card.quick-access": {
     "other": "Quick Access"

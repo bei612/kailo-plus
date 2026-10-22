@@ -318,6 +318,10 @@ func (j *JWTVerifier) Verify(ctx context.Context, rawIDToken string) (context.Co
 		log.Logger(ctx).Error("got a token but failed to load claims", zap.Error(err))
 		return ctx, *claims, err
 	}
+	// Kailo back-channel logout / maximum session age (07 §4.7.5, DD-133).
+	if NativeOIDCSessionEnded(claims.SessionID) {
+		return ctx, claim.Claims{}, errors.WithStack(errors.EmptyIDToken)
+	}
 
 	ctx = claim.ToContext(ctx, *claims)
 

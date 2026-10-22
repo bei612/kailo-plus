@@ -18,7 +18,7 @@
     "other": "Pick action for %s..."
   },
   "drop.cell.share.legend":{
-    "other": "Add new item to this cell"
+    "other": "Add new item to this shared space"
   },
   "drop.cell.copymove.legend":{
     "other": "Inside %s"

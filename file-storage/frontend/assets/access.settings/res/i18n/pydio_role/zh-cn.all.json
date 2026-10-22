@@ -147,7 +147,7 @@
     "other": "对于此用户"
   },
   "52": {
-    "other": "该用户创建的单元格和公共链接"
+    "other": "该用户创建的共享空间和公共链接"
   },
   "53": {
     "other": "%1 从工作区内分享的 %2"
@@ -189,7 +189,7 @@
     "other": "所有工作区"
   },
   "parameters.scope.shared": {
-    "other": "仅限共享单元"
+    "other": "仅限共享空间"
   },
   "parameters.scope.workspace": {
     "other": "工作区 %s"
@@ -216,7 +216,7 @@
     "other": "管理控制台"
   },
   "workspace.statics.settings.description": {
-    "other": "Pydio Cells 管理员面板"
+    "other": "文件服务 管理员面板"
   },
   "acls.rights.policy.manual": {
     "other": "手动设置权限"

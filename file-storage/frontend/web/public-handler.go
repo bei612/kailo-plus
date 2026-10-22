@@ -96,13 +96,16 @@ func (h *PublicHandler) computeTplConf(req *http.Request, linkId string) (status
 	tplConf = &TplConf{
 		ApplicationTitle: config.Get(ctx, config.FrontendPluginPath(config.KeyFrontPluginCorePydio, config.KeyFrontApplicationTitle)...).Default("Pydio Cells").String(),
 		ResourcesFolder:  "plug/gui.ajax/res",
-		Favicon:          "plug/gui.ajax/res/themes/common/images/favicon.png",
+		Favicon:          KailoFavicon,
 		Theme:            "material",
 		Version:          frontend.VersionHash(ctx),
 	}
 	if customHeader := config.Get(ctx, config.FrontendPluginPath(config.KeyFrontPluginGuiAjax, "HTML_CUSTOM_HEADER")...).String(); customHeader != "" {
 		tplConf.CustomHTMLHeader = template.HTML(customHeader)
 	}
+	// Public links keep their native password/minisite access; only the Kailo
+	// brand, tokens and theme apply (no SSO parameters are offered here).
+	tplConf.KailoHead = kailoHead(tplConf.Version)
 
 	statusCode = 200
 	// Load link data

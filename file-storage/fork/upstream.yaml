@@ -19,9 +19,11 @@ artifacts:
     blocked: This frozen candidate adapter is built, pushed and independently read back by digest, but not deployed. Live SecretRef delivery, approved release/binding and full tool/resource acceptance remain unverified.
   - name: file-storage-service
     kind: image
-    build_context: file-storage
+    # Staged inputs at their apps/ paths: the Kailo token sheet, embed runtime
+    # and app icon are build inputs of the native page (07 §4.7.1, DD-133).
+    build_context: .
     build_dockerfile: file-storage/tools/docker/images/cells/buildx-dockerfile
-    inputs: [file-storage/]
+    inputs: [file-storage/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
     build_args: [CELLS_VERSION, DOCKER_ENTRYPOINT_SRC_DIR]
     build_facts: {GIT_REV: source_commit, BUILD_STAMP: build_time_utc}
     source_digest: sha256:14065bc0ec7efeb07829da52a77a3b06b4210e3bf8e46696d9c2418d9bbba2a9
