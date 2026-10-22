@@ -667,7 +667,7 @@ async fn desired_route(
 
 // Fixed native Custom providers have no ambient provider credential branch.
 // Absence is accepted only in the pinned provider body, never inferred from a missing SecretRef.
-fn native_provider_without_auth(provider: &Value) -> bool {
+pub(crate) fn native_provider_without_auth(provider: &Value) -> bool {
     let Some(object) = provider.as_object() else {
         return false;
     };
@@ -2418,7 +2418,11 @@ impl Gateway {
     }
 
     /// 只读 SS-AGW-ADMIN 查询中需要 POST 请求体的接口（request log 检索与单条读取）。
-    pub(crate) async fn admin_post(&self, segments: &[&str], body: &Value) -> Result<Value, Refusal> {
+    pub(crate) async fn admin_post(
+        &self,
+        segments: &[&str],
+        body: &Value,
+    ) -> Result<Value, Refusal> {
         let mut url = self.admin.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?
@@ -2446,15 +2450,20 @@ impl Gateway {
                 (*kind).to_owned(),
                 body.get("resources")
                     .and_then(Value::as_array)
-                    .map(|rows| rows.iter().filter_map(|row| row.get("value").cloned()).collect())
+                    .map(|rows| {
+                        rows.iter()
+                            .filter_map(|row| row.get("value").cloned())
+                            .collect()
+                    })
                     .unwrap_or_default(),
             )],
             ["api", "config", "routes", _] => {
                 let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
                 for entry in body.as_array().into_iter().flatten() {
-                    let (Some(kind), Some(value)) =
-                        (entry.get("kind").and_then(Value::as_str), entry.get("value"))
-                    else {
+                    let (Some(kind), Some(value)) = (
+                        entry.get("kind").and_then(Value::as_str),
+                        entry.get("value"),
+                    ) else {
                         continue;
                     };
                     match groups.iter_mut().find(|(k, _)| k == kind) {
@@ -2469,10 +2478,13 @@ impl Gateway {
         for (kind, values) in groups {
             match self.evidence_rows(&kind).await {
                 Some(rows) => {
-                    let written = crate::gateway_admin::history::match_written(&kind, &values, &rows);
+                    let written =
+                        crate::gateway_admin::history::match_written(&kind, &values, &rows);
                     crate::gateway_admin::history::record(written).await;
                 }
-                None => tracing::warn!(kind = %kind, "写入后回读 ConfigResource 失败，未保存写入证据"),
+                None => {
+                    tracing::warn!(kind = %kind, "写入后回读 ConfigResource 失败，未保存写入证据")
+                }
             }
         }
     }
@@ -2963,12 +2975,14 @@ impl Gateway {
             crate::gateway_admin::history::record(
                 before
                     .into_iter()
-                    .map(|(kind, id, revision)| crate::gateway_admin::history::Written {
-                        kind,
-                        id,
-                        revision: revision + 1,
-                        value: None,
-                    })
+                    .map(
+                        |(kind, id, revision)| crate::gateway_admin::history::Written {
+                            kind,
+                            id,
+                            revision: revision + 1,
+                            value: None,
+                        },
+                    )
                     .collect(),
             )
             .await;

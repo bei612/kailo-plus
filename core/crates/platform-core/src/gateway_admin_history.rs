@@ -146,7 +146,8 @@ pub(crate) struct Evidence {
     pub recorded_at: DateTime<Utc>,
 }
 
-const EVIDENCE_SELECT: &str = "select e.kind,e.resource_id,e.revision,e.deleted,e.masked_value,e.value_digest,
+const EVIDENCE_SELECT: &str =
+    "select e.kind,e.resource_id,e.revision,e.deleted,e.masked_value,e.value_digest,
        e.action_execution_id,e.operation_id,a.action_key,e.recorded_at
      from projection.gateway_config_revision e
      left join admission.action_execution a on a.id=e.action_execution_id";

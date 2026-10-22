@@ -53,9 +53,9 @@ fn looks_secret(text: &str) -> bool {
     if trimmed.starts_with("eyJ") && trimmed.split('.').count() == 3 && !trimmed.contains(' ') {
         return true;
     }
-    ["sk-", "sk_", "pk_", "ghp_", "xox", "AKIA"].iter().any(|prefix| {
-        trimmed.starts_with(prefix) && trimmed.len() >= 16 && !trimmed.contains(' ')
-    })
+    ["sk-", "sk_", "pk_", "ghp_", "xox", "AKIA"]
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix) && trimmed.len() >= 16 && !trimmed.contains(' '))
 }
 
 /// URL 去掉 userinfo、query 与 fragment；不是 URL 时原样返回。
@@ -207,7 +207,10 @@ mod tests {
             "headers": {"authorization": "Basic dXNlcjpwYXNz"}}));
         assert_eq!(masked["maxTokens"], 4096);
         assert_eq!(masked["tokenize"], true);
-        assert_eq!(masked["mcpAuthorization"]["rules"][0], "mcp.tool.name == 'a'");
+        assert_eq!(
+            masked["mcpAuthorization"]["rules"][0],
+            "mcp.tool.name == 'a'"
+        );
         assert_eq!(masked["headers"]["authorization"], REDACTED);
     }
 
@@ -254,8 +257,10 @@ mod tests {
 
     #[test]
     fn urls_lose_userinfo_query_and_fragment() {
-        let masked = mask(&json!({"baseUrl": "https://user:pw@api.example.com/v1?key=abc#frag",
-            "host": "http://mcp.internal:8080/mcp"}));
+        let masked = mask(
+            &json!({"baseUrl": "https://user:pw@api.example.com/v1?key=abc#frag",
+            "host": "http://mcp.internal:8080/mcp"}),
+        );
         assert_eq!(masked["baseUrl"], "https://api.example.com/v1");
         assert_eq!(masked["host"], "http://mcp.internal:8080/mcp");
         assert_eq!(

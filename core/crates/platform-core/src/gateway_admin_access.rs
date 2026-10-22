@@ -24,14 +24,6 @@ pub(crate) struct Caller {
 }
 
 impl Caller {
-    pub(crate) fn scope(&self) -> GatewayAdminScope {
-        if self.platform {
-            GatewayAdminScope::Platform
-        } else {
-            GatewayAdminScope::Tenant
-        }
-    }
-
     pub(crate) fn actor(&self) -> Actor {
         Actor {
             tenant_id: self.ctx.tenant_id,
@@ -223,13 +215,7 @@ async fn access(state: &BffState, caller: &Caller) -> Result<GatewayAccess, Refu
         workspace_id: None,
     };
     let create_route = action_allowed(state, caller, "llm_route.create", &tenant_target).await?;
-    let bind = action_allowed(
-        state,
-        caller,
-        "application_binding.create",
-        &tenant_target,
-    )
-    .await?;
+    let bind = action_allowed(state, caller, "application_binding.create", &tenant_target).await?;
     Ok(GatewayAccess {
         scope: GatewayAdminScope::Tenant,
         tenant_id: tenant.to_string(),
