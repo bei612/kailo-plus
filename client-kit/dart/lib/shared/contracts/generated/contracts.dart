@@ -7970,7 +7970,10 @@ final evidenceAuthorityValues = EnumValues({
 ///存量种类不可识别时缺省
 ///
 ///AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
-///version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+///version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+///证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+///为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+///为上传字节的 SHA-256。均不含 SKILL.md 正文。
 enum EvidenceKind {
   ACTION_EXECUTION_ID,
   ADMIT_ACTION_EXECUTION_ID,
@@ -7988,6 +7991,9 @@ enum EvidenceKind {
   PLATFORM_SESSION_ID,
   SECRET_REF_REHOME_ID,
   SKILL_ARTIFACT_DIGEST,
+  SKILL_SLUG,
+  SKILL_UPLOAD_DIGEST,
+  SKILL_VERSION_ASSET_ID,
   SPICEDB_RELATIONSHIP,
   SPICEDB_ZEDTOKEN,
   TEMPORAL_FIRST_RUN_ID,
@@ -8018,6 +8024,9 @@ final evidenceKindValues = EnumValues({
   "PLATFORM_SESSION_ID": EvidenceKind.PLATFORM_SESSION_ID,
   "SECRET_REF_REHOME_ID": EvidenceKind.SECRET_REF_REHOME_ID,
   "SKILL_ARTIFACT_DIGEST": EvidenceKind.SKILL_ARTIFACT_DIGEST,
+  "SKILL_SLUG": EvidenceKind.SKILL_SLUG,
+  "SKILL_UPLOAD_DIGEST": EvidenceKind.SKILL_UPLOAD_DIGEST,
+  "SKILL_VERSION_ASSET_ID": EvidenceKind.SKILL_VERSION_ASSET_ID,
   "SPICEDB_RELATIONSHIP": EvidenceKind.SPICEDB_RELATIONSHIP,
   "SPICEDB_ZEDTOKEN": EvidenceKind.SPICEDB_ZEDTOKEN,
   "TEMPORAL_FIRST_RUN_ID": EvidenceKind.TEMPORAL_FIRST_RUN_ID,
@@ -18140,8 +18149,12 @@ class SkillArtifactUploadView {
   final String? shortDescription;
   final String? skillName;
   final String skillResourceId;
-  final int uploadByteSize;
-  final String uploadDigest;
+
+  ///上传字节数。缺省条件同 uploadDigest。
+  final int? uploadByteSize;
+
+  ///上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+  final String? uploadDigest;
   final String? uploadId;
   final List<SkillArtifactViolation> violations;
 
@@ -18155,8 +18168,8 @@ class SkillArtifactUploadView {
     this.shortDescription,
     this.skillName,
     required this.skillResourceId,
-    required this.uploadByteSize,
-    required this.uploadDigest,
+    this.uploadByteSize,
+    this.uploadDigest,
     this.uploadId,
     required this.violations,
   });

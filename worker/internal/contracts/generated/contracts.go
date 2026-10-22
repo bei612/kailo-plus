@@ -8351,19 +8351,21 @@ type SkillArtifactUploadRequest struct {
 // DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter
 // 元数据；否则只给逐项违规，不暂存字节。
 type SkillArtifactUploadView struct {
-	Accepted         bool                     `json:"accepted"`
-	ArtifactByteSize *int64                   `json:"artifactByteSize,omitempty"`
-	ArtifactDigest   *string                  `json:"artifactDigest,omitempty"`
-	Description      *string                  `json:"description,omitempty"`
-	Encoding         *SkillArtifactEncoding   `json:"encoding,omitempty"`
-	ExpiresAt        *string                  `json:"expiresAt,omitempty"`
-	ShortDescription *string                  `json:"shortDescription,omitempty"`
-	SkillName        *string                  `json:"skillName,omitempty"`
-	SkillResourceID  string                   `json:"skillResourceId"`
-	UploadByteSize   int64                    `json:"uploadByteSize"`
-	UploadDigest     string                   `json:"uploadDigest"`
-	UploadID         *string                  `json:"uploadId,omitempty"`
-	Violations       []SkillArtifactViolation `json:"violations"`
+	Accepted         bool                   `json:"accepted"`
+	ArtifactByteSize *int64                 `json:"artifactByteSize,omitempty"`
+	ArtifactDigest   *string                `json:"artifactDigest,omitempty"`
+	Description      *string                `json:"description,omitempty"`
+	Encoding         *SkillArtifactEncoding `json:"encoding,omitempty"`
+	ExpiresAt        *string                `json:"expiresAt,omitempty"`
+	ShortDescription *string                `json:"shortDescription,omitempty"`
+	SkillName        *string                `json:"skillName,omitempty"`
+	SkillResourceID  string                 `json:"skillResourceId"`
+	// 上传字节数。缺省条件同 uploadDigest。
+	UploadByteSize *int64 `json:"uploadByteSize,omitempty"`
+	// 上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+	UploadDigest *string                  `json:"uploadDigest,omitempty"`
+	UploadID     *string                  `json:"uploadId,omitempty"`
+	Violations   []SkillArtifactViolation `json:"violations"`
 }
 
 type SkillArtifactViolation struct {
@@ -10348,7 +10350,10 @@ const (
 // 存量种类不可识别时缺省
 //
 // AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
-// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+// 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+// 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+// 为上传字节的 SHA-256。均不含 SKILL.md 正文。
 type EvidenceKind string
 
 const (
@@ -10368,6 +10373,9 @@ const (
 	PlatformSessionID             EvidenceKind = "PLATFORM_SESSION_ID"
 	SecretRefRehomeID             EvidenceKind = "SECRET_REF_REHOME_ID"
 	SkillArtifactDigest           EvidenceKind = "SKILL_ARTIFACT_DIGEST"
+	SkillSlug                     EvidenceKind = "SKILL_SLUG"
+	SkillUploadDigest             EvidenceKind = "SKILL_UPLOAD_DIGEST"
+	SkillVersionAssetID           EvidenceKind = "SKILL_VERSION_ASSET_ID"
 	SpicedbRelationship           EvidenceKind = "SPICEDB_RELATIONSHIP"
 	SpicedbZedtoken               EvidenceKind = "SPICEDB_ZEDTOKEN"
 	TemporalFirstRunID            EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
