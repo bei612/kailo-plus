@@ -58,6 +58,6 @@ artifacts:
     artifact_digest: sha256:792b843117cef6f9617c7ad1191a65fcc9cb1e9e66371970cbca6ffde28acda1
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
-compatibility_evidence: [data-query/fork/verify/native-integration.md]
+compatibility_evidence: [data-query/fork/verify/native-integration.md, data-query/fork/verify/kailo-embed-integration.md]
 owner: team-platform
 last_reverified: 2026-10-05
