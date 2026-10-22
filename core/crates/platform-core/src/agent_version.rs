@@ -356,7 +356,7 @@ pub(crate) async fn prewrite(
                 (asset_id,agent_resource_id,ordinal,content,config_hash,state) values ($1,$2,$3,$4,$5,'DRAFT')")
                 .bind(ae.id).bind(parent.id).bind(ordinal).bind(normalized.clone()).bind(digest)
                 .execute(&mut **tx).await?;
-            Ok(skill_reference_evidence(&mut **tx, ae.tenant_id, &normalized).await?)
+            Ok(skill_reference_evidence(tx, ae.tenant_id, &normalized).await?)
         }
         Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish => {
             let v = version(tx, ae.tenant_id, ae.target_id, true)
@@ -408,7 +408,7 @@ pub(crate) async fn prewrite(
                     .execute(&mut **tx)
                     .await?;
             }
-            Ok(skill_reference_evidence(&mut **tx, ae.tenant_id, &normalized).await?)
+            Ok(skill_reference_evidence(tx, ae.tenant_id, &normalized).await?)
         }
         Semantic::AgentVersionRetire => {
             let v = version(tx, ae.tenant_id, ae.target_id, true)
