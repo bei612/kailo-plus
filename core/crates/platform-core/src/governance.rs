@@ -521,6 +521,8 @@ pub enum Semantic {
     ApplicationBindingCreate,
     ApplicationBindingDisable,
     LlmRouteCreate,
+    /// DD-134(7)、05 §2.13：route `ACTIVE → RETAINED_READ_ONLY` 并退役 Gateway 投影。
+    LlmRouteDisable,
     AgentDefinitionUpdate,
     AgentVersionCreate,
     AgentVersionUpdate,
@@ -587,6 +589,7 @@ impl Semantic {
             "application_binding.create" => Self::ApplicationBindingCreate,
             "application_binding.disable" => Self::ApplicationBindingDisable,
             "llm_route.create" => Self::LlmRouteCreate,
+            "llm_route.disable" => Self::LlmRouteDisable,
             "agent.definition.update" => Self::AgentDefinitionUpdate,
             "agent.version.create" => Self::AgentVersionCreate,
             "agent.version.update" => Self::AgentVersionUpdate,
@@ -709,6 +712,7 @@ impl Semantic {
                     | Self::TenantQuotaSet
                     | Self::AgentDefinitionCreate
                     | Self::LlmRouteCreate
+                    | Self::LlmRouteDisable
                     | Self::AgentDefinitionUpdate
                     | Self::AgentVersionCreate
                     | Self::AgentVersionUpdate
@@ -762,6 +766,7 @@ impl Semantic {
                 self,
                 Self::SecretRefRehome
                     | Self::LlmRouteCreate
+                    | Self::LlmRouteDisable
                     | Self::TenantSuspend
                     | Self::TenantRestore
                     | Self::TenantQuotaSet
@@ -1462,6 +1467,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         sem,
         Semantic::AgentDefinitionUpdate
             | Semantic::ResourceTransferOwner
+            | Semantic::LlmRouteDisable
             | Semantic::AgentVersionCreate
             | Semantic::AgentVersionUpdate
             | Semantic::AgentVersionPublish
@@ -1649,6 +1655,19 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
                 && p.resource_id.is_some()
                 && p.resource_version.is_some_and(|n| n > 0)
+        }
+        Semantic::LlmRouteDisable => {
+            p.workspace_id.is_none()
+                && p.tenant_id.is_none()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
+                && p.llm_route_create.is_none()
+                && p.resource_id.is_some_and(|id| !id.is_nil())
+                && p.resource_version.is_some_and(|n| n > 0)
+                && p.explicit_confirmation == Some(true)
         }
         Semantic::ResourceTransferOwner => {
             p.workspace_id.is_none()
@@ -1940,6 +1959,9 @@ async fn resolve_target(
         }
         Semantic::LlmRouteCreate => {
             crate::model_route::create_target(conn, tenant, def, p, frozen, lock).await
+        }
+        Semantic::LlmRouteDisable => {
+            crate::model_route::disable::target(conn, tenant, def, p, frozen, lock).await
         }
         Semantic::TenantQuotaSet => {
             crate::tenant_quota::target(conn, tenant, def, p, frozen, lock).await
@@ -2923,6 +2945,18 @@ impl Governance {
                         ));
                     };
                     if !crate::automation::management_projection(self, &row).await? {
+                        return Ok(deny(
+                            "DENY",
+                            "NOT_APPLICABLE",
+                            None,
+                            ReasonCode::ScopeGuardFailed,
+                        ));
+                    }
+                    target.id
+                } else if def.action_key == crate::model_route::disable::KEY {
+                    if !crate::model_route::disable::evaluate_target(self, actor.tenant_id, target)
+                        .await?
+                    {
                         return Ok(deny(
                             "DENY",
                             "NOT_APPLICABLE",
@@ -5237,6 +5271,7 @@ impl Governance {
                 sem,
                 Semantic::AgentDefinitionCreate
                     | Semantic::LlmRouteCreate
+                    | Semantic::LlmRouteDisable
                     | Semantic::AgentDefinitionUpdate
                     | Semantic::ResourceTransferOwner
                     | Semantic::AgentVersionCreate
@@ -5271,6 +5306,7 @@ impl Governance {
                     | Semantic::TenantQuotaSet
                     | Semantic::AgentDefinitionCreate
                     | Semantic::LlmRouteCreate
+                    | Semantic::LlmRouteDisable
                     | Semantic::AgentDefinitionUpdate
                     | Semantic::ResourceTransferOwner
                     | Semantic::AgentVersionCreate
@@ -5515,6 +5551,10 @@ impl Governance {
                     crate::model_route::create_prewrite(tx, ae, def, params).await?;
                     Ok(None)
                 }
+                Semantic::LlmRouteDisable => {
+                    crate::model_route::disable::prewrite(tx, ae).await?;
+                    Ok(None)
+                }
                 Semantic::TenantQuotaSet => {
                     crate::tenant_quota::prewrite(self, tx, ae, params).await?;
                     Ok(None)
@@ -5757,6 +5797,7 @@ impl Governance {
             | Semantic::CapabilityContractApprove
             | Semantic::CapabilityContractDeprecate
             | Semantic::LlmRouteCreate
+            | Semantic::LlmRouteDisable
             | Semantic::AgentDefinitionUpdate
             | Semantic::ResourceTransferOwner
             | Semantic::AgentDelegationGrant
@@ -7255,6 +7296,8 @@ impl Governance {
                 crate::agent_version::dispatch(self, ae_id, &def).await
             } else if sem == Semantic::LlmRouteCreate {
                 crate::model_route::create_dispatch(self, ae_id, &def).await
+            } else if sem == Semantic::LlmRouteDisable {
+                crate::model_route::disable::dispatch(self, ae_id, &def).await
             } else if sem == Semantic::TenantQuotaSet {
                 crate::tenant_quota::dispatch(self, ae_id, &def).await
             } else if sem.is_automation() {
@@ -7384,6 +7427,7 @@ impl Governance {
                 | Semantic::CapabilityContractApprove
                 | Semantic::CapabilityContractDeprecate
                 | Semantic::LlmRouteCreate
+                | Semantic::LlmRouteDisable
                 | Semantic::AgentDefinitionUpdate
                 | Semantic::ResourceTransferOwner
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
