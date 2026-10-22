@@ -728,4 +728,113 @@ mod tests {
         );
         assert!(bearer(&headers).is_err());
     }
+
+    /// The database half of V-SCN-218 against a disposable migrated database:
+    /// only ACTIVE HUMAN members of this Tenant with ACTIVE identities, only
+    /// ACTIVE Workspaces in scope, and the SERVER HUMAN key for kind:0.
+    #[tokio::test]
+    #[ignore = "requires COMPONENT_DIRECTORY_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn facts_read_only_active_humans_of_the_binding_scope() {
+        use sqlx::Connection;
+        let mut conn = sqlx::PgConnection::connect(
+            &std::env::var("COMPONENT_DIRECTORY_TEST_DATABASE_URL").expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let provider = Uuid::new_v4();
+        let issuer = format!("urn:fixture:{provider}");
+        sqlx::query("insert into identity.identity_provider(id,issuer,client_id,claim_mapping_version,status) values($1,$2,'fixture-directory',1,'ACTIVE')")
+            .bind(provider).bind(&issuer).execute(&mut *tx).await.unwrap();
+        let (tenant, foreign) = (Uuid::new_v4(), Uuid::new_v4());
+        for id in [tenant, foreign] {
+            sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,'Directory fixture','ACTIVE')")
+                .bind(id).bind(id.to_string()).execute(&mut *tx).await.unwrap();
+        }
+        let (active_ws, suspended_ws) = (Uuid::new_v4(), Uuid::new_v4());
+        for (id, state) in [(active_ws, "ACTIVE"), (suspended_ws, "SUSPENDED")] {
+            sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,$3,'Fixture WS',$4)")
+                .bind(id).bind(tenant).bind(id.to_string()).bind(state).execute(&mut *tx).await.unwrap();
+        }
+        // (tenant, principal kind, membership state, human status, identity status)
+        let people = [
+            (tenant, "HUMAN", "ACTIVE", "ACTIVE", "ACTIVE"), // listed
+            (tenant, "HUMAN", "REVOKED", "ACTIVE", "ACTIVE"), // removed from the Tenant
+            (tenant, "HUMAN", "ACTIVE", "DISABLED", "ACTIVE"), // disabled person
+            (tenant, "AGENT", "ACTIVE", "ACTIVE", "ACTIVE"), // not a human
+            (tenant, "HUMAN", "ACTIVE", "ACTIVE", "DISABLED"), // listed, no identity
+            (foreign, "HUMAN", "ACTIVE", "ACTIVE", "ACTIVE"), // other Tenant
+        ];
+        let mut principals = Vec::new();
+        for (owner, kind, membership, human_status, identity_status) in people {
+            let (human, principal) = (Uuid::new_v4(), Uuid::new_v4());
+            sqlx::query("insert into identity.human_identity(id,display_name,status) values($1,'Fixture Person',$2)")
+                .bind(human).bind(human_status).execute(&mut *tx).await.unwrap();
+            sqlx::query("insert into identity.external_identity(id,provider_id,issuer,subject,human_identity_id,status) values($1,$2,$3,$4,$5,$6)")
+                .bind(Uuid::new_v4()).bind(provider).bind(&issuer).bind(human.to_string()).bind(human).bind(identity_status)
+                .execute(&mut *tx).await.unwrap();
+            sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,$3,'ACTIVE')")
+                .bind(principal).bind(owner).bind(kind).execute(&mut *tx).await.unwrap();
+            sqlx::query("insert into identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) values($1,$2,$3,$4,$5)")
+                .bind(Uuid::new_v4()).bind(owner).bind(human).bind(principal).bind(membership)
+                .execute(&mut *tx).await.unwrap();
+            principals.push((principal, human));
+        }
+        let listed = principals[0].0;
+        for (workspace, state) in [(active_ws, "ACTIVE"), (suspended_ws, "ACTIVE")] {
+            sqlx::query("insert into identity.workspace_membership(id,workspace_id,tenant_principal_id,state) values($1,$2,$3,$4)")
+                .bind(Uuid::new_v4()).bind(workspace).bind(listed).bind(state).execute(&mut *tx).await.unwrap();
+        }
+        sqlx::query("insert into identity.workspace_membership(id,workspace_id,tenant_principal_id,state) values($1,$2,$3,'REVOKED')")
+            .bind(Uuid::new_v4()).bind(active_ws).bind(principals[4].0).execute(&mut *tx).await.unwrap();
+        let pubkey = nostr::Keys::generate().public_key().to_hex();
+        sqlx::query("insert into identity.buzz_identity_binding
+             (tenant_id,principal_id,pubkey,custody,private_key_secret_ref,private_key_secret_version,
+              private_key_secret_audience,private_key_secret_status,kind,state)
+             values($1,$2,$3,'SERVER','fixture/directory',1,'fixture','ACTIVE','HUMAN','ACTIVE')")
+            .bind(tenant).bind(listed).bind(&pubkey).execute(&mut *tx).await.unwrap();
+
+        let entry = |workspace_id| Entry {
+            tenant_id: tenant,
+            workspace_id,
+            tenant_name: "Directory fixture".into(),
+            client: Some("fixture-directory".into()),
+            adapter_client: None,
+            manifest: json!({"frontendDelivery": {"mode": "NATIVE_PAGE"}}),
+        };
+        let all = facts(&mut tx, &entry(None)).await.unwrap();
+        let mut members: Vec<Uuid> = all.members.iter().map(|m| m.principal_id).collect();
+        members.sort();
+        let mut expected = vec![listed, principals[4].0];
+        expected.sort();
+        assert_eq!(
+            members, expected,
+            "only ACTIVE HUMAN members of this Tenant"
+        );
+        let row = all
+            .members
+            .iter()
+            .find(|m| m.principal_id == listed)
+            .unwrap();
+        assert_eq!(row.pubkey.as_deref(), Some(pubkey.as_str()));
+        assert_eq!(row.fallback_name, "Fixture Person");
+        assert_eq!(
+            all.identities.get(&listed),
+            Some(&vec![(issuer.clone(), principals[0].1.to_string())])
+        );
+        assert!(
+            !all.identities.contains_key(&principals[4].0),
+            "DISABLED identity listed"
+        );
+        assert_eq!(all.workspaces, vec![(active_ws, "Fixture WS".to_owned())]);
+        assert_eq!(all.memberships.get(&listed), Some(&vec![active_ws]));
+        assert!(
+            !all.memberships.contains_key(&principals[4].0),
+            "REVOKED membership listed"
+        );
+        let scoped = facts(&mut tx, &entry(Some(active_ws))).await.unwrap();
+        assert_eq!(scoped.scope_workspace, Some(active_ws));
+        assert_eq!(scoped.workspaces.len(), 1);
+        tx.rollback().await.unwrap();
+    }
 }

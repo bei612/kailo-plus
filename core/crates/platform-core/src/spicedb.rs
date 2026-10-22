@@ -1049,6 +1049,66 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn bulk_principal_results_follow_request_order_and_fail_whole() {
+        let items = [
+            BulkCheck {
+                object_type: "tenant",
+                object_id: "t",
+                permission: "manage",
+                principal: "a",
+            },
+            BulkCheck {
+                object_type: "workspace",
+                object_id: "w",
+                permission: "manage",
+                principal: "b",
+            },
+        ];
+        let pair = |item: &BulkCheck<'_>, permissionship: &str| {
+            json!({"request": {
+                "resource": {"objectType": item.object_type, "objectId": item.object_id},
+                "permission": item.permission,
+                "subject": {"object": {"objectType": "principal", "objectId": item.principal}}},
+                "item": {"permissionship": permissionship}})
+        };
+        let answer =
+            |pairs: Vec<serde_json::Value>| json!({"checkedAt": {"token": "z"}, "pairs": pairs});
+        let ok = answer(vec![
+            pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+            pair(&items[1], "PERMISSIONSHIP_CONDITIONAL_PERMISSION"),
+        ]);
+        assert_eq!(
+            bulk_principal_results(&items, &ok).unwrap(),
+            vec![true, false]
+        );
+        for broken in [
+            // swapped echo, missing pair, unknown value, item error, no revision
+            answer(vec![
+                pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION"),
+                pair(&items[0], "PERMISSIONSHIP_NO_PERMISSION"),
+            ]),
+            answer(vec![pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION")]),
+            answer(vec![
+                pair(&items[0], "PERMISSIONSHIP_UNSPECIFIED"),
+                pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION"),
+            ]),
+            {
+                let mut failed = pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION");
+                failed["error"] = json!({"code": 9});
+                answer(vec![
+                    pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+                    failed,
+                ])
+            },
+            json!({"pairs": [
+                pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+                pair(&items[1], "PERMISSIONSHIP_HAS_PERMISSION")]}),
+        ] {
+            assert!(bulk_principal_results(&items, &broken).is_err(), "{broken}");
+        }
+    }
+
     fn row(relation: &str, subject: serde_json::Value) -> serde_json::Value {
         json!({
             "resource": { "objectType": "resource", "objectId": "tool" },
