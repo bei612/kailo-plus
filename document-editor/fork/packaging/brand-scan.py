@@ -55,6 +55,8 @@ IDENTIFIERS = {
     "changeOnlyOfficeUrl": "DocService storage helper function",
     "urn:onlyoffice:config:superset:1": "DocService configuration schema id",
 }
+# Constants that also appear outside code bundles (inline scripts, JSON schema).
+MARKUP_IDENTIFIERS = {"ONLYOFFICEFORM", "http://schemas.onlyoffice.com", "urn:onlyoffice:config:superset:1"}
 PATH = re.compile(r"^(?:\.\./)*(?:/(?:var/www|var/lib|var/log|etc|usr/share|usr/bin)/onlyoffice(?:/|$)|.*document-formats/onlyoffice-docs-formats(?:\.json)?$)")
 ORIGIN_FIELDS = re.compile(r'"(?:homepage|author|repository|url)"\s*:\s*"[^"]*(?:onlyoffice|ascensio)[^"]*"', re.I)
 
@@ -108,7 +110,7 @@ def scan(path, rel):
         key = normalise(token)
         if PATH.match(token.rstrip(".")):
             category = "path"
-        elif key in IDENTIFIERS:
+        elif key in IDENTIFIERS and (code or key in MARKUP_IDENTIFIERS):
             category = "identifier:" + key
         else:
             index = remaining.find(token)
