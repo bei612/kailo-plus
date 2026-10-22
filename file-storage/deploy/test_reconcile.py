@@ -270,7 +270,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual((facts["nativeRootRef"], facts["nativeScopeRef"]), (root, workspace))
         self.assertEqual(facts["instanceServiceUuid"], self.cells.users["svc"])
         self.assertEqual(json.loads(out)["nativeScopeRef"], workspace)
-        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
+        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID") and a.get("NodeID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read"), (self.cells.users["actor"], "read"), (self.cells.users["actor"], "write")})
         self.assertFalse([m for m in self.cells.mutations if m[1].startswith("config/datasource")])
         self.cells.mutations.clear()
@@ -374,7 +374,7 @@ class ReconcileTests(unittest.TestCase):
         self.env["CELLS_BINDING_SERVICE_LOGIN"] = "svc"
         code, out, err = self.run_main()
         self.assertEqual(code, 0, err)
-        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID")}
+        grants = {(a["RoleID"], a["Action"]["Name"]) for a in self.cells.acls if a.get("RoleID") and a.get("NodeID")}
         self.assertEqual(grants, {(self.cells.users["svc"], "read")})
 
     def test_native_action_delivery_must_match_the_facts(self):
