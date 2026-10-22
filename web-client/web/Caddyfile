@@ -14,7 +14,7 @@
 	# 只追加部署登记、与 BFF 同一份的精确 https 来源（WEB_GIF_IMAGE_ORIGINS）。
 	header {
 		-Server
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self' {$WEB_EDITOR_ORIGINS}; frame-ancestors 'none'; frame-src 'self' blob: {$WEB_EDITOR_ORIGINS} {$NATIVE_PAGE_ORIGINS} {$WEB_NATIVE_PAGE_IDP_SOURCE}; img-src 'self' blob: data: {$WEB_GIF_IMAGE_ORIGINS}; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self' {$WEB_EDITOR_ORIGINS} {$WEB_IDP_END_SESSION_SOURCE}; frame-ancestors 'none'; frame-src 'self' blob: {$WEB_EDITOR_ORIGINS} {$NATIVE_PAGE_ORIGINS} {$WEB_NATIVE_PAGE_IDP_SOURCE}; img-src 'self' blob: data: {$WEB_GIF_IMAGE_ORIGINS}; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
 		# DD-125(3)、09 §3：麦克风只给同源页面，且只在用户发起的 Huddle（与语音留言）中申请；
 		# 跨源组件页面不得取得麦克风委派（frame-src 来源不在 self 之内）。
 		Permissions-Policy "camera=(self), geolocation=(), microphone=(self), payment=(), usb=()"
