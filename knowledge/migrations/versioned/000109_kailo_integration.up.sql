@@ -1,4 +1,6 @@
--- Kailo DD-133 organisation mapping: a native space (tenant) or organisation
+-- Kailo DD-133 (07 §4.7.4/§4.7.5).
+--
+-- Organisation mapping: a native space (tenant) or organisation
 -- may carry the reference of the Kailo Tenant / Workspace it represents.
 -- The reference is set once (by the OIDC membership sync or by the explicit
 -- adoption script) and never rewritten, so one Kailo scope always resolves to
@@ -31,3 +33,17 @@ CREATE TRIGGER tenants_kailo_scope_ref_immutable
     BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION guard_kailo_scope_ref();
 CREATE TRIGGER organizations_kailo_tenant_ref_immutable
     BEFORE UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION guard_kailo_scope_ref();
+
+-- Back-channel logout (07 §4.7.5): every native session remembers the IdP
+-- session (sid) it was created from and the latest instant it may live
+-- (never beyond the IdP SSO session); logout_token jti values are kept for
+-- their validity window to refuse replays.
+ALTER TABLE auth_tokens ADD COLUMN oidc_sid TEXT;
+ALTER TABLE auth_tokens ADD COLUMN session_expires_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX idx_auth_tokens_oidc_sid ON auth_tokens (oidc_sid) WHERE oidc_sid IS NOT NULL;
+
+CREATE TABLE oidc_logout_token_ids (
+    jti        VARCHAR(255) PRIMARY KEY,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX idx_oidc_logout_token_ids_expires_at ON oidc_logout_token_ids (expires_at);

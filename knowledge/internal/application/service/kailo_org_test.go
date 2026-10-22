@@ -25,15 +25,17 @@ import (
 const (
 	kailoTestIssuer   = "https://kailo-idp.example/realms/kailo"
 	kailoTestClientID = "kailo-knowledge-native"
+	kailoTestTenant   = "6179e160-tenant"
+	kailoTestSpaceRef = "tenant:" + kailoTestTenant
 )
 
 // kailoFixture is a Kailo-mode native service against a real SQLite schema
-// (identity and Kailo mapping columns installed by the actual migrations)
-// and a local identity-provider fixture serving token, userinfo and JWKS.
+// (identity and Kailo columns, triggers and tables installed by the actual
+// migrations) and a local identity-provider fixture serving token, userinfo
+// and JWKS. Tokens are stored by the real token repository.
 type kailoFixture struct {
 	svc    *userService
 	db     *gorm.DB
-	tokens *stubAuthTokenRepo
 	claims map[string]interface{}
 	key    *rsa.PrivateKey
 }
@@ -45,7 +47,7 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &kailoFixture{tokens: &stubAuthTokenRepo{}, key: key}
+	f := &kailoFixture{key: key}
 	jwks := rsaJWK(key, "kailo-kid")
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -74,18 +76,19 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{},
+	if err := db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.AuthToken{},
 		&types.Organization{}, &types.OrganizationTenantMember{}); err != nil {
 		t.Fatal(err)
 	}
-	// Install the identity and Kailo mapping columns, constraints and
-	// immutability triggers through the actual migrations.
+	// Install the identity and Kailo columns, constraints, triggers and
+	// tables through the actual migrations.
 	if err := db.Exec("DROP INDEX idx_users_oidc_identity; ALTER TABLE users DROP COLUMN oidc_subject; ALTER TABLE users DROP COLUMN oidc_issuer; " +
 		"DROP INDEX idx_tenants_kailo_scope_ref; ALTER TABLE tenants DROP COLUMN kailo_scope_ref; " +
-		"DROP INDEX idx_organizations_kailo_tenant_ref; ALTER TABLE organizations DROP COLUMN kailo_tenant_ref").Error; err != nil {
+		"DROP INDEX idx_organizations_kailo_tenant_ref; ALTER TABLE organizations DROP COLUMN kailo_tenant_ref; " +
+		"ALTER TABLE auth_tokens DROP COLUMN oidc_sid; ALTER TABLE auth_tokens DROP COLUMN session_expires_at").Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"000024_oidc_identity.up.sql", "000028_kailo_org_mapping.up.sql"} {
+	for _, name := range []string{"000024_oidc_identity.up.sql", "000028_kailo_integration.up.sql"} {
 		migration, err := os.ReadFile("../../../migrations/sqlite/" + name)
 		if err != nil {
 			t.Fatal(err)
@@ -95,10 +98,11 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 		}
 	}
 	tenantSvc := NewTenantService(repository.NewTenantRepository(db), nil)
+	tokens := repository.NewAuthTokenRepository(db)
 	f.db = db
 	f.svc = &userService{
 		userRepo:      repository.NewUserRepository(db),
-		tokenRepo:     f.tokens,
+		tokenRepo:     tokens,
 		tenantService: tenantSvc,
 		memberService: NewTenantMemberService(repository.NewTenantMemberRepository(db), nil, nil, nil),
 		config: &config.Config{
@@ -107,35 +111,16 @@ func newKailoFixture(t *testing.T) *kailoFixture {
 				AuthorizationEndpoint: provider.URL + "/authorize", TokenEndpoint: provider.URL + "/token",
 				UserInfoEndpoint: provider.URL + "/userinfo", JwksURI: provider.URL + "/jwks",
 			},
-			Kailo: &config.KailoIntegrationConfig{Enable: true, OrgSync: config.KailoOrgSyncRequired, OrgClaim: "kailo_org"},
+			Kailo: &config.KailoIntegrationConfig{Enable: true, TenantID: kailoTestTenant, TenantName: "Acme"},
 		},
-		kailoOrg: NewKailoOrgService(db, tenantSvc, f.tokens, nil),
+		kailoOrg:   NewKailoOrgService(db, tenantSvc, tokens, nil),
+		logoutRepo: repository.NewOIDCLogoutRepository(db),
 	}
 	return f
 }
 
-func kailoClaims(sub, email, name string, org map[string]interface{}) map[string]interface{} {
-	claims := map[string]interface{}{"sub": sub, "email": email, "name": name, "email_verified": true}
-	if org != nil {
-		claims["kailo_org"] = org
-	}
-	return claims
-}
-
-func kailoOrg(tenantRole string, workspaces ...map[string]interface{}) map[string]interface{} {
-	ws := make([]interface{}, 0, len(workspaces))
-	for _, w := range workspaces {
-		ws = append(ws, w)
-	}
-	return map[string]interface{}{
-		"v":          1,
-		"tenant":     map[string]interface{}{"id": "6179e160-tenant", "name": "Acme", "role": tenantRole},
-		"workspaces": ws,
-	}
-}
-
-func kailoWorkspace(id, name, role string) map[string]interface{} {
-	return map[string]interface{}{"id": id, "name": name, "role": role}
+func kailoClaims(sub, email, name, sid string) map[string]interface{} {
+	return map[string]interface{}{"sub": sub, "email": email, "name": name, "email_verified": true, "sid": sid}
 }
 
 func (f *kailoFixture) login(t *testing.T) *types.OIDCCallbackResponse {
@@ -182,69 +167,93 @@ func (f *kailoFixture) count(t *testing.T, model interface{}) int64 {
 	return n
 }
 
-func TestKailoOrgLoginPutsTenantMembersIntoOneSpace(t *testing.T) {
+func (f *kailoFixture) valid(t *testing.T, access string) bool {
+	t.Helper()
+	_, _, err := f.svc.ValidateToken(context.Background(), access)
+	return err == nil
+}
+
+func TestKailoLoginPutsEveryTenantMemberIntoOneSpace(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada Lovelace",
-		kailoOrg("admin", kailoWorkspace("ws-research", "Research", "member")))
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada Lovelace", "sid-ada")
 	ada := f.login(t)
-
-	tenantSpace := f.space(t, "tenant:6179e160-tenant")
-	research := f.space(t, "workspace:ws-research")
-	if tenantSpace.Name != "Acme" || research.Name != "Research" {
-		t.Fatalf("space names = %q / %q", tenantSpace.Name, research.Name)
+	space := f.space(t, kailoTestSpaceRef)
+	if space.Name != "Acme" {
+		t.Fatalf("space name = %q", space.Name)
 	}
-	if ada.Tenant == nil || ada.Tenant.ID != tenantSpace.ID || ada.User.TenantID != tenantSpace.ID {
-		t.Fatalf("the Tenant space must be the home space: response=%+v", ada.Tenant)
+	if ada.Tenant == nil || ada.Tenant.ID != space.ID || ada.User.TenantID != space.ID {
+		t.Fatalf("the Tenant space must be the home space: %+v", ada.Tenant)
 	}
-	if got := f.role(t, ada.User.ID, tenantSpace.ID); got != types.TenantRoleAdmin {
-		t.Fatalf("Tenant admin role in Tenant space = %q", got)
-	}
-	if got := f.role(t, ada.User.ID, research.ID); got != types.TenantRoleAdmin {
-		t.Fatalf("a Tenant admin administers every Workspace space, got %q", got)
-	}
-
-	f.claims = kailoClaims("bob", "bob@example.com", "Bob", kailoOrg("member", kailoWorkspace("ws-research", "Research", "member")))
+	f.claims = kailoClaims("bob", "bob@example.com", "Bob", "sid-bob")
 	bob := f.login(t)
-	if bob.User.TenantID != tenantSpace.ID {
-		t.Fatalf("second member landed in space %d, want the shared Tenant space %d", bob.User.TenantID, tenantSpace.ID)
+	if bob.User.TenantID != space.ID {
+		t.Fatalf("second member landed in space %d, want the shared Tenant space %d", bob.User.TenantID, space.ID)
 	}
-	if got := f.role(t, bob.User.ID, tenantSpace.ID); got != types.TenantRoleContributor {
-		t.Fatalf("member role = %q, want contributor", got)
+	// Until the member directory supplies roles nobody is an administrator.
+	for _, user := range []*types.User{ada.User, bob.User} {
+		if got := f.role(t, user.ID, space.ID); got != types.TenantRoleContributor {
+			t.Fatalf("role of %s = %q, want contributor", user.Username, got)
+		}
 	}
-	if got := f.role(t, bob.User.ID, research.ID); got != types.TenantRoleContributor {
-		t.Fatalf("workspace member role = %q, want contributor", got)
+	if n := f.count(t, &types.Tenant{}); n != 1 {
+		t.Fatalf("native spaces = %d, want only the Tenant space (no personal spaces)", n)
 	}
-	if n := f.count(t, &types.Tenant{}); n != 2 {
-		t.Fatalf("native spaces = %d, want only the Tenant and Workspace spaces (no personal spaces)", n)
-	}
-
 	var org types.Organization
-	if err := f.db.Where("kailo_tenant_ref = ?", "6179e160-tenant").First(&org).Error; err != nil {
+	if err := f.db.Where("kailo_tenant_ref = ?", kailoTestTenant).First(&org).Error; err != nil {
 		t.Fatalf("Tenant organization: %v", err)
 	}
-	if org.OwnerTenantID != tenantSpace.ID || org.Name != "Acme" {
-		t.Fatalf("organization = %+v", org)
-	}
-	var orgSpaces []types.OrganizationTenantMember
-	if err := f.db.Where("organization_id = ?", org.ID).Find(&orgSpaces).Error; err != nil {
+	var members []types.OrganizationTenantMember
+	if err := f.db.Where("organization_id = ?", org.ID).Find(&members).Error; err != nil {
 		t.Fatal(err)
 	}
-	roles := map[uint64]types.OrgMemberRole{}
-	for _, m := range orgSpaces {
-		roles[m.TenantID] = m.Role
-	}
-	if len(roles) != 2 || roles[tenantSpace.ID] != types.OrgRoleAdmin || roles[research.ID] != types.OrgRoleEditor {
-		t.Fatalf("organization spaces = %+v", roles)
+	if org.OwnerTenantID != space.ID || len(members) != 1 || members[0].TenantID != space.ID || members[0].Role != types.OrgRoleAdmin {
+		t.Fatalf("organization = %+v members = %+v", org, members)
 	}
 }
 
-func TestKailoOrgLoginRefreshesProfileEveryTime(t *testing.T) {
+func TestKailoMembershipSyncFollowsDirectoryRolesAndWorkspaces(t *testing.T) {
+	// The directory-backed projection (07 §4.7.4) goes through the same
+	// reconciliation: Workspace spaces, admin roles, and removals.
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada Lovelace", kailoOrg("member"))
-	f.claims["picture"] = "https://kailo.example/avatars/ada.png"
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
+	user := f.login(t).User
+	ctx := context.Background()
+	membership := &types.KailoMembership{
+		Tenant:     types.KailoScope{ID: kailoTestTenant, Name: "Acme", Role: types.KailoRoleAdmin},
+		Workspaces: []types.KailoScope{{ID: "ws-a", Name: "A", Role: types.KailoRoleMember}},
+	}
+	if _, err := f.svc.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
+		t.Fatal(err)
+	}
+	wsA := f.space(t, "workspace:ws-a")
+	tenantSpace := f.space(t, kailoTestSpaceRef)
+	if f.role(t, user.ID, tenantSpace.ID) != types.TenantRoleAdmin || f.role(t, user.ID, wsA.ID) != types.TenantRoleAdmin {
+		t.Fatal("a Tenant administrator administers the Tenant space and every Workspace space")
+	}
+	membership.Tenant.Role = types.KailoRoleMember
+	membership.Workspaces = nil
+	if _, err := f.svc.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.role(t, user.ID, wsA.ID); got != "" {
+		t.Fatalf("membership removed in Kailo survived natively with role %q", got)
+	}
+	if got := f.role(t, user.ID, tenantSpace.ID); got != types.TenantRoleContributor {
+		t.Fatalf("demoted role = %q", got)
+	}
+	var revoked int64
+	if err := f.db.Model(&types.AuthToken{}).Where("user_id = ? AND is_revoked = ?", user.ID, true).Count(&revoked).Error; err != nil || revoked == 0 {
+		t.Fatalf("earlier sessions of a removed member must be revoked (revoked=%d err=%v)", revoked, err)
+	}
+}
+
+func TestKailoLoginRefreshesProfileEveryTime(t *testing.T) {
+	f := newKailoFixture(t)
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada Lovelace", "sid-1")
+	f.claims["picture"] = "https://kailo.example/api/v1/identity/avatars/ada"
 	f.claims["locale"] = "en_US"
 	first := f.login(t)
-	if first.User.Username != "Ada Lovelace" || first.User.Avatar != "https://kailo.example/avatars/ada.png" {
+	if first.User.Username != "Ada Lovelace" || first.User.Avatar != "https://kailo.example/api/v1/identity/avatars/ada" {
 		t.Fatalf("profile not taken from Kailo: %+v", first.User)
 	}
 	if first.User.Preferences.Locale == nil || *first.User.Preferences.Locale != "en-US" {
@@ -255,84 +264,38 @@ func TestKailoOrgLoginRefreshesProfileEveryTime(t *testing.T) {
 	f.claims["email"] = "ada.king@example.com"
 	delete(f.claims, "picture")
 	f.claims["locale"] = "zh-CN"
-	second := f.login(t)
+	f.login(t)
 	var stored types.User
 	if err := f.db.First(&stored, "id = ?", first.User.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if second.User.ID != first.User.ID || stored.Username != "Ada King" || stored.Email != "ada.king@example.com" ||
-		stored.Avatar != "" || stored.Preferences.Locale == nil || *stored.Preferences.Locale != "zh-CN" {
+	if stored.Username != "Ada King" || stored.Email != "ada.king@example.com" || stored.Avatar != "" ||
+		stored.Preferences.Locale == nil || *stored.Preferences.Locale != "zh-CN" {
 		t.Fatalf("profile was not refreshed: %+v", stored)
+	}
+
+	// An unverified address is never written.
+	f.claims["email"] = "unverified@example.com"
+	f.claims["email_verified"] = false
+	f.login(t)
+	if err := f.db.First(&stored, "id = ?", first.User.ID).Error; err != nil || stored.Email != "ada.king@example.com" {
+		t.Fatalf("unverified email was written: %q err=%v", stored.Email, err)
 	}
 
 	// Another account already shows the same name: the preferred username
 	// disambiguates instead of failing the login.
-	f.claims = kailoClaims("ada-2", "other.ada@example.com", "Ada King", kailoOrg("member"))
+	f.claims = kailoClaims("ada-2", "other.ada@example.com", "Ada King", "sid-2")
 	f.claims["preferred_username"] = "aking2"
-	third := f.login(t)
-	if third.User.Username != "Ada King (aking2)" {
-		t.Fatalf("duplicate display name = %q", third.User.Username)
+	if got := f.login(t).User.Username; got != "Ada King (aking2)" {
+		t.Fatalf("duplicate display name = %q", got)
 	}
 }
 
-func TestKailoOrgLoginFollowsKailoMembershipRemoval(t *testing.T) {
+func TestKailoLoginAdoptsMappedSpaceAndDropsNativeOwnership(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("member", kailoWorkspace("ws-a", "A", "admin")))
-	first := f.login(t)
-	wsA := f.space(t, "workspace:ws-a")
-	if got := f.role(t, first.User.ID, wsA.ID); got != types.TenantRoleAdmin {
-		t.Fatalf("workspace admin role = %q", got)
-	}
-
-	f.claims["kailo_org"] = kailoOrg("member")
-	f.login(t)
-	if got := f.role(t, first.User.ID, wsA.ID); got != "" {
-		t.Fatalf("membership removed in Kailo survived natively with role %q", got)
-	}
-	revoked := false
-	for _, id := range f.tokens.revokedUserIDs {
-		revoked = revoked || id == first.User.ID
-	}
-	if !revoked {
-		t.Fatal("earlier sessions of a removed member must be revoked")
-	}
-}
-
-func TestKailoOrgLoginWithoutClaimIsRefusedBeforeProvisioning(t *testing.T) {
-	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", nil)
-	_, err := f.svc.LoginWithOIDC(context.Background(), "fixture-code",
-		"https://knowledge.example/api/v1/auth/oidc/callback", types.TenantProvisioningCreatePersonal)
-	if !errors.Is(err, ErrKailoOrgClaim) {
-		t.Fatalf("err = %v, want ErrKailoOrgClaim", err)
-	}
-	if n := f.count(t, &types.User{}); n != 0 {
-		t.Fatalf("users = %d, want none", n)
-	}
-	if n := f.count(t, &types.Tenant{}); n != 0 {
-		t.Fatalf("spaces = %d, want none (no personal space fallback)", n)
-	}
-}
-
-func TestKailoOrgLoginAcceptsStringEncodedClaim(t *testing.T) {
-	f := newKailoFixture(t)
-	encoded, err := json.Marshal(kailoOrg("member"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", nil)
-	f.claims["kailo_org"] = string(encoded)
-	resp := f.login(t)
-	if resp.User.TenantID != f.space(t, "tenant:6179e160-tenant").ID {
-		t.Fatal("string-encoded organisation claim was not applied")
-	}
-}
-
-func TestKailoOrgLoginAdoptsMappedSpaceAndFollowsKailoRole(t *testing.T) {
-	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("member"))
-	// A legacy personal space with data, already adopted for the Kailo Tenant
-	// by the migration script; its creator was the native owner.
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
+	// A legacy personal space with data, adopted for the Kailo Tenant by
+	// kailo-org-adopt.sh; its creator was the native owner.
 	f.svc.config.Kailo.Enable = false
 	legacy := f.login(t)
 	f.svc.config.Kailo.Enable = true
@@ -340,46 +303,82 @@ func TestKailoOrgLoginAdoptsMappedSpaceAndFollowsKailoRole(t *testing.T) {
 		t.Fatal("legacy login should have created a personal space")
 	}
 	if err := f.db.Exec("UPDATE tenants SET kailo_scope_ref = ?, name = ? WHERE id = ?",
-		"tenant:6179e160-tenant", "Acme", legacy.User.TenantID).Error; err != nil {
+		kailoTestSpaceRef, "Acme", legacy.User.TenantID).Error; err != nil {
 		t.Fatal(err)
 	}
-
 	resp := f.login(t)
 	if resp.User.TenantID != legacy.User.TenantID {
 		t.Fatalf("adopted space %d was not reused, got %d", legacy.User.TenantID, resp.User.TenantID)
 	}
 	if got := f.role(t, resp.User.ID, legacy.User.TenantID); got != types.TenantRoleContributor {
-		t.Fatalf("native ownership must follow the Kailo role, got %q", got)
+		t.Fatalf("native ownership must follow Kailo, got %q", got)
 	}
 	if n := f.count(t, &types.Tenant{}); n != 1 {
 		t.Fatalf("spaces = %d, want the adopted space only", n)
 	}
 }
 
-func TestKailoOrgLoginRenamesSpaceAndOrganization(t *testing.T) {
+func TestKailoLoginRenamesSpaceAndOrganization(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("admin"))
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
 	f.login(t)
-	org := kailoOrg("admin")
-	org["tenant"].(map[string]interface{})["name"] = "Acme Labs"
-	f.claims["kailo_org"] = org
+	f.svc.config.Kailo.TenantName = "Acme Labs"
 	f.login(t)
-	if got := f.space(t, "tenant:6179e160-tenant").Name; got != "Acme Labs" {
+	if got := f.space(t, kailoTestSpaceRef).Name; got != "Acme Labs" {
 		t.Fatalf("space name = %q", got)
 	}
 	var o types.Organization
-	if err := f.db.Where("kailo_tenant_ref = ?", "6179e160-tenant").First(&o).Error; err != nil || o.Name != "Acme Labs" {
+	if err := f.db.Where("kailo_tenant_ref = ?", kailoTestTenant).First(&o).Error; err != nil || o.Name != "Acme Labs" {
 		t.Fatalf("organization name = %q err=%v", o.Name, err)
 	}
 }
 
 func TestKailoScopeReferenceIsImmutable(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("member"))
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
 	resp := f.login(t)
 	err := f.db.Exec("UPDATE tenants SET kailo_scope_ref = ? WHERE id = ?", "tenant:other", resp.User.TenantID).Error
 	if err == nil || !strings.Contains(err.Error(), "immutable") {
 		t.Fatalf("rewriting a Kailo scope reference must fail, err=%v", err)
+	}
+}
+
+func TestKailoSessionIsBoundToTheIdPSession(t *testing.T) {
+	f := newKailoFixture(t)
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
+	resp := f.login(t)
+	var rows []types.AuthToken
+	if err := f.db.Where("user_id = ?", resp.User.ID).Find(&rows).Error; err != nil || len(rows) != 2 {
+		t.Fatalf("tokens = %d err=%v", len(rows), err)
+	}
+	for _, row := range rows {
+		if row.OIDCSID == nil || *row.OIDCSID != "sid-1" || row.SessionExpiresAt == nil ||
+			row.SessionExpiresAt.After(time.Now().Add(config.DefaultKailoSessionMaxLifetime)) || row.ExpiresAt.After(*row.SessionExpiresAt) {
+			t.Fatalf("token row not bound to the IdP session: %+v", row)
+		}
+	}
+	deadline := *rows[0].SessionExpiresAt
+
+	// Refresh keeps the same sid and deadline.
+	_, refreshed, err := f.svc.RefreshToken(context.Background(), resp.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var next types.AuthToken
+	if err := f.db.Where("token = ?", refreshed).First(&next).Error; err != nil {
+		t.Fatal(err)
+	}
+	if next.OIDCSID == nil || *next.OIDCSID != "sid-1" || next.SessionExpiresAt == nil || !next.SessionExpiresAt.Equal(deadline) {
+		t.Fatalf("refresh changed the session: %+v", next)
+	}
+
+	// A session past its deadline cannot be refreshed.
+	if err := f.db.Model(&types.AuthToken{}).Where("token = ?", refreshed).
+		Update("session_expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.svc.RefreshToken(context.Background(), refreshed); !errors.Is(err, ErrNativeSessionExpired) {
+		t.Fatalf("expired session refresh err = %v", err)
 	}
 }
 
@@ -389,9 +388,9 @@ func (f *kailoFixture) logoutToken(t *testing.T, mutate func(jwt.MapClaims)) str
 		"iss":    kailoTestIssuer,
 		"aud":    kailoTestClientID,
 		"sub":    "ada",
-		"sid":    "session-1",
+		"sid":    "sid-1",
 		"iat":    time.Now().Unix(),
-		"jti":    "logout-1",
+		"jti":    "logout-" + t.Name() + "-" + time.Now().Format("150405.000000000"),
 		"events": map[string]interface{}{oidcBackchannelLogoutEvent: map[string]interface{}{}},
 	}
 	if mutate != nil {
@@ -400,31 +399,52 @@ func (f *kailoFixture) logoutToken(t *testing.T, mutate func(jwt.MapClaims)) str
 	return signedIDToken(t, f.key, "kailo-kid", claims)
 }
 
-func TestKailoBackchannelLogoutRevokesSessions(t *testing.T) {
+func TestKailoBackchannelLogoutEndsOnlyTheIdPSession(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("member"))
-	user := f.login(t).User
-	f.tokens.revokedUserIDs = nil
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
+	browserOne := f.login(t)
+	f.claims["sid"] = "sid-2"
+	browserTwo := f.login(t)
 
-	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), f.logoutToken(t, nil)); err != nil {
+	token := f.logoutToken(t, nil)
+	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), token); err != nil {
 		t.Fatalf("valid logout token rejected: %v", err)
 	}
-	if len(f.tokens.revokedUserIDs) != 1 || f.tokens.revokedUserIDs[0] != user.ID {
-		t.Fatalf("revoked = %v, want %s", f.tokens.revokedUserIDs, user.ID)
+	if f.valid(t, browserOne.Token) {
+		t.Fatal("the session of the logged-out sid is still valid")
+	}
+	if !f.valid(t, browserTwo.Token) {
+		t.Fatal("a different IdP session of the same person must survive")
+	}
+	// Redelivery of the same token is a replay.
+	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), token); !errors.Is(err, ErrInvalidLogoutToken) {
+		t.Fatalf("replay err = %v", err)
 	}
 
-	f.tokens.revokedUserIDs = nil
-	unknown := f.logoutToken(t, func(c jwt.MapClaims) { c["sub"] = "never-logged-in" })
-	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), unknown); err != nil || len(f.tokens.revokedUserIDs) != 0 {
-		t.Fatalf("unknown subject must be a no-op: err=%v revoked=%v", err, f.tokens.revokedUserIDs)
+	// sub without sid ends every session of the person.
+	noSID := f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "sid"); c["jti"] = "logout-sub-only" })
+	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), noSID); err != nil || f.valid(t, browserTwo.Token) {
+		t.Fatalf("sub-only logout: err=%v still valid=%v", err, f.valid(t, browserTwo.Token))
+	}
+
+	// sid without sub ends that session wherever it is.
+	f.claims["sid"] = "sid-3"
+	browserThree := f.login(t)
+	sidOnly := f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "sub"); c["sid"] = "sid-3"; c["jti"] = "logout-sid-only" })
+	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), sidOnly); err != nil || f.valid(t, browserThree.Token) {
+		t.Fatalf("sid-only logout: err=%v", err)
+	}
+
+	unknown := f.logoutToken(t, func(c jwt.MapClaims) { c["sub"] = "never-logged-in"; c["jti"] = "logout-unknown" })
+	if err := f.svc.LogoutByOIDCBackchannel(context.Background(), unknown); err != nil {
+		t.Fatalf("unknown subject must be a no-op: err=%v", err)
 	}
 }
 
 func TestKailoBackchannelLogoutRejectsInvalidTokens(t *testing.T) {
 	f := newKailoFixture(t)
-	f.claims = kailoClaims("ada", "ada@example.com", "Ada", kailoOrg("member"))
-	f.login(t)
-	f.tokens.revokedUserIDs = nil
+	f.claims = kailoClaims("ada", "ada@example.com", "Ada", "sid-1")
+	session := f.login(t)
 	other, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -435,11 +455,14 @@ func TestKailoBackchannelLogoutRejectsInvalidTokens(t *testing.T) {
 		"no event":       f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "events") }),
 		"other event":    f.logoutToken(t, func(c jwt.MapClaims) { c["events"] = map[string]interface{}{"urn:other": map[string]interface{}{}} }),
 		"nonce present":  f.logoutToken(t, func(c jwt.MapClaims) { c["nonce"] = "n" }),
-		"no subject":     f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "sub") }),
+		"no sid or sub":  f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "sub"); delete(c, "sid") }),
+		"no jti":         f.logoutToken(t, func(c jwt.MapClaims) { delete(c, "jti") }),
 		"too old":        f.logoutToken(t, func(c jwt.MapClaims) { c["iat"] = time.Now().Add(-time.Hour).Unix() }),
-		"wrong signer":   signedIDToken(t, other, "kailo-kid", jwt.MapClaims{"iss": kailoTestIssuer, "aud": kailoTestClientID, "sub": "ada", "iat": time.Now().Unix(), "events": map[string]interface{}{oidcBackchannelLogoutEvent: map[string]interface{}{}}}),
-		"unsigned":       unsignedJWT(jwt.MapClaims{"iss": kailoTestIssuer, "aud": kailoTestClientID, "sub": "ada", "iat": time.Now().Unix()}),
-		"empty":          "",
+		"wrong signer": signedIDToken(t, other, "kailo-kid", jwt.MapClaims{"iss": kailoTestIssuer, "aud": kailoTestClientID,
+			"sub": "ada", "iat": time.Now().Unix(), "jti": "x",
+			"events": map[string]interface{}{oidcBackchannelLogoutEvent: map[string]interface{}{}}}),
+		"unsigned": unsignedJWT(jwt.MapClaims{"iss": kailoTestIssuer, "aud": kailoTestClientID, "sub": "ada", "iat": time.Now().Unix(), "jti": "y"}),
+		"empty":    "",
 	}
 	for name, token := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -448,7 +471,7 @@ func TestKailoBackchannelLogoutRejectsInvalidTokens(t *testing.T) {
 			}
 		})
 	}
-	if len(f.tokens.revokedUserIDs) != 0 {
-		t.Fatalf("an invalid logout token revoked sessions: %v", f.tokens.revokedUserIDs)
+	if !f.valid(t, session.Token) {
+		t.Fatal("an invalid logout token ended a session")
 	}
 }

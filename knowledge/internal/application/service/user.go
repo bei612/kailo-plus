@@ -105,6 +105,7 @@ type userService struct {
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
 	kailoOrg         interfaces.KailoOrgService
+	logoutRepo       interfaces.OIDCLogoutRepository
 }
 
 // NewUserService creates a new user service instance
@@ -116,6 +117,7 @@ func NewUserService(
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
 	kailoOrg interfaces.KailoOrgService,
+	logoutRepo interfaces.OIDCLogoutRepository,
 ) interfaces.UserService {
 	return &userService{
 		userRepo:         userRepo,
@@ -125,6 +127,7 @@ func NewUserService(
 		config:           configInfo,
 		systemSettingSvc: systemSettingSvc,
 		kailoOrg:         kailoOrg,
+		logoutRepo:       logoutRepo,
 	}
 }
 
@@ -542,15 +545,9 @@ func (s *userService) LoginWithOIDC(
 		return nil, errors.New("OIDC provider did not return email")
 	}
 
-	// Kailo DD-133: membership comes from the verified Kailo organisation
-	// claim. Validate it before any account exists so a login without it
-	// never leaves a half-provisioned user or a personal space behind.
-	var orgClaim *types.KailoOrgClaim
-	if s.config.KailoOrgSyncRequired() {
-		orgClaim, err = types.ParseKailoOrgClaim(userInfo.Claims[s.config.KailoOrgClaimName()])
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrKailoOrgClaim, err)
-		}
+	// Kailo DD-133 (07 §4.7.4): this instance serves one Kailo Tenant; every
+	// Kailo login joins its space, so no personal space is ever created.
+	if s.config.KailoEnabled() {
 		if s.kailoOrg == nil {
 			return nil, errors.New("kailo organisation sync is not configured")
 		}
@@ -584,15 +581,20 @@ func (s *userService) LoginWithOIDC(
 			return nil, err
 		}
 	}
-	if orgClaim != nil {
-		if _, err := s.kailoOrg.SyncLogin(ctx, user, orgClaim); err != nil {
+	session := nativeSession{}
+	if s.config.KailoEnabled() {
+		membership := types.DeploymentKailoMembership(s.config.Kailo.TenantID, s.config.Kailo.TenantName)
+		if _, err := s.kailoOrg.SyncLogin(ctx, user, membership); err != nil {
 			return nil, err
 		}
+		session = newKailoSession(userInfo.Claims, s.config.KailoSessionMaxLifetime())
 	}
-	return s.finishOIDCLogin(ctx, user, isNewUser)
+	return s.finishOIDCLogin(ctx, user, isNewUser, session)
 }
 
-func (s *userService) finishOIDCLogin(ctx context.Context, user *types.User, isNewUser bool) (*types.OIDCCallbackResponse, error) {
+func (s *userService) finishOIDCLogin(
+	ctx context.Context, user *types.User, isNewUser bool, session nativeSession,
+) (*types.OIDCCallbackResponse, error) {
 	if !user.IsActive {
 		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
 	}
@@ -600,7 +602,7 @@ func (s *userService) finishOIDCLogin(ctx context.Context, user *types.User, isN
 	// Resolve target tenant once so the JWT claim and the tenant we
 	// return below stay in sync; see Login for the rationale.
 	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
+	accessToken, refreshToken, err := s.generateTokensForSession(ctx, user, resolvedTenantID, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate local tokens: %w", err)
 	}
@@ -1120,13 +1122,31 @@ func (s *userService) generateTokensForTenant(
 	user *types.User,
 	activeTenantID uint64,
 ) (accessToken, refreshToken string, err error) {
+	return s.generateTokensForSession(ctx, user, activeTenantID, nativeSession{})
+}
+
+// generateTokensForSession mints the token pair of one native session. A
+// session created from a Kailo sign-in carries the identity-provider sid
+// and a hard deadline; no token of the session outlives it.
+func (s *userService) generateTokensForSession(
+	ctx context.Context,
+	user *types.User,
+	activeTenantID uint64,
+	session nativeSession,
+) (accessToken, refreshToken string, err error) {
+	now := time.Now()
+	accessExpiry := session.cap(now.Add(24 * time.Hour))
+	refreshExpiry := session.cap(now.Add(7 * 24 * time.Hour))
+	if !accessExpiry.After(now) {
+		return "", "", ErrNativeSessionExpired
+	}
 	// Generate access token (expires in 24 hours)
 	accessClaims := jwt.MapClaims{
 		"user_id":   user.ID,
 		"email":     user.Email,
 		"tenant_id": activeTenantID,
-		"exp":       time.Now().Add(24 * time.Hour).Unix(),
-		"iat":       time.Now().Unix(),
+		"exp":       accessExpiry.Unix(),
+		"iat":       now.Unix(),
 		"type":      "access",
 	}
 
@@ -1139,8 +1159,8 @@ func (s *userService) generateTokensForTenant(
 	// Generate refresh token (expires in 7 days)
 	refreshClaims := jwt.MapClaims{
 		"user_id": user.ID,
-		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
-		"iat":     time.Now().Unix(),
+		"exp":     refreshExpiry.Unix(),
+		"iat":     now.Unix(),
 		"type":    "refresh",
 	}
 
@@ -1152,25 +1172,40 @@ func (s *userService) generateTokensForTenant(
 
 	// Store tokens in database
 	accessTokenRecord := &types.AuthToken{
-		ID:        uuid.New().String(),
-		UserID:    user.ID,
-		Token:     accessToken,
-		TokenType: "access_token",
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:               uuid.New().String(),
+		UserID:           user.ID,
+		Token:            accessToken,
+		TokenType:        "access_token",
+		ExpiresAt:        accessExpiry,
+		OIDCSID:          session.sid,
+		SessionExpiresAt: session.deadline,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	refreshTokenRecord := &types.AuthToken{
-		ID:        uuid.New().String(),
-		UserID:    user.ID,
-		Token:     refreshToken,
-		TokenType: "refresh_token",
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:               uuid.New().String(),
+		UserID:           user.ID,
+		Token:            refreshToken,
+		TokenType:        "refresh_token",
+		ExpiresAt:        refreshExpiry,
+		OIDCSID:          session.sid,
+		SessionExpiresAt: session.deadline,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
+	if session.isKailo() {
+		// A Kailo session must be revocable by back-channel logout, so it
+		// is only handed out once both rows are stored.
+		if err := s.tokenRepo.CreateToken(ctx, accessTokenRecord); err != nil {
+			return "", "", err
+		}
+		if err := s.tokenRepo.CreateToken(ctx, refreshTokenRecord); err != nil {
+			return "", "", err
+		}
+		return accessToken, refreshToken, nil
+	}
 	_ = s.tokenRepo.CreateToken(ctx, accessTokenRecord)
 	_ = s.tokenRepo.CreateToken(ctx, refreshTokenRecord)
 
@@ -1226,6 +1261,18 @@ func (s *userService) SwitchTenant(
 		return nil, fmt.Errorf("load target workspace: %w", err)
 	}
 
+	// Kailo mode: the switched session inherits the sid and deadline of the
+	// session it continues, proven by its refresh token.
+	session := nativeSession{}
+	if s.config.KailoEnabled() {
+		record, err := s.tokenRepo.GetTokenByValue(ctx, strings.TrimSpace(currentRefreshToken))
+		if err != nil || record == nil || record.IsRevoked || record.UserID != user.ID ||
+			record.TokenType != "refresh_token" {
+			return nil, ErrNativeSessionExpired
+		}
+		session = sessionOfToken(record)
+	}
+
 	// Persist before minting tokens so a 200 response is also a
 	// durable landing-preference update. RefreshToken re-reads this
 	// field; writing after issue would leave a window where access
@@ -1234,7 +1281,7 @@ func (s *userService) SwitchTenant(
 		return nil, fmt.Errorf("record last-active-tenant preference: %w", err)
 	}
 
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, targetTenantID)
+	accessToken, refreshToken, err := s.generateTokensForSession(ctx, user, targetTenantID, session)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -1487,8 +1534,9 @@ func (s *userService) RefreshToken(
 	tokenRecord.IsRevoked = true
 	_ = s.tokenRepo.UpdateToken(ctx, tokenRecord)
 
-	// Generate new tokens
-	return s.GenerateTokens(ctx, user)
+	// Generate new tokens. Rotation keeps the session's identity-provider
+	// sid and deadline, so refreshing never extends a Kailo session.
+	return s.generateTokensForSession(ctx, user, s.resolveLoginTenantID(ctx, user), sessionOfToken(tokenRecord))
 }
 
 // Logout invalidates every outstanding session for the user identified by

@@ -45,7 +45,9 @@ class NativeEntrypointTests(unittest.TestCase):
             "OIDC_AUTH_ENABLE": "true",
             "AUTO_RECOVER_DIRTY": "false",
             "KAILO_INTEGRATION_ENABLE": "true",
-            "KAILO_ORG_SYNC": "required",
+            "KAILO_TENANT_ID": "6179e160-tenant",
+            "KAILO_TENANT_NAME": "Kailo 验证",
+            "KAILO_SESSION_MAX_LIFETIME": "10h",
             "OIDC_AUTH_ISSUER_URL": "https://idp.example.test/realms/native",
             "OIDC_AUTH_DISCOVERY_URL": "https://idp.example.test/realms/native/.well-known/openid-configuration",
             "OIDC_AUTH_CLIENT_ID": "native-fixture-client",
@@ -78,14 +80,18 @@ class NativeEntrypointTests(unittest.TestCase):
             )
             self.assertNotIn(name + "_FILE", delivered)
 
-    def test_kailo_mode_is_required_and_org_sync_is_explicit(self):
+    def test_kailo_mode_and_served_tenant_are_required(self):
         # Kailo DD-133: the deployment never falls back to native local
-        # credentials or personal spaces.
+        # credentials or personal spaces, and serves exactly one Tenant.
         for name, value in (
             ("KAILO_INTEGRATION_ENABLE", "false"),
             ("KAILO_INTEGRATION_ENABLE", None),
-            ("KAILO_ORG_SYNC", "maybe"),
-            ("KAILO_ORG_SYNC", None),
+            ("KAILO_TENANT_ID", "bad id/"),
+            ("KAILO_TENANT_ID", None),
+            ("KAILO_TENANT_NAME", ""),
+            ("KAILO_SESSION_MAX_LIFETIME", "0h"),
+            ("KAILO_SESSION_MAX_LIFETIME", "7d"),
+            ("KAILO_SESSION_MAX_LIFETIME", None),
         ):
             with self.subTest(name=name, value=value):
                 env = dict(self.env)
@@ -94,8 +100,7 @@ class NativeEntrypointTests(unittest.TestCase):
                 else:
                     env[name] = value
                 self.assert_refused(env)
-        self.env["KAILO_ORG_SYNC"] = "disabled"
-        self.assertEqual(entrypoint.prepare_environment(self.env)["KAILO_ORG_SYNC"], "disabled")
+        self.assertEqual(entrypoint.prepare_environment(self.env)["KAILO_TENANT_ID"], "6179e160-tenant")
 
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])

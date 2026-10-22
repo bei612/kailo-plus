@@ -141,6 +141,14 @@ type AuthToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	// Whether the token is revoked
 	IsRevoked bool `json:"is_revoked" gorm:"default:false"`
+	// OIDCSID is the identity-provider session (ID token `sid`) this native
+	// session was created from; a back-channel logout of that sid ends it
+	// (Kailo DD-133, 07 §4.7.5). Nil for local or legacy sessions.
+	OIDCSID *string `json:"-" gorm:"column:oidc_sid;type:text"`
+	// SessionExpiresAt is the latest instant the native session (including
+	// refresh rotations) may live; in Kailo mode it never outlives the IdP
+	// SSO session. Nil means no session cap (native behaviour).
+	SessionExpiresAt *time.Time `json:"-" gorm:"column:session_expires_at"`
 	// Creation time of the token
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the token

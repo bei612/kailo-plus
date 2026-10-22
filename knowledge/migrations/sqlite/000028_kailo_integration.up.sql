@@ -1,4 +1,4 @@
--- Mirrors native Postgres migration 000109 (Kailo DD-133 organisation mapping).
+-- Mirrors native Postgres migration 000109 (Kailo DD-133 organisation mapping and back-channel logout).
 ALTER TABLE tenants ADD COLUMN kailo_scope_ref VARCHAR(160) CHECK (
     kailo_scope_ref IS NULL OR
     ((kailo_scope_ref LIKE 'tenant:%' OR kailo_scope_ref LIKE 'workspace:%')
@@ -19,3 +19,11 @@ WHEN OLD.kailo_tenant_ref IS NOT NULL AND NEW.kailo_tenant_ref IS NOT OLD.kailo_
 BEGIN
     SELECT RAISE(ABORT, 'Kailo tenant reference of a native organization is immutable');
 END;
+ALTER TABLE auth_tokens ADD COLUMN oidc_sid TEXT;
+ALTER TABLE auth_tokens ADD COLUMN session_expires_at DATETIME;
+CREATE INDEX idx_auth_tokens_oidc_sid ON auth_tokens (oidc_sid);
+CREATE TABLE oidc_logout_token_ids (
+    jti        VARCHAR(255) PRIMARY KEY,
+    expires_at DATETIME NOT NULL
+);
+CREATE INDEX idx_oidc_logout_token_ids_expires_at ON oidc_logout_token_ids (expires_at);

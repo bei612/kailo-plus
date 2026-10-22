@@ -51,7 +51,7 @@ func kailoModeConfig() *config.Config {
 	return &config.Config{
 		Auth:     &config.AuthConfig{RegistrationMode: config.AuthRegistrationModeSelfServe},
 		OIDCAuth: &config.OIDCAuthConfig{Enable: true},
-		Kailo:    &config.KailoIntegrationConfig{Enable: true, OrgSync: config.KailoOrgSyncRequired},
+		Kailo:    &config.KailoIntegrationConfig{Enable: true, TenantID: "t-1", TenantName: "Acme"},
 	}
 }
 
@@ -141,12 +141,13 @@ func TestOIDCCallbackSilentFailureReturnsToOriginalPage(t *testing.T) {
 	}
 }
 
-func TestOIDCCallbackReportsMissingKailoOrganisation(t *testing.T) {
-	us := &stubKailoAuthUserService{loginErr: fmt.Errorf("%w: claim absent", service.ErrKailoOrgClaim)}
+func TestOIDCCallbackLoginFailureReturnsToOriginalPage(t *testing.T) {
+	us := &stubKailoAuthUserService{loginErr: fmt.Errorf("native space unavailable")}
 	h := NewAuthHandler(kailoModeConfig(), us, nil, nil, nil)
 	state := signedCallbackState(t, "/platform/knowledge-bases", "")
 	loc := callback(t, h, "code=c1&state="+url.QueryEscape(state), true)
-	if loc != "/platform/knowledge-bases#oidc_error=kailo_org_missing" {
+	if !strings.HasPrefix(loc, "/platform/knowledge-bases#oidc_error=login_failed&oidc_error_description=") ||
+		strings.Contains(loc, "oidc_prompt") {
 		t.Fatalf("Location = %q", loc)
 	}
 }
@@ -154,20 +155,29 @@ func TestOIDCCallbackReportsMissingKailoOrganisation(t *testing.T) {
 func TestOIDCBackchannelLogoutHandler(t *testing.T) {
 	us := &stubKailoAuthUserService{}
 	r := kailoAuthRouter(NewAuthHandler(kailoModeConfig(), us, nil, nil, nil))
-	post := func() *httptest.ResponseRecorder {
+	post := func(contentType string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/auth/oidc/backchannel-logout",
 			strings.NewReader("logout_token=signed.logout.token"))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", contentType)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		return w
 	}
-	if w := post(); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" || us.logoutGot != "signed.logout.token" {
+	const form = "application/x-www-form-urlencoded"
+	if w := post(form); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" || us.logoutGot != "signed.logout.token" {
 		t.Fatalf("valid logout: status=%d cache=%q token=%q", w.Code, w.Header().Get("Cache-Control"), us.logoutGot)
 	}
+	us.logoutGot = ""
+	if w := post("application/json"); w.Code != http.StatusBadRequest || us.logoutGot != "" {
+		t.Fatalf("non-form logout status = %d token=%q", w.Code, us.logoutGot)
+	}
 	us.logoutErr = service.ErrInvalidLogoutToken
-	if w := post(); w.Code != http.StatusBadRequest {
+	if w := post(form + "; charset=UTF-8"); w.Code != http.StatusBadRequest {
 		t.Fatalf("invalid logout token status = %d", w.Code)
+	}
+	us.logoutErr = fmt.Errorf("database unavailable")
+	if w := post(form); w.Code != http.StatusInternalServerError {
+		t.Fatalf("internal failure status = %d, want 500", w.Code)
 	}
 }
 

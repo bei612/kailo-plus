@@ -6,6 +6,10 @@ DO $$ BEGIN
         RAISE EXCEPTION 'cannot roll back Kailo organisation mapping with mapped spaces';
     END IF;
 END $$;
+DROP TABLE oidc_logout_token_ids;
+DROP INDEX idx_auth_tokens_oidc_sid;
+ALTER TABLE auth_tokens DROP COLUMN session_expires_at;
+ALTER TABLE auth_tokens DROP COLUMN oidc_sid;
 DROP TRIGGER organizations_kailo_tenant_ref_immutable ON organizations;
 DROP TRIGGER tenants_kailo_scope_ref_immutable ON tenants;
 DROP FUNCTION guard_kailo_scope_ref();

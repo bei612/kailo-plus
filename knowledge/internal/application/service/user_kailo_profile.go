@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -13,11 +12,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
-
-// ErrKailoOrgClaim marks a Kailo-mode login whose verified token carries no
-// valid Kailo organisation projection. The login is refused; no account or
-// personal space is created.
-var ErrKailoOrgClaim = errors.New("kailo_org_missing")
 
 const (
 	usernameMaxRunes = 100
@@ -38,8 +32,10 @@ func (s *userService) refreshOIDCProfile(ctx context.Context, user *types.User, 
 		changed = true
 	}
 
+	// 07 §4.7.3: email is profile data only and is written only when the
+	// identity provider says it is verified.
 	if email := strings.TrimSpace(info.Email); email != "" && !strings.EqualFold(email, user.Email) &&
-		!oidcClaimIsFalse(info.Claims, "email_verified") {
+		oidcClaimIsTrue(info.Claims, "email_verified") {
 		other, err := s.userRepo.GetUserByEmail(ctx, email)
 		switch {
 		case err != nil && !isUserLookupNotFound(err):
@@ -140,12 +136,12 @@ func oidcLocale(claims map[string]interface{}) *string {
 	return &value
 }
 
-func oidcClaimIsFalse(claims map[string]interface{}, key string) bool {
+func oidcClaimIsTrue(claims map[string]interface{}, key string) bool {
 	switch v := claims[key].(type) {
 	case bool:
-		return !v
+		return v
 	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "false")
+		return strings.EqualFold(strings.TrimSpace(v), "true")
 	default:
 		return false
 	}

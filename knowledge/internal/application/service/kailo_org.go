@@ -19,20 +19,21 @@ import (
 // Kailo; no native user granted them.
 const kailoSyncActor = "kailo-org-sync"
 
-// kailoOrgService implements interfaces.KailoOrgService (Kailo DD-133 §3).
-//
-// Mapping, per Kailo Tenant T and Workspace W:
-//   - T  → one native space with kailo_scope_ref "tenant:<T>"; every member
-//     of T is a member of it.
-//   - W  → one native space with kailo_scope_ref "workspace:<W>"; members are
-//     the members of W.
+// kailoOrgService implements interfaces.KailoOrgService (Kailo DD-133,
+// 07 §4.7.4). The deployment unit serves one Kailo Tenant
+// (DEDICATED_INSTANCE). Mapping, per Kailo Tenant T and Workspace W:
+//   - T  → one native space with kailo_scope_ref "tenant:<T>"; every person
+//     signing in through Kailo is a member of it (no personal spaces).
 //   - T  → one native organisation with kailo_tenant_ref "<T>" whose member
-//     spaces are T's mapped spaces, so a knowledge base or agent shared to the
-//     organisation reaches every space of the same Kailo Tenant and nothing
-//     outside it.
-//   - Kailo admin → native admin; Kailo member → native contributor. A
-//     Tenant admin is admin in every Workspace space too. Ownership is never
-//     granted natively.
+//     spaces are T's mapped spaces, the sharing target for knowledge bases
+//     and agents across the Tenant.
+//   - W  → one native space with kailo_scope_ref "workspace:<W>", members
+//     the members of W — only once the platform member directory supplies
+//     Workspace memberships.
+//   - Kailo admin → native admin (and admin of every Workspace space);
+//     member → contributor. Until the directory supplies roles every person
+//     is a contributor: no administrator is granted inside the component.
+//     Ownership is never granted natively.
 //
 // Spaces are created lazily by the first login that needs them and keep
 // their reference forever (migration 000109), so one Kailo scope always
@@ -67,28 +68,28 @@ type kailoDesiredSpace struct {
 func (s *kailoOrgService) SyncLogin(
 	ctx context.Context,
 	user *types.User,
-	claim *types.KailoOrgClaim,
+	membership *types.KailoMembership,
 ) (*types.Tenant, error) {
-	if user == nil || claim == nil {
-		return nil, errors.New("kailo organisation sync needs a user and a verified claim")
+	if user == nil || membership == nil {
+		return nil, errors.New("kailo organisation sync needs a user and a membership")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tenantSpace, err := s.ensureSpace(ctx, claim.TenantScopeRef(), claim.Tenant.Name)
+	tenantSpace, err := s.ensureSpace(ctx, membership.TenantScopeRef(), membership.Tenant.Name)
 	if err != nil {
 		return nil, err
 	}
 	desired := map[uint64]kailoDesiredSpace{
-		tenantSpace.ID: {space: tenantSpace, role: claim.Tenant.Role.NativeTenantRole(), org: types.OrgRoleAdmin},
+		tenantSpace.ID: {space: tenantSpace, role: membership.Tenant.Role.NativeTenantRole(), org: types.OrgRoleAdmin},
 	}
-	for _, ws := range claim.Workspaces {
+	for _, ws := range membership.Workspaces {
 		space, err := s.ensureSpace(ctx, types.KailoWorkspaceScopeRef(ws.ID), ws.Name)
 		if err != nil {
 			return nil, err
 		}
 		role := ws.Role.NativeTenantRole()
-		if claim.Tenant.Role == types.KailoRoleAdmin {
+		if membership.Tenant.Role == types.KailoRoleAdmin {
 			role = types.TenantRoleAdmin
 		}
 		desired[space.ID] = kailoDesiredSpace{space: space, role: role, org: types.OrgRoleEditor}
@@ -96,7 +97,7 @@ func (s *kailoOrgService) SyncLogin(
 
 	var changes []kailoMembershipChange
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		org, err := s.ensureOrganization(tx, claim, tenantSpace, user.ID)
+		org, err := s.ensureOrganization(tx, membership, tenantSpace, user.ID)
 		if err != nil {
 			return err
 		}
@@ -186,20 +187,20 @@ func findKailoSpace(db *gorm.DB, ref string) (*types.Tenant, error) {
 
 func (s *kailoOrgService) ensureOrganization(
 	tx *gorm.DB,
-	claim *types.KailoOrgClaim,
+	membership *types.KailoMembership,
 	tenantSpace *types.Tenant,
 	userID string,
 ) (*types.Organization, error) {
-	ref := claim.Tenant.ID
+	ref := membership.Tenant.ID
 	var org types.Organization
 	err := tx.Where("kailo_tenant_ref = ?", ref).First(&org).Error
 	if err == nil {
-		if org.Name != claim.Tenant.Name {
+		if org.Name != membership.Tenant.Name {
 			if err := tx.Model(&types.Organization{}).Where("id = ?", org.ID).
-				Updates(map[string]interface{}{"name": claim.Tenant.Name, "updated_at": time.Now()}).Error; err != nil {
+				Updates(map[string]interface{}{"name": membership.Tenant.Name, "updated_at": time.Now()}).Error; err != nil {
 				return nil, fmt.Errorf("rename Kailo tenant organization: %w", err)
 			}
-			org.Name = claim.Tenant.Name
+			org.Name = membership.Tenant.Name
 		}
 		return &org, nil
 	}
@@ -210,7 +211,7 @@ func (s *kailoOrgService) ensureOrganization(
 	expired := now.Add(-time.Second)
 	org = types.Organization{
 		ID:            uuid.New().String(),
-		Name:          claim.Tenant.Name,
+		Name:          membership.Tenant.Name,
 		Description:   "Kailo",
 		OwnerID:       userID,
 		OwnerTenantID: tenantSpace.ID,

@@ -482,10 +482,6 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI), h.resolveDefaultTenantMode(ctx))
 	if err != nil {
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
-		if stderrors.Is(err, service.ErrKailoOrgClaim) {
-			redirectError(service.ErrKailoOrgClaim.Error(), "")
-			return
-		}
 		redirectError("login_failed", err.Error())
 		return
 	}
@@ -516,6 +512,10 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 // @Router       /auth/oidc/backchannel-logout [post]
 func (h *AuthHandler) OIDCBackchannelLogout(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
+	if ct := strings.ToLower(strings.TrimSpace(strings.Split(c.GetHeader("Content-Type"), ";")[0])); ct != "application/x-www-form-urlencoded" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
 	err := h.userService.LogoutByOIDCBackchannel(c.Request.Context(), strings.TrimSpace(c.PostForm("logout_token")))
 	if err == nil {
 		c.Status(http.StatusOK)
@@ -525,8 +525,9 @@ func (h *AuthHandler) OIDCBackchannelLogout(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 		return
 	}
+	// 07 §4.7.5: internal failures answer 5xx so the IdP records them.
 	logger.Errorf(c.Request.Context(), "OIDC back-channel logout failed: %v", err)
-	c.JSON(http.StatusBadRequest, gin.H{"error": "logout_failed"})
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "logout_failed"})
 }
 
 // normaliseOIDCPrompt keeps only the prompt values the SPA may request:
