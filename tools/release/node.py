@@ -259,7 +259,8 @@ def inspect(request):
         env = {}
         for key, digest in (request.get("env_set") or {}).items():
             values = actual.get(key)
-            env[key] = ("absent" if not values else "duplicate" if len(values) > 1 else
+            # 声明要设置而运行 .env 没有的键由 deploy 追加，计划里如实列为 add（与 unset 的 absent 区分）
+            env[key] = ("add" if not values else "duplicate" if len(values) > 1 else
                         "unchanged" if hashlib.sha256(values[0].encode()).hexdigest() == digest else "change")
         for key in request.get("env_unset") or []:
             env[key] = "remove" if key in actual else "absent"
