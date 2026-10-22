@@ -40,5 +40,22 @@
   未开启时为空，显式 provider 开启即配置错误。
 - 既有 `browser_login_and_logout_flow` 不变（未开启时行为与上游一致）。
 
-本记录写入时上述测试尚未在 CI 节点运行；运行结果与产物 digest 在构建后补记。改动使
-`model-gateway` 的 `source_digest` 失效，需按原入口重建镜像并回填 `fork/upstream.yaml`。
+## 运行结果
+
+提交 `a2b5ca2f68fc5bbb8ff09622158988d15fe6f5f0` 在 CI 节点按 commit 从 GitHub 取出的
+`model-gateway` 子树中执行（宿主 Rust 1.98 工具链、`--profile ci`、`CARGO_INCREMENTAL=0`）：
+
+```bash
+cargo fmt -p agentgateway --check
+cargo test --locked --profile ci -p agentgateway --lib http::oidc
+cargo xtask schema   # 再与提交中的 schema/ 目录逐文件比较
+```
+
+- `cargo test`：`21 passed; 0 failed`（含上述两个新用例与既有 `browser_login_and_logout_flow`）；
+- `cargo fmt --check`：`http/oidc/` 与本次改动的 `types/local.rs` 片段无差异（报告的差异只在既有的
+  `ext_authz`、`telemetry/log_store*`、`proxy/*` 与 `types/local.rs` 其余位置，非本次改动）；
+- `cargo xtask schema`：重新生成结果与提交中的 `schema/` 一致。
+
+日志：CI 节点 `/volumes/data/kailo/ci/tmp/claude-platform-embed/gw-a2b5.log`。改动使
+`model-gateway` 的 `source_digest` 失效，需按原入口重建镜像并回填 `fork/upstream.yaml`；
+IdP 侧的端到端退出联动尚未在部署环境验收。

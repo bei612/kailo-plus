@@ -1,13 +1,10 @@
 import { merge } from 'lodash';
 import { IconComponentProps } from '@/import/icon';
-import ShoppingCartOutlined from '@ant-design/icons/ShoppingCartOutlined';
-import IdCardOutlined from '@ant-design/icons/IdcardOutlined';
 import { SETUP, DATA_SOURCES } from '@/utils/enum';
 import Starter from './Starter';
 import ConnectDataSource from './ConnectDataSource';
 import SelectModels from './SelectModels';
 import DefineRelations from './DefineRelations';
-import { SampleDatasetName } from '@/apollo/client/graphql/__types__';
 import { ERROR_CODES } from '@/utils/errorHandler';
 import {
   getDataSourceConfig,
@@ -59,77 +56,58 @@ export const SETUP_STEPS = {
 export const DATA_SOURCE_OPTIONS = {
   [DATA_SOURCES.BIG_QUERY]: {
     ...getDataSourceConfig(DATA_SOURCES.BIG_QUERY),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/bigquery',
     disabled: false,
   },
   [DATA_SOURCES.DUCKDB]: {
     ...getDataSourceConfig(DATA_SOURCES.DUCKDB),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/duckdb',
     disabled: false,
   },
   [DATA_SOURCES.POSTGRES]: {
     ...getDataSourceConfig(DATA_SOURCES.POSTGRES),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/postgresql',
     disabled: false,
   },
   [DATA_SOURCES.MYSQL]: {
     ...getDataSourceConfig(DATA_SOURCES.MYSQL),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/mysql',
     disabled: false,
   },
   [DATA_SOURCES.ORACLE]: {
     ...getDataSourceConfig(DATA_SOURCES.ORACLE),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/oracle',
     disabled: false,
   },
   [DATA_SOURCES.MSSQL]: {
     ...getDataSourceConfig(DATA_SOURCES.MSSQL),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/sqlserver',
     disabled: false,
   },
   [DATA_SOURCES.CLICK_HOUSE]: {
     ...getDataSourceConfig(DATA_SOURCES.CLICK_HOUSE),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/clickhouse',
     disabled: false,
   },
   [DATA_SOURCES.TRINO]: {
     ...getDataSourceConfig(DATA_SOURCES.TRINO),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/trino',
     disabled: false,
   },
   [DATA_SOURCES.SNOWFLAKE]: {
     ...getDataSourceConfig(DATA_SOURCES.SNOWFLAKE),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/snowflake',
     disabled: false,
   },
   [DATA_SOURCES.ATHENA]: {
     ...getDataSourceConfig(DATA_SOURCES.ATHENA),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/athena',
     disabled: false,
   },
   [DATA_SOURCES.REDSHIFT]: {
     ...getDataSourceConfig(DATA_SOURCES.REDSHIFT),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/redshift',
     disabled: false,
   },
   [DATA_SOURCES.DATABRICKS]: {
     ...getDataSourceConfig(DATA_SOURCES.DATABRICKS),
-    guide: 'https://docs.getwren.ai/oss/guide/connect/databricks',
     disabled: false,
   },
 } as { [key: string]: ButtonOption };
 
-export const TEMPLATE_OPTIONS = {
-  [SampleDatasetName.ECOMMERCE]: {
-    label: 'E-commerce',
-    IconComponent: ShoppingCartOutlined,
-    guide: 'https://docs.getwren.ai/oss/getting_started/sample_data/ecommerce',
-  },
-  [SampleDatasetName.HR]: {
-    label: 'Human Resource',
-    IconComponent: IdCardOutlined,
-    guide: 'https://docs.getwren.ai/oss/getting_started/sample_data/hr',
-  },
+// DD-133 §1: the upstream sample datasets are downloaded from the vendor's
+// hosts and documented on its site; the Kailo build offers none.
+export const TEMPLATE_OPTIONS = {} as {
+  [key: string]: { label: string; IconComponent: any; guide?: string };
 };
 
 export const getDataSources = () => {
@@ -152,21 +130,7 @@ export const getTemplates = () => {
 
 export const getPostgresErrorMessage = (error: Record<string, any>) => {
   if (error.code === ERROR_CODES.CONNECTION_REFUSED) {
-    return (
-      <div>
-        {error.message}. <br />
-        If you are having trouble connecting to your PostgreSQL database, please
-        refer to our{' '}
-        <a
-          href="https://docs.getwren.ai/oss/guide/connect/postgresql#connect"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          documentation
-        </a>{' '}
-        for detailed instructions.
-      </div>
-    );
+    return <div>{error.message}</div>;
   }
   return error.message;
 };

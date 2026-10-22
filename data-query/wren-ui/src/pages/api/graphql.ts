@@ -14,6 +14,10 @@ import {
 } from '@/apollo/server/utils/error';
 import { TelemetryEvent } from '@/apollo/server/telemetry/telemetry';
 import { components } from '@/common';
+import {
+  requestIsNativeService,
+  requestKailoUser,
+} from '@server/services/kailoUserService';
 
 const serverConfig = getConfig();
 const logger = getLogger('APOLLO');
@@ -127,6 +131,9 @@ const bootstrapServer = async () => {
     },
     introspection: process.env.NODE_ENV !== 'production',
     context: ({ req }): IContext => ({
+      kailoUser: requestKailoUser(req.headers),
+      kailoUsers: components.kailoUserDirectory.loader(),
+      kailoNativeService: requestIsNativeService(req.headers),
       nativeIdentityScope:
         typeof req.headers['x-kailo-native-identity-scope'] === 'string'
           ? req.headers['x-kailo-native-identity-scope']
@@ -182,6 +189,12 @@ const startServer = bootstrapServer();
 
 const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   const apolloServer = await startServer;
+  try {
+    await components.kailoUserDirectory.remember(requestKailoUser(req.headers));
+  } catch (error) {
+    // Display claims are not an admission input; the request continues.
+    logger.error(`Failed to refresh Kailo user profile: ${error?.message}`);
+  }
   await apolloServer.createHandler({
     path: '/api/graphql',
   })(req, res);

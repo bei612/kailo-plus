@@ -5,6 +5,7 @@ import {
   ApiError,
   respondWithSimple,
   handleApiError,
+  assertStandaloneKnowledgeAdmin,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 import originalResolvers from '@server/resolvers';
@@ -280,6 +281,8 @@ export default async function handler(
       },
     };
 
+    if (['PUT', 'DELETE'].includes(req.method))
+      assertStandaloneKnowledgeAdmin(req);
     // Handle PUT method - update instruction
     if (req.method === 'PUT') {
       await handleUpdateInstruction(req, res, project, startTime, access);

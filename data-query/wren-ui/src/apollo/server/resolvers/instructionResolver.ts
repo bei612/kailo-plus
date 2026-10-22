@@ -17,6 +17,7 @@ export type InstructionContext = Pick<
   | 'nativeHumanToken'
   | 'nativeIdentityScope'
   | 'nativeProjectCheck'
+  | 'kailoUser'
 >;
 
 export class InstructionResolver {
@@ -70,7 +71,14 @@ export class InstructionResolver {
     const { instruction, questions, isDefault } = args.data;
     const project = await this.currentProject(ctx);
     return await ctx.instructionService.createInstruction(
-      { instruction, questions, isDefault, projectId: project.id },
+      {
+        instruction,
+        questions,
+        isDefault,
+        projectId: project.id,
+        // DD-133 §3: recorded only when the Kailo user is known.
+        ...(ctx.kailoUser?.key ? { ownerKey: ctx.kailoUser.key } : {}),
+      },
       ctx.nativeProjectCheck,
     );
   }

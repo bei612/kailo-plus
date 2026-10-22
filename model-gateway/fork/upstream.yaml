@@ -24,6 +24,8 @@ base_divergence: none
 # 浏览器 logout 可选 RP-Initiated Logout（logout.endSession，SS-AGW-END-SESSION、DD-133(6)）：
 # 有可解开的会话时 303 到 discovery 的 end_session_endpoint 并带 id_token_hint，见
 # fork/verify/end-session.md。
+# OIDC policy 可选 backchannelLogout 接收端（DD-133(6)、.design/07 §4.7.5）：校验 IdP 的
+# logout_token 并按 sid（或 iss+sub）撤销无状态浏览器会话，见 fork/verify/backchannel-logout.md。
 
 artifacts:
   - name: model-gateway
@@ -31,11 +33,11 @@ artifacts:
     build_context: model-gateway
     build_dockerfile: model-gateway/Dockerfile
     inputs: [model-gateway/]
-    source_digest: sha256:9885c4d81bf087b7ca5d737606077706ebb4ccee9ecf4bb25a31a4305d0307bc
-    artifact_digest: sha256:3ca36716a3e92177f0d3a3e143bcd7bacf5d17ae73b3f2fd31f1dec6eca4dbaa
+    source_digest: sha256:67c3ae6dfc0266995b4f7f706b364a4c66442a330e2a2e491bda4ac4c3359edc
+    artifact_digest: sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
 
 source_facts: [SF-AGW-02, SF-AGW-06, SF-AGW-09, SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
 source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE, SS-AGW-END-SESSION]
-compatibility_evidence: [model-gateway/fork/verify/oidc-header-projection.md, model-gateway/fork/verify/admin-authentication.md, model-gateway/fork/verify/durable-usage.md, model-gateway/fork/verify/llm-instruction-role.md, model-gateway/fork/verify/proxy-jwt-407.md, model-gateway/fork/verify/end-session.md]
+compatibility_evidence: [model-gateway/fork/verify/oidc-header-projection.md, model-gateway/fork/verify/admin-authentication.md, model-gateway/fork/verify/durable-usage.md, model-gateway/fork/verify/llm-instruction-role.md, model-gateway/fork/verify/proxy-jwt-407.md, model-gateway/fork/verify/end-session.md, model-gateway/fork/verify/backchannel-logout.md]
 owner: team-platform
 last_reverified: 2026-09-29

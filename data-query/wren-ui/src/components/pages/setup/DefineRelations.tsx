@@ -317,8 +317,6 @@ export default function DefineRelations(props: Props) {
             size="large"
             onClick={onSkip}
             disabled={submitting}
-            data-ph-capture="true"
-            data-ph-capture-attribute-name="cta_skip_define_relationship"
           >
             Skip this step
           </Button>
@@ -329,8 +327,6 @@ export default function DefineRelations(props: Props) {
             className="adm-onboarding-btn"
             loading={submitting}
             disabled={fetching}
-            data-ph-capture="true"
-            data-ph-capture-attribute-name="cta_finish_define_relationship"
           >
             Finish
           </Button>

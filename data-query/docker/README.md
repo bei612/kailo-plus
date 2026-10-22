@@ -332,13 +332,20 @@ original native resolvers serve the page after the same signature and
 instance-claim checks.
 
 Open the native origin normally (or `/auth/login?returnTo=/`). No JavaScript
-Bearer injection is needed. All routes, including callback, share one native
-listener policy. After login, the Gateway forwards only its verified native ID
-token over the private hop. Browser-provided Authorization, Cookie and platform
-identity headers are removed before that hop. The native backend removes the
-credential before the original application handler/API-history boundary.
-Same-origin `POST /auth/logout` clears the native Gateway session; it does not
-claim to terminate the IdP session, platform session or a native running task.
+Bearer injection is needed. The OIDC policy sits on the native UI route; the
+only route without it is the static, credential-free `/kailo-embed/` page
+(DD-133, rendered by `kailo-embed/render.py` from `kailo-embed/bootstrap.js`):
+unauthenticated navigations land on `/kailo-embed/signin`, which signs in
+silently inside the Kailo frame or reports wire v1 `auth-required` to the exact
+Kailo origin, never showing a login form in the frame. After login, the Gateway
+forwards only its verified native ID token over the private hop.
+Browser-provided Authorization, Cookie and platform identity headers are removed
+before that hop. The native backend removes the credential before the original
+application handler/API-history boundary. Same-origin `POST /auth/logout`
+clears the native Gateway session and continues to `KAILO_LOGOUT_URL` at top
+level; the IdP's back-channel `logout_token` at `/oauth/backchannel-logout`
+ends the Gateway sessions of that IdP session (`07` §4.7.5). Neither terminates
+a native running task. See `../fork/verify/kailo-embed-integration.md`.
 
 Use TLS at the public native origin. This isolated static Gateway configuration
 is mounted read-only and its administrative listener is loopback-only. It is

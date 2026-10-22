@@ -269,8 +269,6 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
                 }
                 loading={previewDataResult.loading || query.preparing}
                 onClick={onPreviewData}
-                data-ph-capture="true"
-                data-ph-capture-attribute-name="cta_text-answer_preview_data"
               >
                 {query.pending || query.error ? text.check : text.results}
               </Button>

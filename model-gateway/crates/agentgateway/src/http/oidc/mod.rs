@@ -13,6 +13,7 @@ use crate::http::{Body, PolicyResponse, Request, Response, jwt};
 use crate::proxy::httpproxy::PolicyClient;
 use crate::telemetry::log::RequestLog;
 
+mod backchannel;
 mod browser;
 mod callback;
 mod local;
@@ -23,6 +24,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
+pub use backchannel::{BackchannelLogout, OidcBackchannelLogout};
 pub use local::{LocalOidcConfig, OidcLogin, OidcLogout, OidcUiLocales};
 pub use redirect::RedirectUri;
 pub use session::{
@@ -144,6 +146,9 @@ pub struct OidcPolicy {
 	/// SS-AGW-END-SESSION: set only when `logout.endSession` is enabled.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub end_session_endpoint: Option<ProviderEndpoint>,
+	/// Kailo DD-133(6): OIDC Back-Channel Logout receiver and its revocations.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub backchannel_logout: Option<BackchannelLogout>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -229,6 +234,11 @@ impl OidcPolicy {
 							.provider
 							.id_token_validator
 							.validate_claims(browser_session.raw_id_token.expose_secret())
+						// A session ended by the IdP's back-channel logout is no session.
+						&& !self
+							.backchannel_logout
+							.as_ref()
+							.is_some_and(|receiver| receiver.is_revoked(&claims.inner))
 					{
 						if let Some(Value::String(sub)) = claims.inner.get("sub") {
 							log.jwt_sub = Some(sub.clone());
@@ -367,6 +377,9 @@ impl crate::store::RequestPolicyTrait for OidcPolicy {
 		log: &mut RequestLog,
 		req: &mut Request,
 	) -> Result<PolicyResponse, crate::proxy::ProxyResponse> {
+		if let Some(response) = self.handle_backchannel_logout(req).await {
+			return Ok(response);
+		}
 		if let Some(response) = self
 			.handle_logout(req)
 			.map_err(crate::proxy::ProxyResponse::from)?

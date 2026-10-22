@@ -1,24 +1,8 @@
-import { getConfig } from '../config';
-import { PostHog } from 'posthog-node';
-import { v4 as uuidv4 } from 'uuid';
 import { getLogger } from '@server/utils';
 import { IContext } from '../types';
 
 const logger = getLogger('TELEMETRY');
 logger.level = 'debug';
-
-const config = getConfig();
-
-const {
-  userUUID,
-  telemetryEnabled,
-  wrenAIVersion,
-  generationModel,
-  wrenEngineVersion,
-  wrenUIVersion,
-  posthogApiKey,
-  posthogHost,
-} = config;
 
 export enum TelemetryEvent {
   // onboarding
@@ -101,77 +85,25 @@ export interface ITelemetry {
   ) => void;
 }
 
-export class PostHogTelemetry {
-  private readonly posthog: any;
-  private readonly userId: string;
-
+// DD-133 §1: the Kailo build sends no product telemetry to the upstream
+// vendor. The original event calls remain as no-ops so that no business path
+// changes; TELEMETRY_ENABLED / POSTHOG_* are no longer consumed.
+export class PostHogTelemetry implements ITelemetry {
   constructor() {
-    if (telemetryEnabled) {
-      if (!posthogApiKey) {
-        logger.debug('Telemetry enabled but posthogApiKey not provided.');
-        return;
-      }
-      const client = new PostHog(posthogApiKey, {
-        host: posthogHost || 'https://us.posthog.com',
-      });
-      this.posthog = client;
-      this.userId = userUUID || uuidv4();
-      logger.info(`Telemetry initialized: ${this.userId}`);
-      return;
-    }
-    logger.info('Telemetry not enabled.');
+    logger.info('Upstream product telemetry is not part of this build.');
   }
 
   public async sendEvent(
-    event: TelemetryEvent,
-    properties: Record<string, any> = {},
-    service: WrenService | any = WrenService.UNKNOWN,
-    actionSuccess: boolean = true,
+    _event: TelemetryEvent,
+    _properties: Record<string, any> = {},
+    _service: WrenService | any = WrenService.UNKNOWN,
+    _actionSuccess: boolean = true,
   ) {
-    if (!this.posthog) {
-      return;
-    }
-    const eventName = actionSuccess ? `${event}_success` : `${event}_failed`;
-    try {
-      console.log('sendEvent', eventName, properties, service, actionSuccess);
-      const systemInfo = this.collectSystemInfo();
-      this.posthog.capture({
-        distinctId: this.userId,
-        event: eventName,
-        properties: {
-          ...systemInfo,
-          ...properties,
-          wren_service: service,
-        },
-      });
-    } catch (e) {
-      logger.error(e);
-    }
-  }
-
-  private collectSystemInfo(): Record<string, any> {
-    return {
-      // collect services version
-      'wren-ui-version': wrenUIVersion || null,
-      'wren-engine-version': wrenEngineVersion || null,
-      'wren-ai-service-version': wrenAIVersion || null,
-
-      // collect AI model info
-      'generation-model': generationModel || null,
-
-      // collect some system info from process module
-      node_version: process.version,
-      node_platform: process.platform,
-      node_arch: process.arch,
-      memory_usage: process.memoryUsage(),
-      cpu_usage: process.cpuUsage(),
-    };
+    return;
   }
 
   public stop() {
-    if (this.posthog) {
-      this.posthog.shutdown();
-    }
+    return;
   }
 }
 
