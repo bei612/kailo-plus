@@ -3,6 +3,8 @@
     <div class="section-header">
       <h2>{{ $t('userProfile.title') }}</h2>
       <p class="section-description">{{ $t('userProfile.description') }}</p>
+      <!-- Kailo mode: profile comes from the Kailo identity and is refreshed on every login. -->
+      <p v-if="kailoMode" class="section-description">{{ kailoManagedText }}</p>
     </div>
 
     <!-- Loading -->
@@ -67,7 +69,8 @@
       </div>
 
       <!-- 修改密码：与其它 setting-row 同款只读行 + 编辑入口，表单进原地 popup -->
-      <div class="setting-row">
+      <!-- Kailo mode: no local password exists (DD-133 §2). -->
+      <div v-if="!kailoMode" class="setting-row">
         <div class="setting-info">
           <label>{{ $t('userProfile.changePassword.label') }}</label>
           <p class="desc">
@@ -170,6 +173,8 @@
 </template>
 
 <script setup lang="ts">
+import { kailoConfig } from '@/kailo/runtime'
+import { kailoText } from '@/kailo/strings'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -188,6 +193,9 @@ import { newPasswordRules } from '@/utils/passwordPolicy'
 const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const kailoMode = kailoConfig().mode
+const kailoManagedText = computed(() => kailoText('managedByKailo', locale.value, kailoConfig().displayName))
 
 const userInfo = ref<UserInfo | null>(null)
 const complexPasswordEnabled = ref(false)

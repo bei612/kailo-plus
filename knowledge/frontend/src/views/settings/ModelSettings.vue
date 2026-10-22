@@ -27,7 +27,7 @@
             ? 'modelSettings.builtinModels.descriptionAdmin'
             : 'modelSettings.builtinModels.description') }}
         </p>
-        <a class="doc-link" href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank"
+        <a v-if="SHOW_UPSTREAM_LINKS" class="doc-link" href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank"
           rel="noopener noreferrer">
           {{ $t('modelSettings.builtinModels.viewGuide') }}
           <t-icon name="link" class="link-icon" />
@@ -267,6 +267,7 @@
 </template>
 
 <script setup lang="ts">
+import { SHOW_UPSTREAM_LINKS } from '@/kailo/surface'
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { AddIcon, PlayCircleIcon } from 'tdesign-icons-vue-next'

@@ -1,4 +1,5 @@
 import type { DeploymentCapabilityKey } from './deploymentCapabilities'
+import { WHITE_LABEL_HIDDEN_INTEGRATIONS } from '../kailo/surface'
 
 export const CHROME_EXTENSION_URL =
   'https://chromewebstore.google.com/detail/jpemjbopikggjlmikmclgbmkhhopjdgd?utm_source=item-share-cb'
@@ -27,8 +28,11 @@ export type IntegrationPreviewIcon =
   | { type: 'icon'; name: string }
   | { type: 'emoji'; value: string }
 
-/** Sidebar hover preview + Integrations modal nav — add new entries here. */
-export const INTEGRATION_PREVIEW_ITEMS: Array<{
+/**
+ * Sidebar hover preview + Integrations modal nav — add new entries here.
+ * White-label: upstream-ecosystem tabs (CLI, browser extension, claw) are not listed.
+ */
+const ALL_INTEGRATION_PREVIEW_ITEMS: Array<{
   key: IntegrationTab
   icon: IntegrationPreviewIcon
 }> = [
@@ -40,3 +44,7 @@ export const INTEGRATION_PREVIEW_ITEMS: Array<{
   { key: 'chrome', icon: { type: 'icon', name: 'extension' } },
   { key: 'claw', icon: { type: 'emoji', value: '🦞' } },
 ]
+
+export const INTEGRATION_PREVIEW_ITEMS = ALL_INTEGRATION_PREVIEW_ITEMS.filter(
+  (item) => !WHITE_LABEL_HIDDEN_INTEGRATIONS.has(item.key),
+)

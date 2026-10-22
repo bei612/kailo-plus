@@ -20,6 +20,10 @@ const currentTheme = ref<ThemeMode>(loadTheme())
 
 let lastEffective: 'light' | 'dark' | null = null
 
+// Kailo host theme (DD-133 §4): when the Kailo host supplies a theme it wins
+// over the native preference and is never persisted as a native preference.
+let hostTheme: 'light' | 'dark' | null = null
+
 function getSystemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
@@ -61,10 +65,12 @@ function syncWailsNativeChrome(effective: 'light' | 'dark') {
 }
 
 function applyTheme(mode: ThemeMode) {
-  const effective = mode === 'system' ? getSystemTheme() : mode
+  const effective = hostTheme ?? (mode === 'system' ? getSystemTheme() : mode)
   if (lastEffective === effective) return
   lastEffective = effective
   document.documentElement.setAttribute('theme-mode', effective)
+  // Kailo token CSS keys its dark palette on the `dark` class.
+  document.documentElement.classList.toggle('dark', effective === 'dark')
   syncWailsNativeChrome(effective)
 }
 
@@ -78,6 +84,17 @@ export function useTheme() {
   }
 
   return { currentTheme, setTheme }
+}
+
+/** Applies the Kailo host theme; it overrides the native preference until cleared. */
+export function setHostTheme(mode: 'light' | 'dark' | null) {
+  hostTheme = mode === 'light' || mode === 'dark' ? mode : null
+  applyTheme(currentTheme.value)
+}
+
+/** True while the Kailo host controls the theme. */
+export function isHostThemeActive(): boolean {
+  return hostTheme !== null
 }
 
 /** Call once in main.ts to initialise theme and listen for OS changes. */

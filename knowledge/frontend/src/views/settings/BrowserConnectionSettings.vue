@@ -18,7 +18,7 @@
             <div class="product-heading">
               <div class="product-name">
                 <strong>BrowserSkill</strong>
-                <a class="product-link" href="https://github.com/Tencent/BrowserSkill" target="_blank"
+                <a v-if="SHOW_UPSTREAM_LINKS" class="product-link" href="https://github.com/Tencent/BrowserSkill" target="_blank"
                   rel="noopener noreferrer" aria-label="BrowserSkill">
                   <t-icon name="jump" size="14px" />
                 </a>
@@ -131,6 +131,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { SHOW_UPSTREAM_LINKS } from '@/kailo/surface'
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { get, post, getDown } from '@/utils/request'

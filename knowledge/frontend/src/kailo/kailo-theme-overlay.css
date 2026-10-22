@@ -1,0 +1,129 @@
+/*
+ * Kailo design-token overlay (DD-133 §4).
+ *
+ * Maps the native TDesign / app variables onto the Kailo design tokens. The
+ * token values themselves come only from /kailo/kailo-theme-tokens.css, which
+ * is generated from client-kit at build time; this file holds no colours.
+ *
+ * Token structure (client-kit theme variables): HSL triplets used as
+ * hsl(var(--x)) — --background, --foreground, --card, --card-foreground,
+ * --popover, --popover-foreground, --primary, --primary-foreground,
+ * --secondary, --secondary-foreground, --muted, --muted-foreground, --accent,
+ * --accent-foreground, --destructive, --border, --input, --ring, --radius,
+ * --sidebar-background, --sidebar-foreground, --sidebar-accent,
+ * --sidebar-border. Light values sit on :root, dark values on the `.dark`
+ * class, which useTheme toggles together with theme-mode. The native CSS does
+ * not define any of these bare names, so there is no clash.
+ *
+ * The overlay only applies after the token stylesheet has loaded
+ * (index.html sets html[data-kailo-tokens] in the <link> onload); without it
+ * the native palette stays intact instead of resolving to invalid values.
+ *
+ * Specificity: the native theme uses :root:root and
+ * :root:root[theme-mode="dark"] (0,3,0); the overlay uses (0,4,0) so one rule
+ * covers both modes, the dark values arriving through the `.dark` tokens.
+ *
+ * Not mapped on purpose: warning/success scales (client-kit exposes no
+ * stable token names for them yet) and the TDesign shadow set (client-kit
+ * has no shadow tokens); they keep the native values.
+ */
+:root:root:root[data-kailo-tokens] {
+  /* Brand scale: 4 is the base, 1-3 tints toward the background, 5-10 shades toward the foreground. */
+  --td-brand-color-1: color-mix(in srgb, hsl(var(--primary)) 12%, hsl(var(--background)));
+  --td-brand-color-2: color-mix(in srgb, hsl(var(--primary)) 30%, hsl(var(--background)));
+  --td-brand-color-3: color-mix(in srgb, hsl(var(--primary)) 85%, hsl(var(--background)));
+  --td-brand-color-4: hsl(var(--primary));
+  --td-brand-color-5: color-mix(in srgb, hsl(var(--primary)) 85%, hsl(var(--foreground)));
+  --td-brand-color-6: color-mix(in srgb, hsl(var(--primary)) 70%, hsl(var(--foreground)));
+  --td-brand-color-7: color-mix(in srgb, hsl(var(--primary)) 55%, hsl(var(--foreground)));
+  --td-brand-color-8: color-mix(in srgb, hsl(var(--primary)) 40%, hsl(var(--foreground)));
+  --td-brand-color-9: color-mix(in srgb, hsl(var(--primary)) 30%, hsl(var(--foreground)));
+  --td-brand-color-10: color-mix(in srgb, hsl(var(--primary)) 20%, hsl(var(--foreground)));
+  --td-brand-color: var(--td-brand-color-4);
+  --td-brand-color-hover: var(--td-brand-color-3);
+  --td-brand-color-active: var(--td-brand-color-5);
+  --td-brand-color-light: var(--td-brand-color-1);
+  --td-brand-color-disabled: color-mix(in srgb, hsl(var(--primary)) 40%, hsl(var(--background)));
+  --td-brand-color-focus: color-mix(in srgb, hsl(var(--ring)) 25%, transparent);
+  --brand-main: hsl(var(--primary));
+
+  /* Error = Kailo destructive. */
+  --td-error-color-1: color-mix(in srgb, hsl(var(--destructive)) 10%, hsl(var(--background)));
+  --td-error-color-2: color-mix(in srgb, hsl(var(--destructive)) 22%, hsl(var(--background)));
+  --td-error-color-3: color-mix(in srgb, hsl(var(--destructive)) 40%, hsl(var(--background)));
+  --td-error-color-4: color-mix(in srgb, hsl(var(--destructive)) 60%, hsl(var(--background)));
+  --td-error-color-5: color-mix(in srgb, hsl(var(--destructive)) 85%, hsl(var(--background)));
+  --td-error-color-6: hsl(var(--destructive));
+  --td-error-color-7: color-mix(in srgb, hsl(var(--destructive)) 85%, hsl(var(--foreground)));
+  --td-error-color-8: color-mix(in srgb, hsl(var(--destructive)) 70%, hsl(var(--foreground)));
+  --td-error-color-9: color-mix(in srgb, hsl(var(--destructive)) 55%, hsl(var(--foreground)));
+  --td-error-color-10: color-mix(in srgb, hsl(var(--destructive)) 40%, hsl(var(--foreground)));
+  --td-error-color: var(--td-error-color-6);
+  --td-error-color-hover: var(--td-error-color-5);
+  --td-error-color-active: var(--td-error-color-7);
+  --td-error-color-focus: var(--td-error-color-2);
+  --td-error-color-disabled: var(--td-error-color-3);
+  --td-error-color-light: var(--td-error-color-1);
+
+  /* Surfaces. */
+  --td-bg-color-page: hsl(var(--background));
+  --td-bg-color-container: hsl(var(--card));
+  --td-bg-color-container-select: hsl(var(--card));
+  --td-bg-color-container-hover: hsl(var(--accent));
+  --td-bg-color-container-active: color-mix(in srgb, hsl(var(--foreground)) 10%, hsl(var(--card)));
+  --td-bg-color-secondarycontainer: hsl(var(--muted));
+  --td-bg-color-secondarycontainer-hover: hsl(var(--accent));
+  --td-bg-color-secondarycontainer-active: color-mix(in srgb, hsl(var(--foreground)) 12%, hsl(var(--muted)));
+  --td-bg-color-component: hsl(var(--input));
+  --td-bg-color-component-hover: color-mix(in srgb, hsl(var(--foreground)) 12%, hsl(var(--input)));
+  --td-bg-color-component-active: color-mix(in srgb, hsl(var(--foreground)) 24%, hsl(var(--input)));
+  --td-bg-color-component-disabled: hsl(var(--muted));
+  --td-bg-color-sidebar: hsl(var(--sidebar-background));
+  --td-bg-color-settings-modal: hsl(var(--popover));
+  --td-bg-color-specialcomponent: hsl(var(--card));
+  --td-mask-active: color-mix(in srgb, hsl(var(--foreground)) 40%, transparent);
+
+  /* Strokes. */
+  --td-component-stroke: hsl(var(--border));
+  --td-component-border: hsl(var(--input));
+  --td-border-level-1-color: hsl(var(--border));
+  --td-border-level-2-color: hsl(var(--input));
+
+  /* Text. */
+  --td-text-color-primary: hsl(var(--foreground));
+  --td-text-color-secondary: hsl(var(--muted-foreground));
+  --td-text-color-placeholder: color-mix(in srgb, hsl(var(--muted-foreground)) 75%, transparent);
+  --td-text-color-disabled: color-mix(in srgb, hsl(var(--muted-foreground)) 50%, transparent);
+  --td-text-color-anti: hsl(var(--primary-foreground));
+  --td-text-color-brand: hsl(var(--primary));
+  --td-text-color-link: hsl(var(--primary));
+  --td-font-gray-1: hsl(var(--foreground));
+  --td-font-gray-2: hsl(var(--muted-foreground));
+
+  /* Typography: the Kailo token sheet provides --font-sans when it defines one. */
+  --td-font-family: var(--font-sans, var(--app-font-family));
+  --td-font-family-medium: var(--font-sans, var(--app-font-family));
+
+  /* Radius follows Kailo --radius. */
+  --td-radius-small: calc(var(--radius) - 4px);
+  --td-radius-default: calc(var(--radius) - 2px);
+  --td-radius-medium: var(--radius);
+  --td-radius-large: calc(var(--radius) + 4px);
+  --td-radius-extraLarge: calc(var(--radius) + 8px);
+  --app-radius-xs: calc(var(--radius) - 6px);
+  --app-radius-sm: calc(var(--radius) - 4px);
+  --app-radius-md: calc(var(--radius) - 2px);
+  --app-radius-lg: var(--radius);
+  --app-radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Body text uses the Kailo font when the token sheet defines one. */
+:root:root:root[data-kailo-tokens] body,
+:root:root:root[data-kailo-tokens] #app {
+  font-family: var(--font-sans, var(--app-font-family));
+}
+
+/* Selection and focus rings follow Kailo --ring. */
+:root:root:root[data-kailo-tokens] ::selection {
+  background: color-mix(in srgb, hsl(var(--ring)) 30%, transparent);
+}

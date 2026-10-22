@@ -7,7 +7,8 @@
         <div class="header-title" style="--wails-draggable: drag">
           <div class="title-row" style="--wails-draggable: drag">
             <h2 style="--wails-draggable: drag">{{ $t('organization.title') }}</h2>
-            <div class="header-actions" style="--wails-draggable: no-drag">
+            <!-- Kailo mode (DD-133 §3): the Kailo tenant organization is created and joined automatically. -->
+            <div v-if="!kailoMode" class="header-actions" style="--wails-draggable: no-drag">
               <t-tooltip :content="canManageOrg ? $t('organization.joinOrg') : noPermissionTip" placement="bottom">
                 <t-button variant="text" theme="default" size="small" class="header-action-btn"
                   style="--wails-draggable: no-drag" :disabled="!canManageOrg" @click="handleJoinOrganization">
@@ -177,14 +178,14 @@
         <!-- 空状态（按筛选显示不同文案） -->
         <EmptyState v-else-if="!loading" icon="usergroup" :title="emptyStateTitle"
           :description="emptyStateDesc">
-          <t-tooltip :content="noPermissionTip" placement="top" :disabled="canManageOrg">
+          <t-tooltip v-if="!kailoMode" :content="noPermissionTip" placement="top" :disabled="canManageOrg">
             <t-button theme="default" variant="outline" class="org-join-btn" :disabled="!canManageOrg"
               @click="handleJoinOrganization">
               <template #icon><t-icon name="enter" /></template>
               {{ $t('organization.joinOrg') }}
             </t-button>
           </t-tooltip>
-          <t-tooltip :content="noPermissionTip" placement="top" :disabled="canManageOrg">
+          <t-tooltip v-if="!kailoMode" :content="noPermissionTip" placement="top" :disabled="canManageOrg">
             <t-button theme="primary" class="org-create-btn" :disabled="!canManageOrg" @click="handleCreateOrganization">
               <template #icon><img src="@/assets/img/organization-green.svg" class="org-create-icon" alt=""
                   aria-hidden="true" /></template>
@@ -434,6 +435,7 @@
 </template>
 
 <script setup lang="ts">
+import { kailoConfig } from '@/kailo/runtime'
 import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -460,6 +462,7 @@ const authStore = useAuthStore()
 
 // 后端 /api/v1/organizations 下的写操作（创建、加入、申请加入、邀请、审批、改设置等）
 // 在路由层都要求当前空间角色 ≥ admin。前端只用于 UI 渲染，安全边界仍在服务端。
+const kailoMode = kailoConfig().mode
 const canManageOrg = computed(
   () => authStore.hasRole('admin') || authStore.canAccessAllTenants
 )

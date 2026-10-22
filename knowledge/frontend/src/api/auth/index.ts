@@ -102,6 +102,8 @@ export interface UserPreferences {
   last_active_tenant_id?: number | null
   // oidc_only_login 为 true 表示账号由 OIDC 自动开通且用户尚未设置已知密码。
   oidc_only_login?: boolean
+  // locale is refreshed from the Kailo identity (OIDC `locale` claim) on every login.
+  locale?: string | null
 }
 
 // 用户信息接口
@@ -264,6 +266,9 @@ export interface AuthConfigResponse {
   success: boolean
   registration_mode: 'self_serve' | 'invite_only' | string
   complex_password_enabled: boolean
+  // Kailo mode (DD-133): no local credentials; the SPA starts OIDC itself.
+  local_auth_enabled?: boolean
+  oidc_auto_login?: boolean
 }
 
 export async function getAuthConfig(): Promise<AuthConfigResponse> {

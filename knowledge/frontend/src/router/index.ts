@@ -7,6 +7,14 @@ import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
 import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
 import { normalizeSettingsSection } from '@/config/settingsRoute'
+import { isKailoMode } from '@/kailo/runtime'
+import { sanitizeReturnTo } from '@/kailo/sso'
+
+// Kailo mode (DD-133 §2): the sign-in entry is a neutral page that starts
+// silent OIDC; the native login/register form is never rendered.
+const signInView = () => isKailoMode()
+  ? import('@/kailo/KailoSignIn.vue')
+  : import('../views/auth/Login.vue')
 
 /** Lite /桌面 WebView 硬刷新时可能只打开 `/`，用 session 记住上次页面以便恢复 */
 const LITE_LAST_PATH_KEY = 'weknora_lite_last_path'
@@ -53,7 +61,7 @@ const router = createRouter({
     {
       path: "/login",
       name: "login",
-      component: () => import("../views/auth/Login.vue"),
+      component: signInView,
       meta: { requiresAuth: false, requiresInit: false }
     },
     // Embed chat is a separate entry (embed.html + embed-main.ts), not this SPA.
@@ -65,7 +73,7 @@ const router = createRouter({
       // to switch into invite-register flow. Avoids a parallel page
       // that would duplicate the OIDC / language-switch / styling
       // surface for one extra field.
-      component: () => import("../views/auth/Login.vue"),
+      component: signInView,
       meta: { requiresAuth: false, requiresInit: false }
     },
     {
@@ -322,6 +330,12 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
+  // Kailo mode: no self-service registration; membership comes from Kailo.
+  if (isKailoMode() && to.path === '/register') {
+    next('/login')
+    return
+  }
+
   // Lite：硬刷新后若落在默认首页，恢复本次会话中最后访问的 /platform 子路径
   if (!liteDeepLinkRestoreDone) {
     liteDeepLinkRestoreDone = true
@@ -358,6 +372,10 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth === false || to.meta.requiresInit === false) {
     // 如果已登录用户访问登录页面，重定向到知识库列表页面
     if (to.path === '/login' && authStore.isLoggedIn) {
+      if (isKailoMode() && authStore.hasValidTenant && typeof to.query.redirect === 'string') {
+        next(sanitizeReturnTo(to.query.redirect))
+        return
+      }
       next(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
       return
     }
@@ -375,6 +393,12 @@ router.beforeEach(async (to, from, next) => {
             ? '/onboarding/workspace'
             : to.fullPath,
         )
+        return
+      }
+
+      // Kailo mode: keep the requested page as the OIDC return path.
+      if (isKailoMode()) {
+        next({ path: '/login', query: { redirect: to.fullPath } })
         return
       }
 

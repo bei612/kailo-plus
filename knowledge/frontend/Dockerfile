@@ -6,10 +6,13 @@
 # multi-arch CI (linux/amd64,linux/arm64) compiles Vite once on the runner
 # instead of qemu-emulating Node, and both runtime images share the same dist.
 #
+# Kailo build context is the REPOSITORY ROOT (knowledge/fork/upstream.yaml):
+# the Kailo logo is taken from web-client as a build input (DD-133 §1), and
+# knowledge/frontend/Dockerfile.dockerignore allow-lists exactly the inputs.
+#
 #   docker build --platform linux/amd64 \
 #     --build-arg VITE_FRONTEND_COMMIT=$(git rev-parse --short HEAD) \
-#     -t wechatopenai/weknora-ui:latest \
-#     frontend/
+#     -f knowledge/frontend/Dockerfile .
 #
 # Optional npm mirror (e.g. corporate registry):
 #   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
@@ -35,14 +38,14 @@ ENV VITE_IS_DOCKER=true
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 
 # The lockfile pins the remote SheetJS archive and its integrity hash.
-COPY package.json package-lock.json ./
+COPY knowledge/frontend/package.json knowledge/frontend/package-lock.json ./
 RUN if [ -n "$NPM_REGISTRY" ]; then \
       npm ci --registry="$NPM_REGISTRY"; \
     else \
       npm ci; \
     fi
 
-COPY . .
+COPY knowledge/frontend/ ./
 # After npm ci so a new commit hash does not bust the dependency layer.
 ARG VITE_FRONTEND_COMMIT=unknown
 ENV VITE_FRONTEND_COMMIT=${VITE_FRONTEND_COMMIT}
@@ -60,14 +63,23 @@ FROM nginx:1.30.3-alpine@sha256:0d3b80406a13a767339fbe2f41406d6c7da727ab89cf8fae
 
 COPY --from=builder /frontend/dist /usr/share/nginx/html
 
-COPY nginx.conf /etc/nginx/templates/default.conf.template
+# White-label (DD-133 §1): the Kailo logo is the same file the web-client
+# artifact serves as /app/app-icon.png (Vite copies public/ verbatim), copied
+# here at build time and never fetched cross-origin at runtime.
+COPY web-client/web/public/app-icon.png /usr/share/nginx/html/kailo/app-icon.png
+COPY web-client/web/public/app-icon.png /usr/share/nginx/html/favicon.ico
+# The Kailo token stylesheet (/kailo/kailo-theme-tokens.css, generated from
+# client-kit) is added here once the platform delivers its build output; until
+# then index.html's <link> 404s and the native palette stays intact.
+
+COPY knowledge/frontend/nginx.conf /etc/nginx/templates/default.conf.template
 
 # Copied outside templates/ on purpose: envsubst would eat $host and the other
 # nginx variables in it.
-COPY nginx-api-proxy.conf /etc/nginx/api-proxy.conf
-COPY nginx-http.conf /etc/nginx/conf.d/00-weknora-http.conf
+COPY knowledge/frontend/nginx-api-proxy.conf /etc/nginx/api-proxy.conf
+COPY knowledge/frontend/nginx-http.conf /etc/nginx/conf.d/00-weknora-http.conf
 
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY knowledge/frontend/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENV MAX_FILE_SIZE_MB=50

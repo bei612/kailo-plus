@@ -13,6 +13,13 @@ import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
 import { renderWorkspaceNotifyContent } from '@/utils/workspaceNotifyContent'
+import {
+  callbackPath,
+  nativeInvitationsEnabled,
+  nativeLoginNoticeEnabled,
+  resolveOIDCErrorRoute,
+  resolveSuccessRoute,
+} from '@/kailo/oidcCallback'
 
 // TDesign locale configs
 import enUSConfig from 'tdesign-vue-next/esm/locale/en_US'
@@ -100,7 +107,7 @@ const syncOIDCUserContext = async () => {
   }
 }
 
-const persistOIDCLoginResponse = async (response: any) => {
+const persistOIDCLoginResponse = async (response: any, returnPath = '') => {
   if (!response.token) {
     throw new Error(response.message || 'OIDC login failed')
   }
@@ -126,7 +133,9 @@ const persistOIDCLoginResponse = async (response: any) => {
   }
 
   await nextTick()
-  await router.replace(authStore.hasValidTenant ? '/platform/knowledge-bases' : '/onboarding/workspace')
+  await router.replace(authStore.hasValidTenant
+    ? resolveSuccessRoute(returnPath, '/platform/knowledge-bases')
+    : '/onboarding/workspace')
 }
 
 const handleGlobalOIDCCallback = async () => {
@@ -140,7 +149,19 @@ const handleGlobalOIDCCallback = async () => {
 
   if (!oidcError && !oidcResult) return
 
+  // Kailo mode: the backend returns to the requested page (return_to).
+  const returnPath = callbackPath(window.location)
+
   if (oidcError) {
+    // Kailo mode never shows a login form: a silent failure asks the Kailo
+    // host to sign in again (or restarts interactively at top level).
+    const kailoRoute = resolveOIDCErrorRoute(oidcError, params.get('oidc_prompt'), returnPath, { win: window as never })
+    if (kailoRoute !== null) {
+      if (kailoRoute === '') return
+      clearOIDCCallbackState('/login')
+      await router.replace(kailoRoute)
+      return
+    }
     clearOIDCCallbackState('/login')
     await router.replace('/login')
     MessagePlugin.error(oidcErrorDescription || 'OIDC login failed')
@@ -158,20 +179,24 @@ const handleGlobalOIDCCallback = async () => {
     const response = decodeOIDCResult(oidcResult)
     if (response.success) {
       clearOIDCCallbackState('/')
-      await persistOIDCLoginResponse(response)
-      notifyLoginSuccess(response, t, tm, formatRole, roleIcon)
+      await persistOIDCLoginResponse(response, returnPath)
+      if (nativeLoginNoticeEnabled()) notifyLoginSuccess(response, t, tm, formatRole, roleIcon)
       return
     }
 
+    // Kailo mode: a failed login shows the neutral error state; sending the
+    // user to /login would restart sign-in and loop.
+    const kailoFailure = resolveOIDCErrorRoute('login_failed', null, returnPath, { win: window as never })
     clearOIDCCallbackState('/login')
-    await router.replace('/login')
-    MessagePlugin.error(response.message || 'OIDC login failed')
+    await router.replace(kailoFailure || '/login')
+    if (kailoFailure === null) MessagePlugin.error(response.message || 'OIDC login failed')
   } catch (error: any) {
     console.error('Global OIDC callback handling failed:', error)
     authStore.logout()
+    const kailoFailure = resolveOIDCErrorRoute('login_failed', null, returnPath, { win: window as never })
     clearOIDCCallbackState('/login')
-    await router.replace('/login')
-    MessagePlugin.error(error.message || 'OIDC login failed')
+    await router.replace(kailoFailure || '/login')
+    if (kailoFailure === null) MessagePlugin.error(error.message || 'OIDC login failed')
   }
 }
 
@@ -186,7 +211,7 @@ let invitationPollTimer: ReturnType<typeof setInterval> | null = null
 const INVITATION_POLL_INTERVAL_MS = 2 * 60 * 1000
 
 const startInvitationPolling = () => {
-  if (invitationPollTimer || !authStore.isLoggedIn) return
+  if (invitationPollTimer || !authStore.isLoggedIn || !nativeInvitationsEnabled()) return
   // Immediate fetch so the badge is correct before the first tick.
   authStore.fetchPendingInvitationCount()
   invitationPollTimer = setInterval(() => {
