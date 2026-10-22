@@ -134,7 +134,7 @@ const handleCreateInstruction = async (
     : await components.instructionService.createInstruction({
         ...data,
         projectId: project.id,
-        ownerKey: standaloneOwnerKey(req),
+        ...(standaloneOwnerKey(req) ? { ownerKey: standaloneOwnerKey(req) } : {}),
       });
 
   // Return the created instruction directly

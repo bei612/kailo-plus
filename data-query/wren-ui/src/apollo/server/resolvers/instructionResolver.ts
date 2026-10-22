@@ -76,7 +76,8 @@ export class InstructionResolver {
         questions,
         isDefault,
         projectId: project.id,
-        ownerKey: ctx.kailoUser?.key ?? null,
+        // DD-133 §3: recorded only when the Kailo user is known.
+        ...(ctx.kailoUser?.key ? { ownerKey: ctx.kailoUser.key } : {}),
       },
       ctx.nativeProjectCheck,
     );

@@ -810,7 +810,8 @@ export class AskingService implements IAskingService {
         {
           projectId: project.id,
           summary: input.question,
-          ownerKey: input.ownerKey ?? null,
+          // DD-133 §3: recorded only when the Kailo user is known.
+          ...(input.ownerKey ? { ownerKey: input.ownerKey } : {}),
         },
         { tx },
       );

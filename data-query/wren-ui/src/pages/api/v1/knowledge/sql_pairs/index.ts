@@ -87,7 +87,7 @@ const handleCreateSqlPair = async (
   const newSqlPair = await sqlPairService.createSqlPair(project.id, {
     sql,
     question,
-    ownerKey: standaloneOwnerKey(req),
+    ...(standaloneOwnerKey(req) ? { ownerKey: standaloneOwnerKey(req) } : {}),
   });
 
   // Return the created SQL pair directly
