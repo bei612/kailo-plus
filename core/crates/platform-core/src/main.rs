@@ -187,6 +187,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .connect(&database_url)
         .await?;
+    // DD-134(3)⑥：Gateway ConfigResource 写入证据与 Core 业务库同一连接池。
+    gateway_admin::history::install(pool.clone());
 
     let agent_runtime = agent_runtime::Supervisor::from_env()?.map(std::sync::Arc::new);
     let capacity = std::sync::Arc::new(capacity::Capacity::from_env()?);

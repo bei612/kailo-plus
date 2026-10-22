@@ -896,13 +896,16 @@ pub(crate) async fn create_dispatch(
             _ => Err(unavailable()),
         };
         if credential.is_err()
-            || gateway
-                .admin(
+            || crate::gateway_admin::history::scope(
+                ae.id,
+                ae.operation_id,
+                gateway.admin(
                     &["api", "config", "routes", &ae.target_id.to_string()],
                     Some(Value::Array(desired)),
-                )
-                .await
-                .is_err()
+                ),
+            )
+            .await
+            .is_err()
         {
             return creation_unknown(tx, &ae, def).await;
         }
@@ -1743,6 +1746,12 @@ pub(crate) async fn provision(
     step.enter("model_route.installation_scope");
     let (route_id, tenant, workspace, agent) =
         installation_scope(state, installation, version, generation, Some(action)).await?;
+    // DD-134(3)⑥：本投影的 key 写入归属到该安装动作。
+    let operation: Uuid =
+        sqlx::query_scalar("select operation_id from admission.action_execution where id=$1")
+            .bind(action)
+            .fetch_one(&state.pool)
+            .await?;
     step.enter("model_route.lifecycle_lock");
     // Tenant/Workspace 生命周期锁与下方真实 membership 锁共同覆盖外部授信。
     // NO KEY UPDATE 仍阻止状态修改，并允许内层 intent 的外键 KEY SHARE 检查。
@@ -2010,7 +2019,7 @@ pub(crate) async fn provision(
         // be two identical scope/hash rows, which find_key rejects as CONFLICT
         // (fail closed) rather than binding either one. The lock spans this
         // re-dispatch so concurrent reconcilers cannot each re-send.
-        gateway.create_key(&key).await?;
+        crate::gateway_admin::history::scope(action, operation, gateway.create_key(&key)).await?;
         lock.commit().await?;
     } else if existing.is_none() {
         // 提交后才跨外部边界；失败/超时均不撤掉已落的 dispatch fence。
@@ -2023,7 +2032,7 @@ pub(crate) async fn provision(
         .execute(&mut *lock)
         .await?;
         lock.commit().await?;
-        gateway.create_key(&key).await?;
+        crate::gateway_admin::history::scope(action, operation, gateway.create_key(&key)).await?;
     } else {
         lock.commit().await?;
     }
@@ -2383,6 +2392,11 @@ impl Gateway {
             .extend(segments);
         let bearer = self.tokens.token().await.map_err(|_| unavailable())?;
         let client = reqwest::Client::new();
+        // DD-134(3)⑥：写入成功后回读并追加 Core 写入证据。
+        let written = body
+            .as_ref()
+            .filter(|_| crate::gateway_admin::history::enabled())
+            .cloned();
         let request = match body {
             Some(value) => client.put(url).json(&value),
             None => client.get(url),
@@ -2396,7 +2410,119 @@ impl Gateway {
         if !response.status().is_success() {
             return Err(unavailable());
         }
+        let value = response.json().await.map_err(|_| unavailable())?;
+        if let Some(body) = written {
+            self.record_written(segments, &body).await;
+        }
+        Ok(value)
+    }
+
+    /// 只读 SS-AGW-ADMIN 查询中需要 POST 请求体的接口（request log 检索与单条读取）。
+    pub(crate) async fn admin_post(&self, segments: &[&str], body: &Value) -> Result<Value, Refusal> {
+        let mut url = self.admin.clone();
+        url.path_segments_mut()
+            .map_err(|_| unavailable())?
+            .pop_if_empty()
+            .extend(segments);
+        let bearer = self.tokens.token().await.map_err(|_| unavailable())?;
+        let response = reqwest::Client::new()
+            .post(url)
+            .json(body)
+            .bearer_auth(bearer)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|_| unavailable())?;
+        if !response.status().is_success() {
+            return Err(unavailable());
+        }
         response.json().await.map_err(|_| unavailable())
+    }
+
+    /// 已成功的 ConfigResource 写入：按 kind 回读，记录被写入行的 revision 与打码值。
+    async fn record_written(&self, segments: &[&str], body: &Value) {
+        let groups: Vec<(String, Vec<Value>)> = match segments {
+            ["api", "config", "resources", kind] => vec![(
+                (*kind).to_owned(),
+                body.get("resources")
+                    .and_then(Value::as_array)
+                    .map(|rows| rows.iter().filter_map(|row| row.get("value").cloned()).collect())
+                    .unwrap_or_default(),
+            )],
+            ["api", "config", "routes", _] => {
+                let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
+                for entry in body.as_array().into_iter().flatten() {
+                    let (Some(kind), Some(value)) =
+                        (entry.get("kind").and_then(Value::as_str), entry.get("value"))
+                    else {
+                        continue;
+                    };
+                    match groups.iter_mut().find(|(k, _)| k == kind) {
+                        Some((_, values)) => values.push(value.clone()),
+                        None => groups.push((kind.to_owned(), vec![value.clone()])),
+                    }
+                }
+                groups
+            }
+            _ => return,
+        };
+        for (kind, values) in groups {
+            match self.evidence_rows(&kind).await {
+                Some(rows) => {
+                    let written = crate::gateway_admin::history::match_written(&kind, &values, &rows);
+                    crate::gateway_admin::history::record(written).await;
+                }
+                None => tracing::warn!(kind = %kind, "写入后回读 ConfigResource 失败，未保存写入证据"),
+            }
+        }
+    }
+
+    /// 证据回读：独立的 GET，不经 `admin`，避免写入路径与回读互相递归。
+    async fn evidence_rows(&self, kind: &str) -> Option<Vec<Value>> {
+        let mut url = self.admin.clone();
+        url.path_segments_mut()
+            .ok()?
+            .pop_if_empty()
+            .extend(["api", "config", "resources", kind]);
+        let bearer = self.tokens.token().await.ok()?;
+        let response = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(bearer)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let body: Value = response.json().await.ok()?;
+        body.get("resources").and_then(Value::as_array).cloned()
+    }
+
+    /// 删除前的当前 revision；软删除把 revision 加 1（SF-AGW-28）。
+    async fn revisions_before_delete(&self, segments: &[&str]) -> Vec<(String, String, i64)> {
+        let targets: Vec<(&str, &str)> = match segments {
+            ["api", "config", "resources", kind, id] => vec![(*kind, *id)],
+            ["api", "config", "routes", id] => ["llm.provider", "llm.model", "llm.virtualModel"]
+                .into_iter()
+                .map(|kind| (kind, *id))
+                .collect(),
+            _ => return Vec::new(),
+        };
+        let mut found = Vec::new();
+        for (kind, id) in targets {
+            let Some(rows) = self.evidence_rows(kind).await else {
+                continue;
+            };
+            if let Some(revision) = rows
+                .iter()
+                .find(|row| row.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|row| row.get("revision").and_then(Value::as_i64))
+            {
+                found.push((kind.to_owned(), id.to_owned(), revision));
+            }
+        }
+        found
     }
 
     pub(crate) async fn resources(&self, kind: &str) -> Result<Vec<Value>, Refusal> {
@@ -2811,6 +2937,11 @@ impl Gateway {
     }
 
     pub(crate) async fn admin_delete(&self, segments: &[&str]) -> Result<(), Refusal> {
+        let before = if crate::gateway_admin::history::enabled() {
+            self.revisions_before_delete(segments).await
+        } else {
+            Vec::new()
+        };
         let mut url = self.admin.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?
@@ -2827,6 +2958,20 @@ impl Gateway {
         // Neither 2xx nor 404 is terminal; retire performs independent stored/effective absence reads.
         if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
             return Err(unavailable());
+        }
+        if response.status().is_success() && !before.is_empty() {
+            crate::gateway_admin::history::record(
+                before
+                    .into_iter()
+                    .map(|(kind, id, revision)| crate::gateway_admin::history::Written {
+                        kind,
+                        id,
+                        revision: revision + 1,
+                        value: None,
+                    })
+                    .collect(),
+            )
+            .await;
         }
         Ok(())
     }
