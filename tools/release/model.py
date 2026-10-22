@@ -229,6 +229,62 @@ def databases_for(services, targets):
     return out
 
 
+def drift_policy(decl, service):
+    """release.yaml services.<服务>.drift（ADR-20 §8）：converge（缺省）漂移即重建；report 只报告，
+    重建需要发布之外的专用流程（例如重建即封存的 OpenBao）。"""
+    value = str((decl["services"].get(service) or {}).get("drift") or "converge")
+    if value not in ("converge", "report"):
+        raise ReleaseError(f"{DECLARATIONS}: services.{service}.drift 只能是 converge 或 report")
+    return value
+
+
+def _dependency_order(services, chosen):
+    """chosen 内的依赖在前（按 depends_on 传递闭包，经过未选中的服务也算），其余按 compose 定义顺序。"""
+    left = sorted(chosen, key=lambda s: services[s]["order"])
+    out = []
+    while left:
+        ready = [s for s in left if not _depends_on_any(services, s, set(left) - {s})]
+        if not ready:
+            raise ReleaseError(f"compose depends_on 有环：{left}")
+        out.append(ready[0])
+        left.remove(ready[0])
+    return out
+
+
+def _depends_on_any(services, service, others):
+    seen, stack = set(), [service]
+    while stack:
+        for dep in services.get(stack.pop(), {}).get("depends_on") or {}:
+            if dep in others:
+                return True
+            if dep not in seen and dep in services:
+                seen.add(dep)
+                stack.append(dep)
+    return False
+
+
+def converge_plan(services, drift, targets, managed, decl=None):
+    """配置漂移服务如何收敛（ADR-20 §8）→ dict(targets, before, after, report)：
+      report    声明 drift: report 的服务，只报告；
+      targets   原镜像替换对象 + 漂移的受管服务（同一替换路径：命令、一次性前置、回读），按 03 §7 排序；
+      before    其余漂移服务中不依赖任何替换对象的（基础设施），依赖在前，先于替换对象重建；
+      after     依赖某个替换对象的，替换对象之后重建，依赖在前。"""
+    decl = decl or declarations()
+    report = [s for s in drift if drift_policy(decl, s) == "report"]
+    act = [s for s in drift if s not in report]
+    merged = deploy_order(services, sorted(set(targets) | {s for s in act if s in managed}), decl)
+    rest = [s for s in act if s not in merged]
+    after = [s for s in rest if _depends_on_any(services, s, set(merged))]
+    before = [s for s in rest if s not in after]
+    return dict(targets=merged, before=_dependency_order(services, before),
+                after=_dependency_order(services, after), report=sorted(report, key=lambda s: services[s]["order"]))
+
+
+def converge_databases(services, plan):
+    """备份对象的补充：本身因配置漂移被重建的 Postgres 服务（数据在卷中保留，重建前照例先备份）。"""
+    return [s for s in plan["before"] + plan["after"] if is_postgres(services[s])]
+
+
 def deploy_order(services, targets, decl=None):
     """03 §7：order.first 的镜像 → 其余 → order.last 的镜像；同组按 compose 定义顺序。"""
     decl = decl or declarations()
