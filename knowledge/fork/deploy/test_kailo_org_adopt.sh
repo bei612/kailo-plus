@@ -10,23 +10,23 @@ here=$(cd "$(dirname "$0")" && pwd)
 app_image=${1:?knowledge-service image providing /usr/local/bin/migrate}
 pg_image=paradedb/paradedb@sha256:58bf87d2a6f1e72f56590b0f0ae1467e82c3f99ca203dde646672c8ac13148b2
 docker=${DOCKER:-docker}
-run=kailo-adopt-test-$$
-net=$run-net pg=$run-pg
-cleanup() { $docker rm -f "$pg" >/dev/null 2>&1 || true; $docker network rm "$net" >/dev/null 2>&1 || true; }
+pg=kailo-adopt-test-$$
+cleanup() { $docker rm -f "$pg" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-$docker network create "$net" >/dev/null
-$docker run -d --name "$pg" --network "$net" --tmpfs /var/lib/postgresql/data \
+# No network of its own: the migrate container joins the database's
+# namespace and reaches it on localhost.
+$docker run -d --name "$pg" --network none --tmpfs /var/lib/postgresql/data \
     -e POSTGRES_USER=weknora -e POSTGRES_DB=weknora -e POSTGRES_PASSWORD=fixture "$pg_image" >/dev/null
 for _ in $(seq 1 60); do
     $docker exec "$pg" pg_isready -U weknora -d weknora >/dev/null 2>&1 && break
     sleep 2
 done
 sleep 3
-$docker run --rm --network "$net" --entrypoint /usr/local/bin/migrate \
+$docker run --rm --network "container:$pg" --entrypoint /usr/local/bin/migrate \
     -v "$here/../../migrations:/m:ro" "$app_image" \
-    -path /m/versioned -database "postgres://weknora:fixture@$pg:5432/weknora?sslmode=disable" up >/dev/null
+    -path /m/versioned -database "postgres://weknora:fixture@127.0.0.1:5432/weknora?sslmode=disable" up >/dev/null
 
 psql() { $docker exec -i "$pg" psql -X -q -At -v ON_ERROR_STOP=1 -U weknora -d weknora "$@"; }
 psql <<'SQL'
