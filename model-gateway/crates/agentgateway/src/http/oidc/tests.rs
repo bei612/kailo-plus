@@ -123,8 +123,8 @@ fn test_policy() -> OidcPolicy {
 		session,
 		scopes: vec!["openid".into(), "profile".into()],
 		ui_locales: None,
-		end_session_endpoint: None,
 		backchannel_logout: None,
+		end_session_endpoint: None,
 	}
 }
 
@@ -1562,6 +1562,7 @@ async fn end_session_requires_a_discovered_end_session_endpoint() {
 		redirect_uri: "http://localhost:3000/oauth/callback".into(),
 		scopes: vec![],
 		ui_locales: None,
+		backchannel_logout: None,
 		login: None,
 		logout: logout(end_session),
 	};
@@ -1588,6 +1589,8 @@ async fn end_session_requires_a_discovered_end_session_endpoint() {
 	.await
 	.expect_err("explicit provider has no end session endpoint");
 	assert!(err.to_string().contains("logout.endSession requires"));
+}
+
 // Kailo DD-133(6) (`.design/07` §4.7.5): OIDC Back-Channel Logout receiver.
 mod backchannel_logout {
 	use super::*;
