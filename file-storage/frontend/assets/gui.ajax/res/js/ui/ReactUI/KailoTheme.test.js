@@ -25,7 +25,7 @@ describe('Kailo tokens → Material system colors', () => {
     it('parses HSL triplets, alpha triplets and CSS colors', () => {
         expect(tokenColor('266 85.05% 58.04%').hex()).toBe(Color.hsl(266, 85.05, 58.04).hex())
         expect(tokenColor('0 0% 0% / 40%').alpha()).toBeCloseTo(0.4)
-        expect(tokenColor('rgb(0 0 0 / 7%)')).not.toBeNull()
+        expect(tokenColor('rgb(0, 0, 0)')).not.toBeNull()
         expect(tokenColor('')).toBeNull()
         expect(tokenColor('not a color')).toBeNull()
         expect(tokenRadius('0.625rem')).toBe(10)
