@@ -132,6 +132,43 @@ textarea.ant-input::placeholder {
   background: var(--kailo-color-accent);
 }
 
+// Split borders and the tooltip: antd derives these with Less colour
+// functions, so they stay compiled and are mapped here instead.
+.ant-table-thead > tr > th,
+.ant-table-tbody > tr > td,
+.ant-table-container,
+.ant-card-head,
+.ant-card-bordered,
+.ant-modal-header,
+.ant-modal-footer,
+.ant-drawer-header,
+.ant-drawer-footer,
+.ant-divider,
+.ant-list-split .ant-list-item,
+.ant-collapse,
+.ant-collapse > .ant-collapse-item,
+.ant-menu-inline,
+.ant-menu-vertical,
+.ant-pagination-item,
+.ant-dropdown-menu-item-divider {
+  border-color: var(--kailo-color-border);
+}
+
+.ant-tabs-top > .ant-tabs-nav::before,
+.ant-divider-horizontal.ant-divider-with-text::before,
+.ant-divider-horizontal.ant-divider-with-text::after {
+  border-color: var(--kailo-color-border);
+}
+
+.ant-tooltip {
+  --antd-arrow-background-color: var(--kailo-color-foreground);
+}
+
+.ant-tooltip-inner {
+  background-color: var(--kailo-color-foreground);
+  color: var(--kailo-color-background);
+}
+
 pre,
 code,
 .ace_editor {

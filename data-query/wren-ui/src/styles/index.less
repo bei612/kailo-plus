@@ -30,8 +30,8 @@
 @import './utilities/spacing.less';
 @import './utilities/border.less';
 
-// DD-133 §4: the original Wren overrides again after the variable build (it
-// redefines every theme variable), then the Kailo token mapping, last.
-@import (multiple) './antd-variables.less';
+// DD-133 §4: the Kailo token mapping, last. The variable theme itself is
+// imported once, by the prepended antd-variables.less, so the original Wren
+// overrides that follow it there stay in force.
 @import './kailo/antd-theme.less';
 @import './kailo/overlay.less';
