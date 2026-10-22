@@ -29,7 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/pydio/cells/v5/common"
-	"github.com/pydio/cells/v5/common/auth"
+	nativeauth "github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/commons/idmc"
 	"github.com/pydio/cells/v5/common/config"
@@ -103,11 +103,11 @@ func (dfi *BaseFileInfoResponseBuilder) Build(ctx context.Context, n *tree.Node,
 	// Editors show the Kailo name and avatar of the account (07 §4.7.3):
 	// UserExtraInfo.avatar is the OIDC picture address, never a native binary.
 	if claims.Subject != "" {
-		if name, picture := kailoIdentity(ctx, claims.Subject); name != "" || auth.IsNativeOIDCPicture(picture) {
+		if name, picture := kailoIdentity(ctx, claims.Subject); name != "" || nativeauth.IsNativeOIDCPicture(picture) {
 			if name != "" {
 				f.UserFriendlyName = name
 			}
-			if auth.IsNativeOIDCPicture(picture) {
+			if nativeauth.IsNativeOIDCPicture(picture) {
 				f.UserExtraInfo = map[string]interface{}{"avatar": picture}
 			}
 		}
