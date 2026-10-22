@@ -59,6 +59,7 @@ import { installationLabels, validInstallation } from "./agent-installation-view
 import { InstallationSessions } from "./agent-activity/InstallationSessions";
 import { AgentLifecycleSection } from "./agent-activity/AgentLifecycleControls";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
+import { InstallationSkills, SkillsSection, validSkillVersion } from "./skills";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowsListSkeleton } from "./workflow-list-skeleton";
 import { WorkflowFormCanvas, type WorkflowFormCanvasHandle } from "./workflow-form-canvas";
@@ -237,6 +238,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
           onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
           onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
       </AgentManagementDialog>
+      {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
+      <SkillsSection locked={blocked || versionEdit !== null} />
       <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
       <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
         <ToolManagement />
@@ -2268,6 +2271,7 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
   const client = useBffClient();
   const t = useT();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [state, reload] = useLoad(`agent-installation:${workspaceId}:${resourceId}`, () => client.agentInstallation(resourceId));
   const row = state.status === "ok" && validInstallation(state.data) && state.data.resourceId === resourceId
     && state.data.workspaceId === workspaceId ? state.data : null;
@@ -2308,6 +2312,8 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
     <AgentLifecycleSection installation={row} name={row.agentDisplayName?.trim() ?? ""} locked={locked} onRecorded={reload} />
     {toolsOpen ? <InstallationTools installation={row} locked={locked} onRegrant={onRegrant} />
       : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setToolsOpen(true)}>{t("agents.installation.tools.open")}</Button>}
+    {skillsOpen ? <InstallationSkills installationId={row.resourceId} locked={locked} />
+      : <Button className="w-fit" disabled={locked} aria-expanded={false} onClick={() => setSkillsOpen(true)}>{t("skills.installation.open")}</Button>}
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
     <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
@@ -2724,6 +2730,9 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const [toolIds, setToolIds] = useState<string[]>([]);
   const [toolOffsets, setToolOffsets] = useState([0]);
   const [toolIndex, setToolIndex] = useState(0);
+  const [skillIds, setSkillIds] = useState<string[]>([]);
+  const [skillOffsets, setSkillOffsets] = useState([0]);
+  const [skillIndex, setSkillIndex] = useState(0);
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
   const [intent, setIntent] = useState<ActionCommand | null>(null);
@@ -2740,6 +2749,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     setCoreWrite(content?.memoryPolicy.coreWrite ?? ""); setColdWrite(content?.memoryPolicy.coldWrite ?? "");
     setTriggers(content?.triggerDefaults ?? []); setCapabilities(content?.capabilityRequirements ?? []);
     setToolIds(content?.declaredToolResourceIds ?? []); setToolOffsets([0]); setToolIndex(0);
+    setSkillIds(content?.skillVersionAssetIds ?? []); setSkillOffsets([0]); setSkillIndex(0);
     setOffsets(edit?.configurationOffsets ?? [0]); setIndex((edit?.configurationOffsets.length ?? 1) - 1);
   }, [edit]);
   const offset = offsets[index] ?? 0;
@@ -2756,6 +2766,23 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
     && new Set(tools.data.flatMap((page) => page.tools.map((tool) => tool.resourceId))).size
       === tools.data.reduce((total, page) => total + page.tools.length, 0) ? tools.data : null;
   const toolPage = toolPages?.[toolIndex];
+  // DD-135(4)：同一快照内的可读已发布 Skill 版本；不可用不当作空集，翻页不丢已选引用。
+  const [skillsLoaded, reloadSkills] = useLoad(`version-skills:${edit?.definition.resourceId ?? "none"}:${edit?.version?.assetId ?? "new"}:${edit?.mode ?? "none"}:${skillOffsets.join(",")}`,
+    () => edit && edit.mode !== "retire" ? Promise.all(skillOffsets.map((value) => client.skillReferences(value))) : Promise.resolve([]));
+  const skillPages = skillsLoaded.status === "ok" && skillsLoaded.data.length === skillOffsets.length
+    && skillsLoaded.data.every((page, pageIndex) => !!page && Array.isArray(page.versions)
+      && page.versions.every((version) => validSkillVersion(version) && version.state === AgentVersionState.Published)
+      && (page.nextOffset === undefined || (Number.isSafeInteger(page.nextOffset) && page.nextOffset > (skillOffsets[pageIndex] ?? 0)))
+      && (pageIndex === 0 || skillsLoaded.data[pageIndex - 1]?.nextOffset === skillOffsets[pageIndex])) ? skillsLoaded.data : null;
+  const skillPage = skillPages?.[skillIndex];
+  const availableSkills = skillPages?.flatMap((page) => page.versions) ?? [];
+  const selectedSkills = skillIds.map((id) => availableSkills.find((version) => version.assetId === id));
+  const missingSkillCapabilities = [...new Set(selectedSkills.flatMap((version) => version?.capabilityRequirements ?? []))]
+    .filter((key) => !capabilities.includes(key));
+  const skillsValid = skillIds.length <= 16 && new Set(skillIds).size === skillIds.length
+    && (skillIds.length === 0 || (!!skillPages && selectedSkills.every((version) => version !== undefined)))
+    && new Set(selectedSkills.map((version) => version?.skillResourceId)).size === skillIds.length
+    && missingSkillCapabilities.length === 0;
   const availableTools = toolPages?.flatMap((page) => page.tools).filter(selectableTool) ?? [];
   const source = edit && configuration.status === "ok" && configuration.data
     && validVersionConfiguration(configuration.data, edit.definition, offset) ? configuration.data : null;
@@ -2776,8 +2803,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const permitted = retiring ? edit?.version?.state === AgentVersionState.Published && edit.version.canRetire === true
     : !!edit && !!source && source.routes.length > 0
       && (edit.version ? edit.version.state === AgentVersionState.Draft && (publishing ? edit.version.canPublish === true : edit.version.canUpdate === true) : source.canCreate);
-  const sourceContent = edit?.version?.content;
-  const supported = (!sourceContent || sourceContent.skillVersionAssetIds.length === 0)
+  const supported = skillsValid
     && (toolIds.length === 0 || (!!toolPages && toolIds.every((id) => availableTools.some((tool) => tool.resourceId === id))));
   const integer = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
   const advancedValid = supported && !!contract
@@ -2801,7 +2827,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
       instructions, runtimeProfileKey: profileKey, modelRouteResourceId: routeId, replyPolicy: reply,
       parallelism: Number(parallelism), turnLimits: { idleTimeoutSeconds: Number(idle), maxTurnDurationSeconds: Number(duration) },
       memoryPolicy: { coreWrite: corePolicy, coldWrite: coldPolicy },
-      capabilityRequirements: [...capabilities], triggerDefaults: [...triggers], skillVersionAssetIds: [], declaredToolResourceIds: [...toolIds],
+      capabilityRequirements: [...capabilities], triggerDefaults: [...triggers], skillVersionAssetIds: [...skillIds], declaredToolResourceIds: [...toolIds],
     };
     setIntent(command); setSubmission(null); setFailure(null); onLocked(true);
   };
@@ -2863,6 +2889,10 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
       <p>{t("agents.version.coldWrite")}: {coldWrite === AgentMemoryColdWrite.Disabled ? t("agents.version.coldDisabled") : t("agents.version.coldInvocation")}</p>
       <p className="break-words">{t("agents.version.capabilities")}: {capabilities.join(", ") || "—"}</p>
       <p className="break-words">{t("agents.tools.selected")}: {toolIds.join(", ") || "—"}</p>
+      <p className="break-words">{t("agents.version.skillReferences")}: {skillIds.map((id) => {
+        const version = availableSkills.find((value) => value.assetId === id);
+        return version ? `$${version.stableSlug} v${version.ordinal}` : id;
+      }).join(", ") || "—"}</p>
       <p>{t("agents.version.triggers")}: {triggers.map((trigger) => t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")).join(", ") || "—"}</p>
       <pre className="whitespace-pre-wrap break-words">{instructions}</pre>
       <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
@@ -2876,14 +2906,14 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
         : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
         : <form id={formId} className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
           {avatarHost ? <AvatarHostProvider value={avatarHost(edit.version)}><AgentCreationPreview avatarUrl={avatar || null} label={name.trim() || t("agents.identity.name")}
-            assetLabel={t("platform.profile.avatar")} disabled={publishing || !permitted || avatarUploading || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0}
+            assetLabel={t("platform.profile.avatar")} disabled={publishing || !permitted || avatarUploading}
             onSelectAvatar={setAvatar} onClearAvatar={() => setAvatar("")} onUploadPendingChange={setAvatarUploading} />
           </AvatarHostProvider> : null}
           <div className="space-y-5">
           {!permitted || !supported ? <Notice>{t("agents.version.createUnavailable")}</Notice> : null}
-          <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="flex flex-col gap-3">
+          <fieldset disabled={publishing || !permitted} className="flex flex-col gap-3">
             <AgentIdentityFields displayName={name} onDisplayNameChange={setName} description={description}
-              onDescriptionChange={setDescription} disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} />
+              onDescriptionChange={setDescription} disabled={publishing || !permitted} />
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-instructions`}>{t("agents.identity.instructions")}</label>
               <div className={PERSONA_FIELD_SHELL_CLASS}>
@@ -2903,7 +2933,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
           </fieldset>
             <AgentDefinitionAdvanced key={`${edit.definition.resourceId}:${edit.version?.assetId ?? "new"}:${edit.mode}`}
               required={!advancedValid}>
-            <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="space-y-5">
+            <fieldset disabled={publishing || !permitted} className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-reply`}>{t("agents.version.replyPolicy")}</label>
               <PersonaDropdownField id={`${formId}-reply`} value={reply} onValueChange={setReply} placeholder={t("agents.automation.select")}
@@ -2925,6 +2955,38 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.triggers")}</legend>{Object.values(AgentTrigger).map((trigger) => <label className="flex gap-2" key={trigger}><input type="checkbox" checked={triggers.includes(trigger)} onChange={(event) => setTriggers((values) => event.target.checked ? [...values, trigger] : values.filter((value) => value !== trigger))} />{t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")}</label>)}</fieldset>
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.capabilities")}</legend>{contract?.capabilityRequirements.map((key) => <label className="flex gap-2" key={key}><input type="checkbox" checked={capabilities.includes(key)} onChange={(event) => setCapabilities((values) => event.target.checked ? [...values, key] : values.filter((value) => value !== key))} />{key}</label>)}</fieldset>
             <p className="text-sm text-muted-foreground">{t("agents.version.toolsUnavailable")}</p>
+            <fieldset className="flex flex-col gap-2 text-sm" data-testid="agent-version-skills"><legend>{t("skills.version.select")}</legend>
+              <p className="text-xs text-muted-foreground">{t("skills.version.selectHint")}</p>
+              {skillIds.map((id) => {
+                const version = availableSkills.find((value) => value.assetId === id);
+                return <div key={id} className="flex flex-wrap items-center gap-2">
+                  <span className="break-all">{version ? `$${version.stableSlug} · v${version.ordinal}` : <span className="font-mono text-xs">{id}</span>}</span>
+                  {!version && skillPages ? <span>{t("skills.version.unavailable")}</span> : null}
+                  <Button onClick={() => setSkillIds((values) => values.filter((value) => value !== id))}>{t("skills.version.remove")}</Button>
+                </div>;
+              })}
+              {skillIds.length > 16 || new Set(selectedSkills.map((version) => version?.skillResourceId)).size !== skillIds.length
+                ? <p role="alert">{t("skills.version.limit")}</p> : null}
+              {missingSkillCapabilities.length > 0 ? <p role="alert" className="break-words">{t("skills.version.capabilityMissing")} {missingSkillCapabilities.join(", ")}</p> : null}
+              <Button className="w-fit" onClick={reloadSkills}>{t("platform.refresh")}</Button>
+              {skillsLoaded.status === "pending" ? <p role="status">{t("platform.loading")}</p>
+                : !skillPage ? <p role="status">{t("platform.loadFailed")}</p>
+                : <>
+                  {skillPage.versions.length === 0 ? <p>{t("skills.version.none")}</p> : skillPage.versions.map((version) =>
+                    <label className="flex gap-2" key={version.assetId}><input type="checkbox" checked={skillIds.includes(version.assetId)}
+                      onChange={(event) => setSkillIds((values) => event.target.checked
+                        ? [...values.filter((id) => availableSkills.find((value) => value.assetId === id)?.skillResourceId !== version.skillResourceId), version.assetId]
+                        : values.filter((id) => id !== version.assetId))} />
+                      <span className="break-words"><code>${version.stableSlug}</code> · v{version.ordinal} · {version.shortDescription ?? version.description}</span></label>)}
+                  <div className="flex flex-wrap gap-2">
+                    {skillIndex > 0 ? <Button onClick={() => setSkillIndex(skillIndex - 1)}>{t("roles.previous")}</Button> : null}
+                    {skillPage.nextOffset != null ? <Button onClick={() => {
+                      const next = skillPage.nextOffset!;
+                      setSkillOffsets((values) => [...values.slice(0, skillIndex + 1), next]); setSkillIndex(skillIndex + 1);
+                    }}>{t("roles.next")}</Button> : null}
+                  </div>
+                </>}
+            </fieldset>
             <fieldset className="flex flex-col gap-2 text-sm"><legend>{t("agents.tools.selected")}</legend>
               {toolIds.map((id) => <div key={id} className="flex flex-wrap items-center gap-2">
                 <span className="break-all font-mono text-xs">{id}</span>

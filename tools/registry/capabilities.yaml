@@ -69,6 +69,27 @@ capabilities:
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+- id: agent.skill_management
+  exposure: end_user
+  routes:
+  - /api/v1/skill-definitions
+  - /api/v1/skill-definitions/{resource_id}
+  - /api/v1/skill-definitions/{resource_id}/versions
+  - /api/v1/skill-definitions/{resource_id}/uploads
+  - /api/v1/skill-versions/{asset_id}
+  - /api/v1/skill-versions/{asset_id}/content
+  - /api/v1/skill-references
+  - /api/v1/agent-installations/{resource_id}/skills
+  actions:
+  - skill.definition.create
+  - skill.version.create
+  - skill.version.publish
+  - skill.version.retire
+  - skill.definition.disable
+  - skill.definition.share
+  - skill.definition.unshare
+  tools: []
+  workflow_kinds: []
 - id: collab.channel.management
   exposure: end_user
   routes:

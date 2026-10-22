@@ -106,6 +106,14 @@ import type {
   HuddleAnnouncementView,
   AgentTranscriptPage,
   AgentTranscriptEvent,
+  SkillDefinitionPage,
+  SkillDefinitionView,
+  SkillVersionPage,
+  SkillVersionView,
+  SkillVersionContentView,
+  SkillReferencePage,
+  SkillArtifactUploadView,
+  AgentInstallationSkillPage,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -310,6 +318,41 @@ export function createBffClient(transport: BffTransport) {
       get<AgentVersionPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/versions${offset !== undefined ? `?offset=${offset}` : ""}`),
     agentVersionConfiguration: (resourceId: string, offset?: number) =>
       get<AgentVersionConfigurationPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/version-configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
+
+    /** DD-135：Tenant 级 Skill 目录（逐项 discover 过滤）、定义与版本（fresh read；DRAFT 需版本 read）。 */
+    skillDefinitions: (offset?: number) =>
+      get<SkillDefinitionPage>(`/api/v1/skill-definitions${offset ? `?offset=${offset}` : ""}`),
+    skillDefinition: (resourceId: string) =>
+      get<SkillDefinitionView>(`/api/v1/skill-definitions/${encodeURIComponent(resourceId)}`),
+    skillVersions: (resourceId: string, offset?: number) =>
+      get<SkillVersionPage>(`/api/v1/skill-definitions/${encodeURIComponent(resourceId)}/versions${offset !== undefined ? `?offset=${offset}` : ""}`),
+    skillVersion: (assetId: string) =>
+      get<SkillVersionView>(`/api/v1/skill-versions/${encodeURIComponent(assetId)}`),
+    skillVersionContent: (assetId: string) =>
+      get<SkillVersionContentView>(`/api/v1/skill-versions/${encodeURIComponent(assetId)}/content`),
+    /** AgentVersion 编辑器的 Skill 选择目录：本人可读的 ACTIVE 定义下的 PUBLISHED 版本。 */
+    skillReferences: (offset?: number) =>
+      get<SkillReferencePage>(`/api/v1/skill-references${offset ? `?offset=${offset}` : ""}`),
+    /**
+     * DD-135(2)(3)：校验并一次性暂存一次上传；违规以 422 回同一视图（accepted=false），
+     * 不暂存字节、不创建版本。版本只经 skill.version.create 产生。
+     */
+    uploadSkillArtifact: async (resourceId: string, contentBase64: string): Promise<SkillArtifactUploadView> => {
+      const request: BffRequest = {
+        method: "POST",
+        path: `/api/v1/skill-definitions/${encodeURIComponent(resourceId)}/uploads`,
+        body: { contentBase64 },
+      };
+      const reply = await transport.send(request);
+      const body = reply.body as Partial<SkillArtifactUploadView> | undefined;
+      if ((reply.status === 422 || reply.status === 413) && body?.accepted === false && Array.isArray(body.violations)) {
+        return body as SkillArtifactUploadView;
+      }
+      return unwrap<SkillArtifactUploadView>(request, reply);
+    },
+    /** DD-135(7)：Installation 的 Skill 投影状态；读取不触发投影或重试。 */
+    agentInstallationSkills: (resourceId: string) =>
+      get<AgentInstallationSkillPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/skills`),
 
     /** Installation 是独立 Workspace Resource；读取不创建安装或启动 runtime。 */
     agentInstallations: (workspaceId: string, offset?: number) => {

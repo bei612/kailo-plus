@@ -1,0 +1,46 @@
+capability_id: agent.skill_management
+title: Skills 管理——Tenant 级 Skill 定义与不可变版本、上传校验、发布与目录分享，AgentVersion 引用与 Installation 的 SERVER_CODEX 技能投影
+stage: S5
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-03, V-REQ-05, V-REQ-09, V-REQ-11, V-REQ-15, V-REQ-24]
+  decisions: [DD-28, DD-135]
+  # DD-24/25/27/131 的跨能力合同由 agent.definition_management 归属；本记录只登记 Skill 决策。
+  facts: [SF-COD-07, SF-COD-14, SF-COD-18, SF-BUZ-12]
+  seams: []
+  blockers: []
+  entities: [SkillDefinition, SkillVersion, AgentVersion, AgentInstallation, AgentRuntimeProjection, EffectiveField, Resource, Asset, ResourceTypeDefinition, ActionExecution]
+
+validation:
+  # 新增场景只关联实现，未记为业务验收通过。
+  scenarios: [V-SCN-210, V-SCN-211, V-SCN-212, V-SCN-213, V-SCN-214, V-SCN-215, V-SCN-216, V-SCN-217]
+  evidence:
+    - dimension: 领域规则
+      ref: core/verify/skill-management.md
+    - dimension: 安全边界
+      ref: core/verify/skill-management.md
+    - dimension: 呈现
+      ref: core/verify/skill-management.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/skill_artifact.rs, core/crates/platform-core/src/skill_catalog.rs, core/crates/platform-core/src/skill_projection.rs, core/crates/platform-core/src/skill_query.rs, core/crates/platform-core/src/agent_version.rs, core/crates/platform-core/src/agent_installation.rs, core/crates/platform-core/src/agent_installation_query.rs, core/crates/platform-core/src/agent_runtime.rs, core/crates/platform-core/src/agent_task.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/governance_api.rs, core/crates/platform-core/src/spicedb.rs, core/crates/platform-core/src/audit.rs, core/crates/platform-core/src/audit_views.rs, core/crates/platform-core/src/agent_definition.rs, core/crates/platform-core/src/tenant_delete.rs, core/crates/platform-core/src/bff.rs, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/skills.tsx, client-kit/ts/platform/src/react/agents.tsx, client-kit/ts/platform/src/i18n.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/action_command.schema.json, contracts/domain/skill_version_upload_input.schema.json, contracts/api/skill_definition_view.schema.json, contracts/api/skill_definition_page.schema.json, contracts/api/skill_version_view.schema.json, contracts/api/skill_version_page.schema.json, contracts/api/skill_version_content_view.schema.json, contracts/api/skill_reference_page.schema.json, contracts/api/skill_artifact_upload_request.schema.json, contracts/api/skill_artifact_upload_view.schema.json, contracts/api/skill_artifact_violation.schema.json, contracts/api/agent_installation_skill_view.schema.json, contracts/api/agent_installation_skill_page.schema.json, contracts/enums/skill_definition_status.schema.json, contracts/enums/skill_artifact_encoding.schema.json, contracts/enums/skill_artifact_violation_code.schema.json, contracts/enums/agent_installation_skill_status.schema.json, contracts/enums/evidence_kind.schema.json]
+  migrations: [core/migrations/20261021140000_skill_management.up.sql, core/migrations/20261021140000_skill_management.down.sql]
+
+runtime:
+  # 七个动作全部 SYNC、HUMAN-only、无审批与计量；上传、目录、版本、正文与投影状态是只读查询。
+  routes: ["/api/v1/skill-definitions", "/api/v1/skill-definitions/{resource_id}", "/api/v1/skill-definitions/{resource_id}/versions", "/api/v1/skill-definitions/{resource_id}/uploads", "/api/v1/skill-versions/{asset_id}", "/api/v1/skill-versions/{asset_id}/content", "/api/v1/skill-references", "/api/v1/agent-installations/{resource_id}/skills"]
+  actions: [skill.definition.create, skill.version.create, skill.version.publish, skill.version.retire, skill.definition.disable, skill.definition.share, skill.definition.unshare]
+  tools: []
+  workflow_kinds: []
+
+release:
+  # 本批未构建；artifact 沿当前登记的 Web 产物，发布时由 release 流程统一回填。
+  artifacts:
+    - name: web-client
+      digest: sha256:9f6d0056e1990438c0865b24ac508a1daee6858589c7fad67e611e5a3a787acd
+  gate: blocked_until_seams_closed
