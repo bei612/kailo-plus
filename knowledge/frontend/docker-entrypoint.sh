@@ -27,30 +27,38 @@ validate_origin() {
   fi
 }
 
+# The same validated KAILO_FRAME_ANCESTORS are the Kailo Web origins the
+# platform runtime (kailo-embed.js) talks to: <meta name="kailo-web-origin">
+# (DD-133, design 07 §4.7.1). Only http(s) web origins go into the meta.
+KAILO_WEB_ORIGINS=""
 set -f
 for frame_origin in ${KAILO_FRAME_ANCESTORS:-}; do
   validate_origin KAILO_FRAME_ANCESTORS "$frame_origin"
   NATIVE_FRAME_CSP="$NATIVE_FRAME_CSP $frame_origin"
   NATIVE_FRAME_OPTIONS=
+  case "$frame_origin" in
+    https://*|http://*) KAILO_WEB_ORIGINS="${KAILO_WEB_ORIGINS:+$KAILO_WEB_ORIGINS }$frame_origin" ;;
+  esac
 done
 set +f
 export NATIVE_FRAME_CSP NATIVE_FRAME_OPTIONS
 
-# Kailo integration (DD-133). KAILO_ORIGINS are the exact Kailo origins the
-# page exchanges postMessage with; they default to the framing origins.
+# Render the meta from the pristine page kept at image build time, so a restart
+# with changed settings re-renders it. validate_origin admits only
+# [A-Za-z0-9.:-[]] after the scheme, so the value is safe in an HTML attribute
+# and as a sed replacement with the '|' delimiter; an empty list stays empty.
+if [ -f /etc/nginx/kailo/index.html.template ]; then
+  sed "s|__KAILO_WEB_ORIGIN__|${KAILO_WEB_ORIGINS}|g" /etc/nginx/kailo/index.html.template \
+    > /usr/share/nginx/html/index.html
+fi
+
+# Kailo integration runtime settings (DD-133).
 RUNTIME_KAILO_MODE=false
 case "${KAILO_MODE:-}" in
   true) RUNTIME_KAILO_MODE=true ;;
   ''|false) ;;
   *) echo 'Invalid KAILO_MODE (true|false)' >&2; exit 78 ;;
 esac
-RUNTIME_KAILO_ORIGINS=""
-set -f
-for kailo_origin in ${KAILO_ORIGINS:-${KAILO_FRAME_ANCESTORS:-}}; do
-  validate_origin KAILO_ORIGINS "$kailo_origin"
-  RUNTIME_KAILO_ORIGINS="${RUNTIME_KAILO_ORIGINS:+$RUNTIME_KAILO_ORIGINS }$kailo_origin"
-done
-set +f
 RUNTIME_KAILO_LOGOUT_URL=""
 if [ -n "${KAILO_LOGOUT_URL:-}" ]; then
   case "$KAILO_LOGOUT_URL" in
@@ -99,7 +107,6 @@ window.__RUNTIME_CONFIG__ = {
   DEFAULT_LOCALE: "${RUNTIME_DEFAULT_LOCALE}",
   KAILO_MODE: ${RUNTIME_KAILO_MODE},
   PLATFORM_DISPLAY_NAME: "${RUNTIME_DISPLAY_NAME}",
-  KAILO_ORIGINS: "${RUNTIME_KAILO_ORIGINS}",
   KAILO_LOGOUT_URL: "${RUNTIME_KAILO_LOGOUT_URL}"
 };
 EOF

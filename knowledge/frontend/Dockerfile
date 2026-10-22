@@ -7,7 +7,8 @@
 # instead of qemu-emulating Node, and both runtime images share the same dist.
 #
 # Kailo build context is the REPOSITORY ROOT (knowledge/fork/upstream.yaml):
-# the Kailo logo is taken from web-client as a build input (DD-133 §1), and
+# the Kailo logo (web-client) and the presentation tokens/runtime
+# (client-kit/embed) are build inputs (DD-133, design 07 §4.7.1), and
 # knowledge/frontend/Dockerfile.dockerignore allow-lists exactly the inputs.
 #
 #   docker build --platform linux/amd64 \
@@ -68,9 +69,12 @@ COPY --from=builder /frontend/dist /usr/share/nginx/html
 # here at build time and never fetched cross-origin at runtime.
 COPY web-client/web/public/app-icon.png /usr/share/nginx/html/kailo/app-icon.png
 COPY web-client/web/public/app-icon.png /usr/share/nginx/html/favicon.ico
-# The Kailo token stylesheet (/kailo/kailo-theme-tokens.css, generated from
-# client-kit) is added here once the platform delivers its build output; until
-# then index.html's <link> 404s and the native palette stays intact.
+# Kailo presentation tokens and runtime (client-kit/embed, design 07 §4.7.1),
+# build inputs served from this origin; nothing is fetched from Kailo at run time.
+COPY client-kit/embed/kailo-theme-tokens.css client-kit/embed/kailo-embed.js /usr/share/nginx/html/kailo/
+# Pristine page; docker-entrypoint.sh renders <meta name="kailo-web-origin">
+# from KAILO_FRAME_ANCESTORS into the served index.html on every start.
+RUN mkdir -p /etc/nginx/kailo && cp /usr/share/nginx/html/index.html /etc/nginx/kailo/index.html.template
 
 COPY knowledge/frontend/nginx.conf /etc/nginx/templates/default.conf.template
 

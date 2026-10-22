@@ -1,13 +1,14 @@
-// Silent single sign-on (DD-133 §2).
+// Silent single sign-on (DD-133 (2), design 07 §4.7.2).
 //
 // The native page never shows its own login UI in Kailo mode. Without a
 // session it starts the backend OIDC flow: inside the Kailo iframe with
 // `prompt=none` (silent, relying on the existing IdP session), at top level
 // interactively (the IdP login page is Kailo's login). When the silent attempt
-// reports that the IdP has no session, the page asks the Kailo host to sign
-// in again at top level instead of showing anything inside the iframe.
+// reports that the IdP has no session, the page asks Kailo to sign in again at
+// top level through the platform runtime (wire v1 `auth-required`) instead of
+// showing anything inside the iframe.
 
-import { postToHost, COMPONENT_ID, type HostMessage } from './bridge'
+import { requestTopLevelSignIn, type KailoEmbedRuntime } from './bridge'
 
 export const OIDC_START_PATH = '/api/v1/auth/oidc/start'
 export const DEFAULT_RETURN_PATH = '/platform/knowledge-bases'
@@ -89,19 +90,9 @@ export function decideOIDCErrorAction(ctx: OIDCErrorContext, apiBase = ''): OIDC
   return { kind: 'interactive', url: buildOIDCStartURL(ctx.returnTo, false, apiBase) }
 }
 
-export function authRequiredMessage(): HostMessage {
-  return { type: 'kailo:auth-required', component: COMPONENT_ID }
-}
-
-export function logoutRequestMessage(): HostMessage {
-  return { type: 'kailo:logout-request', component: COMPONENT_ID }
-}
-
-type HostWindow = Parameters<typeof postToHost>[0]
-
-/** Asks the Kailo host to sign the user in again at top level. */
-export function requestHostReauth(win: HostWindow, origins: readonly string[]): number {
-  return postToHost(win, origins, authRequiredMessage())
+/** Asks Kailo to sign the user in again at top level (runtime `auth-required`). */
+export function requestHostReauth(runtime: KailoEmbedRuntime | null): boolean {
+  return requestTopLevelSignIn(runtime)
 }
 
 export function signInRoute(state: KailoSignInState, returnTo?: string): string {
@@ -114,24 +105,22 @@ export function signInRoute(state: KailoSignInState, returnTo?: string): string 
 
 export type LogoutAction =
   | { kind: 'navigate'; url: string }
-  | { kind: 'request-host-logout' }
   | { kind: 'show-reauth' }
 
-/**
- * Logout always ends at Kailo (DD-133 §2). Kailo's own logout is a POST behind
- * its gateway, so a top-level page goes to the configured Kailo logout URL or
- * back to Kailo itself, where the user signs out. It never lands on the native
- * /login, which would silently sign straight back in. Inside the frame the
- * Kailo host is asked to log out.
- */
-export function decideLogoutAction(logoutUrl: string, origins: readonly string[], framed: boolean): LogoutAction {
-  if (framed) return { kind: 'request-host-logout' }
-  if (logoutUrl) return { kind: 'navigate', url: logoutUrl }
-  const home = origins.find(origin => origin.startsWith('http://') || origin.startsWith('https://'))
-  if (home) return { kind: 'navigate', url: `${home}/` }
-  return { kind: 'show-reauth' }
-}
+/** Kailo Web's post-logout landing path (design 07 §4.7.5: <PUBLIC_ORIGIN>/app/). */
+export const KAILO_APP_PATH = '/app/'
 
-export function requestHostLogout(win: HostWindow, origins: readonly string[]): number {
-  return postToHost(win, origins, logoutRequestMessage())
+/**
+ * Logout always ends at Kailo (DD-133 (2)). Kailo's own logout is a POST behind
+ * its gateway, so a top-level page goes to the configured Kailo logout URL or
+ * to Kailo Web (<origin>/app/), where the user signs out. It never lands on the
+ * native /login, which would silently sign straight back in. Inside the frame
+ * Kailo owns logout (the item is hidden; wire v1 has no logout message), so
+ * only the neutral state is shown.
+ */
+export function decideLogoutAction(logoutUrl: string, origins: readonly string[], embedded: boolean): LogoutAction {
+  if (embedded) return { kind: 'show-reauth' }
+  if (logoutUrl) return { kind: 'navigate', url: logoutUrl }
+  if (origins.length > 0) return { kind: 'navigate', url: `${origins[0]}${KAILO_APP_PATH}` }
+  return { kind: 'show-reauth' }
 }

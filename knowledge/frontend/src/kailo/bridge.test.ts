@@ -1,145 +1,103 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  installHostBridge,
+  connectHost,
+  identityLocaleForRuntime,
   isEmbedded,
-  isFramed,
+  kailoEmbed,
   mapKailoLocale,
-  parseHostLocale,
-  postToHost,
-  readHostPreferences,
-  SESSION_LOCALE_KEY,
-  SESSION_THEME_KEY,
+  offerIdentityLocale,
+  requestTopLevelSignIn,
 } from './bridge'
-import { normalizeOrigin, parseKailoRuntimeConfig } from './runtime'
+import { fakeRuntime } from './fakeKailoEmbed'
+import { normalizeOrigin, parseKailoRuntimeConfig, parseWebOrigins } from './runtime'
 
 const KAILO = 'http://192.168.0.193:58090'
 
-function memoryStorage(initial: Record<string, string> = {}) {
-  const data: Record<string, string> = { ...initial }
-  return {
-    data,
-    getItem: (key: string) => (key in data ? data[key] : null),
-    setItem: (key: string, value: string) => { data[key] = String(value) },
-  }
-}
-
-function fakeWindow(framed = true) {
-  const listeners: Array<(event: any) => void> = []
-  const posted: Array<{ message: unknown; origin: string }> = []
-  const parent = { postMessage: (message: unknown, origin: string) => { posted.push({ message, origin }) } }
-  const win: any = {
-    addEventListener: (_type: string, fn: (event: any) => void) => { listeners.push(fn) },
-    removeEventListener: (_type: string, fn: (event: any) => void) => {
-      const i = listeners.indexOf(fn)
-      if (i >= 0) listeners.splice(i, 1)
-    },
-  }
-  win.self = win
-  win.top = framed ? parent : win
-  win.parent = framed ? parent : win
-  const dispatch = (event: any) => listeners.slice().forEach(fn => fn(event))
-  return { win, parent, posted, listeners, dispatch }
-}
-
-test('runtime config accepts only exact origins and absolute http(s) logout URLs', () => {
+test('runtime config: logout URL validation and Kailo Web origins from the meta only', () => {
   assert.equal(normalizeOrigin(KAILO), KAILO)
   assert.equal(normalizeOrigin(KAILO + '/'), KAILO)
   assert.equal(normalizeOrigin(KAILO + '/app'), '')
-  assert.equal(normalizeOrigin('javascript:alert(1)'), '')
+  assert.equal(normalizeOrigin('tauri://localhost'), '')
   assert.equal(normalizeOrigin('http://user:pw@host'), '')
+  assert.deepEqual(parseWebOrigins(`${KAILO} ${KAILO} https://x.example/app __KAILO_WEB_ORIGIN__`), [KAILO])
+  assert.deepEqual(parseWebOrigins(''), [])
   const cfg = parseKailoRuntimeConfig({
     KAILO_MODE: 'true',
     PLATFORM_DISPLAY_NAME: ' Kailo ',
-    KAILO_ORIGINS: `${KAILO} ${KAILO} https://evil.example/x tauri://localhost`,
     KAILO_LOGOUT_URL: 'javascript:alert(1)',
-  })
+  }, KAILO)
   assert.equal(cfg.mode, true)
   assert.equal(cfg.displayName, 'Kailo')
-  assert.deepEqual(cfg.origins, [KAILO, 'tauri://localhost'])
+  assert.deepEqual(cfg.origins, [KAILO])
   assert.equal(cfg.logoutUrl, '')
   assert.equal(parseKailoRuntimeConfig(undefined).mode, false)
-  assert.equal(parseKailoRuntimeConfig({ KAILO_MODE: true }).mode, true)
-  assert.equal(parseKailoRuntimeConfig({ KAILO_LOGOUT_URL: `${KAILO}/app/logout` }).logoutUrl, `${KAILO}/app/logout`)
+  assert.deepEqual(parseKailoRuntimeConfig(undefined).origins, [])
+  assert.equal(parseKailoRuntimeConfig({ KAILO_LOGOUT_URL: `${KAILO}/app/` }).logoutUrl, `${KAILO}/app/`)
 })
 
-test('Kailo locale tags map onto the native locales', () => {
+test('the adapter only accepts a wire v1 runtime', () => {
+  const { runtime } = fakeRuntime()
+  assert.equal(kailoEmbed({ KailoEmbed: runtime }), runtime)
+  assert.equal(kailoEmbed({}), null)
+  assert.equal(kailoEmbed({ KailoEmbed: { ...runtime, version: 2 } }), null)
+  assert.equal(kailoEmbed(undefined), null)
+})
+
+test('embedded is the runtime marker on <html>', () => {
+  const doc = (attrs: string[]) => ({ documentElement: { hasAttribute: (n: string) => attrs.includes(n) } })
+  assert.equal(isEmbedded(doc(['data-kailo-embedded'])), true)
+  assert.equal(isEmbedded(doc([])), false)
+  assert.equal(isEmbedded(undefined), false)
+})
+
+test('only the two Kailo locales map onto native locales', () => {
   assert.equal(mapKailoLocale('zh-CN'), 'zh-CN')
-  assert.equal(mapKailoLocale('zh-Hans'), 'zh-CN')
   assert.equal(mapKailoLocale('en'), 'en-US')
-  assert.equal(mapKailoLocale('en-GB'), 'en-US')
-  assert.equal(mapKailoLocale('ja'), 'ja-JP')
-  assert.equal(mapKailoLocale('ko-KR'), 'ko-KR')
-  assert.equal(mapKailoLocale('ru'), 'ru-RU')
-  assert.equal(mapKailoLocale('de'), 'zh-CN')
-  assert.equal(mapKailoLocale(null), 'zh-CN')
-  assert.equal(parseHostLocale('en<script>'), null)
-  assert.equal(parseHostLocale('zh-CN'), 'zh-CN')
+  assert.equal(mapKailoLocale('en-US'), null)
+  assert.equal(mapKailoLocale('ja'), null)
+  assert.equal(mapKailoLocale(undefined), null)
+  assert.equal(identityLocaleForRuntime('zh-CN'), 'zh-CN')
+  assert.equal(identityLocaleForRuntime('zh'), 'zh-CN')
+  assert.equal(identityLocaleForRuntime('en'), 'en')
+  assert.equal(identityLocaleForRuntime('en-GB'), 'en')
+  assert.equal(identityLocaleForRuntime('de'), null)
+  assert.equal(identityLocaleForRuntime(null), null)
 })
 
-test('URL host preferences are persisted for the OIDC round trip and read back later', () => {
-  const storage = memoryStorage()
-  const first = readHostPreferences('?kailo_theme=dark&kailo_locale=en&kailo_embed=1', storage)
-  assert.deepEqual(first, { theme: 'dark', locale: 'en', embedRequested: true })
-  assert.equal(storage.data[SESSION_THEME_KEY], 'dark')
-  // After the IdP redirect the query string is gone; the session keeps the values.
-  assert.deepEqual(readHostPreferences('', storage), { theme: 'dark', locale: 'en', embedRequested: true })
-  // Invalid values are ignored and never stored.
-  const other = memoryStorage()
-  assert.deepEqual(readHostPreferences('?kailo_theme=neon&kailo_locale=%3Cx%3E', other),
-    { theme: null, locale: null, embedRequested: false })
-  assert.deepEqual(other.data, {})
-})
-
-test('framing detection treats cross-origin top access errors as framed', () => {
-  const { win } = fakeWindow(true)
-  assert.equal(isFramed(win), true)
-  const top = fakeWindow(false).win
-  assert.equal(isFramed(top), false)
-  assert.equal(isEmbedded(top, { embedRequested: true }), true)
-  const throwing = { self: {}, get top(): unknown { throw new Error('cross-origin') } }
-  assert.equal(isFramed(throwing), true)
-})
-
-test('host messages are accepted only from the parent window and a configured Kailo origin', () => {
-  const { win, parent, dispatch } = fakeWindow(true)
-  const storage = memoryStorage()
+test('connectHost applies the current state, then follows runtime changes until unsubscribed', () => {
+  const { runtime, host } = fakeRuntime({ theme: 'dark', locale: 'en' })
   const themes: string[] = []
   const locales: string[] = []
-  const stop = installHostBridge(win, [KAILO], {
-    onTheme: t => themes.push(t),
-    onLocale: l => locales.push(l),
-  }, storage)
-  dispatch({ source: parent, origin: 'https://evil.example', data: { type: 'kailo:theme', theme: 'dark' } })
-  dispatch({ source: {}, origin: KAILO, data: { type: 'kailo:theme', theme: 'dark' } })
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:theme', theme: 'neon' } })
-  dispatch({ source: parent, origin: KAILO, data: 'kailo:theme' })
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:unknown' } })
-  assert.deepEqual(themes, [])
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:theme', theme: 'dark' } })
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:locale', locale: 'en-US' } })
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:locale', locale: '../../x' } })
+  const stop = connectHost(runtime, { onTheme: t => themes.push(t), onLocale: l => locales.push(l) })
   assert.deepEqual(themes, ['dark'])
   assert.deepEqual(locales, ['en-US'])
-  assert.equal(storage.data[SESSION_THEME_KEY], 'dark')
-  assert.equal(storage.data[SESSION_LOCALE_KEY], 'en-US')
+  host.setTheme('light')
+  host.setLocale('zh-CN')
+  assert.deepEqual(themes, ['dark', 'light'])
+  assert.deepEqual(locales, ['en-US', 'zh-CN'])
   stop()
-  dispatch({ source: parent, origin: KAILO, data: { type: 'kailo:theme', theme: 'light' } })
-  assert.deepEqual(themes, ['dark'])
+  host.setTheme('dark')
+  assert.deepEqual(themes, ['dark', 'light'])
 })
 
-test('without configured origins the bridge does not listen at all', () => {
-  const { win, listeners } = fakeWindow(true)
-  installHostBridge(win, [], { onTheme: () => assert.fail('must not listen') })
-  assert.equal(listeners.length, 0)
+test('identity locale is offered to the runtime in its vocabulary and ignored once Kailo supplied one', () => {
+  const fresh = fakeRuntime()
+  const locales: string[] = []
+  connectHost(fresh.runtime, { onTheme: () => {}, onLocale: l => locales.push(l) })
+  assert.equal(offerIdentityLocale(fresh.runtime, 'en-GB'), true)
+  assert.deepEqual(fresh.calls.identity, ['en'])
+  assert.deepEqual(locales, ['zh-CN', 'en-US'])
+  assert.equal(offerIdentityLocale(fresh.runtime, 'de'), false, 'unsupported tags are not offered')
+  assert.deepEqual(fresh.calls.identity, ['en'])
+  const supplied = fakeRuntime({ supplied: true })
+  assert.equal(offerIdentityLocale(supplied.runtime, 'en'), false)
+  assert.equal(offerIdentityLocale(null, 'en'), false)
 })
 
-test('host messages are addressed to each configured origin, and never sent at top level', () => {
-  const framed = fakeWindow(true)
-  const sent = postToHost(framed.win, [KAILO, 'tauri://localhost'], { type: 'kailo:auth-required', component: 'knowledge' })
-  assert.equal(sent, 2)
-  assert.deepEqual(framed.posted.map(p => p.origin), [KAILO, 'tauri://localhost'])
-  assert.deepEqual(framed.posted[0].message, { type: 'kailo:auth-required', component: 'knowledge' })
-  const top = fakeWindow(false)
-  assert.equal(postToHost(top.win, [KAILO], { type: 'kailo:auth-required', component: 'knowledge' }), 0)
+test('top-level sign-in is requested through the runtime only', () => {
+  const { runtime, calls } = fakeRuntime()
+  assert.equal(requestTopLevelSignIn(runtime), true)
+  assert.equal(calls.signIn, 1)
+  assert.equal(requestTopLevelSignIn(null), false)
 })

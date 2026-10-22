@@ -203,8 +203,7 @@ import { SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE } from '@/config/settingsAccess'
 import { SKILL_ICON } from '@/types/mention'
 import { kailoConfig } from '@/kailo/runtime'
 import { isKailoEmbedded } from '@/kailo/setup'
-import { isFramed } from '@/kailo/bridge'
-import { decideLogoutAction, requestHostLogout, signInRoute } from '@/kailo/sso'
+import { decideLogoutAction, signInRoute } from '@/kailo/sso'
 
 const { t } = useI18n()
 
@@ -509,11 +508,9 @@ const handleLogout = async () => {
   // Kailo mode: logout always ends at Kailo (DD-133 §2).
   if (kailoMode) {
     const cfg = kailoConfig()
-    const action = decideLogoutAction(cfg.logoutUrl, cfg.origins, isFramed(window))
+    const action = decideLogoutAction(cfg.logoutUrl, cfg.origins, kailoEmbedded)
     if (action.kind === 'navigate') {
       window.location.assign(action.url)
-    } else if (action.kind === 'request-host-logout') {
-      requestHostLogout(window as never, cfg.origins)
     } else {
       router.push(signInRoute('reauth'))
     }

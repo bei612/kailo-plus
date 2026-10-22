@@ -1,8 +1,8 @@
-// OIDC callback decisions for the root component in Kailo mode (DD-133 §2).
+// OIDC callback decisions for the root component in Kailo mode (DD-133 (2)).
 // Kept free of Vue/store imports so it can be unit-tested with plain fakes.
 
 import { kailoConfig, type KailoRuntimeConfig } from './runtime'
-import { isEmbedded, readHostPreferences } from './bridge'
+import { isEmbedded, kailoEmbed } from './bridge'
 import {
   DEFAULT_RETURN_PATH,
   decideOIDCErrorAction,
@@ -11,15 +11,16 @@ import {
   signInRoute,
 } from './sso'
 
-type CallbackWindow = Parameters<typeof requestHostReauth>[0] & {
-  self?: unknown
-  top?: unknown
-  location: { search?: string; replace?: (url: string) => void }
-  sessionStorage?: Pick<Storage, 'getItem' | 'setItem'>
+type CallbackWindow = {
+  /** The platform runtime installed by kailo-embed.js. */
+  KailoEmbed?: unknown
+  location: { replace?: (url: string) => void }
 }
 
 export interface CallbackEnv {
   win: CallbackWindow
+  /** Defaults to the page document; the runtime marks <html data-kailo-embedded>. */
+  doc?: Parameters<typeof isEmbedded>[0]
   config?: KailoRuntimeConfig
   apiBase?: string
 }
@@ -44,12 +45,11 @@ export function resolveOIDCErrorRoute(
 ): string | null {
   const cfg = env.config ?? kailoConfig()
   if (!cfg.mode) return null
-  const prefs = readHostPreferences(env.win.location.search || '', env.win.sessionStorage)
-  const embedded = isEmbedded(env.win, prefs)
+  const embedded = isEmbedded(env.doc)
   const returnTo = sanitizeReturnTo(returnPath)
   const action = decideOIDCErrorAction({ code, prompt, embedded, returnTo }, env.apiBase ?? '')
   if (action.kind === 'request-host-reauth') {
-    requestHostReauth(env.win, cfg.origins)
+    requestHostReauth(kailoEmbed(env.win))
     return signInRoute('reauth', returnTo)
   }
   if (action.kind === 'interactive') {

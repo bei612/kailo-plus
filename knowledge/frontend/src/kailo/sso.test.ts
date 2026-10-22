@@ -11,11 +11,12 @@ import {
   SILENT_GUARD_KEY,
   SILENT_GUARD_MS,
 } from './sso'
-import { callbackPath, nativeInvitationsEnabled, resolveOIDCErrorRoute, resolveSuccessRoute } from './oidcCallback'
+import { callbackPath, nativeInvitationsEnabled, nativeLoginNoticeEnabled, resolveOIDCErrorRoute, resolveSuccessRoute } from './oidcCallback'
 import { parseKailoRuntimeConfig } from './runtime'
+import { fakeRuntime } from './fakeKailoEmbed'
 
 const KAILO = 'http://192.168.0.193:58090'
-const kailoMode = parseKailoRuntimeConfig({ KAILO_MODE: 'true', KAILO_ORIGINS: KAILO })
+const kailoMode = parseKailoRuntimeConfig({ KAILO_MODE: 'true' }, KAILO)
 const nativeMode = parseKailoRuntimeConfig({})
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -27,19 +28,13 @@ function memoryStorage(initial: Record<string, string> = {}) {
   }
 }
 
-function fakeWindow(framed: boolean, search = '') {
-  const posted: Array<{ message: unknown; origin: string }> = []
+/** Page with the platform runtime; `embedded` mirrors <html data-kailo-embedded>. */
+function page(embedded: boolean) {
+  const fake = fakeRuntime()
   const replaced: string[] = []
-  const parent = { postMessage: (message: unknown, origin: string) => { posted.push({ message, origin }) } }
-  const win: any = {
-    location: { search, replace: (url: string) => replaced.push(url) },
-    sessionStorage: memoryStorage(),
-    addEventListener() {}, removeEventListener() {},
-  }
-  win.self = win
-  win.top = framed ? parent : win
-  win.parent = framed ? parent : win
-  return { win, posted, replaced }
+  const win = { KailoEmbed: fake.runtime, location: { replace: (url: string) => { replaced.push(url) } } }
+  const doc = { documentElement: { hasAttribute: (name: string) => embedded && name === 'data-kailo-embedded' } }
+  return { win, doc, fake, replaced }
 }
 
 test('return paths are restricted to same-origin application paths', () => {
@@ -82,27 +77,28 @@ test('IdP error decisions: host re-auth in the frame, interactive restart at top
   }
 })
 
-test('callback in the frame asks the Kailo host to sign in again and shows the neutral state', () => {
-  const { win, posted, replaced } = fakeWindow(true)
-  const route = resolveOIDCErrorRoute('login_required', 'none', '/platform/agents', { win, config: kailoMode })
+test('silent failure in the frame calls KailoEmbed.requestTopLevelSignIn and shows the neutral state', () => {
+  const { win, doc, fake, replaced } = page(true)
+  const route = resolveOIDCErrorRoute('login_required', 'none', '/platform/agents', { win, doc, config: kailoMode })
   assert.equal(route, '/login?kailo_state=reauth&redirect=%2Fplatform%2Fagents')
-  assert.deepEqual(posted, [{ message: { type: 'kailo:auth-required', component: 'knowledge' }, origin: KAILO }])
+  assert.equal(fake.calls.signIn, 1)
   assert.deepEqual(replaced, [])
 })
 
-test('callback at top level restarts OIDC interactively and stays out of the SPA router', () => {
-  const { win, posted, replaced } = fakeWindow(false)
-  const route = resolveOIDCErrorRoute('login_required', 'none', '/platform/agents', { win, config: kailoMode })
+test('silent failure at top level restarts OIDC interactively and stays out of the SPA router', () => {
+  const { win, doc, fake, replaced } = page(false)
+  const route = resolveOIDCErrorRoute('login_required', 'none', '/platform/agents', { win, doc, config: kailoMode })
   assert.equal(route, '')
   assert.deepEqual(replaced, ['/api/v1/auth/oidc/start?return_to=%2Fplatform%2Fagents'])
-  assert.deepEqual(posted, [])
+  assert.equal(fake.calls.signIn, 0)
 })
 
 test('real login errors show the neutral error state; native mode keeps native handling', () => {
-  const { win } = fakeWindow(true)
-  assert.equal(resolveOIDCErrorRoute('kailo_org_missing', null, '/platform/agents', { win, config: kailoMode }),
+  const { win, doc, fake } = page(true)
+  assert.equal(resolveOIDCErrorRoute('kailo_org_missing', null, '/platform/agents', { win, doc, config: kailoMode }),
     '/login?kailo_state=error&redirect=%2Fplatform%2Fagents')
-  assert.equal(resolveOIDCErrorRoute('login_required', 'none', '/x', { win, config: nativeMode }), null)
+  assert.equal(fake.calls.signIn, 0)
+  assert.equal(resolveOIDCErrorRoute('login_required', 'none', '/x', { win, doc, config: nativeMode }), null)
 })
 
 test('successful callbacks land on the requested page in Kailo mode only', () => {
@@ -113,13 +109,14 @@ test('successful callbacks land on the requested page in Kailo mode only', () =>
   assert.equal(resolveSuccessRoute('/platform/agents', '/platform/knowledge-bases', nativeMode), '/platform/knowledge-bases')
   assert.equal(nativeInvitationsEnabled(kailoMode), false)
   assert.equal(nativeInvitationsEnabled(nativeMode), true)
+  assert.equal(nativeLoginNoticeEnabled(kailoMode), false)
+  assert.equal(nativeLoginNoticeEnabled(nativeMode), true)
 })
 
-test('logout always ends at Kailo and never at the native sign-in page', () => {
+test('logout always ends at Kailo Web and never at the native sign-in page', () => {
   assert.deepEqual(decideLogoutAction(`${KAILO}/app/logout`, [KAILO], false), { kind: 'navigate', url: `${KAILO}/app/logout` })
-  assert.deepEqual(decideLogoutAction('', [KAILO], false), { kind: 'navigate', url: `${KAILO}/` })
-  assert.deepEqual(decideLogoutAction('', ['tauri://localhost', KAILO], false), { kind: 'navigate', url: `${KAILO}/` })
-  assert.deepEqual(decideLogoutAction(`${KAILO}/app/logout`, [KAILO], true), { kind: 'request-host-logout' })
+  assert.deepEqual(decideLogoutAction('', [KAILO], false), { kind: 'navigate', url: `${KAILO}/app/` })
+  assert.deepEqual(decideLogoutAction(`${KAILO}/app/logout`, [KAILO], true), { kind: 'show-reauth' })
   assert.deepEqual(decideLogoutAction('', [], false), { kind: 'show-reauth' })
   assert.equal(signInRoute('reauth'), '/login?kailo_state=reauth')
   assert.equal(signInRoute('loading'), '/login')

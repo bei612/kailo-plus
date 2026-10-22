@@ -3,18 +3,12 @@
 import { watch } from 'vue'
 import { kailoConfig } from './runtime'
 import { productName } from './brand'
-import {
-  installHostBridge,
-  isEmbedded,
-  mapKailoLocale,
-  readHostPreferences,
-  type HostPreferences,
-} from './bridge'
+import { connectHost, isEmbedded, kailoEmbed, offerIdentityLocale } from './bridge'
 import { setHostTheme } from '@/composables/useTheme'
 
 let embedded = false
-let hostLocaleActive = false
 
+/** Inside the Kailo frame (<html data-kailo-embedded>, set by kailo-embed.js). */
 export function isKailoEmbedded(): boolean {
   return embedded
 }
@@ -26,7 +20,6 @@ function setI18nLocale(i18n: I18nLike, locale: string) {
   if (typeof g.locale === 'object' && g.locale !== null) g.locale.value = locale
   else (i18n.global as { locale: string }).locale = locale
   try { localStorage.setItem('locale', locale) } catch { /* storage unavailable */ }
-  try { document.documentElement.setAttribute('lang', locale) } catch { /* no DOM */ }
 }
 
 function currentLocale(i18n: I18nLike): string {
@@ -40,30 +33,22 @@ export function syncDocumentTitle(locale: string) {
 }
 
 /**
- * Applies white-label title, embedded-shell marker and, in Kailo mode, the
- * host theme/locale (URL parameters first, then live host messages).
+ * White-label title for every run; in Kailo mode the platform runtime
+ * (window.KailoEmbed) drives theme and locale: its current state first, then
+ * every change Kailo sends. The native theme preference is never written.
  */
-export function installKailo(i18n: I18nLike): HostPreferences {
+export function installKailo(i18n: I18nLike): void {
   const cfg = kailoConfig()
-  const prefs = readHostPreferences(window.location.search, window.sessionStorage)
-  embedded = isEmbedded(window, prefs)
-  if (embedded) document.documentElement.classList.add('kailo-embedded')
-  if (cfg.mode) document.documentElement.classList.add('kailo-mode')
-
+  embedded = isEmbedded()
   if (cfg.mode) {
-    if (prefs.theme) setHostTheme(prefs.theme)
-    if (prefs.locale) {
-      hostLocaleActive = true
-      setI18nLocale(i18n, mapKailoLocale(prefs.locale))
-    }
-    if (embedded) {
-      installHostBridge(window as never, cfg.origins, {
+    // Activates the token overlay (src/kailo/kailo-theme-overlay.css).
+    document.documentElement.setAttribute('data-kailo-mode', '')
+    const runtime = kailoEmbed()
+    if (runtime) {
+      connectHost(runtime, {
         onTheme: theme => setHostTheme(theme),
-        onLocale: locale => {
-          hostLocaleActive = true
-          setI18nLocale(i18n, mapKailoLocale(locale))
-        },
-      }, window.sessionStorage)
+        onLocale: locale => setI18nLocale(i18n, locale),
+      })
     }
   }
 
@@ -72,15 +57,14 @@ export function installKailo(i18n: I18nLike): HostPreferences {
   if (typeof g.locale === 'object' && g.locale !== null) {
     watch(() => (g.locale as { value: string }).value, value => syncDocumentTitle(value))
   }
-  return prefs
 }
 
 /**
- * Kailo identity locale (OIDC `locale` claim, stored by the backend in user
- * preferences) applies when the host did not pass one.
+ * Top-level visits: the identity locale (OIDC `locale` claim, stored by the
+ * backend in user preferences) seeds the language through the runtime, which
+ * ignores it once Kailo supplied a locale; the change arrives via onLocaleChange.
  */
-export function applyUserLocale(i18n: I18nLike, userLocale: string | null | undefined) {
-  if (!kailoConfig().mode || hostLocaleActive || !userLocale) return
-  const mapped = mapKailoLocale(userLocale)
-  if (mapped !== currentLocale(i18n)) setI18nLocale(i18n, mapped)
+export function applyUserLocale(_i18n: I18nLike, userLocale: string | null | undefined) {
+  if (!kailoConfig().mode || embedded || !userLocale) return
+  offerIdentityLocale(kailoEmbed(), userLocale)
 }

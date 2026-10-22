@@ -28,11 +28,12 @@ artifacts:
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
-    # DD-133 §1: the Kailo logo is a build input taken from web-client, so the
-    # context is the repository root narrowed by Dockerfile.dockerignore.
+    # DD-133 (design 07 §4.7.1): the Kailo logo, presentation tokens and runtime
+    # are build inputs, so the context is the repository root narrowed by
+    # knowledge/frontend/Dockerfile.dockerignore.
     build_context: .
     build_dockerfile: knowledge/frontend/Dockerfile
-    inputs: [knowledge/frontend/, web-client/web/public/app-icon.png]
+    inputs: [knowledge/frontend/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
     source_digest: sha256:6ac832434e300e899211640a8ea20ac4d293b8e8de62e440a15bbc8ede5d27b8
     artifact_digest: sha256:f97e8af41485bc2e3ea2929621a5657e259e7127bd216e4483686f3d01c094f4
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.

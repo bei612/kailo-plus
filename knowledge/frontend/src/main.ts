@@ -6,8 +6,8 @@ import TDesign from "tdesign-vue-next";
 // 引入组件库的少量全局样式变量
 import "tdesign-vue-next/dist/tdesign.css";
 import "@/assets/theme/theme.css";
-// Kailo design-token overlay (DD-133 §4): active only once the Kailo token
-// stylesheet has loaded (html[data-kailo-tokens]).
+// Kailo design-token overlay (DD-133, design 07 §4.7.1): maps TDesign/app
+// variables to /kailo/kailo-theme-tokens.css in Kailo mode (html[data-kailo-mode]).
 import "@/kailo/kailo-theme-overlay.css";
 import "@/assets/theme/tdesign-overrides.less";
 import "@/assets/dropdown-menu.less";

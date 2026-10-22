@@ -1,5 +1,5 @@
 <template>
-  <!-- Kailo mode sign-in (DD-133 §2): no forms, buttons, links or language switch. -->
+  <!-- Kailo mode sign-in (DD-133 (2)): no forms, buttons, links or language switch. -->
   <div class="kailo-signin" :data-state="state">
     <div class="kailo-signin__card">
       <img class="kailo-signin__logo" :src="BRAND_LOGO_URL" alt="" />
@@ -28,6 +28,7 @@ import { getAuthConfig } from '@/api/auth'
 import { getApiBaseUrl } from '@/utils/api-base'
 import { BRAND_LOGO_URL, productName } from './brand'
 import { kailoConfig } from './runtime'
+import { kailoEmbed } from './bridge'
 import { isKailoEmbedded } from './setup'
 import { kailoText } from './strings'
 import {
@@ -64,7 +65,7 @@ onMounted(async () => {
   if (isKailoEmbedded()) {
     // Inside the Kailo frame: silent attempt only, at most once per guard window.
     if (!claimSilentAttempt(window.sessionStorage, Date.now())) {
-      requestHostReauth(window as never, cfg.origins)
+      requestHostReauth(kailoEmbed())
       state.value = 'reauth'
       return
     }

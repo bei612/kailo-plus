@@ -1,9 +1,11 @@
 # Per-Dockerfile ignore file (BuildKit) for knowledge/frontend/Dockerfile.
 # The build context is the repository root; only the native UI sources and
-# the Kailo logo input (DD-133 §1) are sent to the builder.
+# the Kailo presentation inputs (DD-133: logo, tokens, runtime) are sent to the builder.
 *
 !knowledge/frontend/
 !web-client/web/public/app-icon.png
+!client-kit/embed/kailo-theme-tokens.css
+!client-kit/embed/kailo-embed.js
 
 # Same exclusions as knowledge/frontend/.dockerignore, rooted at the context.
 knowledge/frontend/node_modules
