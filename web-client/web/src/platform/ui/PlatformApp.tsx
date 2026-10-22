@@ -78,7 +78,7 @@ import { MessageAuthorAvatar } from "./MessageAuthorProfile";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { forcedUnreadStore, useForcedUnreadActions, type ForcedUnreadMap } from "@client-kit/platform/react/sidebar/forcedUnreadStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BffError, bff, publishChannelTopic, publishConversationMessage, setWorkspacePreference, signOut } from "@/platform/bff-client";
+import { BffError, bff, publishChannelTopic, publishConversationMessage, setWorkspacePreference, signInAgainHere, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { WebAgentTranscriptHost } from "./WebAgentTranscriptHost";
@@ -119,6 +119,8 @@ import { WebHuddleHost } from "@/platform/huddle/WebHuddleHost";
 import { WebOnboardingGate } from "./WebOnboarding";
 import { buildWaveMessageContent } from "@client-kit/platform/react/messages";
 import { newIdempotencyKey } from "@client-kit/platform/governance";
+
+const reauthenticateTopLevel = () => { void signInAgainHere(); };
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -167,7 +169,8 @@ export function PlatformApp() {
   if (error) return <Notice text={error} />;
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
-    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}>
+    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
+      reauthenticateTopLevel={reauthenticateTopLevel}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}

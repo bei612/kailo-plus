@@ -414,6 +414,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/profile/media/{sha256}",
             get(crate::web_profile::avatar),
         )
+        // DD-133(3): the per-subject avatar behind the IdP `picture` claim.
+        .exposed_route(
+            "/api/v1/identity/avatars/{subject}",
+            get(crate::web_profile::identity_avatar),
+        )
         // 公开平台信息（DD-111）：不解析身份，三端据此显示部署的产品名
         .exposed_route("/api/v1/platform-info", get(crate::platform_info::get))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter

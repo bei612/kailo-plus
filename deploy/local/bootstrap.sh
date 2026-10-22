@@ -486,12 +486,20 @@ if timeout <= 0:
     raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
 origin = urllib.parse.urlsplit(issuer)
 base = urllib.parse.urlunsplit((origin.scheme, origin.netloc, "", "", ""))
-KEYS = ("redirectUris", "webOrigins")
+KEYS = ("redirectUris", "webOrigins", "attributes")
 
 
 def same(current, desired):
-    # Keycloak 把回调与来源当作集合保存，返回顺序不保证与导入顺序一致。
-    return all(sorted(current.get(k) or []) == sorted(v) for k, v in desired.items())
+    # Keycloak 把回调与来源当作集合保存，返回顺序不保证与导入顺序一致。属性只核对
+    # 模板声明的键（浏览器客户端的 post.logout.redirect.uris，DD-133(6)），其余属性不读不写。
+    for k, v in desired.items():
+        if k == "attributes":
+            actual = current.get(k) or {}
+            if any(actual.get(name) != value for name, value in v.items()):
+                return False
+        elif sorted(current.get(k) or []) != sorted(v):
+            return False
+    return True
 try:
     rendered = json.loads((pathlib.Path(os.environ.get("KAILO_RUNTIME_DIR", ".")) / "secrets/idp-import/realm.json").read_text(encoding="utf-8"))
     wanted = {}
@@ -908,8 +916,202 @@ except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
 PYWRENCLIENTS
   exit 0
 fi
+# DD-133(3)(6), `07` §4.7.3/§4.7.5: declare the standard profile claims, the Kailo
+# avatar `picture` and OIDC back-channel logout on each component's dedicated browser
+# client (NATIVE_OIDC_CLIENTS in .env), the admin-only `picture` attribute in the realm
+# user profile, and every user's per-subject avatar URL. Idempotent: read back equal is
+# left alone; an existing same-name mapper or profile attribute that differs is refused,
+# never overwritten. No platform client, role, group or credential is touched.
+if [ "${1:-}" = '--declare-native-client-profiles' ] && [ "$#" -eq 1 ]; then
+  NATIVE_OIDC_CLIENTS="${NATIVE_OIDC_CLIENTS:-}" NATIVE_PAGE_ORIGINS="${NATIVE_PAGE_ORIGINS:-}" \
+  python3 - "$KEYCLOAK_PORT" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" "$PUBLIC_ORIGIN" \
+    "${OIDC_SERVICE_CLIENT_ID:?}" "${OIDC_WORKER_CLIENT_ID:?}" \
+    "${OIDC_BROWSER_CLIENT_ID:?}" "${OIDC_NATIVE_CLIENT_ID:?}" <<'PYPROFILES'
+import json
+import os
+import pathlib
+import stat
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+port, realm, admin, timeout, public_origin, *platform_clients = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+
+
+def refuse(reason):
+    raise SystemExit("组件专属客户端资料声明未完成：" + reason + "；未覆写既有配置")
+
+
+def exact_origin(value):
+    parts = urllib.parse.urlsplit(value)
+    if (parts.scheme not in ("http", "https") or not parts.netloc or parts.username
+            or parts.password or parts.path or parts.query or parts.fragment):
+        return None
+    return value
+
+
+try:
+    declared = json.loads(os.environ["NATIVE_OIDC_CLIENTS"] or "[]")
+    allowed = set(os.environ["NATIVE_PAGE_ORIGINS"].split())
+    if not isinstance(declared, list) or not declared:
+        refuse("NATIVE_OIDC_CLIENTS 必须是非空 JSON 数组")
+    if not allowed or any(exact_origin(o) is None for o in allowed) or public_origin in allowed:
+        refuse("NATIVE_PAGE_ORIGINS 必须是精确 origin 且不含平台 origin")
+    seen = set()
+    for entry in declared:
+        if (not isinstance(entry, dict) or set(entry) != {"clientId", "backchannelLogoutUrl"}
+                or not all(isinstance(v, str) and v and v.strip() == v for v in entry.values())):
+            refuse("每项必须恰为 clientId 与 backchannelLogoutUrl")
+        url = urllib.parse.urlsplit(entry["backchannelLogoutUrl"])
+        origin = urllib.parse.urlunsplit((url.scheme, url.netloc, "", "", ""))
+        if (entry["clientId"] in platform_clients or entry["clientId"] in seen
+                or origin not in allowed or not url.path.startswith("/")
+                or url.query or url.fragment or url.username or url.password):
+            refuse("clientId 须是组件专属且唯一，back-channel 地址须在该组件自身 origin")
+        seen.add(entry["clientId"])
+
+    descriptor = os.open(str((pathlib.Path(os.environ.get("KAILO_RUNTIME_DIR", ".")) / "secrets/keycloak_admin_password").absolute()), os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, encoding="utf-8") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            refuse("管理口令文件不是普通文件")
+        password = stream.read().strip()
+    base = "http://127.0.0.1:" + port
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    # Never forward the admin bearer through a redirect.
+    opener = urllib.request.build_opener(NoRedirect())
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    with opener.open(base + "/realms/master/protocol/openid-connect/token", login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    def request(path, body=None, method=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method=method or ("POST" if body is not None else "GET"),
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with opener.open(req, timeout=timeout) as response:
+            raw = response.read()
+            return json.loads(raw) if raw and (method or "GET") == "GET" and body is None else None
+
+    realm_path = "/admin/realms/" + urllib.parse.quote(realm, safe="")
+
+    # 1. Realm user profile: `picture` is admin-written, user-readable.
+    picture_attribute = {"name": "picture", "displayName": "picture", "multivalued": False,
+                         "permissions": {"view": ["admin", "user"], "edit": ["admin"]},
+                         "validations": {"uri": {}}}
+
+    def same_attribute(actual):
+        return (actual.get("multivalued", False) is False
+                and sorted((actual.get("permissions") or {}).get("view") or []) == ["admin", "user"]
+                and (actual.get("permissions") or {}).get("edit") == ["admin"]
+                and "uri" in (actual.get("validations") or {}))
+
+    profile = request(realm_path + "/users/profile")
+    current = [a for a in profile.get("attributes", []) if a.get("name") == "picture"]
+    if current and not same_attribute(current[0]):
+        refuse("realm 用户资料已有不同定义的 picture 属性")
+    if not current:
+        profile["attributes"] = profile.get("attributes", []) + [picture_attribute]
+        request(realm_path + "/users/profile", profile, "PUT")
+        current = [a for a in request(realm_path + "/users/profile").get("attributes", []) if a.get("name") == "picture"]
+        if len(current) != 1 or not same_attribute(current[0]):
+            refuse("picture 属性回读不一致")
+
+    def attribute_mapper(name, attribute):
+        return {"name": name, "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": False,
+                "config": {"user.attribute": attribute, "claim.name": attribute,
+                           "jsonType.label": "String", "multivalued": "false",
+                           "id.token.claim": "true", "access.token.claim": "true",
+                           "userinfo.token.claim": "true", "introspection.token.claim": "true"}}
+    mappers = [attribute_mapper("kailo-picture", "picture"), attribute_mapper("kailo-locale", "locale")]
+    scopes = {s.get("name"): s.get("id") for s in request(realm_path + "/client-scopes")}
+    if not scopes.get("profile") or not scopes.get("email"):
+        refuse("realm 缺少 profile 或 email client scope")
+
+    # 2. Each dedicated component client.
+    clients_path = realm_path + "/clients"
+    for entry in declared:
+        found = request(clients_path + "?" + urllib.parse.urlencode({"clientId": entry["clientId"]}))
+        if not isinstance(found, list) or len(found) != 1 or found[0].get("clientId") != entry["clientId"]:
+            refuse(f"客户端 {entry['clientId']} 不存在或不唯一（由组件部署创建，这里不创建）")
+        path = clients_path + "/" + urllib.parse.quote(found[0]["id"], safe="")
+        defaults = {s.get("name") for s in request(path + "/default-client-scopes")}
+        for name in ("profile", "email"):
+            if name not in defaults:
+                request(path + "/default-client-scopes/" + urllib.parse.quote(scopes[name], safe=""), {}, "PUT")
+        defaults = {s.get("name") for s in request(path + "/default-client-scopes")}
+        if not {"profile", "email"} <= defaults:
+            refuse(f"客户端 {entry['clientId']} 默认 scope 回读不含 profile/email")
+        for wanted in mappers:
+            def matching():
+                return [m for m in request(path + "/protocol-mappers/models") if m.get("name") == wanted["name"]]
+            current = matching()
+            if not current:
+                try:
+                    request(path + "/protocol-mappers/models", wanted)
+                except (urllib.error.URLError, OSError):
+                    pass  # a lost create ACK is resolved by the read-back below, never re-posted
+                current = matching()
+            if (len(current) != 1
+                    or any(current[0].get(k) != wanted[k] for k in ("protocol", "protocolMapper"))
+                    or any((current[0].get("config") or {}).get(k) != v for k, v in wanted["config"].items())):
+                refuse(f"客户端 {entry['clientId']} 的 {wanted['name']} mapper 不一致")
+        logout = {"frontchannelLogout": False,
+                  "attributes": {"backchannel.logout.url": entry["backchannelLogoutUrl"],
+                                 "backchannel.logout.session.required": "true",
+                                 "backchannel.logout.revoke.offline.tokens": "false"}}
+
+        def same_logout(client):
+            attrs = client.get("attributes") or {}
+            return (client.get("frontchannelLogout") is False
+                    and all(attrs.get(k) == v for k, v in logout["attributes"].items()))
+        if not same_logout(request(path)):
+            # Keycloak merges the attributes map; other client fields are not sent.
+            request(path, logout, "PUT")
+        if not same_logout(request(path)):
+            refuse(f"客户端 {entry['clientId']} back-channel 配置回读不一致")
+
+    # 3. Every user's per-subject avatar URL (stable; a new avatar needs no rewrite).
+    users_path = realm_path + "/users"
+    first, written, total = 0, 0, 0
+    while True:
+        page = request(users_path + "?" + urllib.parse.urlencode({"first": first, "max": 100, "briefRepresentation": "false"}))
+        if not page:
+            break
+        for user in page:
+            total += 1
+            wanted = public_origin + "/api/v1/identity/avatars/" + urllib.parse.quote(user["id"], safe="")
+            if (user.get("attributes") or {}).get("picture") == [wanted]:
+                continue
+            full = request(users_path + "/" + urllib.parse.quote(user["id"], safe=""))
+            full.setdefault("attributes", {})["picture"] = [wanted]
+            request(users_path + "/" + urllib.parse.quote(user["id"], safe=""), full, "PUT")
+            confirmed = request(users_path + "/" + urllib.parse.quote(user["id"], safe=""))
+            if (confirmed.get("attributes") or {}).get("picture") != [wanted]:
+                refuse("用户 picture 回读不一致")
+            written += 1
+        first += len(page)
+    print(f"已声明 {len(declared)} 个组件专属客户端的资料 claim 与 back-channel 退出；"
+          f"{total} 个用户的 picture 已一致（本次写入 {written}）")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("组件专属客户端资料声明未完成；修复 IdP 连接或配置后重跑查证") from None
+PYPROFILES
+  exit 0
+fi
 [ "$#" -eq 0 ] || { echo 'bootstrap.sh 不接受该参数' >&2; exit 2; }
 OIDC_REDIRECT_URI="${PUBLIC_ORIGIN}/oauth/callback"
+# DD-133(6)/SS-AGW-END-SESSION: the gateway's RP-initiated logout returns here.
+OIDC_POST_LOGOUT_REDIRECT_URI="${PUBLIC_ORIGIN}/app/"
 RELAY_OPERATOR_API_ORIGIN="http://${BUZZ_RELAY_HOST}:${BUZZ_RELAY_PORT}"
 mkdir -p "$KAILO_RUNTIME_DIR/secrets"
 umask 077
@@ -1040,6 +1242,7 @@ mkdir -p "$KAILO_RUNTIME_DIR/secrets/idp-import"
 # 渲染在进程内完成：secret 从文件读入内存，不经命令行——`sed "s|…|$(cat …)|"`
 # 会把每个 client secret 与核验口令都摆进进程表，任何能 ps 的人都看得见。
 : "${OIDC_REDIRECT_URI:?bootstrap 需要从 PUBLIC_ORIGIN 派生的 OIDC_REDIRECT_URI}"
+: "${OIDC_POST_LOGOUT_REDIRECT_URI:?bootstrap 需要从 PUBLIC_ORIGIN 派生的 OIDC_POST_LOGOUT_REDIRECT_URI}"
 : "${OIDC_REALM:?bootstrap 需要 .env 中的 OIDC_REALM}"
 : "${OIDC_SERVICE_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_SERVICE_CLIENT_ID}"
 : "${OIDC_WORKER_CLIENT_ID:?bootstrap 需要 .env 中的 OIDC_WORKER_CLIENT_ID}"
@@ -1053,7 +1256,8 @@ TEMPORAL_NAMESPACE="$TEMPORAL_NAMESPACE" VERIFY_USER="$VERIFY_USER" \
 BOOTSTRAP_USER="$BOOTSTRAP_USER" PLATFORM_ADMIN_USER="$PLATFORM_ADMIN_USER" \
 OIDC_REALM="$OIDC_REALM" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
 OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" OIDC_BROWSER_CLIENT_ID="$OIDC_BROWSER_CLIENT_ID" \
-OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
+OIDC_REDIRECT_URI="$OIDC_REDIRECT_URI" OIDC_POST_LOGOUT_REDIRECT_URI="$OIDC_POST_LOGOUT_REDIRECT_URI" \
+OIDC_NATIVE_CLIENT_ID="$OIDC_NATIVE_CLIENT_ID" \
 OIDC_NATIVE_AUDIENCE="$OIDC_NATIVE_AUDIENCE" AGENTGATEWAY_ADMIN_AUDIENCE="$AGENTGATEWAY_ADMIN_AUDIENCE" \
 OIDC_NATIVE_MOBILE_REDIRECT_URI="$OIDC_NATIVE_MOBILE_REDIRECT_URI" python3 - <<'RENDER'
 import json
@@ -1069,6 +1273,7 @@ from_file = {
 }
 from_env = ["TEMPORAL_NAMESPACE", "VERIFY_USER", "BOOTSTRAP_USER", "PLATFORM_ADMIN_USER", "OIDC_REALM",
             "OIDC_SERVICE_CLIENT_ID", "OIDC_WORKER_CLIENT_ID", "OIDC_BROWSER_CLIENT_ID", "OIDC_REDIRECT_URI",
+            "OIDC_POST_LOGOUT_REDIRECT_URI",
             "OIDC_NATIVE_CLIENT_ID", "OIDC_NATIVE_AUDIENCE", "OIDC_NATIVE_MOBILE_REDIRECT_URI",
             "AGENTGATEWAY_ADMIN_AUDIENCE"]
 with open("identity-provider/realm.json", encoding="utf-8") as fh:

@@ -123,6 +123,7 @@ fn test_policy() -> OidcPolicy {
 		session,
 		scopes: vec!["openid".into(), "profile".into()],
 		ui_locales: None,
+		end_session_endpoint: None,
 	}
 }
 
@@ -1166,6 +1167,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				logout: Some(super::OidcLogout {
 					path: "/auth/end".into(),
 					redirect: None,
+					end_session: false,
 				}),
 				..explicit_local_oidc_config()
 			},
@@ -1192,6 +1194,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				logout: Some(super::OidcLogout {
 					path: "/auth".into(),
 					redirect: None,
+					end_session: false,
 				}),
 				..explicit_local_oidc_config()
 			},
@@ -1267,6 +1270,7 @@ async fn browser_login_and_logout_flow() {
 	policy.logout = Some(super::OidcLogout {
 		path: "/auth/end".into(),
 		redirect: Some("/signed-out".into()),
+		end_session: false,
 	});
 	let mut req = request(
 		Method::GET,
@@ -1413,4 +1417,169 @@ async fn browser_login_and_logout_flow() {
 		assert_eq!(response.status(), StatusCode::SEE_OTHER);
 		assert_eq!(response.headers()[header::LOCATION], expected);
 	}
+}
+
+/// Kailo SS-AGW-END-SESSION: RP-Initiated Logout on the gateway's own logout path.
+#[tokio::test]
+async fn logout_ends_the_provider_session_only_for_a_decodable_session() {
+	let mut policy = test_policy();
+	policy.logout = Some(super::OidcLogout {
+		path: "/logout".into(),
+		redirect: Some("/app/".into()),
+		end_session: true,
+	});
+	policy.end_session_endpoint = Some(provider_endpoint(
+		"https://issuer.example.com/protocol/openid-connect/logout",
+	));
+	let id_token = signed_id_token(TEST_NONCE);
+	let session = policy.session.clone();
+	let cookie_name = policy.session.cookie_name.clone();
+	let session_cookie = |policy_id: PolicyId| {
+		session
+			.encode_browser_session(&BrowserSession {
+				policy_id,
+				raw_id_token: SecretString::new(id_token.clone().into()),
+				expires_at_unix: Some(now_unix() + 300),
+			})
+			.expect("encode session")
+	};
+	let logout = |cookie: Option<String>| {
+		let mut req = request(Method::POST, "https://app.example.com/logout", None);
+		req
+			.headers_mut()
+			.insert(header::ORIGIN, "https://app.example.com".parse().unwrap());
+		if let Some(cookie) = cookie {
+			add_cookie(&mut req, format!("{cookie_name}={cookie}"));
+		}
+		req
+	};
+
+	let mut req = logout(Some(session_cookie(policy.policy_id.clone())));
+	let response = test_helpers::test_policy(&policy, &mut req)
+		.await
+		.unwrap()
+		.direct_response
+		.unwrap();
+	assert_eq!(response.status(), StatusCode::SEE_OTHER);
+	assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+	let location = redirect_location(&response);
+	assert!(location.starts_with("https://issuer.example.com/protocol/openid-connect/logout?"));
+	assert_eq!(query_param(&location, "id_token_hint"), id_token);
+	assert_eq!(query_param(&location, "client_id"), TEST_CLIENT_ID);
+	assert_eq!(
+		query_param(&location, "post_logout_redirect_uri"),
+		"https://app.example.com/app/"
+	);
+	// Local cookies are cleared exactly as before.
+	let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
+	assert!(cookie.starts_with(&format!("{}=;", policy.session.cookie_name)));
+	assert!(cookie.contains("Max-Age=0"));
+
+	// No session, a forged cookie or another policy's session keep the local destination.
+	for cookie in [
+		None,
+		Some("forged".to_string()),
+		Some(session_cookie(PolicyId::policy("other"))),
+	] {
+		let mut req = logout(cookie);
+		let response = test_helpers::test_policy(&policy, &mut req)
+			.await
+			.unwrap()
+			.direct_response
+			.unwrap();
+		assert_eq!(response.status(), StatusCode::SEE_OTHER);
+		assert_eq!(redirect_location(&response), "/app/");
+	}
+
+	// The CSRF and method checks still run before anything else.
+	let mut req = request(Method::POST, "https://app.example.com/logout", None);
+	add_cookie(
+		&mut req,
+		format!(
+			"{}={}",
+			policy.session.cookie_name,
+			session_cookie(policy.policy_id.clone())
+		),
+	);
+	let error = test_helpers::test_policy(&policy, &mut req)
+		.await
+		.expect_err("cross-origin logout must be rejected")
+		.downcast();
+	assert!(matches!(&error, ProxyError::CsrfValidationFailed));
+
+	// Without endSession the provider session is left alone.
+	policy.end_session_endpoint = None;
+	let mut req = logout(Some(session_cookie(policy.policy_id.clone())));
+	let response = test_helpers::test_policy(&policy, &mut req)
+		.await
+		.unwrap()
+		.direct_response
+		.unwrap();
+	assert_eq!(redirect_location(&response), "/app/");
+}
+
+#[tokio::test]
+async fn end_session_requires_a_discovered_end_session_endpoint() {
+	let mock = MockServer::start().await;
+	Mock::given(method("GET"))
+		.and(path("/.well-known/openid-configuration"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(json!({
+			"issuer": mock.uri(),
+			"authorization_endpoint": format!("{}/authorize", mock.uri()),
+			"token_endpoint": format!("{}/token", mock.uri()),
+			"jwks_uri": format!("{}/jwks", mock.uri()),
+			"end_session_endpoint": format!("{}/logout", mock.uri())
+		})))
+		.mount(&mock)
+		.await;
+	Mock::given(method("GET"))
+		.and(path("/jwks"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(test_jwks()))
+		.mount(&mock)
+		.await;
+	let logout = |end_session| {
+		Some(super::OidcLogout {
+			path: "/logout".into(),
+			redirect: Some("/app/".into()),
+			end_session,
+		})
+	};
+	let discovered = |end_session| LocalOidcConfig {
+		issuer: mock.uri(),
+		discovery: None,
+		authorization_endpoint: None,
+		token_endpoint: None,
+		token_endpoint_auth: None,
+		jwks: None,
+		client_id: TEST_CLIENT_ID.into(),
+		client_secret: SecretString::new("client-secret".into()),
+		redirect_uri: "http://localhost:3000/oauth/callback".into(),
+		scopes: vec![],
+		ui_locales: None,
+		login: None,
+		logout: logout(end_session),
+	};
+
+	let policy = compile_local_policy(discovered(true), translated_policy_id("end-session"))
+		.await
+		.expect("discovered end session endpoint");
+	assert_eq!(
+		policy.end_session_endpoint,
+		Some(provider_endpoint(format!("{}/logout", mock.uri())))
+	);
+	let policy = compile_local_policy(discovered(false), translated_policy_id("local-only"))
+		.await
+		.expect("local logout");
+	assert!(policy.end_session_endpoint.is_none());
+
+	let err = compile_local_policy(
+		LocalOidcConfig {
+			logout: logout(true),
+			..explicit_local_oidc_config()
+		},
+		translated_policy_id("explicit"),
+	)
+	.await
+	.expect_err("explicit provider has no end session endpoint");
+	assert!(err.to_string().contains("logout.endSession requires"));
 }

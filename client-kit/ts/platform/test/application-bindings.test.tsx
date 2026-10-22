@@ -280,7 +280,8 @@ describe("shared external service connection management", () => {
       : { status: 200, body: { bindings: [{ ...connection, hasNativePage: true }], canCreate: false } });
     await click(button(host, "Open service page"));
     const frame = host.querySelector("iframe")!;
-    expect(frame.getAttribute("src")).toBe(nativePage.url);
+    // DD-133: the approved URL carries the launch presentation; its origin is unchanged.
+    expect(frame.getAttribute("src")).toBe("https://service.example.test/admin/?kailo_theme=light&kailo_locale=en#/settings");
     expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(frame.getAttribute("sandbox")).toContain("allow-popups");
     expect(frame.getAttribute("sandbox")).not.toContain("allow-top-navigation");

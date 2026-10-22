@@ -1,0 +1,147 @@
+/*
+ * Kailo presentation tokens (DD-133). Generated from client-kit/ts/platform:
+ * theme.css, typography.css, tailwind.config.js and the buzz / buzz-dark
+ * palettes (adaptive-theme.ts over Shiki github-light / github-dark) by
+ * src/theme/embed-tokens.ts. Do not edit; regenerate with
+ *   KAILO_WRITE_EMBED_TOKENS=1 pnpm --filter @client-kit/platform exec vitest run test/embed-tokens.test.ts
+ * Light is the default; <html data-kailo-theme="dark"> selects dark (kailo-embed.js sets it).
+ * --kailo-hsl-* are bare "H S% L%" triplets for alpha: hsl(var(--kailo-hsl-border) / 0.5).
+ */
+:root {
+  --kailo-font-sans: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
+  --kailo-font-size-xs: 0.75rem;
+  --kailo-font-size-sm: 0.875rem;
+  --kailo-font-size-base: 1rem;
+  --kailo-font-size-lg: 1.125rem;
+  --kailo-font-size-xl: 1.25rem;
+  --kailo-font-size-2xl: 1.5rem;
+  --kailo-font-size-3xl: 1.875rem;
+  --kailo-font-size-4xl: 2.25rem;
+  --kailo-font-size-5xl: 3rem;
+  --kailo-font-size-6xl: 3.75rem;
+  --kailo-radius: 0.625rem;
+  --kailo-radius-lg: 0.625rem;
+  --kailo-radius-md: calc(0.625rem - 2px);
+  --kailo-radius-sm: calc(0.625rem - 4px);
+  --kailo-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --kailo-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --kailo-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --kailo-color-background: hsl(var(--kailo-hsl-background));
+  --kailo-color-foreground: hsl(var(--kailo-hsl-foreground));
+  --kailo-color-card: hsl(var(--kailo-hsl-card));
+  --kailo-color-card-foreground: hsl(var(--kailo-hsl-card-foreground));
+  --kailo-color-popover: hsl(var(--kailo-hsl-popover));
+  --kailo-color-popover-foreground: hsl(var(--kailo-hsl-popover-foreground));
+  --kailo-color-primary: hsl(var(--kailo-hsl-primary));
+  --kailo-color-primary-foreground: hsl(var(--kailo-hsl-primary-foreground));
+  --kailo-color-secondary: hsl(var(--kailo-hsl-secondary));
+  --kailo-color-secondary-foreground: hsl(var(--kailo-hsl-secondary-foreground));
+  --kailo-color-muted: hsl(var(--kailo-hsl-muted));
+  --kailo-color-muted-foreground: hsl(var(--kailo-hsl-muted-foreground));
+  --kailo-color-accent: hsl(var(--kailo-hsl-accent));
+  --kailo-color-accent-foreground: hsl(var(--kailo-hsl-accent-foreground));
+  --kailo-color-destructive: hsl(var(--kailo-hsl-destructive));
+  --kailo-color-destructive-foreground: hsl(var(--kailo-hsl-destructive-foreground));
+  --kailo-color-border: hsl(var(--kailo-hsl-border));
+  --kailo-color-input: hsl(var(--kailo-hsl-input));
+  --kailo-color-ring: hsl(var(--kailo-hsl-ring));
+  --kailo-color-sidebar-background: hsl(var(--kailo-hsl-sidebar-background));
+  --kailo-color-sidebar-foreground: hsl(var(--kailo-hsl-sidebar-foreground));
+  --kailo-color-sidebar-primary: hsl(var(--kailo-hsl-sidebar-primary));
+  --kailo-color-sidebar-primary-foreground: hsl(var(--kailo-hsl-sidebar-primary-foreground));
+  --kailo-color-sidebar-active: hsl(var(--kailo-hsl-sidebar-active));
+  --kailo-color-sidebar-active-foreground: hsl(var(--kailo-hsl-sidebar-active-foreground));
+  --kailo-color-sidebar-accent: hsl(var(--kailo-hsl-sidebar-accent));
+  --kailo-color-sidebar-accent-foreground: hsl(var(--kailo-hsl-sidebar-accent-foreground));
+  --kailo-color-sidebar-border: hsl(var(--kailo-hsl-sidebar-border));
+  --kailo-color-sidebar-ring: hsl(var(--kailo-hsl-sidebar-ring));
+  --kailo-color-chart-1: hsl(var(--kailo-hsl-chart-1));
+  --kailo-color-chart-2: hsl(var(--kailo-hsl-chart-2));
+  --kailo-color-chart-3: hsl(var(--kailo-hsl-chart-3));
+  --kailo-color-chart-4: hsl(var(--kailo-hsl-chart-4));
+  --kailo-color-chart-5: hsl(var(--kailo-hsl-chart-5));
+}
+:root {
+  color-scheme: light;
+  --kailo-hsl-background: 0 0% 100.0%;
+  --kailo-hsl-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-card: 0 0% 100.0%;
+  --kailo-hsl-card-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-popover: 0 0% 92.2%;
+  --kailo-hsl-popover-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-primary: 210.0 12.20% 16.1%;
+  --kailo-hsl-primary-foreground: 0 0% 100.0%;
+  --kailo-hsl-secondary: 0 0% 94.1%;
+  --kailo-hsl-secondary-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-muted: 0 0% 94.1%;
+  --kailo-hsl-muted-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-accent: 0 0% 94.1%;
+  --kailo-hsl-accent-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-destructive: 354.3 66.24% 53.5%;
+  --kailo-hsl-destructive-foreground: 0 0% 100.0%;
+  --kailo-hsl-border: 240.0 1.96% 90.0%;
+  --kailo-hsl-input: 240.0 1.96% 90.0%;
+  --kailo-hsl-ring: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-background: 0 0% 96.5%;
+  --kailo-hsl-sidebar-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-primary: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-primary-foreground: 0 0% 100.0%;
+  --kailo-hsl-sidebar-active: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-active-foreground: 0 0% 100.0%;
+  --kailo-hsl-sidebar-accent: 0 0% 100.0%;
+  --kailo-hsl-sidebar-accent-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-border: 240.0 1.96% 90.0%;
+  --kailo-hsl-sidebar-ring: 240.0 1.96% 90.0%;
+  --kailo-hsl-chart-1: 345 57.65% 74.12%;
+  --kailo-hsl-chart-2: 185 37.25% 70.59%;
+  --kailo-hsl-chart-3: 219 81.96% 78.43%;
+  --kailo-hsl-chart-4: 35 61.18% 76.86%;
+  --kailo-hsl-chart-5: 113 32.94% 73.33%;
+  --kailo-color-status-added: #28a745;
+  --kailo-color-status-deleted: #d73a49;
+  --kailo-color-status-modified: #9a6700;
+  --kailo-color-warning: #9a6700;
+  --kailo-color-warning-background: rgba(154, 103, 0, 0.08);
+}
+:root[data-kailo-theme="dark"] {
+  color-scheme: dark;
+  --kailo-hsl-background: 0 0% 10.1960784314%;
+  --kailo-hsl-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-card: 210.0 12.20% 16.1%;
+  --kailo-hsl-card-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-popover: 213.3 7.69% 22.9%;
+  --kailo-hsl-popover-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-primary: 214.3 13.21% 89.6%;
+  --kailo-hsl-primary-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-secondary: 210.0 9.26% 21.2%;
+  --kailo-hsl-secondary-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-muted: 210.0 9.26% 21.2%;
+  --kailo-hsl-muted-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-accent: 210.0 9.26% 21.2%;
+  --kailo-hsl-accent-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-destructive: 354.0 79.21% 60.4%;
+  --kailo-hsl-destructive-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-border: 210.0 7.25% 27.1%;
+  --kailo-hsl-input: 210.0 7.25% 27.1%;
+  --kailo-hsl-ring: 214.3 13.21% 89.6%;
+  --kailo-hsl-sidebar-background: 210.0 11.54% 10.2%;
+  --kailo-hsl-sidebar-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-sidebar-primary: 214.3 13.21% 89.6%;
+  --kailo-hsl-sidebar-primary-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-active: 214.3 13.21% 89.6%;
+  --kailo-hsl-sidebar-active-foreground: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-accent: 210.0 12.20% 16.1%;
+  --kailo-hsl-sidebar-accent-foreground: 214.3 13.21% 89.6%;
+  --kailo-hsl-sidebar-border: 210.0 7.25% 27.1%;
+  --kailo-hsl-sidebar-ring: 210.0 7.25% 27.1%;
+  --kailo-hsl-chart-1: 333 20.78% 38.04%;
+  --kailo-hsl-chart-2: 193 19.61% 38.04%;
+  --kailo-hsl-chart-3: 224 26.67% 41.18%;
+  --kailo-hsl-chart-4: 30 8.24% 42.35%;
+  --kailo-hsl-chart-5: 139 10.98% 38.82%;
+  --kailo-color-status-added: #34d058;
+  --kailo-color-status-deleted: #ea4a5a;
+  --kailo-color-status-modified: #d29922;
+  --kailo-color-warning: #d29922;
+  --kailo-color-warning-background: rgba(210, 153, 34, 0.1);
+}

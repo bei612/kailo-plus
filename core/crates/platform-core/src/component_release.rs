@@ -71,6 +71,61 @@ pub(crate) struct Registration {
     pub contracts: Vec<(String, i32)>,
 }
 
+/// One Kailo value per key, each mapped to a non-empty native token.
+fn native_mapping(value: &Value, keys: &[&str]) -> bool {
+    value.as_object().is_some_and(|map| {
+        map.len() == keys.len()
+            && keys.iter().all(|key| {
+                map.get(*key).and_then(Value::as_str).is_some_and(|native| {
+                    (1..=64).contains(&native.len())
+                        && native
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+                })
+            })
+    })
+}
+
+/// DD-133: `NONE` keeps the service's own presentation. `KAILO_EMBED` is only
+/// for a `NATIVE_PAGE` whose page ships the client-kit/embed tokens and
+/// runtime: the theme follows Kailo live, the host resolves the locale, and
+/// each mapping names the component's native value for every Kailo value.
+fn validate_presentation(manifest: &Value) -> Result<(), Refusal> {
+    let presentation = &manifest["frontendPresentationContract"];
+    exact_fields(
+        presentation,
+        &[
+            "integrationMode",
+            "themeMapping",
+            "localeMapping",
+            "themeChangePolicy",
+            "localeResolutionPolicy",
+        ],
+        &[],
+    )?;
+    let valid = match presentation["integrationMode"].as_str() {
+        Some("NONE") => {
+            presentation["themeChangePolicy"] == "NONE"
+                && presentation["localeResolutionPolicy"] == "NONE"
+                && presentation["themeMapping"] == json!({})
+                && presentation["localeMapping"] == json!({})
+        }
+        Some("KAILO_EMBED") => {
+            manifest["frontendDelivery"]["mode"] == "NATIVE_PAGE"
+                && presentation["themeChangePolicy"] == "LIVE"
+                && presentation["localeResolutionPolicy"] == "BROWSER_RESOLVED"
+                && native_mapping(&presentation["themeMapping"], &["LIGHT", "DARK"])
+                && native_mapping(&presentation["localeMapping"], &["ZH_CN", "EN"])
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(bad())
+    }
+}
+
 fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
     let frontend = &manifest["frontendDelivery"];
     exact_fields(
@@ -475,26 +530,7 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
     if declared != seen {
         return Err(bad());
     }
-    let presentation = &manifest["frontendPresentationContract"];
-    exact_fields(
-        presentation,
-        &[
-            "integrationMode",
-            "themeMapping",
-            "localeMapping",
-            "themeChangePolicy",
-            "localeResolutionPolicy",
-        ],
-        &[],
-    )?;
-    if presentation["integrationMode"] != "NONE"
-        || presentation["themeChangePolicy"] != "NONE"
-        || presentation["localeResolutionPolicy"] != "NONE"
-        || presentation["themeMapping"] != json!({})
-        || presentation["localeMapping"] != json!({})
-    {
-        return Err(bad());
-    }
+    validate_presentation(&manifest)?;
     let observability = &manifest["businessObservabilityContract"];
     exact_fields(
         observability,
@@ -3545,6 +3581,47 @@ mod report_tests {
         ] {
             assert!(refused.is_err());
         }
+    }
+
+    #[test]
+    fn native_page_declares_kailo_embed_presentation_truthfully() {
+        // DD-133: a native page entry that ships client-kit/embed declares
+        // KAILO_EMBED with live theme, host-resolved locale and both mappings.
+        let embed = json!({"integrationMode":"KAILO_EMBED",
+            "themeMapping":{"LIGHT":"light","DARK":"dark"},
+            "localeMapping":{"ZH_CN":"zh-CN","EN":"en-US"},
+            "themeChangePolicy":"LIVE","localeResolutionPolicy":"BROWSER_RESOLVED"});
+        let presenting = |contract: Value| {
+            move |manifest: &mut Value| manifest["frontendPresentationContract"] = contract.clone()
+        };
+        assert!(native_page_registration(presenting(embed.clone())).is_ok());
+        let changed = |key: &str, value: Value| {
+            let mut contract = embed.clone();
+            contract[key] = value;
+            contract
+        };
+        for refused in [
+            changed("themeChangePolicy", json!("NEXT_LAUNCH")),
+            changed("localeResolutionPolicy", json!("NONE")),
+            changed("themeMapping", json!({"LIGHT":"light"})),
+            changed(
+                "themeMapping",
+                json!({"LIGHT":"light","DARK":"dark","SEPIA":"sepia"}),
+            ),
+            changed("themeMapping", json!({"LIGHT":"light","DARK":""})),
+            changed("localeMapping", json!({"ZH_CN":"zh CN","EN":"en"})),
+            changed("integrationMode", json!("HOST_API_REMOTE")),
+            json!({"integrationMode":"NONE","themeMapping":{"LIGHT":"light","DARK":"dark"},
+                "localeMapping":{},"themeChangePolicy":"NONE","localeResolutionPolicy":"NONE"}),
+        ] {
+            assert!(native_page_registration(presenting(refused)).is_err());
+        }
+        // KAILO_EMBED describes a NATIVE_PAGE only.
+        let mut manifest = json!({"frontendDelivery":{"mode":"NONE"},
+            "frontendPresentationContract":embed});
+        assert!(validate_presentation(&manifest).is_err());
+        manifest["frontendDelivery"]["mode"] = json!("NATIVE_PAGE");
+        assert!(validate_presentation(&manifest).is_ok());
     }
 
     #[test]

@@ -141,6 +141,9 @@ pub struct OidcPolicy {
 	pub session: SessionConfig,
 	pub scopes: Vec<String>,
 	pub ui_locales: Option<OidcUiLocales>,
+	/// SS-AGW-END-SESSION: set only when `logout.endSession` is enabled.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub end_session_endpoint: Option<ProviderEndpoint>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -827,6 +827,9 @@ services:
       # DD-127(8)：启用原生页面时，iframe 内的原生页要经 IdP 完成 OIDC 跳转；frame-src 只追加
       # 该 issuer 的路径前缀，未启用原生页面时为空。IdP 登录页本身仍禁止被嵌入。
       WEB_NATIVE_PAGE_IDP_SOURCE: ${NATIVE_PAGE_ORIGINS:+${OIDC_ISSUER}/}
+      # DD-133(6)：退出以顶层表单 POST 提交，网关 303 到 IdP end_session；form-action
+      # 对表单提交的整条重定向链生效，因此只追加同一 issuer 前缀。
+      WEB_IDP_END_SESSION_SOURCE: ${OIDC_ISSUER:?必须显式提供，禁止硬编码}/
       # DD-125(5)：只把部署登记的 GIF 来源追加到 img-src，不放 https: 通配
       WEB_GIF_IMAGE_ORIGINS: ${GIF_IMAGE_ORIGINS:-}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。

@@ -16,7 +16,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void> };
+type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; reauthenticateTopLevel?: () => void; documentTheme?: "LIGHT" | "DARK"; currentPrincipalId?: string; copyText?: (text: string) => Promise<void> };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -25,6 +25,7 @@ export function PlatformProvider({
   locale,
   children,
   authenticateNativePage,
+  reauthenticateTopLevel,
   documentTheme,
   currentPrincipalId,
   copyText,
@@ -34,6 +35,11 @@ export function PlatformProvider({
   locale?: PlatformLocale;
   children: ReactNode;
   authenticateNativePage?: (bindingId: string) => Promise<void>;
+  /**
+   * DD-133: an embedded component lost its silent IdP session. The host signs
+   * the user in again at the top level and returns to the current route.
+   */
+  reauthenticateTopLevel?: () => void;
   /** Only the Web host opts in. Desktop GAP-DSK-EDITOR-01 and Mobile stay closed. */
   documentTheme?: "LIGHT" | "DARK";
   /** Authenticated BFF session fact; never inferred from a display key. */
@@ -49,7 +55,7 @@ export function PlatformProvider({
   if (scope.client !== client || scope.currentPrincipalId !== currentPrincipalId)
     setScope({ client, currentPrincipalId, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, documentTheme, currentPrincipalId, copyText }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, reauthenticateTopLevel, documentTheme, currentPrincipalId, copyText }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -80,6 +86,8 @@ export function useHasPlatform(): boolean {
 }
 
 export function useNativeAuthenticationHost() { return usePlatform().authenticateNativePage; }
+
+export function useTopLevelReauthentication() { return usePlatform().reauthenticateTopLevel; }
 
 export function useDocumentTheme() { return usePlatform().documentTheme; }
 

@@ -448,19 +448,41 @@ export type MediaDescriptor = WebMessageAttachment;
  *
  * Core 那一步失败也继续清网关：留着网关会话等于退出没有发生。
  *
- * 网关那一步用 fetch 而不是表单提交：表单提交之后的整条重定向链都受页面 CSP
- * 的 form-action 约束，而这条链最终会落到 IdP 的来源上。清完 cookie 再做一次
- * 普通的顶层导航，由网关带去重新登录。
+ * 网关一步以顶层表单 POST 提交（DD-133(6)、SS-AGW-END-SESSION）：网关清 cookie 后
+ * 303 到 IdP 的 end_session 端点结束 IdP 会话（IdP 再以 back-channel 通知各组件），
+ * 再回到 /app/ 由网关带去重新登录。这条重定向链受页面 CSP 的 form-action 约束，
+ * 部署只为它追加 OIDC issuer 前缀（WEB_IDP_END_SESSION_SOURCE）。
  */
 /** Sign-out never waits on a best-effort presence release longer than this. */
 const SIGN_OUT_PRESENCE_WAIT_MS = 1_000;
 export async function signOut(): Promise<void> {
+  await endPlatformSession();
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/logout";
+  form.hidden = true;
+  document.body.append(form);
+  form.submit();
+}
+
+/**
+ * DD-133(2): an embedded component lost its silent IdP session, so the IdP
+ * session is already gone. End this Kailo session locally (fetch, no IdP
+ * round trip) and reload the current route at the top level; the gateway
+ * signs in again and returns here, so the component page reopens.
+ */
+export async function signInAgainHere(): Promise<void> {
+  const here = window.location.pathname + window.location.search + window.location.hash;
+  await endPlatformSession();
+  await fetch("/logout", { method: "POST", credentials: "same-origin", redirect: "manual" });
+  window.location.assign(here);
+}
+
+async function endPlatformSession(): Promise<void> {
   // DD-120 (2): others see offline at once; Core still closes the connection on logout.
   await Promise.race([updatePresence("offline").catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, SIGN_OUT_PRESENCE_WAIT_MS))]);
   await bff.logout().catch(() => undefined);
-  await fetch("/logout", { method: "POST", credentials: "same-origin", redirect: "manual" });
-  window.location.assign(import.meta.env.BASE_URL);
 }
 
 /**

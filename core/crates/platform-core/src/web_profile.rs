@@ -334,6 +334,94 @@ pub(crate) async fn avatar(
     }
 }
 
+/// DD-133(3): the IdP `picture` claim of every user is this per-subject route,
+/// so a component page shows the Kailo avatar without the IdP ever holding it.
+/// It answers only an authenticated requester and only inside the requester's
+/// own Tenant: the subject's ACTIVE member there, its SERVER HUMAN identity,
+/// and that identity's community avatar media. Anything else is 404.
+pub(crate) async fn identity_avatar(
+    State(state): State<BffState>,
+    axum::extract::Path(subject): axum::extract::Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let not_found = || {
+        (
+            StatusCode::NOT_FOUND,
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+        )
+            .into_response()
+    };
+    // Same IdP as the requester: the gateway's verified issuer projection.
+    let Some(issuer) = headers
+        .get(crate::bff::HEADER_ISSUER)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return not_found();
+    };
+    if subject.is_empty() || subject.len() > 255 {
+        return not_found();
+    }
+    let pubkey: Option<String> = match sqlx::query_scalar(
+        "select b.pubkey from identity.external_identity ei
+         join identity.human_identity hi on hi.id = ei.human_identity_id and hi.status = 'ACTIVE'
+         join identity.tenant_membership tm on tm.human_identity_id = hi.id
+              and tm.tenant_id = $3 and tm.state = 'ACTIVE'
+         join identity.buzz_identity_binding b on b.tenant_id = tm.tenant_id
+              and b.principal_id = tm.tenant_principal_id and b.kind = 'HUMAN'
+              and b.custody = 'SERVER' and b.state = 'ACTIVE'
+         where ei.issuer = $1 and ei.subject = $2 and ei.status = 'ACTIVE'",
+    )
+    .bind(issuer)
+    .bind(&subject)
+    .bind(ctx.tenant_id)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return unavailable(),
+    };
+    let Some(pubkey) = pubkey else {
+        return not_found();
+    };
+    let (client, host) = match client(&state, &ctx).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let event = match read_author(&state, &client, &pubkey).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let picture = event
+        .and_then(|e| serde_json::from_str::<Value>(&e.content).ok())
+        .and_then(|content| {
+            content
+                .get("picture")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    let Some(picture) = picture else {
+        return not_found();
+    };
+    let poster = picture
+        .split_once("#buzz-anim=")
+        .map_or(picture.as_str(), |(poster, _)| poster);
+    match avatar_media_paths(Some(picture.as_str()), &host).get(poster) {
+        Some(path) => (
+            StatusCode::FOUND,
+            [
+                (axum::http::header::LOCATION, path.clone()),
+                (axum::http::header::CACHE_CONTROL, "no-store".to_owned()),
+            ],
+        )
+            .into_response(),
+        None => not_found(),
+    }
+}
+
 fn merged_content(
     prior: Option<&nostr::Event>,
     request: &WebProfileUpdateRequest,

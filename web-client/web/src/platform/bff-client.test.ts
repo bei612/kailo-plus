@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { bff, channelTopicPath, deleteMessage, openStream, publishChannelTopic, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
 import { AGENT_MENTION_OUTCOME_QUERY_LIMIT, agentMentionOutcomesPath, queryAgentMentionOutcomes } from "./bff-client";
 import { PRESENCE_PATH, PRESENCE_QUERY_PATH, USER_STATUS_PATH, USER_STATUS_QUERY_PATH, queryPresence, queryUserStatus,
-  releasePresence, setIdentityStreamSink, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
+  releasePresence, setIdentityStreamSink, signInAgainHere, signOut, updatePresence, updateUserStatus, type BuzzEvent } from "./bff-client";
 import { publishTyping, reconnectStreams, streamConnectionState, subscribeStreamConnection } from "./bff-client";
 import { UploadCanceledError, uploadConversationMedia, uploadMedia } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
@@ -510,7 +510,25 @@ it("routes h-less 20001/30315 stream frames to the presence sink, never to timel
   stop();
 });
 
-it("releases presence before revoking the session on sign-out", async () => {
+it("releases presence and revokes the session before the top-level logout form (DD-133(6))", async () => {
+  const order: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (path: string, init: RequestInit) => {
+    order.push(`${init.method ?? "GET"} ${path}`);
+    return new Response(null, { status: 204 });
+  }));
+  vi.spyOn(bff, "logout").mockImplementation(async () => { order.push("logout"); return { revoked: true }; });
+  // A top-level form POST, so the gateway's 303 can carry the browser to the IdP end-session.
+  const form = { method: "", action: "", hidden: false, submit: vi.fn(() => { order.push(`${form.method} ${form.action}`); }) };
+  const append = vi.fn();
+  vi.stubGlobal("document", { createElement: vi.fn(() => form), body: { append } });
+  await signOut();
+  expect(order).toEqual(["PUT /api/v1/presence", "logout", "POST /logout"]);
+  expect(append).toHaveBeenCalledWith(form);
+  expect(form.hidden).toBe(true);
+  expect(form.submit).toHaveBeenCalledOnce();
+});
+
+it("re-enters the current route after a local logout when a component asks for top-level sign-in (DD-133(2))", async () => {
   const order: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (path: string, init: RequestInit) => {
     order.push(`${init.method ?? "GET"} ${path}`);
@@ -518,8 +536,8 @@ it("releases presence before revoking the session on sign-out", async () => {
   }));
   vi.spyOn(bff, "logout").mockImplementation(async () => { order.push("logout"); return { revoked: true }; });
   const assign = vi.fn();
-  vi.stubGlobal("window", { location: { href: "/app/", assign } });
-  await signOut();
+  vi.stubGlobal("window", { location: { pathname: "/app/applications/b1", search: "?x=1", hash: "", assign } });
+  await signInAgainHere();
   expect(order).toEqual(["PUT /api/v1/presence", "logout", "POST /logout"]);
-  expect(assign).toHaveBeenCalledOnce();
+  expect(assign).toHaveBeenCalledWith("/app/applications/b1?x=1");
 });

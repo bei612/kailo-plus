@@ -73,6 +73,8 @@ mod tests {
             "/api/v1/conversations/{conversation_id}/messages/delete"
         ));
         assert!(action_exposed("identity.custom_emoji.publish"));
+        // DD-133(3)：IdP `picture` claim 指向的按 subject 头像路由
+        assert!(route_exposed("/api/v1/identity/avatars/{subject}"));
         // DD-123：额度页（admin/auditor fresh audit）与设置动作（fresh manage）
         assert!(route_exposed("/api/v1/tenant/quotas"));
         assert!(action_exposed("tenant.quota.set"));

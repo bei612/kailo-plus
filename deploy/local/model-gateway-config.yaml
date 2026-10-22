@@ -129,6 +129,10 @@ binds:
         logout:
           path: /logout
           redirect: /app/
+          # DD-133(6)/SS-AGW-END-SESSION：有可解开的会话时 303 到 IdP end_session，
+          # 带 id_token_hint 结束 IdP 会话，IdP 再以 back-channel 通知组件专属 client；
+          # 回到 post.logout.redirect.uris 登记的 ${PUBLIC_ORIGIN}/app/。
+          endSession: true
       transformations:
         request:
           # 移除 Browser 可能自报的身份 header。
