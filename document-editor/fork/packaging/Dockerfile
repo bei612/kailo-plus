@@ -99,8 +99,15 @@ ENV PRODUCT_VERSION=${PRODUCT_VERSION} BUILD_NUMBER=${BUILD_NUMBER} \
     API_URL_EDITING_CALLBACK=about:blank HELP_CENTER_WEB_EDITORS=about:blank \
     HELP_CENTER_WEB_DE=about:blank HELP_CENTER_WEB_SSE=about:blank HELP_CENTER_WEB_PE=about:blank
 RUN cd translation && python3 merge_and_check.py
+# Sprites first (build_tools build_js.py build_js_develop: web-apps/build/sprites),
+# so the common resources the first deploy task copies include them (e.g. the
+# doc-formats formats@2.5x.svg of the official package).
 RUN --mount=type=cache,id=document-editor-npm,target=/root/.npm \
-    cd build && npm ci --no-audit --no-fund && npx grunt --verbose
+    cd build/sprites && npm ci --no-audit --no-fund && npx grunt \
+ && test -s ../../apps/common/main/resources/img/doc-formats/formats@2.5x.svg
+RUN --mount=type=cache,id=document-editor-npm,target=/root/.npm \
+    cd build && npm ci --no-audit --no-fund && npx grunt --verbose \
+ && test -s ../deploy/web-apps/apps/common/main/resources/img/doc-formats/formats@2.5x.svg
 # deploy_server.py: drop source maps, then add the embed worker to api.js.
 RUN find deploy/web-apps/apps -name '*.js.map' -delete \
  && cd /build/sdkjs/common/embed && python3 make.py /build/web-apps/deploy/web-apps/apps/api/documents/api.js \
