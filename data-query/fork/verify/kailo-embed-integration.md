@@ -50,10 +50,10 @@ recorded there and in the delivery report:
 
 ## Boundaries
 
-- `frontendPresentationContract` stays `NONE` in `fork/release/manifest*.json`:
-  Core's validator does not yet accept `KAILO_EMBED`; once it does, the release
-  declares `KAILO_EMBED`, `LIVE`, `BROWSER_RESOLVED`, `LIGHT→light`,
-  `DARK→dark`, `ZH_CN→zh-CN`, `EN→en`.
+- `fork/release/manifest.native-page.json` declares `KAILO_EMBED` (`LIVE`,
+  `BROWSER_RESOLVED`, `LIGHT→light`, `DARK→dark`, `ZH_CN→zh-CN`, `EN→en`), the
+  shape Core admits since the DD-133 platform merge; the governed adapter
+  release (`manifest.json`, not a `NATIVE_PAGE`) keeps `NONE`.
 - The IdP side is deployment work: the Wren browser client needs the
   `kailo-picture`/`kailo-locale` mappers (§4.7.3) and
   `backchannel.logout.url=<Wren origin>/oauth/backchannel-logout`,
