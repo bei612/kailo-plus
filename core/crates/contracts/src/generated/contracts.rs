@@ -1680,6 +1680,59 @@ pub enum AgentInstallationState {
     Provisioning,
 }
 
+/// Installation 的 Skill 投影状态（requested/projection/current）；需 Installation read，读取不触发投影或重试。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationSkillPage {
+    pub agent_version_asset_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<i64>,
+
+    pub installation_resource_id: String,
+
+    pub skills: Vec<AgentInstallationSkillView>,
+}
+
+/// DD-135(7)：Installation pinned Version 引用的一个 Skill 的 requested 事实、投影结果与当前状态；不含正文或物化路径。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInstallationSkillView {
+    pub artifact_digest: String,
+
+    pub ordinal: i64,
+
+    /// 当前 generation 已以 digest 物化并经 skills/list 核对。
+    pub projected: bool,
+
+    pub skill_resource_id: String,
+
+    pub skill_version_asset_id: String,
+
+    pub stable_slug: String,
+
+    pub status: AgentInstallationSkillStatus,
+}
+
+/// DD-135(5)(7)、17 §4：Installation 中一个被引 Skill 的当前状态。PROJECTION_FAILED 与 RUNTIME_NOT_READY
+/// 来自 generation 投影；DISABLED 与 NO_PERMISSION 来自读取时的 fresh 判定，与每次 turn/start 前的判定同一规则。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AgentInstallationSkillStatus {
+    Disabled,
+
+    Effective,
+
+    #[serde(rename = "NO_PERMISSION")]
+    NoPermission,
+
+    #[serde(rename = "PROJECTION_FAILED")]
+    ProjectionFailed,
+
+    #[serde(rename = "RUNTIME_NOT_READY")]
+    RuntimeNotReady,
+}
+
 /// DD-122: the tools an Agent Installation's current generation requests and their effective
 /// state. Read-only; grants happen only through installation create/upgrade.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3239,6 +3292,9 @@ pub enum EvidenceKind {
 
     #[serde(rename = "SECRET_REF_REHOME_ID")]
     SecretRefRehomeId,
+
+    #[serde(rename = "SKILL_ARTIFACT_DIGEST")]
+    SkillArtifactDigest,
 
     #[serde(rename = "SPICEDB_RELATIONSHIP")]
     SpicedbRelationship,
@@ -5874,6 +5930,10 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_version: Option<i64>,
 
+    /// 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_version_upload: Option<SkillVersionUploadInput>,
+
     /// workspace.create 或 agent.definition.create 的稳定 slug
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
@@ -6455,6 +6515,22 @@ pub struct ResourceCreate {
     pub native_type: String,
 
     pub type_key: String,
+}
+
+/// 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+///
+/// 仅 skill.version.create（DD-135(3)）：引用本 PlatformSession、本人、目标定义的一次性上传及其规范 artifact
+/// digest；能力需求只声明契约键与版本，不授予工具。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillVersionUploadInput {
+    /// 上传返回的规范 SKILL.md SHA-256（64 位小写十六进制）；准入事务内重算比对。
+    pub artifact_digest: String,
+
+    /// contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
+    pub capability_requirements: Vec<String>,
+
+    pub upload_id: String,
 }
 
 /// 仅 tenant.quota.set（DD-123）
@@ -8023,6 +8099,284 @@ pub enum SidebarSortMode {
     Alpha,
 
     Recent,
+}
+
+/// DD-135(2)(3)：一次 Skill 上传的原始字节（标准 base64，两端同一 JSON 传输）。解码后不超过 1 MiB；编码只接受 SKILL.md、tar 或
+/// tar.gz，由 Core 判定。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillArtifactUploadRequest {
+    pub content_base64: String,
+}
+
+/// DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter
+/// 元数据；否则只给逐项违规，不暂存字节。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillArtifactUploadView {
+    pub accepted: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_byte_size: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<SkillArtifactEncoding>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_name: Option<String>,
+
+    pub skill_resource_id: String,
+
+    pub upload_byte_size: i64,
+
+    pub upload_digest: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_id: Option<String>,
+
+    pub violations: Vec<SkillArtifactViolation>,
+}
+
+/// DD-135(2)：上传字节的编码。规范 artifact 恒为一个 SKILL.md，与上传编码无关。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SkillArtifactEncoding {
+    #[serde(rename = "SKILL_MD")]
+    SkillMd,
+
+    Tar,
+
+    #[serde(rename = "TAR_GZIP")]
+    TarGzip,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkillArtifactViolation {
+    pub code: SkillArtifactViolationCode,
+
+    /// 违规条目在上传包内的路径（不含正文）；与整体相关的违规省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// DD-135(2)(9)：上传校验的封闭违规码；与路径一起逐项返回，不含文件正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SkillArtifactViolationCode {
+    #[serde(rename = "ARCHIVE_INVALID")]
+    ArchiveInvalid,
+
+    #[serde(rename = "CONTROL_CHARACTER")]
+    ControlCharacter,
+
+    #[serde(rename = "DESCRIPTION_TOO_LONG")]
+    DescriptionTooLong,
+
+    #[serde(rename = "DUPLICATE_SKILL_MD")]
+    DuplicateSkillMd,
+
+    #[serde(rename = "ENTRY_LIMIT_EXCEEDED")]
+    EntryLimitExceeded,
+
+    #[serde(rename = "EXECUTABLE_ENTRY")]
+    ExecutableEntry,
+
+    #[serde(rename = "EXPANDED_TOO_LARGE")]
+    ExpandedTooLarge,
+
+    #[serde(rename = "EXTRA_ENTRY")]
+    ExtraEntry,
+
+    #[serde(rename = "INVALID_FRONTMATTER")]
+    InvalidFrontmatter,
+
+    #[serde(rename = "LINK_ENTRY")]
+    LinkEntry,
+
+    #[serde(rename = "MISSING_DESCRIPTION")]
+    MissingDescription,
+
+    #[serde(rename = "MISSING_FRONTMATTER")]
+    MissingFrontmatter,
+
+    #[serde(rename = "MISSING_SKILL_MD")]
+    MissingSkillMd,
+
+    #[serde(rename = "NAME_MISMATCH")]
+    NameMismatch,
+
+    #[serde(rename = "NOT_UTF8")]
+    NotUtf8,
+
+    #[serde(rename = "SKILL_MD_TOO_LARGE")]
+    SkillMdTooLarge,
+
+    #[serde(rename = "SPECIAL_ENTRY")]
+    SpecialEntry,
+
+    #[serde(rename = "UNSAFE_PATH")]
+    UnsafePath,
+
+    #[serde(rename = "UNSUPPORTED_ENCODING")]
+    UnsupportedEncoding,
+
+    #[serde(rename = "UNSUPPORTED_FRONTMATTER_KEY")]
+    UnsupportedFrontmatterKey,
+
+    #[serde(rename = "UPLOAD_TOO_LARGE")]
+    UploadTooLarge,
+}
+
+/// 同 Tenant 且当前 discover 允许的 Skill 定义页；nextOffset 续读同一排序。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDefinitionPage {
+    pub definitions: Vec<SkillDefinitionView>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+}
+
+/// DD-135(1)(4)：Tenant 级 Skill 定义与 Resource 事实；can* 只是当前 HUMAN 的 fresh 入口提示，提交时仍重验。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDefinitionView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_disable: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_share: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_upload: Option<bool>,
+
+    /// 本 Tenant 成员同时持有该定义的 discoverer 与 reader（DD-131(6)）。
+    pub catalog_shared: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_published_version_asset_id: Option<String>,
+
+    pub display_name: String,
+
+    pub owner_principal_id: String,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+
+    pub stable_slug: String,
+
+    pub status: SkillDefinitionStatus,
+}
+
+/// DD-135(1)、03 §7：SkillDefinition 状态。DISABLED 不可逆，DELETED 是 Tenant 销毁墓碑。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SkillDefinitionStatus {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DELETED")]
+    Deleted,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+}
+
+/// DD-135(4)：AgentVersion 编辑器可选的 Skill 版本目录——当前 HUMAN fresh 可 read 的 ACTIVE 定义下的 PUBLISHED
+/// 版本；不授予任何 Installation permission。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillReferencePage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub versions: Vec<SkillVersionView>,
+}
+
+/// DD-135(1)(2)：不可变 SkillVersion 的元数据；正文只经内容读取端点返回。state 与 AgentVersion 共用同一生命周期枚举。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillVersionView {
+    pub artifact_byte_size: i64,
+
+    pub artifact_digest: String,
+
+    pub artifact_format: String,
+
+    pub asset_id: String,
+
+    pub asset_version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_publish: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_retire: Option<bool>,
+
+    pub capability_requirements: Vec<String>,
+
+    /// 是所属定义当前的发布指针。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<bool>,
+
+    pub description: String,
+
+    pub metadata_hash: String,
+
+    pub ordinal: i64,
+
+    pub owner_principal_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_description: Option<String>,
+
+    pub skill_name: String,
+
+    pub skill_resource_id: String,
+
+    pub stable_slug: String,
+
+    pub state: AgentVersionState,
+}
+
+/// DD-135(4)(8)：一个可读版本的规范 SKILL.md 正文；读取即对该版本的 read，返回前以 digest 重算。不进入审计或日志。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillVersionContentView {
+    pub artifact_digest: String,
+
+    pub asset_id: String,
+
+    pub content: String,
+}
+
+/// 一个 Skill 定义的版本页（ordinal 降序）；DRAFT 只对版本 Asset read 持有者列出。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillVersionPage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub resource_version: i64,
+
+    pub skill_resource_id: String,
+
+    pub versions: Vec<SkillVersionView>,
 }
 
 /// GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage

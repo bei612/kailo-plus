@@ -58,6 +58,8 @@
 //     final agentInstallationCandidatePage = agentInstallationCandidatePageFromJson(jsonString);
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
 //     final agentInstallationProjectionView = agentInstallationProjectionViewFromJson(jsonString);
+//     final agentInstallationSkillPage = agentInstallationSkillPageFromJson(jsonString);
+//     final agentInstallationSkillView = agentInstallationSkillViewFromJson(jsonString);
 //     final agentInstallationToolPage = agentInstallationToolPageFromJson(jsonString);
 //     final agentInstallationUsePage = agentInstallationUsePageFromJson(jsonString);
 //     final agentInstallationView = agentInstallationViewFromJson(jsonString);
@@ -169,6 +171,15 @@
 //     final sidebarSectionRequest = sidebarSectionRequestFromJson(jsonString);
 //     final sidebarSectionOrderRequest = sidebarSectionOrderRequestFromJson(jsonString);
 //     final sidebarSortRequest = sidebarSortRequestFromJson(jsonString);
+//     final skillArtifactUploadRequest = skillArtifactUploadRequestFromJson(jsonString);
+//     final skillArtifactUploadView = skillArtifactUploadViewFromJson(jsonString);
+//     final skillArtifactViolation = skillArtifactViolationFromJson(jsonString);
+//     final skillDefinitionPage = skillDefinitionPageFromJson(jsonString);
+//     final skillDefinitionView = skillDefinitionViewFromJson(jsonString);
+//     final skillReferencePage = skillReferencePageFromJson(jsonString);
+//     final skillVersionContentView = skillVersionContentViewFromJson(jsonString);
+//     final skillVersionPage = skillVersionPageFromJson(jsonString);
+//     final skillVersionView = skillVersionViewFromJson(jsonString);
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final tenantMemberJoinPage = tenantMemberJoinPageFromJson(jsonString);
@@ -256,6 +267,7 @@
 //     final protocolSessionOpenInput = protocolSessionOpenInputFromJson(jsonString);
 //     final resourceCreate = resourceCreateFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
+//     final skillVersionUploadInput = skillVersionUploadInputFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final tenantQuotaSetting = tenantQuotaSettingFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
@@ -680,6 +692,18 @@ AgentInstallationProjectionView agentInstallationProjectionViewFromJson(
 String agentInstallationProjectionViewToJson(
   AgentInstallationProjectionView data,
 ) => json.encode(data.toJson());
+
+AgentInstallationSkillPage agentInstallationSkillPageFromJson(String str) =>
+    AgentInstallationSkillPage.fromJson(json.decode(str));
+
+String agentInstallationSkillPageToJson(AgentInstallationSkillPage data) =>
+    json.encode(data.toJson());
+
+AgentInstallationSkillView agentInstallationSkillViewFromJson(String str) =>
+    AgentInstallationSkillView.fromJson(json.decode(str));
+
+String agentInstallationSkillViewToJson(AgentInstallationSkillView data) =>
+    json.encode(data.toJson());
 
 AgentInstallationToolPage agentInstallationToolPageFromJson(String str) =>
     AgentInstallationToolPage.fromJson(json.decode(str));
@@ -1349,6 +1373,60 @@ SidebarSortRequest sidebarSortRequestFromJson(String str) =>
 String sidebarSortRequestToJson(SidebarSortRequest data) =>
     json.encode(data.toJson());
 
+SkillArtifactUploadRequest skillArtifactUploadRequestFromJson(String str) =>
+    SkillArtifactUploadRequest.fromJson(json.decode(str));
+
+String skillArtifactUploadRequestToJson(SkillArtifactUploadRequest data) =>
+    json.encode(data.toJson());
+
+SkillArtifactUploadView skillArtifactUploadViewFromJson(String str) =>
+    SkillArtifactUploadView.fromJson(json.decode(str));
+
+String skillArtifactUploadViewToJson(SkillArtifactUploadView data) =>
+    json.encode(data.toJson());
+
+SkillArtifactViolation skillArtifactViolationFromJson(String str) =>
+    SkillArtifactViolation.fromJson(json.decode(str));
+
+String skillArtifactViolationToJson(SkillArtifactViolation data) =>
+    json.encode(data.toJson());
+
+SkillDefinitionPage skillDefinitionPageFromJson(String str) =>
+    SkillDefinitionPage.fromJson(json.decode(str));
+
+String skillDefinitionPageToJson(SkillDefinitionPage data) =>
+    json.encode(data.toJson());
+
+SkillDefinitionView skillDefinitionViewFromJson(String str) =>
+    SkillDefinitionView.fromJson(json.decode(str));
+
+String skillDefinitionViewToJson(SkillDefinitionView data) =>
+    json.encode(data.toJson());
+
+SkillReferencePage skillReferencePageFromJson(String str) =>
+    SkillReferencePage.fromJson(json.decode(str));
+
+String skillReferencePageToJson(SkillReferencePage data) =>
+    json.encode(data.toJson());
+
+SkillVersionContentView skillVersionContentViewFromJson(String str) =>
+    SkillVersionContentView.fromJson(json.decode(str));
+
+String skillVersionContentViewToJson(SkillVersionContentView data) =>
+    json.encode(data.toJson());
+
+SkillVersionPage skillVersionPageFromJson(String str) =>
+    SkillVersionPage.fromJson(json.decode(str));
+
+String skillVersionPageToJson(SkillVersionPage data) =>
+    json.encode(data.toJson());
+
+SkillVersionView skillVersionViewFromJson(String str) =>
+    SkillVersionView.fromJson(json.decode(str));
+
+String skillVersionViewToJson(SkillVersionView data) =>
+    json.encode(data.toJson());
+
 TaskView taskViewFromJson(String str) => TaskView.fromJson(json.decode(str));
 
 String taskViewToJson(TaskView data) => json.encode(data.toJson());
@@ -1875,6 +1953,12 @@ RuntimeProfileDirectory runtimeProfileDirectoryFromJson(String str) =>
     RuntimeProfileDirectory.fromJson(json.decode(str));
 
 String runtimeProfileDirectoryToJson(RuntimeProfileDirectory data) =>
+    json.encode(data.toJson());
+
+SkillVersionUploadInput skillVersionUploadInputFromJson(String str) =>
+    SkillVersionUploadInput.fromJson(json.decode(str));
+
+String skillVersionUploadInputToJson(SkillVersionUploadInput data) =>
     json.encode(data.toJson());
 
 TaskStateReport taskStateReportFromJson(String str) =>
@@ -5220,6 +5304,100 @@ final agentInstallationStateValues = EnumValues({
   "PROVISIONING": AgentInstallationState.PROVISIONING,
 });
 
+///Installation 的 Skill 投影状态（requested/projection/current）；需 Installation read，读取不触发投影或重试。
+class AgentInstallationSkillPage {
+  final String agentVersionAssetId;
+  final int? generation;
+  final String installationResourceId;
+  final List<AgentInstallationSkillView> skills;
+
+  AgentInstallationSkillPage({
+    required this.agentVersionAssetId,
+    this.generation,
+    required this.installationResourceId,
+    required this.skills,
+  });
+
+  factory AgentInstallationSkillPage.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationSkillPage(
+        agentVersionAssetId: json["agentVersionAssetId"],
+        generation: json["generation"],
+        installationResourceId: json["installationResourceId"],
+        skills: List<AgentInstallationSkillView>.from(
+          json["skills"].map((x) => AgentInstallationSkillView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentVersionAssetId": agentVersionAssetId,
+    "generation": generation,
+    "installationResourceId": installationResourceId,
+    "skills": List<dynamic>.from(skills.map((x) => x.toJson())),
+  });
+}
+
+///DD-135(7)：Installation pinned Version 引用的一个 Skill 的 requested 事实、投影结果与当前状态；不含正文或物化路径。
+class AgentInstallationSkillView {
+  final String artifactDigest;
+  final int ordinal;
+
+  ///当前 generation 已以 digest 物化并经 skills/list 核对。
+  final bool projected;
+  final String skillResourceId;
+  final String skillVersionAssetId;
+  final String stableSlug;
+  final AgentInstallationSkillStatus status;
+
+  AgentInstallationSkillView({
+    required this.artifactDigest,
+    required this.ordinal,
+    required this.projected,
+    required this.skillResourceId,
+    required this.skillVersionAssetId,
+    required this.stableSlug,
+    required this.status,
+  });
+
+  factory AgentInstallationSkillView.fromJson(Map<String, dynamic> json) =>
+      AgentInstallationSkillView(
+        artifactDigest: json["artifactDigest"],
+        ordinal: json["ordinal"],
+        projected: json["projected"],
+        skillResourceId: json["skillResourceId"],
+        skillVersionAssetId: json["skillVersionAssetId"],
+        stableSlug: json["stableSlug"],
+        status: agentInstallationSkillStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "ordinal": ordinal,
+    "projected": projected,
+    "skillResourceId": skillResourceId,
+    "skillVersionAssetId": skillVersionAssetId,
+    "stableSlug": stableSlug,
+    "status": agentInstallationSkillStatusValues.reverse[status],
+  });
+}
+
+///DD-135(5)(7)、17 §4：Installation 中一个被引 Skill 的当前状态。PROJECTION_FAILED 与 RUNTIME_NOT_READY
+///来自 generation 投影；DISABLED 与 NO_PERMISSION 来自读取时的 fresh 判定，与每次 turn/start 前的判定同一规则。
+enum AgentInstallationSkillStatus {
+  DISABLED,
+  EFFECTIVE,
+  NO_PERMISSION,
+  PROJECTION_FAILED,
+  RUNTIME_NOT_READY,
+}
+
+final agentInstallationSkillStatusValues = EnumValues({
+  "DISABLED": AgentInstallationSkillStatus.DISABLED,
+  "EFFECTIVE": AgentInstallationSkillStatus.EFFECTIVE,
+  "NO_PERMISSION": AgentInstallationSkillStatus.NO_PERMISSION,
+  "PROJECTION_FAILED": AgentInstallationSkillStatus.PROJECTION_FAILED,
+  "RUNTIME_NOT_READY": AgentInstallationSkillStatus.RUNTIME_NOT_READY,
+});
+
 ///DD-122: the tools an Agent Installation's current generation requests and their effective
 ///state. Read-only; grants happen only through installation create/upgrade.
 class AgentInstallationToolPage {
@@ -7669,6 +7847,7 @@ enum EvidenceKind {
   ORIGINAL_ACTION_EXECUTION_ID,
   PLATFORM_SESSION_ID,
   SECRET_REF_REHOME_ID,
+  SKILL_ARTIFACT_DIGEST,
   SPICEDB_RELATIONSHIP,
   SPICEDB_ZEDTOKEN,
   TEMPORAL_FIRST_RUN_ID,
@@ -7698,6 +7877,7 @@ final evidenceKindValues = EnumValues({
   "ORIGINAL_ACTION_EXECUTION_ID": EvidenceKind.ORIGINAL_ACTION_EXECUTION_ID,
   "PLATFORM_SESSION_ID": EvidenceKind.PLATFORM_SESSION_ID,
   "SECRET_REF_REHOME_ID": EvidenceKind.SECRET_REF_REHOME_ID,
+  "SKILL_ARTIFACT_DIGEST": EvidenceKind.SKILL_ARTIFACT_DIGEST,
   "SPICEDB_RELATIONSHIP": EvidenceKind.SPICEDB_RELATIONSHIP,
   "SPICEDB_ZEDTOKEN": EvidenceKind.SPICEDB_ZEDTOKEN,
   "TEMPORAL_FIRST_RUN_ID": EvidenceKind.TEMPORAL_FIRST_RUN_ID,
@@ -11912,6 +12092,9 @@ class ActionCommand {
   ///调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
   final int? resourceVersion;
 
+  ///仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+  final SkillVersionUploadInput? skillVersionUpload;
+
   ///workspace.create 或 agent.definition.create 的稳定 slug
   final String? slug;
 
@@ -11980,6 +12163,7 @@ class ActionCommand {
     this.resourceCreate,
     this.resourceId,
     this.resourceVersion,
+    this.skillVersionUpload,
     this.slug,
     this.sourceEventId,
     this.tenantId,
@@ -12083,6 +12267,9 @@ class ActionCommand {
         : ResourceCreate.fromJson(json["resourceCreate"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
+    skillVersionUpload: json["skillVersionUpload"] == null
+        ? null
+        : SkillVersionUploadInput.fromJson(json["skillVersionUpload"]),
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
@@ -12147,6 +12334,7 @@ class ActionCommand {
     "resourceCreate": resourceCreate?.toJson(),
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
+    "skillVersionUpload": skillVersionUpload?.toJson(),
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
@@ -13139,6 +13327,42 @@ class ResourceCreate {
     "nativeRef": nativeRef,
     "nativeType": nativeType,
     "typeKey": typeKey,
+  });
+}
+
+///仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+///
+///仅 skill.version.create（DD-135(3)）：引用本 PlatformSession、本人、目标定义的一次性上传及其规范 artifact
+///digest；能力需求只声明契约键与版本，不授予工具。
+class SkillVersionUploadInput {
+  ///上传返回的规范 SKILL.md SHA-256（64 位小写十六进制）；准入事务内重算比对。
+  final String artifactDigest;
+
+  ///contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
+  final List<String> capabilityRequirements;
+  final String uploadId;
+
+  SkillVersionUploadInput({
+    required this.artifactDigest,
+    required this.capabilityRequirements,
+    required this.uploadId,
+  });
+
+  factory SkillVersionUploadInput.fromJson(Map<String, dynamic> json) =>
+      SkillVersionUploadInput(
+        artifactDigest: json["artifactDigest"],
+        capabilityRequirements: List<String>.from(
+          json["capabilityRequirements"].map((x) => x),
+        ),
+        uploadId: json["uploadId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "capabilityRequirements": List<dynamic>.from(
+      capabilityRequirements.map((x) => x),
+    ),
+    "uploadId": uploadId,
   });
 }
 
@@ -15811,6 +16035,433 @@ final sidebarSortModeValues = EnumValues({
   "alpha": SidebarSortMode.ALPHA,
   "recent": SidebarSortMode.RECENT,
 });
+
+///DD-135(2)(3)：一次 Skill 上传的原始字节（标准 base64，两端同一 JSON 传输）。解码后不超过 1 MiB；编码只接受 SKILL.md、tar 或
+///tar.gz，由 Core 判定。
+class SkillArtifactUploadRequest {
+  final String contentBase64;
+
+  SkillArtifactUploadRequest({required this.contentBase64});
+
+  factory SkillArtifactUploadRequest.fromJson(Map<String, dynamic> json) =>
+      SkillArtifactUploadRequest(contentBase64: json["contentBase64"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"contentBase64": contentBase64});
+}
+
+///DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter
+///元数据；否则只给逐项违规，不暂存字节。
+class SkillArtifactUploadView {
+  final bool accepted;
+  final int? artifactByteSize;
+  final String? artifactDigest;
+  final String? description;
+  final SkillArtifactEncoding? encoding;
+  final String? expiresAt;
+  final String? shortDescription;
+  final String? skillName;
+  final String skillResourceId;
+  final int uploadByteSize;
+  final String uploadDigest;
+  final String? uploadId;
+  final List<SkillArtifactViolation> violations;
+
+  SkillArtifactUploadView({
+    required this.accepted,
+    this.artifactByteSize,
+    this.artifactDigest,
+    this.description,
+    this.encoding,
+    this.expiresAt,
+    this.shortDescription,
+    this.skillName,
+    required this.skillResourceId,
+    required this.uploadByteSize,
+    required this.uploadDigest,
+    this.uploadId,
+    required this.violations,
+  });
+
+  factory SkillArtifactUploadView.fromJson(Map<String, dynamic> json) =>
+      SkillArtifactUploadView(
+        accepted: json["accepted"],
+        artifactByteSize: json["artifactByteSize"],
+        artifactDigest: json["artifactDigest"],
+        description: json["description"],
+        encoding: json["encoding"] == null
+            ? null
+            : skillArtifactEncodingValues.map[json["encoding"]]!,
+        expiresAt: json["expiresAt"],
+        shortDescription: json["shortDescription"],
+        skillName: json["skillName"],
+        skillResourceId: json["skillResourceId"],
+        uploadByteSize: json["uploadByteSize"],
+        uploadDigest: json["uploadDigest"],
+        uploadId: json["uploadId"],
+        violations: List<SkillArtifactViolation>.from(
+          json["violations"].map((x) => SkillArtifactViolation.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "accepted": accepted,
+    "artifactByteSize": artifactByteSize,
+    "artifactDigest": artifactDigest,
+    "description": description,
+    "encoding": skillArtifactEncodingValues.reverse[encoding],
+    "expiresAt": expiresAt,
+    "shortDescription": shortDescription,
+    "skillName": skillName,
+    "skillResourceId": skillResourceId,
+    "uploadByteSize": uploadByteSize,
+    "uploadDigest": uploadDigest,
+    "uploadId": uploadId,
+    "violations": List<dynamic>.from(violations.map((x) => x.toJson())),
+  });
+}
+
+///DD-135(2)：上传字节的编码。规范 artifact 恒为一个 SKILL.md，与上传编码无关。
+enum SkillArtifactEncoding { SKILL_MD, TAR, TAR_GZIP }
+
+final skillArtifactEncodingValues = EnumValues({
+  "SKILL_MD": SkillArtifactEncoding.SKILL_MD,
+  "TAR": SkillArtifactEncoding.TAR,
+  "TAR_GZIP": SkillArtifactEncoding.TAR_GZIP,
+});
+
+class SkillArtifactViolation {
+  final SkillArtifactViolationCode code;
+
+  ///违规条目在上传包内的路径（不含正文）；与整体相关的违规省略。
+  final String? path;
+
+  SkillArtifactViolation({required this.code, this.path});
+
+  factory SkillArtifactViolation.fromJson(Map<String, dynamic> json) =>
+      SkillArtifactViolation(
+        code: skillArtifactViolationCodeValues.map[json["code"]]!,
+        path: json["path"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "code": skillArtifactViolationCodeValues.reverse[code],
+    "path": path,
+  });
+}
+
+///DD-135(2)(9)：上传校验的封闭违规码；与路径一起逐项返回，不含文件正文。
+enum SkillArtifactViolationCode {
+  ARCHIVE_INVALID,
+  CONTROL_CHARACTER,
+  DESCRIPTION_TOO_LONG,
+  DUPLICATE_SKILL_MD,
+  ENTRY_LIMIT_EXCEEDED,
+  EXECUTABLE_ENTRY,
+  EXPANDED_TOO_LARGE,
+  EXTRA_ENTRY,
+  INVALID_FRONTMATTER,
+  LINK_ENTRY,
+  MISSING_DESCRIPTION,
+  MISSING_FRONTMATTER,
+  MISSING_SKILL_MD,
+  NAME_MISMATCH,
+  NOT_UTF8,
+  SKILL_MD_TOO_LARGE,
+  SPECIAL_ENTRY,
+  UNSAFE_PATH,
+  UNSUPPORTED_ENCODING,
+  UNSUPPORTED_FRONTMATTER_KEY,
+  UPLOAD_TOO_LARGE,
+}
+
+final skillArtifactViolationCodeValues = EnumValues({
+  "ARCHIVE_INVALID": SkillArtifactViolationCode.ARCHIVE_INVALID,
+  "CONTROL_CHARACTER": SkillArtifactViolationCode.CONTROL_CHARACTER,
+  "DESCRIPTION_TOO_LONG": SkillArtifactViolationCode.DESCRIPTION_TOO_LONG,
+  "DUPLICATE_SKILL_MD": SkillArtifactViolationCode.DUPLICATE_SKILL_MD,
+  "ENTRY_LIMIT_EXCEEDED": SkillArtifactViolationCode.ENTRY_LIMIT_EXCEEDED,
+  "EXECUTABLE_ENTRY": SkillArtifactViolationCode.EXECUTABLE_ENTRY,
+  "EXPANDED_TOO_LARGE": SkillArtifactViolationCode.EXPANDED_TOO_LARGE,
+  "EXTRA_ENTRY": SkillArtifactViolationCode.EXTRA_ENTRY,
+  "INVALID_FRONTMATTER": SkillArtifactViolationCode.INVALID_FRONTMATTER,
+  "LINK_ENTRY": SkillArtifactViolationCode.LINK_ENTRY,
+  "MISSING_DESCRIPTION": SkillArtifactViolationCode.MISSING_DESCRIPTION,
+  "MISSING_FRONTMATTER": SkillArtifactViolationCode.MISSING_FRONTMATTER,
+  "MISSING_SKILL_MD": SkillArtifactViolationCode.MISSING_SKILL_MD,
+  "NAME_MISMATCH": SkillArtifactViolationCode.NAME_MISMATCH,
+  "NOT_UTF8": SkillArtifactViolationCode.NOT_UTF8,
+  "SKILL_MD_TOO_LARGE": SkillArtifactViolationCode.SKILL_MD_TOO_LARGE,
+  "SPECIAL_ENTRY": SkillArtifactViolationCode.SPECIAL_ENTRY,
+  "UNSAFE_PATH": SkillArtifactViolationCode.UNSAFE_PATH,
+  "UNSUPPORTED_ENCODING": SkillArtifactViolationCode.UNSUPPORTED_ENCODING,
+  "UNSUPPORTED_FRONTMATTER_KEY":
+      SkillArtifactViolationCode.UNSUPPORTED_FRONTMATTER_KEY,
+  "UPLOAD_TOO_LARGE": SkillArtifactViolationCode.UPLOAD_TOO_LARGE,
+});
+
+///同 Tenant 且当前 discover 允许的 Skill 定义页；nextOffset 续读同一排序。
+class SkillDefinitionPage {
+  final List<SkillDefinitionView> definitions;
+  final int? nextOffset;
+
+  SkillDefinitionPage({required this.definitions, this.nextOffset});
+
+  factory SkillDefinitionPage.fromJson(Map<String, dynamic> json) =>
+      SkillDefinitionPage(
+        definitions: List<SkillDefinitionView>.from(
+          json["definitions"].map((x) => SkillDefinitionView.fromJson(x)),
+        ),
+        nextOffset: json["nextOffset"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "definitions": List<dynamic>.from(definitions.map((x) => x.toJson())),
+    "nextOffset": nextOffset,
+  });
+}
+
+///DD-135(1)(4)：Tenant 级 Skill 定义与 Resource 事实；can* 只是当前 HUMAN 的 fresh 入口提示，提交时仍重验。
+class SkillDefinitionView {
+  final bool? canDisable;
+  final bool? canShare;
+  final bool? canUpload;
+
+  ///本 Tenant 成员同时持有该定义的 discoverer 与 reader（DD-131(6)）。
+  final bool catalogShared;
+  final String? currentPublishedVersionAssetId;
+  final String displayName;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final int resourceVersion;
+  final String stableSlug;
+  final SkillDefinitionStatus status;
+
+  SkillDefinitionView({
+    this.canDisable,
+    this.canShare,
+    this.canUpload,
+    required this.catalogShared,
+    this.currentPublishedVersionAssetId,
+    required this.displayName,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceVersion,
+    required this.stableSlug,
+    required this.status,
+  });
+
+  factory SkillDefinitionView.fromJson(Map<String, dynamic> json) =>
+      SkillDefinitionView(
+        canDisable: json["canDisable"],
+        canShare: json["canShare"],
+        canUpload: json["canUpload"],
+        catalogShared: json["catalogShared"],
+        currentPublishedVersionAssetId: json["currentPublishedVersionAssetId"],
+        displayName: json["displayName"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+        stableSlug: json["stableSlug"],
+        status: skillDefinitionStatusValues.map[json["status"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canDisable": canDisable,
+    "canShare": canShare,
+    "canUpload": canUpload,
+    "catalogShared": catalogShared,
+    "currentPublishedVersionAssetId": currentPublishedVersionAssetId,
+    "displayName": displayName,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+    "stableSlug": stableSlug,
+    "status": skillDefinitionStatusValues.reverse[status],
+  });
+}
+
+///DD-135(1)、03 §7：SkillDefinition 状态。DISABLED 不可逆，DELETED 是 Tenant 销毁墓碑。
+enum SkillDefinitionStatus { ACTIVE, DELETED, DISABLED, PROVISIONING }
+
+final skillDefinitionStatusValues = EnumValues({
+  "ACTIVE": SkillDefinitionStatus.ACTIVE,
+  "DELETED": SkillDefinitionStatus.DELETED,
+  "DISABLED": SkillDefinitionStatus.DISABLED,
+  "PROVISIONING": SkillDefinitionStatus.PROVISIONING,
+});
+
+///DD-135(4)：AgentVersion 编辑器可选的 Skill 版本目录——当前 HUMAN fresh 可 read 的 ACTIVE 定义下的 PUBLISHED
+///版本；不授予任何 Installation permission。
+class SkillReferencePage {
+  final int? nextOffset;
+  final List<SkillVersionView> versions;
+
+  SkillReferencePage({this.nextOffset, required this.versions});
+
+  factory SkillReferencePage.fromJson(Map<String, dynamic> json) =>
+      SkillReferencePage(
+        nextOffset: json["nextOffset"],
+        versions: List<SkillVersionView>.from(
+          json["versions"].map((x) => SkillVersionView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "versions": List<dynamic>.from(versions.map((x) => x.toJson())),
+  });
+}
+
+///DD-135(1)(2)：不可变 SkillVersion 的元数据；正文只经内容读取端点返回。state 与 AgentVersion 共用同一生命周期枚举。
+class SkillVersionView {
+  final int artifactByteSize;
+  final String artifactDigest;
+  final String artifactFormat;
+  final String assetId;
+  final int assetVersion;
+  final bool? canPublish;
+  final bool? canRetire;
+  final List<String> capabilityRequirements;
+
+  ///是所属定义当前的发布指针。
+  final bool? current;
+  final String description;
+  final String metadataHash;
+  final int ordinal;
+  final String ownerPrincipalId;
+  final String? shortDescription;
+  final String skillName;
+  final String skillResourceId;
+  final String stableSlug;
+  final AgentVersionState state;
+
+  SkillVersionView({
+    required this.artifactByteSize,
+    required this.artifactDigest,
+    required this.artifactFormat,
+    required this.assetId,
+    required this.assetVersion,
+    this.canPublish,
+    this.canRetire,
+    required this.capabilityRequirements,
+    this.current,
+    required this.description,
+    required this.metadataHash,
+    required this.ordinal,
+    required this.ownerPrincipalId,
+    this.shortDescription,
+    required this.skillName,
+    required this.skillResourceId,
+    required this.stableSlug,
+    required this.state,
+  });
+
+  factory SkillVersionView.fromJson(Map<String, dynamic> json) =>
+      SkillVersionView(
+        artifactByteSize: json["artifactByteSize"],
+        artifactDigest: json["artifactDigest"],
+        artifactFormat: json["artifactFormat"],
+        assetId: json["assetId"],
+        assetVersion: json["assetVersion"],
+        canPublish: json["canPublish"],
+        canRetire: json["canRetire"],
+        capabilityRequirements: List<String>.from(
+          json["capabilityRequirements"].map((x) => x),
+        ),
+        current: json["current"],
+        description: json["description"],
+        metadataHash: json["metadataHash"],
+        ordinal: json["ordinal"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        shortDescription: json["shortDescription"],
+        skillName: json["skillName"],
+        skillResourceId: json["skillResourceId"],
+        stableSlug: json["stableSlug"],
+        state: agentVersionStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactByteSize": artifactByteSize,
+    "artifactDigest": artifactDigest,
+    "artifactFormat": artifactFormat,
+    "assetId": assetId,
+    "assetVersion": assetVersion,
+    "canPublish": canPublish,
+    "canRetire": canRetire,
+    "capabilityRequirements": List<dynamic>.from(
+      capabilityRequirements.map((x) => x),
+    ),
+    "current": current,
+    "description": description,
+    "metadataHash": metadataHash,
+    "ordinal": ordinal,
+    "ownerPrincipalId": ownerPrincipalId,
+    "shortDescription": shortDescription,
+    "skillName": skillName,
+    "skillResourceId": skillResourceId,
+    "stableSlug": stableSlug,
+    "state": agentVersionStateValues.reverse[state],
+  });
+}
+
+///DD-135(4)(8)：一个可读版本的规范 SKILL.md 正文；读取即对该版本的 read，返回前以 digest 重算。不进入审计或日志。
+class SkillVersionContentView {
+  final String artifactDigest;
+  final String assetId;
+  final String content;
+
+  SkillVersionContentView({
+    required this.artifactDigest,
+    required this.assetId,
+    required this.content,
+  });
+
+  factory SkillVersionContentView.fromJson(Map<String, dynamic> json) =>
+      SkillVersionContentView(
+        artifactDigest: json["artifactDigest"],
+        assetId: json["assetId"],
+        content: json["content"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "assetId": assetId,
+    "content": content,
+  });
+}
+
+///一个 Skill 定义的版本页（ordinal 降序）；DRAFT 只对版本 Asset read 持有者列出。
+class SkillVersionPage {
+  final int? nextOffset;
+  final int resourceVersion;
+  final String skillResourceId;
+  final List<SkillVersionView> versions;
+
+  SkillVersionPage({
+    this.nextOffset,
+    required this.resourceVersion,
+    required this.skillResourceId,
+    required this.versions,
+  });
+
+  factory SkillVersionPage.fromJson(Map<String, dynamic> json) =>
+      SkillVersionPage(
+        nextOffset: json["nextOffset"],
+        resourceVersion: json["resourceVersion"],
+        skillResourceId: json["skillResourceId"],
+        versions: List<SkillVersionView>.from(
+          json["versions"].map((x) => SkillVersionView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "resourceVersion": resourceVersion,
+    "skillResourceId": skillResourceId,
+    "versions": List<dynamic>.from(versions.map((x) => x.toJson())),
+  });
+}
 
 ///GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
 ///的人可见（DD-83）。不含凭据或其摘要。兑换后的确认经 approvalWorkflowId 走既有的审批决定端点。

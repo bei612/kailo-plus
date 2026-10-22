@@ -175,6 +175,12 @@
 //    agentInstallationProjectionView, err := UnmarshalAgentInstallationProjectionView(bytes)
 //    bytes, err = agentInstallationProjectionView.Marshal()
 //
+//    agentInstallationSkillPage, err := UnmarshalAgentInstallationSkillPage(bytes)
+//    bytes, err = agentInstallationSkillPage.Marshal()
+//
+//    agentInstallationSkillView, err := UnmarshalAgentInstallationSkillView(bytes)
+//    bytes, err = agentInstallationSkillView.Marshal()
+//
 //    agentInstallationToolPage, err := UnmarshalAgentInstallationToolPage(bytes)
 //    bytes, err = agentInstallationToolPage.Marshal()
 //
@@ -508,6 +514,33 @@
 //    sidebarSortRequest, err := UnmarshalSidebarSortRequest(bytes)
 //    bytes, err = sidebarSortRequest.Marshal()
 //
+//    skillArtifactUploadRequest, err := UnmarshalSkillArtifactUploadRequest(bytes)
+//    bytes, err = skillArtifactUploadRequest.Marshal()
+//
+//    skillArtifactUploadView, err := UnmarshalSkillArtifactUploadView(bytes)
+//    bytes, err = skillArtifactUploadView.Marshal()
+//
+//    skillArtifactViolation, err := UnmarshalSkillArtifactViolation(bytes)
+//    bytes, err = skillArtifactViolation.Marshal()
+//
+//    skillDefinitionPage, err := UnmarshalSkillDefinitionPage(bytes)
+//    bytes, err = skillDefinitionPage.Marshal()
+//
+//    skillDefinitionView, err := UnmarshalSkillDefinitionView(bytes)
+//    bytes, err = skillDefinitionView.Marshal()
+//
+//    skillReferencePage, err := UnmarshalSkillReferencePage(bytes)
+//    bytes, err = skillReferencePage.Marshal()
+//
+//    skillVersionContentView, err := UnmarshalSkillVersionContentView(bytes)
+//    bytes, err = skillVersionContentView.Marshal()
+//
+//    skillVersionPage, err := UnmarshalSkillVersionPage(bytes)
+//    bytes, err = skillVersionPage.Marshal()
+//
+//    skillVersionView, err := UnmarshalSkillVersionView(bytes)
+//    bytes, err = skillVersionView.Marshal()
+//
 //    taskView, err := UnmarshalTaskView(bytes)
 //    bytes, err = taskView.Marshal()
 //
@@ -768,6 +801,9 @@
 //
 //    runtimeProfileDirectory, err := UnmarshalRuntimeProfileDirectory(bytes)
 //    bytes, err = runtimeProfileDirectory.Marshal()
+//
+//    skillVersionUploadInput, err := UnmarshalSkillVersionUploadInput(bytes)
+//    bytes, err = skillVersionUploadInput.Marshal()
 //
 //    taskStateReport, err := UnmarshalTaskStateReport(bytes)
 //    bytes, err = taskStateReport.Marshal()
@@ -1503,6 +1539,26 @@ func UnmarshalAgentInstallationProjectionView(data []byte) (AgentInstallationPro
 }
 
 func (r *AgentInstallationProjectionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationSkillPage(data []byte) (AgentInstallationSkillPage, error) {
+	var r AgentInstallationSkillPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationSkillPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAgentInstallationSkillView(data []byte) (AgentInstallationSkillView, error) {
+	var r AgentInstallationSkillView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AgentInstallationSkillView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2616,6 +2672,96 @@ func (r *SidebarSortRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalSkillArtifactUploadRequest(data []byte) (SkillArtifactUploadRequest, error) {
+	var r SkillArtifactUploadRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillArtifactUploadRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillArtifactUploadView(data []byte) (SkillArtifactUploadView, error) {
+	var r SkillArtifactUploadView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillArtifactUploadView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillArtifactViolation(data []byte) (SkillArtifactViolation, error) {
+	var r SkillArtifactViolation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillArtifactViolation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillDefinitionPage(data []byte) (SkillDefinitionPage, error) {
+	var r SkillDefinitionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillDefinitionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillDefinitionView(data []byte) (SkillDefinitionView, error) {
+	var r SkillDefinitionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillDefinitionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillReferencePage(data []byte) (SkillReferencePage, error) {
+	var r SkillReferencePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillReferencePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillVersionContentView(data []byte) (SkillVersionContentView, error) {
+	var r SkillVersionContentView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillVersionContentView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillVersionPage(data []byte) (SkillVersionPage, error) {
+	var r SkillVersionPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillVersionPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillVersionView(data []byte) (SkillVersionView, error) {
+	var r SkillVersionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillVersionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalTaskView(data []byte) (TaskView, error) {
 	var r TaskView
 	err := json.Unmarshal(data, &r)
@@ -3483,6 +3629,16 @@ func UnmarshalRuntimeProfileDirectory(data []byte) (RuntimeProfileDirectory, err
 }
 
 func (r *RuntimeProfileDirectory) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalSkillVersionUploadInput(data []byte) (SkillVersionUploadInput, error) {
+	var r SkillVersionUploadInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SkillVersionUploadInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4749,6 +4905,26 @@ type AgentInstallationViewReadPermission struct {
 	Effective                bool    `json:"effective"`
 	PendingActionExecutionID *string `json:"pendingActionExecutionId,omitempty"`
 	Requested                bool    `json:"requested"`
+}
+
+// Installation 的 Skill 投影状态（requested/projection/current）；需 Installation read，读取不触发投影或重试。
+type AgentInstallationSkillPage struct {
+	AgentVersionAssetID    string                       `json:"agentVersionAssetId"`
+	Generation             *int64                       `json:"generation,omitempty"`
+	InstallationResourceID string                       `json:"installationResourceId"`
+	Skills                 []AgentInstallationSkillView `json:"skills"`
+}
+
+// DD-135(7)：Installation pinned Version 引用的一个 Skill 的 requested 事实、投影结果与当前状态；不含正文或物化路径。
+type AgentInstallationSkillView struct {
+	ArtifactDigest string `json:"artifactDigest"`
+	Ordinal        int64  `json:"ordinal"`
+	// 当前 generation 已以 digest 物化并经 skills/list 核对。
+	Projected           bool                         `json:"projected"`
+	SkillResourceID     string                       `json:"skillResourceId"`
+	SkillVersionAssetID string                       `json:"skillVersionAssetId"`
+	StableSlug          string                       `json:"stableSlug"`
+	Status              AgentInstallationSkillStatus `json:"status"`
 }
 
 // DD-122: the tools an Agent Installation's current generation requests and their effective
@@ -6404,6 +6580,8 @@ type ActionCommand struct {
 	ResourceID *string `json:"resourceId,omitempty"`
 	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
 	ResourceVersion *int64 `json:"resourceVersion,omitempty"`
+	// 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+	SkillVersionUpload *SkillVersionUploadInput `json:"skillVersionUpload,omitempty"`
 	// workspace.create 或 agent.definition.create 的稳定 slug
 	Slug *string `json:"slug,omitempty"`
 	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
@@ -6668,6 +6846,18 @@ type ResourceCreate struct {
 	NativeRef      string `json:"nativeRef"`
 	NativeType     string `json:"nativeType"`
 	TypeKey        string `json:"typeKey"`
+}
+
+// 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+//
+// 仅 skill.version.create（DD-135(3)）：引用本 PlatformSession、本人、目标定义的一次性上传及其规范 artifact
+// digest；能力需求只声明契约键与版本，不授予工具。
+type SkillVersionUploadInput struct {
+	// 上传返回的规范 SKILL.md SHA-256（64 位小写十六进制）；准入事务内重算比对。
+	ArtifactDigest string `json:"artifactDigest"`
+	// contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	UploadID               string   `json:"uploadId"`
 }
 
 // 仅 tenant.quota.set（DD-123）
@@ -7397,6 +7587,103 @@ type SidebarSortRequest struct {
 	GroupKey string          `json:"groupKey"`
 	Mode     SidebarSortMode `json:"mode"`
 	Version  int64           `json:"version"`
+}
+
+// DD-135(2)(3)：一次 Skill 上传的原始字节（标准 base64，两端同一 JSON 传输）。解码后不超过 1 MiB；编码只接受 SKILL.md、tar 或
+// tar.gz，由 Core 判定。
+type SkillArtifactUploadRequest struct {
+	ContentBase64 string `json:"contentBase64"`
+}
+
+// DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter
+// 元数据；否则只给逐项违规，不暂存字节。
+type SkillArtifactUploadView struct {
+	Accepted         bool                     `json:"accepted"`
+	ArtifactByteSize *int64                   `json:"artifactByteSize,omitempty"`
+	ArtifactDigest   *string                  `json:"artifactDigest,omitempty"`
+	Description      *string                  `json:"description,omitempty"`
+	Encoding         *SkillArtifactEncoding   `json:"encoding,omitempty"`
+	ExpiresAt        *string                  `json:"expiresAt,omitempty"`
+	ShortDescription *string                  `json:"shortDescription,omitempty"`
+	SkillName        *string                  `json:"skillName,omitempty"`
+	SkillResourceID  string                   `json:"skillResourceId"`
+	UploadByteSize   int64                    `json:"uploadByteSize"`
+	UploadDigest     string                   `json:"uploadDigest"`
+	UploadID         *string                  `json:"uploadId,omitempty"`
+	Violations       []SkillArtifactViolation `json:"violations"`
+}
+
+type SkillArtifactViolation struct {
+	Code SkillArtifactViolationCode `json:"code"`
+	// 违规条目在上传包内的路径（不含正文）；与整体相关的违规省略。
+	Path *string `json:"path,omitempty"`
+}
+
+// 同 Tenant 且当前 discover 允许的 Skill 定义页；nextOffset 续读同一排序。
+type SkillDefinitionPage struct {
+	Definitions []SkillDefinitionView `json:"definitions"`
+	NextOffset  *int64                `json:"nextOffset,omitempty"`
+}
+
+// DD-135(1)(4)：Tenant 级 Skill 定义与 Resource 事实；can* 只是当前 HUMAN 的 fresh 入口提示，提交时仍重验。
+type SkillDefinitionView struct {
+	CanDisable *bool `json:"canDisable,omitempty"`
+	CanShare   *bool `json:"canShare,omitempty"`
+	CanUpload  *bool `json:"canUpload,omitempty"`
+	// 本 Tenant 成员同时持有该定义的 discoverer 与 reader（DD-131(6)）。
+	CatalogShared                  bool                  `json:"catalogShared"`
+	CurrentPublishedVersionAssetID *string               `json:"currentPublishedVersionAssetId,omitempty"`
+	DisplayName                    string                `json:"displayName"`
+	OwnerPrincipalID               string                `json:"ownerPrincipalId"`
+	ResourceID                     string                `json:"resourceId"`
+	ResourceVersion                int64                 `json:"resourceVersion"`
+	StableSlug                     string                `json:"stableSlug"`
+	Status                         SkillDefinitionStatus `json:"status"`
+}
+
+// DD-135(4)：AgentVersion 编辑器可选的 Skill 版本目录——当前 HUMAN fresh 可 read 的 ACTIVE 定义下的 PUBLISHED
+// 版本；不授予任何 Installation permission。
+type SkillReferencePage struct {
+	NextOffset *int64             `json:"nextOffset,omitempty"`
+	Versions   []SkillVersionView `json:"versions"`
+}
+
+// DD-135(1)(2)：不可变 SkillVersion 的元数据；正文只经内容读取端点返回。state 与 AgentVersion 共用同一生命周期枚举。
+type SkillVersionView struct {
+	ArtifactByteSize       int64    `json:"artifactByteSize"`
+	ArtifactDigest         string   `json:"artifactDigest"`
+	ArtifactFormat         string   `json:"artifactFormat"`
+	AssetID                string   `json:"assetId"`
+	AssetVersion           int64    `json:"assetVersion"`
+	CanPublish             *bool    `json:"canPublish,omitempty"`
+	CanRetire              *bool    `json:"canRetire,omitempty"`
+	CapabilityRequirements []string `json:"capabilityRequirements"`
+	// 是所属定义当前的发布指针。
+	Current          *bool             `json:"current,omitempty"`
+	Description      string            `json:"description"`
+	MetadataHash     string            `json:"metadataHash"`
+	Ordinal          int64             `json:"ordinal"`
+	OwnerPrincipalID string            `json:"ownerPrincipalId"`
+	ShortDescription *string           `json:"shortDescription,omitempty"`
+	SkillName        string            `json:"skillName"`
+	SkillResourceID  string            `json:"skillResourceId"`
+	StableSlug       string            `json:"stableSlug"`
+	State            AgentVersionState `json:"state"`
+}
+
+// DD-135(4)(8)：一个可读版本的规范 SKILL.md 正文；读取即对该版本的 read，返回前以 digest 重算。不进入审计或日志。
+type SkillVersionContentView struct {
+	ArtifactDigest string `json:"artifactDigest"`
+	AssetID        string `json:"assetId"`
+	Content        string `json:"content"`
+}
+
+// 一个 Skill 定义的版本页（ordinal 降序）；DRAFT 只对版本 Asset read 持有者列出。
+type SkillVersionPage struct {
+	NextOffset      *int64             `json:"nextOffset,omitempty"`
+	ResourceVersion int64              `json:"resourceVersion"`
+	SkillResourceID string             `json:"skillResourceId"`
+	Versions        []SkillVersionView `json:"versions"`
 }
 
 // GET /api/v1/invitations 回应数组的元素：本 Tenant 的邀请，只对持有 Tenant manage
@@ -8978,13 +9265,25 @@ const (
 	Draining                           AgentInstallationState = "DRAINING"
 )
 
+// DD-135(5)(7)、17 §4：Installation 中一个被引 Skill 的当前状态。PROJECTION_FAILED 与 RUNTIME_NOT_READY
+// 来自 generation 投影；DISABLED 与 NO_PERMISSION 来自读取时的 fresh 判定，与每次 turn/start 前的判定同一规则。
+type AgentInstallationSkillStatus string
+
+const (
+	AgentInstallationSkillStatusDISABLED     AgentInstallationSkillStatus = "DISABLED"
+	AgentInstallationSkillStatusNOPERMISSION AgentInstallationSkillStatus = "NO_PERMISSION"
+	Effective                                AgentInstallationSkillStatus = "EFFECTIVE"
+	ProjectionFailed                         AgentInstallationSkillStatus = "PROJECTION_FAILED"
+	RuntimeNotReady                          AgentInstallationSkillStatus = "RUNTIME_NOT_READY"
+)
+
 type AgentToolBindingStatus string
 
 const (
-	AgentToolBindingStatusACTIVE  AgentToolBindingStatus = "ACTIVE"
-	AgentToolBindingStatusPENDING AgentToolBindingStatus = "PENDING"
-	AgentToolBindingStatusREVOKED AgentToolBindingStatus = "REVOKED"
-	NoPermission                  AgentToolBindingStatus = "NO_PERMISSION"
+	AgentToolBindingStatusACTIVE       AgentToolBindingStatus = "ACTIVE"
+	AgentToolBindingStatusNOPERMISSION AgentToolBindingStatus = "NO_PERMISSION"
+	AgentToolBindingStatusPENDING      AgentToolBindingStatus = "PENDING"
+	AgentToolBindingStatusREVOKED      AgentToolBindingStatus = "REVOKED"
 )
 
 // 稳定业务 reason code，进入 audit、UI 与告警；文案可本地化，code 不变（apps/06-工程基线规范.md 第 4 节）。新增与新增 API
@@ -9315,6 +9614,7 @@ const (
 	OriginalActionExecutionID     EvidenceKind = "ORIGINAL_ACTION_EXECUTION_ID"
 	PlatformSessionID             EvidenceKind = "PLATFORM_SESSION_ID"
 	SecretRefRehomeID             EvidenceKind = "SECRET_REF_REHOME_ID"
+	SkillArtifactDigest           EvidenceKind = "SKILL_ARTIFACT_DIGEST"
 	SpicedbRelationship           EvidenceKind = "SPICEDB_RELATIONSHIP"
 	SpicedbZedtoken               EvidenceKind = "SPICEDB_ZEDTOKEN"
 	TemporalFirstRunID            EvidenceKind = "TEMPORAL_FIRST_RUN_ID"
@@ -10147,6 +10447,52 @@ type SidebarSortMode string
 const (
 	Alpha  SidebarSortMode = "alpha"
 	Recent SidebarSortMode = "recent"
+)
+
+// DD-135(2)：上传字节的编码。规范 artifact 恒为一个 SKILL.md，与上传编码无关。
+type SkillArtifactEncoding string
+
+const (
+	SkillMd SkillArtifactEncoding = "SKILL_MD"
+	Tar     SkillArtifactEncoding = "TAR"
+	TarGzip SkillArtifactEncoding = "TAR_GZIP"
+)
+
+// DD-135(2)(9)：上传校验的封闭违规码；与路径一起逐项返回，不含文件正文。
+type SkillArtifactViolationCode string
+
+const (
+	ArchiveInvalid            SkillArtifactViolationCode = "ARCHIVE_INVALID"
+	ControlCharacter          SkillArtifactViolationCode = "CONTROL_CHARACTER"
+	DescriptionTooLong        SkillArtifactViolationCode = "DESCRIPTION_TOO_LONG"
+	DuplicateSkillMd          SkillArtifactViolationCode = "DUPLICATE_SKILL_MD"
+	EntryLimitExceeded        SkillArtifactViolationCode = "ENTRY_LIMIT_EXCEEDED"
+	ExecutableEntry           SkillArtifactViolationCode = "EXECUTABLE_ENTRY"
+	ExpandedTooLarge          SkillArtifactViolationCode = "EXPANDED_TOO_LARGE"
+	ExtraEntry                SkillArtifactViolationCode = "EXTRA_ENTRY"
+	InvalidFrontmatter        SkillArtifactViolationCode = "INVALID_FRONTMATTER"
+	LinkEntry                 SkillArtifactViolationCode = "LINK_ENTRY"
+	MissingDescription        SkillArtifactViolationCode = "MISSING_DESCRIPTION"
+	MissingFrontmatter        SkillArtifactViolationCode = "MISSING_FRONTMATTER"
+	MissingSkillMd            SkillArtifactViolationCode = "MISSING_SKILL_MD"
+	NameMismatch              SkillArtifactViolationCode = "NAME_MISMATCH"
+	NotUtf8                   SkillArtifactViolationCode = "NOT_UTF8"
+	SkillMdTooLarge           SkillArtifactViolationCode = "SKILL_MD_TOO_LARGE"
+	SpecialEntry              SkillArtifactViolationCode = "SPECIAL_ENTRY"
+	UnsafePath                SkillArtifactViolationCode = "UNSAFE_PATH"
+	UnsupportedEncoding       SkillArtifactViolationCode = "UNSUPPORTED_ENCODING"
+	UnsupportedFrontmatterKey SkillArtifactViolationCode = "UNSUPPORTED_FRONTMATTER_KEY"
+	UploadTooLarge            SkillArtifactViolationCode = "UPLOAD_TOO_LARGE"
+)
+
+// DD-135(1)、03 §7：SkillDefinition 状态。DISABLED 不可逆，DELETED 是 Tenant 销毁墓碑。
+type SkillDefinitionStatus string
+
+const (
+	SkillDefinitionStatusACTIVE       SkillDefinitionStatus = "ACTIVE"
+	SkillDefinitionStatusDELETED      SkillDefinitionStatus = "DELETED"
+	SkillDefinitionStatusDISABLED     SkillDefinitionStatus = "DISABLED"
+	SkillDefinitionStatusPROVISIONING SkillDefinitionStatus = "PROVISIONING"
 )
 
 // TenantInvitation 在视图中的状态（DD-83）。库里只存 ISSUED/REDEEMED/REVOKED；EXPIRED 是查询时判定：expires_at

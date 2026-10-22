@@ -1192,6 +1192,44 @@ export enum AgentInstallationState {
 }
 
 /**
+ * Installation 的 Skill 投影状态（requested/projection/current）；需 Installation read，读取不触发投影或重试。
+ */
+export interface AgentInstallationSkillPage {
+    agentVersionAssetId:    string;
+    generation?:            number;
+    installationResourceId: string;
+    skills:                 AgentInstallationSkillView[];
+}
+
+/**
+ * DD-135(7)：Installation pinned Version 引用的一个 Skill 的 requested 事实、投影结果与当前状态；不含正文或物化路径。
+ */
+export interface AgentInstallationSkillView {
+    artifactDigest: string;
+    ordinal:        number;
+    /**
+     * 当前 generation 已以 digest 物化并经 skills/list 核对。
+     */
+    projected:           boolean;
+    skillResourceId:     string;
+    skillVersionAssetId: string;
+    stableSlug:          string;
+    status:              AgentInstallationSkillStatus;
+}
+
+/**
+ * DD-135(5)(7)、17 §4：Installation 中一个被引 Skill 的当前状态。PROJECTION_FAILED 与 RUNTIME_NOT_READY
+ * 来自 generation 投影；DISABLED 与 NO_PERMISSION 来自读取时的 fresh 判定，与每次 turn/start 前的判定同一规则。
+ */
+export enum AgentInstallationSkillStatus {
+    Disabled = "DISABLED",
+    Effective = "EFFECTIVE",
+    NoPermission = "NO_PERMISSION",
+    ProjectionFailed = "PROJECTION_FAILED",
+    RuntimeNotReady = "RUNTIME_NOT_READY",
+}
+
+/**
  * DD-122: the tools an Agent Installation's current generation requests and their effective
  * state. Read-only; grants happen only through installation create/upgrade.
  */
@@ -2225,6 +2263,7 @@ export enum EvidenceKind {
     OriginalActionExecutionId = "ORIGINAL_ACTION_EXECUTION_ID",
     PlatformSessionId = "PLATFORM_SESSION_ID",
     SecretRefRehomeId = "SECRET_REF_REHOME_ID",
+    SkillArtifactDigest = "SKILL_ARTIFACT_DIGEST",
     SpicedbRelationship = "SPICEDB_RELATIONSHIP",
     SpicedbZedtoken = "SPICEDB_ZEDTOKEN",
     TemporalFirstRunId = "TEMPORAL_FIRST_RUN_ID",
@@ -4178,6 +4217,10 @@ export interface ActionCommand {
      */
     resourceVersion?: number;
     /**
+     * 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+     */
+    skillVersionUpload?: SkillVersionUploadInput;
+    /**
      * workspace.create 或 agent.definition.create 的稳定 slug
      */
     slug?: string;
@@ -4630,6 +4673,24 @@ export interface ResourceCreate {
     nativeRef:      string;
     nativeType:     string;
     typeKey:        string;
+}
+
+/**
+ * 仅 skill.version.create（DD-135(3)）：本会话一次性上传引用与能力需求；其他动作携带即拒绝。
+ *
+ * 仅 skill.version.create（DD-135(3)）：引用本 PlatformSession、本人、目标定义的一次性上传及其规范 artifact
+ * digest；能力需求只声明契约键与版本，不授予工具。
+ */
+export interface SkillVersionUploadInput {
+    /**
+     * 上传返回的规范 SKILL.md SHA-256（64 位小写十六进制）；准入事务内重算比对。
+     */
+    artifactDigest: string;
+    /**
+     * contract_key@version，去重；须是引用它的 AgentVersion 能力需求的子集。
+     */
+    capabilityRequirements: string[];
+    uploadId:               string;
 }
 
 /**
@@ -5797,6 +5858,171 @@ export interface SidebarSortRequest {
 export enum SidebarSortMode {
     Alpha = "alpha",
     Recent = "recent",
+}
+
+/**
+ * DD-135(2)(3)：一次 Skill 上传的原始字节（标准 base64，两端同一 JSON 传输）。解码后不超过 1 MiB；编码只接受 SKILL.md、tar 或
+ * tar.gz，由 Core 判定。
+ */
+export interface SkillArtifactUploadRequest {
+    contentBase64: string;
+}
+
+/**
+ * DD-135(2)(3)：上传校验结果。accepted 时给出一次性 uploadId、规范 artifact digest 与 frontmatter
+ * 元数据；否则只给逐项违规，不暂存字节。
+ */
+export interface SkillArtifactUploadView {
+    accepted:          boolean;
+    artifactByteSize?: number;
+    artifactDigest?:   string;
+    description?:      string;
+    encoding?:         SkillArtifactEncoding;
+    expiresAt?:        string;
+    shortDescription?: string;
+    skillName?:        string;
+    skillResourceId:   string;
+    uploadByteSize:    number;
+    uploadDigest:      string;
+    uploadId?:         string;
+    violations:        SkillArtifactViolation[];
+}
+
+/**
+ * DD-135(2)：上传字节的编码。规范 artifact 恒为一个 SKILL.md，与上传编码无关。
+ */
+export enum SkillArtifactEncoding {
+    SkillMd = "SKILL_MD",
+    Tar = "TAR",
+    TarGzip = "TAR_GZIP",
+}
+
+export interface SkillArtifactViolation {
+    code: SkillArtifactViolationCode;
+    /**
+     * 违规条目在上传包内的路径（不含正文）；与整体相关的违规省略。
+     */
+    path?: string;
+}
+
+/**
+ * DD-135(2)(9)：上传校验的封闭违规码；与路径一起逐项返回，不含文件正文。
+ */
+export enum SkillArtifactViolationCode {
+    ArchiveInvalid = "ARCHIVE_INVALID",
+    ControlCharacter = "CONTROL_CHARACTER",
+    DescriptionTooLong = "DESCRIPTION_TOO_LONG",
+    DuplicateSkillMd = "DUPLICATE_SKILL_MD",
+    EntryLimitExceeded = "ENTRY_LIMIT_EXCEEDED",
+    ExecutableEntry = "EXECUTABLE_ENTRY",
+    ExpandedTooLarge = "EXPANDED_TOO_LARGE",
+    ExtraEntry = "EXTRA_ENTRY",
+    InvalidFrontmatter = "INVALID_FRONTMATTER",
+    LinkEntry = "LINK_ENTRY",
+    MissingDescription = "MISSING_DESCRIPTION",
+    MissingFrontmatter = "MISSING_FRONTMATTER",
+    MissingSkillMd = "MISSING_SKILL_MD",
+    NameMismatch = "NAME_MISMATCH",
+    NotUtf8 = "NOT_UTF8",
+    SkillMdTooLarge = "SKILL_MD_TOO_LARGE",
+    SpecialEntry = "SPECIAL_ENTRY",
+    UnsafePath = "UNSAFE_PATH",
+    UnsupportedEncoding = "UNSUPPORTED_ENCODING",
+    UnsupportedFrontmatterKey = "UNSUPPORTED_FRONTMATTER_KEY",
+    UploadTooLarge = "UPLOAD_TOO_LARGE",
+}
+
+/**
+ * 同 Tenant 且当前 discover 允许的 Skill 定义页；nextOffset 续读同一排序。
+ */
+export interface SkillDefinitionPage {
+    definitions: SkillDefinitionView[];
+    nextOffset?: number;
+}
+
+/**
+ * DD-135(1)(4)：Tenant 级 Skill 定义与 Resource 事实；can* 只是当前 HUMAN 的 fresh 入口提示，提交时仍重验。
+ */
+export interface SkillDefinitionView {
+    canDisable?: boolean;
+    canShare?:   boolean;
+    canUpload?:  boolean;
+    /**
+     * 本 Tenant 成员同时持有该定义的 discoverer 与 reader（DD-131(6)）。
+     */
+    catalogShared:                   boolean;
+    currentPublishedVersionAssetId?: string;
+    displayName:                     string;
+    ownerPrincipalId:                string;
+    resourceId:                      string;
+    resourceVersion:                 number;
+    stableSlug:                      string;
+    status:                          SkillDefinitionStatus;
+}
+
+/**
+ * DD-135(1)、03 §7：SkillDefinition 状态。DISABLED 不可逆，DELETED 是 Tenant 销毁墓碑。
+ */
+export enum SkillDefinitionStatus {
+    Active = "ACTIVE",
+    Deleted = "DELETED",
+    Disabled = "DISABLED",
+    Provisioning = "PROVISIONING",
+}
+
+/**
+ * DD-135(4)：AgentVersion 编辑器可选的 Skill 版本目录——当前 HUMAN fresh 可 read 的 ACTIVE 定义下的 PUBLISHED
+ * 版本；不授予任何 Installation permission。
+ */
+export interface SkillReferencePage {
+    nextOffset?: number;
+    versions:    SkillVersionView[];
+}
+
+/**
+ * DD-135(1)(2)：不可变 SkillVersion 的元数据；正文只经内容读取端点返回。state 与 AgentVersion 共用同一生命周期枚举。
+ */
+export interface SkillVersionView {
+    artifactByteSize:       number;
+    artifactDigest:         string;
+    artifactFormat:         string;
+    assetId:                string;
+    assetVersion:           number;
+    canPublish?:            boolean;
+    canRetire?:             boolean;
+    capabilityRequirements: string[];
+    /**
+     * 是所属定义当前的发布指针。
+     */
+    current?:          boolean;
+    description:       string;
+    metadataHash:      string;
+    ordinal:           number;
+    ownerPrincipalId:  string;
+    shortDescription?: string;
+    skillName:         string;
+    skillResourceId:   string;
+    stableSlug:        string;
+    state:             AgentVersionState;
+}
+
+/**
+ * DD-135(4)(8)：一个可读版本的规范 SKILL.md 正文；读取即对该版本的 read，返回前以 digest 重算。不进入审计或日志。
+ */
+export interface SkillVersionContentView {
+    artifactDigest: string;
+    assetId:        string;
+    content:        string;
+}
+
+/**
+ * 一个 Skill 定义的版本页（ordinal 降序）；DRAFT 只对版本 Asset read 持有者列出。
+ */
+export interface SkillVersionPage {
+    nextOffset?:     number;
+    resourceVersion: number;
+    skillResourceId: string;
+    versions:        SkillVersionView[];
 }
 
 /**
