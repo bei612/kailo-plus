@@ -530,7 +530,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:905543009df7689b381b6b5b0db7900424887fe1d18b4a5f8ac35da6364765b2
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:d539427307f6509e272499c0636d6527da78069046703103532215f5766d946a
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -767,7 +767,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:aa6f3f30dad5ba8ba488d319d047a8330076a599c416e9a09081ffff5f6ae678
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:6cc6a5e6df3f61e8ae0ed2374203d0cebb687367887013482f06ad2787b658f5
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -818,7 +818,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:c08ca98d1ffdd8a7e8d08161c615154a6ded596a27a4e3aa95347dad35bb0dab
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:b853d2b0bec88805e205eead1ad7be7736d22d5c9185d6d377a1325729ee31e0
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -841,7 +841,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6ae2e104a617eee314fa910fdcc76fc4445848c72f2e8b315e3a82c28372fd22
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -906,7 +906,7 @@ services:
   # 只接受 Core service client 的令牌（Proxy-Authorization，失败 407），只放行公网主机名；
   # 不配 admin/storage，端口不发布到宿主，只在 automation-egress 网络。
   automation-egress:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6ae2e104a617eee314fa910fdcc76fc4445848c72f2e8b315e3a82c28372fd22
     networks:
       automation-egress:
         ipv4_address: ${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}

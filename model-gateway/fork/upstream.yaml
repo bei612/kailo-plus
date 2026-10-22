@@ -33,8 +33,8 @@ artifacts:
     build_context: model-gateway
     build_dockerfile: model-gateway/Dockerfile
     inputs: [model-gateway/]
-    source_digest: sha256:67c3ae6dfc0266995b4f7f706b364a4c66442a330e2a2e491bda4ac4c3359edc
-    artifact_digest: sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
+    source_digest: sha256:37b51d7dd7cf6839c9a5391ec4f5ce0f9abffd4aba98251211783eb64b17d086
+    artifact_digest: sha256:6ae2e104a617eee314fa910fdcc76fc4445848c72f2e8b315e3a82c28372fd22
 
 source_facts: [SF-AGW-02, SF-AGW-06, SF-AGW-09, SF-AGW-10, SF-AGW-11, SF-AGW-16, SF-AGW-17, SF-AGW-20]
 source_seams: [SS-AGW-OIDC, SS-AGW-PEP, SS-AGW-ADMIN, SS-AGW-USAGE, SS-AGW-END-SESSION]
