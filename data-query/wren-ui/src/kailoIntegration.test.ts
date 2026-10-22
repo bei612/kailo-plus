@@ -30,7 +30,9 @@ jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 // Web Crypto is a global in the browser/Edge runtime, not under Node 18 Jest.
 if (!(globalThis as any).crypto?.subtle) (globalThis as any).crypto = webcrypto;
 
-const profile = (changes: Partial<KailoUserProfile> = {}): KailoUserProfile => ({
+const profile = (
+  changes: Partial<KailoUserProfile> = {},
+): KailoUserProfile => ({
   key: 'a'.repeat(64),
   name: 'Member',
   username: 'member',
@@ -65,9 +67,7 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
   test('a thread is managed by its creator or an admin only', () => {
     const owner = profile();
     expect(() => assertStandaloneOwnerOrAdmin(owner, owner.key)).not.toThrow();
-    expect(() =>
-      assertStandaloneOwnerOrAdmin(owner, 'b'.repeat(64)),
-    ).toThrow();
+    expect(() => assertStandaloneOwnerOrAdmin(owner, 'b'.repeat(64))).toThrow();
     expect(() => assertStandaloneOwnerOrAdmin(owner, null)).toThrow();
     expect(() =>
       assertStandaloneOwnerOrAdmin(profile({ admin: true }), null),

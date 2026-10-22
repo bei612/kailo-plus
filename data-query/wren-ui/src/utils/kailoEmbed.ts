@@ -79,7 +79,9 @@ export function requireSignIn() {
     return;
   }
   const returnTo = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(`/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+  window.location.assign(
+    `/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+  );
 }
 
 // Apollo/REST fetch: one silent renewal and retry on a Gateway 401.
@@ -88,8 +90,7 @@ export async function kailoFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const response = await fetch(input, init);
-  if (response.status !== 401 || typeof window === 'undefined')
-    return response;
+  if (response.status !== 401 || typeof window === 'undefined') return response;
   if (await renewNativeSession()) return fetch(input, init);
   requireSignIn();
   return response;

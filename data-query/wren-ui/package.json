@@ -15,9 +15,9 @@
     "generate-gql": "yarn graphql-codegen --config codegen.yaml"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.26.0",
     "@google-cloud/bigquery": "^6.0.3",
     "@google-cloud/storage": "^6.10.1",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "apollo-server-micro": "^3.10.2",
     "axios": "^1.12.0",
     "bcryptjs": "^2.4.3",

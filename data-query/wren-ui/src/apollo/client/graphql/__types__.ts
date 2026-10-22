@@ -646,7 +646,7 @@ export type ItemLayoutInput = {
 
 export type KailoSession = {
   __typename?: 'KailoSession';
-  hostOrigins: Array<Scalars['String']>;
+  identityLocale?: Maybe<Scalars['String']>;
   isAdmin: Scalars['Boolean'];
   productName: Scalars['String'];
   user?: Maybe<KailoUser>;

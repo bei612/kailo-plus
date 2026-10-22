@@ -6,7 +6,7 @@ const defaultOptions = {} as const;
 export type KailoSessionQueryVariables = Types.Exact<{ [key: string]: never; }>;
 
 
-export type KailoSessionQuery = { __typename?: 'Query', kailoSession: { __typename?: 'KailoSession', isAdmin: boolean, productName: string, hostOrigins: Array<string>, user?: { __typename?: 'KailoUser', name?: string | null, username?: string | null, email?: string | null, picture?: string | null } | null } };
+export type KailoSessionQuery = { __typename?: 'Query', kailoSession: { __typename?: 'KailoSession', isAdmin: boolean, productName: string, identityLocale?: string | null, user?: { __typename?: 'KailoUser', name?: string | null, username?: string | null, email?: string | null, picture?: string | null } | null } };
 
 
 export const KailoSessionDocument = gql`
@@ -20,7 +20,7 @@ export const KailoSessionDocument = gql`
     }
     isAdmin
     productName
-    hostOrigins
+    identityLocale
   }
 }
     `;

@@ -82,7 +82,8 @@ export function KailoSessionProvider({ children, displayName }: Props) {
   // Kailo has not supplied one (the runtime ignores it otherwise).
   useEffect(() => {
     const locale = session?.identityLocale;
-    if (locale && !presentation().embedded) kailoRuntime()?.useIdentityLocale(locale);
+    if (locale && !presentation().embedded)
+      kailoRuntime()?.useIdentityLocale(locale);
   }, [session?.identityLocale]);
 
   const value = useMemo<KailoSessionValue>(

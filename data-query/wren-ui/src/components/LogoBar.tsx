@@ -10,7 +10,10 @@ export default function LogoBar() {
   return (
     <span className="d-flex align-center" style={{ gap: 8 }}>
       <img src="/kailo/app-icon.png" alt="" width={24} height={24} />
-      <span className="text-bold" style={{ color: 'var(--kailo-color-foreground)' }}>
+      <span
+        className="text-bold"
+        style={{ color: 'var(--kailo-color-foreground)' }}
+      >
         {kailoProductTitle(locale, productName)}
       </span>
     </span>

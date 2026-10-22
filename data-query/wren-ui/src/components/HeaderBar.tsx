@@ -20,7 +20,9 @@ const StyledButton = styled(Button)<{ $isHighlight: boolean }>`
   border: none;
   box-shadow: none;
   color: ${(props) =>
-    props.$isHighlight ? 'var(--kailo-color-foreground)' : 'var(--kailo-color-muted-foreground)'};
+    props.$isHighlight
+      ? 'var(--kailo-color-foreground)'
+      : 'var(--kailo-color-muted-foreground)'};
 
   &:hover,
   &:focus {
