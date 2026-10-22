@@ -437,7 +437,7 @@ describe("independent shared Workflows page", () => {
       const [section, setSection] = useState<"agents" | "workflows">("agents");
       return <><PlatformNavigation locale="en" selectedSection={section}
         onSelectSection={(next) => { if (next === "agents" || next === "workflows") setSection(next); }}
-        icons={{ pulse: null, projects: null, members: null, agents: null, workflows: null, tasks: null, approvals: null, usage: null, operations: null, audit: null, devices: null }} />
+        icons={{ pulse: null, projects: null, members: null, agents: null, workflows: null, tasks: null, approvals: null, usage: null, operations: null, gateway: null, audit: null, devices: null }} />
         {section === "agents" ? <AgentDefinitionsPage /> : <WorkflowsPage />}</>;
     }
     const host = await mount(t, <Host />);

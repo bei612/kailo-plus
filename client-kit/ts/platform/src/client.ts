@@ -114,12 +114,50 @@ import type {
   SkillReferencePage,
   SkillArtifactUploadView,
   AgentInstallationSkillPage,
+  GatewayAccess,
+  GatewayCallDetail,
+  GatewayCallKind,
+  GatewayCallOutcome,
+  GatewayCallPage,
+  GatewayConfigHistory,
+  GatewayConfigView,
+  GatewayMcpBindingDraft,
+  GatewayMcpBindingDraftRequest,
+  GatewayMcpPeerPage,
+  GatewayMcpProbeRequest,
+  GatewayMcpProbeResult,
+  GatewayMcpReleasePage,
+  GatewayModelRoutePage,
+  GatewayModelSourcePage,
+  GatewayStats,
+  GatewayStatsDimension,
+  GatewayToolPage,
+  GatewayToolTestCallResult,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
 import { type BffRequest, type BffTransport, unwrap } from "./transport";
 
 export type BffClient = ReturnType<typeof createBffClient>;
+
+/** DD-134(3)：网关统计与调用列表的查询条件；区间 [from, to) 为 RFC3339。 */
+export type GatewayCallQuery = {
+  from: string;
+  to: string;
+  workspaceId?: string;
+  kind?: GatewayCallKind;
+  outcome?: GatewayCallOutcome;
+  dimension?: GatewayStatsDimension;
+  key?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+function gatewayQuery(values: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(values)) if (value !== undefined && value !== "") query.set(name, String(value));
+  return query.size ? `?${query}` : "";
+}
 
 /** DD-125(6): state of the host's live Agent transcript stream. */
 export type AgentTranscriptStreamState = "connecting" | "live" | "reconnecting" | "closed";
@@ -525,6 +563,39 @@ export function createBffClient(transport: BffTransport) {
       if (workspaceId) query.set("workspaceId", workspaceId);
       return get<UsageBillingView>(`/api/v1/usage-billing?${query}`);
     },
+
+    // DD-134 网关管理区：全部是 BFF 只读查询（Core 以 service 凭据读 Gateway 并打码）；
+    // 修改只经 submitAction 的既有动作。范围取会话 Tenant，每次服务端 fresh 授权。
+    gatewayAccess: () => get<GatewayAccess>("/api/v1/gateway/access", true),
+    gatewayStats: (from: string, to: string, dimension: GatewayStatsDimension, workspaceId?: string) =>
+      get<GatewayStats>(`/api/v1/gateway/stats${gatewayQuery({ from, to, dimension, workspaceId })}`, true),
+    gatewayCalls: (query: GatewayCallQuery) =>
+      get<GatewayCallPage>(`/api/v1/gateway/calls${gatewayQuery(query)}`, true),
+    gatewayCall: (callId: string) =>
+      get<GatewayCallDetail>(`/api/v1/gateway/calls/${encodeURIComponent(callId)}`, true),
+    gatewayTools: (from: string, to: string, offset = 0) =>
+      get<GatewayToolPage>(`/api/v1/gateway/tools${gatewayQuery({ from, to, offset })}`, true),
+    gatewayModelRoutes: (from: string, to: string, offset = 0) =>
+      get<GatewayModelRoutePage>(`/api/v1/gateway/model-routes${gatewayQuery({ from, to, offset })}`, true),
+    gatewayModelSources: () => get<GatewayModelSourcePage>("/api/v1/gateway/model-sources", true),
+    gatewayMcpReleases: () => get<GatewayMcpReleasePage>("/api/v1/gateway/mcp/releases", true),
+    /** 纯计算：生成需由运维加入交付目录的 binding 条目，不写任何状态。 */
+    gatewayMcpBindingDraft: (body: GatewayMcpBindingDraftRequest) =>
+      call<GatewayMcpBindingDraft>({ method: "POST", path: "/api/v1/gateway/mcp/binding-drafts", body }),
+    /**
+     * DD-134(6) 测试调用：以本人提交该工具登记的 ActionDefinition（componentAction 语义命令），
+     * 准入、审批、额度与审计在服务端；结果只在本次回应按冻结的暴露策略返回，Core 不保存。
+     * 结果不明时以同一幂等键原样重发只重查原执行，不重放调用。
+     */
+    gatewayToolTestCall: (command: ActionCommand) =>
+      call<GatewayToolTestCallResult>({ method: "POST", path: "/api/v1/gateway/tool-test-calls", body: command }),
+    gatewayConfig: () => get<GatewayConfigView>("/api/v1/platform/gateway/config", true),
+    gatewayConfigHistory: (kind: string, id: string) =>
+      get<GatewayConfigHistory>(`/api/v1/platform/gateway/config/history${gatewayQuery({ kind, id })}`, true),
+    gatewayMcpPeers: () => get<GatewayMcpPeerPage>("/api/v1/platform/gateway/mcp/peers", true),
+    /** 受控探测：只接受交付目录条目引用；Core 经 Gateway 临时验证 route 读 initialize 与 tools/list。 */
+    gatewayMcpProbe: (body: GatewayMcpProbeRequest) =>
+      call<GatewayMcpProbeResult>({ method: "POST", path: "/api/v1/platform/gateway/mcp/probes", body }),
 
     /** DD-123：本 Tenant 的平台额度（OpenMeter 唯一权威）；只对 Tenant admin 与 auditor 开放，其余 403。 */
     tenantQuotas: () => get<TenantQuotaPage>("/api/v1/tenant/quotas"),

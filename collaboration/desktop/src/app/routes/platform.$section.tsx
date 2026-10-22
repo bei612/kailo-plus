@@ -14,6 +14,7 @@ import {
   WorkspaceMembersPage,
 } from "@client-kit/platform/react/pages";
 import { BusinessOperationsPage, UsageBillingPage } from "@client-kit/platform/react/business-observability";
+import { GatewayPage } from "@client-kit/platform/react/gateway";
 
 import {
   isPlatformSection,
@@ -115,6 +116,8 @@ export function PlatformScreen({ section, workspaceId, onWorkspaceChange, projec
         <UsageBillingPage />
       ) : section === "operations" ? (
         <BusinessOperationsPage />
+      ) : section === "gateway" ? (
+        <GatewayPage />
       ) : section === "audit" ? (
         <AuditPage />
       ) : (

@@ -265,12 +265,15 @@ async fn route(
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
             "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
-    gateway
-        .admin(
+    crate::gateway_admin::history::scope(
+        ae.id,
+        ae.operation_id,
+        gateway.admin(
             &["api", "config", "resources", "traffic.route"],
             Some(json!({"resources":[{"value":value}]})),
-        )
-        .await?;
+        ),
+    )
+    .await?;
     crate::agent_tool_runtime::require_route(&gateway, &id, Some(&value)).await?;
     Ok(url)
 }

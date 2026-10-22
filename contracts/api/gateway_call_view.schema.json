@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_call_view.schema.json",
+  "title": "GatewayCallView",
+  "description": "DD-134(3)⑤：一次模型或工具调用的元数据。不含 prompt 预览、turn、payload、工具参数或结果正文。PLATFORM 范围只填 Gateway 原生字段与 tenantId。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "callId",
+    "kind",
+    "startedAt",
+    "outcome"
+  ],
+  "properties": {
+    "callId": {
+      "type": "string",
+      "description": "MODEL 为 request log ID 前缀 model:，TOOL 为 ActionExecution ID 前缀 tool:。"
+    },
+    "kind": {
+      "$ref": "../enums/gateway_call_kind.schema.json"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "durationMs": {
+      "type": "integer"
+    },
+    "outcome": {
+      "$ref": "../enums/gateway_call_outcome.schema.json"
+    },
+    "reasonCode": {
+      "$ref": "../enums/reason_code.schema.json"
+    },
+    "httpStatus": {
+      "type": "integer"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "modelRouteKey": {
+      "type": "string",
+      "description": "Gateway 上的模型路由名（request log 的请求模型）。"
+    },
+    "modelRouteResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "toolResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "toolName": {
+      "type": "string"
+    },
+    "toolSource": {
+      "type": "string",
+      "enum": [
+        "PLATFORM_NATIVE",
+        "APPLICATION"
+      ]
+    },
+    "agentInstallationResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agentName": {
+      "type": "string"
+    },
+    "applicationBindingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "inputTokens": {
+      "type": "integer"
+    },
+    "outputTokens": {
+      "type": "integer"
+    },
+    "totalTokens": {
+      "type": "integer"
+    },
+    "usageState": {
+      "$ref": "../enums/operation_usage_state.schema.json"
+    },
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "requestLogId": {
+      "type": "string"
+    },
+    "traceId": {
+      "type": "string"
+    }
+  }
+}

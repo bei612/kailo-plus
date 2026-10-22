@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_binding_draft_request.schema.json",
+  "title": "GatewayMcpBindingDraftRequest",
+  "description": "DD-134(5)⑥：为尚无交付归属事实的连接生成目录条目草稿；纯计算，不写任何状态。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "componentReleaseId",
+    "normalizedConfigJson",
+    "isolationMode",
+    "nativeScopeRef"
+  ],
+  "properties": {
+    "componentReleaseId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "normalizedConfigJson": {
+      "type": "string"
+    },
+    "isolationMode": {
+      "$ref": "../enums/application_isolation_mode.schema.json"
+    },
+    "nativeScopeRef": {
+      "type": "string"
+    }
+  }
+}

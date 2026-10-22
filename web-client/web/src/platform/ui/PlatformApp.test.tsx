@@ -97,6 +97,8 @@ vi.mock("@client-kit/platform/react/context", () => ({
   useT: () => (key: string) => key,
   useUiLocale: () => "en",
   useLocale: () => "en",
+  // DD-134: the shell's gateway entry gate has no platform client here, so it stays hidden.
+  useOptionalBffClient: () => null,
   // DD-125(3) Huddle queries in the shell: no live Huddle in any parent.
   useBffClient: () => ({
     huddles: async () => ({ items: [] }),
@@ -165,6 +167,9 @@ vi.mock("@client-kit/platform/react/pages", () => ({
 }));
 vi.mock("./AgentDefinitionsPane", () => ({
   AgentDefinitionsPane: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="agents-scope" data-workspace={workspaceId} />,
+}));
+vi.mock("@client-kit/platform/react/gateway", () => ({
+  GatewayPage: () => <div data-testid="gateway-page" />,
 }));
 vi.mock("@client-kit/platform/react/workflows", () => ({
   WorkflowsPage: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="workflows-scope" data-workspace={workspaceId} />,

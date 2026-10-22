@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_release_page.schema.json",
+  "title": "GatewayMcpReleasePage",
+  "description": "DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "releases"
+  ],
+  "properties": {
+    "releases": {
+      "type": "array",
+      "items": {
+        "title": "GatewayMcpReleaseView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "componentReleaseId",
+          "componentTypeKey",
+          "version",
+          "status",
+          "adapterBuildRef",
+          "capabilityCategories",
+          "tools",
+          "secretKeys",
+          "allowedModelCallModes",
+          "deliveryFacts",
+          "bindingIds"
+        ],
+        "properties": {
+          "componentReleaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "componentTypeKey": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "../enums/component_release_status.schema.json"
+          },
+          "adapterBuildRef": {
+            "type": "string"
+          },
+          "adapterServiceRef": {
+            "type": "string",
+            "description": "交付目录中 artifactDigest 等于 adapterBuildRef 的 peer；没有时省略。"
+          },
+          "nativeInstanceRef": {
+            "type": "string"
+          },
+          "bindingConfigSchemaJson": {
+            "type": "string"
+          },
+          "capabilityCategories": {
+            "type": "array",
+            "items": {
+              "title": "GatewayMcpReleaseCategory",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "category",
+                "version"
+              ],
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "title": "GatewayMcpReleaseTool",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "actionKey",
+                "capabilityContractKey"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "actionKey": {
+                  "type": "string"
+                },
+                "capabilityContractKey": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "secretKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedModelCallModes": {
+            "type": "array",
+            "items": {
+              "$ref": "../enums/application_model_call_mode.schema.json"
+            }
+          },
+          "deliveryFacts": {
+            "type": "array",
+            "items": {
+              "$ref": "gateway_mcp_binding_fact.schema.json"
+            }
+          },
+          "bindingIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    }
+  }
+}

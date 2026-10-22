@@ -301,6 +301,27 @@ capabilities:
   tools: []
   workflow_kinds:
   - COMPONENT_RELEASE
+- id: gateway.admin
+  exposure: tenant_admin
+  routes:
+  - /api/v1/gateway/access
+  - /api/v1/gateway/stats
+  - /api/v1/gateway/calls
+  - /api/v1/gateway/calls/{call_id}
+  - /api/v1/gateway/tools
+  - /api/v1/gateway/model-routes
+  - /api/v1/gateway/model-sources
+  - /api/v1/gateway/mcp/releases
+  - /api/v1/gateway/mcp/binding-drafts
+  - /api/v1/platform/gateway/config
+  - /api/v1/platform/gateway/config/history
+  - /api/v1/platform/gateway/mcp/peers
+  - /api/v1/platform/gateway/mcp/probes
+  - /api/v1/gateway/tool-test-calls
+  actions:
+  - llm_route.disable
+  tools: []
+  workflow_kinds: []
 - id: governance.action_admission
   exposure: end_user
   routes:

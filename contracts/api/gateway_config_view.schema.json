@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_config_view.schema.json",
+  "title": "GatewayConfigView",
+  "description": "DD-134(3)⑥(4)：Gateway effective config 与 ConfigResource 当前值，均已在 Core 打码；只读。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "readAt",
+    "effectiveConfigJson",
+    "resources"
+  ],
+  "properties": {
+    "readAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "effectiveConfigJson": {
+      "type": "string"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "title": "GatewayConfigResourceView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "revision",
+          "valueJson",
+          "source"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valueJson": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "../enums/gateway_config_revision_source.schema.json"
+          },
+          "actionExecutionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actionKey": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_peer_page.schema.json",
+  "title": "GatewayMcpPeerPage",
+  "description": "DD-134(5)①：部署交付目录的 protocolPeers 与一致性环境（只读，Catalog manage）。URL 已去掉 userinfo、query 与 fragment。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "directoryAvailable",
+    "peers"
+  ],
+  "properties": {
+    "directoryAvailable": {
+      "type": "boolean"
+    },
+    "peers": {
+      "type": "array",
+      "items": {
+        "title": "GatewayMcpPeerView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adapterServiceRef",
+          "mcpUrl",
+          "nativeInstanceRef",
+          "artifactDigest",
+          "timeoutSeconds",
+          "maxResponseBytes",
+          "conformanceReady",
+          "bindingFacts"
+        ],
+        "properties": {
+          "adapterServiceRef": {
+            "type": "string"
+          },
+          "mcpUrl": {
+            "type": "string"
+          },
+          "nativeInstanceRef": {
+            "type": "string"
+          },
+          "artifactDigest": {
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "type": "integer"
+          },
+          "maxResponseBytes": {
+            "type": "integer"
+          },
+          "conformanceReady": {
+            "type": "boolean",
+            "description": "部署一致性环境存在且其 artifactDigest 等于本条目。"
+          },
+          "bindingFacts": {
+            "type": "array",
+            "items": {
+              "$ref": "gateway_mcp_binding_fact.schema.json"
+            }
+          }
+        }
+      }
+    },
+    "conformanceArtifactDigest": {
+      "type": "string"
+    }
+  }
+}

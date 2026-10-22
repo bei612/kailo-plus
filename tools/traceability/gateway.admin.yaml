@@ -1,0 +1,131 @@
+capability_id: gateway.admin
+title: 网关管理区：AgentGateway 调用统计、MCP 工具注册与实时配置只经 Core 呈现与治理
+stage: S5
+status: in_progress
+exposure: tenant_admin
+
+design:
+  requirements: [V-REQ-03, V-REQ-10, V-REQ-13, V-REQ-15]
+  decisions: [DD-134]
+  # DD-134 编排的 EXT-BASE 动作（契约、release、binding）沿其既有能力记录
+  # component.capability_contracts、component.release_registration 与
+  # component.application_binding 的准入与证据，本记录不把它们当作前提。
+  facts: [SF-AGW-06, SF-AGW-08, SF-AGW-09, SF-AGW-27, SF-AGW-28]
+  seams: [SS-AGW-ADMIN]
+  blockers: []
+  entities: [ActionExecution, AuditEvent, UsageEvent, ToolDefinition, Resource]
+
+validation:
+  scenarios: [V-SCN-191, V-SCN-192, V-SCN-193, V-SCN-194, V-SCN-195, V-SCN-196, V-SCN-197]
+  evidence:
+    - dimension: 上游接缝
+      ref: model-gateway/fork/verify/admin-authentication.md
+    - dimension: 安全边界
+      ref: core/verify/gateway-admin.md
+    - dimension: 合同一致
+      ref: core/verify/gateway-admin.md
+    - dimension: 呈现
+      ref: core/verify/gateway-admin.md
+
+implementation:
+  owners: [team-platform]
+  paths:
+    - core/crates/platform-core/src/gateway_admin.rs
+    - core/crates/platform-core/src/gateway_admin_access.rs
+    - core/crates/platform-core/src/gateway_admin_config.rs
+    - core/crates/platform-core/src/gateway_admin_history.rs
+    - core/crates/platform-core/src/gateway_admin_mask.rs
+    - core/crates/platform-core/src/gateway_admin_mcp.rs
+    - core/crates/platform-core/src/gateway_admin_probe.rs
+    - core/crates/platform-core/src/gateway_admin_routes.rs
+    - core/crates/platform-core/src/gateway_admin_stats.rs
+    - core/crates/platform-core/src/gateway_admin_tools.rs
+    - core/crates/platform-core/src/model_route.rs
+    - core/crates/platform-core/src/model_route_disable.rs
+    - core/crates/platform-core/src/application_action.rs
+    - core/crates/platform-core/src/application_tool_human.rs
+    - core/crates/platform-core/src/agent_tool_pep.rs
+    - core/crates/platform-core/src/governance.rs
+    - core/crates/platform-core/src/bff.rs
+    - client-kit/ts/platform/src/client.ts
+    - client-kit/ts/platform/src/i18n.ts
+    - client-kit/ts/platform/src/react/gateway.tsx
+    - client-kit/ts/platform/src/react/navigation.tsx
+    - client-kit/ts/platform/src/gateway-drafts.ts
+    - client-kit/ts/platform/src/react/gateway-action.tsx
+    - client-kit/ts/platform/src/react/gateway-config.tsx
+    - client-kit/ts/platform/src/react/gateway-entry.tsx
+    - client-kit/ts/platform/src/react/gateway-mcp.tsx
+    - client-kit/ts/platform/src/react/gateway-routes.tsx
+    - client-kit/ts/platform/src/react/gateway-shared.tsx
+    - client-kit/ts/platform/src/react/gateway-stats.tsx
+    - client-kit/ts/platform/src/react/gateway-tools.tsx
+    - client-kit/ts/platform/src/react/sidebar/app-sidebar-primary-menu.tsx
+    - collaboration/desktop/src/features/platform/platformSections.ts
+    - core/crates/platform-core/src/application_model_route.rs
+    - web-client/web/src/platform/ui/PlatformApp.tsx
+    - collaboration/desktop/src/app/routes/platform.$section.tsx
+  surfaces: [web, desktop]
+  schemas:
+    - contracts/api/gateway_access.schema.json
+    - contracts/api/gateway_stats.schema.json
+    - contracts/api/gateway_stats_counters.schema.json
+    - contracts/api/gateway_call_page.schema.json
+    - contracts/api/gateway_call_view.schema.json
+    - contracts/api/gateway_call_detail.schema.json
+    - contracts/api/gateway_tool_page.schema.json
+    - contracts/api/gateway_model_route_page.schema.json
+    - contracts/api/gateway_model_source_page.schema.json
+    - contracts/api/gateway_config_view.schema.json
+    - contracts/api/gateway_config_history.schema.json
+    - contracts/api/gateway_mcp_peer_page.schema.json
+    - contracts/api/gateway_mcp_binding_fact.schema.json
+    - contracts/api/gateway_mcp_probe_request.schema.json
+    - contracts/api/gateway_mcp_probe_result.schema.json
+    - contracts/api/gateway_mcp_release_page.schema.json
+    - contracts/api/gateway_mcp_binding_draft_request.schema.json
+    - contracts/api/gateway_mcp_binding_draft.schema.json
+    - contracts/api/gateway_tool_test_call_result.schema.json
+    - contracts/enums/gateway_admin_scope.schema.json
+    - contracts/enums/gateway_call_kind.schema.json
+    - contracts/enums/gateway_call_outcome.schema.json
+    - contracts/enums/gateway_stats_dimension.schema.json
+    - contracts/enums/gateway_config_revision_source.schema.json
+    - contracts/enums/gateway_config_change_kind.schema.json
+  migrations:
+    - core/migrations/20261021120000_gateway_config_history.up.sql
+    - core/migrations/20261021120000_gateway_config_history.down.sql
+    - core/migrations/20261021120100_gateway_mcp_probe.up.sql
+    - core/migrations/20261021120100_gateway_mcp_probe.down.sql
+    - core/migrations/20261021120200_llm_route_disable.up.sql
+    - core/migrations/20261021120200_llm_route_disable.down.sql
+
+runtime:
+  routes:
+    - /api/v1/gateway/access
+    - /api/v1/gateway/stats
+    - /api/v1/gateway/calls
+    - /api/v1/gateway/calls/{call_id}
+    - /api/v1/gateway/tools
+    - /api/v1/gateway/model-routes
+    - /api/v1/gateway/model-sources
+    - /api/v1/gateway/mcp/releases
+    - /api/v1/gateway/mcp/binding-drafts
+    - /api/v1/platform/gateway/config
+    - /api/v1/platform/gateway/config/history
+    - /api/v1/platform/gateway/mcp/peers
+    - /api/v1/platform/gateway/mcp/probes
+    - /api/v1/gateway/tool-test-calls
+  actions: [llm_route.disable]
+  tools: []
+  workflow_kinds: []
+
+release:
+  # 以下沿用既有已构建候选的 digest 以满足登记格式；它们不含本能力源码，
+  # 不证明本能力已构建、部署或通过 full 与业务验收（以 core/verify/gateway-admin.md 为准）。
+  artifacts:
+    - name: core
+      digest: sha256:5d7592514a99718c48ccafe4a6c8133c0bb7da80ccd71006226a4b71dc7d61d1
+    - name: web-client
+      digest: sha256:9f6d0056e1990438c0865b24ac508a1daee6858589c7fad67e611e5a3a787acd
+  gate: blocked_until_seams_closed

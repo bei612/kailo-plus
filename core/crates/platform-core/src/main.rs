@@ -31,6 +31,7 @@ mod application_catalog;
 mod application_execution;
 mod application_page;
 mod application_tool;
+mod application_tool_human;
 mod audit;
 mod audit_views;
 mod automation;
@@ -48,6 +49,7 @@ mod conversations;
 mod custom_emoji;
 mod delegation_query;
 mod external_human;
+mod gateway_admin;
 mod gateway_usage;
 mod gifs;
 mod governance;
@@ -188,6 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .connect(&database_url)
         .await?;
+    // DD-134(3)⑥：Gateway ConfigResource 写入证据与 Core 业务库同一连接池。
+    gateway_admin::history::install(pool.clone());
 
     let agent_runtime = agent_runtime::Supervisor::from_env()?.map(std::sync::Arc::new);
     let capacity = std::sync::Arc::new(capacity::Capacity::from_env()?);

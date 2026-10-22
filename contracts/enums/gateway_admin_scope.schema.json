@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_admin_scope.schema.json",
+  "title": "GatewayAdminScope",
+  "description": "DD-134(2)：网关管理区的范围取会话 Tenant。PLATFORM：Platform Catalog Tenant 会话，只见 Gateway 原生事实与 Tenant 归属 ID；TENANT：业务 Tenant 会话，按 Tenant/Workspace audit 下钻本 Tenant 的业务关联。",
+  "type": "string",
+  "enum": [
+    "PLATFORM",
+    "TENANT"
+  ]
+}

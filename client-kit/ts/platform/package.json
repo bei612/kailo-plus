@@ -215,6 +215,7 @@
     "./react/navigation": "./src/react/navigation.tsx",
     "./react/pages": "./src/react/pages.tsx",
     "./react/business-observability": "./src/react/business-observability.tsx",
+    "./react/gateway": "./src/react/gateway.tsx",
     "./react/roles": "./src/react/roles.tsx",
     "./react/settings": "./src/react/settings.tsx",
     "./react/agents-settings": "./src/react/agents-settings.tsx",

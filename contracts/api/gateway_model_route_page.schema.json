@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_model_route_page.schema.json",
+  "title": "GatewayModelRoutePage",
+  "description": "DD-134(7)：本 Tenant 的 llm_route Resource（按 discover 过滤）与时间窗用量；新建沿 llm_route.create，停用沿 llm_route.disable。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "from",
+    "to",
+    "routes",
+    "canCreate"
+  ],
+  "properties": {
+    "from": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "to": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "canCreate": {
+      "type": "boolean"
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "title": "GatewayModelRouteView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resourceId",
+          "resourceVersion",
+          "nativeId",
+          "resourceState",
+          "ownerPrincipalId",
+          "installationCount",
+          "bindingCount",
+          "canDisable"
+        ],
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceVersion": {
+            "type": "integer"
+          },
+          "nativeId": {
+            "type": "string"
+          },
+          "resourceState": {
+            "$ref": "../enums/resource_state.schema.json"
+          },
+          "ownerPrincipalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "homeWorkspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "installationCount": {
+            "type": "integer"
+          },
+          "bindingCount": {
+            "type": "integer"
+          },
+          "requests": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "totalTokens": {
+            "type": "integer"
+          },
+          "modelP95Ms": {
+            "type": "integer"
+          },
+          "canDisable": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "nextOffset": {
+      "type": "integer"
+    }
+  }
+}

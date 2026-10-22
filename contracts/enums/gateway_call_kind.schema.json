@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_call_kind.schema.json",
+  "title": "GatewayCallKind",
+  "description": "DD-134(3)：MODEL 取 Gateway request log（时延为 Gateway durationMs）；TOOL 取 Core 工具子 ActionExecution 与审计（时延为 Core 观测的 INTENT 到 OUTCOME 间隔）。两者时延不混算。",
+  "type": "string",
+  "enum": [
+    "MODEL",
+    "TOOL"
+  ]
+}

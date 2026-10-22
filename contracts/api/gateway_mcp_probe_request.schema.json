@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_mcp_probe_request.schema.json",
+  "title": "GatewayMcpProbeRequest",
+  "description": "DD-134(5)②：受控探测只接受交付目录条目引用，不接受 URL。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapterServiceRef"
+  ],
+  "properties": {
+    "adapterServiceRef": {
+      "type": "string"
+    }
+  }
+}

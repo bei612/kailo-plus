@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/gateway_config_revision_source.schema.json",
+  "title": "GatewayConfigRevisionSource",
+  "description": "DD-134(3)⑥：CORE_RECORDED 表示 Core 写入并回读确认时保存了该 revision 的写入证据；UNRECORDED 表示外部写入或早于写入证据，按 17 §9 作为投影不一致信号，不反向导入。",
+  "type": "string",
+  "enum": [
+    "CORE_RECORDED",
+    "UNRECORDED"
+  ]
+}

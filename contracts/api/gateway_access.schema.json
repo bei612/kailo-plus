@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_access.schema.json",
+  "title": "GatewayAccess",
+  "description": "DD-134(2)：本会话在网关管理区可用的分区。只决定入口与按钮是否呈现；每个查询与动作仍在 BFF fresh 授权，前端隐藏不构成授权。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "tenantId",
+    "canReadStats",
+    "canReadTools",
+    "canReadModelRoutes",
+    "canCreateModelRoute",
+    "canReadConfig",
+    "canManageMcp",
+    "canBindMcp"
+  ],
+  "properties": {
+    "scope": {
+      "$ref": "../enums/gateway_admin_scope.schema.json"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "canReadStats": {
+      "type": "boolean",
+      "description": "PLATFORM：Catalog Tenant audit；TENANT：Tenant audit（Workspace audit 只在选择该 Workspace 时生效）。"
+    },
+    "canReadTools": {
+      "type": "boolean",
+      "description": "TENANT 范围：Tenant discover。PLATFORM 范围恒为 false。"
+    },
+    "canReadModelRoutes": {
+      "type": "boolean",
+      "description": "TENANT 范围：Tenant discover。PLATFORM 范围恒为 false（平台只在实时配置中看到 route 的 Gateway 投影）。"
+    },
+    "canCreateModelRoute": {
+      "type": "boolean",
+      "description": "llm_route.create 的准入预评估（Tenant create）。"
+    },
+    "canReadConfig": {
+      "type": "boolean",
+      "description": "PLATFORM 范围：Catalog Tenant audit。"
+    },
+    "canManageMcp": {
+      "type": "boolean",
+      "description": "PLATFORM 范围：active HUMAN 且 Catalog Tenant manage（交付目录读取、受控探测、契约与 release 登记批准）。"
+    },
+    "canBindMcp": {
+      "type": "boolean",
+      "description": "TENANT 范围：application_binding.create 的准入预评估（Tenant manage）。"
+    }
+  }
+}
