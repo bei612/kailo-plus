@@ -86,13 +86,13 @@ pub(crate) async fn target(
 }
 
 /// [`evaluate_target`] 的判定：`Admissible` 后再 Check `manage`；`NotAdmissible`（非 `ACTIVE`、
-/// 投影在途或版本不符）照常 Check `manage`，冲突由授权之后的 [`gate`] 报出；`ScopeMismatch`
+/// 投影在途或版本不符）照常 Check `manage`，冲突由授权之后的 [`gate`] 报出；`Mismatch`
 /// 是投影或归属与事实不一致。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Scope {
     Admissible,
     NotAdmissible,
-    ScopeMismatch,
+    Mismatch,
 }
 
 fn scope_of(
@@ -103,7 +103,7 @@ fn scope_of(
     target: &crate::governance::Target,
 ) -> Scope {
     if workspace != target.workspace_id {
-        Scope::ScopeMismatch
+        Scope::Mismatch
     } else if !admissible(state, projecting) || version != target.version {
         Scope::NotAdmissible
     } else {
@@ -125,7 +125,7 @@ pub(crate) async fn evaluate_target(
         .fetch_optional(&mut *conn)
         .await?
     else {
-        return Ok(Scope::ScopeMismatch);
+        return Ok(Scope::Mismatch);
     };
     let scope = scope_of(
         &row.state,
@@ -151,7 +151,7 @@ pub(crate) async fn evaluate_target(
     Ok(if matches {
         Scope::Admissible
     } else {
-        Scope::ScopeMismatch
+        Scope::Mismatch
     })
 }
 
@@ -355,9 +355,6 @@ mod tests {
             scope_of("ACTIVE", false, 4, workspace, &target),
             Scope::NotAdmissible
         );
-        assert_eq!(
-            scope_of("ACTIVE", false, 3, None, &target),
-            Scope::ScopeMismatch
-        );
+        assert_eq!(scope_of("ACTIVE", false, 3, None, &target), Scope::Mismatch);
     }
 }

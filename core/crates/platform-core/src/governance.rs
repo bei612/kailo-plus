@@ -3030,7 +3030,7 @@ impl Governance {
                     .await?
                     {
                         Scope::Admissible => {}
-                        Scope::ScopeMismatch => {
+                        Scope::Mismatch => {
                             return Ok(deny(
                                 "DENY",
                                 "NOT_APPLICABLE",
