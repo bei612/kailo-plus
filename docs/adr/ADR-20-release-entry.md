@@ -43,14 +43,14 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 
 | 阶段 | 执行处 | 动作 | 已完成的判定（幂等） |
 |---|---|---|---|
-| plan | 开发机 + 节点只读探针 | 推导重建单元、固定位置、部署对象、备份库、待迁移、`.env` 差异 | 每次重算 |
+| plan | 开发机 + 节点只读探针 | 推导重建单元、固定位置、部署对象、配置漂移、备份库、待迁移、`.env` 差异 | 每次重算 |
 | build | CI worker | 对每个过期单元 `kailo-ci submit <源> build <单元>`，等待终态 | 日志里该单元已有 SUCCEEDED 任务；或同一输入摘要已有成功构建 |
 | record | 开发机 | 二开产物：取任务的 `generated_metadata_diff`，以 `upstream_manifest.py record` 写回并复核源码摘要一致；自建单元：读产物目录中的 provenance，核对源 commit | 记录已等于构建输出 |
 | pin | 开发机 | 按结构替换 compose 镜像 pin 与追溯记录 `release.artifacts[].digest`；断言 `deploy/`、`tools/` 不再残留旧 digest；提交并快进 push | 远端 main 已含该 pin 提交 |
 | check | CI worker | `kailo-ci submit <pin> check`（原 full） | 该 commit 的 full 任务 SUCCEEDED |
 | backup | 节点（发布树内代码） | 对受影响服务直接依赖的 Postgres 做 `pg_dump -Fc`，`pg_restore --list` 校验，连同 `.env` 快照写 manifest | 该 pin commit 的 manifest 存在且文件摘要一致 |
-| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → IdP 声明式配置（§8）→ 按序替换服务 → 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定 |
-| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8） | 每次重算 |
+| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → 重建配置漂移的基础服务（§9）→ IdP 声明式配置（§8）→ 按序替换服务 → 重建依赖替换对象的漂移服务（§9）→ 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定；长期运行服务的配置与现场一致则跳过（§9） |
+| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8）；长期运行服务无配置漂移且健康（§9） | 每次重算 |
 
 `run` 从第一个未完成的阶段继续；中断后再次执行同一命令即恢复。恢复依据两层：开发机日志
 `$XDG_STATE_HOME/kailo-release/<源commit>.json` 记录任务 ID、构建输出与 pin commit，避免重复提交 CI 任务；
@@ -75,6 +75,7 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 | 要备份的库 | 被部署服务及其一次性前置直接依赖的 Postgres 服务；有待执行迁移的库 |
 | 待执行迁移 | `release.yaml` 声明的迁移目录与 `_sqlx_migrations` 已成功版本之差 |
 | 部署顺序 | `03` §7：迁移 → `order.first`（Core、Worker）→ 其余产物 → `order.last`（Web），同组按 compose 定义顺序 |
+| 配置漂移 | 发布树以 deploy 同一套 Compose 参数渲染的服务哈希、configs 内容、secret 路径，与运行容器的 `com.docker.compose.config-hash` 标签、容器内文件、挂载来源比较（§9） |
 | 节点路径、Compose 项目、Web build-info 位置 | CI 节点 `ci/config.json`（`runtime`、`sources`、`release_proofs`、`compose_project`、`web_build_info_path`），不在仓库复制 |
 
 `release.yaml` 的声明只有：自建单元的构建入口与输入；默认部署方式不适用的服务（core-bff 每次启动需要新的
@@ -190,13 +191,82 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   （「平台浏览器客户端」「组件专属客户端第 N 项」），不输出 client id、URL、口令或令牌。plan/`--dry-run` 只报告摘要状态
   （从未记录/已变化/未变）与是否声明了组件专属客户端。
 
+### 9. 运行中服务的配置漂移收敛
+
+部署对象原本只由镜像 digest 决定。长期运行的服务镜像不变、只改了 compose 配置（environment、挂载、
+`configs`、挂载的配置文件）时，发布不会重建它，改动永远不生效。例如 `openmeter_clickhouse_system_logs`
+关闭 ClickHouse 诊断表的配置，合并后不会自己生效。因此 plan、deploy、verify 对发布树中每个长期运行服务，
+用同一实现（`node.py config_drift`）比较「发布树渲染出的配置」与「运行容器」：
+
+1. **Compose 配置哈希**：期望值用 deploy 同一套 Compose 参数求得（发布树 `compose.yaml`、运行目录 `.env`、
+   登记叠加、`KAILO_RUNTIME_DIR=<运行目录>`），再与容器的 `com.docker.compose.config-hash` 标签比较。
+   这里不直接用 `docker compose config --hash`。compose 2.40.3 的 `runHash` 以 `WithoutEnvironmentResolution`
+   加载项目，而 `up` 写标签时已经把 `env_file` 并入 environment。所以凡是用 `env_file` 的服务，两者必然不同。
+   CI 节点实测：12 个这样的服务里有 8 个在运行，全部误报。实际做法是先用 `config --format json` 得到已解析
+   `env_file` 的完整模型，再经标准输入交给 `config --hash '*'`。节点实测时，这样求出的哈希与现有容器的标签
+   逐一相等。模型只在内存和管道中传递。
+2. **configs 内容**：Compose 的服务哈希不包含 `configs` 的 `content` 和 `file` 内容。2.40.3 实测：只改内容，
+   哈希不变，`up` 也不会重建。因此用 `docker cp <容器>:<target> -` 读回容器内的文件（只读，容器内不需要 shell），
+   与渲染出的内容比较。
+3. **文件型 secrets 的挂载来源**：secret 的文件路径同样不在哈希里。这里只比较挂载来源是否等于渲染路径，
+   不读 secret 内容。软链接时期从旧发布树或临时目录挂载的投递（背景第 3 条），只有这样才看得出来。
+
+**排除**（不参与比较）：
+
+- `restart: "no"` 的服务：一次性服务由配置一次性服务机制（`apply_config_oneoffs`）和一次性前置负责，
+  重复启动它们没有「收敛」的含义。
+- 不在本 compose 文件中的服务：组件（`deploy/components`）各有 Compose 项目和部署入口，本入口不触碰它们
+  （见「不改变的事」）。比较只遍历本文件的服务，只看本项目标签的容器。
+- 没有唯一运行中容器的服务：不判为漂移，列为「未运行」。受管服务按镜像判定创建，其余由 bootstrap 负责。
+
+**只比较内容、不比较哈希**（由现场推出，不需要声明）：如果容器的 `com.docker.compose.project.config_files`
+标签里含有发布树 `compose.yaml` 和登记叠加之外的文件，例如 `start-core.sh` 以 mktemp 生成、投递 DD-70
+一次性凭据的叠加，那么它的哈希包含发布树渲染不出的内容，无法比较。这类容器只比较 configs 内容和 secret 来源；
+它的 compose 定义变化在其启动命令下次运行时生效（core-bff 随每次 Core 发布重建）。
+
+**只报告**：`release.yaml` 中 `services.<服务>.drift: report` 的服务只列出漂移，不重建。目前只有 `openbao`：
+本拓扑没有 auto-unseal，重建即封存；解封要经 `secret-store-init.sh` 使用 `secrets/openbao_init.json` 中的分片，
+`up --wait` 也会因健康检查超时（封存时返回 503）。封存期间所有 SecretRef 不可读，Core 与组件的凭据投递中断。
+这不是服务替换能完成的动作，由运维窗口处理。
+
+**收敛**：
+
+- 漂移的受管服务并入替换对象，走同一条路径（声明的命令、一次性前置、镜像回读），按 `03` §7 排序。
+- 其余漂移服务分两组：不依赖任何替换对象的，在替换之前重建；依赖替换对象的（按 depends_on 传递闭包），
+  在替换之后重建。组内依赖在前，其余按 compose 定义顺序。
+- deploy 中的位置（与 §8 的 IdP 声明统一）：迁移 → 配置一次性服务 → **重建「替换前」组的漂移服务** →
+  **等待 keycloak 就绪后执行 IdP 声明** → 按序替换服务（含并入的漂移受管服务）→ **重建「替换后」组的漂移服务** → 回读。
+  漂移的基础服务（可能包括 keycloak 本身或其数据库）先于 IdP 声明收敛，于是声明作用于重建后的实例，§8 的就绪等待
+  也覆盖了这次重建；IdP 声明仍在替换任何服务之前（§8 的兼容顺序不变）。「替换后」组依赖新替换的服务，放在最后。
+- journal：漂移相关字段为 `deploy.json` 的 `config_drift`、`config_converge`、`config_recreated`、`history`，verify 结果为
+  `config_drift_reported`、`not_running`；与 §8 的 `idp` 字段和 `releases/idp-declarations.json` 互不重叠。
+- 每个服务执行 `up -d --no-deps --force-recreate --no-build --wait <服务>`。`--force-recreate` 是必须的：
+  内容与 secret 路径不在哈希里，不强制时 `up` 会认为无需重建。随后回读哈希、内容、secret 来源与健康，
+  再写入 `deploy.json` 的 `config_recreated`。
+- backup：本身因漂移被重建的 Postgres 也加入备份对象。数据在卷中保留，重建前照例先备份。
+- 幂等：每次 deploy 都从现场重算。已收敛的服务哈希与内容一致，不会再出现。`deploy.json` 重写时，
+  之前各次的摘要保留在 `history`。
+- verify：全部长期运行服务（`drift: report` 的除外）必须无漂移且健康。`drift: report` 的服务与未运行的服务
+  列入结果，不判为失败。
+
+**不设阈值，不因数量或有状态服务停下**：
+
+1. 漂移意味着运行的不是该 commit 声明的配置。发布的定义就是让现场等于 commit。按数量设阈值是门禁的变体：
+   数量与正确性无关，还会让旧漂移一直积压，下一次只会更多。
+2. 审阅由 plan 提供：run 之前逐个列出漂移服务、原因和重建顺序，`--dry-run` 也一样。
+3. 风险由既有机制约束：串行、每个服务等健康、第一个失败即停并保留日志（§6）、Postgres 先备份；
+   数据库重建不动卷中数据。
+4. 确实不能靠服务替换完成的情况，用声明一次写明理由（`drift: report`），而不是每次运行时由人临场判断。
+
 ## 后果
 
 正面：一条命令覆盖从规划到回读的全部步骤，所有输入由登记数据推出，改错位置或漏改会在 pin 阶段以残留 digest 断言当场失败；
 Core/Worker 发布逻辑进入仓库并随 commit 版本化；发布树保持干净只读，容器挂载不再依赖软链接；中断后可从原阶段继续而不重复提交 CI 任务。
 
 负面：compose 中运行投递路径多了一层变量，直接阅读不如 `./secrets` 直观；入口在 root 下运行并以工作树属主执行 Git，依赖两机现有身份分工；
-`.env` 的声明值进入版本库，修改它需要提交与 full。
+`.env` 的声明值进入版本库，修改它需要提交与 full。配置漂移判定依赖 Compose 的服务哈希实现（`up` 写标签与 `config --hash`
+的差异只在 env_file 解析，已以渲染模型回送消除）；升级 Compose 后若哈希算法改变，第一次发布会把全部长期运行服务列为漂移，
+plan 会如实列出，届时应先核对再执行。
 
 ## 替换边界
 

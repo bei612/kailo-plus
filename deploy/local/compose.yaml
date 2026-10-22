@@ -1228,11 +1228,35 @@ configs:
   # 内存预算内反复 MEMORY_LIMIT_EXCEEDED，进程被 OOM kill 后 OpenMeter 的
   # entitlement 查询失败，agent.invoke 的 Quota CHECK 只能 fail closed。采样
   # profiler 与服务文本日志的表副本都不是计量权威（文本日志仍写入 logs 卷），故关闭。
+  #
+  # 2026-10-22 实测（25.12.3.21，上面两张已停写）：进程 RSS 3.1 GiB / 上限 3.6 GiB，
+  # 查询仍触发 MEMORY_LIMIT_EXCEEDED；metric_log 每小时约 2.5 万个 part 事件，后台合并
+  # 不停。仍在写入的同类诊断表同样默认开启、没有保留期，也都不是计量权威，一并关闭：
+  #   metric_log               每秒一行服务器指标快照，815 MiB / 260 个 part；
+  #   asynchronous_metric_log  每秒一批异步指标（内存、磁盘、CPU），629 MiB / 90 个 part；
+  #   part_log                 每次 part 新建、合并、删除各一行，2.3 GiB，是体量最大的在写表；
+  #                            其行数随其他日志表的合并同步增长（日志表的合并又写日志表）；
+  #   processors_profile_log   每个查询的每个处理器一行性能剖析；
+  #   background_schedule_pool_log  后台调度池每执行一次任务一行；
+  #   query_metric_log         查询执行期间按秒采样的指标，与 metric_log 同类。
+  # 保留 query_log（查询本身的记录，量与 OpenMeter 查询数同阶，排查配额查询失败要用）与
+  # error_log（按错误码的计数历史，量小，追溯 MEMORY_LIMIT_EXCEEDED 等要用）。其余 *_log
+  # 配置段（query_thread_log、query_views_log、crash_log、backup_log、opentelemetry_span_log、
+  # asynchronous_insert_log、zookeeper/iceberg/delta 等）在本部署没有对应功能或设置启用，
+  # 实测未建表，不在此列。remove 只停止写入：已有表与旧数据不随本配置删除，清理另行决定。
+  # 本配置经 configs.content 投递，Compose 的服务哈希不含其内容；改动由发布入口的配置漂移
+  # 收敛（ADR-20 §9）回读容器内文件发现并重建本服务后生效。
   openmeter_clickhouse_system_logs:
     content: |
       <clickhouse>
         <trace_log remove="1"/>
         <text_log remove="1"/>
+        <metric_log remove="1"/>
+        <asynchronous_metric_log remove="1"/>
+        <part_log remove="1"/>
+        <processors_profile_log remove="1"/>
+        <background_schedule_pool_log remove="1"/>
+        <query_metric_log remove="1"/>
       </clickhouse>
   spicedb_schema:
     file: ./authorization/schema.zed

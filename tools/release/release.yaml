@@ -44,7 +44,13 @@ units:
       - agent-runtime/fork/upstream.yaml
 
 # 默认部署方式（compose up -d --no-deps --force-recreate --no-build --wait <服务>）不适用的服务。
+# drift：配置漂移的收敛方式（ADR-20 §9），缺省 converge（漂移即按依赖顺序重建）；report 只报告。
 services:
+  openbao:
+    # 重建即封存：本拓扑没有 auto-unseal，解封要用 secrets/openbao_init.json 中的分片经
+    # secret-store-init.sh 执行，`up --wait` 也会因健康检查（封存返回 503）超时。封存期间所有
+    # SecretRef 不可读、Core 与组件凭据投递中断，这不是服务替换能完成的动作，由运维窗口处理。
+    drift: report
   core-bff:
     # 每次启动都要新的一次性 OpenBao 投递（DD-70），不能以 compose up 重用已消费的投递。
     command: [./start-core.sh, --no-build]
