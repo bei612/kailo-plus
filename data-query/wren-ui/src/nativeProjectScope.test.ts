@@ -755,7 +755,9 @@ describe('original instructions REST update and delete consumers', () => {
 
   it('retains never-configured independent creation without synthesizing platform authorization', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    const response = await create({ headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) } });
+    const response = await create({
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(201);
     expect(
       components.instructionService.createInstruction,
@@ -991,7 +993,9 @@ describe('original instructions REST update and delete consumers', () => {
 
   it('retains the original never-configured independent partial update without a synthetic governance result', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    const response = await invoke('PUT', { headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) } });
+    const response = await invoke('PUT', {
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(200);
     expect(components.instructionService.getInstruction).toHaveBeenCalledWith(
       row.id,
@@ -1011,7 +1015,9 @@ describe('original instructions REST update and delete consumers', () => {
         process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
         return row as any;
       });
-    const response = await invoke('PUT', { headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) } });
+    const response = await invoke('PUT', {
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(412);
     expect(
       components.instructionService.updateInstruction,

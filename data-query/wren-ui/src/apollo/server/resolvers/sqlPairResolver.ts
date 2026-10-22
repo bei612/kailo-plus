@@ -103,7 +103,9 @@ export class SqlPairResolver {
         sql: arg.data.sql,
         question: arg.data.question,
         // The GOVERNED write keeps its exact persisted native request.
-        ...(native || !ctx.kailoUser?.key ? {} : { ownerKey: ctx.kailoUser.key }),
+        ...(native || !ctx.kailoUser?.key
+          ? {}
+          : { ownerKey: ctx.kailoUser.key }),
       },
       native,
       arg.data.idempotencyKey,
