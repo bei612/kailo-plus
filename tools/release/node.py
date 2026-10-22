@@ -8,7 +8,7 @@
   node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务与配置漂移
   node.py runtime --commit <commit>      从固定发布树执行：输出 CI 配置的运行目录（组件入口据此导出
                                          KAILO_RUNTIME_DIR，ADR-20 §3）
-  node.py drift --commit <commit>        从固定发布树执行，只读：列出长期运行服务的配置漂移（ADR-20 §8）
+  node.py drift --commit <commit>        从固定发布树执行，只读：列出长期运行服务的配置漂移（ADR-20 §9）
 
 backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运行，先核对发布树 HEAD、
 干净与 full 回执；发布树只读，运行投递与数据只在运行目录。进度写 stderr，结果 JSON 写 stdout；
@@ -132,7 +132,7 @@ def containers(project):
     return found
 
 
-# ---- 配置漂移（ADR-20 §8）--------------------------------------------------------
+# ---- 配置漂移（ADR-20 §9）--------------------------------------------------------
 
 def compose_argv(tree, runtime, overlays):
     """节点上唯一的 Compose 调用参数：项目目录是固定发布树，.env 与叠加文件取自运行目录（ADR-20 §3）。
@@ -388,6 +388,122 @@ def active_ci_deploys(cfg):
     return jobs
 
 
+# ---- IdP 声明式配置（ADR-20 §1） ------------------------------------------------------
+
+IDP_STATE = "idp-declarations.json"
+ENV_NAME_REFERENCE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)")
+
+
+def env_closure(values, keys):
+    """keys 及其原始值中 ${NAME}/$NAME 引用的闭包 → {键: 原始值的 sha256 或 None}。.env 由 bash `.` 读取，
+    派生值（如 PUBLIC_ORIGIN、OIDC_ISSUER）随被引用键变化，因此摘要覆盖整条引用链；只保留摘要。"""
+    digests, todo = {}, list(keys)
+    while todo:
+        key = todo.pop()
+        if key in digests:
+            continue
+        raw = (values.get(key) or [None])[-1]
+        digests[key] = None if raw is None else hashlib.sha256(raw.encode()).hexdigest()
+        todo += ENV_NAME_REFERENCE.findall(raw or "")
+    return digests
+
+
+def idp_digest(files_digest, values, keys):
+    body = json.dumps(dict(files=files_digest, env=env_closure(values, keys)), sort_keys=True)
+    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
+
+
+def native_clients_declared(values):
+    return bool(((values.get("NATIVE_OIDC_CLIENTS") or [""])[-1]).strip())
+
+
+def read_json(path):
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream)
+
+
+def write_json_atomic(path, value):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".")
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+
+
+def idp_plan(state_path, digest, values):
+    """只读：本次 deploy 是否执行 apply（never/changed 执行，unchanged 跳过），组件专属客户端是否声明。"""
+    recorded = read_json(state_path).get("digest")
+    return dict(state="never" if not recorded else "unchanged" if recorded == digest else "changed",
+                native_clients_declared=native_clients_declared(values))
+
+
+class IdpStep:
+    """IdP 声明式配置步骤。命令由 release.yaml idp 段声明，在发布树 deploy/local 下执行；run(argv) 返回
+    (退出码, 标准输出)。命令的标准输出是一行状态 JSON（bootstrap 与 idp-declarations.py 保证不含值），
+    这里只保留其中的状态与计数字段。"""
+
+    KEEP = ("nativeClientProfiles", "clients", "changed", "users", "written", "missing")
+
+    def __init__(self, spec, digest, values, state_path, run):
+        self.spec, self.digest, self.values, self.state_path, self.run = spec, digest, values, state_path, run
+
+    def _one(self, argv):
+        code, stdout = self.run([str(a) for a in argv])
+        lines = (stdout or "").strip().splitlines()
+        try:
+            value = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            value = {}
+        result = {k: value[k] for k in self.KEEP if k in value}
+        result.update(command=str(argv[1]), exit_code=code, problems=len(value.get("problems") or []))
+        return result
+
+    def plan(self):
+        return idp_plan(self.state_path, self.digest, self.values)
+
+    def apply(self, commit):
+        plan = self.plan()
+        ran = []
+
+        def step(argv):
+            result = self._one(argv)
+            ran.append(result)
+            return result
+
+        if plan["state"] != "unchanged":
+            for argv in self.spec["apply"]:
+                result = step(argv)
+                if result["exit_code"] != 0:
+                    # 摘要只在全部成功后记录；失败即停止 deploy，下一次 deploy 从头重跑（命令本身幂等）
+                    raise NodeError(f"IdP 声明式配置 {result['command']} 退出 {result['exit_code']}")
+        for argv in self.spec.get("always") or []:
+            result = step(argv)
+            if result["exit_code"] != 0:
+                # always 只补新用户、对客户端只读核对；它发现的漂移只能由完整声明处理，作废已记录的摘要，
+                # 使下一次 deploy 重新执行 apply（不一致的同名 mapper 仍由 apply 拒绝而不覆写）。
+                if read_json(self.state_path).get("digest"):
+                    write_json_atomic(self.state_path, dict(digest=None, commit=commit, at=time.time(),
+                                                            invalidated=result["command"]))
+                raise NodeError(f"IdP 声明式配置 {result['command']} 退出 {result['exit_code']}")
+        if plan["state"] != "unchanged":
+            write_json_atomic(self.state_path, dict(digest=self.digest, commit=commit, at=time.time(),
+                                                    native_clients_declared=plan["native_clients_declared"]))
+        return dict(plan, applied=plan["state"] != "unchanged", commands=ran)
+
+    def verify(self):
+        results = [self._one(argv) for argv in self.spec["verify"]]
+        problems = [f"{r['command']} 退出 {r['exit_code']}（不一致 {r['problems']} 项）"
+                    for r in results if r["exit_code"] != 0]
+        recorded = read_json(self.state_path).get("digest")
+        if recorded != self.digest:
+            problems.append("IdP 声明式配置摘要与本次输入不一致（deploy 未完成该步骤）")
+        native = next((r.get("nativeClientProfiles") for r in results if "nativeClientProfiles" in r), None)
+        return dict(commands=results, native_client_profiles=native, problems=problems)
+
+
 # ---- inspect：只读探针 ---------------------------------------------------------
 
 def inspect(request):
@@ -461,6 +577,14 @@ def inspect(request):
                 entries[name] = next((d["digest"]["gitCommit"] for d in deps
                                       if d.get("digest", {}).get("gitCommit")), None)
         result.setdefault("artifacts", {})[job] = entries if files is not None else None
+    idp = request.get("idp")
+    if idp and os.path.isfile(env_path):
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(idp.get("files"))) or not all(
+                re.fullmatch(r"[A-Z][A-Z0-9_]*", str(k)) for k in idp.get("env") or []):
+            raise NodeError("非法 IdP 摘要请求")
+        values = read_env_file(env_path)
+        result["idp"] = idp_plan(os.path.join(str(idp["journal"]), IDP_STATE),
+                                 idp_digest(idp["files"], values, idp["env"]), values)
     drift_request = request.get("config_drift")
     if drift_request:
         # 只读：compose config 只渲染，docker cp 只读出容器内文件；发布树须已由 worker 就绪
@@ -518,6 +642,20 @@ class Release:
     def git(self, *args):
         return out(["git", "-C", self.tree, *args])
 
+    def idp_step(self):
+        """本发布树的 IdP 声明式配置：摘要输入取自发布树（期望值定义文件与 realm 模板）与运行 .env。"""
+        spec = self.model.idp_declaration(self.decl)
+        files, keys = self.model.idp_inputs(self.decl)
+        values = read_env_file(os.path.join(self.runtime, ".env"))
+
+        def execute(argv):
+            # stderr 直通（拒绝原因只含键名与角色）；stdout 只取状态 JSON
+            r = subprocess.run(argv, cwd=self.deploy_dir, env=self.env(), stdout=subprocess.PIPE, stderr=sys.stderr)
+            return r.returncode, r.stdout.decode(errors="replace")
+
+        return IdpStep(spec, idp_digest(files, values, keys), values,
+                       os.path.join(self.decl["node"]["journal"], IDP_STATE), execute)
+
     def _preflight(self, need_receipt):
         root = os.path.dirname(self.tree)
         with open(os.path.join(root, "ready.json"), encoding="utf-8") as stream:
@@ -558,7 +696,7 @@ class Release:
         return config_drift(rendered, hashes, found, container_file, overlays=self.decl.get("overlays"))
 
     def converge(self, drift, targets):
-        """配置漂移 → 收敛计划（ADR-20 §8）；漂移服务一律按 release.yaml 的 drift 策略处理，不设数量阈值。"""
+        """配置漂移 → 收敛计划（ADR-20 §9）；漂移服务一律按 release.yaml 的 drift 策略处理，不设数量阈值。"""
         names = [d["service"] for d in drift["drift"] if d["service"] in self.services]
         return self.model.converge_plan(self.services, names, targets, self.managed, self.decl)
 
@@ -898,7 +1036,7 @@ class Release:
         return state
 
     def readback_config(self, service, rendered, hashes):
-        """配置回读（ADR-20 §8）：唯一运行容器的配置哈希等于渲染结果（由启动命令以一次性叠加组合的除外）、
+        """配置回读（ADR-20 §9）：唯一运行容器的配置哈希等于渲染结果（由启动命令以一次性叠加组合的除外）、
         configs 内容等于容器内文件、健康。"""
         found = containers(self.cfg["compose_project"])
         ctr = single_container(found, service)
@@ -978,7 +1116,18 @@ class Release:
             say(f"== 迁移 {plan['name']}：待执行 {len(plan['pending'])} 个")
             self.migrate(plan)
         journal["config_oneoffs"] = self.apply_config_oneoffs()
+        # 配置漂移的基础服务先于 IdP 声明重建（ADR-20 §9）：keycloak 若漂移，声明作用于重建后的实例，
+        # 且下面的就绪等待覆盖它。
         self.recreate_drifted(converge["before"], rendered, hashes, journal)
+        # IdP 声明式配置先于任何服务替换：新增回调、mapper 与退出属性对旧服务是兼容的增量，而新 Core/网关/Web
+        # 依赖它们（网关 end-session 的 post_logout_redirect_uri 必须已登记，03 §7 兼容顺序）。
+        idp_spec = self.model.idp_declaration(self.decl)
+        say(f"== IdP 声明式配置（等待 {idp_spec['wait']} 就绪）")
+        self.wait_ready(idp_spec["wait"])
+        journal["idp"] = self.idp_step().apply(self.commit)
+        say("   " + ("摘要变化，已声明并回读" if journal["idp"]["applied"] else "摘要未变，跳过声明")
+            + ("" if journal["idp"]["native_clients_declared"] else "；组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）"))
+        self.write_journal("deploy.json", journal)
         extra = self.ci_env
         for svc in targets:
             say(f"== {svc}")
@@ -1019,6 +1168,8 @@ class Release:
                 results.append(self.readback(svc))
             except NodeError as error:
                 bad.append(str(error))
+        idp = self.idp_step().verify()
+        bad += idp["problems"]
         found = containers(self.cfg["compose_project"])
         rendered, hashes = self.desired()
         drift = self.drift(rendered, hashes, found)
@@ -1038,7 +1189,7 @@ class Release:
         if os.path.isfile(journal_path):
             with open(journal_path, encoding="utf-8") as stream:
                 deploy = json.load(stream)
-        value = dict(commit=self.commit, services=results, problems=bad,
+        value = dict(commit=self.commit, services=results, problems=bad, idp=idp,
                      config_drift_reported=[d for d in drift["drift"] if d["service"] in reported],
                      not_running=drift["absent"],
                      deploy_state=(deploy or {}).get("state"),

@@ -4848,6 +4848,94 @@ pub enum ComponentConformanceStepExpectedMcpResultKind {
     Result,
 }
 
+/// Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
+/// DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
+/// display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
+/// never paged: a person absent from it is removed from the component organisation.
+/// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No
+/// email, Buzz key, session or credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentMemberDirectory {
+    pub binding_id: String,
+
+    /// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+    /// unchanged content keeps the same version.
+    pub directory_version: String,
+
+    pub members: Vec<ComponentDirectoryMember>,
+
+    pub tenant: ComponentDirectoryTenant,
+
+    /// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+    /// one).
+    pub workspaces: Vec<ComponentDirectoryWorkspace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryMember {
+    /// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+    /// HumanIdentity display name.
+    pub display_name: String,
+
+    /// One entry per ACTIVE external identity; the component keys its account on issuer +
+    /// subject.
+    pub identities: Vec<ComponentDirectoryIdentity>,
+
+    pub principal_id: String,
+
+    pub tenant_role: ComponentDirectoryRole,
+
+    pub workspaces: Vec<ComponentDirectoryMembership>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentDirectoryIdentity {
+    pub issuer: String,
+
+    /// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+    /// claim.
+    pub picture: String,
+
+    pub subject: String,
+}
+
+/// 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
+/// ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentDirectoryRole {
+    #[serde(rename = "ADMIN")]
+    Admin,
+
+    #[serde(rename = "MEMBER")]
+    Member,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryMembership {
+    pub role: ComponentDirectoryRole,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryTenant {
+    pub name: String,
+
+    pub tenant_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryWorkspace {
+    pub name: String,
+
+    pub workspace_id: String,
+}
+
 /// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

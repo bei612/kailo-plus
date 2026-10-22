@@ -1245,7 +1245,7 @@ configs:
   # asynchronous_insert_log、zookeeper/iceberg/delta 等）在本部署没有对应功能或设置启用，
   # 实测未建表，不在此列。remove 只停止写入：已有表与旧数据不随本配置删除，清理另行决定。
   # 本配置经 configs.content 投递，Compose 的服务哈希不含其内容；改动由发布入口的配置漂移
-  # 收敛（ADR-20 §8）回读容器内文件发现并重建本服务后生效。
+  # 收敛（ADR-20 §9）回读容器内文件发现并重建本服务后生效。
   openmeter_clickhouse_system_logs:
     content: |
       <clickhouse>

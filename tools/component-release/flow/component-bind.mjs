@@ -37,6 +37,11 @@
 // Core then projects the binding's own Gateway key into OpenBao and activates
 // after model discovery with that key. Delivery into the component is the
 // separate operator step (bootstrap.sh --native-model-delivery).
+// DD-133(4) / .design/07 §4.7.4: --directory-client-id records the component
+// instance's own confidential directory client as normalizedConfig.
+// directoryClientId (native page entry only). Core then answers the member
+// directory read only for a client-credentials token whose azp equals it; the
+// client and its credential belong to the component deployment, not to Core.
 //
 // Usage:
 //   node component-bind.mjs --component file-storage|knowledge|data-query --release-dir <rendered dir>
@@ -45,6 +50,7 @@
 //     [--model-route-ids <uuid,...> --meter-keys component_model_tokens]  (modelGateway; DD-124(6):
 //                                     the platform meter is the only component meter)
 //     [--model-call-mode NONE|PLATFORM_LLM_ROUTE] [--client-id <adapter IdP client id>] [--account admin] [--attempt N]
+//     [--directory-client-id <component directory IdP client id>]  (native page entry only, DD-133(4))
 //     --plan-out <plan.json> (--plan-only | --secret-values-file <file>) [--wait-seconds 1800]
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { attempt, canonical, deployEnv, digest, FlowError, key, log, login, main, parseArgs, privateText,
@@ -74,7 +80,7 @@ function exactOrigin(url, manifest) {
 await main(async () => {
   const args = parseArgs(process.argv.slice(2), ['component', 'release-dir', 'native-page-url', 'native-instance-ref', 'native-scope-ref',
     'adapter-service-ref', 'isolation-mode', 'workspace-id', 'model-route-ids', 'meter-keys', 'model-call-mode', 'account', 'attempt',
-    'plan-out', 'secret-values-file', 'wait-seconds', 'client-id'], ['plan-only']);
+    'plan-out', 'secret-values-file', 'wait-seconds', 'client-id', 'directory-client-id'], ['plan-only']);
   const defaults = DEFAULTS[args.component];
   if (!defaults) throw new FlowError('--component must be file-storage, knowledge or data-query', 2);
   for (const name of ['release-dir', 'native-page-url', 'native-instance-ref', 'plan-out']) {
@@ -93,6 +99,11 @@ await main(async () => {
 
   const normalizedConfig = { nativePageUrl: exactOrigin(args['native-page-url'], manifest) };
   if (args['client-id'] !== undefined && !/^[A-Za-z0-9_-]+$/.test(args['client-id'])) throw new FlowError('--client-id must be one IdP client id segment', 2);
+  if (args['directory-client-id'] !== undefined) {
+    if (!pageOnly) throw new FlowError('--directory-client-id belongs to a native page entry (DD-133(4))', 2);
+    if (!/^[A-Za-z0-9_-]{1,255}$/.test(args['directory-client-id'])) throw new FlowError('--directory-client-id must be one IdP client id segment', 2);
+    normalizedConfig.directoryClientId = args['directory-client-id'];
+  }
   const routes = list(args['model-route-ids']);
   const meters = list(args['meter-keys']);
   if (routes.length || meters.length) {

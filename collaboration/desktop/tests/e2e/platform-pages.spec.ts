@@ -195,7 +195,11 @@ test("a sign-out the server did not confirm says so instead of claiming success"
 }) => {
   await installMockBridge(page, {
     platform: {
-      signOut: { coreSessionRevoked: true, refreshTokenRevoked: false },
+      signOut: {
+        coreSessionRevoked: true,
+        refreshTokenRevoked: false,
+        embeddedIdpSessionEnded: true,
+      },
     },
   });
   await page.goto("/");
