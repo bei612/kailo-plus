@@ -854,7 +854,7 @@ export const typeDefs = gql`
     user: KailoUser
     isAdmin: Boolean!
     productName: String!
-    # OIDC `locale` claim; seeds the language of top-level visits only.
+    # OIDC locale claim; seeds the language of top-level visits only.
     identityLocale: String
   }
 
