@@ -102,6 +102,45 @@ impl Policy {
 
     async fn request(&self, request: &wire::McpRequest) -> Result<wire::McpRequestResult, Refusal> {
         let authorization = session_header(&request.headers)?;
+        // DD-134(5)②：网关管理区的受控探测只走发现类方法，由探测记录判定。
+        if let Some(probe) = optional_header(&request.headers, crate::gateway_admin::probe::HEADER)?
+        {
+            let probe = Uuid::parse_str(probe).map_err(|_| invalid())?;
+            crate::gateway_admin::probe::authorize(
+                &self.state,
+                authorization,
+                probe,
+                &request.service_names,
+                &request.method,
+            )
+            .await?;
+            if request.method == "tools/list" && !empty_params(request.mcp_request.as_deref())? {
+                return Err(invalid());
+            }
+            return management_pass(
+                None,
+                json!({"gatewayProbe":probe,"gatewayProbeBearer":authorization}),
+            );
+        }
+        // DD-134(6)：HUMAN 测试调用只放行该执行冻结的工具名与参数。
+        if let Some(action) =
+            optional_header(&request.headers, crate::application_tool_human::HEADER)?
+        {
+            let action = Uuid::parse_str(action).map_err(|_| invalid())?;
+            let narrowed = crate::application_tool_human::authorize_request(
+                &self.state,
+                authorization,
+                action,
+                &request.service_names,
+                &request.method,
+                request.mcp_request.as_deref(),
+            )
+            .await?;
+            return management_pass(
+                narrowed,
+                json!({"toolTestAction":action,"toolTestBearer":authorization}),
+            );
+        }
         let validation: Vec<_> = request
             .headers
             .iter()
@@ -343,6 +382,48 @@ impl Policy {
             .transpose()
             .map_err(|_| invalid())?
             .ok_or_else(invalid)?;
+        if let Some(probe) = metadata["gatewayProbe"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+        {
+            let bearer = metadata["gatewayProbeBearer"].as_str().ok_or_else(denied)?;
+            crate::gateway_admin::probe::authorize(
+                &self.state,
+                bearer,
+                Uuid::parse_str(probe).map_err(|_| denied())?,
+                &response.service_names,
+                &response.method,
+            )
+            .await?;
+            if response.method == "tools/list" {
+                let _: ListToolsResult =
+                    serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
+            }
+            return Ok(wire::McpResponseResult {
+                result: Some(wire::mcp_response_result::Result::Pass(wire::Pass {})),
+            });
+        }
+        if let Some(action) = metadata["toolTestAction"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+        {
+            let bearer = metadata["toolTestBearer"].as_str().ok_or_else(denied)?;
+            let rebuilt = crate::application_tool_human::authorize_response(
+                &self.state,
+                bearer,
+                Uuid::parse_str(action).map_err(|_| denied())?,
+                &response.service_names,
+                &response.method,
+                &response.mcp_response,
+            )
+            .await?;
+            return Ok(match rebuilt {
+                Some(bytes) => mutated(bytes),
+                None => wire::McpResponseResult {
+                    result: Some(wire::mcp_response_result::Result::Pass(wire::Pass {})),
+                },
+            });
+        }
         if metadata["managementAction"]
             .as_str()
             .is_some_and(|value| !value.is_empty())
@@ -706,6 +787,47 @@ fn error(error: Refusal) -> wire::AuthorizationError {
         },
         mcp_error: None,
     }
+}
+
+/// `*/list` 请求相位不带参数或只带空对象；其他参数（如翻页 cursor）不放行。
+fn empty_params(bytes: Option<&[u8]>) -> Result<bool, Refusal> {
+    Ok(bytes
+        .map(serde_json::from_slice::<Value>)
+        .transpose()
+        .map_err(|_| invalid())?
+        .is_none_or(|value| value == json!({})))
+}
+
+/// 网关管理区 route（探测、测试调用）的请求相位放行：去掉凭据与内部 header，
+/// 只把元数据交给响应相位；`narrowed` 为收窄后的 tools/call 参数。
+fn management_pass(
+    narrowed: Option<Vec<u8>>,
+    metadata: Value,
+) -> Result<wire::McpRequestResult, Refusal> {
+    Ok(wire::McpRequestResult {
+        result: Some(match narrowed {
+            Some(params) => wire::mcp_request_result::Result::Mutated(params),
+            None => wire::mcp_request_result::Result::Pass(wire::Pass {}),
+        }),
+        header_mutation: Some(wire::HeaderMutation {
+            set: Vec::new(),
+            remove: vec![
+                "authorization".into(),
+                "cookie".into(),
+                "proxy-authorization".into(),
+                "idempotency-key".into(),
+                crate::gateway_admin::probe::HEADER.into(),
+                crate::application_tool_human::HEADER.into(),
+                crate::application_binding::peer::HEADER.into(),
+                crate::application_binding::peer::PROBE_HEADER.into(),
+                crate::application_binding::peer::RUN_HEADER.into(),
+                agent_tool_mcp::ACTION_HEADER.into(),
+                agent_tool_mcp::OPERATION_HEADER.into(),
+                agent_tool_mcp::INVOCATION_HEADER.into(),
+            ],
+        }),
+        metadata: Some(serde_json::from_value(metadata).map_err(|_| invalid())?),
+    })
 }
 
 fn mutated(bytes: Vec<u8>) -> wire::McpResponseResult {

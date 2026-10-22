@@ -572,6 +572,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/platform/gateway/mcp/probes",
             axum::routing::post(crate::gateway_admin::probe::run),
         )
+        // DD-134(6)：工具测试调用以该工具 ActionDefinition 准入，结果只在本次回应返回。
+        .exposed_route(
+            "/api/v1/gateway/tool-test-calls",
+            axum::routing::post(crate::application_tool_human::submit),
+        )
         .exposed_route(
             "/api/v1/automations/{resource_id}",
             get(crate::automation_query::get),

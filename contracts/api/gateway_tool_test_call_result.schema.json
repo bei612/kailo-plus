@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/gateway_tool_test_call_result.schema.json",
+  "title": "GatewayToolTestCallResult",
+  "description": "DD-134(6)：网关管理区测试调用的同请求回应。submission 是该工具 ActionDefinition 的准入与派发结论；resultJson 只在本次调用已确定成功时出现，是经 ExtMcp 按冻结 ResultExposurePolicy 与输出 schema 过滤后的 canonical JSON，只回给发起人本人且 Core 不保存；toolError 为真表示原生工具返回了错误结果（不含正文）。结果不明时两者都缺省，ActionExecution 停在 UNKNOWN，不重放。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["submission"],
+  "properties": {
+    "submission": {"$ref": "action_submission.schema.json"},
+    "resultJson": {"type": "string"},
+    "toolError": {"type": "boolean"}
+  }
+}
