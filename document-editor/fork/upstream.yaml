@@ -19,7 +19,7 @@ artifacts:
     build_facts: {KAILO_SOURCE_COMMIT: source_commit, KAILO_BUILD_TIME: build_time_utc}
     source_digest: none
     artifact_digest: none
-    blocked: Built only as a CI-node trial (not pushed, no digest recorded). The CI build target document-editor is not registered yet; production deployment waits for a registered build, DD-132(3) deployment receipt and V-SCN-186..190 acceptance.
+    blocked: Built only as CI-node trials (latest fb51115e, not pushed, no digest recorded); the registered CI build, the DD-132(3) deployment receipt with the operator's Corresponding Source offer, and V-SCN-186..190 acceptance on a deployed instance are still open.
 source_components:
   core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
   core-fonts: 7030c6681fb5bbed560675cb42422f91df15d5c9

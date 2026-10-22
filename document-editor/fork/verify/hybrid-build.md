@@ -93,3 +93,27 @@
 | path | 官方层的安装路径（`/var/www/onlyoffice` 等），只出现在服务端配置中 |
 
 HTML、SVG、CSS 与 locale 不享有 comment 类的放行。
+
+### 白标后的试构建与界面核验（固定提交 `fb51115e5210ecccccc953951a50c2cefb847d42`）
+
+试构建在 CI 节点以 ubuntu 身份执行（不加 sudo，与 CI worker 共用 DOCKER_CONFIG 与 builder），构建参数 `PLATFORM_DISPLAY_NAME=Kailo`，`build_facts` 由脚本按 `tools/build-upstream.sh` 的规则给出。镜像没有推送，也没有登记 digest。
+
+- 镜像：image ID `sha256:398750b0eb670cec4fc4a3dcdba47d8075a1ff267f826be6a0cbee76aae3690c`，825,249,491 字节，1 层。web-apps 不再含帮助、移动端与嵌入版，从 752M 降到 126M。
+- 品牌扫描通过，finding 0。各类命中：legal 7285、path 218、identifier 171、comment 151。identifier 明细：`asc_putOnlyOfficeTime` 32、`asc_getOnlyOfficeTime` 31、`http://schemas.onlyoffice.com` 32、`onlyoffice`（小写键）40、`onlyofficeDefaultFont` 8、`OnlyOfficeStyles` 4、`onlyoffice_hatch` 4、`onlyoffice_internal_guid` 4、`onlyofficeChannel` 4、`onlyoffice-spellchecker` 4、`ONLYOFFICEFORM` 3、`changeOnlyOfficeUrl` 3、`OnlyOfficeTime` 2。
+- 冒烟复验（同第 3 节的方法）：
+  - 容器 healthy，discovery 472 个 action 全部在实例 origin 上；
+  - frame-ancestors 精确；
+  - `/`、`/ai-proxy/`、`/sdkjs-plugins/`、`/welcome/` 返回 404，插件列表为空；
+  - 指向非 Cells host 的 WOPI 请求被 ipfilter 拒绝；
+  - `ApiWorkbook` 已导出；x2t 的 snapshot 与 cache 齐全。
+- 界面核验：用一个只用于测试的 WOPI 宿主冒充 Cells，在 CI 节点用 Playwright 与 Chrome 打开 docx。宿主有意在 `docs_api_config` 中提交 `about:true`、`macros:true`，检验它们改不回来。结果：
+  - `/kailo-legal/` 返回 200，含部署的源码获取地址；`LICENSE.txt` 含 Additional Terms；`/favicon.ico` 返回 Kailo 图标（image/png）；`/themes.json` 只有 `theme-kailo-light` 与 `theme-kailo-dark`。
+  - 编辑器页标题为文件名，favicon 为 Kailo 图标；编辑器框架标题为“文件名 - Kailo”，页头 logo 为 `kailo-logo.png`。
+  - “关于”与“反馈与支持”入口都不显示，宿主提交的 `about:true` 无效；可见文本中没有上游名称；显示名与 `UserExtraInfo.avatar` 头像正确。
+  - `thm=1&ui=zh-CN` 打开时为 `theme-kailo-light`、中文界面。宿主发送 `Kailo_Presentation` 后不重载即切换为 `theme-kailo-dark`，再切回 light；用 `thm=2&ui=en-US` 打开时为 `theme-kailo-dark`、英文界面。截图见 CI 节点 `/home/ubuntu/oo-trial/ui-check/run-fb51115e5210/out/`。
+- 首轮界面核验发现两个问题，已修正并复验：
+  - web-apps 构建阶段没有 sdkjs 源码，`device_scale.js` 因此没有内联；
+  - doc-formats 精灵图（`formats@2.5x.svg`）在 common 资源复制之后才生成。现按 `prebuild-icons-sprite` 先生成。
+- 已知差异：
+  - 编辑器界面字体沿用 web-apps 自带字体栈，主题机制不覆盖字体，所以没有改为 `--kailo-font-sans`；
+  - 编辑器“高级设置”中的其他个人偏好（如单位、缩放）保留为编辑器的原生功能；Kailo 主题下不提供主题选择。
