@@ -144,9 +144,9 @@ pub(crate) fn mask(value: &Value) -> Value {
                 .map(|(key, value)| {
                     let masked = if key == "file" && !value.is_object() && !value.is_null() {
                         Value::String(FILE_DELIVERY.into())
-                    } else if sensitive_key(key) {
-                        mask_sensitive(value)
-                    } else if authorization_key(key) && !value.is_object() && !value.is_array() {
+                    } else if sensitive_key(key)
+                        || (authorization_key(key) && !value.is_object() && !value.is_array())
+                    {
                         mask_sensitive(value)
                     } else {
                         mask(value)
