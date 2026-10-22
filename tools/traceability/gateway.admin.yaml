@@ -51,6 +51,18 @@ implementation:
     - client-kit/ts/platform/src/i18n.ts
     - client-kit/ts/platform/src/react/gateway.tsx
     - client-kit/ts/platform/src/react/navigation.tsx
+    - client-kit/ts/platform/src/gateway-drafts.ts
+    - client-kit/ts/platform/src/react/gateway-action.tsx
+    - client-kit/ts/platform/src/react/gateway-config.tsx
+    - client-kit/ts/platform/src/react/gateway-entry.tsx
+    - client-kit/ts/platform/src/react/gateway-mcp.tsx
+    - client-kit/ts/platform/src/react/gateway-routes.tsx
+    - client-kit/ts/platform/src/react/gateway-shared.tsx
+    - client-kit/ts/platform/src/react/gateway-stats.tsx
+    - client-kit/ts/platform/src/react/gateway-tools.tsx
+    - client-kit/ts/platform/src/react/sidebar/app-sidebar-primary-menu.tsx
+    - collaboration/desktop/src/features/platform/platformSections.ts
+    - core/crates/platform-core/src/application_model_route.rs
     - web-client/web/src/platform/ui/PlatformApp.tsx
     - collaboration/desktop/src/app/routes/platform.$section.tsx
   surfaces: [web, desktop]
@@ -73,13 +85,20 @@ implementation:
     - contracts/api/gateway_mcp_release_page.schema.json
     - contracts/api/gateway_mcp_binding_draft_request.schema.json
     - contracts/api/gateway_mcp_binding_draft.schema.json
+    - contracts/api/gateway_tool_test_call_result.schema.json
     - contracts/enums/gateway_admin_scope.schema.json
     - contracts/enums/gateway_call_kind.schema.json
     - contracts/enums/gateway_call_outcome.schema.json
     - contracts/enums/gateway_stats_dimension.schema.json
     - contracts/enums/gateway_config_revision_source.schema.json
     - contracts/enums/gateway_config_change_kind.schema.json
-  migrations: []
+  migrations:
+    - core/migrations/20261021120000_gateway_config_history.up.sql
+    - core/migrations/20261021120000_gateway_config_history.down.sql
+    - core/migrations/20261021120100_gateway_mcp_probe.up.sql
+    - core/migrations/20261021120100_gateway_mcp_probe.down.sql
+    - core/migrations/20261021120200_llm_route_disable.up.sql
+    - core/migrations/20261021120200_llm_route_disable.down.sql
 
 runtime:
   routes:
@@ -96,6 +115,7 @@ runtime:
     - /api/v1/platform/gateway/config/history
     - /api/v1/platform/gateway/mcp/peers
     - /api/v1/platform/gateway/mcp/probes
+    - /api/v1/gateway/tool-test-calls
   actions: [llm_route.disable]
   tools: []
   workflow_kinds: []

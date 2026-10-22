@@ -893,12 +893,14 @@ async fn admit(
         return Err(denied());
     };
     for (index, id) in config.routes.iter().enumerate() {
+        // DD-134(7): a route that is no longer ACTIVE (llm_route.disable) is a
+        // closed binding dependency, not a missing permission.
         let route: Route = sqlx::query_as(ROUTE)
             .bind(id)
             .bind(current.tenant_id)
             .fetch_optional(&state.pool)
             .await?
-            .ok_or_else(denied)?;
+            .ok_or(Refusal::Denied(ReasonCode::BindingNotActive))?;
         if route.home_workspace_id.is_some() && route.home_workspace_id != current.workspace_id {
             return Err(denied());
         }

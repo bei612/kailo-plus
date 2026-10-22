@@ -296,6 +296,7 @@ capabilities:
   - /api/v1/platform/gateway/config/history
   - /api/v1/platform/gateway/mcp/peers
   - /api/v1/platform/gateway/mcp/probes
+  - /api/v1/gateway/tool-test-calls
   actions:
   - llm_route.disable
   tools: []
