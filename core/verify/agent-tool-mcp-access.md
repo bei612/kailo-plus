@@ -118,7 +118,7 @@ DD-122（10-17）与 DD-134（本次）之后逐条复核第 5 节：
 
 另外两条现状：生产 `catalog.component_release` 只有 6 条 `executionConnector.mode=NONE` 的原生页面入口 release，没有任何 `PROTOCOL_PEER` 或 `REMOTE_ADAPTER` release；AgentGateway `agw_config_resources` 只有 `llm.*` 四类，request log 共 3552 条（10-03 至 10-21）。因此“真实外部 MCP”仍需：在运维域部署固定 digest 的 MCP 服务并写入交付目录与一致性环境（卡点 4），再按 DD-134 网关管理区的向导走契约、release、批准与连接。HUMAN 直接测试调用 `PROTOCOL_PEER` 工具在 `e6b791b78` 前不存在（`application_action::facts` 只接受 `REMOTE_ADAPTER`），由 DD-134(6) 补齐。
 
-## 7. 卡点 4 的部署件（2026-10-22，分支 `feat/gw-mcp-reference`，DD-136、ADR-20 §8）
+## 7. 卡点 4 的部署件（2026-10-22，分支 `feat/gw-mcp-reference`，DD-136、ADR-20 §10）
 
 第 6 节剩下的卡点 4 由一组声明式部署件闭合，随发布入口 `tools/release/kailo-release.sh` 部署，不需要人到节点上写文件或改 `.env`。
 
@@ -147,7 +147,7 @@ DD-122（10-17）与 DD-134（本次）之后逐条复核第 5 节：
 - 结束后临时容器与网络回读为 0。记录文件 sha256 `3d66e564…`，在节点与提交中一致。
 - 健康检查命令另在同一镜像、同样加固参数下实测：无会话 `GET /mcp` 返回 400，检查退出 0，常驻内存约 29 MiB。
 
-发布时入口做的事（ADR-20 §8）：声明在 plan 阶段校验；deploy 把交付目录与一致性环境写到运行目录 `data/protocol-peers/`
+发布时入口做的事（ADR-20 §10）：声明在 plan 阶段校验；deploy 把交付目录与一致性环境写到运行目录 `data/protocol-peers/`
 （交付目录保留已有 `adapters` 条目），按固定引用创建 `protocol-peer-reference` 并回读健康，再因声明摘要首次出现经
 `start-core.sh --no-build` 重建 Core（Worker 随一致性投递由该入口重建），回读成功后记下摘要；verify 回读运行体与投递。
 

@@ -28,6 +28,7 @@ import { queryReceiptState } from '@/utils/queryReceipt';
 import client from '@/apollo/client';
 import { DASHBOARD_ITEMS } from '@/apollo/client/graphql/dashboard';
 import { runNativeMetadataWrite } from '@/utils/errorHandler';
+import useKailoSession from '@/hooks/useKailoSession';
 
 const Chart = dynamic(() => import('@/components/chart'), {
   ssr: false,
@@ -86,6 +87,8 @@ const getDynamicProperties = (chartType: ChartType) => {
 
 export default function ChartAnswer(props: AnswerResultProps) {
   const { onGenerateChartAnswer, onAdjustChartAnswer } = usePromptThreadStore();
+  // DD-133 §3: the shared dashboard is changed by Kailo Tenant admins.
+  const { isAdmin } = useKailoSession();
   const { threadResponse } = props;
   const router = useRouter();
   const text = getQueryPreviewText(router.locale);
@@ -368,7 +371,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
                     values={dataValues}
                     onEdit={onEdit}
                     onReload={onReload}
-                    onPin={onPin}
+                    onPin={isAdmin ? onPin : undefined}
                   />
                 </ChartWrapper>
               )

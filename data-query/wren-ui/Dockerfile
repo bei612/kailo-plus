@@ -35,6 +35,13 @@ COPY data-query/wren-ui/.prettierrc ./
 COPY data-query/wren-ui/next.config.js ./
 COPY data-query/wren-ui/tsconfig.json ./
 COPY client-kit/adapter/protocol.mjs /app/client-kit/adapter/protocol.mjs
+# DD-133 (`07` §4.7.1): Kailo's icon (the web-client's own file), token
+# stylesheet and presentation runtime are build inputs copied into this
+# artifact and served from this origin; nothing is fetched from Kailo at run
+# time. The runtime's type declaration is read by the type check.
+COPY web-client/web/public/app-icon.png ./public/kailo/app-icon.png
+COPY client-kit/embed/kailo-theme-tokens.css client-kit/embed/kailo-embed.js ./public/kailo/
+COPY client-kit/embed/kailo-embed.d.ts /app/client-kit/embed/kailo-embed.d.ts
 
 RUN yarn build
 

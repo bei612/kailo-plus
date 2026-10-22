@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_member_directory.schema.json",
+  "title": "ComponentMemberDirectory",
+  "description": "Read-only member directory snapshot for an embedded component (.design/07 §4.7.4, DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot, never paged: a person absent from it is removed from the component organisation. directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No email, Buzz key, session or credential.",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "directoryVersion", "tenant", "workspaces", "members"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "directoryVersion": {"type": "string", "description": "Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion; unchanged content keeps the same version."},
+    "tenant": {
+      "title": "ComponentDirectoryTenant", "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "name"],
+      "properties": {
+        "tenantId": {"type": "string", "format": "uuid"},
+        "name": {"type": "string"}
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has one).",
+      "items": {
+        "title": "ComponentDirectoryWorkspace", "type": "object", "additionalProperties": false,
+        "required": ["workspaceId", "name"],
+        "properties": {
+          "workspaceId": {"type": "string", "format": "uuid"},
+          "name": {"type": "string"}
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "title": "ComponentDirectoryMember", "type": "object", "additionalProperties": false,
+        "required": ["principalId", "displayName", "tenantRole", "identities", "workspaces"],
+        "properties": {
+          "principalId": {"type": "string", "format": "uuid"},
+          "displayName": {"type": "string", "description": "Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the HumanIdentity display name."},
+          "tenantRole": {"$ref": "../enums/component_directory_role.schema.json"},
+          "identities": {
+            "type": "array",
+            "description": "One entry per ACTIVE external identity; the component keys its account on issuer + subject.",
+            "items": {
+              "title": "ComponentDirectoryIdentity", "type": "object", "additionalProperties": false,
+              "required": ["issuer", "subject", "picture"],
+              "properties": {
+                "issuer": {"type": "string"},
+                "subject": {"type": "string"},
+                "picture": {"type": "string", "description": "<PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture claim."}
+              }
+            }
+          },
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "title": "ComponentDirectoryMembership", "type": "object", "additionalProperties": false,
+              "required": ["workspaceId", "role"],
+              "properties": {
+                "workspaceId": {"type": "string", "format": "uuid"},
+                "role": {"$ref": "../enums/component_directory_role.schema.json"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

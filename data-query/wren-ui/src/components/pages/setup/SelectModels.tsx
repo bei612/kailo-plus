@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { Button, Col, Form, Row, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ERROR_TEXTS } from '@/utils/error';
@@ -50,15 +49,6 @@ export default function SelectModels(props: Props) {
       <Text>
         We will create data models based on selected tables to help AI better
         understand your data.
-        <br />
-        <Link
-          href="https://docs.getwren.ai/oss/guide/modeling/overview"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn more
-        </Link>{' '}
-        about data models.
       </Text>
       <div className="my-6">
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_directory_role.schema.json",
+  "title": "ComponentDirectoryRole",
+  "description": "成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为 ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。",
+  "type": "string",
+  "enum": [
+    "ADMIN",
+    "MEMBER"
+  ]
+}

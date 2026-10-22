@@ -123,6 +123,7 @@ fn test_policy() -> OidcPolicy {
 		session,
 		scopes: vec!["openid".into(), "profile".into()],
 		ui_locales: None,
+		backchannel_logout: None,
 		end_session_endpoint: None,
 	}
 }
@@ -236,6 +237,7 @@ fn explicit_local_oidc_config() -> LocalOidcConfig {
 		redirect_uri: test_redirect_uri().redirect_uri,
 		scopes: vec!["profile".into(), "email".into()],
 		ui_locales: None,
+		backchannel_logout: None,
 		login: None,
 		logout: None,
 	}
@@ -1064,6 +1066,7 @@ async fn local_oidc_config_compiles_supported_provider_sources() {
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
 				ui_locales: None,
+				backchannel_logout: None,
 				login: None,
 				logout: None,
 			},
@@ -1144,6 +1147,7 @@ async fn discovery_rejects_relative_provider_endpoints() {
 		redirect_uri: "http://localhost:3000/oauth/callback".into(),
 		scopes: vec![],
 		ui_locales: None,
+		backchannel_logout: None,
 		login: None,
 		logout: None,
 	};
@@ -1214,6 +1218,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
 				ui_locales: None,
+				backchannel_logout: None,
 				login: None,
 				logout: None,
 			},
@@ -1245,6 +1250,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
 				ui_locales: None,
+				backchannel_logout: None,
 				login: None,
 				logout: None,
 			},
@@ -1556,6 +1562,7 @@ async fn end_session_requires_a_discovered_end_session_endpoint() {
 		redirect_uri: "http://localhost:3000/oauth/callback".into(),
 		scopes: vec![],
 		ui_locales: None,
+		backchannel_logout: None,
 		login: None,
 		logout: logout(end_session),
 	};
@@ -1582,4 +1589,244 @@ async fn end_session_requires_a_discovered_end_session_endpoint() {
 	.await
 	.expect_err("explicit provider has no end session endpoint");
 	assert!(err.to_string().contains("logout.endSession requires"));
+}
+
+// Kailo DD-133(6) (`.design/07` §4.7.5): OIDC Back-Channel Logout receiver.
+mod backchannel_logout {
+	use super::*;
+
+	const RECEIVER: &str = "https://app.example.com/oauth/backchannel-logout";
+
+	fn sign(claims: serde_json::Value) -> String {
+		let mut header = Header::new(Algorithm::ES256);
+		header.kid = Some(TEST_KEY_ID.into());
+		jsonwebtoken::encode(
+			&header,
+			&claims,
+			&EncodingKey::from_ec_pem(TEST_PRIVATE_KEY_PEM.as_bytes()).expect("encoding key"),
+		)
+		.expect("signed token")
+	}
+
+	fn logout_token(changes: serde_json::Value) -> String {
+		let mut claims = json!({
+			"iss": TEST_ISSUER,
+			"aud": TEST_CLIENT_ID,
+			"iat": now_unix(),
+			"jti": uuid::Uuid::new_v4().to_string(),
+			"sid": "sid-1",
+			"sub": "user-1",
+			"events": { "http://schemas.openid.net/event/backchannel-logout": {} },
+		});
+		for (key, value) in changes.as_object().expect("object") {
+			if value.is_null() {
+				claims.as_object_mut().unwrap().remove(key);
+			} else {
+				claims[key] = value.clone();
+			}
+		}
+		sign(claims)
+	}
+
+	fn receiving_policy() -> OidcPolicy {
+		let mut policy = test_policy();
+		let provider = jwt::Provider::from_jwks(
+			test_jwks(),
+			TEST_ISSUER.to_string(),
+			Some(vec![TEST_CLIENT_ID.to_string()]),
+			jwt::JWTValidationOptions {
+				required_claims: Default::default(),
+			},
+		)
+		.expect("logout validator");
+		policy.backchannel_logout = Some(BackchannelLogout::new(
+			"/oauth/backchannel-logout".into(),
+			jwt::Jwt::from_providers(
+				vec![provider],
+				jwt::Mode::Strict,
+				crate::http::auth::AuthorizationLocation::bearer_header(),
+				false,
+			),
+			Duration::from_secs(3600),
+		));
+		policy
+	}
+
+	async fn deliver(policy: &OidcPolicy, body: String, content_type: &str) -> u16 {
+		let mut req = HttpRequest::builder()
+			.method(Method::POST)
+			.uri(RECEIVER)
+			.header(header::CONTENT_TYPE, content_type)
+			.body(crate::http::Body::from(body))
+			.expect("request");
+		let response = test_helpers::test_policy(policy, &mut req)
+			.await
+			.expect("policy apply")
+			.direct_response
+			.expect("receiver answers directly");
+		assert_eq!(
+			response.headers().get(header::CACHE_CONTROL).unwrap(),
+			"no-store"
+		);
+		response.status().as_u16()
+	}
+
+	async fn form(policy: &OidcPolicy, token: String) -> u16 {
+		deliver(
+			policy,
+			format!("logout_token={token}"),
+			"application/x-www-form-urlencoded",
+		)
+		.await
+	}
+
+	/// Whether a browser session holding this ID token is still a session.
+	async fn session_alive(policy: &OidcPolicy, sid: &str, sub: &str, iat: u64) -> bool {
+		let id_token = sign(json!({
+			"iss": TEST_ISSUER,
+			"aud": TEST_CLIENT_ID,
+			"exp": now_unix() + 600,
+			"iat": iat,
+			"nonce": TEST_NONCE,
+			"sid": sid,
+			"sub": sub,
+		}));
+		let encoded = policy
+			.session
+			.encode_browser_session(&BrowserSession {
+				policy_id: policy.policy_id.clone(),
+				raw_id_token: SecretString::new(id_token.into()),
+				expires_at_unix: Some(now_unix() + 300),
+			})
+			.expect("encode session");
+		let mut req = request(
+			Method::GET,
+			"https://app.example.com/protected",
+			Some("text/html"),
+		);
+		add_cookie(
+			&mut req,
+			format!("{}={encoded}", policy.session.cookie_name),
+		);
+		let response = test_helpers::test_policy(policy, &mut req)
+			.await
+			.expect("browser policy apply");
+		response.direct_response.is_none()
+	}
+
+	#[tokio::test]
+	async fn a_valid_logout_token_ends_that_sid_only() {
+		let policy = receiving_policy();
+		let now = now_unix();
+		assert!(session_alive(&policy, "sid-1", "user-1", now - 5).await);
+		assert_eq!(form(&policy, logout_token(json!({}))).await, 200);
+		assert!(!session_alive(&policy, "sid-1", "user-1", now - 5).await);
+		assert!(session_alive(&policy, "sid-2", "user-2", now - 5).await);
+	}
+
+	#[tokio::test]
+	async fn without_sid_every_earlier_session_of_the_subject_ends() {
+		let policy = receiving_policy();
+		let now = now_unix();
+		assert_eq!(
+			form(&policy, logout_token(json!({ "sid": null }))).await,
+			200
+		);
+		assert!(!session_alive(&policy, "sid-a", "user-1", now - 30).await);
+		assert!(!session_alive(&policy, "sid-b", "user-1", now).await);
+		// A later login of the same person is a new session.
+		assert!(session_alive(&policy, "sid-c", "user-1", now + 5).await);
+		assert!(session_alive(&policy, "sid-d", "user-2", now - 30).await);
+	}
+
+	#[tokio::test]
+	async fn invalid_tokens_are_rejected_and_end_nothing() {
+		let policy = receiving_policy();
+		let now = now_unix();
+		let mut other_key = Header::new(Algorithm::HS256);
+		other_key.kid = Some(TEST_KEY_ID.into());
+		let symmetric = jsonwebtoken::encode(
+			&other_key,
+			&json!({ "iss": TEST_ISSUER, "aud": TEST_CLIENT_ID, "iat": now, "jti": "x", "sid": "sid-1",
+				"events": { "http://schemas.openid.net/event/backchannel-logout": {} } }),
+			&EncodingKey::from_secret(b"shared"),
+		)
+		.expect("hs256");
+		for token in [
+			symmetric,
+			logout_token(json!({ "aud": "another-client" })),
+			logout_token(json!({ "iss": "https://other.example.com" })),
+			logout_token(json!({ "nonce": "n" })),
+			logout_token(json!({ "events": null })),
+			logout_token(json!({ "events": { "other": {} } })),
+			logout_token(json!({ "jti": null })),
+			logout_token(json!({ "sid": null, "sub": null })),
+			logout_token(json!({ "iat": now - 3600 })),
+			logout_token(json!({ "iat": now + 3600 })),
+			"not-a-jwt".to_string(),
+		] {
+			assert_eq!(form(&policy, token).await, 400);
+		}
+		assert_eq!(
+			deliver(
+				&policy,
+				format!("logout_token={}", logout_token(json!({}))),
+				"application/json"
+			)
+			.await,
+			400
+		);
+		assert_eq!(
+			deliver(
+				&policy,
+				"other=1".into(),
+				"application/x-www-form-urlencoded"
+			)
+			.await,
+			400
+		);
+		assert!(session_alive(&policy, "sid-1", "user-1", now - 5).await);
+	}
+
+	#[tokio::test]
+	async fn a_replayed_token_is_rejected_and_the_logout_stays_in_force() {
+		let policy = receiving_policy();
+		let token = logout_token(json!({}));
+		assert_eq!(form(&policy, token.clone()).await, 200);
+		assert_eq!(form(&policy, token).await, 400);
+		assert!(!session_alive(&policy, "sid-1", "user-1", now_unix() - 5).await);
+	}
+
+	#[tokio::test]
+	async fn only_form_posts_are_accepted() {
+		let policy = receiving_policy();
+		let mut req = request(Method::GET, RECEIVER, None);
+		let response = test_helpers::test_policy(&policy, &mut req)
+			.await
+			.expect("policy apply")
+			.direct_response
+			.expect("receiver answers directly");
+		assert_eq!(response.status().as_u16(), 405);
+	}
+
+	#[tokio::test]
+	async fn the_receiver_path_must_be_distinct() {
+		let err = compile_local_policy(
+			LocalOidcConfig {
+				logout: Some(OidcLogout {
+					path: "/oauth/backchannel-logout".into(),
+					redirect: None,
+					end_session: false,
+				}),
+				backchannel_logout: Some(OidcBackchannelLogout {
+					path: "/oauth/backchannel-logout".into(),
+				}),
+				..explicit_local_oidc_config()
+			},
+			translated_policy_id("backchannel"),
+		)
+		.await
+		.expect_err("overlapping receiver");
+		assert!(err.to_string().contains("backchannelLogout.path"));
+	}
 }

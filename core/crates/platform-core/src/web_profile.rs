@@ -140,7 +140,7 @@ pub(crate) async fn read_authors(
     author_events(value, authors).map_err(|_| unavailable())
 }
 
-fn author_events(
+pub(crate) fn author_events(
     value: Value,
     authors: &[String],
 ) -> Result<std::collections::HashMap<String, nostr::Event>, ()> {

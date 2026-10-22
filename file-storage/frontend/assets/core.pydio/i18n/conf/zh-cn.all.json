@@ -300,7 +300,7 @@
     "other": "主选项"
   },
   "Main container for core Pydio settings (application title, sharing, webdav server config, etc...)": {
-    "other": "Pydio 核心设置的主容器(应用程序标题、共享、webdav 服务器配置等...)"
+    "other": "Kailo 核心设置的主容器(应用程序标题、共享、webdav 服务器配置等...)"
   },
   "Maximum characters length of new files or folders": {
     "other": "新文件或文件夹的最大字符长度"
@@ -342,7 +342,7 @@
     "other": "公共基础 URI"
   },
   "Pydio Main Options": {
-    "other": "Pydio 主选项"
+    "other": "Kailo 主选项"
   },
   "Read Only": {
     "other": "只读"
@@ -432,7 +432,7 @@
     "other": "传输清晰通行证"
   },
   "Try to use the current Pydio user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!": {
-    "other": "尝试使用当前的 Pydio 用户凭据进行连接。 警告，PYDIO_SESSION_SET_CREDENTIALS 配置必须设置为 true！"
+    "other": "尝试使用当前的 Kailo 用户凭据进行连接。 警告，PYDIO_SESSION_SET_CREDENTIALS 配置必须设置为 true！"
   },
   "URI where to serve the public links": {
     "other": "为公共链接提供服务的URI"
@@ -447,7 +447,7 @@
     "other": "使用 PHP MySQLi 扩展"
   },
   "Use Pydio framework via the command line, allowing CRONTAB jobs or background actions.": {
-    "other": "通过命令行使用 Pydio 框架，允许 CRONTAB 作业或背景动作。"
+    "other": "通过命令行使用 Kailo 框架，允许 CRONTAB 作业或背景动作。"
   },
   "User": {
     "other": "用户"
@@ -495,9 +495,9 @@
     "other": "Zip 编码"
   },
   "Merge Workspaces and Cells": {
-    "other": "合并工作区和单元格"
+    "other": "合并工作区和共享空间"
   },
   "Do not display workspaces and cells separately": {
-    "other": "不要单独显示工作区和单元格"
+    "other": "不要单独显示工作区和共享空间"
   }
 }

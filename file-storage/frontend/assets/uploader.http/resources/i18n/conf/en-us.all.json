@@ -9,7 +9,7 @@
     "other": "Legend"
   },
   "Please beware that using this plugin can be dangerous, as it allows users to remotely download files from a third-party server directly to the Cells storage.":{
-    "other": "Please beware that using this plugin can be dangerous, as it allows users to remotely download files from a third-party server directly to the Cells storage."
+    "other": "Please beware that using this plugin can be dangerous, as it allows users to remotely download files from a third-party server directly to the storage."
   },
   "White List":{
     "other": "White List"

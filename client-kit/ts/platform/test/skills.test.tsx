@@ -177,6 +177,10 @@ describe("Skills section in the Agents page", () => {
     await click(host.querySelector<HTMLButtonElement>(`[data-testid=skill-definition-${definitionId}] button`)!);
     expect(document.querySelector("[data-testid=skill-version]")?.getAttribute("data-state")).toBe("DRAFT");
     await click(button(document.body, "Publish exact draft"));
+    // 确认文案以成员看到的版本序号称呼版本，而不是并发控制用的 assetVersion（生产验收 D2）。
+    const review = document.querySelector("[data-testid=skill-action-review]")?.textContent ?? "";
+    expect(review).toContain("Publish version v1 of Release notes.");
+    expect(review).not.toContain("version 2");
     await click(button(document.body, "Submit governed request"));
     expect(actions(t)).toEqual([expect.objectContaining({
       actionKey: "skill.version.publish", resourceId: definitionId, resourceVersion: 2, assetId, assetVersion: 2, explicitConfirmation: true,

@@ -72,6 +72,27 @@ try:
     require(isinstance(provision, bool), 'native OIDC connector must declare provisionUsers as true or false')
     require(oidc[0]['config'].get('provisionProfile') == 'standard' if provision else 'provisionProfile' not in oidc[0]['config'],
             'provisionUsers true requires provisionProfile "standard"; false carries no provisionProfile')
+    # 07 §4.7.4: the instance serves one Kailo Tenant (DEDICATED_INSTANCE);
+    # provisioned accounts join its native group. Cells re-validates it.
+    organization = oidc[0]['config'].get('organization')
+    require(not provision or isinstance(organization, dict), 'provisionUsers true requires the bound Kailo Tenant (organization.tenant)')
+    if organization is not None:
+        tenant = organization.get('tenant')
+        require(set(organization) == {'tenant'} and isinstance(tenant, dict) and set(tenant) == {'id', 'name'}
+                and isinstance(tenant['id'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', tenant['id'])
+                and isinstance(tenant['name'], str) and tenant['name'].strip() == tenant['name'] != '' and tenant['name'].isprintable() and len(tenant['name']) <= 128,
+                'organization.tenant needs the bound Tenant id and printable name')
+    # 07 §4.7.5: OIDC back-channel logout receiver, explicit bounds.
+    backchannel = oidc[0]['config'].get('backchannelLogout')
+    require(isinstance(backchannel, dict) and set(backchannel) == {'sessionMaxAgeSeconds', 'logoutTokenMaxAgeSeconds'}
+            and all(isinstance(backchannel[k], int) and not isinstance(backchannel[k], bool) and backchannel[k] > 0 for k in backchannel),
+            'backchannelLogout needs positive sessionMaxAgeSeconds and logoutTokenMaxAgeSeconds')
+    logout = oidc[0]['config'].get('platformLogoutUrl')
+    if logout is not None:
+        parsed = urlsplit(logout)
+        require(parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password, 'platformLogoutUrl must be an absolute HTTP(S) Kailo address')
+    display = env['PLATFORM_DISPLAY_NAME']
+    require(display.strip() == display != '' and len(display) <= 64 and display.isprintable(), 'PLATFORM_DISPLAY_NAME: printable Kailo display name required')
     require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
     oauth_secret = json.loads(secret_file('CELLS_OAUTH_SECRET_FILE'))
     require(isinstance(oauth_secret, str) and oauth_secret.strip() and oauth_secret != 'a-very-insecure-secret-for-checking-out-the-demo', 'non-default independent native OAuth secret required')

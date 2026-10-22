@@ -3,6 +3,8 @@ export interface InstructionInput {
   instruction: string;
   questions: string[];
   isDefault: boolean;
+  // DD-133 §3: creating Kailo user.
+  ownerKey?: string | null;
 }
 
 export interface UpdateInstructionInput {

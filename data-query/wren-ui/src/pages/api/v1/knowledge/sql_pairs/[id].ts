@@ -7,6 +7,7 @@ import {
   handleApiError,
   validateSql,
   handleNativeSqlPairRequest,
+  assertStandaloneKnowledgeAdmin,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 import { isGovernedQueryMode } from '@server/services/nativeQueryMode';
@@ -140,6 +141,8 @@ export default async function handler(
     project = await projectService.getCurrentProject();
 
     // Handle PUT method - update SQL pair
+    if (['PUT', 'DELETE'].includes(req.method))
+      assertStandaloneKnowledgeAdmin(req);
     if (req.method === 'PUT') {
       await handleUpdateSqlPair(req, res, project, startTime);
       return;

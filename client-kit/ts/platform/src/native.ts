@@ -97,13 +97,19 @@ export function createInvokeTransport(
 
 /**
  * 注销的服务器侧结果（Tauri 进程内命令 `platform_sign_out` 的返回值，不属于 BFF 契约）。
- * 命令成功返回时本机凭据已清除；两项都为 true 才算服务器确认了登录已结束。
+ * 命令成功返回时本机凭据已清除；三项都为 true 才算服务器确认了登录已结束。
  */
 export type NativeSignOutReport = {
   /** Core 的 `POST /api/v1/logout` 返回 200，且 revoked 为布尔值（含幂等 false） */
   coreSessionRevoked: boolean;
   /** IdP 的 RFC 7009 令牌撤销返回 200 */
   refreshTokenRevoked: boolean;
+  /**
+   * 应用 WebView 中的 IdP 会话（原生认证窗口建立、组件页静默登录所依赖）已经
+   * RP-Initiated Logout 确认结束，或本就没有；为 true 时组件才会收到 back-channel 退出
+   * （DD-133(6)、`.design/07` §4.7.5「Desktop」）。
+   */
+  embeddedIdpSessionEnded: boolean;
 };
 
 /** fail closed：返回值不是对象、或任一字段不是布尔值，一律按服务器未确认处理。 */
@@ -112,6 +118,7 @@ export function signOutReport(value: unknown): NativeSignOutReport {
   return {
     coreSessionRevoked: report.coreSessionRevoked === true,
     refreshTokenRevoked: report.refreshTokenRevoked === true,
+    embeddedIdpSessionEnded: report.embeddedIdpSessionEnded === true,
   };
 }
 
@@ -126,7 +133,7 @@ export type NativeHost = {
   /** RFC 8252：打开系统浏览器并等待回环回调；可被 cancelSignIn 取消 */
   signIn(): Promise<void>;
   cancelSignIn(): Promise<void>;
-  /** 丢弃本机令牌，并撤销 Core 的 PlatformSession 与 IdP 刷新令牌；返回服务器侧结果 */
+  /** 丢弃本机令牌，撤销 Core 的 PlatformSession 与 IdP 刷新令牌，并结束 WebView 中的 IdP 会话；返回服务器侧结果 */
   signOut(): Promise<NativeSignOutReport>;
   /** 以本机设备私钥签持钥证明并提交登记；回应原样给出 */
   registerDevice(): Promise<BffReply>;

@@ -116,15 +116,8 @@ var settingsNode = &rest.SettingsMenuResponse{
 						Component: "AdminServices.Dashboard",
 					},
 				},
-				{
-					Key:         "update",
-					Label:       "updater.title",
-					Description: "updater.legend",
-					Metadata: &rest.SettingsEntryMeta{
-						IconClass: "mdi mdi-update",
-						Component: "AdminPlugins.UpdaterDashboard",
-					},
-				},
+				// Kailo (DD-133 §1): no upstream software update / edition upgrade
+				// entry; the artifact is released and deployed by Kailo.
 				{
 					Key:         "scheduler",
 					Label:       "ajxp_admin.scheduler.title",

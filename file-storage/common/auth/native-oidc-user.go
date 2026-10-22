@@ -60,6 +60,9 @@ type NativeOIDCConnector struct {
 	Users            []NativeOIDCUser `json:"users"`
 	ProvisionUsers   bool             `json:"provisionUsers"`
 	ProvisionProfile string           `json:"provisionProfile"`
+	// Kailo Tenant of this dedicated instance → native group (07 §4.7.4);
+	// nil keeps the DD-127(9) root-group accounts.
+	Organization *NativeOIDCOrganization `json:"organization,omitempty"`
 }
 
 // Validate refuses ambiguous links and any provisioning profile other than an
@@ -78,7 +81,7 @@ func (c NativeOIDCConnector) Validate() error {
 	if c.ProvisionUsers != (c.ProvisionProfile != "") || (c.ProvisionUsers && c.ProvisionProfile != common.PydioProfileStandard) {
 		return errors.New("native OIDC provisioning must be explicitly enabled with the standard profile")
 	}
-	return nil
+	return c.Organization.Validate()
 }
 
 func loadNativeOIDCConnector(ctx context.Context) (NativeOIDCConnector, error) {
@@ -111,7 +114,9 @@ func loadNativeOIDCConnector(ctx context.Context) (NativeOIDCConnector, error) {
 // connector link, then the account provisioned for issuer+subject, then (only
 // with the connector switch on and an ID token the callback verified for the
 // connector's own client) a new standard account. Email, display name and
-// groups never select or create an account. Callers keep their own native
+// groups never select or create an account. With that ID token (browser
+// login only) the account is refreshed from Kailo (07 §4.7.3, DD-133):
+// profile data always, the Tenant group for provisioned accounts. Callers keep their own native
 // policy checks; the returned user already passed ResolveNativeUser.
 func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject string, login *oidc.IDToken) (*idm.User, error) {
 	c, err := loadNativeOIDCConnector(ctx)
@@ -121,22 +126,42 @@ func ResolveOrProvisionNativeOIDCUser(ctx context.Context, issuer, subject strin
 	if issuer != c.Issuer || strings.TrimSpace(subject) == "" {
 		return nil, errors.New("unrecognized native OIDC identity")
 	}
+	if login != nil && (login.Issuer != issuer || login.Subject != subject || !slices.Contains(login.Audience, c.ClientID)) {
+		return nil, errors.New("native OIDC login requires an ID token of the connector client")
+	}
 	for _, link := range c.Users {
 		if link.Subject == subject {
-			return ResolveNativeUser(ctx, link.UserUUID)
+			user, err := ResolveNativeUser(ctx, link.UserUUID)
+			if err != nil || login == nil {
+				return user, err
+			}
+			return refreshNativeOIDCUser(ctx, c, user, login, false)
 		}
 	}
 	id := nativeOIDCUserUUID(issuer, subject)
-	if user, err := provisionedNativeOIDCUser(ctx, id, issuer, subject); err != nil || user != nil {
-		return user, err
+	user, err := provisionedNativeOIDCUser(ctx, id, issuer, subject)
+	if err != nil {
+		return nil, err
 	}
-	if !c.ProvisionUsers || login == nil {
-		return nil, ErrNativeOIDCNotLinked
+	if user == nil {
+		if !c.ProvisionUsers || login == nil {
+			return nil, ErrNativeOIDCNotLinked
+		}
+		if user, err = provisionNativeOIDCUser(ctx, c, id, login); err != nil {
+			return nil, err
+		}
 	}
-	if login.Issuer != issuer || login.Subject != subject || !slices.Contains(login.Audience, c.ClientID) {
-		return nil, errors.New("native OIDC provisioning requires an ID token of the connector client")
+	if login == nil {
+		return user, nil
 	}
-	return provisionNativeOIDCUser(ctx, c, id, login)
+	return refreshNativeOIDCUser(ctx, c, user, login, true)
+}
+
+// refreshNativeOIDCUser serializes the refresh with first-login provisioning.
+func refreshNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, user *idm.User, login *oidc.IDToken, provisioned bool) (*idm.User, error) {
+	nativeOIDCProvisioning.Lock()
+	defer nativeOIDCProvisioning.Unlock()
+	return syncNativeOIDCUser(ctx, c, user, login, provisioned)
 }
 
 func nativeOIDCUserUUID(issuer, subject string) string {
@@ -178,17 +203,22 @@ func provisionNativeOIDCUser(ctx context.Context, c NativeOIDCConnector, id stri
 	if err != nil {
 		return nil, err
 	}
-	// Profile data only; never used to link and not refreshed on later logins.
+	// Profile data only; never used to link (refreshed on every browser login).
 	attributes := map[string]string{
 		idm.UserAttrProfile:        c.ProvisionProfile,
 		NativeOIDCIssuerAttribute:  login.Issuer,
 		NativeOIDCSubjectAttribute: login.Subject,
 	}
-	if displayName := text("name"); displayName != "" {
-		attributes[idm.UserAttrDisplayName] = displayName
+	// The same Kailo profile rules as the refresh of every later login.
+	profile := nativeOIDCProfileFromClaims(claims)
+	if profile.displayName != "" {
+		attributes[idm.UserAttrDisplayName] = profile.displayName
 	}
-	if verified, _ := claims["email_verified"].(bool); verified && text("email") != "" {
-		attributes[idm.UserAttrEmail] = text("email")
+	if profile.email != "" {
+		attributes[idm.UserAttrEmail] = profile.email
+	}
+	if profile.picture != "" {
+		attributes[idm.UserAttrAvatar] = profile.picture
 	}
 	// The role first: a failed user write leaves no account without its role,
 	// and the next login repeats both idempotent writes.

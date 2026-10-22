@@ -37,7 +37,9 @@ const LoginCallbackRouterWrapper = (pydio) => {
             sessionStorage.removeItem('loginLanguage');
 
             PydioApi.getRestClient().sessionLoginWithAuthCode(values.code, additionalInfo).then(() => {
-                browserHistory.replace("/")
+                // Back to the page that started the Kailo SSO login (DD-133 §2).
+                const kailo = window.KailoCells
+                browserHistory.replace(kailo && kailo.consumeReturnPath ? kailo.consumeReturnPath() : "/")
 
                 const challenge = values.challenge
                 if (challenge) {

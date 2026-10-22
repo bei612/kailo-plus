@@ -243,7 +243,7 @@
     "other": "Services"
   },
   "173": {
-    "other": "Pydio Backend Services and their running status"
+    "other": "The file service Backend Services and their running status"
   },
   "174": {
     "other": "Identity Management"
@@ -537,13 +537,13 @@
     "other": "Feature plugins"
   },
   "topbar.title": {
-    "other": "Cells Console"
+    "other": "Console"
   },
   "topbar.button.advanced": {
     "other": "Show/hide advanced parameters"
   },
   "topbar.button.about": {
-    "other": "Learn more about Pydio Cells"
+    "other": "Learn more about the file service"
   },
   "group_access": {
     "other": "g"

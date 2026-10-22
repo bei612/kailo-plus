@@ -26,11 +26,35 @@ import (
 	"net/http"
 	"time"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/pydio/cells/v5/common"
+	nativeauth "github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
+	"github.com/pydio/cells/v5/common/client/commons/idmc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/proto/idm"
+	"github.com/pydio/cells/v5/common/proto/service"
 	"github.com/pydio/cells/v5/common/proto/tree"
 )
+
+// kailoIdentity reads the native account's Kailo display name and picture
+// (refreshed from the OIDC name/picture claims at every login, 07 §4.7.3).
+// Replaced by tests.
+var kailoIdentity = func(ctx context.Context, userUUID string) (displayName, picture string) {
+	query, err := anypb.New(&idm.UserSingleQuery{Uuid: userUUID, NodeType: idm.NodeType_USER})
+	if err != nil {
+		return "", ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	response, err := idmc.UserServiceClient(ctx).SearchOne(ctx, &idm.SearchUserRequest{Query: &service.Query{SubQueries: []*anypb.Any{query}}})
+	if err != nil || response.GetUser().GetUuid() != userUUID {
+		return "", ""
+	}
+	a := response.GetUser().GetAttributes()
+	return a[idm.UserAttrDisplayName], a[idm.UserAttrAvatar]
+}
 
 type FileInfoResponseBuilder interface {
 	Build(ctx context.Context, n *tree.Node, r *http.Request) (*FileInfo, error)
@@ -75,6 +99,18 @@ func (dfi *BaseFileInfoResponseBuilder) Build(ctx context.Context, n *tree.Node,
 		f.UserFriendlyName = claims.Name
 	} else {
 		f.UserFriendlyName = claims.DisplayName
+	}
+	// Editors show the Kailo name and avatar of the account (07 §4.7.3):
+	// UserExtraInfo.avatar is the OIDC picture address, never a native binary.
+	if claims.Subject != "" {
+		if name, picture := kailoIdentity(ctx, claims.Subject); name != "" || nativeauth.IsNativeOIDCPicture(picture) {
+			if name != "" {
+				f.UserFriendlyName = name
+			}
+			if nativeauth.IsNativeOIDCPicture(picture) {
+				f.UserExtraInfo = map[string]interface{}{"avatar": picture}
+			}
+		}
 	}
 	conf := config.Get(ctx, "frontend/plugin/editor.libreoffice")
 

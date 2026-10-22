@@ -216,11 +216,20 @@ func TestNativeOIDCFirstLoginProvisioning(t *testing.T) {
 			}
 
 			// Attribute link: the PAT/WOPI path (no ID token) and a later login
-			// both resolve the same account; nothing is created again.
-			for _, login := range []*oidc.IDToken{nil, idp.token(provisionIssuer, "subject-new", provisionClient, map[string]any{"preferred_username": "renamed", "email": "other@example.invalid", "email_verified": true})} {
-				again, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-new", login)
-				if err != nil || again.Uuid != user.Uuid || again.Login != "new.member" || again.GetAttributes()[idm.UserAttrEmail] != "new.member@example.invalid" {
-					t.Fatalf("provisioned account not resolved by its link: %v", err)
+			// both resolve the same account; nothing is created again. Only the
+			// browser login refreshes the Kailo profile data (DD-133 §3); the
+			// login name never changes.
+			for _, c := range []struct {
+				login        *oidc.IDToken
+				email, label string
+			}{
+				{nil, "new.member@example.invalid", "New Member"},
+				{idp.token(provisionIssuer, "subject-new", provisionClient, map[string]any{"preferred_username": "renamed", "email": "other@example.invalid", "email_verified": true}), "other@example.invalid", "renamed"},
+			} {
+				again, err := auth.ResolveOrProvisionNativeOIDCUser(ctx, provisionIssuer, "subject-new", c.login)
+				if err != nil || again.Uuid != user.Uuid || again.Login != "new.member" || again.GetAttributes()[idm.UserAttrEmail] != c.email ||
+					again.GetAttributes()[idm.UserAttrDisplayName] != c.label {
+					t.Fatalf("provisioned account not resolved by its link: %v %v", again.GetAttributes(), err)
 				}
 			}
 			if n := len(linkedTo(t, ctx, "subject-new")); n != 1 {

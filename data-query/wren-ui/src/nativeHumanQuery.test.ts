@@ -71,6 +71,18 @@ import modelsHandler from './pages/api/v1/models';
 import instructionsHandler from './pages/api/v1/knowledge/instructions';
 import { safeFormatSQL } from './apollo/server/utils/sqlFormat';
 
+// DD-133: STANDALONE writes are Kailo Tenant admin actions (member directory
+// role); GOVERNED cases keep the Core `manage` checks under test.
+const KAILO_ADMIN = {
+  key: 'a'.repeat(64),
+  name: null,
+  username: null,
+  email: null,
+  picture: null,
+  locale: null,
+  admin: true,
+};
+
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
   bindingServiceCall: jest.fn(),
@@ -961,6 +973,7 @@ describe('original SQL-pair durable native write consumer', () => {
           ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
         },
         context: () => ({
+          kailoUser: KAILO_ADMIN,
           nativeHumanToken: native.token,
           nativeIdentityScope: native.identityScope,
           projectService: {
@@ -1050,6 +1063,7 @@ describe('original SQL-pair durable native write consumer', () => {
     revoked = true;
     adaptor.getSqlPairResult.mockClear();
     const ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeHumanToken: native.token,
       nativeIdentityScope: native.identityScope,
       projectService: {
@@ -1085,6 +1099,7 @@ describe('original SQL-pair durable native write consumer', () => {
         await service.readNativeWrite(record, native);
       adaptor.getSqlPairResult.mockClear();
       const ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: native.token,
         nativeIdentityScope: 'b'.repeat(64),
         projectService: {
@@ -1121,6 +1136,7 @@ describe('original SQL-pair durable native write consumer', () => {
       });
       adaptor.getSqlPairResult.mockClear();
       const ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: native.token,
         nativeIdentityScope: native.identityScope,
         projectService: {
@@ -1171,6 +1187,7 @@ describe('original SQL-pair durable native write consumer', () => {
       // The browser's before/after config can both be A; the actual GraphQL
       // request must still reject a B identity or generation at the server.
       const ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: native.token,
         nativeIdentityScope:
           change === 'actor ABA' ? 'b'.repeat(64) : native.identityScope,
@@ -1238,6 +1255,7 @@ describe('original SQL-pair durable native write consumer', () => {
       service.createSqlPair(config.projectId, pair, native, key),
     ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
     const ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeHumanToken: native.token,
       nativeIdentityScope: native.identityScope,
       sqlPairService: service,
@@ -1724,6 +1742,7 @@ describe('native saved-view HUMAN query consumer', () => {
       const oldReader = nativeHistory.findOneBy;
       nativeHistory.findOneBy = history;
       const ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: 'verified-native-token',
         nativeIdentityScope: 'c'.repeat(64),
         projectService: {
@@ -1801,6 +1820,7 @@ describe('native saved-view HUMAN query consumer', () => {
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'fixture-controlled-delivery';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeHumanToken: 'verified-native-token',
       nativeIdentityScope: 'c'.repeat(64),
       projectService: {
@@ -1993,6 +2013,7 @@ describe('native saved-view HUMAN query consumer', () => {
         },
       });
     const historyContext = () => ({
+      kailoUser: KAILO_ADMIN,
       ...components,
       nativeHumanToken: 'verified-native-token',
       nativeIdentityScope: identityScope,
@@ -2482,6 +2503,7 @@ describe('native saved-view HUMAN query consumer', () => {
         },
       }));
       ctx = {
+        kailoUser: KAILO_ADMIN,
         telemetry: { sendEvent: jest.fn() },
         nativeIdentityScope: 'a'.repeat(64),
         nativeHumanToken: 'verified-native-token',
@@ -2667,6 +2689,7 @@ describe('native saved-view HUMAN query consumer', () => {
       .mockResolvedValue(receipt);
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-native-token',
       projectService: {
@@ -2755,6 +2778,7 @@ describe('native saved-view HUMAN query consumer', () => {
         .spyOn(NativeHumanQuery.prototype, 'previewSql')
         .mockResolvedValue(completed);
       ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeIdentityScope: 'a'.repeat(64),
         nativeHumanToken: 'verified-native-token',
         projectService: {
@@ -2960,6 +2984,7 @@ describe('native saved-view HUMAN query consumer', () => {
         nativeObjectRefs: capturedSources,
       };
       ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: 'verified-native-token',
         nativeIdentityScope: 'a'.repeat(64),
         projectService: {
@@ -3632,6 +3657,7 @@ describe('native saved-view HUMAN query consumer', () => {
         scopeResult((input.authorizeScope as any).permission),
       );
       ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeHumanToken: 'verified-native-token',
         nativeIdentityScope: 'a'.repeat(64),
         projectService: {
@@ -4003,7 +4029,8 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(
         await originalResolvers.Query.settings(null, {}, ctx),
       ).toMatchObject({
-        productVersion: 'fixture-original-version',
+        // DD-133(1): the white-labelled page shows no upstream version.
+        productVersion: '',
         language: 'en',
       });
       expect(
@@ -4657,6 +4684,7 @@ describe('native saved-view HUMAN query consumer', () => {
         .spyOn(ModelResolver.prototype, 'previewSql')
         .mockResolvedValue(value);
       const ctx: any = {
+        kailoUser: KAILO_ADMIN,
         projectService: {
           getCurrentProject: jest.fn(async () => ({
             id: config.projectId,
@@ -5302,6 +5330,7 @@ describe('native saved-view HUMAN query consumer', () => {
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-native-token',
       projectService: {
@@ -5378,6 +5407,7 @@ describe('native saved-view HUMAN query consumer', () => {
       command = null;
       const response = { id: 21, threadId: 11, viewId: 7, sql: view.statement };
       ctx = {
+        kailoUser: KAILO_ADMIN,
         nativeIdentityScope: 'a'.repeat(64),
         nativeHumanToken: 'verified-native-token',
         projectService: {
@@ -6048,6 +6078,7 @@ describe('native saved-view HUMAN query consumer', () => {
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '/fixture/query.json';
     jest.mocked(loadQueryDelivery).mockResolvedValue(config);
     const ctx: any = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'b'.repeat(64),
       nativeHumanToken: 'verified-native-token',
       projectService: {
@@ -6761,6 +6792,7 @@ describe('native saved-view HUMAN query consumer', () => {
             ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
           },
           context: () => ({
+            kailoUser: KAILO_ADMIN,
             ...components,
             deployRepository: components.deployLogRepository,
             nativeHumanToken: headers['x-kailo-native-human-token'],
@@ -7218,6 +7250,7 @@ describe('native saved-view HUMAN query consumer', () => {
               ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
             },
             context: () => ({
+              kailoUser: KAILO_ADMIN,
               ...components,
               deployRepository: components.deployLogRepository,
               nativeHumanToken: headers['x-kailo-native-human-token'],
@@ -7648,6 +7681,7 @@ describe('native saved-view HUMAN query consumer', () => {
       expect((await sendAsk()).status).toBe(200);
       const selected = structuredClone(summaryRow);
       const ctx = {
+        kailoUser: KAILO_ADMIN,
         ...components,
         nativeIdentityScope: identityScope,
         nativeHumanToken: headers['x-kailo-native-human-token'],
@@ -7996,6 +8030,7 @@ describe('native saved-view HUMAN query consumer', () => {
         revoked = deny;
         calls.mockClear();
         const ctx = {
+          kailoUser: KAILO_ADMIN,
           ...components,
           deployRepository: components.deployLogRepository,
           nativeHumanToken: 'verified-native-token',
@@ -8482,6 +8517,7 @@ describe('native saved-view HUMAN query consumer', () => {
         revoked = deny;
         calls.mockClear();
         const ctx = {
+          kailoUser: KAILO_ADMIN,
           ...components,
           deployRepository: components.deployLogRepository,
           nativeHumanToken: 'verified-native-token',

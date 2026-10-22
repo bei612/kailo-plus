@@ -1,0 +1,50 @@
+// DD-133 §4: antd 4 theme -> Kailo tokens.
+//
+// antd 4 has no runtime token object; its dynamic theme is the "variable"
+// build (antd.variable.less), whose palette is CSS custom properties
+// (--ant-primary-*, --ant-error-* ...). overlay.less points those properties
+// at the Kailo tokens. The neutral surfaces, text, borders, radius and font
+// below are compiled as references to the same tokens so that the Kailo
+// light/dark switch needs no second stylesheet.
+//
+// Imported last by index.less: Less uses the last definition of a variable
+// everywhere, so these values win over the antd defaults and the original
+// Wren overrides. Only variables that antd never passes through a Less
+// function are mapped here (checked by compiling each one against antd
+// 4.20.4); split borders, tooltip and secondary/disabled text colours, which
+// antd derives with lighten()/fadeout()/shade(), are mapped in overlay.less.
+
+// Palette: back to the variable-build references (antd-variables.less pins
+// the original Wren blue).
+@primary-color: ~'var(--ant-primary-color)';
+@primary-color-hover: ~'var(--ant-primary-color-hover)';
+@primary-color-active: ~'var(--ant-primary-color-active)';
+@primary-color-outline: ~'var(--ant-primary-color-outline)';
+@success-color: ~'var(--ant-success-color)';
+@warning-color: ~'var(--ant-warning-color)';
+@error-color: ~'var(--ant-error-color)';
+@info-color: ~'var(--ant-info-color)';
+
+// Neutrals
+@body-background: ~'var(--kailo-color-background)';
+@component-background: ~'var(--kailo-color-card)';
+@popover-background: ~'var(--kailo-color-popover)';
+@layout-body-background: ~'var(--kailo-color-background)';
+@layout-header-background: ~'var(--kailo-color-background)';
+@text-color: ~'var(--kailo-color-foreground)';
+@heading-color: ~'var(--kailo-color-foreground)';
+@border-color-base: ~'var(--kailo-color-input)';
+@background-color-light: ~'var(--kailo-color-muted)';
+@background-color-base: ~'var(--kailo-color-muted)';
+@item-hover-bg: ~'var(--kailo-color-accent)';
+@table-header-bg: ~'var(--kailo-color-muted)';
+@table-row-hover-bg: ~'var(--kailo-color-accent)';
+@tooltip-color: ~'var(--kailo-color-background)';
+
+// Shape and type
+@border-radius-base: ~'var(--kailo-radius-md)';
+@border-radius-sm: ~'var(--kailo-radius-sm)';
+// The arrow mixin (.roundedArrow) runs unit() on this radius: keep a number.
+@arrow-border-radius: 2px;
+@font-family: ~'var(--kailo-font-sans)';
+@code-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

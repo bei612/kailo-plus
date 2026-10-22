@@ -5,8 +5,9 @@ independent Cells service is healthy; every step is idempotent, read back and
 fails closed. Only original native admin entries are used:
 
   REST /a/config/versioning, /a/config/datasource/{Name} (read only),
-       /a/user-meta/namespace, /a/config/frontend/plugin/meta.user,
-       /a/tree/admin/stat, /a/workspace, /a/acl, /a/user/{Login}
+       /a/user-meta/namespace, /a/config/frontend/plugin/{meta.user,
+       core.pydio, gui.ajax, core.auth}, /a/tree/admin/stat, /a/workspace,
+       /a/acl, /a/user/{Login}
   CLI  cells admin user token (short-lived admin PAT, never printed)
        cells admin file mkdir (binding root folder in the admin tree)
 
@@ -25,6 +26,17 @@ CELLS_BINDING_VERSIONING_POLICY passed to the container), like the install
 creates the default datasources; this script reads it back.
 
 Why each item is required (verified in this fork):
+  brand        DD-133 §1/§2: the page is "<PLATFORM_DISPLAY_NAME> 云盘" (core.pydio
+               APPLICATION_TITLE, also the mail and boot title), without the
+               upstream welcome tours (gui.ajax ENABLE_WELCOME_TOUR, both the
+               first-visit and the Material tour follow it), always on the
+               Material 3 theme the Kailo tokens are mapped onto (GUI_THEME),
+               without local password recovery or user creation (core.auth
+               ENABLE_FORGOT_PASSWORD, USER_CREATE_USERS). The root group role
+               disables the native entries Kailo owns (password change,
+               language switch, WebDAV password, user creation, about/version
+               splash, personal profile): ACL action:<plugin>:<action> = false
+               on PYDIO_REPO_SCOPE_ALL, the native role editor's own switch.
   draft mode   idm/meta/client.go fromNodeMeta/fromAmzHeaders map Draft-Mode to
                USERMETA_DRAFT_NAMESPACE only when USERMETA_DRAFT_API is true
                (frontend/plugin/meta.user; frontend/assets/meta.user/manifest.xml
@@ -49,6 +61,7 @@ Why each item is required (verified in this fork):
   python3 -I reconcile.py --container <cells container id> -- <docker argv...>
 
 Environment (controlled deploy env; deploy/components/file-storage.env.template):
+  PLATFORM_DISPLAY_NAME             Kailo deployment display name (platform .env)
   CELLS_EXTERNAL                    native origin (REST under /a/)
   CELLS_INSTALL_FILE                install JSON; only frontendLogin is read
   CELLS_START_TIMEOUT_SECONDS       overall deadline
@@ -92,6 +105,17 @@ SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}")
 TOKEN = re.compile(r"[A-Za-z0-9._~+/=-]{20,2048}")
 WORKSPACE_ROOT_ACTION = "workspace-path"
+SCOPE_ALL = "PYDIO_REPO_SCOPE_ALL"
+ROOT_GROUP = "ROOT_GROUP"
+# Native entries owned by Kailo (DD-133 §2/§3), disabled on the root group role.
+DISABLED_ACTIONS = (
+    ("auth.pydio", "pass_change"),
+    ("auth.pydio", "switch_language"),
+    ("auth.pydio", "webdav_preferences"),
+    ("auth.pydio", "user_create_user"),
+    ("gui.ajax", "splash"),
+    ("action.user", "open_user_dashboard"),
+)
 
 
 class Refused(Exception):
@@ -123,6 +147,10 @@ def owner_only(path, label):
 def settings(env):
     """Validated, non-secret settings. Raises Refused without echoing values."""
     s = {}
+    name = env["PLATFORM_DISPLAY_NAME"].strip()
+    require(name == env["PLATFORM_DISPLAY_NAME"] and 0 < len(name) <= 64 and name.isprintable(),
+            "PLATFORM_DISPLAY_NAME: printable Kailo display name required")
+    s["title"] = name + " 云盘"
     origin = urllib.parse.urlsplit(env["CELLS_EXTERNAL"])
     require(origin.scheme in ("http", "https") and origin.hostname and not origin.username and not origin.password
             and origin.path in ("", "/") and not origin.query and not origin.fragment, "CELLS_EXTERNAL: native origin required")
@@ -279,22 +307,57 @@ def ensure_draft_mode(native, s, changes):
         ns = listed().get(s["namespace"])
     # An existing namespace of another type or policy is never rewritten.
     require(ns is not None and namespace_ok(ns), "draft namespace must be a boolean usermeta namespace writable by every user")
-    path = "config/frontend/plugin/meta.user"
-
-    def params():
-        raw = native.call("GET", path).get("Data") or ""
-        value = json.loads(raw) if raw.strip() not in ("", "null") else {}
-        require(isinstance(value, dict), "meta.user plugin parameters are not an object")
-        return value
-    current = params()
-    if current.get("USERMETA_DRAFT_API") is not True or current.get("USERMETA_DRAFT_NAMESPACE") != s["namespace"]:
-        # The original handler replaces the whole map: send it back merged.
-        merged = dict(current, USERMETA_DRAFT_API=True, USERMETA_DRAFT_NAMESPACE=s["namespace"])
-        native.call("PUT", path, {"FullPath": "frontend/plugin/meta.user", "Data": json.dumps(merged)})
+    if ensure_plugin_params(native, "meta.user", {"USERMETA_DRAFT_API": True, "USERMETA_DRAFT_NAMESPACE": s["namespace"]}):
         changes.append("meta.user draft API enabled")
-    current = params()
-    require(current.get("USERMETA_DRAFT_API") is True and current.get("USERMETA_DRAFT_NAMESPACE") == s["namespace"],
-            "meta.user draft parameters read-back differs")
+
+
+def plugin_params(native, plugin):
+    raw = native.call("GET", "config/frontend/plugin/" + plugin).get("Data") or ""
+    value = json.loads(raw) if raw.strip() not in ("", "null") else {}
+    require(isinstance(value, dict), plugin + " plugin parameters are not an object")
+    return value
+
+
+def ensure_plugin_params(native, plugin, wanted):
+    """Merge the wanted parameters into one native plugin configuration; True
+    when it was written. The original handler replaces the whole map."""
+    current = plugin_params(native, plugin)
+    written = any(current.get(k) != v or type(current.get(k)) is not type(v) for k, v in wanted.items())
+    if written:
+        native.call("PUT", "config/frontend/plugin/" + plugin,
+                    {"FullPath": "frontend/plugin/" + plugin, "Data": json.dumps(dict(current, **wanted))})
+        current = plugin_params(native, plugin)
+    require(all(current.get(k) == v and type(current.get(k)) is type(v) for k, v in wanted.items()),
+            plugin + " plugin parameters read-back differs")
+    return written
+
+
+def root_action_acls(native, name):
+    query = {"Queries": [{"RoleIDs": [ROOT_GROUP], "WorkspaceIDs": [SCOPE_ALL], "Actions": [{"Name": name}]}]}
+    return [a for a in native.call("POST", "acl", query).get("ACLs") or []
+            if a.get("RoleID") == ROOT_GROUP and a.get("WorkspaceID") == SCOPE_ALL and not a.get("NodeID")
+            and (a.get("Action") or {}).get("Name") == name]
+
+
+def ensure_brand(native, s, changes):
+    """Kailo brand and native entry switches (DD-133), read back."""
+    for plugin, wanted in (("core.pydio", {"APPLICATION_TITLE": s["title"]}),
+                           ("gui.ajax", {"ENABLE_WELCOME_TOUR": False, "GUI_THEME": "mui3"}),
+                           ("core.auth", {"ENABLE_FORGOT_PASSWORD": False, "USER_CREATE_USERS": False})):
+        if ensure_plugin_params(native, plugin, wanted):
+            changes.append(plugin + " brand parameters set")
+    for plugin, action in DISABLED_ACTIONS:
+        name = f"action:{plugin}:{action}"
+        acls = root_action_acls(native, name)
+        if [(a.get("Action") or {}).get("Value") for a in acls] == ["false"]:
+            continue
+        if acls:
+            # Another value (or duplicates) of this one switch: replace it.
+            native.call("POST", "acl/bulk/delete", {"RoleID": ROOT_GROUP, "WorkspaceID": SCOPE_ALL, "Action": {"Name": name}})
+        native.call("PUT", "acl", {"RoleID": ROOT_GROUP, "WorkspaceID": SCOPE_ALL, "Action": {"Name": name, "Value": "false"}})
+        changes.append(f"{action} disabled")
+        require([(a.get("Action") or {}).get("Value") for a in root_action_acls(native, name)] == ["false"],
+                f"{name} read-back differs")
 
 
 def admin_stat(native, path):
@@ -416,6 +479,7 @@ def reconcile(s, native, cli, deadline):
     wait_ready(native, deadline)
     refuse_shared_datasource(native, s)
     ensure_datasource(native, s)
+    ensure_brand(native, s, changes)
     ensure_draft_mode(native, s, changes)
     path, root = ensure_root(native, cli, s, deadline, changes)
     workspace = ensure_workspace(native, s, path, root, changes)

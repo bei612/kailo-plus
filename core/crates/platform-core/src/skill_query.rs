@@ -5,7 +5,7 @@
 //! 不创建版本；版本只经 `skill.version.create` 产生。全部回应只含元数据，正文只经内容端点。
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -506,13 +506,25 @@ pub async fn references(
     }
 }
 
+/// 请求体超过上限时的结构化拒绝：与解码得出的 `UPLOAD_TOO_LARGE` 同一视图与 413。
+fn upload_too_large(skill: Uuid) -> Response {
+    let view = json!({
+        "accepted": false, "skillResourceId": skill,
+        "violations": [{"code": contracts::SkillArtifactViolationCode::UploadTooLarge}],
+    });
+    match decode::<contracts::SkillArtifactUploadView>(view) {
+        Ok(view) => (StatusCode::PAYLOAD_TOO_LARGE, Json(view)).into_response(),
+        Err(r) => r,
+    }
+}
+
 /// DD-135(2)(3)：上传校验与一次性暂存。只接受定义 `create` 持有者对 ACTIVE 定义的上传；
 /// 违规以 422 逐项返回且不暂存字节。
 pub async fn upload(
     State(state): State<BffState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(request): Json<contracts::SkillArtifactUploadRequest>,
+    request: Result<Json<contracts::SkillArtifactUploadRequest>, JsonRejection>,
 ) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
@@ -535,6 +547,15 @@ pub async fn upload(
         Ok(false) => return StatusCode::FORBIDDEN.into_response(),
         Err(r) => return r,
     }
+    // DD-135(2)、V-SCN-211：超过请求上限的上传在读完前即被截断，仍以同一结构化视图回
+    // `UPLOAD_TOO_LARGE`；此时没有完整字节，不伪造上传摘要与字节数。授权在前，未授权者看不到。
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return upload_too_large(d.id);
+        }
+        Err(rejection) => return rejection.into_response(),
+    };
     use base64::Engine as _;
     let Ok(body) =
         base64::engine::general_purpose::STANDARD.decode(request.content_base64.as_bytes())

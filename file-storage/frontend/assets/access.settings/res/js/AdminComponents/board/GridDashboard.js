@@ -39,29 +39,10 @@ class GridDashboard extends React.Component{
                     x:0, y:0
                 }
             },
-            {
-                id:'software.update',
-                componentClass:'AdminComponents.SoftwareUpdate',
-                defaultPosition:{
-                    x:0, y:1
-                }
-            },
-            {
-                id:'graph.files',
-                componentClass:'AdminComponents.FakeGraph',
-                defaultPosition:{
-                    x:0, y:2
-                },
                 props:{
                     type:'files'
                 }
             },
-            {
-                id:'graph.connections',
-                componentClass:'AdminComponents.FakeGraph',
-                defaultPosition:{
-                    x:4, y:2
-                },
                 props:{
                     type:'connections'
                 }
@@ -85,22 +66,11 @@ class GridDashboard extends React.Component{
         const message = (id) => {return pydio.MessageHash['admin_dashboard.' + id]};
         const adminStyles= AdminStyles(this.props.muiTheme.palette);
 
-        const websiteButton = (
-            <IconButton
-                iconClassName={"icomoon-cells"}
-                onClick={()=>{window.open('https://pydio.com')}}
-                tooltip={pydio.MessageHash['settings.topbar.button.about']}
-                tooltipPosition={"bottom-left"}
-                {...adminStyles.props.header.iconButton}
-            />
-        );
-
         return (
             <div style={{height:'100%', display:'flex', flexDirection:'column', overflowY:'hidden'}}>
                 <Header
                     title={message('welc.title.5')}
                     icon="mdi mdi-view-dashboard"
-                    actions={[websiteButton]}
                 />
                 <DynamicGrid
                     storeNamespace="AdminComponents.Grid"

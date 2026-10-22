@@ -237,7 +237,7 @@
     "other": "About"
   },
   "167": {
-    "other": "About Pydio"
+    "other": "About"
   },
   "168": {
     "other": "Connect to APPLICATION_TITLE"
@@ -1047,10 +1047,10 @@
     "other": "Left Pane"
   },
   "417": {
-    "other": "Create a cell..."
+    "other": "Create a shared space..."
   },
   "418": {
-    "other": "Create a cell"
+    "other": "Create a shared space"
   },
   "419": {
     "other": "Loading templates..."
@@ -1218,7 +1218,7 @@
     "other": "Workspaces"
   },
   "469": {
-    "other": "Cells"
+    "other": "Shared spaces"
   },
   "47": {
     "other": "Do you really want to delete the"
@@ -1674,10 +1674,10 @@
     "other": "Edit user"
   },
   "601": {
-    "other": "One shared cell"
+    "other": "One shared space"
   },
   "602": {
-    "other": "%1 shared cells"
+    "other": "%1 shared spaces"
   },
   "603": {
     "other": "Team"
@@ -1773,13 +1773,13 @@
     "other": "Folders shared with me"
   },
   "631": {
-    "other": "This cell is empty!"
+    "other": "This shared space is empty!"
   },
   "632": {
-    "other": "No cells yet"
+    "other": "No shared spaces yet"
   },
   "633": {
-    "other": "Cells are spaces shared with others to collaborate on documents"
+    "other": "Shared spaces are spaces shared with others to collaborate on documents"
   },
   "634": {
     "other": "You"
@@ -1797,31 +1797,31 @@
     "other": "Start typing and hit Enter"
   },
   "637": {
-    "other": "No messages yet, start typing to chat with users of this cell!"
+    "other": "No messages yet, start typing to chat with users of this shared space!"
   },
   "638": {
-    "other": "Cell contains multiple root folders or files, you cannot upload data directly here."
+    "other": "Shared space contains multiple root folders or files, you cannot upload data directly here."
   },
   "639": {
-    "other": "In this cell"
+    "other": "In this shared space"
   },
   "64": {
     "other": "XLS File"
   },
   "640": {
-    "other": "Create a cell with %s"
+    "other": "Create a shared space with %s"
   },
   "641": {
-    "other": "Remove from current cell"
+    "other": "Remove from current shared space"
   },
   "642": {
-    "other": "Add to current cell"
+    "other": "Add to current shared space"
   },
   "643": {
-    "other": "You now share a cell with %s"
+    "other": "You now share a shared space with %s"
   },
   "644": {
-    "other": "Could not create cell: %s"
+    "other": "Could not create shared space: %s"
   },
   "65": {
     "other": "Word File"
@@ -2271,7 +2271,7 @@
     "other": "Renaming %1 to %2"
   },
   "cells.quick-filter": {
-    "other": "Filter Cells"
+    "other": "Filter Shared spaces"
   },
   "ws.quick-filter": {
     "other": "Filter Workspaces"
@@ -2373,10 +2373,10 @@
     "other": "Public Link"
   },
   "searchengine.share.option.cell": {
-    "other": "Shared in Cell"
+    "other": "Shared in a shared space"
   },
   "searchengine.share.option.any": {
-    "other": "Public Link or Cell"
+    "other": "Public Link or Shared space"
   },
   "searchengine.format.title": {
     "other": "Format"

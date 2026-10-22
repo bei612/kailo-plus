@@ -147,7 +147,7 @@
     "other": "With this user"
   },
   "52": {
-    "other": "Cells and public links created by this user"
+    "other": "The file service and public links created by this user"
   },
   "53": {
     "other": "Shared by %1 from within workspace %2"
@@ -189,7 +189,7 @@
     "other": "All Workspaces"
   },
   "parameters.scope.shared":{
-    "other": "Shared Cells only"
+    "other": "Shared the file service only"
   },
   "parameters.scope.workspace":{
     "other": "Workspace %s"
@@ -216,7 +216,7 @@
     "other": "Admin Console"
   },
   "workspace.statics.settings.description":{
-    "other": "Pydio Cells administration dashboard"
+    "other": "The file service administration dashboard"
   },
   "acls.rights.policy.manual":{
     "other": "Rights set manually"

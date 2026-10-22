@@ -231,6 +231,62 @@ def databases_for(services, targets):
     return out
 
 
+def drift_policy(decl, service):
+    """release.yaml services.<服务>.drift（ADR-20 §9）：converge（缺省）漂移即重建；report 只报告，
+    重建需要发布之外的专用流程（例如重建即封存的 OpenBao）。"""
+    value = str((decl["services"].get(service) or {}).get("drift") or "converge")
+    if value not in ("converge", "report"):
+        raise ReleaseError(f"{DECLARATIONS}: services.{service}.drift 只能是 converge 或 report")
+    return value
+
+
+def _dependency_order(services, chosen):
+    """chosen 内的依赖在前（按 depends_on 传递闭包，经过未选中的服务也算），其余按 compose 定义顺序。"""
+    left = sorted(chosen, key=lambda s: services[s]["order"])
+    out = []
+    while left:
+        ready = [s for s in left if not _depends_on_any(services, s, set(left) - {s})]
+        if not ready:
+            raise ReleaseError(f"compose depends_on 有环：{left}")
+        out.append(ready[0])
+        left.remove(ready[0])
+    return out
+
+
+def _depends_on_any(services, service, others):
+    seen, stack = set(), [service]
+    while stack:
+        for dep in services.get(stack.pop(), {}).get("depends_on") or {}:
+            if dep in others:
+                return True
+            if dep not in seen and dep in services:
+                seen.add(dep)
+                stack.append(dep)
+    return False
+
+
+def converge_plan(services, drift, targets, managed, decl=None):
+    """配置漂移服务如何收敛（ADR-20 §9）→ dict(targets, before, after, report)：
+      report    声明 drift: report 的服务，只报告；
+      targets   原镜像替换对象 + 漂移的受管服务（同一替换路径：命令、一次性前置、回读），按 03 §7 排序；
+      before    其余漂移服务中不依赖任何替换对象的（基础设施），依赖在前，先于替换对象重建；
+      after     依赖某个替换对象的，替换对象之后重建，依赖在前。"""
+    decl = decl or declarations()
+    report = [s for s in drift if drift_policy(decl, s) == "report"]
+    act = [s for s in drift if s not in report]
+    merged = deploy_order(services, sorted(set(targets) | {s for s in act if s in managed}), decl)
+    rest = [s for s in act if s not in merged]
+    after = [s for s in rest if _depends_on_any(services, s, set(merged))]
+    before = [s for s in rest if s not in after]
+    return dict(targets=merged, before=_dependency_order(services, before),
+                after=_dependency_order(services, after), report=sorted(report, key=lambda s: services[s]["order"]))
+
+
+def converge_databases(services, plan):
+    """备份对象的补充：本身因配置漂移被重建的 Postgres 服务（数据在卷中保留，重建前照例先备份）。"""
+    return [s for s in plan["before"] + plan["after"] if is_postgres(services[s])]
+
+
 def deploy_order(services, targets, decl=None):
     """03 §7：order.first 的镜像 → 其余 → order.last 的镜像；同组按 compose 定义顺序。"""
     decl = decl or declarations()
@@ -382,6 +438,62 @@ def env_value_digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+# ---- IdP 声明式配置 ------------------------------------------------------------
+
+IDP_COMMAND = re.compile(r"\./[a-z][a-z0-9-]*\.sh")
+IDP_FLAG = re.compile(r"--[a-z][a-z0-9-]*")
+
+
+def idp_declaration(decl=None):
+    """release.yaml 的 idp 段（ADR-20 §1）：等待的服务、期望值定义文件，以及在 deploy/local 下执行的
+    apply（摘要变化时）、always（每次 deploy）、verify（只读回读）命令。命令只允许 ./<脚本>.sh --<模式>。"""
+    decl = decl or declarations()
+    spec = decl.get("idp")
+    if not isinstance(spec, dict):
+        raise ReleaseError(f"{DECLARATIONS}: 缺少映射 idp")
+    if not isinstance(spec.get("wait"), str) or not isinstance(spec.get("inputs"), str):
+        raise ReleaseError(f"{DECLARATIONS}: idp.wait 与 idp.inputs 必须是字符串")
+    for key in ("apply", "always", "verify"):
+        commands = spec.get(key)
+        if not isinstance(commands, list) or (key != "always" and not commands) or not all(
+                isinstance(c, list) and len(c) == 2 and IDP_COMMAND.fullmatch(str(c[0]))
+                and IDP_FLAG.fullmatch(str(c[1])) for c in commands):
+            raise ReleaseError(f"{DECLARATIONS}: idp.{key} 必须是 [./<脚本>.sh, --<模式>] 列表")
+    return spec
+
+
+def _literal(tree, name):
+    import ast
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            value = ast.literal_eval(node.value)
+            if isinstance(value, (tuple, list)) and all(isinstance(v, str) and v for v in value):
+                return [str(v) for v in value]
+    raise ReleaseError(f"IdP 期望值定义缺少字符串元组 {name}")
+
+
+def idp_inputs(decl=None):
+    """(文件摘要, .env 键)：以 ast 读取期望值定义文件中的 INPUT_ENV 与 INPUT_FILES（不执行它）；
+    文件摘要覆盖 INPUT_FILES 列出的文件内容（相对定义文件所在目录）。"""
+    import ast
+    spec = idp_declaration(decl)
+    path = _path(spec["inputs"])
+    with open(path, encoding="utf-8") as stream:
+        tree = ast.parse(stream.read())
+    keys = _literal(tree, "INPUT_ENV")
+    if not all(ENV_KEY.fullmatch(k) for k in keys):
+        raise ReleaseError("INPUT_ENV 含非法键名")
+    h = hashlib.sha256()
+    base = os.path.dirname(path)
+    for rel in sorted(_literal(tree, "INPUT_FILES")):
+        full = os.path.realpath(os.path.join(base, rel))
+        if not full.startswith(os.path.realpath(base) + os.sep):
+            raise ReleaseError(f"INPUT_FILES 越出定义文件目录：{rel}")
+        with open(full, "rb") as stream:
+            h.update(rel.encode() + b"\0" + hashlib.sha256(stream.read()).digest())
+    return "sha256:" + h.hexdigest(), sorted(set(keys))
+
+
 # ---- 迁移 ---------------------------------------------------------------------
 
 def migration_versions(name, decl=None):
@@ -394,7 +506,7 @@ def migration_versions(name, decl=None):
                   if re.fullmatch(r"\d+_[^/]+\.up\.sql", f))
 
 
-# ---- 运维域运行体与投递（ADR-20 §8）--------------------------------------------
+# ---- 运维域运行体与投递（ADR-20 §10）--------------------------------------------
 
 # 运维域运行体：上游固定 digest 的外部镜像（不是本仓库构建单元）
 UPSTREAM_IMAGE = re.compile(r"^(?P<repo>[a-z0-9][a-z0-9._/-]*)@(?P<digest>sha256:[0-9a-f]{64})$")

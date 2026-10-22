@@ -107,6 +107,9 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::UsageEventId
         | K::TraceId
         | K::SkillArtifactDigest
+        | K::SkillSlug
+        | K::SkillVersionAssetId
+        | K::SkillUploadDigest
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }
 }

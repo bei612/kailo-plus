@@ -3244,7 +3244,10 @@ pub enum EvidenceAuthority {
 /// 存量种类不可识别时缺省
 ///
 /// AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
-/// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+/// version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+/// 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+/// 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+/// 为上传字节的 SHA-256。均不含 SKILL.md 正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EvidenceKind {
@@ -3295,6 +3298,15 @@ pub enum EvidenceKind {
 
     #[serde(rename = "SKILL_ARTIFACT_DIGEST")]
     SkillArtifactDigest,
+
+    #[serde(rename = "SKILL_SLUG")]
+    SkillSlug,
+
+    #[serde(rename = "SKILL_UPLOAD_DIGEST")]
+    SkillUploadDigest,
+
+    #[serde(rename = "SKILL_VERSION_ASSET_ID")]
+    SkillVersionAssetId,
 
     #[serde(rename = "SPICEDB_RELATIONSHIP")]
     SpicedbRelationship,
@@ -4846,6 +4858,94 @@ pub enum ComponentConformanceStepExpectedMcpResultKind {
 
     #[serde(rename = "RESULT")]
     Result,
+}
+
+/// Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
+/// DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
+/// display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
+/// never paged: a person absent from it is removed from the component organisation.
+/// directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No
+/// email, Buzz key, session or credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentMemberDirectory {
+    pub binding_id: String,
+
+    /// Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+    /// unchanged content keeps the same version.
+    pub directory_version: String,
+
+    pub members: Vec<ComponentDirectoryMember>,
+
+    pub tenant: ComponentDirectoryTenant,
+
+    /// Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+    /// one).
+    pub workspaces: Vec<ComponentDirectoryWorkspace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryMember {
+    /// Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+    /// HumanIdentity display name.
+    pub display_name: String,
+
+    /// One entry per ACTIVE external identity; the component keys its account on issuer +
+    /// subject.
+    pub identities: Vec<ComponentDirectoryIdentity>,
+
+    pub principal_id: String,
+
+    pub tenant_role: ComponentDirectoryRole,
+
+    pub workspaces: Vec<ComponentDirectoryMembership>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComponentDirectoryIdentity {
+    pub issuer: String,
+
+    /// <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+    /// claim.
+    pub picture: String,
+
+    pub subject: String,
+}
+
+/// 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
+/// ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ComponentDirectoryRole {
+    #[serde(rename = "ADMIN")]
+    Admin,
+
+    #[serde(rename = "MEMBER")]
+    Member,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryMembership {
+    pub role: ComponentDirectoryRole,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryTenant {
+    pub name: String,
+
+    pub tenant_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentDirectoryWorkspace {
+    pub name: String,
+
+    pub workspace_id: String,
 }
 
 /// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -9047,9 +9147,13 @@ pub struct SkillArtifactUploadView {
 
     pub skill_resource_id: String,
 
-    pub upload_byte_size: i64,
+    /// 上传字节数。缺省条件同 uploadDigest。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_byte_size: Option<i64>,
 
-    pub upload_digest: String,
+    /// 上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_digest: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upload_id: Option<String>,

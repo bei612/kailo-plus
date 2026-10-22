@@ -315,7 +315,7 @@
     "other": "Shared workspace options were successfully modified"
   },
   "190": {
-    "other": "This file is not currently publicly accessible. Enabling a public link will create a unique access that you can send to anyone. If you want to share with existing Pydio users, use the \"Users\" tab."
+    "other": "This file is not currently publicly accessible. Enabling a public link will create a unique access that you can send to anyone. If you want to share with existing Kailo users, use the \"Users\" tab."
   },
   "191": {
     "other": "Copy link to clipboard"
@@ -507,13 +507,13 @@
     "other": "%s personal invitation(s) sent"
   },
   "246": {
-    "other": "Open cell"
+    "other": "Open shared space"
   },
   "247": {
-    "other": "Edit cell"
+    "other": "Edit shared space"
   },
   "248": {
-    "other": "Delete cell"
+    "other": "Delete shared space"
   },
   "249": {
     "other": "Contents"
@@ -522,7 +522,7 @@
     "other": "No limit"
   },
   "250": {
-    "other": "Cells"
+    "other": "Shared spaces"
   },
   "251": {
     "other": "Link"
@@ -534,19 +534,19 @@
     "other": "Visibility"
   },
   "254": {
-    "other": "Shared in cells"
+    "other": "Shared in shared spaces"
   },
   "254b": {
     "other": "With users or groups"
   },
   "254c": {
-    "other": "Shared in %d cells"
+    "other": "Shared in %d shared spaces"
   },
   "254d": {
     "other": "Shared in '%s'"
   },
   "255": {
-    "other": "Are you sure you want to delete all cells and links on this item?"
+    "other": "Are you sure you want to delete all shared spaces and links on this item?"
   },
   "256": {
     "other": "Shares for %s"
@@ -555,28 +555,28 @@
     "other": "Created on %s"
   },
   "258": {
-    "other": "Edit cell users"
+    "other": "Edit shared space users"
   },
   "259": {
-    "other": "Remove from this cell"
+    "other": "Remove from this shared space"
   },
   "26": {
     "other": "Choose users or groups and set their access rights. 'Write' only will create an upload-only workspace."
   },
   "260": {
-    "other": "Folder is shared in the following cells. You can edit the users or create a new cell."
+    "other": "Folder is shared in the following shared spaces. You can edit the users or create a new shared space."
   },
   "261": {
-    "other": "Pick users or groups who will have access to this cell"
+    "other": "Pick users or groups who will have access to this shared space"
   },
   "262": {
-    "other": "Share this folder with other users by creating a new cell"
+    "other": "Share this folder with other users by creating a new shared space"
   },
   "263": {
-    "other": "Add to Cell..."
+    "other": "Add to Shared space..."
   },
   "264": {
-    "other": "+ New Cell"
+    "other": "+ New Shared space"
   },
   "265": {
     "other": "Link Label"
@@ -585,13 +585,13 @@
     "other": "Link Description"
   },
   "267": {
-    "other": "Cell Label"
+    "other": "Shared space Label"
   },
   "268": {
-    "other": "Cell Description"
+    "other": "Shared space Description"
   },
   "269": {
-    "other": "You will create a cell shared with %USERS. Pick some folders you want to share or just let Pydio create an empty folder for you!"
+    "other": "You will create a shared space shared with %USERS. Pick some folders you want to share or just let the system create an empty folder for you!"
   },
   "27": {
     "other": "Share file"
@@ -612,10 +612,10 @@
     "other": " and "
   },
   "275": {
-    "other": "Create cells to collaborate with other users. First start by describing the object of this cell."
+    "other": "Create shared spaces to collaborate with other users. First start by describing the object of this shared space."
   },
   "276": {
-    "other": "Title of your cell"
+    "other": "Title of your shared space"
   },
   "277": {
     "other": "Optionally add a description"
@@ -624,16 +624,16 @@
     "other": "Choose who you will share data with"
   },
   "279": {
-    "other": "Create cell now!"
+    "other": "Create shared space now!"
   },
   "28": {
     "other": "Share folder"
   },
   "280": {
-    "other": "Cell has its own folder"
+    "other": "Shared space has its own folder"
   },
   "281": {
-    "other": "Cell will be created in a new folder"
+    "other": "Shared space will be created in a new folder"
   },
   "282": {
     "other": "Add an existing folder..."
@@ -642,7 +642,7 @@
     "other": "Select a node in the tree..."
   },
   "284": {
-    "other": "Visible in %s cells"
+    "other": "Visible in %s shared spaces"
   },
   "29": {
     "other": "WebLink"
@@ -912,19 +912,19 @@
     "other": "Share existing folder(s)"
   },
   "cells.remove.node": {
-    "other": "Remove from this cell"
+    "other": "Remove from this shared space"
   },
   "cell.visibility.advanced": {
-    "other": "This advanced feature allows you to decide who can edit this Cell's properties (right to add/remove users and to add/remove folders at the root of the cell). To simply manage the actual accesses to the data, please use the 'Share With' tab instead."
+    "other": "This advanced feature allows you to decide who can edit this Shared space's properties (right to add/remove users and to add/remove folders at the root of the shared space). To simply manage the actual accesses to the data, please use the 'Share With' tab instead."
   },
   "cell.add.existing-or-new": {
-    "other": "Add to existing or new Cell"
+    "other": "Add to existing or new Shared space"
   },
   "cell.add.existing": {
-    "other": "Add to existing Cell"
+    "other": "Add to existing Shared space"
   },
   "cell.add.new": {
-    "other": "Create a new Cell"
+    "other": "Create a new Shared space"
   },
   "cell.participant.single": {
     "other": "One participant"

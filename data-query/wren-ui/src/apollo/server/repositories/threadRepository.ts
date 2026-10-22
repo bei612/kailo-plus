@@ -18,6 +18,7 @@ export interface Thread {
   id: number; // ID
   projectId: number; // Reference to project.id
   summary: string; // Thread summary
+  ownerKey?: string | null; // DD-133 §3: creating Kailo user (issuer+subject digest)
 
   // recommend question
   queryId?: string; // Query ID

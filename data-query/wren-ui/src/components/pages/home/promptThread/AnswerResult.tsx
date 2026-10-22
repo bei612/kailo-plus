@@ -23,6 +23,7 @@ import TextBasedAnswer, {
 } from '@/components/pages/home/promptThread/TextBasedAnswer';
 import ChartAnswer from '@/components/pages/home/promptThread/ChartAnswer';
 import Preparation from '@/components/pages/home/preparation';
+import useKailoSession from '@/hooks/useKailoSession';
 import {
   AskingTaskStatus,
   ThreadResponse,
@@ -40,19 +41,7 @@ const adjustmentType = {
 };
 
 const knowledgeTooltip = (
-  <>
-    Store this answer as a Question-SQL pair to help Wren AI improve SQL
-    generation.
-    <br />
-    <Typography.Link
-      className="gray-1 underline"
-      href="https://docs.getwren.ai/oss/guide/knowledge/question-sql-pairs#save-to-knowledge"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      Learn more
-    </Typography.Link>
-  </>
+  <>Store this answer as a Question-SQL pair to improve SQL generation.</>
 );
 
 const StyledTabs = styled(Tabs)`
@@ -188,6 +177,8 @@ const isNeedGenerateAnswer = (answerDetail: ThreadResponseAnswerDetail) => {
 
 export default function AnswerResult(props: Props) {
   const { threadResponse, isLastThreadResponse, isOpeningQuestion } = props;
+  // DD-133 §3: knowledge and views are Kailo Tenant admin changes.
+  const { isAdmin } = useKailoSession();
 
   const {
     onOpenSaveAsViewModal,
@@ -333,45 +324,47 @@ export default function AnswerResult(props: Props) {
               <ChartAnswer {...props} />
             </Tabs.TabPane>
           </StyledTabs>
-          <div className="mt-2 d-flex align-center">
-            <Tooltip
-              overlayInnerStyle={{ width: 'max-content' }}
-              placement="topLeft"
-              title={knowledgeTooltip}
-            >
-              <Button
-                type="link"
-                size="small"
-                className="mr-2"
+          {isAdmin && (
+            <div className="mt-2 d-flex align-center">
+              <Tooltip
+                overlayInnerStyle={{ width: 'max-content' }}
+                placement="topLeft"
+                title={knowledgeTooltip}
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  className="mr-2"
+                  onClick={() =>
+                    onOpenSaveToKnowledgeModal(
+                      {
+                        question: rephrasedQuestion,
+                        sql,
+                      },
+                      { isCreateMode: true },
+                    )
+                  }
+                  data-guideid="save-to-knowledge"
+                >
+                  <div className="d-flex align-center">
+                    <RobotSVG className="mr-2" />
+                    Save to knowledge
+                  </div>
+                </Button>
+              </Tooltip>
+              <ViewBlock
+                view={view}
                 onClick={() =>
-                  onOpenSaveToKnowledgeModal(
+                  onOpenSaveAsViewModal(
+                    { sql, responseId: id },
                     {
-                      question: rephrasedQuestion,
-                      sql,
+                      rephrasedQuestion: questionForSaveAsView,
                     },
-                    { isCreateMode: true },
                   )
                 }
-                data-guideid="save-to-knowledge"
-              >
-                <div className="d-flex align-center">
-                  <RobotSVG className="mr-2" />
-                  Save to knowledge
-                </div>
-              </Button>
-            </Tooltip>
-            <ViewBlock
-              view={view}
-              onClick={() =>
-                onOpenSaveAsViewModal(
-                  { sql, responseId: id },
-                  {
-                    rephrasedQuestion: questionForSaveAsView,
-                  },
-                )
-              }
-            />
-          </div>
+              />
+            </div>
+          )}
           {renderRecommendedQuestions(
             isLastThreadResponse,
             recommendedQuestionProps,

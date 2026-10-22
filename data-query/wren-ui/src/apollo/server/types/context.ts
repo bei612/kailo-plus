@@ -39,8 +39,15 @@ import {
   DashboardCacheBackgroundTracker,
 } from '@server/backgrounds';
 import { ISqlPairService } from '../services/sqlPairService';
+import { KailoUserProfile } from '@/utils/kailoUser';
+import { KailoUserLoader } from '../services/kailoUserService';
 
 export interface IContext {
+  // DD-133 §3: the verified Kailo user of this request (display claims only).
+  kailoUser?: KailoUserProfile | null;
+  kailoUsers?: KailoUserLoader;
+  // A verified native service-audience token (the instance's AI service).
+  kailoNativeService?: boolean;
   nativeHumanToken?: string;
   nativeIdentityScope?: string;
   // Per-resolver server closure; consumes the wrapper's captured generation

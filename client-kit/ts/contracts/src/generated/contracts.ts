@@ -2245,7 +2245,10 @@ export enum EvidenceAuthority {
  * 存量种类不可识别时缺省
  *
  * AuditEvent 中 EvidenceRef 的封闭种类（.design/03 §14）。每种只承载其权威源中的稳定 ID（可带
- * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。
+ * version），权威源、证据类型与敏感级别由种类唯一确定（Core 的固定描述表）。库中存量出现不在此列的种类时解释为不可用，不猜测含义。DD-135(8) 的 Skill
+ * 证据：`SKILL_SLUG` 为定义 slug；`SKILL_VERSION_ASSET_ID` 为版本 Asset ID，version
+ * 为版本序号；`SKILL_ARTIFACT_DIGEST` 为规范 artifact 的 SHA-256，version 为其字节数；`SKILL_UPLOAD_DIGEST`
+ * 为上传字节的 SHA-256。均不含 SKILL.md 正文。
  */
 export enum EvidenceKind {
     ActionExecutionId = "ACTION_EXECUTION_ID",
@@ -2264,6 +2267,9 @@ export enum EvidenceKind {
     PlatformSessionId = "PLATFORM_SESSION_ID",
     SecretRefRehomeId = "SECRET_REF_REHOME_ID",
     SkillArtifactDigest = "SKILL_ARTIFACT_DIGEST",
+    SkillSlug = "SKILL_SLUG",
+    SkillUploadDigest = "SKILL_UPLOAD_DIGEST",
+    SkillVersionAssetId = "SKILL_VERSION_ASSET_ID",
     SpicedbRelationship = "SPICEDB_RELATIONSHIP",
     SpicedbZedtoken = "SPICEDB_ZEDTOKEN",
     TemporalFirstRunId = "TEMPORAL_FIRST_RUN_ID",
@@ -3365,6 +3371,80 @@ export enum CapabilityVectorCaptureSlot {
 export enum ComponentConformanceStepExpectedMcpResultKind {
     Error = "ERROR",
     Result = "RESULT",
+}
+
+/**
+ * Read-only member directory snapshot for an embedded component (.design/07 §4.7.4,
+ * DD-133(4)): every ACTIVE HUMAN member in the native page entry binding's scope with Kailo
+ * display name, avatar URL, Tenant role and ACTIVE Workspace memberships. A full snapshot,
+ * never paged: a person absent from it is removed from the component organisation.
+ * directoryVersion is the SHA-256 (hex) of the canonical JSON of every other field. No
+ * email, Buzz key, session or credential.
+ */
+export interface ComponentMemberDirectory {
+    bindingId: string;
+    /**
+     * Lowercase hex SHA-256 of the canonical JSON of this snapshot without directoryVersion;
+     * unchanged content keeps the same version.
+     */
+    directoryVersion: string;
+    members:          ComponentDirectoryMember[];
+    tenant:           ComponentDirectoryTenant;
+    /**
+     * Every ACTIVE Workspace in the binding scope (only the binding's own Workspace when it has
+     * one).
+     */
+    workspaces: ComponentDirectoryWorkspace[];
+}
+
+export interface ComponentDirectoryMember {
+    /**
+     * Kailo display name: the member's SERVER HUMAN kind:0 display_name (else name), else the
+     * HumanIdentity display name.
+     */
+    displayName: string;
+    /**
+     * One entry per ACTIVE external identity; the component keys its account on issuer +
+     * subject.
+     */
+    identities:  ComponentDirectoryIdentity[];
+    principalId: string;
+    tenantRole:  ComponentDirectoryRole;
+    workspaces:  ComponentDirectoryMembership[];
+}
+
+export interface ComponentDirectoryIdentity {
+    issuer: string;
+    /**
+     * <PUBLIC_ORIGIN>/api/v1/identity/avatars/<subject>, the same value as the IdP picture
+     * claim.
+     */
+    picture: string;
+    subject: string;
+}
+
+/**
+ * 成员目录中的 Kailo 角色（.design/07 §4.7.4、DD-133(4)）：SpiceDB 对 Tenant 或 Workspace 有 `manage` 为
+ * ADMIN，否则 MEMBER。只供组件派生自身角色，不授予 Kailo 侧任何权限。
+ */
+export enum ComponentDirectoryRole {
+    Admin = "ADMIN",
+    Member = "MEMBER",
+}
+
+export interface ComponentDirectoryMembership {
+    role:        ComponentDirectoryRole;
+    workspaceId: string;
+}
+
+export interface ComponentDirectoryTenant {
+    name:     string;
+    tenantId: string;
+}
+
+export interface ComponentDirectoryWorkspace {
+    name:        string;
+    workspaceId: string;
 }
 
 /**
@@ -6460,10 +6540,16 @@ export interface SkillArtifactUploadView {
     shortDescription?: string;
     skillName?:        string;
     skillResourceId:   string;
-    uploadByteSize:    number;
-    uploadDigest:      string;
-    uploadId?:         string;
-    violations:        SkillArtifactViolation[];
+    /**
+     * 上传字节数。缺省条件同 uploadDigest。
+     */
+    uploadByteSize?: number;
+    /**
+     * 上传字节的 SHA-256。请求体超过上限、上传未被完整读取时缺省（UPLOAD_TOO_LARGE）。
+     */
+    uploadDigest?: string;
+    uploadId?:     string;
+    violations:    SkillArtifactViolation[];
 }
 
 /**

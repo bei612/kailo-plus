@@ -9,6 +9,10 @@ const INSTRUCTION = gql`
     isDefault
     createdAt
     updatedAt
+    owner {
+      name
+      picture
+    }
   }
 `;
 

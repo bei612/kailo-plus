@@ -112,6 +112,7 @@ fn test_oidc_policy() -> super::FilterOrPolicy {
 			redirect_uri: "http://localhost:3000/oauth/callback".into(),
 			scopes: vec![],
 			ui_locales: None,
+			backchannel_logout: None,
 			login: None,
 			logout: None,
 		}),

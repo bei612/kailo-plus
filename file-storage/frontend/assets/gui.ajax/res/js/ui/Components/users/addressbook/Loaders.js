@@ -77,7 +77,9 @@ class Loaders{
         if(secondary) {
             const parts = []
             parts.push(Pydio.getMessages()[idmUser.Attributes && idmUser.Attributes['profile'] === 'shared' ? '589':'590'])
-            if(idmUser.GroupPath !== '/') {
+            // A Kailo Tenant group (/kailo-<tenant>) is the user's organization,
+            // not a path worth showing next to every member (DD-133 §3).
+            if(idmUser.GroupPath !== '/' && !/^\/kailo-[^/]*\/?$/.test(idmUser.GroupPath || '')) {
                 parts.push(idmUser.GroupPath)
             }
             secondaryText = parts.join(' - ')

@@ -119,6 +119,8 @@ func init() {
 				// No Core/BFF credentials or remote application administration.
 				m.Handle(web.KailoOIDCLoginPath, middleware.HttpContextWrapper(ctx, http.HandlerFunc(web.NativeKailoOIDC)))
 				m.Handle(web.KailoOIDCCallbackPath, middleware.HttpContextWrapper(ctx, http.HandlerFunc(web.NativeKailoOIDC)))
+				// OIDC back-channel logout of the Kailo SSO session (07 §4.7.5).
+				m.Handle(web.KailoOIDCBackchannelLogoutPath, middleware.HttpContextWrapper(ctx, http.HandlerFunc(web.NativeKailoOIDCBackchannelLogout)))
 				m.Handle("index.json", fs)
 				m.Handle("plug/", fs, routing.WithStripPrefix())
 				indexHandler := web.NewIndexHandler(ctx, ResetPasswordPath)

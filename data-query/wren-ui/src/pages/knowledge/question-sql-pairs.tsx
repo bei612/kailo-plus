@@ -1,10 +1,13 @@
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { Button, message, Table, TableColumnsType, Typography } from 'antd';
 import { format } from 'sql-formatter';
 import SiderLayout from '@/components/layouts/SiderLayout';
 import PageLayout from '@/components/layouts/PageLayout';
 import FunctionOutlined from '@ant-design/icons/FunctionOutlined';
+import EyeOutlined from '@ant-design/icons/EyeOutlined';
+import KailoUser from '@/components/kailo/KailoUser';
+import useKailoSession from '@/hooks/useKailoSession';
+import useKailoText from '@/utils/kailoI18n';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import useDrawerAction from '@/hooks/useDrawerAction';
@@ -34,6 +37,9 @@ const { Paragraph, Text } = Typography;
 
 export default function ManageQuestionSQLPairs() {
   const locale = useRouter().locale;
+  const t = useKailoText();
+  // DD-133 §3: knowledge changes are Kailo Tenant admin actions.
+  const { isAdmin } = useKailoSession();
   const questionSqlPairModal = useModalAction();
   const sqlPairDrawer = useDrawerAction();
 
@@ -155,6 +161,15 @@ export default function ManageQuestionSQLPairs() {
       ),
     },
     {
+      // DD-133 §3: the Kailo user who saved it.
+      title: t('owner'),
+      dataIndex: 'owner',
+      width: 160,
+      render: (owner) => (
+        <KailoUser user={owner} emptyText={t('ownerUnknown')} />
+      ),
+    },
+    {
       title: 'Created time',
       dataIndex: 'createdAt',
       width: 130,
@@ -165,11 +180,21 @@ export default function ManageQuestionSQLPairs() {
       width: 64,
       align: 'center',
       fixed: 'right',
-      render: (_, record) => (
-        <SQLPairDropdown onMoreClick={onMoreClick} data={record}>
-          <MoreButton className="gray-8" />
-        </SQLPairDropdown>
-      ),
+      render: (_, record) =>
+        isAdmin ? (
+          <SQLPairDropdown onMoreClick={onMoreClick} data={record}>
+            <MoreButton className="gray-8" />
+          </SQLPairDropdown>
+        ) : (
+          <Button
+            type="text"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() =>
+              onMoreClick({ type: MORE_ACTION.VIEW_SQL_PAIR, data: record })
+            }
+          />
+        ),
     },
   ];
 
@@ -183,27 +208,21 @@ export default function ManageQuestionSQLPairs() {
           </>
         }
         titleExtra={
-          <Button
-            type="primary"
-            className=""
-            onClick={() => questionSqlPairModal.openModal()}
-          >
-            Add question-SQL pair
-          </Button>
+          isAdmin && (
+            <Button
+              type="primary"
+              className=""
+              onClick={() => questionSqlPairModal.openModal()}
+            >
+              Add question-SQL pair
+            </Button>
+          )
         }
         description={
           <>
             On this page, you can manage your saved question-SQL pairs. These
-            pairs help Wren AI learn how your organization writes SQL, allowing
-            it to generate queries that better align with your expectations.{' '}
-            <Link
-              className="gray-8 underline"
-              href="https://docs.getwren.ai/oss/guide/knowledge/question-sql-pairs"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Learn more.
-            </Link>
+            pairs show how your organization writes SQL, so that generated
+            queries better align with your expectations.
           </>
         }
       >

@@ -45,6 +45,8 @@ services:
       CELLS_HEALTH_URL: ${CELLS_HEALTH_URL:?required}
       CELLS_OAUTH_CONNECTORS: ${CELLS_OAUTH_CONNECTORS:?native connector configuration required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
+      # Kailo deployment display name: page/mail title "<name> 云盘" (DD-133 §1).
+      PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?Kailo display name required}
       CELLS_OAUTH_SECRET_FILE: /run/secrets/cells_oauth_secret
       # Binding datasource created by docker-entrypoint.sh (cells admin
       # datasource ensure) before start; reconcile.py only reads it back.

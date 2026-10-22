@@ -306,6 +306,64 @@ impl NativeToolProjection {
     }
 }
 
+/// [`SpiceDb::check_bulk_principals`] 的一项。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BulkCheck<'a> {
+    pub object_type: &'a str,
+    pub object_id: &'a str,
+    pub permission: &'a str,
+    pub principal: &'a str,
+}
+
+/// 校验一块 CheckBulkPermissions 回应并按请求顺序给出结论。
+fn bulk_principal_results(
+    chunk: &[BulkCheck<'_>],
+    value: &serde_json::Value,
+) -> Result<Vec<bool>, SpiceDbError> {
+    if value
+        .pointer("/checkedAt/token")
+        .and_then(serde_json::Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        return Err(SpiceDbError::Unavailable(
+            "批量 Check 缺 fresh revision".into(),
+        ));
+    }
+    let pairs = value["pairs"]
+        .as_array()
+        .ok_or_else(|| SpiceDbError::Unavailable("批量 Check 缺 pairs".into()))?;
+    if pairs.len() != chunk.len() {
+        return Err(SpiceDbError::Unavailable("批量 Check 回应条数不符".into()));
+    }
+    chunk
+        .iter()
+        .zip(pairs)
+        .map(|(item, pair)| {
+            let echo = |p: &str| pair.pointer(p).and_then(serde_json::Value::as_str);
+            if echo("/request/resource/objectType") != Some(item.object_type)
+                || echo("/request/resource/objectId") != Some(item.object_id)
+                || echo("/request/permission") != Some(item.permission)
+                || echo("/request/subject/object/objectType") != Some("principal")
+                || echo("/request/subject/object/objectId") != Some(item.principal)
+            {
+                return Err(SpiceDbError::Unavailable(
+                    "批量 Check 回显与请求不符".into(),
+                ));
+            }
+            if pair.get("error").is_some() {
+                return Err(SpiceDbError::Unavailable("批量 Check 含 item error".into()));
+            }
+            match echo("/item/permissionship") {
+                Some("PERMISSIONSHIP_HAS_PERMISSION") => Ok(true),
+                Some("PERMISSIONSHIP_NO_PERMISSION" | "PERMISSIONSHIP_CONDITIONAL_PERMISSION") => {
+                    Ok(false)
+                }
+                _ => Err(SpiceDbError::Unavailable("批量 Check 权限值未知".into())),
+            }
+        })
+        .collect()
+}
+
 /// 读关系的过滤条件。object type 必填；其余为空即不限。
 pub struct RelationshipFilter<'a> {
     pub object_type: &'a str,
@@ -591,6 +649,53 @@ impl SpiceDb {
                 Some("PERMISSIONSHIP_NO_PERMISSION" | "PERMISSIONSHIP_CONDITIONAL_PERMISSION") => {}
                 _ => return Err(SpiceDbError::Unavailable("批量 Check 权限值未知".into())),
             }
+        }
+        Ok(allowed)
+    }
+
+    /// 一组 `(object_type, object_id, permission, principal)` 的 FullyConsistent
+    /// CheckBulkPermissions，结果与输入逐项对齐。用于固定对象、多个主体的判定（如成员
+    /// 目录的 Tenant/Workspace `manage`，`.design/07` §4.7.4）。分块请求；任一块的
+    /// item error、条数不符、回显与请求不符或未知 permissionship 都让整体失败，
+    /// 不拿部分结论当成完整判定。
+    pub(crate) async fn check_bulk_principals(
+        &self,
+        items: &[BulkCheck<'_>],
+    ) -> Result<Vec<bool>, SpiceDbError> {
+        const CHUNK: usize = 100;
+        let mut allowed = Vec::with_capacity(items.len());
+        for chunk in items.chunks(CHUNK) {
+            let request: Vec<_> = chunk
+                .iter()
+                .map(|item| {
+                    serde_json::json!({
+                        "resource": { "objectType": item.object_type, "objectId": item.object_id },
+                        "permission": item.permission,
+                        "subject": { "object": { "objectType": "principal", "objectId": item.principal } },
+                    })
+                })
+                .collect();
+            let resp = self
+                .http
+                .post(format!("{}/v1/permissions/checkbulk", self.base))
+                .bearer_auth(&self.key)
+                .json(&serde_json::json!({
+                    "consistency": { "fullyConsistent": true },
+                    "items": request,
+                }))
+                .send()
+                .await
+                .map_err(|e| SpiceDbError::Unavailable(e.to_string()))?;
+            let status = resp.status();
+            if !status.is_success() {
+                tracing::warn!(%status, "SpiceDB 批量主体 Check 未成功");
+                return Err(SpiceDbError::Unavailable(format!("HTTP {status}")));
+            }
+            let value: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| SpiceDbError::Unavailable(format!("回应不可解析: {e}")))?;
+            allowed.extend(bulk_principal_results(chunk, &value)?);
         }
         Ok(allowed)
     }
@@ -943,6 +1048,66 @@ impl SpiceDb {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bulk_principal_results_follow_request_order_and_fail_whole() {
+        let items = [
+            BulkCheck {
+                object_type: "tenant",
+                object_id: "t",
+                permission: "manage",
+                principal: "a",
+            },
+            BulkCheck {
+                object_type: "workspace",
+                object_id: "w",
+                permission: "manage",
+                principal: "b",
+            },
+        ];
+        let pair = |item: &BulkCheck<'_>, permissionship: &str| {
+            json!({"request": {
+                "resource": {"objectType": item.object_type, "objectId": item.object_id},
+                "permission": item.permission,
+                "subject": {"object": {"objectType": "principal", "objectId": item.principal}}},
+                "item": {"permissionship": permissionship}})
+        };
+        let answer =
+            |pairs: Vec<serde_json::Value>| json!({"checkedAt": {"token": "z"}, "pairs": pairs});
+        let ok = answer(vec![
+            pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+            pair(&items[1], "PERMISSIONSHIP_CONDITIONAL_PERMISSION"),
+        ]);
+        assert_eq!(
+            bulk_principal_results(&items, &ok).unwrap(),
+            vec![true, false]
+        );
+        for broken in [
+            // swapped echo, missing pair, unknown value, item error, no revision
+            answer(vec![
+                pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION"),
+                pair(&items[0], "PERMISSIONSHIP_NO_PERMISSION"),
+            ]),
+            answer(vec![pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION")]),
+            answer(vec![
+                pair(&items[0], "PERMISSIONSHIP_UNSPECIFIED"),
+                pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION"),
+            ]),
+            {
+                let mut failed = pair(&items[1], "PERMISSIONSHIP_NO_PERMISSION");
+                failed["error"] = json!({"code": 9});
+                answer(vec![
+                    pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+                    failed,
+                ])
+            },
+            json!({"pairs": [
+                pair(&items[0], "PERMISSIONSHIP_HAS_PERMISSION"),
+                pair(&items[1], "PERMISSIONSHIP_HAS_PERMISSION")]}),
+        ] {
+            assert!(bulk_principal_results(&items, &broken).is_err(), "{broken}");
+        }
+    }
 
     fn row(relation: &str, subject: serde_json::Value) -> serde_json::Value {
         json!({
