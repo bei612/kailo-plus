@@ -1,0 +1,13 @@
+{
+  "protocolPeers": [
+    {
+      "adapterServiceRef": "protocol-peer-reference",
+      "mcpUrl": "http://protocol-peer-reference:3001/mcp",
+      "nativeInstanceRef": "protocol-peer-reference",
+      "artifactDigest": "eae11f4ba430af78b6a274818d5c8952bf7eeb65098913f904946e452777ecb1",
+      "timeoutSeconds": 10,
+      "maxResponseBytes": 262144,
+      "bindings": []
+    }
+  ]
+}

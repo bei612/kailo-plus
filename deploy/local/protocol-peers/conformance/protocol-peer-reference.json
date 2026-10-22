@@ -1,0 +1,10 @@
+{
+  "artifactDigest": "eae11f4ba430af78b6a274818d5c8952bf7eeb65098913f904946e452777ecb1",
+  "mcpUrl": "http://protocol-peer-reference:3001/mcp",
+  "timeoutSeconds": 10,
+  "maxResponseBytes": 262144,
+  "maxSteps": 16,
+  "readOnlyTools": ["echo", "get-sum"],
+  "initializeResultJson": "",
+  "listResultJson": ""
+}

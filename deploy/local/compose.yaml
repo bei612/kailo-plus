@@ -921,6 +921,40 @@ services:
         target: /etc/agentgateway/config.yaml
     command: ["-f", "/etc/agentgateway/config.yaml"]
 
+  # 运维域的参考 MCP 运行体（DD-94(2)(5)、DD-134(5)、DD-136）：外部实现
+  # @modelcontextprotocol/server-everything 2026.1.14 的固定 digest 镜像，以其原版
+  # streamable HTTP 传输运行。官方 mcp/everything 镜像停在 2025-05、只有 stdio/SSE，
+  # 而 Gateway 的 MCP target 只接受 streamable HTTP；所选镜像的入口另包一层第三方桥接，
+  # 这里直接执行镜像内同一 npm 包的原版入口，不经桥接。
+  # 它不是 Tool 注册表或授权来源：只作为交付目录 protocolPeers 的端点出现
+  # （deploy/local/protocol-peers/），契约、release、批准与连接仍只经 Core 的既有 Governed
+  # Action，Gateway 只放行该执行冻结的工具。只在 app 网络（Gateway 经此到达，与组件 adapter
+  # 同一接入面），不发布端口；非 root、只读根文件系统、去掉全部 capability；
+  # GZIP_ALLOWED_DOMAINS 取保留域 invalid，使按 URL 抓取的诊断工具对任何主机都拒绝。
+  # 由发布入口按 tools/release/release.yaml 的 operated 部署与回读（ADR-20 §8）。
+  protocol-peer-reference:
+    image: acuvity/mcp-server-everything@sha256:eae11f4ba430af78b6a274818d5c8952bf7eeb65098913f904946e452777ecb1
+    networks: [app]
+    user: "1001:1001"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: ${PROTOCOL_PEER_REFERENCE_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${PROTOCOL_PEER_REFERENCE_MEMORY:?必须显式提供本机运行预算}
+    environment:
+      PORT: "3001"
+      GZIP_ALLOWED_DOMAINS: invalid
+    entrypoint: ["node", "/app/node_modules/@modelcontextprotocol/server-everything/dist/index.js"]
+    command: ["streamableHttp"]
+    healthcheck:
+      # 无会话的 GET /mcp 由原版传输以 400 拒绝：能这样应答即说明监听就绪。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/mcp').then(r=>process.exit(r.status===400?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
   agentgateway-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     networks: [agentgateway-data]
