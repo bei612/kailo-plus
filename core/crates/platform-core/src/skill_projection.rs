@@ -95,7 +95,7 @@ struct StateRow {
 }
 
 /// 一个被引 Skill 的 requested 事实与当前治理状态。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SkillState {
     pub asset_id: Uuid,
     pub skill_resource_id: Uuid,

@@ -2767,6 +2767,7 @@ mod activity_tests {
             gateway_base_url: "http://gateway.invalid/v1".into(),
             instructions: "fixed".into(),
             credential_digest: Sha256::digest(b"test-token-not-a-credential").into(),
+            skills: Vec::new(),
             home: PathBuf::from("/runtime-test"),
             next_id: 0,
             pending_line: Vec::new(),

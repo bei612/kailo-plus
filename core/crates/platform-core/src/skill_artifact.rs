@@ -23,7 +23,7 @@ pub(crate) const MAX_SLUG_CHARS: usize = 64;
 
 const BLOCK: usize = 512;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Violation {
     pub code: Code,
     pub path: Option<String>,
@@ -39,7 +39,7 @@ impl Violation {
 }
 
 /// 一次上传校验通过后的规范 artifact 与 frontmatter 元数据。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Artifact {
     pub encoding: SkillArtifactEncoding,
     pub upload_digest: String,
