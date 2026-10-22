@@ -1,25 +1,20 @@
 // DD-134 网关管理区（V-SCN-191..197 的前端部分）：入口与分区由 access 决定；统计、下钻与
 // 读取失败不显示为零；写入只提交既有动作，结果不明只重查原请求；向导不探测未登记端点。
 
-import { webcrypto } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { act } from "react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { GatewayPage, gatewayTabs } from "../src/react/gateway";
 import { PlatformNavigation } from "../src/react/navigation";
-import { canonicalDigest, canonicalJson } from "../src/gateway-drafts";
+import { canonicalDigest, canonicalJson, sha256Hex } from "../src/gateway-drafts";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
-beforeAll(() => {
-  // The wizard digests drafts with Web Crypto; jsdom's own crypto has no SubtleCrypto.
-  vi.stubGlobal("crypto", webcrypto);
-});
-
-/** Web Crypto settles outside React's microtask queue: poll until the element appears. */
+/** Draft generation is asynchronous: poll until the element appears. */
 async function waitFor<T>(read: () => T | null | undefined, timeout = 2000): Promise<T> {
   const deadline = Date.now() + timeout;
   for (;;) {
@@ -360,6 +355,12 @@ describe("live configuration", () => {
 });
 
 describe("gateway drafts", () => {
+  it("hashes like SHA-256 without Web Crypto (the deployed Web origin is not a secure context)", () => {
+    for (const text of ["", "abc", "a".repeat(55), "a".repeat(56), "a".repeat(64), "a".repeat(1000), '{"时间":"12:00"}']) {
+      expect(sha256Hex(text)).toBe(createHash("sha256").update(text, "utf8").digest("hex"));
+    }
+  });
+
   it("matches the Core canonical JSON", () => {
     expect(canonicalJson({ b: 2, a: [1, { d: true, c: "x" }] })).toBe('{"a":[1,{"c":"x","d":true}],"b":2}');
   });
