@@ -3021,15 +3021,26 @@ impl Governance {
                     }
                     target.id
                 } else if def.action_key == crate::model_route::disable::KEY {
-                    if !crate::model_route::disable::evaluate_target(self, actor.tenant_id, target)
-                        .await?
+                    use crate::model_route::disable::Scope;
+                    match crate::model_route::disable::evaluate_target(
+                        self,
+                        actor.tenant_id,
+                        target,
+                    )
+                    .await?
                     {
-                        return Ok(deny(
-                            "DENY",
-                            "NOT_APPLICABLE",
-                            None,
-                            ReasonCode::ScopeGuardFailed,
-                        ));
+                        Scope::Admissible => {}
+                        Scope::Mismatch => {
+                            return Ok(deny(
+                                "DENY",
+                                "NOT_APPLICABLE",
+                                None,
+                                ReasonCode::ScopeGuardFailed,
+                            ));
+                        }
+                        // 已不可停用：不在这里拒绝，照常 Check manage；无权者与任何无权请求一样得到
+                        // PERMISSION_DENIED（DD-134(2)），有权者由授权之后的 target_gate 得到原冲突。
+                        Scope::NotAdmissible => {}
                     }
                     target.id
                 } else if is_installation_permission {
@@ -6433,6 +6444,9 @@ impl Governance {
         }
         if sem.is_skill() {
             return skill_catalog::gate(self, conn, tenant, initiator, sem, p).await;
+        }
+        if sem == Semantic::LlmRouteDisable {
+            return crate::model_route::disable::gate(conn, tenant, p).await;
         }
         if sem.is_installation_permission() {
             return installation_permission::gate(

@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::access::{action_allowed, caller, require_tenant, Caller};
+use super::access::{action_allowed, caller, require_tenant, require_zone, Caller};
 use super::stats::{rfc3339, tool_records, window, Counters};
 use crate::bff::BffState;
 use crate::governance::{Refusal, Target};
@@ -147,6 +147,7 @@ async fn tool_page(
     caller: &Caller,
     query: ToolsQuery,
 ) -> Result<GatewayToolPage, Refusal> {
+    require_zone(state, caller).await?;
     require_tenant(state, caller, None, "discover").await?;
     let offset = query.offset.unwrap_or(0);
     let limit = i64::from(state.governance.cfg.relationship_page);

@@ -144,7 +144,61 @@ pub(crate) async fn require_tenant(
     Ok(())
 }
 
-/// 统计、调用与下钻的授权：平台范围 Catalog `audit`，Tenant 范围 Tenant/Workspace `audit`。
+/// DD-134(2) 区级门槛的判定结果：平台范围只有 Catalog `audit`；Tenant 范围是 Tenant `audit`，
+/// 或本 Tenant 内至少一个 ACTIVE Workspace 的 `audit`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Zone {
+    pub tenant_audit: bool,
+    pub workspace_audit: bool,
+}
+
+impl Zone {
+    pub(crate) fn open(self) -> bool {
+        self.tenant_audit || self.workspace_audit
+    }
+}
+
+/// 区级门槛（DD-134(2)，用户 2026-10-22 裁决）：网关管理区是审计与运维面，入口与区内全部
+/// 只读查询先要求 `audit`；只持有 `discover` 的普通成员没有入口，工具在 Agents 页查看。
+pub(crate) async fn zone(state: &BffState, caller: &Caller) -> Result<Zone, Refusal> {
+    let principal = caller.ctx.tenant_principal_id;
+    let tenant_audit = check(state, "tenant", caller.ctx.tenant_id, "audit", principal).await?;
+    if tenant_audit || caller.platform {
+        return Ok(Zone {
+            tenant_audit,
+            workspace_audit: false,
+        });
+    }
+    let workspaces: Vec<Uuid> = sqlx::query_scalar(
+        "select id from identity.workspace where tenant_id=$1 and state='ACTIVE' order by id",
+    )
+    .bind(caller.ctx.tenant_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let ids: Vec<String> = workspaces.iter().map(Uuid::to_string).collect();
+    let allowed = state
+        .governance
+        .spicedb
+        .check_bulk("workspace", &ids, "audit", &principal.to_string())
+        .await
+        .map_err(|_| unavailable())?;
+    Ok(Zone {
+        tenant_audit,
+        workspace_audit: !allowed.is_empty(),
+    })
+}
+
+/// 区内只读查询的前置：未过区级门槛即 `PERMISSION_DENIED`，不论分区自身的判定。
+pub(crate) async fn require_zone(state: &BffState, caller: &Caller) -> Result<(), Refusal> {
+    if zone(state, caller).await?.open() {
+        Ok(())
+    } else {
+        Err(Refusal::Denied(ReasonCode::PermissionDenied))
+    }
+}
+
+/// 统计、调用与下钻的授权：平台范围 Catalog `audit`，Tenant 范围 Tenant/Workspace `audit`
+/// （二者都蕴含区级门槛）。
 pub(crate) async fn require_audit(
     state: &BffState,
     caller: &Caller,
@@ -185,11 +239,30 @@ pub(crate) async fn action_allowed(
             .is_some_and(|token| !token.is_empty()))
 }
 
+/// 区级门槛之外一律不呈现：所有分区标记为假，导航不出现入口。
+fn closed(scope: GatewayAdminScope, tenant: Uuid) -> GatewayAccess {
+    GatewayAccess {
+        scope,
+        tenant_id: tenant.to_string(),
+        can_read_stats: false,
+        can_read_tools: false,
+        can_read_model_routes: false,
+        can_create_model_route: false,
+        can_read_config: false,
+        can_manage_mcp: false,
+        can_bind_mcp: false,
+    }
+}
+
 async fn access(state: &BffState, caller: &Caller) -> Result<GatewayAccess, Refusal> {
     let principal = caller.ctx.tenant_principal_id;
     let tenant = caller.ctx.tenant_id;
+    let zone = zone(state, caller).await?;
     if caller.platform {
-        let audit = check(state, "tenant", tenant, "audit", principal).await?;
+        if !zone.open() {
+            return Ok(closed(GatewayAdminScope::Platform, tenant));
+        }
+        let audit = zone.tenant_audit;
         let manage = match require_platform(state, caller, "manage").await {
             Ok(()) => true,
             Err(Refusal::Denied(_)) => false,
@@ -207,7 +280,11 @@ async fn access(state: &BffState, caller: &Caller) -> Result<GatewayAccess, Refu
             can_bind_mcp: false,
         });
     }
-    let audit = check(state, "tenant", tenant, "audit", principal).await?;
+    if !zone.open() {
+        return Ok(closed(GatewayAdminScope::Tenant, tenant));
+    }
+    // 只持有某 Workspace `audit` 时统计与调用按所选 Workspace 查询（BFF 逐次重做授权）
+    let audit = zone.open();
     let discover = check(state, "tenant", tenant, "discover", principal).await?;
     let tenant_target = Target {
         id: tenant,
@@ -238,5 +315,40 @@ pub(crate) async fn get(State(state): State<BffState>, headers: HeaderMap) -> Re
     match access(&state, &caller).await {
         Ok(view) => Json(view).into_response(),
         Err(error) => error.respond(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 区级门槛：任一 `audit` 来源即开放；只有 `discover` 的成员两项皆假，入口关闭。
+    #[test]
+    fn zone_opens_only_on_audit() {
+        let member = Zone {
+            tenant_audit: false,
+            workspace_audit: false,
+        };
+        assert!(!member.open());
+        assert!(Zone {
+            tenant_audit: true,
+            workspace_audit: false
+        }
+        .open());
+        assert!(Zone {
+            tenant_audit: false,
+            workspace_audit: true
+        }
+        .open());
+        let shut = closed(GatewayAdminScope::Tenant, Uuid::nil());
+        assert!(
+            !(shut.can_read_stats
+                || shut.can_read_tools
+                || shut.can_read_model_routes
+                || shut.can_create_model_route
+                || shut.can_read_config
+                || shut.can_manage_mcp
+                || shut.can_bind_mcp)
+        );
     }
 }

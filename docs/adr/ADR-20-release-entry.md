@@ -49,8 +49,8 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 | pin | 开发机 | 按结构替换 compose 镜像 pin 与追溯记录 `release.artifacts[].digest`；断言 `deploy/`、`tools/` 不再残留旧 digest；提交并快进 push | 远端 main 已含该 pin 提交 |
 | check | CI worker | `kailo-ci submit <pin> check`（原 full） | 该 commit 的 full 任务 SUCCEEDED |
 | backup | 节点（发布树内代码） | 对受影响服务直接依赖的 Postgres 做 `pg_dump -Fc`，`pg_restore --list` 校验，连同 `.env` 快照写 manifest | 该 pin commit 的 manifest 存在且文件摘要一致 |
-| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 迁移 → 配置一次性服务 → 重建配置漂移的基础服务（§9）→ IdP 声明式配置（§8）→ 按序替换服务 → 重建依赖替换对象的漂移服务（§9）→ 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定；长期运行服务的配置与现场一致则跳过（§9） |
-| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8）；长期运行服务无配置漂移且健康（§9） | 每次重算 |
+| deploy | 节点（发布树内代码） | 规范发布树权限 → 声明式 `.env` → 渲染运维域投递（§10）→ 迁移 → 配置一次性服务 → 创建缺失的运维域运行体（§10）→ 重建配置漂移的基础服务（§9）→ IdP 声明式配置（§8）→ 按序替换服务（含投递摘要变化时的 core-bff，§10）→ 重建依赖替换对象的漂移服务（§9）→ 回读 | 运行镜像 digest 已等于 pin 的服务跳过；配置一次性服务（`restart: "no"`、消费发布树内 compose configs，例如 SpiceDB schema 写入）按其配置文件内容 digest 判定，与上次成功应用的 digest 相同则跳过；IdP 声明按 §8 的配置摘要判定；长期运行服务的配置与现场一致则跳过（§9）；运维域运行体已运行则不创建，投递摘要等于已生效摘要则不重建 core-bff（§10） |
+| verify | 节点（发布树内代码） | 回读全部受管服务的镜像、健康、Web build-info 与无关容器；IdP 声明只读回读（§8）；长期运行服务无配置漂移且健康（§9）；运维域运行体与投递（§10） | 每次重算 |
 
 `run` 从第一个未完成的阶段继续；中断后再次执行同一命令即恢复。恢复依据两层：开发机日志
 `$XDG_STATE_HOME/kailo-release/<源commit>.json` 记录任务 ID、构建输出与 pin commit，避免重复提交 CI 任务；
@@ -257,6 +257,36 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
 3. 风险由既有机制约束：串行、每个服务等健康、第一个失败即停并保留日志（§6）、Postgres 先备份；
    数据库重建不动卷中数据。
 4. 确实不能靠服务替换完成的情况，用声明一次写明理由（`drift: report`），而不是每次运行时由人临场判断。
+
+### 10. 运维域运行体与投递（2026-10-22 增补，DD-136）
+
+`DD-134(5)` 的外部 MCP 服务器注册需要两类运维域事实：一个按固定 digest 运行的 MCP 运行体，以及 Core 读取的交付目录
+`protocolPeers` 与 `PROTOCOL_PEER` 一致性环境。此前它们没有声明来源，只能由人到节点手写文件、改 `.env` 再手工重建 Core。
+本节把它们并入同一入口，仍不新增门禁：
+
+- **operated**：`release.yaml` 的 `operated` 列出 compose 中按 digest 固定的上游镜像常驻服务（当前为 `protocol-peer-reference`）。
+  它们不是构建单元，不参与 build/record/pin。§9 的漂移收敛只处理已运行的服务（未运行列为「未运行」），而这些运行体首次发布时
+  并不存在，因此 deploy 创建没有唯一运行中容器的 operated 服务并回读运行、本地解析与健康；已运行者的镜像引用或配置与发布树
+  不同即是 §9 的配置漂移（镜像在 Compose 配置哈希内），由漂移收敛重建，本节不重复处理。verify 每次回读其镜像引用、本地解析与
+  健康。上游镜像来自原 registry，不做本仓库产物的 registry 复现核对。
+- **delivery.protocol_peers**：仓库内的 `deploy/local/protocol-peers/directory.json`（只含 `protocolPeers`）与一致性环境，由 deploy
+  渲染到运行目录 `data/protocol-peers/` 下的真实规范文件（0644，同目录临时文件 + fsync + 原子替换，内容不变不改写）。交付目录中
+  `adapters` 保留运行文件已有条目（组件入口以 `adapter-directory.mjs --existing` 维护同一文件），`adapterServiceRef` 两类唯一。
+  `.env` 的 `APPLICATION_ADAPTER_DIRECTORY_FILE` 与 `COMPONENT_CONFORMANCE_ENVIRONMENT_FILE` 由 `env.set` 以 `${KAILO_RUNTIME_DIR}`
+  引用指向这两个文件；一致性套件同一时间只有一个候选，HTTP adapter 才有的另两项由 `env.unset` 删除。
+- **生效**：start-core.sh 以原路径只读挂载这些文件，替换文件不会进入已运行的 Core/Worker，只有新的一次性投递（`DD-70`）重建后生效。
+  因此入口记录声明摘要（发布 journal 目录的 `deliveries.json`），摘要与上次经 `restart`（core-bff）启动入口生效的不同时把 core-bff
+  加入部署目标（并入 §9 的 `converge_plan` 替换对象，backup 随之覆盖 core-db），回读成功后才记下新摘要；摘要相同不重建。plan 列出运行体状态与投递是否待生效。
+- **校验**：`model.peer_delivery` 在 plan 即拒绝不合规的声明——端点不是 operated 运行体、`artifactDigest` 不等于其固定 digest、
+  binding 归属事实或一致性环境不符合契约、期望应答未记录、`.env` 键与渲染位置不一致；拒绝时不改动现场。
+- **期望应答**：一致性环境的 `initializeResultJson`/`listResultJson` 由 `deploy/local/protocol-peers/record-conformance.py` 在 CI 节点
+  隔离网络中经与生产同一 Gateway 构建记录（DD-136(3)），随源码提交；peer 或 Gateway 的 digest 变化后重新记录。
+- **binding 归属事实**（`DD-98`）：Tenant 管理员在网关管理区生成草稿后，把草稿给出的条目登记进 `directory.json` 的 `bindings` 并发布；
+  下一次 deploy 因摘要变化重建 Core，向导读到条目后才放行 `application_binding.create`。
+- **deploy 中的位置**（与 §8、§9 统一）：规范发布树权限 → 声明式 `.env` → **渲染运维域投递到运行目录** → 迁移 → 配置一次性服务 →
+  **创建缺失的运维域运行体** → 重建「替换前」组的漂移服务 → IdP 声明 → 按序替换服务（含因投递摘要变化并入的 core-bff）→
+  重建「替换后」组的漂移服务 → 回读。投递先落盘、运行体先于 Core 重建，Core 经启动入口重建后交付目录中的端点即可达；
+  journal 字段为 `deploy.json` 的 `operated`、`delivery`，已生效摘要在 `releases/deliveries.json`，与 §8、§9 的字段互不重叠。
 
 ## 后果
 

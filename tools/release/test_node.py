@@ -247,8 +247,8 @@ class ConvergeJournal(unittest.TestCase):
 
 
 class DeployOrder(unittest.TestCase):
-    """deploy 的统一顺序（ADR-20 §8/§9）：配置一次性服务 → 替换前的漂移重建 → keycloak 就绪后 IdP 声明 →
-    替换服务 → 替换后的漂移重建；journal 中漂移字段与 idp 字段并存、不互相覆盖。"""
+    """deploy 的统一顺序（ADR-20 §8/§9/§10）：配置一次性服务 → 创建缺失的运维域运行体 → 替换前的漂移重建 →
+    keycloak 就绪后 IdP 声明 → 替换服务 → 替换后的漂移重建；journal 中漂移、idp 与运维域字段并存、不互相覆盖。"""
 
     def test_drift_before_idp_before_targets_before_drift_after(self):
         import tempfile
@@ -278,6 +278,9 @@ class DeployOrder(unittest.TestCase):
             r.model, r.decl, r.commit, r.journal, r.backups = Model, dict(DECL, overlays=[]), "c" * 40, tmp, \
                 os.path.join(tmp, "backups")
             r.services, r.managed, r.cfg, r.ci_env = svcs, {"worker": "worker"}, dict(compose_project="p"), {}
+            # 运维域运行体 peer 尚未运行：在漂移收敛与替换之前创建；没有投递声明
+            r.operated, r.delivery = {"peer": "sha256:" + "d" * 64}, None
+            r.readback_operated = lambda svc: dict(service=svc, operated=True)
             r.lock = lambda: open(os.devnull)
             r.normalize_tree = lambda: 0
             r.apply_env = lambda: {}
@@ -298,8 +301,10 @@ class DeployOrder(unittest.TestCase):
                 journal = r.deploy()
             finally:
                 node.containers, node.running_containers, node.container_file = saved
-        self.assertEqual(events, ["pull worker", "oneoffs", "up keycloak", "wait keycloak", "idp", "up worker",
-                                  "up sidecar"])
+        self.assertEqual(events, ["pull worker", "oneoffs", "up peer", "up keycloak", "wait keycloak", "idp",
+                                  "up worker", "up sidecar"])
+        self.assertEqual(journal["operated"], ["peer"])
+        self.assertEqual(journal["services"][0], dict(service="peer", operated=True))
         self.assertEqual(journal["config_converge"]["before"], ["keycloak"])
         self.assertEqual(journal["config_converge"]["after"], ["sidecar"])
         self.assertEqual([s["service"] for s in journal["config_recreated"]], ["keycloak", "sidecar"])
@@ -332,6 +337,200 @@ configs:
             self.assertNotEqual(model.config_oneoffs(text, tmp), first)
 
 
+def _model():
+    spec = importlib.util.spec_from_file_location("release_model_peers", os.path.join(os.path.dirname(__file__), "model.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PEER_DIGEST = "d" * 64
+PEER_COMPOSE = f"""
+services:
+  core-bff: {{image: "${{REGISTRY_HOST:?x}}/core@sha256:{'a' * 64}"}}
+  protocol-peer-reference: {{image: "vendor/peer@sha256:{PEER_DIGEST}", restart: unless-stopped}}
+  tagged: {{image: "vendor/peer:latest"}}
+  oneoff: {{image: "vendor/peer@sha256:{PEER_DIGEST}", restart: "no"}}
+"""
+
+
+class OperatedAndPeerDelivery(unittest.TestCase):
+    """ADR-20 §10: operated runtimes and the protocolPeers / conformance delivery declaration."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        self.json = json
+        self.model = _model()
+        self.services = self.model.compose_services(PEER_COMPOSE)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.peer = {"adapterServiceRef": "protocol-peer-reference", "mcpUrl": "http://protocol-peer-reference:3001/mcp",
+                     "nativeInstanceRef": "protocol-peer-reference", "artifactDigest": PEER_DIGEST,
+                     "timeoutSeconds": 10, "maxResponseBytes": 262144, "bindings": []}
+        self.conformance = {"artifactDigest": PEER_DIGEST, "mcpUrl": self.peer["mcpUrl"], "timeoutSeconds": 10,
+                            "maxResponseBytes": 262144, "maxSteps": 16, "readOnlyTools": ["echo"],
+                            "initializeResultJson": json.dumps({"protocolVersion": "2025-11-25"}),
+                            "listResultJson": json.dumps({"tools": [{"name": "echo"}, {"name": "get-env"}]})}
+        self.write()
+
+    def write(self, directory=None, conformance=None):
+        for name, value in (("directory.json", directory or {"protocolPeers": [self.peer]}),
+                            ("conformance.json", conformance or self.conformance)):
+            with open(os.path.join(self.tmp.name, name), "w", encoding="utf-8") as stream:
+                stream.write(value if isinstance(value, str) else self.json.dumps(value))
+
+    def decl(self, **override):
+        env = {"set": {"APPLICATION_ADAPTER_DIRECTORY_FILE": "${KAILO_RUNTIME_DIR}/data/protocol-peers/adapter-directory.json",
+                       "COMPONENT_CONFORMANCE_ENVIRONMENT_FILE":
+                           "${KAILO_RUNTIME_DIR}/data/protocol-peers/conformance-environment.json"},
+               "unset": ["COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE"]}
+        value = {"units": {}, "services": {"core-bff": {"command": ["./start-core.sh", "--no-build"]}},
+                 "migrations": {}, "order": {}, "node": {}, "env": env, "operated": ["protocol-peer-reference"],
+                 "delivery": {"protocol_peers": {"directory": os.path.join(self.tmp.name, "directory.json"),
+                                                 "conformance": os.path.join(self.tmp.name, "conformance.json"),
+                                                 "runtime": "data/protocol-peers", "restart": "core-bff"}}}
+        value.update(override)
+        return value
+
+    def refused(self, fragment, decl=None):
+        with self.assertRaises(self.model.ReleaseError) as caught:
+            self.model.peer_delivery(decl or self.decl(), self.services)
+        self.assertIn(fragment, str(caught.exception))
+
+    def test_operated_accepts_only_pinned_upstream_long_running_services(self):
+        self.assertEqual(self.model.operated_services(self.services, self.decl()),
+                         {"protocol-peer-reference": "sha256:" + PEER_DIGEST})
+        for name in ("core-bff", "tagged", "oneoff", "missing"):
+            with self.assertRaises(self.model.ReleaseError):
+                self.model.operated_services(self.services, self.decl(operated=[name]))
+
+    def test_valid_declaration_and_its_digest_follow_content(self):
+        first = self.model.peer_delivery(self.decl(), self.services)
+        self.assertEqual(first["restart"], "core-bff")
+        self.assertEqual(first["peers"], [self.peer])
+        self.peer["bindings"] = [{"bindingId": "11111111-1111-4111-8111-111111111111",
+                                  "tenantId": "22222222-2222-4222-8222-222222222222",
+                                  "servicePrincipalId": "33333333-3333-4333-8333-333333333333",
+                                  "nativeScopeRef": "default", "configDigest": "c" * 64,
+                                  "isolationMode": "DEDICATED_INSTANCE"}]
+        self.write()
+        self.assertNotEqual(self.model.peer_delivery(self.decl(), self.services)["digest"], first["digest"])
+
+    def test_endpoint_must_be_an_operated_runtime_with_the_pinned_digest(self):
+        self.write({"protocolPeers": [dict(self.peer, mcpUrl="http://vendor.example/mcp")]},
+                   dict(self.conformance, mcpUrl="http://vendor.example/mcp"))
+        self.refused("operated")
+        self.write({"protocolPeers": [dict(self.peer, artifactDigest="e" * 64)]},
+                   dict(self.conformance, artifactDigest="e" * 64))
+        self.refused("artifactDigest")
+        self.write({"protocolPeers": [dict(self.peer, mcpUrl="http://u:p@protocol-peer-reference:3001/mcp")]})
+        self.refused("mcpUrl")
+
+    def test_directory_owns_only_protocol_peers_and_valid_binding_facts(self):
+        self.write({"adapters": [], "protocolPeers": [self.peer]})
+        self.refused("protocolPeers")
+        self.write({"protocolPeers": [dict(self.peer, bindings=[{"bindingId": "x"}])]})
+        self.refused("binding")
+        self.write('{"protocolPeers": [], "protocolPeers": []}')
+        with self.assertRaises(self.model.ReleaseError):
+            self.model.peer_delivery(self.decl(), self.services)
+
+    def test_conformance_must_be_recorded_and_match_one_peer(self):
+        self.write(conformance=dict(self.conformance, initializeResultJson=""))
+        self.refused("record-conformance.py")
+        self.write(conformance=dict(self.conformance, readOnlyTools=["get-sum"]))
+        self.refused("readOnlyTools")
+        self.write(conformance=dict(self.conformance, mcpUrl="http://protocol-peer-reference:3002/mcp"))
+        self.refused("一个 peer")
+        self.write(conformance=dict(self.conformance, extra=True))
+        self.refused("ComponentProtocolPeerEnvironment")
+
+    def test_env_keys_must_point_at_the_rendered_files_and_clear_http_only_slots(self):
+        decl = self.decl()
+        decl["env"]["set"]["APPLICATION_ADAPTER_DIRECTORY_FILE"] = "/elsewhere/adapter-directory.json"
+        self.refused("APPLICATION_ADAPTER_DIRECTORY_FILE", decl)
+        decl = self.decl()
+        decl["env"]["unset"] = ["COMPONENT_CONFORMANCE_FIXTURE_FILE"]
+        self.refused("env.unset", decl)
+        decl = self.decl()
+        decl["delivery"]["protocol_peers"]["runtime"] = "../outside"
+        self.refused("runtime", decl)
+        self.assertIsNone(self.model.peer_delivery(self.decl(delivery={}), self.services))
+
+    def test_rendered_directory_keeps_component_adapters_and_refuses_collisions(self):
+        adapter = {"adapterServiceRef": "knowledge-adapter"}
+        rendered = self.model.render_peer_directory({"adapters": [adapter], "protocolPeers": []}, [self.peer])
+        self.assertEqual(rendered, {"adapters": [adapter], "protocolPeers": [self.peer]})
+        self.assertEqual(self.model.render_peer_directory(None, [self.peer])["adapters"], [])
+        for existing in ({"adapters": [{"adapterServiceRef": "protocol-peer-reference"}]},
+                         {"adapters": [], "other": 1}, {"protocolPeers": []}, []):
+            with self.assertRaises(self.model.ReleaseError):
+                self.model.render_peer_directory(existing, [self.peer])
+
+
+class RepositoryPeerDeclaration(unittest.TestCase):
+    """The checked-in declaration itself: operated digest, recorded expectations and env keys agree."""
+
+    def test_release_declaration_is_consistent(self):
+        model = _model()
+        delivery = model.peer_delivery()
+        self.assertEqual([p["adapterServiceRef"] for p in delivery["peers"]], ["protocol-peer-reference"])
+        listed = {t["name"] for t in __import__("json").loads(delivery["conformance"]["listResultJson"])["tools"]}
+        self.assertTrue({"echo", "get-sum"} <= listed)
+
+
+class DeliveryRendering(unittest.TestCase):
+    """node.py renders the declaration into the runtime directory, keeps component adapters,
+    rewrites nothing when unchanged and treats the delivery as effective only after record_delivery."""
+
+    def release(self, tmp):
+        import json
+        model = _model()
+        runtime, journal = os.path.join(tmp, "runtime"), os.path.join(tmp, "journal")
+        os.makedirs(os.path.join(runtime, "data"))
+        os.makedirs(journal)
+        release = node.Release.__new__(node.Release)
+        release.model, release.runtime = model, runtime
+        release.delivery = model.peer_delivery()
+        release.decl = {"node": {"journal": journal}}
+        folder = os.path.join(runtime, "data", "protocol-peers")
+        os.makedirs(folder)
+        with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), "w", encoding="utf-8") as stream:
+            json.dump({"adapters": [{"adapterServiceRef": "knowledge-adapter"}]}, stream)
+        return release, folder
+
+    def test_render_keeps_adapters_is_idempotent_and_takes_effect_on_record(self):
+        import json
+        import stat
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            release, folder = self.release(tmp)
+            model = release.model
+            self.assertEqual(sorted(release.write_deliveries()),
+                             sorted([model.PEER_CONFORMANCE_FILE, model.PEER_DIRECTORY_FILE]))
+            self.assertEqual(release.write_deliveries(), [])
+            with open(os.path.join(folder, model.PEER_DIRECTORY_FILE), encoding="utf-8") as stream:
+                directory = json.load(stream)
+            self.assertEqual(directory["adapters"], [{"adapterServiceRef": "knowledge-adapter"}])
+            self.assertEqual(directory["protocolPeers"], release.delivery["peers"])
+            for name in (model.PEER_DIRECTORY_FILE, model.PEER_CONFORMANCE_FILE):
+                self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, name)).st_mode), 0o644)
+            self.assertTrue(release.delivery_pending())
+            self.assertTrue(any("尚未" in p for p in release.delivery_problems()))
+            release.record_delivery()
+            self.assertFalse(release.delivery_pending())
+            self.assertEqual(release.delivery_problems(), [])
+
+    def test_symlinked_delivery_path_is_refused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            release, folder = self.release(tmp)
+            elsewhere = os.path.join(tmp, "elsewhere")
+            os.rename(folder, elsewhere)
+            os.symlink(elsewhere, folder)
+            with self.assertRaises(node.NodeError):
+                release.write_deliveries()
 
 _ispec = importlib.util.spec_from_file_location(
     "idp_declarations", os.path.join(os.path.dirname(__file__), "..", "..", "deploy", "local", "idp-declarations.py"))

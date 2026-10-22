@@ -259,6 +259,9 @@ def compute_plan(root, node, decl, source):
     services = model.compose_services(text)
     all_managed = model.managed_services(services, units)
     managed = {s: i for s, i in all_managed.items() if services[s]["restart"] != "no"}
+    # 运维域运行体与投递（ADR-20 §10）：声明在 pin 前校验，未记录期望应答等错误在 plan 即停
+    operated = model.operated_services(services, decl)
+    delivery = model.peer_delivery(decl, services)
     by_name = {n: u for u in units.values() for n in pin_names(u)}
 
     pinned = {}
@@ -271,7 +274,8 @@ def compute_plan(root, node, decl, source):
     migrations = [dict(name=name, database=str(spec["database"]), versions=model.migration_versions(name, decl))
                   for name, spec in decl["migrations"].items()]
     idp_files, idp_env = model.idp_inputs(decl)
-    facts = node.inspect(dict(commit=source, services=sorted(managed), proofs=proofs,
+    facts = node.inspect(dict(commit=source, services=sorted(set(managed) | set(operated)), proofs=proofs,
+                              delivery_journal=str(decl["node"]["journal"]),
                               env_set={k: model.env_value_digest(v) for k, v in env_set.items()},
                               env_unset=env_unset, required_env=model.required_env(text), migrations=migrations,
                               idp=dict(files=idp_files, env=idp_env, journal=str(decl["node"]["journal"])),
@@ -325,6 +329,18 @@ def compute_plan(root, node, decl, source):
         elif live[0]["digest"] != services[svc]["digest"]:
             drift.append(svc)
     targets = set(drift) | set(absent) | {s for s, i in managed.items() if i in rebuilt}
+    pending = bool(delivery) and (facts.get("deliveries") or {}).get("protocol_peers") != delivery["digest"]
+    if pending:
+        targets.add(delivery["restart"])
+    plan["operated"] = {}
+    for svc, digest in sorted(operated.items()):
+        live = [c for c in running.get(svc, []) if c["running"]]
+        # 未运行即由 deploy 创建；已运行而镜像不同属配置漂移（Compose 哈希含镜像），由 §9 收敛
+        plan["operated"][svc] = dict(digest=digest, state="absent" if not live else
+                                     "current" if live[0]["digest"] == digest else "drift")
+    plan["delivery"] = dict(digest=delivery["digest"], pending=pending, restart=delivery["restart"],
+                            runtime=delivery["runtime"], peers=[p["adapterServiceRef"] for p in delivery["peers"]],
+                            bindings=sum(len(p["bindings"]) for p in delivery["peers"])) if delivery else None
     # 配置漂移（ADR-20 §9）：源 commit 的发布树与现场比较。pin 提交只改重建产物的镜像行，那些服务本已是
     # 替换对象，所以其余服务的判定与 deploy 在 pin 发布树上重算的结果相同；deploy 以重算为准。
     config = facts.get("config_drift") or {}
@@ -441,10 +457,16 @@ def render_plan(plan, note=None):
             say(f"    重建顺序：{' → '.join(c['before'] + ['〈IdP 声明〉', '〈替换〉'] + c['after'])}")
         if c["hash_skipped"]:
             say(f"    由启动命令以一次性叠加组合、只比较 configs 内容：{', '.join(c['hash_skipped'])}")
+    for svc, o in p["operated"].items():
+        say(f"  运维域运行体 {svc}：{ {'current': '运行镜像等于固定引用', 'drift': '运行镜像与固定引用不一致，由配置漂移收敛重建', 'absent': '未运行，将在漂移收敛与替换之前创建'}[o['state']] }")
+    if p["delivery"]:
+        dl = p["delivery"]
+        say(f"  运维域投递 → 运行目录 {dl['runtime']}：peers {', '.join(dl['peers'])}，binding 归属事实 {dl['bindings']} 条；"
+            + (f"尚未生效，经 {dl['restart']} 的启动入口生效" if dl["pending"] else "已生效"))
     if p["active_ci_deploys"]:
         say(f"  ！CI 队列有进行中的 deploy：{p['active_ci_deploys']}；节点 deploy 会拒绝并发")
     say("\n[6] verify（CI 节点）：受管服务镜像 digest/镜像 ID/健康、buzz-web build-info、无关容器、IdP 声明只读回读；"
-        "长期运行服务配置哈希与 configs 内容一致且健康（drift: report 的服务只报告）；业务验收不在此判定")
+        "长期运行服务配置哈希与 configs 内容一致且健康（drift: report 的服务只报告）、运维域运行体与投递；业务验收不在此判定")
 
 
 def rehearse(plan):
@@ -472,10 +494,11 @@ def rehearse(plan):
     idp_action = ("bootstrap.sh --sync-client-redirects / --declare-native-client-profiles → "
                   if idp.get("state") != "unchanged" else "")
     c = plan["deploy"]["config"]
-    steps = ([f"up --force-recreate {s}" for s in c["before"]]
+    operated = [s for s, o in plan["operated"].items() if o["state"] == "absent"]
+    steps = ([f"up {s}（运维域运行体）" for s in operated] + [f"up --force-recreate {s}" for s in c["before"]]
              + [f"IdP（{idp_action}--declare-native-user-pictures）"] + plan["deploy"]["order"]
              + [f"up --force-recreate {s}" for s in c["after"]])
-    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 迁移 → 配置一次性服务 → {' → '.join(steps)}")
+    say(f"  deploy: ssh 节点 … deploy：权限规范 → 声明式 .env → 运维域投递 → 迁移 → 配置一次性服务 → {' → '.join(steps)}")
     say("  verify: ssh 节点 … verify（含 bootstrap.sh --verify-client-redirects / --verify-native-client-profiles 只读回读）")
 
 

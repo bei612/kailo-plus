@@ -117,3 +117,49 @@ DD-122（10-17）与 DD-134（本次）之后逐条复核第 5 节：
 | 5. 知识检索 v1 503、v2 为 DRAFT | 与本链路无关，状态未变 | 生产 `knowledge@2` 仍为 `DRAFT` |
 
 另外两条现状：生产 `catalog.component_release` 只有 6 条 `executionConnector.mode=NONE` 的原生页面入口 release，没有任何 `PROTOCOL_PEER` 或 `REMOTE_ADAPTER` release；AgentGateway `agw_config_resources` 只有 `llm.*` 四类，request log 共 3552 条（10-03 至 10-21）。因此“真实外部 MCP”仍需：在运维域部署固定 digest 的 MCP 服务并写入交付目录与一致性环境（卡点 4），再按 DD-134 网关管理区的向导走契约、release、批准与连接。HUMAN 直接测试调用 `PROTOCOL_PEER` 工具在 `e6b791b78` 前不存在（`application_action::facts` 只接受 `REMOTE_ADAPTER`），由 DD-134(6) 补齐。
+
+## 7. 卡点 4 的部署件（2026-10-22，分支 `feat/gw-mcp-reference`，DD-136、ADR-20 §10）
+
+第 6 节剩下的卡点 4 由一组声明式部署件闭合，随发布入口 `tools/release/kailo-release.sh` 部署，不需要人到节点上写文件或改 `.env`。
+
+| 部署件 | 位置 | 说明 |
+|---|---|---|
+| 参考 MCP 运行体 | `deploy/local/compose.yaml` 服务 `protocol-peer-reference` | 外部发行物 `acuvity/mcp-server-everything@sha256:eae11f4b…`，内含官方 `@modelcontextprotocol/server-everything` 2026.1.14；直接执行其原版 `streamableHttp` 入口，不经镜像自带的桥接。只在 app 网络，不发布端口；uid 1001、只读根文件系统、`cap_drop: ALL`、`no-new-privileges`；`GZIP_ALLOWED_DOMAINS=invalid` 关闭按 URL 抓取；预算 0.5 CPU / 256m |
+| 交付目录声明 | `deploy/local/protocol-peers/directory.json` | 只含 `protocolPeers`：`protocol-peer-reference`，`http://protocol-peer-reference:3001/mcp`，`artifactDigest` 等于上面的镜像 digest，10 秒、256 KiB，`bindings` 初始为空 |
+| 一致性环境 | `deploy/local/protocol-peers/conformance/protocol-peer-reference.json` | `readOnlyTools` 为 `echo`、`get-sum`，`maxSteps` 16；期望应答由下一行的脚本记录 |
+| 期望记录 | `deploy/local/protocol-peers/record-conformance.py` | 在 CI 节点隔离 `--internal` 网络中，以运行中 agentgateway 的同一镜像（必须等于 compose pin）、与 Core 验证 route 同形的 route 和 rmcp 3.1.2 的握手取得 initialize 与 tools/list；两次会话一致才写入 |
+| 发布声明 | `tools/release/release.yaml` 的 `operated`、`delivery.protocol_peers`、`env` | 运维域运行体、投递渲染位置（运行目录 `data/protocol-peers/`）、两个 `.env` 投递键、预算与删除 HTTP adapter 才有的两项一致性投递 |
+
+为什么不是 `mcp/everything`：Docker Hub 上官方 `mcp/everything` 只有一个 `latest`（`sha256:330885a0…`，2025-05-02，包版本 2025.4.25），
+只有 stdio 与 SSE，没有 streamable HTTP；Core 投影的 Gateway MCP target 是 streamable HTTP。npm 上官方包已有 streamable HTTP，但没有官方镜像。
+所选镜像是第三方对同一官方包的封装：镜像内 `server-everything/dist` 全部文件的 sha256 清单摘要 `f024a52b…`
+与 npm 官方 tarball 2026.1.14 解出的 `dist` 一致，镜像 `package-lock.json` 记录的 integrity 与 npm 的
+`sha512-UqOnsjMx…` 一致；运行时依赖 `@modelcontextprotocol/sdk` 1.25.3、Node 23.11.0。镜像的桥接入口不执行。
+这一版的加法工具名是 `get-sum`（旧版叫 `add`），因此只读工具是 `echo` 与 `get-sum`。
+
+记录结果（CI 节点，`938d5757` 的 GitHub 检出，`python3 -I deploy/local/protocol-peers/record-conformance.py --peer protocol-peer-reference --write`，退出 0）：
+
+- Gateway `127.0.0.1:55000/model-gateway@sha256:c2faf443…`，即运行中的 agentgateway pin；
+- 协议 `2025-11-25`，serverInfo `mcp-servers/everything` 2.0.0；两次会话的应答一致；
+- tools/list 12 个工具：echo、get-annotated-message、get-env、get-resource-links、get-resource-reference、get-structured-content、
+  get-sum、get-tiny-image、gzip-file-as-resource、toggle-simulated-logging、toggle-subscriber-updates、trigger-long-running-operation；
+  依赖客户端能力的三个工具不出现，因为 Core 的 client 声明空能力；
+- 结束后临时容器与网络回读为 0。记录文件 sha256 `3d66e564…`，在节点与提交中一致。
+- 健康检查命令另在同一镜像、同样加固参数下实测：无会话 `GET /mcp` 返回 400，检查退出 0，常驻内存约 29 MiB。
+
+发布时入口做的事（ADR-20 §10）：声明在 plan 阶段校验；deploy 把交付目录与一致性环境写到运行目录 `data/protocol-peers/`
+（交付目录保留已有 `adapters` 条目），按固定引用创建 `protocol-peer-reference` 并回读健康，再因声明摘要首次出现经
+`start-core.sh --no-build` 重建 Core（Worker 随一致性投递由该入口重建），回读成功后记下摘要；verify 回读运行体与投递。
+
+合并并发布后，生产上按 DD-134(5) 走完全链路：
+
+1. 平台管理员在网关管理区 MCP 向导选 `protocol-peer-reference` → 受控探测 → 为 `echo`、`get-sum` 登记能力契约
+   （`capability_contract.register`，由 `kailo-platform-approver` 批准；契约向量只用这两个工具，`inputJson`/`expectedOutputJson`
+   取确定值；单段文本结果按 `application_binding_peer::result_value` 比较为 JSON 字符串，例如 `{"message":"kailo"}` → `"Echo: kailo"`、`{"a":2,"b":3}` → `"The sum of 2 and 3 is 5."`）→ 生成 `PROTOCOL_PEER`
+   manifest（`adapterBuildRef` = `eae11f4b…`）并 `component_release.register`（一致性套件读本节的环境）→ `component_release.approve`
+   由第二位平台管理员批准。
+2. 业务 Tenant 管理员生成 binding 草稿；把草稿给出的条目原样加入 `directory.json` 的 `bindings`，提交、合并、再次发布
+   （入口因声明变化只重建 Core）；然后在向导中建立连接，工具出现后做测试调用。
+3. 其后的 `resource.create`、Installation 升级、委托授予与频道内 @ Agent 调用沿第 3 节第 5、6 步。
+
+每次换 peer 镜像或 Gateway 镜像后，在 CI 节点以待发布 commit 的检出重新运行记录脚本并提交结果；未重新记录时登记会失败，不会放行。
