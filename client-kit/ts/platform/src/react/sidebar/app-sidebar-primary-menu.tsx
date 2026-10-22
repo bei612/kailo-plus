@@ -2,7 +2,7 @@
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
 import { PlatformNavigation, type PlatformNavigationSection as PlatformSection } from "../navigation";
-import { Activity, ChartColumn, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Receipt, Users, Zap } from "lucide-react";
+import { Activity, ChartColumn, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Network, Receipt, Users, Zap } from "lucide-react";
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
 import { SidebarMenuLabel } from "./sidebar-menu-label";
 import type { ReactNode } from "react";
@@ -20,6 +20,7 @@ const PLATFORM_SECTION_ICON = {
   approvals: <ClipboardCheck className="h-4 w-4" />,
   usage: <Receipt className="h-4 w-4" />,
   operations: <ChartColumn className="h-4 w-4" />,
+  gateway: <Network className="h-4 w-4" />,
   audit: <History className="h-4 w-4" />,
   devices: <MonitorSmartphone className="h-4 w-4" />,
 } satisfies Record<PlatformSection, unknown>;

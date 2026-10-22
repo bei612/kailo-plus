@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ComponentType, ReactNode } from "react";
 import { FeatureGate } from "./features";
+import { GatewayEntryGate } from "./gateway-entry";
 import {
   type PlatformLocale,
   type PlatformMessageKey,
@@ -17,6 +18,7 @@ export const platformNavigationSections = [
   "approvals",
   "usage",
   "operations",
+  "gateway",
   "audit",
   "devices",
 ] as const;
@@ -34,6 +36,7 @@ const sectionLabel: Record<PlatformNavigationSection, PlatformMessageKey> = {
   approvals: "platform.tab.approvals",
   usage: "platform.tab.usage",
   operations: "platform.tab.operations",
+  gateway: "platform.tab.gateway",
   audit: "platform.tab.audit",
   devices: "platform.tab.devices",
 };
@@ -65,6 +68,10 @@ function NavigationButton({
   );
 }
 
+function PassThrough({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
 /** Released platform destinations; host-native rows remain with the host. */
 export function PlatformNavigation({
   locale,
@@ -90,8 +97,10 @@ export function PlatformNavigation({
       {firstRow}
       {platformNavigationSections.map((section) => {
         const label = translate(locale, sectionLabel[section]);
+        // DD-134(2)：网关入口只在本会话至少一个网关分区可用时出现；授权仍在 BFF。
+        const Gate = section === "gateway" ? GatewayEntryGate : PassThrough;
         return (
-          <FeatureGate key={section} feature={section}><li
+          <FeatureGate key={section} feature={section}><Gate><li
             className="group/menu-item relative"
             data-sidebar="menu-item"
             key={section}
@@ -120,7 +129,7 @@ export function PlatformNavigation({
                 </span>
               </span>
             </ButtonComponent>
-          </li></FeatureGate>
+          </li></Gate></FeatureGate>
         );
       })}
     </ul>
