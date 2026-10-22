@@ -440,6 +440,13 @@ div {
                 postMessageOrigin = postMessageOrigin.substring(0, postMessageOrigin.length - 1);
             lang = config.editorConfig.lang;
 
+            // Kailo DD-132(7)③: the editor frame reads a stored theme choice before the
+            // URL one (common/main/lib/util/themeinit.js), so the launch theme is stored first.
+            var kailoLaunchTheme = queryParams.thm==="1" ? kailoThemes.light : (queryParams.thm==="2" ? kailoThemes.dark : undefined);
+            if (kailoLaunchTheme) {
+                try { window.localStorage.setItem('ui-theme-id', kailoLaunchTheme); } catch (e) {}
+            }
+
             startTime = Date.now();
             docEditor = new DocsAPI.DocEditor("iframeEditor", config);
 
