@@ -103,3 +103,17 @@
    DRAFT；`knowledge-adapter` 镜像在仓库中但未部署。
 
 在 1、2 由设计裁决之前，任何 Agent 都不能经 AgentGateway MCP 实际使用工具。
+
+## 6. 卡点复核（2026-10-21，只读实测 + 固定源码 `e6b791b78`）
+
+DD-122（10-17）与 DD-134（本次）之后逐条复核第 5 节：
+
+| 第 5 节卡点 | 现状 | 依据 |
+|---|---|---|
+| 1. AgentPrincipal 没有 Tool 的 discover/consume 来源 | 已解决 | DD-122(3)(5)：安装/升级授予时为 AgentPrincipal 写 `discoverer`、`consumer` 并复读（`agent_tool.rs` 的 `TOOL_RELATIONS`）；生产 `catalog.tool_binding` 有 2 行 `ACTIVE` |
+| 2. 原生 ToolDefinition 没有生产者 | 已解决 | DD-122(1)：部署引导按 Tenant 逐名登记（`tenant_bootstrap.rs` 的 PLATFORM_NATIVE 登记段）；生产 `catalog.tool_definition` 有 2 条 `PLATFORM_NATIVE`/`ACTIVE` |
+| 3. Catalog Tenant 只有一位管理员 | 已不成立 | 生产 Catalog Tenant 现有 2 名 `ACTIVE` HUMAN 成员（第二位为批准人账户）；其 admin 关系由 SpiceDB 权威持有，本次未读取 SpiceDB |
+| 4. 线上没有投递一致性候选配置 | 仍成立 | 生产 Core 容器没有 `COMPONENT_CONFORMANCE_*` 与 `APPLICATION_ADAPTER_DIRECTORY_FILE` 环境变量（只核对变量名）；`PROTOCOL_PEER` release 登记仍会在准入处 `CAPABILITY_BLOCKED`，binding 也找不到交付目录 |
+| 5. 知识检索 v1 503、v2 为 DRAFT | 与本链路无关，状态未变 | 生产 `knowledge@2` 仍为 `DRAFT` |
+
+另外两条现状：生产 `catalog.component_release` 只有 6 条 `executionConnector.mode=NONE` 的原生页面入口 release，没有任何 `PROTOCOL_PEER` 或 `REMOTE_ADAPTER` release；AgentGateway `agw_config_resources` 只有 `llm.*` 四类，request log 共 3552 条（10-03 至 10-21）。因此“真实外部 MCP”仍需：在运维域部署固定 digest 的 MCP 服务并写入交付目录与一致性环境（卡点 4），再按 DD-134 网关管理区的向导走契约、release、批准与连接。HUMAN 直接测试调用 `PROTOCOL_PEER` 工具在 `e6b791b78` 前不存在（`application_action::facts` 只接受 `REMOTE_ADAPTER`），由 DD-134(6) 补齐。
