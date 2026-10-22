@@ -174,7 +174,7 @@ describe("gateway writes only submit existing actions", () => {
     if (path === "/api/v1/gateway/tools") return { status: 200, body: { from: "x", to: "y", tools: [tool, native] } };
     if (path === "/api/v1/gateway/mcp/releases") return { status: 200, body: { releases: [] } };
     if (path === "/api/v1/gateway/stats") return { status: 200, body: stats("MODEL_ROUTE") };
-    if (request.method === "POST" && path === "/api/v1/actions") return write(request);
+    if (request.method === "POST" && (path === "/api/v1/actions" || path === "/api/v1/gateway/tool-test-calls")) return write(request);
     return { status: 503, body: undefined };
   });
 
@@ -203,9 +203,9 @@ describe("gateway writes only submit existing actions", () => {
       explicitConfirmation: true, applicationBindingId: tool.applicationBindingId, applicationBindingVersion: 3 } });
   });
 
-  it("submits a test call as the tool's own registered action with canonical input", async () => {
-    const { host, send } = await mount(toolRoutes(() => ({ status: 200, body: { actionKey: "time.convert@v1",
-      actionExecutionId: "a2", operationId: "o2", gateState: "ALLOWED", dispatchState: "DISPATCHED" } })));
+  it("submits a test call as the tool's own registered action and shows only the filtered result to the caller", async () => {
+    const { host, send } = await mount(toolRoutes(() => ({ status: 200, body: { submission: { actionKey: "time.convert@v1",
+      actionExecutionId: "a2", operationId: "o2", gateState: "ALLOWED", dispatchState: "DISPATCHED" }, resultJson: '{"target":"13:00"}' } })));
     await click(tab(host, "tools"));
     await click(button(host.querySelector("[data-testid=gateway-tool-row]") as HTMLElement, "Test call"));
     const input = host.querySelector<HTMLTextAreaElement>("[data-testid=gateway-tool-test] textarea")!;
@@ -213,10 +213,11 @@ describe("gateway writes only submit existing actions", () => {
     await click(button(host, "Review test call"));
     await click(button(host, "Submit governed request"));
     const [sent] = posts(send);
-    expect(sent).toMatchObject({ body: { actionKey: "time.convert@v1", resourceId: tool.testCall.targets[0]!.resourceId, resourceVersion: 4,
+    expect(sent).toMatchObject({ path: "/api/v1/gateway/tool-test-calls", body: { actionKey: "time.convert@v1", resourceId: tool.testCall.targets[0]!.resourceId, resourceVersion: 4,
       componentAction: { actionVersion: 1, inputJson: '{"time":"12:00"}', resultExposurePolicyId: tool.testCall.resultExposurePolicyId,
         resultExposurePolicyVersion: 2 } } });
     expect(host.querySelector("[data-testid=gateway-tool-test-result]")?.textContent).toContain("a2");
+    expect(host.querySelector("[data-testid=gateway-tool-test-output]")?.textContent).toContain('"target": "13:00"');
   });
 
   it("disables a model route through llm_route.disable with its exact version", async () => {

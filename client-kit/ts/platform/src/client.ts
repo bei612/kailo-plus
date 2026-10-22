@@ -124,6 +124,7 @@ import type {
   GatewayStats,
   GatewayStatsDimension,
   GatewayToolPage,
+  GatewayToolTestCallResult,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -538,6 +539,13 @@ export function createBffClient(transport: BffTransport) {
     /** 纯计算：生成需由运维加入交付目录的 binding 条目，不写任何状态。 */
     gatewayMcpBindingDraft: (body: GatewayMcpBindingDraftRequest) =>
       call<GatewayMcpBindingDraft>({ method: "POST", path: "/api/v1/gateway/mcp/binding-drafts", body }),
+    /**
+     * DD-134(6) 测试调用：以本人提交该工具登记的 ActionDefinition（componentAction 语义命令），
+     * 准入、审批、额度与审计在服务端；结果只在本次回应按冻结的暴露策略返回，Core 不保存。
+     * 结果不明时以同一幂等键原样重发只重查原执行，不重放调用。
+     */
+    gatewayToolTestCall: (command: ActionCommand) =>
+      call<GatewayToolTestCallResult>({ method: "POST", path: "/api/v1/gateway/tool-test-calls", body: command }),
     gatewayConfig: () => get<GatewayConfigView>("/api/v1/platform/gateway/config", true),
     gatewayConfigHistory: (kind: string, id: string) =>
       get<GatewayConfigHistory>(`/api/v1/platform/gateway/config/history${gatewayQuery({ kind, id })}`, true),

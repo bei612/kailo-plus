@@ -43,8 +43,11 @@ function validReceipt(intent: ActionCommand, result: ActionSubmission, previous:
 export type GatewayAction = ReturnType<typeof useGatewayAction>;
 
 /** 一项受治理写入的冻结意图与回执。onSettled 在确定回执后触发（用于重读列表）。 */
-export function useGatewayAction(onSettled?: (command: ActionCommand, submission: ActionSubmission) => void) {
+export function useGatewayAction(onSettled?: (command: ActionCommand, submission: ActionSubmission) => void,
+  submitter?: (command: ActionCommand) => Promise<ActionSubmission>) {
   const client = useBffClient();
+  const send = useRef(submitter);
+  send.current = submitter;
   const t = useT();
   const [intent, setIntent] = useState<ActionCommand | null>(null);
   const [warning, setWarning] = useState<PlatformMessageKey | null>(null);
@@ -76,7 +79,7 @@ export function useGatewayAction(onSettled?: (command: ActionCommand, submission
     sending.current = true; setBusy(true);
     const frozen = intent;
     try {
-      const result = await client.submitAction(frozen);
+      const result = await (send.current ?? client.submitAction)(frozen);
       if (!validReceipt(frozen, result, submission)) throw new TransportError(t("platform.loadFailed"));
       if (!mounted.current) return;
       setSubmission(result); setFailure(null);

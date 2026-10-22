@@ -4561,6 +4561,8 @@ export const platformMessages = {
   "gateway.tools.input": { en: "Input (JSON)", "zh-CN": "输入（JSON）" },
   "gateway.tools.invalidInput": { en: "Choose a target and enter a JSON object. Nothing was submitted.", "zh-CN": "请选择目标并输入 JSON 对象；尚未提交。" },
   "gateway.tools.testPrepare": { en: "Review test call", "zh-CN": "核对测试调用" },
+  "gateway.tools.toolError": { en: "The tool returned an error result; its body is not shown.", "zh-CN": "工具返回了错误结果，正文不予展示。" },
+  "gateway.tools.resultExplain": { en: "Result filtered by the action's exposure policy, shown only to you and not stored by the platform.", "zh-CN": "按该动作暴露策略过滤后的结果，只给你本人查看，平台不保存。" },
   "gateway.tools.testWarning": { en: "This submits the tool's registered action as you. It is admitted and audited like any other call.", "zh-CN": "这会以你本人身份提交该工具登记的动作，与其他调用一样经过准入并记审计。" },
   "gateway.routes.title": { en: "Model routes", "zh-CN": "模型路由" },
   "gateway.routes.explain": { en: "Governed model routes of this organization with usage in the window. Provider credentials stay in the gateway and are never shown.", "zh-CN": "本组织受治理的模型路由及时间窗内的用量。提供方凭据只在网关内，从不显示。" },

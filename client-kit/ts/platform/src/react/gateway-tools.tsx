@@ -8,10 +8,12 @@ import {
   ApplicationBindingState,
   type GatewayToolPage,
   type GatewayToolTestCall,
+  type GatewayToolTestCallResult,
   type GatewayToolView,
 } from "@client-kit/contracts";
 import { useState } from "react";
 import { canonicalJson } from "../gateway-drafts";
+import { TransportError } from "../transport";
 import { useBffClient, useT } from "./context";
 import { GatewayActionPanel, useGatewayAction } from "./gateway-action";
 import { GatewayLoad, GatewaySection, useDuration, useNumber } from "./gateway-shared";
@@ -38,7 +40,14 @@ export function inputSkeleton(schemaJson: string): string {
 
 function TestCall({ tool, testCall, onClose }: { tool: GatewayToolView; testCall: GatewayToolTestCall; onClose: () => void }) {
   const t = useT();
-  const action = useGatewayAction();
+  const client = useBffClient();
+  const [outcome, setOutcome] = useState<GatewayToolTestCallResult | null>(null);
+  const action = useGatewayAction(undefined, async (command) => {
+    const reply = await client.gatewayToolTestCall(command);
+    if (!reply || !reply.submission) throw new TransportError(t("platform.loadFailed"));
+    setOutcome(reply);
+    return reply.submission;
+  });
   const [target, setTarget] = useState(testCall.targets[0]?.resourceId ?? "");
   const [input, setInput] = useState(() => inputSkeleton(testCall.inputSchemaJson));
   const [invalid, setInvalid] = useState(false);
@@ -82,16 +91,29 @@ function TestCall({ tool, testCall, onClose }: { tool: GatewayToolView; testCall
         {!action.frozen ? <Button onClick={onClose}>{t("platform.cancel")}</Button> : null}
       </div>
     </>}
-    <TestCallResult action={action} />
+    <TestCallResult action={action} outcome={outcome} />
   </div>;
 }
 
 /**
- * 测试调用的结果呈现：当前只呈现准入与派发回执，并经任务详情读取该次执行；结果正文的读取
- * 只按该动作冻结的暴露策略、只对发起人开放，由服务端决定是否可读。
+ * 测试调用的结果：回执经共用面板呈现（可打开任务）；结果正文只在本次回应中、按该动作冻结的
+ * 暴露策略过滤后给发起人本人，Core 不保存；原生工具报错只显示“工具返回错误”，不含正文。
  */
-export function TestCallResult({ action }: { action: ReturnType<typeof useGatewayAction> }) {
-  return <GatewayActionPanel action={action} testId="gateway-tool-test-result" />;
+export function TestCallResult({ action, outcome }: { action: ReturnType<typeof useGatewayAction>; outcome: GatewayToolTestCallResult | null }) {
+  const t = useT();
+  const current = outcome && action.submission && outcome.submission.actionExecutionId === action.submission.actionExecutionId ? outcome : null;
+  return <div className="flex flex-col gap-2">
+    <GatewayActionPanel action={action} testId="gateway-tool-test-result" />
+    {current?.toolError ? <p role="alert" className="text-sm">{t("gateway.tools.toolError")}</p> : null}
+    {current?.resultJson !== undefined ? <div className="flex flex-col gap-1" data-testid="gateway-tool-test-output">
+      <p className="text-xs text-muted-foreground">{t("gateway.tools.resultExplain")}</p>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border p-2 font-mono text-xs">{pretty(current.resultJson)}</pre>
+    </div> : null}
+  </div>;
+}
+
+function pretty(json: string): string {
+  try { return JSON.stringify(JSON.parse(json), null, 2); } catch { return json; }
 }
 
 export function ToolsSection({ from, to }: { from: string; to: string }) {
