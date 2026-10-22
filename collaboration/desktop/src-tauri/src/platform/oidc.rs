@@ -50,12 +50,19 @@ struct Discovery {
     /// 本机无法让 IdP 作废刷新令牌，注销只能如实报告未确认。
     #[serde(default)]
     revocation_endpoint: Option<String>,
+    /// OIDC RP-Initiated Logout 端点。IdP 不公布时无法结束 WebView 中的 IdP 会话，
+    /// 退出只能如实报告未确认（DD-133(6)、`.design/07` §4.7.5「Desktop」）。
+    #[serde(default)]
+    end_session_endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
+    /// 只在原生认证窗口的登录中使用：作为 WebView IdP 会话的退出提示保存。
+    #[serde(default)]
+    pub id_token: Option<String>,
 }
 
 /// 进行中的登录。只允许一个：新的一次会取消上一次。
@@ -226,6 +233,166 @@ pub(crate) async fn sign_in(
     }
 }
 
+/// 原生认证窗口的回调地址（DD-133(6)、`.design/07` §4.7.5「Desktop」）。窗口导航
+/// 到它时被拦截，从不加载、也不在本机监听；原生 client 的 `http://127.0.0.1/*`
+/// 回调登记已覆盖它。
+pub(crate) const EMBEDDED_SIGN_IN_REDIRECT: &str = "http://127.0.0.1/kailo/embedded-sign-in";
+/// RP-Initiated Logout 的回跳地址，同样只被拦截；原生 client 把它登记为
+/// `post.logout.redirect.uris`。到达它是 IdP 已结束会话的唯一确认。
+pub(crate) const SIGNED_OUT_REDIRECT: &str = "http://127.0.0.1/kailo/signed-out";
+
+/// 一次进行中的窗口内授权：授权地址交给窗口，其余留在 Rust 侧。
+pub(crate) struct EmbeddedAuthorization {
+    pub url: Url,
+    state: String,
+    verifier: String,
+    token_endpoint: String,
+}
+
+/// 地址恰为某个被拦截的回环地址（http、127.0.0.1、无端口、同一路径）。
+fn is_redirect(url: &Url, redirect: &str) -> bool {
+    let Ok(expected) = Url::parse(redirect) else {
+        return false;
+    };
+    url.scheme() == expected.scheme()
+        && url.host_str() == expected.host_str()
+        && url.port() == expected.port()
+        && url.path() == expected.path()
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
+/// 以原生 public client 在应用 WebView 中登录：PKCE S256、`state`、`scope=openid`，
+/// 回调是被拦截的 [`EMBEDDED_SIGN_IN_REDIRECT`]。授权端点必须在 issuer origin 上，
+/// 因为窗口只允许导航到那里。
+pub(crate) async fn embedded_authorization(
+    http: &reqwest::Client,
+    cfg: &PlatformConfig,
+) -> Result<EmbeddedAuthorization, String> {
+    let endpoints = discover(http, cfg).await.map_err(|e| e.to_string())?;
+    let issuer = Url::parse(&cfg.oidc_issuer).map_err(|e| format!("issuer 无效：{e}"))?;
+    let mut url =
+        Url::parse(&endpoints.authorization_endpoint).map_err(|e| format!("授权端点无效：{e}"))?;
+    if url.origin() != issuer.origin() {
+        return Err("授权端点不在 issuer origin 上".to_owned());
+    }
+    let (verifier, challenge) = pkce()?;
+    let state = random_b64(16)?;
+    url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", &cfg.oidc_client_id)
+        .append_pair("redirect_uri", EMBEDDED_SIGN_IN_REDIRECT)
+        .append_pair("scope", "openid")
+        .append_pair("state", &state)
+        .append_pair("code_challenge", &challenge)
+        .append_pair("code_challenge_method", "S256");
+    Ok(EmbeddedAuthorization {
+        url,
+        state,
+        verifier,
+        token_endpoint: endpoints.token_endpoint,
+    })
+}
+
+impl EmbeddedAuthorization {
+    /// 一次窗口导航是否是本次授权的回调：不是返回 `None`；是则返回授权码，或在
+    /// `state` 不符、IdP 报错、缺授权码时返回失败（不回显 IdP 的诊断文本）。
+    pub(crate) fn callback(&self, url: &Url) -> Option<Result<String, String>> {
+        if !is_redirect(url, EMBEDDED_SIGN_IN_REDIRECT) {
+            return None;
+        }
+        let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+        if query.get("state") != Some(&self.state) {
+            return Some(Err("PLATFORM_NATIVE_PAGE_STATE_MISMATCH".to_owned()));
+        }
+        Some(
+            query
+                .get("code")
+                .filter(|code| !code.is_empty())
+                .cloned()
+                .ok_or_else(|| "PLATFORM_NATIVE_PAGE_SIGN_IN_FAILED".to_owned()),
+        )
+    }
+
+    /// 换取令牌，只交回 ID token。访问令牌与刷新令牌随返回值丢弃，不撤销：
+    /// 撤销刷新令牌会在会话中没有其他 client 时让 IdP 删除整个用户会话。
+    pub(crate) async fn exchange(
+        &self,
+        http: &reqwest::Client,
+        cfg: &PlatformConfig,
+        code: &str,
+    ) -> Result<String, String> {
+        let tokens = token_request(
+            http,
+            &self.token_endpoint,
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", EMBEDDED_SIGN_IN_REDIRECT),
+                ("client_id", &cfg.oidc_client_id),
+                ("code_verifier", &self.verifier),
+            ],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        tokens
+            .id_token
+            .filter(|token| !token.is_empty())
+            .ok_or_else(|| "令牌响应缺 id_token".to_owned())
+    }
+}
+
+/// RP-Initiated Logout 地址：`end_session_endpoint` 带 `id_token_hint`、`client_id`
+/// 与被拦截的 [`SIGNED_OUT_REDIRECT`]。端点必须公布且在 issuer origin 上。
+pub(crate) async fn end_session_url(
+    http: &reqwest::Client,
+    cfg: &PlatformConfig,
+    id_token_hint: &str,
+) -> Result<Url, String> {
+    let endpoints = discover(http, cfg).await.map_err(|e| e.to_string())?;
+    let issuer = Url::parse(&cfg.oidc_issuer).map_err(|e| format!("issuer 无效：{e}"))?;
+    let mut url = Url::parse(
+        endpoints
+            .end_session_endpoint
+            .as_deref()
+            .ok_or("IdP 未公布 end_session_endpoint")?,
+    )
+    .map_err(|e| format!("end_session_endpoint 无效：{e}"))?;
+    if url.origin() != issuer.origin() {
+        return Err("end_session_endpoint 不在 issuer origin 上".to_owned());
+    }
+    url.query_pairs_mut()
+        .append_pair("id_token_hint", id_token_hint)
+        .append_pair("client_id", &cfg.oidc_client_id)
+        .append_pair("post_logout_redirect_uri", SIGNED_OUT_REDIRECT);
+    Ok(url)
+}
+
+/// 退出窗口里一次导航的判定。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum LogoutNavigation {
+    /// issuer origin 上的中间页，放行
+    Continue,
+    /// 到达被拦截的回跳地址：IdP 已结束会话
+    Confirmed,
+    /// 其他任何地址：不加载，退出未确认
+    Rejected,
+}
+
+pub(crate) fn logout_navigation(url: &Url, issuer_origin: &url::Origin) -> LogoutNavigation {
+    if is_redirect(url, SIGNED_OUT_REDIRECT) {
+        LogoutNavigation::Confirmed
+    } else if matches!(url.scheme(), "http" | "https")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && &url.origin() == issuer_origin
+    {
+        LogoutNavigation::Continue
+    } else {
+        LogoutNavigation::Rejected
+    }
+}
+
 /// 以刷新令牌换新的访问令牌。
 pub(crate) async fn refresh(
     http: &reqwest::Client,
@@ -364,5 +531,178 @@ mod tests {
         );
         assert_eq!(result.unwrap_err(), "登录已取消");
         drop(server);
+    }
+
+    /// 假 IdP：discovery 可选公布 end_session_endpoint，令牌端点记录表单并回固定令牌。
+    async fn fake_idp(
+        end_session: Option<&str>,
+        token_body: serde_json::Value,
+    ) -> (
+        PlatformConfig,
+        std::sync::Arc<Mutex<Vec<HashMap<String, String>>>>,
+        CallbackServer,
+    ) {
+        use axum::routing::post;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let forms = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let seen = forms.clone();
+        let mut doc = serde_json::json!({
+            "authorization_endpoint": format!("{base}/realm/auth"),
+            "token_endpoint": format!("{base}/realm/token"),
+        });
+        if let Some(path) = end_session {
+            doc["end_session_endpoint"] = if path.starts_with("http") {
+                serde_json::json!(path)
+            } else {
+                serde_json::json!(format!("{base}{path}"))
+            };
+        }
+        let router = Router::new()
+            .route(
+                "/realm/.well-known/openid-configuration",
+                get(move || {
+                    let doc = doc.clone();
+                    async move { axum::Json(doc) }
+                }),
+            )
+            .route(
+                "/realm/token",
+                post(
+                    move |axum::extract::Form(form): axum::extract::Form<
+                        HashMap<String, String>,
+                    >| {
+                        let body = token_body.clone();
+                        seen.lock().unwrap().push(form);
+                        async move { axum::Json(body) }
+                    },
+                ),
+            );
+        let server = CallbackServer(tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap()
+        }));
+        let cfg = PlatformConfig {
+            native_api_url: base.clone(),
+            oidc_issuer: format!("{base}/realm"),
+            oidc_client_id: "native-client".into(),
+        };
+        (cfg, forms, server)
+    }
+
+    fn query(url: &Url) -> HashMap<String, String> {
+        url.query_pairs().into_owned().collect()
+    }
+
+    #[tokio::test]
+    async fn embedded_sign_in_uses_the_intercepted_loopback_and_keeps_only_the_id_token() {
+        let (cfg, forms, _server) = fake_idp(
+            None,
+            serde_json::json!({"access_token":"dropped-access","refresh_token":"dropped-refresh","id_token":"hint-1"}),
+        )
+        .await;
+        let http = reqwest::Client::new();
+        let authorization = embedded_authorization(&http, &cfg).await.unwrap();
+        let params = query(&authorization.url);
+        assert_eq!(params["redirect_uri"], EMBEDDED_SIGN_IN_REDIRECT);
+        assert_eq!(params["client_id"], "native-client");
+        assert_eq!(params["scope"], "openid");
+        assert_eq!(params["code_challenge_method"], "S256");
+        let state = params["state"].clone();
+
+        // 不是回调：交给导航白名单判断
+        for other in [
+            "http://127.0.0.1:8080/kailo/embedded-sign-in?code=c",
+            "http://127.0.0.1/kailo/other?code=c",
+            "https://127.0.0.1/kailo/embedded-sign-in?code=c",
+            "http://localhost/kailo/embedded-sign-in?code=c",
+        ] {
+            assert!(
+                authorization
+                    .callback(&Url::parse(other).unwrap())
+                    .is_none(),
+                "{other}"
+            );
+        }
+        let at = |q: &str| Url::parse(&format!("{EMBEDDED_SIGN_IN_REDIRECT}?{q}")).unwrap();
+        assert!(authorization
+            .callback(&at("state=forged&code=c"))
+            .unwrap()
+            .is_err());
+        assert!(authorization
+            .callback(&at(&format!(
+                "state={state}&error=login_required&error_description=private"
+            )))
+            .unwrap()
+            .is_err_and(|e| !e.contains("private")));
+        let code = authorization
+            .callback(&at(&format!("state={state}&code=the-code&iss=x")))
+            .unwrap()
+            .unwrap();
+        assert_eq!(code, "the-code");
+
+        let hint = authorization.exchange(&http, &cfg, &code).await.unwrap();
+        assert_eq!(hint, "hint-1", "只交回 ID token");
+        let form = &forms.lock().unwrap()[0];
+        assert_eq!(form["grant_type"], "authorization_code");
+        assert_eq!(form["redirect_uri"], EMBEDDED_SIGN_IN_REDIRECT);
+        assert_eq!(form["code"], "the-code");
+        assert!(!form["code_verifier"].is_empty());
+    }
+
+    #[tokio::test]
+    async fn embedded_sign_in_without_an_id_token_is_a_failure() {
+        let (cfg, _, _server) = fake_idp(
+            None,
+            serde_json::json!({"access_token":"a","refresh_token":"r"}),
+        )
+        .await;
+        let http = reqwest::Client::new();
+        let authorization = embedded_authorization(&http, &cfg).await.unwrap();
+        assert!(authorization.exchange(&http, &cfg, "c").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn end_session_url_carries_the_hint_and_the_intercepted_return() {
+        let (cfg, _, _server) = fake_idp(Some("/realm/logout"), serde_json::json!({})).await;
+        let http = reqwest::Client::new();
+        let url = end_session_url(&http, &cfg, "hint-1").await.unwrap();
+        assert_eq!(url.path(), "/realm/logout");
+        let params = query(&url);
+        assert_eq!(params["id_token_hint"], "hint-1");
+        assert_eq!(params["client_id"], "native-client");
+        assert_eq!(params["post_logout_redirect_uri"], SIGNED_OUT_REDIRECT);
+
+        let (missing, _, _server) = fake_idp(None, serde_json::json!({})).await;
+        assert!(end_session_url(&http, &missing, "hint-1").await.is_err());
+        let (elsewhere, _, _server) =
+            fake_idp(Some("https://other.example/logout"), serde_json::json!({})).await;
+        assert!(end_session_url(&http, &elsewhere, "hint-1").await.is_err());
+    }
+
+    #[test]
+    fn logout_navigation_confirms_only_the_intercepted_return() {
+        let issuer = Url::parse("https://idp.example/realms/k").unwrap().origin();
+        let judge = |u: &str| logout_navigation(&Url::parse(u).unwrap(), &issuer);
+        assert_eq!(
+            judge("https://idp.example/realms/k/protocol/openid-connect/logout"),
+            LogoutNavigation::Continue
+        );
+        assert_eq!(
+            judge("http://127.0.0.1/kailo/signed-out"),
+            LogoutNavigation::Confirmed
+        );
+        assert_eq!(
+            judge("http://127.0.0.1/kailo/signed-out?state=x"),
+            LogoutNavigation::Confirmed
+        );
+        for rejected in [
+            "http://127.0.0.1:9/kailo/signed-out",
+            "http://127.0.0.1/kailo/embedded-sign-in",
+            "https://other.example/",
+            "https://user:pw@idp.example/",
+            "data:text/html,x",
+        ] {
+            assert_eq!(judge(rejected), LogoutNavigation::Rejected, "{rejected}");
+        }
     }
 }

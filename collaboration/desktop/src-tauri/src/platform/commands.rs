@@ -73,8 +73,10 @@ pub(crate) fn platform_cancel_sign_in(session: State<'_, NativeSession>) -> Resu
 }
 
 /// 注销：先丢弃本机令牌，再以原凭据快照撤销 Core 的 PlatformSession 和 IdP
-/// 刷新令牌（[`NativeSession::end_session`]）。服务端未确认不阻止本机退出——本机
-/// 不再持有它才是用户要的结果——但如实返回给前端，由它说明服务端未确认。
+/// 刷新令牌，最后以不可见窗口结束应用 WebView 中的 IdP 会话
+/// （[`NativeSession::end_session`]、`.design/07` §4.7.5「Desktop」）。服务端未确认不
+/// 阻止本机退出——本机不再持有它才是用户要的结果——但如实返回给前端，由它说明
+/// 服务端未确认。
 #[tauri::command]
 pub(crate) async fn platform_sign_out(
     app: AppHandle,
@@ -84,11 +86,15 @@ pub(crate) async fn platform_sign_out(
     super::native_auth::close_all(&app);
     match require_config(&app) {
         Ok(cfg) => {
-            let report = session.end_session(&state.http_client, &cfg).await?;
+            let browser = super::native_auth::WindowLogoutBrowser::new(&app, &cfg);
+            let report = session
+                .end_session(&state.http_client, &cfg, &browser)
+                .await?;
             if report
                 != (SignOutReport {
                     core_session_revoked: true,
                     refresh_token_revoked: true,
+                    embedded_idp_session_ended: true,
                 })
             {
                 eprintln!("platform: 服务端未确认注销：{report:?}");
@@ -98,11 +104,12 @@ pub(crate) async fn platform_sign_out(
         Err(_) => {
             // 没有部署配置就到不了任何服务端：本机若还持有凭据，服务端未确认
             let held = session.has_credentials();
-            session.sign_out().await?;
+            let hint_held = session.sign_out().await?;
             let held = held.unwrap_or(true);
             Ok(SignOutReport {
                 core_session_revoked: !held,
                 refresh_token_revoked: !held,
+                embedded_idp_session_ended: !hint_held,
             })
         }
     }

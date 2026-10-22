@@ -219,9 +219,14 @@ type PlatformMockOptions = {
   revoke?: PlatformReply;
   /**
    * What `platform_sign_out` reports about the server side (Core session
-   * revocation, IdP refresh-token revocation). Defaults to both confirmed.
+   * revocation, IdP refresh-token revocation, WebView IdP session end).
+   * Defaults to all confirmed.
    */
-  signOut?: { coreSessionRevoked: boolean; refreshTokenRevoked: boolean };
+  signOut?: {
+    coreSessionRevoked: boolean;
+    refreshTokenRevoked: boolean;
+    embeddedIdpSessionEnded: boolean;
+  };
   workspaces?: Array<{ id: string; name: string; slug: string }>;
   members?: unknown[];
   audit?: unknown[];
@@ -2298,6 +2303,7 @@ async function handlePlatformCommand(
         options?.signOut ?? {
           coreSessionRevoked: true,
           refreshTokenRevoked: true,
+          embeddedIdpSessionEnded: true,
         }
       );
     case "platform_register_device": {

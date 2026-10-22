@@ -351,10 +351,14 @@ export function NativeBootstrap({
       return;
     }
     if (flow.current !== epoch) return;
-    // 本机已退出；服务器没有两项都确认时如实说明，登录会按有效期自行失效
+    // 本机已退出；服务器没有三项都确认时如实说明，登录会按有效期自行失效
     setStep({
       kind: "signIn",
-      signOutUnconfirmed: !(report.coreSessionRevoked && report.refreshTokenRevoked),
+      signOutUnconfirmed: !(
+        report.coreSessionRevoked &&
+        report.refreshTokenRevoked &&
+        report.embeddedIdpSessionEnded
+      ),
     });
   }, [host, invalidateFlow]);
 

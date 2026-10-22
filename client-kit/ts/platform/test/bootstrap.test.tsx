@@ -196,7 +196,7 @@ describe("NativeBootstrap", () => {
       platform_get_config: () => ({}),
       platform_status: () => ({ configured: true, signedIn: true }),
       platform_sign_in: () => {},
-      platform_sign_out: () => ({ coreSessionRevoked: true, refreshTokenRevoked: true }),
+      platform_sign_out: () => ({ coreSessionRevoked: true, refreshTokenRevoked: true, embeddedIdpSessionEnded: true }),
       platform_register_device: () => ({ status: 200, body: { pubkey: PUBKEY, state: "ACTIVE" } }),
       platform_api: api({
         "GET /api/v1/session": () => ({ status: 200, body: { accessMode: "FULL" } }),
@@ -463,11 +463,14 @@ describe("NativeBootstrap", () => {
     expect(again.querySelector("h1")?.textContent).toBe("Sign in");
   });
 
-  // 服务器侧结果：两项都确认才不提示；任一未确认或返回值畸形一律提示（fail closed）
+  // 服务器侧结果：三项都确认才不提示；任一未确认或返回值畸形一律提示（fail closed）
+  const confirmed = { coreSessionRevoked: true, refreshTokenRevoked: true, embeddedIdpSessionEnded: true };
   it.each([
-    ["两项都确认", { coreSessionRevoked: true, refreshTokenRevoked: true }, false],
-    ["Core 未确认", { coreSessionRevoked: false, refreshTokenRevoked: true }, true],
-    ["IdP 未确认", { coreSessionRevoked: true, refreshTokenRevoked: false }, true],
+    ["三项都确认", confirmed, false],
+    ["Core 未确认", { ...confirmed, coreSessionRevoked: false }, true],
+    ["IdP 未确认", { ...confirmed, refreshTokenRevoked: false }, true],
+    ["WebView IdP 会话未确认结束", { ...confirmed, embeddedIdpSessionEnded: false }, true],
+    ["旧形状缺 WebView 字段", { coreSessionRevoked: true, refreshTokenRevoked: true }, true],
     ["返回 null", null, true],
     ["返回非对象", "ok", true],
     ["字段不是布尔值", { coreSessionRevoked: "true", refreshTokenRevoked: 1 }, true],

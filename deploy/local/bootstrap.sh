@@ -491,7 +491,7 @@ KEYS = ("redirectUris", "webOrigins", "attributes")
 
 def same(current, desired):
     # Keycloak 把回调与来源当作集合保存，返回顺序不保证与导入顺序一致。属性只核对
-    # 模板声明的键（浏览器客户端的 post.logout.redirect.uris，DD-133(6)），其余属性不读不写。
+    # 模板声明的键（浏览器客户端与原生客户端的 post.logout.redirect.uris，DD-133(6)），其余属性不读不写。
     for k, v in desired.items():
         if k == "attributes":
             actual = current.get(k) or {}
