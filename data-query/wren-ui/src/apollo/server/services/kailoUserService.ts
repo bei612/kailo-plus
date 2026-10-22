@@ -11,14 +11,15 @@ import {
 import { isGovernedQueryMode } from './nativeQueryMode';
 import { create, GeneralErrorCodes } from '../utils/error';
 
-// DD-133 §3 role mapping of this dedicated instance:
+// DD-133 §3/(4) role mapping of this dedicated instance (`07` §4.7.4):
 //   Kailo Tenant admin  -> Wren admin  (modeling, connection, project settings,
 //                                       knowledge and dashboard changes)
 //   Kailo Tenant member -> Wren member (asking, own threads, reading)
-// GOVERNED: the Core binding permission is the authority (`manage` = admin,
-// `discover` = member) and the existing resolver wrappers enforce it.
-// STANDALONE: the signed admin entitlement of the component token decides
-// (middleware `admin`); without it a user is a member.
+// Roles come only from Core. GOVERNED: the binding permission (`manage` =
+// admin, `discover` = member) checked by the existing resolver wrappers.
+// STANDALONE: the platform member directory's Tenant role once delivered;
+// until then every user is a member (`admin` is false) and no admin is
+// granted inside the component, never from IdP groups, e-mail or names.
 
 type RequestHeaders = { [name: string]: string | string[] | undefined };
 

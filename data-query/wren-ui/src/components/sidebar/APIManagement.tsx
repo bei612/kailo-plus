@@ -13,7 +13,7 @@ const Layout = styled.div`
   left: 0;
   top: 0;
   width: 100%;
-  background-color: var(--kailo-sidebar);
+  background-color: var(--kailo-color-sidebar-background);
   overflow: hidden;
 `;
 

@@ -1,6 +1,6 @@
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, webcrypto } from 'crypto';
 import { exportJWK, generateKeyPair, JWTPayload, SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { middleware } from './middleware';
@@ -12,9 +12,12 @@ import {
   kailoUserFromClaims,
 } from './utils/kailoUser';
 
+// The Edge runtime provides Web Crypto as a global; Node 18 under Jest does
+// not, so the same implementation is installed for these tests.
+if (!(globalThis as any).crypto?.subtle) (globalThis as any).crypto = webcrypto;
+
 // DD-133 §3: the verified component token is the only source of the Kailo
-// user (issuer+subject key, display claims) and, for a STANDALONE instance,
-// of the Wren admin entitlement.
+// user (issuer+subject key, display claims). Roles never come from IdP claims.
 describe('Kailo user forwarded by the native middleware', () => {
   let server: Server;
   let keys: Awaited<ReturnType<typeof generateKeyPair>>;
@@ -50,10 +53,7 @@ describe('Kailo user forwarded by the native middleware', () => {
   beforeEach(() => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     delete process.env.WREN_PLATFORM_BINDING_CONFIG_FILE;
-    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
-      ...settings,
-      adminValue: 'wren-instance#admin',
-    });
+    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify(settings);
   });
 
   afterAll(async () => {
@@ -104,6 +104,7 @@ describe('Kailo user forwarded by the native middleware', () => {
         name: '王 小明',
         preferred_username: 'xiaoming',
         email: 'xm@example.test',
+        email_verified: true,
         picture: 'https://kailo.example.test/avatar/xm.png',
         locale: 'zh_CN',
       }),
@@ -122,25 +123,18 @@ describe('Kailo user forwarded by the native middleware', () => {
     });
   });
 
-  test('the signed admin entitlement makes a Tenant admin a Wren admin', async () => {
+  test('IdP groups, roles or entitlement-like values never make an admin', async () => {
     const { user } = await forwarded(
       await sign({
         sub: randomUUID(),
         native_instances: ['wren-instance', 'wren-instance#admin'],
+        groups: ['/kailo/tenant-admins'],
+        realm_access: { roles: ['admin'] },
+        email: 'unverified@example.test',
+        email_verified: false,
       }),
     );
-    expect(decodeKailoUser(user)?.admin).toBe(true);
-  });
-
-  test('without a configured entitlement nobody is admin', async () => {
-    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify(settings);
-    const { user } = await forwarded(
-      await sign({
-        sub: randomUUID(),
-        native_instances: ['wren-instance', 'wren-instance#admin'],
-      }),
-    );
-    expect(decodeKailoUser(user)?.admin).toBe(false);
+    expect(decodeKailoUser(user)).toMatchObject({ admin: false, email: null });
   });
 
   test('browser-supplied user or service headers never pass through', async () => {
@@ -188,26 +182,6 @@ describe('Kailo user forwarded by the native middleware', () => {
     );
     expect(user).toBeNull();
     expect(service).toBe('1');
-  });
-
-  test.each([
-    [{ adminClaim: 'native_roles' }],
-    [{ adminValue: 'wren-instance' }],
-    [{ adminValue: 'x', adminClaim: 'sub' }],
-    [{ adminValue: ' padded ' }],
-  ])('an ambiguous admin entitlement configuration fails closed: %j', async (extra) => {
-    process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify({
-      ...settings,
-      ...extra,
-    });
-    const response = await middleware(
-      new NextRequest(`${settings.publicOrigin}/home`, {
-        headers: {
-          authorization: `Bearer ${await sign({ sub: 'x', native_instances: 'wren-instance' })}`,
-        },
-      }),
-    );
-    expect(response.status).toBe(503);
   });
 });
 

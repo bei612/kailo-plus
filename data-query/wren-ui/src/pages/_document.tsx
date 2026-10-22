@@ -8,13 +8,12 @@ import Document, {
   DocumentInitialProps,
 } from 'next/document';
 import { ServerStyleSheet } from 'styled-components';
+import { kailoWebOrigins } from '@/utils/kailoOrigins';
 
-const themeBootstrap = `(function(){try{var t=new URLSearchParams(location.search).get('kailo_theme');t=t?t.toLowerCase():null;var d=t==='dark'||t==='buzz-dark'?'dark':t==='light'||t==='buzz'?'light':null;if(d){sessionStorage.setItem('kailo.theme',d)}else{d=sessionStorage.getItem('kailo.theme')==='dark'?'dark':'light'}var r=document.documentElement;r.classList.add(d);r.setAttribute('data-kailo-theme',d);r.style.colorScheme=d}catch(e){}})();`;
+type Props = DocumentInitialProps & { kailoWebOrigin: string };
 
-export default class AppDocument extends Document {
-  static async getInitialProps(
-    ctx: DocumentContext,
-  ): Promise<DocumentInitialProps> {
+export default class AppDocument extends Document<Props> {
+  static async getInitialProps(ctx: DocumentContext): Promise<Props> {
     const originalRenderPage = ctx.renderPage;
 
     const sheet = new ServerStyleSheet();
@@ -28,16 +27,27 @@ export default class AppDocument extends Document {
     const intialProps = await Document.getInitialProps(ctx);
     const styles = sheet.getStyleElement();
 
-    return { ...intialProps, styles };
+    // Rendered per request (App.getInitialProps), so this is the running
+    // deployment's value, never a build-time copy.
+    const kailoWebOrigin = kailoWebOrigins(
+      process.env.KAILO_FRAME_ANCESTORS,
+    ).join(' ');
+    return { ...intialProps, styles, kailoWebOrigin };
   }
 
   render() {
     return (
       <Html lang={this.props.locale === 'en' ? 'en' : 'zh-CN'}>
         <Head>
-          {/* DD-133 §4: apply the Kailo theme before first paint (same rule
-              as utils/kailoEmbed: URL kailo_theme, then this tab's last). */}
-          <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+          {/* DD-133 (`07` §4.7.1): Kailo origin, icon, tokens and runtime,
+              all served from this origin and ahead of the page's own styles
+              and scripts; the runtime applies the Kailo theme before paint. */}
+          <meta name="kailo-web-origin" content={this.props.kailoWebOrigin} />
+          <link rel="icon" type="image/png" href="/kailo/app-icon.png" />
+          {/* eslint-disable-next-line @next/next/no-css-tags */}
+          <link rel="stylesheet" href="/kailo/kailo-theme-tokens.css" />
+          {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+          <script src="/kailo/kailo-embed.js" />
           {this.props.styles}
         </Head>
         <body>

@@ -13,8 +13,8 @@ import useKailoText from '@/utils/kailoI18n';
 const Layout = styled.div`
   position: relative;
   height: 100%;
-  background-color: var(--kailo-sidebar);
-  color: var(--kailo-sidebar-fg);
+  background-color: var(--kailo-color-sidebar-background);
+  color: var(--kailo-color-sidebar-foreground);
   padding-bottom: 12px;
   overflow-x: hidden;
 `;
@@ -30,7 +30,7 @@ const StyledButton = styled(Button)`
   align-items: center;
   padding-left: 16px;
   padding-right: 16px;
-  color: var(--kailo-sidebar-fg) !important;
+  color: var(--kailo-color-sidebar-foreground) !important;
   border-radius: 0;
 
   &:hover,

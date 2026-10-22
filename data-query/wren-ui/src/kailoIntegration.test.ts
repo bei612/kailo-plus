@@ -1,3 +1,4 @@
+import { webcrypto } from 'crypto';
 import knex, { Knex } from 'knex';
 import originalResolvers from './apollo/server/resolvers';
 import { KailoUserRepository } from './apollo/server/repositories/kailoUserRepository';
@@ -15,13 +16,9 @@ import {
   KAILO_USER_HEADER,
 } from './utils/kailoUser';
 import {
-  applyTheme,
-  hostOrigin,
-  initialTheme,
-  parseLocale,
-  parseTheme,
-  readHostMessage,
+  presentation,
   renewNativeSession,
+  requireSignIn,
 } from './utils/kailoEmbed';
 import { kailoProductTitle, kailoText } from './utils/kailoI18n';
 
@@ -29,6 +26,9 @@ import { kailoProductTitle, kailoText } from './utils/kailoI18n';
 const migration = require('../migrations/20261021000000_kailo_user_ownership');
 
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+// Web Crypto is a global in the browser/Edge runtime, not under Node 18 Jest.
+if (!(globalThis as any).crypto?.subtle) (globalThis as any).crypto = webcrypto;
 
 const profile = (changes: Partial<KailoUserProfile> = {}): KailoUserProfile => ({
   key: 'a'.repeat(64),
@@ -97,7 +97,7 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
       'deleteDashboardItem',
     ])
       await expect(
-        (originalResolvers.Mutation as any)[field](undefined, {}, ctx, {}),
+        (originalResolvers.Mutation as any)[field](undefined, {}, ctx),
       ).rejects.toMatchObject({
         extensions: { code: GeneralErrorCodes.KAILO_ADMIN_REQUIRED },
       });
@@ -116,7 +116,7 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
       askingService,
     };
     await expect(
-      originalResolvers.Mutation.updateThread(undefined, args, other, {}),
+      (originalResolvers.Mutation as any).updateThread(undefined, args, other),
     ).rejects.toMatchObject({
       extensions: { code: GeneralErrorCodes.KAILO_ADMIN_REQUIRED },
     });
@@ -126,16 +126,12 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
 
   test('kailoSession reports the user, the role and the deployment name', async () => {
     const previous = process.env.PLATFORM_DISPLAY_NAME;
-    const ancestors = process.env.KAILO_FRAME_ANCESTORS;
     process.env.PLATFORM_DISPLAY_NAME = 'Kailo';
-    process.env.KAILO_FRAME_ANCESTORS =
-      'http://192.168.0.193:58090 https://kailo.example.test bad*origin';
     try {
-      const session = await originalResolvers.Query.kailoSession(
+      const session = await (originalResolvers.Query as any).kailoSession(
         undefined,
         {},
-        { kailoUser: profile({ admin: true, name: null }) } as any,
-        {} as any,
+        { kailoUser: profile({ admin: true, name: null }) },
       );
       expect(session).toEqual({
         user: {
@@ -147,13 +143,11 @@ describe('DD-133 role mapping on a STANDALONE instance', () => {
         },
         isAdmin: true,
         productName: 'Kailo',
-        hostOrigins: ['http://192.168.0.193:58090', 'https://kailo.example.test'],
+        identityLocale: null,
       });
     } finally {
       if (previous === undefined) delete process.env.PLATFORM_DISPLAY_NAME;
       else process.env.PLATFORM_DISPLAY_NAME = previous;
-      if (ancestors === undefined) delete process.env.KAILO_FRAME_ANCESTORS;
-      else process.env.KAILO_FRAME_ANCESTORS = ancestors;
     }
   });
 });
@@ -230,94 +224,37 @@ describe('Kailo users and ownership in the native database', () => {
 });
 
 describe('Kailo presentation bridge', () => {
-  test('theme and locale values follow the Kailo names only', () => {
-    expect(parseTheme('buzz-dark')).toBe('dark');
-    expect(parseTheme('LIGHT')).toBe('light');
-    expect(parseTheme('solarized')).toBeNull();
-    expect(parseLocale('en-US')).toBe('en');
-    expect(parseLocale('zh_CN')).toBe('zh-CN');
-    expect(parseLocale('fr')).toBeNull();
+  test('product naming follows the deployment name and the Kailo locale', () => {
     expect(kailoProductTitle('zh-CN', 'Kailo')).toBe('Kailo 问数');
     expect(kailoProductTitle('en', 'Kailo')).toBe('Kailo Data Q&A');
     expect(kailoProductTitle('en', '')).toBe(kailoText('en', 'componentName'));
   });
 
-  test('host messages are read only from the parent at an allowed Kailo origin', () => {
-    const parent = {};
-    const allowed = ['https://kailo.example.test'];
-    const message = { source: 'kailo-host', type: 'theme', theme: 'dark' };
-    expect(
-      readHostMessage(
-        { origin: allowed[0], source: parent as any, data: message },
-        allowed,
-        parent,
-      ),
-    ).toEqual({ type: 'theme', theme: 'dark' });
-    expect(
-      readHostMessage(
-        { origin: 'https://evil.example', source: parent as any, data: message },
-        allowed,
-        parent,
-      ),
-    ).toBeNull();
-    expect(
-      readHostMessage(
-        { origin: allowed[0], source: {} as any, data: message },
-        allowed,
-        parent,
-      ),
-    ).toBeNull();
-    expect(
-      readHostMessage(
-        {
-          origin: allowed[0],
-          source: parent as any,
-          data: { ...message, source: 'other' },
-        },
-        allowed,
-        parent,
-      ),
-    ).toBeNull();
-  });
-
   describe('in a browser frame', () => {
     const globals = global as any;
-    let storage: Record<string, string>;
     let frames: any[];
     let path: string | Error;
+    let runtime: any;
 
     beforeEach(() => {
-      storage = {};
       frames = [];
       path = '/kailo-embed/auth-ok';
-      const top = {};
+      runtime = {
+        getState: () => ({
+          theme: 'dark',
+          locale: 'en',
+          embedded: true,
+          hostConnected: true,
+        }),
+        requestTopLevelSignIn: jest.fn(() => true),
+      };
       globals.window = {
-        self: {},
-        top,
-        parent: top,
-        location: {
-          search: '',
-          ancestorOrigins: ['https://kailo.example.test'],
-        },
-        sessionStorage: {
-          getItem: (key: string) => storage[key] ?? null,
-          setItem: (key: string, value: string) => (storage[key] = value),
-        },
+        KailoEmbed: runtime,
+        location: { pathname: '/home', search: '?x=1', assign: jest.fn() },
         setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
         clearTimeout: (id: any) => clearTimeout(id),
       };
-      const classes = new Set<string>();
       globals.document = {
-        referrer: '',
-        documentElement: {
-          classList: {
-            toggle: (name: string, on: boolean) =>
-              on ? classes.add(name) : classes.delete(name),
-            contains: (name: string) => classes.has(name),
-          },
-          setAttribute: jest.fn(),
-          style: {},
-        },
         createElement: () => {
           const listeners: Record<string, () => void> = {};
           const frame: any = {
@@ -350,24 +287,15 @@ describe('Kailo presentation bridge', () => {
       delete globals.document;
     });
 
-    test('the URL theme wins and is kept for the tab; .dark follows it', () => {
-      expect(initialTheme('?kailo_theme=dark')).toBe('dark');
-      expect(storage['kailo.theme']).toBe('dark');
-      expect(initialTheme('')).toBe('dark');
-      applyTheme('light');
-      expect(
-        globals.document.documentElement.classList.contains('dark'),
-      ).toBe(false);
-      expect(
-        globals.document.documentElement.classList.contains('light'),
-      ).toBe(true);
-    });
-
-    test('the host origin must be an allowed Kailo origin', () => {
-      expect(hostOrigin(['https://kailo.example.test'])).toBe(
-        'https://kailo.example.test',
-      );
-      expect(hostOrigin(['https://other.example.test'])).toBeNull();
+    test('presentation is the kailo-embed.js state', () => {
+      expect(presentation()).toMatchObject({ theme: 'dark', locale: 'en' });
+      delete globals.window.KailoEmbed;
+      expect(presentation()).toEqual({
+        theme: 'light',
+        locale: 'zh-CN',
+        embedded: false,
+        hostConnected: false,
+      });
     });
 
     test('silent renewal succeeds only when the hidden frame lands on auth-ok', async () => {
@@ -383,6 +311,22 @@ describe('Kailo presentation bridge', () => {
       await expect(renewNativeSession(1000)).resolves.toBe(false);
       path = '/oauth/callback';
       await expect(renewNativeSession(1000)).resolves.toBe(false);
+    });
+
+    test('inside Kailo the host is asked (auth-required); at top level the IdP sign-in opens', () => {
+      requireSignIn();
+      expect(runtime.requestTopLevelSignIn).toHaveBeenCalledTimes(1);
+      expect(globals.window.location.assign).not.toHaveBeenCalled();
+      runtime.getState = () => ({
+        theme: 'light',
+        locale: 'zh-CN',
+        embedded: false,
+        hostConnected: false,
+      });
+      requireSignIn();
+      expect(globals.window.location.assign).toHaveBeenCalledWith(
+        '/auth/login?returnTo=%2Fhome%3Fx%3D1',
+      );
     });
   });
 });

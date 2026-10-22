@@ -3,26 +3,23 @@
 # OIDC creates its own encrypted HttpOnly browser cookie. Only its verified
 # component-specific ID token is forwarded on the private backend hop.
 #
-# DD-133 §2 (embedded single sign-on). The OIDC policy is attached to the
-# native UI route instead of the listener so that one static, credential-free
-# page can be served before authentication:
+# DD-133(2)/(6) (`.design/07` §4.7.2, §4.7.5). The OIDC policy is attached
+# to the native UI route instead of the listener so that one static,
+# credential-free page can be served before authentication:
 #   /kailo-embed/signin      login.redirect target. At top level it continues
 #                            to /auth/login. Inside the Kailo iframe it first
 #                            tries the existing IdP session in a hidden
 #                            same-origin frame (the IdP login page refuses to be
 #                            framed, so a missing session is detected without
-#                            showing it); when that fails it tells the Kailo
-#                            host (postMessage, exact Kailo origin only) so
-#                            Kailo signs in at top level; until then it offers
-#                            the IdP sign-in in a separate window.
+#                            ever showing it); when that fails it sends wire v1
+#                            {source:"kailo-embed",version:1,type:"auth-required"}
+#                            to the exact kailo-web-origin and Kailo signs in at
+#                            top level on the user's click.
 #   /kailo-embed/auth-ok     landing page of that hidden attempt.
-#   /kailo-embed/popup-done  end of the fallback sign-in window that the Kailo
-#                            frame sandbox allows (popups, not top navigation).
-#   /kailo-embed/return      for a host-initiated top-level sign-in
-#                            (/auth/login?returnTo=/kailo-embed/return?to=URL):
-#                            back to an exact KAILO_FRAME_ANCESTORS origin only.
-#   /kailo-embed/signed-out  logout.redirect target: tells the Kailo host, or at
-#                            top level continues to KAILO_LOGOUT_URL when set.
+#   /kailo-embed/signed-out  logout.redirect target; at top level it continues
+#                            to KAILO_LOGOUT_URL (the Kailo sign-out) when set.
+# /oauth/backchannel-logout receives the IdP's signed logout_token (form POST,
+# server to server) and ends that sid's (or that subject's) Gateway sessions.
 # The page receives no identity, cookie or upstream response. Its only script is
 # pinned by the CSP hash below; the configuration loader expands $-variables,
 # so the script deliberately contains no dollar sign.
@@ -60,17 +57,17 @@ binds:
                   cache-control: '"no-store"'
                   x-content-type-options: '"nosniff"'
                   referrer-policy: '"strict-origin-when-cross-origin"'
-                  content-security-policy: '"default-src ''none''; script-src ''sha256-IFbwOvxtf5ZuD+0re7SotALibsG6Rz1wimBqhkCgnOM=''; style-src ''unsafe-inline''; frame-src ''self'' ${WREN_OIDC_ISSUER}/; base-uri ''none''; form-action ''none''; frame-ancestors ''self'' ${KAILO_FRAME_ANCESTORS}"'
+                  content-security-policy: '"default-src ''none''; script-src ''sha256-wOvZzzIkWq1cjHWKHJXtniyjktiXDdSLVx1GxySolpk=''; style-src ''unsafe-inline''; frame-src ''self'' ${WREN_OIDC_ISSUER}/; base-uri ''none''; form-action ''none''; frame-ancestors ''self'' ${KAILO_FRAME_ANCESTORS}"'
                 body: |
                   <!doctype html>
                   <html lang="zh-CN">
                   <head>
                   <meta charset="utf-8">
                   <meta name="viewport" content="width=device-width,initial-scale=1">
-                  <meta name="kailo-origins" content="${KAILO_FRAME_ANCESTORS}">
+                  <meta name="kailo-web-origin" content="${KAILO_FRAME_ANCESTORS}">
                   <meta name="kailo-logout-url" content="${KAILO_LOGOUT_URL}">
                   <title></title>
-                  <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:14px/1.6 var(--kailo-font-sans,system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif);color:#4b5563;background:transparent}#m{display:none;text-align:center;padding:24px}#l{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:6px;background:#111827;color:#fff;text-decoration:none}@media (prefers-color-scheme:dark){body{color:#d1d5db}#l{background:#f3f4f6;color:#111827}}</style>
+                  <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:14px/1.6 var(--kailo-font-sans,system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif);color:#4b5563;background:transparent}#m{display:none;text-align:center;padding:24px}#l{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:6px;background:#111827;color:#fff;text-decoration:none}html[data-kailo-theme=dark] body{color:#d1d5db;background:#1f2328}html[data-kailo-theme=dark] #l{background:#f3f4f6;color:#111827}</style>
                   </head>
                   <body>
                   <div id="m"><div id="t"></div><a id="l" target="_top" href="/"></a></div>
@@ -82,8 +79,19 @@ binds:
                       var node = document.querySelector('meta[name="' + name + '"]');
                       return node ? node.getAttribute('content') || '' : '';
                     };
-                    var allowed = meta('kailo-origins').split(/\s+/).filter(Boolean);
+                    var origins = meta('kailo-web-origin').split(/\s+/).filter(function (value) {
+                      try {
+                        var url = new URL(value);
+                        return (url.protocol === 'https:' || url.protocol === 'http:') && url.origin === value;
+                      } catch (error) {
+                        return false;
+                      }
+                    });
                     var embedded = window.top !== window.self;
+                    var stored = {};
+                    try {
+                      stored = JSON.parse(window.sessionStorage.getItem('kailo-embed-presentation') || '{}') || {};
+                    } catch (error) {}
                     var inner = function (name) {
                       try {
                         return new URL(query.get('returnTo') || '/', location.origin).searchParams.get(name);
@@ -91,48 +99,31 @@ binds:
                         return null;
                       }
                     };
-                    var english = /^en/i.test(query.get('kailo_locale') || inner('kailo_locale') || navigator.language || '');
-                    var text = english
-                      ? { expired: 'Your session has ended. Sign in again to continue.', signin: 'Sign in', out: 'You have signed out.', back: 'Back' }
-                      : { expired: '登录状态已失效，请重新登录后继续。', signin: '重新登录', out: '已退出登录。', back: '返回' };
+                    var locale = query.get('kailo_locale') || inner('kailo_locale') || stored.locale || 'zh-CN';
+                    var dark = (query.get('kailo_theme') || inner('kailo_theme') || stored.theme) === 'dark';
+                    var english = locale === 'en';
                     document.documentElement.lang = english ? 'en' : 'zh-CN';
+                    if (dark) document.documentElement.setAttribute('data-kailo-theme', 'dark');
+                    var text = english
+                      ? { expired: 'Your session has ended. Sign in to Kailo again to continue.', out: 'You have signed out.', back: 'Back to Kailo' }
+                      : { expired: '登录状态已失效，请重新登录 Kailo 后继续。', out: '已退出登录。', back: '返回 Kailo' };
                     var local = function (value) {
                       return typeof value === 'string' && value.charAt(0) === '/' && value.charAt(1) !== '/' && !/[\\\u0000- \u007f]/.test(value) ? value : '/';
                     };
-                    var kailo = function (value) {
-                      try {
-                        var url = new URL(value);
-                        return allowed.indexOf(url.origin) >= 0 ? url.href : null;
-                      } catch (error) {
-                        return null;
-                      }
+                    var post = function (type) {
+                      if (!embedded) return;
+                      for (var i = 0; i < origins.length; i++) window.parent.postMessage({ source: 'kailo-embed', version: 1, type: type }, origins[i]);
                     };
-                    var host = function () {
-                      var candidates = [];
-                      if (location.ancestorOrigins && location.ancestorOrigins.length) candidates.push(location.ancestorOrigins[0]);
-                      try {
-                        if (document.referrer) candidates.push(new URL(document.referrer).origin);
-                      } catch (error) {}
-                      if (allowed.length === 1) candidates.push(allowed[0]);
-                      for (var i = 0; i < candidates.length; i++) if (allowed.indexOf(candidates[i]) >= 0) return candidates[i];
-                      return null;
-                    };
-                    var tell = function (type, detail) {
-                      var origin = host();
-                      if (!embedded || !origin) return;
-                      window.parent.postMessage({ source: 'kailo-native-page', component: 'data-query', type: type, detail: detail || {} }, origin);
-                    };
-                    var show = function (message, label, href, onClick) {
-                      var box = document.getElementById('m');
+                    var show = function (message, href) {
                       document.getElementById('t').textContent = message;
                       var link = document.getElementById('l');
-                      link.textContent = label;
-                      link.setAttribute('href', href);
-                      if (onClick) {
-                        link.setAttribute('target', '_blank');
-                        link.addEventListener('click', onClick);
+                      if (href) {
+                        link.textContent = text.back;
+                        link.setAttribute('href', href);
+                      } else {
+                        link.style.display = 'none';
                       }
-                      box.style.display = 'block';
+                      document.getElementById('m').style.display = 'block';
                     };
                     var probe = function (done) {
                       var settled = false;
@@ -163,41 +154,21 @@ binds:
                         location.replace('/auth/login?returnTo=' + encodeURIComponent(target));
                         return;
                       }
-                      var popupLogin = '/auth/login?returnTo=' + encodeURIComponent('/kailo-embed/popup-done');
-                      window.addEventListener('message', function (event) {
-                        if (event.origin === location.origin && event.data && event.data.source === 'kailo-native-page' && event.data.type === 'signed-in') location.replace(target);
-                      });
                       probe(function (ok) {
                         if (ok) {
                           location.replace(target);
                           return;
                         }
-                        tell('auth-required', { returnTo: target });
-                        show(text.expired, text.signin, popupLogin, function (event) {
-                          var popup = window.open(popupLogin, 'kailo-native-signin', 'popup,width=520,height=680');
-                          if (popup) event.preventDefault();
-                        });
+                        post('auth-required');
+                        show(text.expired, null);
                       });
-                    } else if (page === '/kailo-embed/popup-done') {
-                      if (window.opener) {
-                        try {
-                          window.opener.postMessage({ source: 'kailo-native-page', type: 'signed-in' }, location.origin);
-                        } catch (error) {}
-                        window.close();
-                      } else {
-                        location.replace('/');
-                      }
-                    } else if (page === '/kailo-embed/return') {
-                      location.replace(kailo(query.get('to') || '') || '/');
                     } else if (page === '/kailo-embed/signed-out') {
-                      tell('signed-out');
                       var logout = meta('kailo-logout-url');
                       if (!embedded && logout) {
                         location.replace(logout);
                         return;
                       }
-                      var origin = host() || allowed[0];
-                      show(text.out, text.back, origin ? origin + '/' : '/');
+                      show(text.out, embedded ? null : origins[0] ? origins[0] + '/' : null);
                     }
                   })();
                   </script>
@@ -222,6 +193,10 @@ binds:
                 logout:
                   path: /auth/logout
                   redirect: /kailo-embed/signed-out
+                # DD-133(6): register <public origin>/oauth/backchannel-logout
+                # as this client's back-channel logout URL (session required).
+                backchannelLogout:
+                  path: /oauth/backchannel-logout
               # The pinned Gateway exposes CSRF on routes, not listener policy.
               # This catch-all covers every native UI write with no extra origin.
               csrf: {}

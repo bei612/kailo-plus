@@ -19,10 +19,11 @@ style = ("body{margin:0;min-height:100vh;display:flex;align-items:center;justify
          "font:14px/1.6 var(--kailo-font-sans,system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif);"
          "color:#4b5563;background:transparent}#m{display:none;text-align:center;padding:24px}"
          "#l{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:6px;background:#111827;color:#fff;text-decoration:none}"
-         "@media (prefers-color-scheme:dark){body{color:#d1d5db}#l{background:#f3f4f6;color:#111827}}")
+         "html[data-kailo-theme=dark] body{color:#d1d5db;background:#1f2328}"
+         "html[data-kailo-theme=dark] #l{background:#f3f4f6;color:#111827}")
 html = ('<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-        '<meta name="kailo-origins" content="${KAILO_FRAME_ANCESTORS}">\n'
+        '<meta name="kailo-web-origin" content="${KAILO_FRAME_ANCESTORS}">\n'
         '<meta name="kailo-logout-url" content="${KAILO_LOGOUT_URL}">\n'
         '<title></title>\n<style>' + style + '</style>\n</head>\n<body>\n'
         '<div id="m"><div id="t"></div><a id="l" target="_top" href="/"></a></div>\n'
@@ -38,26 +39,23 @@ yaml_text = f"""# SS-WRN-IDENTITY: this is the native service's dedicated browse
 # OIDC creates its own encrypted HttpOnly browser cookie. Only its verified
 # component-specific ID token is forwarded on the private backend hop.
 #
-# DD-133 §2 (embedded single sign-on). The OIDC policy is attached to the
-# native UI route instead of the listener so that one static, credential-free
-# page can be served before authentication:
+# DD-133(2)/(6) (`.design/07` §4.7.2, §4.7.5). The OIDC policy is attached
+# to the native UI route instead of the listener so that one static,
+# credential-free page can be served before authentication:
 #   /kailo-embed/signin      login.redirect target. At top level it continues
 #                            to /auth/login. Inside the Kailo iframe it first
 #                            tries the existing IdP session in a hidden
 #                            same-origin frame (the IdP login page refuses to be
 #                            framed, so a missing session is detected without
-#                            showing it); when that fails it tells the Kailo
-#                            host (postMessage, exact Kailo origin only) so
-#                            Kailo signs in at top level; until then it offers
-#                            the IdP sign-in in a separate window.
+#                            ever showing it); when that fails it sends wire v1
+#                            {{source:"kailo-embed",version:1,type:"auth-required"}}
+#                            to the exact kailo-web-origin and Kailo signs in at
+#                            top level on the user's click.
 #   /kailo-embed/auth-ok     landing page of that hidden attempt.
-#   /kailo-embed/popup-done  end of the fallback sign-in window that the Kailo
-#                            frame sandbox allows (popups, not top navigation).
-#   /kailo-embed/return      for a host-initiated top-level sign-in
-#                            (/auth/login?returnTo=/kailo-embed/return?to=URL):
-#                            back to an exact KAILO_FRAME_ANCESTORS origin only.
-#   /kailo-embed/signed-out  logout.redirect target: tells the Kailo host, or at
-#                            top level continues to KAILO_LOGOUT_URL when set.
+#   /kailo-embed/signed-out  logout.redirect target; at top level it continues
+#                            to KAILO_LOGOUT_URL (the Kailo sign-out) when set.
+# /oauth/backchannel-logout receives the IdP's signed logout_token (form POST,
+# server to server) and ends that sid's (or that subject's) Gateway sessions.
 # The page receives no identity, cookie or upstream response. Its only script is
 # pinned by the CSP hash below; the configuration loader expands $-variables,
 # so the script deliberately contains no dollar sign.
@@ -117,6 +115,10 @@ binds:
                 logout:
                   path: /auth/logout
                   redirect: /kailo-embed/signed-out
+                # DD-133(6): register <public origin>/oauth/backchannel-logout
+                # as this client's back-channel logout URL (session required).
+                backchannelLogout:
+                  path: /oauth/backchannel-logout
               # The pinned Gateway exposes CSRF on routes, not listener policy.
               # This catch-all covers every native UI write with no extra origin.
               csrf: {{}}

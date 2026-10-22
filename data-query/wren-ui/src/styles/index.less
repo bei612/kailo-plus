@@ -1,8 +1,8 @@
 // DD-133 §4: antd's variable build, so that its palette is CSS custom
 // properties that the Kailo overlay maps onto Kailo tokens at runtime.
 @import '~antd/dist/antd.variable.less';
-// Kailo design tokens (client-kit structure), verbatim.
-@import (inline) './kailo/kailo-theme-tokens.css';
+// The Kailo tokens (client-kit/embed/kailo-theme-tokens.css) are linked in
+// the document head ahead of this stylesheet (DD-133, `07` §4.7.1).
 
 // Components
 @import './components/table.less';

@@ -15,24 +15,24 @@ const { Header } = Layout;
 // Kailo's own shell and are not repeated here.
 const StyledButton = styled(Button)<{ $isHighlight: boolean }>`
   background: ${(props) =>
-    props.$isHighlight ? 'var(--kailo-accent)' : 'transparent'};
+    props.$isHighlight ? 'var(--kailo-color-accent)' : 'transparent'};
   font-weight: ${(props) => (props.$isHighlight ? '600' : 'normal')};
   border: none;
   box-shadow: none;
   color: ${(props) =>
-    props.$isHighlight ? 'var(--kailo-fg)' : 'var(--kailo-muted-fg)'};
+    props.$isHighlight ? 'var(--kailo-color-foreground)' : 'var(--kailo-color-muted-foreground)'};
 
   &:hover,
   &:focus {
-    background: var(--kailo-accent);
-    color: var(--kailo-fg);
+    background: var(--kailo-color-accent);
+    color: var(--kailo-color-foreground);
   }
 `;
 
 const StyledHeader = styled(Header)`
   height: 48px;
-  border-bottom: 1px solid var(--kailo-border);
-  background: var(--kailo-bg);
+  border-bottom: 1px solid var(--kailo-color-border);
+  background: var(--kailo-color-background);
   padding: 10px 16px;
 `;
 

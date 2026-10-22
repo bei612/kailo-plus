@@ -164,14 +164,6 @@ function kailoProductName(): string {
   return name || '';
 }
 
-// The same deployment input as the middleware frame-ancestors (07 §4.6).
-function kailoHostOrigins(): string[] {
-  return (process.env.KAILO_FRAME_ANCESTORS || '')
-    .trim()
-    .split(/\s+/)
-    .filter((origin) => /^https?:\/\/[^/\s]+$/.test(origin));
-}
-
 const kailoUserOutput = (
   user: {
     name: string | null;
@@ -218,7 +210,7 @@ const resolvers = {
       user: ctx.kailoUser ? kailoUserOutput(ctx.kailoUser, true) : null,
       isAdmin: await isKailoAdmin(ctx.kailoUser, ctx.nativeHumanToken),
       productName: kailoProductName(),
-      hostOrigins: kailoHostOrigins(),
+      identityLocale: ctx.kailoUser?.locale ?? null,
     }),
     listDataSourceTables: projectResolver.listDataSourceTables,
     autoGenerateRelation: projectResolver.autoGenerateRelation,

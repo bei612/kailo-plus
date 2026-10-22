@@ -854,8 +854,8 @@ export const typeDefs = gql`
     user: KailoUser
     isAdmin: Boolean!
     productName: String!
-    # Exact Kailo Web origins allowed to embed this page and to message it.
-    hostOrigins: [String!]!
+    # OIDC `locale` claim; seeds the language of top-level visits only.
+    identityLocale: String
   }
 
   # Detailed thread consists of thread and thread responses

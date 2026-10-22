@@ -6,22 +6,15 @@ import zhCN from 'antd/lib/locale/zh_CN';
 import enUS from 'antd/lib/locale/en_US';
 import { useKailoSessionQuery } from '@/apollo/client/graphql/kailo.generated';
 import {
-  applyTheme,
-  initialLocale,
-  initialTheme,
-  isEmbedded,
+  kailoRuntime,
   KailoLocale,
   KailoTheme,
-  readHostMessage,
-  rememberLocale,
-  setHostOrigins,
-  signOutNativeSession,
-  tellHost,
+  presentation,
 } from '@/utils/kailoEmbed';
 import { kailoProductTitle } from '@/utils/kailoI18n';
 
-// DD-133: the Kailo user, derived role, presentation (theme/locale/embedding)
-// and product naming shared by the page shell.
+// DD-133: the Kailo user, derived role, presentation (theme/locale/embedding,
+// from kailo-embed.js) and product naming shared by the page shell.
 export interface KailoSessionValue {
   user: {
     name?: string | null;
@@ -46,67 +39,62 @@ const KailoSessionContext = createContext<KailoSessionValue>({
   theme: 'light',
 });
 
-export function KailoSessionProvider({ children }) {
+interface Props {
+  children: React.ReactNode;
+  // Server-rendered PLATFORM_DISPLAY_NAME (first paint); the session query
+  // supplies the same value afterwards.
+  displayName?: string;
+}
+
+export function KailoSessionProvider({ children, displayName }: Props) {
   const router = useRouter();
   const [embedded, setEmbedded] = useState(false);
   const [theme, setTheme] = useState<KailoTheme>('light');
+  const [serverName] = useState(displayName || '');
   const { data, loading } = useKailoSessionQuery({
     fetchPolicy: 'cache-and-network',
   });
   const session = data?.kailoSession;
-  const hostOrigins = useMemo(
-    () => session?.hostOrigins || [],
-    [session?.hostOrigins],
-  );
 
-  const switchLocale = (locale: KailoLocale) => {
-    rememberLocale(locale);
+  const followLocale = (locale: KailoLocale) => {
     if (router.locale !== locale)
       router.replace(router.asPath, undefined, { locale, scroll: false });
   };
 
-  // Initial theme and locale come from the Kailo URL parameters.
+  // Theme and locale follow Kailo through the runtime; the page offers no
+  // switch of its own.
   useEffect(() => {
-    const search = window.location.search;
-    const nextTheme = initialTheme(search);
-    applyTheme(nextTheme);
-    setTheme(nextTheme);
-    setEmbedded(isEmbedded());
-    const locale = initialLocale(search);
-    if (locale) switchLocale(locale);
+    const state = presentation();
+    setEmbedded(state.embedded);
+    setTheme(state.theme);
+    followLocale(state.locale);
+    const runtime = kailoRuntime();
+    if (!runtime) return;
+    const stopTheme = runtime.onThemeChange(setTheme);
+    const stopLocale = runtime.onLocaleChange(followLocale);
+    return () => {
+      stopTheme();
+      stopLocale();
+    };
   }, []);
 
-  // Later changes arrive from the exact Kailo origin only.
+  // Top-level visits only: the OIDC `locale` claim seeds the language when
+  // Kailo has not supplied one (the runtime ignores it otherwise).
   useEffect(() => {
-    setHostOrigins(hostOrigins);
-    if (!session) return;
-    tellHost(hostOrigins, 'ready', { locale: router.locale, theme });
-    const onMessage = (event: MessageEvent) => {
-      const message = readHostMessage(event, hostOrigins, window.parent);
-      if (!message) return;
-      if (message.type === 'theme') {
-        applyTheme(message.theme);
-        setTheme(message.theme);
-      } else if (message.type === 'locale') {
-        switchLocale(message.locale);
-      } else if (message.type === 'logout') {
-        signOutNativeSession().then(() => tellHost(hostOrigins, 'signed-out'));
-      }
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [session, hostOrigins]);
+    const locale = session?.identityLocale;
+    if (locale && !presentation().embedded) kailoRuntime()?.useIdentityLocale(locale);
+  }, [session?.identityLocale]);
 
   const value = useMemo<KailoSessionValue>(
     () => ({
       user: session?.user || null,
       isAdmin: session?.isAdmin === true,
       loaded: !loading && !!session,
-      productName: session?.productName || '',
+      productName: session?.productName || serverName,
       embedded,
       theme,
     }),
-    [session, loading, embedded, theme],
+    [session, loading, embedded, theme, serverName],
   );
 
   return (

@@ -12,7 +12,7 @@ export const KAILO_SESSION = gql`
       }
       isAdmin
       productName
-      hostOrigins
+      identityLocale
     }
   }
 `;

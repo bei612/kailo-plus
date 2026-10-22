@@ -24,6 +24,7 @@ type SqlValidation = {
 
 export type SqlPairContext = Pick<
   IContext,
+  | 'kailoUser'
   | 'nativeHumanToken'
   | 'nativeIdentityScope'
   | 'nativeProjectCheck'

@@ -18,10 +18,6 @@ let identity: {
   serviceAudience?: string;
   accessClaim: string;
   accessValue: string;
-  // DD-133 §3: optional signed component-admin entitlement of a STANDALONE
-  // instance (Kailo Tenant admin -> Wren admin). Without it nobody is admin.
-  adminClaim?: string;
-  adminValue?: string;
   publicOrigin: string;
   keys: ReturnType<typeof createRemoteJWKSet>;
 };
@@ -90,26 +86,6 @@ function nativeIdentity() {
   ) {
     throw new Error('A separate native service audience is required');
   }
-  for (const field of ['adminClaim', 'adminValue']) {
-    if (
-      value[field] !== undefined &&
-      (typeof value[field] !== 'string' ||
-        !value[field] ||
-        value[field] !== value[field].trim())
-    )
-      throw new Error('Invalid native admin entitlement');
-  }
-  if (
-    (value.adminClaim !== undefined && value.adminValue === undefined) ||
-    ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'jti', 'azp'].includes(
-      value.adminClaim,
-    ) ||
-    (value.adminValue !== undefined &&
-      (value.adminClaim ?? value.accessClaim) === value.accessClaim &&
-      value.adminValue === value.accessValue)
-  ) {
-    throw new Error('A dedicated native admin entitlement is required');
-  }
   identity = {
     source,
     issuer: value.issuer,
@@ -117,10 +93,6 @@ function nativeIdentity() {
     serviceAudience: value.serviceAudience,
     accessClaim: value.accessClaim,
     accessValue: value.accessValue,
-    adminClaim: value.adminValue
-      ? value.adminClaim ?? value.accessClaim
-      : undefined,
-    adminValue: value.adminValue,
     publicOrigin: value.publicOrigin,
     keys: createRemoteJWKSet(new URL(value.jwksUrl)),
   };
@@ -238,22 +210,16 @@ export async function middleware(request: NextRequest) {
     );
     if ((service || !bound) && !permitted)
       return denied(403, 'NATIVE_INSTANCE_ACCESS_DENIED');
-    // DD-133 §3: the Kailo user behind a human page request. Display claims
-    // only; a GOVERNED instance keeps Core's binding permission as authority.
+    // DD-133 §3: the Kailo user behind a human page request (display claims
+    // only). Roles come only from Core: a GOVERNED instance keeps the binding
+    // permission; STANDALONE users are members until the platform member
+    // directory (`07` §4.7.4) is delivered, never an IdP-derived admin.
     if (!service)
       profile = encodeKailoUser(
         await kailoUserFromClaims(
           configured.issuer,
           payload,
-          bound
-            ? null
-            : Boolean(
-                configured.adminValue &&
-                  entitled(
-                    payload[configured.adminClaim],
-                    configured.adminValue,
-                  ),
-              ),
+          bound ? null : false,
         ),
       );
     // A non-authorizing browser storage partition, derived only after signature

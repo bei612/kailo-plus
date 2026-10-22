@@ -4,8 +4,9 @@ use jsonwebtoken::jwk::JwkSet;
 use secrecy::SecretString;
 
 use super::{
-	ClientConfig, CookieSecureMode, Error, OidcPolicy, PolicyId, Provider, ProviderEndpoint,
-	RedirectUri, SameSiteMode, SessionConfig, dedupe_scopes, session,
+	BackchannelLogout, ClientConfig, CookieSecureMode, Error, OidcBackchannelLogout, OidcPolicy,
+	PolicyId, Provider, ProviderEndpoint, RedirectUri, SameSiteMode, SessionConfig, dedupe_scopes,
+	session,
 };
 use crate::http::oauth::{
 	TokenEndpointAuth, openid_configuration_metadata_url, parse_token_endpoint_auth_methods,
@@ -44,6 +45,7 @@ struct PreparedOidcPolicy {
 	login: Option<OidcLogin>,
 	logout: Option<OidcLogout>,
 	ui_locales: Option<OidcUiLocales>,
+	backchannel_logout: Option<OidcBackchannelLogout>,
 }
 
 /// Presentation-only locale projection. Never used as an authentication claim.
@@ -164,6 +166,10 @@ pub struct LocalOidcConfig {
 	/// Optional logout endpoint. Independent of login; omit to disable the logout endpoint.
 	#[serde(default)]
 	pub logout: Option<OidcLogout>,
+
+	/// Optional OIDC Back-Channel Logout receiver. Omit to disable it.
+	#[serde(default)]
+	pub backchannel_logout: Option<OidcBackchannelLogout>,
 }
 
 struct DiscoveredProviderMetadata {
@@ -205,6 +211,7 @@ impl LocalOidcConfig {
 			login,
 			logout,
 			ui_locales,
+			backchannel_logout,
 		} = self;
 		if let Some(locales) = &ui_locales {
 			if !locales.supported.contains(&locales.default)
@@ -235,6 +242,11 @@ impl LocalOidcConfig {
 				"logout",
 				logout.as_ref().map(|v| &v.path),
 				logout.as_ref().and_then(|v| v.redirect.as_ref()),
+			),
+			(
+				"backchannelLogout",
+				backchannel_logout.as_ref().map(|v| &v.path),
+				None,
 			),
 		] {
 			if let Some(endpoint) = endpoint {
@@ -338,6 +350,7 @@ impl LocalOidcConfig {
 			login,
 			logout,
 			ui_locales,
+			backchannel_logout,
 		})
 	}
 }
@@ -486,6 +499,7 @@ impl PreparedOidcPolicy {
 			login,
 			logout,
 			ui_locales,
+			backchannel_logout,
 		} = self;
 		let scopes = dedupe_scopes(scopes);
 		let token_endpoint_auth = provider.token_endpoint_auth;
@@ -493,6 +507,33 @@ impl PreparedOidcPolicy {
 			.end_session_endpoint
 			.clone()
 			.filter(|_| logout.as_ref().is_some_and(|v| v.end_session));
+		let ttl = session::default_session_ttl();
+		// Kailo DD-133(6): logout tokens are verified with the same issuer keys
+		// and client audience as ID tokens; they carry no `exp` requirement.
+		let backchannel_logout = match backchannel_logout {
+			None => None,
+			Some(receiver) => {
+				let validator = crate::http::jwt::Provider::from_jwks(
+					provider.id_token_jwks.clone(),
+					provider.issuer.clone(),
+					Some(vec![client_id.clone()]),
+					crate::http::jwt::JWTValidationOptions {
+						required_claims: Default::default(),
+					},
+				)
+				.map_err(|e| Error::Config(format!("failed to create logout token validator: {e}")))?;
+				Some(BackchannelLogout::new(
+					receiver.path,
+					crate::http::jwt::Jwt::from_providers(
+						vec![validator],
+						crate::http::jwt::Mode::Strict,
+						crate::http::auth::AuthorizationLocation::bearer_header(),
+						false,
+					),
+					ttl,
+				))
+			},
+		};
 		let provider = Arc::new(provider.compile(client_id.clone())?);
 
 		Ok(OidcPolicy {
@@ -509,7 +550,7 @@ impl PreparedOidcPolicy {
 				transaction_cookie_prefix,
 				same_site: SameSiteMode::Lax,
 				secure: CookieSecureMode::Auto,
-				ttl: session::default_session_ttl(),
+				ttl,
 				transaction_ttl: session::default_transaction_ttl(),
 				encoder: oidc_cookie_encoder.clone(),
 			},
@@ -518,6 +559,7 @@ impl PreparedOidcPolicy {
 			logout,
 			ui_locales,
 			end_session_endpoint,
+			backchannel_logout,
 		})
 	}
 }

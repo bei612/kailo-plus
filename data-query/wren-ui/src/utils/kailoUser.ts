@@ -83,7 +83,9 @@ export async function kailoUserFromClaims(
     key: await kailoUserKey(issuer, claims.sub),
     name: text(claims.name, limits.name),
     username: text(claims.preferred_username, limits.username),
-    email: text(claims.email, limits.email),
+    // `07` §4.7.3: e-mail is profile data only, and only once verified.
+    email:
+      claims.email_verified === true ? text(claims.email, limits.email) : null,
     picture: profilePicture(claims.picture),
     locale: profileLocale(claims.locale),
     admin,

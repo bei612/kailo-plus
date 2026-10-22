@@ -17,6 +17,7 @@ export type InstructionContext = Pick<
   | 'nativeHumanToken'
   | 'nativeIdentityScope'
   | 'nativeProjectCheck'
+  | 'kailoUser'
 >;
 
 export class InstructionResolver {
