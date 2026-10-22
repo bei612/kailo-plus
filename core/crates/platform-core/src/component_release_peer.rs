@@ -353,3 +353,41 @@ pub(super) async fn run_probe(
         Err(error) => error.respond(None),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    fn recorded(value: &Value, key: &str) -> Value {
+        serde_json::from_str(value[key].as_str().expect("recorded expectation")).expect("JSON")
+    }
+
+    /// DD-136: the reference peer's checked-in conformance environment is the typed contract, and
+    /// its expectations (recorded through the Gateway by record-conformance.py) are exactly what
+    /// `run_probe` compares them with: Core's rmcp client parses the answers into these types and
+    /// serialises them back, so a lossy round trip would fail every registration.
+    #[test]
+    fn reference_peer_expectations_survive_the_rmcp_round_trip() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../deploy/local/protocol-peers/conformance/protocol-peer-reference.json"
+        );
+        let text = std::fs::read_to_string(path).expect("conformance environment");
+        let environment: Value = serde_json::from_str(&text).expect("JSON");
+        let typed: contracts::ComponentProtocolPeerEnvironment =
+            serde_json::from_value(environment.clone()).expect("ComponentProtocolPeerEnvironment");
+        assert_eq!(serde_json::to_value(typed).unwrap(), environment);
+        let initialize = recorded(&environment, "initializeResultJson");
+        let parsed: rmcp::model::InitializeResult =
+            serde_json::from_value(initialize.clone()).expect("InitializeResult");
+        assert_eq!(serde_json::to_value(parsed).unwrap(), initialize);
+        let listed = recorded(&environment, "listResultJson");
+        let parsed: rmcp::model::ListToolsResult =
+            serde_json::from_value(listed.clone()).expect("ListToolsResult");
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), listed);
+        let names: Vec<_> = parsed.tools.iter().map(|tool| tool.name.as_ref()).collect();
+        for tool in environment["readOnlyTools"].as_array().unwrap() {
+            assert!(names.contains(&tool.as_str().unwrap()), "{tool} not listed");
+        }
+    }
+}
