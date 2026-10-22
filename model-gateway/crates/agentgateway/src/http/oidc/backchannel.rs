@@ -210,7 +210,7 @@ impl OidcPolicy {
 			return Some(respond(StatusCode::BAD_REQUEST));
 		}
 		let body = std::mem::take(req.body_mut());
-		let Ok(bytes) = axum::body::to_bytes(body, MAX_BODY).await else {
+		let Ok(bytes) = crate::http::read_body_with_limit(body, MAX_BODY).await else {
 			return Some(respond(StatusCode::BAD_REQUEST));
 		};
 		let mut tokens = url::form_urlencoded::parse(&bytes)
