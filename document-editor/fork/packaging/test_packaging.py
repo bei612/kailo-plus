@@ -49,7 +49,7 @@ class Themes(unittest.TestCase):
             themes.themes(TOKENS.replace("--kailo-hsl-sidebar-background:", "--kailo-hsl-gone:"))
 
     def test_hsl_conversion(self):
-        self.assertEqual(themes.hex_color(("0", "0%", "100.0")), "#ffffff")
+        self.assertEqual(themes.hex_color(("0", "0", "100.0")), "#ffffff")
         self.assertEqual(themes.hex_color(("0", "100", "50")), "#ff0000")
 
 
@@ -96,18 +96,24 @@ class BrandScan(unittest.TestCase):
                                "var n = 'http://schemas.onlyoffice.com/x'; dt.setData('onlyoffice', s); var f='ONLYOFFICEFORM';\n",
             "license/LICENSE.txt": "Ascensio System SIA ONLYOFFICE",
             "kailo-legal/index.html": "based on the original ONLYOFFICE software developed by Ascensio System SIA",
+            "etc/supervisord.conf": "command=/usr/local/bin/node /var/www/onlyoffice/documentserver/server/x.js",
+            "server/package.json": '{"name": "x", "homepage": "https://www.onlyoffice.com"}',
+            "web-apps/index.html": "<script>let signature = 'ONLYOFFICEFORM';</script>",
+            "server/locale.json": '{"location": "St Helena, Ascension, Tristan da Cunha"}',
         })
         self.assertEqual(code, 0)
         self.assertEqual(report["findingFiles"], 0)
         self.assertGreater(report["totals"]["legal"], 0)
         self.assertGreater(report["totals"]["comment"], 0)
         self.assertEqual(set(report["identifiers"]), {"asc_getOnlyOfficeTime", "http://schemas.onlyoffice.com", "onlyoffice", "ONLYOFFICEFORM"})
+        self.assertEqual(report["totals"]["path"], 1)
 
     def test_visible_spellings_links_and_markup_are_findings(self):
         for rel, text in (("a.js", "title = 'ONLYOFFICE Docs';"), ("a.js", "open('https://helpcenter.onlyoffice.com')"),
                           ("a.js", "x = 'OnlyOffice';"), ("index.html", "<title>ONLYOFFICE</title>"),
                           ("en.json", '{"t": "ONLYOFFICE"}'), ("logo.svg", "<svg><title>onlyoffice</title></svg>"),
-                          ("index.html", "<!-- onlyoffice note -->"), ("a.css", "/* by Ascensio */")):
+                          ("index.html", "<!-- onlyoffice note -->"), ("a.css", "/* by Ascensio */"),
+                          ("package.json", '{"description": "ONLYOFFICE server"}'), ("a.conf", "x https://onlyoffice.github.io")):
             with self.subTest(rel=rel, text=text):
                 code, report, out = self.run_scan({rel: text})
                 self.assertEqual(code, 1)

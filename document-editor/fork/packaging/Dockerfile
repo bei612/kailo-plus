@@ -178,6 +178,7 @@ RUN python3 -I /tmp/kailo/legal-render.py /var/www/onlyoffice/kailo-legal/index.
 # converter directory), then the font, theme and js caches of
 # documentserver-generate-allfonts.sh, all against the rebuilt sdkjs.
 RUN mv /opt/kailo-core/bin "$DS/server/FileConverter/bin" && mv /opt/kailo-core/tools "$DS/server/tools" && rmdir /opt/kailo-core \
+ && rm -f "$DS"/server/Common/config/development-*.json \
  && cp "$DS/sdkjs/pdf/src/engine/cmap.bin" "$DS/server/FileConverter/bin/cmap.bin" \
  && mkdir -p "$DS/fonts" \
  && export LD_LIBRARY_PATH="$DS/server/FileConverter/bin" \

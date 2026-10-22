@@ -9,10 +9,15 @@ publisher names and classifies each hit:
   comment     other source comments shipped inside code bundles (never rendered)
   identifier  the registered code identifiers, document-format namespaces and
               protocol keys below (never rendered; renaming breaks documents or APIs)
+  path        installation paths of the official layer (/var/www/onlyoffice, ...)
+              in configuration, never served to users
   finding     anything else: the scan exits 1 and lists the files and tokens
 
 Markup, styles, locale data and images (.html .ejs .json .svg .css .less .txt)
-get no comment or identifier allowance outside legal notices.
+get no comment allowance; display spellings (ONLYOFFICE, OnlyOffice) and
+upstream host names are never registered identifiers. In package.json the
+homepage/author/repository fields are origin notices (LICENSE Additional
+Terms 1) and count as legal.
 
   python3 brand-scan.py ROOT...
 """
@@ -21,8 +26,8 @@ import os
 import re
 import sys
 
-BRAND = re.compile(r"onlyoffice|ascensio", re.I)
-TOKEN = re.compile(r"[A-Za-z0-9_$.:/\-]*(?:onlyoffice|ascensio)[A-Za-z0-9_$\-]*", re.I)
+BRAND = re.compile(r"onlyoffice|ascensio(?!n)", re.I)
+TOKEN = re.compile(r"[A-Za-z0-9_$.:/\-]*(?:onlyoffice|ascensio(?!n))[A-Za-z0-9_$.\-]*", re.I)
 BLOCK_COMMENT = re.compile(r"/\*.*?\*/|<!--.*?-->", re.S)
 LINE_COMMENT = re.compile(r"(?:(?<=[\s;{}(),])|^)//[^\n]*", re.M)
 LEGAL_MARKERS = re.compile(r"copyright|\(c\)|licen[cs]e|agpl|gnu affero|all rights reserved|warranty", re.I)
@@ -46,16 +51,24 @@ IDENTIFIERS = {
     "onlyoffice-spellchecker": "sdkjs spell-checker worker key",
     "http://schemas.onlyoffice.com": "document-format XML namespace (written into documents)",
     "onlyoffice": "lower-case protocol, drag-and-drop or library key",
+    "OnlyOfficeStyles": "sdkjs paste-style table identifier",
+    "changeOnlyOfficeUrl": "DocService storage helper function",
+    "urn:onlyoffice:config:superset:1": "DocService configuration schema id",
 }
+PATH = re.compile(r"^(?:\.\./)*(?:/(?:var/www|var/lib|var/log|etc|usr/share|usr/bin)/onlyoffice(?:/|$)|.*document-formats/onlyoffice-docs-formats(?:\.json)?$)")
+ORIGIN_FIELDS = re.compile(r'"(?:homepage|author|repository|url)"\s*:\s*"[^"]*(?:onlyoffice|ascensio)[^"]*"', re.I)
 
 
 def normalise(token):
     """Exact-case identifier: a display spelling (ONLYOFFICE, OnlyOffice) never
-    matches a registered key and stays a finding."""
+    matches a registered key, and a host name stays whole, so an upstream site
+    link is a finding unless it is the document-format namespace."""
     token = token.strip(".-$:/")
-    if re.match(r"https?://schemas\.onlyoffice\.com", token, re.I):
-        return "http://schemas.onlyoffice.com" if token.lower().startswith(("http://schemas.onlyoffice.com", "https://schemas.onlyoffice.com")) and "schemas.onlyoffice.com" in token else token
-    return re.sub(r"^.*\.(?=[A-Za-z_$-]*(?:onlyoffice|ascensio))", "", token, flags=re.I)
+    if re.search(r"(?:onlyoffice|ascensio)\.[a-z]", token, re.I):
+        return "http://schemas.onlyoffice.com" if re.match(r"https?://schemas\.onlyoffice\.com(/|$)", token) else token
+    if token in IDENTIFIERS:
+        return token
+    return re.sub(r"^.*[.:](?=[A-Za-z_$-]*(?:onlyoffice|ascensio))", "", token, flags=re.I)
 
 
 def scan(path, rel):
@@ -83,12 +96,19 @@ def scan(path, rel):
             return body
         result[kind] = result.get(kind, 0) + len(BRAND.findall(body))
         return " " * len(body)
+    if os.path.basename(rel) == "package.json":
+        def origin(match):
+            result["legal"] = result.get("legal", 0) + 1
+            return " " * len(match.group(0))
+        text = ORIGIN_FIELDS.sub(origin, text)
     remaining = BLOCK_COMMENT.sub(strip, text)
     if code:
         remaining = LINE_COMMENT.sub(strip, remaining)
     for token in TOKEN.findall(remaining):
         key = normalise(token)
-        if code and key in IDENTIFIERS:
+        if PATH.match(token.rstrip(".")):
+            category = "path"
+        elif key in IDENTIFIERS:
             category = "identifier:" + key
         else:
             index = remaining.find(token)

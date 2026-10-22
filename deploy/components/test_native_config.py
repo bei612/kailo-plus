@@ -445,7 +445,11 @@ class RenderDocumentEditor(unittest.TestCase):
         self.assertEqual(self.local.stat().st_mode & 0o777, 0o644)
         config = json.loads(self.local.read_text(encoding="utf-8"))
         services = config["services"]["CoAuthoring"]
-        self.assertEqual(config["wopi"], {"enable": True, "host": "http://192.168.0.193:58096"})
+        self.assertTrue(config["wopi"]["enable"])
+        self.assertEqual(config["wopi"]["host"], "http://192.168.0.193:58096")
+        # DD-132(7)①: discovery favicons are the Kailo icon.
+        self.assertEqual({v for k, v in config["wopi"].items() if k.startswith("favIconUrl")},
+                         {"/web-apps/apps/common/main/resources/img/header/kailo-logo.png"})
         self.assertEqual(config["externalRequest"]["directIfIn"], {"allowList": ["http://192.168.0.193:58092/wopi/files/"], "jwtToken": False})
         self.assertFalse(config["externalRequest"]["action"]["allow"])
         self.assertEqual(services["ipfilter"]["rules"], [{"address": "192.168.0.193", "allowed": True}, {"address": "*", "allowed": False}])
