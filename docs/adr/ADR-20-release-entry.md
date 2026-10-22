@@ -236,7 +236,7 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   在替换之后重建。组内依赖在前，其余按 compose 定义顺序。
 - deploy 中的位置（与 §8 的 IdP 声明统一）：迁移 → 配置一次性服务 → **重建「替换前」组的漂移服务** →
   **等待 keycloak 就绪后执行 IdP 声明** → 按序替换服务（含并入的漂移受管服务）→ **重建「替换后」组的漂移服务** → 回读。
-  漂移的基础服务（可能包括 keycloak 本身或其数据库）先于 IdP 声明收敛，于是声明作用于重建后的实例，§8 的就绪等待
+  漂移的基础服务（含 keycloak 本身或其数据库发生漂移的情形）先于 IdP 声明收敛，于是声明作用于重建后的实例，§8 的就绪等待
   也覆盖了这次重建；IdP 声明仍在替换任何服务之前（§8 的兼容顺序不变）。「替换后」组依赖新替换的服务，放在最后。
 - journal：漂移相关字段为 `deploy.json` 的 `config_drift`、`config_converge`、`config_recreated`、`history`，verify 结果为
   `config_drift_reported`、`not_running`；与 §8 的 `idp` 字段和 `releases/idp-declarations.json` 互不重叠。
