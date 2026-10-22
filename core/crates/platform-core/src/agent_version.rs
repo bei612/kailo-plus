@@ -46,6 +46,48 @@ fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
 
+/// DD-135(8)：AgentVersion 引用的 Skill 版本证据（版本 Asset ID 与版本序号），按版本中的顺序。
+/// 只读平台自有的冻结事实；读不到的引用不伪造序号（引用在准入时已查证存在）。
+pub(crate) async fn skill_reference_evidence(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    content: &Value,
+) -> Result<Vec<crate::audit::Evidence>, sqlx::Error> {
+    let ids: Vec<Uuid> = content
+        .get("skillVersionAssetIds")
+        .and_then(Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(|id| id.as_str().and_then(|id| Uuid::parse_str(id).ok()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
+        "select asset_id,ordinal from catalog.skill_version where tenant_id=$1 and asset_id=any($2)",
+    )
+    .bind(tenant)
+    .bind(&ids)
+    .fetch_all(conn)
+    .await?;
+    Ok(ids
+        .iter()
+        .filter_map(|id| {
+            rows.iter()
+                .find(|(asset, _)| asset == id)
+                .map(|(asset, ordinal)| {
+                    crate::audit::Evidence::versioned(
+                        contracts::EvidenceKind::SkillVersionAssetId,
+                        asset,
+                        i64::from(*ordinal),
+                    )
+                })
+        })
+        .collect())
+}
+
 /// 共享契约的基础约束；没有缺省模型、timeout、owner 或 runtime。
 pub(crate) fn content(value: &AgentVersionContent) -> Result<(Value, String), Refusal> {
     if value.persona_identity.display_name.trim().is_empty()
@@ -312,9 +354,9 @@ pub(crate) async fn prewrite(
                 .bind(ae.id).execute(&mut **tx).await?;
             sqlx::query("insert into catalog.agent_version
                 (asset_id,agent_resource_id,ordinal,content,config_hash,state) values ($1,$2,$3,$4,$5,'DRAFT')")
-                .bind(ae.id).bind(parent.id).bind(ordinal).bind(normalized).bind(digest)
+                .bind(ae.id).bind(parent.id).bind(ordinal).bind(normalized.clone()).bind(digest)
                 .execute(&mut **tx).await?;
-            Ok(Vec::new())
+            Ok(skill_reference_evidence(&mut **tx, ae.tenant_id, &normalized).await?)
         }
         Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish => {
             let v = version(tx, ae.tenant_id, ae.target_id, true)
@@ -348,7 +390,7 @@ pub(crate) async fn prewrite(
             }
             sqlx::query("update catalog.agent_version set content=$2,config_hash=$3,
                 state=case when $4 then 'PUBLISHED' else state end where asset_id=$1 and state='DRAFT'")
-                .bind(v.asset_id).bind(normalized).bind(digest).bind(sem == Semantic::AgentVersionPublish)
+                .bind(v.asset_id).bind(normalized.clone()).bind(digest).bind(sem == Semantic::AgentVersionPublish)
                 .execute(&mut **tx).await?;
             sqlx::query(
                 "update catalog.asset set version=version+1,
@@ -366,7 +408,7 @@ pub(crate) async fn prewrite(
                     .execute(&mut **tx)
                     .await?;
             }
-            Ok(Vec::new())
+            Ok(skill_reference_evidence(&mut **tx, ae.tenant_id, &normalized).await?)
         }
         Semantic::AgentVersionRetire => {
             let v = version(tx, ae.tenant_id, ae.target_id, true)
@@ -563,6 +605,14 @@ pub(crate) async fn dispatch(gov: &Governance, id: Uuid, def: &Definition) -> Re
     .bind(created)
     .execute(&mut *tx)
     .await?;
+    let mut evidence = vec![crate::audit::Evidence::new(
+        contracts::EvidenceKind::SpicedbZedtoken,
+        token,
+    )];
+    // DD-135(8)：创建的 AgentVersion 记录其引用的 Skill 版本。
+    if created {
+        evidence.extend(skill_reference_evidence(&mut tx, ae.tenant_id, &v.content).await?);
+    }
     crate::governance::record_dispatch(
         &mut tx,
         ae.id,
@@ -572,10 +622,7 @@ pub(crate) async fn dispatch(gov: &Governance, id: Uuid, def: &Definition) -> Re
         } else {
             Err(StatusCode::FORBIDDEN)
         },
-        vec![crate::audit::Evidence::new(
-            contracts::EvidenceKind::SpicedbZedtoken,
-            token,
-        )],
+        evidence,
     )
     .await?;
     tx.commit().await?;
