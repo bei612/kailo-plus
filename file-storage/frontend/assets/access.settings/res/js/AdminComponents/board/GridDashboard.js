@@ -23,7 +23,6 @@ import Pydio from 'pydio'
 import AdminStyles from '../styles/AdminStyles';
 import Header from '../styles/Header'
 import {muiThemeable} from 'material-ui/styles'
-import {IconButton} from 'material-ui'
 const {DynamicGrid} = Pydio.requireLib('components');
 const {PydioContextConsumer} = Pydio.requireLib('boot');
 
@@ -39,10 +38,22 @@ class GridDashboard extends React.Component{
                     x:0, y:0
                 }
             },
+            {
+                id:'graph.files',
+                componentClass:'AdminComponents.FakeGraph',
+                defaultPosition:{
+                    x:0, y:1
+                },
                 props:{
                     type:'files'
                 }
             },
+            {
+                id:'graph.connections',
+                componentClass:'AdminComponents.FakeGraph',
+                defaultPosition:{
+                    x:4, y:1
+                },
                 props:{
                     type:'connections'
                 }
