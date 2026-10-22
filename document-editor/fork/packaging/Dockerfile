@@ -131,12 +131,15 @@ COPY fork/packaging/supervisord.conf /etc/kailo-ds/supervisord.conf
 COPY --chmod=0755 fork/packaging/entrypoint.sh /usr/local/bin/kailo-ds-entrypoint
 COPY --chmod=0755 fork/packaging/runtime-config.py /usr/local/lib/kailo-ds/runtime-config.py
 # FileConverter/bin: official core binaries + cmap.bin of the rebuilt sdkjs
-# (deploy_server.py), then the generated font, theme and js caches of
-# documentserver-generate-allfonts.sh against the rebuilt sdkjs.
+# and the V8 snapshots (deploy_server.py create_x2t_js_cache, run from the
+# converter directory), then the font, theme and js caches of
+# documentserver-generate-allfonts.sh, all against the rebuilt sdkjs.
 RUN mv /opt/kailo-core/bin "$DS/server/FileConverter/bin" && mv /opt/kailo-core/tools "$DS/server/tools" && rmdir /opt/kailo-core \
  && cp "$DS/sdkjs/pdf/src/engine/cmap.bin" "$DS/server/FileConverter/bin/cmap.bin" \
  && mkdir -p "$DS/fonts" \
  && export LD_LIBRARY_PATH="$DS/server/FileConverter/bin" \
+ && (cd "$DS/server/FileConverter/bin" && ./x2t -create-js-snapshots) \
+ && for product in word cell slide; do test -s "$DS/sdkjs/$product/sdk-all.bin"; done \
  && "$DS/server/tools/allfontsgen" --input="$DS/core-fonts" --allfonts-web="$DS/sdkjs/common/AllFonts.js" \
       --allfonts="$DS/server/FileConverter/bin/AllFonts.js" --images="$DS/sdkjs/common/Images" \
       --selection="$DS/server/FileConverter/bin/font_selection.bin" --output-web="$DS/fonts" \
@@ -145,6 +148,7 @@ RUN mv /opt/kailo-core/bin "$DS/server/FileConverter/bin" && mv /opt/kailo-core/
  && "$DS/server/tools/allthemesgen" --converter-dir="$DS/server/FileConverter/bin" --src="$DS/sdkjs/slide/themes" --output="$DS/sdkjs/common/Images" --postfix="ios" --params="280,224" \
  && "$DS/server/tools/allthemesgen" --converter-dir="$DS/server/FileConverter/bin" --src="$DS/sdkjs/slide/themes" --output="$DS/sdkjs/common/Images" --postfix="android" --params="280,224" \
  && "$DS/server/FileConverter/bin/x2t" -create-js-cache \
+ && for product in word cell slide; do test -s "$DS/sdkjs/$product/sdk-all.cache"; done \
  && rm -f "$DS"/fonts/*.gz "$DS/sdkjs/common/AllFonts.js.gz" "$DS"/sdkjs/common/Images/*.gz "$DS/sdkjs/slide/themes/themes.js.gz"
 # Cache tag of documentserver-flush-cache.sh, fixed per source build instead
 # of per container start; nginx and api.js must agree on it.
