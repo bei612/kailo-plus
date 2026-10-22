@@ -1294,4 +1294,34 @@ void main() {
       );
     }
   });
+  test('DD-135 skills contracts round-trip', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/skills.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final codecs = <String, Map<String, dynamic> Function(Map<String, dynamic>)>{
+      'definitionCreateCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'versionCreateCommand': (v) => ActionCommand.fromJson(v).toJson(),
+      'definitionView': (v) => SkillDefinitionView.fromJson(v).toJson(),
+      'versionPage': (v) => SkillVersionPage.fromJson(v).toJson(),
+      'contentView': (v) => SkillVersionContentView.fromJson(v).toJson(),
+      'uploadRequest': (v) => SkillArtifactUploadRequest.fromJson(v).toJson(),
+      'uploadAccepted': (v) => SkillArtifactUploadView.fromJson(v).toJson(),
+      'uploadRejected': (v) => SkillArtifactUploadView.fromJson(v).toJson(),
+      'referencePage': (v) => SkillReferencePage.fromJson(v).toJson(),
+      'installationSkills': (v) =>
+          AgentInstallationSkillPage.fromJson(v).toJson(),
+    };
+    for (final entry in codecs.entries) {
+      final original = value[entry.key] as Map<String, dynamic>;
+      expect(
+        jsonDecode(jsonEncode(entry.value(original))),
+        equals(original),
+        reason: entry.key,
+      );
+    }
+  });
 }

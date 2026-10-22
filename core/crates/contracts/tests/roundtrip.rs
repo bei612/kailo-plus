@@ -1187,3 +1187,34 @@ fn dd125_member_joins_and_memory_refs_preserve_fields_and_absence() {
     partial.as_object_mut().unwrap().remove("coreExists");
     assert!(serde_json::from_value::<contracts::AgentMemoryReferenceView>(partial).is_err());
 }
+
+#[test]
+fn dd135_skills_preserve_fields_and_absence() {
+    // DD-135(1)-(7): commands, definition/version/content views, the upload
+    // request and both upload outcomes, the reference catalog and the
+    // installation Skill status keep every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("skills.sample.json")).unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["definitionCreateCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["versionCreateCommand"]);
+    roundtrip::<contracts::SkillDefinitionView>(&value["definitionView"]);
+    roundtrip::<contracts::SkillVersionPage>(&value["versionPage"]);
+    roundtrip::<contracts::SkillVersionContentView>(&value["contentView"]);
+    roundtrip::<contracts::SkillArtifactUploadRequest>(&value["uploadRequest"]);
+    roundtrip::<contracts::SkillArtifactUploadView>(&value["uploadAccepted"]);
+    roundtrip::<contracts::SkillArtifactUploadView>(&value["uploadRejected"]);
+    roundtrip::<contracts::SkillReferencePage>(&value["referencePage"]);
+    roundtrip::<contracts::AgentInstallationSkillPage>(&value["installationSkills"]);
+    let mut missing = value["definitionView"].clone();
+    missing.as_object_mut().unwrap().remove("catalogShared");
+    assert!(serde_json::from_value::<contracts::SkillDefinitionView>(missing).is_err());
+    let mut unknown = value["installationSkills"].clone();
+    unknown["skills"][0]["status"] = serde_json::json!("UNKNOWN_STATE");
+    assert!(serde_json::from_value::<contracts::AgentInstallationSkillPage>(unknown).is_err());
+}

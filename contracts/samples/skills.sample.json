@@ -1,0 +1,102 @@
+{
+  "definitionCreateCommand": {
+    "actionKey": "skill.definition.create",
+    "idempotencyKey": "3f6d2c1b-8a7e-4f5d-9c3b-2a1e0f9d8c7b",
+    "slug": "release-notes",
+    "name": "Release notes",
+    "explicitConfirmation": true
+  },
+  "versionCreateCommand": {
+    "actionKey": "skill.version.create",
+    "idempotencyKey": "4f6d2c1b-8a7e-4f5d-9c3b-2a1e0f9d8c7b",
+    "resourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+    "resourceVersion": 2,
+    "skillVersionUpload": {
+      "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "artifactDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+      "capabilityRequirements": ["knowledge.search@v1"]
+    },
+    "explicitConfirmation": true
+  },
+  "definitionView": {
+    "resourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+    "ownerPrincipalId": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+    "stableSlug": "release-notes",
+    "displayName": "Release notes",
+    "status": "ACTIVE",
+    "resourceVersion": 2,
+    "catalogShared": true,
+    "canUpload": true,
+    "canDisable": false,
+    "canShare": true
+  },
+  "versionPage": {
+    "skillResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+    "resourceVersion": 3,
+    "versions": [{
+      "assetId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "skillResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+      "stableSlug": "release-notes",
+      "ordinal": 1,
+      "assetVersion": 2,
+      "ownerPrincipalId": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+      "skillName": "release-notes",
+      "description": "Write release notes from merged changes.",
+      "artifactFormat": "kailo-skill@1",
+      "artifactDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+      "artifactByteSize": 412,
+      "metadataHash": "1b4f0e9851971998e732078544c96b36c3d01cedf7caa332359d6f1d83567014",
+      "capabilityRequirements": [],
+      "state": "PUBLISHED",
+      "current": true,
+      "canRetire": true
+    }],
+    "nextOffset": 50
+  },
+  "contentView": {
+    "assetId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "artifactDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "content": "---\nname: release-notes\ndescription: Write release notes from merged changes.\n---\n\n# Release notes\n"
+  },
+  "uploadRequest": {"contentBase64": "LS0tCm5hbWU6IHJlbGVhc2Utbm90ZXMKLS0tCg=="},
+  "uploadAccepted": {
+    "accepted": true,
+    "skillResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+    "uploadDigest": "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+    "uploadByteSize": 2048,
+    "encoding": "TAR",
+    "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "artifactDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "artifactByteSize": 412,
+    "skillName": "release-notes",
+    "description": "Write release notes from merged changes.",
+    "shortDescription": "Release notes",
+    "expiresAt": "2026-10-22T00:30:00Z",
+    "violations": []
+  },
+  "uploadRejected": {
+    "accepted": false,
+    "skillResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+    "uploadDigest": "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
+    "uploadByteSize": 4096,
+    "violations": [
+      {"code": "EXECUTABLE_ENTRY", "path": "release-notes/scripts/run.sh"},
+      {"code": "MISSING_SKILL_MD"}
+    ]
+  },
+  "referencePage": {"versions": []},
+  "installationSkills": {
+    "installationResourceId": "7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d",
+    "agentVersionAssetId": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+    "generation": 3,
+    "skills": [{
+      "skillVersionAssetId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "skillResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e",
+      "stableSlug": "release-notes",
+      "ordinal": 1,
+      "artifactDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+      "projected": true,
+      "status": "NO_PERMISSION"
+    }]
+  }
+}

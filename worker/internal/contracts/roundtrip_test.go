@@ -1761,3 +1761,44 @@ func TestCollaborationDD125C5HuddleRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestDD135SkillsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "skills.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"definitionCreateCommand": new(generated.ActionCommand),
+		"versionCreateCommand":    new(generated.ActionCommand),
+		"definitionView":          new(generated.SkillDefinitionView),
+		"versionPage":             new(generated.SkillVersionPage),
+		"contentView":             new(generated.SkillVersionContentView),
+		"uploadRequest":           new(generated.SkillArtifactUploadRequest),
+		"uploadAccepted":          new(generated.SkillArtifactUploadView),
+		"uploadRejected":          new(generated.SkillArtifactUploadView),
+		"referencePage":           new(generated.SkillReferencePage),
+		"installationSkills":      new(generated.AgentInstallationSkillPage),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}

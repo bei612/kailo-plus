@@ -350,7 +350,7 @@ fn single_skill_md(entries: &[Entry]) -> Result<Vec<u8>, Vec<Violation>> {
                         Some(&path_of(entry)),
                     ));
                 } else {
-                    found = Some(data);
+                    found = Some(data.as_slice());
                 }
             }
             _ => violations.push(Violation::new(Code::ExtraEntry, Some(&path_of(entry)))),

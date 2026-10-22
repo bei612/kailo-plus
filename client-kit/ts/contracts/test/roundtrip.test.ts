@@ -1130,3 +1130,52 @@ test("DD-125 member joins and memory references preserve fields and absence", ()
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-135 skills contracts preserve fields and absence", () => {
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  type Definition = import("../src/generated/contracts.js").SkillDefinitionView;
+  type Version = import("../src/generated/contracts.js").SkillVersionView;
+  type VersionPage = import("../src/generated/contracts.js").SkillVersionPage;
+  type Content = import("../src/generated/contracts.js").SkillVersionContentView;
+  type UploadRequest = import("../src/generated/contracts.js").SkillArtifactUploadRequest;
+  type Upload = import("../src/generated/contracts.js").SkillArtifactUploadView;
+  type References = import("../src/generated/contracts.js").SkillReferencePage;
+  type InstallationSkills = import("../src/generated/contracts.js").AgentInstallationSkillPage;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/skills.sample.json", import.meta.url), "utf8"));
+  const command = (row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey,
+    resourceId: row.resourceId, resourceVersion: row.resourceVersion, slug: row.slug, name: row.name,
+    skillVersionUpload: row.skillVersionUpload && {uploadId: row.skillVersionUpload.uploadId,
+      artifactDigest: row.skillVersionUpload.artifactDigest, capabilityRequirements: row.skillVersionUpload.capabilityRequirements},
+    explicitConfirmation: row.explicitConfirmation});
+  const definition = (row: Definition) => ({resourceId: row.resourceId, ownerPrincipalId: row.ownerPrincipalId,
+    stableSlug: row.stableSlug, displayName: row.displayName, status: row.status, resourceVersion: row.resourceVersion,
+    currentPublishedVersionAssetId: row.currentPublishedVersionAssetId, catalogShared: row.catalogShared,
+    canUpload: row.canUpload, canDisable: row.canDisable, canShare: row.canShare});
+  const version = (row: Version) => ({assetId: row.assetId, skillResourceId: row.skillResourceId, stableSlug: row.stableSlug,
+    ordinal: row.ordinal, assetVersion: row.assetVersion, ownerPrincipalId: row.ownerPrincipalId, skillName: row.skillName,
+    description: row.description, shortDescription: row.shortDescription, artifactFormat: row.artifactFormat,
+    artifactDigest: row.artifactDigest, artifactByteSize: row.artifactByteSize, metadataHash: row.metadataHash,
+    capabilityRequirements: row.capabilityRequirements, state: row.state, current: row.current,
+    canPublish: row.canPublish, canRetire: row.canRetire});
+  const upload = (row: Upload) => ({accepted: row.accepted, skillResourceId: row.skillResourceId, uploadDigest: row.uploadDigest,
+    uploadByteSize: row.uploadByteSize, encoding: row.encoding, uploadId: row.uploadId, artifactDigest: row.artifactDigest,
+    artifactByteSize: row.artifactByteSize, skillName: row.skillName, description: row.description,
+    shortDescription: row.shortDescription, expiresAt: row.expiresAt,
+    violations: row.violations.map((violation) => ({code: violation.code, path: violation.path}))});
+  const actual = {
+    definitionCreateCommand: command(value.definitionCreateCommand), versionCreateCommand: command(value.versionCreateCommand),
+    definitionView: definition(value.definitionView),
+    versionPage: ((row: VersionPage) => ({skillResourceId: row.skillResourceId, resourceVersion: row.resourceVersion,
+      versions: row.versions.map(version), nextOffset: row.nextOffset}))(value.versionPage),
+    contentView: ((row: Content) => ({assetId: row.assetId, artifactDigest: row.artifactDigest, content: row.content}))(value.contentView),
+    uploadRequest: ((row: UploadRequest) => ({contentBase64: row.contentBase64}))(value.uploadRequest),
+    uploadAccepted: upload(value.uploadAccepted), uploadRejected: upload(value.uploadRejected),
+    referencePage: ((row: References) => ({versions: row.versions.map(version), nextOffset: row.nextOffset}))(value.referencePage),
+    installationSkills: ((row: InstallationSkills) => ({installationResourceId: row.installationResourceId,
+      agentVersionAssetId: row.agentVersionAssetId, generation: row.generation,
+      skills: row.skills.map((skill) => ({skillVersionAssetId: skill.skillVersionAssetId, skillResourceId: skill.skillResourceId,
+        stableSlug: skill.stableSlug, ordinal: skill.ordinal, artifactDigest: skill.artifactDigest,
+        projected: skill.projected, status: skill.status}))}))(value.installationSkills),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});
