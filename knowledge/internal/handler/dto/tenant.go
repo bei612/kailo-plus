@@ -27,12 +27,13 @@ type TenantResponse struct {
 	ChatHistoryConfig   *types.ChatHistoryConfig   `json:"chat_history_config,omitempty"`
 	RetrievalConfig     *types.RetrievalConfig     `json:"retrieval_config,omitempty"`
 	MemoryConfig        *types.MemoryConfig        `json:"memory_config,omitempty"`
-	// KailoManaged marks a space whose members and roles come from Kailo
-	// (Kailo DD-133); the UI offers no native membership controls for it.
-	KailoManaged bool      `json:"kailo_managed"`
-	CreatedAt    time.Time `json:"created_at"`
+	CreatedAt           time.Time                  `json:"created_at"`
 	UpdatedAt           time.Time                  `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt             `json:"deleted_at"`
+
+	// KailoManaged marks a space whose members and roles come from Kailo
+	// (Kailo DD-133); the UI offers no native membership controls for it.
+	KailoManaged bool `json:"kailo_managed"`
 }
 
 // NewTenantResponse converts a stored tenant into its HTTP response shape.

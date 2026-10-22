@@ -24,8 +24,6 @@ type Config struct {
 	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
 	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
 	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
-	// Kailo switches on the Kailo embedded product mode (Kailo DD-133).
-	Kailo *KailoIntegrationConfig `yaml:"kailo" json:"kailo"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
 	DocReader       *DocReaderConfig       `yaml:"docreader"        json:"docreader"`
@@ -51,6 +49,9 @@ type Config struct {
 	// against window.location.origin — fine for typical single-origin
 	// deployments. Sourced from FRONTEND_BASE_URL env at startup.
 	FrontendBaseURL string `yaml:"frontend_base_url" json:"frontend_base_url"`
+
+	// Kailo switches on the Kailo embedded product mode (Kailo DD-133).
+	Kailo *KailoIntegrationConfig `yaml:"kailo" json:"kailo"`
 }
 
 // FileStorageSyncConfig reuses the binding's existing OIDC service identity and
