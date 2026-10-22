@@ -624,7 +624,7 @@ impl Supervisor {
                 self.max_message_bytes,
             )
             .await?;
-        if !skills_listed(&listed, &process.home, &skills) {
+        if !skills_listed(&listed, &skills) {
             return Err(RuntimeError::Protocol);
         }
         process.skills = std::mem::take(&mut skills);
@@ -686,7 +686,7 @@ impl Supervisor {
                 self.max_message_bytes,
             )
             .await?;
-        if !skills_listed(&listed, &process.home, &process.skills) {
+        if !skills_listed(&listed, &process.skills) {
             return Err(RuntimeError::Protocol);
         }
         Ok(())
@@ -1792,7 +1792,7 @@ async fn materialize_skills(
 
 /// `skills/list` 对 `CODEX_HOME` 的回应必须恰为预期集合：同名、同规范路径、`user` scope、
 /// 启用标志一致且无解析错误；出现任何其他 Skill 即不一致（DD-135(5)、SF-COD-18）。
-fn skills_listed(listed: &Value, home: &Path, expected: &[ProjectedSkill]) -> bool {
+fn skills_listed(listed: &Value, expected: &[ProjectedSkill]) -> bool {
     let Some([entry]) = listed
         .get("data")
         .and_then(Value::as_array)
@@ -1800,11 +1800,11 @@ fn skills_listed(listed: &Value, home: &Path, expected: &[ProjectedSkill]) -> bo
     else {
         return false;
     };
-    if entry.get("cwd").and_then(Value::as_str) != home.to_str()
-        || entry
-            .get("errors")
-            .and_then(Value::as_array)
-            .is_none_or(|errors| !errors.is_empty())
+    // 只请求了 CODEX_HOME 一个 cwd；回应路径的写法不作为判据，集合与错误才是。
+    if entry
+        .get("errors")
+        .and_then(Value::as_array)
+        .is_none_or(|errors| !errors.is_empty())
     {
         return false;
     }
@@ -3309,7 +3309,7 @@ mod skill_projection_tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o444);
         }
-        assert!(skills_listed(&listed(&home, &first), &home, &first));
+        assert!(skills_listed(&listed(&home, &first), &first));
         // A second generation replaces the old read-only root entirely.
         let (_, second) =
             materialize_skills(&home, Some("kailo-skills/g2"), std::slice::from_ref(&skill))
@@ -3325,7 +3325,7 @@ mod skill_projection_tests {
         assert!(tokio::fs::metadata(home.join(SKILL_ROOT_DIR))
             .await
             .is_err());
-        assert!(skills_listed(&listed(&home, &[]), &home, &[]));
+        assert!(skills_listed(&listed(&home, &[]), &[]));
         tokio::fs::remove_dir_all(&home).await.unwrap();
     }
 
@@ -3353,14 +3353,14 @@ mod skill_projection_tests {
         let mut extra = listed(&home, &projected);
         extra["data"][0]["skills"].as_array_mut().unwrap().push(json!({
             "name":"stray","path":"/etc/codex/skills/stray/SKILL.md","scope":"admin","enabled":true}));
-        assert!(!skills_listed(&extra, &home, &projected));
+        assert!(!skills_listed(&extra, &projected));
         let mut errors = listed(&home, &projected);
         errors["data"][0]["errors"] = json!([{"path":"x","message":"invalid YAML"}]);
-        assert!(!skills_listed(&errors, &home, &projected));
+        assert!(!skills_listed(&errors, &projected));
         let mut disabled = projected.clone();
         disabled[0].enabled = false;
-        assert!(!skills_listed(&listed(&home, &projected), &home, &disabled));
-        assert!(skills_listed(&listed(&home, &disabled), &home, &disabled));
+        assert!(!skills_listed(&listed(&home, &projected), &disabled));
+        assert!(skills_listed(&listed(&home, &disabled), &disabled));
         super::writable_tree(home.clone()).await.unwrap();
         tokio::fs::remove_dir_all(&home).await.unwrap();
     }

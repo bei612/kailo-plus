@@ -37,7 +37,21 @@
   AgentVersion 编辑器的 Skill 选择与 Installation 详情的 Skill 投影状态。
 - 文案进入同一 `i18n.ts`（en/zh-CN），Dart 由 `tools/gen-platform-i18n.py` 生成。
 
-## 已运行的检查
+## 已运行的检查（2026-10-22，CI 节点，分支 `feat/skills`，固定检查镜像）
 
-见同目录提交记录与 CI 节点分支检查日志；业务验收（上传 → 发布 → 引用 → 安装 →
-Codex 发现 → 频道使用 → 审计回读）在合并发布后执行，本文件届时追加实际回执。
+工作树从 GitHub 取固定提交后在 CI 节点 NVMe 上展开（`~/skills-ci/run.sh`），没有经开发机传输源码。
+
+| 检查 | 提交 | 结果 |
+|---|---|---|
+| `tools/gen.sh`（四侧契约与 Dart 文案） | `8a83e95d5` | 生成物单独提交为 `f25805a06` |
+| `cargo fmt --all --check`、`cargo clippy -p platform-core -p contracts --all-targets -D warnings` | `6e2ff800f` | 均退出 0 |
+| `cargo test -p platform-core -p contracts` | `6e2ff800f` | platform-core 632 passed / 59 ignored，contracts 65 passed；Skill 相关 10 项与 `dd135_skills_preserve_fields_and_absence` 通过 |
+| 一次性 PostgreSQL：迁移前进、回退、再前进，`sqlx prepare`，命名枚举约束 | `6e2ff800f` | 三步演练通过；sqlx 离线数据 0 文件变化；47 个命名约束与 `contracts/enums/` 逐值相等 |
+| `tools/check.sh lint` | `6e2ff800f` | cargo fmt、clippy、gofmt、tsc、web-client tsc、dart analyze 通过；go vet 首次因 Go 代理下载中断失败，换用 CI 代理列表后 `go vet ./...` 通过 |
+| `tools/check.sh verify` | `8f9dd82c7` | cargo test、go test、`pnpm -r test`（client-kit 122 个测试文件）、web-client vitest（46 个文件）、dart test 全部通过 |
+| Buzz Desktop `tsc --noEmit` | `8f9dd82c7` | 退出 0 |
+| `tools/check.sh trace`（文档六项、设计语料、注册表） | `8f9dd82c7` | 文档门禁与注册表通过；仅既有 core/worker 产物记录因展开目录未接入持久证明库 `dist/` 报缺，与本能力无关 |
+
+首次 `verify` 的 3 项前端失败已修正并复测通过：Agents 页原版只有一个页面刷新（Skills 区改为随页面刷新重读，并为该断言增加 Skills 读取），以及测试路由未匹配带分页参数的版本读取。
+
+业务验收（上传 → 发布 → 引用 → 安装 → Codex 发现 → 频道使用 → 审计回读）在合并发布后执行，本文件届时追加实际回执。
