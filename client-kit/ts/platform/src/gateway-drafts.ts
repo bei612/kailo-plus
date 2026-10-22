@@ -93,6 +93,14 @@ export async function contractDraft(categoryKey: string, tools: GatewayMcpProbed
   };
 }
 
+function uuidV4(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export type ReleaseDraft = { manifestJson: string; packageJson: string; bindingConfigSchemaJson: string; releaseId: string };
 
 export const emptyBindingConfigSchema = {
@@ -117,7 +125,7 @@ export async function releaseDraft(input: {
   artifactVersion: string;
   contract?: CapabilityContractRegistration;
 }): Promise<ReleaseDraft> {
-  const releaseId = globalThis.crypto.randomUUID();
+  const releaseId = typeof globalThis.crypto.randomUUID === "function" ? globalThis.crypto.randomUUID() : uuidV4();
   const componentTypeKey = identifierFrom(input.componentTypeKey, "mcp_service");
   const chosen = input.choices.filter((choice) => choice.contractKey);
   const implemented = new Map<string, { categoryKey: string; contractVersion: number }>();

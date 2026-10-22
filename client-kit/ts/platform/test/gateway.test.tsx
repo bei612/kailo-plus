@@ -15,8 +15,21 @@ import { type BffReply, type BffRequest, TransportError } from "../src/transport
 import { button, click, render, settle, type } from "./render";
 
 beforeAll(() => {
-  if (!globalThis.crypto?.subtle) vi.stubGlobal("crypto", webcrypto);
+  // The wizard digests drafts with Web Crypto; jsdom's own crypto has no SubtleCrypto.
+  vi.stubGlobal("crypto", webcrypto);
 });
+
+/** Web Crypto settles outside React's microtask queue: poll until the element appears. */
+async function waitFor<T>(read: () => T | null | undefined, timeout = 2000): Promise<T> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    await settle();
+    const value = read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error("waitFor timed out");
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  }
+}
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const tenantAccess = { scope: "TENANT", tenantId, canReadStats: true, canReadTools: true, canReadModelRoutes: true,
@@ -42,7 +55,7 @@ function stats(dimension: string, overrides: Record<string, unknown> = {}) {
 }
 
 const call = { callId: "tool:22222222-2222-4222-8222-222222222222", kind: "TOOL", startedAt: "2026-10-21T01:00:00Z",
-  outcome: "DENIED", reasonCode: "DELEGATION_REQUIRED", toolName: "time.convert", agentName: "研究助理",
+  outcome: "DENIED", reasonCode: "DELEGATION_REQUIRED", promptPreview: "SECRET-PROMPT-BODY", toolName: "time.convert", agentName: "研究助理",
   operationId: "33333333-3333-4333-8333-333333333333", actionExecutionId: "22222222-2222-4222-8222-222222222222" };
 
 type Route = (request: BffRequest) => BffReply | Promise<BffReply>;
@@ -144,7 +157,8 @@ describe("gateway statistics and calls", () => {
     const shown = host.querySelector("[data-testid=gateway-call-detail]")!;
     expect(shown.querySelector("[data-testid=gateway-call-audit]")?.textContent).toContain("DELEGATION_REQUIRED");
     expect(shown.querySelector("[data-testid=gateway-call-execution]")).not.toBeNull();
-    expect(shown.textContent).not.toMatch(/prompt|completion/i);
+    // A body the BFF must never send is not rendered even if a malformed reply carries one.
+    expect(shown.textContent).not.toContain("SECRET-PROMPT-BODY");
   });
 });
 
@@ -273,8 +287,7 @@ describe("MCP server wizard", () => {
     const [, vendor, version] = release.querySelectorAll<HTMLInputElement>("input");
     await type(vendor!, "modelcontextprotocol"); await type(version!, "2025.1");
     await click(button(release, "Draft release"));
-    await settle();
-    const manifest = JSON.parse(release.querySelector("textarea")!.value);
+    const manifest = JSON.parse((await waitFor(() => release.querySelector("textarea"))).value);
     expect(manifest.executionConnector).toEqual({ mode: "PROTOCOL_PEER", adapterProtocolRange: "NONE", actionTokenAudience: "NONE" });
     expect(manifest.adapterBuildRef).toBe(peer.artifactDigest);
     expect(manifest.toolDefinitions[0]).toMatchObject({ name: "convert_time", capabilityContractKey: "time.convert_time@v1" });

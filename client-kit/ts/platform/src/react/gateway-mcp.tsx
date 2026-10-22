@@ -141,8 +141,10 @@ function ContractStep({ probe, choices, onChoices, contract, onContract }: {
     : { ...choice, contractKey: contractKey || undefined,
       permission: choice.tool.matchingContracts.find((item) => item.contractKey === contractKey)?.permission }));
   const draft = async () => {
-    const value = await contractDraft(category || "mcp", unmatched.length ? unmatched : probe.tools);
-    setDocument(JSON.stringify(value, null, 2)); setInvalid(false);
+    try {
+      const value = await contractDraft(category || "mcp", unmatched.length ? unmatched : probe.tools);
+      setDocument(JSON.stringify(value, null, 2)); setInvalid(false);
+    } catch { setInvalid(true); }
   };
   const prepare = () => {
     let value: CapabilityContractRegistration | null = null;
@@ -176,6 +178,7 @@ function ContractStep({ probe, choices, onChoices, contract, onContract }: {
           value={category} disabled={register.frozen} onChange={(event) => setCategory(event.target.value)} />
         <Button disabled={register.frozen} onClick={() => void draft()}>{t("gateway.mcp.draftContract")}</Button>
       </div>
+      {invalid && !document ? <p role="alert">{t("capabilities.invalid")}</p> : null}
       {document ? <>
         <textarea aria-label={t("gateway.mcp.contractDocument")} className={textareaClass} value={document} disabled={register.frozen}
           onChange={(event) => { setDocument(event.target.value); setInvalid(false); }} />
@@ -207,9 +210,11 @@ function ReleaseStep({ peer, probe, choices, contract }: {
   const [invalid, setInvalid] = useState(false);
   const chosen = choices.filter((choice) => choice.contractKey);
   const generate = async () => {
-    setDraft(await releaseDraft({ peer, probe, choices, componentTypeKey: typeKey, vendor: vendor.trim(), artifactVersion: version.trim(),
-      ...(contract ? { contract } : {}) }));
-    setInvalid(false);
+    try {
+      setDraft(await releaseDraft({ peer, probe, choices, componentTypeKey: typeKey, vendor: vendor.trim(), artifactVersion: version.trim(),
+        ...(contract ? { contract } : {}) }));
+      setInvalid(false);
+    } catch { setInvalid(true); }
   };
   const refresh = async () => {
     if (!draft) return;
@@ -246,12 +251,12 @@ function ReleaseStep({ peer, probe, choices, contract }: {
           <textarea className={textareaClass} value={draft[field]} disabled={register.frozen}
             onChange={(event) => edit(field, event.target.value)} />
         </label>)}
-        {invalid ? <p role="alert">{t("components.invalid")}</p> : null}
         <div className="flex gap-2">
           <Button disabled={register.frozen} onClick={() => void refresh()}>{t("gateway.mcp.refreshDigests")}</Button>
           <Button disabled={register.frozen} onClick={prepare}>{t("components.register")}</Button>
         </div>
       </> : null}
+      {invalid ? <p role="alert">{t("components.invalid")}</p> : null}
     </>}
     <GatewayActionPanel action={register} testId="gateway-mcp-release-action" />
     {draft && register.submission && !register.unknown ? <Step index={5} title={t("gateway.mcp.approval")} testId="gateway-mcp-approval">
