@@ -137,12 +137,15 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
     {
         return Err(blocked());
     }
-    gateway
-        .admin(
+    crate::gateway_admin::history::scope(
+        ae.id,
+        ae.operation_id,
+        gateway.admin(
             &["api", "config", "resources", "traffic.route"],
             Some(json!({"resources":[{"value":route}]})),
-        )
-        .await?;
+        ),
+    )
+    .await?;
     crate::agent_tool_runtime::require_route(&gateway, &target, Some(&route)).await?;
     sqlx::query("update projection.application_runtime set gateway_state='ACTIVE'
         where binding_id=$1 and generation=$2 and native_gateway_route_id=$3 and gateway_config_hash=$4 and state='PENDING'")
@@ -196,12 +199,15 @@ pub(super) async fn publish_validation(
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
             "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
-    gateway
-        .admin(
+    crate::gateway_admin::history::scope(
+        ae.id,
+        ae.operation_id,
+        gateway.admin(
             &["api", "config", "resources", "traffic.route"],
             Some(json!({"resources":[{"value":route}]})),
-        )
-        .await?;
+        ),
+    )
+    .await?;
     crate::agent_tool_runtime::require_route(&gateway, &target, Some(&route)).await?;
     tx.commit().await?;
     Ok((url, credential_projection))
@@ -222,7 +228,12 @@ pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
     if !rows.is_empty() {
         let gateway = crate::model_route::Gateway::from_env()?;
         for (generation, id) in rows {
-            gateway.delete("traffic.route", &id).await?;
+            crate::gateway_admin::history::scope(
+                ae.id,
+                ae.operation_id,
+                gateway.delete("traffic.route", &id),
+            )
+            .await?;
             crate::agent_tool_runtime::require_route(&gateway, &id, None).await?;
             sqlx::query(
                 "update projection.application_runtime set gateway_state='REVOKED'
@@ -247,7 +258,12 @@ pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
         let gateway = crate::model_route::Gateway::from_env()?;
         for generation in validation_generations {
             let id = peer::target(ae.target_id, generation);
-            gateway.delete("traffic.route", &id).await?;
+            crate::gateway_admin::history::scope(
+                ae.id,
+                ae.operation_id,
+                gateway.delete("traffic.route", &id),
+            )
+            .await?;
             crate::agent_tool_runtime::require_route(&gateway, &id, None).await?;
         }
     }

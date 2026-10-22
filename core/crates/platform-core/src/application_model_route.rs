@@ -519,7 +519,8 @@ pub(crate) async fn provision(state: &ServiceState, ae: &Execution) -> Result<()
     }
     tx.commit().await?;
     if create {
-        gateway.create_key(&desired).await?;
+        crate::gateway_admin::history::scope(ae.id, ae.operation_id, gateway.create_key(&desired))
+            .await?;
     }
     let (id, revision) = gateway.find_key(&desired).await?.ok_or_else(unavailable)?;
     gateway.check_models(&native_models, &secret).await?;
@@ -705,7 +706,12 @@ pub(crate) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
                 .map_err(|_| unavailable())?;
             let desired = native_key(projection, &secret);
             if let Some((id, _)) = gateway.find_key(&desired).await? {
-                gateway.delete("llm.apiKey", &id).await?;
+                crate::gateway_admin::history::scope(
+                    ae.id,
+                    ae.operation_id,
+                    gateway.delete("llm.apiKey", &id),
+                )
+                .await?;
             }
             // Absence alone is not a fence: the native outbox reader separately
             // requires this exact service identity's durable key tombstones.

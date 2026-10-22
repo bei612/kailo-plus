@@ -107,12 +107,15 @@ pub(crate) async fn configuration(
     {
         return Err(unavailable()); // do not invent an unbounded/new native listener
     }
-    gateway
-        .admin(
+    crate::gateway_admin::history::scope(
+        parent.id,
+        parent.operation_id,
+        gateway.admin(
             &["api", "config", "resources", "traffic.route"],
             Some(json!({"resources":[{"value":route}]})),
-        )
-        .await?;
+        ),
+    )
+    .await?;
     require_route(&gateway, &target, Some(&route)).await?;
     let mut tx = state.pool.begin().await?;
     let (context, parent) =
