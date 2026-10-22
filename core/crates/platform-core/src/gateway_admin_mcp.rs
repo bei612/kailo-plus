@@ -21,7 +21,7 @@ use contracts::{
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::access::{caller, require_platform, require_tenant, Caller};
+use super::access::{caller, require_platform, require_tenant, require_zone, Caller};
 use super::mask::sanitize_url;
 use crate::bff::BffState;
 use crate::governance::Refusal;
@@ -126,6 +126,7 @@ async fn bound_ids(pool: &sqlx::PgPool) -> Result<HashSet<String>, Refusal> {
 }
 
 async fn peer_page(state: &BffState, caller: &Caller) -> Result<GatewayMcpPeerPage, Refusal> {
+    require_zone(state, caller).await?;
     require_platform(state, caller, "manage").await?;
     let conformance = conformance_digest();
     let mut value = json!({"directoryAvailable":false,"peers":[]});
@@ -221,6 +222,7 @@ pub(crate) fn release_view(
 }
 
 async fn release_page(state: &BffState, caller: &Caller) -> Result<GatewayMcpReleasePage, Refusal> {
+    require_zone(state, caller).await?;
     require_tenant(state, caller, None, "manage").await?;
     let tenant = caller.ctx.tenant_id;
     let rows: Vec<ReleaseRow> = sqlx::query_as(
@@ -321,6 +323,7 @@ async fn draft(
     if !config.is_object() {
         return Err(invalid());
     }
+    require_zone(state, caller).await?;
     require_tenant(state, caller, workspace, "manage").await?;
     let adapter_build_ref: Option<String> = sqlx::query_scalar(
         "select adapter_build_ref from catalog.component_release

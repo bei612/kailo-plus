@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::access::{action_allowed, caller, check, require_tenant, Caller};
+use super::access::{action_allowed, caller, check, require_tenant, require_zone, Caller};
 use super::stats::{model_records, rfc3339, window, Counters, Kind};
 use crate::bff::BffState;
 use crate::governance::{Refusal, Target};
@@ -74,6 +74,7 @@ async fn route_page(
     caller: &Caller,
     query: RoutesQuery,
 ) -> Result<GatewayModelRoutePage, Refusal> {
+    require_zone(state, caller).await?;
     require_tenant(state, caller, None, "discover").await?;
     let offset = query.offset.unwrap_or(0);
     let limit = i64::from(state.governance.cfg.relationship_page);
@@ -243,8 +244,9 @@ pub(crate) async fn list(
     }
 }
 
-/// 原生来源配对：model 的 `provider.reference` 指向同库的 provider。route 自身的投影
-/// （ID 为 llm_route Resource 的原生 ID）与已被本 Tenant 现存 route 冻结引用的来源不再列出。
+/// 原生来源配对：model 的 `provider.reference` 指向同库的 provider。只排除 route 自身的投影
+/// （ID 为 llm_route Resource 的原生 ID）；已被现存 route 引用的来源照常列出，与
+/// `llm_route.create` 的准入一致——准入允许多条 route 复用同一来源（DD-134(7)）。
 pub(crate) fn pair_sources(
     providers: &[Value],
     models: &[Value],
@@ -295,32 +297,18 @@ pub(crate) fn pair_sources(
 }
 
 async fn source_page(state: &BffState, caller: &Caller) -> Result<GatewayModelSourcePage, Refusal> {
+    require_zone(state, caller).await?;
     require_tenant(state, caller, None, "create").await?;
     let gateway = crate::model_route::Gateway::from_env().map_err(|_| unavailable())?;
     let providers = gateway.resources("llm.provider").await?;
     let models = gateway.resources("llm.model").await?;
-    // route 投影（任何 Tenant 的 llm_route 原生 ID）与本 Tenant 现存 route 冻结的来源
+    // 只排除 route 投影（任何 Tenant 的 llm_route 原生 ID），不排除被现存 route 引用的来源
     let projected: Vec<String> = sqlx::query_scalar(
         "select native_id from catalog.resource where type_key='llm_route' and application_binding_id is null",
     )
     .fetch_all(&state.pool)
     .await?;
-    let frozen: Vec<Value> = sqlx::query_scalar(
-        "select p.source_refs from catalog.model_route_projection p
-         join catalog.resource r on r.id=p.resource_id
-         where r.tenant_id=$1 and r.state in ('PROVISIONING','ACTIVE','UNKNOWN')",
-    )
-    .bind(caller.ctx.tenant_id)
-    .fetch_all(&state.pool)
-    .await?;
-    let mut excluded: std::collections::HashSet<String> = projected.into_iter().collect();
-    for refs in frozen {
-        for pointer in ["/provider/id", "/model/id"] {
-            if let Some(id) = refs.pointer(pointer).and_then(Value::as_str) {
-                excluded.insert(id.to_owned());
-            }
-        }
-    }
+    let excluded: std::collections::HashSet<String> = projected.into_iter().collect();
     let value = json!({"sources":pair_sources(&providers, &models, &excluded)});
     serde_json::from_value(value)
         .map_err(|e| Refusal::Unavailable(format!("GatewayModelSourcePage: {e}")))
@@ -383,5 +371,28 @@ mod tests {
         assert_eq!(source["credentialRequired"], true);
         // 值本身不出现在响应中
         assert!(!source.to_string().contains("vllm:8000"));
+    }
+
+    /// 缺陷 4（生产验收）：来源被现存 route 引用后仍可再选，与 `llm_route.create` 的准入一致；
+    /// 只有 route 自己的投影（原生 ID 等于某个 llm_route）不作为来源。
+    #[test]
+    fn a_source_used_by_an_existing_route_is_still_offered() {
+        let providers = vec![
+            json!({"kind":"llm.provider","id":"vision","revision":1,
+                "value":{"name":"vision","provider":{"openAI":{}},"params":{}}}),
+            json!({"kind":"llm.provider","id":"62f190fc","revision":1,"value":{"name":"62f190fc"}}),
+        ];
+        let models = vec![
+            json!({"kind":"llm.model","id":"vision-27b","revision":1,
+                "value":{"provider":{"reference":"vision"},"params":{"model":"vision-27b"}}}),
+            // 已由 route 62f190fc 投影、冻结引用了 vision 来源的 route 自身投影
+            json!({"kind":"llm.model","id":"62f190fc","revision":1,
+                "value":{"provider":{"reference":"62f190fc"},"params":{"model":"vision-27b"}}}),
+        ];
+        let projected: HashSet<String> = ["62f190fc".to_owned()].into_iter().collect();
+        let sources = pair_sources(&providers, &models, &projected);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["provider"]["id"], "vision");
+        assert_eq!(sources[0]["model"]["id"], "vision-27b");
     }
 }
