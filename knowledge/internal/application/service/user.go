@@ -1140,8 +1140,11 @@ func (s *userService) generateTokensForSession(
 	if !accessExpiry.After(now) {
 		return "", "", ErrNativeSessionExpired
 	}
-	// Generate access token (expires in 24 hours)
+	// Generate access token (expires in 24 hours). The jti keeps tokens of
+	// two sessions minted in the same second distinct, so revoking one
+	// session (back-channel logout by sid) never matches the other's row.
 	accessClaims := jwt.MapClaims{
+		"jti":       uuid.New().String(),
 		"user_id":   user.ID,
 		"email":     user.Email,
 		"tenant_id": activeTenantID,
@@ -1158,6 +1161,7 @@ func (s *userService) generateTokensForSession(
 
 	// Generate refresh token (expires in 7 days)
 	refreshClaims := jwt.MapClaims{
+		"jti":     uuid.New().String(),
 		"user_id": user.ID,
 		"exp":     refreshExpiry.Unix(),
 		"iat":     now.Unix(),
