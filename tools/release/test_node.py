@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.dont_write_bytecode = True
@@ -857,6 +858,49 @@ class IdpDeclarations(unittest.TestCase):
     def test_read_only_wrapper_refuses_writes(self):
         with self.assertRaises(idp.Refused):
             idp.ReadOnly(FakeKeycloak())("/users/profile", {}, "PUT")
+
+
+class DeclaredEnvPreview(unittest.TestCase):
+    """backup 先于 deploy：compose 必须按声明后的 .env 渲染（新的 ${NAME:?} 键尚未落盘）。"""
+
+    def release(self, runtime, to_set, to_unset=()):
+        r = node.Release.__new__(node.Release)
+        r.runtime, r.decl, r.tree = runtime, dict(overlays=[]), "/tree"
+
+        class Model:
+            @staticmethod
+            def env_declaration(decl):
+                return dict(to_set), list(to_unset)
+        r.model = Model
+        return r
+
+    def test_preview_carries_declared_keys_and_is_removed(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            with open(os.path.join(runtime, ".env"), "w") as stream:
+                stream.write("A=1\nOLD=x\n")
+            r = self.release(runtime, {"NEW": "2", "A": "1"}, ["OLD"])
+            self.assertIn(os.path.join(runtime, ".env"), r.compose_argv())
+            with r.declared_env_preview():
+                argv = r.compose_argv()
+                preview = argv[argv.index("--env-file") + 1]
+                self.assertNotEqual(preview, os.path.join(runtime, ".env"))
+                self.assertEqual(os.path.dirname(preview), runtime)
+                self.assertEqual(os.stat(preview).st_mode & 0o777, 0o600)
+                with open(preview) as stream:
+                    self.assertEqual(stream.read().split("\n"), ["A=1", "NEW=2", ""])
+            self.assertFalse(os.path.exists(preview))
+            self.assertIn(os.path.join(runtime, ".env"), r.compose_argv())
+            with open(os.path.join(runtime, ".env")) as stream:
+                self.assertEqual(stream.read(), "A=1\nOLD=x\n")
+
+    def test_no_declared_change_uses_the_runtime_env(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            with open(os.path.join(runtime, ".env"), "w") as stream:
+                stream.write("A=1\n")
+            r = self.release(runtime, {"A": "1"})
+            with r.declared_env_preview():
+                self.assertIn(os.path.join(runtime, ".env"), r.compose_argv())
+            self.assertEqual(sorted(os.listdir(runtime)), [".env"])
 
 
 if __name__ == "__main__":

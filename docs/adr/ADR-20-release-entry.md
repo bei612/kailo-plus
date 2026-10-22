@@ -124,6 +124,8 @@ kailo-release.sh status [--commit SHA]                   # 读日志（journal�
 渲染 Compose 之前比对：只报告「键 + 新增/修改/删除/不变」，不输出任何值；有变化时在运行目录内写临时文件、fsync、
 原子替换，权限与属主不变，并追加 `releases/env-journal.jsonl`（键、动作、commit、时间）。替换前的 `.env` 快照已在 backup 中。
 plan 同时列出目标 commit 的 compose 以 `${NAME:?…}` 要求、而运行 `.env` 缺少且未声明的键名，deploy 遇到即拒绝。
+backup 先于 deploy 推导漂移与需备份的库，此时声明尚未落盘：它按声明后的 `.env` 在运行目录同目录写 0600 预览、
+用后即删，使新声明的 `${NAME:?…}` 键可插值、预判与 deploy 落盘后的渲染一致；运行 `.env` 在 deploy 之前不变。
 
 ### 5. 执行位置与代码来源
 

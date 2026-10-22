@@ -17,6 +17,7 @@ backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运
 
 import argparse
 import base64
+import contextlib
 import fcntl
 import hashlib
 import io
@@ -137,9 +138,10 @@ def containers(project):
 
 # ---- 配置漂移（ADR-20 §9）--------------------------------------------------------
 
-def compose_argv(tree, runtime, overlays):
+def compose_argv(tree, runtime, overlays, env_file=None):
     """节点上唯一的 Compose 调用参数：项目目录是固定发布树，.env 与叠加文件取自运行目录（ADR-20 §3）。
-    deploy、verify 与只读漂移比较共用，保证比较的就是部署将要创建的配置。"""
+    deploy、verify 与只读漂移比较共用，保证比较的就是部署将要创建的配置。env_file 只在声明式 .env
+    尚未落盘前（backup）指向其同目录预览，使预判与 deploy 落盘后的渲染一致（ADR-20 §4）。"""
     deploy_dir = os.path.join(tree, "deploy", "local")
     files = []
     for rel in overlays or []:
@@ -147,7 +149,7 @@ def compose_argv(tree, runtime, overlays):
         if os.path.isfile(path) and os.path.getsize(path):
             files += ["-f", path]
     argv = DOCKER[:2] + ["--preserve-env=KAILO_RUNTIME_DIR"] + DOCKER[2:] + [
-        "compose", "--env-file", os.path.join(runtime, ".env"), "-f", os.path.join(deploy_dir, "compose.yaml"), *files]
+        "compose", "--env-file", env_file or os.path.join(runtime, ".env"), "-f", os.path.join(deploy_dir, "compose.yaml"), *files]
     return argv, deploy_dir
 
 
@@ -699,7 +701,7 @@ class Release:
         return value
 
     def compose_argv(self):
-        return compose_argv(self.tree, self.runtime, self.decl.get("overlays"))[0]
+        return compose_argv(self.tree, self.runtime, self.decl.get("overlays"), getattr(self, "env_preview", None))[0]
 
     def compose(self, *args, capture=True, check=True):
         return run(self.compose_argv() + list(args), capture=capture, check=check, env=self.env(), cwd=self.deploy_dir)
@@ -869,8 +871,9 @@ class Release:
             manifest["reused"] = True
             return manifest
         found = containers(self.cfg["compose_project"])
-        # 配置漂移按当前运行 .env 判定；deploy 在声明式 .env 落盘后重算，以那时为准
-        rendered, hashes = self.desired()
+        # 配置漂移按声明后的 .env 预判（未落盘）；deploy 在声明式 .env 落盘后重算，以那时为准
+        with self.declared_env_preview():
+            rendered, hashes = self.desired()
         converge = self.converge(self.drift(rendered, hashes, found), self.targets(found))
         targets = converge["targets"]
         migrations = self.migration_plan(found)
@@ -958,8 +961,8 @@ class Release:
             raise NodeError("权限规范后发布树不再干净")
         return changed
 
-    def apply_env(self):
-        """声明式 .env（ADR-20 §4）：只报告键与动作；有变化时同目录临时文件 + fsync + 原子替换。"""
+    def render_env(self):
+        """声明式 .env（ADR-20 §4）应用到运行 .env 后的 (路径, 行, {键: 动作})；不写盘、不输出值。"""
         to_set, to_unset = self.model.env_declaration(self.decl)
         path = os.path.join(self.runtime, ".env")
         with open(path, encoding="utf-8") as stream:
@@ -993,6 +996,29 @@ class Release:
             actions.update({k: "added" for k in missing})
         for key in to_unset:
             actions.setdefault(key, "absent")
+        return path, result, actions
+
+    @contextlib.contextmanager
+    def declared_env_preview(self):
+        """deploy 之前（backup 的漂移与数据库推导）按声明后的 .env 渲染：同目录 0600 临时文件，用后即删。
+        compose 以 ${NAME:?} 要求的新键此时尚未落盘，直接用运行 .env 会插值失败。"""
+        path, result, actions = self.render_env()
+        if not any(a in ("changed", "added", "removed") for a in actions.values()):
+            yield
+            return
+        fd, tmp = tempfile.mkstemp(dir=self.runtime, prefix=".env.preview-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write("\n".join(result))
+            self.env_preview = tmp
+            yield
+        finally:
+            self.env_preview = None
+            os.unlink(tmp)
+
+    def apply_env(self):
+        """声明式 .env（ADR-20 §4）：只报告键与动作；有变化时同目录临时文件 + fsync + 原子替换。"""
+        path, result, actions = self.render_env()
         if any(a in ("changed", "added", "removed") for a in actions.values()):
             info = os.stat(path)
             fd, tmp = tempfile.mkstemp(dir=self.runtime, prefix=".env.release-")
