@@ -10,6 +10,7 @@ import {
   buildWaveMessageContent, MessageRowSurface, parseWaveMessageContent, waveFallbackName, WAVE_MESSAGE_MARKER,
   type TimelineMessage,
 } from "../src/react/messages";
+import { InboxMessageRowSurface } from "../src/react/inbox-surface";
 import { HuddleHostProvider, HuddleParentProvider, IDLE_HUDDLE_STATE, type HuddleHost, type HuddleParent } from "../src/react/huddle/host";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { Popover, PopoverAnchor } from "../src/react/conversations/popover";
@@ -78,6 +79,18 @@ describe("original wave card in the message row", () => {
     expect(renderBody).not.toHaveBeenCalled();
     await act(async () => setLocale("zh-CN"));
     expect(host.querySelector('[data-testid="message-wave-attachment"]')?.textContent).toContain("Ada 向你挥手。");
+  });
+
+  it("renders the same card in the Inbox detail row, never the marked wire text", async () => {
+    const renderBody = vi.fn(() => "wrong ordinary body");
+    const host = await render(row(<InboxMessageRowSurface message={wave} renderBody={renderBody} />));
+    const card = host.querySelector<HTMLElement>('[data-testid="message-wave-attachment"]');
+    expect(card?.textContent).toContain("Ada waved at you.");
+    expect(host.textContent).not.toContain(WAVE_MESSAGE_MARKER);
+    expect(renderBody).not.toHaveBeenCalled();
+    const plain = await render(row(<InboxMessageRowSurface message={{ ...wave, id: "plain", body: "hello" }} renderBody={renderBody} />));
+    expect(plain.querySelector('[data-testid="message-wave-attachment"]')).toBeNull();
+    expect(renderBody).toHaveBeenCalled();
   });
 
   it("starts the governed huddle for the conversation on screen", async () => {
