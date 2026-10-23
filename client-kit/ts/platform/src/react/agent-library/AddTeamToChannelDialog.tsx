@@ -88,7 +88,7 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
     <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogContent className="max-w-xl overflow-hidden p-0" data-testid="team-deploy-dialog" showCloseButton={!deploying}>
         <div className="flex max-h-[85vh] flex-col">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
+          <DialogHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
             <DialogTitle>{t("agentTeams.deployTitle")}</DialogTitle>
             <DialogDescription>{t("agentTeams.deployDescription", { name: team?.name ?? t("agentTeams.thisTeam") })}</DialogDescription>
           </DialogHeader>
@@ -96,10 +96,10 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             {resolved.length > 0 ? (
               <div className="space-y-1.5">
-                <span className="text-sm font-medium">{t("agentTeams.agentsCount", { count: resolved.length })}</span>
+                <span className="text-control font-medium">{t("agentTeams.agentsCount", { count: resolved.length })}</span>
                 <div className="flex flex-wrap gap-2">
                   {resolved.map((member, index) => (
-                    <div className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 px-2 py-1" key={member.resourceId}>
+                    <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted px-2 py-1" key={member.resourceId}>
                       <span className="h-5 w-5 shrink-0"><IdentityInitialsAvatar className="border-0 text-2xs shadow-none" colorIndex={index} label={member.displayName} size={20} /></span>
                       <span className="text-xs font-medium">{member.displayName}</span>
                     </div>
@@ -109,9 +109,9 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
             ) : null}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="team-channel-id">{t("agentTeams.channel")}</label>
+              <label className="text-control font-medium" htmlFor="team-channel-id">{t("agentTeams.channel")}</label>
               <select
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
+                className="flex h-[34px] w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors duration-100 hover:border-ring/40 focus-visible:border-ring focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={available.length === 0 || deploying || results !== null}
                 id="team-channel-id"
                 onChange={(event) => setChannelId(event.target.value)}
@@ -125,7 +125,7 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
             </div>
 
             {missingCount > 0 ? (
-              <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-text">
                 {t(missingCount === 1 ? "agentTeams.deployMissing.one" : "agentTeams.deployMissing.other", { count: missingCount })}
               </p>
             ) : null}
@@ -137,8 +137,8 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
             <p className="text-xs text-muted-foreground">{t("agentTeams.deployBoundary")}</p>
 
             {channels.status === "error" ? (
-              <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
-                {t("platform.loadFailed")} <button className="underline" onClick={reloadChannels} type="button">{t("platform.retry")}</button>
+              <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-text" role="alert">
+                {t("platform.loadFailed")} <button className="font-medium underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" onClick={reloadChannels} type="button">{t("platform.retry")}</button>
               </p>
             ) : null}
 
@@ -147,18 +147,18 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
                 {results.map((result) => (
                   <li className="flex flex-col gap-0.5" data-outcome={result.outcome} key={result.member.resourceId}>
                     <span className="font-medium">{result.member.name}</span>
-                    <span className="break-words text-xs text-muted-foreground">{resultText(result)}</span>
+                    <span className={`break-words text-xs ${result.outcome === "failed" ? (result.failure.kind === "unknown" ? "text-warning-text" : "text-danger-text") : result.outcome === "submitted" && !result.waiting ? "text-success-text" : "text-muted-foreground"}`}>{resultText(result)}</span>
                   </li>
                 ))}
               </ul>
             ) : null}
 
             {problem ? (
-              <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">{problem}</p>
+              <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-text" role="alert">{problem}</p>
             ) : null}
           </div>
 
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border/60 px-6 py-4">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border px-6 py-4">
             <Button disabled={deploying} onClick={() => handleOpenChange(false)} size="sm" type="button" variant="outline">
               {results !== null && !deploying ? t("buzz.close") : t("buzz.cancel")}
             </Button>

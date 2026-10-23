@@ -160,7 +160,7 @@ export function TeamDialog({
           onEscapeKeyDown={(event) => { if (isPending || unknown) event.preventDefault(); }}
           onInteractOutside={(event) => { if (isPending || unknown) event.preventDefault(); }}>
           <div className="flex max-h-[85vh] flex-col">
-            <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
+            <DialogHeader className="shrink-0 border-b border-border px-6 py-5 pr-14">
               <DialogTitle>{title}</DialogTitle>
               {description.trim().length > 0 ? (
                 <DialogDescription>{description}</DialogDescription>
@@ -169,7 +169,7 @@ export function TeamDialog({
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium" htmlFor="team-name">
+                <label className="text-control font-medium" htmlFor="team-name">
                   {t("agentTeams.name")}
                 </label>
                 <Input
@@ -184,7 +184,7 @@ export function TeamDialog({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium" htmlFor="team-description">
+                <label className="text-control font-medium" htmlFor="team-description">
                   {t("agentTeams.description")}
                 </label>
                 <Textarea
@@ -199,15 +199,15 @@ export function TeamDialog({
               </div>
 
               <div className="space-y-2">
-                <span className="text-sm font-medium">{t("agentTeams.agents")}</span>
+                <span className="text-control font-medium">{t("agentTeams.agents")}</span>
                 <p className="text-xs text-muted-foreground">{t("agentTeams.selectAgents")}</p>
                 {missingInitialMemberCount > 0 ? (
-                  <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  <p className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-text">
                     {t(missingInitialMemberCount === 1 ? "agentTeams.dialogMissing.one" : "agentTeams.dialogMissing.other", { count: missingInitialMemberCount })}
                   </p>
                 ) : null}
                 {hiddenCount > 0 ? (
-                  <p className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3 text-sm" data-testid="team-dialog-hidden-locked" role="status">
+                  <p className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground" data-testid="team-dialog-hidden-locked" role="status">
                     {t(hiddenCount === 1 ? "agentTeams.hiddenEditLocked.one" : "agentTeams.hiddenEditLocked.other", { count: hiddenCount })}
                   </p>
                 ) : null}
@@ -216,7 +216,7 @@ export function TeamDialog({
                   <p className="py-4 text-center text-sm text-muted-foreground">{t("agentTeams.emptyAgents")}</p>
                 ) : (
                   <div
-                    className="max-h-60 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2"
+                    className="max-h-60 space-y-0.5 overflow-y-auto rounded-xl border border-border bg-background p-1"
                     role="listbox"
                     aria-label={t("agentTeams.agents")}
                     aria-multiselectable="true"
@@ -226,7 +226,7 @@ export function TeamDialog({
                       const disabled = locked || (!isSelected && atLimit);
                       return (
                         <div
-                          className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
+                          className="flex min-h-[30px] cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 transition-colors duration-100 hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-brand-soft aria-selected:text-brand-soft-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                           data-testid={`team-member-option-${definition.resourceId}`}
                           key={definition.resourceId}
                           onClick={() => { if (!disabled) toggleMember(definition.resourceId); }}
@@ -254,13 +254,13 @@ export function TeamDialog({
               </div>
 
               {error ? (
-                <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role={unknown ? "status" : "alert"}>
+                <p className={unknown ? "rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning-text" : "rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger-text"} role={unknown ? "status" : "alert"}>
                   {error}
                 </p>
               ) : null}
             </div>
 
-            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border/60 px-6 py-4">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border px-6 py-4">
               <div className="flex items-center gap-2">
                 <Button disabled={isPending || unknown} onClick={() => handleOpenChange(false)} size="sm" type="button" variant="outline">
                   {t("buzz.cancel")}

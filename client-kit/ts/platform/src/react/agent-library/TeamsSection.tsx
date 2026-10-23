@@ -76,7 +76,7 @@ export function TeamsSection({
     <section className="relative space-y-4" data-testid="agents-library-teams">
       <div className={TEAM_CARD_COLUMN_CLASS}>
         <div className="min-w-0 space-y-0.5">
-          <h2 className="text-lg font-semibold tracking-tight">{t("agentTeams.title")}</h2>
+          <h2 className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em]">{t("agentTeams.title")}</h2>
           <p className="text-sm font-normal text-muted-foreground">{t("agentTeams.subtitle")}</p>
         </div>
       </div>
@@ -105,7 +105,7 @@ export function TeamsSection({
                     <DropdownMenuTrigger asChild>
                       <button
                         aria-label={t("agentTeams.actions", { name: team.name })}
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground transition-colors duration-100 hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                         data-testid={`team-actions-${team.resourceId}`}
                         type="button"
                       >
@@ -135,7 +135,7 @@ export function TeamsSection({
                       {owner ? (
                         <>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={isPending} onClick={() => onDelete(team)}>
+                          <DropdownMenuItem className="text-danger-text focus:text-danger-text" disabled={isPending} onClick={() => onDelete(team)}>
                             <Trash2 className="h-4 w-4" />
                             {t("agentTeams.delete")}
                           </DropdownMenuItem>
@@ -152,12 +152,12 @@ export function TeamsSection({
                 teamName={team.name}
               >
                 {hasMissing ? (
-                  <p className="border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <p className="relative border-t border-border bg-danger-soft px-3 py-2 text-xs text-danger-text">
                     {t(missingCount === 1 ? "agentTeams.missing.one" : "agentTeams.missing.other", { count: missingCount })}
                   </p>
                 ) : null}
                 {resolution.hiddenMemberCount > 0 ? (
-                  <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                  <p className="relative border-t border-border px-3 py-2 text-xs text-muted-foreground">
                     {t(resolution.hiddenMemberCount === 1 ? "agentTeams.hidden.one" : "agentTeams.hidden.other", { count: resolution.hiddenMemberCount })}
                   </p>
                 ) : null}

@@ -40,17 +40,20 @@ export function TeamIdentityCard({
 
   return (
     <div
-      className={cn("min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card p-0 text-card-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/65", className)}
+      // DD-141 §9/§10: Kailo identity card — card surface, brand band and aura, gentle lift.
+      className={cn("group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card p-0 text-card-foreground transition-[transform,box-shadow,border-color] duration-200 ease-out-expo hover:-translate-y-px hover:border-input hover:shadow-md", className)}
       data-testid={dataTestId}
     >
-      <div className="relative aspect-[4/5] min-w-0 overflow-hidden bg-muted/50">
+      <span aria-hidden="true" className="kailo-card-aura pointer-events-none absolute inset-0" />
+      <span aria-hidden="true" className="kailo-card-band pointer-events-none absolute inset-x-0 top-0 h-[3px]" />
+      <div className="relative aspect-[4/5] min-w-0 overflow-hidden">
         <div className="absolute top-3 left-3 z-30 flex max-w-[calc(100%-4rem)] flex-wrap items-center gap-1.5">
           {trimmedDescription ? (
             <TooltipProvider><Tooltip>
               <TooltipTrigger asChild>
                 <button
                   aria-label={t("agentTeams.descriptionLabel", { name: teamName })}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-border/65 bg-background/90 text-muted-foreground shadow-xs"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-xs transition-colors duration-100 hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   type="button"
                 >
                   <Info className="h-3.5 w-3.5" />
@@ -69,7 +72,7 @@ export function TeamIdentityCard({
 
         <div className="absolute right-3 bottom-3 left-3 z-30 flex min-w-0 flex-col gap-0.5 text-left text-sm leading-5">
           <span className="min-w-0 truncate font-semibold tracking-normal text-foreground">{teamName}</span>
-          <span className="min-w-0 truncate font-normal text-secondary-foreground/75">
+          <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">
             {t(memberCount === 1 ? "agentTeams.memberCount.one" : "agentTeams.memberCount.other", { count: memberCount })}
           </span>
         </div>
@@ -92,8 +95,8 @@ function TeamAvatarRow({ memberCount, members, teamName }: {
   if (visibleMembers.length === 0 && overflowCount === 0) {
     return (
       <div className="absolute inset-x-4 top-0 bottom-12 flex items-center justify-center">
-        <div className="relative h-24 w-24 before:rounded-squircle before:absolute before:-inset-px before:bg-border/65 before:content-['']">
-          <div className="relative z-10 flex h-full w-full items-center justify-center rounded-squircle bg-background/80 text-muted-foreground shadow-xs"
+        <div className="relative h-24 w-24 before:rounded-squircle before:absolute before:-inset-px before:bg-border before:content-['']">
+          <div className="relative z-10 flex h-full w-full items-center justify-center rounded-squircle bg-brand-soft text-brand-soft-foreground"
             data-team-empty-avatar="avatar">
             <Users className="h-9 w-9" />
           </div>
@@ -119,7 +122,7 @@ function TeamAvatarRow({ memberCount, members, teamName }: {
         ))}
         {overflowCount > 0 ? (
           <div className={visibleMembers.length > 0 ? "-ml-5" : ""} style={{ zIndex: stackItemCount }}>
-            <span className="flex h-14 w-14 items-center justify-center rounded-squircle bg-card text-sm font-semibold text-muted-foreground ring-2 ring-card">
+            <span className="flex h-14 w-14 items-center justify-center rounded-squircle bg-muted text-sm font-semibold tabular-nums text-muted-foreground ring-2 ring-card">
               +{overflowCount}
             </span>
           </div>

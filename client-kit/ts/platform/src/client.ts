@@ -20,6 +20,7 @@ import type {
   ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
+  AgentCatalogOwners,
   AgentTeamPage,
   AgentTeamView,
   AgentInstallationPage,
@@ -382,6 +383,12 @@ export function createBffClient(transport: BffTransport) {
       get<AgentTeamPage>(`/api/v1/agent-teams${offset ? `?offset=${offset}` : ""}`),
     agentTeam: (resourceId: string) =>
       get<AgentTeamView>(`/api/v1/agent-teams/${encodeURIComponent(resourceId)}`),
+    /**
+     * DD-131(6): owner names for one page of catalog entries (discoverable Definitions and teams);
+     * IDs the caller cannot discover are omitted, never resolved.
+     */
+    agentCatalogOwners: (resourceIds: readonly string[]) =>
+      get<AgentCatalogOwners>(`/api/v1/agent-catalog/owners?ids=${resourceIds.map(encodeURIComponent).join(",")}`),
 
     /** DD-135：Tenant 级 Skill 目录（逐项 discover 过滤）、定义与版本（fresh read；DRAFT 需版本 read）。 */
     skillDefinitions: (offset?: number) =>

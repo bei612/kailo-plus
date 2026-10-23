@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_catalog_owners.schema.json",
+  "title": "AgentCatalogOwners",
+  "description": "DD-131(6)：GET /api/v1/agent-catalog/owners?ids=<id>,<id>。目录条目（本人可 discover 的本 Tenant ACTIVE AgentDefinition 与 agent.team）的 owner 名，供原版 “Added by <owner>”。一次至多一页 ID；不属本 Tenant、非 ACTIVE、非目录类型或读者当前不可 discover 的 ID 一律省略，不能用来查询任意 Principal；不授予任何权限。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["owners"],
+  "properties": {
+    "owners": {
+      "type": "array",
+      "items": {
+        "title": "AgentCatalogOwnerView",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resourceId", "ownerPrincipalId"],
+        "properties": {
+          "resourceId": {"type": "string", "format": "uuid"},
+          "ownerPrincipalId": {"type": "string", "format": "uuid"},
+          "ownerDisplayName": {"type": "string", "minLength": 1, "description": "owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。"}
+        }
+      }
+    }
+  }
+}

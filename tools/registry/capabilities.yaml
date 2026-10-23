@@ -9,6 +9,7 @@ capabilities:
   - /api/v1/agent-definitions/{resource_id}
   - /api/v1/agent-teams
   - /api/v1/agent-teams/{resource_id}
+  - /api/v1/agent-catalog/owners
   - /api/v1/agent-versions/{asset_id}
   - /api/v1/agent-installations
   - /api/v1/agent-installations/{resource_id}

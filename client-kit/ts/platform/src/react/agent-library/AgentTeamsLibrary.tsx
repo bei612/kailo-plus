@@ -15,9 +15,11 @@ export type AgentTeamsLibraryProps = {
   refreshRevision: number;
   /** Another Agents-page dialog holds a write: team entry points stay closed meanwhile. */
   locked?: boolean;
+  /** DD-131(6): the host's catalog dialog, opened on its Teams list. */
+  onDiscover?: () => void;
 };
 
-export function AgentTeamsLibrary({ refreshRevision, locked = false }: AgentTeamsLibraryProps) {
+export function AgentTeamsLibrary({ refreshRevision, locked = false, onDiscover }: AgentTeamsLibraryProps) {
   const principalId = useCurrentPrincipalId();
   const teams = useTeamActions(refreshRevision);
   const isOwner = (ownerPrincipalId: string) => principalId !== undefined && ownerPrincipalId === principalId;
@@ -36,6 +38,7 @@ export function AgentTeamsLibrary({ refreshRevision, locked = false }: AgentTeam
         onAddToChannel={teams.setTeamToAddToChannel}
         onCreate={teams.openCreateDialog}
         onDelete={(team) => { teams.remove.dismiss(); teams.setTeamToDelete(team); }}
+        onDiscover={onDiscover}
         onDuplicate={teams.openDuplicateDialog}
         onEdit={teams.openEditDialog}
         onRetry={teams.reload}

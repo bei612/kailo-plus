@@ -3,7 +3,7 @@
 // Send has already cleared the composer; the pill shows the aggregate progress of the uploads the
 // message waits for, and Cancel returns the message to the composer. A send left pending by
 // another visit or a reload is offered for restore or discard. Presentation uses only the shared
-// theme tokens and base components.
+// DD-141 Kailo theme roles and base components.
 import type { PendingSendStage } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import type { UploadingAttachmentPreview } from "@client-kit/platform/react/composer/features/messages/lib/attachmentPreview";
 import { t } from "@/shared/i18n";
@@ -21,12 +21,17 @@ export function ComposerQueuedSendPill({ previews, onCancel }: {
   onCancel: () => void;
 }) {
   const percent = queuedUploadPercent(previews);
-  return <div className="flex items-center justify-center gap-2 pb-2 text-xs text-muted-foreground" role="status"
-    aria-live="polite" data-testid="composer-queued-send">
-    <span>{t("platform.sendAfterUpload", { percent })}</span>
-    <Button type="button" size="sm" variant="ghost" onClick={onCancel} data-testid="composer-queued-send-cancel">
-      {t("platform.cancel")}
-    </Button>
+  // DD-141 §9: an overlay chip with a 2px brand progress bar (loading spec), not a Buzz pill.
+  return <div className="flex justify-center pb-2" role="status" aria-live="polite" data-testid="composer-queued-send">
+    <div className="relative flex items-center gap-2 overflow-hidden rounded-full border border-border bg-popover py-0.5 pr-1 pl-3 text-xs text-muted-foreground shadow-sm">
+      <span className="tabular-nums">{t("platform.sendAfterUpload", { percent })}</span>
+      <Button type="button" size="sm" variant="ghost" onClick={onCancel} data-testid="composer-queued-send-cancel">
+        {t("platform.cancel")}
+      </Button>
+      <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-muted">
+        <span className="block h-full bg-primary transition-[width] duration-200 ease-out-expo" style={{ width: `${percent}%` }} />
+      </span>
+    </div>
   </div>;
 }
 
@@ -39,10 +44,13 @@ export function ComposerPendingSendRecovery({ stage, missingFiles, canRestore, o
   onDiscard: () => void;
 }) {
   if (stage === "publishing" || stage === "uploading") {
-    return <div className="flex items-center justify-center gap-2 pb-2 text-xs text-muted-foreground" role="status"
-      aria-live="polite" data-testid="composer-pending-send">{t("platform.pendingSendPublishing")}</div>;
+    return <div className="flex justify-center pb-2" role="status" aria-live="polite" data-testid="composer-pending-send">
+      <span className="rounded-full border border-border bg-popover px-3 py-1 text-xs text-muted-foreground shadow-sm">{t("platform.pendingSendPublishing")}</span>
+    </div>;
   }
-  return <div className="flex flex-wrap items-center justify-center gap-2 pb-2 text-xs text-muted-foreground" role="status"
+  // DD-141 §2.4/§9: soft status pair — unknown outcome in warning, a definite failure in danger.
+  const tone = stage === "unknown" ? "bg-warning-soft text-warning-text" : "bg-danger-soft text-danger-text";
+  return <div className={`mx-auto mb-2 flex w-fit max-w-full flex-wrap items-center justify-center gap-2 rounded-lg py-1 pr-1 pl-3 text-xs ${tone}`} role="status"
     aria-live="polite" data-testid="composer-pending-send" data-stage={stage}>
     <span>{t(stage === "unknown" ? "platform.pendingSendUnknown" : "platform.pendingSendFailed")}</span>
     {missingFiles > 0 ? <span>{t("platform.pendingSendMissingFiles", { count: missingFiles })}</span> : null}

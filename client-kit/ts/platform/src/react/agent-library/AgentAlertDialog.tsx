@@ -23,9 +23,9 @@ export function AgentAlertDialog({ open, onOpenChange, title, description, foote
       <AlertDialog.Overlay className={cn("fixed inset-0 z-50 bg-black/60", MODAL_OVERLAY_MOTION_CLASS, MODAL_BACKDROP_BLUR_CLASS)} />
       <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4">
         <AlertDialog.Content data-testid={testId}
-          className={cn("pointer-events-auto grid w-[calc(100vw-2rem)] max-w-md gap-4 outline-hidden rounded-3xl bg-background p-6 shadow-2xl", MODAL_CONTENT_MOTION_CLASS)}>
+          className={cn("pointer-events-auto grid w-[calc(100vw-2rem)] max-w-md gap-4 rounded-2xl border border-border bg-popover p-6 text-popover-foreground shadow-xl outline-hidden", MODAL_CONTENT_MOTION_CLASS)}>
           <div className="flex flex-col space-y-2 text-left">
-            <AlertDialog.Title className="text-xl font-semibold tracking-tight">{title}</AlertDialog.Title>
+            <AlertDialog.Title className="text-[1.0625rem] font-semibold leading-6 tracking-[-0.012em]">{title}</AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-muted-foreground">{description}</AlertDialog.Description>
             {children}
           </div>

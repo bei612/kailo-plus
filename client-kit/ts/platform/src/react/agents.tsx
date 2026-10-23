@@ -46,7 +46,7 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Upload, Webhook, X, Zap } from "lucide-react";
+import { ArrowRight, BookUser, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Upload, Webhook, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -90,6 +90,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
 import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
+import { AgentCatalogDialog } from "./agent-library/AgentCatalogDialog";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
@@ -188,6 +189,8 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
   const [importSource, setImportSource] = useState<AgentSnapshotSource | null>(null);
   const [exportTarget, setExportTarget] = useState<SnapshotExportTarget | null>(null);
   const [importError, setImportError] = useState<"agents.snapshot.unsupportedFile" | "agents.snapshot.fileTooLarge" | null>(null);
+  // DD-131(6): original CommunityCatalogDialog ("Choose from catalog"), opened on Agents or Teams.
+  const [catalog, setCatalog] = useState<"agents" | "teams" | null>(null);
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
   // create dialog the New agent card opens, only while that card would be enabled.
@@ -206,6 +209,10 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
 
   return (
     <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={<div className="flex shrink-0 items-center gap-1">
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agentCatalog.open")}
+          title={t("agentCatalog.open")} data-testid="agents-catalog-open" disabled={blocked} onClick={() => setCatalog("agents")}>
+          <BookUser aria-hidden className="h-4 w-4" />
+        </WorkflowButton>
         <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agents.snapshot.importTitle")}
           title={t("agents.snapshot.importTitle")} data-testid="agents-import-snapshot"
           disabled={blocked || importSource !== null} onClick={() => { setImportError(null); importInput.current?.click(); }}>
@@ -275,7 +282,12 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
           onExport={(next) => { setSelected(null); setExportTarget(next); }} /> : null}
       </AgentManagementDialog>
       {/* DD-131(1)(6)：原版 Agents 页的团队区（新建、编辑、删除、部署到频道、分享到目录）。 */}
-      <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null} />
+      <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null}
+        onDiscover={() => setCatalog("teams")} />
+      <AgentCatalogDialog open={catalog !== null} preferSection={catalog ?? "agents"} onOpenChange={(next) => { if (!next) setCatalog(null); }}
+        onCreateAgent={() => { if (createAvailable.current) setCreateOpen(true); }}
+        onImport={() => { setImportError(null); importInput.current?.click(); }}
+        onRecorded={() => { reload(); setRefreshRevision((value) => value + 1); }} />
       {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
       <SkillsSection locked={blocked || versionEdit !== null} refreshRevision={refreshRevision} />
       <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
@@ -2784,7 +2796,7 @@ function VersionDirectory({ definition, locked, onEdit }: {
             <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
               <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
             {version.state === AgentVersionState.Draft ? versionMissing(version.content).map((item) =>
-              <p key={item} className="text-sm text-muted-foreground" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</p>) : null}
+              <p key={item} className="w-fit rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-text" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</p>) : null}
             {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
               {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "edit", configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
               {version.canPublish === true ? <Button disabled={locked || versionMissing(version.content).length > 0}
@@ -3016,7 +3028,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
               <div className={PERSONA_FIELD_SHELL_CLASS}>
                 <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={t("agents.identity.instructionsPlaceholder")} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
               </div>
-              {!instructions.trim() ? <p className="text-xs text-muted-foreground">{t("agents.version.instructionsRequired")}</p> : null}
+              {!instructions.trim() ? <p className="text-xs text-warning-text" role="status">{t("agents.version.instructionsRequired")}</p> : null}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-runtime`}>{t("agents.version.runtimeProfile")}</label>

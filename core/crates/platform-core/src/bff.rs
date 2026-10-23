@@ -529,6 +529,11 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-teams/{resource_id}",
             get(crate::governance::agent_team::get),
         )
+        // DD-131(6)：目录条目 owner 名（只答读者可 discover 的本 Tenant 定义与团队）
+        .exposed_route(
+            "/api/v1/agent-catalog/owners",
+            get(crate::agent_catalog::owners),
+        )
         // DD-42、DD-131(2)：源 Tenant 的 ExportPackage（按发起的导出动作或包 Asset 读取，READY 后下载）
         .exposed_route(
             "/api/v1/export-packages/by-action/{action_execution_id}",

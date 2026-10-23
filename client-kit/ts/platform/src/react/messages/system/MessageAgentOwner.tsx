@@ -5,7 +5,8 @@ import { Bot } from "lucide-react";
 import type { AgentOwnerRenderer } from "../agentAuthorFacts";
 import { UserProfilePopover, useHasSystemMessageHost } from "./host";
 
-const ownerNameClass = "min-w-0 truncate rounded font-semibold text-foreground/85 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
+// DD-141 §2.4: owner name in the text-secondary role, text on hover; muted chip stays AA readable.
+const ownerNameClass = "min-w-0 truncate rounded font-semibold text-[var(--k-text-secondary)] transition-colors duration-100 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 export function MessageAgentOwner({
   ownerLabel,
@@ -26,7 +27,7 @@ export function MessageAgentOwner({
   const ownerPubkey = hasSystemHost && !memberOwner ? ownerKey : null;
   return (
     <span
-      className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground/65"
+      className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground"
       data-testid="message-agent-owner"
     >
       <span className="sr-only">
@@ -59,7 +60,7 @@ export function MessageAgentOwner({
         // DD-147(1): the owner's Tenant name without a Workspace key to open a profile for.
         <>
           <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
-          <span className="min-w-0 truncate font-semibold text-foreground/85">{ownerLabel}</span>
+          <span className="min-w-0 truncate font-semibold text-[var(--k-text-secondary)]">{ownerLabel}</span>
         </>
       ) : ownerPubkey && ownerLabel ? (
         <>

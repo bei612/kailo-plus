@@ -37,11 +37,11 @@ export function TeamShareDialog({ team, canShare, isPending, unknown, problem, o
           <DialogTitle>{t("agentTeams.shareTitle", { name: team.name })}</DialogTitle>
           <DialogDescription>{t("agentTeams.shareDescription")}</DialogDescription>
         </DialogHeader>
-        <section className="relative flex min-h-16 w-full flex-col gap-2 rounded-2xl border border-border/70 bg-background px-5 py-4" data-testid="team-share-catalog">
+        <section className="relative flex min-h-16 w-full flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4" data-testid="team-share-catalog">
           <div className="flex items-center gap-3">
             <BookUser className="h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium">{t("agentCatalog.shareTitle")}</h3>
+              <h3 className="text-control font-medium">{t("agentCatalog.shareTitle")}</h3>
               <p className="text-xs text-muted-foreground">{t("agentCatalog.shareTeamDescription")}</p>
             </div>
             <Switch
@@ -53,7 +53,7 @@ export function TeamShareDialog({ team, canShare, isPending, unknown, problem, o
             />
           </div>
           {!canShare ? <p className="text-xs text-muted-foreground">{t("agentCatalog.ownerOnly")}</p> : null}
-          {problem ? <p className="text-xs text-muted-foreground" data-testid="team-share-problem" role={unknown ? "status" : "alert"}>{problem}</p> : null}
+          {problem ? <p className={`text-xs ${unknown ? "text-warning-text" : "text-danger-text"}`} data-testid="team-share-problem" role={unknown ? "status" : "alert"}>{problem}</p> : null}
           {unknown ? <Button className="w-fit" data-testid="team-share-recheck" disabled={isPending} onClick={() => onCatalogShareChange(!team.catalogShared)}
             size="sm" type="button" variant="outline">{t("agents.retry")}</Button> : null}
         </section>

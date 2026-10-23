@@ -5,6 +5,7 @@
 
 mod action_token;
 mod agent_author_directory;
+mod agent_catalog;
 mod agent_definition;
 mod agent_installation;
 mod agent_installation_query;

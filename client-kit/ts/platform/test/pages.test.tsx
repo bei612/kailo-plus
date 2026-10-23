@@ -3510,10 +3510,13 @@ describe("platform pages render only through the host theme", () => {
     "warning", "warning-bg",
     // DD-141 status and brand roles (host variables are the Kailo `--k-*` tokens).
     "success-soft", "success-text", "danger-soft", "danger-text", "brand-soft", "brand-soft-foreground", "brand-text",
+    // DD-141 §2.4 warning soft pair (unknown outcomes and pending states).
+    "warning-soft", "warning-text",
   ];
   const kailoRoleVariable: Record<string, string> = {
     "success-soft": "k-success-soft", "success-text": "k-success-text", "danger-soft": "k-danger-soft",
     "danger-text": "k-danger-text", "brand-soft": "k-brand-soft", "brand-soft-foreground": "k-brand-soft-text", "brand-text": "k-brand-text",
+    "warning-soft": "k-warning-soft", "warning-text": "k-warning-text",
   };
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =

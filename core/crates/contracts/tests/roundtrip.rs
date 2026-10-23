@@ -642,6 +642,7 @@ fn public_workspace_roundtrip_preserves_visibility_and_membership_evidence() {
     roundtrip::<contracts::ActionCommand>("workspace-leave.sample.json");
     roundtrip::<contracts::DiscoverableWorkspacePage>("discoverable-workspaces.sample.json");
     roundtrip::<contracts::AgentAuthorDirectory>("agent-author-directory.sample.json");
+    roundtrip::<contracts::AgentCatalogOwners>("agent-catalog-owners.sample.json");
     let legacy: contracts::WorkspaceView = serde_json::from_value(serde_json::json!({
         "id": "00000000-0000-4000-8000-000000000004", "slug": "legacy", "name": "Legacy"
     }))

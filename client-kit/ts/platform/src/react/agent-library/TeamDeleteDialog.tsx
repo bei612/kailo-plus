@@ -49,7 +49,7 @@ export function TeamDeleteDialog({
       </>}
     >
       {problem ? <p role={unknown ? "status" : "alert"}
-        className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{problem}</p> : null}
+        className={unknown ? "rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-text" : "rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-text"}>{problem}</p> : null}
     </AgentAlertDialog>
   );
 }

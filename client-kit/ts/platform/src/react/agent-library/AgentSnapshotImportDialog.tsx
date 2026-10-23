@@ -31,7 +31,9 @@ import { AgentManagementDialog } from "./AgentManagementDialog";
 export const MAX_AGENT_SNAPSHOT_JSON_BYTES = 5 * 1024 * 1024;
 export const MAX_AGENT_SNAPSHOT_PNG_BYTES = 10 * 1024 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const INPUT_CLASS = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
+// DD-141 §9 input: 34px, radius md, line-strong border, brand focus with a soft halo.
+const INPUT_CLASS = "h-[34px] rounded-md border border-input bg-background px-2.5 text-sm shadow-xs transition-colors duration-100 hover:border-ring/40 focus-visible:border-ring focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50";
+const PANEL_CLASS = "rounded-xl border border-border bg-card p-3";
 
 export type AgentSnapshotSource = { bytes: Uint8Array; mediaType: AgentSnapshotMediaType; filename: string };
 
@@ -221,22 +223,22 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
   }
   return <div className="flex flex-col gap-4 py-1 text-sm" data-testid="agent-snapshot-import-preview">
     <div className="flex items-center gap-3">
-      {preview.avatarDataUrl ? <img alt="" src={preview.avatarDataUrl} className="h-12 w-12 shrink-0 rounded-xl object-cover"
+      {preview.avatarDataUrl ? <img alt="" src={preview.avatarDataUrl} className="h-12 w-12 shrink-0 rounded-squircle object-cover"
         data-testid="agent-snapshot-import-avatar" /> : null}
       <div className="min-w-0">
-        <p className="break-words text-base font-medium">{preview.displayName}</p>
+        <p className="break-words text-headline font-semibold">{preview.displayName}</p>
         {preview.description ? <p className="break-words text-muted-foreground">{preview.description}</p> : null}
         {preview.avatarUrl ? <p className="text-xs text-muted-foreground" data-testid="agent-snapshot-import-avatar-imported">{t("agents.snapshot.avatarImported")}</p> : null}
       </div>
     </div>
-    <section className="flex flex-col gap-2 rounded-md border p-3" data-testid="agent-snapshot-import-behavior">
+    <section className={`flex flex-col gap-2 ${PANEL_CLASS}`} data-testid="agent-snapshot-import-behavior">
       <div>
         <p className="font-medium">{t("agents.snapshot.instructions")}</p>
         <p className="text-xs text-muted-foreground">{t("agents.snapshot.instructionsHint")}</p>
       </div>
-      {preview.instructions.trim() ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-3 text-xs"
+      {preview.instructions.trim() ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-mono text-xs"
         data-testid="agent-snapshot-import-instructions">{preview.instructions}</pre>
-        : <p role="status" className="rounded bg-muted/60 p-3 text-xs" data-testid="agent-snapshot-import-no-instructions">{t("agents.snapshot.noInstructions")}</p>}
+        : <p role="status" className="rounded-lg bg-warning-soft p-3 text-xs text-warning-text" data-testid="agent-snapshot-import-no-instructions">{t("agents.snapshot.noInstructions")}</p>}
       <p className="text-xs text-muted-foreground">
         {[preview.parallelism !== undefined ? t("agents.snapshot.parallelism", { count: String(preview.parallelism) }) : null,
           preview.idleTimeoutSeconds !== undefined ? t("agents.snapshot.idle", { seconds: String(preview.idleTimeoutSeconds) }) : null,
@@ -251,19 +253,19 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
       <p className="text-xs text-muted-foreground">{t("agents.snapshot.omittedHint")}</p>
     </section> : null}
     <p className="text-muted-foreground">{t("agents.snapshot.boundary")}</p>
-    {!action.intent && !done ? <section className="flex flex-col gap-3 rounded-md border p-3">
+    {!action.intent && !done ? <section className={`flex flex-col gap-3 ${PANEL_CLASS}`}>
       {configured.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !configuration ? <ReadFailure error={configured.status === "error" ? configured.error : undefined} onRetry={reconfigure} />
         : !configuration.canImport
           ? <Notice role="alert">{t("agents.snapshot.unavailable")}</Notice>
           : <>
             <p className="text-xs text-muted-foreground">{t("agents.snapshot.runtimeOptional")}</p>
-            <label className="flex flex-col gap-1" htmlFor={`${id}-profile`}>{t("agents.version.runtimeProfile")}
+            <label className="flex flex-col gap-1 text-control font-medium" htmlFor={`${id}-profile`}>{t("agents.version.runtimeProfile")}
               <select id={`${id}-profile`} value={profileKey} onChange={(event) => setProfileKey(event.target.value)} className={INPUT_CLASS}>
                 <option value="">{t("agents.snapshot.runtimeLater")}</option>
                 {configuration.profiles.map((profile) => <option key={profile.key} value={profile.key}>{profile.key}</option>)}
               </select></label>
-            <label className="flex flex-col gap-1" htmlFor={`${id}-route`}>{t("agents.version.modelRoute")}
+            <label className="flex flex-col gap-1 text-control font-medium" htmlFor={`${id}-route`}>{t("agents.version.modelRoute")}
               <select id={`${id}-route`} value={routeId} onChange={(event) => setRouteId(event.target.value)} className={`${INPUT_CLASS} font-mono`}>
                 <option value="">{t("agents.snapshot.runtimeLater")}</option>
                 {configuration.routes.map((route) => <option key={route.resourceId} value={route.resourceId}>{route.resourceId}</option>)}
@@ -275,10 +277,10 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
                 setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); setPageIndex(pageIndex + 1);
               }}>{t("roles.next")}</Button> : null}
             </div> : null}
-            <label className="flex flex-col gap-1" htmlFor={`${id}-slug`}>{t("agents.snapshot.slug")}
+            <label className="flex flex-col gap-1 text-control font-medium" htmlFor={`${id}-slug`}>{t("agents.snapshot.slug")}
               <input id={`${id}-slug`} value={slug} maxLength={64} onChange={(event) => setSlug(event.target.value.trim())}
                 className={`${INPUT_CLASS} font-mono`} data-testid="agent-snapshot-import-slug" />
-              <span className="text-xs text-muted-foreground">{t("agents.snapshot.slugHint")}</span></label>
+              <span className="text-xs font-normal text-muted-foreground">{t("agents.snapshot.slugHint")}</span></label>
             {!slugValid ? <p role="alert">{t("agents.snapshot.slugInvalid")}</p> : null}
           </>}
       <div className="flex flex-wrap gap-2">
@@ -286,7 +288,7 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
         <Button onClick={onClose}>{t("agents.cancel")}</Button>
       </div>
     </section> : null}
-    {action.intent ? <div className="flex flex-col gap-2 rounded-md border p-3" role="group" data-testid="agent-snapshot-import-confirm">
+    {action.intent ? <div className={`flex flex-col gap-2 ${PANEL_CLASS}`} role="group" data-testid="agent-snapshot-import-confirm">
       <p className="break-words">{t("agents.snapshot.confirmSummary", { name: preview.displayName, slug: action.intent.slug ?? "" })}</p>
       <p className="break-all font-mono text-xs text-muted-foreground">SHA-256 {preview.packageDigest}</p>
       <p className="text-muted-foreground">{t("agents.admission")}</p>
@@ -296,12 +298,12 @@ function ImportBody({ source, action, onClose }: { source: AgentSnapshotSource; 
         {!action.busy && !action.unknown ? <Button onClick={action.cancel}>{t("agents.cancel")}</Button> : null}
       </div>
     </div> : null}
-    {action.submission ? <p role="status" className="break-words">{action.unknown
+    {action.submission ? <p role="status" className={`break-words rounded-lg px-3 py-2 ${action.unknown ? "bg-warning-soft text-warning-text" : action.submission.gateState === ActionGateState.Denied ? "bg-danger-soft text-danger-text" : "bg-success-soft text-success-text"}`}>{action.unknown
       ? t("agents.unknown", { operation: action.submission.operationId })
       : action.submission.gateState === ActionGateState.Denied
         ? t("agents.rejected", { reason: action.submission.reason ? reasonText(action.submission.reason) : "—" })
         : t("agents.snapshot.recorded", { operation: action.submission.operationId })}</p> : null}
-    {action.failure ? <p role={action.failure.kind === "unknown" ? "status" : "alert"}>{action.failure.kind === "unknown"
+    {action.failure ? <p role={action.failure.kind === "unknown" ? "status" : "alert"} className={`break-words rounded-lg px-3 py-2 ${action.failure.kind === "unknown" ? "bg-warning-soft text-warning-text" : "bg-danger-soft text-danger-text"}`}>{action.failure.kind === "unknown"
       ? t("agents.unknown", { operation: action.failure.operationId ?? "—" })
       : t("agents.rejected", { reason: failureText(action.failure) })}</p> : null}
     {done ? <Button className="w-fit" onClick={onClose}>{t("agents.snapshot.close")}</Button> : null}
