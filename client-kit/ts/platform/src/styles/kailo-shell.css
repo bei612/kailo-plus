@@ -77,6 +77,9 @@ svg.lucide[stroke-width="2"] {
 }
 
 :is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) > svg {
+  height: 16px;
+  width: 16px;
+  flex-shrink: 0;
   color: hsl(var(--sidebar-foreground) / 0.58);
   transition: color var(--k-duration-instant) var(--k-ease-standard);
 }

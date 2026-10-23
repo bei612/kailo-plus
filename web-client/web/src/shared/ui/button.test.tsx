@@ -19,28 +19,29 @@ it("Web consumes the existing original shared Button", () => {
   expect(buttonVariants).toBe(shared.buttonVariants);
 });
 
+// DD-141 §9: Kailo button geometry (13px control type, lg radius); the shared
+// component, variants and behaviour are unchanged.
 it.each([
-  ["default", ["h-9", "px-4", "py-2"]],
-  ["sm", ["h-8", "px-3", "text-xs"]],
-  ["xs", ["h-6", "px-2", "text-xs"]],
-  ["lg", ["h-10", "px-8"]],
+  ["default", ["h-8", "px-3.5"]],
+  ["sm", ["h-7", "px-2.5"]],
+  ["xs", ["h-6", "px-2"]],
+  ["lg", ["h-9", "px-5"]],
   ["icon", ["h-8", "w-8"]],
   ["icon-xs", ["h-6", "w-6", "[&_svg]:size-3.5"]],
-] as const)("retains original %s geometry", async (size, tokens) => {
+] as const)("uses the Kailo %s geometry", async (size, tokens) => {
   await act(async () => root.render(<Button size={size}>Original</Button>));
   const button = host.querySelector("button")!;
-  for (const token of ["gap-1.5", "rounded-lg", ...tokens]) {
+  for (const token of ["gap-1.5", "rounded-lg", "text-control", ...tokens]) {
     expect(button.classList.contains(token)).toBe(true);
   }
 });
 
-it("retains the original outline treatment", async () => {
+it("uses the Kailo outline treatment", async () => {
   await act(async () => root.render(<Button variant="outline">Original</Button>));
   const button = host.querySelector("button")!;
-  for (const token of ["border-input/40", "hover:bg-muted/70"]) {
+  for (const token of ["border-input", "bg-background", "shadow-xs", "hover:bg-accent/60"]) {
     expect(button.classList.contains(token)).toBe(true);
   }
-  expect(button.classList.contains("shadow-xs")).toBe(false);
 });
 
 it("keeps refs, disabled guards, and click handlers on the original element", async () => {
