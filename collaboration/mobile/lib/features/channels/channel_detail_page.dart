@@ -37,6 +37,7 @@ import 'composer_dock_size_reporter.dart';
 import 'date_formatters.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'reaction_row.dart';
+import 'channel_details_page.dart';
 import 'day_divider.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'jump_to_latest_button.dart';
@@ -53,8 +54,8 @@ import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import '../../shared/platform/platform_views.dart';
-import '../platform/platform_members_page.dart';
 import 'send_message_provider.dart';
+import '../profile/presence_cache_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
@@ -310,14 +311,17 @@ class ChannelDetailPage extends HookConsumerWidget {
                 )
               : _ChannelAppBarTitle(
                   channel: resolvedChannel,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => PlatformMembersPage(
-                        workspaceId: resolvedChannel.id,
-                        title: resolvedChannel.name,
-                      ),
-                    ),
-                  ),
+                  onTap: () async {
+                    final shouldClose = await showChannelDetailsPage(
+                      context: context,
+                      channel: resolvedChannel,
+                      currentPubkey: currentPubkey,
+                      onMemberTap: showUserProfileSheet,
+                    );
+                    if (shouldClose == true && context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
                 ),
         ),
         actions: [

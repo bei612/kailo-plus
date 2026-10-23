@@ -121,6 +121,14 @@
       "type": "integer",
       "description": "调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。"
     },
+    "agentTeam": {
+      "$ref": "../domain/agent_team_input.schema.json",
+      "description": "仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。"
+    },
+    "agentDefinitionImport": {
+      "$ref": "../domain/agent_definition_import_input.schema.json",
+      "description": "仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant 重选的运行配置；其他动作携带即拒绝。"
+    },
     "mcpConnectionCreate": {
       "$ref": "../domain/mcp_connection_create.schema.json",
       "description": "仅 mcp_connection.create（DD-149、05 §2.15）且必带；其他动作携带即拒绝。"
@@ -141,6 +149,18 @@
       "type": "string",
       "format": "uuid",
       "description": "DD-149(6)：仅 OAUTH 连接器的 mcp_connection.rotate_credential：本人本会话已完成且未使用的授权尝试。"
+    },
+    "agentDefinitionExport": {
+      "$ref": "../domain/agent_definition_export_input.schema.json",
+      "description": "仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion 与包媒体类型；其他动作携带即拒绝。"
+    },
+    "agentTeamImport": {
+      "$ref": "../domain/agent_team_import_input.schema.json",
+      "description": "仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。"
+    },
+    "agentTeamExport": {
+      "$ref": "../domain/agent_team_export_input.schema.json",
+      "description": "仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。"
     },
     "skillVersionUpload": {
       "$ref": "../domain/skill_version_upload_input.schema.json",

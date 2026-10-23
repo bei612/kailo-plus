@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_snapshot_upload_request.schema.json",
+  "title": "AgentSnapshotUploadRequest",
+  "description": "DD-131(2)、DD-143：一次 Agent 快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 5 MiB、PNG 不超过 10 MiB；格式与版本由 Core 判定。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mediaType", "contentBase64"],
+  "properties": {
+    "mediaType": {"$ref": "../enums/agent_snapshot_media_type.schema.json"},
+    "contentBase64": {"type": "string"}
+  }
+}

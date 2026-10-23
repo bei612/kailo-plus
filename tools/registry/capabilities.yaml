@@ -7,6 +7,9 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/invocations
   - /api/v1/agent-definitions
   - /api/v1/agent-definitions/{resource_id}
+  - /api/v1/agent-teams
+  - /api/v1/agent-teams/{resource_id}
+  - /api/v1/agent-catalog/owners
   - /api/v1/agent-versions/{asset_id}
   - /api/v1/agent-installations
   - /api/v1/agent-installations/{resource_id}
@@ -29,6 +32,12 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/transcript
   - /api/v1/agent-installations/{resource_id}/transcript/stream
   - /api/v1/workspaces/{workspace_id}/agent-turns
+  - /api/v1/agent-snapshots/uploads
+  - /api/v1/agent-snapshots/configuration
+  - /api/v1/agent-team-snapshots/uploads
+  - /api/v1/export-packages/by-action/{action_execution_id}
+  - /api/v1/export-packages/{asset_id}
+  - /api/v1/export-packages/{asset_id}/content
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -37,6 +46,13 @@ capabilities:
   - agent.version.publish
   - agent.version.retire
   - resource.transfer_owner
+  - agent.team.create
+  - agent.team.update
+  - agent.team.delete
+  - agent.team.share
+  - agent.team.unshare
+  - agent.definition.share
+  - agent.definition.unshare
   - automation.create
   - automation.publish_version
   - automation.enable
@@ -66,9 +82,15 @@ capabilities:
   - agent.installation.use.revoke
   - resource.grant_read
   - resource.revoke_read
+  - agent.definition.import
+  - agent.definition.export
+  - agent.team.import
+  - agent.team.export
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+  - RESOURCE_IMPORT
+  - RESOURCE_EXPORT
 - id: agent.mcp_connection
   exposure: end_user
   routes:
@@ -540,6 +562,7 @@ capabilities:
   - /api/v1/discoverable-workspaces
   - /api/v1/workspaces/{workspace_id}/members
   - /api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}
+  - /api/v1/workspaces/{workspace_id}/agent-authors
   - /api/v1/audit
   - /api/v1/profile
   - /api/v1/profile/media

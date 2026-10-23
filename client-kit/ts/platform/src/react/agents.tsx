@@ -46,7 +46,7 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Webhook, X, Zap } from "lucide-react";
+import { ArrowRight, BookUser, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Upload, Webhook, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -89,8 +89,12 @@ import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
+import { AgentTeamsLibrary } from "./agent-library/AgentTeamsLibrary";
+import { AgentCatalogDialog } from "./agent-library/AgentCatalogDialog";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
+import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
+import { AgentSnapshotExportDialog, type SnapshotExportHost, type SnapshotExportTarget } from "./agent-library/AgentSnapshotExportDialog";
 import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
 import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-library/agentConfigOptions";
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
@@ -159,7 +163,11 @@ export type WorkflowRouteNavigation = {
 
 type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
 
-export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost } = {}) {
+export function AgentDefinitionsPage(navigation: WorkspaceNavigation & {
+  avatarHost?: AgentAvatarHost;
+  /** DD-131(2)：READY 导出包的保存方式；缺省为同源受授权下载。 */
+  snapshotExportHost?: SnapshotExportHost;
+} = {}) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
@@ -176,6 +184,13 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const [versionRevision, setVersionRevision] = useState(0);
   const [installationLocked, setInstallationLocked] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
+  // DD-131(2): original "Import agent snapshot" from a local .agent.json/.agent.png file.
+  const importInput = useRef<HTMLInputElement>(null);
+  const [importSource, setImportSource] = useState<AgentSnapshotSource | null>(null);
+  const [exportTarget, setExportTarget] = useState<SnapshotExportTarget | null>(null);
+  const [importError, setImportError] = useState<"agents.snapshot.unsupportedFile" | "agents.snapshot.fileTooLarge" | null>(null);
+  // DD-131(6): original CommunityCatalogDialog ("Choose from catalog"), opened on Agents or Teams.
+  const [catalog, setCatalog] = useState<"agents" | "teams" | null>(null);
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
   // create dialog the New agent card opens, only while that card would be enabled.
@@ -193,13 +208,38 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const nextOffset = page?.nextOffset;
 
   return (
-    <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={
+    <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={<div className="flex shrink-0 items-center gap-1">
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agentCatalog.open")}
+          title={t("agentCatalog.open")} data-testid="agents-catalog-open" disabled={blocked} onClick={() => setCatalog("agents")}>
+          <BookUser aria-hidden className="h-4 w-4" />
+        </WorkflowButton>
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agents.snapshot.importTitle")}
+          title={t("agents.snapshot.importTitle")} data-testid="agents-import-snapshot"
+          disabled={blocked || importSource !== null} onClick={() => { setImportError(null); importInput.current?.click(); }}>
+          <Upload aria-hidden className="h-4 w-4" />
+        </WorkflowButton>
+        <input ref={importInput} type="file" hidden accept=".json,.png,application/json,image/png" data-testid="agents-import-snapshot-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            void file.arrayBuffer().then((buffer) => {
+              const next = agentSnapshotSource(file.name, new Uint8Array(buffer));
+              if (next === "unsupported") setImportError("agents.snapshot.unsupportedFile");
+              else if (next === "tooLarge") setImportError("agents.snapshot.fileTooLarge");
+              else setImportSource(next);
+            }, () => setImportError("agents.snapshot.unsupportedFile"));
+          }} />
         <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
           disabled={blocked || installationLocked || state.status === "pending"}
           onClick={() => { reload(); setRefreshRevision((value) => value + 1); }}>
           <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
         </WorkflowButton>
-    }>
+    </div>}>
+      {importError ? <Notice role="alert">{t(importError)}</Notice> : null}
+      <AgentSnapshotImportDialog source={importSource} onClose={() => setImportSource(null)}
+        onImported={() => { reload(); setRefreshRevision((value) => value + 1); }} />
+      <AgentSnapshotExportDialog target={exportTarget} host={navigation.snapshotExportHost} onClose={() => setExportTarget(null)} />
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
@@ -238,8 +278,17 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
         title={t("agents.open")} locked={blocked} onClose={() => setSelected(null)}>
         {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
           onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
-          onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
+          onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }}
+          onExport={(next) => { setSelected(null); setExportTarget(next); }} /> : null}
       </AgentManagementDialog>
+      {/* DD-131(1)(6)：原版 Agents 页的团队区（新建、编辑、删除、部署到频道、分享到目录）。 */}
+      <AgentTeamsLibrary refreshRevision={refreshRevision + versionRevision} locked={blocked || versionEdit !== null}
+        snapshotExportHost={navigation.snapshotExportHost}
+        onDiscover={() => setCatalog("teams")} />
+      <AgentCatalogDialog open={catalog !== null} preferSection={catalog ?? "agents"} onOpenChange={(next) => { if (!next) setCatalog(null); }}
+        onCreateAgent={() => { if (createAvailable.current) setCreateOpen(true); }}
+        onImport={() => { setImportError(null); importInput.current?.click(); }}
+        onRecorded={() => { reload(); setRefreshRevision((value) => value + 1); }} />
       {/* DD-135、17 §8：Skills 是 Agents 页内与定义并列的管理区。 */}
       <SkillsSection locked={blocked || versionEdit !== null} refreshRevision={refreshRevision} />
       <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
@@ -2556,9 +2605,11 @@ function InstallationPermission({ kind, installation, locked, onLocked, onRecord
   </section>;
 }
 
-function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit }: {
+function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit, onExport }: {
   resourceId: string; locked: boolean; onEdit: (target: AgentDefinitionView, owner: boolean) => void;
   onVersionEdit: (edit: VersionEdit) => void;
+  /** DD-131(2)：导出当前已发布版本（agent.definition.export，owner 批准）。 */
+  onExport?: (target: SnapshotExportTarget) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -2576,6 +2627,10 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit }: {
         <Button onClick={reload}>{t("platform.refresh")}</Button>
         <Button disabled={locked} onClick={() => onEdit(row, false)}>{t("agents.update")}</Button>
         <Button disabled={locked} onClick={() => onEdit(row, true)}>{t("agents.transfer")}</Button>
+        {onExport ? <Button disabled={locked || !row.currentPublishedVersionAssetId} data-testid="agent-definition-export"
+          title={row.currentPublishedVersionAssetId ? undefined : t("agents.export.needsPublished")}
+          onClick={() => row.currentPublishedVersionAssetId && onExport({ resourceId: row.resourceId, resourceVersion: row.resourceVersion,
+            displayName: row.displayName, versionAssetId: row.currentPublishedVersionAssetId })}>{t("agents.export.export")}</Button> : null}
       </div>
       {row.currentPublishedVersionAssetId ? <PublishedVersion resourceId={resourceId} assetId={row.currentPublishedVersionAssetId} />
         : <p className="text-sm text-muted-foreground">{t("agents.noPublishedVersion")}</p>}
@@ -2634,10 +2689,12 @@ function validVersion(row: AgentVersionView, resourceId: string): boolean {
     && (row.canRetire === undefined || typeof row.canRetire === "boolean")
     && (row.state === AgentVersionState.Draft || (!row.canUpdate && !row.canPublish))
     && (row.state === AgentVersionState.Published || !row.canRetire)
-    && !!content && typeof content.instructions === "string" && !!content.instructions.trim()
+    && !!content && typeof content.instructions === "string"
     && !!content.personaIdentity && typeof content.personaIdentity.displayName === "string" && !!content.personaIdentity.displayName.trim()
     && [content.personaIdentity.description, content.personaIdentity.avatarUrl].every((value) => value === undefined || typeof value === "string")
-    && [content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => typeof value === "string" && !!value.trim())
+    // DD-131(2): only a DRAFT may lack runtime, route, reply policy or instructions; published content is complete.
+    && [content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => value === undefined || (typeof value === "string" && !!value.trim()))
+    && (row.state === AgentVersionState.Draft || versionMissing(content).length === 0)
     && [content.skillVersionAssetIds, content.declaredToolResourceIds, content.capabilityRequirements].every((values) => Array.isArray(values)
       && values.every((value) => typeof value === "string" && !!value.trim()) && new Set(values).size === values.length)
     && content.capabilityRequirements.every((key) => /^[^@]+@[^@\s]+$/.test(key))
@@ -2649,6 +2706,19 @@ function validVersion(row: AgentVersionView, resourceId: string): boolean {
     && !!content.memoryPolicy && Object.values(AgentMemoryCoreWrite).includes(content.memoryPolicy.coreWrite)
     && Object.values(AgentMemoryColdWrite).includes(content.memoryPolicy.coldWrite);
 }
+
+/** What a DRAFT still needs before `agent.version.publish` admits it (DD-131(2)); empty when complete. */
+export function versionMissing(content: AgentVersionView["content"]): ("instructions" | "runtime")[] {
+  const missing: ("instructions" | "runtime")[] = [];
+  if (!content.instructions.trim()) missing.push("instructions");
+  if (![content.runtimeProfileKey, content.modelRouteResourceId, content.replyPolicy].every((value) => typeof value === "string" && !!value.trim())) missing.push("runtime");
+  return missing;
+}
+
+const missingLabels = {
+  instructions: "agents.version.instructionsRequired",
+  runtime: "agents.version.runtimeRequired",
+} as const satisfies Record<ReturnType<typeof versionMissing>[number], PlatformMessageKey>;
 
 function validVersionConfiguration(page: AgentVersionConfigurationPage, definition: AgentDefinitionView, offset: number): boolean {
   return !!page && page.agentResourceId === definition.resourceId && page.resourceVersion === definition.resourceVersion
@@ -2719,16 +2789,19 @@ function VersionDirectory({ definition, locked, onEdit }: {
             <h4 className="text-sm font-medium">{version.content.personaIdentity.displayName} · {version.ordinal} · <Badge tone="neutral">{t(versionLabels[version.state])}</Badge></h4>
             <p className="break-words text-sm">{version.assetId} · {t("agents.version.assetVersion")}: {version.assetVersion}</p>
             <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
-            <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId}</p>
+            <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey ?? "—"} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId ?? "—"}</p>
             <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
             <p className="break-words text-sm">{t("agents.version.skillReferences")}: {version.content.skillVersionAssetIds.join(", ") || "—"}</p>
             <p className="break-words text-sm">{t("agents.tools.selected")}: {version.content.declaredToolResourceIds.join(", ") || "—"}</p>
             <p className="break-words text-sm">{t("agents.version.capabilities")}: {version.content.capabilityRequirements.join(", ") || "—"}</p>
             <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
               <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
+            {version.state === AgentVersionState.Draft ? versionMissing(version.content).map((item) =>
+              <p key={item} className="w-fit rounded-md bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-text" data-testid={`agent-version-missing-${item}`}>{t(missingLabels[item])}</p>) : null}
             {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
               {version.canUpdate === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "edit", configurationOffsets })}>{t("agents.version.edit")}</Button> : null}
-              {version.canPublish === true ? <Button disabled={locked} onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
+              {version.canPublish === true ? <Button disabled={locked || versionMissing(version.content).length > 0}
+                onClick={() => onEdit({ definition, version, mode: "publish", configurationOffsets })}>{t("agents.version.publish")}</Button> : null}
             </div> : null}
             {version.state === AgentVersionState.Published && version.canRetire === true ? <Button className="w-fit" disabled={locked}
               onClick={() => onEdit({ definition, version, mode: "retire", configurationOffsets })}>{t("agents.version.retire")}</Button> : null}
@@ -2956,6 +3029,7 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
               <div className={PERSONA_FIELD_SHELL_CLASS}>
                 <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={t("agents.identity.instructionsPlaceholder")} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
               </div>
+              {!instructions.trim() ? <p className="text-xs text-warning-text" role="status">{t("agents.version.instructionsRequired")}</p> : null}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-runtime`}>{t("agents.version.runtimeProfile")}</label>

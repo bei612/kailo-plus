@@ -31,6 +31,16 @@ const messages = {
   "platform.removeAttachment": { en: "Remove", "zh-CN": "移除" },
   "platform.uploading": { en: "Uploading…", "zh-CN": "上传中…" },
   "platform.sendAfterUpload": { en: "Sending once uploads finish… {percent}%", "zh-CN": "上传完成后发送… {percent}%" },
+  "platform.pendingSendPublishing": { en: "Sending your message…", "zh-CN": "正在发送消息…" },
+  "platform.pendingSendFailed": { en: "Your message wasn't sent.", "zh-CN": "消息未发送。" },
+  "platform.pendingSendUnknown": {
+    en: "Your message may already have been delivered. Restoring it keeps the same send, so a retry cannot post it twice.",
+    "zh-CN": "消息可能已经送达。恢复后重试仍是同一次发送，不会重复发出。",
+  },
+  "platform.pendingSendMissingFiles": { en: "{count} file(s) did not finish uploading and must be attached again.", "zh-CN": "{count} 个文件未上传完成，需要重新添加。" },
+  "platform.pendingSendRestore": { en: "Restore", "zh-CN": "恢复" },
+  "platform.pendingSendRestoreBlocked": { en: "Send or clear the current draft to restore it.", "zh-CN": "发送或清空当前草稿后即可恢复。" },
+  "platform.pendingSendDiscard": { en: "Discard", "zh-CN": "丢弃" },
   "platform.uploadFailed": {
     en: "Upload failed — the result is unknown. Try again.",
     "zh-CN": "上传失败，结果不明。请重试。",

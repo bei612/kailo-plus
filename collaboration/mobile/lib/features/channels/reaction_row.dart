@@ -1,3 +1,4 @@
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -275,7 +276,10 @@ class _AddReactionPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Add reaction',
+      label: platformText(
+        PlatformMessageKey.messagesReactionsAdd,
+        locale: Localizations.localeOf(context).toLanguageTag(),
+      ),
       child: GestureDetector(
         key: const ValueKey('add-reaction-pill'),
         onTap: onTap,

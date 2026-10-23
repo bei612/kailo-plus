@@ -22,6 +22,7 @@ import {
   type InboxDisplayMessage,
   InboxMessageRow,
 } from "@/features/home/ui/InboxMessageRow";
+import { DesktopAgentAuthorFacts } from "@/features/messages/ui/DesktopAgentAuthorFacts";
 import type { TimelineMessage } from "@/features/messages/types";
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 import {
@@ -411,7 +412,7 @@ function InboxMessageDetailPane({
         reopen: reopenStatus ? { ...reopenStatus,
           onRetry: contextChannelId ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined } : undefined,
         actions: headerActions }}
-      renderMessages={(composerOverlayRef) => <InboxDetailMessages
+      renderMessages={(composerOverlayRef) => <DesktopAgentAuthorFacts channelId={isDirectMessage ? null : contextChannelId}><InboxDetailMessages
           conversationId={conversationId} selectedEventId={selectedEventId}
           messages={videoReviewMessages} unreadBoundaryEventId={unreadBoundaryEventId}
           loading={isThreadContextLoading} contextError={hasThreadContextLoadError}
@@ -431,7 +432,7 @@ function InboxMessageDetailPane({
             videoReviewCommentRootId={videoReviewPresentation.commentRootIdsByMessageId.get(message.id)}
             videoReviewContext={videoReviewPresentation.contextsByMessageId.get(message.id)}
           />}
-        />}
+        /></DesktopAgentAuthorFacts>}
       composer={<>
             {editTarget&&canEdit(editTarget) ? <MessageComposer key={`edit:${editTarget.id}`}
               channelId={item.item.channelId} channelType={composerChannelType}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_import_target.schema.json",
+  "title": "ResourceImportTarget",
+  "description": "06 §7.1、DD-42：目标 Tenant 的 RESOURCE_IMPORT 冻结目标。只引用本 Tenant 的 ActionExecution、新建 Resource/Asset 与包 format/digest；不携带包字节、来源 Tenant 或来源 ID。",
+  "type": "object", "additionalProperties": false,
+  "required": ["actionExecutionId", "resourceId", "versionAssetId", "workflowId", "formatKey", "packageDigest"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "resourceId": {"type": "string", "format": "uuid"},
+    "versionAssetId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string"},
+    "formatKey": {"type": "string"},
+    "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -113,4 +113,57 @@ void main() {
       expect(find.textContaining('设备仍保持登记'), findsOneWidget);
     },
   );
+
+  for (final (locale, photo) in const [
+    (Locale('en'), 'Photo'),
+    (Locale('zh', 'CN'), '照片'),
+  ]) {
+    testWidgets('Edit profile offers the original Photo row ($locale)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            savedPrefsProvider.overrideWithValue(prefs),
+            myPubkeyProvider.overrideWithValue('ab' * 32),
+            platformWorkspacesProvider.overrideWith((ref) async => const []),
+            platformOwnAuditProvider.overrideWith((ref) async => const []),
+            platformDevicesProvider.overrideWith((ref) async => const []),
+          ],
+          child: MaterialApp(
+            locale: locale,
+            supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            theme: AppTheme.light(),
+            home: SettingsPage(
+              profileHeader: const SizedBox.shrink(),
+              profileEditPageBuilder: (_) =>
+                  const Scaffold(body: Text('Profile editor destination')),
+              onEditDisplayName: (_) async {},
+              onEditProfileDescription: (_) async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('settings-edit-profile')).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(photo), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('edit-profile-photo')));
+      await tester.pumpAndSettle();
+      expect(find.text('Profile editor destination'), findsOneWidget);
+    });
+  }
 }

@@ -20,8 +20,12 @@ import type {
   ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
+  AgentCatalogOwners,
+  AgentTeamPage,
+  AgentTeamView,
   AgentInstallationPage,
   AgentInstallationUsePage,
+  AgentAuthorDirectory,
   AgentInstallationCandidatePage,
   AgentDelegationPage,
   AgentDelegationTargetPage,
@@ -35,6 +39,12 @@ import type {
   AgentVersionView,
   AgentVersionPage,
   AgentVersionConfigurationPage,
+  AgentImportConfigurationPage,
+  AgentSnapshotImportPreview,
+  AgentSnapshotUploadRequest,
+  AgentTeamSnapshotImportPreview,
+  AgentTeamSnapshotUploadRequest,
+  ExportPackageView,
   AutomationPage,
   AutomationDetailView,
   AutomationRunPage,
@@ -367,6 +377,20 @@ export function createBffClient(transport: BffTransport) {
       get<AgentVersionPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/versions${offset !== undefined ? `?offset=${offset}` : ""}`),
     agentVersionConfiguration: (resourceId: string, offset?: number) =>
       get<AgentVersionConfigurationPage>(`/api/v1/agent-definitions/${encodeURIComponent(resourceId)}/version-configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
+    /**
+     * DD-131(1)(6): same-Tenant, undeleted Agent teams the caller can discover. Members list only
+     * the Definitions the caller can discover (original order); the rest are a count.
+     */
+    agentTeams: (offset?: number) =>
+      get<AgentTeamPage>(`/api/v1/agent-teams${offset ? `?offset=${offset}` : ""}`),
+    agentTeam: (resourceId: string) =>
+      get<AgentTeamView>(`/api/v1/agent-teams/${encodeURIComponent(resourceId)}`),
+    /**
+     * DD-131(6): owner names for one page of catalog entries (discoverable Definitions and teams);
+     * IDs the caller cannot discover are omitted, never resolved.
+     */
+    agentCatalogOwners: (resourceIds: readonly string[]) =>
+      get<AgentCatalogOwners>(`/api/v1/agent-catalog/owners?ids=${resourceIds.map(encodeURIComponent).join(",")}`),
 
     /** DD-135：Tenant 级 Skill 目录（逐项 discover 过滤）、定义与版本（fresh read；DRAFT 需版本 read）。 */
     skillDefinitions: (offset?: number) =>
@@ -399,6 +423,29 @@ export function createBffClient(transport: BffTransport) {
       }
       return unwrap<SkillArtifactUploadView>(request, reply);
     },
+    /**
+     * DD-131(2)、DD-143：校验一个 Agent 快照包并为本会话一次性暂存，返回导入预览；
+     * 不创建对象。新 Definition 与 DRAFT 只经 agent.definition.import 产生。
+     */
+    uploadAgentSnapshot: (body: AgentSnapshotUploadRequest) =>
+      call<AgentSnapshotImportPreview>({ method: "POST", path: "/api/v1/agent-snapshots/uploads", body }),
+    /**
+     * DD-131(3)：校验一个团队快照包并为本会话一次性暂存，返回导入预览；不创建对象。新 agent_team 与
+     * 各成员的 Definition/DRAFT 只经 agent.team.import 产生，任一成员失败整包不提交。
+     */
+    uploadTeamSnapshot: (body: AgentTeamSnapshotUploadRequest) =>
+      call<AgentTeamSnapshotImportPreview>({ method: "POST", path: "/api/v1/agent-team-snapshots/uploads", body }),
+    /** DD-26：导入人可重选的 RuntimeProfile 与 Route（与版本配置目录同一来源）。 */
+    agentImportConfiguration: (offset?: number) =>
+      get<AgentImportConfigurationPage>(`/api/v1/agent-snapshots/configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
+    /**
+     * DD-42、DD-131(2)：发起人按导出 ActionExecution 读取其 ExportPackage；包尚未预写（等待 owner 批准）时为 404。
+     * 字节只在 READY 后经 `downloadPath` 下载，由宿主的受授权传输取得。
+     */
+    exportPackageByAction: (actionExecutionId: string) =>
+      get<ExportPackageView>(`/api/v1/export-packages/by-action/${encodeURIComponent(actionExecutionId)}`, true),
+    exportPackage: (assetId: string) =>
+      get<ExportPackageView>(`/api/v1/export-packages/${encodeURIComponent(assetId)}`, true),
     /** DD-135(7)：Installation 的 Skill 投影状态；读取不触发投影或重试。 */
     agentInstallationSkills: (resourceId: string) =>
       get<AgentInstallationSkillPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/skills`),
@@ -496,6 +543,10 @@ export function createBffClient(transport: BffTransport) {
     /** 成员按人聚合：`pubkeys` 是此人全部 ACTIVE 的 Buzz 公钥（DD-77）。 */
     members: (workspaceId: string) =>
       get<WorkspaceMemberView[]>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`),
+
+    /** DD-147(1)：成员可读的 Agent 作者目录（owner 行），与成员名单同一准入，不授予任何权限。 */
+    agentAuthors: (workspaceId: string) =>
+      get<AgentAuthorDirectory>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-authors`),
 
     /** DD-82：管理候选人来自 Tenant 成员事实，角色来自 SpiceDB；游标按 Principal ID。 */
     roleMembers: (workspaceId?: string, cursor?: string) => {

@@ -940,6 +940,48 @@ export interface AgentActiveTurnView {
 }
 
 /**
+ * DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
+ * Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
+ * owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
+ * 其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+ */
+export interface AgentAuthorDirectory {
+    agents: AgentAuthorView[];
+}
+
+export interface AgentAuthorView {
+    /**
+     * 固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。
+     */
+    agentDisplayName?:      string;
+    agentPubkey:            string;
+    installationResourceId: string;
+    /**
+     * owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+     */
+    ownerDisplayName?: string;
+    ownerPrincipalId:  string;
+}
+
+/**
+ * DD-131(6)：GET /api/v1/agent-catalog/owners?ids=<id>,<id>。目录条目（本人可 discover 的本 Tenant
+ * ACTIVE AgentDefinition 与 agent.team）的 owner 名，供原版 “Added by <owner>”。一次至多一页 ID；不属本
+ * Tenant、非 ACTIVE、非目录类型或读者当前不可 discover 的 ID 一律省略，不能用来查询任意 Principal；不授予任何权限。
+ */
+export interface AgentCatalogOwners {
+    owners: AgentCatalogOwnerView[];
+}
+
+export interface AgentCatalogOwnerView {
+    /**
+     * owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+     */
+    ownerDisplayName?: string;
+    ownerPrincipalId:  string;
+    resourceId:        string;
+}
+
+/**
  * 同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
  */
 export interface AgentDefinitionPage {
@@ -951,6 +993,11 @@ export interface AgentDefinitionPage {
  * DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
  */
 export interface AgentDefinitionView {
+    /**
+     * DD-131(6)：该定义已由 agent.definition.share 写入 tenant#member 的 discoverer/reader；缺省即未分享。只表示同
+     * Tenant 成员可发现与读取，不授予任何 Installation 使用权。
+     */
+    catalogShared?:                  boolean;
     currentPublishedVersionAssetId?: string;
     displayName:                     string;
     ownerPrincipalId:                string;
@@ -1079,6 +1126,64 @@ export interface AgentDelegationTargetPage {
     resourceVersion:        number;
     scopes:                 DelegationScopeParameters[];
     workspaceId:            string;
+}
+
+/**
+ * DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理
+ * Route（与版本配置目录同一来源与过滤）。目录为空不阻止导入（导入时不强制选择，DD-131(2)）；canImport 只反映动作开放与 Tenant
+ * create。目录不授予发布、安装或运行权限。
+ */
+export interface AgentImportConfigurationPage {
+    canImport:  boolean;
+    nextOffset: number | null;
+    profiles:   RuntimeProfileDirectoryProfilesItem[];
+    routes:     AgentVersionRouteOption[];
+}
+
+export interface RuntimeProfileDirectoryProfilesItem {
+    capabilityContract: RuntimeProfileDirectoryProfilesItemCapabilityContract;
+    key:                string;
+    kind:               RuntimeProfileKind;
+    status:             string;
+    webAvailability:    string;
+}
+
+export interface RuntimeProfileDirectoryProfilesItemCapabilityContract {
+    capabilityRequirements: string[];
+    maxIdleTimeoutSeconds:  number;
+    maxParallelism:         number;
+    maxTurnDurationSeconds: number;
+    replyPolicies:          string[];
+    /**
+     * 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+     */
+    replyPolicyMappings?: RuntimeReplyPolicyMapping[];
+}
+
+export interface RuntimeReplyPolicyMapping {
+    broadcastReplies: boolean;
+    key:              string;
+    threadReplies:    boolean;
+}
+
+export enum RuntimeProfileKind {
+    LocalAcp = "LOCAL_ACP",
+    RemoteProvider = "REMOTE_PROVIDER",
+    ServerCodex = "SERVER_CODEX",
+}
+
+/**
+ * 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+ * 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+ */
+export interface AgentVersionRouteOption {
+    homeWorkspaceId:        null | string;
+    nativeConfigHash:       string;
+    nativeConfigResourceId: string;
+    nativeRevision:         number;
+    ownerPrincipalId:       string;
+    resourceId:             string;
+    resourceVersion:        number;
 }
 
 export interface AgentInstallationCandidatePage {
@@ -1648,6 +1753,151 @@ export enum AgentSessionViewStatus {
 }
 
 /**
+ * DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经
+ * agent.definition.import。
+ */
+export interface AgentSnapshotImportPreview {
+    /**
+     * 包内联的头像（≤2 MiB 的 data URL）供预览；上传时已按附件规则存为本 Tenant 内容寻址媒体对象，DRAFT personaIdentity 只引用该对象。
+     */
+    avatarDataUrl?: string;
+    /**
+     * 内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即新 DRAFT 的 personaIdentity.avatarUrl。
+     */
+    avatarUrl?:          string;
+    description?:        string;
+    displayName:         string;
+    expiresAt:           string;
+    formatKey:           AgentSnapshotImportPreviewFormatKey;
+    idleTimeoutSeconds?: number;
+    /**
+     * 可为空串：包没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+     */
+    instructions:            string;
+    maxTurnDurationSeconds?: number;
+    mediaType:               AgentSnapshotMediaType;
+    omitted:                 AgentSnapshotOmission[];
+    packageByteSize:         number;
+    packageDigest:           string;
+    parallelism?:            number;
+    sourceIsBuiltIn?:        boolean;
+    uploadId:                string;
+}
+
+export enum AgentSnapshotImportPreviewFormatKey {
+    BuzzAgentSnapshot1 = "buzz-agent-snapshot@1",
+}
+
+/**
+ * 05 §2.12 TransferFormat 的 package_media_type：`.agent.json` 清单本身，或 tEXt
+ * `buzz_agent_snapshot` 承载同一清单的 `.agent.png`。
+ */
+export enum AgentSnapshotMediaType {
+    ApplicationJson = "application/json",
+    ImagePng = "image/png",
+}
+
+/**
+ * DD-131(2)：快照中存在、导入不带入新 DRAFT 的原版字段。RUNTIME/MODEL/PROVIDER/NAME_POOL
+ * 属本机运行时（DD-26）；RESPOND_TO_ALLOWLIST 的名单公钥属来源身份；RESPOND_TO_ANYONE
+ * 不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR
+ * 只指包引用的外部头像地址（内联头像按附件规则导入，不在此列）；SKILLS 由 owner 按本 Tenant 目录重选。
+ */
+export enum AgentSnapshotOmission {
+    Avatar = "AVATAR",
+    Memory = "MEMORY",
+    Model = "MODEL",
+    NamePool = "NAME_POOL",
+    Provider = "PROVIDER",
+    RespondToAllowlist = "RESPOND_TO_ALLOWLIST",
+    RespondToAnyone = "RESPOND_TO_ANYONE",
+    Runtime = "RUNTIME",
+    SessionPolicy = "SESSION_POLICY",
+    Skills = "SKILLS",
+}
+
+/**
+ * DD-131(2)、DD-143：一次 Agent 快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 5
+ * MiB、PNG 不超过 10 MiB；格式与版本由 Core 判定。
+ */
+export interface AgentSnapshotUploadRequest {
+    contentBase64: string;
+    mediaType:     AgentSnapshotMediaType;
+}
+
+/**
+ * 同 Tenant 且读者当前可 discover 的未删除 AgentTeam 页（DD-131(1)(6)）；nextOffset 续读同一排序。
+ */
+export interface AgentTeamPage {
+    nextOffset?: number;
+    teams:       AgentTeamView[];
+}
+
+/**
+ * DD-131(1) 的 Tenant 级 agent_team Resource 及 AgentTeam 事实（03 §7）。memberAgentResourceIds
+ * 只列读者当前可 discover 的成员，次序不变；hiddenMemberCount 是其余成员个数，不暴露其 ID。catalogShared 表示该团队已写入
+ * tenant#member 的 discoverer/reader（DD-131(6)）。成员停用或删除不改写团队，部署与提及时按当前状态跳过。
+ */
+export interface AgentTeamView {
+    catalogShared:          boolean;
+    description?:           string;
+    hiddenMemberCount:      number;
+    memberAgentResourceIds: string[];
+    name:                   string;
+    ownerPrincipalId:       string;
+    resourceId:             string;
+    resourceState:          ResourceState;
+    resourceVersion:        number;
+}
+
+/**
+ * DD-131(3)：校验通过的团队快照包的导入预览与一次性暂存引用。团队名与说明进入新 agent_team；每个成员按 DD-131(2) 映射为将新建的 Definition
+ * 与 DRAFT。团队 instructions 不进入包也不导入（DD-131(1)）。确认导入经 agent.team.import，任一成员失败整包不提交。
+ */
+export interface AgentTeamSnapshotImportPreview {
+    description?:    string;
+    expiresAt:       string;
+    formatKey:       AgentTeamSnapshotImportPreviewFormatKey;
+    mediaType:       AgentSnapshotMediaType;
+    members:         AgentTeamSnapshotImportPreviewMembersItem[];
+    name:            string;
+    packageByteSize: number;
+    packageDigest:   string;
+    /**
+     * 包内带有原版团队 instructions；按 DD-131(1) 不导入。
+     */
+    teamInstructionsOmitted: boolean;
+    uploadId:                string;
+}
+
+export enum AgentTeamSnapshotImportPreviewFormatKey {
+    BuzzTeamSnapshot1 = "buzz-team-snapshot@1",
+}
+
+export interface AgentTeamSnapshotImportPreviewMembersItem {
+    /**
+     * 该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。
+     */
+    avatarUrl?:   string;
+    description?: string;
+    displayName:  string;
+    /**
+     * 可为空串：成员没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+     */
+    instructions: string;
+    omitted:      AgentSnapshotOmission[];
+}
+
+/**
+ * DD-131(3)：一次团队快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 25 MiB、PNG 不超过 50
+ * MiB；格式与版本由 Core 判定。
+ */
+export interface AgentTeamSnapshotUploadRequest {
+    contentBase64: string;
+    mediaType:     AgentSnapshotMediaType;
+}
+
+/**
  * GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
  * Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
  * 解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
@@ -1863,52 +2113,6 @@ export interface AgentVersionConfigurationPage {
     routes:          AgentVersionRouteOption[];
 }
 
-export interface RuntimeProfileDirectoryProfilesItem {
-    capabilityContract: RuntimeProfileDirectoryProfilesItemCapabilityContract;
-    key:                string;
-    kind:               RuntimeProfileKind;
-    status:             string;
-    webAvailability:    string;
-}
-
-export interface RuntimeProfileDirectoryProfilesItemCapabilityContract {
-    capabilityRequirements: string[];
-    maxIdleTimeoutSeconds:  number;
-    maxParallelism:         number;
-    maxTurnDurationSeconds: number;
-    replyPolicies:          string[];
-    /**
-     * 同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-     */
-    replyPolicyMappings?: RuntimeReplyPolicyMapping[];
-}
-
-export interface RuntimeReplyPolicyMapping {
-    broadcastReplies: boolean;
-    key:              string;
-    threadReplies:    boolean;
-}
-
-export enum RuntimeProfileKind {
-    LocalAcp = "LOCAL_ACP",
-    RemoteProvider = "REMOTE_PROVIDER",
-    ServerCodex = "SERVER_CODEX",
-}
-
-/**
- * 03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
- * 已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
- */
-export interface AgentVersionRouteOption {
-    homeWorkspaceId:        null | string;
-    nativeConfigHash:       string;
-    nativeConfigResourceId: string;
-    nativeRevision:         number;
-    ownerPrincipalId:       string;
-    resourceId:             string;
-    resourceVersion:        number;
-}
-
 /**
  * DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
  * 不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
@@ -1955,7 +2159,9 @@ export interface AgentVersionView {
  * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
  *
  * 03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
- * environment。发布不等于安装或运行授权。
+ * environment。发布不等于安装或运行授权。DRAFT 可缺 runtimeProfileKey、modelRouteResourceId 与
+ * replyPolicy，instructions 可为空串（DD-131(2) 导入草稿与原版一致不要求运行配置）；agent.version.publish
+ * 准入时三者必须齐备且 instructions 非空，PUBLISHED 版本总是完整。
  */
 export interface AgentVersionContent {
     /**
@@ -1965,14 +2171,20 @@ export interface AgentVersionContent {
     declaredToolResourceIds: string[];
     instructions:            string;
     memoryPolicy:            AgentVersionContentMemoryPolicy;
-    modelRouteResourceId:    string;
-    parallelism:             number;
-    personaIdentity:         AgentVersionContentPersonaIdentity;
     /**
-     * RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
+     * DRAFT 可缺省；发布时必填。
      */
-    replyPolicy:          string;
-    runtimeProfileKey:    string;
+    modelRouteResourceId?: string;
+    parallelism:           number;
+    personaIdentity:       AgentVersionContentPersonaIdentity;
+    /**
+     * RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。DRAFT 可缺省；发布时必填。
+     */
+    replyPolicy?: string;
+    /**
+     * DRAFT 可缺省；发布时必填。
+     */
+    runtimeProfileKey?:   string;
     skillVersionAssetIds: string[];
     triggerDefaults:      AgentTrigger[];
     turnLimits:           AgentVersionContentTurnLimits;
@@ -2422,6 +2634,7 @@ export enum EvidenceAuthority {
 export enum EvidenceKind {
     ActionExecutionId = "ACTION_EXECUTION_ID",
     AdmitActionExecutionId = "ADMIT_ACTION_EXECUTION_ID",
+    AgentVersionAssetId = "AGENT_VERSION_ASSET_ID",
     AgentgatewayUsageId = "AGENTGATEWAY_USAGE_ID",
     ApprovalPolicy = "APPROVAL_POLICY",
     ApprovalWorkflowId = "APPROVAL_WORKFLOW_ID",
@@ -2430,6 +2643,7 @@ export enum EvidenceKind {
     BuzzEventId = "BUZZ_EVENT_ID",
     BuzzPubkey = "BUZZ_PUBKEY",
     DeploymentBootstrap = "DEPLOYMENT_BOOTSTRAP",
+    ExportPackageAssetId = "EXPORT_PACKAGE_ASSET_ID",
     ExternalSubjectSha256 = "EXTERNAL_SUBJECT_SHA256",
     OpenmeterEventId = "OPENMETER_EVENT_ID",
     OriginalActionExecutionId = "ORIGINAL_ACTION_EXECUTION_ID",
@@ -2449,6 +2663,8 @@ export enum EvidenceKind {
     TenantLifecycleSnapshotId = "TENANT_LIFECYCLE_SNAPSHOT_ID",
     TenantMembershipId = "TENANT_MEMBERSHIP_ID",
     TraceId = "TRACE_ID",
+    TransferFormat = "TRANSFER_FORMAT",
+    TransferPackageDigest = "TRANSFER_PACKAGE_DIGEST",
     UsageEventId = "USAGE_EVENT_ID",
 }
 
@@ -2922,6 +3138,8 @@ export enum WorkflowKind {
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
     ProtocolSessionReconcile = "PROTOCOL_SESSION_RECONCILE",
+    ResourceExport = "RESOURCE_EXPORT",
+    ResourceImport = "RESOURCE_IMPORT",
     ResourceProvision = "RESOURCE_PROVISION",
     SecretRefRehome = "SECRET_REF_REHOME",
     TenantLifecycle = "TENANT_LIFECYCLE",
@@ -4032,6 +4250,38 @@ export enum EvidenceUnavailableReason {
     Restricted = "RESTRICTED",
     Unrecognized = "UNRECOGNIZED",
     Unverifiable = "UNVERIFIABLE",
+}
+
+/**
+ * DD-42、06 §7.1：源 Tenant 的 ExportPackage Asset。只给当前对该 Asset 有 read 的 HUMAN；READY 后才有
+ * digest、大小与下载路径。字节只经下载路由返回，不进入本视图、审计或 Workflow 历史。
+ */
+export interface ExportPackageView {
+    actionExecutionId: string;
+    byteSize?:         number;
+    contentDigest?:    string;
+    downloadPath?:     string;
+    /**
+     * 原版文件名：`<显示名>.agent.json` 或 `.agent.png`；团队为 `.team.*`。
+     */
+    fileName?:        string;
+    formatKey:        string;
+    mediaType:        string;
+    packageAssetId:   string;
+    sourceAssetId?:   string;
+    sourceResourceId: string;
+    state:            ExportPackageState;
+}
+
+/**
+ * 03 §3 ExportPackage 的状态：只有 READY 可下载；ERROR 是确定失败，DELETED 是 Tenant 销毁后的墓碑。
+ */
+export enum ExportPackageState {
+    Creating = "CREATING",
+    Deleted = "DELETED",
+    Error = "ERROR",
+    Ready = "READY",
+    Revoked = "REVOKED",
 }
 
 /**
@@ -5422,6 +5672,28 @@ export enum NativeHumanScopeQueryPermission {
 export interface ActionCommand {
     actionKey: string;
     /**
+     * 仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+     * 与包媒体类型；其他动作携带即拒绝。
+     */
+    agentDefinitionExport?: AgentDefinitionExportInput;
+    /**
+     * 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+     * 重选的运行配置；其他动作携带即拒绝。
+     */
+    agentDefinitionImport?: AgentDefinitionImportInput;
+    /**
+     * 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+     */
+    agentTeam?: AgentTeamInput;
+    /**
+     * 仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+     */
+    agentTeamExport?: AgentTeamExportInput;
+    /**
+     * 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+     */
+    agentTeamImport?: AgentTeamImportInput;
+    /**
      * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
      */
     agentVersionContent?:       AgentVersionContent;
@@ -5634,6 +5906,80 @@ export interface ActionCommand {
      * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
      */
     workspaceVisibility?: WorkspaceVisibility;
+}
+
+/**
+ * 仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+ * 与包媒体类型；其他动作携带即拒绝。
+ *
+ * 仅 agent.definition.export（DD-131(2)、05 §2.12）：命令的 Resource 目标是 AgentDefinition，这里冻结其一个
+ * PUBLISHED AgentVersion 与包的媒体类型。包只含可移植字段，不含
+ * owner、公钥、Installation、绑定、llm_route、RuntimeProfile、Delegation、记忆或任何 SecretRef。
+ */
+export interface AgentDefinitionExportInput {
+    mediaType:      AgentSnapshotMediaType;
+    versionAssetId: string;
+}
+
+/**
+ * 仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+ * 重选的运行配置；其他动作携带即拒绝。
+ *
+ * 仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节
+ * SHA-256；包不携带运行时与模型路由（DD-26）。导入时不强制选择：所给的 Profile 与 Route 在准入与 Workflow 内各自重验，缺省的由 owner
+ * 发布前在版本编辑器补齐（DD-131(2)）。
+ */
+export interface AgentDefinitionImportInput {
+    modelRouteResourceId?: string;
+    /**
+     * 上传返回的包字节 SHA-256；准入与 Workflow 读取包时重算比对。
+     */
+    packageDigest:      string;
+    runtimeProfileKey?: string;
+    uploadId:           string;
+}
+
+/**
+ * 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+ *
+ * 仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）：Tenant 级 Agent
+ * 团队的名称、说明与有序成员。成员是同 Tenant、发起人当前可 read 的 AgentDefinition Resource，按给出次序保存、不重复、至多 64
+ * 个（沿原团队目录上限）；不含原版团队级 instructions、内置 welcome 团队或任何运行配置。update 另带 resourceId 与读到的
+ * resourceVersion 做 CAS。
+ */
+export interface AgentTeamInput {
+    /**
+     * 可选说明，至多 2000 字符；去首尾空白后为空即省略
+     */
+    description?:           string;
+    memberAgentResourceIds: string[];
+    /**
+     * 去首尾空白后非空，至多 200 字符
+     */
+    name: string;
+}
+
+/**
+ * 仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+ *
+ * 仅 agent.team.export（DD-131(3)、05 §2.12）：命令的 Resource 目标是
+ * agent_team，这里只冻结包媒体类型。各成员取审批开始时冻结的当前已发布版本；包是团队信息加各成员的 DD-131(2) 清单，不含团队
+ * instructions、owner、公钥、Installation、绑定、llm_route、RuntimeProfile、记忆或任何 SecretRef。
+ */
+export interface AgentTeamExportInput {
+    mediaType: AgentSnapshotMediaType;
+}
+
+/**
+ * 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+ *
+ * 仅 agent.team.import（DD-131(3)、05 §2.12）：本会话、本人上传的 buzz-team-snapshot@1 包引用与包
+ * digest。agent_team 没有 slug；各成员 Definition 的 slug 由 Core 按成员显示名规范化生成并在本 Tenant 内加序号去重。成员
+ * DRAFT 不带运行配置，由 owner 发布前补齐。
+ */
+export interface AgentTeamImportInput {
+    packageDigest: string;
+    uploadId:      string;
 }
 
 /**
@@ -9235,6 +9581,55 @@ export interface ProtocolSessionReconcileResult {
     round:             ProtocolSessionReconcileRound;
     status:            TaskStatus;
     waitingReason:     string;
+}
+
+export interface ResourceExportAdvanceRequest {
+    cancelRequested: boolean;
+    runId:           string;
+    target:          ResourceExportTarget;
+}
+
+/**
+ * 06 §7.1、DD-42：源 Tenant 的 RESOURCE_EXPORT 冻结目标。只引用本 Tenant 的 ActionExecution、来源
+ * Resource、准入时预写的 ExportPackage Asset 与 TransferFormat；不携带包字节或任何来源内容。
+ */
+export interface ResourceExportTarget {
+    actionExecutionId: string;
+    formatKey:         string;
+    packageAssetId:    string;
+    sourceResourceId:  string;
+    workflowId:        string;
+}
+
+export interface ResourceExportAdvanceResult {
+    packageAssetId: string;
+    status:         TaskStatus;
+    waitingReason:  string;
+}
+
+export interface ResourceImportAdvanceRequest {
+    cancelRequested: boolean;
+    runId:           string;
+    target:          ResourceImportTarget;
+}
+
+/**
+ * 06 §7.1、DD-42：目标 Tenant 的 RESOURCE_IMPORT 冻结目标。只引用本 Tenant 的 ActionExecution、新建
+ * Resource/Asset 与包 format/digest；不携带包字节、来源 Tenant 或来源 ID。
+ */
+export interface ResourceImportTarget {
+    actionExecutionId: string;
+    formatKey:         string;
+    packageDigest:     string;
+    resourceId:        string;
+    versionAssetId:    string;
+    workflowId:        string;
+}
+
+export interface ResourceImportAdvanceResult {
+    resourceId:    string;
+    status:        TaskStatus;
+    waitingReason: string;
 }
 
 export interface ResourceProvisionAdvanceRequest {

@@ -7,6 +7,7 @@ import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/features/channels/channel_actions_sheet.dart';
 import 'package:buzz/features/channels/unread_badge/unread_badge_provider.dart';
 import 'package:buzz/features/channels/direct_messages.dart';
+import 'package:buzz/features/profile/profile_provider.dart';
 import 'package:buzz/shared/auth/auth.dart';
 import 'package:buzz/shared/platform/platform_api.dart';
 import 'package:buzz/shared/platform/platform_config.dart';
@@ -738,6 +739,8 @@ class _Harness {
         if (!realChannels)
           channelsProvider.overrideWith(() => _Channels(server)),
         appLifecycleProvider.overrideWith(_Lifecycle.new),
+        // The kind:20001 heartbeat is a periodic timer; these tests do not exercise presence.
+        presenceProvider.overrideWith(_FakePresenceNotifier.new),
       ],
     );
     await container.read(authProvider.future);
@@ -863,4 +866,9 @@ class _Channels extends ChannelsNotifier {
     for (final key in server.keys)
       ChannelMember(pubkey: key, role: 'member', joinedAt: DateTime(2026)),
   ];
+}
+
+class _FakePresenceNotifier extends PresenceNotifier {
+  @override
+  Future<String> build() async => 'online';
 }

@@ -4,6 +4,7 @@ import { hasMentionClipboardHtml } from "../lib/normalizeMentionClipboard";
 import { handleMentionClipboardPaste } from "../lib/mentionClipboardPaste";
 import type { BindPastedMentionIdentities } from "../lib/mentionPasteBinding";
 import { getBuzzCodeBlockClipboardText } from "../../../shared/lib/codeBlockClipboard";
+import { restoreSnapshotPaste, SNAPSHOT_CLIPBOARD_ATTRIBUTE } from "../../../../messages/agentSnapshotClipboard";
 
 export function useComposerPasteHandler(options: {
   editor: Editor | null;
@@ -31,7 +32,11 @@ export function useComposerPasteHandler(options: {
           );
           if (mediaItem) {
             const file = mediaItem.getAsFile();
-            if (file) void uploadFileRef.current(file);
+            const html = event.clipboardData?.getData("text/html") ?? "";
+            // DD-131(7): a copied snapshot keeps its `.agent.png` name when the bytes match.
+            if (file && html.includes(SNAPSHOT_CLIPBOARD_ATTRIBUTE)) {
+              void restoreSnapshotPaste(html, file).then((named) => uploadFileRef.current(named ?? file));
+            } else if (file) void uploadFileRef.current(file);
             return true;
           }
           const codeBlockText = getBuzzCodeBlockClipboardText(

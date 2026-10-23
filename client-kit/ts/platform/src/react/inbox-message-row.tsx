@@ -12,12 +12,15 @@ import { useReactionHandler } from "./messages/reactions/useReactionHandler";
 import type { MessageActionBarSurface } from "./messages/MessageActionBarSurface";
 import type { MessageRowSurface } from "./messages/MessageRowSurface";
 import type { TimelineMessage } from "./messages/types";
+import { useAgentAuthorScope, withAgentAuthorFacts } from "./messages/agentAuthorFacts";
+import { MessageMetaSeparator } from "./messages/MessageHeader";
+import { MessageAgentOwner } from "./messages/system/MessageAgentOwner";
 
 type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
   "reactions" | "onReactionSelect" | "onReactionBadgeBurstRequest" | "reactionErrorMessage" | "customEmoji" | "reactionScope" | "resolveMediaUrl">;
 
 export function InboxMessageRowSurface({
-  message, isSelected = false, isFocusHighlightVisible = false,
+  message: rowMessage, isSelected = false, isFocusHighlightVisible = false,
   isContinuation = false, isFirst = false, showUnreadBoundary = false,
   fullTimestampLabel, renderIdentity, renderBody, renderActions,
   onToggleReaction, customEmoji = [], reactionScope, resolveMediaUrl,
@@ -32,6 +35,10 @@ export function InboxMessageRowSurface({
   fullTimestampLabel?: string;
   renderActions?: (reactions: ReactionActionProps) => React.ReactNode;
 }) {
+  // DD-147(1): the original InboxMessageRow owner line, from the host's member-readable directory.
+  const agentScope = useAgentAuthorScope();
+  const message = React.useMemo(() => agentScope ? withAgentAuthorFacts(rowMessage, agentScope.facts) : rowMessage,
+    [agentScope, rowMessage]);
   const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
   const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
   const { emojiOnly } = useMessageEmoji(message.body, message.tags);
@@ -64,6 +71,11 @@ export function InboxMessageRowSurface({
       <div className="min-w-0 flex-1">
         {isContinuation ? null : <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0" data-testid="message-header">
           {identity(<span className="block max-w-full truncate rounded text-message font-semibold leading-message-author text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" data-testid="message-author">{message.author}</span>, "author")}
+          {message.isAgent && message.ownerLabel !== undefined ? <>
+            <MessageAgentOwner ownerLabel={message.ownerLabel} ownerPubkey={message.ownerPubkey}
+              ownerPrincipalId={message.ownerPrincipalId} renderOwner={agentScope?.renderOwner} />
+            <MessageMetaSeparator />
+          </> : null}
           <p className="shrink-0 text-message-timestamp font-normal tabular-nums text-muted-foreground/55" data-testid="inbox-message-timestamp" title={absoluteTimestamp}>
             {formatItemTimestamp(message.createdAt, {withTime: true})}
           </p>

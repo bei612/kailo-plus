@@ -61,20 +61,27 @@ class PlatformAgentInstallationCandidatesPage extends HookConsumerWidget {
             if (page.candidates.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(Grid.gutter),
-                child: Text(text(PlatformMessageKey.agentsInstallationNoPublished)),
+                child: Text(
+                  text(PlatformMessageKey.agentsInstallationNoPublished),
+                ),
               )
             else
               for (final row in page.candidates)
                 AppListCard(
-                  key: ValueKey('platform-installation-source-${row.agentVersionAssetId}'),
+                  key: ValueKey(
+                    'platform-installation-source-${row.agentVersionAssetId}',
+                  ),
                   label: row.displayName,
                   children: [
                     AppListRow(
                       title: text(PlatformMessageKey.agentsVersionPublished),
-                      subtitle: '${text(PlatformMessageKey.agentsVersionOrdinal)}: ${row.ordinal}',
+                      subtitle:
+                          '${text(PlatformMessageKey.agentsVersionOrdinal)}: ${row.ordinal}',
                     ),
                     AppListRow(
-                      title: text(PlatformMessageKey.agentsInstallationDefinition),
+                      title: text(
+                        PlatformMessageKey.agentsInstallationDefinition,
+                      ),
                       subtitle: row.agentResourceId,
                     ),
                     AppListRow(
@@ -98,7 +105,9 @@ class PlatformAgentInstallationCandidatesPage extends HookConsumerWidget {
                 children: [
                   if (pageIndex.value > 0)
                     OutlinedButton(
-                      key: const ValueKey('platform-installation-sources-previous'),
+                      key: const ValueKey(
+                        'platform-installation-sources-previous',
+                      ),
                       onPressed: () => pageIndex.value--,
                       child: Text(text(PlatformMessageKey.rolesPrevious)),
                     ),

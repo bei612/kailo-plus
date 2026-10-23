@@ -333,6 +333,12 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
         anchor.href = target;
         anchor.download = filename;
         anchor.click();
+      }}
+      // DD-143: "Add" reads the same authorized BFF media route; the card verifies x/size.
+      readBytes={async () => {
+        const response = await fetch(url, { credentials: "same-origin" });
+        if (!response.ok) throw new Error(response.statusText || String(response.status));
+        return new Uint8Array(await response.arrayBuffer());
       }} />;
   }
   const attachment = resolveAudioAttachment(entry, resolveMediaUrl(media.sha256), String(children));

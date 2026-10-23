@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_snapshot_media_type.schema.json",
+  "title": "AgentSnapshotMediaType",
+  "description": "05 §2.12 TransferFormat 的 package_media_type：`.agent.json` 清单本身，或 tEXt `buzz_agent_snapshot` 承载同一清单的 `.agent.png`。",
+  "type": "string",
+  "enum": ["application/json", "image/png"]
+}

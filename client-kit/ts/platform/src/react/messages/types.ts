@@ -25,6 +25,8 @@ export type TimelineMessage = {
   role?: string;
   isAgent?: boolean;
   ownerPubkey?: string | null;
+  /** DD-147(1): the owner's Principal, present with `ownerPubkey` so the name opens the member card. */
+  ownerPrincipalId?: string | null;
   ownerLabel?: string | null;
   /**
    * DD-147(2): the owner-only respondTo badge. Only `allowlist` exists in Kailo (`anyone` is not

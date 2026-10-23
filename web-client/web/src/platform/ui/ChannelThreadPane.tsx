@@ -1,7 +1,7 @@
 import { WorkspaceMembershipState, WebMessageType, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { ThreadPanelSurface, MessageThreadPanelSkeleton, ThreadRepliesErrorCard, AuxiliaryPanel, MessageThreadPanelHeader, useThreadPanelWidth, buildThreadPanelData, getThreadRouteTarget, useRoutedMessageEdit, ThreadViewModeToggle, useThreadViewModeSwitch, RightAuxiliaryPane } from "@client-kit/platform/react/thread";
-import { agentAddressHost, withAgentAuthorFacts, type AgentAuthorFacts } from "@client-kit/platform/react/messages";
+import { agentAddressHost, withAgentAuthorFacts, type AgentAuthorFacts, type AgentOwnerRenderer } from "@client-kit/platform/react/messages";
 import { MessageRowSurface, MessageActionBarSurface, SentFromThreadLine, SentFromThreadLink, canSendMessageToChannel, getThreadReference, isThreadReply, useSendToChannelIntent, type MessageModerationContext, type TimelineMessage, canRemoveLinkPreviews, useRemoveLinkPreviewsIntent, type LinkPreviewRemovalEdit } from "@client-kit/platform/react/messages";
 import { useCollaborationPreferences } from "@client-kit/platform/react/collaboration-preferences";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
@@ -20,13 +20,15 @@ import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 import type { TypingIndicatorEntry } from "@client-kit/platform/react/messages/typingState";
 import type { ComponentProps, ReactNode } from "react";
 
-export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, nonMemberMentionWorkspaceId, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys, agentFacts, ownedAgentPubkeys }: {
+export function ChannelThreadPane({ workspaceId, principalId, conversation, selected, restoreDraftKey, autoSendDraftKey, onAutoSendConsumed, routeTargetMessageId, routeActivationId, searchMessageId, searchQuery, members, nonMemberMentionWorkspaceId, mentions = [], typingEntries = [], profiles, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, useSplitAuxiliaryPane = false, onThreadViewModeChange, channelName = "", channelId, onOpenMessageLink, editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete, isMessageUnread, onMarkRead, onMarkUnread, renderAgentMentionStatus, agentPubkeys, agentFacts, renderAgentOwner, ownedAgentPubkeys }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: (WorkspaceMemberView | ConversationParticipant)[];
   /** DD-125(8): set when `members` is the resolved Workspace roster; replies may mention people outside it. */
   nonMemberMentionWorkspaceId?: string;
   /** The channel's admitted Agent identities; their messages use the original squircle avatar. */
   agentPubkeys?: ReadonlySet<string>;
   agentFacts?: AgentAuthorFacts;
+  /** DD-147(1): the owner's member profile card, from the channel host. */
+  renderAgentOwner?: AgentOwnerRenderer;
   /** Installations the viewer owns in this channel: their replies offer the original Send to channel. */
   ownedAgentPubkeys?: ReadonlySet<string>;
   conversation?: ConversationView;
@@ -240,7 +242,7 @@ export function ChannelThreadPane({ workspaceId, principalId, conversation, sele
     onExpandReplies={(message) => setExpanded((prior) => {const next = new Set(prior); if (!next.delete(message.id)) next.add(message.id); return next;})}
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
-    renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply" agentAddress={agentAddress}
+    renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply" agentAddress={agentAddress} renderAgentOwner={renderAgentOwner}
       agentMentionStatus={renderAgentMentionStatus?.(row.message)}
       reference={<SentFromThreadLine channelId={channelId} tags={row.message.tags}
         renderLink={(link, threadExcerpt) => <SentFromThreadLink link={link}

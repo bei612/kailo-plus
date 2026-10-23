@@ -24,6 +24,11 @@ import { rankMentionCandidates } from "./mentionRanking";
 import { mapMentionCandidateToSuggestion } from "./mentionSuggestionMapping";
 import { appendUniqueName, mentionCandidateLabel } from "./mentionCandidates";
 import { buildMentionCandidates } from "./buildMentionCandidates";
+import { formatTeamMention } from "@client-kit/platform/react/composer/features/messages/lib/teamMentionCandidates";
+import type { MentionCandidate } from "./mentionCandidates";
+
+/** DD-131(1) "@team" rows ride the same ranking; they never become a bindable identity. */
+type TeamRow = MentionSuggestion & { teamRow: true };
 
 const MENTION_DEBOUNCE_MS = 120,
   MENTION_SUGGESTION_LIMIT = 50;
@@ -36,6 +41,8 @@ export function useMentions(
   ownerPubkey?: string,
   /** DD-125(8): same-Tenant people outside this Workspace channel ("not in channel"). */
   outsidePeople?: readonly MentionSuggestion[],
+  /** DD-131(1): original team rows, already expanded to this channel's admitted Installations. */
+  teams?: readonly MentionSuggestion[],
 ) {
   const t=useUiT();
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null);
@@ -62,13 +69,16 @@ export function useMentions(
     },
     [members, profiles, people, agents, outsidePeople],
   );
+  const teamRows = React.useMemo<TeamRow[]>(() => (teams ?? []).filter((team) => team.kind === "team" && (team.teamMembers?.length ?? 0) > 0)
+    .map((team) => ({ ...team, teamRow: true as const })), [teams]);
   const searchableNames = React.useMemo(
     () => [
-      ...new Set(
-        mentionCandidates.map((candidate) => mentionCandidateLabel(candidate)),
-      ),
+      ...new Set([
+        ...mentionCandidates.map((candidate) => mentionCandidateLabel(candidate)),
+        ...teamRows.map((team) => team.displayName),
+      ]),
     ],
-    [mentionCandidates],
+    [mentionCandidates, teamRows],
   );
   const highlightNames = React.useMemo<string[]>(() => {
     const names: string[] = [];
@@ -106,12 +116,12 @@ export function useMentions(
     if (mentionQuery === null) {
       return [];
     }
-    return rankMentionCandidates(mentionCandidates, mentionQuery)
+    return rankMentionCandidates<MentionCandidate | TeamRow>([...mentionCandidates, ...teamRows], mentionQuery)
       .slice(0, MENTION_SUGGESTION_LIMIT)
-      .map(({ candidate, label }) =>
-        mapMentionCandidateToSuggestion({ candidate, label, profiles }),
-      );
-  }, [mentionCandidates, mentionQuery, profiles]);
+      .map(({ candidate, label }) => "teamRow" in candidate
+        ? { kind: "team" as const, teamId: candidate.teamId, teamMembers: candidate.teamMembers, pubkey: candidate.pubkey, displayName: label, isAgent: false }
+        : mapMentionCandidateToSuggestion({ candidate, label, profiles }));
+  }, [mentionCandidates, teamRows, mentionQuery, profiles]);
   const { mentionSelectedIndex, setMentionSelectedIndex: setSelected, clearAgentSelectionPreference, prepareSelectionPreference } =
     useMentionSelection(suggestions);
   const isMentionOpen = mentionQuery !== null && suggestions.length > 0;
@@ -146,6 +156,27 @@ export function useMentions(
       if (debounceTimerRef.current !== null) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
+      }
+      if (suggestion.kind === "team") {
+        // Original insertMention team branch: bind each member label to its exact Installation key
+        // and insert `Team(@A @B) `; each member is still admitted by agent.invoke on publish.
+        const labels: { displayName: string }[] = [];
+        for (const member of suggestion.teamMembers ?? []) {
+          if (!member.pubkey) continue;
+          pasteBinding.claimMentionIntent(member.displayName);
+          const label = selectedMentionLabel(member.displayName, member.pubkey, mentionMapRef.current);
+          pasteBinding.claimMentionIntent(label);
+          mentionMapRef.current.set(label, member.pubkey);
+          selectedAgentKeys.add(member.pubkey);
+          labels.push({ displayName: label });
+        }
+        trimMapToSize(mentionMapRef.current, 200);
+        setSelectedMentionNames((current) => labels.reduce((names, { displayName }) => appendUniqueName(names, displayName), current));
+        setMentionQuery(null);
+        setSelected(0);
+        const teamStart = flushedMentionStartIndexRef.current ?? mentionStartIndex;
+        flushedMentionStartIndexRef.current = null;
+        return { replaceFromOffset: teamStart, replaceToOffset: selectionEnd, insertText: formatTeamMention(suggestion.displayName, labels) };
       }
       const displayName = selectedMentionLabel(
         suggestion.displayName,

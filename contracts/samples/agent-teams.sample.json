@@ -1,0 +1,66 @@
+{
+  "createCommand": {
+    "actionKey": "agent.team.create",
+    "idempotencyKey": "1d0f6a2e-5b3c-4f7a-9e1d-2c3b4a5f6e7d",
+    "agentTeam": {
+      "name": "Release crew",
+      "description": "Drafts and reviews release notes.",
+      "memberAgentResourceIds": ["7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "0b1c2d3e-4f5a-4b6c-9d7e-8f9a0b1c2d3e"]
+    },
+    "explicitConfirmation": true
+  },
+  "updateCommand": {
+    "actionKey": "agent.team.update",
+    "idempotencyKey": "2e1f7b3a-6c4d-4a8b-8f2e-3d4c5b6a7f8e",
+    "resourceId": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+    "resourceVersion": 2,
+    "agentTeam": {
+      "name": "Release crew",
+      "memberAgentResourceIds": ["0b1c2d3e-4f5a-4b6c-9d7e-8f9a0b1c2d3e"]
+    },
+    "explicitConfirmation": true
+  },
+  "shareCommand": {
+    "actionKey": "agent.team.share",
+    "idempotencyKey": "3f2a8c4b-7d5e-4b9c-9a3f-4e5d6c7b8a9f",
+    "resourceId": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+    "resourceVersion": 3,
+    "explicitConfirmation": true
+  },
+  "teamPage": {
+    "teams": [
+      {
+        "resourceId": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+        "name": "Release crew",
+        "description": "Drafts and reviews release notes.",
+        "memberAgentResourceIds": ["7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"],
+        "hiddenMemberCount": 1,
+        "ownerPrincipalId": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+        "resourceVersion": 3,
+        "resourceState": "ACTIVE",
+        "catalogShared": true
+      },
+      {
+        "resourceId": "6d7e8f9a-0b1c-4d2e-9f3a-4b5c6d7e8f9a",
+        "name": "Solo",
+        "memberAgentResourceIds": [],
+        "hiddenMemberCount": 0,
+        "ownerPrincipalId": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+        "resourceVersion": 2,
+        "resourceState": "ACTIVE",
+        "catalogShared": false
+      }
+    ],
+    "nextOffset": 100
+  },
+  "sharedDefinitionView": {
+    "resourceId": "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "stableSlug": "release-writer",
+    "displayName": "Release writer",
+    "status": "ACTIVE",
+    "resourceVersion": 4,
+    "ownerPrincipalId": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+    "resourceState": "ACTIVE",
+    "catalogShared": true
+  }
+}

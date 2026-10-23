@@ -9,10 +9,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/channel_details_page.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channel_messages_provider.dart';
 import 'package:buzz/features/channels/channel_typing_provider.dart';
@@ -342,7 +344,13 @@ double? effectiveFontSizeForText(
   return null;
 }
 
+// The test MaterialApp sets no locale, so widgets resolve en-US from
+// Localizations; date helpers must format with the same locale.
+const _widgetLocale = 'en-US';
+
 void main() {
+  // Production initializes every locale's date symbols in main.dart.
+  setUpAll(() => initializeDateFormatting());
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();
@@ -1113,7 +1121,7 @@ void main() {
       expect(
         findRichText(
           '2 replies · last reply '
-          '${formatThreadSummaryLastReplyTime(1200)}',
+          '${formatThreadSummaryLastReplyTime(1200, locale: _widgetLocale)}',
         ),
         findsOneWidget,
       );
@@ -2508,7 +2516,9 @@ void main() {
         expect(
           find.descendant(
             of: stickyHeader,
-            matching: find.text(formatDayHeading(firstDay + 86400)),
+            matching: find.text(
+              formatDayHeading(firstDay + 86400, locale: _widgetLocale),
+            ),
           ),
           findsOneWidget,
         );
@@ -4035,15 +4045,21 @@ void main() {
       expect(find.byTooltip('View members'), findsNothing);
       expect(find.byTooltip('Channel actions'), findsOneWidget);
 
-      // 点频道名看成员：数据来自平台 BFF 的成员视图
+      // 点频道名打开原版频道详情：成员预览来自平台 BFF 的成员视图，按人计
       await tester.tap(
         find.byKey(const ValueKey('channel-header-settings-trigger')),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Member 0'), findsOneWidget);
-      expect(find.text('5 members'), findsOneWidget);
-      expect(find.text('Member · 2 keys'), findsNWidgets(5));
+      expect(find.byType(ChannelDetailsPage), findsOneWidget);
+      expect(find.text('Member 0 · Member'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('channel-details-members-card')),
+          matching: find.text('5 members'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('shows lock icon for private channel', (tester) async {
@@ -4880,14 +4896,18 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(DayDivider),
-          matching: find.text(formatDayHeading(rootCreatedAt)),
+          matching: find.text(
+            formatDayHeading(rootCreatedAt, locale: _widgetLocale),
+          ),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: find.byType(DayDivider),
-          matching: find.text(formatDayHeading(nextDayCreatedAt)),
+          matching: find.text(
+            formatDayHeading(nextDayCreatedAt, locale: _widgetLocale),
+          ),
         ),
         findsOneWidget,
       );
@@ -5009,7 +5029,9 @@ void main() {
       expect(
         find.descendant(
           of: stickyHeader,
-          matching: find.text(formatDayHeading(timestampForDay(2, 0))),
+          matching: find.text(
+            formatDayHeading(timestampForDay(2, 0), locale: _widgetLocale),
+          ),
         ),
         findsOneWidget,
       );
@@ -5026,7 +5048,9 @@ void main() {
       expect(
         find.descendant(
           of: stickyHeader,
-          matching: find.text(formatDayHeading(timestampForDay(3, 0))),
+          matching: find.text(
+            formatDayHeading(timestampForDay(3, 0), locale: _widgetLocale),
+          ),
         ),
         findsOneWidget,
       );

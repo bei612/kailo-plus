@@ -101,6 +101,7 @@ void main() {
           'taskStatus': 'COMPLETED',
           'observation': 'EXTERNAL_RESULT_UNKNOWN',
         }),
+        locale: 'en',
       ),
       startsWith('Outcome not known yet'),
     );
@@ -111,17 +112,21 @@ void main() {
           'taskStatus': 'FAILED',
           'observation': 'PROJECTION_DELAYED',
         }),
+        locale: 'en',
       ),
       startsWith('Status may be out of date'),
     );
-    expect(platformTaskPhase(t({'workflowId': 'w'})), 'Started');
+    expect(platformTaskPhase(t({'workflowId': 'w'}), locale: 'en'), 'Started');
     expect(
-      platformTaskPhase(t({'workflowId': 'w', 'taskStatus': 'COMPLETED'})),
+      platformTaskPhase(
+        t({'workflowId': 'w', 'taskStatus': 'COMPLETED'}),
+        locale: 'en',
+      ),
       'Completed',
     );
-    expect(platformTaskPhase(t({})), 'Applied');
+    expect(platformTaskPhase(t({}), locale: 'en'), 'Applied');
     expect(
-      platformTaskPhase(t({'gateState': 'WAITING'})),
+      platformTaskPhase(t({'gateState': 'WAITING'}), locale: 'en'),
       'Waiting for approval',
     );
   });

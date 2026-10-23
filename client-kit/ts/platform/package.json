@@ -316,6 +316,8 @@
     "./react/composer/features/messages/ui/ComposerChannelLinksContext": "./src/react/composer/features/messages/ui/ComposerChannelLinksContext.tsx",
     "./react/composer/features/messages/ui/useAgentAddressLockPicker": "./src/react/composer/features/messages/ui/useAgentAddressLockPicker.ts",
     "./react/composer/features/messages/ui/useComposerAgentDirectory": "./src/react/composer/features/messages/ui/useComposerAgentDirectory.ts",
+    "./react/composer/features/messages/ui/useTeamMentionCandidates": "./src/react/composer/features/messages/ui/useTeamMentionCandidates.ts",
+    "./react/composer/features/messages/lib/teamMentionCandidates": "./src/react/composer/features/messages/lib/teamMentionCandidates.ts",
     "./react/composer/features/messages/ui/useThreadAgentAudience": "./src/react/composer/features/messages/ui/useThreadAgentAudience.ts",
     "./react/composer/features/messages/ui/useAddressMentionPulse": "./src/react/composer/features/messages/ui/useAddressMentionPulse.ts",
     "./react/composer/features/messages/ui/useAutoPinMentionedAgents": "./src/react/composer/features/messages/ui/useAutoPinMentionedAgents.ts",

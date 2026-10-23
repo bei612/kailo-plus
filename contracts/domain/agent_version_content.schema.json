@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/agent_version_content.schema.json",
   "title": "AgentVersionContent",
-  "description": "03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host environment。发布不等于安装或运行授权。",
+  "description": "03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host environment。发布不等于安装或运行授权。DRAFT 可缺 runtimeProfileKey、modelRouteResourceId 与 replyPolicy，instructions 可为空串（DD-131(2) 导入草稿与原版一致不要求运行配置）；agent.version.publish 准入时三者必须齐备且 instructions 非空，PUBLISHED 版本总是完整。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["personaIdentity", "instructions", "runtimeProfileKey", "modelRouteResourceId", "skillVersionAssetIds", "declaredToolResourceIds", "capabilityRequirements", "triggerDefaults", "replyPolicy", "parallelism", "turnLimits", "memoryPolicy"],
+  "required": ["personaIdentity", "instructions", "skillVersionAssetIds", "declaredToolResourceIds", "capabilityRequirements", "triggerDefaults", "parallelism", "turnLimits", "memoryPolicy"],
   "properties": {
     "personaIdentity": {
       "type": "object",
@@ -18,13 +18,13 @@
       }
     },
     "instructions": {"type": "string"},
-    "runtimeProfileKey": {"type": "string"},
-    "modelRouteResourceId": {"type": "string", "format": "uuid"},
+    "runtimeProfileKey": {"type": "string", "description": "DRAFT 可缺省；发布时必填。"},
+    "modelRouteResourceId": {"type": "string", "format": "uuid", "description": "DRAFT 可缺省；发布时必填。"},
     "skillVersionAssetIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
     "declaredToolResourceIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
     "capabilityRequirements": {"type": "array", "items": {"type": "string"}, "description": "精确 contract_key@version，不引用业务能力实现名。"},
     "triggerDefaults": {"type": "array", "items": {"$ref": "../enums/agent_trigger.schema.json"}},
-    "replyPolicy": {"type": "string", "description": "RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。"},
+    "replyPolicy": {"type": "string", "description": "RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。DRAFT 可缺省；发布时必填。"},
     "parallelism": {"type": "integer"},
     "turnLimits": {
       "type": "object",

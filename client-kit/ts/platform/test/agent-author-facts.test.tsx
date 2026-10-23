@@ -5,8 +5,9 @@ import { setLocale } from "../src/i18n";
 import {
   AgentAuthorFactsProvider, MessageRowSurface, agentAddressHost, agentAuthorFacts,
   buildAgentAddressMentionTags, getAgentAddressMentionPubkeys, getVisibleAgentAddressPubkeys,
-  withAgentAuthorFacts, type TimelineMessage,
+  withAgentAuthorFacts, type AgentOwnerRenderer, type TimelineMessage,
 } from "../src/react/messages";
+import { InboxMessageRowSurface } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render } from "./render";
 
@@ -16,10 +17,9 @@ const OWNER_KEY = "c".repeat(64);
 const directory = {
   principalId: "owner-principal",
   agents: [
-    { pubkey: AGENT.toUpperCase(), displayName: "Builder",
-      installation: { resourceId: "inst-1", ownerPrincipalId: "owner-principal", ownerDisplayName: " Dana " } },
-    { pubkey: OTHER, displayName: "Reviewer",
-      installation: { resourceId: "inst-2", ownerPrincipalId: "gone-principal" } },
+    { agentPubkey: AGENT.toUpperCase(), agentDisplayName: "Builder", installationResourceId: "inst-1",
+      ownerPrincipalId: "owner-principal", ownerDisplayName: " Dana " },
+    { agentPubkey: OTHER, agentDisplayName: "Reviewer", installationResourceId: "inst-2", ownerPrincipalId: "gone-principal" },
   ],
   members: [
     { principalId: "owner-principal", state: WorkspaceMembershipState.Active, pubkeys: [OWNER_KEY], displayName: "Dana" },
@@ -37,10 +37,11 @@ it("keeps the original agent-address tag helpers: addressed ∩ delivered, order
 
 it("projects the owner line from the admitted directory and the badge only from the owner's allowlist", () => {
   const facts = agentAuthorFacts(directory, new Set(["inst-1"]));
-  expect(facts.get(AGENT)).toEqual({ ownerLabel: "Dana", ownerPubkey: OWNER_KEY, displayName: "Builder", respondTo: "allowlist" });
-  expect(facts.get(OTHER)).toEqual({ ownerLabel: null, ownerPubkey: null, displayName: "Reviewer" });
+  expect(facts.get(AGENT)).toEqual({ ownerLabel: "Dana", ownerPubkey: OWNER_KEY, ownerPrincipalId: "owner-principal",
+    displayName: "Builder", respondTo: "allowlist" });
+  expect(facts.get(OTHER)).toEqual({ ownerLabel: null, ownerPubkey: null, ownerPrincipalId: null, displayName: "Reviewer" });
   expect(withAgentAuthorFacts({ ...message, pubkey: "d".repeat(64) }, facts)).toEqual({ ...message, pubkey: "d".repeat(64) });
-  expect(withAgentAuthorFacts(message, facts)).toMatchObject({ isAgent: true, ownerLabel: "Dana", respondTo: "allowlist" });
+  expect(withAgentAuthorFacts(message, facts)).toMatchObject({ isAgent: true, ownerLabel: "Dana", ownerPrincipalId: "owner-principal", respondTo: "allowlist" });
   expect(agentAuthorFacts(directory).get(AGENT)?.respondTo).toBeUndefined();
   const host = agentAddressHost(facts);
   expect(host.isKnownAgent(AGENT.toUpperCase())).toBe(true);
@@ -71,4 +72,38 @@ it("renders the owner line, allowlist badge and address prefix through the provi
 
   const human = await render(<TooltipProvider><MessageRowSurface message={{ ...message, pubkey: OWNER_KEY }} renderBody={() => message.body} /></TooltipProvider>);
   expect(human.querySelector('[data-testid="message-agent-owner"]')).toBeNull();
+});
+
+it("keeps a known owner name without a Workspace key, and an unnamed Agent unlabelled", () => {
+  const facts = agentAuthorFacts({ principalId: null, members: [], agents: [
+    { agentPubkey: AGENT, installationResourceId: "inst-1", ownerPrincipalId: "owner-principal", ownerDisplayName: "Dana" },
+  ] } as never);
+  expect(facts.get(AGENT)).toEqual({ ownerLabel: "Dana", ownerPubkey: null, ownerPrincipalId: null, displayName: null });
+  expect(agentAddressHost(facts).labelFor(AGENT)).toBeNull();
+});
+
+it("opens the owner's member profile card from the owner name on any host renderer", async () => {
+  await act(async () => setLocale("en"));
+  const facts = agentAuthorFacts(directory);
+  const opened: unknown[] = [];
+  const renderOwner: AgentOwnerRenderer = (owner, name) => <button type="button" data-testid="owner-card"
+    onClick={() => opened.push(owner)}>{name}</button>;
+  const view = await render(<TooltipProvider><AgentAuthorFactsProvider facts={facts} renderOwner={renderOwner}>
+    <MessageRowSurface message={message} renderBody={() => message.body} />
+    <InboxMessageRowSurface message={{ ...message, id: "m2" }} renderBody={() => message.body} />
+  </AgentAuthorFactsProvider></TooltipProvider>);
+  const triggers = view.querySelectorAll<HTMLButtonElement>('[data-testid="owner-card"]');
+  expect(triggers).toHaveLength(2);
+  expect(view.querySelectorAll('[data-testid="message-agent-owner-name"]')[1]?.textContent).toBe("Dana");
+  await act(async () => { triggers[0]!.click(); triggers[1]!.click(); });
+  expect(opened).toEqual([
+    { principalId: "owner-principal", pubkey: OWNER_KEY, label: "Dana" },
+    { principalId: "owner-principal", pubkey: OWNER_KEY, label: "Dana" },
+  ]);
+
+  const plain = await render(<TooltipProvider><AgentAuthorFactsProvider facts={facts}>
+    <MessageRowSurface message={message} renderBody={() => message.body} />
+  </AgentAuthorFactsProvider></TooltipProvider>);
+  expect(plain.querySelector('[data-testid="owner-card"]')).toBeNull();
+  expect(plain.querySelector('[data-testid="message-agent-owner"]')?.textContent).toContain("Dana");
 });

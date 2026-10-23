@@ -89,6 +89,22 @@ pub async fn submit_action(
     if cmd.skill_version_upload.is_some() != (cmd.action_key == "skill.version.create") {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
+    // DD-131(2): the staged snapshot reference belongs only to agent.definition.import.
+    if cmd.agent_definition_import.is_some() != (cmd.action_key == crate::resource_transfer::IMPORT)
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
+    // DD-131(2): the frozen version and media type belong only to agent.definition.export.
+    if cmd.agent_definition_export.is_some() != (cmd.action_key == crate::resource_export::EXPORT) {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
+    // DD-131(3): the team package reference and the team export media type belong only
+    // to agent.team.import and agent.team.export respectively.
+    if cmd.agent_team_import.is_some() != (cmd.action_key == crate::team_transfer::IMPORT)
+        || cmd.agent_team_export.is_some() != (cmd.action_key == crate::team_transfer::EXPORT)
+    {
+        return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
+    }
     // DD-149: connector inputs belong only to their actions; the transient credential
     // and OAuth attempt never reach another consumer. Tool-call children are opened
     // only by the ExtMcp PEP, never submitted through the BFF.
@@ -133,6 +149,18 @@ pub async fn submit_action(
     } else if crate::huddle::is_action(&cmd.action_key) {
         // DD-125(3)：Huddle 临时频道投影有自己的 CONTROL 派发与对账路径
         crate::huddle::submit(&state, &ctx, &cmd).await
+    } else if cmd.action_key == crate::resource_transfer::IMPORT {
+        // DD-131(2)：导入只接收本 PlatformSession、本人的暂存上传；不符即不存在。
+        match crate::resource_transfer::check_session(&state, &ctx, &cmd).await {
+            Ok(()) => state.governance.submit(actor(&ctx), &cmd).await,
+            Err(refusal) => Err((refusal, None)),
+        }
+    } else if cmd.action_key == crate::team_transfer::IMPORT {
+        // DD-131(3)：团队导入同样只接收本 PlatformSession、本人的暂存上传。
+        match crate::team_transfer::check_session(&state, &ctx, &cmd).await {
+            Ok(()) => state.governance.submit(actor(&ctx), &cmd).await,
+            Err(refusal) => Err((refusal, None)),
+        }
     } else if cmd.action_key == "skill.version.create" {
         // DD-135(3)：上传版本只接收本 PlatformSession、本人的暂存上传；不符即不存在。
         match crate::skill_query::check_session(&state, &ctx, &cmd).await {

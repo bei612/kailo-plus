@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'dart:ui' as ui;
 
+import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter/material.dart';
@@ -172,7 +173,12 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.copy),
-                      title: const Text('Copy text'),
+                      title: Text(
+                        _mt(
+                          sheetContext,
+                          PlatformMessageKey.messagesActionsCopyText,
+                        ),
+                      ),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         // Copy to clipboard
@@ -186,7 +192,9 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.pencil),
-                      title: const Text('Edit message'),
+                      title: Text(
+                        _mt(sheetContext, PlatformMessageKey.buzzEditMessage),
+                      ),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         _showEditSheet(
@@ -204,7 +212,7 @@ void showMessageActions({
                         color: sheetContext.colors.error,
                       ),
                       title: Text(
-                        'Delete message',
+                        _mt(sheetContext, PlatformMessageKey.buzzDeleteMessage),
                         style: TextStyle(color: sheetContext.colors.error),
                       ),
                       onTap: () {
@@ -258,7 +266,12 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.download),
-                title: const Text('Save image'),
+                title: Text(
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsSaveImage,
+                  ),
+                ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   unawaited(_saveImage(context, ref, imageUrl));
@@ -267,7 +280,12 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.share2),
-                title: const Text('Share image'),
+                title: Text(
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsShareImage,
+                  ),
+                ),
                 onTap: () {
                   final renderBox = context.findRenderObject() as RenderBox?;
                   final shareOrigin = renderBox == null
@@ -287,13 +305,21 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.link2),
-                title: const Text('Copy image link'),
+                title: Text(
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsCopyImageLink,
+                  ),
+                ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   copyToClipboard(
                     context,
                     imageUrl,
-                    message: 'Image link copied',
+                    message: _mt(
+                      sheetContext,
+                      PlatformMessageKey.messagesActionsImageLinkCopied,
+                    ),
                   );
                 },
               ),
@@ -306,7 +332,7 @@ void showImageActions({
                     color: sheetContext.colors.error,
                   ),
                   title: Text(
-                    'Delete message',
+                    _mt(sheetContext, PlatformMessageKey.buzzDeleteMessage),
                     style: TextStyle(color: sheetContext.colors.error),
                   ),
                   onTap: () {
@@ -393,6 +419,11 @@ Future<void> _saveImage(
   String imageUrl,
 ) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final saved = _mt(context, PlatformMessageKey.messagesActionsImageSaved);
+  final failed = _mt(
+    context,
+    PlatformMessageKey.messagesActionsImageSaveFailed,
+  );
   try {
     final needsPhotoLibraryPermission =
         defaultTargetPlatform == TargetPlatform.iOS ||
@@ -415,13 +446,9 @@ Future<void> _saveImage(
     }
     final image = await _downloadImage(ref, imageUrl);
     await PhotoManager.editor.saveImage(image.bytes, filename: image.filename);
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('Image saved to Photos')),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(saved)));
   } catch (_) {
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('Could not save image')),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(failed)));
   }
 }
 
@@ -432,6 +459,10 @@ Future<void> _shareImage(
   Rect? shareOrigin,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final failed = _mt(
+    context,
+    PlatformMessageKey.messagesActionsImageShareFailed,
+  );
   try {
     final image = await _downloadImage(ref, imageUrl);
     final directory = await getTemporaryDirectory();
@@ -443,9 +474,7 @@ Future<void> _shareImage(
       ShareParams(files: [XFile(file.path)], sharePositionOrigin: shareOrigin),
     );
   } catch (_) {
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('Could not share image')),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(failed)));
   }
 }
 
@@ -484,7 +513,14 @@ class _MarkReadUnreadTile extends ConsumerWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(unread ? LucideIcons.mailCheck : LucideIcons.mailOpen),
-      title: Text(unread ? 'Mark read' : 'Mark unread'),
+      title: Text(
+        _mt(
+          context,
+          unread
+              ? PlatformMessageKey.buzzMarkRead
+              : PlatformMessageKey.buzzMarkUnread,
+        ),
+      ),
       onTap: () {
         Navigator.of(context).pop();
         final notifier = ref.read(readStateProvider.notifier);
@@ -526,7 +562,14 @@ class _FollowThreadTile extends ConsumerWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(following ? LucideIcons.bellOff : LucideIcons.bellRing),
-      title: Text(following ? 'Unfollow thread' : 'Follow thread'),
+      title: Text(
+        _mt(
+          context,
+          following
+              ? PlatformMessageKey.buzzUnfollowThread
+              : PlatformMessageKey.buzzFollowThread,
+        ),
+      ),
       onTap: () {
         Navigator.of(context).pop();
         final notifier = ref.read(threadFollowsProvider.notifier);
@@ -570,7 +613,7 @@ class _FastActionsRow extends ConsumerWidget {
       if (messages != null)
         _FastActionTile(
           icon: LucideIcons.messageSquareReply,
-          label: 'Reply',
+          label: _mt(context, PlatformMessageKey.buzzReply),
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(pageContext).push(
@@ -589,13 +632,13 @@ class _FastActionsRow extends ConsumerWidget {
         ),
       _FastActionTile(
         icon: LucideIcons.link2,
-        label: 'Copy link',
+        label: _mt(context, PlatformMessageKey.buzzCopyLink),
         onTap: () {
           Navigator.of(context).pop();
           copyToClipboard(
             pageContext,
             messageLinkFor(message: message, channelId: channelId),
-            message: 'Message link copied',
+            message: _mt(context, PlatformMessageKey.messagesActionsLinkCopied),
           );
         },
       ),
@@ -798,7 +841,9 @@ void _showEditSheet({
             autofocus: true,
             minLines: 1,
             maxLines: 5,
-            decoration: const InputDecoration(hintText: 'Edit message'),
+            decoration: InputDecoration(
+              hintText: _mt(sheetContext, PlatformMessageKey.buzzEditMessage),
+            ),
           ),
           const SizedBox(height: Grid.xxs),
           Row(
@@ -806,7 +851,7 @@ void _showEditSheet({
             children: [
               TextButton(
                 onPressed: () => Navigator.of(sheetContext).pop(),
-                child: const Text('Cancel'),
+                child: Text(_mt(sheetContext, PlatformMessageKey.buzzCancel)),
               ),
               const SizedBox(width: Grid.half),
               FilledButton(
@@ -829,7 +874,7 @@ void _showEditSheet({
                       );
                   Navigator.of(sheetContext).pop();
                 },
-                child: const Text('Save'),
+                child: Text(_mt(sheetContext, PlatformMessageKey.buzzSave)),
               ),
             ],
           ),
@@ -849,15 +894,25 @@ void _confirmDelete({
   showBuzzDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Delete message'),
-      content: const Text('This cannot be undone.'),
+      title: Text(_mt(dialogContext, PlatformMessageKey.buzzDeleteMessage)),
+      content: Text(
+        _mt(dialogContext, PlatformMessageKey.messagesActionsDeleteUndone),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Cancel'),
+          child: Text(_mt(dialogContext, PlatformMessageKey.buzzCancel)),
         ),
         FilledButton(
           onPressed: () async {
+            final unknown = _mt(
+              dialogContext,
+              PlatformMessageKey.messagesActionsDeleteUnknown,
+            );
+            final failed = _mt(
+              dialogContext,
+              PlatformMessageKey.messagesActionsDeleteFailed,
+            );
             Navigator.of(dialogContext).pop();
             final messenger = ScaffoldMessenger.of(context);
             try {
@@ -865,18 +920,28 @@ void _confirmDelete({
                   .read(messageMutationsProvider)
                   .deleteMessage(channelId: channelId, eventId: messageId);
               onDeleted?.call();
-            } catch (error) {
-              messenger.showSnackBar(
-                SnackBar(content: Text('Failed to delete message: $error')),
-              );
+            } on RelayPublishOutcomeUnknown {
+              messenger.showSnackBar(SnackBar(content: Text(unknown)));
+            } catch (_) {
+              messenger.showSnackBar(SnackBar(content: Text(failed)));
             }
           },
           style: FilledButton.styleFrom(
             backgroundColor: dialogContext.colors.error,
           ),
-          child: const Text('Delete'),
+          child: Text(_mt(dialogContext, PlatformMessageKey.buzzDelete)),
         ),
       ],
     ),
   );
 }
+
+String _mt(
+  BuildContext context,
+  PlatformMessageKey key, [
+  Map<String, Object>? variables,
+]) => platformText(
+  key,
+  locale: Localizations.localeOf(context).toLanguageTag(),
+  variables: variables,
+);

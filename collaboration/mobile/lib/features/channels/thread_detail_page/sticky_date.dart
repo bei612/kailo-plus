@@ -116,10 +116,7 @@ class _ThreadStickyDateIndex {
         .toDouble();
     return _ThreadStickyDateUpdate(
       state: StickyDateHeaderState(
-        label: formatDayHeading(
-          activeDayTimestamp,
-          locale: locale,
-        ),
+        label: formatDayHeading(activeDayTimestamp, locale: locale),
         translateY: (translateY * 2).round() / 2,
       ),
       activeDayTimestamp: activeDayTimestamp,

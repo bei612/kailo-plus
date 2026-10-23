@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_import_advance_request.schema.json",
+  "title": "ResourceImportAdvanceRequest", "type": "object", "additionalProperties": false,
+  "required": ["target", "runId", "cancelRequested"],
+  "properties": {
+    "target": {"$ref": "resource_import_target.schema.json"},
+    "runId": {"type": "string", "format": "uuid"},
+    "cancelRequested": {"type": "boolean"}
+  }
+}

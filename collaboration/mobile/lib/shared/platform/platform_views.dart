@@ -159,12 +159,27 @@ final platformAgentPublishedVersionProvider = FutureProvider.autoDispose
           row.assetVersion <= 0 ||
           row.ownerPrincipalId.isEmpty ||
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(row.configHash) ||
-          row.content.runtimeProfileKey.isEmpty ||
-          row.content.modelRouteResourceId.isEmpty) {
+          !_completeVersionContent(row.content)) {
         throw const FormatException('Published version record');
       }
       return row;
     }, retry: _noRetry);
+
+/// DD-131(2)：DRAFT 可缺 Profile、Route 与回复策略；出现时不能是空串。
+bool _wellFormedVersionContent(AgentVersionContent content) => [
+  content.runtimeProfileKey,
+  content.modelRouteResourceId,
+  content.replyPolicy,
+].every((value) => value == null || value.trim().isNotEmpty);
+
+/// 发布与运行要求的齐备内容：非空指令、Profile、Route 与回复策略。
+bool _completeVersionContent(AgentVersionContent content) =>
+    content.instructions.trim().isNotEmpty &&
+    [
+      content.runtimeProfileKey,
+      content.modelRouteResourceId,
+      content.replyPolicy,
+    ].every((value) => value != null && value.trim().isNotEmpty);
 
 /// 17 §8：BFF 逐项 fresh Asset read 后的历史；不把空受权页解释成不存在版本。
 final platformAgentVersionsProvider = FutureProvider.autoDispose
@@ -202,8 +217,10 @@ final platformAgentVersionsProvider = FutureProvider.autoDispose
             !assets.add(row.assetId) ||
             !ordinals.add(row.ordinal) ||
             !RegExp(r'^[0-9a-f]{64}$').hasMatch(row.configHash) ||
-            row.content.runtimeProfileKey.isEmpty ||
-            row.content.modelRouteResourceId.isEmpty ||
+            !_wellFormedVersionContent(row.content) ||
+            // DD-131(2)：只有 DRAFT 可以缺运行配置或指令；已发布与已退役的版本总是齐备。
+            (row.state != AgentVersionState.DRAFT &&
+                !_completeVersionContent(row.content)) ||
             (row.state != AgentVersionState.DRAFT &&
                 (row.canUpdate == true || row.canPublish == true))) {
           throw const FormatException('Version directory record');
@@ -639,6 +656,14 @@ final platformAutomationProvider = FutureProvider.autoDispose
                 trigger.mentionPrincipalId == null &&
                 trigger.textPrefix == null &&
                 trigger.emoji?.trim().isEmpty != true &&
+                spec == null,
+          // Core automation_query.rs WEBHOOK rule: channel result, no
+          // prefix, filter, mention or schedule.
+          AutomationTriggerKind.WEBHOOK =>
+            content.resultTarget == AutomationResultTarget.CHANNEL &&
+                trigger.mentionPrincipalId == null &&
+                trigger.textPrefix == null &&
+                trigger.filter == null &&
                 spec == null,
           AutomationTriggerKind.SCHEDULE =>
             content.resultTarget == AutomationResultTarget.CHANNEL &&

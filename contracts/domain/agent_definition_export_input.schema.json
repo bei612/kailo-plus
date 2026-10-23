@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/agent_definition_export_input.schema.json",
+  "title": "AgentDefinitionExportInput",
+  "description": "仅 agent.definition.export（DD-131(2)、05 §2.12）：命令的 Resource 目标是 AgentDefinition，这里冻结其一个 PUBLISHED AgentVersion 与包的媒体类型。包只含可移植字段，不含 owner、公钥、Installation、绑定、llm_route、RuntimeProfile、Delegation、记忆或任何 SecretRef。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["versionAssetId", "mediaType"],
+  "properties": {
+    "versionAssetId": {"type": "string", "format": "uuid"},
+    "mediaType": {"$ref": "../enums/agent_snapshot_media_type.schema.json"}
+  }
+}

@@ -198,6 +198,80 @@ pub(crate) async fn platform_avatar(
     )))
 }
 
+/// 原版快照包上限：Agent PNG 10 MiB、团队 PNG 50 MiB（DD-131(2)(3)）。
+const MAX_EXPORT_PACKAGE_BYTES: usize = 50 * 1024 * 1024;
+
+/// DD-42、DD-131(2)：取一个 READY 的 ExportPackage。只代发本部署的导出包下载路由；是否可读由
+/// BFF 对该 Asset 的 `read` 判定，不接受任意路径。返回字节与是否为 PNG。
+async fn export_package_bytes(
+    app: &AppHandle,
+    state: &AppState,
+    session: &NativeSession,
+    asset_id: &str,
+) -> Result<(Vec<u8>, bool), String> {
+    let path = export_package_path(asset_id).ok_or("导出包 ID 无效")?;
+    let cfg = require_config(app)?;
+    let (response, _) = session
+        .call_raw(&state.media_fetch_client, &cfg, &path)
+        .await?;
+    if !response.status().is_success() {
+        return Err(format!("导出包下载返回 {}", response.status().as_u16()));
+    }
+    let png = match response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    {
+        Some("image/png") => true,
+        Some("application/json") => false,
+        _ => return Err("导出包不是快照格式".to_owned()),
+    };
+    let bytes =
+        crate::commands::link_preview::read_limited_bytes(response, MAX_EXPORT_PACKAGE_BYTES)
+            .await?;
+    Ok((bytes, png))
+}
+
+/// 经原生保存对话框保存一个 READY 的 ExportPackage。
+#[tauri::command]
+pub(crate) async fn platform_export_package_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    asset_id: String,
+    file_name: String,
+) -> Result<bool, String> {
+    let (bytes, png) = export_package_bytes(&app, &state, &session, &asset_id).await?;
+    let name = crate::commands::media_filename::sanitize_filename(&file_name);
+    let extension = if png { "png" } else { "json" };
+    crate::commands::export_util::save_bytes_with_dialog(
+        &app,
+        &name,
+        "Agent snapshot",
+        &[extension],
+        &bytes,
+    )
+    .await
+}
+
+/// DD-131(7)：原版“复制”所需的包字节（以原始 ArrayBuffer 回到前端，由其写入剪贴板）。
+#[tauri::command]
+pub(crate) async fn platform_export_package_read(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: State<'_, NativeSession>,
+    asset_id: String,
+) -> Result<tauri::ipc::Response, String> {
+    let (bytes, _) = export_package_bytes(&app, &state, &session, &asset_id).await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+fn export_package_path(asset_id: &str) -> Option<String> {
+    let id = uuid::Uuid::parse_str(asset_id).ok()?;
+    (id.hyphenated().to_string() == asset_id)
+        .then(|| format!("/api/v1/export-packages/{id}/content"))
+}
+
 fn is_avatar_path(path: &str) -> bool {
     path.strip_prefix("/api/v1/identity/avatars/")
         .is_some_and(|subject| {
@@ -287,5 +361,25 @@ mod avatar_path_tests {
             "/api/v1/profile/media/{}",
             "g".repeat(64)
         )));
+    }
+}
+
+#[cfg(test)]
+mod export_package_tests {
+    #[test]
+    fn export_package_path_accepts_only_a_canonical_asset_id() {
+        let id = "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b";
+        assert_eq!(
+            super::export_package_path(id).as_deref(),
+            Some("/api/v1/export-packages/3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b/content")
+        );
+        for bad in [
+            "../x",
+            "3E4F5A6B-7C8D-4E9F-8A1B-2C3D4E5F6A7B",
+            "3e4f5a6b7c8d4e9f8a1b2c3d4e5f6a7b",
+            "",
+        ] {
+            assert!(super::export_package_path(bad).is_none());
+        }
     }
 }

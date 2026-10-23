@@ -88,17 +88,55 @@ pub(crate) async fn skill_reference_evidence(
         .collect())
 }
 
-/// 共享契约的基础约束；没有缺省模型、timeout、owner 或 runtime。
+/// 发布所需的 RuntimeProfile 键；DRAFT 可缺省（DD-131(2)），缺省即不可运行。
+pub(crate) fn profile_key(value: &AgentVersionContent) -> Result<&str, Refusal> {
+    value
+        .runtime_profile_key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(invalid)
+}
+
+/// 发布所需的模型 Route；DRAFT 可缺省。
+pub(crate) fn route_id(value: &AgentVersionContent) -> Result<Uuid, Refusal> {
+    value
+        .model_route_resource_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(invalid)
+}
+
+/// 发布所需的回复策略键；DRAFT 可缺省。
+pub(crate) fn reply_key(value: &AgentVersionContent) -> Result<&str, Refusal> {
+    value
+        .reply_policy
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(invalid)
+}
+
+/// DD-131(2)：发布与运行只接受齐备的内容——非空 instructions、RuntimeProfile、Route 与回复策略。
+/// DRAFT 可以缺这些（导入草稿与原版一致不要求运行配置），由 owner 发布前补齐。
+pub(crate) fn complete(value: &AgentVersionContent) -> Result<(), Refusal> {
+    if value.instructions.trim().is_empty() {
+        return Err(invalid());
+    }
+    profile_key(value)?;
+    route_id(value)?;
+    reply_key(value)?;
+    Ok(())
+}
+
+/// 共享契约的基础约束；没有缺省模型、timeout、owner 或 runtime。可缺省项若出现必须成立。
 pub(crate) fn content(value: &AgentVersionContent) -> Result<(Value, String), Refusal> {
     if value.persona_identity.display_name.trim().is_empty()
-        || value.instructions.trim().is_empty()
-        || value.runtime_profile_key.trim().is_empty()
-        || value.reply_policy.trim().is_empty()
         || value.parallelism <= 0
         || value.turn_limits.idle_timeout_seconds <= 0
         || value.turn_limits.max_turn_duration_seconds <= 0
         || value.turn_limits.idle_timeout_seconds > value.turn_limits.max_turn_duration_seconds
-        || Uuid::parse_str(&value.model_route_resource_id).is_err()
+        || (value.runtime_profile_key.is_some() && profile_key(value).is_err())
+        || (value.reply_policy.is_some() && reply_key(value).is_err())
+        || (value.model_route_resource_id.is_some() && route_id(value).is_err())
     {
         return Err(invalid());
     }
@@ -243,29 +281,45 @@ pub(crate) fn reply_policy_contract(
 
 pub(crate) fn reply_to_channel(value: &AgentVersionContent) -> Result<bool, Refusal> {
     runtime_profile(value)?;
+    let key = profile_key(value)?;
+    let reply = reply_key(value)?;
     let directory = runtime_profile_directory()?;
     let profile = directory
         .profiles
         .iter()
-        .find(|p| p.key == value.runtime_profile_key)
+        .find(|p| p.key == key)
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
-    reply_policy_contract(&profile.capability_contract, Some(&value.reply_policy))?;
+    reply_policy_contract(&profile.capability_contract, Some(reply))?;
     let mapping = profile
         .capability_contract
         .reply_policy_mappings
         .as_deref()
-        .and_then(|items| items.iter().find(|m| m.key == value.reply_policy))
+        .and_then(|items| items.iter().find(|m| m.key == reply))
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     Ok(mapping.broadcast_replies)
 }
 
-/// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。
+/// 发布只消费已投递合同，profile 的 ACTIVE 不能从 runtime spawn 推导。运行与发布要求齐备：
+/// 缺 Profile 或回复策略的 DRAFT 内容在此即不成立（`CAPABILITY_BLOCKED`）。
 pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal> {
+    let reply = value
+        .reply_policy
+        .as_deref()
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+    profile_contract(value, Some(reply))
+}
+
+/// DRAFT 已选的 Profile 也按当前合同校验并发与时限；回复策略只在已给出时校验。
+fn profile_contract(value: &AgentVersionContent, reply: Option<&str>) -> Result<(), Refusal> {
+    let key = value
+        .runtime_profile_key
+        .as_deref()
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let directory = runtime_profile_directory()?;
     let profile = directory
         .profiles
         .iter()
-        .find(|p| p.key == value.runtime_profile_key)
+        .find(|p| p.key == key)
         .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let c = &profile.capability_contract;
     if profile.kind != contracts::RuntimeProfileKind::ServerCodex
@@ -284,7 +338,7 @@ pub(crate) fn runtime_profile(value: &AgentVersionContent) -> Result<(), Refusal
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    reply_policy_contract(c, Some(&value.reply_policy))
+    reply_policy_contract(c, reply)
 }
 
 /// 引用只声明 requested；引用存在与 fresh read 不把 execute 权限送给未来 Installation。
@@ -301,6 +355,32 @@ pub(crate) async fn validate_references(
         .await
 }
 
+/// DD-131(2)：DRAFT 的创建与编辑只校验已给出的运行配置——所选 Profile 按合同、所选 Route
+/// 按作者 fresh read；缺省项留到 `agent.version.publish` 由 [`validate_references`] 完整校验。
+pub(crate) async fn validate_draft_references(
+    gov: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    human: Uuid,
+    value: &AgentVersionContent,
+) -> Result<(), Refusal> {
+    if value.runtime_profile_key.is_some() {
+        profile_contract(value, value.reply_policy.as_deref())?;
+    } else if value.reply_policy.is_some() {
+        // 回复策略键只在某个 Profile 合同下有意义。
+        return Err(invalid());
+    }
+    for tool in &value.declared_tool_resource_ids {
+        let tool = Uuid::parse_str(tool).map_err(|_| invalid())?;
+        crate::agent_tool::validate_reference(gov, conn, tenant, human, tool).await?;
+    }
+    if value.model_route_resource_id.is_some() {
+        crate::model_route::validate_reference(gov, conn, tenant, human, route_id(value)?).await?;
+    }
+    crate::governance::skill_catalog::validate_agent_references(gov, conn, tenant, human, value)
+        .await
+}
+
 /// 运行侧（Installation 就绪与回合准入、自动化执行者）只重验 profile、工具与模型路由。
 /// 已发布版本的 Skill 引用是冻结事实：撤权或停用按 DD-135(7) 在每次 `turn/start` 前逐个
 /// 停用该 Skill，不让单个 Skill 的失效阻断整个 Installation。
@@ -312,7 +392,7 @@ pub(crate) async fn validate_runtime_references(
     value: &AgentVersionContent,
 ) -> Result<(), Refusal> {
     runtime_profile(value)?;
-    let route = Uuid::parse_str(&value.model_route_resource_id).map_err(|_| invalid())?;
+    let route = route_id(value)?;
     for tool in &value.declared_tool_resource_ids {
         let tool = Uuid::parse_str(tool).map_err(|_| invalid())?;
         crate::agent_tool::validate_reference(gov, conn, tenant, human, tool).await?;
@@ -342,7 +422,7 @@ pub(crate) async fn prewrite(
         Semantic::AgentVersionCreate => {
             let requested = p.agent_version_content.as_ref().ok_or_else(invalid)?;
             let (normalized, digest) = content(requested)?;
-            validate_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, requested)
+            validate_draft_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, requested)
                 .await?;
             let ordinal: i32 = sqlx::query_scalar(
                 "select coalesce(max(ordinal),0)+1 from catalog.agent_version where agent_resource_id=$1")
@@ -383,8 +463,21 @@ pub(crate) async fn prewrite(
                 _ => serde_json::from_value(v.content.clone()).map_err(|_| invalid())?,
             };
             let (normalized, digest) = content(&requested)?;
-            validate_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, &requested)
+            if sem == Semantic::AgentVersionPublish {
+                // DD-131(2)：发布前补齐——空指令、缺 Profile/Route/回复策略的 DRAFT 不能发布。
+                complete(&requested)?;
+                validate_references(gov, tx, ae.tenant_id, ae.initiator_principal_id, &requested)
+                    .await?;
+            } else {
+                validate_draft_references(
+                    gov,
+                    tx,
+                    ae.tenant_id,
+                    ae.initiator_principal_id,
+                    &requested,
+                )
                 .await?;
+            }
             if sem == Semantic::AgentVersionPublish && digest != v.config_hash {
                 return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
             }

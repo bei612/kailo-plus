@@ -68,6 +68,7 @@ import {
 } from "./markdown/runtimeContext";
 import { resolveFileCard, resolveSnapshotCard } from "./markdownFileCard";
 import { SnapshotCard } from "@client-kit/platform/react/messages/SnapshotCard";
+import { fetchMediaBytes } from "@/shared/api/tauriMedia";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { MarkdownProps, MarkdownRuntime } from "./markdown/types";
 import { SpoilerInline } from "./markdown/SpoilerInline";
@@ -134,7 +135,9 @@ export function createMarkdownComponents(
     const snapshot = resolveSnapshotCard(href ? imetaByUrl?.get(href) : undefined, href, label);
     if (snapshot) {
       return <SnapshotCard {...snapshot}
-        onDownload={(url, filename) => invokeTauri("download_file", { url, filename })} />;
+        onDownload={(url, filename) => invokeTauri("download_file", { url, filename })}
+        // DD-143: "Add" reads the original relay URL over the native media IPC; the card verifies x/size.
+        readBytes={() => fetchMediaBytes(href!)} />;
     }
 
     const audioAttachment = renderAudioMessageAttachment(

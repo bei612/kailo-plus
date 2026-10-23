@@ -522,6 +522,51 @@ async fn evidence_existence(
             .await?;
             return Ok(present(found.is_some()));
         }
+        // DD-131(8)：格式键是登记的协议常量；包摘要只在同 Tenant 仍有该摘要的上传暂存时
+        // 可证实（字节随终态清空，摘要行保留）；新建版本 Asset 按同 Tenant 的版本行判定。
+        K::TransferFormat => {
+            return Ok(present(e.value == crate::agent_snapshot::FORMAT_KEY));
+        }
+        K::TransferPackageDigest => {
+            // 导入的上传暂存或导出的 ExportPackage（DD-42）；两者都在同 Tenant 保留摘要。
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from admission.transfer_upload where package_digest=$1 and tenant_id=$2
+                 union all select 1 from catalog.export_package where content_digest=$1 and tenant_id=$2
+                 limit 1",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::ExportPackageAssetId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.export_package where asset_id=$1 and tenant_id=$2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::AgentVersionAssetId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.agent_version v join catalog.asset a on a.id=v.asset_id
+                 where v.asset_id=$1 and a.tenant_id=$2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
         K::SpicedbZedtoken
         | K::BuzzEventId
         | K::BuzzPubkey

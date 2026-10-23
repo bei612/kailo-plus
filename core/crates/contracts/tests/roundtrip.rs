@@ -641,6 +641,8 @@ fn public_workspace_roundtrip_preserves_visibility_and_membership_evidence() {
     roundtrip::<contracts::ActionCommand>("workspace-reopen.sample.json");
     roundtrip::<contracts::ActionCommand>("workspace-leave.sample.json");
     roundtrip::<contracts::DiscoverableWorkspacePage>("discoverable-workspaces.sample.json");
+    roundtrip::<contracts::AgentAuthorDirectory>("agent-author-directory.sample.json");
+    roundtrip::<contracts::AgentCatalogOwners>("agent-catalog-owners.sample.json");
     let legacy: contracts::WorkspaceView = serde_json::from_value(serde_json::json!({
         "id": "00000000-0000-4000-8000-000000000004", "slug": "legacy", "name": "Legacy"
     }))
@@ -1217,4 +1219,106 @@ fn dd135_skills_preserve_fields_and_absence() {
     let mut unknown = value["installationSkills"].clone();
     unknown["skills"][0]["status"] = serde_json::json!("UNKNOWN_STATE");
     assert!(serde_json::from_value::<contracts::AgentInstallationSkillPage>(unknown).is_err());
+}
+
+#[test]
+fn dd131_agent_snapshot_import_preserves_fields_and_absence() {
+    // DD-131(2)/DD-143: the import command, upload request, both preview shapes,
+    // the import configuration page and the RESOURCE_IMPORT advance pair keep
+    // every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-snapshot-import.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["importCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["minimalImportCommand"]);
+    // DD-131(2): an imported DRAFT may lack runtime, route and reply policy and
+    // carry empty instructions; absent stays absent through the typed side.
+    roundtrip::<contracts::AgentVersionContent>(&value["draftContent"]);
+    roundtrip::<contracts::AgentSnapshotUploadRequest>(&value["uploadRequest"]);
+    roundtrip::<contracts::AgentSnapshotImportPreview>(&value["preview"]);
+    roundtrip::<contracts::AgentSnapshotImportPreview>(&value["minimalPreview"]);
+    roundtrip::<contracts::AgentImportConfigurationPage>(&value["configuration"]);
+    roundtrip::<contracts::ResourceImportAdvanceRequest>(&value["advanceRequest"]);
+    roundtrip::<contracts::ResourceImportAdvanceResult>(&value["advanceResult"]);
+    let mut unknown = value["preview"].clone();
+    unknown["omitted"][0] = serde_json::json!("SECRET");
+    assert!(serde_json::from_value::<contracts::AgentSnapshotImportPreview>(unknown).is_err());
+}
+
+#[test]
+fn dd131_agent_teams_preserve_fields_and_absence() {
+    // DD-131(1)(6): team create/update/share commands, the team page (visible
+    // members only, hidden count) and a catalog-shared definition view keep
+    // every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-teams.sample.json")).unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["createCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["updateCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["shareCommand"]);
+    roundtrip::<contracts::AgentTeamPage>(&value["teamPage"]);
+    roundtrip::<contracts::AgentDefinitionView>(&value["sharedDefinitionView"]);
+    let mut missing = value["teamPage"]["teams"][0].clone();
+    missing.as_object_mut().unwrap().remove("catalogShared");
+    assert!(serde_json::from_value::<contracts::AgentTeamView>(missing).is_err());
+}
+
+#[test]
+fn dd131_agent_snapshot_export_preserves_fields_and_absence() {
+    // DD-131(2)/DD-42: the export command, both ExportPackage view shapes and the
+    // RESOURCE_EXPORT advance pair keep every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-snapshot-export.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["exportCommand"]);
+    roundtrip::<contracts::ExportPackageView>(&value["creating"]);
+    roundtrip::<contracts::ExportPackageView>(&value["ready"]);
+    roundtrip::<contracts::ResourceExportAdvanceRequest>(&value["advanceRequest"]);
+    roundtrip::<contracts::ResourceExportAdvanceResult>(&value["advanceResult"]);
+    let mut unknown = value["ready"].clone();
+    unknown["state"] = serde_json::json!("PUBLISHED");
+    assert!(serde_json::from_value::<contracts::ExportPackageView>(unknown).is_err());
+}
+
+#[test]
+fn dd131_team_snapshot_transfer_preserves_fields_and_absence() {
+    // DD-131(3): the team import/export commands, the upload request, both team
+    // preview shapes, a READY team package and the team RESOURCE_IMPORT advance
+    // request keep every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-team-snapshot.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["importCommand"]);
+    roundtrip::<contracts::ActionCommand>(&value["exportCommand"]);
+    roundtrip::<contracts::AgentTeamSnapshotUploadRequest>(&value["uploadRequest"]);
+    roundtrip::<contracts::AgentTeamSnapshotImportPreview>(&value["preview"]);
+    roundtrip::<contracts::AgentTeamSnapshotImportPreview>(&value["minimalPreview"]);
+    roundtrip::<contracts::ExportPackageView>(&value["readyPackage"]);
+    roundtrip::<contracts::ResourceImportAdvanceRequest>(&value["importAdvanceRequest"]);
+    let mut unknown = value["preview"].clone();
+    unknown["members"][0]["omitted"][0] = serde_json::json!("SECRET");
+    assert!(serde_json::from_value::<contracts::AgentTeamSnapshotImportPreview>(unknown).is_err());
 }

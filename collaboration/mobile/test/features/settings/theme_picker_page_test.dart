@@ -54,7 +54,7 @@ void main() {
   test('theme copy comes from the shared English and Chinese catalog', () {
     expect(appearanceModeLabel(ThemeMode.light, locale: 'en'), 'Light');
     expect(appearanceModeLabel(ThemeMode.dark, locale: 'zh-CN'), '深色');
-    expect(appearanceModeLabel(ThemeMode.system, locale: 'zh-CN'), '跟随系统');
+    expect(appearanceModeLabel(ThemeMode.system, locale: 'zh-CN'), '系统');
     expect(
       platformText(
         PlatformMessageKey.platformThemeAppearanceCycle,

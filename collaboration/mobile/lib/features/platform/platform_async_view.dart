@@ -81,10 +81,16 @@ String platformErrorText(Object error, {String? locale}) {
     final raw = error.response.body;
     if (raw == null || (raw is Map<String, dynamic> && raw['class'] == null)) {
       if (error.response.status == 403) {
-        return platformText(PlatformMessageKey.tasksStatusDenied, locale: locale);
+        return platformText(
+          PlatformMessageKey.tasksStatusDenied,
+          locale: locale,
+        );
       }
       if (error.response.status == 404) {
-        return platformText(PlatformMessageKey.nativeUnavailableTitle, locale: locale);
+        return platformText(
+          PlatformMessageKey.nativeUnavailableTitle,
+          locale: locale,
+        );
       }
     }
     return platformText(

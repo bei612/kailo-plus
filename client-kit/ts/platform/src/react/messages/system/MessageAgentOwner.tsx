@@ -2,20 +2,32 @@ import { useUiT } from "../../context";
 // Upstream Buzz 779af8886caae1317b4de962082429867ab61503: desktop/src/features/messages/ui/MessageAgentOwner.tsx
 import { Bot } from "lucide-react";
 
+import type { AgentOwnerRenderer } from "../agentAuthorFacts";
 import { UserProfilePopover, useHasSystemMessageHost } from "./host";
+
+// DD-141 §2.4: owner name in the text-secondary role, text on hover; muted chip stays AA readable.
+const ownerNameClass = "min-w-0 truncate rounded font-semibold text-[var(--k-text-secondary)] transition-colors duration-100 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 export function MessageAgentOwner({
   ownerLabel,
   ownerPubkey: ownerKey,
+  ownerPrincipalId,
+  renderOwner,
 }: {
   ownerLabel?: string | null;
   ownerPubkey?: string | null;
+  ownerPrincipalId?: string | null;
+  /** DD-147(1): the host's member profile card for the owner (Web MemberHover, Desktop popover). */
+  renderOwner?: AgentOwnerRenderer;
 }) {
   const t = useUiT();
-  const ownerPubkey = useHasSystemMessageHost() ? ownerKey : null;
+  const hasSystemHost = useHasSystemMessageHost();
+  const memberOwner = renderOwner && ownerKey && ownerPrincipalId && ownerLabel
+    ? { principalId: ownerPrincipalId, pubkey: ownerKey, label: ownerLabel } : null;
+  const ownerPubkey = hasSystemHost && !memberOwner ? ownerKey : null;
   return (
     <span
-      className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground/65"
+      className="inline-flex min-w-0 max-w-56 items-baseline gap-1 text-xs leading-4 text-muted-foreground"
       data-testid="message-agent-owner"
     >
       <span className="sr-only">
@@ -39,11 +51,16 @@ export function MessageAgentOwner({
         aria-hidden="true"
         className="h-3.5 w-3.5 shrink-0 translate-y-[0.125em] self-center"
       />
-      {ownerLabel && !ownerPubkey ? (
+      {memberOwner && renderOwner ? (
+        <>
+          <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
+          {renderOwner(memberOwner, <span className={ownerNameClass} data-testid="message-agent-owner-name">{ownerLabel}</span>)}
+        </>
+      ) : ownerLabel && !ownerPubkey ? (
         // DD-147(1): the owner's Tenant name without a Workspace key to open a profile for.
         <>
           <span aria-hidden="true" className="shrink-0">{t("messages.system.managedBy")}</span>
-          <span className="min-w-0 truncate font-semibold text-foreground/85">{ownerLabel}</span>
+          <span className="min-w-0 truncate font-semibold text-[var(--k-text-secondary)]">{ownerLabel}</span>
         </>
       ) : ownerPubkey && ownerLabel ? (
         <>
@@ -55,9 +72,7 @@ export function MessageAgentOwner({
             triggerAriaLabel={ownerLabel}
             triggerElement="span"
           >
-            <span className="min-w-0 truncate rounded font-semibold text-foreground/85 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
-              {ownerLabel}
-            </span>
+            <span className={ownerNameClass}>{ownerLabel}</span>
           </UserProfilePopover>
         </>
       ) : (

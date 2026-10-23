@@ -1802,3 +1802,41 @@ func TestDD135SkillsRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestDD131AgentSnapshotImportRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-snapshot-import.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &samples); err != nil {
+		t.Fatal(err)
+	}
+	for name, typed := range map[string]any{
+		"importCommand":  new(generated.ActionCommand),
+		"uploadRequest":  new(generated.AgentSnapshotUploadRequest),
+		"preview":        new(generated.AgentSnapshotImportPreview),
+		"minimalPreview": new(generated.AgentSnapshotImportPreview),
+		"configuration":  new(generated.AgentImportConfigurationPage),
+		"advanceRequest": new(generated.ResourceImportAdvanceRequest),
+		"advanceResult":  new(generated.ResourceImportAdvanceResult),
+	} {
+		if err := json.Unmarshal(samples[name], typed); err != nil {
+			t.Fatal(name, err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal(samples[name], &expected); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(name, err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s round-trip changed fields: %s", name, back)
+		}
+	}
+}

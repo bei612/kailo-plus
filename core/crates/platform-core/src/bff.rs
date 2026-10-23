@@ -500,6 +500,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_transport::member_profile),
         )
         .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/agent-authors",
+            get(crate::agent_author_directory::list),
+        )
+        .exposed_route(
             "/api/v1/role-members",
             get(crate::platform_views::list_role_members),
         )
@@ -515,6 +519,55 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),
+        )
+        // DD-131(1)(6)：读者可 discover 的 Tenant 级团队（成员只列读者可 discover 者）
+        .exposed_route(
+            "/api/v1/agent-teams",
+            get(crate::governance::agent_team::list),
+        )
+        .exposed_route(
+            "/api/v1/agent-teams/{resource_id}",
+            get(crate::governance::agent_team::get),
+        )
+        // DD-131(6)：目录条目 owner 名（只答读者可 discover 的本 Tenant 定义与团队）
+        .exposed_route(
+            "/api/v1/agent-catalog/owners",
+            get(crate::agent_catalog::owners),
+        )
+        // DD-42、DD-131(2)：源 Tenant 的 ExportPackage（按发起的导出动作或包 Asset 读取，READY 后下载）
+        .exposed_route(
+            "/api/v1/export-packages/by-action/{action_execution_id}",
+            get(crate::resource_export::by_action),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}",
+            get(crate::resource_export::package),
+        )
+        .exposed_route(
+            "/api/v1/export-packages/{asset_id}/content",
+            get(crate::resource_export::content),
+        )
+        // DD-131(2)、DD-143：Agent 快照包的一次性上传暂存与导入预览，以及导入人可重选的运行配置
+        .exposed_route(
+            "/api/v1/agent-snapshots/uploads",
+            axum::routing::post(crate::resource_transfer::upload).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    crate::resource_transfer::MAX_UPLOAD_REQUEST_BYTES,
+                ),
+            ),
+        )
+        .exposed_route(
+            "/api/v1/agent-snapshots/configuration",
+            get(crate::resource_transfer::configuration),
+        )
+        // DD-131(3)：团队快照包的一次性上传暂存与导入预览（成员头像逐个存为本 Tenant 媒体对象）
+        .exposed_route(
+            "/api/v1/agent-team-snapshots/uploads",
+            axum::routing::post(crate::team_transfer::upload).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    crate::team_transfer::MAX_UPLOAD_REQUEST_BYTES,
+                ),
+            ),
         )
         // DD-135(2)(3)(4)、17 §8：Skill 目录、版本、正文、一次性上传暂存与 AgentVersion 引用目录
         // DD-149: user self-service MCP connectors (reads, probes and OAuth attempts;

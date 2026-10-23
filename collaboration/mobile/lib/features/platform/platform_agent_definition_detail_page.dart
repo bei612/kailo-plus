@@ -116,11 +116,11 @@ class PlatformAgentDefinitionDetailPage extends ConsumerWidget {
                         ),
                         field(
                           PlatformMessageKey.agentsVersionRuntimeProfile,
-                          version.content.runtimeProfileKey,
+                          version.content.runtimeProfileKey ?? '—',
                         ),
                         field(
                           PlatformMessageKey.agentsVersionModelRoute,
-                          version.content.modelRouteResourceId,
+                          version.content.modelRouteResourceId ?? '—',
                         ),
                         field(
                           PlatformMessageKey.agentsVersionHash,

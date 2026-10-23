@@ -110,6 +110,10 @@ pub fn describe(kind: &EvidenceKind) -> (EvidenceAuthority, EvidenceSensitivity)
         | K::SkillSlug
         | K::SkillVersionAssetId
         | K::SkillUploadDigest
+        | K::TransferFormat
+        | K::TransferPackageDigest
+        | K::AgentVersionAssetId
+        | K::ExportPackageAssetId
         | K::DeploymentBootstrap => (A::Core, S::Summary),
     }
 }

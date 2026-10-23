@@ -2250,6 +2250,32 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1/version-configuration?offset=9" });
   });
 
+  it("shows what an imported DRAFT still needs and keeps Publish disabled until it is complete (DD-131(2))", async () => {
+    const rest = Object.fromEntries(Object.entries(version.content)
+      .filter(([key]) => !["runtimeProfileKey", "modelRouteResourceId", "replyPolicy"].includes(key)));
+    const incomplete = { ...version, content: { ...rest, instructions: "" } };
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [incomplete], nextOffset: null } } : undefined);
+    const host = await open(t);
+    const directory = section(host, "agent-version-directory");
+    expect(directory.querySelector("[data-testid=agent-version-missing-instructions]")!.textContent).toBe("Add instructions before publishing.");
+    expect(directory.querySelector("[data-testid=agent-version-missing-runtime]")).not.toBeNull();
+    expect(button(directory, "Publish exact draft").disabled).toBe(true);
+    expect(button(directory, "Edit draft").disabled).toBe(false);
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("keeps a PUBLISHED version that lacks runtime facts unknown", async () => {
+    const rest = Object.fromEntries(Object.entries(version.content).filter(([key]) => key !== "runtimeProfileKey"));
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, state: "PUBLISHED", canUpdate: false, canPublish: false, content: rest }], nextOffset: null } } : undefined);
+    const host = await open(t);
+    const directory = section(host, "agent-version-directory");
+    expect(directory.textContent).not.toContain(version.configHash);
+  });
+
   it.each(["PUBLISHED", "RETIRED"])("reads %s history without generating draft write controls", async (state) => {
     const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
       agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
@@ -3484,10 +3510,13 @@ describe("platform pages render only through the host theme", () => {
     "warning", "warning-bg",
     // DD-141 status and brand roles (host variables are the Kailo `--k-*` tokens).
     "success-soft", "success-text", "danger-soft", "danger-text", "brand-soft", "brand-soft-foreground", "brand-text",
+    // DD-141 §2.4 warning soft pair (unknown outcomes and pending states).
+    "warning-soft", "warning-text",
   ];
   const kailoRoleVariable: Record<string, string> = {
     "success-soft": "k-success-soft", "success-text": "k-success-text", "danger-soft": "k-danger-soft",
     "danger-text": "k-danger-text", "brand-soft": "k-brand-soft", "brand-soft-foreground": "k-brand-soft-text", "brand-text": "k-brand-text",
+    "warning-soft": "k-warning-soft", "warning-text": "k-warning-text",
   };
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =
@@ -4080,9 +4109,12 @@ describe("AgentDefinitionsPage read outcomes", () => {
     expect(host.textContent).not.toContain("TARGET_NOT_FOUND");
 
     reply = { status: 200, body: { definitions: [] } };
+    // DD-131(1): the Teams area reads the same directory on its own; "Try again" repeats only the list GET.
+    const listReads = () => t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions").length;
+    const before = listReads();
     await click(button(host, "Try again"));
     expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
-    expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions")).toHaveLength(2);
+    expect(listReads() - before).toBe(1);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 

@@ -51,11 +51,14 @@
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
 //     final agentActiveTurnPage = agentActiveTurnPageFromJson(jsonString);
 //     final agentActiveTurnView = agentActiveTurnViewFromJson(jsonString);
+//     final agentAuthorDirectory = agentAuthorDirectoryFromJson(jsonString);
+//     final agentCatalogOwners = agentCatalogOwnersFromJson(jsonString);
 //     final agentDefinitionPage = agentDefinitionPageFromJson(jsonString);
 //     final agentDefinitionView = agentDefinitionViewFromJson(jsonString);
 //     final agentDelegationPage = agentDelegationPageFromJson(jsonString);
 //     final agentDelegationTargetPage = agentDelegationTargetPageFromJson(jsonString);
 //     final agentDelegationView = agentDelegationViewFromJson(jsonString);
+//     final agentImportConfigurationPage = agentImportConfigurationPageFromJson(jsonString);
 //     final agentInstallationCandidate = agentInstallationCandidateFromJson(jsonString);
 //     final agentInstallationCandidatePage = agentInstallationCandidatePageFromJson(jsonString);
 //     final agentInstallationPage = agentInstallationPageFromJson(jsonString);
@@ -76,6 +79,12 @@
 //     final agentMentionOutcomeQueryRequest = agentMentionOutcomeQueryRequestFromJson(jsonString);
 //     final agentSessionPage = agentSessionPageFromJson(jsonString);
 //     final agentSessionView = agentSessionViewFromJson(jsonString);
+//     final agentSnapshotImportPreview = agentSnapshotImportPreviewFromJson(jsonString);
+//     final agentSnapshotUploadRequest = agentSnapshotUploadRequestFromJson(jsonString);
+//     final agentTeamPage = agentTeamPageFromJson(jsonString);
+//     final agentTeamSnapshotImportPreview = agentTeamSnapshotImportPreviewFromJson(jsonString);
+//     final agentTeamSnapshotUploadRequest = agentTeamSnapshotUploadRequestFromJson(jsonString);
+//     final agentTeamView = agentTeamViewFromJson(jsonString);
 //     final agentTranscriptEvent = agentTranscriptEventFromJson(jsonString);
 //     final agentTranscriptItem = agentTranscriptItemFromJson(jsonString);
 //     final agentTranscriptPage = agentTranscriptPageFromJson(jsonString);
@@ -131,6 +140,7 @@
 //     final discoverableWorkspace = discoverableWorkspaceFromJson(jsonString);
 //     final discoverableWorkspacePage = discoverableWorkspacePageFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
+//     final exportPackageView = exportPackageViewFromJson(jsonString);
 //     final followedPrincipalRequest = followedPrincipalRequestFromJson(jsonString);
 //     final gatewayAccess = gatewayAccessFromJson(jsonString);
 //     final gatewayCallDetail = gatewayCallDetailFromJson(jsonString);
@@ -265,9 +275,14 @@
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
 //     final actionTokenSigningDelivery = actionTokenSigningDeliveryFromJson(jsonString);
+//     final agentDefinitionExportInput = agentDefinitionExportInputFromJson(jsonString);
+//     final agentDefinitionImportInput = agentDefinitionImportInputFromJson(jsonString);
 //     final agentMemoryEntryListInput = agentMemoryEntryListInputFromJson(jsonString);
 //     final agentMemoryEntryReadInput = agentMemoryEntryReadInputFromJson(jsonString);
 //     final agentMemoryWriteInput = agentMemoryWriteInputFromJson(jsonString);
+//     final agentTeamExportInput = agentTeamExportInputFromJson(jsonString);
+//     final agentTeamImportInput = agentTeamImportInputFromJson(jsonString);
+//     final agentTeamInput = agentTeamInputFromJson(jsonString);
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final applicationAdapterDirectory = applicationAdapterDirectoryFromJson(jsonString);
 //     final applicationBindingCreate = applicationBindingCreateFromJson(jsonString);
@@ -363,6 +378,12 @@
 //     final protocolSessionReconcileResult = protocolSessionReconcileResultFromJson(jsonString);
 //     final protocolSessionReconcileRound = protocolSessionReconcileRoundFromJson(jsonString);
 //     final protocolSessionReconcileTarget = protocolSessionReconcileTargetFromJson(jsonString);
+//     final resourceExportAdvanceRequest = resourceExportAdvanceRequestFromJson(jsonString);
+//     final resourceExportAdvanceResult = resourceExportAdvanceResultFromJson(jsonString);
+//     final resourceExportTarget = resourceExportTargetFromJson(jsonString);
+//     final resourceImportAdvanceRequest = resourceImportAdvanceRequestFromJson(jsonString);
+//     final resourceImportAdvanceResult = resourceImportAdvanceResultFromJson(jsonString);
+//     final resourceImportTarget = resourceImportTargetFromJson(jsonString);
 //     final resourceProvisionAdvanceRequest = resourceProvisionAdvanceRequestFromJson(jsonString);
 //     final resourceProvisionAdvanceResult = resourceProvisionAdvanceResultFromJson(jsonString);
 //     final resourceProvisionTarget = resourceProvisionTargetFromJson(jsonString);
@@ -696,6 +717,18 @@ AgentActiveTurnView agentActiveTurnViewFromJson(String str) =>
 String agentActiveTurnViewToJson(AgentActiveTurnView data) =>
     json.encode(data.toJson());
 
+AgentAuthorDirectory agentAuthorDirectoryFromJson(String str) =>
+    AgentAuthorDirectory.fromJson(json.decode(str));
+
+String agentAuthorDirectoryToJson(AgentAuthorDirectory data) =>
+    json.encode(data.toJson());
+
+AgentCatalogOwners agentCatalogOwnersFromJson(String str) =>
+    AgentCatalogOwners.fromJson(json.decode(str));
+
+String agentCatalogOwnersToJson(AgentCatalogOwners data) =>
+    json.encode(data.toJson());
+
 AgentDefinitionPage agentDefinitionPageFromJson(String str) =>
     AgentDefinitionPage.fromJson(json.decode(str));
 
@@ -724,6 +757,12 @@ AgentDelegationView agentDelegationViewFromJson(String str) =>
     AgentDelegationView.fromJson(json.decode(str));
 
 String agentDelegationViewToJson(AgentDelegationView data) =>
+    json.encode(data.toJson());
+
+AgentImportConfigurationPage agentImportConfigurationPageFromJson(String str) =>
+    AgentImportConfigurationPage.fromJson(json.decode(str));
+
+String agentImportConfigurationPageToJson(AgentImportConfigurationPage data) =>
     json.encode(data.toJson());
 
 AgentInstallationCandidate agentInstallationCandidateFromJson(String str) =>
@@ -851,6 +890,44 @@ AgentSessionView agentSessionViewFromJson(String str) =>
 
 String agentSessionViewToJson(AgentSessionView data) =>
     json.encode(data.toJson());
+
+AgentSnapshotImportPreview agentSnapshotImportPreviewFromJson(String str) =>
+    AgentSnapshotImportPreview.fromJson(json.decode(str));
+
+String agentSnapshotImportPreviewToJson(AgentSnapshotImportPreview data) =>
+    json.encode(data.toJson());
+
+AgentSnapshotUploadRequest agentSnapshotUploadRequestFromJson(String str) =>
+    AgentSnapshotUploadRequest.fromJson(json.decode(str));
+
+String agentSnapshotUploadRequestToJson(AgentSnapshotUploadRequest data) =>
+    json.encode(data.toJson());
+
+AgentTeamPage agentTeamPageFromJson(String str) =>
+    AgentTeamPage.fromJson(json.decode(str));
+
+String agentTeamPageToJson(AgentTeamPage data) => json.encode(data.toJson());
+
+AgentTeamSnapshotImportPreview agentTeamSnapshotImportPreviewFromJson(
+  String str,
+) => AgentTeamSnapshotImportPreview.fromJson(json.decode(str));
+
+String agentTeamSnapshotImportPreviewToJson(
+  AgentTeamSnapshotImportPreview data,
+) => json.encode(data.toJson());
+
+AgentTeamSnapshotUploadRequest agentTeamSnapshotUploadRequestFromJson(
+  String str,
+) => AgentTeamSnapshotUploadRequest.fromJson(json.decode(str));
+
+String agentTeamSnapshotUploadRequestToJson(
+  AgentTeamSnapshotUploadRequest data,
+) => json.encode(data.toJson());
+
+AgentTeamView agentTeamViewFromJson(String str) =>
+    AgentTeamView.fromJson(json.decode(str));
+
+String agentTeamViewToJson(AgentTeamView data) => json.encode(data.toJson());
 
 AgentTranscriptEvent agentTranscriptEventFromJson(String str) =>
     AgentTranscriptEvent.fromJson(json.decode(str));
@@ -1191,6 +1268,12 @@ EvidenceView evidenceViewFromJson(String str) =>
     EvidenceView.fromJson(json.decode(str));
 
 String evidenceViewToJson(EvidenceView data) => json.encode(data.toJson());
+
+ExportPackageView exportPackageViewFromJson(String str) =>
+    ExportPackageView.fromJson(json.decode(str));
+
+String exportPackageViewToJson(ExportPackageView data) =>
+    json.encode(data.toJson());
 
 FollowedPrincipalRequest followedPrincipalRequestFromJson(String str) =>
     FollowedPrincipalRequest.fromJson(json.decode(str));
@@ -1983,6 +2066,18 @@ ActionTokenSigningDelivery actionTokenSigningDeliveryFromJson(String str) =>
 String actionTokenSigningDeliveryToJson(ActionTokenSigningDelivery data) =>
     json.encode(data.toJson());
 
+AgentDefinitionExportInput agentDefinitionExportInputFromJson(String str) =>
+    AgentDefinitionExportInput.fromJson(json.decode(str));
+
+String agentDefinitionExportInputToJson(AgentDefinitionExportInput data) =>
+    json.encode(data.toJson());
+
+AgentDefinitionImportInput agentDefinitionImportInputFromJson(String str) =>
+    AgentDefinitionImportInput.fromJson(json.decode(str));
+
+String agentDefinitionImportInputToJson(AgentDefinitionImportInput data) =>
+    json.encode(data.toJson());
+
 AgentMemoryEntryListInput agentMemoryEntryListInputFromJson(String str) =>
     AgentMemoryEntryListInput.fromJson(json.decode(str));
 
@@ -2000,6 +2095,23 @@ AgentMemoryWriteInput agentMemoryWriteInputFromJson(String str) =>
 
 String agentMemoryWriteInputToJson(AgentMemoryWriteInput data) =>
     json.encode(data.toJson());
+
+AgentTeamExportInput agentTeamExportInputFromJson(String str) =>
+    AgentTeamExportInput.fromJson(json.decode(str));
+
+String agentTeamExportInputToJson(AgentTeamExportInput data) =>
+    json.encode(data.toJson());
+
+AgentTeamImportInput agentTeamImportInputFromJson(String str) =>
+    AgentTeamImportInput.fromJson(json.decode(str));
+
+String agentTeamImportInputToJson(AgentTeamImportInput data) =>
+    json.encode(data.toJson());
+
+AgentTeamInput agentTeamInputFromJson(String str) =>
+    AgentTeamInput.fromJson(json.decode(str));
+
+String agentTeamInputToJson(AgentTeamInput data) => json.encode(data.toJson());
 
 AgentVersionContent agentVersionContentFromJson(String str) =>
     AgentVersionContent.fromJson(json.decode(str));
@@ -2615,6 +2727,42 @@ ProtocolSessionReconcileTarget protocolSessionReconcileTargetFromJson(
 String protocolSessionReconcileTargetToJson(
   ProtocolSessionReconcileTarget data,
 ) => json.encode(data.toJson());
+
+ResourceExportAdvanceRequest resourceExportAdvanceRequestFromJson(String str) =>
+    ResourceExportAdvanceRequest.fromJson(json.decode(str));
+
+String resourceExportAdvanceRequestToJson(ResourceExportAdvanceRequest data) =>
+    json.encode(data.toJson());
+
+ResourceExportAdvanceResult resourceExportAdvanceResultFromJson(String str) =>
+    ResourceExportAdvanceResult.fromJson(json.decode(str));
+
+String resourceExportAdvanceResultToJson(ResourceExportAdvanceResult data) =>
+    json.encode(data.toJson());
+
+ResourceExportTarget resourceExportTargetFromJson(String str) =>
+    ResourceExportTarget.fromJson(json.decode(str));
+
+String resourceExportTargetToJson(ResourceExportTarget data) =>
+    json.encode(data.toJson());
+
+ResourceImportAdvanceRequest resourceImportAdvanceRequestFromJson(String str) =>
+    ResourceImportAdvanceRequest.fromJson(json.decode(str));
+
+String resourceImportAdvanceRequestToJson(ResourceImportAdvanceRequest data) =>
+    json.encode(data.toJson());
+
+ResourceImportAdvanceResult resourceImportAdvanceResultFromJson(String str) =>
+    ResourceImportAdvanceResult.fromJson(json.decode(str));
+
+String resourceImportAdvanceResultToJson(ResourceImportAdvanceResult data) =>
+    json.encode(data.toJson());
+
+ResourceImportTarget resourceImportTargetFromJson(String str) =>
+    ResourceImportTarget.fromJson(json.decode(str));
+
+String resourceImportTargetToJson(ResourceImportTarget data) =>
+    json.encode(data.toJson());
 
 ResourceProvisionAdvanceRequest resourceProvisionAdvanceRequestFromJson(
   String str,
@@ -5003,6 +5151,109 @@ class AgentActiveTurnView {
   });
 }
 
+///DD-147(1)：GET /api/v1/workspaces/{workspaceId}/agent-authors。Workspace 成员（与成员名单同一准入）可读的
+///Agent 作者目录：本 Workspace 中有 ACTIVE ChannelAgentBinding 的未删除 Installation（排空或故障中的也保留，其历史消息仍需
+///owner 行）的 Agent 公钥、persona 显示名与 owner。只供消息行显示“managed by <owner>”，不含 Installation
+///其余字段，不授予任何使用、读取或管理权限；作者名仍只读 Relay kind:0（DD-117(6)）。
+class AgentAuthorDirectory {
+  final List<AgentAuthorView> agents;
+
+  AgentAuthorDirectory({required this.agents});
+
+  factory AgentAuthorDirectory.fromJson(Map<String, dynamic> json) =>
+      AgentAuthorDirectory(
+        agents: List<AgentAuthorView>.from(
+          json["agents"].map((x) => AgentAuthorView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agents": List<dynamic>.from(agents.map((x) => x.toJson())),
+  });
+}
+
+class AgentAuthorView {
+  ///固定版本 personaIdentity 的显示名；缺省时客户端用公钥简写，不以 Installation 目录合成作者名。
+  final String? agentDisplayName;
+  final String agentPubkey;
+  final String installationResourceId;
+
+  ///owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+  final String? ownerDisplayName;
+  final String ownerPrincipalId;
+
+  AgentAuthorView({
+    this.agentDisplayName,
+    required this.agentPubkey,
+    required this.installationResourceId,
+    this.ownerDisplayName,
+    required this.ownerPrincipalId,
+  });
+
+  factory AgentAuthorView.fromJson(Map<String, dynamic> json) =>
+      AgentAuthorView(
+        agentDisplayName: json["agentDisplayName"],
+        agentPubkey: json["agentPubkey"],
+        installationResourceId: json["installationResourceId"],
+        ownerDisplayName: json["ownerDisplayName"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "agentDisplayName": agentDisplayName,
+    "agentPubkey": agentPubkey,
+    "installationResourceId": installationResourceId,
+    "ownerDisplayName": ownerDisplayName,
+    "ownerPrincipalId": ownerPrincipalId,
+  });
+}
+
+///DD-131(6)：GET /api/v1/agent-catalog/owners?ids=<id>,<id>。目录条目（本人可 discover 的本 Tenant
+///ACTIVE AgentDefinition 与 agent.team）的 owner 名，供原版 “Added by <owner>”。一次至多一页 ID；不属本
+///Tenant、非 ACTIVE、非目录类型或读者当前不可 discover 的 ID 一律省略，不能用来查询任意 Principal；不授予任何权限。
+class AgentCatalogOwners {
+  final List<AgentCatalogOwnerView> owners;
+
+  AgentCatalogOwners({required this.owners});
+
+  factory AgentCatalogOwners.fromJson(Map<String, dynamic> json) =>
+      AgentCatalogOwners(
+        owners: List<AgentCatalogOwnerView>.from(
+          json["owners"].map((x) => AgentCatalogOwnerView.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "owners": List<dynamic>.from(owners.map((x) => x.toJson())),
+  });
+}
+
+class AgentCatalogOwnerView {
+  ///owner 在本 Tenant 的显示名；owner 已不是 ACTIVE 成员时省略，客户端显示原版 owner unavailable。
+  final String? ownerDisplayName;
+  final String ownerPrincipalId;
+  final String resourceId;
+
+  AgentCatalogOwnerView({
+    this.ownerDisplayName,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+  });
+
+  factory AgentCatalogOwnerView.fromJson(Map<String, dynamic> json) =>
+      AgentCatalogOwnerView(
+        ownerDisplayName: json["ownerDisplayName"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "ownerDisplayName": ownerDisplayName,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+  });
+}
+
 ///同 Tenant 且当前 discover 权限允许的 AgentDefinition 页；nextOffset 续读同一排序，不代表总量上限。
 class AgentDefinitionPage {
   final List<AgentDefinitionView> definitions;
@@ -5026,6 +5277,9 @@ class AgentDefinitionPage {
 
 ///DD-24/25 的 Core Agent 稳定身份及实际 Resource 事实；不表示版本已发布或 Agent 可运行。
 class AgentDefinitionView {
+  ///DD-131(6)：该定义已由 agent.definition.share 写入 tenant#member 的 discoverer/reader；缺省即未分享。只表示同
+  ///Tenant 成员可发现与读取，不授予任何 Installation 使用权。
+  final bool? catalogShared;
   final String? currentPublishedVersionAssetId;
   final String displayName;
   final String ownerPrincipalId;
@@ -5036,6 +5290,7 @@ class AgentDefinitionView {
   final String status;
 
   AgentDefinitionView({
+    this.catalogShared,
     this.currentPublishedVersionAssetId,
     required this.displayName,
     required this.ownerPrincipalId,
@@ -5048,6 +5303,7 @@ class AgentDefinitionView {
 
   factory AgentDefinitionView.fromJson(Map<String, dynamic> json) =>
       AgentDefinitionView(
+        catalogShared: json["catalogShared"],
         currentPublishedVersionAssetId: json["currentPublishedVersionAssetId"],
         displayName: json["displayName"],
         ownerPrincipalId: json["ownerPrincipalId"],
@@ -5059,6 +5315,7 @@ class AgentDefinitionView {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "catalogShared": catalogShared,
     "currentPublishedVersionAssetId": currentPublishedVersionAssetId,
     "displayName": displayName,
     "ownerPrincipalId": ownerPrincipalId,
@@ -5360,6 +5617,210 @@ class AgentDelegationTargetPage {
     "resourceVersion": resourceVersion,
     "scopes": List<dynamic>.from(scopes.map((x) => x.toJson())),
     "workspaceId": workspaceId,
+  });
+}
+
+///DD-131(2)、DD-26：导入人在本 Tenant 可选的 RuntimeProfile 与已治理
+///Route（与版本配置目录同一来源与过滤）。目录为空不阻止导入（导入时不强制选择，DD-131(2)）；canImport 只反映动作开放与 Tenant
+///create。目录不授予发布、安装或运行权限。
+class AgentImportConfigurationPage {
+  final bool canImport;
+  final int? nextOffset;
+  final List<RuntimeProfileDirectoryProfilesItem> profiles;
+  final List<AgentVersionRouteOption> routes;
+
+  AgentImportConfigurationPage({
+    required this.canImport,
+    required this.nextOffset,
+    required this.profiles,
+    required this.routes,
+  });
+
+  factory AgentImportConfigurationPage.fromJson(Map<String, dynamic> json) =>
+      AgentImportConfigurationPage(
+        canImport: json["canImport"],
+        nextOffset: json["nextOffset"],
+        profiles: List<RuntimeProfileDirectoryProfilesItem>.from(
+          json["profiles"].map(
+            (x) => RuntimeProfileDirectoryProfilesItem.fromJson(x),
+          ),
+        ),
+        routes: List<AgentVersionRouteOption>.from(
+          json["routes"].map((x) => AgentVersionRouteOption.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "canImport": canImport,
+    "nextOffset": nextOffset,
+    "profiles": List<dynamic>.from(profiles.map((x) => x.toJson())),
+    "routes": List<dynamic>.from(routes.map((x) => x.toJson())),
+  });
+}
+
+class RuntimeProfileDirectoryProfilesItem {
+  final RuntimeProfileDirectoryProfilesItemCapabilityContract
+  capabilityContract;
+  final String key;
+  final RuntimeProfileKind kind;
+  final String status;
+  final String webAvailability;
+
+  RuntimeProfileDirectoryProfilesItem({
+    required this.capabilityContract,
+    required this.key,
+    required this.kind,
+    required this.status,
+    required this.webAvailability,
+  });
+
+  factory RuntimeProfileDirectoryProfilesItem.fromJson(
+    Map<String, dynamic> json,
+  ) => RuntimeProfileDirectoryProfilesItem(
+    capabilityContract:
+        RuntimeProfileDirectoryProfilesItemCapabilityContract.fromJson(
+          json["capabilityContract"],
+        ),
+    key: json["key"],
+    kind: runtimeProfileKindValues.map[json["kind"]]!,
+    status: json["status"],
+    webAvailability: json["webAvailability"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "capabilityContract": capabilityContract.toJson(),
+    "key": key,
+    "kind": runtimeProfileKindValues.reverse[kind],
+    "status": status,
+    "webAvailability": webAvailability,
+  });
+}
+
+class RuntimeProfileDirectoryProfilesItemCapabilityContract {
+  final List<String> capabilityRequirements;
+  final int maxIdleTimeoutSeconds;
+  final int maxParallelism;
+  final int maxTurnDurationSeconds;
+  final List<String> replyPolicies;
+
+  ///同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
+  final List<RuntimeReplyPolicyMapping>? replyPolicyMappings;
+
+  RuntimeProfileDirectoryProfilesItemCapabilityContract({
+    required this.capabilityRequirements,
+    required this.maxIdleTimeoutSeconds,
+    required this.maxParallelism,
+    required this.maxTurnDurationSeconds,
+    required this.replyPolicies,
+    this.replyPolicyMappings,
+  });
+
+  factory RuntimeProfileDirectoryProfilesItemCapabilityContract.fromJson(
+    Map<String, dynamic> json,
+  ) => RuntimeProfileDirectoryProfilesItemCapabilityContract(
+    capabilityRequirements: List<String>.from(
+      json["capabilityRequirements"].map((x) => x),
+    ),
+    maxIdleTimeoutSeconds: json["maxIdleTimeoutSeconds"],
+    maxParallelism: json["maxParallelism"],
+    maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
+    replyPolicies: List<String>.from(json["replyPolicies"].map((x) => x)),
+    replyPolicyMappings: json["replyPolicyMappings"] == null
+        ? null
+        : List<RuntimeReplyPolicyMapping>.from(
+            json["replyPolicyMappings"]!.map(
+              (x) => RuntimeReplyPolicyMapping.fromJson(x),
+            ),
+          ),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "capabilityRequirements": List<dynamic>.from(
+      capabilityRequirements.map((x) => x),
+    ),
+    "maxIdleTimeoutSeconds": maxIdleTimeoutSeconds,
+    "maxParallelism": maxParallelism,
+    "maxTurnDurationSeconds": maxTurnDurationSeconds,
+    "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
+    "replyPolicyMappings": replyPolicyMappings == null
+        ? null
+        : List<dynamic>.from(replyPolicyMappings!.map((x) => x.toJson())),
+  });
+}
+
+class RuntimeReplyPolicyMapping {
+  final bool broadcastReplies;
+  final String key;
+  final bool threadReplies;
+
+  RuntimeReplyPolicyMapping({
+    required this.broadcastReplies,
+    required this.key,
+    required this.threadReplies,
+  });
+
+  factory RuntimeReplyPolicyMapping.fromJson(Map<String, dynamic> json) =>
+      RuntimeReplyPolicyMapping(
+        broadcastReplies: json["broadcastReplies"],
+        key: json["key"],
+        threadReplies: json["threadReplies"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "broadcastReplies": broadcastReplies,
+    "key": key,
+    "threadReplies": threadReplies,
+  });
+}
+
+enum RuntimeProfileKind { LOCAL_ACP, REMOTE_PROVIDER, SERVER_CODEX }
+
+final runtimeProfileKindValues = EnumValues({
+  "LOCAL_ACP": RuntimeProfileKind.LOCAL_ACP,
+  "REMOTE_PROVIDER": RuntimeProfileKind.REMOTE_PROVIDER,
+  "SERVER_CODEX": RuntimeProfileKind.SERVER_CODEX,
+});
+
+///03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
+///已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
+class AgentVersionRouteOption {
+  final String? homeWorkspaceId;
+  final String nativeConfigHash;
+  final String nativeConfigResourceId;
+  final int nativeRevision;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final int resourceVersion;
+
+  AgentVersionRouteOption({
+    required this.homeWorkspaceId,
+    required this.nativeConfigHash,
+    required this.nativeConfigResourceId,
+    required this.nativeRevision,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceVersion,
+  });
+
+  factory AgentVersionRouteOption.fromJson(Map<String, dynamic> json) =>
+      AgentVersionRouteOption(
+        homeWorkspaceId: json["homeWorkspaceId"],
+        nativeConfigHash: json["nativeConfigHash"],
+        nativeConfigResourceId: json["nativeConfigResourceId"],
+        nativeRevision: json["nativeRevision"],
+        ownerPrincipalId: json["ownerPrincipalId"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "homeWorkspaceId": homeWorkspaceId,
+    "nativeConfigHash": nativeConfigHash,
+    "nativeConfigResourceId": nativeConfigResourceId,
+    "nativeRevision": nativeRevision,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
   });
 }
 
@@ -6688,6 +7149,373 @@ final agentSessionViewStatusValues = EnumValues({
   "UNKNOWN": AgentSessionViewStatus.UNKNOWN,
 });
 
+///DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经
+///agent.definition.import。
+class AgentSnapshotImportPreview {
+  ///包内联的头像（≤2 MiB 的 data URL）供预览；上传时已按附件规则存为本 Tenant 内容寻址媒体对象，DRAFT personaIdentity 只引用该对象。
+  final String? avatarDataUrl;
+
+  ///内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即新 DRAFT 的 personaIdentity.avatarUrl。
+  final String? avatarUrl;
+  final String? description;
+  final String displayName;
+  final String expiresAt;
+  final AgentSnapshotImportPreviewFormatKey formatKey;
+  final int? idleTimeoutSeconds;
+
+  ///可为空串：包没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+  final String instructions;
+  final int? maxTurnDurationSeconds;
+  final AgentSnapshotMediaType mediaType;
+  final List<AgentSnapshotOmission> omitted;
+  final int packageByteSize;
+  final String packageDigest;
+  final int? parallelism;
+  final bool? sourceIsBuiltIn;
+  final String uploadId;
+
+  AgentSnapshotImportPreview({
+    this.avatarDataUrl,
+    this.avatarUrl,
+    this.description,
+    required this.displayName,
+    required this.expiresAt,
+    required this.formatKey,
+    this.idleTimeoutSeconds,
+    required this.instructions,
+    this.maxTurnDurationSeconds,
+    required this.mediaType,
+    required this.omitted,
+    required this.packageByteSize,
+    required this.packageDigest,
+    this.parallelism,
+    this.sourceIsBuiltIn,
+    required this.uploadId,
+  });
+
+  factory AgentSnapshotImportPreview.fromJson(Map<String, dynamic> json) =>
+      AgentSnapshotImportPreview(
+        avatarDataUrl: json["avatarDataUrl"],
+        avatarUrl: json["avatarUrl"],
+        description: json["description"],
+        displayName: json["displayName"],
+        expiresAt: json["expiresAt"],
+        formatKey:
+            agentSnapshotImportPreviewFormatKeyValues.map[json["formatKey"]]!,
+        idleTimeoutSeconds: json["idleTimeoutSeconds"],
+        instructions: json["instructions"],
+        maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+        omitted: List<AgentSnapshotOmission>.from(
+          json["omitted"].map((x) => agentSnapshotOmissionValues.map[x]!),
+        ),
+        packageByteSize: json["packageByteSize"],
+        packageDigest: json["packageDigest"],
+        parallelism: json["parallelism"],
+        sourceIsBuiltIn: json["sourceIsBuiltIn"],
+        uploadId: json["uploadId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "avatarDataUrl": avatarDataUrl,
+    "avatarUrl": avatarUrl,
+    "description": description,
+    "displayName": displayName,
+    "expiresAt": expiresAt,
+    "formatKey": agentSnapshotImportPreviewFormatKeyValues.reverse[formatKey],
+    "idleTimeoutSeconds": idleTimeoutSeconds,
+    "instructions": instructions,
+    "maxTurnDurationSeconds": maxTurnDurationSeconds,
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+    "omitted": List<dynamic>.from(
+      omitted.map((x) => agentSnapshotOmissionValues.reverse[x]),
+    ),
+    "packageByteSize": packageByteSize,
+    "packageDigest": packageDigest,
+    "parallelism": parallelism,
+    "sourceIsBuiltIn": sourceIsBuiltIn,
+    "uploadId": uploadId,
+  });
+}
+
+enum AgentSnapshotImportPreviewFormatKey { BUZZ_AGENT_SNAPSHOT_1 }
+
+final agentSnapshotImportPreviewFormatKeyValues = EnumValues({
+  "buzz-agent-snapshot@1":
+      AgentSnapshotImportPreviewFormatKey.BUZZ_AGENT_SNAPSHOT_1,
+});
+
+///05 §2.12 TransferFormat 的 package_media_type：`.agent.json` 清单本身，或 tEXt
+///`buzz_agent_snapshot` 承载同一清单的 `.agent.png`。
+enum AgentSnapshotMediaType { APPLICATION_JSON, IMAGE_PNG }
+
+final agentSnapshotMediaTypeValues = EnumValues({
+  "application/json": AgentSnapshotMediaType.APPLICATION_JSON,
+  "image/png": AgentSnapshotMediaType.IMAGE_PNG,
+});
+
+///DD-131(2)：快照中存在、导入不带入新 DRAFT 的原版字段。RUNTIME/MODEL/PROVIDER/NAME_POOL
+///属本机运行时（DD-26）；RESPOND_TO_ALLOWLIST 的名单公钥属来源身份；RESPOND_TO_ANYONE
+///不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR
+///只指包引用的外部头像地址（内联头像按附件规则导入，不在此列）；SKILLS 由 owner 按本 Tenant 目录重选。
+enum AgentSnapshotOmission {
+  AVATAR,
+  MEMORY,
+  MODEL,
+  NAME_POOL,
+  PROVIDER,
+  RESPOND_TO_ALLOWLIST,
+  RESPOND_TO_ANYONE,
+  RUNTIME,
+  SESSION_POLICY,
+  SKILLS,
+}
+
+final agentSnapshotOmissionValues = EnumValues({
+  "AVATAR": AgentSnapshotOmission.AVATAR,
+  "MEMORY": AgentSnapshotOmission.MEMORY,
+  "MODEL": AgentSnapshotOmission.MODEL,
+  "NAME_POOL": AgentSnapshotOmission.NAME_POOL,
+  "PROVIDER": AgentSnapshotOmission.PROVIDER,
+  "RESPOND_TO_ALLOWLIST": AgentSnapshotOmission.RESPOND_TO_ALLOWLIST,
+  "RESPOND_TO_ANYONE": AgentSnapshotOmission.RESPOND_TO_ANYONE,
+  "RUNTIME": AgentSnapshotOmission.RUNTIME,
+  "SESSION_POLICY": AgentSnapshotOmission.SESSION_POLICY,
+  "SKILLS": AgentSnapshotOmission.SKILLS,
+});
+
+///DD-131(2)、DD-143：一次 Agent 快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 5
+///MiB、PNG 不超过 10 MiB；格式与版本由 Core 判定。
+class AgentSnapshotUploadRequest {
+  final String contentBase64;
+  final AgentSnapshotMediaType mediaType;
+
+  AgentSnapshotUploadRequest({
+    required this.contentBase64,
+    required this.mediaType,
+  });
+
+  factory AgentSnapshotUploadRequest.fromJson(Map<String, dynamic> json) =>
+      AgentSnapshotUploadRequest(
+        contentBase64: json["contentBase64"],
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentBase64": contentBase64,
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+  });
+}
+
+///同 Tenant 且读者当前可 discover 的未删除 AgentTeam 页（DD-131(1)(6)）；nextOffset 续读同一排序。
+class AgentTeamPage {
+  final int? nextOffset;
+  final List<AgentTeamView> teams;
+
+  AgentTeamPage({this.nextOffset, required this.teams});
+
+  factory AgentTeamPage.fromJson(Map<String, dynamic> json) => AgentTeamPage(
+    nextOffset: json["nextOffset"],
+    teams: List<AgentTeamView>.from(
+      json["teams"].map((x) => AgentTeamView.fromJson(x)),
+    ),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nextOffset": nextOffset,
+    "teams": List<dynamic>.from(teams.map((x) => x.toJson())),
+  });
+}
+
+///DD-131(1) 的 Tenant 级 agent_team Resource 及 AgentTeam 事实（03 §7）。memberAgentResourceIds
+///只列读者当前可 discover 的成员，次序不变；hiddenMemberCount 是其余成员个数，不暴露其 ID。catalogShared 表示该团队已写入
+///tenant#member 的 discoverer/reader（DD-131(6)）。成员停用或删除不改写团队，部署与提及时按当前状态跳过。
+class AgentTeamView {
+  final bool catalogShared;
+  final String? description;
+  final int hiddenMemberCount;
+  final List<String> memberAgentResourceIds;
+  final String name;
+  final String ownerPrincipalId;
+  final String resourceId;
+  final ResourceState resourceState;
+  final int resourceVersion;
+
+  AgentTeamView({
+    required this.catalogShared,
+    this.description,
+    required this.hiddenMemberCount,
+    required this.memberAgentResourceIds,
+    required this.name,
+    required this.ownerPrincipalId,
+    required this.resourceId,
+    required this.resourceState,
+    required this.resourceVersion,
+  });
+
+  factory AgentTeamView.fromJson(Map<String, dynamic> json) => AgentTeamView(
+    catalogShared: json["catalogShared"],
+    description: json["description"],
+    hiddenMemberCount: json["hiddenMemberCount"],
+    memberAgentResourceIds: List<String>.from(
+      json["memberAgentResourceIds"].map((x) => x),
+    ),
+    name: json["name"],
+    ownerPrincipalId: json["ownerPrincipalId"],
+    resourceId: json["resourceId"],
+    resourceState: resourceStateValues.map[json["resourceState"]]!,
+    resourceVersion: json["resourceVersion"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "catalogShared": catalogShared,
+    "description": description,
+    "hiddenMemberCount": hiddenMemberCount,
+    "memberAgentResourceIds": List<dynamic>.from(
+      memberAgentResourceIds.map((x) => x),
+    ),
+    "name": name,
+    "ownerPrincipalId": ownerPrincipalId,
+    "resourceId": resourceId,
+    "resourceState": resourceStateValues.reverse[resourceState],
+    "resourceVersion": resourceVersion,
+  });
+}
+
+///DD-131(3)：校验通过的团队快照包的导入预览与一次性暂存引用。团队名与说明进入新 agent_team；每个成员按 DD-131(2) 映射为将新建的 Definition
+///与 DRAFT。团队 instructions 不进入包也不导入（DD-131(1)）。确认导入经 agent.team.import，任一成员失败整包不提交。
+class AgentTeamSnapshotImportPreview {
+  final String? description;
+  final String expiresAt;
+  final AgentTeamSnapshotImportPreviewFormatKey formatKey;
+  final AgentSnapshotMediaType mediaType;
+  final List<AgentTeamSnapshotImportPreviewMembersItem> members;
+  final String name;
+  final int packageByteSize;
+  final String packageDigest;
+
+  ///包内带有原版团队 instructions；按 DD-131(1) 不导入。
+  final bool teamInstructionsOmitted;
+  final String uploadId;
+
+  AgentTeamSnapshotImportPreview({
+    this.description,
+    required this.expiresAt,
+    required this.formatKey,
+    required this.mediaType,
+    required this.members,
+    required this.name,
+    required this.packageByteSize,
+    required this.packageDigest,
+    required this.teamInstructionsOmitted,
+    required this.uploadId,
+  });
+
+  factory AgentTeamSnapshotImportPreview.fromJson(Map<String, dynamic> json) =>
+      AgentTeamSnapshotImportPreview(
+        description: json["description"],
+        expiresAt: json["expiresAt"],
+        formatKey: agentTeamSnapshotImportPreviewFormatKeyValues
+            .map[json["formatKey"]]!,
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+        members: List<AgentTeamSnapshotImportPreviewMembersItem>.from(
+          json["members"].map(
+            (x) => AgentTeamSnapshotImportPreviewMembersItem.fromJson(x),
+          ),
+        ),
+        name: json["name"],
+        packageByteSize: json["packageByteSize"],
+        packageDigest: json["packageDigest"],
+        teamInstructionsOmitted: json["teamInstructionsOmitted"],
+        uploadId: json["uploadId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "expiresAt": expiresAt,
+    "formatKey":
+        agentTeamSnapshotImportPreviewFormatKeyValues.reverse[formatKey],
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+    "members": List<dynamic>.from(members.map((x) => x.toJson())),
+    "name": name,
+    "packageByteSize": packageByteSize,
+    "packageDigest": packageDigest,
+    "teamInstructionsOmitted": teamInstructionsOmitted,
+    "uploadId": uploadId,
+  });
+}
+
+enum AgentTeamSnapshotImportPreviewFormatKey { BUZZ_TEAM_SNAPSHOT_1 }
+
+final agentTeamSnapshotImportPreviewFormatKeyValues = EnumValues({
+  "buzz-team-snapshot@1":
+      AgentTeamSnapshotImportPreviewFormatKey.BUZZ_TEAM_SNAPSHOT_1,
+});
+
+class AgentTeamSnapshotImportPreviewMembersItem {
+  ///该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。
+  final String? avatarUrl;
+  final String? description;
+  final String displayName;
+
+  ///可为空串：成员没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。
+  final String instructions;
+  final List<AgentSnapshotOmission> omitted;
+
+  AgentTeamSnapshotImportPreviewMembersItem({
+    this.avatarUrl,
+    this.description,
+    required this.displayName,
+    required this.instructions,
+    required this.omitted,
+  });
+
+  factory AgentTeamSnapshotImportPreviewMembersItem.fromJson(
+    Map<String, dynamic> json,
+  ) => AgentTeamSnapshotImportPreviewMembersItem(
+    avatarUrl: json["avatarUrl"],
+    description: json["description"],
+    displayName: json["displayName"],
+    instructions: json["instructions"],
+    omitted: List<AgentSnapshotOmission>.from(
+      json["omitted"].map((x) => agentSnapshotOmissionValues.map[x]!),
+    ),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "avatarUrl": avatarUrl,
+    "description": description,
+    "displayName": displayName,
+    "instructions": instructions,
+    "omitted": List<dynamic>.from(
+      omitted.map((x) => agentSnapshotOmissionValues.reverse[x]),
+    ),
+  });
+}
+
+///DD-131(3)：一次团队快照包的原始字节（标准 base64，Web 与 Desktop 同一 JSON 传输）。解码后 JSON 不超过 25 MiB、PNG 不超过 50
+///MiB；格式与版本由 Core 判定。
+class AgentTeamSnapshotUploadRequest {
+  final String contentBase64;
+  final AgentSnapshotMediaType mediaType;
+
+  AgentTeamSnapshotUploadRequest({
+    required this.contentBase64,
+    required this.mediaType,
+  });
+
+  factory AgentTeamSnapshotUploadRequest.fromJson(Map<String, dynamic> json) =>
+      AgentTeamSnapshotUploadRequest(
+        contentBase64: json["contentBase64"],
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentBase64": contentBase64,
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+  });
+}
+
 ///GET /api/v1/agent-installations/{id}/transcript/stream 的 SSE 数据帧（DD-125(6)）：Core 从同一
 ///Installation 原生进程读到的 item/started、item/completed、turn/started、turn/completed 通知，按 thread
 ///解析到 AgentSession 后转发；只在建立时与周期性再准入下 Installation audit 成立期间发送，建立时写 ACCESS
@@ -7116,172 +7944,6 @@ class AgentVersionConfigurationPage {
   });
 }
 
-class RuntimeProfileDirectoryProfilesItem {
-  final RuntimeProfileDirectoryProfilesItemCapabilityContract
-  capabilityContract;
-  final String key;
-  final RuntimeProfileKind kind;
-  final String status;
-  final String webAvailability;
-
-  RuntimeProfileDirectoryProfilesItem({
-    required this.capabilityContract,
-    required this.key,
-    required this.kind,
-    required this.status,
-    required this.webAvailability,
-  });
-
-  factory RuntimeProfileDirectoryProfilesItem.fromJson(
-    Map<String, dynamic> json,
-  ) => RuntimeProfileDirectoryProfilesItem(
-    capabilityContract:
-        RuntimeProfileDirectoryProfilesItemCapabilityContract.fromJson(
-          json["capabilityContract"],
-        ),
-    key: json["key"],
-    kind: runtimeProfileKindValues.map[json["kind"]]!,
-    status: json["status"],
-    webAvailability: json["webAvailability"],
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "capabilityContract": capabilityContract.toJson(),
-    "key": key,
-    "kind": runtimeProfileKindValues.reverse[kind],
-    "status": status,
-    "webAvailability": webAvailability,
-  });
-}
-
-class RuntimeProfileDirectoryProfilesItemCapabilityContract {
-  final List<String> capabilityRequirements;
-  final int maxIdleTimeoutSeconds;
-  final int maxParallelism;
-  final int maxTurnDurationSeconds;
-  final List<String> replyPolicies;
-
-  ///同一发布合同中回复策略键到 Buzz ResolvedPersona 原生布尔字段的显式映射；缺映射不表示支持。
-  final List<RuntimeReplyPolicyMapping>? replyPolicyMappings;
-
-  RuntimeProfileDirectoryProfilesItemCapabilityContract({
-    required this.capabilityRequirements,
-    required this.maxIdleTimeoutSeconds,
-    required this.maxParallelism,
-    required this.maxTurnDurationSeconds,
-    required this.replyPolicies,
-    this.replyPolicyMappings,
-  });
-
-  factory RuntimeProfileDirectoryProfilesItemCapabilityContract.fromJson(
-    Map<String, dynamic> json,
-  ) => RuntimeProfileDirectoryProfilesItemCapabilityContract(
-    capabilityRequirements: List<String>.from(
-      json["capabilityRequirements"].map((x) => x),
-    ),
-    maxIdleTimeoutSeconds: json["maxIdleTimeoutSeconds"],
-    maxParallelism: json["maxParallelism"],
-    maxTurnDurationSeconds: json["maxTurnDurationSeconds"],
-    replyPolicies: List<String>.from(json["replyPolicies"].map((x) => x)),
-    replyPolicyMappings: json["replyPolicyMappings"] == null
-        ? null
-        : List<RuntimeReplyPolicyMapping>.from(
-            json["replyPolicyMappings"]!.map(
-              (x) => RuntimeReplyPolicyMapping.fromJson(x),
-            ),
-          ),
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "capabilityRequirements": List<dynamic>.from(
-      capabilityRequirements.map((x) => x),
-    ),
-    "maxIdleTimeoutSeconds": maxIdleTimeoutSeconds,
-    "maxParallelism": maxParallelism,
-    "maxTurnDurationSeconds": maxTurnDurationSeconds,
-    "replyPolicies": List<dynamic>.from(replyPolicies.map((x) => x)),
-    "replyPolicyMappings": replyPolicyMappings == null
-        ? null
-        : List<dynamic>.from(replyPolicyMappings!.map((x) => x.toJson())),
-  });
-}
-
-class RuntimeReplyPolicyMapping {
-  final bool broadcastReplies;
-  final String key;
-  final bool threadReplies;
-
-  RuntimeReplyPolicyMapping({
-    required this.broadcastReplies,
-    required this.key,
-    required this.threadReplies,
-  });
-
-  factory RuntimeReplyPolicyMapping.fromJson(Map<String, dynamic> json) =>
-      RuntimeReplyPolicyMapping(
-        broadcastReplies: json["broadcastReplies"],
-        key: json["key"],
-        threadReplies: json["threadReplies"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "broadcastReplies": broadcastReplies,
-    "key": key,
-    "threadReplies": threadReplies,
-  });
-}
-
-enum RuntimeProfileKind { LOCAL_ACP, REMOTE_PROVIDER, SERVER_CODEX }
-
-final runtimeProfileKindValues = EnumValues({
-  "LOCAL_ACP": RuntimeProfileKind.LOCAL_ACP,
-  "REMOTE_PROVIDER": RuntimeProfileKind.REMOTE_PROVIDER,
-  "SERVER_CODEX": RuntimeProfileKind.SERVER_CODEX,
-});
-
-///03 §7、17 §3：同 Tenant、fresh read 与 Workspace scope 查证后的既有治理 Route 元数据。原生 revision/hash
-///已回读；不包含 provider 配置、正文、凭据或模型 endpoint，不证明某次执行已获准。
-class AgentVersionRouteOption {
-  final String? homeWorkspaceId;
-  final String nativeConfigHash;
-  final String nativeConfigResourceId;
-  final int nativeRevision;
-  final String ownerPrincipalId;
-  final String resourceId;
-  final int resourceVersion;
-
-  AgentVersionRouteOption({
-    required this.homeWorkspaceId,
-    required this.nativeConfigHash,
-    required this.nativeConfigResourceId,
-    required this.nativeRevision,
-    required this.ownerPrincipalId,
-    required this.resourceId,
-    required this.resourceVersion,
-  });
-
-  factory AgentVersionRouteOption.fromJson(Map<String, dynamic> json) =>
-      AgentVersionRouteOption(
-        homeWorkspaceId: json["homeWorkspaceId"],
-        nativeConfigHash: json["nativeConfigHash"],
-        nativeConfigResourceId: json["nativeConfigResourceId"],
-        nativeRevision: json["nativeRevision"],
-        ownerPrincipalId: json["ownerPrincipalId"],
-        resourceId: json["resourceId"],
-        resourceVersion: json["resourceVersion"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "homeWorkspaceId": homeWorkspaceId,
-    "nativeConfigHash": nativeConfigHash,
-    "nativeConfigResourceId": nativeConfigResourceId,
-    "nativeRevision": nativeRevision,
-    "ownerPrincipalId": ownerPrincipalId,
-    "resourceId": resourceId,
-    "resourceVersion": resourceVersion,
-  });
-}
-
 ///DD-24/25、17 §3/8：同 Definition 下逐项 fresh Asset read 后的版本目录；DRAFT 可发现，PUBLISHED/RETIRED
 ///不可编辑。nextOffset 属原始扫描窗口，空的受权页不证明全集为空。
 class AgentVersionPage {
@@ -7399,20 +8061,26 @@ class AgentVersionView {
 ///仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
 ///
 ///03 §7、17 §3 的 requested 行为内容；不含 owner、Workspace、凭据、provider 地址或 host
-///environment。发布不等于安装或运行授权。
+///environment。发布不等于安装或运行授权。DRAFT 可缺 runtimeProfileKey、modelRouteResourceId 与
+///replyPolicy，instructions 可为空串（DD-131(2) 导入草稿与原版一致不要求运行配置）；agent.version.publish
+///准入时三者必须齐备且 instructions 非空，PUBLISHED 版本总是完整。
 class AgentVersionContent {
   ///精确 contract_key@version，不引用业务能力实现名。
   final List<String> capabilityRequirements;
   final List<String> declaredToolResourceIds;
   final String instructions;
   final AgentVersionContentMemoryPolicy memoryPolicy;
-  final String modelRouteResourceId;
+
+  ///DRAFT 可缺省；发布时必填。
+  final String? modelRouteResourceId;
   final int parallelism;
   final AgentVersionContentPersonaIdentity personaIdentity;
 
-  ///RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。
-  final String replyPolicy;
-  final String runtimeProfileKey;
+  ///RuntimeProfile capability contract 所声明的回复策略键；不隐式授予触发或读取权限。DRAFT 可缺省；发布时必填。
+  final String? replyPolicy;
+
+  ///DRAFT 可缺省；发布时必填。
+  final String? runtimeProfileKey;
   final List<String> skillVersionAssetIds;
   final List<AgentTrigger> triggerDefaults;
   final AgentVersionContentTurnLimits turnLimits;
@@ -7422,11 +8090,11 @@ class AgentVersionContent {
     required this.declaredToolResourceIds,
     required this.instructions,
     required this.memoryPolicy,
-    required this.modelRouteResourceId,
+    this.modelRouteResourceId,
     required this.parallelism,
     required this.personaIdentity,
-    required this.replyPolicy,
-    required this.runtimeProfileKey,
+    this.replyPolicy,
+    this.runtimeProfileKey,
     required this.skillVersionAssetIds,
     required this.triggerDefaults,
     required this.turnLimits,
@@ -8567,6 +9235,7 @@ enum EvidenceKind {
   ACTION_EXECUTION_ID,
   ADMIT_ACTION_EXECUTION_ID,
   AGENTGATEWAY_USAGE_ID,
+  AGENT_VERSION_ASSET_ID,
   APPROVAL_POLICY,
   APPROVAL_WORKFLOW_ID,
   BUZZ_DELETION_INVENTORY_DIGEST,
@@ -8574,6 +9243,7 @@ enum EvidenceKind {
   BUZZ_EVENT_ID,
   BUZZ_PUBKEY,
   DEPLOYMENT_BOOTSTRAP,
+  EXPORT_PACKAGE_ASSET_ID,
   EXTERNAL_SUBJECT_SHA256,
   OPENMETER_EVENT_ID,
   ORIGINAL_ACTION_EXECUTION_ID,
@@ -8593,6 +9263,8 @@ enum EvidenceKind {
   TENANT_LIFECYCLE_SNAPSHOT_ID,
   TENANT_MEMBERSHIP_ID,
   TRACE_ID,
+  TRANSFER_FORMAT,
+  TRANSFER_PACKAGE_DIGEST,
   USAGE_EVENT_ID,
 }
 
@@ -8600,6 +9272,7 @@ final evidenceKindValues = EnumValues({
   "ACTION_EXECUTION_ID": EvidenceKind.ACTION_EXECUTION_ID,
   "ADMIT_ACTION_EXECUTION_ID": EvidenceKind.ADMIT_ACTION_EXECUTION_ID,
   "AGENTGATEWAY_USAGE_ID": EvidenceKind.AGENTGATEWAY_USAGE_ID,
+  "AGENT_VERSION_ASSET_ID": EvidenceKind.AGENT_VERSION_ASSET_ID,
   "APPROVAL_POLICY": EvidenceKind.APPROVAL_POLICY,
   "APPROVAL_WORKFLOW_ID": EvidenceKind.APPROVAL_WORKFLOW_ID,
   "BUZZ_DELETION_INVENTORY_DIGEST": EvidenceKind.BUZZ_DELETION_INVENTORY_DIGEST,
@@ -8607,6 +9280,7 @@ final evidenceKindValues = EnumValues({
   "BUZZ_EVENT_ID": EvidenceKind.BUZZ_EVENT_ID,
   "BUZZ_PUBKEY": EvidenceKind.BUZZ_PUBKEY,
   "DEPLOYMENT_BOOTSTRAP": EvidenceKind.DEPLOYMENT_BOOTSTRAP,
+  "EXPORT_PACKAGE_ASSET_ID": EvidenceKind.EXPORT_PACKAGE_ASSET_ID,
   "EXTERNAL_SUBJECT_SHA256": EvidenceKind.EXTERNAL_SUBJECT_SHA256,
   "OPENMETER_EVENT_ID": EvidenceKind.OPENMETER_EVENT_ID,
   "ORIGINAL_ACTION_EXECUTION_ID": EvidenceKind.ORIGINAL_ACTION_EXECUTION_ID,
@@ -8626,6 +9300,8 @@ final evidenceKindValues = EnumValues({
   "TENANT_LIFECYCLE_SNAPSHOT_ID": EvidenceKind.TENANT_LIFECYCLE_SNAPSHOT_ID,
   "TENANT_MEMBERSHIP_ID": EvidenceKind.TENANT_MEMBERSHIP_ID,
   "TRACE_ID": EvidenceKind.TRACE_ID,
+  "TRANSFER_FORMAT": EvidenceKind.TRANSFER_FORMAT,
+  "TRANSFER_PACKAGE_DIGEST": EvidenceKind.TRANSFER_PACKAGE_DIGEST,
   "USAGE_EVENT_ID": EvidenceKind.USAGE_EVENT_ID,
 });
 
@@ -9651,6 +10327,8 @@ enum WorkflowKind {
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
   PROTOCOL_SESSION_RECONCILE,
+  RESOURCE_EXPORT,
+  RESOURCE_IMPORT,
   RESOURCE_PROVISION,
   SECRET_REF_REHOME,
   TENANT_LIFECYCLE,
@@ -9668,6 +10346,8 @@ final workflowKindValues = EnumValues({
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
   "PROTOCOL_SESSION_RECONCILE": WorkflowKind.PROTOCOL_SESSION_RECONCILE,
+  "RESOURCE_EXPORT": WorkflowKind.RESOURCE_EXPORT,
+  "RESOURCE_IMPORT": WorkflowKind.RESOURCE_IMPORT,
   "RESOURCE_PROVISION": WorkflowKind.RESOURCE_PROVISION,
   "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
   "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
@@ -12379,6 +13059,78 @@ final evidenceUnavailableReasonValues = EnumValues({
   "RESTRICTED": EvidenceUnavailableReason.RESTRICTED,
   "UNRECOGNIZED": EvidenceUnavailableReason.UNRECOGNIZED,
   "UNVERIFIABLE": EvidenceUnavailableReason.UNVERIFIABLE,
+});
+
+///DD-42、06 §7.1：源 Tenant 的 ExportPackage Asset。只给当前对该 Asset 有 read 的 HUMAN；READY 后才有
+///digest、大小与下载路径。字节只经下载路由返回，不进入本视图、审计或 Workflow 历史。
+class ExportPackageView {
+  final String actionExecutionId;
+  final int? byteSize;
+  final String? contentDigest;
+  final String? downloadPath;
+
+  ///原版文件名：`<显示名>.agent.json` 或 `.agent.png`；团队为 `.team.*`。
+  final String? fileName;
+  final String formatKey;
+  final String mediaType;
+  final String packageAssetId;
+  final String? sourceAssetId;
+  final String sourceResourceId;
+  final ExportPackageState state;
+
+  ExportPackageView({
+    required this.actionExecutionId,
+    this.byteSize,
+    this.contentDigest,
+    this.downloadPath,
+    this.fileName,
+    required this.formatKey,
+    required this.mediaType,
+    required this.packageAssetId,
+    this.sourceAssetId,
+    required this.sourceResourceId,
+    required this.state,
+  });
+
+  factory ExportPackageView.fromJson(Map<String, dynamic> json) =>
+      ExportPackageView(
+        actionExecutionId: json["actionExecutionId"],
+        byteSize: json["byteSize"],
+        contentDigest: json["contentDigest"],
+        downloadPath: json["downloadPath"],
+        fileName: json["fileName"],
+        formatKey: json["formatKey"],
+        mediaType: json["mediaType"],
+        packageAssetId: json["packageAssetId"],
+        sourceAssetId: json["sourceAssetId"],
+        sourceResourceId: json["sourceResourceId"],
+        state: exportPackageStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "byteSize": byteSize,
+    "contentDigest": contentDigest,
+    "downloadPath": downloadPath,
+    "fileName": fileName,
+    "formatKey": formatKey,
+    "mediaType": mediaType,
+    "packageAssetId": packageAssetId,
+    "sourceAssetId": sourceAssetId,
+    "sourceResourceId": sourceResourceId,
+    "state": exportPackageStateValues.reverse[state],
+  });
+}
+
+///03 §3 ExportPackage 的状态：只有 READY 可下载；ERROR 是确定失败，DELETED 是 Tenant 销毁后的墓碑。
+enum ExportPackageState { CREATING, DELETED, ERROR, READY, REVOKED }
+
+final exportPackageStateValues = EnumValues({
+  "CREATING": ExportPackageState.CREATING,
+  "DELETED": ExportPackageState.DELETED,
+  "ERROR": ExportPackageState.ERROR,
+  "READY": ExportPackageState.READY,
+  "REVOKED": ExportPackageState.REVOKED,
 });
 
 ///PUT /api/v1/user-state/followed-principals 的请求体（DD-125(5)、03
@@ -15898,6 +16650,23 @@ final nativeHumanScopeQueryPermissionValues = EnumValues({
 class ActionCommand {
   final String actionKey;
 
+  ///仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+  ///与包媒体类型；其他动作携带即拒绝。
+  final AgentDefinitionExportInput? agentDefinitionExport;
+
+  ///仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+  ///重选的运行配置；其他动作携带即拒绝。
+  final AgentDefinitionImportInput? agentDefinitionImport;
+
+  ///仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+  final AgentTeamInput? agentTeam;
+
+  ///仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+  final AgentTeamExportInput? agentTeamExport;
+
+  ///仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+  final AgentTeamImportInput? agentTeamImport;
+
   ///仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
   final AgentVersionContent? agentVersionContent;
   final ApplicationBindingCreate? applicationBindingCreate;
@@ -16069,6 +16838,11 @@ class ActionCommand {
 
   ActionCommand({
     required this.actionKey,
+    this.agentDefinitionExport,
+    this.agentDefinitionImport,
+    this.agentTeam,
+    this.agentTeamExport,
+    this.agentTeamImport,
     this.agentVersionContent,
     this.applicationBindingCreate,
     this.applicationBindingId,
@@ -16127,6 +16901,21 @@ class ActionCommand {
 
   factory ActionCommand.fromJson(Map<String, dynamic> json) => ActionCommand(
     actionKey: json["actionKey"],
+    agentDefinitionExport: json["agentDefinitionExport"] == null
+        ? null
+        : AgentDefinitionExportInput.fromJson(json["agentDefinitionExport"]),
+    agentDefinitionImport: json["agentDefinitionImport"] == null
+        ? null
+        : AgentDefinitionImportInput.fromJson(json["agentDefinitionImport"]),
+    agentTeam: json["agentTeam"] == null
+        ? null
+        : AgentTeamInput.fromJson(json["agentTeam"]),
+    agentTeamExport: json["agentTeamExport"] == null
+        ? null
+        : AgentTeamExportInput.fromJson(json["agentTeamExport"]),
+    agentTeamImport: json["agentTeamImport"] == null
+        ? null
+        : AgentTeamImportInput.fromJson(json["agentTeamImport"]),
     agentVersionContent: json["agentVersionContent"] == null
         ? null
         : AgentVersionContent.fromJson(json["agentVersionContent"]),
@@ -16258,6 +17047,11 @@ class ActionCommand {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionKey": actionKey,
+    "agentDefinitionExport": agentDefinitionExport?.toJson(),
+    "agentDefinitionImport": agentDefinitionImport?.toJson(),
+    "agentTeam": agentTeam?.toJson(),
+    "agentTeamExport": agentTeamExport?.toJson(),
+    "agentTeamImport": agentTeamImport?.toJson(),
     "agentVersionContent": agentVersionContent?.toJson(),
     "applicationBindingCreate": applicationBindingCreate?.toJson(),
     "applicationBindingId": applicationBindingId,
@@ -16316,6 +17110,148 @@ class ActionCommand {
     "workspaceVisibility":
         workspaceVisibilityValues.reverse[workspaceVisibility],
   });
+}
+
+///仅 agent.definition.export（DD-131(2)、05 §2.12）：目标 Definition 的一个 PUBLISHED AgentVersion
+///与包媒体类型；其他动作携带即拒绝。
+///
+///仅 agent.definition.export（DD-131(2)、05 §2.12）：命令的 Resource 目标是 AgentDefinition，这里冻结其一个
+///PUBLISHED AgentVersion 与包的媒体类型。包只含可移植字段，不含
+///owner、公钥、Installation、绑定、llm_route、RuntimeProfile、Delegation、记忆或任何 SecretRef。
+class AgentDefinitionExportInput {
+  final AgentSnapshotMediaType mediaType;
+  final String versionAssetId;
+
+  AgentDefinitionExportInput({
+    required this.mediaType,
+    required this.versionAssetId,
+  });
+
+  factory AgentDefinitionExportInput.fromJson(Map<String, dynamic> json) =>
+      AgentDefinitionExportInput(
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+        versionAssetId: json["versionAssetId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+    "versionAssetId": versionAssetId,
+  });
+}
+
+///仅 agent.definition.import（DD-131(2)、05 §2.12）：本会话上传的快照包引用、包 digest 与本 Tenant
+///重选的运行配置；其他动作携带即拒绝。
+///
+///仅 agent.definition.import（DD-131(2)、05 §2.12）：引用本 PlatformSession、本人的一次性快照上传与其包字节
+///SHA-256；包不携带运行时与模型路由（DD-26）。导入时不强制选择：所给的 Profile 与 Route 在准入与 Workflow 内各自重验，缺省的由 owner
+///发布前在版本编辑器补齐（DD-131(2)）。
+class AgentDefinitionImportInput {
+  final String? modelRouteResourceId;
+
+  ///上传返回的包字节 SHA-256；准入与 Workflow 读取包时重算比对。
+  final String packageDigest;
+  final String? runtimeProfileKey;
+  final String uploadId;
+
+  AgentDefinitionImportInput({
+    this.modelRouteResourceId,
+    required this.packageDigest,
+    this.runtimeProfileKey,
+    required this.uploadId,
+  });
+
+  factory AgentDefinitionImportInput.fromJson(Map<String, dynamic> json) =>
+      AgentDefinitionImportInput(
+        modelRouteResourceId: json["modelRouteResourceId"],
+        packageDigest: json["packageDigest"],
+        runtimeProfileKey: json["runtimeProfileKey"],
+        uploadId: json["uploadId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "modelRouteResourceId": modelRouteResourceId,
+    "packageDigest": packageDigest,
+    "runtimeProfileKey": runtimeProfileKey,
+    "uploadId": uploadId,
+  });
+}
+
+///仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）；其他动作携带即拒绝。
+///
+///仅 agent.team.create / agent.team.update 且必带（DD-131(1)、05 §2.12）：Tenant 级 Agent
+///团队的名称、说明与有序成员。成员是同 Tenant、发起人当前可 read 的 AgentDefinition Resource，按给出次序保存、不重复、至多 64
+///个（沿原团队目录上限）；不含原版团队级 instructions、内置 welcome 团队或任何运行配置。update 另带 resourceId 与读到的
+///resourceVersion 做 CAS。
+class AgentTeamInput {
+  ///可选说明，至多 2000 字符；去首尾空白后为空即省略
+  final String? description;
+  final List<String> memberAgentResourceIds;
+
+  ///去首尾空白后非空，至多 200 字符
+  final String name;
+
+  AgentTeamInput({
+    this.description,
+    required this.memberAgentResourceIds,
+    required this.name,
+  });
+
+  factory AgentTeamInput.fromJson(Map<String, dynamic> json) => AgentTeamInput(
+    description: json["description"],
+    memberAgentResourceIds: List<String>.from(
+      json["memberAgentResourceIds"].map((x) => x),
+    ),
+    name: json["name"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "memberAgentResourceIds": List<dynamic>.from(
+      memberAgentResourceIds.map((x) => x),
+    ),
+    "name": name,
+  });
+}
+
+///仅 agent.team.export（DD-131(3)、05 §2.12）：团队快照包媒体类型；其他动作携带即拒绝。
+///
+///仅 agent.team.export（DD-131(3)、05 §2.12）：命令的 Resource 目标是
+///agent_team，这里只冻结包媒体类型。各成员取审批开始时冻结的当前已发布版本；包是团队信息加各成员的 DD-131(2) 清单，不含团队
+///instructions、owner、公钥、Installation、绑定、llm_route、RuntimeProfile、记忆或任何 SecretRef。
+class AgentTeamExportInput {
+  final AgentSnapshotMediaType mediaType;
+
+  AgentTeamExportInput({required this.mediaType});
+
+  factory AgentTeamExportInput.fromJson(Map<String, dynamic> json) =>
+      AgentTeamExportInput(
+        mediaType: agentSnapshotMediaTypeValues.map[json["mediaType"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "mediaType": agentSnapshotMediaTypeValues.reverse[mediaType],
+  });
+}
+
+///仅 agent.team.import（DD-131(3)、05 §2.12）：本会话上传的团队快照包引用与包 digest；其他动作携带即拒绝。
+///
+///仅 agent.team.import（DD-131(3)、05 §2.12）：本会话、本人上传的 buzz-team-snapshot@1 包引用与包
+///digest。agent_team 没有 slug；各成员 Definition 的 slug 由 Core 按成员显示名规范化生成并在本 Tenant 内加序号去重。成员
+///DRAFT 不带运行配置，由 owner 发布前补齐。
+class AgentTeamImportInput {
+  final String packageDigest;
+  final String uploadId;
+
+  AgentTeamImportInput({required this.packageDigest, required this.uploadId});
+
+  factory AgentTeamImportInput.fromJson(Map<String, dynamic> json) =>
+      AgentTeamImportInput(
+        packageDigest: json["packageDigest"],
+        uploadId: json["uploadId"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"packageDigest": packageDigest, "uploadId": uploadId});
 }
 
 ///DD-88/94：pin 已批准 release 的业务绑定选择。不接受密钥正文、调用方自选 SecretRef 或运行端点 URL；secret 值只经同一
@@ -25180,6 +26116,180 @@ class ProtocolSessionReconcileResult {
   Map<String, dynamic> toJson() => _stripNulls({
     "protocolSessionId": protocolSessionId,
     "round": round.toJson(),
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+class ResourceExportAdvanceRequest {
+  final bool cancelRequested;
+  final String runId;
+  final ResourceExportTarget target;
+
+  ResourceExportAdvanceRequest({
+    required this.cancelRequested,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ResourceExportAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      ResourceExportAdvanceRequest(
+        cancelRequested: json["cancelRequested"],
+        runId: json["runId"],
+        target: ResourceExportTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+///06 §7.1、DD-42：源 Tenant 的 RESOURCE_EXPORT 冻结目标。只引用本 Tenant 的 ActionExecution、来源
+///Resource、准入时预写的 ExportPackage Asset 与 TransferFormat；不携带包字节或任何来源内容。
+class ResourceExportTarget {
+  final String actionExecutionId;
+  final String formatKey;
+  final String packageAssetId;
+  final String sourceResourceId;
+  final String workflowId;
+
+  ResourceExportTarget({
+    required this.actionExecutionId,
+    required this.formatKey,
+    required this.packageAssetId,
+    required this.sourceResourceId,
+    required this.workflowId,
+  });
+
+  factory ResourceExportTarget.fromJson(Map<String, dynamic> json) =>
+      ResourceExportTarget(
+        actionExecutionId: json["actionExecutionId"],
+        formatKey: json["formatKey"],
+        packageAssetId: json["packageAssetId"],
+        sourceResourceId: json["sourceResourceId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "formatKey": formatKey,
+    "packageAssetId": packageAssetId,
+    "sourceResourceId": sourceResourceId,
+    "workflowId": workflowId,
+  });
+}
+
+class ResourceExportAdvanceResult {
+  final String packageAssetId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ResourceExportAdvanceResult({
+    required this.packageAssetId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ResourceExportAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      ResourceExportAdvanceResult(
+        packageAssetId: json["packageAssetId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "packageAssetId": packageAssetId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+class ResourceImportAdvanceRequest {
+  final bool cancelRequested;
+  final String runId;
+  final ResourceImportTarget target;
+
+  ResourceImportAdvanceRequest({
+    required this.cancelRequested,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ResourceImportAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      ResourceImportAdvanceRequest(
+        cancelRequested: json["cancelRequested"],
+        runId: json["runId"],
+        target: ResourceImportTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+///06 §7.1、DD-42：目标 Tenant 的 RESOURCE_IMPORT 冻结目标。只引用本 Tenant 的 ActionExecution、新建
+///Resource/Asset 与包 format/digest；不携带包字节、来源 Tenant 或来源 ID。
+class ResourceImportTarget {
+  final String actionExecutionId;
+  final String formatKey;
+  final String packageDigest;
+  final String resourceId;
+  final String versionAssetId;
+  final String workflowId;
+
+  ResourceImportTarget({
+    required this.actionExecutionId,
+    required this.formatKey,
+    required this.packageDigest,
+    required this.resourceId,
+    required this.versionAssetId,
+    required this.workflowId,
+  });
+
+  factory ResourceImportTarget.fromJson(Map<String, dynamic> json) =>
+      ResourceImportTarget(
+        actionExecutionId: json["actionExecutionId"],
+        formatKey: json["formatKey"],
+        packageDigest: json["packageDigest"],
+        resourceId: json["resourceId"],
+        versionAssetId: json["versionAssetId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "formatKey": formatKey,
+    "packageDigest": packageDigest,
+    "resourceId": resourceId,
+    "versionAssetId": versionAssetId,
+    "workflowId": workflowId,
+  });
+}
+
+class ResourceImportAdvanceResult {
+  final String resourceId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ResourceImportAdvanceResult({
+    required this.resourceId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ResourceImportAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      ResourceImportAdvanceResult(
+        resourceId: json["resourceId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "resourceId": resourceId,
     "status": taskStatusValues.reverse[status],
     "waitingReason": waitingReason,
   });

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_export_advance_result.schema.json",
+  "title": "ResourceExportAdvanceResult", "type": "object", "additionalProperties": false,
+  "required": ["packageAssetId", "status", "waitingReason"],
+  "properties": {
+    "packageAssetId": {"type": "string", "format": "uuid"},
+    "status": {"$ref": "../enums/task_status.schema.json"},
+    "waitingReason": {"type": "string"}
+  }
+}

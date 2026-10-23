@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_team_snapshot_import_preview.schema.json",
+  "title": "AgentTeamSnapshotImportPreview",
+  "description": "DD-131(3)：校验通过的团队快照包的导入预览与一次性暂存引用。团队名与说明进入新 agent_team；每个成员按 DD-131(2) 映射为将新建的 Definition 与 DRAFT。团队 instructions 不进入包也不导入（DD-131(1)）。确认导入经 agent.team.import，任一成员失败整包不提交。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "packageDigest", "packageByteSize", "mediaType", "formatKey", "expiresAt", "name", "teamInstructionsOmitted", "members"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packageByteSize": {"type": "integer", "minimum": 1},
+    "mediaType": {"$ref": "../enums/agent_snapshot_media_type.schema.json"},
+    "formatKey": {"type": "string", "const": "buzz-team-snapshot@1"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "teamInstructionsOmitted": {"type": "boolean", "description": "包内带有原版团队 instructions；按 DD-131(1) 不导入。"},
+    "members": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["displayName", "instructions", "omitted"],
+        "properties": {
+          "displayName": {"type": "string"},
+          "description": {"type": "string"},
+          "avatarUrl": {"type": "string", "description": "该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。"},
+          "instructions": {"type": "string", "description": "可为空串：成员没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。"},
+          "omitted": {"type": "array", "items": {"$ref": "../enums/agent_snapshot_omission.schema.json"}}
+        }
+      }
+    }
+  }
+}

@@ -16,6 +16,7 @@ import '../../shared/widgets/buzz_action_tile.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/progressive_animated_avatar.dart';
 import '../../shared/profile/user_cache_provider.dart';
+import 'presence_cache_provider.dart';
 
 /// Show a user profile bottom sheet for the given [pubkey].
 void showUserProfileSheet(BuildContext context, String pubkey) {
@@ -41,6 +42,8 @@ class UserProfileSheet extends HookConsumerWidget {
     final profile =
         ref.watch(userCacheProvider.select((cache) => cache[pk])) ??
         ref.read(userCacheProvider.notifier).get(pk);
+    // kind:20001 presence (DD-120 (5)): no fact yet means no chip, never "Offline".
+    final presence = ref.watch(presenceCacheProvider.select((map) => map[pk]));
 
     // Fetch about from the user's kind:0 profile event.
     final aboutFuture = useMemoized(
@@ -58,6 +61,7 @@ class UserProfileSheet extends HookConsumerWidget {
     final about = aboutSnapshot.data ?? profile?.about ?? '';
 
     useEffect(() {
+      ref.read(presenceCacheProvider.notifier).track([pk]);
       ref.read(userCacheProvider.notifier).preload([pk]);
       return null;
     }, [pk]);
@@ -112,17 +116,35 @@ class UserProfileSheet extends HookConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Align(
-                      alignment: Alignment.center,
-                      child: FractionallySizedBox(
-                        widthFactor: 0.5,
-                        child: _ProfileAvatar(
-                          avatarUrl: avatarUrl,
-                          initial: initial,
-                        ),
+                    // Center the presence chip on the avatar's lower edge.
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: presence == null ? 0 : Grid.xl / 2,
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Align(
+                            alignment: Alignment.center,
+                            child: FractionallySizedBox(
+                              widthFactor: 0.5,
+                              child: _ProfileAvatar(
+                                avatarUrl: avatarUrl,
+                                initial: initial,
+                              ),
+                            ),
+                          ),
+                          if (presence != null)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: -(Grid.xl / 2),
+                              child: _ProfilePresenceChip(presence: presence),
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: Grid.xs),
+                    SizedBox(height: presence == null ? Grid.xs : Grid.half),
 
                     // Display name — centered, large
                     Center(
@@ -152,7 +174,7 @@ class UserProfileSheet extends HookConsumerWidget {
                       icon: copied.value ? LucideIcons.check : LucideIcons.key,
                       label: copied.value
                           ? platformText(
-                              PlatformMessageKey.platformProfileCopied,
+                              PlatformMessageKey.platformProfileCopiedShort,
                               locale: locale,
                             )
                           : platformText(
@@ -311,6 +333,64 @@ class _AvatarFallback extends StatelessWidget {
         style: context.textTheme.displayLarge?.copyWith(
           color: context.colors.onPrimaryContainer,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// The read-only version of the presence control in Settings. A viewed profile
+/// reflects its owner's availability but does not allow another user to change
+/// it.
+class _ProfilePresenceChip extends StatelessWidget {
+  const _ProfilePresenceChip({required this.presence});
+
+  final String presence;
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final effectivePresence = switch (presence) {
+      'online' || 'away' => presence,
+      _ => 'offline',
+    };
+    final backgroundColor = switch (effectivePresence) {
+      'online' => context.appColors.success,
+      'away' => context.appColors.warning,
+      _ => context.colors.onSurfaceVariant,
+    };
+    final label = platformText(switch (effectivePresence) {
+      'online' => PlatformMessageKey.presenceOnline,
+      'away' => PlatformMessageKey.presenceAway,
+      _ => PlatformMessageKey.presenceOffline,
+    }, locale: locale);
+
+    return Semantics(
+      label:
+          '${platformText(PlatformMessageKey.presenceChooser, locale: locale)}: $label',
+      child: SizedBox(
+        key: const ValueKey('user-profile-presence-chip'),
+        height: Grid.xl,
+        child: Center(
+          child: Material(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(Radii.full),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Grid.xs,
+                vertical: Grid.xxs,
+              ),
+              child: ExcludeSemantics(
+                child: Text(
+                  label,
+                  style: filterChipTextStyle.copyWith(
+                    color: context.colors.onPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

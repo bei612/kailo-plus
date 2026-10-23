@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'accent_colors.dart';
 import 'community_theme_preference.dart';
 import 'theme_provider.dart';
 
@@ -28,6 +29,17 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
         theme: theme,
         accent: state.accent,
         followSystem: mode == ThemeMode.system,
+      ),
+    );
+  }
+
+  void setAccent(int index) {
+    if (index < 0 || index >= accentColors.length) return;
+    _save(
+      CommunityThemePreference(
+        theme: state.theme,
+        accent: accentColors[index].wireValue,
+        followSystem: state.followSystem,
       ),
     );
   }

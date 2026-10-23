@@ -130,6 +130,8 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                           PlatformMessageKey.agentsAutomationDiffPosted,
                         AutomationTriggerKind.REACTION_ADDED =>
                           PlatformMessageKey.agentsAutomationReactionAdded,
+                        AutomationTriggerKind.WEBHOOK =>
+                          PlatformMessageKey.agentsAutomationWebhook,
                       }),
                     ),
                     if (version.content.trigger.mentionPrincipalId != null)
@@ -159,11 +161,13 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                     ],
                     field(
                       PlatformMessageKey.agentsAutomationAction,
-                      text(switch (version.content.action.kind) {
+                      text(switch (version.content.action?.kind) {
                         AutomationVersionContentActionKind.AGENT_TURN =>
                           PlatformMessageKey.agentsAutomationAgentTurn,
                         AutomationVersionContentActionKind.POST_MESSAGE =>
                           PlatformMessageKey.agentsAutomationPostMessage,
+                        // Step-based versions carry no single action.
+                        null => PlatformMessageKey.agentsAutomationNone,
                       }),
                     ),
                     field(
@@ -177,7 +181,7 @@ class PlatformAutomationDetailPage extends HookConsumerWidget {
                     ),
                     field(
                       PlatformMessageKey.agentsAutomationTemplate,
-                      version.content.action.template,
+                      version.content.action?.template ?? '',
                     ),
                     field(
                       PlatformMessageKey.agentsAutomationResultTarget,

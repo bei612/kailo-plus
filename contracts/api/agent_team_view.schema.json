@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_team_view.schema.json",
+  "title": "AgentTeamView",
+  "description": "DD-131(1) 的 Tenant 级 agent_team Resource 及 AgentTeam 事实（03 §7）。memberAgentResourceIds 只列读者当前可 discover 的成员，次序不变；hiddenMemberCount 是其余成员个数，不暴露其 ID。catalogShared 表示该团队已写入 tenant#member 的 discoverer/reader（DD-131(6)）。成员停用或删除不改写团队，部署与提及时按当前状态跳过。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "name", "memberAgentResourceIds", "hiddenMemberCount", "ownerPrincipalId", "resourceVersion", "resourceState", "catalogShared"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "memberAgentResourceIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "hiddenMemberCount": {"type": "integer", "minimum": 0},
+    "ownerPrincipalId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer"},
+    "resourceState": {"$ref": "../enums/resource_state.schema.json"},
+    "catalogShared": {"type": "boolean"}
+  }
+}

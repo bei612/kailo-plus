@@ -38,6 +38,8 @@ func registerActivities(w activityRegistrar, spicedb *activities.SpiceDB, core *
 	w.RegisterActivity(core.AdvanceAgentInstallation)
 	w.RegisterActivity(core.AdvanceApplicationBinding)
 	w.RegisterActivity(core.AdvanceResourceProvision)
+	w.RegisterActivity(core.AdvanceResourceImport)
+	w.RegisterActivity(core.AdvanceResourceExport)
 	w.RegisterActivity(core.AdvanceComponentAction)
 	w.RegisterActivity(core.AdvanceProtocolSession)
 	w.RegisterActivity(core.RunComponentConformanceStep)
