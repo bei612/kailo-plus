@@ -22,15 +22,20 @@ export function InboxDetailChannelMembers({ roster, channel, isDark, management,
 }) {
   const [membersOpen, setMembersOpen] = React.useState(false);
   const [manageOpen, setManageOpen] = React.useState(false);
+  // Mounted on first open and kept mounted afterwards, so an UNKNOWN governed intent keeps its
+  // idempotency key across closing (no resend under a new key); unopened details cost no reads.
+  const [membersMounted, setMembersMounted] = React.useState(false);
+  const [manageMounted, setManageMounted] = React.useState(false);
+  const openMembers = (open: boolean) => { if (open) setMembersMounted(true); setMembersOpen(open); };
   const archived = channel.archived === true;
   return <>
     <ChannelMembersBar roster={roster} fallbackMemberCount={fallbackMemberCount}
-      onToggleMembers={() => setMembersOpen((open) => !open)} onManageChannel={() => setManageOpen(true)} />
-    <ChannelMembersDialog roster={roster} open={membersOpen} onOpenChange={setMembersOpen} archived={archived}
+      onToggleMembers={() => openMembers(!membersOpen)} onManageChannel={() => { setManageMounted(true); setManageOpen(true); }} />
+    {membersMounted ? <ChannelMembersDialog roster={roster} open={membersOpen} onOpenChange={openMembers} archived={archived}
       currentPrincipalId={currentPrincipalId} currentPubkey={currentPubkey}
-      workspaceName={roster.kind === "workspace" ? channel.name : undefined} />
-    <ChannelManagementSheet roster={roster} channel={channel} open={manageOpen} onOpenChange={setManageOpen} isDark={isDark}
+      workspaceName={roster.kind === "workspace" ? channel.name : undefined} /> : null}
+    {manageMounted ? <ChannelManagementSheet roster={roster} channel={channel} open={manageOpen} onOpenChange={setManageOpen} isDark={isDark}
       management={management} onCopy={onCopy}
-      onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpen(true)); }} />
+      onOpenMembers={() => { window.requestAnimationFrame(() => openMembers(true)); }} /> : null}
   </>;
 }
