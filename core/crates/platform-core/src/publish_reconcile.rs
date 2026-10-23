@@ -122,6 +122,10 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
             if let Err(e) = crate::link_preview::sweep(&state.pool, cfg.batch).await {
                 tracing::warn!(error = %e, "Link-preview snapshot retention incomplete");
             }
+            // DD-138(4): component notifications are kept 90 days (07 §4.8.3).
+            if let Err(e) = crate::component_notification::sweep(&state.pool, cfg.batch).await {
+                tracing::warn!(error = %e, "Component notification retention incomplete");
+            }
             if let Err(e) = pass(&state, &metrics, &cfg, &mut publish_cursor).await {
                 tracing::warn!(error = %e, "发布结果对账本轮未完成");
             }

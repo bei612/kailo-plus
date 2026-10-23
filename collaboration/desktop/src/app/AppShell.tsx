@@ -28,6 +28,7 @@ import {
   useHomeFeedNotificationState,
 } from "@/features/notifications/hooks";
 import { useProfileQuery } from "@/features/profile/hooks";
+import { useDesktopComponentNotifications } from "@/features/notifications/useComponentNotifications";
 import {
   DEFAULT_SETTINGS_SECTION,
   type SettingsSection,
@@ -176,6 +177,14 @@ export function AppShell() {
         : null,
     [channels, selectedChannelId],
   );
+  // DD-138(4), 07 §4.8.3: component notifications (Inbox rows, desktop alerts, badge) on every
+  // view, scoped to the tenant Principal like the Web host.
+  const componentNotifications = useDesktopComponentNotifications({
+    client: nativeSession.client,
+    principalId: platformSession.data?.tenantPrincipalId,
+    settings: notificationSettings.settings,
+    openApplication: (bindingId, workspaceId, path) => goApplication(bindingId, workspaceId, path),
+  });
   const { handleDmNotification, handleChannelNotification, handleThreadReplyDesktopNotification } =
     useAppShellDesktopNotifications({
       channels,
@@ -190,6 +199,7 @@ export function AppShell() {
         principalId: platformSession.data?.tenantPrincipalId,
         tenantName: platformSession.data?.tenantName,
       },
+      openComponentNotification: componentNotifications.openTarget,
     });
   const {
     followedRootIds,
@@ -283,7 +293,7 @@ export function AppShell() {
     unreadThreadFeedItems,
   ]);
 
-  const { homeBadgeCount, homeBadgeCountExcludingHighPriority } =
+  const { homeBadgeCount: messageBadgeCount, homeBadgeCountExcludingHighPriority: messageBadgeCountExcludingHighPriority } =
     useHomeFeedNotificationState(
       homeFeedQuery.data,
       identityQuery.data?.pubkey,
@@ -302,6 +312,11 @@ export function AppShell() {
       getMessageReadAt,
       channels,
     );
+  // DD-138(4), 07 §4.8.3: plus unread component items whose category alert is on (a disabled
+  // category is still listed in the Inbox); the Home badge switch governs both.
+  const componentBadgeCount = notificationSettings.settings.homeBadgeEnabled ? componentNotifications.unreadCount : 0;
+  const homeBadgeCount = messageBadgeCount + componentBadgeCount;
+  const homeBadgeCountExcludingHighPriority = messageBadgeCountExcludingHighPriority + componentBadgeCount;
   const isNotifiedForThread = React.useCallback(
     (rootId: string) =>
       !mutedRootIds.has(rootId) &&
@@ -435,6 +450,7 @@ export function AppShell() {
           hasSidebarUnreadProjections: true,
           feedItemState,
           onOpenSettings: handleOpenSettings,
+          componentNotifications: { source: componentNotifications.source, open: componentNotifications.open },
         }}
       >
         <div className="relative h-dvh overflow-hidden overscroll-none">
@@ -488,6 +504,7 @@ export function AppShell() {
                           notificationSettings.setAllSlotAlertsEnabled
                         }
                         onSetSoundForSlot={notificationSettings.setSoundForSlot}
+                        onSetComponentAlertEnabled={notificationSettings.setComponentAlertEnabled}
                         section={settingsSection}
                       />
                     </React.Suspense>

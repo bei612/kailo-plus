@@ -334,10 +334,22 @@ async function clientSecret(file: string): Promise<string> {
   }
 }
 
-async function serviceToken(
-  config: KailoDirectoryConfig,
-  doFetch: Fetch,
-): Promise<string> {
+export interface KailoServiceToken {
+  accessToken: string;
+  // Seconds from the token response, when it states a valid one.
+  expiresIn: number | null;
+}
+
+// The directory client's client-credentials token. DD-138(4), `07` §4.8.3:
+// the notification delivery client (kailoNotifications) reuses it unchanged,
+// since Core authenticates both with the same `azp` = directoryClientId.
+export async function kailoServiceToken(
+  config: Pick<
+    KailoDirectoryConfig,
+    'clientId' | 'clientSecretFile' | 'tokenUrl'
+  >,
+  doFetch: Fetch = fetch,
+): Promise<KailoServiceToken> {
   const secret = await clientSecret(config.clientSecretFile);
   const basic = Buffer.from(
     `${encodeURIComponent(config.clientId)}:${encodeURIComponent(secret)}`,
@@ -376,7 +388,20 @@ async function serviceToken(
     body.token_type.toLowerCase() !== 'bearer'
   )
     throw new KailoDirectoryUnavailable('token response is not a bearer token');
-  return body.access_token;
+  const expiresIn =
+    typeof body.expires_in === 'number' &&
+    Number.isFinite(body.expires_in) &&
+    body.expires_in > 0
+      ? body.expires_in
+      : null;
+  return { accessToken: body.access_token, expiresIn };
+}
+
+async function serviceToken(
+  config: KailoDirectoryConfig,
+  doFetch: Fetch,
+): Promise<string> {
+  return (await kailoServiceToken(config, doFetch)).accessToken;
 }
 
 export async function readKailoDirectory(
@@ -425,6 +450,12 @@ interface Entry {
   admin: boolean;
   name: string | null;
   picture: string | null;
+}
+
+// DD-138(4): one current member as offered to the share picker and the
+// admin notifications (kailoNotifications / kailoShare).
+export interface KailoDirectoryMemberView extends Entry {
+  userKey: string;
 }
 
 const NAME_LIMIT = 200;
@@ -511,6 +542,17 @@ export class KailoMemberDirectoryStore {
     return entry ? { name: entry.name, picture: entry.picture } : null;
   }
 
+  // DD-138(4): the current members of the applied snapshot; null until a
+  // snapshot has been delivered (nobody can be picked or notified as a member).
+  public async list(): Promise<KailoDirectoryMemberView[] | null> {
+    await this.ready();
+    if (this.version === null) return null;
+    return [...this.members].map(([userKey, entry]) => ({
+      userKey,
+      ...entry,
+    }));
+  }
+
   // Replace the persisted snapshot in one transaction; returns false when the
   // version is already applied. The in-memory view changes only after commit.
   public async apply(
@@ -519,7 +561,14 @@ export class KailoMemberDirectoryStore {
   ): Promise<boolean> {
     await this.ready();
     if (snapshot.directoryVersion === this.version) return false;
-    const members = new Map<string, Entry & { principalId: string }>();
+    const members = new Map<
+      string,
+      Entry & {
+        principalId: string;
+        issuer: string | null;
+        subject: string | null;
+      }
+    >();
     for (const member of snapshot.members) {
       for (const identity of member.identities) {
         if (identity.issuer !== issuer) continue;
@@ -532,6 +581,11 @@ export class KailoMemberDirectoryStore {
           admin: member.tenantRole === 'ADMIN' || previous?.admin === true,
           name: displayName(member.displayName),
           picture: profilePicture(identity.picture),
+          // DD-138(4), `07` §4.8.3: the pair Core addresses notifications to
+          // (kailo_user.issuer/subject column limits; beyond them: not stored).
+          ...(identity.subject.length <= 255 && identity.issuer.length <= 2048
+            ? { issuer: identity.issuer, subject: identity.subject }
+            : { issuer: null, subject: null }),
         });
       }
     }
@@ -545,7 +599,12 @@ export class KailoMemberDirectoryStore {
       for (let i = 0; i < rows.length; i += 200)
         await trx('kailo_directory_member').insert(rows.slice(i, i + 200));
       for (const [key, entry] of members) {
-        const profile = { name: entry.name, picture: entry.picture };
+        const profile = {
+          name: entry.name,
+          picture: entry.picture,
+          issuer: entry.issuer,
+          subject: entry.subject,
+        };
         await trx('kailo_user')
           .insert({ user_key: key, ...profile })
           .onConflict('user_key')

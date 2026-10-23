@@ -1,0 +1,368 @@
+/*
+ * DD-141 Kailo layout shell (.design/20 §7–§10).
+ *
+ * Presentation only: every rule targets existing shell hooks (data-sidebar,
+ * data-testid, data-buzz-*) and consumes theme roles, so behaviour, markup and
+ * the original Buzz features stay untouched. Rules are unlayered on purpose so
+ * they win over Tailwind utilities without `!important`; they are written
+ * against semantic variables, so user-selected syntax themes stay coherent.
+ */
+
+:root {
+  --buzz-top-chrome-height: 44px;
+  --kailo-sidebar-row-height: 30px;
+  --kailo-row-radius: 6px;
+}
+
+/* ── Icons: one stroke weight everywhere (Lucide default 2 → 1.75) ───── */
+svg.lucide[stroke-width="2"] {
+  stroke-width: 1.75;
+}
+
+/* ── Focus: one brand ring for keyboard focus ─────────────────────────── */
+@layer base {
+  :where(a[href], button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+/* ── Top chrome ───────────────────────────────────────────────────────── */
+[data-testid="app-top-chrome"] {
+  gap: 4px;
+}
+
+[data-testid="app-top-chrome"] :is([data-sidebar="trigger"], [data-testid="global-back"], [data-testid="global-forward"]) {
+  border-radius: var(--kailo-row-radius);
+  color: hsl(var(--sidebar-foreground) / 0.62);
+  transition: background-color var(--k-duration-instant) var(--k-ease-standard), color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+[data-testid="app-top-chrome"] :is([data-sidebar="trigger"], [data-testid="global-back"], [data-testid="global-forward"]):hover:not(:disabled) {
+  background-color: hsl(var(--foreground) / 0.06);
+  color: hsl(var(--sidebar-foreground));
+}
+
+[data-kailo-brand-mark] {
+  flex-shrink: 0;
+}
+
+[data-testid="app-top-chrome"] [data-kailo-brand-mark] {
+  margin-inline: 2px 8px;
+  border-radius: 7px;
+  filter: drop-shadow(0 1px 1.5px rgb(var(--k-brand-rgb) / 0.35));
+}
+
+/* Brand mark gradient stops (DD-141 §2.5); token-driven, so both modes follow. */
+.kailo-mark-stop-from {
+  stop-color: var(--k-gradient-from);
+}
+
+.kailo-mark-stop-via {
+  stop-color: var(--k-gradient-via);
+}
+
+.kailo-mark-stop-to {
+  stop-color: var(--k-gradient-to);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) {
+  position: relative;
+  min-height: var(--kailo-sidebar-row-height);
+  height: var(--kailo-sidebar-row-height);
+  padding-block: 0;
+  padding-inline: 10px;
+  gap: 10px;
+  border-radius: var(--kailo-row-radius);
+  font-size: calc(var(--buzz-type-rem) * 0.8125);
+  font-weight: 450;
+  letter-spacing: -0.003em;
+  color: hsl(var(--sidebar-foreground) / 0.86);
+  box-shadow: none;
+  transition: background-color var(--k-duration-instant) var(--k-ease-standard), color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) > svg {
+  height: 16px;
+  width: 16px;
+  flex-shrink: 0;
+  color: hsl(var(--sidebar-foreground) / 0.58);
+  transition: color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]):not([data-active="true"]):hover,
+[data-testid="app-sidebar"] :where([data-sidebar="menu-item"]:hover) > [data-sidebar="menu-button"]:not([data-active="true"]) {
+  background-color: hsl(var(--foreground) / 0.055);
+  color: hsl(var(--sidebar-foreground));
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]):not([data-active="true"]):active {
+  background-color: hsl(var(--foreground) / 0.085);
+}
+
+/* Selected: brand-soft fill, brand text and icon, 3px brand indicator. */
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"],
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"]:hover {
+  background-color: var(--sidebar-row-subtle-active-surface);
+  color: var(--k-brand-soft-text);
+  font-weight: 550;
+  box-shadow: none;
+}
+
+:root[data-prominent-active-tab] :is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"] {
+  background-color: var(--sidebar-row-active-surface);
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"] > svg {
+  color: hsl(var(--primary));
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: hsl(var(--primary));
+}
+
+.dark :is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"])[data-active="true"] {
+  color: var(--k-brand-soft-text);
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]):focus-visible {
+  box-shadow: inset 0 0 0 2px hsl(var(--ring));
+}
+
+[data-testid="app-sidebar"] [data-sidebar="menu"] {
+  gap: 1px;
+}
+
+/* Group labels: overline. */
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) [data-sidebar="group-label"] {
+  height: 26px;
+  padding-inline: 10px;
+  font-size: calc(var(--buzz-type-rem) * 0.6875);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--sidebar-foreground) / 0.5);
+}
+
+/* Search: a quiet input-like field on the canvas. */
+[data-testid="app-sidebar"] [data-testid="open-search"] {
+  height: 32px;
+  border-radius: 8px;
+  background-color: hsl(var(--background) / 0.72);
+  box-shadow: inset 0 0 0 1px hsl(var(--border)), var(--k-shadow-xs);
+  color: hsl(var(--muted-foreground));
+  transition: box-shadow var(--k-duration-fast) var(--k-ease-standard), background-color var(--k-duration-fast) var(--k-ease-standard);
+}
+
+[data-testid="app-sidebar"] [data-testid="open-search"] > * {
+  color: hsl(var(--muted-foreground));
+}
+
+[data-testid="app-sidebar"] [data-testid="open-search"]:hover {
+  background-color: hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(var(--input)), var(--k-shadow-xs);
+}
+
+.dark [data-testid="app-sidebar"] [data-testid="open-search"] {
+  background-color: hsl(var(--foreground) / 0.05);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+
+.dark [data-testid="app-sidebar"] [data-testid="open-search"]:hover {
+  background-color: hsl(var(--foreground) / 0.08);
+}
+
+[data-testid="app-sidebar"] .sidebar-section-action:hover,
+[data-testid="app-sidebar"] .sidebar-section-action:focus-visible {
+  background-color: hsl(var(--foreground) / 0.07);
+}
+
+/* Profile card. */
+[data-testid="app-sidebar"] [data-testid="sidebar-profile-card"] {
+  border-radius: 8px;
+  transition: background-color var(--k-duration-instant) var(--k-ease-standard);
+}
+
+[data-testid="app-sidebar"] [data-testid="sidebar-profile-card"]:hover {
+  background-color: hsl(var(--foreground) / 0.055);
+}
+
+:is([data-testid="app-sidebar"], [data-testid="settings-sidebar"]) [data-buzz-sidebar-secondary] {
+  color: hsl(var(--sidebar-foreground) / 0.55);
+}
+
+/* ── Content plane: flush to the canvas, separated by hairlines ───────── */
+[data-buzz-content-surface] {
+  margin: 0;
+  border-radius: 0;
+  border-top: 1px solid hsl(var(--border));
+  border-left: 1px solid hsl(var(--border));
+  border-top-left-radius: 12px;
+  box-shadow: none;
+}
+
+.dark [data-buzz-content-surface] {
+  border-color: hsl(var(--border) / 0.9);
+}
+
+/* ── Channel header ───────────────────────────────────────────────────── */
+[data-testid="chat-header"] {
+  padding-inline: 20px;
+  padding-block: 8px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+[data-testid="chat-header"] > div {
+  min-height: 36px;
+}
+
+[data-testid="chat-header"] [data-testid="chat-title"] {
+  font-size: calc(var(--buzz-type-rem) * 0.9375);
+  font-weight: 600;
+  letter-spacing: -0.006em;
+}
+
+/* The channel glyph sits in a brand-soft tile. */
+[data-testid="chat-header"] .group\/title > div:first-child {
+  height: 26px;
+  width: 26px;
+  justify-content: center;
+  margin-inline-end: 6px;
+  border-radius: 7px;
+  background-color: var(--k-brand-soft);
+  color: var(--k-brand-soft-text);
+}
+
+[data-testid="chat-header"] .group\/title > div:first-child svg {
+  color: var(--k-brand-soft-text);
+  stroke: currentColor;
+  transform: none;
+  height: 15px;
+  width: 15px;
+}
+
+/* Header actions read as quiet ghost buttons. */
+[data-testid="chat-header"] :is([data-testid="channel-members-trigger"], [data-testid="channel-start-huddle-trigger"], [data-testid="channel-management-trigger"]) {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  color: hsl(var(--muted-foreground));
+}
+
+[data-testid="chat-header"] :is([data-testid="channel-members-trigger"], [data-testid="channel-start-huddle-trigger"], [data-testid="channel-management-trigger"]):hover {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+/* ── Timeline ─────────────────────────────────────────────────────────── */
+/* Day divider hairline follows its label through the pinned-chip handoff. */
+[data-testid="message-timeline-day-divider"]:has(> p[style*="visibility: hidden"]) > span {
+  visibility: hidden;
+}
+
+/* Message rows: Kailo row radius and a quiet hover surface. */
+[data-testid="message-row"] {
+  border-radius: 10px;
+}
+
+/* Human avatars are rounded squares; agents keep their squircle. */
+[data-avatar-shape="circle"] {
+  border-radius: 30%;
+}
+
+/* ── Composer ─────────────────────────────────────────────────────────── */
+[data-testid="message-composer"] {
+  border-radius: 12px;
+  border-color: hsl(var(--input));
+  background-color: hsl(var(--background));
+  box-shadow: var(--k-shadow-xs);
+  transition: border-color var(--k-duration-fast) var(--k-ease-standard), box-shadow var(--k-duration-fast) var(--k-ease-standard);
+}
+
+[data-testid="message-composer"]:hover {
+  border-color: hsl(var(--muted-foreground) / 0.45);
+}
+
+[data-testid="message-composer"]:focus-within {
+  border-color: hsl(var(--ring) / 0.7);
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.12), var(--k-shadow-sm);
+}
+
+.dark [data-testid="message-composer"] {
+  background-color: hsl(var(--card));
+}
+
+[data-testid="message-composer"] [data-testid="send-message"]:not(:disabled) {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: 8px;
+}
+
+[data-testid="message-composer"] [data-testid="send-message"]:not(:disabled):hover {
+  background-color: var(--k-brand-hover);
+}
+
+[data-testid="message-composer"] [data-testid="send-message"]:disabled {
+  background-color: hsl(var(--foreground) / 0.08);
+  color: hsl(var(--muted-foreground));
+  border-radius: 8px;
+}
+
+/* ── Settings ─────────────────────────────────────────────────────────── */
+[data-testid="settings-content-surface"] {
+  border-top-left-radius: 12px;
+  border-top: 1px solid hsl(var(--border));
+  border-left: 1px solid hsl(var(--border));
+}
+
+/* ── Skeletons: neutral bars with a low-contrast shimmer (§8) ─────────── */
+.t-skel-bar,
+.kailo-skeleton {
+  background-color: hsl(var(--foreground) / 0.06);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--foreground) / 0.045) 45%,
+    transparent 90%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+}
+
+.t-skel-bar.is-pulsing,
+.kailo-skeleton {
+  animation: kailo-shimmer 1.6s linear infinite;
+}
+
+.dark .t-skel-bar,
+.dark .kailo-skeleton {
+  background-color: hsl(var(--foreground) / 0.07);
+}
+
+@keyframes kailo-shimmer {
+  from {
+    background-position: 160% 0;
+  }
+
+  to {
+    background-position: -60% 0;
+  }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

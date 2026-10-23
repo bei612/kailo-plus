@@ -3313,7 +3313,7 @@ describe("AuditPage 范围审计", () => {
     expect((select.querySelector("option[value='']") as HTMLOptionElement).disabled).toBe(true);
     await choose("w-2");
     expect(section.textContent).toContain("tenant.admin.grant");
-    await click(button(section, "Buzz event"));
+    await click(button(section, "Relay event"));
     expect(section.textContent).toContain("You do not have audit permission for this scope.");
     expect(section.textContent).not.toContain("leak-me");
     expect(section.querySelector("[data-testid=evidence-available]")).toBeNull();
@@ -3374,7 +3374,7 @@ describe("AuditPage 范围审计", () => {
     expect(section.textContent).toContain("wf-123");
     expect(section.textContent).toContain("version 4");
     expect(section.textContent).toContain("Workflow engine");
-    await click(button(section, "Buzz event"));
+    await click(button(section, "Relay event"));
     expect(section.textContent).toContain("Unavailable: restricted evidence you are not authorized to view");
     await click(button(section, "Unrecognized evidence"));
     expect(section.textContent).toContain("Unavailable: the evidence kind is not recognized");
@@ -3504,11 +3504,17 @@ describe("platform pages render only through the host theme", () => {
   });
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "card", "destructive", "destructive-foreground",
-    "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
+    "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover", "popover-foreground",
     "sidebar-foreground", "sidebar-border",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
     "warning", "warning-bg",
+    // DD-141 status and brand roles (host variables are the Kailo `--k-*` tokens).
+    "success-soft", "success-text", "danger-soft", "danger-text", "brand-soft", "brand-soft-foreground", "brand-text",
   ];
+  const kailoRoleVariable: Record<string, string> = {
+    "success-soft": "k-success-soft", "success-text": "k-success-text", "danger-soft": "k-danger-soft",
+    "danger-text": "k-danger-text", "brand-soft": "k-brand-soft", "brand-soft-foreground": "k-brand-soft-text", "brand-text": "k-brand-text",
+  };
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =
     /^(xs|sm|base|lg|xl|[2-9]xl|left|center|right|justify|start|end|[tblrxyse]|\d+|none|solid|dashed|dotted|double|collapse|separate|wrap|nowrap|balance|pretty|ellipsis|clip)$/;
@@ -3628,7 +3634,8 @@ describe("platform pages render only through the host theme", () => {
     const inspectedSegmented = segmented.text.slice(0, segmentedStyle.getStart(segmentedParsed)) + segmented.text.slice(segmentedStyle.end);
     // Fixed Buzz 779af8886caae1317b4de962082429867ab61503:
     // desktop/src/shared/ui/popoverSurface.ts::POPOVER_SURFACE_CLASS/POPOVER_SHADOW.
-    // Verify the original host-variable mix and shadow, never exempt their module.
+    // DD-141 replaces the original values with the Kailo overlay surface and
+    // elevation; the shared constants and their consumers stay the same.
     const surface = sources.find(({ name }) => name === "popover-surface.ts")!;
     const surfaceParsed = ts.createSourceFile(surface.name, surface.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const constants = new Map<string, import("typescript").Expression>();
@@ -3640,8 +3647,8 @@ describe("platform pages render only through the host theme", () => {
     }
     const mix = constants.get("POPOVER_SURFACE_CLASS")!;
     const shadow = constants.get("POPOVER_SHADOW")!;
-    expect(ts.isStringLiteral(mix) && mix.text).toBe("border border-border/60 bg-[color-mix(in_srgb,hsl(var(--background))_80%,hsl(var(--muted))_20%)] text-popover-foreground");
-    expect(ts.isStringLiteral(shadow) && shadow.text).toBe("0 6px 18px lch(0% 0 0 / 0.02), 0 3px 9px lch(0% 0 0 / 0.04), 0 1px 1px lch(0% 0 0 / 0.04)");
+    expect(ts.isStringLiteral(mix) && mix.text).toBe("border border-border bg-popover text-popover-foreground");
+    expect(ts.isStringLiteral(shadow) && shadow.text).toBe("var(--k-shadow-md)");
     const shadowStyle = constants.get("POPOVER_SHADOW_STYLE")!;
     if (!ts.isObjectLiteralExpression(shadowStyle)) throw new Error("Native popover shadow is not an object");
     expect(shadowStyle.properties).toHaveLength(1);
@@ -4031,7 +4038,7 @@ describe("platform pages render only through the host theme", () => {
     }
     expect([...used].filter((token) => !semanticColors.includes(token))).toEqual([]);
     for (const token of semanticColors) {
-      const variable = token === "warning" ? "ui-warning" : token === "warning-bg" ? "ui-warning-bg" : token;
+      const variable = kailoRoleVariable[token] ?? (token === "warning" ? "ui-warning" : token === "warning-bg" ? "ui-warning-bg" : token);
       for (const config of hosts) expect(config).toContain(`var(--${variable})`);
     }
     // The original monthly schedule hint uses the same adaptive host warning

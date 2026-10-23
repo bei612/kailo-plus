@@ -120,6 +120,9 @@ describe('Kailo user forwarded by the native middleware', () => {
       picture: 'https://kailo.example.test/avatar/xm.png',
       locale: 'zh-CN',
       admin: false,
+      // DD-138(4): the verified pair that addresses Kailo notifications.
+      issuer: settings.issuer,
+      subject: sub,
     });
   });
 

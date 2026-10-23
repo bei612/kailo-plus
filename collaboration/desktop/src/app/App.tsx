@@ -29,7 +29,7 @@ import { createBuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { cn } from "@/shared/lib/cn";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
-import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
+import { KailoMark } from "@client-kit/platform/react/surfaces";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 // Minimum time the cold-boot splash stays on screen. A real boot resolves the
@@ -91,8 +91,8 @@ function useBootSplashHold(): BootSplashPhase {
   return phase;
 }
 
-// Cold boot gate: the theme-adaptive grainient background with a single
-// centered Buzz bee flying over it.
+// Cold boot gate: the theme-adaptive grainient background with the Kailo mark
+// (DD-141 brand moment) centered over it.
 function AppLoadingGate() {
   const LOADING_TEXT = translate(useDeviceLocale(), "platform.loading");
   return (
@@ -104,7 +104,7 @@ function AppLoadingGate() {
       <StartupWindowDragRegion />
       <ThemeGrainientBackground />
       <span className="sr-only">{LOADING_TEXT}</span>
-      <FlappingBee className="relative z-10 h-auto w-28" />
+      <KailoMark className="relative z-10 animate-pulse rounded-[18px] shadow-lg" size={64} />
     </div>
   );
 }

@@ -12,7 +12,7 @@ import Color from 'color'
 const HSL_TRIPLET = /^(-?[\d.]+)(?:deg)?\s+([\d.]+)%\s+([\d.]+)%(?:\s*\/\s*([\d.]+%?))?$/
 
 // Fallback when the sheet carries no --kailo-font-sans (never in a release).
-export const KAILO_FONT_FAMILY = '"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif'
+export const KAILO_FONT_FAMILY = '"Inter Variable", Inter, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei UI", system-ui, sans-serif'
 
 // Token names (without the --kailo-hsl- prefix); the sidebar ones are optional.
 export const KAILO_COLOR_NAMES = [
@@ -84,6 +84,13 @@ export function readKailoTokens(element = document.documentElement) {
     if (font) {
         out['--font-sans'] = font
     }
+    // DD-141 roles (complete colors) when the sheet carries them.
+    ;['selected', 'selected-foreground', 'brand-hover', 'success', 'warning-text', 'info'].forEach((name) => {
+        const v = read('--kailo-color-' + name)
+        if (v) {
+            out['--' + name] = v
+        }
+    })
     return out
 }
 
@@ -123,14 +130,16 @@ export function kailoScheme(tokens, dark) {
     const input = t('--input', '--border')
     const sidebar = t('--sidebar-background', '--muted') || muted
     const primaryForeground = t('--primary-foreground', '--background')
-    const primaryContainer = background.mix(primary, dark ? 0.24 : 0.14)
+    // DD-141: the Kailo selected role (brand-soft) when present, else a tint.
+    const primaryContainer = t('--selected') || background.mix(primary, dark ? 0.24 : 0.14)
+    const onPrimaryContainer = t('--selected-foreground') || foreground
     const errorContainer = background.mix(destructive, dark ? 0.24 : 0.14)
 
     const colors = {
         'primary': css(primary),
         'on-primary': css(primaryForeground),
         'primary-container': css(primaryContainer),
-        'on-primary-container': css(foreground),
+        'on-primary-container': css(onPrimaryContainer),
         'secondary': css(mutedForeground),
         'on-secondary': css(background),
         'secondary-container': css(accent),
@@ -138,7 +147,7 @@ export function kailoScheme(tokens, dark) {
         'tertiary': css(primary),
         'on-tertiary': css(primaryForeground),
         'tertiary-container': css(primaryContainer),
-        'on-tertiary-container': css(foreground),
+        'on-tertiary-container': css(onPrimaryContainer),
         'error': css(destructive),
         'on-error': css(destructiveForeground),
         'error-container': css(errorContainer),

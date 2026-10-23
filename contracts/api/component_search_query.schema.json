@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_search_query.schema.json",
+  "title": "ComponentSearchQuery",
+  "description": "DD-138(5)、07 §4.8.4：POST /api/v1/search/components。q 去首尾空白后 1–200 字符；limit 为每个来源的上限 1–20（缺省 8）；locale 为 ZH_CN 或 EN（缺省 ZH_CN）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["q"],
+  "properties": {
+    "q": {"type": "string"},
+    "limit": {"type": "integer"},
+    "locale": {"type": "string"}
+  }
+}

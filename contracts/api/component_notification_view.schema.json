@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/component_notification_view.schema.json",
+  "title": "ComponentNotificationView",
+  "description": "DD-138(4)、03 ComponentNotification：当前会话 Principal 收件箱中的一条组件通知。只含呈现类别，不含组件名、component_type_key 或 binding 配置；bindingId 只用于在 Kailo 内容区打开该原生页面入口。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notificationId", "bindingId", "category", "title", "path", "occurredAt", "receivedAt"],
+  "properties": {
+    "notificationId": {"type": "string", "format": "uuid"},
+    "bindingId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json"},
+    "category": {"$ref": "../enums/component_notification_category.schema.json"},
+    "title": {"$ref": "../domain/component_text.schema.json"},
+    "summary": {"$ref": "../domain/component_text.schema.json"},
+    "path": {"type": "string"},
+    "actorPrincipalId": {"type": "string", "format": "uuid"},
+    "actorDisplayName": {"type": "string"},
+    "actorPicture": {"type": "string", "description": "07 §4.7.3 Tenant 头像地址；缺省时客户端显示首字母。"},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "receivedAt": {"type": "string", "format": "date-time"},
+    "readAt": {"type": "string", "format": "date-time"}
+  }
+}

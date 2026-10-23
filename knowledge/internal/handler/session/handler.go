@@ -65,6 +65,9 @@ type Handler struct {
 	// forkService branches a session at a chosen user message. May be nil in
 	// deployments where fork is not wired; ForkSession checks.
 	forkService sessionForker
+	// kailoNotifier announces long-running answers through Kailo
+	// notifications (DD-138(4), 07 §4.8.3). Nil or disabled outside Kailo mode.
+	kailoNotifier *service.KailoNotifier
 }
 
 // NewHandler creates a new instance of Handler with all necessary dependencies
@@ -99,6 +102,7 @@ func NewHandler(
 	desktopLast service.SandboxDesktopLastStore,
 	rdb *redis.Client,
 	forkService *service.SessionForkService,
+	kailoNotifier *service.KailoNotifier,
 ) *Handler {
 	h := &Handler{
 		browserSkill:          browserSkill,
@@ -138,6 +142,7 @@ func NewHandler(
 	if forkService != nil {
 		h.forkService = forkService
 	}
+	h.kailoNotifier = kailoNotifier
 	return h
 }
 

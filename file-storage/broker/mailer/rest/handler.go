@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/errors"
@@ -77,6 +78,13 @@ func (mh *MailerHandler) Send(req *restful.Request, rsp *restful.Response) error
 	}
 
 	ctx := req.Request.Context()
+	// DD-138(4), 07 §4.8.3: in Kailo mode the component sends no user-triggered
+	// notification e-mail (share/Cell invitations, link mails, direct mails);
+	// only the administrator's mailer test stays. Account mails (reset, welcome)
+	// do not use this route.
+	if auth.NativeKailoMode() && message.TemplateId != "AdminTestMail" {
+		return errors.WithMessage(errors.StatusForbidden, "notification e-mails are delivered by Kailo")
+	}
 	if len(message.To) > 100 {
 		return errors.WithMessage(errors.StatusForbidden, "you are not allowed to send emails to more than 100 people at once")
 	}

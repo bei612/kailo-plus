@@ -31,6 +31,7 @@ import {
 import { isGovernedQueryMode } from '../services/nativeQueryMode';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import { nativeWriteUnknown } from '../utils/error';
+import { kailoUserLabel } from '@/utils/kailoUser';
 
 const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
@@ -309,7 +310,37 @@ export class DashboardResolver {
         nativeId: item.id,
       });
     }
+    // DD-138(4), `07` §4.8.3: tell the thread's creator (CONTENT_UPDATED);
+    // background only, never part of this write's outcome.
+    void this.notifyItemAdded(ctx, project.id, response.threadId, item.id);
     return item;
+  }
+
+  private async notifyItemAdded(
+    ctx: IContext,
+    projectId: number,
+    threadId: number,
+    itemId: number,
+  ): Promise<void> {
+    try {
+      const actor = ctx.kailoUser;
+      if (!actor?.key) return;
+      const { components } = await import('@/common');
+      if (!components.kailoNotifications.enabled) return;
+      const thread = await components.threadRepository.findOneBy({
+        id: threadId,
+      });
+      if (!thread || thread.projectId !== projectId) return;
+      await components.kailoNotifications.dashboardItemAdded({
+        actorKey: actor.key,
+        actorName: kailoUserLabel(actor),
+        ownerKey: thread.ownerKey,
+        itemId,
+        threadName: thread.summary,
+      });
+    } catch (error) {
+      logger.debug(`Dashboard item notification skipped: ${error?.name}`);
+    }
   }
 
   public async updateDashboardItem(

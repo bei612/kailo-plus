@@ -63,7 +63,7 @@ export function SnapshotCard({ displayName, href, filename, size, sha256, snapsh
   return (
     <Attachment className="my-1 inline-flex w-fit max-w-full shadow-none" data-testid="agent-snapshot-card"
       data-snapshot-kind={snapshotKind}>
-      <AttachmentMedia variant={showThumb ? "image" : "icon"} className={showThumb ? "relative h-9 w-9" : undefined}>
+      <AttachmentMedia variant={showThumb ? "image" : "icon"} className={showThumb ? "relative h-9 w-9" : "bg-brand-soft text-brand-soft-foreground"}>
         {showThumb ? <img alt="" className="h-full w-full object-cover" data-testid="agent-snapshot-card-thumb" src={thumb}
           referrerPolicy="no-referrer" onError={() => setThumbError(true)} /> : <Icon />}
       </AttachmentMedia>

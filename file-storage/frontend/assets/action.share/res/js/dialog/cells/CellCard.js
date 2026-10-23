@@ -107,7 +107,7 @@ class CellCard extends React.Component{
             } else{
                 rootStyle = {width: 700, height: 500};
             }
-            content = <EditCellDialog {...this.props} model={model} sendInvitations={this.usersInvitations.bind(this)} editorOneColumn={editorOneColumn}/>;
+            content = <EditCellDialog {...this.props} model={model} sendInvitations={ShareHelper.kailoMode() ? null : this.usersInvitations.bind(this)} editorOneColumn={editorOneColumn}/>;
         } else if (model) {
             let nodes = model.getRootNodes().map(node => {
                 return model.getNodeLabelInContext(node);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  KAILO_PALETTE_COMMANDS,
   KAILO_PERSONAL_SETTINGS,
   fallbackSettingsSection,
   kailoHiddenSettingsSection,
@@ -81,14 +82,18 @@ test('direct navigation to a hidden section lands on the first visible section',
   assert.equal(resolveSettingsSection('system', ['general'], false), 'general')
 })
 
-test('Kailo mode drops settings and product-tour commands from the palette', () => {
+test('Kailo mode keeps only the knowledge business commands in the palette (DD-138(5))', () => {
   const commands = [
     { id: 'new-chat' },
     { id: 'open-kb-list' },
+    { id: 'open-agents' },
+    { id: 'open-organizations' },
     { id: 'open-settings' },
     { id: 'open-product-tour' },
+    { id: 'some-future-upstream-command' },
   ]
-  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list'])
+  assert.deepEqual(kailoVisibleCommands(commands, true).map((c) => c.id), ['new-chat', 'open-kb-list', 'open-agents'])
+  assert.deepEqual([...KAILO_PALETTE_COMMANDS].sort(), ['new-chat', 'open-agents', 'open-kb-list'])
   assert.deepEqual(kailoVisibleCommands(commands, false).map((c) => c.id), commands.map((c) => c.id))
 })
 

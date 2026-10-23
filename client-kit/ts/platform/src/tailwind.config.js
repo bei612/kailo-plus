@@ -10,6 +10,10 @@ export default {
       // the px-text guard rejects them. Stock scale picks up from xs.
       fontSize: {
         "2xs": "calc(var(--buzz-type-rem) * 0.6875)", // 11px at 16px type rem
+        // DD-141 §3 Callout: buttons, sidebar rows and form labels (13px).
+        control: "calc(var(--buzz-type-rem) * 0.8125)",
+        // DD-141 §3 Headline: channel and page headers (15px).
+        headline: "calc(var(--buzz-type-rem) * 0.9375)",
         "3xs": "calc(var(--buzz-type-rem) * 0.5)", // 8px at 16px type rem
         badge: "calc(var(--buzz-type-rem) * 0.625)", // 10px at 16px type rem
         "status-indicator": "0.9375rem", // 15px at the default root size
@@ -52,6 +56,14 @@ export default {
         "message-author": "var(--conversation-author-line-height)",
       },
       boxShadow: {
+        // DD-141 §6: Kailo elevation replaces Tailwind's neutral-black scale.
+        "2xs": "var(--k-shadow-xs)",
+        xs: "var(--k-shadow-xs)",
+        sm: "var(--k-shadow-sm)",
+        md: "var(--k-shadow-md)",
+        lg: "var(--k-shadow-lg)",
+        xl: "var(--k-shadow-xl)",
+        "2xl": "var(--k-shadow-xl)",
         "content-edge": "-1px -1px 0 0 hsl(var(--sidebar-border) / 0.45)",
         // Edge + elevation for a surface anchored to the right of the content
         // area, whose only exposed edge faces left. Tailwind's stock shadows are
@@ -77,14 +89,15 @@ export default {
         "conversation-paragraph": "var(--conversation-paragraph-gap)",
         "conversation-row": "var(--conversation-row-padding-block)",
       },
+      // DD-141: one font stack (Inter + platform CJK UI faces) from kailo-tokens.ts.
       fontFamily: {
-        sans: [
-          '"Inter Variable"',
-          "Inter",
-          '"Avenir Next"',
-          '"Segoe UI"',
-          "sans-serif",
-        ],
+        sans: ["var(--k-font-sans)"],
+        mono: ["var(--k-font-mono)"],
+      },
+      // DD-141 §8: Kailo motion curves (durations stay on Tailwind's scale).
+      transitionTimingFunction: {
+        standard: "var(--k-ease-standard)",
+        "out-expo": "var(--k-ease-out)",
       },
       colors: {
         background: "hsl(var(--background))",
@@ -140,6 +153,41 @@ export default {
         warning: {
           DEFAULT: "var(--ui-warning)",
           bg: "var(--ui-warning-bg)",
+          soft: "var(--k-warning-soft)",
+          text: "var(--k-warning-text)",
+        },
+        // DD-141 §2: brand ramp and status roles (complete colors).
+        brand: {
+          DEFAULT: "var(--k-brand)",
+          50: "var(--k-brand-50)",
+          100: "var(--k-brand-100)",
+          200: "var(--k-brand-200)",
+          300: "var(--k-brand-300)",
+          400: "var(--k-brand-400)",
+          500: "var(--k-brand-500)",
+          600: "var(--k-brand-600)",
+          700: "var(--k-brand-700)",
+          800: "var(--k-brand-800)",
+          900: "var(--k-brand-900)",
+          950: "var(--k-brand-950)",
+          soft: "var(--k-brand-soft)",
+          "soft-foreground": "var(--k-brand-soft-text)",
+          text: "var(--k-brand-text)",
+        },
+        success: {
+          DEFAULT: "var(--k-success)",
+          soft: "var(--k-success-soft)",
+          text: "var(--k-success-text)",
+        },
+        danger: {
+          DEFAULT: "var(--k-danger)",
+          soft: "var(--k-danger-soft)",
+          text: "var(--k-danger-text)",
+        },
+        info: {
+          DEFAULT: "var(--k-info)",
+          soft: "var(--k-info-soft)",
+          text: "var(--k-info-text)",
         },
       },
     },

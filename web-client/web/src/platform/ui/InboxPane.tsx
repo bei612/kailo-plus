@@ -34,6 +34,7 @@ import {resolveProjectInboxWorkItem,projectWorkItemTarget,ProjectInboxDetail,typ
 import {useProjectsHost} from "./ProjectsPane";
 import {PulsePane} from "./PulsePane";
 import {UserAvatar} from "@client-kit/platform/react/messages";
+import type { ComponentNotificationItem, ComponentNotificationSource } from "@client-kit/platform/react/inbox/component-notifications";
 type Snapshot = InboxSnapshot;
 
 export function InboxPane({
@@ -46,6 +47,7 @@ export function InboxPane({
   onSelectedItemIdChange,
   isDark = false,
   workflowsFor,
+  componentNotifications,
 }: {
   principalId: string;
   onOpen: (channelId: string, target?: InboxNavigationTarget, draft?: PlatformDraftNavigation & {conversation?: import("@client-kit/contracts").ConversationView}) => void | Promise<void>;
@@ -58,6 +60,8 @@ export function InboxPane({
   isDark?: boolean;
   /** Host Workflows routes for a Workspace (original channel management Workflows ingress). */
   workflowsFor?: (workspaceId: string) => ChannelWorkflowNavigation;
+  /** DD-138(4), 07 §4.8.3: the shell's component notification source; opening navigates away. */
+  componentNotifications?: { source: ComponentNotificationSource | null; open: (item: ComponentNotificationItem) => void };
 }) {
   const client = useBffClient();
   const selectionScope = useMemo(() => ({}), [client, principalId]);
@@ -144,6 +148,7 @@ export function InboxPane({
     void load();
     void reads.refresh();
     needsAction.refresh();
+    componentNotifications?.source?.refresh();
   };
   const messagesMode = view.isMessagesMode;
   const anchorFeedItems = useMemo(() => rows.flatMap(row => row.items), [rows]);
@@ -238,6 +243,7 @@ export function InboxPane({
     selectedConversationId={selected} coldResolutionPending={coldPending}
     onFilterChanged={() => setProfileTarget(null)}
     needsAction={needsAction}
+    componentNotifications={componentNotifications?.source ? { source: componentNotifications.source, onOpen: componentNotifications.open } : null}
     onRowSelected={() => setProfileTarget(null)}
     list={{
       activeDraftCount: drafts.entries.length,

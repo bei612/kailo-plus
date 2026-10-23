@@ -367,7 +367,7 @@ describe('Kailo presentation bridge', () => {
       );
     });
 
-    test('after auth-required the expired session is Kailo\'s prompt alone (V-SCN-226)', async () => {
+    test("after auth-required the expired session is Kailo's prompt alone (V-SCN-226)", async () => {
       path = '/oauth/callback';
       const realFetch = globals.fetch;
       const statuses = [200, 401, 401, 200];

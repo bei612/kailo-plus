@@ -3,8 +3,9 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { BffClient } from "@client-kit/platform/client";
 import { PulseQueryRequestView, type ConversationView } from "@client-kit/contracts";
-import { useBffClient } from "@client-kit/platform/react/context";
+import { useBffClient, useLocale } from "@client-kit/platform/react/context";
 import { createSearchResultsReader, type SearchDataHooks } from "@client-kit/platform/react/search/useSearchResults";
+import { validComponentSearchPage } from "@client-kit/platform/react/search/componentSearch";
 import { rankUserCandidatesBySearch } from "@client-kit/platform/react/search/userCandidateSearch";
 import type { SearchChannel, UserSearchResult } from "@client-kit/platform/react/search/types";
 import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
@@ -71,6 +72,7 @@ async function profiles(pubkeys:string[],check:()=>void):Promise<UserProfileLook
 
 export function useWebSearchReader(scopeKey:string, directoryError?:unknown) {
   const client=useBffClient();
+  const locale=useLocale();
   const owner=useMemo(()=>({active:true}),[scopeKey,client]);
   useEffect(()=>{owner.active=true;return()=>{owner.active=false;};},[owner]);
   return useMemo(()=>{
@@ -95,6 +97,14 @@ export function useWebSearchReader(scopeKey:string, directoryError?:unknown) {
         queryKey:["platform",scopeKey,"search-profiles",[...keys].sort()],enabled:options?.enabled!==false&&keys.length>0,retry:false,
         queryFn:async()=>({profiles:await profiles([...new Set(keys)],check)}),
       }),
+      // DD-138(5), 07 §4.8.4: component content in 「搜索全部」; the shared reader enables it only
+      // for the unscoped, debounced query of at least two characters.
+      useComponentSearchQuery:(query,options)=>useQuery({
+        queryKey:["platform",scopeKey,"search-components",query,locale],
+        enabled:options.enabled,retry:false,
+        queryFn:async()=>{check();const page:unknown=await client.searchComponents({q:query,locale:locale==="zh-CN"?"ZH_CN":"EN"});
+          check();if(!validComponentSearchPage(page))throw new TransportError("Invalid component search page");return page;},
+      }),
       useSearchMessagesQuery:(query,options)=>useQuery({
         queryKey:["platform",scopeKey,"search-messages",query,options?.limit,options?.channelId,options?.authors,options?.since,options?.until],
         enabled:options?.enabled!==false,retry:false,
@@ -107,5 +117,5 @@ export function useWebSearchReader(scopeKey:string, directoryError?:unknown) {
       const result=read(options);
       return {...result,searchQuery:{...result.searchQuery,error:directoryError??result.searchQuery.error}};
     };
-  },[client,scopeKey,owner,directoryError]);
+  },[client,scopeKey,owner,directoryError,locale]);
 }

@@ -41,7 +41,7 @@ import { SettingsSectionHeader } from "./settings-surface";
 import { Badge, Button, Cell, Notice, ReadFailure, Table, type Tone } from "./ui";
 import { useLoad } from "./use-load";
 
-const inputClass = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
+const inputClass = "h-8 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs";
 const fieldClass = "flex flex-col gap-1 text-sm";
 const textareaClass = "min-h-24 w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs";
 
@@ -234,7 +234,7 @@ export function ConnectorActionPanel({ action, testId, conflictText }: {
   const { intent, submission, failure, busy, unknown, warning } = action;
   if (!intent && !submission && !failure) return null;
   const conflict = conflicted(action);
-  return <div className="flex flex-col gap-2 rounded-md border p-3 text-sm" data-testid={testId}>
+  return <div className="flex flex-col gap-2 rounded-xl border bg-card p-3.5 text-sm" data-testid={testId}>
     {intent ? <div role="group" className="flex flex-col gap-2">
       {warning ? <p>{t(warning)}</p> : null}
       <div className="flex gap-2">
@@ -404,7 +404,7 @@ function ToolSelectionStep({ probe, choices, onChange, disabled, changed }: {
     {probe.tools.map((tool) => {
       const choice = choices[tool.upstreamName] ?? suggestedChoice(tool, false);
       const declare = choice.enabled && needsDeclaration(tool, choice);
-      return <div key={tool.upstreamName} className="flex flex-col gap-2 rounded-md border p-3" data-testid="connector-probed-tool" data-tool={tool.upstreamName}>
+      return <div key={tool.upstreamName} className="flex flex-col gap-2 rounded-xl border bg-card p-3.5" data-testid="connector-probed-tool" data-tool={tool.upstreamName}>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={choice.enabled} disabled={disabled}
             aria-label={t("connectors.tools.enable", { tool: tool.upstreamName })}
@@ -671,7 +671,7 @@ export function AddConnectorFlow({ page, onDone, onCancel, onLocked }: {
           onChange={(event) => setCredential(event.target.value)} />
         <span className="text-xs text-muted-foreground">{t("connectors.field.credentialHint")}</span>
       </label> : null}
-      {isOauth ? <div className="flex flex-col gap-2 rounded-md border p-3" data-testid="connector-oauth">
+      {isOauth ? <div className="flex flex-col gap-2 rounded-xl border bg-card p-3.5" data-testid="connector-oauth">
         <p className="text-xs text-muted-foreground">{t("connectors.oauth.explain")}</p>
         <Button className="w-fit" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{t("connectors.oauth.advanced")}</Button>
         {advanced ? <>
@@ -711,7 +711,7 @@ export function AddConnectorFlow({ page, onDone, onCancel, onLocked }: {
     </div> : null}
     {step === 4 && probe ? <div className="flex flex-col gap-3">
       <ScopeStep page={page} scope={scope} onChange={setScope} oauth={isOauth} disabled={frozen} />
-      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-md border p-3 text-sm md:grid-cols-2" data-testid="connector-summary">
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-xl border bg-card p-3.5 text-sm md:grid-cols-2" data-testid="connector-summary">
         <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.field.name")}</dt><dd className="break-all">{name.trim()}</dd></div>
         <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.host")}</dt><dd className="break-all">{probe.endpointHost || endpoint}</dd></div>
         <div className="flex gap-2"><dt className="text-muted-foreground">{t("connectors.field.auth")}</dt><dd>{t(authLabel[authMode])}</dd></div>
@@ -783,7 +783,7 @@ function RefreshOutcome({ result }: { result: McpConnectionRefreshResult }) {
   const timestamp = useTimestamp();
   const list = (key: PlatformMessageKey, names: string[]) => names.length
     ? <p className="break-words">{t(key, { tools: names.join(", ") })}</p> : null;
-  return <div className="flex flex-col gap-1 rounded-md border p-3 text-sm" role="status" data-testid="connector-refresh-result">
+  return <div className="flex flex-col gap-1 rounded-xl border bg-card p-3.5 text-sm" role="status" data-testid="connector-refresh-result">
     <p>{t("connectors.refresh.checked", { at: timestamp(result.checkedAt), health: t(healthLabel[result.health] ?? "connectors.health.unchecked") })}</p>
     {result.drift ? <>
       <p className="font-medium">{t("connectors.drift")}</p>
@@ -826,7 +826,7 @@ function ReconfirmFlow({ connection, probe, refresh, page, onDone, onCancel }: {
       },
     }, "connectors.confirm.update");
   };
-  return <div className="flex flex-col gap-3 rounded-md border p-3" data-testid="connector-reconfirm">
+  return <div className="flex flex-col gap-3 rounded-xl border bg-card p-3.5" data-testid="connector-reconfirm">
     <h4 className="text-sm font-medium">{t("connectors.reconfirm.title")}</h4>
     <ProbeSummary probe={probe} />
     <ToolSelectionStep probe={probe} choices={choices} onChange={setChoices} disabled={action.frozen}
@@ -948,7 +948,7 @@ function ConnectorRow({ connection, page, workspaceName, onChanged }: {
   const healthTone = useHealthTone();
   const [open, setOpen] = useState(false);
   const active = connection.state === McpConnectionState.Active;
-  return <li className="flex flex-col gap-2 rounded-md border p-3" data-testid="connector-row" data-connector={connection.id}>
+  return <li className="flex flex-col gap-2 rounded-xl border bg-card p-3.5" data-testid="connector-row" data-connector={connection.id}>
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="flex min-w-0 flex-col gap-1">
         <p className="break-words font-medium">{connection.displayName}</p>
@@ -981,7 +981,7 @@ function PolicyEditor({ page, onChanged }: { page: McpConnectionPage; onChanged:
   changed.current = onChanged;
   const action = useConnectorAction(() => changed.current());
   const list = [...new Set(suffixes.split("\n").map((line) => line.trim().toLowerCase()).filter(Boolean))];
-  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid="connector-policy">
+  return <section className="flex flex-col gap-3 rounded-xl border bg-card p-3.5" data-testid="connector-policy">
     <h3 className="text-sm font-medium">{t("connectors.policy.title")}</h3>
     <label className={fieldClass}>{t("connectors.policy.members")}
       <select className={`${inputClass} w-fit`} value={registration} disabled={action.frozen} aria-label={t("connectors.policy.members")}

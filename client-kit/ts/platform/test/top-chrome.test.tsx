@@ -35,7 +35,7 @@ it("replaces an uncaught render error with the original Reload splash", async ()
   function Broken(): never { throw new Error("storage denied"); }
   const host = await render(<RootErrorBoundary><Broken /></RootErrorBoundary>);
   const splash = host.querySelector("[data-testid=root-error-boundary]")!;
-  expect(splash.textContent).toContain("Buzz failed to start");
+  expect(splash.textContent).toContain("The app failed to start");
   expect(splash.querySelector("button")?.textContent).toBe("Reload");
   const healthy = await render(<RootErrorBoundary><p>ready</p></RootErrorBoundary>);
   expect(healthy.textContent).toBe("ready");

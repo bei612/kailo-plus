@@ -24,6 +24,8 @@ export interface KailoSessionValue {
     picture?: string | null;
   } | null;
   isAdmin: boolean;
+  // DD-138(4): Kailo inbox delivery is configured ("share with member").
+  shareAvailable: boolean;
   // false until the session query answered; role-gated UI stays hidden.
   loaded: boolean;
   productName: string;
@@ -34,6 +36,7 @@ export interface KailoSessionValue {
 const KailoSessionContext = createContext<KailoSessionValue>({
   user: null,
   isAdmin: false,
+  shareAvailable: false,
   loaded: false,
   productName: '',
   embedded: false,
@@ -96,6 +99,7 @@ export function KailoSessionProvider({ children, displayName }: Props) {
     () => ({
       user: session?.user || null,
       isAdmin: session?.isAdmin === true,
+      shareAvailable: session?.shareAvailable === true,
       loaded: !loading && !!session,
       productName: session?.productName || serverName,
       embedded,

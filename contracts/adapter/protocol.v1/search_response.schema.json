@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/search_response.schema.json",
+  "title": "AdapterSearchResponse",
+  "description": "DD-138(5)、07 §4.8.4：adapter search 回应。至多 limit 项；title 1–200 字符、summary 至多 400 字符、path 为该组件原生页面 origin 内相对路径。任一项不合则 Core 丢弃该来源的全部结果。不含正文、ContentReference 或凭据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["results"],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "title": "AdapterSearchResult",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "title", "path"],
+        "properties": {
+          "kind": {"$ref": "../../enums/component_search_result_kind.schema.json"},
+          "title": {"type": "string"},
+          "summary": {"type": "string"},
+          "path": {"type": "string"},
+          "updatedAt": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

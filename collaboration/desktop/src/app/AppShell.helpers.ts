@@ -189,6 +189,10 @@ export async function activateDesktopNotificationTarget(
       behavior?: { force?: boolean; signal?: AbortSignal },
     ) => Promise<unknown>;
     revealWindow: () => Promise<void>;
+    /** DD-138(4), 07 §4.8.3: mark the component notification read and open its native page. */
+    openComponentNotification?: (
+      application: NonNullable<DesktopNotificationTarget["application"]>,
+    ) => Promise<unknown> | unknown;
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -197,7 +201,9 @@ export async function activateDesktopNotificationTarget(
   }
 
   let navigation: Promise<unknown>;
-  if (!target.channelId) {
+  if (target.application && actions.openComponentNotification) {
+    navigation = Promise.resolve(actions.openComponentNotification(target.application));
+  } else if (!target.channelId) {
     navigation = actions.goHome();
   } else {
     const anchor = toSearchHit(target);

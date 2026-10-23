@@ -101,6 +101,12 @@ func activityClient(ctx context.Context) activity.ActivityServiceClient {
 // Run processes the actual action code
 func (m *MailDigestAction) Run(ctx context.Context, channels *actions.RunnableChannels, input *jobs.ActionMessage) (*jobs.ActionMessage, error) {
 
+	// DD-138(4), 07 §4.8.3: in Kailo mode the component sends no notification
+	// e-mail; these events are delivered to the Kailo inbox instead.
+	if auth.NativeKailoMode() {
+		return input.WithIgnore(), nil
+	}
+
 	if !config.Get(ctx, "services", common.ServiceMailerGRPC, "valid").Default(false).Bool() {
 		log.Logger(ctx).Debug("Ignoring as no valid mailer was found")
 		return input.WithIgnore(), nil

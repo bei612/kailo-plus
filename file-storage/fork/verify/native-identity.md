@@ -3953,3 +3953,49 @@ Core 不可用时仍按已应用快照拒绝非成员并保留管理员。另有
 
 完成边界：只有源码、单元测试与部署文件；镜像、部署、binding 以 `--directory-client-id` 重新登记与 qa 真人验收未执行。
 工作区根目录经原生 admin router 建立的路径只在单元测试中以假实现替代，真实数据源上的建目录与回读在部署验收时确认。
+
+## 2026-10-23 通知并入 Kailo 收件箱与搜索来源（DD-138(4)(5)，07 §4.8.3 / §4.8.4，源码阶段）
+
+通知投递（`common/auth/native-oidc-notify.go`，事件源 `frontend/web/service/kailo-notify.go`，web 服务 `AfterServe` 与成员目录同步并列启动）：
+
+- 入口 `POST {KAILO_DIRECTORY_CORE_URL}/service/v1/component-notifications/bindings/{KAILO_DIRECTORY_BINDING_ID}/notifications`，
+  令牌复用成员目录 client 的 client-credentials（`clientCredentials`，由原 `token()` 抽出，目录读取行为不变；新增读取
+  `expires_in`，缓存至到期前 30 s，401/403 时换新令牌重试一次）。目录配置全有才启用（同 all-or-none 规则），且须 Kailo 模式。
+- Kailo 模式的服务端判定统一为 `auth.NativeKailoMode()`：本 fork 首页始终渲染 `startParameters.KAILO_EMBED`，
+  `index-handler.go` 现以同一函数决定，前端 `KailoCells.kailoMode()` 条件与之一致。
+- 有界内存队列（1024，满则丢最旧并计数告警）+ 单后台 worker；429/5xx/网络错误同键指数退避（20/40/80/160 s，共 5 次），
+  400/403/409 不重试。日志只记 binding、类别、HTTP 状态；入队前按合同规整（文案去控制字符、截断 120/280、
+  actor 等于 recipient 时省略、occurredAt 不晚于当前、路径与幂等键校验）。
+- 收件人/触发者映射：账号私有属性 `kailo_oidc_issuer/subject`（首登开户写入），否则 connector 显式链接；未知即不投递、不署名。
+- 事件 → 类别：活动收件箱 Share（ACL 授予用户自身角色的 Cell/工作区；`kailo-ws-*` 目录成员关系与公开链接除外）→ `SHARED`，
+  路径 `/ws-<slug>`；关注者收件箱 UpdateComment → `COMMENTED`（被 @ 的关注者改收 `MENTIONED`）；新节点评论中的 `@login`
+  （chat 事件；编辑、删除不触发）→ `MENTIONED`，仅发给能经自身 UUID 路由读到该节点的用户、不发作者；
+  关注内容的 Create/Update/Delete/Move（上传完成即非临时 etag 的 CREATE）→ `CONTENT_UPDATED`，按（接收人、父目录）60 s 聚合为
+  一条带数量的通知（单项时指向该文件）；本人发起、运行 ≥30 s 后完成的后台任务（压缩、解压、回收站以外的复制/移动）→
+  `TASK_COMPLETED`（只发给任务所有者）。07 §4.8.3 的“任务完成”取后台任务而非上传，上传对上传者本人不通知、对关注者归入内容更新。
+- 路径：接收人自身视图下节点的 Cells 页面路由 `/ws-<slug>/<相对路径>`（`AppearsIn`，优先工作区其次 Cell，从不用公开链接），
+  逐段 URL 编码，按 Core 相对路径规则复核。幂等键 `cells.<事件>.<sha256 前 40 位>`，由事件与接收人确定。
+- Kailo 模式移除原生通知面：左栏铃铛与活动收件箱永不渲染、不再读取活动收件箱（后台任务进度改由原生 `TasksPanel` 显示，无任务时隐藏）；
+  资料面板不暴露 `NOTIFICATIONS_EMAIL*`；分享对话框不提供邀请邮件/链接邮件，头像面板不提供发邮件；服务端
+  `users-activity-digest` 的 `MailDigestAction` 在 Kailo 模式直接忽略，邮件 REST `Send` 对 `AdminTestMail` 以外的模板返回 403。
+  重置密码、欢迎邮件不经该路由，保持上游（OIDC-only 登录下不可达）。
+
+搜索来源（`adapter/src/native-search.mjs`，路由 `POST /platform-adapter/v1/search`）：
+
+- `searchArguments` + `verifySearchToken`（client-kit 共用）；带 `Origin`/`Cookie` 拒绝（403），体不合 400，令牌不合 401；不调 PEP、不建执行。
+- 只在 `resources[]` 中 nativeId 为 UUID、位于 binding 根之下且属本 native 工作区的节点内检索；他者忽略；全部来源读取失败为 503。
+  文件夹用原生 REST v2 Lookup（`Filters.Text` 文件名检索、递归、Limit=limit），文件资源按名称匹配；排除回收站、草稿与 Kailo Workspace 根文件夹本身。
+- 结果 `FILE/FOLDER`，title 为名称，summary 为父目录（成员视角，去掉 Workspace id 段），updatedAt 取 `Modified`，
+  path 为页面路由：binding 根下首段是 Kailo Workspace id 时为 `/ws-kailo-ws-<id>/…`，否则 `/ws-<binding 工作区 slug>/…`，逐段编码；经 `searchResponse` 净化。
+- `fork/release/manifest.json` 的 `executionConnector` 增加 `"searchSource": "SUPPORTED"`（原生页面 manifest 未动）。
+
+测试（只写未跑，开发机不执行；待 CI 节点运行）：
+`common/auth/native-oidc-notify_test.go`（页面路径构造与编码、Core 路径规则正反例、幂等键确定性、@ 提及解析、
+60 s 聚合与批次键、规整与文案、httptest 假 IdP/Core：201/200 完成，409/400 不重试，429（Retry-After）/503/网络错误重试，
+401/403 换令牌一次、二次 403 拒绝，令牌缓存，队列丢最旧计数、退避重试同键、拒绝后不重试）；
+`adapter/test/native-search.test.mjs`（有效令牌与体返回净化结果且只检索所属文件夹、binding/workspace/摘要/token_use/
+多余声明/超 60 s 有效期为 401 且不触达 Cells、Origin/Cookie 403、非规范体与键不符 400、原生不可用 503、页面路径编码与越界）。
+
+未验证：Go 未编译、`go vet`/`go test`/`node --test`/vitest 均未运行；webpack 产物、部署、与 Core 的端到端投递、
+`AppearsIn` 在真实 UUID 路由下的取值、上传/评论/分享/任务的真实事件次序与去重、Cells Lookup 返回 `Path`/`Modified` 的真实形态、
+以及 Kailo 收件箱与“搜索全部”中的打开效果均未验收。评论 @ 只识别原生登录名（评论框无提及选择器）。

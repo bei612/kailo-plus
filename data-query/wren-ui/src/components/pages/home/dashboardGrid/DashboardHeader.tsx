@@ -4,6 +4,7 @@ import { MoreIcon } from '@/utils/icons';
 import { MORE_ACTION } from '@/utils/enum';
 import { getCompactTime } from '@/utils/time';
 import { DashboardDropdown } from '@/components/diagram/CustomDropdown';
+import { KailoShareButton } from '@/components/kailo/KailoShare';
 import {
   Schedule,
   getScheduleText,
@@ -48,7 +49,10 @@ export default function DashboardHeader(props: Props) {
 
   return (
     <StyledHeader>
-      <div />
+      {/* DD-138(4), 07 §4.8.3: notify Kailo members about the dashboard. */}
+      <div>
+        <KailoShareButton target={{ dashboard: true }} />
+      </div>
       <div>
         {schedule && (
           <div className="d-flex align-center gray-6 gx-2">

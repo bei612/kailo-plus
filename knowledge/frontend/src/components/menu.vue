@@ -92,7 +92,8 @@
                             </div>
                             <template v-if="!uiStore.sidebarCollapsed">
                                 <span class="menu_title" :title="item.title">{{ item.title }}</span>
-                                <span v-if="item.path === 'organizations' && orgStore.totalPendingJoinRequestCount > 0"
+                                <!-- Kailo mode: no native join requests; reminders are Kailo's (DD-138(4), 07 §4.8.3). -->
+                                <span v-if="!kailoMode && item.path === 'organizations' && orgStore.totalPendingJoinRequestCount > 0"
                                     class="menu-pending-badge"
                                     :title="t('organization.settings.pendingJoinRequestsBadge')">{{
                                         orgStore.totalPendingJoinRequestCount }}</span>
@@ -295,6 +296,8 @@ const platformLogo = (p: string): string => (p ? PLATFORM_LOGO[p] || '' : '');
 const { t, locale } = useI18n();
 const brandProductName = computed(() => productName(locale.value, kailoConfig().displayName));
 const kailoEmbedded = isKailoEmbedded();
+// DD-138(4), 07 §4.8.3: Kailo mode drops the native reminder surfaces.
+const kailoMode = kailoConfig().mode;
 const usemenuStore = useMenuStore();
 const sessionActivity = useSessionActivityStore();
 const { entries: sessionActivityEntries } = storeToRefs(sessionActivity);
@@ -1047,7 +1050,8 @@ onMounted(async () => {
         await syncActiveBucketFromChat(initialChatId);
     }
     // 若组织列表未加载则拉取一次，用于侧栏「待审批」角标
-    if (deploymentCapabilities.isSupported('organizations') && orgStore.organizations.length === 0) {
+    // Kailo mode shows no join-request badge, so it does not fetch for it (DD-138(4)).
+    if (!kailoMode && deploymentCapabilities.isSupported('organizations') && orgStore.organizations.length === 0) {
         orgStore.fetchOrganizations();
     }
 });

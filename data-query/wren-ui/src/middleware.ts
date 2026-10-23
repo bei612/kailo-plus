@@ -185,6 +185,9 @@ export async function middleware(request: NextRequest) {
       '/platform-adapter/v1/validate_binding',
       '/platform-adapter/v1/reconcile',
       '/platform-adapter/v1/map_native_status_error',
+      // DD-138(5), `07` §4.8.4: authenticated by Core's Search Token.
+      '/api/platform-adapter/search',
+      '/platform-adapter/v1/search',
     ].includes(request.nextUrl.pathname)
   ) {
     const headers = new Headers(request.headers);

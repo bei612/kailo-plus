@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/component_text.schema.json",
+  "title": "ComponentText",
+  "description": "组件向 Kailo 提供的中英文文案（键恰为 ZH_CN、EN）。长度与字符规则由 Core 按使用处校验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ZH_CN", "EN"],
+  "properties": {
+    "ZH_CN": {"type": "string"},
+    "EN": {"type": "string"}
+  }
+}

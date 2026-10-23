@@ -28,7 +28,7 @@ export function SettingsOptionGroup({
         >
           <div className="min-w-0 flex-1">
             {title ? (
-              <h2 className="text-sm font-semibold text-muted-foreground/70">
+              <h2 className="text-2xs font-semibold tracking-[0.04em] text-muted-foreground uppercase">
                 {title}
               </h2>
             ) : null}
@@ -49,7 +49,7 @@ export function SettingsOptionGroup({
           "[container-type:inline-size]",
           surface === "soft"
             ? "overflow-hidden rounded-2xl bg-muted/20"
-            : "divide-y divide-border/55 overflow-hidden rounded-xl border border-border/70 bg-background/70",
+            : "divide-y divide-border overflow-hidden rounded-xl border border-border bg-card",
         )}
         data-slot="settings-section-card"
       >

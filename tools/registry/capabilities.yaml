@@ -332,6 +332,15 @@ capabilities:
   - capability_contract.deprecate
   tools: []
   workflow_kinds: []
+- id: component.fused_inbox_search
+  exposure: end_user
+  routes:
+  - /api/v1/inbox/component-notifications
+  - /api/v1/inbox/component-notifications/read
+  - /api/v1/search/components
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.fused_surfaces
   exposure: none
   routes: []

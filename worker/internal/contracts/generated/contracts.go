@@ -133,6 +133,12 @@
 //    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
 //    bytes, err = adapterScopeObservation.Marshal()
 //
+//    adapterSearchRequest, err := UnmarshalAdapterSearchRequest(bytes)
+//    bytes, err = adapterSearchRequest.Marshal()
+//
+//    adapterSearchResponse, err := UnmarshalAdapterSearchResponse(bytes)
+//    bytes, err = adapterSearchResponse.Marshal()
+//
 //    adapterSourceResource, err := UnmarshalAdapterSourceResource(bytes)
 //    bytes, err = adapterSourceResource.Marshal()
 //
@@ -340,6 +346,21 @@
 //    componentMemberDirectory, err := UnmarshalComponentMemberDirectory(bytes)
 //    bytes, err = componentMemberDirectory.Marshal()
 //
+//    componentNotificationDelivery, err := UnmarshalComponentNotificationDelivery(bytes)
+//    bytes, err = componentNotificationDelivery.Marshal()
+//
+//    componentNotificationPage, err := UnmarshalComponentNotificationPage(bytes)
+//    bytes, err = componentNotificationPage.Marshal()
+//
+//    componentNotificationReadRequest, err := UnmarshalComponentNotificationReadRequest(bytes)
+//    bytes, err = componentNotificationReadRequest.Marshal()
+//
+//    componentNotificationReceipt, err := UnmarshalComponentNotificationReceipt(bytes)
+//    bytes, err = componentNotificationReceipt.Marshal()
+//
+//    componentNotificationView, err := UnmarshalComponentNotificationView(bytes)
+//    bytes, err = componentNotificationView.Marshal()
+//
 //    componentReleaseApprovalReport, err := UnmarshalComponentReleaseApprovalReport(bytes)
 //    bytes, err = componentReleaseApprovalReport.Marshal()
 //
@@ -348,6 +369,12 @@
 //
 //    componentReleaseReceipt, err := UnmarshalComponentReleaseReceipt(bytes)
 //    bytes, err = componentReleaseReceipt.Marshal()
+//
+//    componentSearchPage, err := UnmarshalComponentSearchPage(bytes)
+//    bytes, err = componentSearchPage.Marshal()
+//
+//    componentSearchQuery, err := UnmarshalComponentSearchQuery(bytes)
+//    bytes, err = componentSearchQuery.Marshal()
 //
 //    conversationOpenRequest, err := UnmarshalConversationOpenRequest(bytes)
 //    bytes, err = conversationOpenRequest.Marshal()
@@ -862,6 +889,9 @@
 //    componentNativeReceiverRequest, err := UnmarshalComponentNativeReceiverRequest(bytes)
 //    bytes, err = componentNativeReceiverRequest.Marshal()
 //
+//    componentPersonRef, err := UnmarshalComponentPersonRef(bytes)
+//    bytes, err = componentPersonRef.Marshal()
+//
 //    componentPreferenceDeclaration, err := UnmarshalComponentPreferenceDeclaration(bytes)
 //    bytes, err = componentPreferenceDeclaration.Marshal()
 //
@@ -873,6 +903,9 @@
 //
 //    componentReleaseRegistration, err := UnmarshalComponentReleaseRegistration(bytes)
 //    bytes, err = componentReleaseRegistration.Marshal()
+//
+//    componentText, err := UnmarshalComponentText(bytes)
+//    bytes, err = componentText.Marshal()
 //
 //    contentReference, err := UnmarshalContentReference(bytes)
 //    bytes, err = contentReference.Marshal()
@@ -1537,6 +1570,26 @@ func UnmarshalAdapterScopeObservation(data []byte) (AdapterScopeObservation, err
 }
 
 func (r *AdapterScopeObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterSearchRequest(data []byte) (AdapterSearchRequest, error) {
+	var r AdapterSearchRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterSearchRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterSearchResponse(data []byte) (AdapterSearchResponse, error) {
+	var r AdapterSearchResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterSearchResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2230,6 +2283,56 @@ func (r *ComponentMemberDirectory) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentNotificationDelivery(data []byte) (ComponentNotificationDelivery, error) {
+	var r ComponentNotificationDelivery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNotificationDelivery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentNotificationPage(data []byte) (ComponentNotificationPage, error) {
+	var r ComponentNotificationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNotificationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentNotificationReadRequest(data []byte) (ComponentNotificationReadRequest, error) {
+	var r ComponentNotificationReadRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNotificationReadRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentNotificationReceipt(data []byte) (ComponentNotificationReceipt, error) {
+	var r ComponentNotificationReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNotificationReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentNotificationView(data []byte) (ComponentNotificationView, error) {
+	var r ComponentNotificationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentNotificationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentReleaseApprovalReport(data []byte) (ComponentReleaseApprovalReport, error) {
 	var r ComponentReleaseApprovalReport
 	err := json.Unmarshal(data, &r)
@@ -2257,6 +2360,26 @@ func UnmarshalComponentReleaseReceipt(data []byte) (ComponentReleaseReceipt, err
 }
 
 func (r *ComponentReleaseReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentSearchPage(data []byte) (ComponentSearchPage, error) {
+	var r ComponentSearchPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentSearchPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentSearchQuery(data []byte) (ComponentSearchQuery, error) {
+	var r ComponentSearchQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentSearchQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3970,6 +4093,16 @@ func (r *ComponentNativeReceiverRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentPersonRef(data []byte) (ComponentPersonRef, error) {
+	var r ComponentPersonRef
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentPersonRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentPreferenceDeclaration(data []byte) (ComponentPreferenceDeclaration, error) {
 	var r ComponentPreferenceDeclaration
 	err := json.Unmarshal(data, &r)
@@ -4007,6 +4140,16 @@ func UnmarshalComponentReleaseRegistration(data []byte) (ComponentReleaseRegistr
 }
 
 func (r *ComponentReleaseRegistration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentText(data []byte) (ComponentText, error) {
+	var r ComponentText
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentText) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5293,6 +5436,41 @@ type AdapterReadGrantResponseReceiverWrite struct {
 	ActionToken       string `json:"actionToken"`
 	ArgumentsJSON     string `json:"argumentsJson"`
 	ExpiresAt         int64  `json:"expiresAt"`
+}
+
+// DD-138(5)、07 §4.8.4/§5.2：Core → adapter POST /platform-adapter/v1/search 的请求体（规范 JSON，其
+// SHA-256 即 Search Token 的 normalized_parameter_hash）。resources 只含当前 HUMAN 已 fresh read 的该
+// binding Resource，adapter 只在这些 native 对象内检索。
+type AdapterSearchRequest struct {
+	IdempotencyKey string `json:"idempotencyKey"`
+	// 1–20。
+	Limit int64 `json:"limit"`
+	// ZH_CN 或 EN。
+	Locale string `json:"locale"`
+	// 去首尾空白后 1–200 字符。
+	Query string `json:"query"`
+	// 1–50 项。
+	Resources []AdapterSearchResource `json:"resources"`
+}
+
+type AdapterSearchResource struct {
+	NativeID   string `json:"nativeId"`
+	NativeType string `json:"nativeType"`
+	ResourceID string `json:"resourceId"`
+}
+
+// DD-138(5)、07 §4.8.4：adapter search 回应。至多 limit 项；title 1–200 字符、summary 至多 400 字符、path
+// 为该组件原生页面 origin 内相对路径。任一项不合则 Core 丢弃该来源的全部结果。不含正文、ContentReference 或凭据。
+type AdapterSearchResponse struct {
+	Results []AdapterSearchResult `json:"results"`
+}
+
+type AdapterSearchResult struct {
+	Kind      ComponentSearchResultKind `json:"kind"`
+	Path      string                    `json:"path"`
+	Summary   *string                   `json:"summary,omitempty"`
+	Title     string                    `json:"title"`
+	UpdatedAt *string                   `json:"updatedAt,omitempty"`
 }
 
 // GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
@@ -6840,6 +7018,87 @@ type ComponentDirectoryWorkspace struct {
 	WorkspaceID string `json:"workspaceId"`
 }
 
+// DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+// /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
+// ActionExecution、不授予权限；未知字段整体拒绝。
+type ComponentNotificationDelivery struct {
+	// 触发者；须在同一目录范围内且不是接收人。
+	Actor    *ComponentPersonRef           `json:"actor,omitempty"`
+	Category ComponentNotificationCategory `json:"category"`
+	// 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+	IdempotencyKey string `json:"idempotencyKey"`
+	// 事件发生时刻（RFC3339），不晚于 Core 当前时刻 5 分钟；缺省取接收时刻。
+	OccurredAt *string `json:"occurredAt,omitempty"`
+	// 组件页面 origin 内的相对路径：1–1024 字符，以单个 / 开头，无反斜杠、空白与控制字符，无凭据类查询参数。
+	Path      string             `json:"path"`
+	Recipient ComponentPersonRef `json:"recipient"`
+	// 每种语言 1–280 字符，不含控制字符。
+	Summary *ComponentText `json:"summary,omitempty"`
+	// 每种语言 1–120 字符，不含控制字符。
+	Title ComponentText `json:"title"`
+}
+
+// 触发者；须在同一目录范围内且不是接收人。
+//
+// 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
+// 当前目录范围内解析。
+type ComponentPersonRef struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// 每种语言 1–280 字符，不含控制字符。
+//
+// 组件向 Kailo 提供的中英文文案（键恰为 ZH_CN、EN）。长度与字符规则由 Core 按使用处校验。
+//
+// 每种语言 1–120 字符，不含控制字符。
+type ComponentText struct {
+	En   string `json:"EN"`
+	ZhCN string `json:"ZH_CN"`
+}
+
+// DD-138(4)：GET /api/v1/inbox/component-notifications 的一页，按 receivedAt 倒序；nextCursor
+// 缺省表示没有更多。
+type ComponentNotificationPage struct {
+	Items      []ComponentNotificationView `json:"items"`
+	NextCursor *string                     `json:"nextCursor,omitempty"`
+	// 当前可见范围内本人未读条目总数（不受分页影响）。
+	UnreadCount int64 `json:"unreadCount"`
+}
+
+// DD-138(4)、03 ComponentNotification：当前会话 Principal
+// 收件箱中的一条组件通知。只含呈现类别，不含组件名、component_type_key 或 binding 配置；bindingId 只用于在 Kailo
+// 内容区打开该原生页面入口。
+type ComponentNotificationView struct {
+	ActorDisplayName *string `json:"actorDisplayName,omitempty"`
+	// 07 §4.7.3 Tenant 头像地址；缺省时客户端显示首字母。
+	ActorPicture       *string                       `json:"actorPicture,omitempty"`
+	ActorPrincipalID   *string                       `json:"actorPrincipalId,omitempty"`
+	BindingID          string                        `json:"bindingId"`
+	Category           ComponentNotificationCategory `json:"category"`
+	NativePageCategory *NativePageCategory           `json:"nativePageCategory,omitempty"`
+	NotificationID     string                        `json:"notificationId"`
+	OccurredAt         string                        `json:"occurredAt"`
+	Path               string                        `json:"path"`
+	ReadAt             *string                       `json:"readAt,omitempty"`
+	ReceivedAt         string                        `json:"receivedAt"`
+	Summary            *ComponentText                `json:"summary,omitempty"`
+	Title              ComponentText                 `json:"title"`
+	WorkspaceID        *string                       `json:"workspaceId,omitempty"`
+}
+
+// DD-138(4)：POST /api/v1/inbox/component-notifications/read。接收人把本人的条目标记为已读（个人状态，不建立
+// ActionExecution）；1–100 个 ID，非本人或不可见的 ID 被忽略。
+type ComponentNotificationReadRequest struct {
+	NotificationIDS []string `json:"notificationIds"`
+}
+
+// DD-138(4)：投递回执。新建 201、同键同内容重复 200（duplicate=true）。
+type ComponentNotificationReceipt struct {
+	Duplicate      bool   `json:"duplicate"`
+	NotificationID string `json:"notificationId"`
+}
+
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 type ComponentReleaseApprovalReport struct {
 	RunID       string                         `json:"runId"`
@@ -6895,6 +7154,36 @@ type ComponentReleaseReceipt struct {
 	ComponentReleaseID string                 `json:"componentReleaseId"`
 	PlanDigest         string                 `json:"planDigest"`
 	Status             ComponentReleaseStatus `json:"status"`
+}
+
+// DD-138(5)、07 §4.8.4：组件内容搜索结果。每项已解析到可在 Kailo 内容区打开的原生页面入口（bindingId 为该呈现类别生效的入口，不是 adapter
+// binding）；sources 列出每个呈现类别来源的状态。
+type ComponentSearchPage struct {
+	Results []ComponentSearchResult `json:"results"`
+	Sources []ComponentSearchSource `json:"sources"`
+}
+
+type ComponentSearchResult struct {
+	BindingID          string                    `json:"bindingId"`
+	Kind               ComponentSearchResultKind `json:"kind"`
+	NativePageCategory NativePageCategory        `json:"nativePageCategory"`
+	Path               string                    `json:"path"`
+	Summary            *string                   `json:"summary,omitempty"`
+	Title              string                    `json:"title"`
+	UpdatedAt          *string                   `json:"updatedAt,omitempty"`
+}
+
+type ComponentSearchSource struct {
+	NativePageCategory NativePageCategory         `json:"nativePageCategory"`
+	State              ComponentSearchSourceState `json:"state"`
+}
+
+// DD-138(5)、07 §4.8.4：POST /api/v1/search/components。q 去首尾空白后 1–200 字符；limit 为每个来源的上限
+// 1–20（缺省 8）；locale 为 ZH_CN 或 EN（缺省 ZH_CN）。
+type ComponentSearchQuery struct {
+	Limit  *int64  `json:"limit,omitempty"`
+	Locale *string `json:"locale,omitempty"`
+	Q      string  `json:"q"`
 }
 
 type ConversationPage struct {
@@ -10534,9 +10823,9 @@ const (
 type CanaryVariantsItemKind string
 
 const (
-	File    CanaryVariantsItemKind = "FILE"
-	Message CanaryVariantsItemKind = "MESSAGE"
-	Task    CanaryVariantsItemKind = "TASK"
+	CanaryVariantsItemKindFILE CanaryVariantsItemKind = "FILE"
+	Message                    CanaryVariantsItemKind = "MESSAGE"
+	Task                       CanaryVariantsItemKind = "TASK"
 )
 
 type FileStorageShareOperation string
@@ -10670,6 +10959,18 @@ type ApplicationReadResourceDirection string
 const (
 	ApplicationReadResourceDirectionRECEIVER ApplicationReadResourceDirection = "RECEIVER"
 	Source                                   ApplicationReadResourceDirection = "SOURCE"
+)
+
+// DD-138(5)、07 §4.8.4：组件搜索结果的类别（封闭枚举）。
+type ComponentSearchResultKind string
+
+const (
+	ComponentSearchResultKindFILE ComponentSearchResultKind = "FILE"
+	Dashboard                     ComponentSearchResultKind = "DASHBOARD"
+	Document                      ComponentSearchResultKind = "DOCUMENT"
+	Folder                        ComponentSearchResultKind = "FOLDER"
+	KnowledgeBase                 ComponentSearchResultKind = "KNOWLEDGE_BASE"
+	Question                      ComponentSearchResultKind = "QUESTION"
 )
 
 // 03 §7 Resource 的正式状态，投影未闭合不得呈现 ACTIVE。
@@ -11508,6 +11809,19 @@ const (
 	Member ComponentDirectoryRole = "MEMBER"
 )
 
+// DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
+// 评论了你的对象；ACCESS_REQUESTED 访问申请（进入「需要处理」）；TASK_COMPLETED 任务完成；CONTENT_UPDATED 你关注的内容有更新。
+type ComponentNotificationCategory string
+
+const (
+	AccessRequested ComponentNotificationCategory = "ACCESS_REQUESTED"
+	Commented       ComponentNotificationCategory = "COMMENTED"
+	ContentUpdated  ComponentNotificationCategory = "CONTENT_UPDATED"
+	Mentioned       ComponentNotificationCategory = "MENTIONED"
+	Shared          ComponentNotificationCategory = "SHARED"
+	TaskCompleted   ComponentNotificationCategory = "TASK_COMPLETED"
+)
+
 type PlatformBuildInfoPlatformPortKeysItem string
 
 const (
@@ -11536,6 +11850,15 @@ const (
 	ComponentReleaseStatusREVOKED  ComponentReleaseStatus = "REVOKED"
 	Registered                     ComponentReleaseStatus = "REGISTERED"
 	Rejected                       ComponentReleaseStatus = "REJECTED"
+)
+
+// DD-138(5)：一次「搜索全部」中某个组件来源的结果状态。ANSWERED 表示该来源已按合同回应（可为零条）；UNAVAILABLE
+// 表示该来源超时、不可达或回应不合合同，其结果整体未采信。
+type ComponentSearchSourceState string
+
+const (
+	Answered                              ComponentSearchSourceState = "ANSWERED"
+	ComponentSearchSourceStateUNAVAILABLE ComponentSearchSourceState = "UNAVAILABLE"
 )
 
 type ConversationViewState string

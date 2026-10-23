@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNotificationSettings, NotificationSettingsCard, playNotificationSound, truncateNotificationBody, type NotificationHost, type SoundSlot } from "@client-kit/platform/react/notifications";
+import { useNotificationSettings, NotificationSettingsCard, playNotificationSound, truncateNotificationBody, componentAlertAllowed, componentNotificationSlot, type NotificationHost, type SoundSlot } from "@client-kit/platform/react/notifications";
 import { bff } from "../bff-client";
 
 // Browser permission is an OS capability, never a replacement for BFF scope
@@ -22,6 +22,12 @@ type BrowserNotificationsState = ReturnType<typeof useNotificationSettings> & {
    * sound, and is not a viewed conversation (reads run only while the page is in front).
    */
   notifyMemberJoin: (message: { eventId: string; title: string; body: string }) => void;
+  /**
+   * DD-138(4), 07 §4.8.3 提醒: a newly arrived component notification. Shown and voiced (with the
+   * existing Needs action or @mention slot sound) only when its category switch is on and the
+   * desktop switch, browser permission and "notify while viewing" rule allow it.
+   */
+  notifyComponent: (message: { notificationId: string; category: string; title: string; body: string; onOpen: () => void }) => void;
 };
 const BrowserNotifications = createContext<BrowserNotificationsState | null>(null);
 export function useBrowserNotifications() { return useContext(BrowserNotifications); }
@@ -70,6 +76,22 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
         playNotificationSound(controller.settings.sounds[message.slot]);
       } catch { /* Original delivery miss: no success receipt and no sound. */ }
     },
+    notifyComponent(message) {
+      if (!active.current || !profile.isSuccess || typeof Notification === "undefined") return;
+      if (!componentAlertAllowed({ settings: controller.settings, category: message.category,
+        permission: Notification.permission, visible: document.visibilityState === "visible" })) return;
+      const eventId = `component:${message.notificationId}`;
+      if (displayed.current.has(eventId) || delivered.current.has(eventId)) return;
+      try {
+        const notification = new Notification(message.title, { body: truncateNotificationBody(message.body, ""), silent: true, tag: eventId });
+        displayed.current.set(eventId, notification);
+        notification.onclick = () => { if (active.current) { window.focus(); message.onOpen(); } notification.close(); };
+        notification.onclose = () => displayed.current.delete(eventId);
+        delivered.current.add(eventId);
+        if (delivered.current.size > DELIVERED_EVENT_LIMIT) delivered.current.delete(delivered.current.values().next().value!);
+        playNotificationSound(controller.settings.sounds[componentNotificationSlot(message.category)]);
+      } catch { /* Delivery miss: no sound. */ }
+    },
     notifyMemberJoin(message) {
       if (!active.current || !profile.isSuccess || !controller.settings.desktopEnabled ||
         typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -94,5 +116,6 @@ export function BrowserNotificationSettings() {
     notificationErrorMessage={state.errorMessage} notificationPermission={state.permission} notificationSettings={state.settings}
     onSetDesktopNotificationsEnabled={state.setDesktopEnabled} onSetAllSlotAlertsEnabled={state.setAllSlotAlertsEnabled}
     onSetHomeBadgeEnabled={state.setHomeBadgeEnabled} onSetSlotAlertsEnabled={state.setSlotAlertsEnabled}
-    onSetNotifyWhileViewing={state.setNotifyWhileViewing} onSetSoundForSlot={state.setSoundForSlot} />;
+    onSetNotifyWhileViewing={state.setNotifyWhileViewing} onSetSoundForSlot={state.setSoundForSlot}
+    onSetComponentAlertEnabled={state.setComponentAlertEnabled} />;
 }

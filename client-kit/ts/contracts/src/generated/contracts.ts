@@ -833,6 +833,65 @@ export interface AdapterReadGrantResponseReceiverWrite {
 }
 
 /**
+ * DD-138(5)、07 §4.8.4/§5.2：Core → adapter POST /platform-adapter/v1/search 的请求体（规范 JSON，其
+ * SHA-256 即 Search Token 的 normalized_parameter_hash）。resources 只含当前 HUMAN 已 fresh read 的该
+ * binding Resource，adapter 只在这些 native 对象内检索。
+ */
+export interface AdapterSearchRequest {
+    idempotencyKey: string;
+    /**
+     * 1–20。
+     */
+    limit: number;
+    /**
+     * ZH_CN 或 EN。
+     */
+    locale: string;
+    /**
+     * 去首尾空白后 1–200 字符。
+     */
+    query: string;
+    /**
+     * 1–50 项。
+     */
+    resources: AdapterSearchResource[];
+}
+
+export interface AdapterSearchResource {
+    nativeId:   string;
+    nativeType: string;
+    resourceId: string;
+}
+
+/**
+ * DD-138(5)、07 §4.8.4：adapter search 回应。至多 limit 项；title 1–200 字符、summary 至多 400 字符、path
+ * 为该组件原生页面 origin 内相对路径。任一项不合则 Core 丢弃该来源的全部结果。不含正文、ContentReference 或凭据。
+ */
+export interface AdapterSearchResponse {
+    results: AdapterSearchResult[];
+}
+
+export interface AdapterSearchResult {
+    kind:       ComponentSearchResultKind;
+    path:       string;
+    summary?:   string;
+    title:      string;
+    updatedAt?: string;
+}
+
+/**
+ * DD-138(5)、07 §4.8.4：组件搜索结果的类别（封闭枚举）。
+ */
+export enum ComponentSearchResultKind {
+    Dashboard = "DASHBOARD",
+    Document = "DOCUMENT",
+    File = "FILE",
+    Folder = "FOLDER",
+    KnowledgeBase = "KNOWLEDGE_BASE",
+    Question = "QUESTION",
+}
+
+/**
  * GET /api/v1/workspaces/{workspaceId}/agent-turns（DD-125(6)）：已准入 Workspace 内本人持有
  * Installation audit 的运行中回合；没有 audit 的 Installation 不出现（成员只见 20002）。每次读取写 ACCESS 审计。
  */
@@ -3649,6 +3708,130 @@ export interface ComponentDirectoryWorkspace {
 }
 
 /**
+ * DD-138(4)、07 §4.8.3：组件以其成员目录 client 的 client-credentials 令牌向 Core 服务监听面 POST
+ * /service/v1/component-notifications/bindings/{bindingId}/notifications 投递的一条通知。不建立
+ * ActionExecution、不授予权限；未知字段整体拒绝。
+ */
+export interface ComponentNotificationDelivery {
+    /**
+     * 触发者；须在同一目录范围内且不是接收人。
+     */
+    actor?:   ComponentPersonRef;
+    category: ComponentNotificationCategory;
+    /**
+     * 1–128 个字母、数字、. _ : -，在该 binding 内唯一；同键同内容返回首次结果，同键异内容 409。
+     */
+    idempotencyKey: string;
+    /**
+     * 事件发生时刻（RFC3339），不晚于 Core 当前时刻 5 分钟；缺省取接收时刻。
+     */
+    occurredAt?: string;
+    /**
+     * 组件页面 origin 内的相对路径：1–1024 字符，以单个 / 开头，无反斜杠、空白与控制字符，无凭据类查询参数。
+     */
+    path:      string;
+    recipient: ComponentPersonRef;
+    /**
+     * 每种语言 1–280 字符，不含控制字符。
+     */
+    summary?: ComponentText;
+    /**
+     * 每种语言 1–120 字符，不含控制字符。
+     */
+    title: ComponentText;
+}
+
+/**
+ * 触发者；须在同一目录范围内且不是接收人。
+ *
+ * 组件以 OIDC issuer + subject 指称 Kailo 成员（与 07 §4.7.4 成员目录 identities[] 同值）；Core 只在该 binding
+ * 当前目录范围内解析。
+ */
+export interface ComponentPersonRef {
+    issuer:  string;
+    subject: string;
+}
+
+/**
+ * DD-138(4)、07 §4.8.3：组件投递到 Kailo 收件箱的通知类别（封闭枚举）。SHARED 分享给你；MENTIONED 提及你；COMMENTED
+ * 评论了你的对象；ACCESS_REQUESTED 访问申请（进入「需要处理」）；TASK_COMPLETED 任务完成；CONTENT_UPDATED 你关注的内容有更新。
+ */
+export enum ComponentNotificationCategory {
+    AccessRequested = "ACCESS_REQUESTED",
+    Commented = "COMMENTED",
+    ContentUpdated = "CONTENT_UPDATED",
+    Mentioned = "MENTIONED",
+    Shared = "SHARED",
+    TaskCompleted = "TASK_COMPLETED",
+}
+
+/**
+ * 每种语言 1–280 字符，不含控制字符。
+ *
+ * 组件向 Kailo 提供的中英文文案（键恰为 ZH_CN、EN）。长度与字符规则由 Core 按使用处校验。
+ *
+ * 每种语言 1–120 字符，不含控制字符。
+ */
+export interface ComponentText {
+    EN:    string;
+    ZH_CN: string;
+}
+
+/**
+ * DD-138(4)：GET /api/v1/inbox/component-notifications 的一页，按 receivedAt 倒序；nextCursor
+ * 缺省表示没有更多。
+ */
+export interface ComponentNotificationPage {
+    items:       ComponentNotificationView[];
+    nextCursor?: string;
+    /**
+     * 当前可见范围内本人未读条目总数（不受分页影响）。
+     */
+    unreadCount: number;
+}
+
+/**
+ * DD-138(4)、03 ComponentNotification：当前会话 Principal
+ * 收件箱中的一条组件通知。只含呈现类别，不含组件名、component_type_key 或 binding 配置；bindingId 只用于在 Kailo
+ * 内容区打开该原生页面入口。
+ */
+export interface ComponentNotificationView {
+    actorDisplayName?: string;
+    /**
+     * 07 §4.7.3 Tenant 头像地址；缺省时客户端显示首字母。
+     */
+    actorPicture?:       string;
+    actorPrincipalId?:   string;
+    bindingId:           string;
+    category:            ComponentNotificationCategory;
+    nativePageCategory?: NativePageCategory;
+    notificationId:      string;
+    occurredAt:          string;
+    path:                string;
+    readAt?:             string;
+    receivedAt:          string;
+    summary?:            ComponentText;
+    title:               ComponentText;
+    workspaceId?:        string;
+}
+
+/**
+ * DD-138(4)：POST /api/v1/inbox/component-notifications/read。接收人把本人的条目标记为已读（个人状态，不建立
+ * ActionExecution）；1–100 个 ID，非本人或不可见的 ID 被忽略。
+ */
+export interface ComponentNotificationReadRequest {
+    notificationIds: string[];
+}
+
+/**
+ * DD-138(4)：投递回执。新建 201、同键同内容重复 200（duplicate=true）。
+ */
+export interface ComponentNotificationReceipt {
+    duplicate:      boolean;
+    notificationId: string;
+}
+
+/**
  * 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
  */
 export interface ComponentReleaseApprovalReport {
@@ -3737,6 +3920,49 @@ export interface ComponentReleaseReceipt {
     componentReleaseId: string;
     planDigest:         string;
     status:             ComponentReleaseStatus;
+}
+
+/**
+ * DD-138(5)、07 §4.8.4：组件内容搜索结果。每项已解析到可在 Kailo 内容区打开的原生页面入口（bindingId 为该呈现类别生效的入口，不是 adapter
+ * binding）；sources 列出每个呈现类别来源的状态。
+ */
+export interface ComponentSearchPage {
+    results: ComponentSearchResult[];
+    sources: ComponentSearchSource[];
+}
+
+export interface ComponentSearchResult {
+    bindingId:          string;
+    kind:               ComponentSearchResultKind;
+    nativePageCategory: NativePageCategory;
+    path:               string;
+    summary?:           string;
+    title:              string;
+    updatedAt?:         string;
+}
+
+export interface ComponentSearchSource {
+    nativePageCategory: NativePageCategory;
+    state:              ComponentSearchSourceState;
+}
+
+/**
+ * DD-138(5)：一次「搜索全部」中某个组件来源的结果状态。ANSWERED 表示该来源已按合同回应（可为零条）；UNAVAILABLE
+ * 表示该来源超时、不可达或回应不合合同，其结果整体未采信。
+ */
+export enum ComponentSearchSourceState {
+    Answered = "ANSWERED",
+    Unavailable = "UNAVAILABLE",
+}
+
+/**
+ * DD-138(5)、07 §4.8.4：POST /api/v1/search/components。q 去首尾空白后 1–200 字符；limit 为每个来源的上限
+ * 1–20（缺省 8）；locale 为 ZH_CN 或 EN（缺省 ZH_CN）。
+ */
+export interface ComponentSearchQuery {
+    limit?:  number;
+    locale?: string;
+    q:       string;
 }
 
 export interface ConversationPage {

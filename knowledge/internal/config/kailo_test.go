@@ -127,3 +127,30 @@ func TestKailoDirectoryUnsetIsNotDelivered(t *testing.T) {
 		t.Fatalf("an interval without a directory must be refused: %v", errs)
 	}
 }
+
+// DD-138(4): the long-answer notification threshold.
+func TestKailoLongAnswerNotifyAfter(t *testing.T) {
+	t.Setenv("KAILO_INTEGRATION_ENABLE", "true")
+	t.Setenv("KAILO_LONG_ANSWER_NOTIFY_SECONDS", "")
+	cfg := &Config{OIDCAuth: &OIDCAuthConfig{Enable: true}}
+	applyKailoEnvOverrides(cfg)
+	if cfg.KailoLongAnswerNotifyAfter() != DefaultKailoLongAnswerNotifyAfter {
+		t.Fatalf("default threshold = %v", cfg.KailoLongAnswerNotifyAfter())
+	}
+	t.Setenv("KAILO_LONG_ANSWER_NOTIFY_SECONDS", "90")
+	applyKailoEnvOverrides(cfg)
+	if cfg.KailoLongAnswerNotifyAfter() != 90*time.Second {
+		t.Fatalf("configured threshold = %v", cfg.KailoLongAnswerNotifyAfter())
+	}
+	t.Setenv("KAILO_LONG_ANSWER_NOTIFY_SECONDS", "soon")
+	applyKailoEnvOverrides(cfg)
+	found := false
+	for _, err := range validateKailoConfig(cfg) {
+		if err == "kailo.long_answer_notify_after must be a positive duration" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("an invalid threshold must be refused")
+	}
+}
