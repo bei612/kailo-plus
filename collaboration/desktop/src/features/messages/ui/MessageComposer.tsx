@@ -64,6 +64,7 @@ import { prepareBackgroundLinkPreviews } from "@/features/messages/lib/linkPrevi
 import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 import type { MessageComposerProps } from "./MessageComposer.types";
+import { useTypingBroadcast } from "@/features/messages/useTypingBroadcast";
 function MessageComposerImpl({
   audienceContext = null,
   surface = "stream",
@@ -97,6 +98,8 @@ function MessageComposerImpl({
   showBackgroundUploadProgress = true,
   showTopBorder = false,
   toolbarExtraActions,
+  typingParentEventId = null,
+  typingRootEventId = null,
 }: MessageComposerProps) {
   const {
     contentRef,
@@ -120,6 +123,7 @@ function MessageComposerImpl({
     setIsFormattingOpen(pressed);
   }, []);
   const drafts = useDrafts();
+  const notifyTyping = useTypingBroadcast(channelId, typingParentEventId, typingRootEventId);
   const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
   effectiveDraftKeyRef.current = effectiveDraftKey;
@@ -308,6 +312,9 @@ function MessageComposerImpl({
       mentions.updateMentionQuery(text, cursor);
       channelLinks.updateChannelQuery(text, cursor);
       emojiAutocomplete.updateEmojiQuery(text, cursor);
+      if (text.trim().length > 0) {
+        notifyTyping();
+      }
     },
   });
   const linkEditor = useLinkEditor(richText);

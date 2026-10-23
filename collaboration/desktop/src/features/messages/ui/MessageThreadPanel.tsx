@@ -120,6 +120,8 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
           }
           profiles={props.profiles}
           channelType={props.channelType}
+          typingParentEventId={props.threadHead?.id ?? null}
+          typingRootEventId={props.threadHead?.rootId ?? null}
           audienceContext={props.editTarget || !props.threadHead?.tags ? null : {type: "thread", rootTags: props.threadHead.tags}}
         />
       )}

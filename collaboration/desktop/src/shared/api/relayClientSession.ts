@@ -5,6 +5,7 @@ import {
   signRelayEvent,
 } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
+import { buildThreadReferenceTags } from "@/features/messages/lib/threading";
 import {
   KIND_STREAM_MESSAGE,
   CHANNEL_EVENT_KINDS,
@@ -280,6 +281,33 @@ export class RelayClient {
       }
       throw error;
     }
+  }
+
+  /**
+   * Buzz 779af8886caae1317b4de962082429867ab61503 relayClientSession.ts::sendTypingIndicator:
+   * this device's CLIENT-signed kind:20002, fire-and-forget on the current socket.
+   */
+  async sendTypingIndicator(
+    channelId: string,
+    parentEventId?: string | null,
+    rootEventId?: string | null,
+  ) {
+    // Disconnected: not worth triggering a reconnect for ephemeral typing.
+    if (this.wsId === null) {
+      return;
+    }
+    const event = await signRelayEvent({
+      kind: KIND_TYPING_INDICATOR,
+      content: "",
+      tags: buildThreadReferenceTags(
+        channelId,
+        parentEventId ?? null,
+        rootEventId ?? null,
+      ),
+    });
+
+    // Fire-and-forget: no need to wait for relay acknowledgement.
+    void this.sendRaw(["EVENT", event]).catch(() => {});
   }
 
   /** Subscribe to channel rows and aux starting now, with no history replay. */
