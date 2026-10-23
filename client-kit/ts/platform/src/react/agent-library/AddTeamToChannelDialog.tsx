@@ -20,9 +20,11 @@ type AddTeamToChannelDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDeployed: (channel: WorkspaceView, results: TeamDeployResult[]) => void;
+  /** Opened from a channel's add-agent dialog: the target is that channel and is not changeable. */
+  channelId?: string;
 };
 
-export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, onDeployed }: AddTeamToChannelDialogProps) {
+export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, onDeployed, channelId: fixedChannelId }: AddTeamToChannelDialogProps) {
   const t = useUiT();
   const client = useBffClient();
   const failureText = useFailureText();
@@ -39,7 +41,7 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
   }, [team?.resourceId]);
 
   const available = React.useMemo(() => channels.status === "ok" && Array.isArray(channels.data)
-    ? channels.data.filter((channel) => channel.isMember !== false) : [], [channels]);
+    ? channels.data.filter((channel) => channel.isMember !== false && (!fixedChannelId || channel.id === fixedChannelId)) : [], [channels, fixedChannelId]);
   const resolution = React.useMemo(() => team ? resolveTeamMembers(team, definitions) : emptyResolvedTeamMembers(), [team, definitions]);
   const resolved = resolution.resolvedMembers;
   const missingCount = resolution.missingMemberCount;
@@ -112,7 +114,7 @@ export function AddTeamToChannelDialog({ team, definitions, open, onOpenChange, 
               <label className="text-control font-medium" htmlFor="team-channel-id">{t("agentTeams.channel")}</label>
               <select
                 className="flex h-[34px] w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors duration-100 hover:border-ring/40 focus-visible:border-ring focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={available.length === 0 || deploying || results !== null}
+                disabled={available.length === 0 || deploying || results !== null || !!fixedChannelId}
                 id="team-channel-id"
                 onChange={(event) => setChannelId(event.target.value)}
                 value={channelId}

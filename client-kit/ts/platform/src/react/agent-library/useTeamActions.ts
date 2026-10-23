@@ -3,6 +3,10 @@
 // machine, copy and the create/duplicate/edit/delete/share/deploy entry points are kept. Every write
 // freezes its command with an idempotency key; an unknown outcome keeps the dialog on that same
 // request. Directories are re-read after every recorded change (never optimistic).
+// The original react-query wrappers desktop/src/features/agents/teamHooks.ts over
+// desktop/src/shared/api/tauriTeams.ts (and the native desktop/src-tauri/src/commands/teams/mod.rs,
+// teams/adopt.rs, teams/adopt/apply.rs local store) become the BFF agent-team reads and governed
+// agent.team.* actions here; Core owns the team Resource (core platform-core agent_team.rs).
 import * as React from "react";
 import type { AgentDefinitionView, AgentTeamView, WorkspaceView } from "@client-kit/contracts";
 import { useBffClient, useUiT } from "../context";

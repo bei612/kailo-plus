@@ -3,6 +3,9 @@
 // through the host's authorized media transport. The original "Add" action first verifies the bytes
 // against the message's imeta `x`/`size`, then opens the import preview: DD-131(2)
 // `agent.definition.import` for `.agent.*`, DD-131(3) `agent.team.import` for `.team.*`.
+// The original desktop/src/features/agents/openSnapshotImportFromUrlEvent.ts hand-off (card → AgentsView
+// importer via a module-level pending payload) is replaced by opening the shared import preview in
+// place once the bytes match imeta; nothing is parked between views.
 import * as React from "react";
 import { Bot, Download, Plus, Users } from "lucide-react";
 import { toast } from "sonner";

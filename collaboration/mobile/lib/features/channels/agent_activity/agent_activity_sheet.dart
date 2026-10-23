@@ -6,6 +6,11 @@
 // A member without `audit` sees the Agent's 20002 "working" signal and is told the detail is
 // audit-only; nothing is polled — the turn list and transcript are re-read when the Agent's
 // working signal changes, on pull-to-refresh, and on demand ("load more").
+// "Stop current turn" is the governed Agent turn cancel (DD-84 widened by DD-125(6),
+// task.cancel.agent.invoke.v1): offered only when Core puts `cancelActionKey` on the turn (the
+// turn's initiator or an Installation `manage` holder), the intent is frozen with its key and an
+// unknown outcome keeps that same command for a retry; an accepted cancel is not the end of the
+// turn, the turn list and transcript show the real end (client-kit useInterruptTurn).
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:client_kit/shared/platform/reason_text.dart';
@@ -21,6 +26,7 @@ import '../../../shared/profile/user_cache_provider.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/utils/string_utils.dart';
 import '../../../shared/widgets/buzz_loading_indicator.dart';
+import '../channel_governed_actions.dart';
 import 'working_agents_provider.dart';
 
 /// Pages read in one go before "load more" is offered; each page is an audited read.
@@ -152,6 +158,12 @@ class AgentActivitySheet extends HookConsumerWidget {
                       ),
                     ),
                   ],
+                  if (turn != null)
+                    AgentTurnStopControl(
+                      channelId: channelId,
+                      turn: turn,
+                      agentName: name,
+                    ),
                   const SizedBox(height: Grid.xxs),
                   Divider(color: context.colors.outlineVariant),
                 ],
@@ -283,6 +295,103 @@ class AgentActivitySheet extends HookConsumerWidget {
         }
         return AgentTranscriptItemTile(item: items[index], agentName: name);
       },
+    );
+  }
+}
+
+/// The original "Stop current turn" entry for one running [turn].
+class AgentTurnStopControl extends HookConsumerWidget {
+  const AgentTurnStopControl({
+    super.key,
+    required this.channelId,
+    required this.turn,
+    required this.agentName,
+  });
+
+  final String channelId;
+  final AgentActiveTurnView turn;
+  final String agentName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    String t(PlatformMessageKey key, [Map<String, Object>? variables]) =>
+        platformText(key, locale: locale, variables: variables);
+    final busy = useState(false);
+    final ChannelGovernedActions actions;
+    try {
+      actions = ref.watch(channelGovernedActionsProvider);
+    } on Object {
+      // No platform session (Riverpod surfaces the provider's PlatformNotSignedIn): no entry.
+      return const SizedBox.shrink();
+    }
+    // One frozen intent per original agent.invoke execution; another turn starts a new one.
+    final slot = 'agent-turn-cancel:${turn.originalActionExecutionId}';
+    final retained = actions.retained(slot);
+    final cancelKey = turn.cancelActionKey;
+    if (cancelKey == null && retained == null) return const SizedBox.shrink();
+
+    Future<void> stop() async {
+      busy.value = true;
+      final ChannelActionOutcome? outcome;
+      try {
+        outcome = await actions.submit(
+          slot,
+          (key) => ActionCommand(
+            actionKey: cancelKey!,
+            idempotencyKey: key,
+            originalActionExecutionId: turn.originalActionExecutionId,
+          ),
+        );
+      } finally {
+        if (context.mounted) busy.value = false;
+      }
+      if (outcome == null || !context.mounted) return;
+      final text = switch (outcome) {
+        ChannelActionRecorded() => t(
+          PlatformMessageKey.agentTranscriptStopSent,
+          {'name': agentName},
+        ),
+        ChannelActionUnknown(:final operation) => t(
+          PlatformMessageKey.agentTranscriptStopUnknown,
+          {'operation': operation ?? '—'},
+        ),
+        ChannelActionRejected(:final reason?) => platformReasonText(
+          reason,
+          locale: locale,
+        ),
+        ChannelActionRejected() => t(
+          PlatformMessageKey.agentTranscriptStopFailed,
+          {'name': agentName},
+        ),
+        _ => channelActionOutcomeText(outcome, locale: locale),
+      };
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(text)));
+      // A settled answer re-reads the audited turn list; the turn ends there, not here.
+      if (outcome is! ChannelActionUnknown) {
+        ref.invalidate(platformAgentActiveTurnsProvider(channelId));
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Grid.xxs),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: OutlinedButton.icon(
+          key: const ValueKey('agent-activity-stop'),
+          onPressed: busy.value || actions.busy(slot) ? null : stop,
+          icon: const Icon(LucideIcons.square, size: 14),
+          label: Text(
+            t(
+              retained != null
+                  ? PlatformMessageKey.agentTranscriptStopRetry
+                  : PlatformMessageKey.agentTranscriptStopLabel,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -9,6 +9,8 @@
 // copies to the caller's own team that refers to the same Definitions (agent.team.create). The
 // original runtime/model/provider metadata and the persona relay events are not used (DD-24, DD-26).
 // Visual layer: DD-141 Kailo roles only (brand-soft selection, accent hover, soft status pairs).
+// The original desktop/src/features/agents/ui/PersonaAddedBy.tsx line is the detail pane's
+// "Added by …" / "Added by you" owner line here.
 import * as React from "react";
 import { BookUser, Plus, Upload, Users } from "lucide-react";
 

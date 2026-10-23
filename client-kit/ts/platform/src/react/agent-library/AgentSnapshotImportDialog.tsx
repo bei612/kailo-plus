@@ -7,6 +7,8 @@
 // 运行时与模型路由由导入人按本 Tenant 目录重选（DD-26），导入时不强制选择：草稿可缺省，发布前在
 // 版本编辑器补齐；没有提示词的包得到空指令草稿；内联头像由 Core 存为本 Tenant 媒体对象，草稿引用之
 // （DD-131(2) 2026-10-23 裁定）。视觉只用 client-kit 主题 token。
+// The native decoder desktop/src-tauri/src/commands/personas/snapshot/import.rs is Core's
+// agent_snapshot decoder behind the staged upload.
 import {
   ActionDispatchState,
   ActionGateState,

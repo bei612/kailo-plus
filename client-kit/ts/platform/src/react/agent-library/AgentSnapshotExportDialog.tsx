@@ -4,6 +4,11 @@
 // agent.definition.export：Definition owner 批准（可自批）后由 Core 生成源 Tenant 的 ExportPackage 并
 // 冻结 digest，READY 后才可下载。原版的记忆选项不提供（DD-131(4)），固定为“仅 Agent”。
 // 一次导出只冻结一个幂等键；结果不明只能以同一请求重试。视觉只用 client-kit 主题 token 与基础组件。
+// The original mutation hooks desktop/src/features/agents/snapshotHooks.ts and the format/memory
+// dropdown desktop/src/features/agents/ui/SnapshotOptionMenu.tsx are this dialog's governed submission
+// and format choice; the PNG body (desktop/src/features/agents/ui/snapshotAvatarPng.ts,
+// desktop/src-tauri/src/managed_agents/agent_snapshot.rs) is produced by Core's snapshot package
+// (DD-131(2)), not in the client.
 import {
   ActionDispatchState,
   ActionGateState,

@@ -5,6 +5,9 @@ import { selectSearchHighlightRouteState } from "@/app/routes/searchHighlightRou
 
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
+// The original forum post route desktop/src/app/routes/channels.$channelId.posts.$postId.tsx
+// (/channels/$channelId/posts/$postId?replyId) is carried on this channel route, as on Web:
+// `threadRootId` is the post (ForumScreen opens it) and `messageId` the reply it scrolls to.
 type ChannelRouteSearch = {
   /**
    * When set, the composer on mount will auto-submit its loaded draft once,
