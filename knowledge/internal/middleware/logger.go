@@ -45,7 +45,7 @@ func (r loggerResponseBodyWriter) Write(b []byte) (int, error) {
 var sensitiveFieldRegex = regexp.MustCompile(
 	`(?i)("(?:new[_-]?password|old[_-]?password|password|passwd|ticket|token|access[_-]?token|` +
 		`refresh[_-]?token|next[_-]?token|device[_-]?token|pending[_-]?token|pairing[_-]?link|` +
-		`id[_-]?token|authorization|auth[_-]?token|api[_-]?key|` +
+		`id[_-]?token|logout[_-]?token|authorization|auth[_-]?token|api[_-]?key|` +
 		`api[_-]?secret|secret[_-]?key|client[_-]?secret|private[_-]?key|secret|` +
 		`authorization[_-]?url|authorization[_-]?attempt)")\s*:\s*"[^"]*"`,
 )
@@ -60,6 +60,7 @@ var sensitiveQueryFields = map[string]struct{}{
 	"authorization_attempt": {},
 	"code":                  {},
 	"id_token":              {},
+	"logout_token":          {},
 	"refresh_token":         {},
 	"state":                 {},
 	// ticket is the sandbox terminal's WebSocket handshake credential. A
@@ -68,6 +69,29 @@ var sensitiveQueryFields = map[string]struct{}{
 	// in the session's sandbox, which is why it must never reach a log line.
 	"ticket": {},
 	"token":  {},
+}
+
+// sanitizeFormBody redacts an application/x-www-form-urlencoded body with the
+// field rules of JSON bodies (sensitiveFieldRegex) and queries
+// (sensitiveQueryFields); anything unparsable is omitted, never logged raw.
+func sanitizeFormBody(body string) string {
+	values, err := url.ParseQuery(body)
+	if err != nil {
+		return "[invalid form body omitted]"
+	}
+	for key := range values {
+		if sensitiveFormField(key) {
+			values[key] = []string{"***"}
+		}
+	}
+	return values.Encode()
+}
+
+func sensitiveFormField(key string) bool {
+	if _, sensitive := sensitiveQueryFields[strings.ToLower(key)]; sensitive {
+		return true
+	}
+	return sensitiveFieldRegex.MatchString(`"` + key + `":""`)
 }
 
 // sanitizeQuery prevents OAuth authorization codes, CSRF/attempt state, and
@@ -109,6 +133,16 @@ func readRequestBody(c *gin.Context) string {
 
 	// 重置request body，使用完整内容，确保后续handler能读取到完整数据
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Form bodies are redacted field by field like queries: the OIDC
+	// back-channel logout receiver takes logout_token this way, and a signed
+	// logout token must never reach the log (07 §4.7.5).
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+		if len(bodyBytes) > maxBodySize {
+			return "[表单请求体过长，已跳过]"
+		}
+		return sanitizeFormBody(string(bodyBytes))
+	}
 
 	// 用于日志的body（限制大小）
 	var logBodyBytes []byte

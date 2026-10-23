@@ -1,8 +1,13 @@
 package middleware
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestSanitizeBody(t *testing.T) {
@@ -104,5 +109,38 @@ func TestSanitizeQueryRedactsTerminalTicket(t *testing.T) {
 	}
 	if strings.Contains(got, "signature") {
 		t.Fatalf("sanitizeQuery() leaked the ticket: %q", got)
+	}
+}
+
+// 07 §4.7.5: the IdP posts the signed logout_token as a form body to the
+// back-channel receiver (/api/v1/auth/oidc/backchannel-logout); the access log
+// must keep neither it nor other form credentials, and the handler must still
+// read the original body.
+func TestReadRequestBodyRedactsFormCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	body := "logout_token=eyJhbGciOiJSUzI1NiJ9.payload.signature&client_secret=s3cret&password=pw&keep=1"
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/oidc/backchannel-logout", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	got := readRequestBody(c)
+	for _, leaked := range []string{"eyJhbGciOiJSUzI1NiJ9", "signature", "s3cret", "pw&"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("readRequestBody() leaked %q: %q", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "keep=1") || !strings.Contains(got, "logout_token=%2A%2A%2A") {
+		t.Fatalf("readRequestBody() = %q, want non-sensitive fields kept and logout_token redacted", got)
+	}
+	rest, err := io.ReadAll(c.Request.Body)
+	if err != nil || string(rest) != body {
+		t.Fatalf("handler body = %q, %v; want the original body", rest, err)
+	}
+}
+
+func TestSanitizeBodyRedactsJSONLogoutToken(t *testing.T) {
+	got := sanitizeBody(`{"logout_token":"eyJ.a.b","keep":"1"}`)
+	if strings.Contains(got, "eyJ") || !strings.Contains(got, `"keep":"1"`) {
+		t.Fatalf("sanitizeBody() = %q", got)
 	}
 }
