@@ -299,6 +299,34 @@ DD-133(3)、`.design/07` §4.7.3/§4.7.5）只能经管理 API 收敛。此前�
   重建「替换后」组的漂移服务 → 回读。投递先落盘、运行体先于 Core 重建，Core 经启动入口重建后交付目录中的端点即可达；
   journal 字段为 `deploy.json` 的 `operated`、`delivery`，已生效摘要在 `releases/deliveries.json`，与 §8、§9 的字段互不重叠。
 
+### 11. 发布树与代理暂存保留（2026-10-23 增补）
+
+CI worker 每次 fetch、检查、构建与发布都在 `<sources>/<commit>` 留下一棵约 3.5 GiB 的发布树，此前从不回收；连同 Docker
+镜像与各代理的 `~/scratch` 暂存，NVMe 根分区一再写满，作业以 `insufficient CI workspace disk space` 拒绝启动。保留逻辑只有
+一份，在 `node.py retention`（`run_retention`），三处调用：
+
+- **规则**（`retention_decision`，纯推导）：保留 ① 任一容器（含已停止的）以挂载来源、挂载来源经软链接解析的位置、Compose
+  项目目录或 Compose 文件引用的树（例如 OpenBao 以发布树内的链接挂载运行目录）；② 链接扫描根（缺省运行目录，深度 6，不跟随
+  目录链接）下指向发布树的软链接；③ 当前 pin（journal 中最近一次 `SUCCEEDED` 的 deploy）与最近 `keep_releases`（3）次发布；
+  ④ CI 队列中未结束的任务与尚未领取的请求；⑤ `origin/main`；⑥ 调用方指定的 commit；⑦ 2 小时内活动过的树（树根、`ready.json`、
+  `check.json` 的 mtime）。其余删除，删除前把树根的 `*.json` 回执归档到 `<receipts>/<commit>/`（内容相同跳过，不同加时间后缀）。
+  `~/scratch/<名字>` 自身与直接子项 24 小时无变化即删除（`07` §2.1）；只读的 go module cache 先 `chmod -R u+w`，本用户无权删除
+  的条目经 `sudo -n` 删除。
+- **安全**：Docker 或 journal 读不全、链接扫描根缺失即停止且不删除；根下由容器 uid 持有、不可读的数据目录列入 `unscanned`
+  （其中的链接只在容器内解析，宿主上消费发布树的路径都已出现在容器挂载与 Compose 标签里）。实际删除在 `<queue>/source.lock`
+  下重新取事实后执行，与 worker 准备发布树互斥。删除量按独占块计，与 Git 对象库硬链接共享的部分不计为释放。
+- **配置**：策略缺省值随代码版本化；节点路径只在 CI 配置的 `retention` 段（`journal`、`receipts`、`scratch`、`link_roots`，可覆盖
+  `keep_releases`、`grace_seconds`、`scratch_max_age_seconds`、`link_depth`）。节点 deploy 核对其 `journal` 等于 `release.yaml`
+  的 `node.journal`。
+- **发布入口**：plan 经 inspect 以只读方式推算并列出将删除的树、独占大小与每棵保留树的原因（本次源 commit 视为保留）；deploy 成功
+  回读后（无关容器未停止）以届时现场重算并执行，结果写入 `deploy.json` 的 `retention`。发布本身已成功，保留失败只记录，不改变 deploy 结果。
+- **CI worker 准入自愈**：构建类阶段可用空间低于准入值时，worker 取本次 checkout 刚 fetch 的 main（`FETCH_HEAD`）上的
+  `tools/release/node.py`，执行 `retention --prune-docker --keep <本任务 commit>`——即上述保留，再 `docker image prune -a --filter until=72h`
+  （只删未被任何容器使用的镜像）与 `docker builder prune --filter until=72h`——然后重新检查空间，仍不足才失败。规则在仓库内随 main
+  演进，worker 只有调用与重检两步；main 尚无该步骤或执行失败时只记录日志，行为与此前相同。被清理的检查镜像由下次检查按配方重建。
+- **只读核对**：`node.py retention --dry-run [--prune-docker]` 不删除、不建目录，列出将删除的树与暂存及大小；`--prune-docker` 时只回报
+  `docker system df` 的可回收上界。
+
 ## 后果
 
 正面：一条命令覆盖从规划到回读的全部步骤，所有输入由登记数据推出，改错位置或漏改会在 pin 阶段以残留 digest 断言当场失败；
