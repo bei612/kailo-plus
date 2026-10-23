@@ -980,7 +980,6 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
   - mobile/lib/features/activity
   - mobile/lib/features/age_gate
-  - mobile/lib/features/channels/add_members_sheet.dart
   - mobile/lib/features/channels/agent_activity
   - mobile/lib/features/channels/channel_detail_page/huddle_call_avatar.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_controls.dart
@@ -990,7 +989,6 @@ remove_paths:
   - mobile/lib/features/channels/channel_detail_page/huddle_participant_overlay.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_reactions.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_sheet.dart
-  - mobile/lib/features/channels/channel_details_page.dart
   - mobile/lib/features/channels/channel_directory.dart
   - mobile/lib/features/channels/channel_huddle_actions.dart
   - mobile/lib/features/channels/channel_metadata_updates.dart
@@ -1004,8 +1002,6 @@ remove_paths:
   - mobile/lib/features/channels/dm_channel_labels.dart
   - mobile/lib/features/channels/ephemeral_channel_display.dart
   - mobile/lib/features/channels/huddle_channel_filter.dart
-  - mobile/lib/features/channels/manage_channel_sheet.dart
-  - mobile/lib/features/channels/members_sheet.dart
   - mobile/lib/features/channels/message_mention_pubkeys.dart
   - mobile/lib/features/channels/mobile_huddle_controller.dart
   - mobile/lib/features/forum
@@ -1047,7 +1043,6 @@ remove_paths:
   - mobile/lib/shared/widgets/immediate_page_route.dart
   - mobile/lib/shared/widgets/ios_native_segmented_control.dart
   - mobile/lib/shared/widgets/ios_native_skin_tone_control.dart
-  - mobile/lib/shared/widgets/lucide_star_icon.dart
   - mobile/lib/shared/widgets/playing_avatar_image.dart
   - mobile/lib/shared/widgets/tappable_flapping_bee.dart
   - mobile/test/features/activity

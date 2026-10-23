@@ -13,6 +13,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/channel_details_page.dart';
 import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channel_messages_provider.dart';
 import 'package:buzz/features/channels/channel_typing_provider.dart';
@@ -4035,15 +4036,21 @@ void main() {
       expect(find.byTooltip('View members'), findsNothing);
       expect(find.byTooltip('Channel actions'), findsOneWidget);
 
-      // 点频道名看成员：数据来自平台 BFF 的成员视图
+      // 点频道名打开原版频道详情：成员预览来自平台 BFF 的成员视图，按人计
       await tester.tap(
         find.byKey(const ValueKey('channel-header-settings-trigger')),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Member 0'), findsOneWidget);
-      expect(find.text('5 members'), findsOneWidget);
-      expect(find.text('Member · 2 keys'), findsNWidgets(5));
+      expect(find.byType(ChannelDetailsPage), findsOneWidget);
+      expect(find.text('Member 0 · Member'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('channel-details-members-card')),
+          matching: find.text('5 members'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('shows lock icon for private channel', (tester) async {
