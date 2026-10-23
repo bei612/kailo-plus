@@ -1229,7 +1229,8 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
   const [clearedPublishing, setClearedPublishing] = useState(0);
   // DD-144: an Agent mention in a DM is refused before sending, with the draft kept.
   const dmAgentNames = useDmAgentMentionNames(bff, channelType === "dm" && !editTarget);
-  useEffect(() => { onSendingChange?.(sending); }, [sending, onSendingChange]);
+  // A cleared message is still being sent until the Relay confirms it.
+  useEffect(() => { onSendingChange?.(sending || clearedPublishing > 0); }, [sending, clearedPublishing, onSendingChange]);
   useEffect(() => () => { onSendingChange?.(false); }, [onSendingChange]);
   const [dragging, setDragging] = useState(false);
   const pendingRef = useRef(pending);
@@ -1953,9 +1954,12 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
       setProblem(t("dm.agentMentionRefused"));
       return;
     }
-    if (uploading > 0) {
-      // An edit replaces a published message; it waits for its own uploads.
-      if (editTarget) return;
+    // An edit replaces a published message: it waits for its own uploads and is not cleared.
+    if (editTarget && uploading > 0) return;
+    if (!editTarget) {
+      // Original useMentionSendFlow: Send freezes the message and clears the composer before it is
+      // published; uploads still in flight hold the frozen message, not the composer (DD-146).
+      let snapshot: SendSnapshot | null = null;
       owner.sending = true;
       setSending(true);
       try {
@@ -1964,20 +1968,30 @@ export function Composer({ audienceContext = null, channelType, mentionPeople, n
         // Previews belong to the text being cleared; they are prepared before it goes.
         const linkPreviewIntent = await linkPreviews.prepareSubmit();
         if (!owner.active) return;
-        const snapshot: SendSnapshot = { content: richText.getMarkdown().trim(), pending: pendingRef.current, gifs: pendingGifsRef.current,
+        const content = richText.getMarkdown().trim();
+        if (!content && pendingRef.current.length === 0 && pendingGifsRef.current.length === 0 && activeBatches.current.size === 0) return;
+        snapshot = { content, pending: pendingRef.current, gifs: pendingGifsRef.current,
           bindings: new Map(humanBindings.current), installationIds: mentionInstallationIds, spoilers: new Set(attachmentActions.spoileredAttachmentUrls),
           intent: { current: intent.current }, linkPreviews: linkPreviewIntent, cleared: true,
           batches: new Set(activeBatches.current), remainingFiles: [], failed: false };
-        queuedRef.current = snapshot;
-        setQueued(snapshot);
         clearComposer();
-        persistPendingSend(snapshot, "uploading");
         setProblem(null);
         setProblemNeutral(false);
+        // Persisted at once: a reload before publication offers it back as not sent.
+        persistPendingSend(snapshot, "uploading");
+        if (snapshot.batches.size) {
+          queuedRef.current = snapshot;
+          setQueued(snapshot);
+          snapshot = null;
+        }
       } finally {
         owner.sending = false;
         if (owner.active) setSending(false);
       }
+      if (!snapshot) return;
+      setClearedPublishing((count) => count + 1);
+      try { await dispatch(snapshot, decision); }
+      finally { if (owner.active) setClearedPublishing((count) => Math.max(0, count - 1)); }
       return;
     }
     if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
