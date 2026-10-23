@@ -253,6 +253,23 @@ def pin_names(unit):
     return unit.images if not unit.upstream else [unit.name]
 
 
+def upstream_entry(unit, state, recorded, current, targets):
+    """二开产物的规划条目。记录为 none（unbuilt/blocked）的产物在 CI 已登记同名构建目标时就是首次构建的
+    重建单元：blocked 说明的是部署与验收尚未闭合，不阻止构建（已记录摘要的阻断产物过期时同样重建）；
+    CI 没有构建目标的（如尚无构建入口的安装包）才保持不动。"""
+    first = state in ("unbuilt", "blocked") and unit.name in targets
+    return dict(kind=unit.artifact.get("kind"), type="upstream", state="stale" if first else state,
+                first_build=first, key=current, recorded_source=recorded,
+                artifact=str(unit.artifact.get("artifact_digest")), images=unit.images, record=unit.record,
+                blocked=bool(unit.artifact.get("blocked")))
+
+
+def recorded_artifact(unit):
+    """来源记录中的 artifact_digest；首次构建（none）没有旧 digest，不参与残留 digest 核对。"""
+    value = str(unit.artifact.get("artifact_digest") or "none")
+    return None if value == "none" else value
+
+
 def compute_plan(root, node, decl, source):
     units = model.units(decl)
     text = model.compose_text()
@@ -283,12 +300,10 @@ def compute_plan(root, node, decl, source):
 
     plan = dict(source=source, head=model.head(), compose_project=model.project_name(text), units={},
                 sources=facts["sources"])
+    targets = set(facts.get("build_targets") or [])
     for u in units.values():
         if u.upstream:
-            state, recorded, current = model.upstream_state(u)
-            plan["units"][u.name] = dict(kind=u.artifact.get("kind"), type="upstream", state=state, key=current,
-                                         recorded_source=recorded, artifact=str(u.artifact.get("artifact_digest")),
-                                         images=u.images, record=u.record, blocked=bool(u.artifact.get("blocked")))
+            plan["units"][u.name] = upstream_entry(u, *model.upstream_state(u), targets)
             continue
         commits = {(facts["proofs"].get(proof_name(i, pinned[i])) or {}).get("commit") if i in pinned else None
                    for i in u.images}
@@ -314,7 +329,7 @@ def compute_plan(root, node, decl, source):
         for entry in (doc.get("release") or {}).get("artifacts") or []:
             traces.setdefault(entry.get("name"), []).append(rel)
     plan["pins"] = {n: dict(unit=rebuilt[n],
-                            old=(pinned.get(n) or by_name[n].artifact.get("artifact_digest")) if by_name[n].upstream
+                            old=(pinned.get(n) or recorded_artifact(by_name[n])) if by_name[n].upstream
                             else pinned.get(n),
                             services=[s for s, spec in services.items() if spec["image"] == n],
                             traceability=traces.get(n, []))
@@ -397,9 +412,10 @@ def render_plan(plan, note=None):
             detail = (f"已固定产物来自 {u['built_from'][:12]}，此后构建输入变化 {len(u.get('changed') or [])} 处"
                       if u.get("built_from") else u.get("reason", ""))
         else:
-            detail = {"stale": f"source_digest 记录 {u['recorded_source'][7:19]} ≠ 当前 {u['key'][7:19]}",
-                      "current": "源码摘要与记录一致", "unbuilt": "记录为 none，从未构建（不在门禁范围）",
-                      "blocked": "登记为阻断，记录为 none"}[u["state"]]
+            detail = ("记录为 none，CI 已登记构建目标：首次构建" if u.get("first_build") else
+                      {"stale": f"source_digest 记录 {u['recorded_source'][7:19]} ≠ 当前 {u['key'][7:19]}",
+                       "current": "源码摘要与记录一致", "unbuilt": "记录为 none，CI 未登记构建目标（不在门禁范围）",
+                       "blocked": "登记为阻断，记录为 none，CI 未登记构建目标"}[u["state"]])
         say(f"  {'重建' if u['state'] == 'stale' else '保持'}  {name:27} {u['kind']:6} {detail}")
         if u["type"] == "self" and u["state"] == "stale":
             for path in (u.get("changed") or [])[:10]:

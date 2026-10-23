@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { ApplicationBindingsPanel, bindingDocument, bindingSecretValues, validBindingPage } from "../src/react/application-bindings";
-import { NativeApplicationPage, validNativePage } from "../src/react/native-application-page";
+import { NATIVE_HANDSHAKE_GRACE_MS, NativeApplicationPage, validNativePage } from "../src/react/native-application-page";
 import { NativeApplicationEntries } from "../src/react/native-application-entries";
 import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { act, useState } from "react";
 import { PlatformProvider } from "../src/react/context";
 import { type BffReply, type BffRequest, type BffTransport, TransportError } from "../src/transport";
-import { button, click, render, type } from "./render";
+import { button, click, render, settle, type } from "./render";
+
+/** DD-138: a page that has not spoken wire v1 within the grace period is a DD-127 page. */
+async function passHandshakeGrace() {
+  await act(async () => { vi.advanceTimersByTime(NATIVE_HANDSHAKE_GRACE_MS); });
+  await settle();
+}
 
 const connection = {
   bindingId: "connection-fixture", tenantId: "tenant-fixture", componentReleaseId: "release-fixture",
@@ -287,44 +293,48 @@ describe("shared external service connection management", () => {
     expect(frame.getAttribute("sandbox")).not.toContain("allow-top-navigation");
     expect(host.querySelector("a")).toBeNull();
     expect(send.mock.calls.at(-1)?.[0].path).toBe(`/api/v1/application-bindings/${connection.bindingId}/native-page`);
+    // Opened from the management list, the page offers Back to the list (no Refresh chrome).
+    expect(button(host, "Back")).toBeTruthy();
+    expect([...host.querySelectorAll("button")].some((element) => element.textContent === "Refresh")).toBe(false);
     revoked = true;
-    await click(button(host, "Refresh"));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await settle();
     expect(host.querySelector("iframe")).toBeNull();
     expect(host.querySelector("a")).toBeNull();
     expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
   });
 
-  it("preserves the original frame on focus checks and only explicitly refreshes the native document", async () => {
+  it("is a Kailo page from the sidebar: no host chrome, and focus checks keep the original frame", async () => {
+    // DD-138(3): no "service workspace", Back, Refresh or boundary note around the page.
     const client = createBffClient({ send: async () => ({ status: 200, body: nativePage }) });
     const host = await render(<PlatformProvider client={client} locale="en">
-      <NativeApplicationPage bindingId={connection.bindingId} onBack={() => {}} />
+      <NativeApplicationPage bindingId={connection.bindingId} title="Knowledge" />
     </PlatformProvider>);
     const frame = host.querySelector("iframe")!;
     expect(frame).not.toBeNull();
+    expect(frame.getAttribute("title")).toBe("Knowledge");
+    expect(host.querySelectorAll("button")).toHaveLength(0);
+    expect(host.textContent).not.toContain("Service workspace");
+    // Kailo's own loading state covers the frame until the page speaks wire v1.
+    expect(host.querySelector('[data-testid="native-page-loading"]')).not.toBeNull();
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(host.querySelector("iframe")).toBe(frame);
     expect(host.querySelector("a")).toBeNull();
-    await click(button(host, "Refresh"));
-    expect(host.querySelector("iframe")).not.toBe(frame);
   });
 
-  it("keeps Refresh usable while a focus check is pending, so the focusing click refreshes", async () => {
+  it("keeps the frame mounted while a focus check is pending", async () => {
     let pending = false;
     const client = createBffClient({ send: (() => pending
       ? new Promise<BffReply>(() => {})
       : Promise.resolve({ status: 200, body: nativePage } as BffReply)) as BffTransport["send"] });
     const host = await render(<PlatformProvider client={client} locale="en">
-      <NativeApplicationPage bindingId={connection.bindingId} onBack={() => {}} />
+      <NativeApplicationPage bindingId={connection.bindingId} />
     </PlatformProvider>);
     const frame = host.querySelector("iframe")!;
     pending = true;
-    // Leaving the native iframe focuses the window first; the click follows on Refresh.
     await act(async () => window.dispatchEvent(new Event("focus")));
-    expect(button(host, "Refresh").disabled).toBe(false);
+    await settle();
     expect(host.querySelector("iframe")).toBe(frame);
-    pending = false;
-    await click(button(host, "Refresh"));
-    expect(host.querySelector("iframe")).not.toBe(frame);
   });
 
   it("rejects wrong binding, stale generation, unapproved origins and platform origin pages", async () => {
@@ -366,6 +376,7 @@ describe("shared external service connection management", () => {
   });
 
   it("opens only the same approved URL for explicit service authentication and refreshes on return",async()=>{
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const popup=vi.spyOn(window,"open").mockReturnValue(null);
     const client=createBffClient({send:async()=>({status:200,body:nativePage})});
     const host=await render(<PlatformProvider client={client} locale="zh-CN">
@@ -373,14 +384,19 @@ describe("shared external service connection management", () => {
     </PlatformProvider>);
     const frame=host.querySelector("iframe");
     expect(popup).not.toHaveBeenCalled();
+    // The DD-127 entry appears only for a page that did not speak wire v1 in time.
+    expect(host.textContent).not.toContain("登录服务");
+    await passHandshakeGrace();
     await click(button(host,"登录服务"));
     expect(popup).toHaveBeenCalledExactlyOnceWith(nativePage.url,"_blank","popup,noopener,noreferrer");
     await act(async()=>window.dispatchEvent(new Event("focus")));
     expect(host.querySelector("iframe")).not.toBe(frame);
     popup.mockRestore();
+    vi.useRealTimers();
   });
 
   it("uses the native authentication host and refreshes after close even when focus was revalidated", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let close!: () => void;
     const authenticate = vi.fn(() => new Promise<void>((resolve) => { close = resolve; }));
     const client = createBffClient({send:async()=>({status:200,body:nativePage})});
@@ -388,6 +404,7 @@ describe("shared external service connection management", () => {
       <NativeApplicationPage bindingId={connection.bindingId} onBack={()=>{}} />
     </PlatformProvider>);
     const frame = host.querySelector("iframe");
+    await passHandshakeGrace();
     await click(button(host,"Sign in to service"));
     expect(authenticate).toHaveBeenCalledExactlyOnceWith(connection.bindingId);
     await act(async()=>window.dispatchEvent(new Event("focus")));
@@ -395,8 +412,12 @@ describe("shared external service connection management", () => {
     expect(button(host,"Sign in to service").disabled).toBe(true);
     await act(async()=>close());
     expect(host.querySelector("iframe")).not.toBe(frame);
+    // The new document gets its own handshake grace before the DD-127 entry returns.
+    expect(host.textContent).not.toContain("Sign in to service");
+    await passHandshakeGrace();
     expect(button(host,"Sign in to service").disabled).toBe(false);
     expect(host.textContent).not.toContain("success");
+    vi.useRealTimers();
   });
 
   it("labels a native page entry binding by its presentation category, else by component type (DD-127)",async()=>{
@@ -449,15 +470,35 @@ describe("shared external service connection management", () => {
     }
   });
 
-  it("consumes later authorized pages but rejects a repeating offset rather than reusing stale entries",async()=>{
+  it("reads every authorized page into one list but rejects a repeating offset rather than reusing stale entries",async()=>{
     const send=vi.fn(async(request:BffRequest)=>({status:200,body:request.path.endsWith("offset=0")
       ? {bindings:[],canCreate:false,nextOffset:1}
       : {bindings:[{...connection,hasNativePage:true}],canCreate:false,nextOffset:1}}));
     const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider><NativeApplicationEntries scopeKey="human" onSelect={vi.fn()} /></SidebarProvider></PlatformProvider>);
-    await click(button(host,"Next page"));
+    await settle();
     expect(send.mock.calls.at(-1)?.[0].path).toBe("/api/v1/application-bindings?offset=1");
-    expect(host.textContent).not.toContain(connection.componentTypeKey);
+    expect(host.querySelector('button[aria-label="Knowledge"]')).toBeNull();
     expect([...host.querySelectorAll("button")].some((element)=>element.textContent==="Next page")).toBe(false);
+  });
+
+  it("lists entries as ordinary navigation: no connection heading, one entry per category, the Workspace one first (DD-138)",async()=>{
+    const tenantFiles={...connection,bindingId:"10000000-0000-4000-8000-000000000001",componentTypeKey:"cells",capabilityCategories:[],hasNativePage:true,canDisable:false,nativePageCategory:"file_storage"};
+    const tenantKnowledge={...connection,bindingId:"10000000-0000-4000-8000-000000000002",componentTypeKey:"weknora",capabilityCategories:[],hasNativePage:true,canDisable:false,nativePageCategory:"knowledge"};
+    const workspaceKnowledge={...tenantKnowledge,bindingId:"10000000-0000-4000-8000-000000000003",workspaceId:"ws"};
+    const send=vi.fn(async(request:BffRequest)=>({status:200,body:{bindings:request.path.includes("workspaceId=ws")?[workspaceKnowledge]:[tenantFiles,tenantKnowledge],canCreate:false}}));
+    const titles:(string|null)[]=[];
+    const host=await render(<PlatformProvider client={createBffClient({send})} locale="zh-CN"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" workspace={{id:"ws",name:"Workspace"}} selectedId={workspaceKnowledge.bindingId} onSelect={vi.fn()} onSelectedTitle={(title)=>titles.push(title)} />
+    </SidebarProvider></PlatformProvider>);
+    await settle();
+    expect(host.textContent).not.toContain("外部服务连接");
+    expect(host.textContent).not.toContain("组织级连接");
+    expect(host.textContent).not.toContain("Workspace");
+    const entries=[...host.querySelectorAll<HTMLButtonElement>("[data-binding-id]")];
+    expect(entries.map((entry)=>entry.getAttribute("aria-label"))).toEqual(["云盘","知识库"]);
+    expect(entries[1]!.getAttribute("data-binding-id")).toBe(workspaceKnowledge.bindingId);
+    expect(host.innerHTML).not.toContain("weknora");
+    expect(titles.at(-1)).toBe("知识库");
   });
 
   it("withdraws the old workspace entry and late native response on a scope change",async()=>{

@@ -1,0 +1,312 @@
+{
+  "description": "DD-134(5)④ 向导 PROTOCOL_PEER release 草稿的跨语言对照：TypeScript releaseDraft 以 peer/probe/input 生成的草稿（id 归一为 release.manifest.id 后重算摘要）必须逐值等于 release；Core 测试以 activeContract 为 ACTIVE 契约内容，对 release 运行 component_release::registration 与 validate_declarations 并须通过。",
+  "peer": {
+    "adapterServiceRef": "time-mcp",
+    "mcpUrl": "http://time-mcp:8000/mcp",
+    "nativeInstanceRef": "time-1",
+    "artifactDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timeoutSeconds": 10,
+    "maxResponseBytes": 65536,
+    "conformanceReady": true,
+    "bindingFacts": []
+  },
+  "probe": {
+    "probeId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "adapterServiceRef": "time-mcp",
+    "probedAt": "2026-10-21T02:00:00Z",
+    "serverName": "mcp-time",
+    "serverVersion": "1.0",
+    "protocolVersion": "2025-06-18",
+    "toolSchemaDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "tools": [
+      {
+        "name": "convert_time",
+        "inputSchemaJson": "{\"type\":\"object\"}",
+        "inputSchemaDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "readOnlyHint": true,
+        "matchingContracts": [
+          {
+            "categoryKey": "time",
+            "contractVersion": 1,
+            "contractKey": "time.convert_time@v1",
+            "permission": "consume",
+            "targetType": "RESOURCE",
+            "outputSchemaDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+            "resourceTypeKeys": [
+              "time.service"
+            ],
+            "operationContractKeys": [
+              "time.convert_time@v1",
+              "time.get_current_time@v1"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "get_current_time",
+        "inputSchemaJson": "{\"type\":\"object\"}",
+        "inputSchemaDigest": "3333333333333333333333333333333333333333333333333333333333333333",
+        "readOnlyHint": true,
+        "matchingContracts": [
+          {
+            "categoryKey": "time",
+            "contractVersion": 1,
+            "contractKey": "time.get_current_time@v1",
+            "permission": "consume",
+            "targetType": "RESOURCE",
+            "outputSchemaDigest": "4444444444444444444444444444444444444444444444444444444444444444",
+            "resourceTypeKeys": [
+              "time.service"
+            ],
+            "operationContractKeys": [
+              "time.convert_time@v1",
+              "time.get_current_time@v1"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "activeContract": {
+    "categoryKey": "time",
+    "contractVersion": 1,
+    "resourceTypeFamily": [
+      {
+        "typeKey": "time.service",
+        "kind": "SERVICE"
+      }
+    ],
+    "operationContracts": [
+      {
+        "contractKey": "time.convert_time@v1",
+        "surface": "TOOL",
+        "inputSchemaDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "outputSchemaDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+        "permission": "consume",
+        "targetType": "RESOURCE"
+      },
+      {
+        "contractKey": "time.get_current_time@v1",
+        "surface": "TOOL",
+        "inputSchemaDigest": "3333333333333333333333333333333333333333333333333333333333333333",
+        "outputSchemaDigest": "4444444444444444444444444444444444444444444444444444444444444444",
+        "permission": "consume",
+        "targetType": "RESOURCE"
+      }
+    ],
+    "contentReferenceSemantics": {
+      "nativeObjectRefRule": "Opaque reference of the registered MCP service instance.",
+      "nativeRevisionRule": "Read-only tools; results carry no native revision.",
+      "authorizationTargetRule": "The registered service Resource of the binding."
+    },
+    "requiredDeclarations": [],
+    "protocolSessionKinds": []
+  },
+  "input": {
+    "componentTypeKey": "time_server",
+    "vendor": "modelcontextprotocol",
+    "artifactVersion": "2025.1",
+    "choices": {
+      "convert_time": "time.convert_time@v1",
+      "get_current_time": "time.get_current_time@v1"
+    }
+  },
+  "release": {
+    "manifest": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "componentTypeKey": "time_server",
+      "version": "1.0.0",
+      "class": "APPLICATION",
+      "platformPortKey": "NONE",
+      "manifestSchemaVersion": 1,
+      "admissionPath": "EXTERNAL",
+      "vendor": "modelcontextprotocol",
+      "artifactVersion": "2025.1",
+      "bindingConfigSchemaVersion": 1,
+      "bindingConfigSchemaDigest": "f756efec6a0a66a15ab91734cca8faddba94c94f249bef195c3799b86f9a444c",
+      "adapterProtocolRange": "NONE",
+      "frontendDelivery": {
+        "mode": "NONE",
+        "extensionSlots": [],
+        "editorOrigins": []
+      },
+      "executionConnector": {
+        "mode": "PROTOCOL_PEER",
+        "adapterProtocolRange": "NONE",
+        "actionTokenAudience": "NONE"
+      },
+      "adapterBuildRef": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "implements": [
+        {
+          "categoryKey": "time",
+          "contractVersion": 1
+        }
+      ],
+      "capabilityDeclarations": [
+        {
+          "categoryKey": "time",
+          "contractVersion": 1,
+          "cancel": "UNSUPPORTED",
+          "observe": "UNSUPPORTED",
+          "meter": "UNSUPPORTED",
+          "revisionQuery": "UNSUPPORTED",
+          "versionedModel": "UNSUPPORTED",
+          "onlineEditing": "UNSUPPORTED",
+          "readEdge": "NONE",
+          "tenantDelete": "RETAIN_ON_TENANT_DELETE"
+        }
+      ],
+      "allowedModelCallModes": [
+        "NONE"
+      ],
+      "dataStoreIsolation": "DEDICATED_INSTANCE",
+      "dataLocation": "Self-hosted MCP service time-1 in the platform operations domain.",
+      "secretSchema": [],
+      "targetResourceTypeKeys": [
+        "time.service"
+      ],
+      "resourceTypeDefinitions": [
+        {
+          "typeKey": "time.service",
+          "capabilityCategory": "time",
+          "capabilityContractVersion": 1,
+          "incrementalContracts": [],
+          "llmGatewayContract": "NOT_USED",
+          "transferFormats": [],
+          "tenantDeleteActionKey": "NONE",
+          "status": "ACTIVE"
+        }
+      ],
+      "actionDefinitions": [
+        {
+          "actionKey": "time.convert_time@v1",
+          "version": 1,
+          "capabilityContractKey": "time.convert_time@v1",
+          "componentTypeKey": "time_server",
+          "targetType": "RESOURCE",
+          "tenantRule": "SESSION_TENANT",
+          "workspaceRule": "TARGET_HOME_WORKSPACE",
+          "permission": "consume",
+          "executionMode": "SYNC",
+          "confirmationMode": "NONE",
+          "approvalPolicyId": "NONE",
+          "workflowType": "NONE",
+          "capacityPolicy": "NATIVE",
+          "capacityPoolKey": "NONE",
+          "quotaPolicy": "NONE",
+          "meters": [],
+          "resultExposurePolicy": {
+            "mode": "CONSUME_ONLY",
+            "outputSchemaHash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "redactionPolicy": "PLATFORM_METADATA_ONLY"
+          },
+          "auditPolicy": "FULL_LIFECYCLE",
+          "businessObservabilityPolicy": {
+            "correlationMode": "OPERATION_NATIVE_REF",
+            "progressSource": "NONE",
+            "terminalSource": "SYNC_RESULT",
+            "usageSource": "NONE",
+            "costSource": "NONE",
+            "redactionPolicy": "PLATFORM_METADATA_ONLY"
+          },
+          "status": "ACTIVE",
+          "inputSchemaDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "outputSchemaDigest": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "actionKey": "time.get_current_time@v1",
+          "version": 1,
+          "capabilityContractKey": "time.get_current_time@v1",
+          "componentTypeKey": "time_server",
+          "targetType": "RESOURCE",
+          "tenantRule": "SESSION_TENANT",
+          "workspaceRule": "TARGET_HOME_WORKSPACE",
+          "permission": "consume",
+          "executionMode": "SYNC",
+          "confirmationMode": "NONE",
+          "approvalPolicyId": "NONE",
+          "workflowType": "NONE",
+          "capacityPolicy": "NATIVE",
+          "capacityPoolKey": "NONE",
+          "quotaPolicy": "NONE",
+          "meters": [],
+          "resultExposurePolicy": {
+            "mode": "CONSUME_ONLY",
+            "outputSchemaHash": "4444444444444444444444444444444444444444444444444444444444444444",
+            "redactionPolicy": "PLATFORM_METADATA_ONLY"
+          },
+          "auditPolicy": "FULL_LIFECYCLE",
+          "businessObservabilityPolicy": {
+            "correlationMode": "OPERATION_NATIVE_REF",
+            "progressSource": "NONE",
+            "terminalSource": "SYNC_RESULT",
+            "usageSource": "NONE",
+            "costSource": "NONE",
+            "redactionPolicy": "PLATFORM_METADATA_ONLY"
+          },
+          "status": "ACTIVE",
+          "inputSchemaDigest": "3333333333333333333333333333333333333333333333333333333333333333",
+          "outputSchemaDigest": "4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ],
+      "toolDefinitions": [
+        {
+          "name": "convert_time",
+          "source": "APPLICATION",
+          "actionKey": "time.convert_time@v1",
+          "capabilityContractKey": "time.convert_time@v1",
+          "inputSchemaHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "outputSchemaHash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "backendRef": "time-mcp",
+          "status": "ACTIVE"
+        },
+        {
+          "name": "get_current_time",
+          "source": "APPLICATION",
+          "actionKey": "time.get_current_time@v1",
+          "capabilityContractKey": "time.get_current_time@v1",
+          "inputSchemaHash": "3333333333333333333333333333333333333333333333333333333333333333",
+          "outputSchemaHash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "backendRef": "time-mcp",
+          "status": "ACTIVE"
+        }
+      ],
+      "businessObservabilityContract": {
+        "correlationSources": [
+          "OPERATION_ID"
+        ],
+        "businessStateSources": [
+          "CORE_ACTION",
+          "AGENTGATEWAY"
+        ],
+        "aggregationDimensions": [
+          "tenant_id",
+          "workspace_id",
+          "action_key",
+          "component_binding_ref"
+        ],
+        "redactionPolicy": "PLATFORM_METADATA_ONLY"
+      },
+      "frontendPresentationContract": {
+        "integrationMode": "NONE",
+        "themeMapping": {},
+        "localeMapping": {},
+        "themeChangePolicy": "NONE",
+        "localeResolutionPolicy": "NONE"
+      }
+    },
+    "package": {
+      "componentReleaseId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "manifestDigest": "36d2220a3d1a23a45f4e56aa51c3907b10d21682e9f4054df08b243d7c11c398",
+      "webArtifacts": [],
+      "backendDelivery": "EXTERNAL_SERVICE"
+    },
+    "bindingConfigSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "BindingConfig",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
+}

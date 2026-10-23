@@ -23,7 +23,7 @@ import {
 import { type ReactNode, useState } from "react";
 import {
   canonicalDigest, contractDraft, peerEntryTemplate, refreshReleaseDigests, releaseDraft, type ReleaseDraft,
-  type ToolContractChoice, usableFacts,
+  type ToolContractChoice, UncoveredOperationsError, usableFacts,
 } from "../gateway-drafts";
 import { writeFailure } from "../transport";
 import { useBffClient, useFailureText, useT } from "./context";
@@ -197,8 +197,8 @@ function ContractStep({ probe, choices, onChoices, contract, onContract }: {
 }
 
 /** ④⑤发行登记与批准：草稿可编辑，摘要按当前文本重算；登记人不能自批（self_approval=DENY）。 */
-function ReleaseStep({ peer, probe, choices, contract }: {
-  peer: GatewayMcpPeerView; probe: GatewayMcpProbeResult; choices: ToolContractChoice[]; contract: CapabilityContractRegistration | null;
+function ReleaseStep({ peer, probe, choices }: {
+  peer: GatewayMcpPeerView; probe: GatewayMcpProbeResult; choices: ToolContractChoice[];
 }) {
   const t = useT();
   const register = useGatewayAction();
@@ -208,13 +208,16 @@ function ReleaseStep({ peer, probe, choices, contract }: {
   const [version, setVersion] = useState("");
   const [draft, setDraft] = useState<ReleaseDraft | null>(null);
   const [invalid, setInvalid] = useState(false);
+  const [uncovered, setUncovered] = useState<string[]>([]);
   const chosen = choices.filter((choice) => choice.contractKey);
   const generate = async () => {
     try {
-      setDraft(await releaseDraft({ peer, probe, choices, componentTypeKey: typeKey, vendor: vendor.trim(), artifactVersion: version.trim(),
-        ...(contract ? { contract } : {}) }));
-      setInvalid(false);
-    } catch { setInvalid(true); }
+      setDraft(await releaseDraft({ peer, probe, choices, componentTypeKey: typeKey, vendor: vendor.trim(), artifactVersion: version.trim() }));
+      setInvalid(false); setUncovered([]);
+    } catch (error) {
+      setInvalid(true);
+      setUncovered(error instanceof UncoveredOperationsError ? error.contractKeys : []);
+    }
   };
   const refresh = async () => {
     if (!draft) return;
@@ -257,6 +260,7 @@ function ReleaseStep({ peer, probe, choices, contract }: {
         </div>
       </> : null}
       {invalid ? <p role="alert">{t("components.invalid")}</p> : null}
+      {uncovered.length ? <p className="font-mono text-xs" data-testid="gateway-mcp-uncovered">{uncovered.join(", ")}</p> : null}
     </>}
     <GatewayActionPanel action={register} testId="gateway-mcp-release-action" />
     {draft && register.submission && !register.unknown ? <Step index={5} title={t("gateway.mcp.approval")} testId="gateway-mcp-approval">
@@ -290,7 +294,7 @@ export function McpWizard() {
       <EndpointStep page={page} selected={peer} onSelect={select} />
       {peer ? <ProbeStep key={peer.adapterServiceRef} peer={peer} probe={probe} onProbe={probed} /> : null}
       {peer && probe ? <ContractStep probe={probe} choices={choices} onChoices={setChoices} contract={contract} onContract={setContract} /> : null}
-      {peer && probe ? <ReleaseStep peer={peer} probe={probe} choices={choices} contract={contract} /> : null}
+      {peer && probe ? <ReleaseStep peer={peer} probe={probe} choices={choices} /> : null}
       <p className="text-xs text-muted-foreground">{t("gateway.mcp.bindingInTenant")}</p>
     </div>}</GatewayLoad>
   </GatewaySection>;

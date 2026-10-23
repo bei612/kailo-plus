@@ -40,8 +40,9 @@ const panelProps = {
 };
 
 test("Desktop routes every shared settings section, including Moderation and Channel templates", () => {
-  // Count assertion kept in step with the shared list (10 sections, the Web host's set).
-  assert.equal(settingsSectionValues.length, 10);
+  // Count assertion kept in step with the shared list (12 sections, the Web host's set;
+  // DD-138 added the contributed "documents" and "answers" categories).
+  assert.equal(settingsSectionValues.length, 12);
   for (const section of settingsSectionValues) assert.equal(isSettingsSection(section), true, section);
   assert.equal(isSettingsSection("voice"), false);
 });

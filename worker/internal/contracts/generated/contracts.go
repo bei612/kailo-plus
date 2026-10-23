@@ -811,6 +811,9 @@
 //    componentNativeReceiverRequest, err := UnmarshalComponentNativeReceiverRequest(bytes)
 //    bytes, err = componentNativeReceiverRequest.Marshal()
 //
+//    componentPreferenceDeclaration, err := UnmarshalComponentPreferenceDeclaration(bytes)
+//    bytes, err = componentPreferenceDeclaration.Marshal()
+//
 //    componentProtocolPeerEnvironment, err := UnmarshalComponentProtocolPeerEnvironment(bytes)
 //    bytes, err = componentProtocolPeerEnvironment.Marshal()
 //
@@ -3722,6 +3725,16 @@ func (r *ComponentNativeReceiverRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentPreferenceDeclaration(data []byte) (ComponentPreferenceDeclaration, error) {
+	var r ComponentPreferenceDeclaration
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentPreferenceDeclaration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentProtocolPeerEnvironment(data []byte) (ComponentProtocolPeerEnvironment, error) {
 	var r ComponentProtocolPeerEnvironment
 	err := json.Unmarshal(data, &r)
@@ -5608,11 +5621,15 @@ type ApplicationBindingView struct {
 	HasReadReceiver *bool `json:"hasReadReceiver,omitempty"`
 	// DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar
 	// labels the entry by capabilityCategories ∪ this value; it grants nothing.
-	NativePageCategory *NativePageCategory     `json:"nativePageCategory,omitempty"`
-	State              ApplicationBindingState `json:"state"`
-	TenantID           string                  `json:"tenantId"`
-	Version            int64                   `json:"version"`
-	WorkspaceID        *string                 `json:"workspaceId,omitempty"`
+	NativePageCategory *NativePageCategory `json:"nativePageCategory,omitempty"`
+	// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+	// settings (07 §4.8.2). Kailo settings render them by category, never by component. Absent
+	// when none; Core keeps no values.
+	Preferences []ComponentPreferenceDeclaration `json:"preferences,omitempty"`
+	State       ApplicationBindingState          `json:"state"`
+	TenantID    string                           `json:"tenantId"`
+	Version     int64                            `json:"version"`
+	WorkspaceID *string                          `json:"workspaceId,omitempty"`
 }
 
 type ApplicationBindingCapability struct {
@@ -5620,14 +5637,43 @@ type ApplicationBindingCapability struct {
 	Version  int64  `json:"version"`
 }
 
+// DD-138：KAILO_EMBED release 向 Kailo 设置页贡献的一项偏好声明（03
+// FrontendPresentationContract.preference_declarations[]，07 §4.8.2）。值对象，随 APPROVED release
+// 固定；Core 不保存偏好的值。键规则、选项数量与文案长度由 Core 登记时校验。
+type ComponentPreferenceDeclaration struct {
+	// BOOLEAN 为 true/false，ENUM 为 options[].value 之一。
+	DefaultValue string                   `json:"defaultValue"`
+	Description  *ComponentPreferenceText `json:"description,omitempty"`
+	// Kailo 侧偏好键，2–4 段以 . 连接，不含组件名。
+	Key   string                  `json:"key"`
+	Label ComponentPreferenceText `json:"label"`
+	// ENUM 时 2–12 项；BOOLEAN 时为空。
+	Options          []ComponentPreferenceOption  `json:"options"`
+	SettingsCategory ComponentPreferenceCategory  `json:"settingsCategory"`
+	ValueType        ComponentPreferenceValueType `json:"valueType"`
+}
+
+type ComponentPreferenceText struct {
+	En   string `json:"EN"`
+	ZhCN string `json:"ZH_CN"`
+}
+
+type ComponentPreferenceOption struct {
+	Label ComponentPreferenceText `json:"label"`
+	Value string                  `json:"value"`
+}
+
 // Authorized ACTIVE binding's independent native page. Exact origin is release and
 // deployment approved; no native credential or page body is returned.
 type ApplicationNativePage struct {
-	AllowedOrigins       []string `json:"allowedOrigins"`
-	BindingID            string   `json:"bindingId"`
-	Origin               string   `json:"origin"`
-	ProjectionGeneration int64    `json:"projectionGeneration"`
-	URL                  string   `json:"url"`
+	AllowedOrigins []string `json:"allowedOrigins"`
+	BindingID      string   `json:"bindingId"`
+	Origin         string   `json:"origin"`
+	// DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo
+	// settings (07 §4.8.2); the host sends their values to this page only. Absent when none.
+	Preferences          []ComponentPreferenceDeclaration `json:"preferences,omitempty"`
+	ProjectionGeneration int64                            `json:"projectionGeneration"`
+	URL                  string                           `json:"url"`
 }
 
 // Existing Resource references authorized for a HUMAN configuring a receiver binding's
@@ -6764,7 +6810,8 @@ type GatewayMCPProbeRequest struct {
 }
 
 // DD-134(5)②：经 Gateway 临时验证 route 的 initialize 与 tools/list 结果（route
-// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键。
+// 已删除并回读不存在）。matchingContracts 为输入 schema 摘要一致的 ACTIVE 契约 TOOL 键，并带该契约生成 PROTOCOL_PEER
+// release 草稿所需的 Catalog 元数据（DD-134(5)③④），不含 schema 正文。
 type GatewayMCPProbeResult struct {
 	AdapterServiceRef string                 `json:"adapterServiceRef"`
 	ProbedAt          string                 `json:"probedAt"`
@@ -6789,10 +6836,18 @@ type GatewayMCPProbedTool struct {
 }
 
 type GatewayMCPContractMatch struct {
-	CategoryKey     string               `json:"categoryKey"`
-	ContractKey     string               `json:"contractKey"`
-	ContractVersion int64                `json:"contractVersion"`
-	Permission      CapabilityPermission `json:"permission"`
+	CategoryKey     string `json:"categoryKey"`
+	ContractKey     string `json:"contractKey"`
+	ContractVersion int64  `json:"contractVersion"`
+	// 该 ACTIVE 契约的全部 operation 契约键；release 须为每个键登记动作与工具。
+	OperationContractKeys []string `json:"operationContractKeys"`
+	// 该 TOOL 契约键在 ACTIVE 契约中的输出 schema 摘要；release 的动作与工具逐字采用。
+	OutputSchemaDigest string               `json:"outputSchemaDigest"`
+	Permission         CapabilityPermission `json:"permission"`
+	// 该 ACTIVE 契约 resourceTypeFamily 的全部 typeKey；release 须逐一登记。
+	ResourceTypeKeys []string `json:"resourceTypeKeys"`
+	// 该 TOOL 契约键在 ACTIVE 契约中的 targetType。
+	TargetType string `json:"targetType"`
 }
 
 // DD-134(5)⑥：业务 Tenant 可建立连接的已批准 PROTOCOL_PEER release 与本 Tenant 的交付归属事实（Tenant manage）。
@@ -10268,6 +10323,25 @@ const (
 	DataQuery   NativePageCategory = "data_query"
 	FileStorage NativePageCategory = "file_storage"
 	Knowledge   NativePageCategory = "knowledge"
+)
+
+// DD-138：组件偏好项所属的 Kailo 设置功能分类（07 §4.8.2）。APPEARANCE 外观、NOTIFICATIONS 通知、DOCUMENTS
+// 文档与文件、ANSWERS 问答；不按组件分类。
+type ComponentPreferenceCategory string
+
+const (
+	Answers       ComponentPreferenceCategory = "ANSWERS"
+	Appearance    ComponentPreferenceCategory = "APPEARANCE"
+	Documents     ComponentPreferenceCategory = "DOCUMENTS"
+	Notifications ComponentPreferenceCategory = "NOTIFICATIONS"
+)
+
+// DD-138：组件偏好项的取值类型。只有布尔与封闭选项，不接受自由文本、数字区间、URL、凭据或用户数据（07 §4.8.2）。
+type ComponentPreferenceValueType string
+
+const (
+	Boolean ComponentPreferenceValueType = "BOOLEAN"
+	Enum    ComponentPreferenceValueType = "ENUM"
 )
 
 type ApplicationBindingState string

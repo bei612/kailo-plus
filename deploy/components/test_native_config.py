@@ -506,6 +506,67 @@ class RenderDocumentEditor(unittest.TestCase):
         self.assertNotIn("elsewhere", errors)
         self.assertEqual(json.loads((self.backup / "local.json").read_text(encoding="utf-8"))["wopi"]["host"], "http://elsewhere.example")
 
+    def stage(self, scratch):
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            return native.main(["stage", "document-editor", "--env", str(self.env_file), "--scratch-dir", str(scratch)], self.environ)
+
+    def test_first_deployment_check_stages_without_a_deployed_file(self):
+        # --check before the first deployment: no local.json exists yet.
+        scratch = self.work / "scratch"
+        scratch.mkdir(mode=0o700)
+        self.write_env(DOCUMENT_EDITOR_FACTS, DOCUMENT_EDITOR_IMAGE="127.0.0.1:55000/document-editor@sha256:" + "a" * 64)
+        controlled = self.env_file.read_text(encoding="utf-8")
+        result = self.stage(scratch)
+        staged_env, staged_local = scratch / "native.env", scratch / "local.json"
+        self.assertEqual((result["operation"], result["env"], result["destination"]), ("stage", str(staged_env), str(staged_local)))
+        self.assertTrue(result["written"])
+        self.assertFalse(self.local.exists())
+        self.assertEqual(self.env_file.read_text(encoding="utf-8"), controlled)
+        self.assertEqual(os.listdir(self.backup), [])
+        self.assertEqual(staged_env.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(staged_local.stat().st_mode & 0o777, 0o644)
+        # Only the destination line differs; every other fact is carried over unchanged.
+        staged = native.env_file(staged_env)
+        self.assertEqual(staged.pop("DOCUMENT_EDITOR_LOCAL_CONFIG_FILE"), str(staged_local))
+        original = native.env_file(self.env_file)
+        original.pop("DOCUMENT_EDITOR_LOCAL_CONFIG_FILE")
+        self.assertEqual(staged, original)
+        # The staged file is exactly what apply would publish.
+        self.run_native("apply")
+        self.assertEqual(staged_local.read_text(encoding="utf-8"), self.local.read_text(encoding="utf-8"))
+
+    def test_stage_refuses_unsafe_scratch_and_bad_facts(self):
+        shared = self.work / "shared"
+        shared.mkdir()
+        os.chmod(shared, 0o755)
+        with self.assertRaises(native.Refused):
+            self.stage(shared)
+        used = self.work / "used"
+        used.mkdir(mode=0o700)
+        private(used / "local.json", "{}")
+        with self.assertRaises(native.Refused):
+            self.stage(used)
+        empty = self.work / "empty"
+        empty.mkdir(mode=0o700)
+        self.write_env({**DOCUMENT_EDITOR_FACTS, "DOCUMENT_EDITOR_PUBLIC_ORIGIN": ""})
+        with self.assertRaises(native.Refused):
+            self.stage(empty)
+        self.assertFalse(self.local.exists())
+        with self.assertRaises(native.Refused):
+            native.main(["check", "document-editor", "--env", str(self.env_file), "--scratch-dir", str(empty)], self.environ)
+
+    def test_deploy_check_reads_the_staged_env_not_the_deployed_file(self):
+        script = (HERE / "component-deploy.sh").read_text(encoding="utf-8")
+        branch = script[script.index("  document-editor)"):script.index("  *) echo \"未知组件")]
+        check = branch[branch.index('if "$check"; then'):branch.index("exit 0")]
+        self.assertIn("mktemp -d", check)
+        self.assertIn("trap 'rm -rf -- \"$scratch\"' EXIT", check)
+        self.assertIn('"${render[@]}" stage document-editor --env "$ENV"', check)
+        self.assertIn('bash "$here/start.sh" --check "$staged"', check)
+        self.assertNotIn('start.sh" --check "$ENV"', check)
+        self.assertNotIn("apply document-editor", check)
+
     def test_deploy_entry_checks_before_any_change_and_renders_before_start(self):
         script = (HERE / "component-deploy.sh").read_text(encoding="utf-8")
         branch = script[script.index("  document-editor)"):script.index("  *) echo \"未知组件")]

@@ -1,12 +1,64 @@
 import {describe, expect, it} from 'vitest';
-import {DOCS_API_CONFIG, editorLocale, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch';
+import {docsApiConfig, editorLocale, kailoPreferences, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch';
 
 const origin = 'http://ds.example:58096';
 const selected = `${origin}/hosting/wopi/word/edit?wopisrc=http%3A%2F%2Fcells.example%2Fwopi%2Ffiles%2Fu&ui=en-US&lang=en-US&dchat=1`;
 
 describe('native ONLYOFFICE launch (DD-132)', () => {
-    it('closes macros and plugins in the posted editor configuration', () => {
-        expect(JSON.parse(DOCS_API_CONFIG)).toEqual({editorConfig: {customization: {macros: false, plugins: false}}});
+    const config = (preferences) => JSON.parse(docsApiConfig(preferences)).editorConfig.customization;
+
+    it('closes macros, plugins and the editor advanced settings in the posted configuration', () => {
+        for (const preferences of [undefined, {}, {'documents.measurementUnit': 'pt', 'documents.spellcheck': false}]) {
+            const customization = config(preferences);
+            expect(customization.macros).toBe(false);
+            expect(customization.plugins).toBe(false);
+            expect(customization.layout).toEqual({toolbar: {file: {settings: false}}});
+            expect(customization.features.spellcheck.change).toBe(false);
+        }
+    });
+
+    it('uses the declared document preference defaults (DD-138)', () => {
+        expect(JSON.parse(docsApiConfig(undefined))).toEqual({editorConfig: {customization: {
+            macros: false,
+            plugins: false,
+            layout: {toolbar: {file: {settings: false}}},
+            unit: 'cm',
+            features: {spellcheck: {mode: true, change: false}},
+        }}});
+        expect(config({})).toMatchObject({unit: 'cm', features: {spellcheck: {mode: true}}});
+    });
+
+    it('applies valid Kailo document preferences', () => {
+        for (const unit of ['cm', 'pt', 'inch']) {
+            expect(config({'documents.measurementUnit': unit}).unit).toBe(unit);
+        }
+        expect(config({'documents.spellcheck': false}).features.spellcheck.mode).toBe(false);
+        expect(config({'documents.spellcheck': true}).features.spellcheck.mode).toBe(true);
+    });
+
+    it('falls back to the defaults for invalid or foreign values', () => {
+        for (const unit of ['mm', 'CM', '', true, 1, null, {}]) {
+            expect(config({'documents.measurementUnit': unit}).unit).toBe('cm');
+        }
+        for (const spellcheck of ['false', 0, null, 'off']) {
+            expect(config({'documents.spellcheck': spellcheck}).features.spellcheck.mode).toBe(true);
+        }
+        const customization = config({'documents.other': 'x', macros: true, plugins: true});
+        expect(customization.macros).toBe(false);
+        expect(customization.plugins).toBe(false);
+        expect(customization).not.toHaveProperty('documents.other');
+    });
+
+    it('reads the preferences from the Kailo runtime and tolerates its absence', () => {
+        expect(kailoPreferences(undefined)).toEqual({});
+        expect(kailoPreferences({})).toEqual({});
+        expect(kailoPreferences({getPreferences: () => null})).toEqual({});
+        expect(kailoPreferences({getPreferences: () => ['cm']})).toEqual({});
+        expect(kailoPreferences({getPreferences: () => { throw new Error('x'); }})).toEqual({});
+        expect(kailoPreferences({getPreferences: () => ({'documents.measurementUnit': 'inch'})}))
+            .toEqual({'documents.measurementUnit': 'inch'});
+        expect(config(kailoPreferences({getPreferences: () => ({'documents.measurementUnit': 'inch', 'documents.spellcheck': false})})))
+            .toMatchObject({unit: 'inch', features: {spellcheck: {mode: false}}});
     });
 
     it('maps the Cells language preference to a DocumentServer locale', () => {

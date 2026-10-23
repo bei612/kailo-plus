@@ -1,6 +1,7 @@
 import type { Router } from 'vue-router'
 import type { Composer } from 'vue-i18n'
 import { openNewUserGuide } from '@/config/contextualGuides'
+import { kailoVisibleCommands } from '@/kailo/surface'
 
 /**
  * A single command that can be searched and invoked from the palette.
@@ -24,6 +25,8 @@ export interface CommandContext {
   t: Composer['t']
   /** Closes the palette; typically wires to commandPaletteStore.closePalette. */
   close: () => void
+  /** Kailo mode: settings and onboarding are Kailo surfaces (DD-138 §2), not palette commands. */
+  kailoMode?: boolean
 }
 
 /**
@@ -32,7 +35,7 @@ export interface CommandContext {
  */
 export function buildCommands(ctx: CommandContext): CmdkCommand[] {
   const { router, t, close } = ctx
-  return [
+  return kailoVisibleCommands<CmdkCommand>([
     {
       id: 'new-chat',
       label: t('commandPalette.quick.newChat'),
@@ -93,7 +96,7 @@ export function buildCommands(ctx: CommandContext): CmdkCommand[] {
         openNewUserGuide()
       },
     },
-  ]
+  ], Boolean(ctx.kailoMode))
 }
 
 /**

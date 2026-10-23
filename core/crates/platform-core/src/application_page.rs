@@ -267,8 +267,19 @@ async fn descriptor(
     }
     let (page, effective) = admitted_entry(&manifest, &config)?;
     let page_origin = page.origin().ascii_serialization();
-    let value = serde_json::json!({"bindingId":id,"projectionGeneration":generation,
+    let mut value = serde_json::json!({"bindingId":id,"projectionGeneration":generation,
         "url":page.as_str(),"origin":page_origin,"allowedOrigins":effective});
+    // DD-138: the page's declared Kailo settings items, so the host sends their
+    // values to this page only (07 §4.8.2). Validated at registration.
+    let presentation = &manifest["frontendPresentationContract"];
+    if presentation["integrationMode"] == "KAILO_EMBED" {
+        if let Some(items) = presentation["preferences"]
+            .as_array()
+            .filter(|items| !items.is_empty())
+        {
+            value["preferences"] = Value::Array(items.clone());
+        }
+    }
     let typed: contracts::ApplicationNativePage =
         serde_json::from_value(value.clone()).map_err(|_| unavailable())?;
     if serde_json::to_value(&typed).map_err(|_| unavailable())? != value {

@@ -69,6 +69,9 @@
     var embed = window.KailoEmbed || null;
     var listeners = [];
     var cached = null;
+    // Top level: the bridge drives the language only after it seeded KailoEmbed
+    // from the account (whenPydioReady below); inside Kailo, from the start.
+    var seeded = false;
 
     function embedState() {
         if (embed) {
@@ -90,9 +93,24 @@
         return cached || {};
     }
 
+    // Kailo mode (07 §4.8.1, DD-138): the deployment declared KAILO_EMBED, i.e.
+    // the Cells index page rendered startParameters.KAILO_EMBED (web/kailo-embed.go).
+    // Independent of framing: a top-level visit is still Kailo mode.
+    function kailoMode() {
+        var start = window.startParameters;
+        return !!(start && start.KAILO_EMBED && typeof start.KAILO_EMBED === 'object');
+    }
+
     function presentation() {
         var s = embedState();
         return {theme: s.theme, dark: s.theme === 'dark', locale: s.locale, language: nativeLanguage(s.locale), embedded: !!s.embedded};
+    }
+
+    // The native language the page must show, or '' while the account
+    // preference still decides (top level before the bridge seeded KailoEmbed).
+    function language() {
+        var s = embedState();
+        return embed && (s.embedded || seeded) ? nativeLanguage(s.locale) : '';
     }
 
     function localizedTitle() {
@@ -223,6 +241,9 @@
 
     window.KailoCells = {
         presentation: presentation,
+        // Native language id Kailo imposes on the page (Controller.setUser
+        // keeps it over the stored account preference), or ''.
+        language: language,
         subscribe: function (fn) {
             if (typeof fn === 'function') {
                 listeners.push(fn);
@@ -235,6 +256,11 @@
         logoutUrl: logoutUrl,
         // The native "logout" entry is shown only outside a Kailo frame.
         showLogout: function () { return !embedState().embedded && (!!logoutUrl() || !params().sso); },
+        kailoMode: kailoMode,
+        // DD-138: personal/global-shell entries (account dashboard, password,
+        // about, admin console switch, rail theme toggle, notification bell,
+        // rail user menu) render only outside Kailo mode; Kailo provides them.
+        showPersonalShell: function () { return !kailoMode(); },
         startLogin: startLogin,
         consumeReturnPath: consumeReturnPath,
         _internal: {nativeLanguage: nativeLanguage, kailoLocale: kailoLocale, safeReturnPath: safeReturnPath, params: params}
@@ -251,6 +277,7 @@
         if (embed && !embedState().embedded && pydio.currentLanguage) {
             embed.useIdentityLocale(kailoLocale(pydio.currentLanguage));
         }
+        seeded = true;
         syncPydio();
     });
 })(window, document);

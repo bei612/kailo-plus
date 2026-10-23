@@ -32,6 +32,8 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
   "appearance",
   "notifications",
+  "documents",
+  "answers",
   "shortcuts",
   "community-members",
   "moderation",
@@ -82,6 +84,9 @@ export function renderSettingsSection(
       return null; // SettingsView keeps the scoped UNKNOWN publication intent mounted.
     case "channel-templates":
       return <ChannelTemplatesSettingsCard />;
+    case "documents":
+    case "answers":
+      return null; // DD-138: the shared SettingsPage renders the contributed Kailo settings items.
     case "notifications":
       return (
         <NotificationSettingsCard

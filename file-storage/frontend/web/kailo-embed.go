@@ -94,14 +94,18 @@ func kailoPlatformLogoutURL(raw string) error {
 // the Kailo web origin (KAILO_FRAME_ANCESTORS, the frame-ancestors fact), the
 // platform token sheet and runtime (kailo-embed.js), the Cells overlay and
 // the Cells bridge, so the first paint already uses the Kailo theme.
+// The paths are root-absolute: this head precedes the page's <base>, so a
+// relative path resolved against the request path (/login/callback loaded
+// /login/plug/... as HTML and the runtime never started after SSO).
 func kailoHead(version string) template.HTML {
 	v := url.QueryEscape(version)
+	root := "/" + kailoEmbedRoot
 	var b strings.Builder
 	fmt.Fprintf(&b, `<meta name="kailo-web-origin" content="%s">`+"\n", template.HTMLEscapeString(strings.Join(kailoWebOrigins(), " ")))
-	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-theme-tokens.css?v=%s">`+"\n", kailoEmbedRoot, v)
-	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-overlay.css?v=%s">`+"\n", kailoEmbedRoot, v)
-	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-embed.js?v=%s"></script>`+"\n", kailoEmbedRoot, v)
-	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-cells.js?v=%s"></script>`+"\n", kailoEmbedRoot, v)
+	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-theme-tokens.css?v=%s">`+"\n", root, v)
+	fmt.Fprintf(&b, `<link rel="stylesheet" type="text/css" href="%s/kailo-overlay.css?v=%s">`+"\n", root, v)
+	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-embed.js?v=%s"></script>`+"\n", root, v)
+	fmt.Fprintf(&b, `<script type="text/javascript" src="%s/kailo-cells.js?v=%s"></script>`+"\n", root, v)
 	return template.HTML(b.String())
 }
 

@@ -64,6 +64,29 @@ recorded there and in the delivery report:
   English.
 - Nothing was deployed.
 
+## Production acceptance (2026-10-23, DD-133 问数部分)
+
+Deployed: Gateway at main `a06b5913` (login fix), Wren binding `2709f33a`
+(release `5a942f6e`, `wren@1.2.0-native-page`, `KAILO_EMBED`). Scripts and raw
+output on the CI node under `~/kailo-acceptance/dd133/`: `scripts/acc2.mjs`,
+`logout2.mjs`, `reauth.mjs`; output `out-20261023-r2/kailo-qa-{1,2,3}/`
+(`acc.jsonl`, `logout.jsonl`, screenshots) and `out-20261023-r2/reauth/`.
+qa-1/2/3 each ran once; values below hold for all three.
+
+| Scenario | Result | Evidence |
+|---|---|---|
+| V-SCN-198 white label | PASS | sidebar entry and top-level tab: title `Kailo 问数`, favicon/tokens/`kailo-embed.js` sha256 equal to the repository bytes at `a06b5913`, no upstream brand hits, `data-kailo-embedded` only when framed |
+| V-SCN-199 silent SSO / sign in again | PASS | first open lands on `/home` signed in, no password field or login UI; after the IdP session and the Gateway cookie were cleared with Kailo still signed in, the frame stayed on `/kailo-embed/signin`, the host showed “登录已失效…重新登录”, the click went to the IdP at top level and returned to `/app/applications/2709f33a…` with Wren signed in (`reauth/kailo-qa-*-wren.jsonl`) |
+| V-SCN-201 theme | PASS | `?kailo_theme=dark` → `data-kailo-theme=dark`, background `rgb(26,26,26)`; live switch kept the frame (`marker=kept`) and turned light |
+| V-SCN-201 locale | FAIL | `?kailo_locale=en`: runtime state `en`, but Next stayed `zh-CN` and `<html lang>` was reset to `zh-CN`. Cause: the one-shot locale replace at mount was aborted by the onboarding redirect `/`→`/home` (“Abort fetching component for route: /”). Fix: branch `fix/wren-embed-locale` `10e9dd66` (locale re-checked after every navigation; jest `kailoIntegration.test.ts` 15/15, tsc only the known `nativeQueryDelivery.test.ts(38,9)`), not deployed |
+| V-SCN-201 forged messages | PASS (runtime) | same `kailo-embed.js` bytes as the knowledge page, where self-posted and other-origin messages were ignored |
+| V-SCN-204 back-channel logout | PASS | Gateway session from the same browser context: `/home` 200 before, 302 → `/kailo-embed/signin` after Kailo sign-out (GraphQL 403 → 302); open Wren tab followed Kailo to the IdP |
+
+The display name inside Wren comes from the IdP `name` claim (`1 QA`), not the
+Kailo display name (`kailo-qa-1`); the avatar URL answers 404 for every
+same-Tenant requester, so the picture is broken (V-SCN-200, Core, see the Cells
+record).
+
 ## Member directory sync (DD-133(4), 2026-10-23, source stage)
 
 Authority: design-authority `.design/07` §4.7.4 (read contract and the Wren

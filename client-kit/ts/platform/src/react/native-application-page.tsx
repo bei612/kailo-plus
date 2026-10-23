@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApplicationNativePage } from "@client-kit/contracts";
 import { useBffClient, useNativeAuthenticationHost, useT, useTopLevelReauthentication } from "./context";
-import { embedRequest, nativeEmbedUrl, presentationMessage, useEmbedPresentation } from "./native-embed-host";
+import { embedRequest, nativeEmbedUrl, preferencesMessage, presentationMessage, useEmbedPresentation } from "./native-embed-host";
+import { preferenceValues } from "../component-preferences";
+import { useStoredComponentPreferences } from "./component-preferences";
 import { Button, Notice, ReadFailure } from "./ui";
+
+/** How long a page may take to complete the wire v1 handshake before it is treated as a DD-127 page. */
+export const NATIVE_HANDSHAKE_GRACE_MS = 8000;
 
 export function validNativePage(page: ApplicationNativePage, bindingId: string): boolean {
   try {
@@ -20,8 +25,16 @@ export function validNativePage(page: ApplicationNativePage, bindingId: string):
   } catch { return false; }
 }
 
-/** The independent service owns its complete page and session in both hosts. */
-export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string; onBack: () => void }) {
+/**
+ * The independent service owns its complete page and session in both hosts.
+ * DD-138(3): the page is a Kailo page — no host chrome (no "service workspace",
+ * back, refresh or boundary note) around a page that completed the handshake;
+ * only the DD-127 entry for a page without the Kailo runtime keeps its explicit
+ * sign-in button and boundary note. `onBack` renders a Back button only where
+ * the page is opened from a list (the binding management panel), not from the
+ * sidebar entry.
+ */
+export function NativeApplicationPage({ bindingId, onBack, title }: { bindingId: string; onBack?: () => void; title?: string }) {
   const client = useBffClient();
   const authenticateNative = useNativeAuthenticationHost();
   const reauthenticate = useTopLevelReauthentication();
@@ -107,6 +120,18 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
     return () => window.removeEventListener("message", receive);
   }, [origin, frameKey, post]);
   useEffect(() => { if (connected) post(); }, [connected, post, presentation.theme, presentation.locale]);
+  // DD-138: every declared preference of this page with its effective value,
+  // posted after `ready` and whenever Kailo settings change one of them.
+  const stored = useStoredComponentPreferences();
+  const declared = page?.preferences;
+  const values = useMemo(() => preferenceValues(declared, stored), [declared, stored]);
+  const valuesKey = JSON.stringify(values);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: valuesKey carries the content of `values`
+  useEffect(() => {
+    const target = frame.current?.contentWindow;
+    if (!connected || !origin || !target || !declared?.length) return;
+    target.postMessage(preferencesMessage(values), origin);
+  }, [connected, origin, declared, valuesKey]);
   const authenticateInHost = (): boolean => {
     if (!authenticateNative) return false;
     const request = scope.current;
@@ -131,20 +156,35 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
     if (reauthenticate) reauthenticate();
     else signInToService(url);
   };
+  // A page that has not (yet) completed the handshake within a short grace
+  // period is a DD-127 page without the Kailo runtime: keep its explicit entry.
+  // Until then Kailo shows its own loading state over the (still loading) frame.
+  const [graceOver, setGraceOver] = useState(false);
+  useEffect(() => {
+    setGraceOver(false);
+    if (!frameKey) return;
+    const timer = window.setTimeout(() => setGraceOver(true), NATIVE_HANDSHAKE_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [frameKey]);
+  const awaitingHandshake = page !== null && !connected && !graceOver;
+  const unhandshaked = page !== null && !connected && graceOver;
   return <section className="flex h-full min-h-0 flex-1 flex-col gap-3" data-testid="native-application-page">
-    <div className="flex flex-wrap items-center gap-2"><Button onClick={onBack}>{t("platform.back")}</Button>
-      <Button disabled={loading} onClick={() => { void reload(true); }}>{t("platform.refresh")}</Button>
-      {page && !connected ? <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>
-        {t("bindings.signInNative")}</Button> : null}</div>
+    {onBack ? <div><Button onClick={onBack}>{t("platform.back")}</Button></div> : null}
+    {unhandshaked ? <div className="flex flex-wrap items-center gap-2">
+      <Button disabled={loading || authenticationPending} onClick={() => signInToService(page.url)}>{t("bindings.signInNative")}</Button>
+      <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p></div> : null}
     {authenticationError ? <ReadFailure error={authenticationError} onRetry={() => setAuthenticationError(undefined)} /> : null}
     {page && connected && embedded?.authRequired ? <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
       <span>{t("bindings.embedSignInRequired")}</span>
       <Button disabled={authenticationPending} onClick={() => signInAgain(page.url)}>{t("bindings.embedSignIn")}</Button></div> : null}
-    {connected ? null : <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p>}
-    {page && frameKey && launch.current ? <iframe key={frameKey} ref={frame}
-      className="min-h-0 w-full flex-1 border-0" title={t("bindings.nativeTitle")}
-      src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
-      referrerPolicy="no-referrer" />
+    {page && frameKey && launch.current ? <div className="relative flex min-h-0 w-full flex-1 flex-col">
+      <iframe key={frameKey} ref={frame}
+        className={`min-h-0 w-full flex-1 border-0${awaitingHandshake ? " invisible" : ""}`} title={title ?? t("bindings.nativeTitle")}
+        src={launch.current.src} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
+        referrerPolicy="no-referrer" />
+      {awaitingHandshake ? <div className="absolute inset-0 flex items-center justify-center" data-testid="native-page-loading">
+        <Notice role="status">{t("platform.loading")}</Notice></div> : null}
+    </div>
       : loading ? <Notice role="status">{t("platform.loading")}</Notice>
       : <ReadFailure error={error} onRetry={() => { void reload(true); }} />}
   </section>;

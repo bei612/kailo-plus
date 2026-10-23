@@ -36,6 +36,7 @@
         "canDisable": {"type": "boolean"},
         "hasNativePage": {"type": "boolean", "description": "Approved release declares an independent native page. Launch still freshly checks binding, scope and deployment origins."},
         "nativePageCategory": {"$ref": "../enums/native_page_category.schema.json", "description": "DD-127(4): presentation category the approved NATIVE_PAGE release declares. The sidebar labels the entry by capabilityCategories ∪ this value; it grants nothing."},
+        "preferences": {"type": "array", "description": "DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo settings (07 §4.8.2). Kailo settings render them by category, never by component. Absent when none; Core keeps no values.", "items": {"$ref": "../domain/component_preference_declaration.schema.json"}},
         "hasReadReceiver": {"type": "boolean", "description": "Active approved binding declares a SERVICE read receiver. Resource discovery and writes still freshly check the original source share and receiver update permissions."},
         "bindingId": {"type": "string", "format": "uuid"},
         "tenantId": {"type": "string", "format": "uuid"},

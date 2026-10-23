@@ -200,7 +200,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
-import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -225,23 +224,20 @@ import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageBackendSettings from './StorageBackendSettings.vue'
 import SandboxSettings from './SandboxSettings.vue'
 import SkillSettings from './SkillSettings.vue'
-import { WHITE_LABEL_HIDDEN_SETTINGS } from '@/kailo/surface'
+import {
+  WHITE_LABEL_HIDDEN_SETTINGS,
+  fallbackSettingsSection,
+  resolveSettingsSection,
+} from '@/kailo/surface'
+import { useSettingsSectionVisibility } from '@/composables/useSettingsSectionVisibility'
 import TenantMembers from './TenantMembers.vue'
 import SystemSettings from '@/views/system/SystemSettings.vue'
 import RuntimeQueues from '@/views/system/RuntimeQueues.vue'
 import PlatformAPIKeys from '@/views/system/PlatformAPIKeys.vue'
 import SystemAuditLog from '@/views/system/SystemAuditLog.vue'
 import IntegrationSettingsSection from '@/views/integrations/IntegrationSettingsSection.vue'
-import {
-  INTEGRATION_PREVIEW_ITEMS,
-  INTEGRATION_TAB_CAPABILITY,
-  INTEGRATION_TAB_MIN_ROLE,
-} from '@/config/integrations'
-import {
-  SETTINGS_SECTION_MIN_ROLE,
-  SYSTEM_ADMIN_SETTINGS_SECTIONS,
-} from '@/config/settingsAccess'
-import { SETTINGS_SECTION_CAPABILITY } from '@/config/deploymentCapabilities'
+import { INTEGRATION_PREVIEW_ITEMS } from '@/config/integrations'
+import { SYSTEM_ADMIN_SETTINGS_SECTIONS } from '@/config/settingsAccess'
 import { SKILL_ICON } from '@/types/mention'
 import {
   buildSettingsRouteQuery,
@@ -255,11 +251,13 @@ import {
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
-const authStore = useAuthStore()
 const deploymentCapabilities = useDeploymentCapabilitiesStore()
 const { t } = useI18n()
+const { kailoMode, canSeeSection, isSectionSupported, visibleSectionKeys } = useSettingsSectionVisibility()
 
-const currentSection = ref<string>('general')
+// Kailo mode never defaults to a personal section (DD-138 §2); the first
+// visible section is chosen once navigation is known.
+const currentSection = ref<string>(fallbackSettingsSection([], kailoMode))
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
@@ -299,7 +297,7 @@ const normalizeSettingsSection = (section: string) => {
 }
 
 const syncSettingsRoute = (sectionKey: string) => {
-  if (route.path !== '/platform/settings') return
+  if (!sectionKey || route.path !== '/platform/settings') return
   const query = buildSettingsRouteQuery(sectionKey, route.query)
   if (settingsQueryUnchanged(route.query, query)) return
   void router.replace({
@@ -308,31 +306,15 @@ const syncSettingsRoute = (sectionKey: string) => {
   })
 }
 
-const isSectionSupported = (key: string): boolean => {
-  if (isIntegrationSection(key)) {
-    return deploymentCapabilities.isSupported(
-      INTEGRATION_TAB_CAPABILITY[integrationTabFromSection(key)],
-    )
-  }
-  return deploymentCapabilities.isSupported(SETTINGS_SECTION_CAPABILITY[key])
-}
+// 可见性规则（角色、部署能力、白标与 Kailo 模式）统一在
+// useSettingsSectionVisibility / @/kailo/surface，头像菜单共用同一判断。
 
-const canSeeSection = (key: string): boolean => {
-  if (isIntegrationSection(key)) {
-    const min = INTEGRATION_TAB_MIN_ROLE[integrationTabFromSection(key)]
-    if (!min) return true
-    if (authStore.canAccessAllTenants) return true
-    return authStore.hasRole(min)
-  }
-  if (SYSTEM_ADMIN_SECTIONS.has(key)) {
-    return authStore.isSystemAdmin
-  }
-  const min = SETTINGS_SECTION_MIN_ROLE[key] ?? 'viewer'
-  // canAccessAllTenants（superuser）和路由层一样必须 bypass，否则 cross-tenant
-  // 管理员看不到自己有权操作的入口（参考 TenantMembers.vue 的 canManage）。
-  if (authStore.canAccessAllTenants) return true
-  return authStore.hasRole(min)
-}
+/** A requested section, redirected to the first visible one when it is hidden in this mode. */
+const resolveRequestedSection = (section: string) =>
+  resolveSettingsSection(section, navItems.value.map((item) => item.key), kailoMode)
+
+/** First visible section, or the mode default before navigation is known. */
+const firstVisibleSection = () => fallbackSettingsSection(navItems.value.map((item) => item.key), kailoMode)
 
 const navItems = computed(() => {
   // 一律走 SETTINGS_SECTION_MIN_ROLE 表，避免 ad-hoc isAdmin/isOwner 散落在多处。
@@ -370,14 +352,10 @@ const navItems = computed(() => {
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     ...integrationItems,
   ]
-  // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
-  // viewer 入口然后角色一返回又消失，先卡住不渲染更稳，跟原先 members
-  // 入口的策略一致。
-  if (!authStore.currentTenantRole && !authStore.canAccessAllTenants) {
-    return [] as NavItem[]
-  }
-  return all.filter((it) =>
-    !WHITE_LABEL_HIDDEN_SETTINGS.has(it.key) && canSeeSection(it.key) && isSectionSupported(it.key))
+  // 角色未加载时 visibleSectionKeys 为空（先不渲染，避免入口闪烁）；
+  // Kailo 模式下个人设置整组（account）不出现（DD-138 §2）。
+  const visible = new Set(visibleSectionKeys.value)
+  return all.filter((it) => visible.has(it.key))
 })
 
 const navGroups = computed<NavGroup[]>(() => {
@@ -495,10 +473,17 @@ const handleClose = () => {
 // 监听初始导航设置
 watch(() => uiStore.settingsInitialSection, (section) => {
   if (section && visible.value) {
-    const normalizedSection = normalizeSettingsSection(section)
+    const requestedSection = normalizeSettingsSection(section)
+    const normalizedSection = resolveRequestedSection(requestedSection)
+    if (normalizedSection !== requestedSection) {
+      currentSection.value = normalizedSection
+      currentSubSection.value = ''
+      syncSettingsRoute(normalizedSection)
+      return
+    }
     if (deploymentCapabilities.loaded && !isSectionSupported(normalizedSection)) {
       MessagePlugin.warning(t('settings.capabilityUnavailable'))
-      currentSection.value = navItems.value[0]?.key || 'general'
+      currentSection.value = firstVisibleSection()
       currentSubSection.value = ''
       return
     }
@@ -539,16 +524,25 @@ watch(
   ([isVisible, path, section, capabilitiesLoaded]) => {
     if (!isVisible || path !== '/platform/settings') return
     if (typeof section !== 'string') {
-      syncSettingsRoute(currentSection.value || 'general')
+      syncSettingsRoute(currentSection.value || firstVisibleSection())
       return
     }
-    const normalizedSection = normalizeSettingsSectionFromQuery(
+    const requestedSection = normalizeSettingsSectionFromQuery(
       section,
       typeof route.query.tab === 'string' ? route.query.tab : undefined,
     )
+    // Direct links to sections hidden in this mode (e.g. ?section=general in
+    // Kailo mode) land on the first visible section instead.
+    const normalizedSection = resolveRequestedSection(requestedSection)
+    if (normalizedSection !== requestedSection) {
+      currentSection.value = normalizedSection
+      currentSubSection.value = ''
+      syncSettingsRoute(normalizedSection)
+      return
+    }
     if (capabilitiesLoaded && !isSectionSupported(normalizedSection)) {
       MessagePlugin.warning(t('settings.capabilityUnavailable'))
-      const fallback = navItems.value[0]?.key || 'general'
+      const fallback = firstVisibleSection()
       currentSection.value = fallback
       currentSubSection.value = ''
       syncSettingsRoute(fallback)
@@ -567,7 +561,7 @@ watch(
 // 如果 currentSection 落到了不再显示的 key 上，就回退到第一个可见项。
 watch(navItems, (items) => {
   if (!items.some((item) => item.key === currentSection.value)) {
-    const fallback = items[0]?.key || 'general'
+    const fallback = fallbackSettingsSection(items.map((item) => item.key), kailoMode)
     currentSection.value = fallback
     currentSubSection.value = ''
     syncSettingsRoute(fallback)
@@ -584,10 +578,17 @@ const modalShell = useModalShell({
 const handleSettingsNav = (e: CustomEvent) => {
   const { section, subsection } = e.detail
   if (section) {
-    const normalizedSection = normalizeSettingsSection(section)
+    const requestedSection = normalizeSettingsSection(section)
+    const normalizedSection = resolveRequestedSection(requestedSection)
+    if (normalizedSection !== requestedSection) {
+      currentSection.value = normalizedSection
+      currentSubSection.value = ''
+      syncSettingsRoute(normalizedSection)
+      return
+    }
     if (deploymentCapabilities.loaded && !isSectionSupported(normalizedSection)) {
       MessagePlugin.warning(t('settings.capabilityUnavailable'))
-      currentSection.value = navItems.value[0]?.key || 'general'
+      currentSection.value = firstVisibleSection()
       currentSubSection.value = ''
       return
     }

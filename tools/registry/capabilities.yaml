@@ -291,6 +291,12 @@ capabilities:
   - capability_contract.deprecate
   tools: []
   workflow_kinds: []
+- id: component.fused_surfaces
+  exposure: none
+  routes: []
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: component.native_embed
   exposure: end_user
   routes:

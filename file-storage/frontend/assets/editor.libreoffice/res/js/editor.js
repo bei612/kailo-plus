@@ -143,7 +143,7 @@ export default class Editor extends React.Component {
 
     render() {
         const {url, kailoDelivery, exportingReference, referenceError} = this.state
-        const messages = Pydio.getInstance().getMessages();
+        const messages = Pydio.getMessages();
         return (
             <div style={{display: 'flex', flexDirection: 'column', width: '100%', height: '100%'}}>
                 {kailoDelivery ? <div>

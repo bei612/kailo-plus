@@ -238,6 +238,10 @@
                     </context>
                 </gui>
                 <processing>
+                    <!-- DD-138: help and about are Kailo's only (07 §4.8.1). -->
+                    <activeCondition><![CDATA[
+                        return !window.KailoCells || window.KailoCells.showPersonalShell();
+                    ]]></activeCondition>
                     <clientCallback module="PydioCoreActions.Navigation.splash"/>
                 </processing>
             </action>

@@ -10,6 +10,7 @@
     "projectionGeneration": {"type": "integer"},
     "url": {"type": "string", "format": "uri"},
     "origin": {"type": "string", "format": "uri"},
-    "allowedOrigins": {"type": "array", "items": {"type": "string", "format": "uri"}}
+    "allowedOrigins": {"type": "array", "items": {"type": "string", "format": "uri"}},
+    "preferences": {"type": "array", "description": "DD-138: preference items the pinned APPROVED KAILO_EMBED release declares for Kailo settings (07 §4.8.2); the host sends their values to this page only. Absent when none.", "items": {"$ref": "../domain/component_preference_declaration.schema.json"}}
   }
 }

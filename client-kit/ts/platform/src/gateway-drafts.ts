@@ -150,10 +150,22 @@ export const emptyBindingConfigSchema = {
   properties: {},
 } as const;
 
+/** 所选 ACTIVE 契约中有 operation 没有对应工具：Core 要求 release 覆盖契约的全部 operation。 */
+export class UncoveredOperationsError extends Error {
+  constructor(readonly contractKeys: string[]) {
+    super(`uncovered contract operations: ${contractKeys.join(", ")}`);
+    this.name = "UncoveredOperationsError";
+  }
+}
+
 /**
- * PROTOCOL_PEER release 草稿（07 §5.1、DD-94）：connector 只取 PROTOCOL_PEER，adapterBuildRef 是交付
- * 目录登记的运行体 digest，工具与动作来自所选契约。所选契约不是本次草稿登记的，其类型键与输出
- * 摘要在客户端无从得知，以占位写出，必须由管理员核对后提交；摘要按当前文本重新计算。
+ * PROTOCOL_PEER release 草稿（07 §5.1、DD-94、DD-134(5)④）。工具只能对应探测时已 ACTIVE 的契约键
+ * （DD-134(5)③），因此 resourceTypeFamily、targetType、permission 与输出摘要一律取探测结果所带的
+ * ACTIVE 契约 Catalog 元数据，不在客户端推断或占位；本会话刚登记的契约须经批准并重新探测后才可选。
+ * 规则与 Core 的 component_release::registration / validate_declarations 及
+ * application_binding_native::Connector::validate_action 对齐（PROTOCOL_PEER 的观测来源含 CORE_ACTION
+ * 与 AGENTGATEWAY；APPLICATION 动作 capacityPolicy=NATIVE；同步、无 meter 与 quota）。
+ * 跨语言对照样例见 contracts/samples/gateway-mcp-release-draft.sample.json，两侧测试共用。
  */
 export async function releaseDraft(input: {
   peer: GatewayMcpPeerView;
@@ -162,32 +174,32 @@ export async function releaseDraft(input: {
   componentTypeKey: string;
   vendor: string;
   artifactVersion: string;
-  contract?: CapabilityContractRegistration;
 }): Promise<ReleaseDraft> {
   const releaseId = newIdempotencyKey();
   const componentTypeKey = identifierFrom(input.componentTypeKey, "mcp_service");
   const chosen = input.choices.filter((choice) => choice.contractKey);
   const implemented = new Map<string, { categoryKey: string; contractVersion: number }>();
-  const typeKeys = new Set<string>();
+  const resourceTypes = new Map<string, { categoryKey: string; contractVersion: number }>();
+  const required = new Set<string>();
+  const covered = new Set<string>();
   const actionDefinitions: unknown[] = [];
   const toolDefinitions: unknown[] = [];
   for (const choice of chosen) {
     const contractKey = choice.contractKey!;
-    const match = /^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)@v(\d+)$/.exec(contractKey);
-    const categoryKey = match?.[1] ?? contractKey;
-    const contractVersion = Number(match?.[3] ?? 1);
+    const match = choice.tool.matchingContracts.find((item) => item.contractKey === contractKey);
+    if (!match) throw new UncoveredOperationsError([contractKey]);
+    const { categoryKey, contractVersion } = match;
     implemented.set(`${categoryKey}@${contractVersion}`, { categoryKey, contractVersion });
-    const drafted = input.contract?.categoryKey === categoryKey && input.contract.contractVersion === contractVersion
-      ? input.contract : undefined;
-    for (const family of drafted?.resourceTypeFamily ?? [{ typeKey: `${categoryKey}.<kind>` }]) typeKeys.add(family.typeKey);
-    const operation = drafted?.operationContracts.find((item) => item.contractKey === contractKey);
-    const output = operation?.outputSchemaDigest ?? (await outputSchemaOf(choice.tool)).digest;
-    const permission = choice.permission ?? operation?.permission ?? "consume";
+    for (const typeKey of match.resourceTypeKeys) resourceTypes.set(typeKey, { categoryKey, contractVersion });
+    for (const key of match.operationContractKeys) required.add(key);
+    if (covered.has(contractKey)) throw new UncoveredOperationsError([contractKey]);
+    covered.add(contractKey);
+    const output = match.outputSchemaDigest;
     actionDefinitions.push({
       actionKey: contractKey, version: 1, capabilityContractKey: contractKey, componentTypeKey,
-      targetType: "RESOURCE", tenantRule: "SESSION_TENANT", workspaceRule: "TARGET_HOME_WORKSPACE", permission,
+      targetType: match.targetType, tenantRule: "SESSION_TENANT", workspaceRule: "TARGET_HOME_WORKSPACE", permission: match.permission,
       executionMode: "SYNC", confirmationMode: "NONE", approvalPolicyId: "NONE", workflowType: "NONE",
-      capacityPolicy: "NONE", capacityPoolKey: "NONE", quotaPolicy: "NONE", meters: [],
+      capacityPolicy: "NATIVE", capacityPoolKey: "NONE", quotaPolicy: "NONE", meters: [],
       resultExposurePolicy: { mode: "CONSUME_ONLY", outputSchemaHash: output, redactionPolicy: "PLATFORM_METADATA_ONLY" },
       auditPolicy: "FULL_LIFECYCLE",
       businessObservabilityPolicy: { correlationMode: "OPERATION_NATIVE_REF", progressSource: "NONE", terminalSource: "SYNC_RESULT",
@@ -199,6 +211,9 @@ export async function releaseDraft(input: {
       inputSchemaHash: choice.tool.inputSchemaDigest, outputSchemaHash: output, backendRef: input.peer.adapterServiceRef, status: "ACTIVE",
     });
   }
+  const uncovered = [...required].filter((key) => !covered.has(key)).sort();
+  if (uncovered.length) throw new UncoveredOperationsError(uncovered);
+  const typeKeys = [...resourceTypes.keys()].sort();
   const bindingConfigSchemaJson = JSON.stringify(emptyBindingConfigSchema, null, 2);
   const manifest = {
     id: releaseId,
@@ -225,15 +240,15 @@ export async function releaseDraft(input: {
     dataStoreIsolation: "DEDICATED_INSTANCE",
     dataLocation: `Self-hosted MCP service ${input.peer.nativeInstanceRef} in the platform operations domain.`,
     secretSchema: [],
-    targetResourceTypeKeys: [...typeKeys],
-    resourceTypeDefinitions: [...typeKeys].map((typeKey) => ({
-      typeKey, capabilityCategory: typeKey.split(".")[0], capabilityContractVersion: implemented.get(
-        [...implemented.keys()].find((key) => key.startsWith(`${typeKey.split(".")[0]}@`)) ?? "")?.contractVersion ?? 1,
+    targetResourceTypeKeys: typeKeys,
+    resourceTypeDefinitions: typeKeys.map((typeKey) => ({
+      typeKey, capabilityCategory: resourceTypes.get(typeKey)!.categoryKey,
+      capabilityContractVersion: resourceTypes.get(typeKey)!.contractVersion,
       incrementalContracts: [], llmGatewayContract: "NOT_USED", transferFormats: [], tenantDeleteActionKey: "NONE", status: "ACTIVE",
     })),
     actionDefinitions,
     toolDefinitions,
-    businessObservabilityContract: { correlationSources: ["OPERATION_ID"], businessStateSources: ["CORE_ACTION"],
+    businessObservabilityContract: { correlationSources: ["OPERATION_ID"], businessStateSources: ["CORE_ACTION", "AGENTGATEWAY"],
       aggregationDimensions: ["tenant_id", "workspace_id", "action_key", "component_binding_ref"], redactionPolicy: "PLATFORM_METADATA_ONLY" },
     frontendPresentationContract: { integrationMode: "NONE", themeMapping: {}, localeMapping: {}, themeChangePolicy: "NONE", localeResolutionPolicy: "NONE" },
   };

@@ -3495,6 +3495,11 @@ enum PlatformMessageKey {
   gifRemove,
   platformSettingsBack,
   platformSettingsNotifications,
+  platformSettingsDocuments,
+  platformSettingsDocumentsDescription,
+  platformSettingsAnswers,
+  platformSettingsAnswersDescription,
+  platformSettingsNoItems,
   platformSettingsShortcuts,
   platformSettingsShortcutsDescription,
   platformSettingsSendShortcut,
@@ -12851,6 +12856,20 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.gifRemove: ('Remove {title}', '移除{title}'),
   PlatformMessageKey.platformSettingsBack: ('Back to app', '返回应用'),
   PlatformMessageKey.platformSettingsNotifications: ('Notifications', '通知'),
+  PlatformMessageKey.platformSettingsDocuments: ('Documents & files', '文档与文件'),
+  PlatformMessageKey.platformSettingsDocumentsDescription: (
+    'How documents open and behave when you edit them.',
+    '打开与编辑文档时的偏好。',
+  ),
+  PlatformMessageKey.platformSettingsAnswers: ('Answers', '问答'),
+  PlatformMessageKey.platformSettingsAnswersDescription: (
+    'How questions about your knowledge and data are answered.',
+    '针对知识与数据提问时的回答偏好。',
+  ),
+  PlatformMessageKey.platformSettingsNoItems: (
+    'Nothing to set here yet.',
+    '暂无可设置的项目。',
+  ),
   PlatformMessageKey.platformSettingsShortcuts: ('Keyboard shortcuts', '快捷键'),
   PlatformMessageKey.platformSettingsShortcutsDescription: (
     'Shortcuts available in this app. Read-only.',

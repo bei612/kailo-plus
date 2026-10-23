@@ -25,9 +25,10 @@ container_require_data_path() {
   path=$(realpath -e -- "$1") || {
     container_safety_error "数据路径不存在：$1"; return 2;
   }
+  # 项目专属数据位置：/volumes/data（容量）或 NVMe 上的 /var/lib/kailo-ci（高频临时写入，07 §2.1）
   case "$path" in
-    /volumes/data/*) printf '%s\n' "$path" ;;
-    *) container_safety_error "缓存、临时目录与日志必须位于 /volumes/data：$path" ;;
+    /volumes/data/*|/var/lib/kailo-ci/*) printf '%s\n' "$path" ;;
+    *) container_safety_error "缓存、临时目录与日志必须位于 /volumes/data 或 /var/lib/kailo-ci：$path" ;;
   esac
 }
 

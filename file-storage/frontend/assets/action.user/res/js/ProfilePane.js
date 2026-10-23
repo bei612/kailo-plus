@@ -114,7 +114,10 @@ class ProfilePane extends React.Component {
         }else{
             button = <FlatButton label={this.props.pydio.MessageHash[86]} onClick={this.props.onDismiss}/>;
         }
-        if(this.props.pydio.Controller.getActionByName('pass_change')){
+        // DD-138 (07 §4.8.1): in Kailo mode the password belongs to the Kailo
+        // account only; the native password change is not rendered.
+        const kailoMode = !!(window.KailoCells && window.KailoCells.kailoMode && window.KailoCells.kailoMode());
+        if(!kailoMode && this.props.pydio.Controller.getActionByName('pass_change')){
             return [
                 <div style={{display:'flex', width: '100%'}}>
                     <PasswordPopover {...this.props}/>

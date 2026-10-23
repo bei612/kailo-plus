@@ -101,8 +101,9 @@ fn validate_presentation(manifest: &Value) -> Result<(), Refusal> {
             "themeChangePolicy",
             "localeResolutionPolicy",
         ],
-        &[],
+        &["preferences"],
     )?;
+    validate_preferences(presentation)?;
     let valid = match presentation["integrationMode"].as_str() {
         Some("NONE") => {
             presentation["themeChangePolicy"] == "NONE"
@@ -124,6 +125,109 @@ fn validate_presentation(manifest: &Value) -> Result<(), Refusal> {
     } else {
         Err(bad())
     }
+}
+
+/// DD-138 (`07` §4.8.2): the items a `KAILO_EMBED` release contributes to
+/// Kailo settings. Booleans and closed options only, bilingual labels, Kailo
+/// settings categories (never a component section), at most 16 per release.
+/// Core keeps the declaration with the release and never stores a value.
+fn validate_preferences(presentation: &Value) -> Result<(), Refusal> {
+    let Some(items) = presentation.get("preferences") else {
+        return Ok(());
+    };
+    let items = items.as_array().ok_or_else(bad)?;
+    if presentation["integrationMode"] != "KAILO_EMBED" || items.len() > 16 {
+        return Err(bad());
+    }
+    let mut keys = BTreeSet::new();
+    for item in items {
+        exact_fields(
+            item,
+            &[
+                "key",
+                "settingsCategory",
+                "valueType",
+                "options",
+                "defaultValue",
+                "label",
+            ],
+            &["description"],
+        )?;
+        let key = item["key"]
+            .as_str()
+            .filter(|key| preference_key(key))
+            .ok_or_else(bad)?;
+        if !keys.insert(key)
+            || !matches!(
+                item["settingsCategory"].as_str(),
+                Some("APPEARANCE" | "NOTIFICATIONS" | "DOCUMENTS" | "ANSWERS")
+            )
+        {
+            return Err(bad());
+        }
+        bilingual(&item["label"], 60)?;
+        if let Some(description) = item.get("description") {
+            bilingual(description, 200)?;
+        }
+        let options = item["options"].as_array().ok_or_else(bad)?;
+        let default = item["defaultValue"].as_str().ok_or_else(bad)?;
+        match item["valueType"].as_str() {
+            Some("BOOLEAN") if options.is_empty() && matches!(default, "true" | "false") => {}
+            Some("ENUM") if (2..=12).contains(&options.len()) => {
+                let mut values = BTreeSet::new();
+                for option in options {
+                    exact_fields(option, &["value", "label"], &[])?;
+                    let value = option["value"]
+                        .as_str()
+                        .filter(|value| preference_option(value))
+                        .ok_or_else(bad)?;
+                    if !values.insert(value) {
+                        return Err(bad());
+                    }
+                    bilingual(&option["label"], 60)?;
+                }
+                if !values.contains(default) {
+                    return Err(bad());
+                }
+            }
+            _ => return Err(bad()),
+        }
+    }
+    Ok(())
+}
+
+/// Two to four lower-camel segments joined by `.`, e.g. `documents.spellcheck`.
+fn preference_key(key: &str) -> bool {
+    let segments = key.split('.').count();
+    key.len() <= 64
+        && (2..=4).contains(&segments)
+        && key.split('.').all(|segment| {
+            let mut bytes = segment.bytes();
+            bytes.next().is_some_and(|c| c.is_ascii_lowercase())
+                && bytes.all(|c| c.is_ascii_alphanumeric())
+        })
+}
+
+fn preference_option(value: &str) -> bool {
+    (1..=32).contains(&value.len())
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'-'))
+}
+
+fn bilingual(value: &Value, max_chars: usize) -> Result<(), Refusal> {
+    exact_fields(value, &["ZH_CN", "EN"], &[])?;
+    for locale in ["ZH_CN", "EN"] {
+        let text = value[locale]
+            .as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .ok_or_else(bad)?;
+        if text.chars().count() > max_chars {
+            return Err(bad());
+        }
+    }
+    Ok(())
 }
 
 fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
@@ -2964,7 +3068,7 @@ async fn persist_registration(
                 "select exists(select 1 from audit.audit_event
                 where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4
                   and action_version=$5 and target_id=$6 and parameter_hash=$7
-                  and event_type='RESULT' and decision='ALLOW' and result_code='SUCCEEDED')",
+                  and event_type='OUTCOME' and decision='ALLOW' and result_code='SUCCEEDED')",
             )
             .bind(format!("{}:mcp-probe:{index}:result", ae.operation_id))
             .bind(ae.tenant_id)
@@ -3120,6 +3224,9 @@ async fn read_releases(
     // invented status or a successful empty catalog.
     serde_json::from_value::<contracts::ComponentReleasePage>(result).map_err(|_| bad())
 }
+
+#[cfg(test)]
+mod draft_sample;
 
 #[cfg(test)]
 mod report_tests {
@@ -3622,6 +3729,99 @@ mod report_tests {
         assert!(validate_presentation(&manifest).is_err());
         manifest["frontendDelivery"]["mode"] = json!("NATIVE_PAGE");
         assert!(validate_presentation(&manifest).is_ok());
+    }
+
+    #[test]
+    fn kailo_embed_preferences_are_kailo_settings_items() {
+        // DD-138 (07 §4.8.2, V-SCN-224): a KAILO_EMBED release contributes
+        // boolean or closed-option items to Kailo settings categories.
+        let text = |zh: &str, en: &str| json!({"ZH_CN":zh,"EN":en});
+        let unit = json!({"key":"documents.measurementUnit","settingsCategory":"DOCUMENTS",
+            "valueType":"ENUM","options":[{"value":"cm","label":text("厘米","Centimeters")},
+                {"value":"pt","label":text("点","Points")},{"value":"inch","label":text("英寸","Inches")}],
+            "defaultValue":"cm","label":text("度量单位","Measurement unit"),
+            "description":text("编辑器单位","Editor unit")});
+        let spell = json!({"key":"documents.spellcheck","settingsCategory":"DOCUMENTS",
+            "valueType":"BOOLEAN","options":[],"defaultValue":"true",
+            "label":text("拼写检查","Spell checking")});
+        let embed = json!({"integrationMode":"KAILO_EMBED",
+            "themeMapping":{"LIGHT":"light","DARK":"dark"},
+            "localeMapping":{"ZH_CN":"zh-CN","EN":"en-US"},
+            "themeChangePolicy":"LIVE","localeResolutionPolicy":"BROWSER_RESOLVED",
+            "preferences":[unit.clone(), spell.clone()]});
+        let manifest = |contract: Value| {
+            json!({"frontendDelivery":{"mode":"NATIVE_PAGE"},
+            "frontendPresentationContract":contract})
+        };
+        assert!(validate_presentation(&manifest(embed.clone())).is_ok());
+        let mut empty = embed.clone();
+        empty["preferences"] = json!([]);
+        assert!(validate_presentation(&manifest(empty)).is_ok());
+        let with = |items: Value| {
+            let mut contract = embed.clone();
+            contract["preferences"] = items;
+            manifest(contract)
+        };
+        let item = |base: &Value, key: &str, value: Value| {
+            let mut item = base.clone();
+            item[key] = value;
+            item
+        };
+        let too_many: Vec<Value> = (0..17)
+            .map(|i| item(&spell, "key", json!(format!("documents.flag{i}"))))
+            .collect();
+        for refused in [
+            with(json!([spell.clone(), spell.clone()])),
+            with(json!([item(&spell, "key", json!("spellcheck"))])),
+            with(json!([item(&spell, "key", json!("Documents.spellcheck"))])),
+            with(json!([item(&spell, "key", json!("a.b.c.d.e"))])),
+            with(json!([item(&spell, "settingsCategory", json!("CELLS"))])),
+            with(json!([item(&spell, "valueType", json!("TEXT"))])),
+            with(json!([item(&spell, "defaultValue", json!("yes"))])),
+            with(json!([item(
+                &spell,
+                "options",
+                json!([{"value":"on","label":text("开","On")}])
+            )])),
+            with(json!([item(
+                &unit,
+                "options",
+                json!([{"value":"cm","label":text("厘米","Centimeters")}])
+            )])),
+            with(json!([item(&unit, "defaultValue", json!("mm"))])),
+            with(json!([item(
+                &unit,
+                "options",
+                json!([{"value":"cm","label":text("厘米","cm")},
+                {"value":"cm","label":text("厘米","cm")}])
+            )])),
+            with(json!([item(
+                &unit,
+                "options",
+                json!([{"value":"c m","label":text("厘米","cm")},
+                {"value":"pt","label":text("点","pt")}])
+            )])),
+            with(json!([item(&spell, "label", json!({"ZH_CN":"拼写检查"}))])),
+            with(json!([item(
+                &spell,
+                "label",
+                json!({"ZH_CN":" ","EN":"Spell"})
+            )])),
+            with(json!([item(
+                &spell,
+                "label",
+                text("长".repeat(61).as_str(), "Spell")
+            )])),
+            with(json!([item(&spell, "extra", json!(true))])),
+            with(json!(too_many)),
+            with(json!({"documents.spellcheck":true})),
+        ] {
+            assert!(validate_presentation(&refused).is_err());
+        }
+        // Preferences ride only with KAILO_EMBED.
+        let none = json!({"integrationMode":"NONE","themeMapping":{},"localeMapping":{},
+            "themeChangePolicy":"NONE","localeResolutionPolicy":"NONE","preferences":[spell]});
+        assert!(validate_presentation(&manifest(none)).is_err());
     }
 
     #[test]

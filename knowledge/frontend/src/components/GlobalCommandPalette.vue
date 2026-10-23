@@ -19,7 +19,7 @@
         <span v-if="loading" class="cmdk__input-spinner">
           <t-loading size="small" />
         </span>
-        <t-tooltip :content="t('commandPalette.retrieval')" placement="bottom">
+        <t-tooltip v-if="showRetrievalSettings" :content="t('commandPalette.retrieval')" placement="bottom">
           <button type="button" class="cmdk__icon-btn" :class="{ active: drawerVisible }" @click="drawerVisible = true">
             <t-icon name="setting" size="16px" />
           </button>
@@ -130,7 +130,7 @@
                 <template #icon><t-icon name="chat" size="14px" /></template>
                 {{ t('commandPalette.empty.askAi') }}
               </t-button>
-              <t-button variant="outline" size="small" @click="drawerVisible = true">
+              <t-button v-if="showRetrievalSettings" variant="outline" size="small" @click="drawerVisible = true">
                 <template #icon><t-icon name="setting" size="14px" /></template>
                 {{ t('commandPalette.empty.adjustRetrieval') }}
               </t-button>
@@ -170,16 +170,21 @@ import { useCmdkSearch, type CmdkFileGroup, type CmdkChunk, type CmdkMsgGroup } 
 import { highlightText } from './GlobalCommandPalette/useHighlight'
 import { useStartChat } from './GlobalCommandPalette/useStartChat'
 import { buildCommands, filterCommands } from './GlobalCommandPalette/commands'
+import { kailoConfig } from '@/kailo/runtime'
 import ResultGroup from './GlobalCommandPalette/ResultGroup.vue'
 import ResultItem from './GlobalCommandPalette/ResultItem.vue'
 import RetrievalSettings from '@/views/settings/RetrievalSettings.vue'
 import type { MessageSearchGroupItem } from '@/api/chat-history'
 
 const { t } = useI18n()
+const kailoMode = kailoConfig().mode
 const route = useRoute()
 const router = useRouter()
 const commandPaletteStore = useCommandPaletteStore()
 const authStore = useAuthStore()
+// Retrieval config is a workspace-wide admin setting; in Kailo mode it is
+// reachable only for admins until it moves to the Kailo admin area (DD-138(6)).
+const showRetrievalSettings = computed(() => !kailoMode || authStore.hasRole('admin'))
 const deploymentCapabilities = useDeploymentCapabilitiesStore()
 const { open, initialQuery, recentQueries } = storeToRefs(commandPaletteStore)
 const { startChat } = useStartChat()
@@ -258,6 +263,7 @@ const allCommands = computed(() => {
     router,
     t,
     close: () => commandPaletteStore.closePalette(),
+    kailoMode,
   })
   return cmds.filter((command) => {
     if (command.id === 'open-agents') {

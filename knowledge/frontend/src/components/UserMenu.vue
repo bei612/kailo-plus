@@ -1,8 +1,13 @@
 <template>
-  <div class="user-menu" :class="{ 'user-menu--collapsed': uiStore.sidebarCollapsed }" ref="menuRef">
+  <!-- Kailo mode (DD-138 §2): identity, personal settings, guide and logout live in Kailo;
+       the button shows the space line and opens only space/admin entries. -->
+  <div v-if="menu.render" class="user-menu" :class="{ 'user-menu--collapsed': uiStore.sidebarCollapsed }" ref="menuRef">
     <!-- 用户按钮 -->
-    <div class="user-button" data-guide="user-menu" @click="toggleMenu">
-      <div class="user-avatar">
+    <div class="user-button" :class="{ 'is-static': !menu.dropdown }" data-guide="user-menu" @click="toggleMenu">
+      <div v-if="kailoMode" class="user-avatar user-avatar--space" aria-hidden="true">
+        <t-icon name="system-sum" size="14px" />
+      </div>
+      <div v-else class="user-avatar">
         <img v-if="userAvatar" :src="userAvatar" :alt="$t('common.avatar')" />
         <span v-else class="avatar-placeholder">{{ userInitial }}</span>
       </div>
@@ -12,8 +17,8 @@
           <template v-if="showTenantIdentityLine">
             <div class="user-tenant-name" :title="activeTenantName">{{ activeTenantName }}</div>
             <div class="user-tenant-meta">
-              <span v-if="userName && userName !== activeTenantName" class="user-tenant-meta-name">{{ userName }}</span>
-              <span v-if="(userName && userName !== activeTenantName) && currentRoleLabel"
+              <span v-if="showMetaUserName" class="user-tenant-meta-name">{{ userName }}</span>
+              <span v-if="showMetaUserName && currentRoleLabel"
                 class="user-tenant-meta-sep">·</span>
               <t-icon v-if="currentRoleIcon" :name="currentRoleIcon" size="12px" class="user-tenant-meta-icon" />
               <span v-if="currentRoleLabel" class="user-tenant-meta-role">{{ currentRoleLabel }}</span>
@@ -24,16 +29,16 @@
             <div class="user-email">{{ userEmail }}</div>
           </template>
         </div>
-        <t-icon :name="menuVisible ? 'chevron-up' : 'chevron-down'" class="dropdown-icon" />
+        <t-icon v-if="menu.dropdown" :name="menuVisible ? 'chevron-up' : 'chevron-down'" class="dropdown-icon" />
       </template>
     </div>
 
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
-      <div v-if="menuVisible" class="user-dropdown" @click.stop>
+      <div v-if="menuVisible && menu.dropdown" class="user-dropdown" @click.stop>
         <!-- 弹出菜单：账号（头像+昵称）／当前空间（名称+权限）；底部侧栏样式不改。 -->
-        <!-- Embedded in Kailo: personal identity lives in Kailo, not in this page (DD-133 §4). -->
-        <div v-if="userName && !kailoEmbedded" class="dropdown-user-header is-clickable" role="button" tabindex="0"
+        <!-- Kailo mode: personal identity lives in Kailo, not in this page (DD-133 §4, DD-138 §2). -->
+        <div v-if="userName && menu.personalHeader" class="dropdown-user-header is-clickable" role="button" tabindex="0"
           @click="handleQuickNav('userprofile')" @keydown.enter.prevent="handleQuickNav('userprofile')"
           @keydown.space.prevent="handleQuickNav('userprofile')">
           <div class="dropdown-user-avatar">
@@ -43,7 +48,7 @@
           <div class="dropdown-user-meta">
             <div class="dropdown-user-name-row">
               <span class="dropdown-user-name">{{ userName }}</span>
-              <t-tooltip v-if="!kailoMode" :content="$t('newUserGuide.reopen')" placement="top">
+              <t-tooltip v-if="menu.guide" :content="$t('newUserGuide.reopen')" placement="top">
                 <button type="button" class="dropdown-guide-btn" :aria-label="$t('newUserGuide.reopen')"
                   @click.stop="reopenGuide">
                   <t-icon name="help-circle" size="14px" />
@@ -73,33 +78,33 @@
           <t-icon v-if="showTenantSwitcher" name="swap" class="dropdown-tenant-panel-trail"
             :title="$t('tenant.switcher.menuLabel')" />
         </div>
-        <div class="menu-divider"></div>
+        <div v-if="hasShortcutGroup || menu.allSettings || menu.systemAdmin" class="menu-divider"></div>
         <!-- 账号与空间是头像菜单的核心上下文；基础设施类配置统一收进「全部设置」。 -->
-        <div v-if="!kailoEmbedded" class="menu-item" @click="handleQuickNav('general')">
+        <div v-if="menu.personalSettings" class="menu-item" @click="handleQuickNav('general')">
           <t-icon name="user" class="menu-icon" />
           <span>{{ $t('general.personalSettings') }}</span>
         </div>
-        <div v-if="!authStore.isLiteMode" class="menu-item" @click="handleQuickNav('tenant')">
+        <div v-if="menu.spaceSettings" class="menu-item" @click="handleQuickNav('tenant')">
           <t-icon name="user-circle" class="menu-icon" />
           <span>{{ $t('settings.workspaceSettings') }}</span>
         </div>
         <!-- “管理”类快捷入口只对真正具备写权限的人展示。只读名册和模型列表
              仍可从「全部设置」进入，避免 viewer 看到名不副实的管理入口。 -->
         <!-- Kailo mode: membership and roles come from Kailo, so no "manage members" shortcut. -->
-        <div v-if="canManageMembers && !kailoMode" class="menu-item" @click="handleQuickNav('members')">
+        <div v-if="menu.members" class="menu-item" @click="handleQuickNav('members')">
           <t-icon name="usergroup" class="menu-icon" />
           <span>{{ $t('tenantMember.title') }}</span>
         </div>
-        <div v-if="canManageModels" class="menu-item" @click="handleQuickNav('models')">
+        <div v-if="menu.models" class="menu-item" @click="handleQuickNav('models')">
           <t-icon name="control-platform" class="menu-icon" />
           <span>{{ $t('settings.modelManagement') }}</span>
         </div>
-        <div v-if="canManageSkills" class="menu-item" @click="handleQuickNav('skills')">
+        <div v-if="menu.skills" class="menu-item" @click="handleQuickNav('skills')">
           <t-icon :name="SKILL_ICON" class="menu-icon" />
           <span>{{ $t('settings.skills.title') }}</span>
         </div>
-        <div class="menu-divider"></div>
-        <div class="menu-item" @click="handleSettings">
+        <div v-if="hasShortcutGroup && (menu.allSettings || menu.systemAdmin)" class="menu-divider"></div>
+        <div v-if="menu.allSettings" class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
         </div>
@@ -109,12 +114,12 @@
           including tenant Owners. Real authorisation lives server-side
           (RequireSystemAdmin middleware); this is UI gating only.
         -->
-        <div v-if="authStore.isSystemAdmin" class="menu-item" @click="handleSystemAdmin">
+        <div v-if="menu.systemAdmin" class="menu-item" @click="handleSystemAdmin">
           <t-icon name="server" class="menu-icon" />
           <span>{{ $t('settings.navGroups.systemAdministration') }}</span>
         </div>
-        <!-- Logout always ends at Kailo; inside the Kailo frame Kailo owns logout. -->
-        <template v-if="!authStore.isLiteMode && !kailoEmbedded">
+        <!-- Kailo mode: Kailo owns logout (DD-138 §2), embedded or top-level. -->
+        <template v-if="menu.logout">
           <div class="menu-divider"></div>
           <div class="menu-item danger" @click="handleLogout">
             <t-icon name="logout" class="menu-icon" />
@@ -204,6 +209,8 @@ import { SKILL_ICON } from '@/types/mention'
 import { kailoConfig } from '@/kailo/runtime'
 import { isKailoEmbedded } from '@/kailo/setup'
 import { decideLogoutAction, signInRoute } from '@/kailo/sso'
+import { KAILO_SETTINGS_MIN_ROLE, userMenuModel } from '@/kailo/surface'
+import { useSettingsSectionVisibility } from '@/composables/useSettingsSectionVisibility'
 
 const { t } = useI18n()
 
@@ -234,6 +241,7 @@ const currentRoleIcon = computed(() => roleIcon(authStore.currentTenantRole))
 // 渲染。Lite 模式下没有 RBAC 概念，统一隐藏。
 const showTenantIdentityLine = computed(() => {
   if (authStore.isLiteMode) return false
+  if (kailoMode) return true
   if (authStore.canAccessAllTenants) return true
   return (authStore.memberships ?? []).length > 1
 })
@@ -252,6 +260,31 @@ const canManageSkills = computed(() =>
   authStore.canAccessAllTenants ||
   authStore.isSystemAdmin ||
   authStore.hasRole(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.skills),
+)
+
+const { visibleSectionKeys } = useSettingsSectionVisibility()
+
+// Entry visibility is decided by the pure userMenuModel (tested in src/kailo/surface.test.ts).
+const menu = computed(() => userMenuModel({
+  kailoMode,
+  liteMode: authStore.isLiteMode,
+  hasTenantSwitcher: showTenantSwitcher.value,
+  canManageSpace: authStore.canAccessAllTenants || authStore.hasRole(KAILO_SETTINGS_MIN_ROLE),
+  canManageMembers: canManageMembers.value,
+  canManageModels: canManageModels.value,
+  canManageSkills: canManageSkills.value,
+  isSystemAdmin: authStore.isSystemAdmin,
+  hasVisibleSettings: visibleSectionKeys.value.length > 0,
+}))
+
+const hasShortcutGroup = computed(() =>
+  menu.value.personalSettings || menu.value.spaceSettings || menu.value.members ||
+  menu.value.models || menu.value.skills,
+)
+
+// Kailo mode shows the space line only; the user's name belongs to Kailo's identity area.
+const showMetaUserName = computed(() =>
+  !kailoMode && Boolean(userName.value) && userName.value !== activeTenantName.value,
 )
 
 const menuRef = ref<HTMLElement>()
@@ -279,6 +312,7 @@ const userInitial = computed(() => {
 
 // 切换菜单显示
 const toggleMenu = () => {
+  if (!menu.value.dropdown) return
   menuVisible.value = !menuVisible.value
 }
 
@@ -654,6 +688,20 @@ onUnmounted(() => {
     font-size: var(--app-text-sm);
     font-weight: 600;
     line-height: 1;
+  }
+}
+
+/* Kailo mode: the button carries the space line, not a personal avatar. */
+.user-avatar--space {
+  border-radius: var(--app-radius-sm);
+  color: var(--td-text-color-anti);
+}
+
+.user-button.is-static {
+  cursor: default;
+
+  &:active {
+    transform: none;
   }
 }
 

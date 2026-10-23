@@ -89,8 +89,12 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
     if native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter {
         native_target["policies"] =
             json!({"backendAuth":service.adapter_backend_auth(&audience).map_err(|_| blocked())?});
-    } else if let Some(auth) = credentials::backend_auth(&observation["nativeCredentials"])? {
-        native_target["policies"] = json!({"backendAuth":auth});
+    } else {
+        if let Some(auth) = credentials::backend_auth(&observation["nativeCredentials"])? {
+            native_target["policies"] = json!({"backendAuth":auth});
+        }
+        // 第三方 peer 不接收平台内部关联 header（DD-137(3)、SF-AGW-29）。
+        peer::strip_platform_headers(&mut native_target)?;
     }
     let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"mcpAuthentication":{"mode":"strict","issuer":signer.issuer(),"audiences":[signer.audience()],
@@ -187,6 +191,7 @@ pub(super) async fn publish_validation(
     if let Some(auth) = credentials::backend_auth(&credential_projection)? {
         native_target["policies"] = json!({"backendAuth":auth});
     }
+    peer::strip_platform_headers(&mut native_target)?;
     let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_| blocked())?,
             "mcpAuthorization":{"rules":["mcp.methodName in ['initialize', 'ping', 'notifications/initialized', 'tools/list']"]},

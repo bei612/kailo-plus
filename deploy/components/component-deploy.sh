@@ -390,7 +390,17 @@ PYWREN
     echo "== 0. local.json 渲染核对（只列键名）"
     "${render[@]}" check document-editor --env "$ENV" --source "$commit" >/dev/null
     ensure_image "$(env_value "$ENV" DOCUMENT_EDITOR_IMAGE)"
-    if "$check"; then bash "$here/start.sh" --check "$ENV"; exit 0; fi
+    if "$check"; then
+      # 首次部署时正式 local.json 尚不存在（只有正式部署才渲染）。--check 把 local.json 与指向它的
+      # 受控 env 副本渲染进退出即删的 owner-only 临时目录，再按 start.sh --check 同一规则核对；
+      # 不写运行目录与正式 local.json。
+      scratch=$(realpath -e -- "$(mktemp -d)")
+      trap 'rm -rf -- "$scratch"' EXIT
+      staged=$("${render[@]}" stage document-editor --env "$ENV" --source "$commit" --scratch-dir "$scratch" \
+        | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["env"])')
+      bash "$here/start.sh" --check "$staged"
+      exit 0
+    fi
     echo "== 1. 渲染 local.json（原子替换、0644 无 secret；旧文件备份到本次备份目录）"
     dir="$backup_root/$component/$stamp"; mkdir -p "$dir" && chmod 700 "$backup_root" "$backup_root/$component" "$dir"
     rendered=$("${render[@]}" apply document-editor --env "$ENV" --source "$commit" --backup-dir "$dir")
