@@ -183,7 +183,7 @@ void main() {
             PlatformMessageKey.agentsAutomationRun,
             PlatformMessageKey.agentsAutomationDelete,
             PlatformMessageKey.agentsAutomationEnable,
-            PlatformMessageKey.agentsAutomationPublish,
+            PlatformMessageKey.actionsAutomationPublishVersion,
           ]) {
             expect(
               find.text(platformText(key, locale: locale.toLanguageTag())),
@@ -258,7 +258,7 @@ void main() {
           expect(find.byType(TextField), findsNothing);
           expect(find.byType(TextFormField), findsNothing);
           for (final key in [
-            PlatformMessageKey.agentsAutomationPublish,
+            PlatformMessageKey.actionsAutomationPublishVersion,
             PlatformMessageKey.agentsAutomationEnable,
             PlatformMessageKey.agentsAutomationDisable,
           ]) {
@@ -319,7 +319,7 @@ void main() {
           expect(find.byType(TextField), findsNothing);
           expect(find.byType(TextFormField), findsNothing);
           for (final key in [
-            PlatformMessageKey.agentsAutomationPublish,
+            PlatformMessageKey.actionsAutomationPublishVersion,
             PlatformMessageKey.agentsAutomationEnable,
             PlatformMessageKey.agentsAutomationDisable,
             PlatformMessageKey.approvalsApprove,

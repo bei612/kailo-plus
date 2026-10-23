@@ -640,6 +640,14 @@ final platformAutomationProvider = FutureProvider.autoDispose
                 trigger.textPrefix == null &&
                 trigger.emoji?.trim().isEmpty != true &&
                 spec == null,
+          // Core automation_query.rs WEBHOOK rule: channel result, no
+          // prefix, filter, mention or schedule.
+          AutomationTriggerKind.WEBHOOK =>
+            content.resultTarget == AutomationResultTarget.CHANNEL &&
+                trigger.mentionPrincipalId == null &&
+                trigger.textPrefix == null &&
+                trigger.filter == null &&
+                spec == null,
           AutomationTriggerKind.SCHEDULE =>
             content.resultTarget == AutomationResultTarget.CHANNEL &&
                 trigger.mentionPrincipalId == null &&
