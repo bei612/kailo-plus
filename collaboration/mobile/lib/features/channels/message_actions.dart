@@ -173,7 +173,12 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.copy),
-                      title: Text(_mt(sheetContext, PlatformMessageKey.messagesActionsCopyText)),
+                      title: Text(
+                        _mt(
+                          sheetContext,
+                          PlatformMessageKey.messagesActionsCopyText,
+                        ),
+                      ),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         // Copy to clipboard
@@ -187,7 +192,9 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.pencil),
-                      title: Text(_mt(sheetContext, PlatformMessageKey.buzzEditMessage)),
+                      title: Text(
+                        _mt(sheetContext, PlatformMessageKey.buzzEditMessage),
+                      ),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         _showEditSheet(
@@ -259,7 +266,12 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.download),
-                title: Text(_mt(sheetContext, PlatformMessageKey.messagesActionsSaveImage)),
+                title: Text(
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsSaveImage,
+                  ),
+                ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   unawaited(_saveImage(context, ref, imageUrl));
@@ -268,7 +280,12 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.share2),
-                title: Text(_mt(sheetContext, PlatformMessageKey.messagesActionsShareImage)),
+                title: Text(
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsShareImage,
+                  ),
+                ),
                 onTap: () {
                   final renderBox = context.findRenderObject() as RenderBox?;
                   final shareOrigin = renderBox == null
@@ -289,7 +306,10 @@ void showImageActions({
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.link2),
                 title: Text(
-                  _mt(sheetContext, PlatformMessageKey.messagesActionsCopyImageLink),
+                  _mt(
+                    sheetContext,
+                    PlatformMessageKey.messagesActionsCopyImageLink,
+                  ),
                 ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
@@ -400,7 +420,10 @@ Future<void> _saveImage(
 ) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final saved = _mt(context, PlatformMessageKey.messagesActionsImageSaved);
-  final failed = _mt(context, PlatformMessageKey.messagesActionsImageSaveFailed);
+  final failed = _mt(
+    context,
+    PlatformMessageKey.messagesActionsImageSaveFailed,
+  );
   try {
     final needsPhotoLibraryPermission =
         defaultTargetPlatform == TargetPlatform.iOS ||
@@ -436,7 +459,10 @@ Future<void> _shareImage(
   Rect? shareOrigin,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
-  final failed = _mt(context, PlatformMessageKey.messagesActionsImageShareFailed);
+  final failed = _mt(
+    context,
+    PlatformMessageKey.messagesActionsImageShareFailed,
+  );
   try {
     final image = await _downloadImage(ref, imageUrl);
     final directory = await getTemporaryDirectory();

@@ -28,7 +28,10 @@ const _emojiWellSize = 48.0;
 const _emojiGlyphSize = 28.0;
 
 const _statusPresets = [
-  (text: PlatformMessageKey.userStatusPresetMeeting, emoji: '\u{1F5E3}\u{FE0F}'),
+  (
+    text: PlatformMessageKey.userStatusPresetMeeting,
+    emoji: '\u{1F5E3}\u{FE0F}',
+  ),
   (text: PlatformMessageKey.userStatusPresetCommuting, emoji: '\u{1F68C}'),
   (text: PlatformMessageKey.userStatusPresetSick, emoji: '\u{1F912}'),
   (
@@ -40,7 +43,10 @@ const _statusPresets = [
 
 enum _StatusDuration {
   oneHour(PlatformMessageKey.userStatusDurationOneHour, Duration(hours: 1)),
-  eightHours(PlatformMessageKey.userStatusDurationEightHours, Duration(hours: 8)),
+  eightHours(
+    PlatformMessageKey.userStatusDurationEightHours,
+    Duration(hours: 8),
+  ),
   oneDay(PlatformMessageKey.userStatusDurationOneDay, Duration(days: 1)),
   oneWeek(PlatformMessageKey.userStatusDurationOneWeek, Duration(days: 7)),
   custom(PlatformMessageKey.userStatusDurationCustom, null);

@@ -121,10 +121,7 @@ class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
         tags.add(['emoji', emoji]);
       }
       if (expiresAt != null) {
-        tags.add([
-          'expiration',
-          '${expiresAt.millisecondsSinceEpoch ~/ 1000}',
-        ]);
+        tags.add(['expiration', '${expiresAt.millisecondsSinceEpoch ~/ 1000}']);
       }
       final createdAt = nowSeconds > _latestCreatedAt
           ? nowSeconds
