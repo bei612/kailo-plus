@@ -5,10 +5,14 @@ import { getStorageItem, removeStorageItem } from "./safe-storage";
 import { useProminentActiveTab } from "./prominent-active-tab";
 import { applyNeutralThemeAccent, createThemeVars, hexToHsl } from "./adaptive-theme";
 import { SYNTAX_THEMES, type SyntaxThemeName, extractThemeInfo, getThemePair, loadThemeData, resolveSystemTheme } from "./theme-loader";
+import { kailoRoles, kailoThemeVars } from "./kailo-tokens";
 export const THEME_STORAGE_KEY = "buzz-theme";
+// Shared with the Desktop boot script (index.html), which reads the cached background.
 const CACHE_KEY = "buzz-theme-cache";
 export const ACCENT_STORAGE_KEY = "buzz-accent-color";
 export const NEUTRAL_ACCENT = "neutral";
+/** DD-141: the first-party theme is pinned to the Kailo brand accent. */
+export const KAILO_BRAND_ACCENT = "kailo-brand";
 const FOLLOW_SYSTEM_KEY = "buzz-follow-system";
 const VIDEO_REVIEW_CHIP_SURFACE = "#161616";
 const VIDEO_REVIEW_TEXT_CONTRAST = 4.5;
@@ -137,6 +141,10 @@ function rgbToHex({ r, g, b }: Rgb): string {
 
 function applyAccentColor(value: string) {
   const root = document.documentElement;
+  if (value === KAILO_BRAND_ACCENT) {
+    applyKailoBrandAccent(root);
+    return;
+  }
   if (value === NEUTRAL_ACCENT) {
     applyNeutralThemeAccent(root);
     return;
@@ -160,6 +168,23 @@ function applyAccentColor(value: string) {
 }
 
 /**
+ * DD-141: the first-party theme paints with the Kailo brand (`kailo-tokens.ts`).
+ * Its primary/sidebar tokens are re-installed here so a previously selected
+ * accent never lingers inline after switching back.
+ */
+function applyKailoBrandAccent(root: HTMLElement) {
+  const isDark = root.classList.contains("dark");
+  const vars = kailoThemeVars(isDark ? "dark" : "light");
+  for (const key of ["--primary", "--primary-foreground", "--sidebar-primary", "--sidebar-primary-foreground", "--sidebar-active", "--sidebar-active-foreground"]) {
+    root.style.setProperty(key, vars[key]!);
+  }
+  const brand = kailoRoles(isDark ? "dark" : "light").brand;
+  root.style.setProperty("--buzz-selected-accent", vars["--primary"]!);
+  root.style.setProperty("--buzz-video-review-accent", vars["--primary"]!);
+  root.style.setProperty("--buzz-video-review-accent-foreground", getReviewAccentForeground(brand));
+}
+
+/**
  * The Buzz themes ship with a fixed neutral accent (the GitHub black/white
  * foreground) rather than a user-selectable accent color. When a Buzz theme is
  * active we force `NEUTRAL_ACCENT` regardless of the stored preference, and the
@@ -178,7 +203,7 @@ function resolveEffectiveAccent(
   themeName: string,
   accentColor: string,
 ): string {
-  return isBuzzTheme(themeName) ? NEUTRAL_ACCENT : accentColor;
+  return isBuzzTheme(themeName) ? KAILO_BRAND_ACCENT : accentColor;
 }
 
 /** Toggle the Buzz-specific gradient marker independently from glass. */
@@ -202,7 +227,10 @@ function applyCachedVars(onThemeApplied?: () => void): string | null {
   try {
     const cached = window.localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
-    const { themeName, vars, isDark } = JSON.parse(cached);
+    const { themeName, vars: cachedVars, isDark } = JSON.parse(cached);
+    // DD-141: the first-party theme always paints the current Kailo tokens, so a
+    // palette cached by an earlier release can never flash on first paint.
+    const vars = isBuzzTheme(themeName) ? kailoThemeVars(isDark ? "dark" : "light") : cachedVars;
     const root = document.documentElement;
     for (const [key, value] of Object.entries(vars)) {
       root.style.setProperty(key, value as string);
@@ -234,15 +262,25 @@ async function applyTheme(
   isCurrent: () => boolean = () => true,
 ): Promise<{ isDark: boolean } | null> {
   const requestToken = ++themeApplyRequest;
-  const themeData = await loadThemeData(name);
-  if (requestToken !== themeApplyRequest || !isCurrent()) return null;
-
-  const info = extractThemeInfo(name, themeData);
-  const { isDark, vars } = createThemeVars(info.bg, info.fg, info.comment, {
-    added: info.added,
-    deleted: info.deleted,
-    modified: info.modified,
-  });
+  // DD-141: the first-party theme is the Kailo design system, not a palette
+  // derived from a Shiki theme; other themes keep the adaptive derivation.
+  let isDark: boolean;
+  let vars: Record<string, string>;
+  if (isBuzzTheme(name)) {
+    await Promise.resolve();
+    if (requestToken !== themeApplyRequest || !isCurrent()) return null;
+    isDark = name === "buzz-dark";
+    vars = kailoThemeVars(isDark ? "dark" : "light");
+  } else {
+    const themeData = await loadThemeData(name);
+    if (requestToken !== themeApplyRequest || !isCurrent()) return null;
+    const info = extractThemeInfo(name, themeData);
+    ({ isDark, vars } = createThemeVars(info.bg, info.fg, info.comment, {
+      added: info.added,
+      deleted: info.deleted,
+      modified: info.modified,
+    }));
+  }
 
   const root = document.documentElement;
   for (const [key, value] of Object.entries(vars)) {

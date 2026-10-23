@@ -1,38 +1,32 @@
 /**
- * DD-133 component presentation tokens.
+ * DD-133 component presentation tokens, valued by the DD-141 Kailo visual
+ * design system.
  *
  * Renders `client-kit/embed/kailo-theme-tokens.css` from the very sources the
  * Kailo shell paints with, so a component page embedded in the content area
- * resolves the same colors, type, radii and elevation:
+ * resolves the same colors, type, radii, elevation and motion:
  *
- * - colors: the default Buzz pair (`buzz` / `buzz-dark`) through the same
- *   `extractThemeInfo` → `createThemeVars` → neutral-accent path that
- *   `useAppearance` applies to `:root`, plus the static `theme.css` values that
- *   path leaves in place (radius, charts) and the Buzz Dark content canvas that
- *   `[data-buzz-content-surface]` installs under the content area;
- * - type: the `theme.css` body font stack and the `typography.css` ramp;
- * - radius: the `tailwind.config.js` radius scale.
+ * - colors, elevation, motion and font stacks: `kailo-tokens.ts`, the single
+ *   source `useAppearance` installs for the first-party theme;
+ * - type: the `typography.css` ramp;
+ * - radius: the `tailwind.config.js` radius scale over the Kailo base radius.
  *
- * Sources are passed in as text/JSON so the rendering is a pure function; the
- * drift test reads the real files and fails when the committed CSS differs.
- * Every emitted name carries the `--kailo-` prefix so it never collides with a
- * component's own custom properties.
+ * Text sources are passed in so the rendering is a pure function; the drift
+ * test reads the real files and fails when the committed CSS differs. Every
+ * emitted name carries the `--kailo-` prefix so it never collides with a
+ * component's own custom properties. Names that existed before DD-141 keep
+ * their meaning; only their values follow the new design system.
  */
-import type { ThemeRegistrationRaw } from "shiki";
-import { createThemeVars } from "./adaptive-theme";
-import { extractThemeInfo } from "./theme-loader";
+import {
+  KAILO_FONT_FEATURES, KAILO_FONT_MONO, KAILO_FONT_SANS, KAILO_MOTION, KAILO_RADIUS, KAILO_SHADOWS,
+  kailoExtendedVars, kailoThemeVars, type KailoMode,
+} from "./kailo-tokens";
 
 export interface EmbedTokenSources {
-  /** `client-kit/ts/platform/src/theme.css` */
-  themeCss: string;
   /** `client-kit/ts/platform/src/typography.css` */
   typographyCss: string;
   /** `client-kit/ts/platform/src/tailwind.config.js` */
   tailwindConfig: string;
-  /** Shiki `github-light`, the palette the `buzz` theme reuses. */
-  light: ThemeRegistrationRaw;
-  /** Shiki `github-dark`, the palette the `buzz-dark` theme reuses. */
-  dark: ThemeRegistrationRaw;
 }
 
 /** Semantic color tokens, in the order they are emitted. */
@@ -51,16 +45,20 @@ const DIRECT_COLOR_TOKENS = [
   ["status-modified", "--status-modified"], ["warning", "--ui-warning"], ["warning-background", "--ui-warning-bg"],
 ] as const;
 
-/**
- * Elevation used by Kailo popovers, menus and dialogs: the Tailwind v4 default
- * shadow scale (`tailwindcss` ^4.3 in web-client and desktop) that their
- * `shadow-sm|md|lg` utilities resolve to, plus the shell's own named shadows.
- */
-const TAILWIND_SHADOWS = [
-  ["sm", "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"],
-  ["md", "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)"],
-  ["lg", "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)"],
+/** DD-141 roles carried to components as complete colors (`--kailo-color-<name>` ← `--k-<role>`). */
+const ROLE_COLOR_TOKENS = [
+  ["brand", "--k-brand"], ["brand-hover", "--k-brand-hover"], ["brand-pressed", "--k-brand-pressed"],
+  ["on-brand", "--k-on-brand"], ["brand-text", "--k-brand-text"],
+  ["selected", "--k-brand-soft"], ["selected-hover", "--k-brand-soft-hover"], ["selected-foreground", "--k-brand-soft-text"],
+  ["brand-line", "--k-brand-line"], ["hover", "--k-hover"], ["pressed", "--k-pressed"], ["canvas", "--k-canvas"],
+  ["text-secondary", "--k-text-secondary"], ["text-disabled", "--k-text-disabled"], ["line-strong", "--k-line-strong"],
+  ["success", "--k-success"], ["success-text", "--k-success-text"], ["success-soft", "--k-success-soft"],
+  ["warning-text", "--k-warning-text"], ["warning-soft", "--k-warning-soft"],
+  ["danger", "--k-danger"], ["danger-text", "--k-danger-text"], ["danger-soft", "--k-danger-soft"],
+  ["info", "--k-info"], ["info-text", "--k-info-text"], ["info-soft", "--k-info-soft"],
 ] as const;
+
+const BRAND_STEPS = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"] as const;
 
 function block(css: string, selector: RegExp, what: string): string {
   const match = selector.exec(css);
@@ -86,27 +84,10 @@ function declarations(body: string): Map<string, string> {
   return values;
 }
 
-function required(values: Map<string, string>, name: string, what: string): string {
-  const value = values.get(name);
+function required(values: Record<string, string>, name: string, what: string): string {
+  const value = values[name];
   if (value === undefined) throw new Error(`embed tokens: ${what} lacks ${name}`);
   return value;
-}
-
-/** The colors `useAppearance` installs for a Buzz theme (vars + neutral accent). */
-function shellColors(raw: ThemeRegistrationRaw, name: string): Map<string, string> {
-  const info = extractThemeInfo(name, raw);
-  const { vars } = createThemeVars(info.bg, info.fg, info.comment, {
-    added: info.added, deleted: info.deleted, modified: info.modified,
-  });
-  const colors = new Map(Object.entries(vars));
-  const foreground = required(colors, "--foreground", name);
-  const background = required(colors, "--background", name);
-  // applyNeutralThemeAccent: Buzz themes pin the neutral accent.
-  for (const key of ["--primary", "--sidebar-primary", "--sidebar-active"]) colors.set(key, foreground);
-  for (const key of ["--primary-foreground", "--sidebar-primary-foreground", "--sidebar-active-foreground"]) {
-    colors.set(key, background);
-  }
-  return colors;
 }
 
 function typeRamp(typographyCss: string): [string, string][] {
@@ -135,65 +116,63 @@ function radiusScale(tailwindConfig: string, radius: string): [string, string][]
     scale.push([match[1]!, match[2]!.replaceAll("var(--radius)", radius)]);
   }
   if (scale.length === 0) throw new Error("embed tokens: tailwind borderRadius is empty");
+  // DD-141 §5: card/popover and dialog radii.
+  scale.push(["xl", "0.75rem"], ["2xl", "1rem"]);
   return scale;
 }
 
-function fontStack(themeCss: string): string {
-  // `html, body { overflow }` precedes the `body` rule that sets the font.
-  for (const rule of themeCss.matchAll(/(?:^|[\s,])body\s*\{([^{}]*)\}/g)) {
-    const family = /font-family:\s*([^;]+);/.exec(rule[1]!)?.[1];
-    if (family) return family.trim().replace(/\s+/g, " ");
-  }
-  throw new Error("embed tokens: body font-family not found");
-}
-
-function modeBlock(selector: string, scheme: "light" | "dark", colors: Map<string, string>, statics: Map<string, string>,
-  canvas: string | null): string {
-  const lines = [`${selector} {`, `  color-scheme: ${scheme};`];
+function modeBlock(selector: string, mode: KailoMode): string {
+  const colors = kailoThemeVars(mode);
+  const roles = kailoExtendedVars(mode);
+  const lines = [`${selector} {`, `  color-scheme: ${mode};`];
   for (const token of EMBED_COLOR_TOKENS) {
-    const raw = token === "background" && canvas !== null ? canvas
-      : colors.get(`--${token}`) ?? required(statics, `--${token}`, `${scheme} theme.css`);
-    lines.push(`  --kailo-hsl-${token}: ${raw};`);
+    lines.push(`  --kailo-hsl-${token}: ${required(colors, `--${token}`, `${mode} theme`)};`);
   }
   for (const [token, source] of DIRECT_COLOR_TOKENS) {
-    lines.push(`  --kailo-color-${token}: ${required(colors, source, `${scheme} adaptive theme`)};`);
+    lines.push(`  --kailo-color-${token}: ${required(colors, source, `${mode} theme`)};`);
   }
+  for (const [token, source] of ROLE_COLOR_TOKENS) {
+    lines.push(`  --kailo-color-${token}: ${required(roles, source, `${mode} roles`)};`);
+  }
+  for (const step of BRAND_STEPS) {
+    lines.push(`  --kailo-color-brand-${step}: ${required(roles, `--k-brand-${step}`, `${mode} brand ramp`)};`);
+  }
+  for (const [step, value] of Object.entries(KAILO_SHADOWS[mode])) lines.push(`  --kailo-shadow-${step}: ${value};`);
+  lines.push(`  --kailo-gradient-brand: ${required(roles, "--k-gradient-brand", `${mode} roles`)};`);
+  lines.push(`  --kailo-focus-ring: ${required(roles, "--k-focus-ring", `${mode} roles`)};`);
   lines.push("}");
   return lines.join("\n");
 }
 
 /** The complete distributable stylesheet, byte-for-byte what is committed. */
 export function renderEmbedTokenCss(sources: EmbedTokenSources): string {
-  const lightStatic = declarations(block(sources.themeCss, /:root\s*\{/, "theme :root"));
-  const darkStatic = declarations(block(sources.themeCss, /\.dark\s*\{/, "theme .dark"));
-  const radius = required(lightStatic, "--radius", "theme :root");
-  const contentDark = required(lightStatic, "--buzz-content-dark", "theme :root");
   const common = [
     ":root {",
-    `  --kailo-font-sans: ${fontStack(sources.themeCss)};`,
+    `  --kailo-font-sans: ${KAILO_FONT_SANS.join(", ")};`,
+    `  --kailo-font-mono: ${KAILO_FONT_MONO.join(", ")};`,
+    `  --kailo-font-features: ${KAILO_FONT_FEATURES};`,
     ...typeRamp(sources.typographyCss).map(([step, size]) => `  --kailo-font-size-${step}: ${size};`),
-    `  --kailo-radius: ${radius};`,
-    ...radiusScale(sources.tailwindConfig, radius).map(([step, value]) => `  --kailo-radius-${step}: ${value};`),
-    ...TAILWIND_SHADOWS.map(([step, value]) => `  --kailo-shadow-${step}: ${value};`),
+    `  --kailo-radius: ${KAILO_RADIUS};`,
+    ...radiusScale(sources.tailwindConfig, KAILO_RADIUS).map(([step, value]) => `  --kailo-radius-${step}: ${value};`),
+    ...Object.entries(KAILO_MOTION.duration).map(([name, value]) => `  --kailo-duration-${name}: ${value};`),
+    ...Object.entries(KAILO_MOTION.easing).map(([name, value]) => `  --kailo-ease-${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}: ${value};`),
     // Resolved on :root against whichever mode block below is in effect.
     ...EMBED_COLOR_TOKENS.map((token) => `  --kailo-color-${token}: hsl(var(--kailo-hsl-${token}));`),
     "}",
   ].join("\n");
   return [
     "/*",
-    " * Kailo presentation tokens (DD-133). Generated from client-kit/ts/platform:",
-    " * theme.css, typography.css, tailwind.config.js and the buzz / buzz-dark",
-    " * palettes (adaptive-theme.ts over Shiki github-light / github-dark) by",
-    " * src/theme/embed-tokens.ts. Do not edit; regenerate with",
+    " * Kailo presentation tokens (DD-133), valued by the Kailo visual design system",
+    " * (DD-141, .design/20). Generated from client-kit/ts/platform: theme/kailo-tokens.ts,",
+    " * typography.css and tailwind.config.js by src/theme/embed-tokens.ts. Do not edit;",
+    " * regenerate with",
     " *   KAILO_WRITE_EMBED_TOKENS=1 pnpm --filter @client-kit/platform exec vitest run test/embed-tokens.test.ts",
     " * Light is the default; <html data-kailo-theme=\"dark\"> selects dark (kailo-embed.js sets it).",
     " * --kailo-hsl-* are bare \"H S% L%\" triplets for alpha: hsl(var(--kailo-hsl-border) / 0.5).",
     " */",
     common,
-    modeBlock(":root", "light", shellColors(sources.light, "buzz"), lightStatic, null),
-    // Buzz Dark paints the content area with its warmer neutral canvas; an
-    // embedded page sits on that canvas, so its background is the same value.
-    modeBlock(":root[data-kailo-theme=\"dark\"]", "dark", shellColors(sources.dark, "buzz-dark"), darkStatic, contentDark),
+    modeBlock(":root", "light"),
+    modeBlock(":root[data-kailo-theme=\"dark\"]", "dark"),
     "",
   ].join("\n");
 }

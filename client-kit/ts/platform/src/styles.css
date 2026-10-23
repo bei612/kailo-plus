@@ -1,3 +1,4 @@
+@import "./styles/kailo-tokens.css";
 @import "./styles/scrollbars.css";
 @import "./styles/motion.css";
 @import "./styles/animations.css";
@@ -15,6 +16,8 @@
 @import "./styles/image-lightbox.css";
 @import "./styles/video-review.css";
 @import "./styles/progress.css";
+@import "./styles/kailo-shell.css";
+@import "./styles/kailo-components.css";
 
 /* Original Buzz 779af8886caae1317b4de962082429867ab61503 globals.css.
  * Keep explicit app theme and pointer hover behavior identical in both hosts. */

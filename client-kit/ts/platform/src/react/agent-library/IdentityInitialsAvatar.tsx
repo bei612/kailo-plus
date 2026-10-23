@@ -4,13 +4,14 @@ import { UserRound } from "lucide-react";
 import { getInitials } from "../profile/buzz/shared/lib/initials";
 import { cn } from "../profile/buzz/shared/lib/cn";
 
+// DD-141: Kailo identity tints (brand, info, success, warning soft roles).
 const IDENTITY_INITIAL_AVATAR_CLASS_NAMES = [
-  "bg-muted text-foreground",
-  "bg-secondary text-secondary-foreground",
+  "bg-brand-soft text-brand-soft-foreground",
+  "bg-info-soft text-info-text",
+  "bg-success-soft text-success-text",
+  "bg-warning-soft text-warning-text",
   "bg-accent text-accent-foreground",
-  "bg-card text-card-foreground",
-  "bg-popover text-popover-foreground",
-  "bg-background text-foreground",
+  "bg-muted text-foreground",
 ] as const;
 
 type IdentityInitialsAvatarProps = {
@@ -40,7 +41,7 @@ export function IdentityInitialsAvatar({
   return (
     <span
       className={cn(
-        "flex h-full w-full items-center justify-center rounded-squircle border-[3px] border-background font-semibold shadow-sm",
+        "flex h-full w-full items-center justify-center rounded-squircle border-[3px] border-background font-semibold shadow-sm ring-1 ring-border",
         colorClassName,
         textSizeClassName,
         className,

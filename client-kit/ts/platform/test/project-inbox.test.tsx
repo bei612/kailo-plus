@@ -865,7 +865,7 @@ describe("original Inbox project read closure",()=>{
     expect(loading?.parentElement?.hasAttribute("data-project-detail-panel")).toBe(true);
     expect(loading?.parentElement?.className).toBe("overflow-hidden rounded-xl border border-border/60 bg-transparent");
     expect(loading?.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(`Loading ${kind}`);
-    expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 466 309");
+    expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24"); // DD-141 Kailo glyph
     expect(loading?.querySelector(".buzz-logo--background, filter")).toBeNull();
     await act(async()=>{reject(new Error("revoked"));await pending;});
     await vi.waitFor(()=>expect(f.ui.textContent).toContain("Couldn't load this — the result is unknown."));
@@ -1057,7 +1057,7 @@ describe("original Inbox project read closure",()=>{
       expect(loading?.getAttribute("role")).toBe("status");
       expect(loading?.classList.contains("min-h-[calc(100dvh-7rem)]")).toBe(true);
       expect(loading?.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(locale==="en"?(kind==="issue"?"Loading tasks":"Loading reviews"):(kind==="issue"?"正在加载任务":"正在加载审阅"));
-      expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 466 309");
+      expect(loading?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24"); // DD-141 Kailo glyph
       expect(loading?.querySelector(".buzz-logo--background, filter")).toBeNull();
       expect(row()).toBeNull();
     };

@@ -10,20 +10,20 @@
   overflow: hidden;
 }
 
+/* DD-141: brand moment — the Kailo gradient with a faint dot grid. */
 .buzz-logo--background {
-  background-color: #d7d72e;
-  background-image: radial-gradient(
-    circle,
-    rgba(35, 30, 30, 0.16) 1.2px,
-    transparent 1.3px
-  );
+  background-color: var(--k-brand);
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.12) 1.2px, transparent 1.3px),
+    var(--k-gradient-brand);
   background-position: 0 0;
-  background-size: 37px 37px;
+  background-size: 28px 28px, 100% 100%;
+  color: white;
 }
 
 .buzz-logo__mark {
   display: block;
-  inline-size: min(466px, calc(100vw - 32px));
+  inline-size: min(96px, calc(100vw - 32px));
   block-size: auto;
   overflow: visible;
 }
@@ -71,9 +71,105 @@
   transform-origin: center;
 }
 
+/* Kailo glyph draw-in: stem, arms, then the two nodes settle. */
+.kailo-glyph .kailo-glyph__stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: kailo-glyph-draw 0.62s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.kailo-glyph .kailo-glyph__stroke--2 {
+  animation-delay: 0.14s;
+}
+
+.kailo-glyph .kailo-glyph__stroke--3 {
+  animation-delay: 0.26s;
+}
+
+.kailo-glyph .kailo-glyph__node {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: kailo-glyph-node 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.5s forwards;
+}
+
+.kailo-glyph .kailo-glyph__node--2 {
+  animation-delay: 0.62s;
+}
+
+.kailo-glyph--loop .kailo-glyph__stroke {
+  animation: kailo-glyph-draw-loop var(--kailo-glyph-cycle, 1.6s) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.kailo-glyph--loop .kailo-glyph__node {
+  animation: kailo-glyph-node-loop var(--kailo-glyph-cycle, 1.6s) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.kailo-glyph--reverse .buzz-logo__mark {
+  animation-direction: reverse;
+}
+
+@keyframes kailo-glyph-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes kailo-glyph-node {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes kailo-glyph-draw-loop {
+  0% {
+    stroke-dashoffset: 1;
+  }
+
+  45%,
+  85% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes kailo-glyph-node-loop {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  50%,
+  85% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .buzz-logo animate {
-    display: none;
+  .kailo-glyph .kailo-glyph__stroke,
+  .kailo-glyph .kailo-glyph__node {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: none;
   }
 
   .buzz-logo--pulse .buzz-logo__mark {

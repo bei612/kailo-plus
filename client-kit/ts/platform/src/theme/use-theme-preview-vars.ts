@@ -12,7 +12,8 @@ import {
   LIGHT_PREVIEW_VARS,
   type ThemePreviewVars,
 } from "./theme-preview-frame";
-import { NEUTRAL_ACCENT } from "./use-appearance";
+import { KAILO_BRAND_ACCENT, NEUTRAL_ACCENT, isBuzzTheme } from "./use-appearance";
+import { kailoThemeVars } from "./kailo-tokens";
 
 export type ThemePreviewVarsByTheme = Partial<
   Record<SyntaxThemeName, ThemePreviewVars>
@@ -22,6 +23,8 @@ let themePreviewVarsCache: ThemePreviewVarsByTheme | null = null;
 let themePreviewVarsPromise: Promise<ThemePreviewVarsByTheme> | null = null;
 
 async function loadThemePreviewVars(name: SyntaxThemeName) {
+  // DD-141: the first-party theme previews the Kailo palette it actually paints.
+  if (isBuzzTheme(name)) return [name, kailoThemeVars(name === "buzz-dark" ? "dark" : "light")] as const;
   const themeData = await loadThemeData(name);
   const info = extractThemeInfo(name, themeData);
   const { vars } = createThemeVars(info.bg, info.fg, info.comment, {
@@ -95,6 +98,8 @@ export function withAccentPreviewVars(
   if (!vars) {
     return null;
   }
+
+  if (accentColor === KAILO_BRAND_ACCENT) return vars;
 
   if (accentColor === NEUTRAL_ACCENT) {
     return {

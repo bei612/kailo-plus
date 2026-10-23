@@ -55,15 +55,16 @@ export function Notice({ children, role }: { children: ReactNode; role?: "alert"
 
 export type Tone = "neutral" | "positive" | "negative";
 
+// DD-141 §9: soft status pairs (tint + readable text), never solid blocks.
 const toneClass: Record<Tone, string> = {
-  neutral: "border-border text-muted-foreground",
-  positive: "border-transparent bg-secondary text-secondary-foreground",
-  negative: "border-transparent bg-destructive text-destructive-foreground",
+  neutral: "border-border bg-muted text-muted-foreground",
+  positive: "border-transparent bg-success-soft text-success-text",
+  negative: "border-transparent bg-danger-soft text-danger-text",
 };
 
 export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-xs font-medium ${toneClass[tone]}`}>
+    <span className={`inline-flex h-5 items-center rounded-sm border px-1.5 text-xs font-medium ${toneClass[tone]}`}>
       {children}
     </span>
   );
@@ -76,7 +77,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={`inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 ${className ?? ""}`}
+      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-3.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring active:translate-y-px disabled:pointer-events-none disabled:opacity-50 ${className ?? ""}`}
       {...props}
     />
   );

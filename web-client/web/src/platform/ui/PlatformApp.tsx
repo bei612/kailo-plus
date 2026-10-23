@@ -47,7 +47,7 @@ import {
   MembersPane,
   WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
-import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
+import { ContentSurface, GradientLayer, KailoMark } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { MemberHover, useOptionalMemberProfile, type MemberTarget } from "@client-kit/platform/react/members";
 import { CandidatePictureProvider, sameOriginAvatarPicture } from "@client-kit/platform/react/profile/candidate-picture";
@@ -204,10 +204,13 @@ export function PlatformApp() {
   );
 }
 
+// DD-141 brand moment: session gates show the Kailo mark over the canvas aura.
 function Notice({ text }: { text: string }) {
   return (
-    <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
-      {text}
+    <div className="relative flex min-h-dvh flex-col items-center justify-center gap-4 text-sm text-muted-foreground">
+      <GradientLayer />
+      <KailoMark className="animate-pulse rounded-[14px] shadow-md" size={44} />
+      <span>{text}</span>
     </div>
   );
 }
@@ -689,6 +692,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
           <div className={`${tab === "settings" ? "absolute inset-x-0 top-0" : "relative"} z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground`} data-testid="app-top-chrome">
             <div className="flex items-center gap-0.5">
+              {/* DD-141: Kailo brand mark leads the top chrome. */}
+              <KailoMark />
               <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
               <TopChromeHistoryButtons canGoBack={navigation.canGoBack === true} canGoForward={navigation.canGoForward === true}
                 onGoBack={() => navigation.goBack?.()} onGoForward={() => navigation.goForward?.()} />
@@ -827,7 +832,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCopyTitle={async (title) => {
                 try { await writeTextToClipboard(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
                 catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
-              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+              }} /> : tab === "new-message" || tab === "agents" || tab === "projects" || tab === "inbox" ? null : <header className="flex h-[52px] shrink-0 items-center border-b px-5 text-headline font-semibold tracking-[-0.006em]" data-kailo-page-header>
             {tabLabel(tab)}
           </header>}
           {tab === "channel" && active && activeRow?.isMember === true && channel.data ?
@@ -874,7 +879,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onOpenMembers={() => { window.requestAnimationFrame(() => setMembersOpenFor(chosenConversation.id)); }}
               onCopy={writeTextToClipboard} />
           </> : null}
-          <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
+          <main className={tab === "inbox" || tab === "new-message" || tab === "agents" || tab === "projects" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "min-h-0 flex-1 overflow-auto px-6 py-5"}>
             {body}
           </main>
         </ContentSurface>
