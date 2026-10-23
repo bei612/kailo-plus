@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/shared/ui/badge";
 import { Input } from "@/shared/ui/input";
 
-export interface SpecParams { direction: KailoBrandDirection; mode: KailoMode; view: "full" | "directions" }
+export interface SpecParams { direction: KailoBrandDirection; mode: KailoMode; view: "full" | "directions" | "icon"; size: number }
 
 export function readSpecParams(search: string): SpecParams {
   const query = new URLSearchParams(search);
@@ -20,7 +20,8 @@ export function readSpecParams(search: string): SpecParams {
   return {
     direction: direction === "violet" || direction === "orchid" || direction === "iris" ? direction : KAILO_BRAND_DIRECTION,
     mode: query.get("mode") === "dark" ? "dark" : "light",
-    view: query.get("view") === "directions" ? "directions" : "full",
+    view: query.get("view") === "directions" ? "directions" : query.get("view") === "icon" ? "icon" : "full",
+    size: Number(query.get("size") ?? 168) || 168,
   };
 }
 
@@ -61,13 +62,13 @@ function Section({ id, title, kicker, children }: { id: string; title: string; k
   );
 }
 
-function Swatch({ color, label, dark = false }: { color: string; label: string; dark?: boolean }) {
+function Swatch({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
       <div className="h-12 rounded-md ring-1 ring-inset ring-black/5" style={{ background: color }} />
       <div className="flex flex-col leading-tight">
         <span className="text-xs font-medium">{label}</span>
-        <span className={`font-mono text-2xs ${dark ? "text-muted-foreground" : "text-muted-foreground"}`}>{color}</span>
+        <span className="font-mono text-2xs text-muted-foreground">{color}</span>
       </div>
     </div>
   );
@@ -226,11 +227,11 @@ function ControlsSection() {
         {[
           ["默认", ""], ["悬停", "border-muted-foreground/40"], ["焦点", "border-ring ring-[3px] ring-ring/15"], ["错误", "border-destructive ring-[3px] ring-destructive/15"], ["禁用", ""],
         ].map(([state, cls]) => (
-          <label className="flex flex-col gap-1.5 text-control font-medium" key={state}>
-            {state}
+          <div className="flex flex-col gap-1.5 text-control font-medium" key={state}>
+            <span>{state}</span>
             <Input className={cls} defaultValue={state === "默认" ? "" : "kailo-qa-1"} disabled={state === "禁用"} placeholder="输入频道名称" />
             {state === "错误" ? <span className="text-xs text-danger-text">名称已被占用</span> : <span className="text-xs text-muted-foreground">最多 80 个字符</span>}
-          </label>
+          </div>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-6">
@@ -346,7 +347,7 @@ function EmptyLoadingSection() {
   return (
     <div className="grid grid-cols-2 gap-6">
       <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-8 py-12 text-center">
-        <svg aria-hidden className="size-16" fill="none" viewBox="0 0 64 64">
+        <svg aria-hidden="true" className="size-16" fill="none" viewBox="0 0 64 64">
           <rect height="40" rx="10" stroke="url(#spec-empty)" strokeWidth="2" width="44" x="10" y="12" />
           <path d="M20 26h24M20 34h16" stroke="url(#spec-empty)" strokeLinecap="round" strokeWidth="2" />
           <circle cx="48" cy="16" fill="var(--k-gradient-to)" r="4" />
@@ -500,8 +501,10 @@ function FullView({ direction, mode }: { direction: KailoBrandDirection; mode: K
   );
 }
 
-export function DesignSpec({ direction, mode, view }: SpecParams) {
+export function DesignSpec({ direction, mode, view, size }: SpecParams) {
   applyDocument(direction, mode);
+  // Brand-mark raster source (app icon / favicon): the mark alone on a transparent page.
+  if (view === "icon") return <div className="inline-flex" data-spec-icon><KailoMark size={size} /></div>;
   return (
     <div className="h-dvh overflow-y-auto bg-background text-foreground" data-spec-root>
       {view === "directions" ? <DirectionsView /> : <FullView direction={direction} mode={mode} />}

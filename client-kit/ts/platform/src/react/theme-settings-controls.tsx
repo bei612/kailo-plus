@@ -5,7 +5,7 @@ import { twJoin, twMerge } from "tailwind-merge";
 import { translate, platformThemeModeKeys, type PlatformThemeMode, type PlatformLocale, type PlatformMessageKey } from "../i18n";
 import { SegmentedControl } from "./segmented-control";
 import { SettingsOptionGroup, SettingsOptionRow } from "./settings-option-group";
-import { isBuzzTheme, ACCENT_COLORS, NEUTRAL_ACCENT, type Appearance } from "../theme/use-appearance";
+import { isBuzzTheme, ACCENT_COLORS, KAILO_BRAND_ACCENT, NEUTRAL_ACCENT, type Appearance } from "../theme/use-appearance";
 import { LIGHT_THEMES, SYNTAX_THEMES, type SyntaxThemeName, getThemePair } from "../theme/theme-loader";
 import { BUZZ_GRADIENT_STOPS, SystemPreferencePreviewFrame, ThemePreviewFrame, type ThemePreviewVars } from "../theme/theme-preview-frame";
 import { getThemeFallbackPreviewVars, useThemePreviewVars, withAccentPreviewVars } from "../theme/use-theme-preview-vars";
@@ -28,7 +28,10 @@ const accentKeys: Record<(typeof ACCENT_COLORS)[number]["name"], PlatformMessage
   Purple: "platform.theme.accentPurple",
   Indigo: "platform.theme.accentIndigo",
 };
-function formatThemeLabel(name: string): string {
+function formatThemeLabel(name: string, productName?: string): string {
+  // DD-141: the first-party theme is labelled with the deployment's product
+  // name (DD-111), never with the upstream theme id.
+  if (productName && isBuzzTheme(name)) return name === "buzz-dark" ? `${productName} Dark` : productName;
   return name
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -41,7 +44,8 @@ function formatThemeLabel(name: string): string {
  * from any position, handling names like "github-light-default", "light-plus",
  * "material-theme-lighter", and "gruvbox-light-soft".
  */
-function pairedThemeLabel(lightName: string): string {
+function pairedThemeLabel(lightName: string, productName?: string): string {
+  if (productName && isBuzzTheme(lightName)) return productName;
   const modeTokens = new Set([
     "light",
     "latte",
@@ -109,7 +113,9 @@ function PairedThemeTile({
   lightVars,
   darkVars,
   onSelect,
+  productName,
 }: {
+  productName: string;
   isActive: boolean;
   lightName: SyntaxThemeName;
   lightVars: ThemePreviewVars | null;
@@ -143,7 +149,7 @@ function PairedThemeTile({
           isActive ? "font-medium text-foreground" : "text-muted-foreground",
         )}
       >
-        {pairedThemeLabel(lightName)}
+        {pairedThemeLabel(lightName, productName)}
       </span>
     </button>
   );
@@ -154,7 +160,9 @@ function SingleThemeTile({
   name,
   vars,
   onSelect,
+  productName,
 }: {
+  productName: string;
   isActive: boolean;
   name: SyntaxThemeName;
   vars: ThemePreviewVars | null;
@@ -184,7 +192,7 @@ function SingleThemeTile({
           isActive ? "font-medium text-foreground" : "text-muted-foreground",
         )}
       >
-        {formatThemeLabel(name)}
+        {formatThemeLabel(name, productName)}
       </span>
     </button>
   );
@@ -220,6 +228,8 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
   // so the accent picker is hidden while a Buzz theme is active. `themeName` is
   // the effective theme, so this also covers System mode resolving to Buzz.
   const buzzThemeSelected = isBuzzTheme(themeName);
+  // The deployment product name labels the first-party theme (DD-111, DD-141).
+  const productName = name;
   const accentPickerHidden = buzzThemeSelected;
   const shouldReduceMotion = useReducedMotion();
 
@@ -237,10 +247,10 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
     useState<PlatformThemeMode>(activeMode);
   const [themeStyleExpanded, setThemeStyleExpanded] = useState(false);
 
-  const getVars = (name: SyntaxThemeName) =>
+  const getVars = (theme: SyntaxThemeName) =>
     withAccentPreviewVars(
-      previewVarsByTheme[name] ?? getThemeFallbackPreviewVars(name),
-      accentColor,
+      previewVarsByTheme[theme] ?? getThemeFallbackPreviewVars(theme),
+      isBuzzTheme(theme) ? KAILO_BRAND_ACCENT : accentColor,
     );
 
   // All light themes (paired light + light-only)
@@ -315,8 +325,8 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
     ? getThemePair(selectedPairedTheme)
     : undefined;
   const selectedThemeLabel = selectedPairedTheme
-    ? pairedThemeLabel(selectedPairedTheme)
-    : formatThemeLabel(selectedTheme);
+    ? pairedThemeLabel(selectedPairedTheme, name)
+    : formatThemeLabel(selectedTheme, name);
   const selectedThemePreview = selectedPairedTheme ? (
     <SystemPreferencePreviewFrame
       className="h-[112px] w-[168px] shrink-0"
@@ -376,6 +386,7 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
                 if (!darkName) return null;
                 return (
                   <PairedThemeTile
+                    productName={productName}
                     darkVars={getVars(darkName)}
                     isActive={isPairActive(lightName)}
                     key={lightName}
@@ -388,6 +399,7 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
             {selectedMode === "light" &&
               allLightThemes.map((name) => (
                 <SingleThemeTile
+                  productName={productName}
                   isActive={selectedThemeName === name}
                   key={name}
                   name={name}
@@ -398,6 +410,7 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
             {selectedMode === "dark" &&
               allDarkThemes.map((name) => (
                 <SingleThemeTile
+                  productName={productName}
                   isActive={selectedThemeName === name}
                   key={name}
                   name={name}
