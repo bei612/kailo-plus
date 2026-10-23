@@ -3860,7 +3860,7 @@ describe("platform pages render only through the host theme", () => {
           expect(text.split(accent)).toHaveLength(2);
           text = text.replace(accent, "");
         }
-        expect(source.text).toContain('import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
+        expect(source.text).toContain('import { ActionEmoji, WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
         expect(card!.getText(parsed)).toContain("<WorkflowActionTileStack content={content}");
       }
       if (source.name === "inbox-row.tsx") {
