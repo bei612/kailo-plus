@@ -4,6 +4,10 @@
 // moderation.report.submit: Core re-reads the message as the reporter in its admitted scope,
 // takes its signer as the `p` target and signs kind 1984 as the reporter. Reporting stays
 // available while timed out (original Relay behaviour).
+// A native host (Desktop, DD-75) instead publishes the same 1984 with its device CLIENT key, as
+// DD-125(2) puts 1984 in the member whitelist "原生端直连": it supplies a NativeReportPublisher
+// that answers done or unknown; an unknown report is never re-signed (the host resends the same
+// signed event), and is never shown as success or failure.
 import { Flag } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -17,7 +21,15 @@ import { Textarea } from "../profile/buzz/shared/ui/textarea";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
 import { useModerationAction } from "./hooks";
 
+export type NativeReportInput = { eventId: string; authorPubkey: string; reportType: ModerationReportType; note?: string };
+export type NativeReportPublisher = (input: NativeReportInput) => Promise<"done" | "unknown">;
+const NativeReportPublisherContext = React.createContext<NativeReportPublisher | null>(null);
+/** Native hosts publish 1984 themselves (DD-125(2)); Web leaves this unset and uses Core. */
+export const NativeReportPublisherProvider = NativeReportPublisherContext.Provider;
+
 type ReportMessageDialogProps = {
+  /** Reported message author (the `p` tag); required for a native publisher. */
+  authorPubkey?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Reported message event id (the `e` tag target). */
@@ -43,10 +55,13 @@ export function ReportMessageDialog(props: ReportMessageDialogProps) {
   return useHasPlatform() ? <ReportDialogBody {...props} /> : null;
 }
 
-function ReportDialogBody({ open, onOpenChange, eventId, scope }: ReportMessageDialogProps) {
+function ReportDialogBody({ open, onOpenChange, eventId, scope, authorPubkey }: ReportMessageDialogProps) {
   const t = useT();
   const reasonText = useReasonText();
-  const submitReport = useModerationAction();
+  const governedReport = useModerationAction();
+  const nativePublisher = React.useContext(NativeReportPublisherContext);
+  const [nativePending, setNativePending] = React.useState(false);
+  const submitReport = { isPending: governedReport.isPending || nativePending };
   const [category, setCategory] = React.useState<ModerationReportType | null>(null);
   const [note, setNote] = React.useState("");
 
@@ -61,7 +76,20 @@ function ReportDialogBody({ open, onOpenChange, eventId, scope }: ReportMessageD
   const submit = () => {
     if (!category || submitReport.isPending) return;
     const trimmed = note.trim();
-    submitReport.mutate(
+    if (nativePublisher) {
+      if (!authorPubkey) { toast.error(t("moderation.report.failed")); return; }
+      setNativePending(true);
+      void nativePublisher({ eventId, authorPubkey, reportType: category, ...(trimmed ? { note: trimmed } : {}) })
+        .then((outcome) => {
+          if (outcome === "done") {
+            toast.success(t("moderation.report.submitted"));
+            onOpenChange(false);
+          } else toast(t("moderation.report.unknown", { operation: "" }));
+        }, () => toast.error(t("moderation.report.failed")))
+        .finally(() => setNativePending(false));
+      return;
+    }
+    governedReport.mutate(
       {
         intent: `report:${eventId}:${category}:${trimmed}`,
         build: (key) => reportCommand({ eventId, reportType: category, note: trimmed || undefined, scope }, key),

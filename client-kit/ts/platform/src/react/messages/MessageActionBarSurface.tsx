@@ -251,7 +251,7 @@ function MoreActionsMenu({
       </DropdownMenuContent>
     </DropdownMenu>
     {canReport && moderation ? <ReportMessageDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}
-      eventId={message.id} scope={moderation.scope} /> : null}
+      eventId={message.id} authorPubkey={message.signerPubkey ?? message.pubkey ?? undefined} scope={moderation.scope} /> : null}
     </>
   );
 }
