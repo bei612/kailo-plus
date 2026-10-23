@@ -32,6 +32,7 @@ export function useAppShellDesktopNotifications({
   openSearchHit,
   pubkey,
   joinAlerts,
+  openComponentNotification,
 }: {
   channels: Channel[];
   goChannel: (
@@ -52,6 +53,10 @@ export function useAppShellDesktopNotifications({
     principalId?: string;
     tenantName?: string;
   };
+  /** DD-138(4), 07 §4.8.3: activation of a component notification (mark read, open native page). */
+  openComponentNotification?: (
+    application: NonNullable<import("@/features/notifications/lib/desktop").DesktopNotificationTarget["application"]>,
+  ) => unknown;
 }) {
   const resolveSenderName = useNotificationSenderName();
 
@@ -157,6 +162,7 @@ export function useAppShellDesktopNotifications({
           goHome,
           openSearchHit,
           revealWindow: revealDesktopAppWindow,
+          openComponentNotification,
         },
         signal,
       );

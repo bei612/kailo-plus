@@ -6,6 +6,7 @@ import type { FeedItemState } from "@/features/home/useFeedItemState";
 import type { FeedItem } from "@/shared/api/types";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import type { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import type { ComponentNotificationItem, ComponentNotificationSource } from "@client-kit/platform/react/inbox/component-notifications";
 
 const EMPTY_SET = new Set<string>();
 
@@ -78,6 +79,12 @@ type AppShellContextValue = {
   // Open the Settings panel at the given section. Available on all surfaces
   // that render under AppShell.
   onOpenSettings: ((section: SettingsSection) => void) | null;
+  // DD-138(4), 07 §4.8.3: the shell's component notification source (Inbox rows); opening
+  // marks the item read and navigates to the native page. Absent in isolated tests.
+  componentNotifications?: {
+    source: ComponentNotificationSource | null;
+    open: (item: ComponentNotificationItem) => void;
+  };
 };
 
 const AppShellContext = React.createContext<AppShellContextValue>({

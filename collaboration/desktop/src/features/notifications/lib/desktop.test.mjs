@@ -62,3 +62,12 @@ test("does not send a reminder when identity changes during permission lookup", 
   assert.equal(await sendDesktopNotification({ title: "Current reminder" }, () => true), true);
   assert.equal(notifications.length, count + 1);
 });
+
+// DD-138(4), 07 §4.8.3: the component notification target survives the native round trip.
+test("parses a component notification application target without a channel anchor", async () => {
+  const { parseNotificationTarget } = await import("./desktop.ts");
+  const parsed = parseNotificationTarget({ channelId: null, eventId: null, kind: null,
+    application: { notificationId: "n-1", bindingId: "b-1", path: "/files/a", extra: "ignored" } });
+  assert.deepEqual(parsed?.application, { notificationId: "n-1", bindingId: "b-1", workspaceId: undefined, path: "/files/a" });
+  assert.equal(parseNotificationTarget({ channelId: null, eventId: null, application: { bindingId: "b-1", path: "/x" } }), null);
+});

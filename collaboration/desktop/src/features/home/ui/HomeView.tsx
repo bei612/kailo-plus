@@ -146,7 +146,7 @@ export function HomeView({
   const projectsHost=useProjectsHost();
   const projectQuery=useQuery({queryKey:["projects",projectsHost?.scopeKey,"inbox-work-items"],enabled:Boolean(projectsHost),
     queryFn:({signal})=>{if(!projectsHost)throw new Error("Project scope unavailable");return loadProjectWorkItems(projectsHost,signal);},retry:false});
-  const coreReads = useAppShell().coreReads;
+  const { coreReads, componentNotifications } = useAppShell();
   if (!coreReads) throw new Error("Missing Core read-state context");
   const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: `${nativeSession.facts.relayUrl}:${nativeSession.devicePubkey}`,
     conversations: coreReads.conversations,
@@ -359,6 +359,7 @@ export function HomeView({
               void coreReads.refresh();
               void ownedAgents.refetch();
               void projectQuery.refetch();
+              componentNotifications?.source?.refresh();
             } }
         : { kind: "ready" };
 
@@ -386,6 +387,10 @@ export function HomeView({
         isRead={isRead}
         selectedConversationId={selectedConversationId}
         coldResolutionPending={coldResolutionPending}
+        // DD-138(4), 07 §4.8.3: component notifications in 全部/提及/需要处理; opening marks read
+        // and navigates to the native page at the item's path (same source as the Web host).
+        componentNotifications={componentNotifications?.source
+          ? { source: componentNotifications.source, onOpen: componentNotifications.open } : null}
         list={{
           activeDraftCount,
           draftList: <DraftsPanel items={draftItems} onDeleteDraft={handleDeleteDraft}

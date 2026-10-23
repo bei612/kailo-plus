@@ -576,3 +576,37 @@ source 相等，原 manifest 仅该产物 source/artifact 两字段 +2/-2，不�
 原慢速依赖安装、bundle/chunk、dead_code 与交叉打包提示均保留。
 本包未签名、未安装、未做 Win11 设备／业务验收；此 lane 没有部署或执行 full，
 不以打包成功替代三端业务终态。
+
+## 2026-10-23 DD-138 第二阶段：Desktop 接入组件通知与组件搜索（源码，未验证）
+
+依据 `07` §4.8.3／§4.8.4「Web 与 Desktop 同一呈现」，Desktop 复用 client-kit 已有的共享实现，
+与 Web 宿主同一来源、同一 scopeKey（会话 tenant Principal）与同一规则：
+
+- 应用页路由：`src/app/routes/applications.$bindingId.tsx` 改用新文件
+  `applicationRouteSearch.ts` 校验可选 `path` 搜索参数（`validComponentPath`，与 Web
+  `platformLocationSearch` 同规则），传给 `NativeApplicationPage path`；
+  `useAppNavigation.goApplication(bindingId, workspaceId?, path?)` 接受 path。
+- 收件箱：新文件 `src/features/notifications/useComponentNotifications.ts`
+  （镜像 Web `ComponentNotificationAlerts.ts`），在 `AppShell` 挂载一次，经
+  `AppShellContext.componentNotifications` 交给 `HomeView` 的共享 `InboxView`：
+  全部／提及（MENTIONED）／需要处理（ACCESS_REQUESTED）出现组件条目；打开即标记已读并导航到
+  应用页 + path；Home 角标与 Dock 角标加上组件未读（关闭类别不计数，受「首页角标」开关约束）。
+- 桌面通知：新到未读条目走原有 `sendDesktopNotification`（Tauri 原生通道），受类别开关、
+  桌面提醒开关、系统权限与「正在查看时也提醒」约束（窗口可见且聚焦算正在查看），提示音沿用
+  需要处理／@提及槽位；`DesktopNotificationTarget` 增加可选 `application`
+  （notificationId／bindingId／workspaceId／path），点击经 `activateDesktopNotificationTarget`
+  的 `openComponentNotification` 标记已读并打开应用页。
+- 设置「通知」：`SettingsPanels`／`SettingsScreen` 透传 `onSetComponentAlertEnabled`，
+  共享 `NotificationSettingsCard` 显示 `ComponentAlertsGroup`（六类开关，默认开启）。
+- 搜索：`src/features/search/hooks.ts` 新增 `useComponentSearchQuery`（BFF
+  `client.searchComponents`，按会话 relay 与设备键分 key），接入共享 search reader；
+  `features/search/ui/TopbarSearch.tsx` 的组件结果经 `goApplication(bindingId, undefined, path)` 打开。
+- 未改样式，未写死颜色。
+
+测试（node:test，待 CI 执行）：新增 `src/app/routes/applicationRouteSearch.test.mjs`
+（合法 path 保留、畸形 path 丢弃）；`AppShell.helpers.test.mjs` 增加组件通知点击打开应用页；
+`notifications/lib/desktop.test.mjs` 增加 application target 解析。
+
+未验证：本机未编译、未运行单测或类型检查，未打包、未部署，未做 Desktop 端收件箱、通知点击
+（含 macOS 冷启动队列）、角标、设置开关与搜索的运行验收；BFF 组件通知／搜索端点的真实数据联调
+也未做。
