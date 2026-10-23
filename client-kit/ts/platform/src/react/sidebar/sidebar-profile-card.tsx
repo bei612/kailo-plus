@@ -3,6 +3,7 @@ import { useUiT } from "../context";
 // desktop/src/features/sidebar/ui/SidebarProfileCard.tsx: the self presence badge on the avatar and
 // the status line that swaps with the community label on hover are restored for DD-120 when the
 // host supplies the person's presence session and status.
+import { Building2 } from "lucide-react";
 import * as React from "react";
 
 import { MaskedAvatarBadgeFrame, STATUS_DOT_MASK_CURVE } from "../messages/thread/MaskedAvatarBadgeFrame";
@@ -73,9 +74,9 @@ export function SidebarProfileCard({
     >
       <span
         aria-hidden="true"
-        className="flex w-3.5 shrink-0 items-center justify-center text-2xs"
+        className="flex w-3.5 shrink-0 items-center justify-center"
       >
-        <span className="-translate-y-px leading-normal">🐝</span>
+        <Building2 className="h-3 w-3" strokeWidth={2} />
       </span>
       <span className="truncate">{communityLabel}</span>
     </span>

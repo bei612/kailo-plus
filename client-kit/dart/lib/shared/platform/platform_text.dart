@@ -6031,7 +6031,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.threadCollapseThread: ('Collapse thread', '收起线程'),
   PlatformMessageKey.threadReplyTo: (
     'Reply in thread to {author}',
-    '在线程中回复{author}',
+    '在线程中回复 {author}',
   ),
   PlatformMessageKey.threadNewMessageOne: (
     '{count} new message',
@@ -12535,8 +12535,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionHash: ('Configuration hash', '配置摘要'),
   PlatformMessageKey.agentsAutomationTitle: ('Automations', '自动化'),
   PlatformMessageKey.agentsAutomationScope: (
-    'Automations that keep your community moving.',
-    '让社区协作自动运转。',
+    'Automations that keep your team moving.',
+    '让团队协作自动运转。',
   ),
   PlatformMessageKey.agentsAutomationNone: (
     'No workflows in this workspace yet.',
@@ -12547,7 +12547,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsAutomationStatePaused: ('Paused', '已暂停'),
   PlatformMessageKey.agentsAutomationStateDisabled: ('Disabled', '已停用'),
   PlatformMessageKey.agentsAutomationVersionRetired: ('Retired', '已退役'),
-  PlatformMessageKey.agentsAutomationCreate: ('Create automation', '创建自动化'),
+  PlatformMessageKey.agentsAutomationCreate: ('New workflow', '新建工作流'),
   PlatformMessageKey.agentsAutomationCopy: ('Copy as new draft', '复制为新草稿'),
   PlatformMessageKey.agentsAutomationForm: ('Form', '表单'),
   PlatformMessageKey.agentsAutomationYaml: ('Workflow YAML', '工作流 YAML'),
