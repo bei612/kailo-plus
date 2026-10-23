@@ -32,6 +32,19 @@ export function presentation(): KailoPresentationState {
   );
 }
 
+// The Next locale the page must switch to, or null when it already shows the
+// Kailo one. Checked after every navigation, not once at mount: the page's own
+// first redirect (index -> /home) aborts an earlier locale replace and keeps
+// the default locale (V-SCN-201 production acceptance).
+export function pendingLocale(
+  routerLocale: string | undefined,
+  ready: boolean,
+): KailoLocale | null {
+  if (!ready) return null;
+  const wanted = presentation().locale;
+  return routerLocale === wanted ? null : wanted;
+}
+
 let renewal: Promise<boolean> | null = null;
 
 // Silent renewal of the native Gateway session through the existing IdP
