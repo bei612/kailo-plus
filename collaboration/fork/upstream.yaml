@@ -1143,8 +1143,8 @@ artifacts:
     # 安装包显示名由发布配置注入（DD-111），不写在源码里
     build_args: [PLATFORM_DISPLAY_NAME]
     blocked: Win11 x64 unsigned 测试安装包已生成；代码签名、Win11 安装运行与业务验收未完成
-    source_digest: sha256:6bcd5c7ce4aafbd5357637c40498e329fc2c7e9e6d94505d1b991c81cf24094f
-    artifact_digest: sha256:99f4099d291d0ce7767cca024b2dac2a4d7849e5202599a332668378b41c975f
+    source_digest: sha256:3edc842dbb0ea0b01509d25e845d016c5a61b687349d6f197b0820dc00ed6f50
+    artifact_digest: sha256:71183886d377b3daa7d24708ba7d40a2b38f6060ab40a86b9efba3203a620c4c
   # Android release APK（ADR-06 客户端发布单元按端分离：应用商店包，带平台签名）。
   # 阻断：release 签名所需的 upload keystore 未提供。上游 release 构建缺 keystore 即失败，
   # 不以 debug 证书冒充 release；profile/debug APK 只是测试构建，不登记为发布产物。

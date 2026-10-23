@@ -26,8 +26,8 @@ artifacts:
     inputs: [file-storage/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
     build_args: [CELLS_VERSION, DOCKER_ENTRYPOINT_SRC_DIR]
     build_facts: {GIT_REV: source_commit, BUILD_STAMP: build_time_utc}
-    source_digest: sha256:c4a0b150d64549f43c86966881a2cac88f98247cb7c97423bcbf2f39e112da34
-    artifact_digest: sha256:b3cedac7652a27f639e673a0c76179facbc51787efa869b610a97d3f28e342e1
+    source_digest: sha256:2fe3e1b5dd773c9404ca49ad7f30f80d266901c09688318a6a126c16271ef4dd
+    artifact_digest: sha256:90312bca903a1d89be93f8fc919ff5cb72ac03b9e03503dcf57c3670ded935f4
     blocked: This clean-source candidate at 4f2ac2885a9a27395814e2efa5e00ea7da654f97 is built, pushed and independently read back by digest, but not deployed. Platform ApplicationBinding, resource and tool governance and the full FILE_STORAGE release gates remain unaccepted; historical three-user native SSO evidence applies only to the previously deployed artifact.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
