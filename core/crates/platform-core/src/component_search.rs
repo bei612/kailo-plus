@@ -484,15 +484,15 @@ mod tests {
             "more results than the limit"
         );
         let cases: Vec<Box<dyn Fn(&mut Value)>> = vec![
-            Box::new(|v| v["results"][0]["path"] = json!("https://evil.test/")),
-            Box::new(|v| v["results"][0]["path"] = json!("/x?token=1")),
-            Box::new(|v| v["results"][0]["title"] = json!("")),
-            Box::new(|v| v["results"][0]["title"] = json!("t".repeat(201))),
-            Box::new(|v| v["results"][0]["summary"] = json!("s".repeat(401))),
-            Box::new(|v| v["results"][0]["kind"] = json!("EMAIL")),
-            Box::new(|v| v["results"][0]["updatedAt"] = json!("soon")),
-            Box::new(|v| v["results"][0]["content"] = json!("full body")),
-            Box::new(|v| v["extra"] = json!(true)),
+            Box::new(|v: &mut Value| v["results"][0]["path"] = json!("https://evil.test/")),
+            Box::new(|v: &mut Value| v["results"][0]["path"] = json!("/x?token=1")),
+            Box::new(|v: &mut Value| v["results"][0]["title"] = json!("")),
+            Box::new(|v: &mut Value| v["results"][0]["title"] = json!("t".repeat(201))),
+            Box::new(|v: &mut Value| v["results"][0]["summary"] = json!("s".repeat(401))),
+            Box::new(|v: &mut Value| v["results"][0]["kind"] = json!("EMAIL")),
+            Box::new(|v: &mut Value| v["results"][0]["updatedAt"] = json!("soon")),
+            Box::new(|v: &mut Value| v["results"][0]["content"] = json!("full body")),
+            Box::new(|v: &mut Value| v["extra"] = json!(true)),
         ];
         for (index, edit) in cases.iter().enumerate() {
             let mut value = good.clone();

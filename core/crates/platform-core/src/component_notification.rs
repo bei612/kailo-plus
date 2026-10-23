@@ -258,7 +258,7 @@ pub(crate) async fn deliver(
 ) -> Response {
     match store(&state, &headers, binding, &body).await {
         Ok((receipt, created, category)) => {
-            tracing::info!(%binding, category, duplicate = !created, "组件通知已接收");
+            tracing::info!(%binding, category = %category, duplicate = !created, "组件通知已接收");
             (
                 if created {
                     StatusCode::CREATED
@@ -772,31 +772,31 @@ mod tests {
     #[test]
     fn every_out_of_contract_delivery_is_refused() {
         let cases: Vec<Box<dyn Fn(&mut Value)>> = vec![
-            Box::new(|v| v["unknown"] = json!(1)),
-            Box::new(|v| v["category"] = json!("INVITED")),
-            Box::new(|v| v["idempotencyKey"] = json!("")),
-            Box::new(|v| v["idempotencyKey"] = json!("a b")),
-            Box::new(|v| v["idempotencyKey"] = json!("x".repeat(129))),
-            Box::new(|v| v["title"] = json!({"ZH_CN": "只有中文"})),
-            Box::new(|v| v["title"]["EN"] = json!("   ")),
-            Box::new(|v| v["title"]["EN"] = json!("x".repeat(121))),
-            Box::new(|v| v["title"]["ZH_CN"] = json!("line\nbreak")),
-            Box::new(|v| v["summary"]["EN"] = json!("y".repeat(281))),
-            Box::new(|v| v["title"]["FR"] = json!("Bonjour")),
-            Box::new(|v| v["path"] = json!("https://evil.test/x")),
-            Box::new(|v| v["path"] = json!("//evil.test/x")),
-            Box::new(|v| v["path"] = json!("relative/x")),
-            Box::new(|v| v["path"] = json!("/a\\b")),
-            Box::new(|v| v["path"] = json!("/a b")),
-            Box::new(|v| v["path"] = json!("/x?access_token=abc")),
-            Box::new(|v| v["path"] = json!("/x?Token=abc")),
-            Box::new(|v| v["path"] = json!("/x?a=1&SIG=2")),
-            Box::new(|v| v["path"] = json!(format!("/{}", "p".repeat(1024)))),
-            Box::new(|v| v["occurredAt"] = json!("2026-10-23T10:06:00Z")),
-            Box::new(|v| v["occurredAt"] = json!("yesterday")),
-            Box::new(|v| v["actor"] = v["recipient"].clone()),
-            Box::new(|v| v["recipient"]["subject"] = json!("")),
-            Box::new(|v| v["recipient"]["extra"] = json!("x")),
+            Box::new(|v: &mut Value| v["unknown"] = json!(1)),
+            Box::new(|v: &mut Value| v["category"] = json!("INVITED")),
+            Box::new(|v: &mut Value| v["idempotencyKey"] = json!("")),
+            Box::new(|v: &mut Value| v["idempotencyKey"] = json!("a b")),
+            Box::new(|v: &mut Value| v["idempotencyKey"] = json!("x".repeat(129))),
+            Box::new(|v: &mut Value| v["title"] = json!({"ZH_CN": "只有中文"})),
+            Box::new(|v: &mut Value| v["title"]["EN"] = json!("   ")),
+            Box::new(|v: &mut Value| v["title"]["EN"] = json!("x".repeat(121))),
+            Box::new(|v: &mut Value| v["title"]["ZH_CN"] = json!("line\nbreak")),
+            Box::new(|v: &mut Value| v["summary"]["EN"] = json!("y".repeat(281))),
+            Box::new(|v: &mut Value| v["title"]["FR"] = json!("Bonjour")),
+            Box::new(|v: &mut Value| v["path"] = json!("https://evil.test/x")),
+            Box::new(|v: &mut Value| v["path"] = json!("//evil.test/x")),
+            Box::new(|v: &mut Value| v["path"] = json!("relative/x")),
+            Box::new(|v: &mut Value| v["path"] = json!("/a\\b")),
+            Box::new(|v: &mut Value| v["path"] = json!("/a b")),
+            Box::new(|v: &mut Value| v["path"] = json!("/x?access_token=abc")),
+            Box::new(|v: &mut Value| v["path"] = json!("/x?Token=abc")),
+            Box::new(|v: &mut Value| v["path"] = json!("/x?a=1&SIG=2")),
+            Box::new(|v: &mut Value| v["path"] = json!(format!("/{}", "p".repeat(1024)))),
+            Box::new(|v: &mut Value| v["occurredAt"] = json!("2026-10-23T10:06:00Z")),
+            Box::new(|v: &mut Value| v["occurredAt"] = json!("yesterday")),
+            Box::new(|v: &mut Value| v["actor"] = v["recipient"].clone()),
+            Box::new(|v: &mut Value| v["recipient"]["subject"] = json!("")),
+            Box::new(|v: &mut Value| v["recipient"]["extra"] = json!("x")),
         ];
         for (index, edit) in cases.iter().enumerate() {
             let mut value = body();
