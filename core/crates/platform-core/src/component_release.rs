@@ -3807,7 +3807,7 @@ mod report_tests {
             with(json!([item(
                 &spell,
                 "label",
-                text(&"长".repeat(61), "Spell")
+                text("长".repeat(61).as_str(), "Spell")
             )])),
             with(json!([item(&spell, "extra", json!(true))])),
             with(json!(too_many)),

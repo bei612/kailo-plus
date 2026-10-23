@@ -412,6 +412,9 @@ describe("shared external service connection management", () => {
     expect(button(host,"Sign in to service").disabled).toBe(true);
     await act(async()=>close());
     expect(host.querySelector("iframe")).not.toBe(frame);
+    // The new document gets its own handshake grace before the DD-127 entry returns.
+    expect(host.textContent).not.toContain("Sign in to service");
+    await passHandshakeGrace();
     expect(button(host,"Sign in to service").disabled).toBe(false);
     expect(host.textContent).not.toContain("success");
     vi.useRealTimers();
