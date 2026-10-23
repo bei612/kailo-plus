@@ -1,7 +1,10 @@
 // Reused from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; only identity/transport seams adapt to Kailo.
 import type { ConversationParticipant } from "@client-kit/contracts";
-import { useUiT } from "../context";
+import { useUiLocale, useUiT } from "../context";
 import { Avatar, AvatarFallback } from "../profile/buzz/shared/ui/avatar";
+import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
+import { AvatarHostProvider } from "../profile/avatar-host";
+import { useCandidatePictureResolver } from "../profile/candidate-picture";
 import { getInitials } from "../profile/buzz/shared/lib/initials";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { truncateNpub } from "./pubkey";
@@ -78,6 +81,10 @@ export function NewMessageResultRow({
 }) {
   const name = formatRecipientName(user);
   const translateUi = useUiT();
+  // Original NewMessageResultRow ProfileAvatar (DD-139): the Tenant avatar address, else initials.
+  const resolvePicture = useCandidatePictureResolver();
+  const picture = resolvePicture(user.picture);
+  const locale = useUiLocale();
 
   return (
     <div
@@ -99,7 +106,9 @@ export function NewMessageResultRow({
         tabIndex={-1}
         type="button"
       >
-        <Avatar className="h-8 w-8 text-xs shadow-none"><AvatarFallback>{getInitials(name)}</AvatarFallback></Avatar>
+        {picture ? <AvatarHostProvider value={{ locale, rewriteMediaUrl: (url) => resolvePicture(url) }}>
+          <ProfileAvatar avatarUrl={picture} className="h-8 w-8 text-xs shadow-none" label={name} shape="circle" />
+        </AvatarHostProvider> : <Avatar className="h-8 w-8 text-xs shadow-none"><AvatarFallback>{getInitials(name)}</AvatarFallback></Avatar>}
         <div className="min-w-0 flex-1">
           <HoverRecipientIdentity displayName={name} pubkey={user.pubkeys[0] ?? ""} />
         </div>

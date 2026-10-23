@@ -50,6 +50,7 @@ import {
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
 import { ChannelMembersBar, ChannelMembersDialog, type MemberProfileRequest } from "@client-kit/platform/react/channel-members";
 import { MemberHover, useOptionalMemberProfile, type MemberTarget } from "@client-kit/platform/react/members";
+import { CandidatePictureProvider, sameOriginAvatarPicture } from "@client-kit/platform/react/profile/candidate-picture";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { ChannelManagementSheet } from "@client-kit/platform/react/channel-management-sheet";
 import { ChannelEphemeralBadge } from "@client-kit/platform/react/ephemeral-channel";
@@ -128,6 +129,7 @@ const reauthenticateTopLevel = () => { void signInAgainHere(); };
 export function PlatformApp() {
   const locale = useDeviceLocale();
   const { isDark } = useTheme();
+  const avatarPicture = useMemo(() => sameOriginAvatarPicture(window.location.origin), []);
   const documentBinding = new URLSearchParams(window.location.search).get("protocolBinding");
   const [session, setSession] = useState<PlatformSessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +175,8 @@ export function PlatformApp() {
   return (
     <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"} currentPrincipalId={session.tenantPrincipalId}
       reauthenticateTopLevel={reauthenticateTopLevel}>
+      {/* DD-139: candidate and DM-row avatars load only the Tenant avatar route on this origin. */}
+      <CandidatePictureProvider resolve={avatarPicture}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}
@@ -192,6 +196,7 @@ export function PlatformApp() {
         <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><WebPresenceHost session={session}><WebAgentTranscriptHost session={session}><SignedIn session={session} /></WebAgentTranscriptHost></WebPresenceHost></ConversationVisibilityProvider></BrowserNotificationsProvider>
         </WebOnboardingGate>
       )}
+      </CandidatePictureProvider>
     </PlatformProvider>
   );
 }

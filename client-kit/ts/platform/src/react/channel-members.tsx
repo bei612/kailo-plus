@@ -45,6 +45,7 @@ import { VirtualizedList } from "./forum/VirtualizedList";
 import { ProfileAvatar } from "./profile/buzz/features/profile/ui/ProfileAvatar";
 import { AvatarHostProvider } from "./profile/avatar-host";
 import { MemberAvatar, type MemberTarget } from "./members";
+import { useCandidatePictureResolver } from "./profile/candidate-picture";
 import { loadRoleMemberDirectory, MemberActionFeedback, useMemberAction } from "./roles";
 import { rankUserCandidatesBySearch } from "./search/userCandidateSearch";
 import type { UserSearchResult } from "./search/types";
@@ -691,6 +692,9 @@ function AddMemberSearchResultRow({ disabled, onSelect, role }: {
 }) {
   const t = useT();
   const name = role.displayName.trim() || (role.pubkeys?.[0] ? truncatePubkey(role.pubkeys[0]) : role.principalId);
+  // Original AddMemberSearchResultRow ProfileAvatar (DD-139): the Tenant avatar address, else initials.
+  const resolvePicture = useCandidatePictureResolver();
+  const locale = useLocale();
   return (
     <div
       className={cn(
@@ -706,7 +710,9 @@ function AddMemberSearchResultRow({ disabled, onSelect, role }: {
         onClick={() => onSelect(role)}
         type="button"
       />
-      <ProfileAvatar avatarUrl={null} className="pointer-events-none relative z-10 h-8 w-8 text-xs shadow-none" label={name} shape="circle" />
+      <AvatarHostProvider value={{ locale, rewriteMediaUrl: (url) => resolvePicture(url) }}>
+        <ProfileAvatar avatarUrl={resolvePicture(role.picture)} className="pointer-events-none relative z-10 h-8 w-8 text-xs shadow-none" label={name} shape="circle" />
+      </AvatarHostProvider>
       <div className="pointer-events-none relative z-10 min-w-0 flex-1">
         <span className="block truncate text-sm font-medium tracking-tight">{name}</span>
       </div>
