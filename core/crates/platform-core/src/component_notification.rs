@@ -131,17 +131,6 @@ pub(crate) fn component_path(path: &str) -> bool {
             .any(|(name, _)| CREDENTIAL_QUERY.contains(&name.to_ascii_lowercase().as_str()))
 }
 
-/// The resolved link for a stored path against the page origin; `None` when it
-/// would leave that origin (the inbox then shows the item without opening it).
-pub(crate) fn resolve_in_origin(origin: &str, path: &str) -> Option<String> {
-    if !component_path(path) {
-        return None;
-    }
-    let base = reqwest::Url::parse(origin).ok()?;
-    let url = base.join(path).ok()?;
-    (url.origin() == base.origin()).then(|| url.to_string())
-}
-
 /// A validated delivery, ready to store.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Delivery {
@@ -722,6 +711,19 @@ pub(crate) async fn sweep(pool: &sqlx::PgPool, batch: i64) -> Result<u64, sqlx::
 mod tests {
     use super::*;
 
+    type Edit = Box<dyn Fn(&mut Value)>;
+
+    /// The resolved link for a stored path against the page origin; `None` when it
+    /// would leave that origin (the inbox then shows the item without opening it).
+    fn resolve_in_origin(origin: &str, path: &str) -> Option<String> {
+        if !component_path(path) {
+            return None;
+        }
+        let base = reqwest::Url::parse(origin).ok()?;
+        let url = base.join(path).ok()?;
+        (url.origin() == base.origin()).then(|| url.to_string())
+    }
+
     fn now() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-10-23T10:00:00Z")
             .unwrap()
@@ -771,7 +773,7 @@ mod tests {
 
     #[test]
     fn every_out_of_contract_delivery_is_refused() {
-        let cases: Vec<Box<dyn Fn(&mut Value)>> = vec![
+        let cases: Vec<Edit> = vec![
             Box::new(|v: &mut Value| v["unknown"] = json!(1)),
             Box::new(|v: &mut Value| v["category"] = json!("INVITED")),
             Box::new(|v: &mut Value| v["idempotencyKey"] = json!("")),

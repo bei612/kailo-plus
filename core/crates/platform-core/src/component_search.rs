@@ -391,11 +391,11 @@ async fn call(
     let reference = candidate
         .adapter_service_ref
         .as_deref()
-        .ok_or_else(|| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let instance = candidate
         .native_instance_ref
         .as_deref()
-        .ok_or_else(|| Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
+        .ok_or(Refusal::Blocked(ReasonCode::CapabilityBlocked))?;
     let adapter = crate::application_binding::native::Adapter::resolve(
         reference,
         instance,
@@ -433,6 +433,8 @@ async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type Edit = Box<dyn Fn(&mut Value)>;
 
     fn query(q: &str, limit: Option<i64>, locale: Option<&str>) -> contracts::ComponentSearchQuery {
         contracts::ComponentSearchQuery {
@@ -483,7 +485,7 @@ mod tests {
             None,
             "more results than the limit"
         );
-        let cases: Vec<Box<dyn Fn(&mut Value)>> = vec![
+        let cases: Vec<Edit> = vec![
             Box::new(|v: &mut Value| v["results"][0]["path"] = json!("https://evil.test/")),
             Box::new(|v: &mut Value| v["results"][0]["path"] = json!("/x?token=1")),
             Box::new(|v: &mut Value| v["results"][0]["title"] = json!("")),
