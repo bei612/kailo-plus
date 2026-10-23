@@ -62,4 +62,4 @@ Go 测试在 `golang:1.26.8-alpine@sha256:8ac98ca5…` 中运行，设置 `CGO_E
 - 云盘原生页面 release（`fork/release/manifest.native-page.json`，版本升为 `1.2.0-native-page`）在 `frontendPresentationContract.preferences` 声明两项 `DOCUMENTS` 偏好：`documents.measurementUnit`（ENUM `cm`/`pt`/`inch`，默认 `cm`）与 `documents.spellcheck`（BOOLEAN，默认 `true`）。
 - 插件每次打开文档时用 `docsApiConfig(kailoPreferences(window.KailoEmbed))` 生成 `docs_api_config`：`customization.unit`、`customization.features.spellcheck.mode` 取 Kailo 下发的值，缺失或不合法时取声明默认值；宏、插件保持关闭，`layout.toolbar.file.settings=false` 隐藏编辑器“高级设置”，`features.spellcheck.change=false` 不在编辑器内提供同义开关。偏好变化在下一次打开文档时生效。
 - `launch.test.js` 新增默认值、合法值、非法值回落、运行时缺失与“设置/宏/插件始终关闭”的用例。
-- 未执行：vitest、webpack 产物、DocumentServer 实际是否合并 `layout`/`features`/`unit` 与截图验收，均待 CI 节点按 §3 运行。
+- 2026-10-23 CI 节点对 `c8ef6d4a8` 运行 `launch.test.js`：12 项通过（与 `kailo-cells.test.js` 合计 21 项）。未执行：webpack 产物、DocumentServer 实际合并 `layout`/`features`/`unit` 的读回与截图验收，待构建部署后按 §3 运行。
