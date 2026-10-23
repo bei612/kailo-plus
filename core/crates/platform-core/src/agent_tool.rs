@@ -1179,7 +1179,11 @@ mod provision_tests {
         let tenant = Uuid::new_v4();
         assert_eq!(
             NATIVE_TOOLS,
-            ["agent.memory.entry.list", "agent.memory.entry.read"]
+            [
+                "agent.memory.entry.list",
+                "agent.memory.entry.read",
+                "project_channel_request"
+            ]
         );
         for name in NATIVE_TOOLS {
             assert!(schema_hashes(name).is_ok());

@@ -4200,17 +4200,7 @@ pub(crate) async fn open_project_channel_child(
     }
     let sem = Semantic::WorkspaceCreate;
     let params = parse_command(sem, command)?;
-    let target = resolve_target(
-        &mut **tx,
-        parent.tenant_id,
-        owner,
-        def,
-        sem,
-        &params,
-        None,
-        true,
-    )
-    .await?;
+    let target = resolve_target(tx, parent.tenant_id, owner, def, sem, &params, None, true).await?;
     let mut parameters = json!({ "params": params.to_json(), "targetVersion": target.version });
     parameters[frozen_key] = frozen;
     let hash = parameter_hash(def, target.id, &params);
