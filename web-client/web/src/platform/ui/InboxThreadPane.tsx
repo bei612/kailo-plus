@@ -1,13 +1,12 @@
 // Host adapter for the original shared Inbox detail surface, not a message store.
-import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant, type WorkspaceVisibility } from "@client-kit/contracts";
-import { InboxDetailChannelMembers } from "@client-kit/platform/react/inbox/InboxDetailChannelMembers";
+import { ReasonCode, WebMessageType, WorkspaceMembershipState, type WorkspaceMemberView, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxMessageRowSurface } from "@client-kit/platform/react/inbox-surface";
 import { InboxDetailFrame } from "@client-kit/platform/react/inbox/InboxDetailFrame";
 import { InboxDetailMessages } from "@client-kit/platform/react/inbox-detail-messages";
 import { MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { useChannelMessageEdit } from "@client-kit/platform/react/thread";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { relativeTime } from "@client-kit/platform/format";
@@ -17,14 +16,14 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
-import { bff, deleteMessage, publishChannelTopic, publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
+import { bff, deleteMessage, publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorAvatar, MessageAuthorIdentity, useMessageAuthorLabels, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
 import { BffVideoReviewProvider } from "@/features/chat/ui/BffVideoReview";
 
-export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen, workspaceVisibility, isDark = false }: {
+export function InboxThreadPane({ principalId, workspaceId, channelId, conversation, forum = false, canInteract = true, rootId, selectedEventId, selectionItemId, channelName, senderLabel, members, onBack, onOpen, autoSendDraftKey, restoreDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable, onPublicationPendingChange, unreadBoundaryEventId, reopen }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string; senderLabel?: string;
   members: (WorkspaceMemberView | ConversationParticipant)[]; onBack?: () => void; onOpen?: () => void;
   conversation?: ConversationView;
@@ -42,10 +41,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   unreadBoundaryEventId?: string | null;
   /** Original header reopen chip for this context's hidden-DM reopen. */
   reopen?: { pending: boolean; error: boolean; unknown?: boolean; onRetry?: () => void };
-  /** Directory visibility of the context Workspace channel (original channel.visibility). */
-  workspaceVisibility?: WorkspaceVisibility;
-  /** Host theme state for the original channel management overlay. */
-  isDark?: boolean;
 }) {
   const t = useT(); const locale = useLocale();
   const [selection, setSelection] = useState({ anchor: selectedEventId, root: rootId });
@@ -61,27 +56,6 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
   const publicationOwnerRef=useRef(publicationOwner);publicationOwnerRef.current=publicationOwner;
   useEffect(()=>{publicationOwner.active=true;return()=>{publicationOwner.active=false;};},[publicationOwner]);
   const composerContainer = useRef<HTMLDivElement>(null);
-  // Original InboxDetailPane ChannelMembersBar: the context channel's roster and management sheet,
-  // over the same admitted channel descriptor read (and cache key) as the channel page.
-  const queryClient = useQueryClient();
-  const descriptorKey = ["platform", "channel-descriptor", principalId, workspaceId] as const;
-  const descriptor = useQuery({ queryKey: descriptorKey, enabled: !conversation && canInteract,
-    queryFn: () => bff.workspaceChannel(workspaceId), retry: false });
-  const channelMembers = conversation
-    ? <InboxDetailChannelMembers roster={{kind: "conversation", conversation}} isDark={isDark} currentPrincipalId={principalId}
-        channel={{channelId: conversation.channelId, name: channelName, description: "", channelType: "dm", ttlSeconds: null}}
-        onCopy={writeTextToClipboard} />
-    : descriptor.isSuccess && descriptor.data ? <InboxDetailChannelMembers roster={{kind: "workspace", workspaceId}} isDark={isDark}
-        currentPrincipalId={principalId}
-        channel={{channelId: descriptor.data.channelId, name: descriptor.data.name, description: descriptor.data.description ?? "",
-          channelType: descriptor.data.channelType === "forum" ? "forum" : "stream", visibility: workspaceVisibility,
-          ttlSeconds: descriptor.data.ttlSeconds ?? null, topic: descriptor.data.topic, archived: descriptor.data.archived}}
-        management={{
-          refresh: () => { void queryClient.invalidateQueries({ queryKey: descriptorKey }); },
-          publishTopic: async (id, request, idempotencyKey) => { await publishChannelTopic(id, request, idempotencyKey); },
-          renderCanvas: (content) => <MessageContent content={content} workspaceId={workspaceId} />,
-        }}
-        onCopy={writeTextToClipboard} /> : undefined;
   const currentHeaderDelete = useRef<(() => void) | undefined>(undefined);
   const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined, true, conversation?.channelId ?? channelId, forum);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
@@ -183,7 +157,7 @@ export function InboxThreadPane({ principalId, workspaceId, channelId, conversat
     channelName={channelName} channelType={conversation ? "dm" : forum ? "forum" : "stream"} messages={rows}
     available={Boolean(canUseContext)} canSendComment={Boolean(canReply)} onToggleReaction={messageReactions.onToggleReaction} resolveMediaUrl={messageReactions.resolveMediaUrl} refresh={refresh}>
     <InboxDetailFrame headerKey={JSON.stringify([principalId, ownProfile.data?.pubkey, workspaceId, conversation?.id, anchor])}
-      header={{title: contextLabel, onBack, onOpen, openLabel: openContextLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete, reopen, actions: channelMembers}}
+      header={{title: contextLabel, onBack, onOpen, openLabel: openContextLabel, deletePending: headerDeletePending, onDelete: requestHeaderDelete, reopen}}
       renderMessages={composerOverlayRef => <InboxDetailMessages conversationId={anchorRoot} selectedEventId={anchor} messages={rows} composerOverlayRef={composerOverlayRef}
       unreadBoundaryEventId={unreadBoundaryEventId}
       unavailable={unavailable} interrupted={interrupted} loading={thread.isPending}
