@@ -1,5 +1,6 @@
 import * as React from "react";
-import { useBffClient } from "@client-kit/platform/react/context";
+import { useBffClient, useUiT } from "@client-kit/platform/react/context";
+import { findDmAgentMention, useDmAgentMentionNames } from "@client-kit/platform/react/composer/dmAgentMention";
 import { useNativeSession } from "@/features/platform/activeCommunity";
 import { nativeApplicationWorkspace, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useComposerAgentDirectory } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAgentDirectory";
@@ -128,6 +129,11 @@ function MessageComposerImpl({
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
   effectiveDraftKeyRef.current = effectiveDraftKey;
   const bff = useBffClient();
+  const translateUi = useUiT();
+  const dmAgentNames = useDmAgentMentionNames(bff, channelType === "dm" && !editTarget);
+  const dmAgentNamesRef = React.useRef(dmAgentNames);
+  dmAgentNamesRef.current = dmAgentNames;
+  const [dmAgentRefusal, setDmAgentRefusal] = React.useState(false);
   const session = useNativeSession();
   const workspaces = useWorkspaceChannelDirectory({ enabled: channelType !== "dm" && channelId !== null });
   const workspace = nativeApplicationWorkspace(workspaces.data, { channelId });
@@ -446,6 +452,12 @@ function MessageComposerImpl({
   });
   const submitMessage = React.useCallback(async () => {
     const trimmed = syncComposerContentFromEditor().trim();
+    // DD-144: Kailo DMs never admit Agents; refuse an Agent mention before sending, draft kept.
+    if (channelType === "dm" && dmAgentNamesRef.current.length && findDmAgentMention(trimmed, dmAgentNamesRef.current)) {
+      setDmAgentRefusal(true);
+      return;
+    }
+    setDmAgentRefusal(false);
     // Normal send
     const currentPendingImeta = media.pendingImetaRef.current;
     const currentQueuedAttachments = media.queuedAttachmentsRef.current;
@@ -505,6 +517,7 @@ function MessageComposerImpl({
       onPreparingMentionSendChange?.(false);
     }
   }, [
+    channelType,
     channelId,
     drafts.loadDraft,
     getLiveLinkPreviewCandidates,
@@ -716,6 +729,12 @@ function MessageComposerImpl({
                 >
                   Dismiss
                 </button>
+              </div>
+            ) : null}
+            {dmAgentRefusal ? (
+              <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                data-testid="composer-dm-agent-refused" role="alert">
+                {translateUi("dm.agentMentionRefused")}
               </div>
             ) : null}
             {mentionSendFlow.sendOutcome ? (

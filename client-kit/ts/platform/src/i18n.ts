@@ -1032,6 +1032,7 @@ export const platformMessages = {
   "dm.addPerson": { en: "Add {name}", "zh-CN": "添加{name}" },
   "dm.addedPerson": { en: "Already added {name}", "zh-CN": "已添加{name}" },
   "dm.removePerson": { en: "Remove {name}", "zh-CN": "移除{name}" },
+  "dm.agentMentionRefused": { en: "Agents can't join direct messages; mention them in a channel they're in.", "zh-CN": "Agent 不能加入私聊，请在其所在的频道中提及。" },
   "dm.verifyPublicKey": { en: "Verify {name} public key", "zh-CN": "核验{name}的公钥" },
   "dm.viewInactive": { en: "Conversation view is no longer active.", "zh-CN": "当前会话页面已不再有效。" },
   "dm.synchronizing": { en: "The direct message is still synchronizing. Your draft is retained.", "zh-CN": "私聊仍在同步，草稿已保留。" },
