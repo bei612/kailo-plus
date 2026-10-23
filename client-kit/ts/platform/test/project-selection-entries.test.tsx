@@ -17,7 +17,7 @@ beforeEach(() => { setLocale("en"); });
 
 const owner = "a".repeat(64);
 const repository = { id: "r", name: "repo", description: "", cloneUrls: [], webUrl: null, owner, contributors: [], createdAt: 1,
-  status: "open", defaultBranch: "main", repoAddress: `30617:${owner}:repo`, channelId: "11111111-1111-4111-8111-111111111111" } as Repository;
+  status: "open", defaultBranch: "main", repoAddress: `30617:${owner}:repo`, channelId: "11111111-1111-4111-8111-111111111111" } as unknown as Repository;
 const commit = (hash: string, subject: string) => ({ hash, shortHash: hash.slice(0, 7), authorName: "Ada", authorEmail: "ada@example.org", timestamp: 1, subject });
 const commits = [commit("1".repeat(40), "first"), commit("2".repeat(40), "second"), commit("3".repeat(40), "third")];
 

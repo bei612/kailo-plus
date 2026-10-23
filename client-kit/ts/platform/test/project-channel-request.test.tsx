@@ -2,7 +2,7 @@
 // over the viewer's pending approvals; Cancel = DENY, Create channel = APPROVE.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApprovalStatus, type ApprovalView } from "@client-kit/contracts";
+import { ApprovalStatus, WorkspaceVisibility, type ApprovalView } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { setLocale } from "../src/i18n";
 import { PlatformProvider } from "../src/react/context";
@@ -14,7 +14,7 @@ const home = "11111111-1111-4111-8111-111111111111";
 vi.mock("../src/react/projects/projectEnumeration", async (original) => ({
   ...await original<typeof import("../src/react/projects/projectEnumeration")>(),
   loadProjectDirectory: async () => ({ viewerPubkey: viewer, projects: [
-    { id: "p", name: "Apollo", owner: viewer, channelId: home, relatedChannelIds: [], projectAddress: `30621:${viewer}:apollo` }] }),
+    { id: "p", name: "Apollo", owner: viewer, projectChannelId: home, relatedChannelIds: [], projectAddress: `30621:${viewer}:apollo` }] }),
 }));
 vi.mock("../src/react/projects/ProjectChannelManagement", () => ({ useProjectChannelLinking: () => ({ busy: false, record: vi.fn() }) }));
 const { ProjectChannelRequestDialog, ProjectChannelRequestDetails } = await import("../src/react/projects/ProjectChannelRequestDialog");
@@ -27,7 +27,7 @@ const approval = (homeChannelId: string): ApprovalView => ({ workflowId: "wf-1",
   initiatorPrincipalId: "44444444-4444-4444-8444-444444444444", status: ApprovalStatus.Waiting,
   expiresAt: "2999-01-01T00:00:00Z", decisions: [], roleRequirements: [],
   projectChannelRequest: { installationResourceId: "55555555-5555-4555-8555-555555555555",
-    request: { homeChannelId, name: "launch", description: "Launch prep", visibility: "private", ttlSeconds: 86400 } } } as ApprovalView);
+    request: { homeChannelId, name: "launch", description: "Launch prep", visibility: WorkspaceVisibility.Private, ttlSeconds: 86400 } } } as ApprovalView);
 
 function mount(approvals: ApprovalView[]) {
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
@@ -66,7 +66,7 @@ describe("original project channel request dialog (DD-140)", () => {
   it("renders the details in Chinese", async () => {
     setLocale("zh-CN");
     const host = await render(<PlatformProvider client={createBffClient({ send: async () => ({ status: 404, body: {} }) })} locale="zh-CN">
-      <ProjectChannelRequestDetails request={{ homeChannelId: home, name: "launch", visibility: "open" }} /></PlatformProvider>);
+      <ProjectChannelRequestDetails request={{ homeChannelId: home, name: "launch", visibility: WorkspaceVisibility.Open }} /></PlatformProvider>);
     expect(host.textContent).toContain("名称");
     expect(host.textContent).toContain("公开");
   });

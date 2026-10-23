@@ -14,7 +14,7 @@ import {
   ActionDispatchState, ActionGateState, ApprovalDecision, ApprovalStatus,
   type ActionSubmission, type ApprovalView, type ProjectChannelRequest,
 } from "@client-kit/contracts";
-import { isOutcomeUnknown } from "../../transport";
+import { isOutcomeUnknown, writeFailure } from "../../transport";
 import { useBffClient, useFailureText, useUiT } from "../context";
 import { formatTtlDuration } from "../channel-type-settings";
 import { Button } from "../profile/buzz/shared/ui/button";
@@ -60,7 +60,7 @@ export function useProjectChannelRequests(host: ProjectsHost) {
       return approvals.flatMap(approval => {
         const request = approval.projectChannelRequest!.request;
         const project = directory.projects.find(candidate => candidate.owner.toLowerCase() === directory.viewerPubkey
-          && (candidate.channelId === request.homeChannelId || candidate.relatedChannelIds.includes(request.homeChannelId)));
+          && (candidate.projectChannelId === request.homeChannelId || candidate.relatedChannelIds.includes(request.homeChannelId)));
         return project ? [{ approval, request, project }] : [];
       });
     },
@@ -70,18 +70,26 @@ export function useProjectChannelRequests(host: ProjectsHost) {
 
 /** Global owner-review surface for project-channel requests from managed agents. */
 export function ProjectChannelRequestDialog({ host }: { host: ProjectsHost }) {
+  const requests = useProjectChannelRequests(host);
+  const pending = Array.isArray(requests.data) ? requests.data : [];
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { if (pending.length > 0) setMounted(true); }, [pending.length]);
+  // The review surface (and any approved link runner) mounts on the first request and stays.
+  return mounted ? <ProjectChannelRequestSurface host={host} pending={pending} /> : null;
+}
+
+function ProjectChannelRequestSurface({ host, pending }: { host: ProjectsHost; pending: readonly PendingRequest[] }) {
   const t = useUiT();
   const client = useBffClient();
   const failureText = useFailureText();
   const cache = useQueryClient();
-  const requests = useProjectChannelRequests(host);
   const [dismissed, setDismissed] = React.useState<ReadonlySet<string>>(() => new Set());
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   // Approved requests keep their link runner mounted until this host unmounts; an interrupted link
   // resumes from the same retained creation slot when the project's channel management mounts.
   const [approved, setApproved] = React.useState<readonly { project: Project; submission: ActionSubmission; name: string }[]>([]);
-  const current = (requests.data ?? []).find(item => !dismissed.has(item.approval.workflowId)) ?? null;
+  const current = pending.find(item => !dismissed.has(item.approval.workflowId)) ?? null;
   const settle = (workflowId: string) => {
     setDismissed(previous => new Set(previous).add(workflowId));
     setError(null);
@@ -103,7 +111,8 @@ export function ProjectChannelRequestDialog({ host }: { host: ProjectsHost }) {
       settle(current.approval.workflowId);
     } catch (cause) {
       // An unknown decision outcome keeps the request open: the same decision is resent as is.
-      setError(isOutcomeUnknown(cause) ? t("projects.channelRequest.unknown") : failureText(cause));
+      const failed = writeFailure(cause);
+      setError(isOutcomeUnknown(cause) || failed.kind !== "rejected" ? t("projects.channelRequest.unknown") : failureText(failed));
     } finally { setBusy(false); }
   };
   return <>
