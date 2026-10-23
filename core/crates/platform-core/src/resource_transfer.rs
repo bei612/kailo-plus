@@ -118,6 +118,9 @@ struct Staged {
     consumed_by: Option<Uuid>,
 }
 
+/// media_type, package, package_digest, expired, consumed_by
+type StagedRow = (String, Option<Vec<u8>>, String, bool, Option<Uuid>);
+
 async fn staged(
     conn: &mut PgConnection,
     tenant: Uuid,
@@ -125,19 +128,18 @@ async fn staged(
     id: Uuid,
     lock: bool,
 ) -> Result<Option<Staged>, sqlx::Error> {
-    let row: Option<(String, Option<Vec<u8>>, String, bool, Option<Uuid>)> =
-        sqlx::query_as(&format!(
-            "select media_type,package,package_digest,expires_at<=now(),consumed_by_action_execution_id
+    let row: Option<StagedRow> = sqlx::query_as(&format!(
+        "select media_type,package,package_digest,expires_at<=now(),consumed_by_action_execution_id
              from admission.transfer_upload where id=$1 and tenant_id=$2 and principal_id=$3
                and format_key=$4{}",
-            if lock { " for update" } else { "" }
-        ))
-        .bind(id)
-        .bind(tenant)
-        .bind(principal)
-        .bind(agent_snapshot::FORMAT_KEY)
-        .fetch_optional(conn)
-        .await?;
+        if lock { " for update" } else { "" }
+    ))
+    .bind(id)
+    .bind(tenant)
+    .bind(principal)
+    .bind(agent_snapshot::FORMAT_KEY)
+    .fetch_optional(conn)
+    .await?;
     Ok(row.map(
         |(media_type, package, package_digest, expired, consumed_by)| Staged {
             media_type,
