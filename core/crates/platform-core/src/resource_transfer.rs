@@ -609,9 +609,9 @@ fn status(id: Uuid, status: &str) -> Value {
 
 async fn advance_inner(
     state: &crate::service_api::ServiceState,
-    input: contracts::ResourceImportAdvanceRequest,
+    request: contracts::ResourceImportAdvanceRequest,
 ) -> Result<Value, Refusal> {
-    let value = serde_json::to_value(input).map_err(|_| invalid())?;
+    let value = serde_json::to_value(request).map_err(|_| invalid())?;
     let target = &value["target"];
     let action = Uuid::parse_str(text(target, "actionExecutionId")?).map_err(|_| invalid())?;
     let id = Uuid::parse_str(text(target, "resourceId")?).map_err(|_| invalid())?;

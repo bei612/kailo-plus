@@ -46,7 +46,7 @@
   "configuration": {
     "profiles": [],
     "routes": [],
-    "nextOffset": null,
+    "nextOffset": 50,
     "canImport": false
   },
   "advanceRequest": {

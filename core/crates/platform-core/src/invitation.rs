@@ -530,6 +530,7 @@ impl Governance {
             application_binding_id: None,
             application_binding_version: None,
             resource_create: None,
+            agent_definition_import: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
         };
