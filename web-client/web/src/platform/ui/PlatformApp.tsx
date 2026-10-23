@@ -270,6 +270,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const chosenConversation = !conversations.error && !conversations.loading
     ? conversations.items.find((conversation) => conversation.id === navigation.conversationId) : undefined;
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
+  // DD-138(3): a native page is titled by its product name (云盘/知识库/问数), not "service workspace".
+  const [applicationTitle, setApplicationTitle] = useState<string | null>(null);
   const settingsVisited=useRef(false);
   if(tab==="settings")settingsVisited.current=true;
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -480,7 +482,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       gateway: t("platform.tab.gateway"),
       audit: t("platform.tab.audit"),
       settings: translate(getLocale(), "platform.settings.title"),
-      application: translate(getLocale(), "bindings.nativeTitle"),
+      application: applicationTitle ?? translate(getLocale(), "bindings.nativeTitle"),
     })[name];
 
   // 任务、审批、审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
@@ -526,7 +528,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   );
   const body =
     tab === "application" && navigation.applicationBindingId ? (
-      <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} onBack={() => setTab("inbox")} />
+      <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} title={applicationTitle ?? undefined} />
     ) : tab === "new-message" ? (
       <NewMessagePage currentPrincipalId={session.tenantPrincipalId} onConversationOpened={async (conversation) => {
         await conversations.reload();
@@ -703,7 +705,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" || tab === "application" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <NativeApplicationEntries scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}
-              selectedId={navigation.applicationBindingId}
+              selectedId={navigation.applicationBindingId} onSelectedTitle={setApplicationTitle}
               onSelect={(binding) => { void navigation.openApplication(binding.bindingId, binding.workspaceId); }}
               workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
             {sidebarLoading ? <SidebarLoadingContent shape={sidebarLoadingShape} /> : <>

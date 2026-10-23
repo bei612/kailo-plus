@@ -56,3 +56,10 @@ Go 测试在 `golang:1.26.8-alpine@sha256:8ac98ca5…` 中运行，设置 `CGO_E
 - 插件的名称与设置标签不含上游名称：中文为“文档编辑器”，英文为 “Document editor”。
 - 编辑器页把 CheckFileInfo `UserFriendlyName` 作为显示名，把 `UserExtraInfo.avatar` 作为头像。合并 main（2b054bbf）后，Cells 的 FileInfo 按 DD-133 §4.7.3 填入二者（`gateway/wopi/fileinfo-builder.go`）：显示名取 Kailo 资料的 `name`，`UserExtraInfo.avatar` 取 OIDC `picture` 地址（只接受原生 OIDC 头像地址，不传二进制）；没有资料时显示名退回 Cells 账号显示名，编辑器显示首字母头像。`TestFileInfoKailoIdentity` 覆盖这一行为。
 - vitest 8 项通过，新增 4 项：宿主值决定主题和语言、`thm` 映射、宿主消息格式、法律声明链接。
+
+## 5. 文档偏好经 Kailo 设置生效（DD-138，07 §4.8.2，源码阶段）
+
+- 云盘原生页面 release（`fork/release/manifest.native-page.json`，版本升为 `1.2.0-native-page`）在 `frontendPresentationContract.preferences` 声明两项 `DOCUMENTS` 偏好：`documents.measurementUnit`（ENUM `cm`/`pt`/`inch`，默认 `cm`）与 `documents.spellcheck`（BOOLEAN，默认 `true`）。
+- 插件每次打开文档时用 `docsApiConfig(kailoPreferences(window.KailoEmbed))` 生成 `docs_api_config`：`customization.unit`、`customization.features.spellcheck.mode` 取 Kailo 下发的值，缺失或不合法时取声明默认值；宏、插件保持关闭，`layout.toolbar.file.settings=false` 隐藏编辑器“高级设置”，`features.spellcheck.change=false` 不在编辑器内提供同义开关。偏好变化在下一次打开文档时生效。
+- `launch.test.js` 新增默认值、合法值、非法值回落、运行时缺失与“设置/宏/插件始终关闭”的用例。
+- 未执行：vitest、webpack 产物、DocumentServer 实际是否合并 `layout`/`features`/`unit` 与截图验收，均待 CI 节点按 §3 运行。

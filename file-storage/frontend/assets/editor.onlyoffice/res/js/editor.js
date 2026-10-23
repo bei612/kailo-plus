@@ -15,7 +15,7 @@ import {RestDocumentAccessTokenRequest, TokenServiceApi} from 'cells-sdk'
 import React from 'react'
 import {connect} from 'react-redux'
 import {referenceDelivery, nativeDocumentSelection, documentBridge} from '../../../../../adapter/src/native-reference.mjs'
-import {DOCS_API_CONFIG, editorLocale, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch'
+import {docsApiConfig, editorLocale, kailoPreferences, kailoPresentation, launchAction, legalNoticeUrl, presentationMessage} from './launch'
 
 const {EditorActions} = Pydio.requireLib('hoc');
 const FRAME = 'kailo-onlyoffice-frame';
@@ -117,7 +117,9 @@ export default class Editor extends React.Component {
             request.Path = PydioApi.getClient().getSlugForNode(node) + node.getPath();
             const token = await api.generateDocumentAccessToken(request);
             if (epoch !== this.epoch || pydio.user.id !== nativeUser || !token.AccessToken) throw new Error('selection changed');
-            this.setState({launch: {action, token: token.AccessToken, submitted: false}});
+            // DD-138: Kailo document preferences are read per launch; a change applies at the next open.
+            const config = docsApiConfig(kailoPreferences(window.KailoEmbed));
+            this.setState({launch: {action, token: token.AccessToken, config, submitted: false}});
         } catch (_) {
             if (epoch === this.epoch) this.setState({failed: true});
         }
@@ -174,7 +176,7 @@ export default class Editor extends React.Component {
                     <form ref={this.form} action={launch.action} method="post" target={FRAME} style={{display: 'none'}}>
                         <input type="hidden" name="access_token" value={launch.token}/>
                         <input type="hidden" name="access_token_ttl" value="0"/>
-                        <input type="hidden" name="docs_api_config" value={DOCS_API_CONFIG}/>
+                        <input type="hidden" name="docs_api_config" value={launch.config}/>
                     </form>
                 ) : null}
                 {launch ? <iframe name={FRAME} ref={(el) => { this.frame = el; }} title={messages['onlyoffice.1']} allow="clipboard-read; clipboard-write; fullscreen"

@@ -88,6 +88,7 @@ export default function Sidebar(props: Props) {
   return (
     <Layout className="d-flex flex-column">
       <DynamicSidebar {...props} pathname={router.pathname} />
+      {/* DD-138(6): moves to the Kailo admin area. */}
       {loaded && isAdmin && (
         <div className="border-t border-gray-4 pt-2">
           <StyledButton type="text" block onClick={onSettingsClick}>

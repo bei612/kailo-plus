@@ -3815,3 +3815,10 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
   `backchannelLogout.sessionMaxAgeSeconds`。
 
 验证与未验收边界见本分支提交说明；镜像、部署与 qa-1/2/3 截图验收未执行。
+
+## 2026-10-23 个人与全局外壳只由 Kailo 提供（DD-138，07 §4.8.1，源码阶段）
+
+- Kailo 模式 = 首页渲染了 `startParameters.KAILO_EMBED`（`web/index-handler.go`），与是否在 iframe 内无关；`kailo-cells.js` 新增 `KailoCells.kailoMode()` 与 `KailoCells.showPersonalShell()`（Kailo 模式下为 false）。
+- Kailo 模式下不渲染：用户菜单“我的账户” `open_user_dashboard`、关于 `splash`、管理控制台切换 `switch_to_settings`（action manifest `activeCondition`）；资料面板的改密码 `PasswordPopover`；左侧栏主题切换、通知铃铛与顶部用户头像菜单（`RailPanel.js`）。地址簿（`directory`/`open_address_book`）作为分享的业务目录保留。非 Kailo 模式的上游路径不变。
+- 仅前端不渲染，不构成授权边界；服务端关闭仍以 `reconcile.py` 的 ROOT_GROUP 角色参数为准。
+- `kailo-cells.test.js` 新增 Kailo 模式（嵌入与顶层）隐藏、非 Kailo 模式保留的用例。vitest、构建与截图验收待 CI 节点执行，未运行。

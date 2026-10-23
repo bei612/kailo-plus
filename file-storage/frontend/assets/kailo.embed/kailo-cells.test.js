@@ -127,6 +127,28 @@ describe('Cells bridge over the Kailo embed runtime', () => {
         expect(safeReturnPath('/personal-files/a%20b')).toBe('/personal-files/a%20b')
     })
 
+    it('hides the personal shell in Kailo mode, framed or top level (DD-138)', () => {
+        for (const embedded of [true, false]) {
+            const { api } = load({ embedded })
+            expect(api.kailoMode()).toBe(true)
+            expect(api.showPersonalShell()).toBe(false)
+        }
+        // Kailo mode follows the deployment parameters, not the framing.
+        const minimal = load({ embedded: false, params: { KAILO_EMBED: { sso: false } } }).api
+        expect(minimal.kailoMode()).toBe(true)
+        expect(minimal.showPersonalShell()).toBe(false)
+    })
+
+    it('keeps the personal shell outside Kailo mode', () => {
+        for (const params of [{}, { KAILO_EMBED: null }, { KAILO_EMBED: 'yes' }, null]) {
+            for (const embedded of [true, false]) {
+                const { api } = load({ embedded, params })
+                expect(api.kailoMode()).toBe(false)
+                expect(api.showPersonalShell()).toBe(true)
+            }
+        }
+    })
+
     it('shows the native logout entry only outside a Kailo frame', () => {
         expect(load().api.showLogout()).toBe(false)
         const top = load({ embedded: false })

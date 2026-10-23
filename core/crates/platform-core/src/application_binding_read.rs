@@ -364,7 +364,14 @@ async fn page(
         'nativePageCategory',(select release.manifest->'frontendDelivery'->>'nativePageCategory'
             from catalog.component_release release
             where release.id=component_release_id and release.status='APPROVED'
-            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE')))
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'),
+        'preferences',(select release.manifest->'frontendPresentationContract'->'preferences'
+            from catalog.component_release release
+            where release.id=component_release_id and release.status='APPROVED'
+            and release.manifest->'frontendDelivery'->>'mode'='NATIVE_PAGE'
+            and release.manifest->'frontendPresentationContract'->>'integrationMode'='KAILO_EMBED'
+            and jsonb_typeof(release.manifest->'frontendPresentationContract'->'preferences')='array'
+            and jsonb_array_length(release.manifest->'frontendPresentationContract'->'preferences')>0)))
         from catalog.application_binding
         where tenant_id=$1 and workspace_id is not distinct from $2 order by id offset $3 limit $4",
     )

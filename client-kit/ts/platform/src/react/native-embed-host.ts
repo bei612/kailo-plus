@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { useLocale } from "./context";
 import type { PlatformLocale } from "../i18n";
+import type { ComponentPreferenceValues } from "../component-preferences";
 
 export const EMBED_PROTOCOL_VERSION = 1;
 
@@ -34,6 +35,14 @@ export function embedRequest(data: unknown): EmbedRequest | null {
 export function presentationMessage(presentation: EmbedPresentation) {
   return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "presentation",
     theme: presentation.theme, locale: presentation.locale } as const;
+}
+
+/**
+ * DD-138 (07 §4.8.2): the values of the page's declared Kailo settings items.
+ * Same version 1; a runtime that predates it ignores the unknown type.
+ */
+export function preferencesMessage(values: ComponentPreferenceValues) {
+  return { source: "kailo-host", version: EMBED_PROTOCOL_VERSION, type: "preferences", values: { ...values } } as const;
 }
 
 // The applied appearance is the root `.dark` class in both hosts

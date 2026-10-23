@@ -12,6 +12,9 @@ export interface KailoPresentationState {
   hostConnected: boolean;
 }
 
+/** Declared preference key -> BOOLEAN value or ENUM option (design 07 §4.8.2). */
+export type KailoPreferenceValues = Record<string, boolean | string>;
+
 export interface KailoPresentationChange {
   theme: boolean;
   locale: boolean;
@@ -27,6 +30,9 @@ export interface KailoEmbedRuntime {
   onLocaleChange(listener: (locale: KailoLocale) => void): () => void;
   useIdentityLocale(locale: string): boolean;
   requestTopLevelSignIn(): boolean;
+  /** DD-138: values Kailo supplied for the release's declared settings items. */
+  getPreferences(): KailoPreferenceValues;
+  onPreferencesChange(listener: (values: KailoPreferenceValues, changed: string[]) => void): () => void;
 }
 
 declare global {
