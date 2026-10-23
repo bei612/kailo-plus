@@ -23,6 +23,7 @@ import { useBffClient, useFailureText, useReasonText, useT } from "../context";
 import { Button } from "../ui";
 import { AgentManagementDialog } from "./AgentManagementDialog";
 import { browserSnapshotExportHost, type SnapshotExportHost } from "./AgentSnapshotExportDialog";
+import { SnapshotSendPanel } from "./SnapshotSendPanel";
 
 /** DD-141 primary action on the shared Button: brand fill, theme tokens only. */
 const PRIMARY = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground";
@@ -85,6 +86,7 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "choose" });
   const [saving, setSaving] = useState(false);
+  const [sendBusy, setSendBusy] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const inFlight = useRef(false);
   const submission = phase.kind === "choose" ? null : phase.submission;
@@ -92,7 +94,7 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
     || submission?.gateState === ActionGateState.Evaluating;
   const waiting = phase.kind === "submitted" && !unknown && (submission?.gateState === ActionGateState.Waiting
     || submission?.gateState === ActionGateState.Allowed);
-  useEffect(() => { onLockedChange(busy || unknown); }, [busy, unknown, onLockedChange]);
+  useEffect(() => { onLockedChange(busy || unknown || sendBusy); }, [busy, unknown, sendBusy, onLockedChange]);
 
   const submit = async () => {
     if (inFlight.current) return;
@@ -190,6 +192,10 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
       <p className="break-words">{t("agents.export.ready", { file: phase.view.fileName })}</p>
       <p className="break-all font-mono text-xs text-muted-foreground">SHA-256 {phase.view.contentDigest}</p>
       {saveFailed ? <p role="alert" className="text-danger-text">{t("agents.export.saveFailed")}</p> : null}
+      {host.readBytes && host.sendToConversation && phase.view.mediaType === "image/png"
+        ? <SnapshotSendPanel view={phase.view} label={target.name} readBytes={() => host.readBytes!(phase.view)}
+          send={host.sendToConversation} dedupesRetry={host.sendDedupesRetry === true} onSent={onClose}
+          onBusyChange={setSendBusy} testIdPrefix="team-snapshot-export" /> : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>{t("agents.snapshot.close")}</Button>
         <Button className={PRIMARY} disabled={saving} onClick={() => void save()} data-testid="team-snapshot-export-save">

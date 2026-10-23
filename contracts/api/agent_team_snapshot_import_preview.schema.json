@@ -26,6 +26,7 @@
           "displayName": {"type": "string"},
           "description": {"type": "string"},
           "avatarUrl": {"type": "string", "description": "该成员内联头像在本 Tenant 媒体中的对象地址（/media/<sha256>），即其 DRAFT 的 personaIdentity.avatarUrl。"},
+          "avatarDataUrl": {"type": "string", "pattern": "^data:image/(png|jpeg|gif|webp);base64,", "description": "仅与 avatarUrl 同时出现：包内该成员头像的原字节（data URL），只供预览显示，不写入任何对象。"},
           "instructions": {"type": "string", "description": "可为空串：成员没有 systemPrompt 时生成空指令的 DRAFT，补充后才能发布。"},
           "omitted": {"type": "array", "items": {"$ref": "../enums/agent_snapshot_omission.schema.json"}}
         }

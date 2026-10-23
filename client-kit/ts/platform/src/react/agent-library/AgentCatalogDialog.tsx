@@ -12,7 +12,7 @@
 import * as React from "react";
 import { BookUser, Plus, Upload, Users } from "lucide-react";
 
-import type { ActionCommand, ActionSubmission, AgentDefinitionView, AgentTeamView, WorkspaceView } from "@client-kit/contracts";
+import { AgentVersionState, type ActionCommand, type ActionSubmission, type AgentDefinitionView, type AgentTeamView, type AgentVersionView, type WorkspaceView } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../../governance";
 import { writeFailure, type WriteFailure } from "../../transport";
 import { useGovernedChannelAction } from "../channel-management-actions";
@@ -37,6 +37,8 @@ import {
   type CatalogOwner,
 } from "./agentCatalog";
 import { IdentityInitialsAvatar } from "./IdentityInitialsAvatar";
+import { AvatarHostProvider, type AvatarHost } from "../profile/avatar-host";
+import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
 import { deployTeamToChannel, type TeamDeployResult } from "./teamDeploy";
 import { loadAgentDirectory, loadAgentTeams } from "./teamPersonas";
 
@@ -53,7 +55,14 @@ export type AgentCatalogDialogProps = {
   onImport?: () => void;
   /** A copy or team was recorded: the host re-reads its directories. */
   onRecorded?: () => void;
+  /**
+   * The host's media view for an exact published Version (the Agents page `avatarHost`). Without it
+   * the original initials stay; with it each entry shows its published persona avatar.
+   */
+  avatarHost?: CatalogAvatarHost;
 };
+
+export type CatalogAvatarHost = (version?: AgentVersionView) => AvatarHost;
 
 const NAV_ITEM = "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-control transition-colors duration-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 const NAV_IDLE = "text-muted-foreground hover:bg-accent hover:text-accent-foreground";
@@ -65,7 +74,7 @@ const DANGER = "rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-text";
 const WARNING = "rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning-text";
 const SUCCESS = "rounded-lg bg-success-soft px-3 py-2 text-sm text-success-text";
 
-export function AgentCatalogDialog({ open, preferSection = "agents", onOpenChange, onCreateAgent, onImport, onRecorded }: AgentCatalogDialogProps) {
+export function AgentCatalogDialog({ open, preferSection = "agents", onOpenChange, onCreateAgent, onImport, onRecorded, avatarHost }: AgentCatalogDialogProps) {
   const t = useUiT();
   const client = useBffClient();
   const principalId = useCurrentPrincipalId();
@@ -138,7 +147,7 @@ export function AgentCatalogDialog({ open, preferSection = "agents", onOpenChang
                   return <button aria-current={current ? "true" : undefined} className={cn(NAV_ITEM, current ? NAV_CURRENT : NAV_IDLE)}
                     data-testid={`agent-catalog-agent-${definition.resourceId}`} key={definition.resourceId} type="button"
                     onClick={() => select({ kind: "agent", id: definition.resourceId })}>
-                    <IdentityInitialsAvatar className="shrink-0 border-0 text-2xs shadow-none" colorIndex={index} label={definition.displayName} size={24} />
+                    <CatalogAvatar avatarHost={avatarHost} definition={definition} colorIndex={index} size={24} />
                     <span className="min-w-0 flex-1 truncate">{definition.displayName}</span>
                   </button>;
                 })}
@@ -170,16 +179,45 @@ export function AgentCatalogDialog({ open, preferSection = "agents", onOpenChang
             </p> : null}
           </nav>
           <section className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background px-6 py-5" data-testid="agent-catalog-detail">
-            {selectedAgent ? <AgentDetail key={selectedAgent.resourceId} definition={selectedAgent} owner={ownerText(selectedAgent)}
+            {selectedAgent ? <AgentDetail key={selectedAgent.resourceId} definition={selectedAgent} owner={ownerText(selectedAgent)} avatarHost={avatarHost}
               own={principalId !== undefined && selectedAgent.ownerPrincipalId === principalId}
               takenSlugs={new Set(definitions.map((d) => d.stableSlug))} onRecorded={recorded} /> : null}
-            {selectedTeam ? <TeamDetail key={selectedTeam.resourceId} team={selectedTeam} definitions={definitions} owner={ownerText(selectedTeam)}
+            {selectedTeam ? <TeamDetail key={selectedTeam.resourceId} team={selectedTeam} definitions={definitions} owner={ownerText(selectedTeam)} avatarHost={avatarHost}
               own={principalId !== undefined && selectedTeam.ownerPrincipalId === principalId} onRecorded={recorded} /> : null}
           </section>
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * The entry's real persona avatar: the exact published Version's personaIdentity.avatarUrl, viewed
+ * through the host's media path for that Version (Web: the server-projected path; Desktop: the
+ * Community media rewrite). Anything not verifiably that Version keeps the original initials.
+ */
+function CatalogAvatar({ avatarHost, definition, version: known, colorIndex, size }: {
+  avatarHost?: CatalogAvatarHost; definition: AgentDefinitionView; version?: AgentVersionView | null;
+  colorIndex?: number; size: number;
+}) {
+  const client = useBffClient();
+  const assetId = definition.currentPublishedVersionAssetId;
+  const load = !!avatarHost && !!assetId && known === undefined;
+  const [state] = useLoad(`agent-catalog-avatar:${definition.resourceId}:${load ? assetId : ""}`,
+    () => load ? client.agentVersion(assetId!) : Promise.resolve(null));
+  const loaded = known === undefined ? (state.status === "ok" ? state.data : null) : known;
+  const version = loaded && loaded.assetId === assetId && loaded.agentResourceId === definition.resourceId
+    && loaded.state === AgentVersionState.Published ? loaded : null;
+  const avatarUrl = version?.content.personaIdentity.avatarUrl?.trim();
+  const box = size >= 40 ? "h-12 w-12" : size >= 28 ? "h-7 w-7" : "h-6 w-6";
+  if (!avatarHost || !version || !avatarUrl) {
+    return <span className={cn("shrink-0", box)}><IdentityInitialsAvatar className={cn("shadow-none", size < 40 && "border-0 text-2xs")}
+      colorIndex={colorIndex} label={definition.displayName} size={size} /></span>;
+  }
+  return <AvatarHostProvider value={avatarHost(version)}>
+    <ProfileAvatar avatarUrl={avatarUrl} className={cn("shrink-0 bg-muted shadow-none", box)} iconClassName="h-3 w-3"
+      label={version.content.personaIdentity.displayName} shape="squircle" testId={`agent-catalog-avatar-${definition.resourceId}`} />
+  </AvatarHostProvider>;
 }
 
 function CatalogListSkeleton() {
@@ -197,8 +235,9 @@ function InstructionReview({ instructions }: { instructions: string }) {
     data-testid="agent-catalog-instructions">{instructions || t("agentCatalog.noInstructions")}</pre>;
 }
 
-function AgentDetail({ definition, owner, own, takenSlugs, onRecorded }: {
+function AgentDetail({ definition, owner, own, takenSlugs, onRecorded, avatarHost }: {
   definition: AgentDefinitionView; owner: string; own: boolean; takenSlugs: ReadonlySet<string>; onRecorded: () => void;
+  avatarHost?: CatalogAvatarHost;
 }) {
   const t = useUiT();
   const client = useBffClient();
@@ -208,7 +247,7 @@ function AgentDetail({ definition, owner, own, takenSlugs, onRecorded }: {
   const persona = version?.content.personaIdentity;
   return <div className="flex w-full min-w-0 flex-col gap-6">
     <div className="flex items-center gap-3">
-      <IdentityInitialsAvatar className="shrink-0 shadow-none" label={definition.displayName} size={48} />
+      <CatalogAvatar avatarHost={avatarHost} definition={definition} version={version} size={48} />
       <div className="min-w-0">
         <h3 className="truncate text-headline font-semibold">{persona?.displayName ?? definition.displayName}</h3>
         <p className="text-xs text-muted-foreground" data-testid="agent-catalog-owner">{owner}</p>
@@ -386,8 +425,9 @@ function CopyPanel({ definition, own, takenSlugs, onRecorded }: {
   </section>;
 }
 
-function TeamDetail({ team, definitions, owner, own, onRecorded }: {
+function TeamDetail({ team, definitions, owner, own, onRecorded, avatarHost }: {
   team: AgentTeamView; definitions: AgentDefinitionView[]; owner: string; own: boolean; onRecorded: () => void;
+  avatarHost?: CatalogAvatarHost;
 }) {
   const t = useUiT();
   const [name, setName] = React.useState(team.name);
@@ -406,7 +446,8 @@ function TeamDetail({ team, definitions, owner, own, onRecorded }: {
       <ul className="mt-2 space-y-1.5">
         {members.map((member, index) => <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
           data-testid={`agent-catalog-team-member-${team.memberAgentResourceIds[index]}`} key={team.memberAgentResourceIds[index]}>
-          <IdentityInitialsAvatar className="shrink-0 border-0 shadow-none" colorIndex={index} label={member?.displayName ?? "?"} size={28} />
+          {member ? <CatalogAvatar avatarHost={avatarHost} definition={member} colorIndex={index} size={28} />
+            : <span className="h-7 w-7 shrink-0"><IdentityInitialsAvatar className="border-0 shadow-none" colorIndex={index} label="?" size={28} /></span>}
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{member?.displayName ?? team.memberAgentResourceIds[index]}</span>
         </li>)}
       </ul>

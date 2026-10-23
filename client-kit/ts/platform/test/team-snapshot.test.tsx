@@ -26,13 +26,15 @@ const manifest = new TextEncoder().encode(JSON.stringify({ format: "buzz-team-sn
   members: [{ format: "buzz-agent-snapshot", version: 1, definition: { name: "Writer", systemPrompt: "Write." },
     profile: { displayName: "Writer" } }] }));
 
+const AVATAR_DATA_URL = "data:image/png;base64,iVBORw0KGgo=";
+
 function preview(bytes: Uint8Array, digest: string, extra: Record<string, unknown> = {}) {
   return { uploadId, packageDigest: digest, packageByteSize: bytes.length, mediaType: "application/json",
     formatKey: "buzz-team-snapshot@1", expiresAt: "2026-10-28T10:30:00Z", name: "Release crew",
     description: "Ships notes.", teamInstructionsOmitted: true,
     members: [
       { displayName: "Writer", instructions: "Write release notes.", omitted: ["RUNTIME"],
-        avatarUrl: `https://buzz.example.test/media/${"b".repeat(64)}.png` },
+        avatarUrl: `https://buzz.example.test/media/${"b".repeat(64)}.png`, avatarDataUrl: AVATAR_DATA_URL },
       { displayName: "Reviewer", instructions: "", omitted: [] },
     ], ...extra };
 }
@@ -88,6 +90,10 @@ describe("team snapshot import", () => {
     expect(document.querySelector("[data-testid=team-snapshot-import-member-1-no-instructions]")!.textContent)
       .toContain("add them before publishing");
     expect(document.querySelector("[data-testid=team-snapshot-import-member-0]")!.textContent).toContain("Avatar imported");
+    // The staged member avatar previews the package's own bytes; an avatar-less member keeps initials.
+    expect(document.querySelector<HTMLImageElement>("[data-testid=team-snapshot-import-member-0-avatar]")!.getAttribute("src"))
+      .toBe(AVATAR_DATA_URL);
+    expect(document.querySelector("[data-testid=team-snapshot-import-member-1-avatar]")).toBeNull();
     await click(document.querySelector<HTMLButtonElement>("[data-testid=team-snapshot-import-review]")!);
     expect(document.querySelector("[data-testid=team-snapshot-import-confirm]")!.textContent).toContain("2 draft agents");
     await click(document.querySelector<HTMLButtonElement>("[data-testid=team-snapshot-import-submit]")!);
@@ -105,6 +111,12 @@ describe("team snapshot import", () => {
     ["an agent package format", { formatKey: "buzz-agent-snapshot@1" }],
     ["an empty team", { members: [] }],
     ["an unstaged member avatar", { members: [{ displayName: "Writer", instructions: "", omitted: [], avatarUrl: "https://evil.test/a.png" }] }],
+    ["a staged member avatar without its preview bytes", { members: [{ displayName: "Writer", instructions: "", omitted: [],
+      avatarUrl: `https://buzz.example.test/media/${"b".repeat(64)}.png` }] }],
+    ["member preview bytes without a staged avatar", { members: [{ displayName: "Writer", instructions: "", omitted: [],
+      avatarDataUrl: AVATAR_DATA_URL }] }],
+    ["member preview bytes that are not an image", { members: [{ displayName: "Writer", instructions: "", omitted: [],
+      avatarUrl: `https://buzz.example.test/media/${"b".repeat(64)}.png`, avatarDataUrl: "javascript:alert(1)" }] }],
     ["an unknown omission", { members: [{ displayName: "Writer", instructions: "", omitted: ["SECRET"] }] }],
   ])("rejects a preview with %s", async (_label, extra) => {
     const digest = await sha256Hex(manifest);
