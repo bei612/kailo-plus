@@ -11,6 +11,7 @@ export interface SqlPair {
   createdAt?: string; // Date and time when the SQL pair was created
   updatedAt?: string; // Date and time when the SQL pair was last updated
   nativeWritePending?: boolean;
+  ownerKey?: string | null; // DD-133 §3: creating Kailo user
 }
 
 export interface ISqlPairRepository extends IBasicRepository<SqlPair> {

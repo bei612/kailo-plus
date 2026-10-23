@@ -245,12 +245,14 @@ impl Dimension {
     }
 }
 
-/// 模型调用的呈现状态：2xx 且无错误为成功；401/403 是网关准入拒绝；其余失败。
+/// 模型调用的呈现状态：2xx 且无错误为成功；401/403 是网关准入拒绝；记了错误或非 2xx 为失败。
+/// 既无 HTTP 状态也无错误的 request log 没有记下任何应答（例如上游超时后连接被断开），
+/// 是结果不明，计入 DD-134(3)④ 的结果不明数，不得计为成功（AGENTS.md 第 15 条）。
 pub(crate) fn model_outcome(http_status: Option<i64>, error: Option<&str>) -> Outcome {
     match (http_status, error.filter(|e| !e.is_empty())) {
         (Some(401 | 403), _) => Outcome::Denied,
         (Some(status), None) if (200..300).contains(&status) => Outcome::Succeeded,
-        (None, None) => Outcome::Succeeded,
+        (None, None) => Outcome::Unknown,
         _ => Outcome::Failed,
     }
 }
@@ -524,6 +526,22 @@ fn put(view: &mut Map<String, Value>, key: &str, value: Option<Value>) {
     }
 }
 
+/// 模型调用归属的路由键（DD-134(3)④ 的模型路由维度）。`llm_route.create` 以 route 的原生 ID
+/// 命名其 provider、model 与 virtualModel 投影，request log 的 `genAi.providerName` 因此就是
+/// route 的原生 ID；按它匹配 Core 登记的 `llm_route` Resource，同名模型的多条 route 不合并。
+/// 非 Core 投影的原生 route 以请求模型名登记原生 ID 时退而按请求模型匹配；都匹配不到时
+/// 键取 provider（或请求模型），不映射到任何 Resource。
+pub(crate) fn route_key(entry: &LogEntry, route_resources: &HashMap<String, Uuid>) -> String {
+    [entry.provider.as_ref(), entry.request_model.as_ref()]
+        .into_iter()
+        .flatten()
+        .find(|name| route_resources.contains_key(*name))
+        .or(entry.provider.as_ref())
+        .or(entry.request_model.as_ref())
+        .cloned()
+        .unwrap_or_else(|| UNATTRIBUTED.into())
+}
+
 /// request log 条目 → 记录；平台范围只填 Gateway 原生字段与 Tenant 归属。
 pub(crate) fn model_record(
     entry: &LogEntry,
@@ -533,6 +551,7 @@ pub(crate) fn model_record(
     platform: bool,
 ) -> Record {
     let outcome = model_outcome(entry.http_status, entry.error.as_deref());
+    let route = route_key(entry, route_resources);
     let usage_state = usage_state(usage.map(Vec::as_slice).unwrap_or(&[]));
     let mut view = Map::new();
     view.insert("callId".into(), json!(format!("model:{}", entry.id)));
@@ -547,19 +566,13 @@ pub(crate) fn model_record(
     put(&mut view, "durationMs", entry.duration_ms.map(Value::from));
     put(&mut view, "httpStatus", entry.http_status.map(Value::from));
     put(&mut view, "tenantId", attribution.map(|a| json!(a.tenant)));
-    put(
-        &mut view,
-        "modelRouteKey",
-        entry.request_model.clone().map(Value::from),
-    );
+    if route != UNATTRIBUTED {
+        view.insert("modelRouteKey".into(), json!(route));
+    }
     put(
         &mut view,
         "modelRouteResourceId",
-        entry
-            .request_model
-            .as_ref()
-            .and_then(|route| route_resources.get(route))
-            .map(|id| json!(id)),
+        route_resources.get(&route).map(|id| json!(id)),
     );
     put(
         &mut view,
@@ -648,12 +661,7 @@ pub(crate) fn model_record(
         input_tokens: entry.input_tokens.unwrap_or(0),
         output_tokens: entry.output_tokens.unwrap_or(0),
         total_tokens: entry.total_tokens.unwrap_or(0),
-        route: Some(
-            entry
-                .request_model
-                .clone()
-                .unwrap_or_else(|| UNATTRIBUTED.into()),
-        ),
+        route: Some(route),
         tool: None,
         agent: if platform {
             None
@@ -737,7 +745,8 @@ pub(crate) async fn route_resources(
 ) -> Result<HashMap<String, Uuid>, Refusal> {
     let mut names: Vec<String> = entries
         .iter()
-        .filter_map(|e| e.request_model.clone())
+        .flat_map(|e| [e.provider.clone(), e.request_model.clone()])
+        .flatten()
         .collect();
     names.sort();
     names.dedup();
@@ -1084,7 +1093,7 @@ pub(crate) fn aggregate(
     (totals.json(), rows, buckets)
 }
 
-/// 维度键的展示名：binding 取组件类型，Tenant（平台范围）取 Tenant 名称。
+/// 维度键的展示名：binding 取组件类型；Tenant（平台范围）只用 ID，不读取名称（DD-134(2)①）。
 async fn dimension_labels(
     pool: &sqlx::PgPool,
     caller: &Caller,
@@ -1111,12 +1120,7 @@ async fn dimension_labels(
             .fetch_all(pool)
             .await?
         }
-        Dimension::Tenant if caller.platform => {
-            sqlx::query_as("select id,name from identity.tenant where id=any($1)")
-                .bind(&ids)
-                .fetch_all(pool)
-                .await?
-        }
+        // 平台范围只呈现 Tenant 归属 ID（DD-134(2)①），不读取业务 Tenant 的名称：行标签即 ID。
         _ => Vec::new(),
     };
     Ok(rows
@@ -1627,6 +1631,10 @@ mod tests {
         assert_eq!(model_outcome(Some(200), None), Outcome::Succeeded);
         assert_eq!(model_outcome(Some(403), None), Outcome::Denied);
         assert_eq!(model_outcome(Some(502), Some("upstream")), Outcome::Failed);
+        // 没有应答也没有错误：结果不明，不是成功（生产 wren binding 超时的 166 条 request log）
+        assert_eq!(model_outcome(None, None), Outcome::Unknown);
+        assert_eq!(model_outcome(None, Some("")), Outcome::Unknown);
+        assert_eq!(model_outcome(None, Some("timeout")), Outcome::Failed);
         assert_eq!(
             model_outcome(Some(200), Some("stream reset")),
             Outcome::Failed
@@ -1772,7 +1780,8 @@ mod tests {
         assert_eq!(totals["modelP95Ms"], 300);
         assert_eq!(totals["toolP95Ms"], 5000);
         assert_eq!(rows.len(), 1, "tool records have no model route");
-        assert_eq!(rows[0]["key"], "route-a");
+        // 未登记为 llm_route 的调用以 provider（route 原生 ID）为键，不按请求模型名合并
+        assert_eq!(rows[0]["key"], "openai");
         assert_eq!(rows[0]["counters"]["requests"], 4);
         assert_eq!(rows[0]["label"], "openai/gpt-x");
         assert_eq!(rows[0]["kind"], "MODEL");
@@ -1818,13 +1827,64 @@ mod tests {
             &records,
             Some(Kind::Model),
             None,
-            Some((Dimension::ModelRoute, "r")),
+            Some((Dimension::ModelRoute, "openai")),
             None,
             10,
         )
         .unwrap();
         assert_eq!(by_route.len(), 5);
         assert!(page(&records, None, None, None, Some("model:none"), 2).is_err());
+    }
+
+    /// 缺陷 2（生产验收）：两条 route 投影同一模型名时，按 request log 的 providerName（route
+    /// 原生 ID）各自归属到自己的 Resource，统计分行、`modelRouteResourceId` 填上；登记不到的
+    /// 调用不映射 Resource，非 Core 投影的原生 route 以请求模型名匹配。
+    #[test]
+    fn model_route_follows_the_route_native_id_not_the_model_name() {
+        let (first, second, native) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let routes: HashMap<String, Uuid> = [
+            ("62f190fc".to_owned(), first),
+            ("55ba18a0".to_owned(), second),
+            ("legacy-qwen".to_owned(), native),
+        ]
+        .into_iter()
+        .collect();
+        let mut a = log("l1", None, 200, 10, "qwen");
+        a.provider = Some("62f190fc".into());
+        let mut b = log("l2", None, 200, 10, "qwen");
+        b.provider = Some("55ba18a0".into());
+        let mut legacy = log("l3", None, 200, 10, "legacy-qwen");
+        legacy.provider = Some("openai".into());
+        let mut unknown = log("l4", None, 200, 10, "qwen");
+        unknown.provider = None;
+        assert_eq!(route_key(&a, &routes), "62f190fc");
+        assert_eq!(route_key(&b, &routes), "55ba18a0");
+        assert_eq!(route_key(&legacy, &routes), "legacy-qwen");
+        assert_eq!(route_key(&unknown, &routes), "qwen");
+        let mut none = unknown.clone();
+        none.request_model = None;
+        assert_eq!(route_key(&none, &routes), UNATTRIBUTED);
+        let records: Vec<Record> = [&a, &b, &legacy, &unknown]
+            .into_iter()
+            .map(|entry| model_record(entry, None, None, &routes, false))
+            .collect();
+        assert_eq!(records[0].view["modelRouteResourceId"], json!(first));
+        assert_eq!(records[1].view["modelRouteResourceId"], json!(second));
+        assert_eq!(records[2].view["modelRouteResourceId"], json!(native));
+        assert!(records[3].view.get("modelRouteResourceId").is_none());
+        let w = window(None, None, at("2026-10-21T12:00:00Z")).unwrap();
+        let (_, rows, _) = aggregate(&records, &w, Dimension::ModelRoute, &HashMap::new());
+        let keys: std::collections::BTreeSet<_> = rows
+            .iter()
+            .map(|row| row["key"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            keys,
+            ["55ba18a0", "62f190fc", "legacy-qwen", "qwen"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        );
     }
 
     #[test]

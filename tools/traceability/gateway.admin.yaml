@@ -6,7 +6,8 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-03, V-REQ-10, V-REQ-13, V-REQ-15]
-  decisions: [DD-134]
+  # DD-136：外部 MCP 服务器的运维域参考运行体与声明式投递（交付目录、一致性环境），随发布入口部署。
+  decisions: [DD-134, DD-136]
   # DD-134 编排的 EXT-BASE 动作（契约、release、binding）沿其既有能力记录
   # component.capability_contracts、component.release_registration 与
   # component.application_binding 的准入与证据，本记录不把它们当作前提。
@@ -16,7 +17,7 @@ design:
   entities: [ActionExecution, AuditEvent, UsageEvent, ToolDefinition, Resource]
 
 validation:
-  scenarios: [V-SCN-191, V-SCN-192, V-SCN-193, V-SCN-194, V-SCN-195, V-SCN-196, V-SCN-197]
+  scenarios: [V-SCN-191, V-SCN-192, V-SCN-193, V-SCN-194, V-SCN-195, V-SCN-196, V-SCN-197, V-SCN-220]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/admin-authentication.md
@@ -26,6 +27,8 @@ validation:
       ref: core/verify/gateway-admin.md
     - dimension: 呈现
       ref: core/verify/gateway-admin.md
+    - dimension: 组件集成
+      ref: core/verify/agent-tool-mcp-access.md
 
 implementation:
   owners: [team-platform]
@@ -65,6 +68,15 @@ implementation:
     - core/crates/platform-core/src/application_model_route.rs
     - web-client/web/src/platform/ui/PlatformApp.tsx
     - collaboration/desktop/src/app/routes/platform.$section.tsx
+    - core/crates/platform-core/src/component_release_peer.rs
+    - deploy/local/compose.yaml
+    - deploy/local/protocol-peers/directory.json
+    - deploy/local/protocol-peers/conformance/protocol-peer-reference.json
+    - deploy/local/protocol-peers/record-conformance.py
+    - tools/release/model.py
+    - tools/release/node.py
+    - tools/release/orchestrator.py
+    - tools/release/release.yaml
   surfaces: [web, desktop]
   schemas:
     - contracts/api/gateway_access.schema.json
@@ -125,7 +137,7 @@ release:
   # 不证明本能力已构建、部署或通过 full 与业务验收（以 core/verify/gateway-admin.md 为准）。
   artifacts:
     - name: core
-      digest: sha256:905543009df7689b381b6b5b0db7900424887fe1d18b4a5f8ac35da6364765b2
+      digest: sha256:d539427307f6509e272499c0636d6527da78069046703103532215f5766d946a
     - name: web-client
-      digest: sha256:c08ca98d1ffdd8a7e8d08161c615154a6ded596a27a4e3aa95347dad35bb0dab
+      digest: sha256:b853d2b0bec88805e205eead1ad7be7736d22d5c9185d6d377a1325729ee31e0
   gate: blocked_until_seams_closed

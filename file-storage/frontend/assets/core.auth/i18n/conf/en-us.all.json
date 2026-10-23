@@ -3,7 +3,7 @@
     "other": "Action to trigger when clicking on Forgot Password"
   },
   "Activate the users management system to protect your Pydio installation.": {
-    "other": "Activate the users management system to protect your Pydio installation."
+    "other": "Activate the users management system to protect your Kailo installation."
   },
   "Add a Forgot Password link at the bottom of the login form": {
     "other": "Add a Forgot Password link at the bottom of the login form"
@@ -144,10 +144,10 @@
     "other": "When relying on an external authentication system, replace the Forgot Action with an external link that will be opened in a new window."
   },
   "Let user create new cells":{
-    "other": "Let user create new cells"
+    "other": "Let user create new shared spaces"
   },
   "Whether users can create their own cells or not": {
-    "other": "Whether users can create their own cells or not"
+    "other": "Whether users can create their own shared spaces or not"
   },
   "Delegation": {
     "other": "Delegation"

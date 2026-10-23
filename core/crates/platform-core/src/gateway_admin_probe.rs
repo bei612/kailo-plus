@@ -233,7 +233,7 @@ pub(crate) async fn run(
     }
 }
 
-/// Catalog 会话、active HUMAN 与 fresh Catalog Tenant `manage`（DD-134(2)①）。
+/// Catalog 会话、active HUMAN 与 fresh Catalog Tenant `audit`（区级门槛）及 `manage`（DD-134(2)①）。
 async fn admit(state: &BffState, ctx: &ExecutionContext) -> Result<(), Refusal> {
     if ctx.access_mode != contracts::PlatformSessionAccessMode::Full {
         return Err(denied());
@@ -246,23 +246,25 @@ async fn admit(state: &BffState, ctx: &ExecutionContext) -> Result<(), Refusal> 
         return Err(denied());
     }
     tx.commit().await?;
-    let checked = state
-        .governance
-        .spicedb
-        .check(
-            "tenant",
-            &ctx.tenant_id.to_string(),
-            "manage",
-            &ctx.tenant_principal_id.to_string(),
-            Consistency::FullyConsistent,
-        )
-        .await
-        .map_err(|_| unavailable())?;
-    if checked.zed_token.is_empty() {
-        return Err(unavailable());
-    }
-    if !checked.allowed {
-        return Err(denied());
+    for permission in ["audit", "manage"] {
+        let checked = state
+            .governance
+            .spicedb
+            .check(
+                "tenant",
+                &ctx.tenant_id.to_string(),
+                permission,
+                &ctx.tenant_principal_id.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| unavailable())?;
+        if checked.zed_token.is_empty() {
+            return Err(unavailable());
+        }
+        if !checked.allowed {
+            return Err(denied());
+        }
     }
     Ok(())
 }

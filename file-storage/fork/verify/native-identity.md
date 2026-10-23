@@ -3787,3 +3787,31 @@ scripts/webpack 告警保留；SBOM 成功不是漏洞门禁通过。
 
 完成边界：本节只有源码与测试源码；Go 测试、镜像、部署、生产 connector 投递与三名真人首次登录验收均未执行。
 进程内互斥以单实例 Cells 部署单元为前提；与管理员同时手工创建同名用户的竞争沿用原生先查后建语义。
+
+## 2026-10-22 组件一体化呈现（DD-133，07 §4.7，源码阶段）
+
+依据：design-authority `1a8c395e1c67bc3a24119123fd7046731e11c2c8` 07 §4.7.1–§4.7.5；
+平台交付 `client-kit/embed`（`03993cc588089cb290152b5d62b621d633c839ab`，已合入本分支）。
+
+- **白标（§4.7.1）**：页面头部依次为 `kailo-web-origin`（取 `KAILO_FRAME_ANCESTORS`）、
+  `kailo-theme-tokens.css`、Cells 覆盖层、`kailo-embed.js`、Cells 桥接 `kailo-cells.js`；
+  favicon、加载页、登录框/首页/外链页 logo 与邮件 logo 均为 web-client `app-icon.png`。
+  三个平台文件列入 `file-storage-service` 的 `inputs`，构建时复制进 `plug/kailo.embed/`。
+  标题/邮件为 `PLATFORM_DISPLAY_NAME` + 云盘/Files；en-us/zh-cn 词条去除上游产品名
+  （共享“Cell”改称共享空间）；关于/版本、改密码、切换语言、WebDAV 密码、建外部用户、
+  个人资料入口由 `reconcile.py` 在 ROOT_GROUP 角色上关闭；欢迎引导、升级入口、
+  Enterprise/社区外链、“powered by”页脚移除。
+- **静默 SSO（§4.7.2）**：原生 `login` 动作不再打开登录框，直接走 `/auth/kailo/login`；
+  iframe 内带 `prompt=none`，IdP 无会话时回调页经 `KailoEmbed.requestTopLevelSignIn()`
+  发 wire v1 `auth-required`，不在框内显示表单或弹窗；顶层访问走 Kailo 登录。
+  回到原页面路径；三次内未建立会话即停止重定向。
+- **用户体系（§4.7.3/§4.7.4）**：每次浏览器登录按 ID token 刷新显示名、邮箱（verified）、
+  头像（`picture` URL 原样作为头像地址）、语言；开户账号进入实例所服务 Tenant 的原生组
+  `/kailo-<tenant id>`，只对本组成员与原生管理员可见；未交付成员目录前一律 standard，
+  不从 IdP groups/claim 派生管理员，控制台提升的权限在下次登录被恢复。
+- **退出联动（§4.7.5）**：`POST /auth/kailo/backchannel-logout` 按规格校验 logout_token；
+  登录时记录 IdP `sid`/`iss`+`sub` 与原生会话；结束后该原生会话的令牌（含刷新得到的）
+  在 `JWTVerifier.Verify` 被拒，并对原生 OAuth 登录会话执行登出；会话最长寿命为
+  `backchannelLogout.sessionMaxAgeSeconds`。
+
+验证与未验收边界见本分支提交说明；镜像、部署与 qa-1/2/3 截图验收未执行。

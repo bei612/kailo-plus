@@ -43,6 +43,7 @@ mod capability_registry;
 mod capacity;
 mod client_keys;
 mod component_conformance_identity;
+mod component_directory;
 mod component_release;
 mod component_task;
 mod conversations;

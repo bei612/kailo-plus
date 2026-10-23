@@ -9,6 +9,7 @@ import LoadingOutlined from '@ant-design/icons/LoadingOutlined';
 import { Logo } from '@/components/Logo';
 import { makeIterable } from '@/utils/iteration';
 import { GroupedQuestion } from '@/hooks/useRecommendedQuestionsInstruction';
+import useKailoText from '@/utils/kailoI18n';
 
 const CategorySectionBlock = styled.div`
   background: var(--gray-1);
@@ -92,6 +93,7 @@ const QuestionColumnIterator = makeIterable(QuestionTemplate);
 
 export default function RecommendedQuestionsPrompt(props: Props) {
   const { onSelect, recommendedQuestions, loading } = props;
+  const t = useKailoText();
 
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [selectedQuestion, setSelectedQuestion] = useState<string>('');
@@ -115,13 +117,11 @@ export default function RecommendedQuestionsPrompt(props: Props) {
   return (
     <div className="bg-gray-2 px-10 py-6">
       <div className="d-flex align-center mb-3">
-        <Logo size={24} color="var(--gray-8)" />
+        <Logo size={24} />
         <div className="text-md text-medium gray-8 mx-3">
-          Know more about your data.
+          {t('askAboutData')}
         </div>
-        <div className="text-medium gray-7">
-          Try asking some of the following questions
-        </div>
+        <div className="text-medium gray-7">{t('tryAsking')}</div>
       </div>
       <Space
         style={{ width: 680 }}

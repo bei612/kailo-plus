@@ -193,9 +193,8 @@ class ConfigLogo extends React.Component {
             pydio.Registry.getPluginConfigs(pluginName).get(pluginParameter);
         let url;
         if (!logo) {
-            logo =
-                pydio.Parameters.get('ajxpResourcesFolder') +
-                '/themes/common/images/PydioLogoSquare.png';
+            // Kailo application icon (DD-133 §1).
+            logo = 'plug/kailo.embed/brand/app-icon.png';
         }
         if (logo) {
             if (logo.indexOf('plug/') > -1) {
@@ -215,44 +214,8 @@ class ConfigLogo extends React.Component {
 
 class Copyright extends React.Component {
     render() {
-        const { mode, style, aboutString } = this.props;
-        if (aboutString === 'false') {
-            return null;
-        }
-        let s;
-        if (mode === 'insert') {
-            s = {
-                textAlign: 'right',
-                padding: '6px 16px',
-                backgroundColor: 'var(--md-sys-color-surface-variant)',
-                color: 'var(--md-sys-color-on-surface-variant)',
-            };
-        } else if (mode === 'overlay') {
-            s = {
-                position: 'absolute',
-                bottom: 0,
-                right: 0,
-                color: 'rgba(255,255,255,0.8)',
-                padding: '6px 16px',
-            };
-        } else if (mode === 'block') {
-            s = {
-                textAlign: 'center',
-                padding: '6px 16px',
-                color: 'rgba(255,255,255)',
-            };
-        }
-        return (
-            <div style={{ ...s, ...style }}>
-                <a
-                    href={'https://pydio.com'}
-                    style={{ fontWeight: 500, color: s.color }}
-                >
-                    Pydio Cells
-                </a>{' '}
-                - secure file sharing
-            </div>
-        );
+        // Kailo (DD-133 §1): no upstream "powered by" footer on public links.
+        return null;
     }
 }
 

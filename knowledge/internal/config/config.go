@@ -49,6 +49,9 @@ type Config struct {
 	// against window.location.origin — fine for typical single-origin
 	// deployments. Sourced from FRONTEND_BASE_URL env at startup.
 	FrontendBaseURL string `yaml:"frontend_base_url" json:"frontend_base_url"`
+
+	// Kailo switches on the Kailo embedded product mode (Kailo DD-133).
+	Kailo *KailoIntegrationConfig `yaml:"kailo" json:"kailo"`
 }
 
 // FileStorageSyncConfig reuses the binding's existing OIDC service identity and
@@ -647,6 +650,7 @@ func LoadConfig() (*Config, error) {
 
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
+	applyKailoEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyAuthAndTenantDefaults(&cfg)
@@ -694,6 +698,8 @@ func ValidateConfig(cfg *Config) error {
 			errs = append(errs, "oidc_auth.discovery_url or both oidc_auth.authorization_endpoint and oidc_auth.token_endpoint are required when OIDC is enabled")
 		}
 	}
+
+	errs = append(errs, validateKailoConfig(cfg)...)
 
 	if cfg.Auth != nil {
 		mode := strings.TrimSpace(cfg.Auth.RegistrationMode)

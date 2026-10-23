@@ -44,6 +44,10 @@ class NativeEntrypointTests(unittest.TestCase):
             "DOCREADER_ADDR": "docreader:50051",
             "OIDC_AUTH_ENABLE": "true",
             "AUTO_RECOVER_DIRTY": "false",
+            "KAILO_INTEGRATION_ENABLE": "true",
+            "KAILO_TENANT_ID": "6179e160-tenant",
+            "KAILO_TENANT_NAME": "Kailo 验证",
+            "KAILO_SESSION_MAX_LIFETIME": "10h",
             "OIDC_AUTH_ISSUER_URL": "https://idp.example.test/realms/native",
             "OIDC_AUTH_DISCOVERY_URL": "https://idp.example.test/realms/native/.well-known/openid-configuration",
             "OIDC_AUTH_CLIENT_ID": "native-fixture-client",
@@ -75,6 +79,28 @@ class NativeEntrypointTests(unittest.TestCase):
                 delivered[name].encode(), Path(original[name + "_FILE"]).read_bytes()
             )
             self.assertNotIn(name + "_FILE", delivered)
+
+    def test_kailo_mode_and_served_tenant_are_required(self):
+        # Kailo DD-133: the deployment never falls back to native local
+        # credentials or personal spaces, and serves exactly one Tenant.
+        for name, value in (
+            ("KAILO_INTEGRATION_ENABLE", "false"),
+            ("KAILO_INTEGRATION_ENABLE", None),
+            ("KAILO_TENANT_ID", "bad id/"),
+            ("KAILO_TENANT_ID", None),
+            ("KAILO_TENANT_NAME", ""),
+            ("KAILO_SESSION_MAX_LIFETIME", "0h"),
+            ("KAILO_SESSION_MAX_LIFETIME", "7d"),
+            ("KAILO_SESSION_MAX_LIFETIME", None),
+        ):
+            with self.subTest(name=name, value=value):
+                env = dict(self.env)
+                if value is None:
+                    del env[name]
+                else:
+                    env[name] = value
+                self.assert_refused(env)
+        self.assertEqual(entrypoint.prepare_environment(self.env)["KAILO_TENANT_ID"], "6179e160-tenant")
 
     def test_aes_is_exactly_32_bytes_not_trimmed_or_hex_decoded(self):
         file = Path(self.env["SYSTEM_AES_KEY_FILE"])

@@ -120,6 +120,11 @@ type Tenant struct {
 	MemoryConfig *MemoryConfig `yaml:"memory_config" json:"memory_config" gorm:"type:jsonb"`
 	// API principal config: controls how X-API-Key requests map to terminal principals.
 	APIPrincipalConfig *APIPrincipalConfig `yaml:"api_principal_config" json:"-" gorm:"type:jsonb"`
+	// KailoScopeRef names the Kailo Tenant ("tenant:<id>") or Workspace
+	// ("workspace:<id>") this space represents (Kailo DD-133). Set once by the
+	// OIDC membership sync or the adoption script; memberships of a mapped
+	// space are derived from Kailo and cannot be edited natively.
+	KailoScopeRef *string `yaml:"kailo_scope_ref" json:"kailo_scope_ref,omitempty" gorm:"column:kailo_scope_ref;type:varchar(160);uniqueIndex:idx_tenants_kailo_scope_ref"`
 	// Creation time
 	CreatedAt time.Time `yaml:"created_at"          json:"created_at"`
 	// Last updated time
@@ -958,4 +963,10 @@ func (c *TenantSandboxConfig) Scan(value interface{}) error {
 	}
 
 	return nil
+}
+
+// IsKailoManaged reports whether membership of this space is derived from
+// Kailo rather than managed natively.
+func (t *Tenant) IsKailoManaged() bool {
+	return t != nil && t.KailoScopeRef != nil && *t.KailoScopeRef != ""
 }

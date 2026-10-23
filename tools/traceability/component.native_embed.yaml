@@ -1,5 +1,5 @@
 capability_id: component.native_embed
-title: 组件一体化呈现的平台部分：呈现令牌与运行时、宿主协议、头像解析、资料声明与退出联动
+title: 组件一体化呈现的平台部分：呈现令牌与运行时、宿主协议、头像解析、成员目录、资料声明与退出联动
 stage: EXT-BASE
 status: in_progress
 exposure: end_user
@@ -11,15 +11,21 @@ design:
   facts: []
   seams: [SS-AGW-END-SESSION]
   blockers: []
-  entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding]
+  entities: [ComponentRelease, FrontendPresentationContract, ApplicationBinding, BuzzIdentityBinding, TenantMembership, WorkspaceMembership, ExternalIdentity]
 
 validation:
-  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205]
+  scenarios: [V-SCN-198, V-SCN-199, V-SCN-200, V-SCN-201, V-SCN-202, V-SCN-203, V-SCN-204, V-SCN-205, V-SCN-218, V-SCN-219]
   evidence:
     - dimension: 上游接缝
       ref: model-gateway/fork/verify/end-session.md
     - dimension: 合同一致
       ref: client-kit/embed/README.md
+    - dimension: 合同一致
+      ref: contracts/api/component_member_directory.schema.json
+    - dimension: 单元测试
+      ref: core/crates/platform-core/src/component_directory.rs
+    - dimension: 退出联动
+      ref: collaboration/fork/verify/desktop-embedded-idp-logout.md
 
 implementation:
   owners: [team-platform]
@@ -33,15 +39,29 @@ implementation:
     - client-kit/dart/lib/shared/platform/platform_text.dart
     - core/crates/platform-core/src/component_release.rs
     - core/crates/platform-core/src/web_profile.rs
+    - core/crates/platform-core/src/component_directory.rs
+    - collaboration/desktop/src-tauri/src/platform/native_auth.rs
+    - collaboration/desktop/src-tauri/src/platform/oidc.rs
+    - collaboration/desktop/src-tauri/src/platform/api.rs
+    - collaboration/desktop/src-tauri/src/platform/commands.rs
+    - client-kit/ts/platform/src/native.ts
+    - client-kit/ts/platform/src/react/NativeBootstrap.tsx
+    - core/crates/platform-core/src/spicedb.rs
+    - core/crates/platform-core/src/service_api.rs
+    - file-storage/fork/release/binding-config.native-page.schema.json
+    - knowledge/fork/release/binding-config.native-page.schema.json
+    - data-query/fork/release/binding-config.native-page.schema.json
+    - tools/component-release/flow/component-bind.mjs
     - web-client/web/src/platform/bff-client.ts
     - web-client/web/src/platform/ui/PlatformApp.tsx
     - web-client/web/Caddyfile
     - model-gateway/crates/agentgateway/src/http/oidc
     - deploy/local/bootstrap.sh
+    - deploy/local/idp-declarations.py
     - deploy/local/identity-provider/realm.json
     - deploy/local/model-gateway-config.yaml
   surfaces: [web, desktop]
-  schemas: []
+  schemas: [contracts/api/component_member_directory.schema.json, contracts/enums/component_directory_role.schema.json]
   migrations: []
 
 runtime:
@@ -54,7 +74,7 @@ release:
   # 网关 SS-AGW-END-SESSION 与组件接收端闭合前不宣称退出联动。
   artifacts:
     - name: core
-      digest: sha256:905543009df7689b381b6b5b0db7900424887fe1d18b4a5f8ac35da6364765b2
+      digest: sha256:d539427307f6509e272499c0636d6527da78069046703103532215f5766d946a
     - name: web-client
-      digest: sha256:c08ca98d1ffdd8a7e8d08161c615154a6ded596a27a4e3aa95347dad35bb0dab
+      digest: sha256:b853d2b0bec88805e205eead1ad7be7736d22d5c9185d6d377a1325729ee31e0
   gate: blocked_until_seams_closed

@@ -11,6 +11,13 @@
       "type": "string",
       "minLength": 1,
       "description": "Exact Cells native page entry URL (DD-127 native page entry); its origin must be one of the release nativePageOrigins and the deployment NATIVE_PAGE_ORIGINS."
+    },
+    "directoryClientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "DD-133(4), .design/07 §4.7.4: the IdP client id of this component instance's own confidential directory client. Core accepts a member directory read only from a client-credentials token whose azp equals it; it must be unique among non-DISABLED bindings and differ from any adapter client_id. Core never creates or holds this client's credential."
     }
   }
 }

@@ -21,7 +21,12 @@ const oidcStateMaxAge = 10 * time.Minute
 type OIDCStatePayload struct {
 	Nonce       string `json:"nonce"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
-	IssuedAt    int64  `json:"iat"`
+	// ReturnTo is the same-origin SPA path to land on after the callback.
+	ReturnTo string `json:"return_to,omitempty"`
+	// Prompt records a silent ("none") attempt so a failure can be told
+	// apart from an interactive one.
+	Prompt   string `json:"prompt,omitempty"`
+	IssuedAt int64  `json:"iat"`
 }
 
 var (

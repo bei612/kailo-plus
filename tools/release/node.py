@@ -5,9 +5,10 @@
                                          不写任何文件；规划阶段用它读取节点现场
   node.py backup --commit <pin commit>   从固定发布树执行：备份受影响 Postgres 与 .env 快照
   node.py deploy --commit <pin commit>   从固定发布树执行：权限规范、声明式 .env、迁移、按序替换服务、回读
-  node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务
+  node.py verify --commit <pin commit>   从固定发布树执行：回读全部受管服务、运维域运行体与投递、配置漂移
   node.py runtime --commit <commit>      从固定发布树执行：输出 CI 配置的运行目录（组件入口据此导出
                                          KAILO_RUNTIME_DIR，ADR-20 §3）
+  node.py drift --commit <commit>        从固定发布树执行，只读：列出长期运行服务的配置漂移（ADR-20 §9）
 
 backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运行，先核对发布树 HEAD、
 干净与 full 回执；发布树只读，运行投递与数据只在运行目录。进度写 stderr，结果 JSON 写 stdout；
@@ -16,14 +17,17 @@ backup/deploy/verify 只在 <sources>/<commit>/apps/tools/release/node.py 上运
 
 import argparse
 import base64
+import contextlib
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.error
@@ -37,6 +41,12 @@ DOCKER = ["sudo", "-n", "docker"]
 COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
 COMPOSE_SERVICE_LABEL = "com.docker.compose.service"
 COMPOSE_ONEOFF_LABEL = "com.docker.compose.oneoff"
+# 运维域投递已在启动入口生效的摘要（发布 journal 目录下，与 config-oneoffs.json 并列）
+DELIVERIES = "deliveries.json"
+DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+COMPOSE_HASH_LABEL = "com.docker.compose.config-hash"
+COMPOSE_WORKDIR_LABEL = "com.docker.compose.project.working_dir"
+COMPOSE_FILES_LABEL = "com.docker.compose.project.config_files"
 
 
 class NodeError(Exception):
@@ -47,11 +57,11 @@ def say(message):
     print(message, file=sys.stderr, flush=True)
 
 
-def run(argv, *, capture=True, check=True, env=None, cwd=None):
+def run(argv, *, capture=True, check=True, env=None, cwd=None, stdin=None):
     """执行命令；失败时只报告命令名、子命令与 stderr 末行（Docker/Compose 的错误行不含 .env 值）。"""
     # 不捕获时输出进 stderr：stdout 只留给结果 JSON
     streams = dict(capture_output=True) if capture else dict(stdout=sys.stderr, stderr=sys.stderr)
-    result = subprocess.run(argv, env=env, cwd=cwd, **streams)
+    result = subprocess.run(argv, env=env, cwd=cwd, input=stdin, **streams)
     if check and result.returncode:
         words = [a for a in argv if not a.startswith("-") and a not in ("sudo", "docker")][:2]
         tail = (result.stderr or b"").decode(errors="replace").strip().splitlines()[-1:] if capture else []
@@ -119,8 +129,162 @@ def containers(project):
         found.setdefault(labels.get(COMPOSE_SERVICE_LABEL, ""), []).append(dict(
             id=entry["Id"], name=entry["Name"].lstrip("/"), image_ref=entry["Config"]["Image"],
             image_id=entry["Image"], running=bool(state.get("Running")), exit_code=state.get("ExitCode"),
-            health=(state.get("Health") or {}).get("Status")))
+            health=(state.get("Health") or {}).get("Status"), config_hash=labels.get(COMPOSE_HASH_LABEL),
+            working_dir=labels.get(COMPOSE_WORKDIR_LABEL),
+            config_files=[f for f in (labels.get(COMPOSE_FILES_LABEL) or "").split(",") if f],
+            binds={m["Destination"]: m.get("Source") for m in entry.get("Mounts") or [] if m.get("Type") == "bind"}))
     return found
+
+
+# ---- 配置漂移（ADR-20 §9）--------------------------------------------------------
+
+def compose_argv(tree, runtime, overlays, env_file=None):
+    """节点上唯一的 Compose 调用参数：项目目录是固定发布树，.env 与叠加文件取自运行目录（ADR-20 §3）。
+    deploy、verify 与只读漂移比较共用，保证比较的就是部署将要创建的配置。env_file 只在声明式 .env
+    尚未落盘前（backup）指向其同目录预览，使预判与 deploy 落盘后的渲染一致（ADR-20 §4）。"""
+    deploy_dir = os.path.join(tree, "deploy", "local")
+    files = []
+    for rel in overlays or []:
+        path = os.path.join(runtime, str(rel))
+        if os.path.isfile(path) and os.path.getsize(path):
+            files += ["-f", path]
+    argv = DOCKER[:2] + ["--preserve-env=KAILO_RUNTIME_DIR"] + DOCKER[2:] + [
+        "compose", "--env-file", env_file or os.path.join(runtime, ".env"), "-f", os.path.join(deploy_dir, "compose.yaml"), *files]
+    return argv, deploy_dir
+
+
+def parse_config_hashes(text):
+    """`docker compose config --hash '*'` 的输出：每行「服务 哈希」→ {服务: 哈希}。"""
+    hashes = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+            hashes[parts[0]] = parts[1]
+    return hashes
+
+
+def config_payloads(rendered, service, read_file=None):
+    """服务消费的 compose configs → [(名称, 容器内目标, 期望内容 bytes)]。content 取渲染后的文本，file 取文件内容；
+    其他来源（environment/external）不在发布树里，跳过。secrets 不比较：它们是运行投递，由 bootstrap 与
+    start-core.sh 管理轮换（DD-70 的一次性投递消费后即删除，比较它只会得到永久漂移）。"""
+    read_file = read_file or _read_bytes
+    tops = rendered.get("configs") or {}
+    found = []
+    for entry in rendered["services"][service].get("configs") or []:
+        source = entry.get("source") if isinstance(entry, dict) else entry
+        target = (entry.get("target") if isinstance(entry, dict) else None) or "/" + source
+        top = tops.get(source) or {}
+        if "content" in top:
+            # config 输出把字面 $ 转义为 $$（再次加载时还原）；容器内文件是还原后的文本
+            data = str(top["content"]).replace("$$", "$").encode()
+        elif top.get("file"):
+            data = read_file(top["file"])
+        else:
+            continue
+        found.append((source, target, data))
+    return found
+
+
+def _read_bytes(path):
+    with open(path, "rb") as stream:
+        return stream.read()
+
+
+def container_file(container_id, path):
+    """容器内一个文件的内容（docker cp 到标准输出的 tar 流，只读，不需要容器内有 shell）；不存在时 None。"""
+    r = run(DOCKER + ["cp", f"{container_id}:{path}", "-"], check=False)
+    if r.returncode:
+        return None
+    with tarfile.open(fileobj=io.BytesIO(r.stdout)) as archive:
+        for member in archive:
+            if member.isfile():
+                return archive.extractfile(member).read()
+    return None
+
+
+def secret_sources(rendered, service):
+    """服务的文件型 secrets → [(名称, 容器内路径, 渲染出的宿主文件路径)]。只比较路径，不读内容。"""
+    tops = rendered.get("secrets") or {}
+    found = []
+    for entry in rendered["services"][service].get("secrets") or []:
+        source = entry.get("source") if isinstance(entry, dict) else entry
+        target = (entry.get("target") if isinstance(entry, dict) else None) or source
+        path = (tops.get(source) or {}).get("file")
+        if path:
+            found.append((source, target if target.startswith("/") else "/run/secrets/" + target, path))
+    return found
+
+
+def foreign_compose_files(ctr, overlays):
+    """容器创建时用到、却不是「项目目录下的 compose.yaml 或登记叠加」的 Compose 文件——启动命令每次生成的
+    一次性叠加（start-core.sh 以 mktemp 文件投递 DD-70 的一次性凭据）。有这样的文件时，容器的配置哈希
+    含发布树渲染不出的内容，不可比较。"""
+    base = os.path.join(ctr.get("working_dir") or "", "compose.yaml")
+    return [f for f in ctr.get("config_files") or []
+            if f != base and not any(f.endswith("/" + str(rel)) for rel in overlays or [])]
+
+
+def config_drift(rendered, hashes, found, read_config, read_file=None, overlays=()):
+    """长期运行服务的配置漂移：Compose 配置哈希（desired_config，与 up 写入标签的同一哈希）不等于运行容器的
+    com.docker.compose.config-hash，或它消费的 configs 内容与容器内目标文件不同，或文件型 secrets 的挂载来源
+    与渲染路径不同。Compose 的服务哈希不含 configs 内容与 configs/secrets 的文件路径（2.40.3 实测：只改
+    content 或 file 内容，哈希不变），所以这两项单独回读比较；secret 只比路径，不读内容。
+
+    排除：restart 为 "no" 的一次性服务（apply_config_oneoffs 管）；不在本 compose 文件中的服务
+    （组件各自的 Compose 项目，found 只含本项目容器，这里只遍历本文件的服务）。没有唯一运行中容器的服务
+    不判漂移，列入 absent，由 bootstrap 或受管服务的镜像判定负责创建。由启动命令以一次性叠加组合的容器
+    （foreign_compose_files 非空，例如 start-core.sh 启动的 core-bff）只比较 configs 内容，列入 hash_skipped。
+    → dict(drift=[{service, reasons, working_dir}], absent=[服务], hash_skipped=[服务])，按 compose 定义顺序。"""
+    drift, absent, skipped = [], [], []
+    for svc, spec in rendered["services"].items():
+        if str(spec.get("restart") or "") == "no":
+            continue
+        ctr = single_container(found, svc)
+        if not ctr:
+            absent.append(svc)
+            continue
+        reasons = []
+        want = hashes.get(svc)
+        if not want:
+            raise NodeError(f"{svc}: compose config --hash 没有给出哈希")
+        if foreign_compose_files(ctr, overlays):
+            skipped.append(svc)
+        elif ctr.get("config_hash") != want:
+            reasons.append("compose 配置哈希不同")
+        for name, target, data in config_payloads(rendered, svc, read_file):
+            if read_config(ctr["id"], target) != data:
+                reasons.append(f"配置 {name} 内容与容器内 {target} 不同")
+        # secret 文件路径同样不在服务哈希里：软链接时期从旧发布树挂载的投递，只有比较挂载来源才看得见
+        for name, target, path in secret_sources(rendered, svc):
+            if (ctr.get("binds") or {}).get(target) != path:
+                reasons.append(f"secret {name} 的挂载来源不是运行目录中的投递")
+        if reasons:
+            drift.append(dict(service=svc, reasons=reasons, working_dir=ctr.get("working_dir")))
+    return dict(drift=drift, absent=absent, hash_skipped=skipped)
+
+
+def desired_config(argv, deploy_dir, runtime):
+    """渲染发布树（与 up 同样解析 env_file）并求每个服务的 Compose 配置哈希。
+
+    `docker compose config --hash` 以 WithoutEnvironmentResolution 加载项目（compose 2.40.3
+    cmd/compose/config.go runHash），而 up 写入 com.docker.compose.config-hash 时 env_file 已并入
+    environment，所以凡用 env_file 的服务两者必然不同。这里先以 `config --format json` 得到已解析
+    env_file、已插值（$ 转义为 $$）的完整模型，再把它经标准输入交给 `config --hash`：模型中已没有
+    env_file，求得的就是 up 所用的同一哈希。模型只在内存与管道中传递，不落盘、不输出。"""
+    env = dict(os.environ, KAILO_RUNTIME_DIR=runtime)
+    raw = run(argv + ["config", "--format", "json"], env=env, cwd=deploy_dir).stdout
+    hashed = run(DOCKER + ["compose", "-f", "-", "--project-directory", deploy_dir, "config", "--hash", "*"],
+                 cwd=deploy_dir, stdin=raw)
+    return json.loads(raw), parse_config_hashes(hashed.stdout.decode())
+
+
+def drift_facts(tree, runtime, overlays, project):
+    """只读：以部署同一套 Compose 参数渲染发布树，与本项目运行容器比较。"""
+    argv, deploy_dir = compose_argv(tree, runtime, overlays)
+    rendered, hashes = desired_config(argv, deploy_dir, runtime)
+    if rendered.get("name") != project:
+        raise NodeError("渲染出的 Compose 项目名与 CI 配置不一致")
+    return config_drift(rendered, hashes, containers(project), container_file, overlays=overlays)
 
 
 def ref_digest(ref):
@@ -229,6 +393,122 @@ def active_ci_deploys(cfg):
     return jobs
 
 
+# ---- IdP 声明式配置（ADR-20 §1） ------------------------------------------------------
+
+IDP_STATE = "idp-declarations.json"
+ENV_NAME_REFERENCE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)")
+
+
+def env_closure(values, keys):
+    """keys 及其原始值中 ${NAME}/$NAME 引用的闭包 → {键: 原始值的 sha256 或 None}。.env 由 bash `.` 读取，
+    派生值（如 PUBLIC_ORIGIN、OIDC_ISSUER）随被引用键变化，因此摘要覆盖整条引用链；只保留摘要。"""
+    digests, todo = {}, list(keys)
+    while todo:
+        key = todo.pop()
+        if key in digests:
+            continue
+        raw = (values.get(key) or [None])[-1]
+        digests[key] = None if raw is None else hashlib.sha256(raw.encode()).hexdigest()
+        todo += ENV_NAME_REFERENCE.findall(raw or "")
+    return digests
+
+
+def idp_digest(files_digest, values, keys):
+    body = json.dumps(dict(files=files_digest, env=env_closure(values, keys)), sort_keys=True)
+    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
+
+
+def native_clients_declared(values):
+    return bool(((values.get("NATIVE_OIDC_CLIENTS") or [""])[-1]).strip())
+
+
+def read_json(path):
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream)
+
+
+def write_json_atomic(path, value):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".")
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+
+
+def idp_plan(state_path, digest, values):
+    """只读：本次 deploy 是否执行 apply（never/changed 执行，unchanged 跳过），组件专属客户端是否声明。"""
+    recorded = read_json(state_path).get("digest")
+    return dict(state="never" if not recorded else "unchanged" if recorded == digest else "changed",
+                native_clients_declared=native_clients_declared(values))
+
+
+class IdpStep:
+    """IdP 声明式配置步骤。命令由 release.yaml idp 段声明，在发布树 deploy/local 下执行；run(argv) 返回
+    (退出码, 标准输出)。命令的标准输出是一行状态 JSON（bootstrap 与 idp-declarations.py 保证不含值），
+    这里只保留其中的状态与计数字段。"""
+
+    KEEP = ("nativeClientProfiles", "clients", "changed", "users", "written", "missing")
+
+    def __init__(self, spec, digest, values, state_path, run):
+        self.spec, self.digest, self.values, self.state_path, self.run = spec, digest, values, state_path, run
+
+    def _one(self, argv):
+        code, stdout = self.run([str(a) for a in argv])
+        lines = (stdout or "").strip().splitlines()
+        try:
+            value = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            value = {}
+        result = {k: value[k] for k in self.KEEP if k in value}
+        result.update(command=str(argv[1]), exit_code=code, problems=len(value.get("problems") or []))
+        return result
+
+    def plan(self):
+        return idp_plan(self.state_path, self.digest, self.values)
+
+    def apply(self, commit):
+        plan = self.plan()
+        ran = []
+
+        def step(argv):
+            result = self._one(argv)
+            ran.append(result)
+            return result
+
+        if plan["state"] != "unchanged":
+            for argv in self.spec["apply"]:
+                result = step(argv)
+                if result["exit_code"] != 0:
+                    # 摘要只在全部成功后记录；失败即停止 deploy，下一次 deploy 从头重跑（命令本身幂等）
+                    raise NodeError(f"IdP 声明式配置 {result['command']} 退出 {result['exit_code']}")
+        for argv in self.spec.get("always") or []:
+            result = step(argv)
+            if result["exit_code"] != 0:
+                # always 只补新用户、对客户端只读核对；它发现的漂移只能由完整声明处理，作废已记录的摘要，
+                # 使下一次 deploy 重新执行 apply（不一致的同名 mapper 仍由 apply 拒绝而不覆写）。
+                if read_json(self.state_path).get("digest"):
+                    write_json_atomic(self.state_path, dict(digest=None, commit=commit, at=time.time(),
+                                                            invalidated=result["command"]))
+                raise NodeError(f"IdP 声明式配置 {result['command']} 退出 {result['exit_code']}")
+        if plan["state"] != "unchanged":
+            write_json_atomic(self.state_path, dict(digest=self.digest, commit=commit, at=time.time(),
+                                                    native_clients_declared=plan["native_clients_declared"]))
+        return dict(plan, applied=plan["state"] != "unchanged", commands=ran)
+
+    def verify(self):
+        results = [self._one(argv) for argv in self.spec["verify"]]
+        problems = [f"{r['command']} 退出 {r['exit_code']}（不一致 {r['problems']} 项）"
+                    for r in results if r["exit_code"] != 0]
+        recorded = read_json(self.state_path).get("digest")
+        if recorded != self.digest:
+            problems.append("IdP 声明式配置摘要与本次输入不一致（deploy 未完成该步骤）")
+        native = next((r.get("nativeClientProfiles") for r in results if "nativeClientProfiles" in r), None)
+        return dict(commands=results, native_client_profiles=native, problems=problems)
+
+
 # ---- inspect：只读探针 ---------------------------------------------------------
 
 def inspect(request):
@@ -256,7 +536,8 @@ def inspect(request):
         env = {}
         for key, digest in (request.get("env_set") or {}).items():
             values = actual.get(key)
-            env[key] = ("absent" if not values else "duplicate" if len(values) > 1 else
+            # 声明要设置而运行 .env 没有的键由 deploy 追加，计划里如实列为 add（与 unset 的 absent 区分）
+            env[key] = ("add" if not values else "duplicate" if len(values) > 1 else
                         "unchanged" if hashlib.sha256(values[0].encode()).hexdigest() == digest else "change")
         for key in request.get("env_unset") or []:
             env[key] = "remove" if key in actual else "absent"
@@ -288,6 +569,15 @@ def inspect(request):
                                          if d.get("digest", {}).get("gitCommit")), None),
                             subject=doc.get("subject"))
     result["proofs"] = proofs
+    # 已生效的运维域投递摘要（ADR-20 §10）：只读回 deliveries.json 的摘要，不读投递内容
+    journal = request.get("delivery_journal")
+    if journal:
+        path = os.path.join(str(journal), DELIVERIES)
+        applied = {}
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as stream:
+                applied = json.load(stream)
+        result["deliveries"] = {k: v for k, v in applied.items() if isinstance(v, str) and DIGEST_RE.fullmatch(v)}
     for job in request.get("artifacts") or []:
         if not re.fullmatch(r"[0-9a-f]{32}", job):
             raise NodeError("非法任务 ID")
@@ -302,6 +592,27 @@ def inspect(request):
                 entries[name] = next((d["digest"]["gitCommit"] for d in deps
                                       if d.get("digest", {}).get("gitCommit")), None)
         result.setdefault("artifacts", {})[job] = entries if files is not None else None
+    idp = request.get("idp")
+    if idp and os.path.isfile(env_path):
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(idp.get("files"))) or not all(
+                re.fullmatch(r"[A-Z][A-Z0-9_]*", str(k)) for k in idp.get("env") or []):
+            raise NodeError("非法 IdP 摘要请求")
+        values = read_env_file(env_path)
+        result["idp"] = idp_plan(os.path.join(str(idp["journal"]), IDP_STATE),
+                                 idp_digest(idp["files"], values, idp["env"]), values)
+    drift_request = request.get("config_drift")
+    if drift_request:
+        # 只读：compose config 只渲染，docker cp 只读出容器内文件；发布树须已由 worker 就绪
+        tree = os.path.join(cfg["sources"], str(drift_request["commit"]), "apps")
+        if not re.fullmatch(r"[0-9a-f]{40}", str(drift_request["commit"])):
+            raise NodeError("config_drift.commit 必须是 40 位完整 commit")
+        if not os.path.isfile(os.path.join(cfg["sources"], drift_request["commit"], "ready.json")):
+            result["config_drift"] = dict(tree_missing=True)
+        else:
+            try:
+                result["config_drift"] = drift_facts(tree, runtime_dir(cfg), drift_request.get("overlays"), project)
+            except NodeError as error:  # 例如目标 commit 要求的 .env 键缺失：plan 照常输出，deploy 时重算
+                result["config_drift"] = dict(error=str(error))
     result["active_ci_deploys"] = active_ci_deploys(cfg)
     return result
 
@@ -337,6 +648,9 @@ class Release:
         self.units = model.units(self.decl)
         self.managed = {s: i for s, i in model.managed_services(self.services, self.units).items()
                         if self.services[s]["restart"] != "no"}
+        # 运维域运行体与投递（ADR-20 §10）：上游固定 digest 的服务，以及 Core 启动入口消费的投递文件
+        self.operated = model.operated_services(self.services, self.decl)
+        self.delivery = model.peer_delivery(self.decl, self.services)
         # start-core.sh 与迁移容器所需的受限资源参数，取自 CI 执行配置（与 worker 同一来源）
         wanted = [str(k) for k in self.decl["node"].get("ci_environment") or []]
         self.ci_env = {k: str(v) for k, v in (self.cfg.get("environment") or {}).items() if k in wanted}
@@ -345,6 +659,20 @@ class Release:
 
     def git(self, *args):
         return out(["git", "-C", self.tree, *args])
+
+    def idp_step(self):
+        """本发布树的 IdP 声明式配置：摘要输入取自发布树（期望值定义文件与 realm 模板）与运行 .env。"""
+        spec = self.model.idp_declaration(self.decl)
+        files, keys = self.model.idp_inputs(self.decl)
+        values = read_env_file(os.path.join(self.runtime, ".env"))
+
+        def execute(argv):
+            # stderr 直通（拒绝原因只含键名与角色）；stdout 只取状态 JSON
+            r = subprocess.run(argv, cwd=self.deploy_dir, env=self.env(), stdout=subprocess.PIPE, stderr=sys.stderr)
+            return r.returncode, r.stdout.decode(errors="replace")
+
+        return IdpStep(spec, idp_digest(files, values, keys), values,
+                       os.path.join(self.decl["node"]["journal"], IDP_STATE), execute)
 
     def _preflight(self, need_receipt):
         root = os.path.dirname(self.tree)
@@ -367,27 +695,28 @@ class Release:
 
     # -- Compose -----------------------------------------------------------------
 
-    def overlays(self):
-        files = []
-        for rel in self.decl.get("overlays") or []:
-            path = os.path.join(self.runtime, str(rel))
-            if os.path.isfile(path) and os.path.getsize(path):
-                files += ["-f", path]
-        return files
-
     def env(self, extra=None):
         value = dict(os.environ, KAILO_RUNTIME_DIR=self.runtime)
         value.update(extra or {})
         return value
 
-    def compose(self, *args, capture=True, check=True):
-        argv = DOCKER[:2] + ["--preserve-env=KAILO_RUNTIME_DIR"] + DOCKER[2:] + [
-            "compose", "--env-file", os.path.join(self.runtime, ".env"),
-            "-f", os.path.join(self.deploy_dir, "compose.yaml"), *self.overlays(), *args]
-        return run(argv, capture=capture, check=check, env=self.env(), cwd=self.deploy_dir)
+    def compose_argv(self):
+        return compose_argv(self.tree, self.runtime, self.decl.get("overlays"), getattr(self, "env_preview", None))[0]
 
-    def rendered(self):
-        return json.loads(self.compose("config", "--format", "json").stdout)
+    def compose(self, *args, capture=True, check=True):
+        return run(self.compose_argv() + list(args), capture=capture, check=check, env=self.env(), cwd=self.deploy_dir)
+
+    def desired(self):
+        """(渲染结果, {服务: up 所用的配置哈希})：与 up 同一套参数与 env_file 解析。"""
+        return desired_config(self.compose_argv(), self.deploy_dir, self.runtime)
+
+    def drift(self, rendered, hashes, found):
+        return config_drift(rendered, hashes, found, container_file, overlays=self.decl.get("overlays"))
+
+    def converge(self, drift, targets):
+        """配置漂移 → 收敛计划（ADR-20 §9）；漂移服务一律按 release.yaml 的 drift 策略处理，不设数量阈值。"""
+        names = [d["service"] for d in drift["drift"] if d["service"] in self.services]
+        return self.model.converge_plan(self.services, names, targets, self.managed, self.decl)
 
     # -- 推导 --------------------------------------------------------------------
 
@@ -400,13 +729,110 @@ class Release:
         return plans
 
     def targets(self, found):
-        """运行 digest 不等于 pin 的受管服务（含未运行的）。"""
+        """运行 digest 不等于 pin 的受管服务（含未运行的）；运维域投递尚未经启动入口生效时，
+        加上消费它的服务（start-core.sh 按文件原路径只读挂载，替换文件不会进入已运行的容器）。"""
         out_ = []
         for svc in self.managed:
             ctr = single_container(found, svc)
             if not ctr or ref_digest(ctr["image_ref"]) != self.services[svc]["digest"]:
                 out_.append(svc)
+        if self.delivery_pending() and self.delivery["restart"] not in out_:
+            out_.append(self.delivery["restart"])
         return self.model.deploy_order(self.services, out_, self.decl)
+
+    def operated_targets(self, found):
+        """没有唯一运行中容器的运维域运行体，由本入口创建（ADR-20 §10）。已运行者镜像引用或配置与发布树不同
+        即是 §9 的配置漂移（镜像在 Compose 配置哈希内），由漂移收敛重建，不在这里重复处理。"""
+        return [svc for svc in self.operated if not single_container(found, svc)]
+
+    # -- 运维域投递 ----------------------------------------------------------------
+
+    def applied_deliveries(self):
+        path = os.path.join(self.decl["node"]["journal"], DELIVERIES)
+        if not os.path.isfile(path):
+            return {}
+        with open(path, encoding="utf-8") as stream:
+            return json.load(stream)
+
+    def delivery_pending(self):
+        return bool(self.delivery) and self.applied_deliveries().get("protocol_peers") != self.delivery["digest"]
+
+    def delivery_folder(self):
+        folder = os.path.join(self.runtime, self.delivery["runtime"])
+        parts = os.path.relpath(folder, self.runtime).split(os.sep)
+        for i in range(1, len(parts) + 1):
+            path = os.path.join(self.runtime, *parts[:i])
+            if os.path.islink(path):
+                raise NodeError(f"运行目录中的投递路径是软链接：{path}")
+        return folder
+
+    def write_deliveries(self):
+        """把 delivery.protocol_peers 渲染为运行目录内的真实规范文件（0644，Core uid 与 Worker 只读挂载）：
+        交付目录的 adapters 保留已有条目，protocolPeers 与一致性环境取发布树声明。内容不变的文件不改写；
+        写入用同目录临时文件 + fsync + 原子替换。返回改写的文件名（不含内容）。"""
+        folder = self.delivery_folder()
+        os.makedirs(folder, mode=0o755, exist_ok=True)
+        os.chmod(folder, 0o755)
+        directory_path = os.path.join(folder, self.model.PEER_DIRECTORY_FILE)
+        conformance_path = os.path.join(folder, self.model.PEER_CONFORMANCE_FILE)
+        for path in (directory_path, conformance_path):
+            if os.path.islink(path) or (os.path.exists(path) and not os.path.isfile(path)):
+                raise NodeError(f"投递文件不是普通文件：{path}")
+        existing = self.model.load_json(directory_path) if os.path.isfile(directory_path) else None
+        documents = {directory_path: self.model.render_peer_directory(existing, self.delivery["peers"]),
+                     conformance_path: self.delivery["conformance"]}
+        written = []
+        for path, value in documents.items():
+            text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as stream:
+                    if stream.read() == text:
+                        os.chmod(path, 0o644)
+                        continue
+            fd, tmp = tempfile.mkstemp(dir=folder, prefix=".delivery-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    stream.write(text)
+                    stream.flush()
+                    os.fchmod(stream.fileno(), 0o644)
+                    os.fsync(stream.fileno())
+                os.replace(tmp, path)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            written.append(os.path.basename(path))
+        return written
+
+    def record_delivery(self):
+        """启动入口回读成功后记下已生效的投递摘要。"""
+        path = os.path.join(self.decl["node"]["journal"], DELIVERIES)
+        applied = self.applied_deliveries()
+        applied["protocol_peers"] = self.delivery["digest"]
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".")
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(applied, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+
+    def delivery_problems(self):
+        """回读：运行目录文件等于声明（protocolPeers 与一致性环境），且已经启动入口生效。"""
+        if not self.delivery:
+            return []
+        bad = []
+        folder = os.path.join(self.runtime, self.delivery["runtime"])
+        try:
+            directory = self.model.load_json(os.path.join(folder, self.model.PEER_DIRECTORY_FILE))
+            conformance = self.model.load_json(os.path.join(folder, self.model.PEER_CONFORMANCE_FILE))
+        except (OSError, ValueError, self.model.ReleaseError):
+            return ["运维域投递文件缺失或不可解析"]
+        if directory.get("protocolPeers") != self.delivery["peers"]:
+            bad.append("交付目录 protocolPeers 与发布树声明不一致")
+        if conformance != self.delivery["conformance"]:
+            bad.append("一致性环境与发布树声明不一致")
+        if self.delivery_pending():
+            bad.append(f"运维域投递尚未经 {self.delivery['restart']} 的启动入口生效")
+        return bad
 
     def lock(self):
         os.makedirs(self.decl["node"]["journal"], mode=0o700, exist_ok=True)
@@ -445,9 +871,16 @@ class Release:
             manifest["reused"] = True
             return manifest
         found = containers(self.cfg["compose_project"])
-        targets = self.targets(found)
+        # 配置漂移按声明后的 .env 预判（未落盘）；deploy 在声明式 .env 落盘后重算，以那时为准
+        with self.declared_env_preview():
+            rendered, hashes = self.desired()
+        converge = self.converge(self.drift(rendered, hashes, found), self.targets(found))
+        targets = converge["targets"]
         migrations = self.migration_plan(found)
         databases = self.model.databases_for(self.services, targets)
+        for database in self.model.converge_databases(self.services, converge):
+            if database not in databases:
+                databases.append(database)
         for plan in migrations:
             if plan["pending"] and plan["database"] not in databases:
                 databases.append(plan["database"])
@@ -484,7 +917,7 @@ class Release:
         files.append(dict(kind="env", file="env.snapshot", bytes=os.path.getsize(snapshot),
                           sha256=sha256_file(snapshot)))
         manifest = dict(commit=self.commit, created_at=time.time(), targets=targets,
-                        migrations=migrations, files=files, path=self.backups)
+                        config_converge=converge, migrations=migrations, files=files, path=self.backups)
         fd, tmp = tempfile.mkstemp(dir=self.backups, prefix=".")
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(manifest, stream, ensure_ascii=False, indent=2)
@@ -528,8 +961,8 @@ class Release:
             raise NodeError("权限规范后发布树不再干净")
         return changed
 
-    def apply_env(self):
-        """声明式 .env（ADR-20 §4）：只报告键与动作；有变化时同目录临时文件 + fsync + 原子替换。"""
+    def render_env(self):
+        """声明式 .env（ADR-20 §4）应用到运行 .env 后的 (路径, 行, {键: 动作})；不写盘、不输出值。"""
         to_set, to_unset = self.model.env_declaration(self.decl)
         path = os.path.join(self.runtime, ".env")
         with open(path, encoding="utf-8") as stream:
@@ -563,6 +996,29 @@ class Release:
             actions.update({k: "added" for k in missing})
         for key in to_unset:
             actions.setdefault(key, "absent")
+        return path, result, actions
+
+    @contextlib.contextmanager
+    def declared_env_preview(self):
+        """deploy 之前（backup 的漂移与数据库推导）按声明后的 .env 渲染：同目录 0600 临时文件，用后即删。
+        compose 以 ${NAME:?} 要求的新键此时尚未落盘，直接用运行 .env 会插值失败。"""
+        path, result, actions = self.render_env()
+        if not any(a in ("changed", "added", "removed") for a in actions.values()):
+            yield
+            return
+        fd, tmp = tempfile.mkstemp(dir=self.runtime, prefix=".env.preview-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write("\n".join(result))
+            self.env_preview = tmp
+            yield
+        finally:
+            self.env_preview = None
+            os.unlink(tmp)
+
+    def apply_env(self):
+        """声明式 .env（ADR-20 §4）：只报告键与动作；有变化时同目录临时文件 + fsync + 原子替换。"""
+        path, result, actions = self.render_env()
         if any(a in ("changed", "added", "removed") for a in actions.values()):
             info = os.stat(path)
             fd, tmp = tempfile.mkstemp(dir=self.runtime, prefix=".env.release-")
@@ -718,6 +1174,66 @@ class Release:
             state["build_id"] = info.get("buildId")
         return state
 
+    def readback_operated(self, service):
+        """运维域运行体：容器引用等于 compose 的固定引用，本节点解析出的镜像就是容器正在运行的镜像，健康。
+        上游镜像来自其原 registry，不做本仓库产物的 registry 复现核对。"""
+        ctr = single_container(containers(self.cfg["compose_project"]), service)
+        if not ctr:
+            raise NodeError(f"{service} 未运行")
+        want = self.services[service]["raw_image"]
+        state = dict(service=service, digest=ref_digest(ctr["image_ref"]), image_id=ctr["image_id"],
+                     health=ctr["health"], running=ctr["running"], container=ctr["name"], operated=True)
+        if ctr["image_ref"] != want:
+            raise NodeError(f"{service}：运行镜像引用与 compose 固定引用不一致")
+        if resolve_local(want) != ctr["image_id"]:
+            raise NodeError(f"{service}：固定引用解析出的镜像与容器运行镜像不同")
+        if ctr["health"] not in (None, "healthy"):
+            raise NodeError(f"{service} 健康状态 {ctr['health']}")
+        return state
+    def readback_config(self, service, rendered, hashes):
+        """配置回读（ADR-20 §9）：唯一运行容器的配置哈希等于渲染结果（由启动命令以一次性叠加组合的除外）、
+        configs 内容等于容器内文件、健康。"""
+        found = containers(self.cfg["compose_project"])
+        ctr = single_container(found, service)
+        if not ctr:
+            raise NodeError(f"{service} 未运行")
+        left = config_drift(dict(rendered, services={service: rendered["services"][service]}), hashes,
+                            {service: [ctr]}, container_file, overlays=self.decl.get("overlays"))
+        if left["drift"]:
+            raise NodeError(f"{service} 重建后配置仍不一致：" + "；".join(left["drift"][0]["reasons"]))
+        if ctr["health"] not in (None, "healthy"):
+            raise NodeError(f"{service} 健康状态 {ctr['health']}")
+        return dict(service=service, config_hash=ctr["config_hash"], health=ctr["health"], container=ctr["name"])
+
+    def recreate_drifted(self, services, rendered, hashes, journal):
+        """按依赖顺序重建配置漂移的非受管服务：up -d --no-deps --force-recreate --wait，回读后写日志。
+        --force-recreate 是必须的：configs 内容不在 Compose 的哈希里，不强制时 up 会认为无需重建。"""
+        for svc in services:
+            say(f"== 配置漂移 {svc}")
+            self.compose("up", "-d", "--no-deps", "--force-recreate", "--no-build", "--wait", svc, capture=False)
+            journal["config_recreated"].append(self.readback_config(svc, rendered, hashes))
+            self.write_journal("deploy.json", journal)
+
+    def drift_report(self):
+        """只读：本发布树相对现场的配置漂移与收敛计划。"""
+        found = containers(self.cfg["compose_project"])
+        rendered, hashes = self.desired()
+        drift = self.drift(rendered, hashes, found)
+        return dict(commit=self.commit, drift=drift["drift"], absent=drift["absent"],
+                    converge=self.converge(drift, self.targets(found)))
+
+    def deploy_history(self):
+        """同一 commit 之前各次 deploy 的摘要：重跑时 deploy.json 重写为本次，已完成的动作留在 history 里。"""
+        path = os.path.join(self.journal, "deploy.json")
+        if not os.path.isfile(path):
+            return []
+        with open(path, encoding="utf-8") as stream:
+            prior = json.load(stream)
+        return prior.get("history", []) + [dict(
+            started_at=prior.get("started_at"), finished_at=prior.get("finished_at"), state=prior.get("state"),
+            services=[s.get("service") for s in prior.get("services", [])],
+            config_recreated=[s.get("service") for s in prior.get("config_recreated", [])])]
+
     def deploy(self):
         lock = self.lock()
         if not os.path.isfile(os.path.join(self.backups, "manifest.json")):
@@ -726,25 +1242,62 @@ class Release:
         say(f"== 发布树权限按 Git 模式规范（调整 {changed} 项）")
         say("== 声明式 .env")
         env_actions = self.apply_env()
-        rendered = self.rendered()
+        rendered, hashes = self.desired()
         self.check_rendered(rendered)
+        # 运维域投递先落到运行目录：只有启动入口重建消费者后才生效（已运行容器仍挂着旧文件）
+        delivered = self.write_deliveries() if self.delivery else []
         found = containers(self.cfg["compose_project"])
-        targets = self.targets(found)
+        # 配置漂移以现场为准：重跑时已收敛的服务哈希与内容一致，不再出现（幂等）
+        drift = self.drift(rendered, hashes, found)
+        converge = self.converge(drift, self.targets(found))
+        targets = converge["targets"]
+        # 运维域运行体（ADR-20 §10）：这里只创建缺失的；已运行者的镜像或配置变化由 §9 的漂移收敛重建
+        operated = self.operated_targets(found)
         migrations = [m for m in self.migration_plan(found) if m["pending"]]
         journal = dict(commit=self.commit, started_at=time.time(), env=env_actions, targets=targets,
-                       migrations=migrations, services=[], state="RUNNING")
+                       operated=operated, delivery=dict(written=delivered, pending=self.delivery_pending(),
+                                                        digest=(self.delivery or {}).get("digest")),
+                       config_drift=drift["drift"], config_converge=converge, config_recreated=[],
+                       migrations=migrations, services=[], state="RUNNING",
+                       history=self.deploy_history())
         self.write_journal("deploy.json", journal)
-        touched = set(targets) | {p for t in targets for p in self.model.prerequisites(self.services, t)}
+        swapped = set(targets) | {p for t in targets for p in self.model.prerequisites(self.services, t)}
+        touched = swapped | set(converge["before"]) | set(converge["after"]) | set(operated)
         replaced = {c["id"] for svc in touched for c in found.get(svc, [])}
         before = {cid: name for cid, name in running_containers().items() if cid not in replaced}
-        say("== 目标：" + (", ".join(targets) or "无（运行镜像均已等于 pin）"))
-        if targets:
-            pulls = sorted(touched)
-            self.compose("pull", "--quiet", *pulls, capture=False)
+        say("== 目标：" + (", ".join(targets) or "无（运行镜像均已等于 pin，也无受管服务配置漂移）"))
+        say("== 运维域运行体，创建：" + (", ".join(operated) or "无（均已运行）"))
+        if delivered:
+            say("== 运维域投递改写：" + ", ".join(delivered))
+        for key, label in (("before", "替换前"), ("after", "替换后")):
+            if converge[key]:
+                say(f"== 配置漂移，{label}重建：" + ", ".join(converge[key]))
+        if converge["report"]:
+            say("== 配置漂移，仅报告（release.yaml drift: report）：" + ", ".join(converge["report"]))
+        if targets or operated:
+            self.compose("pull", "--quiet", *sorted(swapped | set(operated)), capture=False)
         for plan in migrations:
             say(f"== 迁移 {plan['name']}：待执行 {len(plan['pending'])} 个")
             self.migrate(plan)
         journal["config_oneoffs"] = self.apply_config_oneoffs()
+        # 缺失的运维域运行体先于漂移收敛与服务替换创建：Core 经启动入口重建后交付目录中的端点即可达
+        for svc in operated:
+            say(f"== {svc}（运维域运行体，创建）")
+            self.compose("up", "-d", "--no-deps", "--force-recreate", "--no-build", "--wait", svc, capture=False)
+            journal["services"].append(self.readback_operated(svc))
+            self.write_journal("deploy.json", journal)
+        # 配置漂移的基础服务先于 IdP 声明重建（ADR-20 §9）：keycloak 若漂移，声明作用于重建后的实例，
+        # 且下面的就绪等待覆盖它。
+        self.recreate_drifted(converge["before"], rendered, hashes, journal)
+        # IdP 声明式配置先于任何服务替换：新增回调、mapper 与退出属性对旧服务是兼容的增量，而新 Core/网关/Web
+        # 依赖它们（网关 end-session 的 post_logout_redirect_uri 必须已登记，03 §7 兼容顺序）。
+        idp_spec = self.model.idp_declaration(self.decl)
+        say(f"== IdP 声明式配置（等待 {idp_spec['wait']} 就绪）")
+        self.wait_ready(idp_spec["wait"])
+        journal["idp"] = self.idp_step().apply(self.commit)
+        say("   " + ("摘要变化，已声明并回读" if journal["idp"]["applied"] else "摘要未变，跳过声明")
+            + ("" if journal["idp"]["native_clients_declared"] else "；组件专属客户端未声明（NATIVE_OIDC_CLIENTS 为空）"))
+        self.write_journal("deploy.json", journal)
         extra = self.ci_env
         for svc in targets:
             say(f"== {svc}")
@@ -759,8 +1312,14 @@ class Release:
                 self.wait_ready(svc)
             else:
                 self.compose("up", "-d", "--no-deps", "--force-recreate", "--no-build", "--wait", svc, capture=False)
-            journal["services"].append(self.readback(svc))
+            state = self.readback(svc)
+            state["config"] = self.readback_config(svc, rendered, hashes)
+            journal["services"].append(state)
+            if self.delivery and svc == self.delivery["restart"] and self.delivery_pending():
+                self.record_delivery()
+                journal["delivery"]["pending"] = False
             self.write_journal("deploy.json", journal)
+        self.recreate_drifted(converge["after"], rendered, hashes, journal)
         # 部署前已运行、且不属于本次替换的容器必须仍在运行。同名但 ID 变化的（例如 start-core.sh
         # 按投递变化重建 Worker）如实记为重建，不当作停止；不再运行的才是失败。
         after = running_containers()
@@ -782,12 +1341,36 @@ class Release:
                 results.append(self.readback(svc))
             except NodeError as error:
                 bad.append(str(error))
+        for svc in self.operated:
+            try:
+                results.append(self.readback_operated(svc))
+            except NodeError as error:
+                bad.append(str(error))
+        bad += self.delivery_problems()
+        idp = self.idp_step().verify()
+        bad += idp["problems"]
+        found = containers(self.cfg["compose_project"])
+        rendered, hashes = self.desired()
+        drift = self.drift(rendered, hashes, found)
+        reported = self.model.converge_plan(self.services, [d["service"] for d in drift["drift"]], [],
+                                            self.managed, self.decl)["report"]
+        for entry in drift["drift"]:
+            if entry["service"] not in reported:
+                bad.append(f"{entry['service']}：配置漂移未收敛（" + "；".join(entry["reasons"]) + "）")
+        for svc, spec in rendered["services"].items():
+            if str(spec.get("restart") or "") == "no" or svc in self.managed:
+                continue
+            ctr = single_container(found, svc)
+            if ctr and ctr["health"] not in (None, "healthy"):
+                bad.append(f"{svc} 健康状态 {ctr['health']}")
         journal_path = os.path.join(self.journal, "deploy.json")
         deploy = None
         if os.path.isfile(journal_path):
             with open(journal_path, encoding="utf-8") as stream:
                 deploy = json.load(stream)
-        value = dict(commit=self.commit, services=results, problems=bad,
+        value = dict(commit=self.commit, services=results, problems=bad, idp=idp,
+                     config_drift_reported=[d for d in drift["drift"] if d["service"] in reported],
+                     not_running=drift["absent"],
                      deploy_state=(deploy or {}).get("state"),
                      unrelated_stopped=(deploy or {}).get("unrelated_stopped"),
                      business_acceptance="NOT_RUN：业务验收由开发端发起与判定")
@@ -809,7 +1392,7 @@ def main():
     sub = parser.add_subparsers(dest="stage", required=True)
     probe = sub.add_parser("inspect")
     probe.add_argument("request")
-    for stage in ("backup", "deploy", "verify", "normalize", "runtime"):
+    for stage in ("backup", "deploy", "verify", "normalize", "runtime", "drift"):
         sub.add_parser(stage).add_argument("--commit", required=True)
     args = parser.parse_args()
     try:
@@ -820,8 +1403,10 @@ def main():
                 raise NodeError("从标准输入执行时只允许只读 inspect")
             # normalize: every deploy from this fixed tree (platform or component) first gives
             # tracked files their Git modes, so non-root containers can read bind-mounted config.
-            release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize", "runtime"))
-            if args.stage == "normalize":
+            release = Release(args.commit, need_receipt=args.stage not in ("verify", "normalize", "runtime", "drift"))
+            if args.stage == "drift":
+                value = release.drift_report()
+            elif args.stage == "normalize":
                 value = {"normalized": release.normalize_tree()}
             elif args.stage == "runtime":
                 value = {"runtime": release.runtime}

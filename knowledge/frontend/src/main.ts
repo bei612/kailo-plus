@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, watch } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
 import router from "./router";
@@ -6,6 +6,9 @@ import TDesign from "tdesign-vue-next";
 // 引入组件库的少量全局样式变量
 import "tdesign-vue-next/dist/tdesign.css";
 import "@/assets/theme/theme.css";
+// Kailo design-token overlay (DD-133, design 07 §4.7.1): maps TDesign/app
+// variables to /kailo/kailo-theme-tokens.css in Kailo mode (html[data-kailo-mode]).
+import "@/kailo/kailo-theme-overlay.css";
 import "@/assets/theme/tdesign-overrides.less";
 import "@/assets/dropdown-menu.less";
 import "@/components/css/chat-hljs-dark.less";
@@ -19,19 +22,21 @@ import { initFont } from "@/composables/useFont";
 import { installTDesignIconOfflineGuard } from "@/utils/tdesign-icon-offline";
 import { installAutofillGuard } from "@/utils/disable-autofill";
 import { useAuthStore } from "@/stores/auth";
+import { applyUserLocale, installKailo } from "@/kailo/setup";
 
 // 必须在 Vue 组件挂载之前执行，避免 tdesign-icons 运行时请求 tdesign.gtimg.com
 installTDesignIconOfflineGuard();
 
 initTheme();
 initFont();
+installKailo(i18n);
 
 async function bootstrap() {
   const app = createApp(App);
 
   // 全局错误处理：捕获未处理的组件错误，防止白屏
   app.config.errorHandler = (err, instance, info) => {
-    console.error("[WeKnora] Unhandled Vue error:", err, "\nComponent:", instance, "\nInfo:", info);
+    console.error("[knowledge] Unhandled Vue error:", err, "\nComponent:", instance, "\nInfo:", info);
   };
 
   app.use(TDesign);
@@ -41,6 +46,12 @@ async function bootstrap() {
   // Capabilities (can_create_tenant, auto_accept_invitation) are not cached
   // in localStorage — reconcile once before first paint when a session exists.
   const authStore = useAuthStore();
+  // Kailo identity locale applies when the host did not pass kailo_locale.
+  watch(
+    () => authStore.user?.preferences?.locale,
+    (userLocale) => applyUserLocale(i18n, userLocale),
+    { immediate: true },
+  );
   if (localStorage.getItem("weknora_token")) {
     try {
       await authStore.refreshFromAuthMe();

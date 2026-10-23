@@ -1,5 +1,7 @@
-// Using in appendData, only for variables defination
-@import '~antd/lib/style/themes/default.less';
+// Using in appendData, only for variables defination.
+// DD-133: the antd variable theme (palette as --ant-* custom properties),
+// never default.less, whose palette functions cannot take CSS variables.
+@import '~antd/lib/style/themes/variable.less';
 
 @prefix: adm;
 

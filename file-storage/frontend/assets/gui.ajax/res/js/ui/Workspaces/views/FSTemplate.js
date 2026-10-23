@@ -363,7 +363,8 @@ class FSTemplate extends React.Component {
         const wtMUI = pydio.user.getLayoutPreference('WelcomeComponent.MUITour', false)
         if (wTourEnabled && !wTour){
             tutorialComponent = <WelcomeTour pydio={pydio}/>;
-        } else if (userTheme === 'mui3' && wTour && !wtMUI) {
+        } else if (wTourEnabled && userTheme === 'mui3' && wTour && !wtMUI) {
+            // Both tours follow ENABLE_WELCOME_TOUR (off in Kailo, DD-133 §1).
             tutorialComponent = <MUITour pydio={pydio}/>
         }
 

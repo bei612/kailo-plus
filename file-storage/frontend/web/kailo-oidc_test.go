@@ -51,6 +51,8 @@ type nativeOIDCFixture struct {
 	preferredUsername                     string
 	created                               *idm.User
 	creates, roles                        int
+	key                                   *rsa.PrivateKey
+	idpSession                            string
 }
 
 var nativeOIDCTestProvider sync.Once
@@ -94,6 +96,7 @@ func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.key = key
 	f.issuer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -128,6 +131,9 @@ func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 			idClaims := map[string]any{"iss": f.issuer.URL, "sub": f.subject, "aud": "cells-oidc-client", "exp": time.Now().Add(time.Minute).Unix(), "iat": time.Now().Unix(), "nonce": nonce, "email": f.email, "groups": []string{"admin"}}
 			if f.preferredUsername != "" {
 				idClaims["preferred_username"] = f.preferredUsername
+			}
+			if f.idpSession != "" {
+				idClaims["sid"] = f.idpSession
 			}
 			payload, _ := json.Marshal(idClaims)
 			signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: jose.JSONWebKey{Key: key, KeyID: "fixture-key"}}, nil)

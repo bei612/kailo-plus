@@ -49,6 +49,11 @@ type UserPreferences struct {
 	// UI hides self-service password rotation until the user sets a known
 	// password via ChangePassword (which clears this flag).
 	OidcOnlyLogin *bool `json:"oidc_only_login,omitempty"`
+
+	// Locale is the user's language from the identity provider's standard
+	// `locale` claim, refreshed on every OIDC login (Kailo DD-133). The UI
+	// prefers the host's explicit locale and falls back to this value.
+	Locale *string `json:"locale,omitempty"`
 }
 
 // Value implements driver.Valuer so GORM persists UserPreferences as
@@ -136,6 +141,14 @@ type AuthToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	// Whether the token is revoked
 	IsRevoked bool `json:"is_revoked" gorm:"default:false"`
+	// OIDCSID is the identity-provider session (ID token `sid`) this native
+	// session was created from; a back-channel logout of that sid ends it
+	// (Kailo DD-133, 07 §4.7.5). Nil for local or legacy sessions.
+	OIDCSID *string `json:"-" gorm:"column:oidc_sid;type:text"`
+	// SessionExpiresAt is the latest instant the native session (including
+	// refresh rotations) may live; in Kailo mode it never outlives the IdP
+	// SSO session. Nil means no session cap (native behaviour).
+	SessionExpiresAt *time.Time `json:"-" gorm:"column:session_expires_at"`
 	// Creation time of the token
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the token
@@ -159,6 +172,15 @@ type OIDCAuthURLResponse struct {
 	// Nonce is bound to an HttpOnly cookie on /auth/oidc/url and verified
 	// on callback; omitted from JSON so clients cannot replay it alone.
 	Nonce string `json:"-"`
+}
+
+// OIDCAuthOptions are the SPA-requested variations of an authorization
+// request (Kailo DD-133 §2): Prompt "none" for the silent login inside the
+// Kailo iframe, and the same-origin path to return to after the callback.
+// Both are validated by the handler and signed into the state.
+type OIDCAuthOptions struct {
+	Prompt   string
+	ReturnTo string
 }
 
 type OIDCConfigResponse struct {

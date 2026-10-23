@@ -58,12 +58,27 @@ type kailoOIDCConfig struct {
 	// First-login provisioning switch (DD-127(9)); validated by auth.NativeOIDCConnector.
 	ProvisionUsers   bool   `json:"provisionUsers"`
 	ProvisionProfile string `json:"provisionProfile"`
+	// Kailo Tenant → native group/profile (DD-133 §3); validated by the same entry.
+	Organization *auth.NativeOIDCOrganization `json:"organization,omitempty"`
+	// Kailo sign-out address opened by the native "logout" outside of a Kailo
+	// frame (DD-133 §2); empty hides that action.
+	PlatformLogoutURL string `json:"platformLogoutUrl,omitempty"`
+	// OIDC back-channel logout receiver (07 §4.7.5); nil leaves it disabled.
+	BackchannelLogout *kailoBackchannelConfig `json:"backchannelLogout,omitempty"`
+}
+
+// Explicit bounds, no defaults: native sessions of a Kailo login live at most
+// sessionMaxAgeSeconds (not longer than the IdP SSO session maximum) and a
+// logout_token is accepted until logoutTokenMaxAgeSeconds after its iat.
+type kailoBackchannelConfig struct {
+	SessionMaxAgeSeconds     int `json:"sessionMaxAgeSeconds"`
+	LogoutTokenMaxAgeSeconds int `json:"logoutTokenMaxAgeSeconds"`
 }
 
 // identity is the part consumed by the shared native identity entry.
 func (c kailoOIDCConfig) identity() auth.NativeOIDCConnector {
 	return auth.NativeOIDCConnector{Issuer: c.Issuer, ClientID: c.ClientID, Users: c.Users,
-		ProvisionUsers: c.ProvisionUsers, ProvisionProfile: c.ProvisionProfile}
+		ProvisionUsers: c.ProvisionUsers, ProvisionProfile: c.ProvisionProfile, Organization: c.Organization}
 }
 
 type kailoOIDCConnector struct {
@@ -146,6 +161,12 @@ func (c kailoOIDCConnector) validate(nativeOrigin string) error {
 	base, err := nativeOIDCURL(strings.TrimSuffix(nativeOrigin, "/"))
 	if err != nil || base.Path != "" || c.Config.RedirectURI != strings.TrimSuffix(nativeOrigin, "/")+KailoOIDCCallbackPath || u.Path != KailoOIDCCallbackPath {
 		return errors.New("OIDC callback must be the configured native frontend origin")
+	}
+	if err := kailoPlatformLogoutURL(c.Config.PlatformLogoutURL); err != nil {
+		return err
+	}
+	if b := c.Config.BackchannelLogout; b != nil && (b.SessionMaxAgeSeconds <= 0 || b.LogoutTokenMaxAgeSeconds <= 0) {
+		return errors.New("native OIDC back-channel logout bounds must be explicitly configured")
 	}
 	// Explicit links and the provisioning switch: the same rules as the shared
 	// identity entry, so a connector it refuses never offers a login.
@@ -296,11 +317,19 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		if challenge := r.URL.Query().Get("login_challenge"); challenge != "" {
 			s.Values["challenge"] = challenge
 		}
+		options := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce)}
+		// Inside a Kailo frame the login is silent (DD-133 §2): the existing
+		// IdP session completes it, otherwise the IdP answers login_required
+		// and the Kailo host signs in again at top level. Never a login form.
+		if r.URL.Query().Get("prompt") == "none" {
+			s.Values["silent"] = true
+			options = append(options, oauth2.SetAuthURLParam("prompt", "none"))
+		}
 		if err := s.Save(r, w); err != nil {
 			http.Error(w, "Native OIDC is unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		http.Redirect(w, r, oc.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce)), http.StatusFound)
+		http.Redirect(w, r, oc.AuthCodeURL(state, options...), http.StatusFound)
 		return
 	}
 	if r.URL.Path != KailoOIDCCallbackPath {
@@ -318,6 +347,7 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 	digest, _ := s.Values["connector"].(string)
 	issued, _ := s.Values["issued"].(int64)
 	challenge, _ := s.Values["challenge"].(string)
+	silent, _ := s.Values["silent"].(bool)
 	// Clear before the external exchange: a failed result is not a replay command.
 	s.Values = map[interface{}]interface{}{}
 	s.Options.MaxAge = -1
@@ -326,6 +356,10 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	if silent && len(q["state"]) == 1 && state != "" && subtle.ConstantTimeCompare([]byte(state), []byte(q.Get("state"))) == 1 && silentLoginRequired(q.Get("error")) {
+		serveKailoAuthRequired(w)
+		return
+	}
 	if state == "" || nonce == "" || verifier == "" || digest != c.digest() || issued <= 0 || time.Now().Unix()-issued > int64(c.Config.TransactionMaxAgeSeconds) || issued > time.Now().Unix() || len(q["state"]) != 1 || len(q["code"]) != 1 || q.Get("code") == "" || q.Has("error") || subtle.ConstantTimeCompare([]byte(state), []byte(q.Get("state"))) != 1 {
 		http.Error(w, "Invalid OIDC transaction", http.StatusUnauthorized)
 		return
@@ -423,6 +457,18 @@ func NativeKailoOIDC(w http.ResponseWriter, r *http.Request) {
 	if err != nil || confirmed.String() != redirect.String() || login.GetChallenge() != before.GetChallenge() {
 		http.Error(w, "Invalid native callback", http.StatusUnauthorized)
 		return
+	}
+	// Back-channel logout (07 §4.7.5): the native session is bound to the IdP
+	// sid and iss+sub before its code is delivered; untracked is refused.
+	if b := c.Config.BackchannelLogout; b != nil {
+		var sid struct {
+			SID string `json:"sid"`
+		}
+		_ = id.Claims(&sid)
+		if auth.RecordNativeOIDCSession(login.GetSessionID(), id.Issuer, id.Subject, sid.SID, user.Uuid, time.Duration(b.SessionMaxAgeSeconds)*time.Second) != nil {
+			http.Error(w, "Native login is unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	// Only the confirmed native callback may establish the encrypted backend
 	// credential. No raw upstream token enters frontend JSON or localStorage.

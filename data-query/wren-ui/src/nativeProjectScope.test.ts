@@ -32,6 +32,20 @@ import { components } from './common';
 import instructionByIdHandler from './pages/api/v1/knowledge/instructions/[id]';
 import instructionsHandler from './pages/api/v1/knowledge/instructions';
 
+import { encodeKailoUser } from './utils/kailoUser';
+
+// DD-133: STANDALONE writes are Kailo Tenant admin actions (member directory
+// role); GOVERNED cases keep the Core `manage` checks under test.
+const KAILO_ADMIN = {
+  key: 'a'.repeat(64),
+  name: null,
+  username: null,
+  email: null,
+  picture: null,
+  locale: null,
+  admin: true,
+};
+
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
   bindingServiceCall: jest.fn(),
@@ -73,6 +87,7 @@ describe('original dashboard item metadata write consumers', () => {
       deleteOne: jest.fn(async () => undefined),
     };
     ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-person',
       projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
@@ -278,6 +293,7 @@ describe('original thread metadata management consumers', () => {
       updateOne: jest.fn(async (_id, data) => ({ ...response, ...data })),
     };
     ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'verified-person',
       projectService: { getCurrentProject: jest.fn(async () => ({ id: 3 })) },
@@ -739,7 +755,9 @@ describe('original instructions REST update and delete consumers', () => {
 
   it('retains never-configured independent creation without synthesizing platform authorization', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    const response = await create({ headers: {} });
+    const response = await create({
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(201);
     expect(
       components.instructionService.createInstruction,
@@ -935,6 +953,7 @@ describe('original instructions REST update and delete consumers', () => {
 
   it('does not overwrite the shared caller context while parallel original GraphQL fields perform fresh project checks', async () => {
     const context = {
+      kailoUser: KAILO_ADMIN,
       projectService: components.projectService,
       instructionService: components.instructionService,
       telemetry: components.telemetry,
@@ -974,7 +993,9 @@ describe('original instructions REST update and delete consumers', () => {
 
   it('retains the original never-configured independent partial update without a synthetic governance result', async () => {
     delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
-    const response = await invoke('PUT', { headers: {} });
+    const response = await invoke('PUT', {
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(200);
     expect(components.instructionService.getInstruction).toHaveBeenCalledWith(
       row.id,
@@ -994,7 +1015,9 @@ describe('original instructions REST update and delete consumers', () => {
         process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
         return row as any;
       });
-    const response = await invoke('PUT', { headers: {} });
+    const response = await invoke('PUT', {
+      headers: { 'x-kailo-native-user': encodeKailoUser(KAILO_ADMIN) },
+    });
     expect(response.status).toHaveBeenCalledWith(412);
     expect(
       components.instructionService.updateInstruction,
@@ -1094,6 +1117,7 @@ describe('original independent Model/View preview business consumers', () => {
       .spyOn(NativeHumanQuery.prototype, 'preview')
       .mockResolvedValue({ terminalStatus: 'UNKNOWN' } as any);
     ctx = {
+      kailoUser: KAILO_ADMIN,
       projectService: { getCurrentProject: jest.fn(async () => project) },
       modelRepository: {
         findOneBy: jest.fn(async () => ({
@@ -1373,6 +1397,7 @@ describe('original Save as View consumes the same HUMAN query history', () => {
         };
       });
     ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'human-a',
       projectService: {
@@ -1662,6 +1687,7 @@ describe('native bound-project business consumers', () => {
       selected(request),
     );
     ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'first-person-token',
       projectService: {
@@ -2545,6 +2571,7 @@ describe('native bound-project business consumers', () => {
       { ...views[0], displayName: undefined },
     ]);
     const other = {
+      kailoUser: KAILO_ADMIN,
       ...ctx,
       nativeHumanToken: 'second-person-token',
       nativeIdentityScope: 'b'.repeat(64),
@@ -3901,6 +3928,7 @@ describe('original project resolver native delivery and identity boundary', () =
       return scope((input.authorizeScope as { permission: string }).permission);
     });
     ctx = {
+      kailoUser: KAILO_ADMIN,
       nativeIdentityScope: 'a'.repeat(64),
       nativeHumanToken: 'first-person-token',
       projectService: {

@@ -1,0 +1,110 @@
+/*
+ * Kailo overlay of the native file storage page (07 §4.7.1, DD-133).
+ *
+ * Colors, font, radius come only from the platform token sheet
+ * (client-kit/embed/kailo-theme-tokens.css: --kailo-color-*, --kailo-hsl-*,
+ * --kailo-font-sans, --kailo-radius*; dark under [data-kailo-theme="dark"]).
+ * The native Material palette is mapped onto the same tokens by the theme
+ * builder (gui.ajax ThemeBuilder + KailoTheme); this file covers what is
+ * plain CSS: typography, the embedded shell and the minimal OIDC page.
+ */
+:root {
+    --kailo-cells-font: var(--kailo-font-sans);
+}
+
+html,
+body {
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+}
+
+body,
+body.react-mui-context,
+.react-mui-context {
+    font-family: var(--kailo-cells-font) !important;
+}
+
+.react-mui-context input,
+.react-mui-context textarea,
+.react-mui-context select,
+.react-mui-context button {
+    font-family: inherit;
+}
+
+::selection {
+    background-color: hsl(var(--kailo-hsl-primary) / 0.25);
+}
+
+/* Inside a Kailo frame (kailo-embed.js sets data-kailo-embedded) the Kailo
+ * shell already shows the brand, the account, help and sign-out: only the
+ * component's own business navigation remains. */
+[data-kailo-embedded] .home-top-logo,
+[data-kailo-embedded] .loginLogo,
+[data-kailo-embedded] .loginLanguagePicker {
+    display: none !important;
+}
+
+/* Loader before the native application renders. */
+.kailo-loader img {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* Minimal pages: silent-login fallback, front-channel logout, loop guard. */
+.kailo-minimal-page {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--kailo-cells-font);
+    background-color: var(--kailo-color-background);
+    color: var(--kailo-color-foreground);
+}
+
+.kailo-minimal-message {
+    max-width: 420px;
+    padding: 24px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--kailo-color-muted-foreground);
+}
+
+.kailo-minimal-message img {
+    border-radius: var(--kailo-radius-lg);
+}
+
+.kailo-minimal-message p {
+    margin: 12px 0 0;
+}
+
+.kailo-overlay-message {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--kailo-color-background);
+}
+
+/* The upstream product glyph marks shared spaces in the native UI; Kailo uses
+ * neutral Material Design Icons (7.x codepoints of the bundled font). */
+.icomoon-cells:before,
+.icomoon-cells-full-plus:before,
+.icomoon-cells-clear-plus:before,
+.icomoon-cells-full-minus:before,
+.icomoon-cells-clear-minus:before {
+    font-family: "Material Design Icons" !important;
+}
+.icomoon-cells:before {
+    content: "\F0B9C"; /* folder-account-outline */
+}
+.icomoon-cells-full-plus:before,
+.icomoon-cells-clear-plus:before {
+    content: "\F0B9D"; /* folder-plus-outline */
+}
+.icomoon-cells-full-minus:before,
+.icomoon-cells-clear-minus:before {
+    content: "\F0B9E"; /* folder-remove-outline */
+}

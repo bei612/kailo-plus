@@ -1,7 +1,6 @@
 import { useRouter } from 'next/router';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { getUserConfig, UserConfig } from '@/utils/env';
-import { trackUserTelemetry } from '@/utils/telemetry';
 
 type ContextProps = {
   config?: UserConfig | null;
@@ -17,9 +16,6 @@ export const GlobalConfigProvider = ({ children }) => {
     getUserConfig()
       .then((config) => {
         setConfig(config);
-        // telemetry setup
-        const cleanup = trackUserTelemetry(router, config);
-        return cleanup;
       })
       .catch((error) => {
         console.error('Failed to get user config', error);

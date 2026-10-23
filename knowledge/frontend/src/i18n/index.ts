@@ -5,14 +5,18 @@ import enUS from './locales/en-US.ts'
 import koKR from './locales/ko-KR.ts'
 import jaJP from './locales/ja-JP.ts'
 import { BUILT_IN_DEFAULT, resolveDefaultLocale } from './resolveDefaultLocale.ts'
+import { brandLocaleMessages } from '../kailo/brand.ts'
+import { kailoConfig } from '../kailo/runtime.ts'
 
-const messages = {
+// White-label (DD-133 §1): the upstream product word is replaced centrally by
+// the Kailo product name, so the locale files stay identical to upstream.
+const messages = brandLocaleMessages({
   'zh-CN': zhCN,
   'en-US': enUS,
   'ru-RU': ruRU,
   'ko-KR': koKR,
   'ja-JP': jaJP
-}
+}, kailoConfig().displayName)
 
 // User's explicit past choice wins; otherwise use the deployment default.
 const savedLocale = localStorage.getItem('locale') || resolveDefaultLocale(

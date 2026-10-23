@@ -101,6 +101,8 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if login := nativeOIDCLoginOption(r); login != nil {
 		startParameters["KAILO_OIDC_LOGIN"] = login
 	}
+	// Public Kailo presentation parameters read by kailo.embed (DD-133).
+	startParameters["KAILO_EMBED"] = nativeKailoEmbedParameters(r)
 
 	if regXml, e := xml.Marshal(registry); e == nil {
 		startParameters["PRELOADED_REGISTRY"] = string(regXml)
@@ -110,7 +112,7 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ApplicationTitle: config.Get(ctx, config.FrontendPluginPath(config.KeyFrontPluginCorePydio, config.KeyFrontApplicationTitle)...).Default("Cells").String(),
 		Rebase:           "/",
 		ResourcesFolder:  bootConf.AjxpResourcesFolder,
-		Favicon:          bootConf.AjxpResourcesFolder + "/themes/common/images/favicon.png",
+		Favicon:          KailoFavicon,
 		Theme:            "material",
 		Version:          frontend.VersionHash(ctx),
 		LoadingString:    GetLoadingString(bootConf.CurrentLanguage),
@@ -126,6 +128,7 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tplConf.StartParameters["USER_ACTION_KEY"] = reset
 	}
 
+	tplConf.KailoHead = kailoHead(tplConf.Version)
 	tplConf = FilterTplConf(ctx, tplConf, "")
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

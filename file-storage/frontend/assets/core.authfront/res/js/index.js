@@ -228,7 +228,10 @@ let LoginPasswordDialog = createReactClass({
 
     render(){
         const passwordOnly = this.state.globalParameters.get('PASSWORD_AUTH_ONLY');
-        const nativeLogin = !passwordOnly && this.state.globalParameters.get('KAILO_OIDC_LOGIN');
+        // Kailo SSO never opens this dialog (Callbacks.loginPassword); it only
+        // remains for the password of a public link. No language switch either:
+        // the language follows Kailo (DD-133 §4).
+        const kailoPresentation = !!this.state.globalParameters.get('KAILO_EMBED');
         const secureLoginForm = passwordOnly || this.state.authParameters.get('SECURE_LOGIN_FORM');
         const forgotPasswordLink = this.state.authParameters.get('ENABLE_FORGOT_PASSWORD') && !passwordOnly;
         const pydio = Pydio.getInstance()
@@ -292,26 +295,17 @@ let LoginPasswordDialog = createReactClass({
                 {logoUrl && <div className={"loginLogo"} style={logoStyle}></div>}
                 <div className="dialogLegend loginTitle" style={{fontSize: 22, paddingBottom: 12, lineHeight: '28px'}}>
                     {loginTitle}
-                    <div className={"loginLanguagePicker"} style={{position:'absolute', bottom: 9, left:24}}>
+                    {!kailoPresentation && <div className={"loginLanguagePicker"} style={{position:'absolute', bottom: 9, left:24}}>
                         <LanguagePicker
                             anchorOrigin={{horizontal: 'left', vertical: 'bottom'}}
                             targetOrigin={{horizontal: 'left', vertical: 'bottom'}}
                             onChange={(v) => {this.setState({loginLanguage: v}); sessionStorage.setItem('loginLanguage', v)}}
                         />
-                    </div>
+                    </div>}
                 </div>
                 {loginLegend && <div className={"loginLegend"}>{loginLegend}</div>}
                 {errorMessage}
                 {additionalComponentsTop}
-                {nativeLogin && <FlatButton
-                    label={nativeLogin.label}
-                    href={nativeLogin.href}
-                    target={window.self !== window.top ? '_blank' : undefined}
-                    rel="noopener noreferrer"
-                    disabled={this.state.loading}
-                    fullWidth={true}
-                    primary={true}
-                />}
                 <form autoComplete={secureLoginForm?"off":"on"} className={"loginForm"}>
                     {!passwordOnly && <TextField
                         className="blurDialogTextField loginInputLogin"
@@ -370,6 +364,23 @@ DarkThemeContainer = muiThemeable()(DarkThemeContainer);
 
 class Callbacks{
 
+    /**
+     * The visible "logout" entry (action kailo_logout, DD-133 §2): end the
+     * native session, then sign out of Kailo at its configured address. A
+     * deployment without Kailo SSO keeps the native behaviour.
+     */
+    static platformLogout(){
+        const kailo = window.KailoCells;
+        const target = kailo && kailo.logoutUrl ? kailo.logoutUrl() : '';
+        if(!target){
+            Callbacks.sessionLogout();
+            return;
+        }
+        PydioApi.getRestClient().sessionLogout()
+            .catch(() => {})
+            .then(() => window.location.assign(target));
+    }
+
     static sessionLogout(){
 
         const pydio = Pydio.getInstance();
@@ -396,6 +407,18 @@ class Callbacks{
         }
 
         const {...props} = args[0] || {};
+
+        // Kailo SSO (DD-133 §2): no native login page, button or popup. The
+        // OIDC login runs in this window (silently when framed by Kailo).
+        const kailoLogin = !pydio.Parameters.get('PASSWORD_AUTH_ONLY') && pydio.Parameters.get('KAILO_OIDC_LOGIN');
+        if(kailoLogin && kailoLogin.href){
+            if(window.KailoCells && window.KailoCells.startLogin){
+                window.KailoCells.startLogin(kailoLogin.href);
+            } else {
+                window.location.replace(kailoLogin.href);
+            }
+            return;
+        }
 
         pydio.UI.openComponentInModal('AuthfrontCoreActions', 'LoginPasswordDialog', {...props, blur: true});
         

@@ -484,6 +484,44 @@ async fn evidence_existence(
             .await?;
             return Ok(present(found.is_some()));
         }
+        // DD-135(8)：slug、版本 Asset（version 为序号）与上传摘要都是平台自有的冻结事实；
+        // 定义与版本只转墓碑不物理删除，因此按同 Tenant 的行判定。
+        K::SkillSlug => {
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.skill_definition where stable_slug=$1 and tenant_id=$2 limit 1",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
+        K::SkillVersionAssetId => {
+            let Ok(id) = Uuid::parse_str(&e.value) else {
+                return Ok(Existence::Absent);
+            };
+            let ordinal = sqlx::query_scalar::<_, i32>(
+                "select ordinal from catalog.skill_version where asset_id=$1 and tenant_id=$2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(ordinal.is_some_and(|ordinal| {
+                e.version
+                    .is_none_or(|version| version == i64::from(ordinal))
+            })));
+        }
+        K::SkillUploadDigest => {
+            let found = sqlx::query_scalar::<_, i32>(
+                "select 1 from catalog.skill_version where upload_digest=$1 and tenant_id=$2 limit 1",
+            )
+            .bind(&e.value)
+            .bind(tenant_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            return Ok(present(found.is_some()));
+        }
         K::SpicedbZedtoken
         | K::BuzzEventId
         | K::BuzzPubkey

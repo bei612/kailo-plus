@@ -54,7 +54,7 @@
     "other": "保存设置"
   },
   "upgrade.ed.title": {
-    "other": "升级到Cells企业"
+    "other": "升级到文件服务"
   },
   "upgrade.ed.button.next": {
     "other": "下一步"
@@ -78,7 +78,7 @@
     "other": "因此我接受这个EULA"
   },
   "upgrade.ed.key.title": {
-    "other": "输入一个有效的许可证密钥(由 Pydio 销售代表提供)"
+    "other": "输入一个有效的许可证密钥(由 销售代表提供)"
   },
   "upgrade.ed.key.legend": {
     "other": "如果您没有，可以通过使用下面的按钮联系销售或直接通过以下方式接收试用密钥 "
@@ -87,10 +87,10 @@
     "other": "在此粘贴提供的密钥..."
   },
   "upgrade.ed.version.loading": {
-    "other": "寻找最接近的Cells企业版本"
+    "other": "寻找最接近的文件服务本"
   },
   "upgrade.ed.version.error": {
-    "other": "无法加载Cells 企业的可用版本！"
+    "other": "无法加载文件服务的可用版本！"
   },
   "upgrade.ed.version.error.string": {
     "other": "错误为"
@@ -108,13 +108,13 @@
     "other": "描述"
   },
   "upgrade.ed.version.legend": {
-    "other": "点击“下一步”现在将下载这个新版本并替换您当前的 Cells 二进制文件。 如果您需要恢复，原始可执行文件的备份将保存在您的单元格配置文件夹(位于 %s 下) 中。"
+    "other": "点击“下一步”现在将下载这个新版本并替换您当前的 文件服务 二进制文件。 如果您需要恢复，原始可执行文件的备份将保存在您的配置文件夹(位于 %s 下) 中。"
   },
   "upgrade.ed.version.nomatch": {
-    "other": "无法找到类似的Cells企业版"
+    "other": "无法找到类似的文件服务"
   },
   "upgrade.ed.version.nomatch.legend1": {
-    "other": "为了避免混合升级和更新，我们建议在同一版本中将Cells家庭版升级为企业版。"
+    "other": "为了避免混合升级和更新，我们建议在同一版本中将文件服务。"
   },
   "upgrade.ed.version.nomatch.legend2": {
     "other": "请先更新您当前的版本为以下其中一个，然后再重新尝试升级为企业版。"

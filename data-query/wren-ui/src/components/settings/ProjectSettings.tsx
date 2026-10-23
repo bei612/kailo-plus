@@ -7,6 +7,7 @@ import {
 } from '@/apollo/client/graphql/settings.generated';
 import { getLanguageText } from '@/utils/language';
 import { ProjectLanguage } from '@/apollo/client/graphql/__types__';
+import useKailoText from '@/utils/kailoI18n';
 
 interface Props {
   data: { language: string };
@@ -15,6 +16,7 @@ interface Props {
 export default function ProjectSettings(props: Props) {
   const { data } = props;
   const router = useRouter();
+  const t = useKailoText();
   const [form] = Form.useForm();
   const [resetCurrentProject, { client }] = useResetCurrentProjectMutation({
     onError: (error) => console.error(error),
@@ -27,15 +29,15 @@ export default function ProjectSettings(props: Props) {
     refetchQueries: ['GetSettings'],
     onError: (error) => console.error(error),
     onCompleted: () => {
-      message.success('Successfully updated project language.');
+      message.success(t('languageUpdated'));
     },
   });
 
   const reset = () => {
     Modal.confirm({
-      title: 'Are you sure you want to reset?',
+      title: t('resetConfirm'),
       okButtonProps: { danger: true },
-      okText: 'Reset',
+      okText: t('reset'),
       onOk: async () => {
         await resetCurrentProject();
         client.clearStore();
@@ -61,14 +63,14 @@ export default function ProjectSettings(props: Props) {
         initialValues={{ language: data.language }}
       >
         <Form.Item
-          label="Project language"
-          extra="This setting will affect the language in which the AI responds to you."
+          label={t('projectLanguage')}
+          extra={t('projectLanguageHint')}
         >
           <Row gutter={16} wrap={false}>
             <Col className="flex-grow-1">
               <Form.Item name="language" noStyle>
                 <Select
-                  placeholder="Select a language"
+                  placeholder={t('selectLanguage')}
                   showSearch
                   options={languageOptions}
                 />
@@ -81,20 +83,17 @@ export default function ProjectSettings(props: Props) {
                 onClick={submit}
                 loading={loading}
               >
-                Save
+                {t('save')}
               </Button>
             </Col>
           </Row>
         </Form.Item>
       </Form>
-      <div className="gray-8 mb-2">Reset project</div>
+      <div className="gray-8 mb-2">{t('resetProject')}</div>
       <Button type="primary" style={{ width: 70 }} danger onClick={reset}>
-        Reset
+        {t('reset')}
       </Button>
-      <div className="gray-6 mt-1">
-        Please be aware that resetting will delete all current settings and
-        records, including those in the Modeling Page and Home Page threads.
-      </div>
+      <div className="gray-6 mt-1">{t('resetHint')}</div>
     </div>
   );
 }

@@ -40,6 +40,11 @@ services:
       WREN_GATEWAY_HTTP_PORT: ${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
       WREN_GATEWAY_ADMIN_PORT: ${WREN_GATEWAY_ADMIN_PORT:?loopback admin port is required}
       WREN_UI_UPSTREAM: wren-ui:${WREN_UI_PORT:?native UI port is required}
+      # DD-133 §2: the public /kailo-embed/ page talks only to these exact
+      # Kailo origins; KAILO_LOGOUT_URL (optional) is where a top-level sign-out
+      # continues. Both are always defined for the configuration loader.
+      KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
+      KAILO_LOGOUT_URL: ${KAILO_LOGOUT_URL:-}
     volumes:
       - ./native-gateway.yaml:/etc/agentgateway/native-gateway.yaml:ro
     ports:
@@ -166,6 +171,8 @@ services:
     environment:
       WREN_NATIVE_IDENTITY_JSON: ${WREN_NATIVE_IDENTITY_JSON:?native identity configuration is required}
       KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
+      # DD-133 §1: product name = deployment display name + 问数 / Data Q&A.
+      PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?platform display name is required}
       WREN_ENCRYPTION_PASSWORD_FILE: /run/wren-native/encryption-password
       WREN_ENCRYPTION_SALT_FILE: /run/wren-native/encryption-salt
       DB_TYPE: ${WREN_DB_TYPE:?native database backend is required}

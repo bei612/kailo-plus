@@ -31,6 +31,13 @@ const nextConfig = withLess({
   },
   lessLoaderOptions: {
     additionalData: `@import "@/styles/antd-variables.less";`,
+    // DD-133: antd 4's CSS-variable theme. Its component styles select the
+    // theme file through @root-entry-name (lib/style/index.less sets
+    // `default`), so the variable entry must be forced the way antd documents
+    // it, by modifyVars, which Less applies after every other definition.
+    lessOptions: {
+      modifyVars: { 'root-entry-name': 'variable' },
+    },
   },
   webpack: (config) => {
     config.resolve.alias = {

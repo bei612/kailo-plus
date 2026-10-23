@@ -23,7 +23,6 @@ import Pydio from 'pydio'
 import AdminStyles from '../styles/AdminStyles';
 import Header from '../styles/Header'
 import {muiThemeable} from 'material-ui/styles'
-import {IconButton} from 'material-ui'
 const {DynamicGrid} = Pydio.requireLib('components');
 const {PydioContextConsumer} = Pydio.requireLib('boot');
 
@@ -40,17 +39,10 @@ class GridDashboard extends React.Component{
                 }
             },
             {
-                id:'software.update',
-                componentClass:'AdminComponents.SoftwareUpdate',
-                defaultPosition:{
-                    x:0, y:1
-                }
-            },
-            {
                 id:'graph.files',
                 componentClass:'AdminComponents.FakeGraph',
                 defaultPosition:{
-                    x:0, y:2
+                    x:0, y:1
                 },
                 props:{
                     type:'files'
@@ -60,7 +52,7 @@ class GridDashboard extends React.Component{
                 id:'graph.connections',
                 componentClass:'AdminComponents.FakeGraph',
                 defaultPosition:{
-                    x:4, y:2
+                    x:4, y:1
                 },
                 props:{
                     type:'connections'
@@ -85,22 +77,11 @@ class GridDashboard extends React.Component{
         const message = (id) => {return pydio.MessageHash['admin_dashboard.' + id]};
         const adminStyles= AdminStyles(this.props.muiTheme.palette);
 
-        const websiteButton = (
-            <IconButton
-                iconClassName={"icomoon-cells"}
-                onClick={()=>{window.open('https://pydio.com')}}
-                tooltip={pydio.MessageHash['settings.topbar.button.about']}
-                tooltipPosition={"bottom-left"}
-                {...adminStyles.props.header.iconButton}
-            />
-        );
-
         return (
             <div style={{height:'100%', display:'flex', flexDirection:'column', overflowY:'hidden'}}>
                 <Header
                     title={message('welc.title.5')}
                     icon="mdi mdi-view-dashboard"
-                    actions={[websiteButton]}
                 />
                 <DynamicGrid
                     storeNamespace="AdminComponents.Grid"

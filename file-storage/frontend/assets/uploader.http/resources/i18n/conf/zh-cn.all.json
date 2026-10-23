@@ -9,7 +9,7 @@
     "other": "图例"
   },
   "Please beware that using this plugin can be dangerous, as it allows users to remotely download files from a third-party server directly to the Cells storage.": {
-    "other": "请注意，使用此插件可能有危险， 因为它允许用户从第三方服务器直接将文件下载到单元存储。"
+    "other": "请注意，使用此插件可能有危险， 因为它允许用户从第三方服务器直接将文件下载到存储。"
   },
   "White List": {
     "other": "白名单"

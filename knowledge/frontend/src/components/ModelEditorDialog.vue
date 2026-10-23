@@ -412,6 +412,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { WHITE_LABEL_HIDDEN_PROVIDERS } from '@/kailo/surface'
 import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, checkASRModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, listModelProviders, type OllamaModelInfo, type ModelProviderOption } from '@/api/initialization'
 import {
   getWeKnoraCloudStatus,
@@ -672,8 +673,9 @@ const loadProviders = async () => {
 // API 返回的 defaultUrls/modelTypes 数据优先，但 label/description 使用 i18n
 const providerOptions = computed(() => {
   // API 数据可用时，用 API 的结构数据 + i18n 的显示文本
+  // White-label: the upstream cloud provider is not offered (DD-133 §1).
   if (apiProviderOptions.value.length > 0) {
-    return apiProviderOptions.value.map(p => ({
+    return apiProviderOptions.value.filter(p => !WHITE_LABEL_HIDDEN_PROVIDERS.has(p.value)).map(p => ({
       ...p,
       label: te(`model.editor.providers.${p.value}.label`)
         ? t(`model.editor.providers.${p.value}.label`)
@@ -685,7 +687,7 @@ const providerOptions = computed(() => {
   }
   // 回退到硬编码值，按 modelTypes 过滤
   return fallbackProviderOptions.value.filter(p =>
-    p.modelTypes.includes(activeModelType.value)
+    p.modelTypes.includes(activeModelType.value) && !WHITE_LABEL_HIDDEN_PROVIDERS.has(p.value)
   )
 })
 

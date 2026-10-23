@@ -13,11 +13,13 @@
         <GlobalCommandPalette />
         <!-- 全局右上角"待处理邀请"铃铛。固定定位，z-index 低于抽屉，业务页面
              右侧抽屉弹出时会自然覆盖；仅在有待处理邀请时渲染。 -->
-        <GlobalInvitationBell />
+        <!-- Kailo mode: membership comes from Kailo, so there are no native invitations. -->
+        <GlobalInvitationBell v-if="!kailoMode" />
         <!-- 知识库文件上传进度浮层：上传队列放在 store 里，切换页面不中断 -->
         <UploadTasksPanel />
         <!-- 带遮罩层的新手引导：首次进入自动开启，可从用户菜单顶部昵称旁帮助按钮重新打开 -->
-        <NewUserGuide />
+        <!-- Inside the Kailo frame the native onboarding tour is not shown (DD-133 §4). -->
+        <NewUserGuide v-if="!kailoEmbedded" />
     </div>
 </template>
 <script setup lang="ts">
@@ -30,6 +32,8 @@ import GlobalCommandPalette from '@/components/GlobalCommandPalette.vue'
 import GlobalInvitationBell from '@/components/GlobalInvitationBell.vue'
 import UploadTasksPanel from '@/components/upload-tasks/UploadTasksPanel.vue'
 import NewUserGuide from '@/components/NewUserGuide.vue'
+import { kailoConfig } from '@/kailo/runtime'
+import { isKailoEmbedded } from '@/kailo/setup'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { useUIStore } from '@/stores/ui'
@@ -37,6 +41,9 @@ import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { collectDroppedFiles } from './collectDroppedFiles'
+
+const kailoMode = kailoConfig().mode
+const kailoEmbedded = isKailoEmbedded()
 
 const route = useRoute();
 const router = useRouter();

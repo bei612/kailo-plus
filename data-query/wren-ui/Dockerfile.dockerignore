@@ -1,4 +1,5 @@
-# This UI build consumes only its original source and the shared wire module.
+# This UI build consumes only its original source, the shared wire module and
+# Kailo's icon, token stylesheet and runtime (DD-133, `07` §4.7.1).
 *
 !data-query/wren-ui/.yarnrc.yml
 !data-query/wren-ui/package.json
@@ -15,3 +16,7 @@
 !data-query/wren-ui/knexfile.js
 !data-query/wren-ui/docker-entrypoint.mjs
 !client-kit/adapter/protocol.mjs
+!web-client/web/public/app-icon.png
+!client-kit/embed/kailo-theme-tokens.css
+!client-kit/embed/kailo-embed.js
+!client-kit/embed/kailo-embed.d.ts

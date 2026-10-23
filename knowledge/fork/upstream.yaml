@@ -23,16 +23,19 @@ artifacts:
     inputs: [knowledge/]
     exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:507df9bb6bf96ab32c78069447cf6f4c3911aae584d1e31259059b0fc20c1326
-    artifact_digest: sha256:caae31a2b888634237c624e9bd65bba143f60f48c23f9cdd9ee012d025184d48
+    source_digest: sha256:d92609498f2f00fa22361b4d94a6b89388753ee9a993e776373b80162512c76a
+    artifact_digest: sha256:acd7865fcffabf2108c1c2ca3cbf9f2ed4c666ed5d8f1d072b8cf94800058866
     blocked: The frozen pending-sync recovery candidate built and reached the local registry with immutable digest readback; this candidate is not deployed. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified. The earlier deployed backend remains historical; see fork/verify/release-20261009-272693.md.
   - name: knowledge-native-ui
     kind: image
-    build_context: knowledge/frontend
+    # DD-133 (design 07 §4.7.1): the Kailo logo, presentation tokens and runtime
+    # are build inputs, so the context is the repository root narrowed by
+    # knowledge/frontend/Dockerfile.dockerignore.
+    build_context: .
     build_dockerfile: knowledge/frontend/Dockerfile
-    inputs: [knowledge/frontend/]
-    source_digest: sha256:6ac832434e300e899211640a8ea20ac4d293b8e8de62e440a15bbc8ede5d27b8
-    artifact_digest: sha256:f97e8af41485bc2e3ea2929621a5657e259e7127bd216e4483686f3d01c094f4
+    inputs: [knowledge/frontend/, client-kit/embed/kailo-theme-tokens.css, client-kit/embed/kailo-embed.js, web-client/web/public/app-icon.png]
+    source_digest: sha256:6a231a3a65a75db4935435e8878315e493a071e3dcefe13e298b122c03313b78
+    artifact_digest: sha256:24b11bdbe5ff21493f4e6a8b8db85a26a123e2caeb539589d91c8da4c90ab1dc
     blocked: The full native UI from Kailo commit 8a47534c96c9bf09048ee282ca4e62d5d9d73079 is deployed with digest readback and fresh ordinary-user OIDC login/reload screenshots. The existing account has one workspace only and native chat readiness rejects its unconfigured conversation model, so cross-scope and live SSE acceptance remain unverified. Complete business/governance acceptance, unresolved dependency vulnerabilities and approved component activation remain unverified. See fork/verify/release-20261011-oidc.md.
   - name: knowledge-document-reader
     kind: image

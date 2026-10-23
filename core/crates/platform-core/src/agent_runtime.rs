@@ -196,6 +196,7 @@ impl RpcDiagnostic {
             "skills/extraRoots/set" => "skills/extraRoots/set",
             "skills/list" => "skills/list",
             "skills/config/write" => "skills/config/write",
+            "config/batchWrite" => "config/batchWrite",
             _ => "UNRECOGNIZED_METHOD",
         };
         Self {
@@ -632,8 +633,9 @@ impl Supervisor {
         Ok(())
     }
 
-    /// DD-135(7)：每次 `turn/start` 前按 fresh 判定的有效集合调整 Codex 本地启用投影，并以
-    /// `skills/list` 核对；失效 Skill 不再注入、不能被 `$slug` 选中，其余能力照常。
+    /// DD-135(7)：每次 `thread/start`、`thread/resume` 与 `turn/start` 前按 fresh 判定的有效集合
+    /// 调整 Codex 本地启用投影，热加载到已加载的 thread，再以 `skills/list` 核对；失效 Skill
+    /// 不再注入、不能被 `$slug` 选中，其余能力照常。
     pub(crate) async fn reconcile_skills(
         &self,
         projection: &RuntimeRef,
@@ -651,43 +653,16 @@ impl Supervisor {
         process
             .check(projection.generation, &projection.config_hash)
             .await?;
-        let changes: Vec<(usize, bool)> = process
-            .skills
-            .iter()
-            .enumerate()
-            .filter_map(|(index, skill)| {
-                let wanted = effective.contains(&skill.asset_id);
-                (skill.enabled != wanted).then_some((index, wanted))
-            })
-            .collect();
-        if changes.is_empty() {
-            return Ok(());
-        }
-        for (index, enabled) in changes {
-            let path = process.skills[index].path.clone();
-            let written = process
-                .rpc(
-                    "skills/config/write",
-                    json!({"path": path, "enabled": enabled}),
-                    self.timeout,
-                    self.max_message_bytes,
-                )
-                .await?;
-            if written.get("effectiveEnabled").and_then(Value::as_bool) != Some(enabled) {
-                return Err(RuntimeError::Protocol);
-            }
-            process.skills[index].enabled = enabled;
-        }
-        let listed = process
-            .rpc(
-                "skills/list",
-                json!({"cwds":[process.home], "forceReload": true}),
-                self.timeout,
-                self.max_message_bytes,
-            )
-            .await?;
-        if !skills_listed(&listed, &process.skills) {
-            return Err(RuntimeError::Protocol);
+        let skills = process.skills.clone();
+        let home = process.home.clone();
+        let mut rpc = ProcessSkillRpc {
+            process: &mut *process,
+            timeout: self.timeout,
+            max_message_bytes: self.max_message_bytes,
+        };
+        // 只有写入、热加载与回读全部成立才提交本地启用值；任何一步失败都让下次重做整组收敛。
+        if let Some(next) = reconcile_projected_skills(&skills, effective, &home, &mut rpc).await? {
+            process.skills = next;
         }
         Ok(())
     }
@@ -1820,6 +1795,89 @@ fn skills_listed(listed: &Value, expected: &[ProjectedSkill]) -> bool {
                     && skill.get("enabled").and_then(Value::as_bool) == Some(want.enabled)
             })
         })
+}
+
+/// Skill 收敛使用的原生 RPC；测试以 Codex 语义替身实现。
+trait SkillRpc {
+    fn call(
+        &mut self,
+        method: &'static str,
+        params: Value,
+    ) -> impl std::future::Future<Output = Result<Value, RuntimeError>> + Send;
+}
+
+struct ProcessSkillRpc<'a> {
+    process: &'a mut Process,
+    timeout: Duration,
+    max_message_bytes: usize,
+}
+
+impl SkillRpc for ProcessSkillRpc<'_> {
+    async fn call(&mut self, method: &'static str, params: Value) -> Result<Value, RuntimeError> {
+        self.process
+            .rpc(method, params, self.timeout, self.max_message_bytes)
+            .await
+    }
+}
+
+/// DD-135(7) 的一次收敛：没有变化返回 `None`；有变化时写入每个启用值、热加载已加载 thread、
+/// 再以 `skills/list` 核对，全部成立才返回新的投影。
+///
+/// Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84：`skills/config/write` 只改 `config.toml` 并清
+/// 技能缓存（app-server/src/request_processors/catalog_processor.rs::skills_config_write_response_inner）；
+/// 已加载 thread 每个 turn 的技能启用规则取自其 session config 的 user layer
+/// （core/src/session/turn_context.rs::build_per_turn_config、ext/skills/src/host_service.rs），
+/// 只有 `config/batchWrite` 的 `reloadUserConfig` 会对每个已加载 thread 调
+/// `refresh_runtime_config`（app-server/src/request_processors/config_processor.rs::reload_user_config）。
+/// 不热加载时，写入前已 `thread/start` 或仍加载的 thread 会继续以 `$slug` 选中已停用的 Skill。
+async fn reconcile_projected_skills<R: SkillRpc>(
+    skills: &[ProjectedSkill],
+    effective: &HashSet<Uuid>,
+    home: &Path,
+    rpc: &mut R,
+) -> Result<Option<Vec<ProjectedSkill>>, RuntimeError> {
+    let mut next = skills.to_vec();
+    let mut changed = false;
+    for skill in &mut next {
+        let wanted = effective.contains(&skill.asset_id);
+        if skill.enabled == wanted {
+            continue;
+        }
+        let written = rpc
+            .call(
+                "skills/config/write",
+                json!({"path": skill.path, "enabled": wanted}),
+            )
+            .await?;
+        if written.get("effectiveEnabled").and_then(Value::as_bool) != Some(wanted) {
+            return Err(RuntimeError::Protocol);
+        }
+        skill.enabled = wanted;
+        changed = true;
+    }
+    if !changed {
+        return Ok(None);
+    }
+    // 空编辑不改文件，只把刚写入的 user layer 热加载进每个已加载 thread。
+    let reloaded = rpc
+        .call(
+            "config/batchWrite",
+            json!({"edits": [], "reloadUserConfig": true}),
+        )
+        .await?;
+    if !matches!(
+        reloaded.get("status").and_then(Value::as_str),
+        Some("ok" | "okOverridden")
+    ) {
+        return Err(RuntimeError::Protocol);
+    }
+    let listed = rpc
+        .call("skills/list", json!({"cwds": [home], "forceReload": true}))
+        .await?;
+    if !skills_listed(&listed, &next) {
+        return Err(RuntimeError::Protocol);
+    }
+    Ok(Some(next))
 }
 
 impl Process {
@@ -3363,5 +3421,209 @@ mod skill_projection_tests {
         assert!(skills_listed(&listed(&home, &disabled), &disabled));
         super::writable_tree(home.clone()).await.unwrap();
         tokio::fs::remove_dir_all(&home).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod skill_reconcile_tests {
+    //! DD-135(7)、V-SCN-215 回归：生产验收中停用 Skill 后的第一个新话题仍以 `$slug` 选中了它——
+    //! 该 thread 在 `skills/config/write` 之前已 `thread/start`。替身按 Codex
+    //! 7498521d288b9b3b96ffba4eedf089d8d6e06a84 的语义建模：写入只落盘，已加载 thread 的启用规则
+    //! 是其 session config 的快照，只有 `config/batchWrite{reloadUserConfig}` 刷新它。
+    use super::{reconcile_projected_skills, ProjectedSkill, RuntimeError, SkillRpc};
+    use serde_json::{json, Value};
+    use std::collections::HashSet;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    #[derive(Default)]
+    struct FakeCodex {
+        skills: Vec<(String, String)>,
+        disk_disabled: HashSet<String>,
+        threads: Vec<HashSet<String>>,
+        methods: Vec<&'static str>,
+        fail_next_reload: bool,
+    }
+
+    impl FakeCodex {
+        fn start_thread(&mut self) -> usize {
+            self.threads.push(self.disk_disabled.clone());
+            self.threads.len() - 1
+        }
+
+        /// Codex 只从该 thread 当前快照中启用的 Skill 里解析 `$name` 显式提及。
+        fn selects(&self, thread: usize, text: &str) -> Vec<String> {
+            self.skills
+                .iter()
+                .filter(|(name, path)| {
+                    text.contains(&format!("${name}")) && !self.threads[thread].contains(path)
+                })
+                .map(|(name, _)| name.clone())
+                .collect()
+        }
+    }
+
+    impl SkillRpc for FakeCodex {
+        async fn call(
+            &mut self,
+            method: &'static str,
+            params: Value,
+        ) -> Result<Value, RuntimeError> {
+            self.methods.push(method);
+            match method {
+                "skills/config/write" => {
+                    let path = params["path"].as_str().unwrap().to_owned();
+                    let enabled = params["enabled"].as_bool().unwrap();
+                    if enabled {
+                        self.disk_disabled.remove(&path);
+                    } else {
+                        self.disk_disabled.insert(path);
+                    }
+                    Ok(json!({"effectiveEnabled": enabled}))
+                }
+                "config/batchWrite" => {
+                    assert_eq!(params, json!({"edits": [], "reloadUserConfig": true}));
+                    if std::mem::take(&mut self.fail_next_reload) {
+                        return Err(RuntimeError::Unknown);
+                    }
+                    for thread in &mut self.threads {
+                        thread.clone_from(&self.disk_disabled);
+                    }
+                    Ok(json!({"status": "ok", "version": "v", "filePath": "/h/config.toml"}))
+                }
+                "skills/list" => {
+                    let listed: Vec<Value> = self
+                        .skills
+                        .iter()
+                        .map(|(name, path)| {
+                            let enabled = !self.disk_disabled.contains(path);
+                            json!({"name": name, "path": path, "scope": "user", "enabled": enabled})
+                        })
+                        .collect();
+                    Ok(json!({"data": [{"cwd": "/h", "errors": [], "skills": listed}]}))
+                }
+                _ => panic!("unexpected {method}"),
+            }
+        }
+    }
+
+    fn setup() -> (Vec<ProjectedSkill>, FakeCodex) {
+        let projected: Vec<ProjectedSkill> = ["release-notes", "weekly-report"]
+            .iter()
+            .map(|name| ProjectedSkill {
+                asset_id: Uuid::new_v4(),
+                name: (*name).into(),
+                digest: "a".repeat(64),
+                path: format!("/h/kailo-skills/g2/{name}/SKILL.md"),
+                enabled: true,
+            })
+            .collect();
+        let fake = FakeCodex {
+            skills: projected
+                .iter()
+                .map(|s| (s.name.clone(), s.path.clone()))
+                .collect(),
+            ..FakeCodex::default()
+        };
+        (projected, fake)
+    }
+
+    #[tokio::test]
+    async fn disabled_skill_is_not_selected_in_a_session_started_before_the_write() {
+        let (skills, mut fake) = setup();
+        // 生产时序：新话题的 thread/start 先于本回合的收敛；另一个旧话题仍加载着。
+        let older = fake.start_thread();
+        let first = fake.start_thread();
+        assert_eq!(
+            fake.selects(first, "$weekly-report 写周报"),
+            ["weekly-report"]
+        );
+        let effective = HashSet::from([skills[0].asset_id]);
+        let next = reconcile_projected_skills(&skills, &effective, Path::new("/h"), &mut fake)
+            .await
+            .unwrap()
+            .expect("weekly-report must be switched off");
+        assert_eq!(
+            fake.methods,
+            ["skills/config/write", "config/batchWrite", "skills/list"]
+        );
+        assert!(next[0].enabled && !next[1].enabled);
+        for thread in [older, first, fake.start_thread()] {
+            assert!(fake.selects(thread, "$weekly-report 写周报").is_empty());
+            assert_eq!(fake.selects(thread, "$release-notes"), ["release-notes"]);
+        }
+        // 条件恢复后同法重新启用，已加载的 thread 也恢复可选。
+        let all = HashSet::from([skills[0].asset_id, skills[1].asset_id]);
+        let restored = reconcile_projected_skills(&next, &all, Path::new("/h"), &mut fake)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(restored.iter().all(|skill| skill.enabled));
+        assert_eq!(fake.selects(first, "$weekly-report"), ["weekly-report"]);
+    }
+
+    #[tokio::test]
+    async fn unchanged_effective_set_sends_nothing() {
+        let (skills, mut fake) = setup();
+        let all: HashSet<Uuid> = skills.iter().map(|skill| skill.asset_id).collect();
+        let next = reconcile_projected_skills(&skills, &all, Path::new("/h"), &mut fake).await;
+        assert!(matches!(next, Ok(None)));
+        assert!(fake.methods.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_reload_commits_nothing_and_the_next_attempt_redoes_it() {
+        let (skills, mut fake) = setup();
+        let loaded = fake.start_thread();
+        fake.fail_next_reload = true;
+        let effective = HashSet::from([skills[0].asset_id]);
+        assert!(
+            reconcile_projected_skills(&skills, &effective, Path::new("/h"), &mut fake)
+                .await
+                .is_err()
+        );
+        // 未提交：调用方仍以原投影重试，而不是误以为已停用而跳过热加载。
+        assert_eq!(fake.selects(loaded, "$weekly-report"), ["weekly-report"]);
+        let next = reconcile_projected_skills(&skills, &effective, Path::new("/h"), &mut fake)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!next[1].enabled);
+        assert!(fake.selects(loaded, "$weekly-report").is_empty());
+    }
+
+    #[tokio::test]
+    async fn reload_status_must_be_confirmed() {
+        let mut fake = FakeCodexStatus;
+        let skill = ProjectedSkill {
+            asset_id: Uuid::new_v4(),
+            name: "release-notes".into(),
+            digest: "a".repeat(64),
+            path: "/h/kailo-skills/g1/release-notes/SKILL.md".into(),
+            enabled: true,
+        };
+        let outcome = reconcile_projected_skills(
+            std::slice::from_ref(&skill),
+            &HashSet::new(),
+            Path::new("/h"),
+            &mut fake,
+        )
+        .await;
+        assert!(matches!(outcome, Err(RuntimeError::Protocol)));
+    }
+
+    struct FakeCodexStatus;
+
+    impl SkillRpc for FakeCodexStatus {
+        async fn call(
+            &mut self,
+            method: &'static str,
+            params: Value,
+        ) -> Result<Value, RuntimeError> {
+            Ok(match method {
+                "skills/config/write" => json!({"effectiveEnabled": params["enabled"]}),
+                _ => json!({"status": "unexpected"}),
+            })
+        }
     }
 }

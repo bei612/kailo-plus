@@ -674,8 +674,9 @@ export class AskingResolver {
       };
     } else {
       // when we use recommendation questions, there's no task to track
-      threadInput = data;
+      threadInput = { ...data };
     }
+    if (ctx.kailoUser?.key) threadInput.ownerKey = ctx.kailoUser.key;
 
     const eventName = TelemetryEvent.HOME_CREATE_THREAD;
     try {

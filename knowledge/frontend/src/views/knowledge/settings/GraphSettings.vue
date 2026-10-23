@@ -11,7 +11,7 @@
       >
         <template #message>
           <div>{{ t('graphSettings.disabledWarning') }}</div>
-          <t-link class="graph-guide-link" theme="primary" @click="handleOpenGraphGuide">
+          <t-link v-if="SHOW_UPSTREAM_LINKS" class="graph-guide-link" theme="primary" @click="handleOpenGraphGuide">
             {{ t('graphSettings.howToEnable') }}
           </t-link>
         </template>
@@ -320,6 +320,7 @@
 </template>
 
 <script setup lang="ts">
+import { SHOW_UPSTREAM_LINKS } from '@/kailo/surface'
 import { ref, watch, onMounted, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'

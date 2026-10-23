@@ -10,6 +10,7 @@ import SidebarTree, {
   useSidebarTreeState,
 } from './SidebarTree';
 import ThreadTree, { ThreadData } from './home/ThreadTree';
+import useKailoText from '@/utils/kailoI18n';
 
 export interface Props {
   data: {
@@ -41,6 +42,7 @@ export const StyledSidebarTree = styled(SidebarTree)`
 export default function Home(props: Props) {
   const { data, onSelect, onRename, onDelete } = props;
   const router = useRouter();
+  const t = useKailoText();
   const params = useParams<{ id: string }>();
   const { threads } = data;
 
@@ -78,7 +80,7 @@ export default function Home(props: Props) {
         href={Path.HomeDashboard}
       >
         <FundViewOutlined className="mr-2" />
-        <span className="text-medium">Dashboard</span>
+        <span className="text-medium">{t('dashboard')}</span>
       </StyledTreeNodeLink>
       <ThreadTree
         threads={threads}

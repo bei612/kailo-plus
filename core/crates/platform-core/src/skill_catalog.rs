@@ -281,13 +281,46 @@ pub(crate) struct SkillVersion {
     pub artifact_byte_size: i32,
     pub metadata_hash: String,
     pub capability_requirements: Vec<String>,
+    pub upload_digest: String,
 }
 
 pub(crate) const VERSION_COLUMNS: &str =
     "v.asset_id,v.tenant_id,v.skill_resource_id,a.owner_principal_id,v.ordinal,a.version,
      a.state as asset_state,v.state,a.projection_action_execution_id,v.skill_name,v.description,
      v.short_description,v.artifact_format,v.artifact_digest,v.artifact_byte_size,v.metadata_hash,
-     v.capability_requirements";
+     v.capability_requirements,v.upload_digest";
+
+/// DD-135(8)：Skill 版本动作的审计证据——slug、版本 Asset 与序号、artifact digest 与字节数；
+/// 创建另记上传 digest。只放平台自有的稳定标识与摘要，不含 `SKILL.md` 正文。
+pub(crate) fn version_evidence(
+    slug: &str,
+    asset_id: Uuid,
+    ordinal: i32,
+    artifact_digest: &str,
+    artifact_byte_size: i32,
+    upload_digest: Option<&str>,
+) -> Vec<crate::audit::Evidence> {
+    let mut evidence = vec![
+        crate::audit::Evidence::new(EvidenceKind::SkillSlug, slug),
+        crate::audit::Evidence::versioned(
+            EvidenceKind::SkillVersionAssetId,
+            asset_id,
+            i64::from(ordinal),
+        ),
+        crate::audit::Evidence::versioned(
+            EvidenceKind::SkillArtifactDigest,
+            artifact_digest,
+            i64::from(artifact_byte_size),
+        ),
+    ];
+    if let Some(upload) = upload_digest {
+        evidence.push(crate::audit::Evidence::new(
+            EvidenceKind::SkillUploadDigest,
+            upload,
+        ));
+    }
+    evidence
+}
 
 pub(crate) async fn version(
     conn: &mut PgConnection,
@@ -354,6 +387,29 @@ struct Upload {
     upload_digest: String,
     expired: bool,
     consumed_by_action_execution_id: Option<Uuid>,
+}
+
+/// DD-135(3)、V-SCN-211：准入目标解析对暂存上传的判定。他人、跨 Tenant、跨定义的上传按不存在
+/// 拒绝；本人本定义的上传存在而 digest 或名称不符是参数错误（`INVALID_PARAMETERS`）。
+fn staged_target(
+    staged: Option<&Upload>,
+    tenant: Uuid,
+    initiator: Uuid,
+    definition: Uuid,
+    slug: &str,
+    digest: &str,
+) -> Result<(), Refusal> {
+    let staged = staged
+        .filter(|u| {
+            u.tenant_id == tenant
+                && u.principal_id == initiator
+                && u.skill_resource_id == definition
+        })
+        .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+    if staged.artifact_digest != digest || staged.skill_name != slug {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 async fn upload(
@@ -462,18 +518,15 @@ pub(super) async fn target(
             }
             if sem == Semantic::SkillVersionCreate {
                 let input = upload_input(p).ok_or_else(invalid)?;
-                let staged = upload(conn, input.upload_id, false)
-                    .await?
-                    .filter(|u| {
-                        u.tenant_id == tenant
-                            && u.principal_id == initiator
-                            && u.skill_resource_id == d.id
-                            && u.artifact_digest == input.digest
-                    })
-                    .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
-                if staged.skill_name != d.stable_slug {
-                    return Err(invalid());
-                }
+                let staged = upload(conn, input.upload_id, false).await?;
+                staged_target(
+                    staged.as_ref(),
+                    tenant,
+                    initiator,
+                    d.id,
+                    &d.stable_slug,
+                    &input.digest,
+                )?;
             }
             Ok(Target {
                 id: d.id,
@@ -669,10 +722,14 @@ pub(super) async fn prewrite(
             if consumed.rows_affected() != 1 {
                 return Err(conflict());
             }
-            Ok(vec![crate::audit::Evidence::new(
-                EvidenceKind::SkillArtifactDigest,
+            Ok(version_evidence(
+                &staged.skill_name,
+                ae.id,
+                ordinal,
                 &input.digest,
-            )])
+                staged.artifact_byte_size,
+                Some(&staged.upload_digest),
+            ))
         }
         Semantic::SkillVersionPublish | Semantic::SkillVersionRetire => {
             let publish = sem == Semantic::SkillVersionPublish;
@@ -746,17 +803,22 @@ pub(super) async fn prewrite(
                 .execute(&mut **tx)
                 .await?;
             }
-            Ok(vec![crate::audit::Evidence::new(
-                EvidenceKind::SkillArtifactDigest,
+            Ok(version_evidence(
+                &v.skill_name,
+                v.asset_id,
+                v.ordinal,
                 &v.artifact_digest,
-            )])
+                v.artifact_byte_size,
+                None,
+            ))
         }
         Semantic::SkillDefinitionDisable => {
-            let changed = sqlx::query(
-                "update catalog.skill_definition set status='DISABLED' where resource_id=$1 and status='ACTIVE'",
+            let slug: Option<String> = sqlx::query_scalar(
+                "update catalog.skill_definition set status='DISABLED' where resource_id=$1 and status='ACTIVE'
+                 returning stable_slug",
             )
             .bind(ae.target_id)
-            .execute(&mut **tx)
+            .fetch_optional(&mut **tx)
             .await?;
             let bumped = sqlx::query(
                 "update catalog.resource set version=version+1 where id=$1 and tenant_id=$2 and version=$3",
@@ -766,10 +828,16 @@ pub(super) async fn prewrite(
             .bind(ae.frozen_target_version())
             .execute(&mut **tx)
             .await?;
-            if changed.rows_affected() != 1 || bumped.rows_affected() != 1 {
+            let Some(slug) = slug else {
+                return Err(conflict());
+            };
+            if bumped.rows_affected() != 1 {
                 return Err(conflict());
             }
-            Ok(Vec::new())
+            Ok(vec![crate::audit::Evidence::new(
+                EvidenceKind::SkillSlug,
+                slug,
+            )])
         }
         Semantic::SkillDefinitionShare | Semantic::SkillDefinitionUnshare => Ok(Vec::new()),
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
@@ -909,6 +977,7 @@ pub(super) async fn dispatch_create(
             EvidenceKind::SpicedbRelationship,
             format!("resource:{}#owner@principal:{owner}", d.id),
         ),
+        crate::audit::Evidence::new(EvidenceKind::SkillSlug, &d.stable_slug),
     ];
     let recorded =
         super::record_dispatch(&mut tx, ae.id, def.audit_class(), Ok(()), evidence.clone()).await?;
@@ -1073,9 +1142,13 @@ pub(super) async fn dispatch_version(
         token,
     )];
     if created {
-        evidence.push(crate::audit::Evidence::new(
-            EvidenceKind::SkillArtifactDigest,
+        evidence.extend(version_evidence(
+            &v.skill_name,
+            v.asset_id,
+            v.ordinal,
             &v.artifact_digest,
+            v.artifact_byte_size,
+            Some(&v.upload_digest),
         ));
     }
     let recorded = super::record_dispatch(
@@ -1212,11 +1285,15 @@ pub(super) async fn dispatch_grants(
     };
     if !fresh {
         if first {
-            sqlx::query("update admission.action_execution set dispatch_state='ABORTED',reason_code=$2,updated_at=now() where id=$1")
-                .bind(id)
-                .bind(super::wire(&ReasonCode::TargetStateConflict))
-                .execute(&mut *tx)
-                .await?;
+            // 确定未写入：同一 record_dispatch 记 ABORTED（TARGET_STATE_CONFLICT）与 DISPATCH 审计。
+            super::record_dispatch(
+                &mut tx,
+                ae.id,
+                def.audit_class(),
+                Err(StatusCode::CONFLICT),
+                Vec::new(),
+            )
+            .await?;
             audit(
                 &mut tx,
                 &ae,
@@ -1282,10 +1359,6 @@ pub(super) async fn dispatch_grants(
         tx.commit().await?;
         return Err(unavailable("目录分享"));
     }
-    sqlx::query("update admission.action_execution set dispatch_state='DISPATCHED',reason_code=null,updated_at=now() where id=$1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
     let mut evidence = vec![crate::audit::Evidence::new(
         EvidenceKind::SpicedbZedtoken,
         &token,
@@ -1295,22 +1368,28 @@ pub(super) async fn dispatch_grants(
             .iter()
             .map(|r| crate::audit::Evidence::new(EvidenceKind::SpicedbRelationship, r)),
     );
-    audit(
-        &mut tx,
-        &ae,
-        def,
-        "skill-share-outcome",
-        "OUTCOME",
-        "ALLOW",
-        if grant {
-            "CATALOG_SHARED"
-        } else {
-            "CATALOG_UNSHARED"
-        },
-        None,
-        evidence,
-    )
-    .await?;
+    // 写前意图把 DISPATCH 记为结果不明；原生写入经回读确认后以同一 record_dispatch 把
+    // dispatch_state 推进为 DISPATCHED 并追加 DISPATCH 审计，审计终态与 ActionExecution 一致。
+    let recorded =
+        super::record_dispatch(&mut tx, ae.id, def.audit_class(), Ok(()), evidence.clone()).await?;
+    if recorded.settled {
+        audit(
+            &mut tx,
+            &ae,
+            def,
+            "skill-share-outcome",
+            "OUTCOME",
+            "ALLOW",
+            if grant {
+                "CATALOG_SHARED"
+            } else {
+                "CATALOG_UNSHARED"
+            },
+            None,
+            evidence,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -1397,6 +1476,76 @@ mod tests {
         let mut upper = upload_command(&[]);
         upper.artifact_digest = "A".repeat(64);
         assert!(normalize_upload(&upper).is_err());
+    }
+
+    #[test]
+    fn staged_upload_digest_mismatch_is_invalid_parameters_not_absence() {
+        let (tenant, me, other, definition) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        let staged = Upload {
+            tenant_id: tenant,
+            principal_id: me,
+            skill_resource_id: definition,
+            artifact: Some(b"x".to_vec()),
+            artifact_digest: "a".repeat(64),
+            artifact_byte_size: 1,
+            skill_name: "release-notes".into(),
+            description: "d".into(),
+            short_description: None,
+            upload_digest: "b".repeat(64),
+            expired: false,
+            consumed_by_action_execution_id: None,
+        };
+        let reason = |r: Result<(), Refusal>| r.err().map(|refusal| refusal.reason());
+        let digest = "a".repeat(64);
+        assert!(staged_target(
+            Some(&staged),
+            tenant,
+            me,
+            definition,
+            "release-notes",
+            &digest
+        )
+        .is_ok());
+        assert_eq!(
+            reason(staged_target(
+                Some(&staged),
+                tenant,
+                me,
+                definition,
+                "release-notes",
+                &"c".repeat(64)
+            )),
+            Some(ReasonCode::InvalidParameters)
+        );
+        for (who, def) in [(other, definition), (me, Uuid::new_v4())] {
+            assert_eq!(
+                reason(staged_target(
+                    Some(&staged),
+                    tenant,
+                    who,
+                    def,
+                    "release-notes",
+                    &digest
+                )),
+                Some(ReasonCode::TargetNotFound)
+            );
+        }
+        assert_eq!(
+            reason(staged_target(
+                None,
+                tenant,
+                me,
+                definition,
+                "release-notes",
+                &digest
+            )),
+            Some(ReasonCode::TargetNotFound)
+        );
     }
 
     #[test]

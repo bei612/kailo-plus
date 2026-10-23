@@ -178,6 +178,11 @@ export const THREADS = gql`
     threads {
       id
       summary
+      owner {
+        name
+        picture
+        isCurrentUser
+      }
     }
   }
 `;

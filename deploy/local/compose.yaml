@@ -530,7 +530,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:905543009df7689b381b6b5b0db7900424887fe1d18b4a5f8ac35da6364765b2
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:d539427307f6509e272499c0636d6527da78069046703103532215f5766d946a
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -767,7 +767,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:aa6f3f30dad5ba8ba488d319d047a8330076a599c416e9a09081ffff5f6ae678
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:6cc6a5e6df3f61e8ae0ed2374203d0cebb687367887013482f06ad2787b658f5
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -818,7 +818,7 @@ services:
   buzz-web:
     # digest 与 web-client/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:c08ca98d1ffdd8a7e8d08161c615154a6ded596a27a4e3aa95347dad35bb0dab
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/web-client@sha256:b853d2b0bec88805e205eead1ad7be7736d22d5c9185d6d377a1325729ee31e0
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
@@ -841,7 +841,7 @@ services:
   agentgateway:
     # digest 与 model-gateway/fork/upstream.yaml 的 artifact_digest
     # 必须一致，由 check.sh 校验——两处不等说明镜像与 manifest 脱节。
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6ae2e104a617eee314fa910fdcc76fc4445848c72f2e8b315e3a82c28372fd22
     # edge 是唯一对外可达层；它同时进 app 以到达 BFF。
     # 不接入 mgmt——admin router 不得与公开入口同面（SS-AGW-ADMIN）。admin 端口
     # （配置里的 adminAddr）不在下方 ports 中发布到宿主；Core 经 app 网络访问，且每个
@@ -906,7 +906,7 @@ services:
   # 只接受 Core service client 的令牌（Proxy-Authorization，失败 407），只放行公网主机名；
   # 不配 admin/storage，端口不发布到宿主，只在 automation-egress 网络。
   automation-egress:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:c2faf443acf3276fb351c453229b896daa28708d25dc875528610f091a9637ef
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/model-gateway@sha256:6ae2e104a617eee314fa910fdcc76fc4445848c72f2e8b315e3a82c28372fd22
     networks:
       automation-egress:
         ipv4_address: ${AUTOMATION_EGRESS_GATEWAY_IP:?必须显式提供出站网关地址}
@@ -920,6 +920,40 @@ services:
       - source: automation_egress_config
         target: /etc/agentgateway/config.yaml
     command: ["-f", "/etc/agentgateway/config.yaml"]
+
+  # 运维域的参考 MCP 运行体（DD-94(2)(5)、DD-134(5)、DD-136）：外部实现
+  # @modelcontextprotocol/server-everything 2026.1.14 的固定 digest 镜像，以其原版
+  # streamable HTTP 传输运行。官方 mcp/everything 镜像停在 2025-05、只有 stdio/SSE，
+  # 而 Gateway 的 MCP target 只接受 streamable HTTP；所选镜像的入口另包一层第三方桥接，
+  # 这里直接执行镜像内同一 npm 包的原版入口，不经桥接。
+  # 它不是 Tool 注册表或授权来源：只作为交付目录 protocolPeers 的端点出现
+  # （deploy/local/protocol-peers/），契约、release、批准与连接仍只经 Core 的既有 Governed
+  # Action，Gateway 只放行该执行冻结的工具。只在 app 网络（Gateway 经此到达，与组件 adapter
+  # 同一接入面），不发布端口；非 root、只读根文件系统、去掉全部 capability；
+  # GZIP_ALLOWED_DOMAINS 取保留域 invalid，使按 URL 抓取的诊断工具对任何主机都拒绝。
+  # 由发布入口按 tools/release/release.yaml 的 operated 部署与回读（ADR-20 §10）。
+  protocol-peer-reference:
+    image: acuvity/mcp-server-everything@sha256:eae11f4ba430af78b6a274818d5c8952bf7eeb65098913f904946e452777ecb1
+    networks: [app]
+    user: "1001:1001"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: ${PROTOCOL_PEER_REFERENCE_CPUS:?必须显式提供本机运行预算}
+    mem_limit: ${PROTOCOL_PEER_REFERENCE_MEMORY:?必须显式提供本机运行预算}
+    environment:
+      PORT: "3001"
+      GZIP_ALLOWED_DOMAINS: invalid
+    entrypoint: ["node", "/app/node_modules/@modelcontextprotocol/server-everything/dist/index.js"]
+    command: ["streamableHttp"]
+    healthcheck:
+      # 无会话的 GET /mcp 由原版传输以 400 拒绝：能这样应答即说明监听就绪。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/mcp').then(r=>process.exit(r.status===400?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
 
   agentgateway-db:
     image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
@@ -1228,11 +1262,35 @@ configs:
   # 内存预算内反复 MEMORY_LIMIT_EXCEEDED，进程被 OOM kill 后 OpenMeter 的
   # entitlement 查询失败，agent.invoke 的 Quota CHECK 只能 fail closed。采样
   # profiler 与服务文本日志的表副本都不是计量权威（文本日志仍写入 logs 卷），故关闭。
+  #
+  # 2026-10-22 实测（25.12.3.21，上面两张已停写）：进程 RSS 3.1 GiB / 上限 3.6 GiB，
+  # 查询仍触发 MEMORY_LIMIT_EXCEEDED；metric_log 每小时约 2.5 万个 part 事件，后台合并
+  # 不停。仍在写入的同类诊断表同样默认开启、没有保留期，也都不是计量权威，一并关闭：
+  #   metric_log               每秒一行服务器指标快照，815 MiB / 260 个 part；
+  #   asynchronous_metric_log  每秒一批异步指标（内存、磁盘、CPU），629 MiB / 90 个 part；
+  #   part_log                 每次 part 新建、合并、删除各一行，2.3 GiB，是体量最大的在写表；
+  #                            其行数随其他日志表的合并同步增长（日志表的合并又写日志表）；
+  #   processors_profile_log   每个查询的每个处理器一行性能剖析；
+  #   background_schedule_pool_log  后台调度池每执行一次任务一行；
+  #   query_metric_log         查询执行期间按秒采样的指标，与 metric_log 同类。
+  # 保留 query_log（查询本身的记录，量与 OpenMeter 查询数同阶，排查配额查询失败要用）与
+  # error_log（按错误码的计数历史，量小，追溯 MEMORY_LIMIT_EXCEEDED 等要用）。其余 *_log
+  # 配置段（query_thread_log、query_views_log、crash_log、backup_log、opentelemetry_span_log、
+  # asynchronous_insert_log、zookeeper/iceberg/delta 等）在本部署没有对应功能或设置启用，
+  # 实测未建表，不在此列。remove 只停止写入：已有表与旧数据不随本配置删除，清理另行决定。
+  # 本配置经 configs.content 投递，Compose 的服务哈希不含其内容；改动由发布入口的配置漂移
+  # 收敛（ADR-20 §9）回读容器内文件发现并重建本服务后生效。
   openmeter_clickhouse_system_logs:
     content: |
       <clickhouse>
         <trace_log remove="1"/>
         <text_log remove="1"/>
+        <metric_log remove="1"/>
+        <asynchronous_metric_log remove="1"/>
+        <part_log remove="1"/>
+        <processors_profile_log remove="1"/>
+        <background_schedule_pool_log remove="1"/>
+        <query_metric_log remove="1"/>
       </clickhouse>
   spicedb_schema:
     file: ./authorization/schema.zed

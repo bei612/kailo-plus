@@ -14,6 +14,14 @@ type UserService interface {
 	Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error)
 	// GetOIDCAuthorizationURL builds the third-party OIDC authorization URL
 	GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
+	// LogoutByOIDCBackchannel validates an identity-provider back-channel
+	// logout token and revokes every native session of its subject.
+	LogoutByOIDCBackchannel(ctx context.Context, logoutToken string) error
+	// GetOIDCAuthorizationURLWithOptions is GetOIDCAuthorizationURL with a
+	// validated prompt and return path carried through the signed state.
+	GetOIDCAuthorizationURLWithOptions(
+		ctx context.Context, redirectURI string, opts types.OIDCAuthOptions,
+	) (*types.OIDCAuthURLResponse, error)
 	// LoginWithOIDC exchanges the callback code, auto-provisions users if needed, and completes login.
 	// provisioning is the default tenant mode for a newly auto-created user
 	// (resolved by the caller from auth.default_tenant_mode).

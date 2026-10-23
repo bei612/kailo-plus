@@ -10,10 +10,12 @@
 
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -229,6 +231,62 @@ def databases_for(services, targets):
     return out
 
 
+def drift_policy(decl, service):
+    """release.yaml services.<服务>.drift（ADR-20 §9）：converge（缺省）漂移即重建；report 只报告，
+    重建需要发布之外的专用流程（例如重建即封存的 OpenBao）。"""
+    value = str((decl["services"].get(service) or {}).get("drift") or "converge")
+    if value not in ("converge", "report"):
+        raise ReleaseError(f"{DECLARATIONS}: services.{service}.drift 只能是 converge 或 report")
+    return value
+
+
+def _dependency_order(services, chosen):
+    """chosen 内的依赖在前（按 depends_on 传递闭包，经过未选中的服务也算），其余按 compose 定义顺序。"""
+    left = sorted(chosen, key=lambda s: services[s]["order"])
+    out = []
+    while left:
+        ready = [s for s in left if not _depends_on_any(services, s, set(left) - {s})]
+        if not ready:
+            raise ReleaseError(f"compose depends_on 有环：{left}")
+        out.append(ready[0])
+        left.remove(ready[0])
+    return out
+
+
+def _depends_on_any(services, service, others):
+    seen, stack = set(), [service]
+    while stack:
+        for dep in services.get(stack.pop(), {}).get("depends_on") or {}:
+            if dep in others:
+                return True
+            if dep not in seen and dep in services:
+                seen.add(dep)
+                stack.append(dep)
+    return False
+
+
+def converge_plan(services, drift, targets, managed, decl=None):
+    """配置漂移服务如何收敛（ADR-20 §9）→ dict(targets, before, after, report)：
+      report    声明 drift: report 的服务，只报告；
+      targets   原镜像替换对象 + 漂移的受管服务（同一替换路径：命令、一次性前置、回读），按 03 §7 排序；
+      before    其余漂移服务中不依赖任何替换对象的（基础设施），依赖在前，先于替换对象重建；
+      after     依赖某个替换对象的，替换对象之后重建，依赖在前。"""
+    decl = decl or declarations()
+    report = [s for s in drift if drift_policy(decl, s) == "report"]
+    act = [s for s in drift if s not in report]
+    merged = deploy_order(services, sorted(set(targets) | {s for s in act if s in managed}), decl)
+    rest = [s for s in act if s not in merged]
+    after = [s for s in rest if _depends_on_any(services, s, set(merged))]
+    before = [s for s in rest if s not in after]
+    return dict(targets=merged, before=_dependency_order(services, before),
+                after=_dependency_order(services, after), report=sorted(report, key=lambda s: services[s]["order"]))
+
+
+def converge_databases(services, plan):
+    """备份对象的补充：本身因配置漂移被重建的 Postgres 服务（数据在卷中保留，重建前照例先备份）。"""
+    return [s for s in plan["before"] + plan["after"] if is_postgres(services[s])]
+
+
 def deploy_order(services, targets, decl=None):
     """03 §7：order.first 的镜像 → 其余 → order.last 的镜像；同组按 compose 定义顺序。"""
     decl = decl or declarations()
@@ -380,6 +438,62 @@ def env_value_digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+# ---- IdP 声明式配置 ------------------------------------------------------------
+
+IDP_COMMAND = re.compile(r"\./[a-z][a-z0-9-]*\.sh")
+IDP_FLAG = re.compile(r"--[a-z][a-z0-9-]*")
+
+
+def idp_declaration(decl=None):
+    """release.yaml 的 idp 段（ADR-20 §1）：等待的服务、期望值定义文件，以及在 deploy/local 下执行的
+    apply（摘要变化时）、always（每次 deploy）、verify（只读回读）命令。命令只允许 ./<脚本>.sh --<模式>。"""
+    decl = decl or declarations()
+    spec = decl.get("idp")
+    if not isinstance(spec, dict):
+        raise ReleaseError(f"{DECLARATIONS}: 缺少映射 idp")
+    if not isinstance(spec.get("wait"), str) or not isinstance(spec.get("inputs"), str):
+        raise ReleaseError(f"{DECLARATIONS}: idp.wait 与 idp.inputs 必须是字符串")
+    for key in ("apply", "always", "verify"):
+        commands = spec.get(key)
+        if not isinstance(commands, list) or (key != "always" and not commands) or not all(
+                isinstance(c, list) and len(c) == 2 and IDP_COMMAND.fullmatch(str(c[0]))
+                and IDP_FLAG.fullmatch(str(c[1])) for c in commands):
+            raise ReleaseError(f"{DECLARATIONS}: idp.{key} 必须是 [./<脚本>.sh, --<模式>] 列表")
+    return spec
+
+
+def _literal(tree, name):
+    import ast
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            value = ast.literal_eval(node.value)
+            if isinstance(value, (tuple, list)) and all(isinstance(v, str) and v for v in value):
+                return [str(v) for v in value]
+    raise ReleaseError(f"IdP 期望值定义缺少字符串元组 {name}")
+
+
+def idp_inputs(decl=None):
+    """(文件摘要, .env 键)：以 ast 读取期望值定义文件中的 INPUT_ENV 与 INPUT_FILES（不执行它）；
+    文件摘要覆盖 INPUT_FILES 列出的文件内容（相对定义文件所在目录）。"""
+    import ast
+    spec = idp_declaration(decl)
+    path = _path(spec["inputs"])
+    with open(path, encoding="utf-8") as stream:
+        tree = ast.parse(stream.read())
+    keys = _literal(tree, "INPUT_ENV")
+    if not all(ENV_KEY.fullmatch(k) for k in keys):
+        raise ReleaseError("INPUT_ENV 含非法键名")
+    h = hashlib.sha256()
+    base = os.path.dirname(path)
+    for rel in sorted(_literal(tree, "INPUT_FILES")):
+        full = os.path.realpath(os.path.join(base, rel))
+        if not full.startswith(os.path.realpath(base) + os.sep):
+            raise ReleaseError(f"INPUT_FILES 越出定义文件目录：{rel}")
+        with open(full, "rb") as stream:
+            h.update(rel.encode() + b"\0" + hashlib.sha256(stream.read()).digest())
+    return "sha256:" + h.hexdigest(), sorted(set(keys))
+
+
 # ---- 迁移 ---------------------------------------------------------------------
 
 def migration_versions(name, decl=None):
@@ -390,6 +504,194 @@ def migration_versions(name, decl=None):
     folder = _path(str(spec["source"]))
     return sorted(int(f.split("_", 1)[0]) for f in os.listdir(folder)
                   if re.fullmatch(r"\d+_[^/]+\.up\.sql", f))
+
+
+# ---- 运维域运行体与投递（ADR-20 §10）--------------------------------------------
+
+# 运维域运行体：上游固定 digest 的外部镜像（不是本仓库构建单元）
+UPSTREAM_IMAGE = re.compile(r"^(?P<repo>[a-z0-9][a-z0-9._/-]*)@(?P<digest>sha256:[0-9a-f]{64})$")
+PEER_DIRECTORY_FILE = "adapter-directory.json"
+PEER_CONFORMANCE_FILE = "conformance-environment.json"
+DIRECTORY_ENV = "APPLICATION_ADAPTER_DIRECTORY_FILE"
+CONFORMANCE_ENV = "COMPONENT_CONFORMANCE_ENVIRONMENT_FILE"
+# 原生 MCP peer 的一致性投递只有 environment（start-core.sh），HTTP adapter 的另两项须同时缺省
+CONFORMANCE_HTTP_ONLY = ("COMPONENT_CONFORMANCE_FIXTURE_FILE", "COMPONENT_CONFORMANCE_IDENTITY_FILE")
+# contracts/domain/application_adapter_directory.schema.json 的 protocolPeers 条目
+PEER_REQUIRED = {"adapterServiceRef", "mcpUrl", "nativeInstanceRef", "artifactDigest", "timeoutSeconds",
+                 "maxResponseBytes", "bindings"}
+PEER_OPTIONAL = {"secretReaders", "modelCredentialDeliveries"}
+BINDING_REQUIRED = {"bindingId", "tenantId", "servicePrincipalId", "nativeScopeRef", "configDigest", "isolationMode"}
+BINDING_OPTIONAL = {"workspaceId", "credentialGeneration", "nativeCredentials"}
+ISOLATION_MODES = {"DEDICATED_INSTANCE", "NATIVE_TENANT", "NAMESPACE", "RESOURCE_FILTER", "RESOURCE_INSTANCE"}
+# contracts/domain/component_protocol_peer_environment.schema.json
+CONFORMANCE_REQUIRED = {"artifactDigest", "mcpUrl", "timeoutSeconds", "maxResponseBytes", "maxSteps", "readOnlyTools",
+                        "initializeResultJson", "listResultJson"}
+CONFORMANCE_OPTIONAL = {"nativeCredentials"}
+UUID_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+REFERENCE = re.compile(r"[a-z][a-z0-9-]*")
+RUNTIME_SUBDIR = re.compile(r"data(/[a-z0-9][a-z0-9-]*)+")
+
+
+def operated_services(services, decl=None):
+    """release.yaml operated：{服务: 固定 digest}。只接受上游固定 digest 的常驻服务，不接受本仓库产物或一次性服务。"""
+    decl = decl or declarations()
+    names = decl.get("operated") or []
+    if not isinstance(names, list):
+        raise ReleaseError(f"{DECLARATIONS}: operated 必须是服务名列表")
+    out = {}
+    for name in names:
+        spec = services.get(str(name))
+        if spec is None:
+            raise ReleaseError(f"{DECLARATIONS}: operated 的 {name} 不是 compose 服务")
+        m = UPSTREAM_IMAGE.match(spec["raw_image"])
+        if spec["image"] is not None or not m or spec["restart"] == "no":
+            raise ReleaseError(f"{DECLARATIONS}: operated 的 {name} 必须是按 digest 固定的上游镜像常驻服务")
+        out[str(name)] = m["digest"]
+    return out
+
+
+def canonical_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ReleaseError(f"重复的 JSON 键 {key}")
+        value[key] = item
+    return value
+
+
+def load_json(path):
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream, object_pairs_hook=_unique_object)
+
+
+def _positive(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _peer_url(raw, where):
+    url = urlsplit(raw) if isinstance(raw, str) else None
+    if (not url or url.scheme not in ("http", "https") or not url.hostname or url.username or url.password
+            or url.query or url.fragment or "?" in raw or "#" in raw):
+        raise ReleaseError(f"{where}: mcpUrl 必须是不含凭据、query 与 fragment 的 http(s) 地址")
+    return url
+
+
+def _check_binding(fact, where):
+    if not isinstance(fact, dict) or BINDING_REQUIRED - set(fact) or set(fact) - BINDING_REQUIRED - BINDING_OPTIONAL:
+        raise ReleaseError(f"{where}: binding 归属事实字段与 ApplicationProtocolPeerBindingDelivery 不符")
+    for key in ("bindingId", "tenantId", "servicePrincipalId", "workspaceId"):
+        if key in fact and not (isinstance(fact[key], str) and UUID_TEXT.fullmatch(fact[key])):
+            raise ReleaseError(f"{where}: {key} 必须是小写 UUID")
+    if fact["isolationMode"] not in ISOLATION_MODES or not fact["nativeScopeRef"] \
+            or not re.fullmatch(r"[0-9a-f]{64}", str(fact["configDigest"])):
+        raise ReleaseError(f"{where}: isolationMode、nativeScopeRef 或 configDigest 不合法")
+    if "credentialGeneration" in fact and not _positive(fact["credentialGeneration"]):
+        raise ReleaseError(f"{where}: credentialGeneration 必须是正整数")
+
+
+def peer_delivery(decl=None, services=None):
+    """release.yaml delivery.protocol_peers 的声明经校验后的投递内容；未声明时为 None。
+
+    交付目录 protocolPeers 与一致性环境是运维域事实（DD-94(2)(5)、DD-98、DD-134(5)）：端点只能是本拓扑
+    operated 中的运行体，artifactDigest 等于该运行体固定的镜像 digest；一致性环境只登记同一 peer，期望应答
+    由 record-conformance.py 经同一 Gateway 构建记录。.env 的两个投递键必须指向本声明的运行目录文件，
+    HTTP adapter 才有的另两项一致性投递必须由同一声明删除（单一候选，start-core.sh 只接受 environment）。"""
+    decl = decl or declarations()
+    spec = (decl.get("delivery") or {}).get("protocol_peers")
+    if spec is None:
+        return None
+    if not isinstance(spec, dict) or set(spec) != {"directory", "conformance", "runtime", "restart"}:
+        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers 只声明 directory、conformance、runtime、restart")
+    runtime = str(spec["runtime"])
+    if not RUNTIME_SUBDIR.fullmatch(runtime):
+        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers.runtime 必须是运行目录 data/ 下的子目录")
+    restart = str(spec["restart"])
+    if not (decl["services"].get(restart) or {}).get("command"):
+        raise ReleaseError(f"{DECLARATIONS}: delivery.protocol_peers.restart 必须是以启动入口部署的服务")
+    services = services if services is not None else compose_services(compose_text())
+    operated = operated_services(services, decl)
+    directory = load_json(_path(str(spec["directory"])))
+    if not isinstance(directory, dict) or set(directory) != {"protocolPeers"} \
+            or not isinstance(directory["protocolPeers"], list) or not directory["protocolPeers"]:
+        raise ReleaseError(f"{spec['directory']}: 只声明非空的 protocolPeers（adapters 由组件入口维护）")
+    peers, refs = directory["protocolPeers"], set()
+    for peer in peers:
+        where = f"{spec['directory']}: {peer.get('adapterServiceRef') if isinstance(peer, dict) else peer}"
+        if not isinstance(peer, dict) or PEER_REQUIRED - set(peer) or set(peer) - PEER_REQUIRED - PEER_OPTIONAL:
+            raise ReleaseError(f"{where}: 字段与 ApplicationProtocolPeerDelivery 不符")
+        ref = peer["adapterServiceRef"]
+        if not isinstance(ref, str) or not REFERENCE.fullmatch(ref) or ref in refs:
+            raise ReleaseError(f"{where}: adapterServiceRef 不合法或重复")
+        refs.add(ref)
+        host = _peer_url(peer["mcpUrl"], where).hostname
+        if host not in operated:
+            raise ReleaseError(f"{where}: 端点必须是 operated 中的运维域运行体（DD-94(5)）")
+        if peer["artifactDigest"] != operated[host].removeprefix("sha256:"):
+            raise ReleaseError(f"{where}: artifactDigest 必须等于 {host} 固定的镜像 digest")
+        if not isinstance(peer["nativeInstanceRef"], str) or not peer["nativeInstanceRef"] \
+                or not _positive(peer["timeoutSeconds"]) or not _positive(peer["maxResponseBytes"]):
+            raise ReleaseError(f"{where}: nativeInstanceRef、timeoutSeconds 或 maxResponseBytes 不合法")
+        if not isinstance(peer["bindings"], list):
+            raise ReleaseError(f"{where}: bindings 必须是数组")
+        ids = [fact.get("bindingId") for fact in peer["bindings"] if isinstance(fact, dict)]
+        if len(set(ids)) != len(ids):
+            raise ReleaseError(f"{where}: bindingId 重复")
+        for fact in peer["bindings"]:
+            _check_binding(fact, where)
+    conformance = load_json(_path(str(spec["conformance"])))
+    where = str(spec["conformance"])
+    if not isinstance(conformance, dict) or CONFORMANCE_REQUIRED - set(conformance) \
+            or set(conformance) - CONFORMANCE_REQUIRED - CONFORMANCE_OPTIONAL:
+        raise ReleaseError(f"{where}: 字段与 ComponentProtocolPeerEnvironment 不符")
+    matching = [p for p in peers if p["artifactDigest"] == conformance["artifactDigest"]
+                and p["mcpUrl"] == conformance["mcpUrl"]]
+    if len(matching) != 1:
+        raise ReleaseError(f"{where}: 必须且只能对应交付目录中的一个 peer（同一 artifactDigest 与 mcpUrl）")
+    if not all(_positive(conformance[k]) for k in ("timeoutSeconds", "maxResponseBytes", "maxSteps")):
+        raise ReleaseError(f"{where}: timeoutSeconds、maxResponseBytes、maxSteps 必须是正整数")
+    tools = conformance["readOnlyTools"]
+    if not isinstance(tools, list) or not all(isinstance(t, str) and t for t in tools) or len(set(tools)) != len(tools):
+        raise ReleaseError(f"{where}: readOnlyTools 必须是不重复的工具名")
+    try:
+        initialize = json.loads(conformance["initializeResultJson"])
+        listed = json.loads(conformance["listResultJson"])
+    except (TypeError, ValueError):
+        raise ReleaseError(f"{where}: 期望应答尚未记录（deploy/local/protocol-peers/record-conformance.py）") from None
+    if not isinstance(initialize, dict) or not initialize.get("protocolVersion") \
+            or not isinstance(listed, dict) or not isinstance(listed.get("tools"), list):
+        raise ReleaseError(f"{where}: initializeResultJson 或 listResultJson 不是 MCP 结果")
+    missing = sorted(set(tools) - {t.get("name") for t in listed["tools"] if isinstance(t, dict)})
+    if missing:
+        raise ReleaseError(f"{where}: readOnlyTools 不在记录的 tools/list 中：{missing}")
+    to_set, to_unset = env_declaration(decl)
+    for key, name in ((DIRECTORY_ENV, PEER_DIRECTORY_FILE), (CONFORMANCE_ENV, PEER_CONFORMANCE_FILE)):
+        if to_set.get(key) != "${KAILO_RUNTIME_DIR}/" + runtime + "/" + name:
+            raise ReleaseError(f"{DECLARATIONS}: env.set.{key} 必须指向 ${{KAILO_RUNTIME_DIR}}/{runtime}/{name}")
+    if set(CONFORMANCE_HTTP_ONLY) - set(to_unset):
+        raise ReleaseError(f"{DECLARATIONS}: env.unset 必须包含 {list(CONFORMANCE_HTTP_ONLY)}（原生 peer 只投递 environment）")
+    digest = "sha256:" + hashlib.sha256(canonical_json(
+        dict(protocolPeers=peers, conformance=conformance, runtime=runtime)).encode()).hexdigest()
+    return dict(peers=peers, conformance=conformance, runtime=runtime, restart=restart, digest=digest)
+
+
+def render_peer_directory(existing, peers):
+    """运行目录中的交付目录：adapters 保留已有条目（组件入口按 adapter-directory.mjs --existing 维护），
+    protocolPeers 整体取声明；adapterServiceRef 在两类条目间唯一（与 Core 的解析一致）。"""
+    adapters = []
+    if existing is not None:
+        if not isinstance(existing, dict) or set(existing) - {"adapters", "protocolPeers"} \
+                or not isinstance(existing.get("adapters"), list):
+            raise ReleaseError("运行目录中的交付目录不是 ApplicationAdapterDirectory，拒绝覆盖")
+        adapters = existing["adapters"]
+    refs = [a.get("adapterServiceRef") if isinstance(a, dict) else None for a in adapters]
+    refs += [p["adapterServiceRef"] for p in peers]
+    if None in refs or len(set(refs)) != len(refs):
+        raise ReleaseError("交付目录中 adapterServiceRef 重复或缺失，拒绝覆盖")
+    return {"adapters": adapters, "protocolPeers": peers}
 
 
 if __name__ == "__main__":

@@ -2,10 +2,12 @@
     <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
-            <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
-                <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
+            <!-- White-label (DD-133 §1): Kailo logo + product name; hidden inside the Kailo frame. -->
+            <div v-if="!kailoEmbedded" class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
+                <img class="logo" :src="BRAND_LOGO_URL" alt="">
+                <span class="logo_name">{{ brandProductName }}</span>
             </div>
+            <div v-else class="logo_box"></div>
             <div class="logo_actions">
                 <t-tooltip placement="bottom">
                     <template #content>
@@ -259,6 +261,9 @@ import UserMenu from '@/components/UserMenu.vue';
 import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
 import { getSystemInfo } from '@/api/system';
+import { BRAND_LOGO_URL, productName } from '@/kailo/brand';
+import { kailoConfig } from '@/kailo/runtime';
+import { isKailoEmbedded } from '@/kailo/setup';
 
 const chatResources = useChatResourcesStore();
 // Platform logos reused from IMChannelsOverviewPanel — keeps the session list
@@ -287,7 +292,9 @@ const PLATFORM_LOGO: Record<string, string> = {
 
 const platformLogo = (p: string): string => (p ? PLATFORM_LOGO[p] || '' : '');
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const brandProductName = computed(() => productName(locale.value, kailoConfig().displayName));
+const kailoEmbedded = isKailoEmbedded();
 const usemenuStore = useMenuStore();
 const sessionActivity = useSessionActivityStore();
 const { entries: sessionActivityEntries } = storeToRefs(sessionActivity);
@@ -1327,19 +1334,20 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         overflow: hidden;
 
         .logo {
-            width: 128px;
-            height: auto;
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+            border-radius: var(--app-radius-sm);
         }
 
-        .lite-badge {
-            margin-left: 2px;
-            align-self: flex-start;
-            margin-top: 2px;
-            font-size: 9px;
+        .logo_name {
+            margin-left: var(--app-space-2);
+            font-size: var(--app-text-md);
             font-weight: 600;
-            color: var(--td-text-color-placeholder);
-            user-select: none;
+            color: var(--td-text-color-primary);
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     }
 
@@ -1853,11 +1861,6 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 }
 </style>
 <style lang="less">
-// Dark mode: invert dark logo to light
-html[theme-mode="dark"] .aside_box .logo_box .logo {
-    filter: invert(1) hue-rotate(180deg);
-}
-
 // Dark mode: 滚动条在深色背景下需要更亮的颜色才看得见
 html[theme-mode="dark"] .aside_box .menu_top:hover {
     scrollbar-color: rgba(255, 255, 255, 0.22) transparent;

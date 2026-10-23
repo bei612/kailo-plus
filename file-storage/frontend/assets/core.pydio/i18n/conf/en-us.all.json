@@ -300,7 +300,7 @@
     "other": "Main Options"
   },
   "Main container for core Pydio settings (application title, sharing, webdav server config, etc...)": {
-    "other": "Main container for core Pydio settings (application title, sharing, webdav server config, etc...)"
+    "other": "Main container for core Kailo settings (application title, sharing, webdav server config, etc...)"
   },
   "Maximum characters length of new files or folders": {
     "other": "Maximum characters length of new files or folders"
@@ -342,7 +342,7 @@
     "other": "Public Base URI"
   },
   "Pydio Main Options": {
-    "other": "Pydio Main Options"
+    "other": "Kailo Main Options"
   },
   "Read Only": {
     "other": "Read Only"
@@ -432,7 +432,7 @@
     "other": "Transmit Clear Pass"
   },
   "Try to use the current Pydio user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!": {
-    "other": "Try to use the current Pydio user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!"
+    "other": "Try to use the current Kailo user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!"
   },
   "URI where to serve the public links": {
     "other": "URI where to serve the public links"
@@ -447,7 +447,7 @@
     "other": "Use PHP MySQLi extension"
   },
   "Use Pydio framework via the command line, allowing CRONTAB jobs or background actions.": {
-    "other": "Use Pydio framework via the command line, allowing CRONTAB jobs or background actions."
+    "other": "Use Kailo framework via the command line, allowing CRONTAB jobs or background actions."
   },
   "User": {
     "other": "User"
@@ -495,9 +495,9 @@
     "other": "Zip Encoding"
   },
   "Merge Workspaces and Cells": {
-    "other": "Merge Workspaces and Cells"
+    "other": "Merge Workspaces and Shared spaces"
   },
   "Do not display workspaces and cells separately": {
-    "other": "Do not display workspaces and cells separately"
+    "other": "Do not display workspaces and shared spaces separately"
   }
 }

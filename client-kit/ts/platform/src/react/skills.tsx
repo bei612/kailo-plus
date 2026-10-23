@@ -407,6 +407,10 @@ function SkillDetail({ resourceId, onLocked, onChanged }: {
   if (!definition) return <ReadFailure error={definitionState.status === "error" ? definitionState.error : undefined} onRetry={reloadDefinition} />;
   const active = definition.status === SkillDefinitionStatus.Active;
   const target = { resourceId: definition.resourceId, resourceVersion: definition.resourceVersion, explicitConfirmation: true };
+  // 确认文案按成员看到的版本序号（v{ordinal}）称呼版本；assetVersion 只是并发控制值。
+  const reviewedAsset = action.intent?.assetId;
+  const reviewedOrdinal = reviewedAsset ? versions?.versions.find((row) => row.assetId === reviewedAsset)?.ordinal : undefined;
+  const reviewedVersion = reviewedOrdinal !== undefined ? `v${reviewedOrdinal}` : "";
   const review: Record<string, PlatformMessageKey> = {
     "skill.definition.share": "skills.reviewShare", "skill.definition.unshare": "skills.reviewUnshare",
     "skill.definition.disable": "skills.reviewDisable", "skill.version.publish": "skills.reviewPublish",
@@ -432,7 +436,7 @@ function SkillDetail({ resourceId, onLocked, onChanged }: {
       <Button disabled={pending} onClick={() => { reloadDefinition(); reloadVersions(); }}>{t("platform.refresh")}</Button>
     </div>
     <ActionReview action={action} summary={<p className="break-words">{t(review[action.intent?.actionKey ?? ""] ?? "skills.reviewShare",
-      { name: definition.displayName, version: String(action.intent?.assetVersion ?? definition.resourceVersion) })}</p>} />
+      { name: definition.displayName, version: reviewedVersion })}</p>} />
     <ActionStatus action={action} />
     {uploading ? <SkillUpload definition={definition} onClose={() => { setUploading(false); setUploadPending(false); }}
       onLocked={setUploadPending} onRecorded={recorded} /> : null}
