@@ -376,12 +376,16 @@ describe('DD-133(4) entry admission in the middleware', () => {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ keys: [{ ...jwk, kid: 'native' }] }));
     });
-    // Stands in for the Node consumer; the user arrives in the header the
-    // middleware itself would set on that hop.
+    // Stands in for the Node consumer. In the deployment the hop passes the
+    // middleware again, which sets the user from the same token; here the
+    // user key is derived from that token's subject directly.
     node = createServer((req, res) => {
       lookups.push(`${req.method} ${req.url} ${req.headers.authorization}`);
-      const user = decodeKailoUser(req.headers[KAILO_USER_HEADER] as string);
-      const reply = answer(user?.key ?? '');
+      const token = String(req.headers.authorization).split(' ')[1] ?? '';
+      const claims = JSON.parse(
+        Buffer.from(token.split('.')[1] ?? '', 'base64url').toString() || '{}',
+      );
+      const reply = answer(claims.sub ? key(settings.issuer, claims.sub) : '');
       res.statusCode = reply.status;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(reply.body));
