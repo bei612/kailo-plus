@@ -230,8 +230,11 @@ cmd_builder() {
     container_require_limited_builder
   )
   if [ -n "$BUILDKITD_CONFIG" ]; then
-    docker exec "$CONTAINER" cat /etc/buildkit/buildkitd.toml | cmp -s - "$BUILDKITD_CONFIG" \
-      || die "新 builder 内的 buildkitd.toml 与 $BUILDKITD_CONFIG 不一致"
+    # buildx 写入容器时会重新序列化 TOML（去掉注释），按解析结果比较。
+    docker exec "$CONTAINER" cat /etc/buildkit/buildkitd.toml | python3 -c '
+import sys, tomllib
+if tomllib.loads(sys.stdin.read()) != tomllib.load(open(sys.argv[1], "rb")):
+    sys.exit(1)' "$BUILDKITD_CONFIG" || die "新 builder 内的 buildkitd.toml 与 $BUILDKITD_CONFIG 不一致"
   fi
   printf '已重建 %s；旧实例备份 %s\n' "$BUILDER" "$backup"
 }
