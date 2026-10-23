@@ -161,7 +161,6 @@ remove_paths:
   - desktop/src-tauri/src/commands/mesh_readiness.rs
   - desktop/src-tauri/src/commands/messages/forum.rs
   - desktop/src-tauri/src/commands/observer_archive.rs
-  - desktop/src-tauri/src/commands/os_idle.rs
   - desktop/src-tauri/src/commands/pairing.rs
   - desktop/src-tauri/src/commands/pairing_generation_tests.rs
   - desktop/src-tauri/src/commands/pairing_relay_tests.rs
@@ -187,7 +186,6 @@ remove_paths:
   - desktop/src-tauri/src/commands/team_snapshot
   - desktop/src-tauri/src/commands/team_snapshot.rs
   - desktop/src-tauri/src/commands/teams
-  - desktop/src-tauri/src/commands/updater.rs
   - desktop/src-tauri/src/commands/workflows.rs
   - desktop/src-tauri/src/commands/workflows_tests.rs
   - desktop/src-tauri/src/event_sync.rs
@@ -225,7 +223,6 @@ remove_paths:
   - desktop/src-tauri/src/terminal_runtime
   - desktop/src-tauri/src/terminal_runtime.rs
   - desktop/src-tauri/src/terminal_transport.rs
-  - desktop/src-tauri/src/tray_menu.rs
   - desktop/src-tauri/tauri.windows.conf.json
   - desktop/src-tauri/tests/fixtures
   - desktop/src-tauri/tests/rodio_mixer_diagnostic.rs
@@ -262,7 +259,6 @@ remove_paths:
   - desktop/src/app/useHuddlePresentation.ts
   - desktop/src/app/useLiveHomeFeedActions.ts
   - desktop/src/app/useTerminalContext.ts
-  - desktop/src/app/useTrayMenu.ts
   - desktop/src/features-manifest.d.ts
   - desktop/src/features/agent-memory
   - desktop/src/features/agents
@@ -653,16 +649,12 @@ remove_paths:
   - desktop/src/features/projects
   - desktop/src/features/pulse
   - desktop/src/features/reminders
-  - desktop/src/features/settings/SidebarUpdateCard.tsx
-  - desktop/src/features/settings/UpdateChecker.tsx
-  - desktop/src/features/settings/UpdateIndicator.tsx
-  - desktop/src/features/settings/hooks
+  - desktop/src/features/settings/hooks/useSendFeedback.helpers.test.mjs
+  - desktop/src/features/settings/hooks/useSendFeedback.ts
   - desktop/src/features/settings/lib/appearanceScopeCopy.test.mjs
   - desktop/src/features/settings/lib/appearanceScopeCopy.ts
   - desktop/src/features/settings/lib/moderationQueue.test.mjs
   - desktop/src/features/settings/lib/moderationQueue.ts
-  - desktop/src/features/settings/sidebarUpdateCardVisibility.test.mjs
-  - desktop/src/features/settings/sidebarUpdateCardVisibility.ts
   - desktop/src/features/settings/ui/AgentDefaultsSettingsCard.tsx
   - desktop/src/features/settings/ui/AgentsSettingsPanel.tsx
   - desktop/src/features/settings/ui/ChannelTemplatesSettingsCard.tsx
@@ -752,7 +744,6 @@ remove_paths:
   - desktop/src/shared/api/moderation.ts
   - desktop/src/shared/api/observerRelay.test.mjs
   - desktop/src/shared/api/observerRelay.ts
-  - desktop/src/shared/api/osIdle.ts
   - desktop/src/shared/api/parseInviteInput.test.mjs
   - desktop/src/shared/api/presenceRelaySubscription.test.mjs
   - desktop/src/shared/api/presenceRelaySubscription.ts
@@ -980,7 +971,11 @@ remove_paths:
   - mobile/android/app/src/test/kotlin/xyz/block/buzz/mobile/HuddleActiveTalkerSelectorTest.kt
   - mobile/lib/features/activity
   - mobile/lib/features/age_gate
-  - mobile/lib/features/channels/agent_activity
+  - mobile/lib/features/channels/agent_activity/observer_models.dart
+  - mobile/lib/features/channels/agent_activity/observer_subscription.dart
+  - mobile/lib/features/channels/agent_activity/transcript_builder.dart
+  - mobile/lib/features/channels/agent_activity/transcript_item_widget.dart
+  - mobile/lib/features/channels/agent_activity/working_bots_provider.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_avatar.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_controls.dart
   - mobile/lib/features/channels/channel_detail_page/huddle_call_participants.dart
@@ -994,7 +989,8 @@ remove_paths:
   - mobile/lib/features/channels/channel_metadata_updates.dart
   - mobile/lib/features/channels/channel_mutes
   - mobile/lib/features/channels/channel_push_cache.dart
-  - mobile/lib/features/channels/channel_sections
+  - mobile/lib/features/channels/channel_sections/channel_sections_manager.dart
+  - mobile/lib/features/channels/channel_sections/channel_sections_storage.dart
   - mobile/lib/features/channels/channel_sort
   - mobile/lib/features/channels/channel_stars
   - mobile/lib/features/channels/channels_page/badges.dart
@@ -1037,8 +1033,6 @@ remove_paths:
   - mobile/test/features/forum
   - mobile/test/features/invites
   - mobile/test/features/pairing
-  - mobile/test/features/profile/set_status_sheet_test.dart
-  - mobile/test/features/profile/user_status_provider_test.dart
   - mobile/test/features/pulse
   - mobile/test/features/settings/connection_section_test.dart
   - mobile/test/features/settings/settings_page_loading_test.dart

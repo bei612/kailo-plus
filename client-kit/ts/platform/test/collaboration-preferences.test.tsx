@@ -108,3 +108,43 @@ describe("DD-125 preference writes share the read-mark CAS queue", () => {
     expect(output()).toEqual({ version: 6, following: true, muted: false });
   });
 });
+
+const workspace = "44444444-4444-4444-8444-444444444444";
+
+function MuteHarness({ client }: { client: ReturnType<typeof createBffClient> }) {
+  const reads = useInboxState(client);
+  const actions = useCollaborationPreferenceActions(client, reads);
+  return <>
+    <output>{JSON.stringify({ version: reads.state?.version ?? null, muted: actions.isWorkspaceMuted(workspace) ?? null })}</output>
+    <button disabled={!actions.writable} onClick={() => void actions.setWorkspaceMuted(workspace, true)}>Mute</button>
+  </>;
+}
+
+describe("DD-150(3) channel mute is the Workspace preference", () => {
+  it("writes muted with the Star and version of the same Core snapshot, no action", async () => {
+    let current: CollaborationUserState = { version: 5, readContexts: {},
+      workspacePreferences: { [workspace]: { starred: true, muted: false } } };
+    const writes: BffRequest[] = [];
+    const client = createBffClient({ send: async (request) => {
+      if (request.method === "GET" && request.path === "/api/v1/workspaces") return { status: 200, body: [] };
+      if (request.method === "GET" && request.path.startsWith("/api/v1/conversations")) return { status: 200, body: { items: [] } };
+      if (request.method === "GET") return { status: 200, body: current };
+      writes.push(request);
+      const body = request.body as { muted: boolean; starred: boolean; version: number };
+      current = { ...current, version: body.version + 1,
+        workspacePreferences: { [workspace]: { starred: body.starred, muted: body.muted } } };
+      return { status: 200, body: { version: current.version } };
+    } });
+    const ui = await render(<MuteHarness client={client} />);
+    await settle();
+    const output = () => JSON.parse(ui.querySelector("output")!.textContent!);
+    expect(output()).toEqual({ version: 5, muted: false });
+    await click(button(ui, "Mute"));
+    await settle();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ method: "PUT", path: `/api/v1/user-state/workspaces/${workspace}`,
+      body: { muted: true, starred: true, version: 5 } });
+    expect(writes.some((request) => request.path === "/api/v1/actions")).toBe(false);
+    expect(output()).toEqual({ version: 6, muted: true });
+  });
+});

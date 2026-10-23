@@ -2,7 +2,7 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate, ShieldAlert, FileText, MessageCircleQuestion, Plug } from "lucide-react";
+import { ArrowLeft, BellRing, Bot, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical, LayoutTemplate, ShieldAlert, FileText, MessageCircleQuestion, Plug, Download } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
 import type { Loaded } from "./use-load";
@@ -26,8 +26,9 @@ export const settingsSectionKeys = {
   agents: "platform.settings.agents",
   connectors: "platform.settings.connectors",
   experimental: "platform.settings.experimental",
+  updates: "platform.settings.updates",
 } as const;
-const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, documents: FileText, answers: MessageCircleQuestion, shortcuts: Keyboard, "community-members": Ticket, moderation: ShieldAlert, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, connectors: Plug, experimental: FlaskConical };
+const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, documents: FileText, answers: MessageCircleQuestion, shortcuts: Keyboard, "community-members": Ticket, moderation: ShieldAlert, "custom-emoji": Smile, "channel-templates": LayoutTemplate, agents: Bot, connectors: Plug, experimental: FlaskConical, updates: Download };
 const personalSettingsSections: SettingsSection[] = ["profile", "appearance", "notifications", "shortcuts", "custom-emoji"];
 
 export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
@@ -43,7 +44,7 @@ export function SettingsBackButton({ locale, onClose, sidebarState = "expanded",
   </SidebarMenuItem></SidebarMenu>;
 }
 
-export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false, contributedSections = [] }: {
+export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false, contributedSections = [], updates = false }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   icons?: Partial<Record<SettingsSection, ReactNode>>;
   sidebarState?: "expanded" | "collapsed"; isMobile?: boolean;
@@ -55,6 +56,8 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
   moderation?: boolean;
   /** DD-138: Kailo categories that have contributed items ("documents", "answers"), after Notifications. */
   contributedSections?: SettingsSection[];
+  /** DD-125(5): the original App "Updates" section, offered only by the Desktop host. */
+  updates?: boolean;
 }) {
   // Original Personal group order ends with local-archive, then channel-templates.
   const base = personalSettingsSections.flatMap((value) => value === "notifications"
@@ -66,7 +69,7 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
   if(communities.length>0)groups.push({label:translate(locale,"platform.settings.communities"),sections:communities});
   // Original App group order (agents, compute, experimental, …); hosts render the sections they have.
   // DD-149 (1): Kailo's Connectors category sits next to Agents.
-  groups.push({label:translate(locale,"platform.settings.app"),sections:["agents","connectors","experimental"]});
+  groups.push({label:translate(locale,"platform.settings.app"),sections:["agents","connectors","experimental",...(updates?["updates" as const]:[])]});
   return <>
     {invitationAccess?.status==="pending"?<div className="mx-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70" data-testid="community-access-loading"><LoaderCircle className="h-3.5 w-3.5 animate-spin"/>{translate(locale,"platform.loading")}</div>:null}
     {invitationAccess?.status==="error"&&onRetryInvitations&&!(invitationAccess.error instanceof BffError&&invitationAccess.error.status===403)?<div className="mx-3" data-testid="community-access-error"><ReadFailure error={invitationAccess.error} onRetry={onRetryInvitations}/></div>:null}
@@ -103,11 +106,11 @@ export function SettingsContentSurface({ section, children }: { section: Setting
 // Original SettingsView shell, shared by both hosts. Access facts and section
 // bodies still come from the existing governed consumers, not a second query.
 export function SettingsViewSurface({ locale, section, onSelect, onClose, children, active = true,
-  appVersion, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false, contributedSections }: {
+  appVersion, invitationAccess, onRetryInvitations, channelTemplates = false, moderation = false, contributedSections, updates = false }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   onClose?: () => void; children: ReactNode; active?: boolean; appVersion?: string | null;
   invitationAccess?: Loaded<boolean>; onRetryInvitations?: () => void; channelTemplates?: boolean; moderation?: boolean;
-  contributedSections?: SettingsSection[];
+  contributedSections?: SettingsSection[]; updates?: boolean;
 }) {
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const [isLoaded, setIsLoaded] = useState(false);
@@ -140,7 +143,7 @@ export function SettingsViewSurface({ locale, section, onSelect, onClose, childr
         <SettingsNavigation locale={locale} section={section} onSelect={onSelect}
           sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile}
           invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} channelTemplates={channelTemplates}
-          moderation={moderation} contributedSections={contributedSections} />
+          moderation={moderation} contributedSections={contributedSections} updates={updates} />
       </SidebarContent>
       <SidebarFooter>
         {appVersion ? <p className="px-2 pb-1 text-xs text-sidebar-foreground/45" data-buzz-sidebar-secondary data-testid="settings-version">v{appVersion}</p> : null}

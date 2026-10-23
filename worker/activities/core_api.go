@@ -269,6 +269,41 @@ func (c *CoreAPI) ConvergeWorkspaceChannelArchive(ctx context.Context, in Worksp
 	return c.post(ctx, "/service/v1/workspaces/channel-archive", in, nil)
 }
 
+// WorkspaceDeleteAdvanceInput 是 workspace.delete 的 DELETE 段一轮推进的载荷（DD-150）。
+// 只带引用：删除清单由 Core 从准入冻结的 WorkspaceLifecycleSnapshot 读取；版本是准入落定后
+// （DELETING）的 Workspace 版本。
+type WorkspaceDeleteAdvanceInput struct {
+	WorkspaceID      string `json:"workspaceId"`
+	WorkspaceVersion int32  `json:"workspaceVersion"`
+	SnapshotID       string `json:"snapshotId"`
+}
+
+// AdvanceWorkspaceDelete 的结论，与 Core 的 WorkspaceDeleteAdvanceResult 逐字相同。
+const (
+	// 仍有未回读确认的段，等下一轮
+	WorkspaceDeletePending = "PENDING"
+	// 全部确认，Workspace 已转墓碑
+	WorkspaceDeleted = "DELETED"
+)
+
+// WorkspaceDeleteAdvanceResult 是一轮推进的回答。Stage 是尚未确认的那一段。
+type WorkspaceDeleteAdvanceResult struct {
+	State      string `json:"state"`
+	Stage      string `json:"stage,omitempty"`
+	SnapshotID string `json:"snapshotId"`
+}
+
+// AdvanceWorkspaceDelete 请 Core 按冻结快照推进一轮频道删除（DD-150(2)）：停用 Installation、
+// Schedule/Huddle/roster 收尾与 CONTROL 9008、SpiceDB relationship 删除与 Core 墓碑，每段以
+// 回读为准。409 是确定的拒绝（快照、版本或状态不符）；503 是依赖不可用，按重试上界继续。
+func (c *CoreAPI) AdvanceWorkspaceDelete(
+	ctx context.Context, in WorkspaceDeleteAdvanceInput,
+) (WorkspaceDeleteAdvanceResult, error) {
+	var out WorkspaceDeleteAdvanceResult
+	err := c.post(ctx, "/service/v1/workspaces/delete-advance", in, &out)
+	return out, err
+}
+
 // WorkspaceMetadataInput 是 workspace.update 的 METADATA 段一轮收敛的载荷（DD-119）。
 // 只带引用：名称、描述与 TTL 的目标状态由 Core 从该 ActionExecution 的冻结参数读取，
 // 不进 Workflow history。版本是准入时冻结的 Workspace 版本。LastRound 只回读、不再签发。

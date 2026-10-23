@@ -1759,7 +1759,7 @@ pub async fn converge_workspace_channel_roster(
 /// 去删——Core 之外混进 roster 的钥匙同样必须清掉。REBUILD 不替仍在建立或撤权途中的
 /// 钥匙下结论：它们由各自的投影 Workflow 收敛（与对账度量同一口径）。收敛后按当前
 /// 事实重算期望并与回读比对；未收敛或不一致回 `Ok(false)`。
-async fn converge_channel_roster(
+pub(crate) async fn converge_channel_roster(
     state: &ServiceState,
     control: &IdentityClient,
     tenant_id: Uuid,

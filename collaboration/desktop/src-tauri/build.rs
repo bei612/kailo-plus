@@ -7,6 +7,10 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BUZZ_RELAY_HTTP");
     println!("cargo:rerun-if-env-changed=BUZZ_BUILD_RELAY_RECONNECT_CMD");
     println!("cargo:rerun-if-env-changed=BUZZ_BUILD_DEMO_SLUG");
+    println!("cargo:rerun-if-env-changed=PLATFORM_UPDATER_PUBLIC_KEY");
+    println!("cargo:rerun-if-env-changed=PLATFORM_UPDATER_ENDPOINT");
+    println!("cargo:rerun-if-env-changed=PLATFORM_DESKTOP_RELEASE_URL");
+    println!("cargo:rustc-check-cfg=cfg(platform_updater_enabled)");
 
     if let Ok(slug) = std::env::var("BUZZ_BUILD_DEMO_SLUG") {
         let valid = !slug.is_empty()
@@ -43,6 +47,25 @@ fn main() {
             panic!("BUZZ_BUILD_RELAY_RECONNECT_CMD doesn't match ReconnectHookConfig: {e}")
         });
         println!("cargo:rustc-env=BUZZ_DESKTOP_BUILD_RELAY_RECONNECT_CMD={val}");
+    }
+
+    // DD-125(5), apps ADR-06: the Desktop release configuration injects the update feed
+    // and its signing key at packaging time (the same values go into the Tauri release
+    // config). Without both, the updater plugin is not registered.
+    let updater_public_key = std::env::var("PLATFORM_UPDATER_PUBLIC_KEY")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let updater_endpoint = std::env::var("PLATFORM_UPDATER_ENDPOINT")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    if updater_public_key.is_some() && updater_endpoint.is_some() {
+        println!("cargo:rustc-cfg=platform_updater_enabled");
+    }
+    if let Ok(release_url) = std::env::var("PLATFORM_DESKTOP_RELEASE_URL") {
+        println!(
+            "cargo:rustc-env=PLATFORM_DESKTOP_RELEASE_URL={}",
+            release_url.trim()
+        );
     }
 
     // Cargo test executables get no embedded Windows manifest (tauri_build

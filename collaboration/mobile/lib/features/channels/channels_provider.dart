@@ -580,9 +580,14 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     NostrEvent event,
     String pubkey,
   ) {
+    // DD-150(3): a Workspace channel's mute is its workspace preference. Until
+    // Core answers, a channel keeps the original unmuted default, as before.
     final muted = channel.isDm
         ? ref.read(collaborationPreferencesProvider).muted(channel.id)
-        : false;
+        : ref
+                  .read(collaborationPreferencesProvider)
+                  .workspaceMuted(channel.id) ??
+              false;
     // Missing/revoked authority is not an unmuted preference. The original
     // predicate retains broadcast/own-mention precedence for confirmed mutes.
     if (muted == null) return false;

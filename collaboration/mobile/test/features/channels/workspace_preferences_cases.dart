@@ -213,7 +213,7 @@ void starPreferenceCases(Future<SharedPreferences> Function() preferences) {
   );
 
   testWidgets(
-    'original stream quick action is confirmed Star/Unstar; DM has no Star and stream has no mute',
+    'original stream quick action is confirmed Star/Unstar; DM has no Star and stream mute is the workspace preference',
     (tester) async {
       final server = _Server();
       final harness = await _Harness.start(server, await preferences());
@@ -243,7 +243,13 @@ void starPreferenceCases(Future<SharedPreferences> Function() preferences) {
       await tester.pumpAndSettle();
       expect(find.text('Star'), findsOneWidget);
       expect(find.text('Mark Unread'), findsOneWidget);
-      expect(find.byKey(const Key('channel-action-mute')), findsNothing);
+      // DD-150(3): the readback says muted (server.workspaceMuted defaults true).
+      expect(
+        tester
+            .widget<ListTile>(find.byKey(const Key('channel-action-mute')))
+            .onTap,
+        isNotNull,
+      );
       await tester.tap(find.text('Star'));
       await tester.pumpAndSettle();
       expect(server.starPuts, hasLength(1));

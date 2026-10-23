@@ -18,6 +18,7 @@ import { useBffClient, useFailureText, useReasonText, useT } from "../context";
 import { Badge, Button, Notice, ReadFailure } from "../ui";
 import { useLoad } from "../use-load";
 import { AgentManagementDialog } from "./AgentManagementDialog";
+import { IdentityInitialsAvatar } from "./IdentityInitialsAvatar";
 import { omissionLabels, toBase64, useImportAction } from "./AgentSnapshotImportDialog";
 
 /** Original upper bounds for `.team.json` / `.team.png`. */
@@ -26,6 +27,7 @@ export const MAX_TEAM_SNAPSHOT_PNG_BYTES = 50 * 1024 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const PANEL_CLASS = "rounded-xl border border-border bg-card p-3";
 const MEDIA_URL = /^https?:\/\/[^/]+\/media\/[0-9a-f]{64}(\.[A-Za-z0-9]+)?$/;
+const AVATAR_DATA_URL = /^data:image\/(png|jpeg|gif|webp);base64,/;
 
 export type TeamSnapshotSource = { bytes: Uint8Array; mediaType: AgentSnapshotMediaType; filename: string };
 
@@ -54,7 +56,9 @@ export function validTeamPreview(view: AgentTeamSnapshotImportPreview, source: T
     && view.members.every((member) => !!member && typeof member.displayName === "string" && !!member.displayName.trim()
       && typeof member.instructions === "string" && Array.isArray(member.omitted)
       && member.omitted.every((code) => omissions.includes(code))
-      && (member.avatarUrl === undefined || MEDIA_URL.test(member.avatarUrl)));
+      // As for one Agent: a staged avatar comes with the package's own bytes for the preview, and only then.
+      && (member.avatarUrl === undefined ? member.avatarDataUrl === undefined
+        : MEDIA_URL.test(member.avatarUrl) && typeof member.avatarDataUrl === "string" && AVATAR_DATA_URL.test(member.avatarDataUrl)));
 }
 
 export function TeamSnapshotImportDialog({ source, onClose, onImported }: {
@@ -108,8 +112,13 @@ function ImportBody({ source, action, onClose }: {
       <ul className={`flex max-h-64 flex-col gap-2 overflow-y-auto ${PANEL_CLASS}`}>
         {preview.members.map((member, index) => (
           // Member names may repeat; the package order is the identity here.
-          <li key={index} className="flex flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0"
+          <li key={index} className="flex gap-3 border-b border-border pb-2 last:border-b-0 last:pb-0"
             data-testid={`team-snapshot-import-member-${index}`}>
+            {member.avatarDataUrl ? <img alt="" src={member.avatarDataUrl} className="h-9 w-9 shrink-0 rounded-squircle object-cover"
+              data-testid={`team-snapshot-import-member-${index}-avatar`} />
+              : <span className="h-9 w-9 shrink-0"><IdentityInitialsAvatar className="border-0 text-xs shadow-none" colorIndex={index}
+                label={member.displayName} size={36} /></span>}
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
             <p className="break-words font-medium">{member.displayName}</p>
             {member.description ? <p className="break-words text-xs text-muted-foreground">{member.description}</p> : null}
             {member.instructions.trim()
@@ -119,6 +128,7 @@ function ImportBody({ source, action, onClose }: {
             {member.avatarUrl ? <p className="text-xs text-muted-foreground">{t("teamSnapshot.memberAvatarImported")}</p> : null}
             {member.omitted.length > 0 ? <div className="flex flex-wrap gap-1">{member.omitted.map((code) =>
               <Badge key={code} tone="neutral">{t(omissionLabels[code] ?? "agents.snapshot.omitted.other")}</Badge>)}</div> : null}
+            </div>
           </li>
         ))}
       </ul>

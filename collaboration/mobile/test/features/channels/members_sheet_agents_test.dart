@@ -2,15 +2,19 @@
 // author directory: one row per governed installation with its owner line, nothing granted.
 import 'dart:async';
 
+import 'package:buzz/features/channels/agent_activity/agent_activity_sheet.dart';
 import 'package:buzz/features/channels/channel.dart';
+import 'package:buzz/features/channels/channel_typing_provider.dart';
 import 'package:buzz/features/channels/channel_governed_actions.dart';
 import 'package:buzz/features/channels/members_sheet.dart';
 import 'package:buzz/features/profile/user_status.dart';
 import 'package:buzz/features/profile/user_status_cache_provider.dart';
+import 'package:buzz/shared/platform/agent_activity_api.dart';
 import 'package:buzz/shared/platform/agent_author_directory.dart';
 import 'package:buzz/shared/platform/platform_views.dart';
 import 'package:buzz/shared/profile/user_cache_provider.dart';
 import 'package:buzz/shared/profile/user_profile.dart';
+import 'package:buzz/shared/widgets/modal_presentation.dart';
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,15 +56,30 @@ class _Statuses extends UserStatusCacheNotifier {
   void track(List<String> pubkeys) => tracked.addAll(pubkeys);
 }
 
+class _Typing extends ChannelTypingNotifier {
+  _Typing(this._entries) : super(_workspace);
+  final List<TypingEntry> _entries;
+
+  @override
+  List<TypingEntry> build() => _entries;
+}
+
 Future<_Statuses> _pump(
   WidgetTester tester, {
   required FutureOr<List<AgentAuthorView>> Function() agents,
   Map<String, UserProfile> profiles = const {},
+  List<TypingEntry> typing = const [],
+  bool asSheet = false,
 }) async {
   final statuses = _Statuses();
   await tester.pumpWidget(
     WidgetHelpers.testable(
       overrides: [
+        channelTypingProvider(_workspace).overrideWith(() => _Typing(typing)),
+        platformAgentActiveTurnsProvider(_workspace).overrideWith(
+          (ref) async =>
+              AgentActiveTurnPage(turns: const [], workspaceId: _workspace),
+        ),
         platformWorkspaceMembersProvider(_workspace).overrideWith(
           (ref) async => [
             WorkspaceMemberView(
@@ -83,12 +102,47 @@ Future<_Statuses> _pump(
         userCacheProvider.overrideWith(() => _Profiles(profiles)),
         userStatusCacheProvider.overrideWith(() => statuses),
       ],
-      child: MembersSheet(channel: _channel, currentPubkey: null),
+      child: asSheet
+          ? Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showBuzzModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) =>
+                      MembersSheet(channel: _channel, currentPubkey: null),
+                ),
+                child: const Text('Open members'),
+              ),
+            )
+          : MembersSheet(channel: _channel, currentPubkey: null),
     ),
   );
-  await tester.pumpAndSettle();
+  // A working Agent row shows the original spinner, which never settles.
+  Future<void> settle() async {
+    if (typing.isEmpty) {
+      await tester.pumpAndSettle();
+      return;
+    }
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  await settle();
+  if (asSheet) {
+    await tester.tap(find.text('Open members'));
+    await settle();
+  }
   return statuses;
 }
+
+AgentAuthorView _scout() => AgentAuthorView(
+  agentDisplayName: 'Scout',
+  agentPubkey: _agentKey,
+  installationResourceId: 'install-1',
+  ownerDisplayName: 'Bob',
+  ownerPrincipalId: 'bob',
+);
 
 void main() {
   testWidgets('lists governed agents with the persona name and owner line', (
@@ -155,4 +209,65 @@ void main() {
       expect(find.text('Alice'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'an Agent typing in the channel is Working and its row opens the activity sheet',
+    (tester) async {
+      await _pump(
+        tester,
+        asSheet: true,
+        agents: () => [_scout()],
+        typing: [
+          TypingEntry(
+            pubkey: _agentKey.toUpperCase(),
+            threadHeadId: 'root',
+            expiresAtMs: DateTime.now().millisecondsSinceEpoch + 8000,
+          ),
+          TypingEntry(
+            pubkey: 'b' * 64,
+            expiresAtMs: DateTime.now().millisecondsSinceEpoch + 8000,
+          ),
+        ],
+      );
+
+      expect(
+        find.byKey(const ValueKey('channel-agent-working')),
+        findsOneWidget,
+      );
+      expect(find.text('Working\u2026'), findsOneWidget);
+      expect(find.text('Added by Bob'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('channel-agent-install-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MembersSheet), findsNothing);
+      expect(find.byType(AgentActivitySheet), findsOneWidget);
+      expect(find.text('Scout'), findsOneWidget);
+      // A member without `audit` has no turn row: the detail is said to be audit-only.
+      expect(
+        find.byKey(const ValueKey('agent-activity-audit-only')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('an idle Agent keeps its owner line and still offers activity', (
+    tester,
+  ) async {
+    await _pump(tester, asSheet: true, agents: () => [_scout()]);
+
+    expect(find.byKey(const ValueKey('channel-agent-working')), findsNothing);
+    expect(find.text('Added by Bob'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('channel-agent-install-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AgentActivitySheet), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('channel-agent-activity-install-1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AgentActivitySheet), findsOneWidget);
+    expect(find.byKey(const ValueKey('agent-activity-idle')), findsOneWidget);
+  });
 }

@@ -185,6 +185,7 @@ export function SettingsPage({
   channelTemplates,
   moderation,
   workspaceId,
+  updates,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -201,6 +202,8 @@ export function SettingsPage({
   moderation?: boolean;
   /** DD-138: the Workspace whose native page bindings also contribute settings items. */
   workspaceId?: string;
+  /** DD-125(5): the original App "Updates" section; only the Desktop host renders it. */
+  updates?: boolean;
 }) {
   // DD-138 (07 §4.8.2): component items join Kailo's own categories; the
   // "documents" and "answers" categories exist only when an item does.
@@ -214,7 +217,7 @@ export function SettingsPage({
   return (
     <SettingsViewSurface locale={locale} section={section} onSelect={onSelect} onClose={onClose}
       active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}
-      channelTemplates={channelTemplates} moderation={moderation} contributedSections={contributedSections}>
+      channelTemplates={channelTemplates} moderation={moderation} contributedSections={contributedSections} updates={updates}>
       {children}
       {section === "appearance" ? <ContributedPreferenceItems declarations={declarations} category="APPEARANCE" />
         : section === "notifications" ? <ContributedPreferenceItems declarations={declarations} category="NOTIFICATIONS" />

@@ -147,8 +147,10 @@ pub(crate) fn preview_fields(team: &TeamSnapshot, avatar_urls: &[Option<String>]
             if let Some(description) = &m.description {
                 member["description"] = json!(description);
             }
-            if let Some(Some(url)) = avatar_urls.get(i) {
+            // 与单个 Agent 预览相同：只有已暂存为媒体对象的头像才同时给出包内字节供预览显示。
+            if let (Some(Some(url)), Some(data_url)) = (avatar_urls.get(i), &m.avatar_data_url) {
                 member["avatarUrl"] = json!(url);
+                member["avatarDataUrl"] = json!(data_url);
             }
             member
         })
@@ -327,21 +329,31 @@ mod tests {
 
     #[test]
     fn preview_lists_members_in_order_with_staged_avatars() {
+        let avatar = "data:image/png;base64,iVBORw0KGgo=";
+        let mut reviewer = member("Reviewer");
+        reviewer["profile"]["avatarDataUrl"] = json!(avatar);
+        let mut editor = member("Editor");
+        editor["profile"]["avatarDataUrl"] = json!(avatar);
         let decoded = decode(
-            &serde_json::to_vec(&team(vec![member("Writer"), member("Reviewer")])).unwrap(),
+            &serde_json::to_vec(&team(vec![member("Writer"), reviewer, editor])).unwrap(),
             MediaType::Json,
         )
         .unwrap();
         let view = preview_fields(
             &decoded,
-            &[None, Some("https://h.test/media/abc.png".to_owned())],
+            &[None, Some("https://h.test/media/abc.png".to_owned()), None],
         );
         assert_eq!(view["members"][0]["displayName"], "Writer");
         assert!(view["members"][0].get("avatarUrl").is_none());
+        assert!(view["members"][0].get("avatarDataUrl").is_none());
         assert_eq!(
             view["members"][1]["avatarUrl"],
             "https://h.test/media/abc.png"
         );
+        // The preview shows the package's own bytes only for an avatar that was staged.
+        assert_eq!(view["members"][1]["avatarDataUrl"], avatar);
+        assert!(view["members"][2].get("avatarUrl").is_none());
+        assert!(view["members"][2].get("avatarDataUrl").is_none());
         assert_eq!(view["description"], "Ships notes.");
     }
 }

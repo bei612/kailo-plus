@@ -3,8 +3,8 @@
 // governed `workspace.update` (DD-119), offered only with the BFF's update hint; a channel the
 // TTL reaper archived offers only the original reopen (`workspaceUpdate.reopen`). A recorded
 // request is not a saved channel: the sheet stays open with the status line until the channel
-// reads back. The Canvas section is not offered: Kailo's Canvas is the adopted CONTROL-authored
-// body (DD-125(4)) and Mobile has no governed Canvas writer yet.
+// reads back. The Canvas section is the adopted CONTROL-authored body (DD-125(4)), edited only
+// through the governed `workspace.canvas.set` (DD-150(4), channel_canvas_section.dart).
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -12,6 +12,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/theme/theme.dart';
 import 'channel.dart';
+import 'channel_canvas_section.dart';
 import 'channel_governed_actions.dart';
 
 class ManageChannelSheet extends HookConsumerWidget {
@@ -173,6 +174,11 @@ class ManageChannelSheet extends HookConsumerWidget {
                 ),
               ),
             ],
+            const SizedBox(height: Grid.sm),
+            ChannelCanvasSection(
+              workspaceId: channel.id,
+              isArchived: channel.isArchived,
+            ),
           ],
         ),
       ),

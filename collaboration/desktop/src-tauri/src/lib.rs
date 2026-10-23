@@ -32,6 +32,11 @@ mod relay;
 mod relay_admission;
 mod secret_store;
 mod shutdown;
+#[cfg(target_os = "macos")]
+mod tray_menu;
+#[cfg(not(target_os = "macos"))]
+#[path = "tray_menu_stub.rs"]
+mod tray_menu;
 mod unread_catch_up;
 mod util;
 #[cfg(target_os = "linux")]
@@ -138,6 +143,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init());
 
+    // DD-125(5): the updater is registered only in release builds whose packaging injected
+    // the Kailo update feed and signing key; otherwise Updates shows the original
+    // "unavailable" state.
+    #[cfg(platform_updater_enabled)]
+    let builder = if cfg!(debug_assertions) {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    };
+
     let app = app_menu::install(builder)
         .register_asynchronous_uri_scheme_protocol("buzz-media", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -157,6 +172,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             #[cfg(target_os = "macos")]
             {
+                tray_menu::init(&app_handle)?;
                 macos_notifications::init(&app_handle)?;
                 mouse_nav::init(&app_handle);
             }
@@ -231,6 +247,14 @@ pub fn run() {
             get_identity,
             get_nsec,
             get_presence,
+            get_os_idle_seconds,
+            is_auto_update_supported,
+            updater_release_url,
+            tray_menu::clear_tray_agent_activity,
+            tray_menu::requeue_tray_actions,
+            tray_menu::take_tray_actions,
+            tray_menu::update_tray_agent_activity,
+            tray_menu::update_tray_menu_labels,
             generate_backup_passphrase,
             create_ncryptsec_backup,
             verify_ncryptsec_backup,

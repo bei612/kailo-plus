@@ -97,6 +97,9 @@ class _SliverChannelsList extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final readState = ref.watch(readStateProvider);
     final preferences = ref.watch(collaborationPreferencesProvider);
+    // DD-150(3): custom sections are the Core `sidebar_sections` readback.
+    final sectionsState = ref.watch(channelSectionsProvider);
+    final collapsedSections = useState<Set<String>>(const {});
     final visibleChannels = channels
         .where((channel) => channel.isMember && !channel.isArchived)
         .toList();
@@ -130,12 +133,30 @@ class _SliverChannelsList extends HookConsumerWidget {
             );
             return name != 0 ? name : left.id.compareTo(right.id);
           });
-    final ungroupedStreamChannels = streamChannels
+    final unstarredStreamChannels = streamChannels
         .where(
           (channel) =>
               channel.channelType != 'stream' ||
               preferences.starred(channel.id) != true,
         )
+        .toList();
+    // Original grouping: Starred wins, then the assigned custom section, then
+    // the default Channels group.
+    final userSections = sectionsState.sections;
+    List<Channel> sectionChannels(String sectionId) =>
+        unstarredStreamChannels
+            .where(
+              (channel) => sectionsState.sectionOf(channel.id) == sectionId,
+            )
+            .toList()
+          ..sort((left, right) {
+            final name = left.name.toLowerCase().compareTo(
+              right.name.toLowerCase(),
+            );
+            return name != 0 ? name : left.id.compareTo(right.id);
+          });
+    final ungroupedStreamChannels = unstarredStreamChannels
+        .where((channel) => sectionsState.sectionOf(channel.id) == null)
         .toList();
     final initialSeedComplete = useState(false);
     final seededPubkey = useRef<String?>(null);
@@ -206,10 +227,39 @@ class _SliverChannelsList extends HookConsumerWidget {
                 emptyLabel: '',
                 onSelectChannel: onSelectChannel,
               ),
+            for (final section in userSections)
+              _ChannelSection(
+                key: ValueKey('channel-user-section-${section.id}'),
+                title: section.name,
+                icon: LucideIcons.folder,
+                emoji: section.icon,
+                showTopDivider:
+                    starredStreamChannels.isNotEmpty ||
+                    userSections.first.id != section.id,
+                expanded: !collapsedSections.value.contains(section.id),
+                onToggle: () {
+                  final next = {...collapsedSections.value};
+                  if (!next.remove(section.id)) next.add(section.id);
+                  collapsedSections.value = next;
+                },
+                channels: sectionChannels(section.id),
+                unreadChannelIds: unreadChannelIds,
+                emptyLabel: '',
+                onSelectChannel: onSelectChannel,
+                menu: sectionsState.writable
+                    ? _UserSectionMenu(
+                        section: section,
+                        channelCount: sectionChannels(section.id).length,
+                        isFirst: userSections.first.id == section.id,
+                        isLast: userSections.last.id == section.id,
+                      )
+                    : null,
+              ),
             _ChannelSection(
               title: 'Channels',
               icon: LucideIcons.hash,
-              showTopDivider: starredStreamChannels.isNotEmpty,
+              showTopDivider:
+                  starredStreamChannels.isNotEmpty || userSections.isNotEmpty,
               expanded: channelsExpanded.value,
               onToggle: () => channelsExpanded.value = !channelsExpanded.value,
               channels: ungroupedStreamChannels,

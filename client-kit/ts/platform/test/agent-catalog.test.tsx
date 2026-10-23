@@ -14,7 +14,7 @@ import {
 } from "@client-kit/contracts";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
-import { AgentCatalogDialog } from "../src/react/agent-library/AgentCatalogDialog";
+import { AgentCatalogDialog, type CatalogAvatarHost } from "../src/react/agent-library/AgentCatalogDialog";
 import {
   catalogOwnerLabel,
   loadCatalogOwners,
@@ -87,13 +87,13 @@ function catalogRoute(definitions: AgentDefinitionView[], teams: AgentTeamView[]
 
 async function mount(route: (request: BffRequest) => BffReply | undefined | Promise<BffReply | undefined>,
   definitions = [definition(A, "Scout"), definition(B, "Critic", { ownerPrincipalId: ME })], teams = [team()],
-  locale: "en" | "zh-CN" = "en", preferSection: "agents" | "teams" = "agents") {
+  locale: "en" | "zh-CN" = "en", preferSection: "agents" | "teams" = "agents", avatarHost?: CatalogAvatarHost) {
   const base = catalogRoute(definitions, teams);
   const send = vi.fn(async (request: BffRequest) => (await route(request)) ?? base(request) ?? notFound);
   const client = createBffClient({ send });
   const onRecorded = vi.fn();
   await render(<PlatformProvider client={client} locale={locale} currentPrincipalId={ME}>
-    <AgentCatalogDialog open preferSection={preferSection} onOpenChange={() => undefined} onRecorded={onRecorded} />
+    <AgentCatalogDialog open preferSection={preferSection} onOpenChange={() => undefined} onRecorded={onRecorded} avatarHost={avatarHost} />
   </PlatformProvider>);
   await until(() => !!document.querySelector('[data-testid="agent-catalog-dialog"]')
     && !document.querySelector('[data-testid="agent-catalog-loading"]'), "catalog directory");
@@ -135,6 +135,29 @@ describe("DD-131(6) catalog helpers", () => {
 });
 
 describe("DD-131(6) catalog dialog", () => {
+  it("shows each entry's published persona avatar through the host's media view, else initials", async () => {
+    const avatarUrl = `https://relay.test/media/${"c".repeat(64)}.png`;
+    const rewriteMediaUrl = vi.fn((url: string) => url === avatarUrl ? `/api/v1/profile/media/${"c".repeat(64)}` : url);
+    const avatarHost = vi.fn((_version?: unknown) => ({ locale: "en" as const, rewriteMediaUrl,
+      uploadMediaBytes: vi.fn(), performDefaultHaptic: vi.fn() }));
+    const withAvatar = () => ({ ...version(A), content: { ...content(), personaIdentity: { displayName: "Scout", avatarUrl } } });
+    const { dialog } = await mount((request) => request.path === `/api/v1/agent-versions/${A}-v` ? ok(withAvatar()) : undefined,
+      undefined, undefined, "en", "agents", avatarHost as unknown as CatalogAvatarHost);
+    await settle();
+    // List row and detail header both use the exact published Version's avatar.
+    expect(dialog.querySelectorAll(`[data-testid="agent-catalog-avatar-${A}"]`).length).toBe(2);
+    expect(rewriteMediaUrl).toHaveBeenCalledWith(avatarUrl);
+    expect(avatarHost).toHaveBeenCalledWith(expect.objectContaining({ assetId: `${A}-v`, agentResourceId: A }));
+    // No avatar on the published Version: the original initials stay.
+    expect(dialog.querySelector(`[data-testid="agent-catalog-avatar-${B}"]`)).toBeNull();
+    expect(dialog.querySelector(`[data-testid="agent-catalog-agent-${B}"]`)!.textContent).toContain("C");
+  });
+
+  it("keeps initials without a host media view", async () => {
+    const { dialog } = await mount(() => undefined);
+    expect(dialog.querySelector(`[data-testid="agent-catalog-avatar-${A}"]`)).toBeNull();
+  });
+
   it("lists agents and teams with Added by, and shows the exact instructions (en and zh-CN)", async () => {
     const { dialog } = await mount(() => undefined);
     expect(dialog.querySelector(`[data-testid="agent-catalog-agent-${A}"]`)!.getAttribute("aria-current")).toBe("true");

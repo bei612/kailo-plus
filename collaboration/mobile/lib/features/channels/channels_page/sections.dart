@@ -11,7 +11,16 @@ class _ChannelSection extends StatelessWidget {
   final String emptyLabel;
   final Future<void> Function(Channel channel) onSelectChannel;
 
+  /// A custom section's emoji icon (original section icon), shown instead of [icon].
+  final String? emoji;
+
+  /// The original custom-section header menu; built-in groups have none.
+  final Widget? menu;
+
   const _ChannelSection({
+    super.key,
+    this.emoji,
+    this.menu,
     required this.title,
     required this.icon,
     required this.expanded,
@@ -32,6 +41,8 @@ class _ChannelSection extends StatelessWidget {
         _SectionHeader(
           label: title,
           icon: icon,
+          emoji: emoji,
+          menu: menu,
           expanded: expanded,
           onToggle: onToggle,
         ),
@@ -122,10 +133,14 @@ class _SectionDivider extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   final String label;
   final IconData icon;
+  final String? emoji;
+  final Widget? menu;
   final bool expanded;
   final VoidCallback onToggle;
 
   const _SectionHeader({
+    this.emoji,
+    this.menu,
     required this.label,
     required this.icon,
     required this.expanded,
@@ -152,7 +167,12 @@ class _SectionHeader extends StatelessWidget {
               width: _kChannelLeadingWidth,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Icon(icon, size: _kChannelIconSize, color: sectionColor),
+                child: emoji == null
+                    ? Icon(icon, size: _kChannelIconSize, color: sectionColor)
+                    : Text(
+                        emoji!,
+                        style: const TextStyle(fontSize: _kChannelIconSize),
+                      ),
               ),
             ),
             const SizedBox(width: _kChannelLabelGap),
@@ -165,6 +185,7 @@ class _SectionHeader extends StatelessWidget {
                 ),
               ),
             ),
+            ?menu,
             _SectionChevron(expanded: expanded, color: sectionColor),
           ],
         ),
@@ -287,6 +308,114 @@ class _AnimatedSectionBody extends HookWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Original custom-section header menu (channels_page/sections.dart): rename,
+/// move up/down and delete. Every choice is one Core preference write
+/// (DD-150(3)); the list changes only when Core's readback does.
+class _UserSectionMenu extends StatelessWidget {
+  const _UserSectionMenu({
+    required this.section,
+    required this.channelCount,
+    required this.isFirst,
+    required this.isLast,
+  });
+
+  final ChannelSectionRecord section;
+  final int channelCount;
+  final bool isFirst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    String t(PlatformMessageKey key, [Map<String, Object>? variables]) =>
+        _channelText(context, key, variables: variables ?? const {});
+    return PopupMenuButton<String>(
+      key: ValueKey('channel-user-section-menu-${section.id}'),
+      icon: Icon(
+        LucideIcons.ellipsis,
+        size: _kChannelIconSize,
+        color: navigationSectionForeground(context),
+      ),
+      onSelected: (choice) async {
+        switch (choice) {
+          case 'rename':
+            final name = await showSectionNameDialog(
+              context,
+              initialValue: section.name,
+              rename: true,
+            );
+            if (name == null || name.isEmpty || !context.mounted) return;
+            await runSectionWrite(
+              context,
+              (notifier) => notifier.renameSection(section.id, name),
+            );
+          case 'up' || 'down':
+            await runSectionWrite(
+              context,
+              (notifier) =>
+                  notifier.moveSection(section.id, up: choice == 'up'),
+            );
+          case 'delete':
+            final confirmed = await showBuzzDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text(t(PlatformMessageKey.sidebarSectionDelete)),
+                content: Text(
+                  t(
+                    channelCount == 0
+                        ? PlatformMessageKey.sidebarSectionDeleteEmpty
+                        : channelCount == 1
+                        ? PlatformMessageKey.sidebarSectionDeleteOne
+                        : PlatformMessageKey.sidebarSectionDeleteMany,
+                    {'name': section.name, 'count': channelCount},
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: Text(t(PlatformMessageKey.platformCancel)),
+                  ),
+                  TextButton(
+                    key: const ValueKey('channel-user-section-delete-confirm'),
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: Text(
+                      t(PlatformMessageKey.sidebarSectionDeleteConfirm),
+                      style: TextStyle(color: context.colors.error),
+                    ),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed != true || !context.mounted) return;
+            await runSectionWrite(
+              context,
+              (notifier) => notifier.deleteSection(section.id),
+            );
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'rename',
+          child: Text(t(PlatformMessageKey.sidebarSectionRename)),
+        ),
+        if (!isFirst)
+          PopupMenuItem(
+            value: 'up',
+            child: Text(t(PlatformMessageKey.sidebarSectionMoveUp)),
+          ),
+        if (!isLast)
+          PopupMenuItem(
+            value: 'down',
+            child: Text(t(PlatformMessageKey.sidebarSectionMoveDown)),
+          ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(t(PlatformMessageKey.sidebarSectionDelete)),
+        ),
+      ],
     );
   }
 }

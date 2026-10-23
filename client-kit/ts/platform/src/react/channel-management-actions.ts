@@ -1,5 +1,5 @@
 // DD-119 channel management over the existing governed action flow (Web and Desktop share it).
-// Edit, reopen, leave, archive and unarchive are ActionCommands submitted through the BFF
+// Edit, reopen, leave, archive, unarchive and delete (DD-150) are ActionCommands submitted through the BFF
 // client; the entries appear only when the BFF answers the matching action hint, and every
 // submission is re-admitted by Core. The member topic is a host publication (Web BFF route).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -11,6 +11,7 @@ import {
   DiscoverableWorkspaceLeaveActionKey,
   DiscoverableWorkspaceUpdateActionKey,
   WorkspaceLifecycleActionKey,
+  WorkspaceState,
   type ActionCommand,
   type WebPublishTopicRequest,
 } from "@client-kit/contracts";
@@ -47,12 +48,24 @@ export type ChannelManagementHints = {
   /** Original canJoin: a non-member of an open, unarchived channel (directory joinActionKey). */
   joinActionKey?: DiscoverableWorkspaceJoinActionKey;
   lifecycleActionKey?: WorkspaceLifecycleActionKey;
+  /** DD-150: the role projection offers `workspace.delete` (ACTIVE or SUSPENDED, fresh Workspace manage). */
+  deleteActionKey?: typeof WORKSPACE_DELETE_ACTION;
+  /** DD-150: an admitted delete is still converging; the channel stays listed until it is confirmed. */
+  deleting: boolean;
 };
+
+/** The governed channel delete (DD-150); its hint comes from the role-workspaces projection. */
+export const WORKSPACE_DELETE_ACTION = "workspace.delete" as const;
+
+type RoleWorkspaceHints = Pick<ChannelManagementHints, "lifecycleActionKey" | "deleteActionKey" | "deleting">;
 
 export const channelManagementQueryKey = (workspaceId: string) => ["platform", "channel-management", workspaceId] as const;
 
-/** The current Principal's Workspace lifecycle hint (suspend/restore) from the role projection. */
-async function loadLifecycleActionKey(client: BffClient, workspaceId: string): Promise<WorkspaceLifecycleActionKey | undefined> {
+/**
+ * The current Principal's Workspace lifecycle hints from the role projection: suspend/restore,
+ * the DD-150 delete offer, and whether an admitted delete is still converging (state DELETING).
+ */
+async function loadRoleWorkspaceHints(client: BffClient, workspaceId: string): Promise<RoleWorkspaceHints> {
   let offset = 0;
   try {
     for (;;) {
@@ -60,17 +73,23 @@ async function loadLifecycleActionKey(client: BffClient, workspaceId: string): P
       if (!page || !Array.isArray(page.workspaces)) throw new TransportError("Invalid role workspace page");
       const row = page.workspaces.find((item) => item?.id === workspaceId);
       if (row) {
-        if (row.lifecycleActionKey !== undefined && !Object.values(WorkspaceLifecycleActionKey).includes(row.lifecycleActionKey))
+        const deleteKey = row.deleteActionKey as string | undefined;
+        if ((row.lifecycleActionKey !== undefined && !Object.values(WorkspaceLifecycleActionKey).includes(row.lifecycleActionKey))
+          || (deleteKey !== undefined && deleteKey !== WORKSPACE_DELETE_ACTION))
           throw new TransportError("Invalid workspace lifecycle hint");
-        return row.lifecycleActionKey;
+        return {
+          lifecycleActionKey: row.lifecycleActionKey,
+          deleteActionKey: deleteKey === WORKSPACE_DELETE_ACTION ? WORKSPACE_DELETE_ACTION : undefined,
+          deleting: row.state === WorkspaceState.Deleting,
+        };
       }
-      if (page.nextOffset === undefined) return undefined;
+      if (page.nextOffset === undefined) return { deleting: false };
       if (!Number.isSafeInteger(page.nextOffset) || page.nextOffset <= offset) throw new TransportError("Role workspace cursor did not advance");
       offset = page.nextOffset;
     }
   } catch (error) {
-    // No Tenant manage permission only removes the archive entry.
-    if (error instanceof BffError && error.status === 403) return undefined;
+    // No Tenant manage permission only removes the archive and delete entries.
+    if (error instanceof BffError && error.status === 403) return { deleting: false };
     throw error;
   }
 }
@@ -83,12 +102,12 @@ export function useChannelManagementHints(workspaceId: string | undefined, chann
     retry: false,
     staleTime: 0,
     queryFn: async (): Promise<ChannelManagementHints> => {
-      const [rows, lifecycleActionKey] = await Promise.all([
+      const [rows, role] = await Promise.all([
         loadChannelDirectory(client, () => true, channelId),
-        loadLifecycleActionKey(client, workspaceId!),
+        loadRoleWorkspaceHints(client, workspaceId!),
       ]);
       const row = rows.find((item) => item.id === workspaceId);
-      if (!row) return { canReopen: false, lifecycleActionKey };
+      if (!row) return { canReopen: false, ...role };
       if ((row.updateActionKey !== undefined && row.updateActionKey !== DiscoverableWorkspaceUpdateActionKey.WorkspaceUpdate)
         || (row.leaveActionKey !== undefined && row.leaveActionKey !== DiscoverableWorkspaceLeaveActionKey.WorkspaceLeave)
         || (row.joinActionKey !== undefined && row.joinActionKey !== DiscoverableWorkspaceJoinActionKey.WorkspaceJoin)
@@ -99,7 +118,7 @@ export function useChannelManagementHints(workspaceId: string | undefined, chann
         canReopen: row.updateActionKey !== undefined && row.canReopen === true,
         leaveActionKey: row.leaveActionKey,
         joinActionKey: row.isMember || row.channel.archived ? undefined : row.joinActionKey,
-        lifecycleActionKey,
+        ...role,
       };
     },
   });

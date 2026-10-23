@@ -25,6 +25,8 @@ import { ChannelTemplatesSettingsCard } from "@client-kit/platform/react/channel
 import { ModerationQueueCard } from "@client-kit/platform/react/moderation";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
+// DD-125(5): the original Desktop-only Updates section.
+import { UpdateChecker } from "../UpdateChecker";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
 
@@ -45,6 +47,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "agents",
   "connectors",
   "experimental",
+  "updates",
 ];
 
 export function isSettingsSection(value: unknown): value is SettingsSection {
@@ -123,6 +126,8 @@ export function renderSettingsSection(
       return <ExperimentalFeaturesCard />;
     case "moderation":
       return <ModerationQueueCard />;
+    case "updates":
+      return <UpdateChecker />;
     default: {
       const exhaustiveCheck: never = section;
       return exhaustiveCheck;

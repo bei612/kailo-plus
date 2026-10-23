@@ -23,6 +23,7 @@ import { Button } from "../ui";
 import { writeSnapshotToClipboard } from "../messages/agentSnapshotClipboard";
 import { AgentManagementDialog } from "./AgentManagementDialog";
 import { sha256Hex } from "./AgentSnapshotImportDialog";
+import { SnapshotSendPanel, type SnapshotShareSend } from "./SnapshotSendPanel";
 
 /** DD-141 §6 primary action on the shared Button: brand fill, theme tokens only. */
 const PRIMARY = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground";
@@ -38,6 +39,13 @@ type ReadyView = ExportPackageView & { downloadPath: string; fileName: string };
 export type SnapshotExportHost = {
   save: (view: ReadyView) => Promise<unknown>;
   readBytes?: (view: ReadyView) => Promise<Uint8Array>;
+  /**
+   * DD-131(7) original "send to people": the READY PNG package as an ordinary attachment in a direct
+   * message with the chosen people, through the host's conversation media and publish chain.
+   */
+  sendToConversation?: SnapshotShareSend;
+  /** The host's DM publication carries the intent's Idempotency-Key, so an unknown outcome may be retried. */
+  sendDedupesRetry?: boolean;
 };
 
 /** Default host: the BFF route is same-origin and session-authorized, so a plain download link is enough. */
@@ -116,13 +124,14 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [copy, setCopy] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const [sendBusy, setSendBusy] = useState(false);
   const inFlight = useRef(false);
   const submission = phase.kind === "choose" ? null : phase.submission;
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating;
   const waiting = phase.kind === "submitted" && !unknown && (submission?.gateState === ActionGateState.Waiting
     || submission?.gateState === ActionGateState.Allowed);
-  useEffect(() => { onLockedChange(busy || unknown); }, [busy, unknown, onLockedChange]);
+  useEffect(() => { onLockedChange(busy || unknown || sendBusy); }, [busy, unknown, sendBusy, onLockedChange]);
 
   const submit = async () => {
     if (inFlight.current) return;
@@ -235,6 +244,10 @@ function ExportBody({ target, host, onClose, onLockedChange }: {
       {saveFailed ? <p role="alert" className="text-danger-text">{t("agents.export.saveFailed")}</p> : null}
       {copy === "copied" ? <p role="status" className="text-success-text">{t("agents.export.copied")}</p>
         : copy === "failed" ? <p role="alert" className="text-danger-text">{t("agents.export.copyFailed")}</p> : null}
+      {host.readBytes && host.sendToConversation && phase.view.mediaType === "image/png"
+        ? <SnapshotSendPanel view={phase.view} label={target.displayName} readBytes={() => host.readBytes!(phase.view)}
+          send={host.sendToConversation} dedupesRetry={host.sendDedupesRetry === true} onSent={onClose}
+          onBusyChange={setSendBusy} testIdPrefix="agent-snapshot-export" /> : null}
       {host.readBytes && phase.view.mediaType === "image/png"
         ? <p className="text-xs text-muted-foreground">{t("agents.export.shareHint")}</p> : null}
       <div className="flex flex-wrap justify-end gap-2">

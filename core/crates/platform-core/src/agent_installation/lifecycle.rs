@@ -66,17 +66,23 @@ struct LifecycleRow {
     state: String,
     active_projection_generation: Option<i64>,
     projection_action_execution_id: Option<Uuid>,
+    workspace_state: String,
 }
 
+/// DD-150(2)：受治理删除中的 Workspace（DELETING 且有进行中的删除快照）只接受停用，由
+/// [`target`] 拒绝其余生命周期动作。
 const LIFECYCLE_ROW: &str = "select r.version,i.workspace_id,i.agent_resource_id,
     i.pinned_version_asset_id,i.state,i.active_projection_generation,
-    r.projection_action_execution_id
+    r.projection_action_execution_id,w.state as workspace_state
     from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
     join identity.workspace w on w.id=i.workspace_id and w.tenant_id=r.tenant_id
     join identity.tenant t on t.id=r.tenant_id
     where r.id=$1 and r.tenant_id=$2 and r.type_key='agent.installation'
       and r.home_workspace_id=i.workspace_id and r.state='ACTIVE'
-      and w.state='ACTIVE' and t.state='ACTIVE'";
+      and (w.state='ACTIVE' or (w.state='DELETING' and exists (
+          select 1 from admission.workspace_lifecycle_snapshot s
+          where s.workspace_id=w.id and s.state='DELETING')))
+      and t.state='ACTIVE'";
 
 /// The lifecycle command only names the Installation and the version it read;
 /// the home Workspace is resolved from Core facts (TARGET_HOME_WORKSPACE).
@@ -106,6 +112,9 @@ pub(crate) async fn target(
     .ok_or_else(conflict)?;
     if params.resource_version != Some(row.version) || row.projection_action_execution_id.is_some()
     {
+        return Err(conflict());
+    }
+    if row.workspace_state != "ACTIVE" && def.action_key != DISABLE_ACTION {
         return Err(conflict());
     }
     let ready = if def.action_key == DISABLE_ACTION {

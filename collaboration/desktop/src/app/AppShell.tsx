@@ -18,7 +18,7 @@ import { useAppShellLifecycleEffects } from "@/app/useAppShellLifecycleEffects";
 import { useChannelActivityProjection } from "@/app/useChannelActivityProjection";
 import { useTauriWindowDrag } from "@/app/useTauriWindowDrag";
 import { useWebviewZoomShortcuts } from "@/app/useWebviewZoomShortcuts";
-import { useChannelsQuery } from "@/features/channels/hooks";
+import { nativeApplicationWorkspace, useChannelsQuery, useWorkspaceChannelDirectory } from "@/features/channels/hooks";
 import { useUnreadChannels } from "@/features/channels/useUnreadChannels";
 import { useMembershipNotifications } from "@/features/channels/useMembershipNotifications";
 import { useFeedItemState } from "@/features/home/useFeedItemState";
@@ -40,7 +40,6 @@ import {
   useNativeSession,
 } from "@/features/platform/activeCommunity";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
-import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useRelayAutoHeal } from "@/shared/api/useRelayAutoHeal";
@@ -113,9 +112,6 @@ export function AppShell() {
     ? locationSearchSection
     : DEFAULT_SETTINGS_SECTION;
   const identityQuery = useIdentityQuery();
-  const localMutes = useChannelMutes(
-    identityQuery.data?.pubkey,
-  );
   const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
     identityQuery.data?.pubkey,
   );
@@ -134,22 +130,37 @@ export function AppShell() {
     queryFn: async () => checkedUserState(await nativeSession.client.collaborationUserState()),
     enabled: !!identityQuery.data?.pubkey,
   });
-  // Original non-DM local preferences remain unchanged. Private-conversation
-  // notification decisions come only from the same Core CAS used by its menu.
+  // DD-150(3): a Workspace channel's mute is Core `workspace_preferences.muted`, the same
+  // authority Web and Mobile write; private conversations use `conversation_preferences`.
+  // Native channel IDs reach their Workspace through the admitted channel directory.
+  const workspaceDirectory = useWorkspaceChannelDirectory();
+  const workspaceIdOf = React.useCallback(
+    (channelId: string) => nativeApplicationWorkspace(workspaceDirectory.data, { channelId })?.id,
+    [workspaceDirectory.data],
+  );
+  const workspaceMutedIds = React.useMemo(() => new Set(channels
+    .filter((channel) => channel.channelType !== "dm")
+    .filter((channel) => {
+      const workspaceId = workspaceIdOf(channel.id);
+      return workspaceId !== undefined && collaborationPreferences.isWorkspaceMuted(workspaceId) === true;
+    })
+    .map((channel) => channel.id)), [channels, workspaceIdOf, collaborationPreferences]);
+  // Private-conversation notification decisions come only from the same Core CAS used by its menu.
   const mutedChannelIds = React.useMemo(() => conversationNotificationMutes(
-    localMutes.mutedChannelIds, channels.filter((channel) => channel.channelType === "dm").map((channel) => channel.id),
+    workspaceMutedIds, channels.filter((channel) => channel.channelType === "dm").map((channel) => channel.id),
     conversations.items.filter((item) => item.state === "ACTIVE"),
     conversations.loading || conversations.error || conversationState.isError || conversationState.isFetching
       ? undefined : conversationState.data?.conversationPreferences,
-  ), [channels, conversations.items, conversations.loading, conversations.error, conversationState.data, conversationState.isError, conversationState.isFetching, localMutes.mutedChannelIds]);
+  ), [channels, conversations.items, conversations.loading, conversations.error, conversationState.data, conversationState.isError, conversationState.isFetching, workspaceMutedIds]);
   // Governed DMs have their original menu in ConversationList. Never let an old
   // native sidebar callback recreate a second private-conversation mute store.
-  const muteChannel = (id: string) => {
-    if (channels.some((channel) => channel.id === id && channel.channelType !== "dm")) localMutes.muteChannel(id);
+  const setChannelMuted = (id: string, muted: boolean) => {
+    if (!collaborationPreferences.writable || !channels.some((channel) => channel.id === id && channel.channelType !== "dm")) return;
+    const workspaceId = workspaceIdOf(id);
+    if (workspaceId) void collaborationPreferences.setWorkspaceMuted(workspaceId, muted);
   };
-  const unmuteChannel = (id: string) => {
-    if (channels.some((channel) => channel.id === id && channel.channelType !== "dm")) localMutes.unmuteChannel(id);
-  };
+  const muteChannel = (id: string) => setChannelMuted(id, true);
+  const unmuteChannel = (id: string) => setChannelMuted(id, false);
   const refetchHomeFeedFromLiveSignal = React.useEffectEvent(() => {
     void homeFeedQuery.refetch();
   });

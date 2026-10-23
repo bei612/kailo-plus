@@ -139,7 +139,8 @@ export function useInboxState(client: BffClient) {
   // re-reads the authority; nothing is reissued with a fresher version.
   const update = useCallback(
     (
-      send: (version: number) => Promise<UserStateVersion>,
+      // The authority the write is based on: the same snapshot its version comes from.
+      send: (version: number, state: CollaborationUserState) => Promise<UserStateVersion>,
       patch?: (state: CollaborationUserState, now: string) => CollaborationUserState,
     ) => {
       const generation = epoch.current;
@@ -149,7 +150,7 @@ export function useInboxState(client: BffClient) {
         writing.current = true;
         setPending(true);
         try {
-          const ack = await send(version);
+          const ack = await send(version, current.current);
           if (generation !== epoch.current) return false;
           if (ack?.version !== version + 1) throw new TransportError("Invalid user-state CAS response");
           if (!current.current) return false;

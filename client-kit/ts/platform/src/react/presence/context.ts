@@ -29,6 +29,11 @@ export type PresenceHost = {
   ) => Promise<UserStatusReceipt>;
   /** The admitted community custom emoji used to render a `:shortcode:` status emoji. */
   customEmoji?: readonly CustomEmoji[];
+  /**
+   * Seconds since the last OS-wide input, or null when the platform has no idle API.
+   * Native hosts provide it (DD-125(5)); browsers expose no OS idle and omit it.
+   */
+  osIdleSeconds?: () => Promise<number | null>;
 };
 
 export type PresenceSession = {

@@ -7,7 +7,9 @@
 // Status lines come from the restored NIP-38 cache, newest visible status over the person's keys.
 // The original Agents section lists the Workspace's governed Agent installations from the
 // member-readable DD-147 author directory (ACTIVE ChannelAgentBinding only); it grants nothing
-// and offers no management, which stays with the governed installation actions.
+// and offers no management, which stays with the governed installation actions. An Agent row
+// shows the original "Working…" while that Agent's 20002 typing is live in this channel and
+// opens the activity sheet (Core's audited turn and transcript reads, DD-125(6)).
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +29,8 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../platform/platform_async_view.dart';
 import '../profile/user_status.dart';
 import '../profile/user_status_cache_provider.dart';
+import 'agent_activity/agent_activity_sheet.dart';
+import 'agent_activity/working_agents_provider.dart';
 import 'channel.dart';
 import 'channel_governed_actions.dart';
 
@@ -57,6 +61,27 @@ class MembersSheet extends HookConsumerWidget {
     final bottomClearance = Grid.md + MediaQuery.viewPaddingOf(context).bottom;
     final agentsAsync = ref.watch(platformAgentAuthorsProvider(channel.id));
     final agents = agentsAsync.asData?.value ?? const <AgentAuthorView>[];
+    final workingAgents = ref.watch(workingAgentPubkeysProvider(channel.id));
+
+    void openActivity(AgentAuthorView agent) {
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!navigator.mounted) return;
+        showBuzzModalBottomSheet<void>(
+          context: navigator.context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (_) => AgentActivitySheet(
+            channelId: channel.id,
+            installationId: agent.installationResourceId,
+            agentPubkey: agent.agentPubkey,
+            agentName: agent.agentDisplayName,
+          ),
+        );
+      });
+    }
+
     final allPubkeys = [
       for (final member in people) ...member.pubkeys,
       for (final agent in agents) agent.agentPubkey,
@@ -126,6 +151,10 @@ class MembersSheet extends HookConsumerWidget {
                   _AgentTile(
                     agent: agent,
                     profile: userCache[agent.agentPubkey.toLowerCase()],
+                    isWorking: workingAgents.contains(
+                      agent.agentPubkey.toLowerCase(),
+                    ),
+                    onViewActivity: () => openActivity(agent),
                   ),
               ] else if (agentsAsync.isLoading)
                 Padding(
@@ -231,8 +260,15 @@ class _SectionLabel extends StatelessWidget {
 class _AgentTile extends StatelessWidget {
   final AgentAuthorView agent;
   final UserProfile? profile;
+  final bool isWorking;
+  final VoidCallback onViewActivity;
 
-  const _AgentTile({required this.agent, required this.profile});
+  const _AgentTile({
+    required this.agent,
+    required this.profile,
+    required this.isWorking,
+    required this.onViewActivity,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -257,23 +293,57 @@ class _AgentTile extends StatelessWidget {
         isAgent: true,
       ),
       title: Text(label),
-      subtitle: Text(
-        owner != null && owner.isNotEmpty
-            ? platformText(
-                PlatformMessageKey.channelMembersAgentAddedBy,
-                locale: locale,
-                variables: {'name': owner},
-              )
-            : platformText(
-                PlatformMessageKey.messagesSystemAgentOwnerUnavailable,
-                locale: locale,
+      subtitle: isWorking
+          ? Row(
+              key: const ValueKey('channel-agent-working'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                BuzzLoadingIndicator(
+                  size: 14,
+                  color: context.appColors.success,
+                  semanticLabel: platformText(
+                    PlatformMessageKey.agentActivityPopoverWorking,
+                    locale: locale,
+                  ),
+                ),
+                const SizedBox(width: Grid.half),
+                Text(
+                  '${platformText(PlatformMessageKey.agentActivityPopoverWorking, locale: locale)}\u2026',
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: context.appColors.success,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            )
+          : Text(
+              owner != null && owner.isNotEmpty
+                  ? platformText(
+                      PlatformMessageKey.channelMembersAgentAddedBy,
+                      locale: locale,
+                      variables: {'name': owner},
+                    )
+                  : platformText(
+                      PlatformMessageKey.messagesSystemAgentOwnerUnavailable,
+                      locale: locale,
+                    ),
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
               ),
-        style: context.textTheme.bodySmall?.copyWith(
-          color: context.colors.onSurfaceVariant,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+      trailing: IconButton(
+        key: ValueKey('channel-agent-activity-${agent.installationResourceId}'),
+        icon: const Icon(LucideIcons.activity, size: 18),
+        tooltip: platformText(
+          PlatformMessageKey.agentActivityViewActivity,
+          locale: locale,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        onPressed: onViewActivity,
+        visualDensity: VisualDensity.compact,
       ),
+      onTap: isWorking ? onViewActivity : null,
     );
   }
 }

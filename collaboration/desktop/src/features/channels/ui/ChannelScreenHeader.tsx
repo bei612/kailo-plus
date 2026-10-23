@@ -1,4 +1,6 @@
 import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
+// DD-125(5): the original header update indicator, before the channel actions.
+import { UpdateIndicator } from "@/features/settings/UpdateIndicator";
 import { DmHeaderParticipants } from "@client-kit/platform/react/messages/dm-header-participants";
 import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
@@ -90,10 +92,10 @@ export function ChannelScreenHeader({
           ? <UserNameIndicators className="ml-1" pubkey={activeDmHeaderParticipants[0]?.profilePubkey}
               pubkeys={activeDmHeaderParticipants[0]?.presencePubkeys} size="dm" /> : null}
         statusBadge={activeChannelEphemeralDisplay ? <ChannelHeaderStatusBadge ephemeralDisplay={activeChannelEphemeralDisplay} /> : undefined}
-        actions={roster && rosterId ? <ChannelMembersBar roster={roster}
+        actions={<div className="flex items-center gap-1"><UpdateIndicator />{roster && rosterId ? <ChannelMembersBar roster={roster}
           onToggleMembers={() => setMembersOpenFor(membersOpenFor === rosterId ? null : rosterId)}
           onManageChannel={() => setManageOpenFor(rosterId)} variant={actionsVariant}
-          fallbackMemberCount={activeChannel.memberCount} /> : undefined} />
+          fallbackMemberCount={activeChannel.memberCount} /> : null}</div>} />
       {roster && rosterId ? <ChannelManagementSheet key={`manage:${rosterId}`} roster={roster}
         open={manageOpenFor === rosterId} onOpenChange={(open) => setManageOpenFor(open ? rosterId : null)} isDark={isDark}
         channel={activeChannel.channelType === "dm"

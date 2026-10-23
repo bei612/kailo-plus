@@ -267,7 +267,7 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
   );
 
   testWidgets(
-    'original DM action tile and list bellOff consume Core mute; ordinary channel has no fake mute',
+    'original DM action tile and list bellOff consume Core mute; an unadmitted channel mute stays inert',
     (tester) async {
       final server = _Server()..muted = true;
       final harness = await _Harness.start(server, await preferences());
@@ -319,7 +319,14 @@ void mutePreferenceCases(Future<SharedPreferences> Function() preferences) {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('channel-action-mute')), findsNothing);
+      // DD-150(3): a Workspace channel's mute is its workspace preference; a
+      // channel Core has not admitted has no readback, so the tile is inert.
+      expect(
+        tester
+            .widget<ListTile>(find.byKey(const Key('channel-action-mute')))
+            .onTap,
+        isNull,
+      );
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: harness.container,

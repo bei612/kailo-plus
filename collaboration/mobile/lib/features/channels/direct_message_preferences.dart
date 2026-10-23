@@ -28,6 +28,18 @@ class CollaborationPreferenceState {
   bool? starred(String id) => version == null || !workspaceIds.contains(id)
       ? null
       : workspacePreferences[id]?.starred ?? false;
+
+  /// DD-150(3): channel mute is `workspace_preferences.muted`, the same Core
+  /// readback as Star; `null` until Core has answered for an admitted channel.
+  bool? workspaceMuted(String id) =>
+      version == null || !workspaceIds.contains(id)
+      ? null
+      : workspacePreferences[id]?.muted ?? false;
+
+  /// The confirmed mute of a channel row: DMs read `conversation_preferences`,
+  /// Workspace channels `workspace_preferences` (DD-40, DD-150(3)).
+  bool? channelMuted(String id, {required bool isDm}) =>
+      isDm ? muted(id) : workspaceMuted(id);
 }
 
 class _CollaborationPreferenceIntent {
@@ -172,7 +184,10 @@ extension _DirectMessagePreferences on DirectMessages {
     return rows.where((row) => row.isMember == true).toList();
   }
 
-  Future<void> _admitWorkspacePreference(String id) async {
+  Future<void> _admitWorkspacePreference(
+    String id, {
+    bool allowForum = false,
+  }) async {
     await _checkActor();
     if (!(await _workspaces()).any((row) => row.id == id)) {
       throw const PlatformUnavailable('Workspace is not admitted');
@@ -203,7 +218,8 @@ extension _DirectMessagePreferences on DirectMessages {
     }
     nostr.Event.fromMap(roster.toJson());
     if (channel.id != id ||
-        channel.channelType != 'stream' ||
+        !(channel.channelType == 'stream' ||
+            (allowForum && channel.channelType == 'forum')) ||
         channel.visibility != 'private' ||
         channel.isArchived ||
         roster.pubkey != event.pubkey ||
@@ -299,12 +315,18 @@ class CollaborationPreferenceNotifier
   Future<void> setMuted(String id, bool muted) =>
       _start(id: id, muted: muted, recheck: false);
   Future<void> setStarred(String id, bool starred) =>
-      _start(id: id, starred: starred, recheck: false);
+      _start(id: id, starred: starred, workspace: true, recheck: false);
+
+  /// DD-150(3): the original channel Mute is the caller's Workspace preference,
+  /// written with the same frozen CAS request as Star (never a Governed Action).
+  Future<void> setWorkspaceMuted(String id, bool muted) =>
+      _start(id: id, muted: muted, workspace: true, recheck: false);
 
   Future<void> _start({
     String? id,
     bool? muted,
     bool? starred,
+    bool workspace = false,
     required bool recheck,
   }) {
     if (_flightEpoch == _epoch && _flight != null) return _flight!;
@@ -313,6 +335,7 @@ class CollaborationPreferenceNotifier
       id: id,
       muted: muted,
       starred: starred,
+      workspace: workspace,
       recheck: recheck,
     );
     _flight = flight;
@@ -326,6 +349,7 @@ class CollaborationPreferenceNotifier
     String? id,
     bool? muted,
     bool? starred,
+    bool workspace = false,
     required bool recheck,
   }) async {
     final consumer = _consumer;
@@ -333,7 +357,7 @@ class CollaborationPreferenceNotifier
     if (consumer == null || _runningEpoch == epoch) return;
     if (id != null &&
         (_original != null ||
-            (starred == null ? state.muted(id) : state.starred(id)) == null)) {
+            (workspace ? state.workspaceMuted(id) : state.muted(id)) == null)) {
       return;
     }
     _runningEpoch = epoch;
@@ -347,17 +371,21 @@ class CollaborationPreferenceNotifier
       }
       final snapshot = await _load(consumer, epoch);
       if (id != null) {
-        if ((starred == null ? snapshot.muted(id) : snapshot.starred(id)) ==
+        if ((workspace ? snapshot.workspaceMuted(id) : snapshot.muted(id)) ==
             null) {
           throw const PlatformUnavailable('Preference target is not admitted');
         }
-        if (starred == null) {
+        if (!workspace) {
           await consumer._admitConversationPreference(id);
         } else {
-          await consumer._admitWorkspacePreference(id);
+          // Star stays stream-only (original Starred); Mute also covers forums.
+          await consumer._admitWorkspacePreference(
+            id,
+            allowForum: starred == null,
+          );
         }
         _ensure(consumer, epoch);
-        _original = starred == null
+        _original = !workspace
             ? _CollaborationPreferenceIntent.conversation(
                 id,
                 ConversationPreferenceRequest(
@@ -369,8 +397,14 @@ class CollaborationPreferenceNotifier
             : _CollaborationPreferenceIntent.workspace(
                 id,
                 WorkspacePreferenceRequest(
-                  muted: snapshot.workspacePreferences[id]?.muted ?? false,
-                  starred: starred,
+                  muted:
+                      muted ??
+                      snapshot.workspacePreferences[id]?.muted ??
+                      false,
+                  starred:
+                      starred ??
+                      snapshot.workspacePreferences[id]?.starred ??
+                      false,
                   version: snapshot.version!,
                 ),
               );
@@ -379,7 +413,12 @@ class CollaborationPreferenceNotifier
       if (original == null || (id == null && !recheck)) return;
       if (id == null) {
         if (original.isWorkspace) {
-          await consumer._admitWorkspacePreference(original.id);
+          // A frozen Star was admitted stream-only when it was made; Core
+          // re-admits the replay either way.
+          await consumer._admitWorkspacePreference(
+            original.id,
+            allowForum: true,
+          );
         } else {
           await consumer._admitConversationPreference(original.id);
         }

@@ -57,6 +57,11 @@ import type {
   CollapsibleSidebarGroup,
 } from "@/features/sidebar/ui/AppSidebar.types";
 import { SidebarRelayConnectionCard } from "@/features/sidebar/ui/SidebarRelayConnectionCard";
+// DD-125(5): the original sidebar update card and macOS tray menu.
+import { SidebarUpdateCard } from "@/features/settings/SidebarUpdateCard";
+import { useOptionalUpdaterContext } from "@/features/settings/hooks/UpdaterProvider";
+import { shouldShowSidebarUpdateCard } from "@/features/settings/sidebarUpdateCardVisibility";
+import { useTrayMenu } from "@/app/useTrayMenu";
 import {
   SidebarMenu,
   SidebarMenuItem,
@@ -145,6 +150,20 @@ export function AppSidebar({
       { channelId: selectedView === "channel" ? selectedChannelId : null });
   const { open: sidebarOpen, openMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const nativeSession = useNativeSession();
+  useTrayMenu({
+    channels,
+    displayName: nativeSession.displayName,
+    goChannel: onSelectChannel,
+    openCreateChannel: () => setNewChannelOpen(true),
+  });
+  const updateStatus = useOptionalUpdaterContext()?.status;
+  const canShowSidebarUpdateCard = updateStatus ? shouldShowSidebarUpdateCard(updateStatus) : false;
+  const [isSidebarUpdateCardDismissed, setIsSidebarUpdateCardDismissed] = React.useState(false);
+  React.useEffect(() => {
+    if (!canShowSidebarUpdateCard) setIsSidebarUpdateCardDismissed(false);
+  }, [canShowSidebarUpdateCard]);
+  const showSidebarUpdateCard = canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useSidebarScrollLock(scrollRef);
   const dmUnread = useConversationUnreadProjection(directMessageOwner);
@@ -357,6 +376,11 @@ export function AppSidebar({
                 onDismiss={relayConnectionCard.onDismissRelayConnectionCard}
                 onReconnect={relayConnectionCard.onReconnectRelay}
               />
+            ) : null}
+            {showSidebarUpdateCard ? (
+              <div className="mb-2 group-data-[collapsible=icon]:hidden">
+                <SidebarUpdateCard onDismiss={() => setIsSidebarUpdateCardDismissed(true)} />
+              </div>
             ) : null}
             <SidebarMenu>
               <SidebarMenuItem>
