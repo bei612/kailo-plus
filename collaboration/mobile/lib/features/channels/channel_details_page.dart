@@ -35,7 +35,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import 'add_members_sheet.dart';
 import 'channel.dart';
 import 'channel_governed_actions.dart';
-import 'direct_message_preferences.dart';
+import 'direct_messages.dart';
 import 'manage_channel_sheet.dart';
 import 'members_sheet.dart';
 

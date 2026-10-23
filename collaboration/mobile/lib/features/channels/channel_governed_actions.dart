@@ -367,7 +367,7 @@ final channelManagementHintsProvider = FutureProvider.autoDispose
       for (var page = 0; page < _maxHintPages && row == null; page++) {
         final query = {
           'channelId': workspaceId,
-          if (cursor != null) 'cursor': cursor,
+          'cursor': ?cursor,
         };
         final body = await _readPage(
           ref,
@@ -427,7 +427,7 @@ final channelRoleMembersProvider = FutureProvider.autoDispose
         for (var page = 0; page < _maxHintPages; page++) {
           final query = {
             'workspaceId': workspaceId,
-            if (cursor != null) 'cursor': cursor,
+            'cursor': ?cursor,
           };
           final body = await _readPage(
             ref,
