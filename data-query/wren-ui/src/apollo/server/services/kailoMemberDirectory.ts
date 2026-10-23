@@ -76,7 +76,7 @@ function serviceUrl(value: string, name: string, root: boolean): string {
 // All five deployment keys together (the interval may be omitted) or none:
 // none keeps the directory off; a partial set is a deployment error.
 export function kailoDirectoryConfig(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): KailoDirectoryConfig | null {
   const value = (name: string) => {
     const raw = env[name];
