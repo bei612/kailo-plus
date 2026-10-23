@@ -27,7 +27,7 @@ validation:
     - dimension: 单元测试
       ref: core/crates/platform-core/src/component_search.rs
     - dimension: 迁移演练
-      ref: core/migrations/20261026010000_component_notification.down.sql
+      ref: core/migrations/20261026030000_component_notification.down.sql
     - dimension: 验证记录
       ref: core/verify/fused-inbox-search.md
 
@@ -49,7 +49,7 @@ implementation:
     - contracts/enums/component_search_result_kind.schema.json
     - contracts/enums/component_search_source_state.schema.json
     - client-kit/adapter/protocol.mjs
-    - core/migrations/20261026010000_component_notification.up.sql
+    - core/migrations/20261026030000_component_notification.up.sql
     - core/crates/platform-core/src/component_notification.rs
     - core/crates/platform-core/src/component_search.rs
     - core/crates/platform-core/src/component_directory.rs
@@ -78,7 +78,7 @@ implementation:
     - contracts/api/component_search_page.schema.json
     - contracts/adapter/protocol.v1/search_request.schema.json
     - contracts/adapter/protocol.v1/search_response.schema.json
-  migrations: [core/migrations/20261026010000_component_notification.up.sql]
+  migrations: [core/migrations/20261026030000_component_notification.up.sql]
 
 runtime:
   routes: ["/api/v1/inbox/component-notifications", "/api/v1/inbox/component-notifications/read", "/api/v1/search/components"]
@@ -88,7 +88,7 @@ runtime:
 release:
   # 记录的是当前在发的 Core 与 Web 产物（与 component.native_embed 同一对）；本能力源码
   # 尚未构建进任何产物。合并后须重建 Core/Worker 与 Web（Desktop 安装包、三组件镜像），
-  # 执行迁移 20261026010000，并部署声明 searchSource 的 REMOTE_ADAPTER binding 后才有搜索结果。
+  # 执行迁移 20261026030000，并部署声明 searchSource 的 REMOTE_ADAPTER binding 后才有搜索结果。
   artifacts:
     - name: core
       digest: sha256:32153d328acb2859b5e330be70b656a813a275030170b21c3c4a9ba35a4f5b52

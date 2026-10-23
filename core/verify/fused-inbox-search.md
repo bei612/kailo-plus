@@ -6,7 +6,7 @@
 
 ## 源码范围（Core）
 
-- `identity.component_notification`（迁移 `20261026010000_component_notification`，down 删表；
+- `identity.component_notification`（迁移 `20261026030000_component_notification`，down 删表；
   回滚须与停用投递入口的 Core 一同发布，旧条目只是提醒，组件仍持有业务事实）。
 - 服务面投递 `POST /service/v1/component-notifications/bindings/{binding}/notifications`：
   与成员目录同一认证（`component_directory::authorize`），另要求 `KAILO_EMBED`；接收人/触发者按目录范围
