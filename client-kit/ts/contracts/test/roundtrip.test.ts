@@ -1179,3 +1179,36 @@ test("DD-135 skills contracts preserve fields and absence", () => {
   };
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
 });
+
+test("DD-131 agent snapshot import contracts preserve fields and absence", () => {
+  type Command = import("../src/generated/contracts.js").ActionCommand;
+  type UploadRequest = import("../src/generated/contracts.js").AgentSnapshotUploadRequest;
+  type Preview = import("../src/generated/contracts.js").AgentSnapshotImportPreview;
+  type Configuration = import("../src/generated/contracts.js").AgentImportConfigurationPage;
+  type AdvanceRequest = import("../src/generated/contracts.js").ResourceImportAdvanceRequest;
+  type AdvanceResult = import("../src/generated/contracts.js").ResourceImportAdvanceResult;
+  const value = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-snapshot-import.sample.json", import.meta.url), "utf8"));
+  const preview = (row: Preview) => ({uploadId: row.uploadId, packageDigest: row.packageDigest, packageByteSize: row.packageByteSize,
+    mediaType: row.mediaType, formatKey: row.formatKey, expiresAt: row.expiresAt, displayName: row.displayName,
+    description: row.description, avatarDataUrl: row.avatarDataUrl, instructions: row.instructions, parallelism: row.parallelism,
+    idleTimeoutSeconds: row.idleTimeoutSeconds, maxTurnDurationSeconds: row.maxTurnDurationSeconds,
+    sourceIsBuiltIn: row.sourceIsBuiltIn, omitted: row.omitted});
+  const actual = {
+    importCommand: ((row: Command) => ({actionKey: row.actionKey, idempotencyKey: row.idempotencyKey, slug: row.slug,
+      agentDefinitionImport: row.agentDefinitionImport && {uploadId: row.agentDefinitionImport.uploadId,
+        packageDigest: row.agentDefinitionImport.packageDigest, runtimeProfileKey: row.agentDefinitionImport.runtimeProfileKey,
+        modelRouteResourceId: row.agentDefinitionImport.modelRouteResourceId},
+      explicitConfirmation: row.explicitConfirmation}))(value.importCommand),
+    uploadRequest: ((row: UploadRequest) => ({mediaType: row.mediaType, contentBase64: row.contentBase64}))(value.uploadRequest),
+    preview: preview(value.preview), minimalPreview: preview(value.minimalPreview),
+    configuration: ((row: Configuration) => ({profiles: row.profiles, routes: row.routes, nextOffset: row.nextOffset,
+      canImport: row.canImport}))(value.configuration),
+    advanceRequest: ((row: AdvanceRequest) => ({target: {actionExecutionId: row.target.actionExecutionId,
+      resourceId: row.target.resourceId, versionAssetId: row.target.versionAssetId, workflowId: row.target.workflowId,
+      formatKey: row.target.formatKey, packageDigest: row.target.packageDigest},
+      runId: row.runId, cancelRequested: row.cancelRequested}))(value.advanceRequest),
+    advanceResult: ((row: AdvanceResult) => ({resourceId: row.resourceId, status: row.status,
+      waitingReason: row.waitingReason}))(value.advanceResult),
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), value);
+});

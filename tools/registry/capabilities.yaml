@@ -29,6 +29,8 @@ capabilities:
   - /api/v1/agent-installations/{resource_id}/transcript
   - /api/v1/agent-installations/{resource_id}/transcript/stream
   - /api/v1/workspaces/{workspace_id}/agent-turns
+  - /api/v1/agent-snapshots/uploads
+  - /api/v1/agent-snapshots/configuration
   actions:
   - agent.definition.create
   - agent.definition.update
@@ -66,9 +68,11 @@ capabilities:
   - agent.installation.use.revoke
   - resource.grant_read
   - resource.revoke_read
+  - agent.definition.import
   tools: []
   workflow_kinds:
   - AGENT_INSTALLATION
+  - RESOURCE_IMPORT
 - id: agent.skill_management
   exposure: end_user
   routes:

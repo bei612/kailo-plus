@@ -36,6 +36,9 @@ import type {
   AgentVersionView,
   AgentVersionPage,
   AgentVersionConfigurationPage,
+  AgentImportConfigurationPage,
+  AgentSnapshotImportPreview,
+  AgentSnapshotUploadRequest,
   AutomationPage,
   AutomationDetailView,
   AutomationRunPage,
@@ -389,6 +392,15 @@ export function createBffClient(transport: BffTransport) {
       }
       return unwrap<SkillArtifactUploadView>(request, reply);
     },
+    /**
+     * DD-131(2)、DD-143：校验一个 Agent 快照包并为本会话一次性暂存，返回导入预览；
+     * 不创建对象。新 Definition 与 DRAFT 只经 agent.definition.import 产生。
+     */
+    uploadAgentSnapshot: (body: AgentSnapshotUploadRequest) =>
+      call<AgentSnapshotImportPreview>({ method: "POST", path: "/api/v1/agent-snapshots/uploads", body }),
+    /** DD-26：导入人可重选的 RuntimeProfile 与 Route（与版本配置目录同一来源）。 */
+    agentImportConfiguration: (offset?: number) =>
+      get<AgentImportConfigurationPage>(`/api/v1/agent-snapshots/configuration${offset !== undefined ? `?offset=${offset}` : ""}`),
     /** DD-135(7)：Installation 的 Skill 投影状态；读取不触发投影或重试。 */
     agentInstallationSkills: (resourceId: string) =>
       get<AgentInstallationSkillPage>(`/api/v1/agent-installations/${encodeURIComponent(resourceId)}/skills`),

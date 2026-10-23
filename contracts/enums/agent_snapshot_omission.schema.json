@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/agent_snapshot_omission.schema.json",
+  "title": "AgentSnapshotOmission",
+  "description": "DD-131(2)：快照中存在、导入不带入新 DRAFT 的原版字段。RUNTIME/MODEL/PROVIDER/NAME_POOL 属本机运行时（DD-26）；RESPOND_TO_ALLOWLIST 的名单公钥属来源身份；RESPOND_TO_ANYONE 不提供（DD-125(6)）；SESSION_POLICY 由运行时合同决定；MEMORY 见 DD-131(4)；AVATAR 内联头像不写入版本正文，由 owner 在版本编辑器重新上传；SKILLS 由 owner 按本 Tenant 目录重选。",
+  "type": "string",
+  "enum": ["RUNTIME", "MODEL", "PROVIDER", "NAME_POOL", "RESPOND_TO_ALLOWLIST", "RESPOND_TO_ANYONE", "SESSION_POLICY", "MEMORY", "AVATAR", "SKILLS"]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/agent_snapshot_import_preview.schema.json",
+  "title": "AgentSnapshotImportPreview",
+  "description": "DD-131(2)：校验通过的快照包的导入预览与一次性暂存引用。只含映射后将进入新 DRAFT 的可移植字段与被丢弃的原版字段类别；不回显包正文、名单公钥或记忆。确认导入经 agent.definition.import。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uploadId", "packageDigest", "packageByteSize", "mediaType", "formatKey", "expiresAt", "displayName", "instructions", "omitted"],
+  "properties": {
+    "uploadId": {"type": "string", "format": "uuid"},
+    "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packageByteSize": {"type": "integer", "minimum": 1},
+    "mediaType": {"$ref": "../enums/agent_snapshot_media_type.schema.json"},
+    "formatKey": {"type": "string", "const": "buzz-agent-snapshot@1"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "displayName": {"type": "string"},
+    "description": {"type": "string"},
+    "avatarDataUrl": {"type": "string", "description": "包内联的头像（≤2 MiB 的 data URL），只供预览识别，不写入 DRAFT。"},
+    "instructions": {"type": "string"},
+    "parallelism": {"type": "integer", "minimum": 1},
+    "idleTimeoutSeconds": {"type": "integer", "minimum": 1},
+    "maxTurnDurationSeconds": {"type": "integer", "minimum": 1},
+    "sourceIsBuiltIn": {"type": "boolean"},
+    "omitted": {"type": "array", "items": {"$ref": "../enums/agent_snapshot_omission.schema.json"}}
+  }
+}

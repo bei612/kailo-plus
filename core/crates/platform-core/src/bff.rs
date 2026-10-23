@@ -506,6 +506,19 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/agent-definitions",
             get(crate::agent_definition::list),
         )
+        // DD-131(2)、DD-143：Agent 快照包的一次性上传暂存与导入预览，以及导入人可重选的运行配置
+        .exposed_route(
+            "/api/v1/agent-snapshots/uploads",
+            axum::routing::post(crate::resource_transfer::upload).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    crate::resource_transfer::MAX_UPLOAD_REQUEST_BYTES,
+                ),
+            ),
+        )
+        .exposed_route(
+            "/api/v1/agent-snapshots/configuration",
+            get(crate::resource_transfer::configuration),
+        )
         // DD-135(2)(3)(4)、17 §8：Skill 目录、版本、正文、一次性上传暂存与 AgentVersion 引用目录
         .exposed_route("/api/v1/skill-definitions", get(crate::skill_query::list))
         .exposed_route(

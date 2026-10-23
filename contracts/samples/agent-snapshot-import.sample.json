@@ -1,0 +1,69 @@
+{
+  "importCommand": {
+    "actionKey": "agent.definition.import",
+    "idempotencyKey": "5a6d2c1b-8a7e-4f5d-9c3b-2a1e0f9d8c7b",
+    "slug": "release-writer",
+    "agentDefinitionImport": {
+      "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+      "runtimeProfileKey": "server-codex",
+      "modelRouteResourceId": "6d7f8a1c-0f1e-4e1b-9a55-0c1f3a2b4d5e"
+    },
+    "explicitConfirmation": true
+  },
+  "uploadRequest": {
+    "mediaType": "image/png",
+    "contentBase64": "iVBORw0KGgo="
+  },
+  "preview": {
+    "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "packageByteSize": 2048,
+    "mediaType": "image/png",
+    "formatKey": "buzz-agent-snapshot@1",
+    "expiresAt": "2026-10-23T10:30:00Z",
+    "displayName": "Release writer",
+    "description": "Drafts release notes",
+    "avatarDataUrl": "data:image/png;base64,iVBORw0KGgo=",
+    "instructions": "Write concise release notes.",
+    "parallelism": 2,
+    "idleTimeoutSeconds": 300,
+    "maxTurnDurationSeconds": 1800,
+    "sourceIsBuiltIn": false,
+    "omitted": ["RUNTIME", "MODEL", "RESPOND_TO_ALLOWLIST", "AVATAR"]
+  },
+  "minimalPreview": {
+    "uploadId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "packageByteSize": 512,
+    "mediaType": "application/json",
+    "formatKey": "buzz-agent-snapshot@1",
+    "expiresAt": "2026-10-23T10:30:00Z",
+    "displayName": "Release writer",
+    "instructions": "Write concise release notes.",
+    "omitted": []
+  },
+  "configuration": {
+    "profiles": [],
+    "routes": [],
+    "nextOffset": null,
+    "canImport": false
+  },
+  "advanceRequest": {
+    "target": {
+      "actionExecutionId": "ae0f9024-bf19-4c6a-b7f4-af61a76d3cbe",
+      "resourceId": "51acb7a1-d540-4bcd-9a45-0f8dc1afbd70",
+      "versionAssetId": "24ca335d-571e-4b69-ab43-73d7ed5862de",
+      "workflowId": "platform:RESOURCE_IMPORT:00000000-0000-0000-0000-000000000001:ae0f9024-bf19-4c6a-b7f4-af61a76d3cbe:1",
+      "formatKey": "buzz-agent-snapshot@1",
+      "packageDigest": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+    },
+    "runId": "3e261901-e2b9-4977-86b8-2203523f7507",
+    "cancelRequested": false
+  },
+  "advanceResult": {
+    "resourceId": "51acb7a1-d540-4bcd-9a45-0f8dc1afbd70",
+    "status": "COMPLETED",
+    "waitingReason": "NONE"
+  }
+}

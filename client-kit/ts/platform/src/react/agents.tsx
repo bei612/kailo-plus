@@ -45,7 +45,7 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { consumePendingOpenCreateAgent, subscribeOpenCreateAgent } from "./open-create-agent-event";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Webhook, X, Zap } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, Code, GitPullRequest, MessageSquare, Pencil, Play, Plus, RefreshCw, SmilePlus, Upload, Webhook, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -90,6 +90,7 @@ import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { AgentsPageFrame } from "./agent-library/AgentsPageFrame";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
+import { AgentSnapshotImportDialog, agentSnapshotSource, type AgentSnapshotSource } from "./agent-library/AgentSnapshotImportDialog";
 import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
 import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-library/agentConfigOptions";
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
@@ -175,6 +176,10 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const [versionRevision, setVersionRevision] = useState(0);
   const [installationLocked, setInstallationLocked] = useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
+  // DD-131(2): original "Import agent snapshot" from a local .agent.json/.agent.png file.
+  const importInput = useRef<HTMLInputElement>(null);
+  const [importSource, setImportSource] = useState<AgentSnapshotSource | null>(null);
+  const [importError, setImportError] = useState<"agents.snapshot.unsupportedFile" | "agents.snapshot.fileTooLarge" | null>(null);
   const blocked = locked || versionLocked;
   // Original requestOpenCreateAgent (search Actions "Create a new agent"): open the same governed
   // create dialog the New agent card opens, only while that card would be enabled.
@@ -192,13 +197,33 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
   const nextOffset = page?.nextOffset;
 
   return (
-    <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={
+    <AgentsPageFrame title={t("platform.tab.agents")} description={t("agents.description")} action={<div className="flex shrink-0 items-center gap-1">
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("agents.snapshot.importTitle")}
+          title={t("agents.snapshot.importTitle")} data-testid="agents-import-snapshot"
+          disabled={blocked || importSource !== null} onClick={() => { setImportError(null); importInput.current?.click(); }}>
+          <Upload aria-hidden className="h-4 w-4" />
+        </WorkflowButton>
+        <input ref={importInput} type="file" hidden accept=".json,.png,application/json,image/png" data-testid="agents-import-snapshot-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            void file.arrayBuffer().then((buffer) => {
+              const next = agentSnapshotSource(file.name, new Uint8Array(buffer));
+              if (next === "unsupported") setImportError("agents.snapshot.unsupportedFile");
+              else if (next === "tooLarge") setImportError("agents.snapshot.fileTooLarge");
+              else setImportSource(next);
+            }, () => setImportError("agents.snapshot.unsupportedFile"));
+          }} />
         <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
           disabled={blocked || installationLocked || state.status === "pending"}
           onClick={() => { reload(); setRefreshRevision((value) => value + 1); }}>
           <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
         </WorkflowButton>
-    }>
+    </div>}>
+      {importError ? <Notice role="alert">{t(importError)}</Notice> : null}
+      <AgentSnapshotImportDialog source={importSource} onClose={() => setImportSource(null)}
+        onImported={() => { reload(); setRefreshRevision((value) => value + 1); }} />
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />

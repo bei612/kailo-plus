@@ -1219,3 +1219,29 @@ fn dd135_skills_preserve_fields_and_absence() {
     unknown["skills"][0]["status"] = serde_json::json!("UNKNOWN_STATE");
     assert!(serde_json::from_value::<contracts::AgentInstallationSkillPage>(unknown).is_err());
 }
+
+#[test]
+fn dd131_agent_snapshot_import_preserves_fields_and_absence() {
+    // DD-131(2)/DD-143: the import command, upload request, both preview shapes,
+    // the import configuration page and the RESOURCE_IMPORT advance pair keep
+    // every field and keep absent optionals absent.
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-snapshot-import.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let typed: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(typed).unwrap(), value);
+    }
+    roundtrip::<contracts::ActionCommand>(&value["importCommand"]);
+    roundtrip::<contracts::AgentSnapshotUploadRequest>(&value["uploadRequest"]);
+    roundtrip::<contracts::AgentSnapshotImportPreview>(&value["preview"]);
+    roundtrip::<contracts::AgentSnapshotImportPreview>(&value["minimalPreview"]);
+    roundtrip::<contracts::AgentImportConfigurationPage>(&value["configuration"]);
+    roundtrip::<contracts::ResourceImportAdvanceRequest>(&value["advanceRequest"]);
+    roundtrip::<contracts::ResourceImportAdvanceResult>(&value["advanceResult"]);
+    let mut unknown = value["preview"].clone();
+    unknown["omitted"][0] = serde_json::json!("SECRET");
+    assert!(serde_json::from_value::<contracts::AgentSnapshotImportPreview>(unknown).is_err());
+}

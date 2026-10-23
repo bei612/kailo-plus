@@ -2067,6 +2067,8 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.skill_definition set status='DELETED' where tenant_id=$1 and status<>'DELETED'",
         "update catalog.skill_version set artifact=null where tenant_id=$1 and artifact is not null",
         "delete from admission.skill_artifact_upload where tenant_id = $1",
+        // DD-131(2)：快照包暂存不是历史；导入审计只引用其摘要。
+        "delete from admission.transfer_upload where tenant_id = $1",
         "delete from identity.collaboration_user_state where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         "delete from admission.publish_attempt where tenant_principal_id in (select id from identity.principal where tenant_id = $1)",
         // DD-125(5): short-term link-preview snapshots are not history; nothing references them.

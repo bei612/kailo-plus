@@ -554,6 +554,8 @@ pub enum Semantic {
     AutomationRotateWebhookSecret,
     ResourceTransferOwner,
     ResourceCreate,
+    /// DD-131(2)、05 §2.12：快照包导入为新 Definition 与 DRAFT Version（RESOURCE_IMPORT）。
+    AgentDefinitionImport,
     /// DD-135、05 §2.14：Tenant 级 skill.definition 与不可变 skill.version 的管理。
     SkillDefinitionCreate,
     SkillVersionCreate,
@@ -627,6 +629,7 @@ impl Semantic {
             "automation.rotate_webhook_secret" => Self::AutomationRotateWebhookSecret,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
+            "agent.definition.import" => Self::AgentDefinitionImport,
             "skill.definition.create" => Self::SkillDefinitionCreate,
             "skill.version.create" => Self::SkillVersionCreate,
             "skill.version.publish" => Self::SkillVersionPublish,
@@ -750,6 +753,7 @@ impl Semantic {
                     | Self::AgentDelegationRevoke
                     | Self::ResourceTransferOwner
                     | Self::ResourceCreate
+                    | Self::AgentDefinitionImport
             )
     }
 
@@ -802,6 +806,7 @@ impl Semantic {
                     | Self::AgentInstallationEnable
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
+                    | Self::AgentDefinitionImport
             )
     }
 
@@ -870,6 +875,8 @@ pub struct Params {
     pub tenant_quota_setting: Option<Value>,
     /// DD-135(3)：skill.version.create 的一次性上传引用、规范 digest 与能力需求
     pub skill_version_upload: Option<Value>,
+    /// DD-131(2)：agent.definition.import 的本会话上传引用、包 digest 与重选的运行配置
+    pub agent_definition_import: Option<Value>,
 }
 
 impl Params {
@@ -895,6 +902,9 @@ impl Params {
         }
         if let Some(upload) = &self.skill_version_upload {
             m.insert("skillVersionUpload".into(), upload.clone());
+        }
+        if let Some(input) = &self.agent_definition_import {
+            m.insert("agentDefinitionImport".into(), input.clone());
         }
         if let Some(input) = &self.application_binding_create {
             m.insert("applicationBindingCreate".into(), input.clone());
@@ -1048,6 +1058,7 @@ impl Params {
             resource_create: v.get("resourceCreate").cloned(),
             tenant_quota_setting: v.get("tenantQuotaSetting").cloned(),
             skill_version_upload: v.get("skillVersionUpload").cloned(),
+            agent_definition_import: v.get("agentDefinitionImport").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
                 .get("applicationBindingVersion")
@@ -1433,6 +1444,11 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .as_ref()
             .map(skill_catalog::normalize_upload)
             .transpose()?,
+        agent_definition_import: cmd
+            .agent_definition_import
+            .as_ref()
+            .map(crate::resource_transfer::normalize)
+            .transpose()?,
     };
     // DD-135（05 §2.14）：Skill 动作的参数各为闭集，其他动作不得携带上传引用。
     if sem.is_skill() {
@@ -1462,6 +1478,13 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Ok(p);
     }
     if p.resource_create.is_some() {
+        return Err(bad());
+    }
+    if sem == Semantic::AgentDefinitionImport {
+        crate::resource_transfer::validate_params(&p)?;
+        return Ok(p);
+    }
+    if p.agent_definition_import.is_some() {
         return Err(bad());
     }
     if sem.is_application_binding() {
@@ -1866,6 +1889,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ApplicationBindingCreate
         | Semantic::ApplicationBindingDisable
         | Semantic::ResourceCreate
+        | Semantic::AgentDefinitionImport
         // DD-135：已在上方按各自闭集校验并返回
         | Semantic::SkillDefinitionCreate | Semantic::SkillVersionCreate | Semantic::SkillVersionPublish
         | Semantic::SkillVersionRetire | Semantic::SkillDefinitionDisable
@@ -1990,6 +2014,9 @@ async fn resolve_target(
         }
         Semantic::ResourceCreate => {
             crate::resource_provision::target(conn, tenant, initiator, def, p, frozen, lock).await
+        }
+        Semantic::AgentDefinitionImport => {
+            crate::resource_transfer::target(conn, tenant, initiator, def, p, frozen, lock).await
         }
         Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
             crate::application_binding::target(conn, tenant, def, p, frozen, lock).await
@@ -3785,6 +3812,7 @@ impl Governance {
             application_binding_id: None,
             application_binding_version: None,
             resource_create: None,
+            agent_definition_import: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
         };
@@ -3892,6 +3920,7 @@ impl Governance {
             application_binding_id: None,
             application_binding_version: None,
             resource_create: None,
+            agent_definition_import: None,
             tenant_quota_setting: None,
             skill_version_upload: None,
         };
@@ -5411,6 +5440,7 @@ impl Governance {
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
+            || sem == Semantic::AgentDefinitionImport
             || sem == Semantic::WorkspaceJoin
             || sem.is_application_binding()
             || sem.is_installation_permission()
@@ -5444,6 +5474,7 @@ impl Governance {
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
+            || sem == Semantic::AgentDefinitionImport
             || sem == Semantic::WorkspaceJoin
             || sem == Semantic::WorkspaceUpdate
             || sem.is_application_binding()
@@ -5783,6 +5814,9 @@ impl Governance {
         }
         let version: i32 = match sem {
             Semantic::ResourceCreate => crate::resource_provision::prewrite(tx,ae,params).await?,
+            Semantic::AgentDefinitionImport => {
+                crate::resource_transfer::prewrite(tx, ae, def, params).await?
+            }
             Semantic::TenantDelete => {
                 let snapshot: Option<(Uuid, i32, serde_json::Value)> = sqlx::query_as(
                     "select id, tenant_version, frozen_inventory from admission.tenant_lifecycle_snapshot
@@ -6003,6 +6037,7 @@ impl Governance {
             Semantic::SecretRefRehome
                 | Semantic::ComponentReleaseApprove
                 | Semantic::ResourceCreate
+                | Semantic::AgentDefinitionImport
                 | Semantic::WorkspaceUpdate
         ) {
             ae.id
@@ -6505,6 +6540,9 @@ impl Governance {
         }
         if sem == Semantic::LlmRouteDisable {
             return crate::model_route::disable::gate(conn, tenant, p).await;
+        }
+        if sem == Semantic::AgentDefinitionImport {
+            return crate::resource_transfer::gate(self, conn, tenant, initiator, p).await;
         }
         if sem.is_installation_permission() {
             return installation_permission::gate(
@@ -7523,6 +7561,9 @@ impl Governance {
             let started = match sem {
                 Semantic::ConversationOpen => crate::conversations::start(&self.pool,&self.temporal,ae.id,ae.tenant_id,&workflow_id).await,
                 Semantic::ResourceCreate => crate::resource_provision::start(&self.pool,&self.temporal,ae.id,ae.tenant_id,&workflow_id).await,
+                Semantic::AgentDefinitionImport => {
+                    crate::resource_transfer::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
+                }
                 Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
                     crate::application_binding::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
