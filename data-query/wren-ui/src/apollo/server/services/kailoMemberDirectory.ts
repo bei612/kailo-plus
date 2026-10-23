@@ -33,8 +33,7 @@ const ENV = {
   intervalSeconds: 'KAILO_DIRECTORY_INTERVAL_SECONDS',
 } as const;
 
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SECRET_MAX_BYTES = 4 * 1024;
 const TOKEN_MAX_BYTES = 64 * 1024;
 const DIRECTORY_MAX_BYTES = 16 * 1024 * 1024;
@@ -169,7 +168,9 @@ function exactObject(value: unknown, keys: string[], what: string) {
     Object.keys(value).length !== keys.length ||
     !keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
   )
-    throw new KailoDirectorySnapshotError(`${what} does not match the contract`);
+    throw new KailoDirectorySnapshotError(
+      `${what} does not match the contract`,
+    );
   return value;
 }
 
@@ -232,7 +233,13 @@ export function parseKailoDirectory(
     members: array(root.members, 'members').map((entry) => {
       const member = exactObject(
         entry,
-        ['principalId', 'displayName', 'tenantRole', 'identities', 'workspaces'],
+        [
+          'principalId',
+          'displayName',
+          'tenantRole',
+          'identities',
+          'workspaces',
+        ],
         'member',
       );
       return {
@@ -349,7 +356,10 @@ async function serviceToken(
   });
   if (response.status !== 200) {
     await response.body?.cancel().catch(() => undefined);
-    throw new KailoDirectoryUnavailable('token request refused', response.status);
+    throw new KailoDirectoryUnavailable(
+      'token request refused',
+      response.status,
+    );
   }
   let body: unknown;
   try {
@@ -482,7 +492,9 @@ export class KailoMemberDirectoryStore {
     return this.version;
   }
 
-  public async access(userKey: string | null | undefined): Promise<KailoDirectoryAccess> {
+  public async access(
+    userKey: string | null | undefined,
+  ): Promise<KailoDirectoryAccess> {
     await this.ready();
     if (this.version === null)
       return { delivered: false, member: true, admin: false };

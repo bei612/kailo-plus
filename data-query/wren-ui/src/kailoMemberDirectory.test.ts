@@ -32,7 +32,9 @@ const BINDING = randomUUID();
 const TENANT = randomUUID();
 const WS = randomUUID();
 const key = (issuer: string, subject: string) =>
-  createHash('sha256').update(JSON.stringify([issuer, subject])).digest('hex');
+  createHash('sha256')
+    .update(JSON.stringify([issuer, subject]))
+    .digest('hex');
 
 type Member = {
   principalId: string;
@@ -102,7 +104,10 @@ class Platform {
         res.statusCode = this.tokenStatus;
         res.setHeader('content-type', 'application/json');
         return res.end(
-          JSON.stringify({ access_token: 'directory-token', token_type: 'Bearer' }),
+          JSON.stringify({
+            access_token: 'directory-token',
+            token_type: 'Bearer',
+          }),
         );
       }
       if (
@@ -134,7 +139,8 @@ describe('DD-133(4) member directory configuration', () => {
   const base = {
     KAILO_DIRECTORY_BINDING_ID: BINDING,
     KAILO_DIRECTORY_CLIENT_ID: 'kailo-wren-directory',
-    KAILO_DIRECTORY_CLIENT_SECRET_FILE: '/run/secrets/kailo_directory_client_secret',
+    KAILO_DIRECTORY_CLIENT_SECRET_FILE:
+      '/run/secrets/kailo_directory_client_secret',
     KAILO_DIRECTORY_TOKEN_URL: `${ISSUER}/protocol/openid-connect/token`,
     KAILO_DIRECTORY_CORE_URL: 'http://core-bff:8081',
     WREN_NATIVE_IDENTITY_JSON: JSON.stringify({ issuer: ISSUER }),
@@ -142,7 +148,9 @@ describe('DD-133(4) member directory configuration', () => {
 
   test('absent keys keep the directory off; a complete set is read', () => {
     expect(kailoDirectoryConfig({})).toBeNull();
-    expect(kailoDirectoryConfig({ KAILO_DIRECTORY_BINDING_ID: ' ' })).toBeNull();
+    expect(
+      kailoDirectoryConfig({ KAILO_DIRECTORY_BINDING_ID: ' ' }),
+    ).toBeNull();
     expect(kailoDirectoryConfig(base)).toMatchObject({
       bindingId: BINDING,
       coreUrl: 'http://core-bff:8081',
@@ -165,7 +173,9 @@ describe('DD-133(4) member directory configuration', () => {
       { ...base, KAILO_DIRECTORY_INTERVAL_SECONDS: '3601' },
       { ...base, WREN_NATIVE_IDENTITY_JSON: '' },
     ])
-      expect(() => kailoDirectoryConfig(env)).toThrow(KailoDirectoryConfigError);
+      expect(() => kailoDirectoryConfig(env)).toThrow(
+        KailoDirectoryConfigError,
+      );
   });
 
   test('the snapshot contract is closed and bound to this binding', () => {
@@ -241,9 +251,19 @@ describe('DD-133(4) periodic member directory sync', () => {
       member('alice', 'ADMIN', 'Alice Kailo'),
       member('bob', 'MEMBER'),
       // Another issuer is not this instance's identity.
-      { ...member('carol', 'MEMBER'), identities: [{ issuer: 'https://other', subject: 'carol', picture: 'https://x/y' }] },
+      {
+        ...member('carol', 'MEMBER'),
+        identities: [
+          { issuer: 'https://other', subject: 'carol', picture: 'https://x/y' },
+        ],
+      },
     ]);
-    await db('kailo_user').insert({ user_key: key(ISSUER, 'alice'), name: 'IdP name', username: 'alice', email: 'a@example.test' });
+    await db('kailo_user').insert({
+      user_key: key(ISSUER, 'alice'),
+      name: 'IdP name',
+      username: 'alice',
+      email: 'a@example.test',
+    });
     const store = new KailoMemberDirectoryStore(db);
     const sync = new KailoMemberDirectorySync(config, store);
     expect(await sync.tick()).toBe('APPLIED');
@@ -251,11 +271,23 @@ describe('DD-133(4) periodic member directory sync', () => {
       `Basic ${Buffer.from('kailo-wren-directory:directory-secret').toString('base64')}`,
     );
     expect(platform.lastAuthorization).toBe('Bearer directory-token');
-    expect(await store.access(key(ISSUER, 'alice'))).toEqual({ delivered: true, member: true, admin: true });
-    expect(await store.access(key(ISSUER, 'bob'))).toEqual({ delivered: true, member: true, admin: false });
-    expect((await store.access(key('https://other', 'carol'))).member).toBe(false);
+    expect(await store.access(key(ISSUER, 'alice'))).toEqual({
+      delivered: true,
+      member: true,
+      admin: true,
+    });
+    expect(await store.access(key(ISSUER, 'bob'))).toEqual({
+      delivered: true,
+      member: true,
+      admin: false,
+    });
+    expect((await store.access(key('https://other', 'carol'))).member).toBe(
+      false,
+    );
     expect((await store.access(key(ISSUER, 'mallory'))).member).toBe(false);
-    const alice = await db('kailo_user').where({ user_key: key(ISSUER, 'alice') }).first();
+    const alice = await db('kailo_user')
+      .where({ user_key: key(ISSUER, 'alice') })
+      .first();
     expect(alice).toMatchObject({
       name: 'Alice Kailo',
       picture: 'https://kailo.example.test/api/v1/identity/avatars/alice',
@@ -295,7 +327,10 @@ describe('DD-133(4) periodic member directory sync', () => {
     platform.rawBody = '{not json';
     expect(await sync.tick()).toBe('REJECTED');
     platform.rawBody = null;
-    platform.directoryBody = { ...snapshot([], 'empty'), bindingId: randomUUID() };
+    platform.directoryBody = {
+      ...snapshot([], 'empty'),
+      bindingId: randomUUID(),
+    };
     expect(await sync.tick()).toBe('REJECTED');
     rmSync(config.clientSecretFile);
     expect(await sync.tick()).toBe('FAILED');
@@ -305,16 +340,30 @@ describe('DD-133(4) periodic member directory sync', () => {
   });
 
   test('removal, demotion and promotion follow the next snapshot; kailo_user rows stay', async () => {
-    platform.directoryBody = snapshot([member('alice', 'ADMIN'), member('bob', 'MEMBER')]);
+    platform.directoryBody = snapshot([
+      member('alice', 'ADMIN'),
+      member('bob', 'MEMBER'),
+    ]);
     const store = new KailoMemberDirectoryStore(db);
     const sync = new KailoMemberDirectorySync(config, store);
     await sync.tick();
     platform.directoryBody = snapshot([member('alice', 'MEMBER')], 'b');
     expect(await sync.tick()).toBe('APPLIED');
-    expect(await store.access(key(ISSUER, 'alice'))).toEqual({ delivered: true, member: true, admin: false });
+    expect(await store.access(key(ISSUER, 'alice'))).toEqual({
+      delivered: true,
+      member: true,
+      admin: false,
+    });
     expect((await store.access(key(ISSUER, 'bob'))).member).toBe(false);
-    expect(await db('kailo_user').where({ user_key: key(ISSUER, 'bob') }).first()).toBeTruthy();
-    platform.directoryBody = snapshot([member('alice', 'ADMIN'), member('bob', 'MEMBER')], 'c');
+    expect(
+      await db('kailo_user')
+        .where({ user_key: key(ISSUER, 'bob') })
+        .first(),
+    ).toBeTruthy();
+    platform.directoryBody = snapshot(
+      [member('alice', 'ADMIN'), member('bob', 'MEMBER')],
+      'c',
+    );
     await sync.tick();
     expect((await store.access(key(ISSUER, 'alice'))).admin).toBe(true);
     expect((await store.access(key(ISSUER, 'bob'))).member).toBe(true);
@@ -322,11 +371,20 @@ describe('DD-133(4) periodic member directory sync', () => {
 
   test('a restart keeps the persisted snapshot before the next read', async () => {
     platform.directoryBody = snapshot([member('alice', 'ADMIN')]);
-    await new KailoMemberDirectorySync(config, new KailoMemberDirectoryStore(db)).tick();
+    await new KailoMemberDirectorySync(
+      config,
+      new KailoMemberDirectoryStore(db),
+    ).tick();
     platform.directoryStatus = 503;
     const restarted = new KailoMemberDirectoryStore(db);
-    expect(await new KailoMemberDirectorySync(config, restarted).tick()).toBe('UNAVAILABLE');
-    expect(await restarted.access(key(ISSUER, 'alice'))).toEqual({ delivered: true, member: true, admin: true });
+    expect(await new KailoMemberDirectorySync(config, restarted).tick()).toBe(
+      'UNAVAILABLE',
+    );
+    expect(await restarted.access(key(ISSUER, 'alice'))).toEqual({
+      delivered: true,
+      member: true,
+      admin: true,
+    });
     expect((await restarted.access(key(ISSUER, 'bob'))).member).toBe(false);
   });
 
@@ -345,10 +403,15 @@ describe('DD-133(4) periodic member directory sync', () => {
     };
     await users.remember(profile);
     expect((await db('kailo_user').first()).name).toBe('Token Name');
-    platform.directoryBody = snapshot([member('alice', 'MEMBER', 'Kailo Alice')]);
+    platform.directoryBody = snapshot([
+      member('alice', 'MEMBER', 'Kailo Alice'),
+    ]);
     await new KailoMemberDirectorySync(config, store).tick();
     await new KailoUserDirectory(repository, store).remember(profile);
-    expect(await db('kailo_user').first()).toMatchObject({ name: 'Kailo Alice', locale: 'en' });
+    expect(await db('kailo_user').first()).toMatchObject({
+      name: 'Kailo Alice',
+      locale: 'en',
+    });
   });
 
   test('the migration is reversible', async () => {
@@ -391,7 +454,9 @@ describe('DD-133(4) entry admission in the middleware', () => {
       res.end(JSON.stringify(reply.body));
     });
     for (const server of [idp, node])
-      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
     const origin = `http://127.0.0.1:${(idp.address() as AddressInfo).port}`;
     settings = {
       issuer: `${origin}/realms/kailo`,
@@ -441,11 +506,20 @@ describe('DD-133(4) entry admission in the middleware', () => {
     );
 
   const forwardedUser = (response: Response) =>
-    decodeKailoUser(response.headers.get(`x-middleware-request-${KAILO_USER_HEADER}`));
+    decodeKailoUser(
+      response.headers.get(`x-middleware-request-${KAILO_USER_HEADER}`),
+    );
 
   test('a non-member is refused for pages, GraphQL and REST', async () => {
-    answer = (userKey) => ({ status: 200, body: { userKey, delivered: true, member: false, admin: false } });
-    for (const [path, method] of [['/home', 'GET'], ['/api/graphql', 'POST'], ['/api/v1/ask', 'POST']]) {
+    answer = (userKey) => ({
+      status: 200,
+      body: { userKey, delivered: true, member: false, admin: false },
+    });
+    for (const [path, method] of [
+      ['/home', 'GET'],
+      ['/api/graphql', 'POST'],
+      ['/api/v1/ask', 'POST'],
+    ]) {
       const response = await request(path, 'mallory', method);
       expect(response.status).toBe(403);
       expect(await response.json()).toEqual({ error: 'KAILO_NOT_MEMBER' });
@@ -454,11 +528,17 @@ describe('DD-133(4) entry admission in the middleware', () => {
   });
 
   test('a STANDALONE member gets the directory role; undelivered stays member', async () => {
-    answer = (userKey) => ({ status: 200, body: { userKey, delivered: true, member: true, admin: true } });
+    answer = (userKey) => ({
+      status: 200,
+      body: { userKey, delivered: true, member: true, admin: true },
+    });
     let response = await request('/home', 'alice');
     expect(response.headers.get('x-middleware-next')).toBe('1');
     expect(forwardedUser(response)?.admin).toBe(true);
-    answer = (userKey) => ({ status: 200, body: { userKey, delivered: false, member: true, admin: false } });
+    answer = (userKey) => ({
+      status: 200,
+      body: { userKey, delivered: false, member: true, admin: false },
+    });
     response = await request('/home', 'alice');
     expect(forwardedUser(response)?.admin).toBe(false);
   });
@@ -466,7 +546,15 @@ describe('DD-133(4) entry admission in the middleware', () => {
   test('a lookup failure or an answer for another user fails closed', async () => {
     answer = () => ({ status: 503, body: { error: 'x' } });
     expect((await request('/home', 'alice')).status).toBe(503);
-    answer = () => ({ status: 200, body: { userKey: 'b'.repeat(64), delivered: true, member: true, admin: true } });
+    answer = () => ({
+      status: 200,
+      body: {
+        userKey: 'b'.repeat(64),
+        delivered: true,
+        member: true,
+        admin: true,
+      },
+    });
     expect((await request('/home', 'alice')).status).toBe(503);
   });
 
@@ -475,7 +563,9 @@ describe('DD-133(4) entry admission in the middleware', () => {
     const response = await request('/api/kailo/directory-access', 'alice');
     expect(response.headers.get('x-middleware-next')).toBe('1');
     delete process.env.KAILO_DIRECTORY_BINDING_ID;
-    expect((await request('/home', 'alice')).headers.get('x-middleware-next')).toBe('1');
+    expect(
+      (await request('/home', 'alice')).headers.get('x-middleware-next'),
+    ).toBe('1');
     expect(lookups).toEqual([]);
   });
 });
