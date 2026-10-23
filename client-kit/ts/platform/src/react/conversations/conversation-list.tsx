@@ -9,6 +9,9 @@ import { useLocale, useT } from "../context";
 import { AvatarHostProvider } from "../profile/avatar-host";
 import { ChannelGroupSection } from "../sidebar/channel-group";
 import { ChannelRow } from "../sidebar/channel-row";
+import { ChannelActivityPopover } from "../sidebar/channel-activity-popover";
+import { ChannelWorkingBadge } from "../agent-activity/ChannelWorkingBadge";
+import { useWorkingChannels } from "../agent-activity/agentWorkingSignal";
 import { TooltipProvider } from "../sidebar/tooltip";
 import { sortDmChannelsForSidebar } from "../sidebar/dmSidebarSort";
 import { useChannelSortPreference } from "../sidebar/useChannelSortPreference";
@@ -42,7 +45,6 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
   const t = useT();
   const directory = useConversationDirectory(currentPrincipalId);
   const [collapsed, setCollapsed] = useState(false);
-  const [starredCollapsed, setStarredCollapsed] = useState(false);
   const userState = useConversationState(items);
   const { sortModeFor, setSortModeFor } = useChannelSortPreference(currentPrincipalId);
   const admitted = new Set(items.filter(item => item.state === "ACTIVE" && item.participantPrincipalIds.includes(currentPrincipalId)).map(item => item.channelId));
@@ -65,6 +67,8 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
   }, [selectedChannel, userState.hidden, onCloseSelected]);
   const names = new Map(directory.items.map((person) => [person.principalId, person.displayName]));
   const presenceHost = usePresenceHost();
+  const workingChannels = useWorkingChannels();
+  const workingByChannelId = useMemo(() => new Map(workingChannels.map((summary) => [summary.channelId, summary])), [workingChannels]);
   const locale = useLocale();
   // DD-139: DM rows show the other person's Tenant avatar address when the host can load it;
   // any other URL never reaches the network and the original initials remain.
@@ -112,35 +116,40 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     const isPair = conversation.participantPrincipalIds.length === 2;
     return participants && (isPair || participants.length === 1) ? participants[0]?.pubkeys ?? [] : [];
   }))];
-  const group = (starred: boolean, presence: PresenceLookup | undefined) => <ChannelGroupSection
-      title={t(starred ? "sidebar.starred" : "sidebar.directMessages")}
-      items={error ? [] : sortDmChannelsForSidebar(rows.filter((row) => Boolean(userState.preferences[row.id]?.starred) === starred), {}, sortModeFor(starred ? "starred" : "dms"))}
-      sortMode={sortModeFor(starred ? "starred" : "dms")}
-      onSortModeChange={mode => setSortModeFor(starred ? "starred" : "dms", mode)}
-      hasUnread={rows.some(row => Boolean(userState.preferences[row.id]?.starred) === starred && (unreadCounts.get(row.channelId) ?? 0) > 0)} isCollapsed={starred ? starredCollapsed : collapsed}
-      onToggleCollapsed={() => starred ? setStarredCollapsed(!starredCollapsed) : setCollapsed(!collapsed)}
-      listTestId={starred ? "starred-conversation-list" : "conversation-list"} actionsTestId="conversation-actions"
-      onCreateChannel={starred ? undefined : onNewMessage} createChannelLabel={t("sidebar.newMessage")} createTestId="new-conversation"
-      onNewMessage={starred ? undefined : onNewMessage}
+  // Original AppSidebar: Starred is built from stream channels only (L349-355) and the DM
+  // SidebarSection gets no star handlers, so every DM stays in the one "Direct messages" group.
+  const group = (presence: PresenceLookup | undefined) => <ChannelGroupSection
+      title={t("sidebar.directMessages")}
+      items={error ? [] : sortDmChannelsForSidebar(rows, {}, sortModeFor("dms"))}
+      sortMode={sortModeFor("dms")}
+      onSortModeChange={mode => setSortModeFor("dms", mode)}
+      hasUnread={rows.some(row => (unreadCounts.get(row.channelId) ?? 0) > 0)} isCollapsed={collapsed}
+      onToggleCollapsed={() => setCollapsed(!collapsed)}
+      listTestId="conversation-list" actionsTestId="conversation-actions"
+      onCreateChannel={onNewMessage} createChannelLabel={t("sidebar.newMessage")} createTestId="new-conversation"
+      onNewMessage={onNewMessage}
       renderContextMenu={(conversation) => <ChannelContextMenuItems channel={{...conversation, id: conversation.channelId}} hasUnread={(unreadCounts.get(conversation.channelId) ?? 0) > 0}
         onMarkChannelRead={canMark && byChannel.has(conversation.channelId) ? id => mark(id, true) : undefined}
         onMarkChannelUnread={canMark && byChannel.has(conversation.channelId) ? id => mark(id, false) : undefined}
-        isStarred={userState.preferences[conversation.id]?.starred} isMuted={userState.preferences[conversation.id]?.muted}
+        isMuted={userState.preferences[conversation.id]?.muted}
         onCopy={(text, success) => { void Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(() => toast.success(success), () => toast.error(t("platform.loadFailed"))); }}
-        onStarChannel={userState.canWrite ? () => userState.preference(conversation.id, {starred: true}) : undefined}
-        onUnstarChannel={userState.canWrite ? () => userState.preference(conversation.id, {starred: false}) : undefined}
         onMuteChannel={userState.canWrite ? () => userState.preference(conversation.id, {muted: true}) : undefined}
         onUnmuteChannel={userState.canWrite ? () => userState.preference(conversation.id, {muted: false}) : undefined} />}
       renderRow={(conversation) => { const participants = participantsFor(conversation);
         const isPair = conversation.participantPrincipalIds.length === 2;
         const single = participants && (isPair || participants.length === 1) ? participants[0] : undefined;
+        const working = workingByChannelId.get(conversation.channelId);
         return <>
+        {/* Original SidebarSection: a working DM row gets the activity popover and working badge. */}
+        <ChannelActivityPopover activeWorking={working} channel={{ id: conversation.channelId, name: conversation.name }}>
         <ChannelRow channel={{...conversation, id: conversation.channelId}} isActive={selectedId === conversation.id}
+          workingBadge={working ? <ChannelWorkingBadge channelName={conversation.name} isActive={selectedId === conversation.id} summary={working} /> : undefined}
           isMuted={userState.preferences[conversation.id]?.muted}
           hasUnread={(unreadCounts.get(conversation.channelId) ?? 0) > 0} hasThreadUnread={false} onSelectChannel={() => onSelect(conversation)}
           glyph={() => <DmChannelIcon channelName={conversation.name} isPair={isPair} participants={participants}
             presenceStatus={participants ? dmPresenceStatus(presence, isPair, participants) : undefined} />}
           labelAdornment={single ? <UserNameIndicators className="ml-1" pubkey={single.pubkeys[0]} pubkeys={single.pubkeys} size="dm" /> : null} />
+        </ChannelActivityPopover>
         {(unreadCounts.get(conversation.channelId) ?? 0) > 0 && selectedId !== conversation.id ? <span
           className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground tabular-nums pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 transition-opacity max-md:opacity-0 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0"
           data-testid={`channel-unread-${conversation.name}`}>
@@ -153,8 +162,7 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
           onClick={(event) => { event.stopPropagation(); userState.hide(conversation); }}><X className="h-4 w-4" /></button>
       </>; }} />;
   const groups = (presence: PresenceLookup | undefined) => <AvatarHostProvider value={avatarView}>
-    {rows.some((row) => userState.preferences[row.id]?.starred) ? group(true, presence) : null}
-    {group(false, presence)}
+    {group(presence)}
   </AvatarHostProvider>;
   return <TooltipProvider>
     {error || userState.failed || userState.unknown || reads?.failed || reads?.unknown ? <p role={userState.unknown || reads?.unknown ? "status" : "alert"} className="px-4 text-sm">

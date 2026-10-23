@@ -14,6 +14,7 @@ import type { InboxEvent } from "../src/inbox";
 import { sortDmChannelsForSidebar } from "../src/react/sidebar/dmSidebarSort";
 import type { ConversationUnreadEntry } from "../src/react/sidebar/useSidebarUnreadOverflow";
 import { click, render, settle } from "./render";
+import { reportChannelBotTyping, resetAgentWorkingSignal } from "../src/react/agent-activity/agentWorkingSignal";
 
 const items: ConversationView[] = [
   {id:"bob",channelId:"dm-bob",state:ConversationViewState.Active,participantPrincipalIds:["self","bob"],version:1,operationId:"open-bob"},
@@ -225,5 +226,23 @@ describe("original DM row avatar, presence dot and count (DD-120)",()=>{
     expect(host.querySelector('[data-testid="channel-presence-Zara"]')).toBeNull();
     expect(calls).toHaveLength(1);
     expect([...calls[0]!].sort()).toEqual(["b".repeat(64),"c".repeat(64),"d".repeat(64)]);
+  });
+
+  it("offers no Star on DM rows and keeps every DM in the one original Direct messages group",async()=>{
+    // Buzz 779af888 AppSidebar L349-355 and the DM SidebarSection: Starred is stream-only.
+    const {host}=await mount();
+    expect(host.querySelector('[data-testid="starred-conversation-list"]')).toBeNull();
+    await openContext(host);
+    expect([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].some(item=>/star/i.test(item.textContent ?? ""))).toBe(false);
+  });
+
+  it("restores the original working badge and activity popover on a working DM row",async()=>{
+    resetAgentWorkingSignal();
+    const {host}=await mount();
+    expect(host.querySelector('[data-testid="channel-working-Bob"]')).toBeNull();
+    await act(async()=>{reportChannelBotTyping("dm-bob",["d".repeat(64)]);});
+    await settle();
+    expect(host.querySelector('[data-testid="channel-working-Bob"]')).not.toBeNull();
+    await act(async()=>{resetAgentWorkingSignal();});
   });
 });
