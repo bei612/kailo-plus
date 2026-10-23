@@ -7,8 +7,8 @@ import { applyNeutralThemeAccent, createThemeVars, hexToHsl } from "./adaptive-t
 import { SYNTAX_THEMES, type SyntaxThemeName, extractThemeInfo, getThemePair, loadThemeData, resolveSystemTheme } from "./theme-loader";
 import { kailoRoles, kailoThemeVars } from "./kailo-tokens";
 export const THEME_STORAGE_KEY = "buzz-theme";
-// DD-141: a new key so a cached pre-Kailo palette never flashes on first paint.
-const CACHE_KEY = "kailo-theme-cache";
+// Shared with the Desktop boot script (index.html), which reads the cached background.
+const CACHE_KEY = "buzz-theme-cache";
 export const ACCENT_STORAGE_KEY = "buzz-accent-color";
 export const NEUTRAL_ACCENT = "neutral";
 /** DD-141: the first-party theme is pinned to the Kailo brand accent. */
@@ -227,7 +227,10 @@ function applyCachedVars(onThemeApplied?: () => void): string | null {
   try {
     const cached = window.localStorage.getItem(CACHE_KEY);
     if (!cached) return null;
-    const { themeName, vars, isDark } = JSON.parse(cached);
+    const { themeName, vars: cachedVars, isDark } = JSON.parse(cached);
+    // DD-141: the first-party theme always paints the current Kailo tokens, so a
+    // palette cached by an earlier release can never flash on first paint.
+    const vars = isBuzzTheme(themeName) ? kailoThemeVars(isDark ? "dark" : "light") : cachedVars;
     const root = document.documentElement;
     for (const [key, value] of Object.entries(vars)) {
       root.style.setProperty(key, value as string);
